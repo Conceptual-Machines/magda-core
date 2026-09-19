@@ -121,6 +121,42 @@ TEST_CASE("The cursor moves at the rate the tempo says", "[engine][transport][cl
     CHECK(advance(clock, snapshot, 512).segments[0].block.continuous);
 }
 
+TEST_CASE("Punch boundaries cut recording at device samples", "[engine][transport][clock][punch]") {
+    TransportClock clock;
+    auto snapshot = playing(0.0);
+    snapshot.punch = {
+        .startBeat = 0.5, .endBeat = 1.0, .punchInEnabled = true, .punchOutEnabled = true};
+
+    const auto block = advance(clock, snapshot, static_cast<int>(kSamplesPerBeat * 1.5));
+    requireCovers(block, static_cast<int>(kSamplesPerBeat * 1.5));
+    REQUIRE(block.segments.size() == 3);
+    CHECK_FALSE(block.segments[0].insidePunch);
+    CHECK(block.segments[0].block.beats.end == approx(0.5));
+    CHECK(block.segments[1].insidePunch);
+    CHECK(block.segments[1].block.beats.end == approx(1.0));
+    CHECK_FALSE(block.segments[2].insidePunch);
+}
+
+TEST_CASE("A punch boundary between samples is crossed once", "[engine][transport][clock][punch]") {
+    TransportClock clock;
+    auto snapshot = playing(0.0);
+    snapshot.punch = {
+        .startBeat = 0.50001, .endBeat = 2.0, .punchInEnabled = true, .punchOutEnabled = false};
+
+    const auto block = advance(clock, snapshot, 12000);
+    requireCovers(block, 12000);
+    REQUIRE(block.segments.size() == 2);
+    CHECK_FALSE(block.segments[0].insidePunch);
+    CHECK(block.segments[1].insidePunch);
+    CHECK(block.segments[1].startSample == 11026);
+
+    auto changed = snapshot;
+    changed.punch.startBeat = 0.25;
+    const auto next = advance(clock, changed, 64);
+    REQUIRE(next.segments.size() == 1);
+    CHECK(next.segments[0].insidePunch);
+}
+
 TEST_CASE("Where the cursor lands does not depend on how the blocks were cut",
           "[engine][transport][clock]") {
     // The cursor is a function of the sample count rather than a sum of steps,

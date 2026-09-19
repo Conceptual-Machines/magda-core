@@ -353,6 +353,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         reconcileFinishedSessionTakes();
         if (sessionCapture_.update())
             publishClips();
+        if (sessionCapture_.armed())
+            sessionPunchPending_.store(false, std::memory_order_release);
         publishMeters();
         publishDeviceMeters();
         publishRackMeters();
@@ -929,9 +931,19 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     }
 
     void stopMidiRecording(bool createClips = true) {
+        arrangementPunchActive_.store(false, std::memory_order_release);
+        sessionPunchPending_.store(false, std::memory_order_release);
+        const auto invalidatePunch = punch_.recordingRequested;
+        if (punch_.recordingRequested) {
+            punch_.recordingRequested = false;
+            ++punch_.recordingGeneration;
+            publishTransport();
+        }
         recording_ = false;
         arrangementRecording_ = false;
         sessionCapture_.disarm(createClips);
+        if (invalidatePunch)
+            sessionCapture_.invalidateRecordingGeneration(punch_.recordingGeneration);
         const auto active = recordingRoutes_;
         std::vector<engine::SlotKey> releases;
         for (const auto& [trackId, unused] : active) {
@@ -985,7 +997,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             }
             sessionSlotTargets_[trackId] = {.scene = sceneIndex};
         }
-        recording_ = sessionCapture_.armed() || !recordingRoutes_.empty();
+        recording_ = sessionCapture_.ownsRecording() ||
+                     sessionPunchPending_.load(std::memory_order_acquire) ||
+                     !recordingRoutes_.empty();
         launcher_.recordTargetsChanged();
         publishClips();
     }
@@ -1023,12 +1037,16 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         }
         if (target.launched)
             stopMidiTake(trackId);
-        recording_ = sessionCapture_.armed() || !recordingRoutes_.empty();
+        recording_ = sessionCapture_.ownsRecording() ||
+                     sessionPunchPending_.load(std::memory_order_acquire) ||
+                     !recordingRoutes_.empty();
         publishClips();
         return true;
     }
 
-    void beginArmedSessionSlotRecordings(std::optional<double> positionSeconds = {}) {
+    void beginArmedSessionSlotRecordings(std::optional<double> positionSeconds = {},
+                                         std::optional<double> dueBeat = {},
+                                         std::optional<bool> wasPlaying = {}) {
         handleUpdateNowIfNeeded();
         if (session_ == nullptr || !audioRunning_.load(std::memory_order_acquire) ||
             offlineRenders_ > 0)
@@ -1045,7 +1063,13 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         std::vector<TrackId> launched;
         {
             std::optional<double> due;
-            if (request_.playing) {
+            if (dueBeat) {
+                const auto sync = session_->syncPoint();
+                due = wasPlaying.value_or(request_.playing)
+                          ? sync.monotonicAt(*dueBeat)
+                          : sync.monotonicBeat + countInBeats() +
+                                (*dueBeat - map_.timeToBeat(positionSeconds.value_or(0.0)));
+            } else if (wasPlaying.value_or(request_.playing)) {
                 const auto sync = session_->syncPoint();
                 const auto period = launchBeatsPerBar();
                 const auto boundary = std::floor(sync.beat / period + 1.0) * period;
@@ -1131,7 +1155,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             stopSessionSlotRecording(trackId);
 
         if (!arrangementRecording_) {
-            recording_ = sessionCapture_.armed() || !recordingRoutes_.empty();
+            recording_ = sessionCapture_.ownsRecording() ||
+                         sessionPunchPending_.load(std::memory_order_acquire) ||
+                         !recordingRoutes_.empty();
             return;
         }
 
@@ -1162,10 +1188,30 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                 stopMidiTake(trackId);
         }
 
-        recording_ = sessionCapture_.armed() || !recordingRoutes_.empty();
+        recording_ = sessionCapture_.ownsRecording() ||
+                     sessionPunchPending_.load(std::memory_order_acquire) ||
+                     !recordingRoutes_.empty();
     }
 
-    bool startMidiRecording(double positionSeconds) {
+    void reschedulePunchedSessionSlots() {
+        if (!punch_.recordingRequested || session_ == nullptr)
+            return;
+        const auto sync = session_->syncPoint();
+        const auto due = punch_.punchInEnabled && punch_.valid()
+                             ? std::optional<double>{sync.monotonicAt(punch_.startBeat)}
+                             : std::optional<double>{};
+        engine::LaunchRequestQueue::Gesture gesture(session_->launchRequests());
+        for (const auto& [trackId, target] : sessionSlotTargets_) {
+            if (!target.launched)
+                continue;
+            const auto* tap = session_->takeTap({trackId, engine::RecordMaterial::midi});
+            engine::RecordTap::Reading reading;
+            if (tap != nullptr && tap->read(reading) && !reading.recording)
+                gesture.play({trackId, target.scene}, due);
+        }
+    }
+
+    bool startMidiRecording(double positionSeconds, bool armedSlotsWillLaunch = false) {
         if (recording_)
             return recording_;
 
@@ -1178,12 +1224,40 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         recording_ = true;
         arrangementRecording_ = true;
-        sessionCapture_.arm();
+        sessionPunchPending_.store(sessionCapture_.hasMaterial(), std::memory_order_release);
+        punch_.recordingRequested = true;
+        ++punch_.recordingGeneration;
+        publishTransport();
         reconcileMidiRecording();
-        if (!recording_)
+        if (!recording_ && armedSlotsWillLaunch) {
+            sources_.registerAvailableDevices();
+            auto devices = sources_.deviceSources();
+            std::erase_if(devices, [this](auto source) {
+                return sources_.slotFor(source) == LiveMidiSources::kNoSlot;
+            });
+            for (const auto& [trackId, target] : sessionSlotTargets_) {
+                const auto* track = TrackManager::getInstance().getTrack(trackId);
+                if (track != nullptr &&
+                    ClipManager::getInstance().getClipInSlot(trackId, target.scene) ==
+                        INVALID_CLIP_ID &&
+                    session_->slotRunTarget({trackId, target.scene}) &&
+                    recordingSources(*track, devices)) {
+                    recording_ = true;
+                    break;
+                }
+            }
+        }
+        if (!recording_) {
             arrangementRecording_ = false;
-        if (!recording_)
+            punch_.recordingRequested = false;
+            ++punch_.recordingGeneration;
+            sessionCapture_.invalidateRecordingGeneration(punch_.recordingGeneration);
+            publishTransport();
             return false;
+        }
+
+        activePunchGeneration_.store(punch_.recordingGeneration, std::memory_order_release);
+        arrangementPunchActive_.store(punch_.recordingRequested, std::memory_order_release);
 
         if (!request_.playing)
             publishRequest({.playing = true,
@@ -1191,6 +1265,18 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                             .positionBeat = map_.timeToBeat(positionSeconds),
                             .countInBeats = countInBeats()});
         return true;
+    }
+
+    void resumeMidiRecording() {
+        recording_ = true;
+        arrangementRecording_ = true;
+        sessionPunchPending_.store(sessionCapture_.hasMaterial(), std::memory_order_release);
+        punch_.recordingRequested = true;
+        ++punch_.recordingGeneration;
+        publishTransport();
+        reconcileMidiRecording();
+        activePunchGeneration_.store(punch_.recordingGeneration, std::memory_order_release);
+        arrangementPunchActive_.store(recording_, std::memory_order_release);
     }
 
     void reconcileFinishedSessionTakes() {
@@ -1231,7 +1317,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         }
         if (!finishedSlots.empty()) {
             launcher_.recordTargetsChanged();
-            recording_ = sessionCapture_.armed() || !recordingRoutes_.empty();
+            recording_ = sessionCapture_.ownsRecording() ||
+                         sessionPunchPending_.load(std::memory_order_acquire) ||
+                         !recordingRoutes_.empty();
             publishClips();
         }
     }
@@ -1328,8 +1416,6 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             traceEdit(EngineTrace::Kind::Publish);
             session_->publishClips(std::move(snapshot));
             const auto created = sessionCapture_.published();
-            if (arrangementRecording_ && !sessionCapture_.armed())
-                sessionCapture_.arm();
             if (!created)
                 break;
         }
@@ -1339,8 +1425,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (session_ == nullptr)
             return;
 
-        session_->publishTransport(
-            {.tempo = tempoMap(), .loop = loop_, .click = click_, .request = request_});
+        session_->publishTransport({.tempo = tempoMap(),
+                                    .loop = loop_,
+                                    .punch = punch_,
+                                    .click = click_,
+                                    .request = request_});
     }
 
     /// A play, a stop or a locate. The generation is what makes a snapshot a
@@ -1562,6 +1651,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // after the callback has been installed again.
         if (recording_ && !audioRunning_.load(std::memory_order_acquire))
             stopMidiRecording();
+        if (arrangementRecording_ &&
+            punchedOutGeneration_.load(std::memory_order_acquire) == punch_.recordingGeneration)
+            stopMidiRecording();
 
         const engine::RenderContext wanted{.sampleRate = rate_.load(),
                                            .maxBlockSize = blockSize_.load(),
@@ -1780,12 +1872,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         publishPlan();
         publishClips();
 
-        if (resumeRecording) {
-            recording_ = true;
-            arrangementRecording_ = true;
-            sessionCapture_.arm();
-            reconcileMidiRecording();
-        }
+        if (resumeRecording)
+            resumeMidiRecording();
 
         devices_->addAudioCallback(this);
     }
@@ -2023,6 +2111,13 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             session_->process(piece, scratch_,
                               done == 0 ? engine::LiveInputBlock{pieceIn, streams}
                                         : engine::LiveInputBlock{pieceIn, {}});
+
+            const auto activeGeneration = activePunchGeneration_.load(std::memory_order_acquire);
+            if (arrangementPunchActive_.load(std::memory_order_acquire) &&
+                session_->punchOutGeneration() == activeGeneration) {
+                punchedOutGeneration_.store(activeGeneration, std::memory_order_release);
+                triggerAsyncUpdate();
+            }
 
             for (auto channel = 0; channel < outputs; ++channel)
                 if (output[channel] != nullptr)
@@ -2517,6 +2612,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     std::set<engine::TakeKey> publishedTakeKeys_;
     bool recording_ = false;
     bool arrangementRecording_ = false;
+    std::atomic<bool> arrangementPunchActive_{false};
+    std::atomic<std::uint64_t> activePunchGeneration_{0};
+    std::atomic<std::uint64_t> punchedOutGeneration_{0};
+    std::atomic<bool> sessionPunchPending_{false};
     std::unordered_map<TrackId, engine::RecordTap::Reading> previewReadings_;
     std::unordered_map<TrackId, RecordingPreview> recordingPreviews_;
 
@@ -2543,6 +2642,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     TempoMapView view_{map_};
 
     engine::LoopRange loop_;
+    engine::PunchRange punch_;
     engine::ClickSettings click_;
     engine::TransportRequest request_;
     std::uint64_t generation_ = 0;
@@ -2771,6 +2871,14 @@ bool EngineHost::startMidiRecording(double positionSeconds) {
     return impl_->startMidiRecording(positionSeconds);
 }
 
+bool EngineHost::startPunchRecording(double positionSeconds, std::optional<double> punchInBeat) {
+    const auto wasPlaying = impl_->request_.playing;
+    if (!impl_->startMidiRecording(positionSeconds, true))
+        return false;
+    impl_->beginArmedSessionSlotRecordings(positionSeconds, punchInBeat, wasPlaying);
+    return true;
+}
+
 void EngineHost::stopMidiRecording() {
     impl_->stopMidiRecording();
 }
@@ -2825,10 +2933,7 @@ void EngineHost::setTempo(double bpm) {
     // it is compiled again rather than left placing clips at the old tempo.
     impl_->publishClips();
     if (resumeRecording) {
-        impl_->recording_ = true;
-        impl_->arrangementRecording_ = true;
-        impl_->sessionCapture_.arm();
-        impl_->reconcileMidiRecording();
+        impl_->resumeMidiRecording();
     }
 }
 
@@ -2847,10 +2952,7 @@ void EngineHost::setTimeSignature(int numerator, int denominator) {
     impl_->refreshTempoMap();
     impl_->publishTransport();
     if (resumeRecording) {
-        impl_->recording_ = true;
-        impl_->arrangementRecording_ = true;
-        impl_->sessionCapture_.arm();
-        impl_->reconcileMidiRecording();
+        impl_->resumeMidiRecording();
     }
 }
 
@@ -2869,11 +2971,27 @@ void EngineHost::setLoop(bool enabled, double startBeat, double endBeat) {
     impl_->loop_ = wanted;
     impl_->publishTransport();
     if (resumeRecording) {
-        impl_->recording_ = true;
-        impl_->arrangementRecording_ = true;
-        impl_->sessionCapture_.arm();
-        impl_->reconcileMidiRecording();
+        impl_->resumeMidiRecording();
     }
+}
+
+void EngineHost::setPunch(double startBeat, double endBeat, bool punchInEnabled,
+                          bool punchOutEnabled) {
+    auto wanted = impl_->punch_;
+    wanted.startBeat = startBeat;
+    wanted.endBeat = endBeat;
+    wanted.punchInEnabled = punchInEnabled;
+    wanted.punchOutEnabled = punchOutEnabled;
+    if (impl_->punch_ == wanted)
+        return;
+    impl_->punch_ = wanted;
+    impl_->publishTransport();
+    impl_->reschedulePunchedSessionSlots();
+}
+
+EngineHost::PunchState EngineHost::punch() const {
+    return {impl_->punch_.startBeat, impl_->punch_.endBeat, impl_->punch_.punchInEnabled,
+            impl_->punch_.punchOutEnabled};
 }
 
 void EngineHost::setMetronomeEnabled(bool enabled) {

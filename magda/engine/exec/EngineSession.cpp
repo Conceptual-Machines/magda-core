@@ -325,6 +325,32 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
     const auto callbackEnd = clock_.syncPoint();
     for (std::size_t index = 0; index < segments.size(); ++index) {
         const auto& segment = segments[index];
+        if (transport->punch.recordingGeneration != punchCaptureGeneration_) {
+            punchCaptureEnded_ = false;
+            punchCaptureActive_ = false;
+        }
+        const auto afterPunch = transport->punch.valid() && transport->punch.punchOutEnabled &&
+                                !segment.insidePunch &&
+                                segment.block.openingBeat() >= transport->punch.endBeat;
+        if (transport->punch.recordingRequested && afterPunch)
+            punchCaptureEnded_ = true;
+        const auto captureWanted = transport->punch.recordingRequested && segment.block.playing &&
+                                   !segment.countingIn && !punchCaptureEnded_ &&
+                                   (segment.insidePunch || punchCaptureActive_);
+        if (captureWanted != punchCaptureActive_ ||
+            transport->punch.recordingGeneration != punchCaptureGeneration_) {
+            runs_.push({.kind = captureWanted ? SlotRunEvent::Kind::captureBegan
+                                              : SlotRunEvent::Kind::captureEnded,
+                        .at = segment.block.monotonicSamples.start,
+                        .timelineBeat = segment.block.beats.start,
+                        .monotonicBeat = segment.block.monotonicBeats.start,
+                        .recordingGeneration = transport->punch.recordingGeneration});
+            punchCaptureActive_ = captureWanted;
+            punchCaptureGeneration_ = transport->punch.recordingGeneration;
+        }
+        if (transport->punch.recordingRequested && afterPunch)
+            punchOutGeneration_.store(transport->punch.recordingGeneration,
+                                      std::memory_order_release);
         auto& piece = (*render)->segmentOutput;
         piece.setDataToReferTo(output.getArrayOfWritePointers(), (*render)->outputChannels,
                                segment.startSample, segment.block.numSamples);
@@ -354,6 +380,11 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
                                   .monotonicBeat = callbackEnd.monotonicBeat};
         advanceLaunchHandles(handles_, requests_, segment.block, &runs_, clips_.live(), &boundary);
 
+        if (transport->punch.recordingRequested && afterPunch && takes)
+            for (const auto& entry : *takes.get())
+                if (std::binary_search((*render)->takes.begin(), (*render)->takes.end(), entry.key))
+                    entry.take->punchOut();
+
         // Before the plan and outside it: a take holds the input the device
         // captured, not what the track's chain went on to make of it.
         //
@@ -365,7 +396,35 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
         if (takes)
             for (const auto& entry : *takes.get())
                 if (std::binary_search((*render)->takes.begin(), (*render)->takes.end(), entry.key))
-                    entry.take->capture(segment.block, segment.countingIn, transport->loop);
+                    entry.take->capture(segment.block,
+                                        segment.countingIn ||
+                                            (entry.take->followsArrangement() &&
+                                             transport->punch.recordingRequested && !captureWanted),
+                                        transport->loop);
+
+        const auto reachesPunchOut = transport->punch.recordingRequested &&
+                                     transport->punch.valid() && transport->punch.punchOutEnabled &&
+                                     segment.insidePunch && !punchCaptureEnded_ &&
+                                     segment.block.beats.end >= transport->punch.endBeat;
+        if (reachesPunchOut) {
+            if (takes)
+                for (const auto& entry : *takes.get())
+                    if (std::binary_search((*render)->takes.begin(), (*render)->takes.end(),
+                                           entry.key))
+                        entry.take->punchOut();
+            runs_.push({.kind = SlotRunEvent::Kind::captureEnded,
+                        .at = segment.block.monotonicSamples.end,
+                        .timelineBeat = segment.block.beats.end,
+                        .monotonicBeat = segment.block.monotonicBeats.end,
+                        .recordingGeneration = transport->punch.recordingGeneration});
+            runs_.reached({.at = segment.block.monotonicSamples.end,
+                           .timelineBeat = segment.block.beats.end,
+                           .monotonicBeat = segment.block.monotonicBeats.end});
+            punchCaptureActive_ = false;
+            punchCaptureEnded_ = true;
+            punchOutGeneration_.store(transport->punch.recordingGeneration,
+                                      std::memory_order_release);
+        }
 
         // Where the transport is, for the thread that reads ahead of it. A
         // relaxed store of a double, before the block rather than after: the

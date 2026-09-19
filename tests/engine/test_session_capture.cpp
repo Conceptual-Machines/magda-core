@@ -307,6 +307,70 @@ TEST_CASE("arming from current captures only the sounding tail", "[engine][captu
     CHECK(captured.front().origin.sample == static_cast<std::int64_t>(3.0 * kBeatSamples));
 }
 
+TEST_CASE("arming from a published boundary recovers a run already ended", "[engine][capture]") {
+    Rig rig;
+    rig.play();
+    rig.launch(1, 1.0);
+    rig.roll(2.0, false);
+    rig.runs().push({.kind = SlotRunEvent::Kind::captureBegan,
+                     .at = SamplePosition{static_cast<std::int64_t>(2.0 * kBeatSamples)},
+                     .timelineBeat = 2.0,
+                     .monotonicBeat = 2.0,
+                     .recordingGeneration = 1});
+    rig.stopSlot(1, 3.0);
+    rig.roll(2.0, false);
+    rig.capture().update();
+
+    const auto captured = rig.capture().collect();
+    REQUIRE(captured.size() == 1);
+    CHECK(captured.front().startBeat == Approx(2.0));
+    CHECK(captured.front().lengthBeats == Approx(1.0).margin(2.0 / kBeatSamples));
+    CHECK(captured.front().offsetBeats == Approx(1.0));
+}
+
+TEST_CASE("recording window markers preserve both edges before one harvest", "[engine][capture]") {
+    Rig rig;
+    rig.play();
+    rig.launch(1, 1.0);
+    rig.roll(2.0, false);
+    rig.runs().push({.kind = SlotRunEvent::Kind::captureBegan,
+                     .at = SamplePosition{static_cast<std::int64_t>(2.0 * kBeatSamples)},
+                     .timelineBeat = 2.0,
+                     .monotonicBeat = 2.0,
+                     .recordingGeneration = 1});
+    rig.roll(1.0, false);
+    rig.runs().push({.kind = SlotRunEvent::Kind::captureEnded,
+                     .at = SamplePosition{static_cast<std::int64_t>(3.0 * kBeatSamples)},
+                     .timelineBeat = 3.0,
+                     .monotonicBeat = 3.0,
+                     .recordingGeneration = 1});
+    rig.roll(1.0, false);
+
+    rig.capture().update();
+    const auto captured = rig.capture().collect();
+    REQUIRE(captured.size() == 1);
+    CHECK(captured.front().startBeat == Approx(2.0));
+    CHECK(captured.front().lengthBeats == Approx(1.0));
+}
+
+TEST_CASE("an explicit stop rejects a queued recording-window begin", "[engine][capture]") {
+    Rig rig;
+    rig.play();
+    rig.launch(1, 1.0);
+    rig.roll(2.0, false);
+    rig.runs().push({.kind = SlotRunEvent::Kind::captureBegan,
+                     .at = SamplePosition{static_cast<std::int64_t>(2.0 * kBeatSamples)},
+                     .timelineBeat = 2.0,
+                     .monotonicBeat = 2.0,
+                     .recordingGeneration = 1});
+
+    rig.capture().invalidateRecordingGeneration(2);
+    rig.capture().update();
+    rig.stopSlot(1, 3.0);
+    rig.roll(2.0);
+    CHECK(rig.capture().collect().empty());
+}
+
 TEST_CASE("arm from current resumes a sounding run without duplicating it", "[engine][capture]") {
     Rig rig;
     rig.capture().armFromCurrent();

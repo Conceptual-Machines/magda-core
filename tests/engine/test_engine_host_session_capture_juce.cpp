@@ -149,6 +149,7 @@ class EngineHostSessionCaptureTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { launchWithoutRecordCreatesNothing(); });
         magda::test::runWithCleanJuceState([this] { unarmedTrackCapturesAcrossTransportLoop(); });
         magda::test::runWithCleanJuceState([this] { recordBoundaryPreservesSourcePhase(); });
+        magda::test::runWithCleanJuceState([this] { punchWindowCapturesExactSessionSpan(); });
         magda::test::runWithCleanJuceState([this] { seekPunchesOutOnce(); });
         magda::test::runWithCleanJuceState([this] { handoverAndIndividualReturnCloseRuns(); });
         magda::test::runWithCleanJuceState([this] { sceneAndGlobalReturnShareBoundaries(); });
@@ -309,6 +310,39 @@ class EngineHostSessionCaptureTest final : public juce::UnitTest {
             expectWithinAbsoluteError(captured[1].startBeats, 1.2, 0.03);
             expectWithinAbsoluteError(captured[1].lengthBeats, 0.2, 0.03);
             expectWithinAbsoluteError(captured[1].midiOffset, 1.2, 0.03);
+        }
+
+        host.stop();
+        devices.closeAudioDevice();
+    }
+
+    void punchWindowCapturesExactSessionSpan() {
+        beginTest("punch markers bound Session capture on the audio callback");
+        CapturePumpManager devices;
+        expect(open(devices));
+        if (devices.device == nullptr)
+            return;
+
+        const auto track = magda::TrackManager::getInstance().createTrack("Session punch");
+        const auto clip = sessionMidi(track, 0, 67);
+        magda::daw::engine_host::EngineHost host;
+        host.start(devices);
+        settle();
+        host.launchClip(clip);
+        pump(*devices.device, 10);
+
+        host.setPunch(0.4, 0.6, true, true);
+        expect(host.startMidiRecording(0.1));
+        pump(*devices.device, 30);
+        settle();
+
+        expect(!host.isRecording(), "punch-out finalizes while playback continues");
+        const auto captured = arrangement(track);
+        expectEquals(static_cast<int>(captured.size()), 1);
+        if (captured.size() == 1) {
+            expectWithinAbsoluteError(captured[0].startBeats, 0.4, 0.000001);
+            expectWithinAbsoluteError(captured[0].lengthBeats, 0.2, 0.000001);
+            expectWithinAbsoluteError(captured[0].midiOffset, 0.4, 0.000001);
         }
 
         host.stop();

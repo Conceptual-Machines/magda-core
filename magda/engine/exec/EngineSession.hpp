@@ -326,6 +326,10 @@ class EngineSession {
         return clock_.positionBeats();
     }
 
+    std::uint64_t punchOutGeneration() const {
+        return punchOutGeneration_.load(std::memory_order_acquire);
+    }
+
     /// The cursor and the monotonic count as one block left them, which is what
     /// a quantized launch is resolved against off the audio thread (#2305).
     SyncPoint syncPoint() const {
@@ -553,6 +557,10 @@ class EngineSession {
     /// is, a property of the session rather than of any plan, and a plan
     /// swap must not move it.
     TransportClock clock_;
+    std::atomic<std::uint64_t> punchOutGeneration_{0};
+    bool punchCaptureActive_ = false;
+    bool punchCaptureEnded_ = false;
+    std::uint64_t punchCaptureGeneration_ = 0;
 
     /// The callback's live input, narrowed per block. Outside every epoch for
     /// the same reason the clock is: what the device captured is a property of

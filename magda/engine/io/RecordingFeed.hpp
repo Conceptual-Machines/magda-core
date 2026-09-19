@@ -66,6 +66,9 @@ class TakeCapture {
     /// kind of take, so whoever registered one can unregister it without
     /// knowing which kind it is (#2465).
     virtual RecordStream& stream() = 0;
+
+    virtual bool followsArrangement() const = 0;
+    virtual void punchOut() = 0;
 };
 
 /// One take in the callback's set, beside the key that says whether the epoch

@@ -649,6 +649,16 @@ void MagdaAudioEngine::onTransportPause() {
     pause();
 }
 void MagdaAudioEngine::onTransportRecord(double positionSeconds) {
+    const auto punch = host_->punch();
+    const auto validPunch =
+        punch.endBeat > punch.startBeat && (punch.punchInEnabled || punch.punchOutEnabled);
+    if (validPunch) {
+        const auto waiting = punch.punchInEnabled &&
+                             host_->tempoMap()->timeToBeat(positionSeconds) < punch.startBeat;
+        host_->startPunchRecording(positionSeconds,
+                                   waiting ? std::optional<double>{punch.startBeat} : std::nullopt);
+        return;
+    }
     host_->beginArmedSessionSlotRecordings(positionSeconds);
     host_->startMidiRecording(positionSeconds);
 }
@@ -706,13 +716,14 @@ const std::unordered_map<TrackId, RecordingPreview>& MagdaAudioEngine::getRecord
 
 void MagdaAudioEngine::onPunchRegionChanged(double startSeconds, double endSeconds,
                                             bool punchInEnabled, bool punchOutEnabled) {
-    juce::ignoreUnused(startSeconds, endSeconds, punchInEnabled, punchOutEnabled);
-    reportUnwired("onPunchRegionChanged", "#2553");
+    const auto* map = host_->tempoMap();
+    host_->setPunch(map->timeToBeat(startSeconds), map->timeToBeat(endSeconds), punchInEnabled,
+                    punchOutEnabled);
 }
 
 void MagdaAudioEngine::onPunchEnabledChanged(bool punchInEnabled, bool punchOutEnabled) {
-    juce::ignoreUnused(punchInEnabled, punchOutEnabled);
-    reportUnwired("onPunchEnabledChanged", "#2553");
+    const auto punch = host_->punch();
+    host_->setPunch(punch.startBeat, punch.endBeat, punchInEnabled, punchOutEnabled);
 }
 
 }  // namespace magda

@@ -125,8 +125,9 @@ class MagdaAudioEngineTest final : public juce::UnitTest {
               "armSessionSlotRecording", "isSessionSlotRecordArmed", "isSessionSlotRecording",
               "beginArmedSessionSlotRecordings"})
             expect(!named.contains(wired), juce::String(wired) + " is wired through the host");
-        for (const auto* method : {"onPunchRegionChanged", "onPunchEnabledChanged",
-                                   "getPluginWindowManager", "getInsertRenderCaptureService",
+        for (const auto* wired : {"onPunchRegionChanged", "onPunchEnabledChanged"})
+            expect(!named.contains(wired), juce::String(wired) + " is wired through the host");
+        for (const auto* method : {"getPluginWindowManager", "getInsertRenderCaptureService",
                                    "getSamplerMediaReferences", "createTempoSequenceRippleCommand"})
             expect(named.contains(method), juce::String(method) + " says it is not wired");
 

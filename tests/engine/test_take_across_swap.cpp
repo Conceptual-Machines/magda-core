@@ -511,6 +511,11 @@ class StubTake final : public magda::engine::TakeCapture {
         return stream_;
     }
 
+    bool followsArrangement() const override {
+        return true;
+    }
+    void punchOut() override {}
+
   private:
     class NullSink final : public magda::engine::RecordSink {};
 

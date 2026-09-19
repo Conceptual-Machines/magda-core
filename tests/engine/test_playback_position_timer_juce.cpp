@@ -26,6 +26,12 @@ class TimerEngine final : public magda::TracktionEngineWrapper {
         return recording;
     }
 
+    void onTransportRecord(double) override {}
+
+    bool hasSampleAccuratePunch() const override {
+        return sampleAccuratePunch;
+    }
+
     std::unordered_map<magda::ClipId, double> getActiveClipPlayheadPositions() const override {
         return clipPositions;
     }
@@ -40,6 +46,7 @@ class TimerEngine final : public magda::TracktionEngineWrapper {
 
     bool playing = true;
     bool recording = false;
+    bool sampleAccuratePunch = false;
     double transportSeconds = 0.0;
     std::unordered_map<magda::ClipId, double> clipPositions;
     int triggerUpdates = 0;
@@ -92,6 +99,7 @@ class PlaybackPositionTimerTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testPendingPlayIsNotRejected(); });
         magda::test::runWithCleanJuceState([this] { testAcceptedRecordAndPunchOutReconcile(); });
         magda::test::runWithCleanJuceState([this] { testPunchArmedStateSurvivesPolling(); });
+        magda::test::runWithCleanJuceState([this] { testRejectedNativePunchReconciles(); });
     }
 
   private:
@@ -199,6 +207,32 @@ class PlaybackPositionTimerTest final : public juce::UnitTest {
         timeline.dispatch(magda::StopPlaybackEvent{});
         expect(!timeline.isPunchArmed() && !timeline.getState().playhead.isRecording,
                "An explicit stop cancels the waiting punch");
+    }
+
+    void testRejectedNativePunchReconciles() {
+        beginTest("A rejected native punch clears Record while playback continues");
+
+        TimerEngine engine;
+        engine.playing = true;
+        engine.recording = false;
+        engine.sampleAccuratePunch = true;
+        magda::TimelineController timeline;
+        timeline.addAudioEngineListener(&engine);
+        timeline.dispatch(magda::SetPlaybackStateEvent{true, false});
+        timeline.dispatch(magda::SetPunchRegionBeatsEvent{4.0, 8.0});
+        timeline.dispatch(magda::StartRecordEvent{});
+        expect(timeline.isPunchArmed() && timeline.getState().playhead.isRecording,
+               "The native punch request begins optimistically");
+
+        magda::PlaybackPositionTimer timer(engine, timeline);
+        timer.start();
+        expect(waitForNextTimerTick(engine, 0), "The rejected native punch tick arrives");
+        expect(timeline.getState().playhead.isPlaying,
+               "Rejecting Record does not stop rolling playback");
+        expect(!timeline.getState().playhead.isRecording && !timeline.isPunchArmed(),
+               "Native punch does not retain the legacy armed-state exemption");
+        timer.stop();
+        timeline.removeAudioEngineListener(&engine);
     }
 
     void testClipPositionPrecedesTimelineNotification() {
