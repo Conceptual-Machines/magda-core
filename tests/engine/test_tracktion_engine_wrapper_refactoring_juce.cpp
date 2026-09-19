@@ -21,7 +21,6 @@ class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
         testConstants();
         testHeadlessDetection();
         testTransportOperations();
-        testDeviceLoadingState();
         testTriggerStateTracking();
         testBridgeAccess();
         testMetronomeOperations();
@@ -109,25 +108,6 @@ class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
         wrapper.setTempo(120.0);
         double tempo = wrapper.getTempo();
         expect(tempo > 0.0, "Tempo should be positive");
-    }
-
-    void testDeviceLoadingState() {
-        beginTest("Device loading state");
-
-        auto& wrapper = magda::test::getSharedEngine();
-
-        bool isLoading = wrapper.isDevicesLoading();
-        expect(isLoading == true || isLoading == false, "Device loading state should be boolean");
-
-        // Test callback setting
-        bool callbackCalled = false;
-        wrapper.onDevicesLoadingChanged = [&](bool /*loading*/, const juce::String& /*message*/) {
-            callbackCalled = true;
-        };
-
-        expect(true, "Callback set without crash");
-
-        wrapper.onDevicesLoadingChanged = nullptr;
     }
 
     void testTriggerStateTracking() {
@@ -260,7 +240,6 @@ class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
         wrapper.getCurrentPosition();
         wrapper.isPlaying();
         wrapper.getTempo();
-        wrapper.isDevicesLoading();
 
         expect(true, "Concurrent access patterns work");
     }

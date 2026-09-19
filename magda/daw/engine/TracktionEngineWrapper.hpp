@@ -202,13 +202,6 @@ class TracktionEngineWrapper : public AudioEngine,
     // Device management
     juce::AudioDeviceManager* getDeviceManager() override;
     AudioIOControl* getAudioIO() override;
-    bool isDevicesLoading() const override {
-        return devicesLoading_;
-    }
-    void setDevicesLoadingCallback(
-        std::function<void(bool, const juce::String&)> callback) override {
-        onDevicesLoadingChanged = std::move(callback);
-    }
 
     // AudioEngineListener implementation (receives state changes from UI)
     void onTransportPlay(double position) override;
@@ -417,12 +410,6 @@ class TracktionEngineWrapper : public AudioEngine,
     bool isOfflineRenderActive() const {
         return offlineRenderActive_;
     }
-
-    /**
-     * @brief Callback when device loading state changes
-     * Called with (isLoading, message) - message describes what's happening
-     */
-    std::function<void(bool, const juce::String&)> onDevicesLoadingChanged;
 
     // =========================================================================
     // Plugin Scanning
@@ -661,7 +648,6 @@ class TracktionEngineWrapper : public AudioEngine,
     // Change listener helper methods
     void handleMidiDeviceChanges(tracktion::DeviceManager& dm);
     void handlePlaybackContextReallocation(tracktion::DeviceManager& dm);
-    void notifyDeviceLoadingComplete(const juce::String& message);
 
     // Tracktion Engine components
     std::unique_ptr<tracktion::Engine> engine_;
@@ -776,10 +762,7 @@ class TracktionEngineWrapper : public AudioEngine,
     // Creates the transient active-recording-pass preview for a session slot.
     void createSessionSlotPreview(TrackId trackId, int sceneIndex);
 
-    // Device loading state
-    bool devicesLoading_ = true;                    // Start as loading until first scan completes
     std::atomic<bool> offlineRenderActive_{false};  // an offline render owns the edit
-    bool wasPlayingBeforeDeviceChange_ = false;
 
     // Plugin scanning state
     bool isScanning_ = false;

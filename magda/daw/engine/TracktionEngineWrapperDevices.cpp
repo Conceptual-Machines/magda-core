@@ -95,25 +95,6 @@ void TracktionEngineWrapper::handlePlaybackContextReallocation(tracktion::Device
         lastKnownAudioDeviceName_ = std::move(currentDeviceName);
 }
 
-void TracktionEngineWrapper::notifyDeviceLoadingComplete(const juce::String& message) {
-    // If we were playing, stop and remember we need to resume
-    if (isPlaying() && devicesLoading_) {
-        wasPlayingBeforeDeviceChange_ = true;
-        stop();
-        DBG("Stopped playback during device initialization");
-    }
-
-    // Mark devices as no longer loading after first change notification
-    if (devicesLoading_) {
-        devicesLoading_ = false;
-        DBG("Device initialization complete: " << message);
-
-        if (onDevicesLoadingChanged) {
-            onDevicesLoadingChanged(false, message);
-        }
-    }
-}
-
 void TracktionEngineWrapper::changeListenerCallback(juce::ChangeBroadcaster* source) {
     // DeviceManager changed - this happens during MIDI device scanning
     if (!engine_ || source != &engine_->getDeviceManager()) {
@@ -127,36 +108,6 @@ void TracktionEngineWrapper::changeListenerCallback(juce::ChangeBroadcaster* sou
 
     // Reallocate playback context if devices were added
     handlePlaybackContextReallocation(dm);
-
-    // Build a description of currently enabled devices
-    juce::StringArray deviceNames;
-
-    // Get MIDI input devices (returns shared_ptr)
-    for (const auto& midiIn : dm.getMidiInDevices()) {
-        if (midiIn && midiIn->isEnabled()) {
-            deviceNames.add("MIDI: " + midiIn->getName());
-        }
-    }
-
-    // Get audio output device (returns raw pointers)
-    for (auto* waveOut : dm.getWaveOutputDevices()) {
-        if (waveOut && waveOut->isEnabled()) {
-            deviceNames.add("Audio: " + waveOut->getName());
-        }
-    }
-
-    juce::String message;
-    if (devicesLoading_) {
-        message = "Scanning devices...";
-        if (deviceNames.size() > 0) {
-            message = "Found: " + deviceNames.joinIntoString(", ");
-        }
-    } else {
-        message = "Devices ready";
-    }
-
-    // Notify completion and stop playback if needed
-    notifyDeviceLoadingComplete(message);
 }
 
 juce::AudioDeviceManager* TracktionEngineWrapper::getDeviceManager() {

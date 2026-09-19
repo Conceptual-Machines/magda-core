@@ -399,12 +399,6 @@ bool TracktionEngineWrapper::initialiseServices() {
 
     installProjectStateHooks();
 
-    // Ensure devicesLoading_ is cleared so transport isn't blocked
-    // The async changeListenerCallback may not fire if no MIDI devices are present
-    if (devicesLoading_) {
-        devicesLoading_ = false;
-    }
-
     return engine_ != nullptr;
 }
 

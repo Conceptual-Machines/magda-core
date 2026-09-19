@@ -89,28 +89,6 @@ TEST_CASE("TracktionEngineWrapper - Transport operations with refactored code",
     }
 }
 
-TEST_CASE("TracktionEngineWrapper - Device loading state", "[engine][refactoring][devices]") {
-    auto& wrapper = magda::test::getSharedEngine();
-
-    SECTION("Device loading state is accessible") {
-        bool isLoading = wrapper.isDevicesLoading();
-        REQUIRE((isLoading == true || isLoading == false));
-    }
-
-    SECTION("Device loading callback can be set") {
-        bool callbackCalled = false;
-        wrapper.onDevicesLoadingChanged = [&](bool loading, const juce::String& message) {
-            callbackCalled = true;
-        };
-
-        // Just verify it doesn't crash
-        REQUIRE(true);
-
-        // Clean up callback
-        wrapper.onDevicesLoadingChanged = nullptr;
-    }
-}
-
 TEST_CASE("TracktionEngineWrapper - Trigger state tracking", "[engine][refactoring][triggers]") {
     auto& wrapper = magda::test::getSharedEngine();
     magda::test::resetTransport(wrapper);
@@ -251,7 +229,6 @@ TEST_CASE("TracktionEngineWrapper - Refactoring preserves thread safety",
         wrapper.getCurrentPosition();
         wrapper.isPlaying();
         wrapper.getTempo();
-        wrapper.isDevicesLoading();
 
         REQUIRE(true);
     }
