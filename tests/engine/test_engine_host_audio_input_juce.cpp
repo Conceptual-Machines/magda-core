@@ -214,7 +214,10 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { recordsInputWithPreviewAndLatency(); });
         magda::test::runWithCleanJuceState([this] { disarmFinalizesRecording(); });
         magda::test::runWithCleanJuceState([this] { deviceStopFinalizesRecording(); });
+        magda::test::runWithCleanJuceState([this] { deviceStopForceClosesPostRoll(); });
         magda::test::runWithCleanJuceState([this] { reportedLatencyIsBounded(); });
+        magda::test::runWithCleanJuceState([this] { sameRateRestartContinuesRecording(); });
+        magda::test::runWithCleanJuceState([this] { inputChangeContinuesAfterPostRoll(); });
         magda::test::runWithCleanJuceState([this] { deviceRestartSplitsRecording(); });
         magda::test::runWithCleanJuceState([this] { recordsIntoAnArmedSessionSlot(); });
         magda::test::runWithCleanJuceState([this] { filledSessionSlotPreservesTake(); });
@@ -581,6 +584,39 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
         devices.closeAudioDevice();
     }
 
+    void deviceStopForceClosesPostRoll() {
+        beginTest("an audio-device stop force-closes a take already in post-roll");
+
+        InputPumpManager devices;
+        expect(devices.initialise(kInputs, 2, nullptr, true).isEmpty());
+        if (devices.device == nullptr)
+            return;
+        devices.device->inputLatencySamples = kInputLatency;
+        devices.device->outputLatencySamples = kOutputLatency;
+        auto& tracks = magda::TrackManager::getInstance();
+        const auto track = tracks.createTrack("Stopped post-roll take");
+        tracks.setTrackAudioInput(track, "Loopback 2");
+        tracks.setTrackRecordArmed(track, true);
+
+        Host host;
+        host.setHardwareInputProvider([] { return loopbackCatalog(); });
+        host.start(devices);
+        settle(host);
+        expect(host.startMidiRecording(0.0));
+        devices.device->pump();
+        devices.device->pump();
+
+        host.stopMidiRecording();
+        devices.device->stop();
+        settle(host);
+        expect(!host.isRecording());
+        expect(onlyAudioClip(track) != nullptr,
+               "the deferred take closes without waiting for a future device callback");
+
+        host.stop();
+        devices.closeAudioDevice();
+    }
+
     void reportedLatencyIsBounded() {
         beginTest("reported latency is summed without overflow and bounded to three seconds");
 
@@ -690,10 +726,10 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
         host.processSessionStateEvents();
         if (clip != nullptr)
             expectEquals(static_cast<int>(host.sessionClipPlayState(clip->id)),
-                         static_cast<int>(magda::SessionClipPlayState::Playing),
-                         "the materialized slot continues the recording handle");
-        expect(tracks.getTrack(track)->playbackMode == magda::TrackPlaybackMode::Session,
-               "the materialized clip takes over the recording run");
+                         static_cast<int>(magda::SessionClipPlayState::Stopped),
+                         "stopping a recording slot stops its materialized clip too");
+        expect(tracks.getTrack(track)->playbackMode == magda::TrackPlaybackMode::Arrangement,
+               "deferred and immediate Session stops both return to Arrangement");
 
         host.stop();
         devices.closeAudioDevice();
@@ -797,6 +833,94 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
                              "the rebuilt take keeps the callback installed during rebuild and "
                              "both explicit blocks");
         }
+
+        host.stop();
+        devices.closeAudioDevice();
+    }
+
+    void sameRateRestartContinuesRecording() {
+        beginTest("a same-rate audio-device restart immediately opens a replacement take");
+
+        InputPumpManager devices;
+        expect(devices.initialise(kInputs, 2, nullptr, true).isEmpty());
+        if (devices.device == nullptr)
+            return;
+        auto& tracks = magda::TrackManager::getInstance();
+        const auto track = tracks.createTrack("Same-rate restarted take");
+        tracks.setTrackAudioInput(track, "Loopback 1");
+        tracks.setTrackRecordArmed(track, true);
+
+        Host host;
+        host.setHardwareInputProvider([] { return loopbackCatalog(); });
+        host.start(devices);
+        settle(host);
+        expect(host.startMidiRecording(0.0));
+        devices.device->pump();
+        devices.device->pump();
+
+        devices.device->restart(channels({0, 1, 2, 3}));
+        settle(host);
+        expect(host.isRecording());
+        expectEquals(static_cast<int>(magda::ClipManager::getInstance()
+                                          .getClipsOnTrack(track, magda::ClipView::Arrangement)
+                                          .size()),
+                     1, "the old device generation materializes once");
+
+        devices.device->pump();
+        devices.device->pump();
+        host.stopMidiRecording();
+        settle(host);
+        expectEquals(static_cast<int>(magda::ClipManager::getInstance()
+                                          .getClipsOnTrack(track, magda::ClipView::Arrangement)
+                                          .size()),
+                     2, "the replacement keeps recording after the same-rate restart");
+
+        host.stop();
+        devices.closeAudioDevice();
+    }
+
+    void inputChangeContinuesAfterPostRoll() {
+        beginTest("an input change opens its replacement after the old take's post-roll");
+
+        InputPumpManager devices;
+        expect(devices.initialise(kInputs, 2, nullptr, true).isEmpty());
+        if (devices.device == nullptr)
+            return;
+        devices.device->inputLatencySamples = kInputLatency;
+        devices.device->outputLatencySamples = kOutputLatency;
+        auto& tracks = magda::TrackManager::getInstance();
+        const auto track = tracks.createTrack("Changed input take");
+        tracks.setTrackAudioInput(track, "Loopback 1");
+        tracks.setTrackRecordArmed(track, true);
+
+        Host host;
+        host.setHardwareInputProvider([] { return loopbackCatalog(); });
+        host.start(devices);
+        settle(host);
+        expect(host.startMidiRecording(0.0));
+        devices.device->pump();
+        devices.device->pump();
+
+        tracks.setTrackAudioInput(track, "Loopback 2");
+        settle(host);
+        expect(host.isRecording(), "the eligible closing take keeps the Record gesture alive");
+        devices.device->pump();
+        settle(host);
+        expect(host.isRecording(), "the replacement starts after deferred materialization");
+        expectEquals(static_cast<int>(magda::ClipManager::getInstance()
+                                          .getClipsOnTrack(track, magda::ClipView::Arrangement)
+                                          .size()),
+                     1);
+
+        devices.device->pump();
+        devices.device->pump();
+        host.stopMidiRecording();
+        devices.device->pump();
+        settle(host);
+        expectEquals(static_cast<int>(magda::ClipManager::getInstance()
+                                          .getClipsOnTrack(track, magda::ClipView::Arrangement)
+                                          .size()),
+                     2, "the replacement route records into a second clip");
 
         host.stop();
         devices.closeAudioDevice();

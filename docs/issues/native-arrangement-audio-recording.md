@@ -26,8 +26,9 @@ adjustment from the head, then remains on the callback for the same number of
 samples past the timeline stop. The file therefore starts on the corrected
 sample without losing its tail or shortening its musical length.
 MIDI takes snapshot the output-interface and live-plan portions of the same
-adjustment, so adding round-trip correction to audio does not introduce a new
-output-latency skew between simultaneously recorded material.
+adjustment and retain their adjusted events through the same deferred
+post-roll. Adding round-trip correction to audio therefore neither introduces
+an output-latency skew nor shortens simultaneously recorded MIDI material.
 
 Disarm, input rerouting, track deletion, transport stop, project replacement,
 tempo/signature changes, and loop changes request the same deferred close path.
@@ -92,12 +93,12 @@ remain outside this slice.
 
 - The Debug `magda_tests`, `magda_juce_tests`, and `magda_daw_app` targets
   built.
-- The recorded-clip and audio-recorder filters passed 757 assertions across
-  17 cases.
-- `Engine Host Audio Input` passed ten callback cases, including post-roll,
+- The recording and plan-swap filters passed 1,232 assertions across 78 cases.
+- `Engine Host Audio Input` passed thirteen callback cases, including post-roll,
   three-second correction bounds, device-rebuild continuity, and Session audio
   target isolation from Arrangement.
-- `Engine Host MIDI Recording` passed its 35 existing cases, `Engine Host
+- `Engine Host MIDI Recording` passed its 36 cases, including non-zero
+  output-latency post-roll; `Engine Host
   Session Arrangement Capture` passed its ten cases, and `Magda Audio Engine
   Tests` passed its three cases.
 - A Release build was not run.

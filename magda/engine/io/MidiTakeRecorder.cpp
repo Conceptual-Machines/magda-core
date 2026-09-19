@@ -209,6 +209,14 @@ MidiTakeRecorder::MidiTakeRecorder(const LiveInputFeed& feed, RecordTap& tap,
 }
 
 void MidiTakeRecorder::capture(const BlockInfo& block, bool countingIn, const LoopRange& loop) {
+    if (postRollRequested_.exchange(false, std::memory_order_acq_rel) && state_ == State::rolling)
+        beginPostRoll();
+
+    if (state_ == State::postRoll) {
+        capturePostRoll(block, 0, block.numSamples);
+        return;
+    }
+
     // A slot take is on its run's own time: neither the count-in nor the loop
     // says anything about it (#2464).
     if (settings_.slot) {
@@ -222,8 +230,10 @@ void MidiTakeRecorder::capture(const BlockInfo& block, bool countingIn, const Lo
     // A count-in is time before the play position and a stop is where a take
     // ends, so neither is part of one.
     if (!block.playing || countingIn) {
-        if (state_ == State::rolling)
-            stop();
+        if (state_ == State::rolling) {
+            beginPostRoll();
+            capturePostRoll(block, 0, block.numSamples);
+        }
 
         return;
     }
@@ -232,7 +242,8 @@ void MidiTakeRecorder::capture(const BlockInfo& block, bool countingIn, const Lo
         start(block, loop);
     } else if (!block.continuous) {
         if (!atLoopStart(block, loop)) {
-            stop();
+            beginPostRoll();
+            capturePostRoll(block, 0, block.numSamples);
             return;
         }
 
@@ -252,8 +263,10 @@ void MidiTakeRecorder::captureRun(const BlockInfo& block) {
 
     // The slot was retired or refilled: the take ends where it stood.
     if (run.gone) {
-        if (state_ == State::rolling)
-            stop();
+        if (state_ == State::rolling) {
+            beginPostRoll();
+            capturePostRoll(block, 0, block.numSamples);
+        }
 
         return;
     }
@@ -286,8 +299,10 @@ void MidiTakeRecorder::captureRun(const BlockInfo& block) {
         arrivals_ += to - from;
     }
 
-    if (closing)
-        stop();
+    if (closing) {
+        beginPostRoll();
+        capturePostRoll(block, to, block.numSamples);
+    }
 }
 
 void MidiTakeRecorder::start(const BlockInfo& block, const LoopRange& loop, int from) {
@@ -339,8 +354,58 @@ void MidiTakeRecorder::openPass(const BlockInfo& block, const LoopRange& loop) {
 
 void MidiTakeRecorder::stop() {
     state_ = State::stopped;
-    rolling_.store(false, std::memory_order_relaxed);
+    rolling_.store(false, std::memory_order_release);
+    capturesPostRoll_.store(false, std::memory_order_release);
     tap_.close();
+}
+
+void MidiTakeRecorder::punchOut() {
+    if (state_ == State::rolling)
+        beginPostRoll();
+    else if (state_ == State::waiting)
+        stop();
+}
+
+bool MidiTakeRecorder::requestPostRoll() {
+    if (settings_.latencySamples <= 0 || !rolling_.load(std::memory_order_acquire))
+        return false;
+
+    closeRequested_.store(true, std::memory_order_release);
+    postRollRequested_.store(true, std::memory_order_relaxed);
+    capturesPostRoll_.store(true, std::memory_order_release);
+    return true;
+}
+
+void MidiTakeRecorder::beginPostRoll() {
+    if (state_ != State::rolling)
+        return;
+
+    postRollRemaining_ = std::max(0, settings_.latencySamples);
+    if (postRollRemaining_ == 0) {
+        stop();
+        return;
+    }
+
+    state_ = State::postRoll;
+    capturesPostRoll_.store(true, std::memory_order_release);
+}
+
+void MidiTakeRecorder::capturePostRoll(const BlockInfo& block, int from, int to) {
+    if (state_ != State::postRoll)
+        return;
+
+    const auto available = std::max(0, std::min(to, block.numSamples) - std::max(0, from));
+    const auto kept = std::min(postRollRemaining_, available);
+    if (kept > 0) {
+        const auto offset = std::clamp(from, 0, block.numSamples);
+        write(block, offset, offset + kept);
+        publish(block);
+        arrivals_ += kept;
+        postRollRemaining_ -= kept;
+    }
+
+    if (postRollRemaining_ == 0)
+        stop();
 }
 
 void MidiTakeRecorder::collect(const BlockInfo& block, int from, int to) {

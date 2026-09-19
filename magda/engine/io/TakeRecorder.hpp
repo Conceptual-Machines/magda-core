@@ -176,7 +176,8 @@ class TakeRecorder final : public TakeCapture {
         return capturesPostRoll_.load(std::memory_order_acquire);
     }
     bool readyToClose() const override {
-        return readyToClose_.load(std::memory_order_acquire);
+        return closeRequested_.load(std::memory_order_acquire) &&
+               !rolling_.load(std::memory_order_acquire);
     }
 
     /// Where the pass in flight is published (#2463).
@@ -265,7 +266,7 @@ class TakeRecorder final : public TakeCapture {
     /// A publishing-thread close request, consumed by the callback.
     std::atomic<bool> postRollRequested_{false};
     std::atomic<bool> capturesPostRoll_{false};
-    std::atomic<bool> readyToClose_{false};
+    std::atomic<bool> closeRequested_{false};
 
     /// Samples written to the queue, and the timeline the take has covered.
     /// The second is the first read a latency earlier, which is why a pass

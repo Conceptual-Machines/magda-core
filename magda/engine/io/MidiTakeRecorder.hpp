@@ -135,9 +135,14 @@ class MidiTakeRecorder final : public TakeCapture {
     bool followsArrangement() const override {
         return !settings_.slot.has_value();
     }
-    void punchOut() override {
-        if (state_ != State::stopped)
-            stop();
+    void punchOut() override;
+    bool requestPostRoll() override;
+    bool capturesPostRoll() const override {
+        return capturesPostRoll_.load(std::memory_order_acquire);
+    }
+    bool readyToClose() const override {
+        return closeRequested_.load(std::memory_order_acquire) &&
+               !rolling_.load(std::memory_order_acquire);
     }
 
     /// Where the pass in flight is published (#2463).
@@ -165,7 +170,7 @@ class MidiTakeRecorder final : public TakeCapture {
     RecordedMidiTake finish(const TempoMap& tempo);
 
   private:
-    enum class State : std::uint8_t { waiting, rolling, stopped };
+    enum class State : std::uint8_t { waiting, rolling, postRoll, stopped };
 
     /// Pass ends one take can hold, as TakeFileSink's own lane: what will not
     /// fit is refused rather than dropped.
@@ -184,6 +189,12 @@ class MidiTakeRecorder final : public TakeCapture {
     void openPass(const BlockInfo& block, const LoopRange& loop);
 
     void stop();
+
+    /// End the timeline window and retain adjusted events that arrive after it.
+    void beginPostRoll();
+
+    /// Capture at most the outstanding post-roll from [@p from, @p to).
+    void capturePostRoll(const BlockInfo& block, int from, int to);
 
     /// This block's events over [@p from, @p to), stamped and queued.
     void write(const BlockInfo& block, int from, int to);
@@ -238,6 +249,9 @@ class MidiTakeRecorder final : public TakeCapture {
     std::int64_t arrivals_ = 0;
     std::int64_t end_ = 0;
 
+    /// Input after the timeline end still owed by a positive adjustment.
+    int postRollRemaining_ = 0;
+
     std::array<std::int64_t, kMaxPasses> boundaries_{};
     std::size_t numBoundaries_ = 0;
     std::int64_t boundariesLost_ = 0;
@@ -271,6 +285,9 @@ class MidiTakeRecorder final : public TakeCapture {
 
     std::atomic<std::int64_t> captured_{0};
     std::atomic<bool> rolling_{false};
+    std::atomic<bool> postRollRequested_{false};
+    std::atomic<bool> capturesPostRoll_{false};
+    std::atomic<bool> closeRequested_{false};
 };
 
 }  // namespace magda::engine

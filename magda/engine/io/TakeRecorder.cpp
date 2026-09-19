@@ -227,9 +227,8 @@ void TakeRecorder::openTapPass(const BlockInfo& block) {
 
 void TakeRecorder::stop() {
     state_ = State::stopped;
-    rolling_.store(false, std::memory_order_relaxed);
+    rolling_.store(false, std::memory_order_release);
     capturesPostRoll_.store(false, std::memory_order_release);
-    readyToClose_.store(true, std::memory_order_release);
     tap_.close();
 }
 
@@ -244,6 +243,7 @@ bool TakeRecorder::requestPostRoll() {
     if (settings_.latencySamples <= 0 || !rolling_.load(std::memory_order_acquire))
         return false;
 
+    closeRequested_.store(true, std::memory_order_release);
     postRollRequested_.store(true, std::memory_order_relaxed);
     capturesPostRoll_.store(true, std::memory_order_release);
     return true;

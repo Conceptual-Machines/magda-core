@@ -641,6 +641,8 @@ TEST_CASE("Punch-out captures the delayed tail without extending the take",
     rig.run(kAdjustment);
 
     CHECK_FALSE(rig.recorder().rolling());
+    INFO("a self-stopped take does not notify until the host requests its close");
+    CHECK_FALSE(rig.recorder().readyToClose());
     const auto take = rig.recorder().finish();
     const auto stored = readBack(take.file);
     REQUIRE(stored.getNumSamples() == kTimelineSamples);

@@ -685,6 +685,26 @@ TEST_CASE("An event is placed where it was played, not where it arrived",
     }
 }
 
+TEST_CASE("A corrected MIDI take captures its tail without shortening the timeline",
+          "[engine][io][record][midi][2751]") {
+    constexpr int kAdjustment = 800;
+    constexpr int kTimeline = kBeatSamples * 2;
+
+    Rig rig(takeOf(kAdjustment));
+    rig.schedule({noteOn(kTimeline + 400, 64), noteOff(kTimeline + 600, 64)});
+    rig.play();
+    rig.run(kTimeline);
+    REQUIRE(rig.recorder().requestPostRoll());
+    rig.run(kAdjustment);
+
+    CHECK(rig.recorder().readyToClose());
+    const auto take = rig.finish();
+    CHECK(take.lengthBeats == Catch::Approx(2.0));
+    REQUIRE(take.active.notes.size() == 1);
+    CHECK(take.active.notes[0].startBeat == Catch::Approx(1.9));
+    CHECK(take.active.notes[0].lengthBeats == Catch::Approx(0.05));
+}
+
 TEST_CASE("A negative adjustment moves an event across a pass boundary, not the boundary",
           "[engine][io][record][midi][2462]") {
     constexpr int kLoopSamples = kBeatSamples * 4;
