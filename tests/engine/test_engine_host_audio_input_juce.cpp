@@ -1,4 +1,5 @@
 #include <juce_audio_devices/juce_audio_devices.h>
+#include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_core/juce_core.h>
 
 #include <algorithm>
@@ -7,6 +8,7 @@
 #include <memory>
 
 #include "JuceTestStateGuard.hpp"
+#include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/engine/host/EngineHost.hpp"
 
@@ -46,7 +48,7 @@ class InputPumpDevice final : public juce::AudioIODevice {
         return {"In 1", "In 2", "Loopback 1", "Loopback 2"};
     }
     juce::Array<double> getAvailableSampleRates() override {
-        return {48000.0};
+        return {48000.0, 96000.0};
     }
     juce::Array<int> getAvailableBufferSizes() override {
         return {kBlockSize};
@@ -54,9 +56,10 @@ class InputPumpDevice final : public juce::AudioIODevice {
     int getDefaultBufferSize() override {
         return kBlockSize;
     }
-    juce::String open(const juce::BigInteger& inputs, const juce::BigInteger&, double,
+    juce::String open(const juce::BigInteger& inputs, const juce::BigInteger&, double sampleRate,
                       int) override {
         active_ = inputs;
+        sampleRate_ = sampleRate;
         open_ = true;
         return {};
     }
@@ -87,7 +90,7 @@ class InputPumpDevice final : public juce::AudioIODevice {
         return kBlockSize;
     }
     double getCurrentSampleRate() override {
-        return 48000.0;
+        return sampleRate_;
     }
     int getCurrentBitDepth() override {
         return 32;
@@ -102,15 +105,27 @@ class InputPumpDevice final : public juce::AudioIODevice {
         return 0;
     }
     int getInputLatencyInSamples() override {
-        return 0;
+        if (++latencyReads_ == pumpAtLatencyRead_) {
+            pumpAtLatencyRead_ = 0;
+            juce::MessageManager::callAsync([this] { pump(); });
+        }
+        return inputLatencySamples;
     }
 
-    void restart(const juce::BigInteger& active) {
+    void restart(const juce::BigInteger& active, double sampleRate = 48000.0) {
         if (callback_ != nullptr)
             callback_->audioDeviceStopped();
         active_ = active;
+        sampleRate_ = sampleRate;
         if (callback_ != nullptr)
             callback_->audioDeviceAboutToStart(this);
+    }
+
+    /// Queue one block while the host is between the rebuild and its next
+    /// async reconciliation. Two reads cover the outer restart and the
+    /// callback installation performed by the rebuild itself.
+    void pumpAfterFutureLatencyReads(int reads) {
+        pumpAtLatencyRead_ = latencyReads_ + reads;
     }
 
     /// One callback, inputs packed as a driver packs its active channels.
@@ -133,9 +148,14 @@ class InputPumpDevice final : public juce::AudioIODevice {
         return {left.back(), right.back()};
     }
 
+    int inputLatencySamples = 0;
+
   private:
     juce::AudioIODeviceCallback* callback_ = nullptr;
     juce::BigInteger active_;
+    double sampleRate_ = 48000.0;
+    int latencyReads_ = 0;
+    int pumpAtLatencyRead_ = 0;
     bool open_ = false;
 };
 
@@ -187,6 +207,11 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { monitoredInputReachesTheTrack(); });
         magda::test::runWithCleanJuceState([this] { unmonitoredInputStaysSilent(); });
         magda::test::runWithCleanJuceState([this] { restartRepacksAndMissingIsSilent(); });
+        magda::test::runWithCleanJuceState([this] { recordsInputWithPreviewAndLatency(); });
+        magda::test::runWithCleanJuceState([this] { disarmFinalizesRecording(); });
+        magda::test::runWithCleanJuceState([this] { deviceStopFinalizesRecording(); });
+        magda::test::runWithCleanJuceState([this] { deviceRestartSplitsRecording(); });
+        magda::test::runWithCleanJuceState([this] { sessionTargetDoesNotRecordArrangement(); });
     }
 
   private:
@@ -219,6 +244,35 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
             juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
         }
         return meters.contains(track) ? meters[track] : -1.0f;
+    }
+
+    static const magda::ClipInfo* onlyAudioClip(magda::TrackId trackId) {
+        auto& clips = magda::ClipManager::getInstance();
+        const auto ids = clips.getClipsOnTrack(trackId, magda::ClipView::Arrangement);
+        const magda::ClipInfo* result = nullptr;
+        for (const auto id : ids) {
+            const auto* clip = clips.getClip(id);
+            if (clip == nullptr || !clip->isAudio())
+                continue;
+            if (result != nullptr)
+                return nullptr;
+            result = clip;
+        }
+        return result;
+    }
+
+    static std::unique_ptr<juce::AudioFormatReader> readerFor(const magda::ClipInfo& clip) {
+        const auto* event = clip.primaryEvent();
+        if (event == nullptr)
+            return nullptr;
+        static juce::AudioFormatManager formats;
+        static const auto registered = [] {
+            formats.registerBasicFormats();
+            return true;
+        }();
+        juce::ignoreUnused(registered);
+        return std::unique_ptr<juce::AudioFormatReader>(
+            formats.createReaderFor(juce::File(event->sourceFilePath())));
     }
 
     void monitoredInputReachesTheTrack() {
@@ -328,6 +382,209 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
         const auto missing = steady(*devices.device);
         expectEquals(missing.left, 0.0f);
         expectEquals(missing.right, 0.0f);
+
+        host.stop();
+        devices.closeAudioDevice();
+    }
+
+    void recordsInputWithPreviewAndLatency() {
+        beginTest("an armed audio input records callback channels with a live preview");
+
+        InputPumpManager devices;
+        expect(devices.initialise(kInputs, 2, nullptr, true).isEmpty());
+        if (devices.device == nullptr)
+            return;
+        devices.device->inputLatencySamples = kBlockSize;
+
+        auto& tracks = magda::TrackManager::getInstance();
+        const auto track = tracks.createTrack("Recorded loopback");
+        tracks.setTrackAudioInput(track, "stereo:Loopback 1");
+        tracks.setTrackInputMonitor(track, magda::InputMonitorMode::Off);
+        tracks.setTrackRecordArmed(track, true);
+        // Loaded and transitional model states can carry both routes even
+        // though the current setters make them mutually exclusive.
+        tracks.getTrack(track)->midiInputDevice = "all";
+
+        Host host;
+        host.setHardwareInputProvider([] { return loopbackCatalog(); });
+        host.registerVirtualMidiSource("keyboard");
+        host.start(devices);
+        settle(host);
+        expect(host.startMidiRecording(0.0), "the app-facing Record entry accepts audio input");
+
+        for (auto block = 0; block < 4; ++block)
+            devices.device->pump();
+
+        const auto& previews = host.recordingPreviews();
+        const auto preview = previews.find(track);
+        expect(preview != previews.end(), "the callback publishes a recording preview");
+        if (preview != previews.end()) {
+            expect(preview->second.isAudioRecording,
+                   "the default all-MIDI take cannot replace the waveform");
+            expect(preview->second.currentLengthBeats > 0.0);
+            expect(!preview->second.audioPeaks.empty());
+            if (!preview->second.audioPeaks.empty()) {
+                expectWithinAbsoluteError(preview->second.audioPeaks.front().peakL, levelOf(2),
+                                          0.0001f);
+                expectWithinAbsoluteError(preview->second.audioPeaks.front().peakR, levelOf(3),
+                                          0.0001f);
+            }
+        }
+
+        tracks.setTrackMidiInput(track, {});
+        settle(host);
+        expect(previews.contains(track) && previews.at(track).isAudioRecording,
+               "closing the parallel MIDI take keeps the waveform visible");
+
+        host.stopMidiRecording();
+        expect(host.recordingPreviews().empty(), "the transient preview clears at stop");
+        const auto* clip = onlyAudioClip(track);
+        expect(clip != nullptr, "stop publishes the completed audio clip");
+        if (clip != nullptr) {
+            auto reader = readerFor(*clip);
+            expect(reader != nullptr, "the recorded WAV can be read");
+            if (reader != nullptr) {
+                expectEquals(static_cast<int>(reader->numChannels), 2);
+                expectEquals(static_cast<int>(reader->lengthInSamples), 3 * kBlockSize,
+                             "device input latency is removed from the head");
+                juce::AudioBuffer<float> captured(2, 1);
+                reader->read(&captured, 0, 1, 0, true, true);
+                expectWithinAbsoluteError(captured.getSample(0, 0), levelOf(2), 0.0001f);
+                expectWithinAbsoluteError(captured.getSample(1, 0), levelOf(3), 0.0001f);
+            }
+        }
+
+        host.stop();
+        devices.closeAudioDevice();
+    }
+
+    void disarmFinalizesRecording() {
+        beginTest("disarming finalizes an active audio take once");
+
+        InputPumpManager devices;
+        expect(devices.initialise(kInputs, 2, nullptr, true).isEmpty());
+        if (devices.device == nullptr)
+            return;
+        auto& tracks = magda::TrackManager::getInstance();
+        const auto track = tracks.createTrack("Disarmed take");
+        tracks.setTrackAudioInput(track, "Loopback 1");
+        tracks.setTrackRecordArmed(track, true);
+
+        Host host;
+        host.setHardwareInputProvider([] { return loopbackCatalog(); });
+        host.start(devices);
+        settle(host);
+        expect(host.startMidiRecording(0.0));
+        devices.device->pump();
+        devices.device->pump();
+
+        tracks.setTrackRecordArmed(track, false);
+        settle(host);
+        expect(onlyAudioClip(track) != nullptr);
+        expect(host.recordingPreviews().empty());
+        host.stopMidiRecording();
+        expectEquals(static_cast<int>(magda::ClipManager::getInstance()
+                                          .getClipsOnTrack(track, magda::ClipView::Arrangement)
+                                          .size()),
+                     1);
+
+        host.stop();
+        devices.closeAudioDevice();
+    }
+
+    void deviceStopFinalizesRecording() {
+        beginTest("an audio-device stop finalizes an active audio take");
+
+        InputPumpManager devices;
+        expect(devices.initialise(kInputs, 2, nullptr, true).isEmpty());
+        if (devices.device == nullptr)
+            return;
+        auto& tracks = magda::TrackManager::getInstance();
+        const auto track = tracks.createTrack("Stopped device take");
+        tracks.setTrackAudioInput(track, "Loopback 2");
+        tracks.setTrackRecordArmed(track, true);
+
+        Host host;
+        host.setHardwareInputProvider([] { return loopbackCatalog(); });
+        host.start(devices);
+        settle(host);
+        expect(host.startMidiRecording(0.0));
+        devices.device->pump();
+        devices.device->pump();
+
+        devices.device->stop();
+        settle(host);
+        expect(!host.isRecording());
+        expect(onlyAudioClip(track) != nullptr);
+        expect(host.recordingPreviews().empty());
+
+        host.stop();
+        devices.closeAudioDevice();
+    }
+
+    void sessionTargetDoesNotRecordArrangement() {
+        beginTest("an unsupported audio Session target does not become an Arrangement take");
+
+        InputPumpManager devices;
+        expect(devices.initialise(kInputs, 2, nullptr, true).isEmpty());
+        if (devices.device == nullptr)
+            return;
+        auto& tracks = magda::TrackManager::getInstance();
+        const auto track = tracks.createTrack("Audio Session target");
+        tracks.setTrackAudioInput(track, "Loopback 1");
+        tracks.setTrackRecordArmed(track, true);
+
+        Host host;
+        host.setHardwareInputProvider([] { return loopbackCatalog(); });
+        host.start(devices);
+        settle(host);
+        host.armSessionSlotRecording(track, 0);
+        expect(!host.startPunchRecording(0.0, {}),
+               "the unsupported target cannot start an Arrangement recording");
+        devices.device->pump();
+        expect(onlyAudioClip(track) == nullptr);
+        expect(host.recordingPreviews().empty());
+
+        host.stop();
+        devices.closeAudioDevice();
+    }
+
+    void deviceRestartSplitsRecording() {
+        beginTest("an audio-device restart closes the old take and continues recording");
+
+        InputPumpManager devices;
+        expect(devices.initialise(kInputs, 2, nullptr, true).isEmpty());
+        if (devices.device == nullptr)
+            return;
+        auto& tracks = magda::TrackManager::getInstance();
+        const auto track = tracks.createTrack("Restarted device take");
+        tracks.setTrackAudioInput(track, "Loopback 1");
+        tracks.setTrackRecordArmed(track, true);
+
+        Host host;
+        host.setHardwareInputProvider([] { return loopbackCatalog(); });
+        host.start(devices);
+        settle(host);
+        expect(host.startMidiRecording(0.0));
+        devices.device->pump();
+        devices.device->pump();
+
+        devices.device->pumpAfterFutureLatencyReads(2);
+        devices.device->restart(channels({0, 1, 2, 3}), 96000.0);
+        settle(host);
+        expect(host.isRecording());
+        expectEquals(static_cast<int>(magda::ClipManager::getInstance()
+                                          .getClipsOnTrack(track, magda::ClipView::Arrangement)
+                                          .size()),
+                     1, "the old device epoch became one clip");
+
+        devices.device->pump();
+        devices.device->pump();
+        host.stopMidiRecording();
+        expectEquals(static_cast<int>(magda::ClipManager::getInstance()
+                                          .getClipsOnTrack(track, magda::ClipView::Arrangement)
+                                          .size()),
+                     2, "the restarted device recorded a second clip");
 
         host.stop();
         devices.closeAudioDevice();

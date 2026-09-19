@@ -14,10 +14,12 @@ Capturing existing Session performances has focused
 [Session-to-Arrangement checks](../issues/native-session-arrangement-capture.md).
 Hardware audio input reaching a track has focused
 [native audio input checks](../issues/native-audio-input.md).
+Native Arrangement audio capture and its live waveform have focused
+[Arrangement audio recording checks](../issues/native-arrangement-audio-recording.md).
 Scheduled punch recording has focused
 [native punch checks](../issues/native-punch-recording.md).
-The wider checklist below also covers audio and latency work that is not yet
-connected to the native app.
+The wider checklist below also covers hardware-dependent audio and latency
+behaviour that automated fixtures cannot establish.
 
 This checklist covers only what needs a human and an interface. Everything
 that can be asserted offline already is, in `test_take_recorder`,

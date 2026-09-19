@@ -72,6 +72,14 @@ struct RecordedMidiClipData {
     MidiClipModel takeModel;
 };
 
+/** @brief A finished audio recording ready to become one Arrangement clip. */
+struct RecordedAudioClipData {
+    double startBeat = 0.0;
+    double lengthBeats = 0.0;
+    juce::String filePath;
+    AudioClipModel takeModel;
+};
+
 /**
  * @brief Singleton manager for all clips in the project
  *
@@ -109,6 +117,16 @@ class ClipManager {
         TrackId trackId, double startBeats, double lengthBeats, const juce::String& audioFilePath,
         ClipView view = ClipView::Arrangement, double projectBPM = 0.0,
         ClipOverlapPolicy overlapPolicy = ClipOverlapPolicy::PreserveExisting);
+
+    /**
+     * @brief Insert a completed Arrangement audio recording atomically (#2553).
+     *
+     * The active source and every loop pass are installed before the sole
+     * clipsChanged notification.
+     */
+    ClipId createRecordedAudioClip(
+        TrackId trackId, RecordedAudioClipData recording,
+        ClipOverlapPolicy overlapPolicy = ClipOverlapPolicy::ResolveOverlaps);
 
     /**
      * @brief Create an audio clip from timeline seconds.
