@@ -16,8 +16,9 @@
  * summed into the output after the plan instead, which is where the incumbent
  * puts it too.
  *
- * The sounds are synthesised once when the generator is prepared, so the audio
- * thread only ever copies. Two of them: a bar accent and a beat.
+ * Two sounds, a bar accent and a beat, synthesised as they play from the tick's
+ * own instant, so a tick a fraction into a sample sounds that fraction late
+ * (#2741).
  */
 
 namespace magda::engine {
@@ -42,18 +43,22 @@ class ClickGenerator {
                 bool countingIn, juce::AudioBuffer<float>& output, int startSample);
 
   private:
-    void trigger(bool accent);
+    /// Start a click @p fraction of a sample after the sample it lands on.
+    void trigger(bool accent, double fraction);
 
-    /// Copy what is left of the sounding click into the block, from
+    /// Add what is left of the sounding click to the block, from
     /// @p startSample, and advance by however much fitted.
     void pour(juce::AudioBuffer<float>& output, int startSample, int numSamples, float gain);
 
-    juce::AudioBuffer<float> barClick_, beatClick_;
+    double sampleRate_ = 0.0;
 
-    /// The click that is sounding, and how far into it we are. Null between
-    /// clicks, which is most of the time.
-    const juce::AudioBuffer<float>* sounding_ = nullptr;
-    int soundingPosition_ = 0;
+    /// One click's worth, written by pour() and added to every channel.
+    juce::AudioBuffer<float> scratch_;
+
+    /// The sounding click's pitch, zero between clicks, which is most of the
+    /// time; and how many samples after its tick the next one poured sits.
+    double frequency_ = 0.0;
+    double elapsed_ = 0.0;
 };
 
 }  // namespace magda::engine

@@ -17,67 +17,67 @@ constexpr double kAttackSeconds = 0.001;
 constexpr double kBarFrequency = 2000.0;
 constexpr double kBeatFrequency = 1000.0;
 
-void synthesise(juce::AudioBuffer<float>& buffer, double sampleRate, double frequency) {
-    const auto length = buffer.getNumSamples();
-    const auto attack = std::max(1, static_cast<int>(kAttackSeconds * sampleRate));
-    auto* samples = buffer.getWritePointer(0);
+/// The click @p seconds after its tick, silent before it and after it ends.
+float clickAt(double seconds, double frequency) {
+    if (seconds < 0.0 || seconds >= kClickSeconds)
+        return 0.0f;
 
-    for (auto i = 0; i < length; ++i) {
-        const auto seconds = static_cast<double>(i) / sampleRate;
-        const auto decay = std::exp(-seconds / kDecaySeconds);
-        const auto onset = i < attack ? 0.5 - 0.5 * std::cos(juce::MathConstants<double>::pi *
-                                                             static_cast<double>(i) / attack)
-                                      : 1.0;
+    const auto decay = std::exp(-seconds / kDecaySeconds);
+    const auto onset =
+        seconds < kAttackSeconds
+            ? 0.5 - 0.5 * std::cos(juce::MathConstants<double>::pi * seconds / kAttackSeconds)
+            : 1.0;
 
-        samples[i] = static_cast<float>(
-            std::sin(juce::MathConstants<double>::twoPi * frequency * seconds) * decay * onset);
-    }
+    return static_cast<float>(std::sin(juce::MathConstants<double>::twoPi * frequency * seconds) *
+                              decay * onset);
 }
 
 }  // namespace
 
 void ClickGenerator::prepare(const RenderContext& context) {
-    const auto length =
-        std::max(1, static_cast<int>(std::lround(kClickSeconds * context.sampleRate)));
+    sampleRate_ = context.sampleRate;
 
-    barClick_.setSize(1, length);
-    beatClick_.setSize(1, length);
-    synthesise(barClick_, context.sampleRate, kBarFrequency);
-    synthesise(beatClick_, context.sampleRate, kBeatFrequency);
+    // The most one pour can write: a whole click.
+    scratch_.setSize(1, static_cast<int>(std::ceil(kClickSeconds * sampleRate_)) + 1);
 
-    sounding_ = nullptr;
-    soundingPosition_ = 0;
+    frequency_ = 0.0;
+    elapsed_ = 0.0;
 }
 
-void ClickGenerator::trigger(bool accent) {
-    sounding_ = accent ? &barClick_ : &beatClick_;
-    soundingPosition_ = 0;
+void ClickGenerator::trigger(bool accent, double fraction) {
+    frequency_ = accent ? kBarFrequency : kBeatFrequency;
+    elapsed_ = -fraction;
 }
 
 void ClickGenerator::pour(juce::AudioBuffer<float>& output, int startSample, int numSamples,
                           float gain) {
-    if (sounding_ == nullptr || numSamples <= 0)
+    if (frequency_ <= 0.0 || numSamples <= 0)
         return;
 
-    const auto count = std::min({sounding_->getNumSamples() - soundingPosition_, numSamples,
-                                 output.getNumSamples() - startSample});
+    const auto remaining = static_cast<int>(std::ceil(kClickSeconds * sampleRate_ - elapsed_));
+    const auto count = std::min(
+        {remaining, numSamples, output.getNumSamples() - startSample, scratch_.getNumSamples()});
     if (count <= 0) {
-        sounding_ = nullptr;
+        frequency_ = 0.0;
         return;
     }
 
-    for (auto channel = 0; channel < output.getNumChannels(); ++channel)
-        output.addFrom(channel, startSample, *sounding_, 0, soundingPosition_, count, gain);
+    auto* samples = scratch_.getWritePointer(0);
+    for (auto i = 0; i < count; ++i)
+        samples[i] = clickAt((elapsed_ + i) / sampleRate_, frequency_);
 
-    soundingPosition_ += count;
-    if (soundingPosition_ >= sounding_->getNumSamples())
-        sounding_ = nullptr;
+    for (auto channel = 0; channel < output.getNumChannels(); ++channel)
+        output.addFrom(channel, startSample, scratch_, 0, 0, count, gain);
+
+    elapsed_ += count;
+    if (count == remaining)
+        frequency_ = 0.0;
 }
 
 void ClickGenerator::render(const TempoMap& tempo, const ClickSettings& click,
                             const BlockInfo& block, bool countingIn,
                             juce::AudioBuffer<float>& output, int startSample) {
-    if (barClick_.getNumSamples() == 0)
+    if (!(sampleRate_ > 0.0))
         return;
 
     // Whatever is still sounding finishes, even if the metronome was switched
@@ -93,7 +93,7 @@ void ClickGenerator::render(const TempoMap& tempo, const ClickSettings& click,
     for (auto tick = tempo.tickAtOrAfter(block.beats.start); tick.beat < block.beats.end;
          tick = tempo.tickAtOrAfter(tick.nextBeat)) {
         const auto offset = block.eventForBeat(tick.beat);
-        trigger(click.emphasiseBars && tick.startsBar);
+        trigger(click.emphasiseBars && tick.startsBar, offset.fraction);
         pour(output, startSample + offset.value, block.numSamples - offset.value, click.gain);
     }
 }

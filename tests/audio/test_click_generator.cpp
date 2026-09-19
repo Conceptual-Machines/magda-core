@@ -1,3 +1,4 @@
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "transport/ClickGenerator.hpp"
@@ -229,4 +230,26 @@ TEST_CASE("The metronome follows a signature change inside one block",
     const auto blip = static_cast<int>(0.05 * kSampleRate);
     CHECK(firstSounding(fixture.output, first + blip) - 1 ==
           static_cast<int>(1.0 * kSamplesPerBeat));
+}
+
+TEST_CASE("A tick a fraction into a sample sounds that fraction late",
+          "[engine][transport][click][2741]") {
+    // The same beat, once on sample 100 and once half a sample after it. Both
+    // land on sample 100; the second is the first delayed by half a sample,
+    // which is the mean of two neighbours to within the click's curvature.
+    Fixture onTheSample, halfAfter;
+    onTheSample.render(blockFrom(1.0 - 100.0 / kSamplesPerBeat, kBlockSize));
+    halfAfter.render(blockFrom(1.0 - 100.5 / kSamplesPerBeat, kBlockSize));
+
+    REQUIRE(clickStart(onTheSample.output) == 100);
+    REQUIRE(clickStart(halfAfter.output) == 100);
+
+    for (auto sample = 102; sample < kBlockSize; ++sample) {
+        const auto mean = 0.5f * (onTheSample.output.getSample(0, sample - 1) +
+                                  onTheSample.output.getSample(0, sample));
+        INFO("sample " << sample);
+        REQUIRE(halfAfter.output.getSample(0, sample) == Catch::Approx(mean).margin(0.01));
+    }
+
+    CHECK(halfAfter.output.getSample(0, 110) != onTheSample.output.getSample(0, 110));
 }
