@@ -20,8 +20,9 @@ Monitoring is unchanged: the input gate passes the signal when the track is
 armed or set to Monitor In. The input's own meter sits ahead of the gate; a
 monitoring track's meter shows the larger of its output and its input.
 
-Input latency calibration and audio takes are later slices of #2553. Opening
-only the selected channels is #2588.
+Arrangement audio takes and their live previews are covered by the
+[recording slice](native-arrangement-audio-recording.md). Manual input-latency
+calibration remains later work. Opening only the selected channels is #2588.
 
 ## Automated verification
 

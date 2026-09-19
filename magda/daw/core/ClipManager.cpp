@@ -440,6 +440,54 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
                                 view, bpm, overlapPolicy);
 }
 
+ClipId ClipManager::createRecordedAudioClip(TrackId trackId, RecordedAudioClipData recording,
+                                            ClipOverlapPolicy overlapPolicy) {
+    if (overlapPolicy == ClipOverlapPolicy::PreserveExisting) {
+        recording.startBeat = findNonOverlappingStartBeats(
+            trackId, recording.startBeat, recording.lengthBeats, ClipView::Arrangement);
+    }
+
+    ClipInfo clip;
+    clip.id = nextClipId_++;
+    clip.trackId = trackId;
+    clip.setAudioContent();
+    clip.view = ClipView::Arrangement;
+    clip.name = recording.filePath.isNotEmpty()
+                    ? juce::File(recording.filePath).getFileNameWithoutExtension()
+                    : generateClipName(ClipType::Audio);
+    if (Config::getInstance().getClipColourMode() == 0) {
+        const auto* track = TrackManager::getInstance().getTrack(trackId);
+        clip.colour = track ? track->colour : juce::Colour(Config::getDefaultColour(0));
+    } else {
+        clip.colour = juce::Colour(Config::getDefaultColour(static_cast<int>(clips_.size())));
+    }
+
+    clip.autoCrossfade = Config::getInstance().getAutoCrossfadeByDefault();
+    clip.overlapPlaysBoth = Config::getInstance().getClipOverlapPlaysBoth();
+    const auto projectBpm = currentProjectTempoOrDefault();
+    clip.setPlacementBeats(recording.startBeat, recording.lengthBeats);
+    clip.deriveTimesFromBeats(projectBpm);
+    clip.audio() = std::move(recording.takeModel);
+
+    AudioEvent event;
+    event.sourceId = SourcePool::getInstance().acquire(recording.filePath);
+    event.speedRatio = 1.0;
+    event.seedInterpretationFromSource();
+    auto& active = clip.audio().addEvent(event);
+    clip.syncSingleEventToClipBounds();
+    active.loopStartSamples = 0;
+    active.setLoopExtent(RegionExtent::WholeSource);
+    active.adoptBpm(projectBpm, Provenance::User);
+    active.adoptTotalBeats(recording.lengthBeats, Provenance::User);
+
+    const auto clipId = clip.id;
+    clips_[clipId] = std::move(clip);
+    if (overlapPolicy == ClipOverlapPolicy::ResolveOverlaps)
+        resolveOverlaps(clipId);
+    notifyClipsChanged();
+    return clipId;
+}
+
 ClipId ClipManager::createMidiClipBeats(TrackId trackId, double startBeats, double lengthBeats,
                                         ClipView view, ClipOverlapPolicy overlapPolicy) {
     if (overlapPolicy == ClipOverlapPolicy::PreserveExisting) {

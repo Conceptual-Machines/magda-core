@@ -301,7 +301,7 @@ class EngineHost {
     bool isSessionSlotRecordArmed(TrackId trackId, int sceneIndex) const;
     bool isSessionSlotRecording(TrackId trackId, int sceneIndex) const;
 
-    /** @brief Arrangement MIDI passes as the record taps last published them. */
+    /** @brief Arrangement input passes as the record taps last published them. */
     const std::unordered_map<TrackId, RecordingPreview>& recordingPreviews();
 
     /// Where the cursor is. Readable from any thread; what a playhead is drawn

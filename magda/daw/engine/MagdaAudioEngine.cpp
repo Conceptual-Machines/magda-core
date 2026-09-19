@@ -691,7 +691,7 @@ void MagdaAudioEngine::onLoopEnabledChanged(bool enabled) {
 // --- the bases' defaulted virtuals -------------------------------------------
 //
 // Punch remains on the migration boundary below. Session MIDI slot recording
-// is owned by EngineHost beside Arrangement MIDI recording.
+// is owned by EngineHost beside Arrangement input recording.
 
 void MagdaAudioEngine::armSessionSlotRecording(TrackId trackId, int sceneIndex) {
     host_->armSessionSlotRecording(trackId, sceneIndex);

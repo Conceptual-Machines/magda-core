@@ -129,6 +129,7 @@ set(TEST_SOURCES
     project/test_project_teardown.cpp
     clips/test_session_clip_playback.cpp
     clips/test_recorded_midi_clip_creation.cpp
+    clips/test_recorded_audio_clip_creation.cpp
     devices/test_sidechain_triggers.cpp
     devices/test_sidechain_device.cpp
     automation/test_curve_snapshot.cpp
