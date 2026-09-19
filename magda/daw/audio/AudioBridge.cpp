@@ -1239,6 +1239,10 @@ void AudioBridge::onMidiDevicesAvailable() {
     midiInputRouter_.onMidiDevicesAvailable();
 }
 
+void AudioBridge::refreshActiveMidiInputs() {
+    midiInputRouter_.refreshActiveMidiInputs();
+}
+
 void AudioBridge::applyPendingMidiRoutes() {
     midiInputRouter_.applyPendingRoutes();
 }

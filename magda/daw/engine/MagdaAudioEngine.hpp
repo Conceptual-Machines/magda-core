@@ -6,6 +6,7 @@
 #include "../audio/DeviceMeters.hpp"
 #include "../audio/MidiBridge.hpp"
 #include "../audio/TrackMeters.hpp"
+#include "../audio/io/AudioIOService.hpp"
 #include "AudioEngine.hpp"
 #include "AudioEngineChoice.hpp"
 
@@ -69,15 +70,18 @@ class TracktionEngineWrapper;
  *
  * ## What the Tracktion engine is under this one
  *
- * Services: the engine, the plugin formats, the device manager, the MidiBridge
- * and the project save hooks. `initialisePlayback()` is never called, so there
- * is no Edit and so no playback context, and nothing on that side can fill an
- * output buffer. tests/engine/test_magda_audio_engine_juce.cpp pins it.
+ * Services: the engine, the plugin formats, MIDI, the MidiBridge and the
+ * project save hooks. No audio interface: that is @ref audioIO_'s (#2747).
+ * `initialisePlayback()` is never called, so there is no Edit and so no
+ * playback context, and nothing on that side can fill an output buffer.
+ * tests/engine/test_magda_audio_engine_juce.cpp pins it.
  */
 
 namespace magda {
 
-class MagdaAudioEngine final : public AudioEngine, public LiveMidiSink {
+class MagdaAudioEngine final : public AudioEngine,
+                               public LiveMidiSink,
+                               private HardwareChannels::Listener {
   public:
     explicit MagdaAudioEngine(AudioEngineOptions options);
     ~MagdaAudioEngine() override;
@@ -124,11 +128,7 @@ class MagdaAudioEngine final : public AudioEngine, public LiveMidiSink {
     void updateTriggerState() override;
     void processSessionStateEvents() override;
     juce::AudioDeviceManager* getDeviceManager() override;
-    juce::BigInteger getEnabledWaveChannels(bool input) const override;
-    std::map<int, juce::String> getOutputDeviceNamesByChannel() const override;
-    std::map<int, juce::String> getInputDeviceNamesByChannel() const override;
-    void setEnabledWaveChannels(bool input, const juce::BigInteger& channels) override;
-    void rescanWaveDevices(bool enableInputs, bool enableOutputs) override;
+    AudioIOControl* getAudioIO() override;
     bool isDevicesLoading() const override;
     void setDevicesLoadingCallback(
         std::function<void(bool, const juce::String&)> callback) override;
@@ -257,6 +257,8 @@ class MagdaAudioEngine final : public AudioEngine, public LiveMidiSink {
     /** @brief Say once that @p method has not moved to magda::engine yet. */
     void reportUnwired(const char* method, const char* issue) const;
 
+    void hardwareChannelsChanged() override;
+
     /// Track and master meters, fed by the host (#2579).
     TrackMeters meters_;
 
@@ -282,9 +284,11 @@ class MagdaAudioEngine final : public AudioEngine, public LiveMidiSink {
     /// (#2566); a pointer rather than a cast so the ownership stays above.
     TracktionEngineWrapper* fork_ = nullptr;
 
-    /// What actually renders. Declared after the fork so it is destroyed
-    /// first: the device it has a callback on is the fork's, and the fork
-    /// closes it on its way out.
+    /// The one audio interface, which Tracktion leaves alone under this engine (#2747).
+    std::unique_ptr<AudioIOService> audioIO_;
+
+    /// What actually renders. Declared after the interface so it is destroyed
+    /// first, being a callback on it.
     std::unique_ptr<daw::engine_host::EngineHost> host_;
 
     /// This engine's own facade onto the model; the fork builds a second one in

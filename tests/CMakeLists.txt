@@ -191,6 +191,8 @@ set(TEST_SOURCES
     ui/test_channel_labels.cpp
     # Tracktion's saved audio interface, migrated to AudioIOService (#2746)
     audio/test_tracktion_audio_settings.cpp
+    # Hardware channels named as saved routes name them (#2747)
+    audio/test_hardware_route_names.cpp
     # The input levels behind the input menu's meters
     ui/test_hardware_input_levels.cpp
     ../magda/daw/ui/components/mixer/HardwareInputLevels.cpp
@@ -849,6 +851,12 @@ target_sources(magda_juce_tests PRIVATE
     ui/test_audio_driver_type_selection_juce.cpp
     # AudioIOService opening only the channels asked for (#2746)
     audio/test_audio_io_service_juce.cpp
+    # Audio Settings' Active MIDI inputs, saved in Config
+    audio/test_active_midi_inputs_juce.cpp
+    # Tracktion keeping MIDI and opening no audio interface under native (#2747)
+    engine/test_tracktion_without_audio_juce.cpp
+    # Audio Settings driving Tracktion's interface through its wave devices (#2749)
+    engine/test_tracktion_audio_io_juce.cpp
     automation/test_tempo_sequence_ripple_juce.cpp
     ../magda/daw/ui/components/chain/slot/StepSequencerClipExport.cpp
 )

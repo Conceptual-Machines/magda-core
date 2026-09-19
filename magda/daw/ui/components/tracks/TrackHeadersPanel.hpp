@@ -19,6 +19,7 @@
 #include "TrackControlsLayout.hpp"
 #include "TrackControlsPolicy.hpp"
 #include "audio/MidiBridge.hpp"
+#include "audio/io/AudioIOControl.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
@@ -36,7 +37,8 @@ class TrackHeadersPanel : public juce::Component,
                           public SelectionManagerListener,
                           public ViewModeListener,
                           public AutomationManagerListener,
-                          public MidiBridge::Listener {
+                          public MidiBridge::Listener,
+                          private HardwareChannels::Listener {
   public:
     static constexpr int TRACK_HEADER_WIDTH = 200;
     static constexpr int DEFAULT_TRACK_HEIGHT = 83;
@@ -69,6 +71,9 @@ class TrackHeadersPanel : public juce::Component,
 
     // MidiBridge::Listener
     void midiDeviceListChanged() override;
+
+    /** @brief Rebuild every header's routing menus against what is open now (#2748). */
+    void hardwareChannelsChanged() override;
     void automationValueChanged(AutomationLaneId laneId, double normalizedValue) override;
 
     // DragAndDropTarget implementation (plugin drops)

@@ -173,6 +173,9 @@ class EngineHost {
     /// publish and stays bound to it. Message thread.
     void registerVirtualMidiSource(const juce::String& deviceId);
 
+    /// Rebind "all" routes after the inputs Audio Settings has active changed. Message thread.
+    void refreshMidiInputs();
+
     // ===== Plugin state =====
     //
     // All three run on the message thread and return once the plugin has been

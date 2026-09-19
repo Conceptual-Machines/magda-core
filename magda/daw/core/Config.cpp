@@ -79,6 +79,12 @@ RemoteApiSwitches remoteApiSwitchesFrom(const juce::var& remoteApiObject) {
     return switches;
 }
 
+bool Config::isMidiInputActive(const juce::String& name) const {
+    return std::ranges::none_of(inactiveMidiInputs, [&name](const std::string& inactive) {
+        return name.equalsIgnoreCase(toJuceString(inactive));
+    });
+}
+
 void Config::addRecentProject(const std::string& path) {
     // Remove existing entry if present (dedup)
     recentProjects.erase(std::remove(recentProjects.begin(), recentProjects.end(), path),
@@ -222,6 +228,12 @@ void Config::save() {
     root->setProperty("preferredOutputChannels", preferredOutputChannels);
     if (audioIO)
         root->setProperty("audioIO", audioIOObject(*audioIO));
+    {
+        juce::Array<juce::var> names;
+        for (const auto& name : inactiveMidiInputs)
+            names.add(toJuceString(name));
+        root->setProperty("inactiveMidiInputs", names);
+    }
 
     // AI — nested "ai" object with per-agent inference profiles.
     {
@@ -866,6 +878,7 @@ void Config::load() {
     }
     recentProjects = getStringArray("recentProjects");
     customPluginPaths = getStringArray("customPluginPaths");
+    inactiveMidiInputs = getStringArray("inactiveMidiInputs");
     autoEnabledInsertInputs_ = getStringArray("autoEnabledInsertInputs");
     autoEnabledInsertOutputs_ = getStringArray("autoEnabledInsertOutputs");
     totalPluginCount = getInt("totalPluginCount", totalPluginCount);

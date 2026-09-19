@@ -6,6 +6,7 @@
 #include <ranges>
 #include <vector>
 
+#include "../core/Config.hpp"
 #include "../core/RangesHelpers.hpp"
 #include "../core/TrackManager.hpp"
 #include "AudioBridge.hpp"
@@ -95,9 +96,12 @@ MidiDeviceInfo asPhysicalDevice(const juce::MidiDeviceInfo& device) {
 }  // namespace
 
 std::vector<MidiDeviceInfo> MidiBridge::getAvailableMidiInputs() const {
+    const auto isActive = [](const juce::MidiDeviceInfo& device) {
+        return Config::getInstance().isMidiInputActive(device.name);
+    };
     const auto midiInputs = juce::MidiInput::getAvailableDevices();
-    auto devices =
-        midiInputs | std::views::transform(asPhysicalDevice) | toStd<std::vector<MidiDeviceInfo>>();
+    auto devices = midiInputs | std::views::filter(isActive) |
+                   std::views::transform(asPhysicalDevice) | toStd<std::vector<MidiDeviceInfo>>();
 
     // Under the native engine, messages arrive under a physical device's
     // identifier or under qwertyMidiDeviceId(). Those are the ids to offer.
@@ -252,11 +256,22 @@ void MidiBridge::disableMidiInput(const juce::String& deviceId) {
     // inputToDestroy destroyed here, outside lock
 }
 
+void MidiBridge::activeInputsChanged() {
+    refreshMidiInputs();
+    notifyMidiDeviceListChanged();
+    if (onActiveInputsChanged)
+        onActiveInputsChanged();
+}
+
 void MidiBridge::refreshMidiInputs() {
     if (isShuttingDown_.load(std::memory_order_acquire))
         return;
 
-    const auto available = juce::MidiInput::getAvailableDevices();
+    // An input switched off in Audio Settings is closed and not reopened, as if unplugged.
+    juce::Array<juce::MidiDeviceInfo> available;
+    for (const auto& device : juce::MidiInput::getAvailableDevices())
+        if (Config::getInstance().isMidiInputActive(device.name))
+            available.add(device);
     const auto isAvailable = [&available](const juce::String& deviceId) {
         return std::ranges::any_of(
             available, [&deviceId](const auto& device) { return device.identifier == deviceId; });
@@ -272,7 +287,8 @@ void MidiBridge::refreshMidiInputs() {
 
         for (const auto& [trackId, route] : trackMidiInputs_) {
             if (route != "all") {
-                routed.push_back(route);
+                if (isAvailable(route))
+                    routed.push_back(route);
                 continue;
             }
             for (const auto& device : available)
@@ -308,19 +324,11 @@ void MidiBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDevi
         trackMidiInputs_[trackId] = midiDeviceId;
         DBG("  -> Stored routing: track " << trackId << " -> '" << midiDeviceId << "'");
 
-        // Auto-enable the device if not already enabled
-        if (midiDeviceId == "all") {
-            // Special case: enable ALL MIDI input devices
-            auto availableDevices = juce::MidiInput::getAvailableDevices();
-            DBG("  -> 'all' mode: enabling " << availableDevices.size() << " MIDI input devices");
-            for (const auto& deviceInfo : availableDevices) {
+        // Open what the route reads, less what Audio Settings has switched off.
+        for (const auto& deviceInfo : juce::MidiInput::getAvailableDevices())
+            if ((midiDeviceId == "all" || deviceInfo.identifier == midiDeviceId) &&
+                Config::getInstance().isMidiInputActive(deviceInfo.name))
                 enableMidiInput(deviceInfo.identifier);
-            }
-        } else {
-            // Single device
-            DBG("  -> Single device mode: enabling '" << midiDeviceId << "'");
-            enableMidiInput(midiDeviceId);
-        }
     }
 
     // Debug: print current routing state

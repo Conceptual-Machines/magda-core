@@ -22,6 +22,7 @@
     #include "MagdaAudioEngine.hpp"
 #endif
 #include "MagdaEngineBehaviour.hpp"
+#include "MagdaPropertyStorage.hpp"
 #include "MagdaUIBehaviour.hpp"
 #include "PluginScanCoordinator.hpp"
 #include "PluginWindowManager.hpp"
@@ -340,10 +341,11 @@ void TracktionEngineWrapper::setupMidiDevices() {
 bool TracktionEngineWrapper::initialiseServices() {
     // Initialize Tracktion Engine with custom UIBehaviour for plugin windows
     juce::Logger::writeToLog("[Init] Creating Tracktion Engine...");
-    auto uiBehaviour = std::make_unique<MagdaUIBehaviour>();
-    auto engineBehaviour = std::make_unique<MagdaEngineBehaviour>();
-    engine_ = std::make_unique<tracktion::Engine>("MAGDA", std::move(uiBehaviour),
-                                                  std::move(engineBehaviour));
+    engine_ = std::make_unique<tracktion::Engine>(
+        std::make_unique<MagdaPropertyStorage>("MAGDA", opensAudioInterface_),
+        std::make_unique<MagdaUIBehaviour>(),
+        std::make_unique<MagdaEngineBehaviour>(opensAudioInterface_));
+    audioIO_ = std::make_unique<TracktionAudioIO>(engine_->getDeviceManager());
 
     // Here rather than in the AudioBridge's constructor, which is the fork's
     // and is never built under the native engine (#2600). The provider asks
@@ -365,15 +367,22 @@ bool TracktionEngineWrapper::initialiseServices() {
     juce::Logger::writeToLog("[Init] initializePluginFormats() done");
 
     if (!isHeadlessRuntime()) {
-        // Initialize device manager with preferred settings
-        juce::Logger::writeToLog("[Init] initializeDeviceManager()...");
-        initializeDeviceManager();
-        juce::Logger::writeToLog("[Init] initializeDeviceManager() done");
+        if (opensAudioInterface_) {
+            // Initialize device manager with preferred settings
+            juce::Logger::writeToLog("[Init] initializeDeviceManager()...");
+            initializeDeviceManager();
+            juce::Logger::writeToLog("[Init] initializeDeviceManager() done");
 
-        // Configure audio devices if user has preferences
-        juce::Logger::writeToLog("[Init] configureAudioDevices()...");
-        configureAudioDevices();
-        juce::Logger::writeToLog("[Init] configureAudioDevices() done");
+            // Configure audio devices if user has preferences
+            juce::Logger::writeToLog("[Init] configureAudioDevices()...");
+            configureAudioDevices();
+            juce::Logger::writeToLog("[Init] configureAudioDevices() done");
+        } else {
+            // MIDI still scans and hot-plugs through Tracktion's DeviceManager; with no backends
+            // it opens no audio interface.
+            juce::Logger::writeToLog("[Init] Tracktion opens no audio interface");
+            engine_->getDeviceManager().initialise(0, 0);
+        }
 
         // Setup MIDI devices
         juce::Logger::writeToLog("[Init] setupMidiDevices()...");
@@ -522,6 +531,8 @@ bool TracktionEngineWrapper::initialisePlayback() {
     // Create AudioBridge for TrackManager synchronization
     audioBridge_ = std::make_unique<AudioBridge>(*engine_, *currentEdit_, meters_, deviceMeters_);
     audioBridge_->syncAll();
+    if (midiBridge_)
+        midiBridge_->onActiveInputsChanged = [this] { audioBridge_->refreshActiveMidiInputs(); };
 
 #ifndef MAGDA_NO_AUTO_TEMPO_LANE_SYNC
     // Keep the edit-scoped Tempo automation lane and tempoSequence in sync.
@@ -622,6 +633,7 @@ void TracktionEngineWrapper::shutdown() {
     if (engine_) {
         engine_->getDeviceManager().removeChangeListener(this);
     }
+    audioIO_.reset();
 
     // CRITICAL: Close all plugin windows FIRST (before plugins are destroyed)
     // This prevents malloc errors from windows trying to access destroyed plugins
@@ -655,8 +667,10 @@ void TracktionEngineWrapper::shutdown() {
     ProjectManager::getInstance().onAfterLoad = std::move(previousAfterLoad_);
 
     // Clear MidiBridge's reference to AudioBridge before destroying it
-    if (midiBridge_)
+    if (midiBridge_) {
         midiBridge_->clearAudioBridge();
+        midiBridge_->onActiveInputsChanged = nullptr;
+    }
 
     // Destroy AudioBridge first (it references Edit and Engine)
     if (audioBridge_) {

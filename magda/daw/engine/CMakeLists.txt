@@ -12,6 +12,7 @@ target_sources(magda_daw PRIVATE
     TracktionEngineWrapper.cpp
     TracktionEngineWrapperInit.cpp
     TracktionEngineWrapperDevices.cpp
+    TracktionAudioIO.cpp
     TracktionEngineWrapperTransport.cpp
     TracktionEngineWrapperTracks.cpp
     TracktionEngineWrapperClips.cpp

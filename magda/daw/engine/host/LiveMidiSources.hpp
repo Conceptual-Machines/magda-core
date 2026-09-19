@@ -53,8 +53,9 @@ class LiveMidiSources {
     /// What an id past @ref kSlots is bound to, and what a retired one leaves.
     static constexpr int kNoSlot = -1;
 
-    /// Ids for every MIDI input this machine has now, so an "all" route
-    /// resolves to them before any of them has played a note.
+    /// Ids for every MIDI input this machine has now, less those switched off
+    /// in Audio Settings, so an "all" route resolves to them before any of them
+    /// has played a note.
     void registerAvailableDevices();
 
     /// The same against a list the caller already holds, which is the

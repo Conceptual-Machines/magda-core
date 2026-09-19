@@ -3,31 +3,38 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "../../audio/io/AudioIOControl.hpp"
+#include "../../audio/midi/ActiveMidiInputs.hpp"
+
 namespace magda {
 
 class AudioEngine;
 
 /**
- * Custom channel selector that shows both stereo pairs and individual mono channels
- * with mutual exclusion logic (can't select 1-2 AND 1 at the same time)
+ * @brief The chosen interface's channels one way, as stereo pairs and mono channels.
+ *
+ * A pair and either of its channels exclude each other. What is ticked is exactly what opens
+ * (#2749).
  */
 class CustomChannelSelector : public juce::Component {
   public:
-    CustomChannelSelector(juce::AudioDeviceManager* deviceManager, bool isInput,
-                          AudioEngine* audioEngine);
+    CustomChannelSelector(AudioIOControl& audio, bool isInput);
     ~CustomChannelSelector() override;
 
     void resized() final;
     void paint(juce::Graphics& g) override;
-    void updateFromDevice();
-    void applyToDevice();
+
+    /** @brief List the chosen interface's channels, ticked where they are chosen. */
+    void refresh();
 
   private:
     void onChannelToggled(int channelIndex, bool isStereo);
     void refreshChannelStates();
 
-    juce::AudioDeviceManager* deviceManager_;
-    AudioEngine* audioEngine_;
+    /** @brief Open exactly the ticked channels on the chosen interface. */
+    void applyTicks();
+
+    AudioIOControl& audio_;
     bool isInput_;
 
     static void onPreviewToggled(int startChannel);
@@ -94,10 +101,21 @@ class AudioSettingsDialog : public juce::Component,
     void hideDeviceRefreshIndicator();
     void onInputDeviceSelected();
     void onOutputDeviceSelected();
-    void enableAllChannelsOnCurrentDevice();
+
+    /** @brief Open @p interfaceName one way, keeping the channels chosen where it has them. */
+    void chooseInterface(const juce::String& interfaceName, bool inputs);
+
+    /** @brief Keep the backend, rate and block size the JUCE selector changed on the manager. */
+    void keepSelectorChanges();
+
+    /** @brief Relist the interfaces and their channels, after the backend or an interface moved. */
+    void refreshChosenInterface();
+    void showOpenInterface();
     void savePreferencesIfNeeded();
     void onAudioEngineSelected();
 
+    /// Before the selector, which reads the ticks it sets.
+    std::unique_ptr<ActiveMidiInputs> activeMidiInputs_;
     std::unique_ptr<juce::AudioDeviceSelectorComponent> deviceSelector_;
     std::unique_ptr<CustomChannelSelector> inputChannelSelector_;
     std::unique_ptr<CustomChannelSelector> outputChannelSelector_;
@@ -121,6 +139,10 @@ class AudioSettingsDialog : public juce::Component,
     juce::Label deviceNameLabel_;
     juce::AudioDeviceManager* deviceManager_;
     AudioEngine* audioEngine_;
+    AudioIOControl* audio_;
+
+    /// The backend and interfaces the lists show, so a channel toggle does not rebuild them.
+    AudioIOSettings listed_;
     juce::ComboBox* driverTypeComboBox_ = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioSettingsDialog)

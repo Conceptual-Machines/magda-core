@@ -408,6 +408,15 @@ class Config {
         audioIO = std::move(settings);
     }
 
+    /** @brief MIDI inputs switched off in Audio Settings, by name: no track lists or hears them. */
+    const std::vector<std::string>& getInactiveMidiInputs() const {
+        return inactiveMidiInputs;
+    }
+    void setInactiveMidiInputs(std::vector<std::string> names) {
+        inactiveMidiInputs = std::move(names);
+    }
+    bool isMidiInputActive(const juce::String& name) const;
+
     // Custom Plugin Paths
     std::vector<std::string> getCustomPluginPaths() const {
         return customPluginPaths;
@@ -1652,6 +1661,7 @@ class Config {
     int preferredInputChannels = 0;   // Preferred input channel count (0 = use device default)
     int preferredOutputChannels = 0;  // Preferred output channel count (0 = use device default)
     std::optional<AudioIOSettings> audioIO;
+    std::vector<std::string> inactiveMidiInputs;  // Names, so a new port starts active
 
     // Language
     std::string language = "en";  // Language code, matches lang/<code>.json

@@ -3268,6 +3268,10 @@ void EngineHost::registerVirtualMidiSource(const juce::String& deviceId) {
     impl_->sources_.registerVirtualDevice(deviceId);
 }
 
+void EngineHost::refreshMidiInputs() {
+    impl_->refreshLiveMidiDevices();
+}
+
 void EngineHost::captureExternalPluginStates() {
     impl_->captureExternalPluginStates();
 }

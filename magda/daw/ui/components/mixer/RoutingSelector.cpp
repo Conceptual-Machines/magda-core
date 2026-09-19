@@ -272,6 +272,11 @@ void RoutingSelector::setOptions(const std::vector<RoutingOption>& options) {
     updateMetering();
 }
 
+void RoutingSelector::addOption(RoutingOption option) {
+    options_.push_back(std::move(option));
+    updateMetering();
+}
+
 void RoutingSelector::clearOptions() {
     options_.clear();
     selectedId_ = -1;

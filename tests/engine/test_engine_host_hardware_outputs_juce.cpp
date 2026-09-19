@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "JuceTestStateGuard.hpp"
+#include "magda/daw/audio/io/AudioIOService.hpp"
 #include "magda/daw/audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/engine/host/EngineHost.hpp"
@@ -47,7 +48,8 @@ juce::BigInteger channels(std::initializer_list<int> set) {
 
 class OutputPumpDevice final : public juce::AudioIODevice {
   public:
-    OutputPumpDevice() : juce::AudioIODevice("Output Pump", "Output Pump") {}
+    explicit OutputPumpDevice(const juce::String& name = "Output Pump")
+        : juce::AudioIODevice(name, "Output Pump") {}
 
     juce::StringArray getOutputChannelNames() override {
         juce::StringArray names;
@@ -67,7 +69,10 @@ class OutputPumpDevice final : public juce::AudioIODevice {
     int getDefaultBufferSize() override {
         return kBlockSize;
     }
-    juce::String open(const juce::BigInteger&, const juce::BigInteger&, double, int) override {
+    juce::String open(const juce::BigInteger&, const juce::BigInteger& outputs, double,
+                      int) override {
+        if (!outputs.isZero())
+            active_ = outputs;
         open_ = true;
         return {};
     }
@@ -161,21 +166,21 @@ class OutputPumpType final : public juce::AudioIODeviceType {
 
     void scanForDevices() override {}
     juce::StringArray getDeviceNames(bool input) const override {
-        return input ? juce::StringArray{} : juce::StringArray{"Output Pump"};
+        return input ? juce::StringArray{} : juce::StringArray{"Output Pump", "Output Pump B"};
     }
     int getDefaultDeviceIndex(bool) const override {
         return 0;
     }
-    int getIndexOfDevice(juce::AudioIODevice* device, bool) const override {
-        return device == device_ ? 0 : -1;
+    int getIndexOfDevice(juce::AudioIODevice* device, bool input) const override {
+        return device != nullptr ? getDeviceNames(input).indexOf(device->getName()) : -1;
     }
     bool hasSeparateInputsAndOutputs() const override {
         return true;
     }
     juce::AudioIODevice* createDevice(const juce::String& output, const juce::String&) override {
-        if (output != "Output Pump")
+        if (!getDeviceNames(false).contains(output))
             return nullptr;
-        auto device = std::make_unique<OutputPumpDevice>();
+        auto device = std::make_unique<OutputPumpDevice>(output);
         device_ = device.get();
         return device.release();
     }
@@ -200,6 +205,7 @@ class EngineHostHardwareOutputTest final : public juce::UnitTest {
 
     void runTest() override {
         magda::test::runWithCleanJuceState([this] { routesToPackedHardwareChannels(); });
+        magda::test::runWithCleanJuceState([this] { followsTheAudioInterface(); });
     }
 
   private:
@@ -314,6 +320,75 @@ class EngineHostHardwareOutputTest final : public juce::UnitTest {
 
         host.stop();
         devices.closeAudioDevice();
+    }
+
+    /** @brief The native engine's wiring: routes named as saved, masks from what is open. */
+    struct AudioIORefresh final : magda::HardwareChannels::Listener {
+        explicit AudioIORefresh(magda::daw::engine_host::EngineHost& host) : host(host) {}
+        void hardwareChannelsChanged() override {
+            host.refreshHardwareOutputs();
+        }
+        magda::daw::engine_host::EngineHost& host;
+    };
+
+    static magda::AudioIOSettings pumpOutputs(std::vector<int> outputs,
+                                              std::string interfaceName = "Output Pump") {
+        return {.backend = "Output Pump",
+                .inputInterface = {},
+                .outputInterface = std::move(interfaceName),
+                .sampleRate = 48000.0,
+                .bufferSize = kBlockSize,
+                .inputChannels = {},
+                .outputChannels = std::move(outputs)};
+    }
+
+    void followsTheAudioInterface() {
+        beginTest("native outputs follow what AudioIOService opens, across a reopen and a switch");
+
+        OutputPumpDevice* device = nullptr;
+        std::vector<std::unique_ptr<juce::AudioIODeviceType>> backends;
+        backends.push_back(std::make_unique<OutputPumpType>(device));
+        magda::AudioIOService audioIO(std::move(backends), juce::File());
+        magda::Config::getInstance().setAudioIO(pumpOutputs({2, 3}));
+        audioIO.open();
+        expect(device != nullptr, "the service opened the pump");
+        if (device == nullptr)
+            return;
+
+        auto& tracks = magda::TrackManager::getInstance();
+        const auto track = tracks.createTrack("Hardware routed");
+        tracks.getTrack(track)->chain.fxChainElements.emplace_back(polySynth(1));
+        tracks.setTrackAudioOutput(track, "stereo:Output 3 + 4");
+
+        magda::daw::engine_host::EngineHost host;
+        host.setHardwareOutputProvider([&audioIO] {
+            auto outputs = audioIO.outputs();
+            return magda::daw::engine_host::EngineHost::HardwareChannelCatalog{
+                .enabledChannels = std::move(outputs.open),
+                .namesByChannel = std::move(outputs.routeNames)};
+        });
+        AudioIORefresh refresh(host);
+        audioIO.addListener(&refresh);
+        host.start(audioIO.getDeviceManager());
+        settle(host);
+
+        expectOnly(sound(host, *device, track), {2, 3});
+
+        expect(audioIO.apply(pumpOutputs({4, 5})).isEmpty());
+        tracks.setTrackAudioOutput(track, "stereo:Output 5 + 6");
+        settle(host);
+        expectOnly(sound(host, *device, track, 62), {4, 5});
+
+        // Another interface altogether: the host renders into the device that replaced it.
+        expect(audioIO.apply(pumpOutputs({0, 1}, "Output Pump B")).isEmpty());
+        expectEquals(device->getName(), juce::String("Output Pump B"));
+        tracks.setTrackAudioOutput(track, "stereo:Output 1 + 2");
+        settle(host);
+        expectOnly(sound(host, *device, track, 64), {0, 1});
+
+        audioIO.removeListener(&refresh);
+        host.stop();
+        magda::Config::getInstance().setAudioIO(std::nullopt);
     }
 };
 

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <iterator>
 
+#include "HardwareRouteNames.hpp"
 #include "TracktionAudioSettings.hpp"
 
 namespace magda {
@@ -141,12 +142,46 @@ AudioIOService::ActiveConfiguration AudioIOService::getActiveConfiguration() con
             .inputLatencySamples = device->getInputLatencyInSamples()};
 }
 
-void AudioIOService::addListener(Listener* listener) {
-    listeners_.add(listener);
+AudioIOSettings AudioIOService::openSettings() const {
+    const auto active = getActiveConfiguration();
+    const auto channelsOf = [](const juce::BigInteger& mask) {
+        std::vector<int> channels;
+        for (auto bit = mask.findNextSetBit(0); bit >= 0; bit = mask.findNextSetBit(bit + 1))
+            channels.push_back(bit);
+        return channels;
+    };
+    return {.backend = active.backend.toStdString(),
+            .inputInterface = active.inputInterface.toStdString(),
+            .outputInterface = active.outputInterface.toStdString(),
+            .sampleRate = active.sampleRate,
+            .bufferSize = active.bufferSize,
+            .inputChannels = channelsOf(active.inputChannels),
+            .outputChannels = channelsOf(active.outputChannels)};
 }
 
-void AudioIOService::removeListener(Listener* listener) {
-    listeners_.remove(listener);
+AudioIOSettings AudioIOService::chosen() const {
+    const auto& saved = Config::getInstance().getAudioIO();
+    return saved.has_value() ? *saved : openSettings();
+}
+
+bool AudioIOService::isOpen() const {
+    return getActiveConfiguration().backend.isNotEmpty();
+}
+
+HardwareChannels::Direction AudioIOService::inputs() const {
+    const auto active = getActiveConfiguration();
+    return {.open = active.inputChannels,
+            .channelNames = active.inputChannelNames,
+            .routeNames =
+                routeNamesByChannel(active.inputChannelNames, active.inputChannels, true)};
+}
+
+HardwareChannels::Direction AudioIOService::outputs() const {
+    const auto active = getActiveConfiguration();
+    return {.open = active.outputChannels,
+            .channelNames = active.outputChannelNames,
+            .routeNames =
+                routeNamesByChannel(active.outputChannelNames, active.outputChannels, false)};
 }
 
 juce::AudioIODeviceType* AudioIOService::backendNamed(const juce::String& name) {
@@ -249,7 +284,7 @@ juce::String AudioIOService::openFitted(const AudioIOSettings& fitted) {
 }
 
 void AudioIOService::changeListenerCallback(juce::ChangeBroadcaster*) {
-    listeners_.call([](Listener& listener) { listener.audioIOChanged(); });
+    notifyChanged();
 }
 
 }  // namespace magda

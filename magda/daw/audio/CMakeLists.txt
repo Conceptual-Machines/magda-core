@@ -480,6 +480,8 @@ target_sources(magda_daw PRIVATE
     # The one owner of hardware audio I/O (#2746)
     io/AudioIOService.cpp
     io/AudioIOService.hpp
+    io/HardwareRouteNames.cpp
+    io/HardwareRouteNames.hpp
     io/TracktionAudioSettings.cpp
     io/TracktionAudioSettings.hpp
     AudioThumbnailManager.cpp
@@ -488,6 +490,8 @@ target_sources(magda_daw PRIVATE
     analysis/MixAnalysisInput.cpp
     analysis/OfflineMixAnalysis.cpp
     MidiBridge.cpp
+    midi/ActiveMidiInputs.cpp
+    midi/ActiveMidiInputs.hpp
     midi/MidiDeviceMatch.cpp
     midi/MidiInputRouter.cpp
     midi/MidiInputRouter.hpp

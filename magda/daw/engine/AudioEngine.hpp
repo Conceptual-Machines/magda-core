@@ -35,6 +35,7 @@ namespace magda {
 
 class AudioBridge;
 class DeviceMeters;
+class AudioIOControl;
 class InsertRenderCaptureService;
 
 class MagdaApi;
@@ -293,15 +294,9 @@ class AudioEngine : public AudioEngineListener {
 
     // ===== Device Management =====
     virtual juce::AudioDeviceManager* getDeviceManager() = 0;
-    virtual juce::BigInteger getEnabledWaveChannels(bool input) const = 0;
-    virtual std::map<int, juce::String> getOutputDeviceNamesByChannel() const {
-        return {};
-    }
-    virtual std::map<int, juce::String> getInputDeviceNamesByChannel() const {
-        return {};
-    }
-    virtual void setEnabledWaveChannels(bool input, const juce::BigInteger& channels) = 0;
-    virtual void rescanWaveDevices(bool enableInputs, bool enableOutputs) = 0;
+
+    /** @brief The audio interface: what the routing menus read and Audio Settings drives. */
+    virtual AudioIOControl* getAudioIO() = 0;
     virtual bool isDevicesLoading() const = 0;
     virtual void setDevicesLoadingCallback(
         std::function<void(bool, const juce::String&)> callback) = 0;
