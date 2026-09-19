@@ -308,6 +308,14 @@ class EngineHost {
     void setMetronomeEnabled(bool enabled);
     bool isMetronomeEnabled() const;
 
+    /**
+     * @brief What Record rolls in for when it starts the transport, as the
+     *        transport panel numbers it: 0 none, 1 one bar, 2 two bars, 3 two
+     *        beats, 4 one beat. A plain play never counts in.
+     */
+    void setCountInMode(int mode);
+    int countInMode() const;
+
     /** @brief The loop, as the one value the transport is published with. */
     struct LoopState {
         bool enabled = false;

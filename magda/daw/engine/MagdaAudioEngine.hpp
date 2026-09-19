@@ -264,9 +264,6 @@ class MagdaAudioEngine final : public AudioEngine, public LiveMidiSink {
     /// means with no Edit to ask.
     bool initialised_ = false;
 
-    /// Held rather than acted on: count-in itself is #2553.
-    int countInMode_ = 0;
-
     /// Last frame's transport, for the play-start and loop edges modulators
     /// retrigger on.
     bool wasPlaying_ = false;

@@ -1009,6 +1009,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                 const auto period = launchBeatsPerBar();
                 const auto boundary = std::floor(sync.beat / period + 1.0) * period;
                 due = sync.monotonicAt(boundary);
+            } else if (const auto countIn = countInBeats(); countIn > 0.0) {
+                // The roll-in moves the cursor back but not the monotonic count,
+                // so the count-in ends that many beats past where it stands now.
+                due = session_->syncPoint().monotonicBeat + countIn;
             }
             engine::LaunchRequestQueue::Gesture gesture(session_->launchRequests());
 
@@ -1051,7 +1055,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (recording_ && !request_.playing)
             publishRequest({.playing = true,
                             .locate = positionSeconds.has_value(),
-                            .positionBeat = map_.timeToBeat(positionSeconds.value_or(0.0))});
+                            .positionBeat = map_.timeToBeat(positionSeconds.value_or(0.0)),
+                            .countInBeats = countInBeats()});
     }
 
     void reconcileMidiRecording() {
@@ -1142,7 +1147,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (!request_.playing)
             publishRequest({.playing = true,
                             .locate = true,
-                            .positionBeat = map_.timeToBeat(positionSeconds)});
+                            .positionBeat = map_.timeToBeat(positionSeconds),
+                            .countInBeats = countInBeats()});
         return true;
     }
 
@@ -1433,6 +1439,24 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     double launchBeatsPerBar() const override {
         return static_cast<double>(numerator_) * 4.0 / static_cast<double>(denominator_);
+    }
+
+    /// The count-in in the clock's quarter-note beats. A beat of the count is
+    /// the signature's, so 6/8 counts in eighths.
+    double countInBeats() const {
+        const auto beat = 4.0 / static_cast<double>(denominator_);
+        switch (countInMode_) {
+            case 1:
+                return launchBeatsPerBar();
+            case 2:
+                return 2.0 * launchBeatsPerBar();
+            case 3:
+                return 2.0 * beat;
+            case 4:
+                return beat;
+            default:
+                return 0.0;
+        }
     }
 
     bool launchTransportPlaying() const override {
@@ -2407,6 +2431,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     double bpm_ = 120.0;
     int numerator_ = 4;
     int denominator_ = 4;
+    int countInMode_ = 0;
 
     /// The three above, baked. Cached rather than rebuilt per read: everything
     /// published with a tempo reads it, and so does the app through @ref view_.
@@ -2737,6 +2762,14 @@ void EngineHost::setLoop(bool enabled, double startBeat, double endBeat) {
 void EngineHost::setMetronomeEnabled(bool enabled) {
     impl_->click_.enabled = enabled;
     impl_->publishTransport();
+}
+
+void EngineHost::setCountInMode(int mode) {
+    impl_->countInMode_ = mode;
+}
+
+int EngineHost::countInMode() const {
+    return impl_->countInMode_;
 }
 
 bool EngineHost::isMetronomeEnabled() const {
