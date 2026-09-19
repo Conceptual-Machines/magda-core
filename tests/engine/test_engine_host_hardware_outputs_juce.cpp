@@ -7,6 +7,8 @@
 #include <memory>
 
 #include "JuceTestStateGuard.hpp"
+#include "magda/daw/audio/io/AudioIOService.hpp"
+#include "magda/daw/audio/io/HardwareRouteNames.hpp"
 #include "magda/daw/audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/engine/host/EngineHost.hpp"
@@ -67,7 +69,10 @@ class OutputPumpDevice final : public juce::AudioIODevice {
     int getDefaultBufferSize() override {
         return kBlockSize;
     }
-    juce::String open(const juce::BigInteger&, const juce::BigInteger&, double, int) override {
+    juce::String open(const juce::BigInteger&, const juce::BigInteger& outputs, double,
+                      int) override {
+        if (!outputs.isZero())
+            active_ = outputs;
         open_ = true;
         return {};
     }
@@ -200,6 +205,7 @@ class EngineHostHardwareOutputTest final : public juce::UnitTest {
 
     void runTest() override {
         magda::test::runWithCleanJuceState([this] { routesToPackedHardwareChannels(); });
+        magda::test::runWithCleanJuceState([this] { followsTheAudioInterface(); });
     }
 
   private:
@@ -314,6 +320,68 @@ class EngineHostHardwareOutputTest final : public juce::UnitTest {
 
         host.stop();
         devices.closeAudioDevice();
+    }
+
+    /** @brief The native engine's wiring: routes named as saved, masks from what is open. */
+    struct AudioIORefresh final : magda::AudioIOService::Listener {
+        explicit AudioIORefresh(magda::daw::engine_host::EngineHost& host) : host(host) {}
+        void audioIOChanged() override {
+            host.refreshHardwareOutputs();
+        }
+        magda::daw::engine_host::EngineHost& host;
+    };
+
+    static magda::AudioIOSettings pumpOutputs(std::vector<int> outputs) {
+        return {.backend = "Output Pump",
+                .inputInterface = {},
+                .outputInterface = "Output Pump",
+                .sampleRate = 48000.0,
+                .bufferSize = kBlockSize,
+                .inputChannels = {},
+                .outputChannels = std::move(outputs)};
+    }
+
+    void followsTheAudioInterface() {
+        beginTest("native outputs follow what AudioIOService opens, across a reopen");
+
+        OutputPumpDevice* device = nullptr;
+        std::vector<std::unique_ptr<juce::AudioIODeviceType>> backends;
+        backends.push_back(std::make_unique<OutputPumpType>(device));
+        magda::AudioIOService audioIO(std::move(backends), juce::File());
+        magda::Config::getInstance().setAudioIO(pumpOutputs({2, 3}));
+        audioIO.open();
+        expect(device != nullptr, "the service opened the pump");
+        if (device == nullptr)
+            return;
+
+        auto& tracks = magda::TrackManager::getInstance();
+        const auto track = tracks.createTrack("Hardware routed");
+        tracks.getTrack(track)->chain.fxChainElements.emplace_back(polySynth(1));
+        tracks.setTrackAudioOutput(track, "stereo:Output 3 + 4");
+
+        magda::daw::engine_host::EngineHost host;
+        host.setHardwareOutputProvider([&audioIO] {
+            const auto active = audioIO.getActiveConfiguration();
+            return magda::daw::engine_host::EngineHost::HardwareChannelCatalog{
+                .enabledChannels = active.outputChannels,
+                .namesByChannel = magda::routeNamesByChannel(active.outputChannelNames,
+                                                             active.outputChannels, false)};
+        });
+        AudioIORefresh refresh(host);
+        audioIO.addListener(&refresh);
+        host.start(audioIO.getDeviceManager());
+        settle(host);
+
+        expectOnly(sound(host, *device, track), {2, 3});
+
+        expect(audioIO.apply(pumpOutputs({4, 5})).isEmpty());
+        tracks.setTrackAudioOutput(track, "stereo:Output 5 + 6");
+        settle(host);
+        expectOnly(sound(host, *device, track, 62), {4, 5});
+
+        audioIO.removeListener(&refresh);
+        host.stop();
+        magda::Config::getInstance().setAudioIO(std::nullopt);
     }
 };
 

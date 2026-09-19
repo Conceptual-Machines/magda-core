@@ -141,6 +141,23 @@ AudioIOService::ActiveConfiguration AudioIOService::getActiveConfiguration() con
             .inputLatencySamples = device->getInputLatencyInSamples()};
 }
 
+AudioIOSettings AudioIOService::openSettings() const {
+    const auto active = getActiveConfiguration();
+    const auto channelsOf = [](const juce::BigInteger& mask) {
+        std::vector<int> channels;
+        for (auto bit = mask.findNextSetBit(0); bit >= 0; bit = mask.findNextSetBit(bit + 1))
+            channels.push_back(bit);
+        return channels;
+    };
+    return {.backend = active.backend.toStdString(),
+            .inputInterface = active.inputInterface.toStdString(),
+            .outputInterface = active.outputInterface.toStdString(),
+            .sampleRate = active.sampleRate,
+            .bufferSize = active.bufferSize,
+            .inputChannels = channelsOf(active.inputChannels),
+            .outputChannels = channelsOf(active.outputChannels)};
+}
+
 void AudioIOService::addListener(Listener* listener) {
     listeners_.add(listener);
 }

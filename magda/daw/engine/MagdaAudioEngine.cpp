@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "../api/magda_api_live.hpp"
+#include "../audio/io/HardwareRouteNames.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/UndoManager.hpp"  // complete type for the unique_ptr this forwards
 #include "RenderProgressWindow.hpp"
@@ -25,6 +26,16 @@ std::vector<std::string_view>& unwiredSoFar() {
     static std::vector<std::string_view> names;
     return names;
 }
+
+/** @brief The channels @p audioIO has open one way, under the names saved routes use. */
+magda::daw::engine_host::EngineHost::HardwareChannelCatalog hardwareCatalog(
+    const magda::AudioIOService& audioIO, bool inputs) {
+    const auto active = audioIO.getActiveConfiguration();
+    const auto& open = inputs ? active.inputChannels : active.outputChannels;
+    return {.enabledChannels = open,
+            .namesByChannel = magda::routeNamesByChannel(
+                inputs ? active.inputChannelNames : active.outputChannelNames, open, inputs)};
+}
 }  // namespace
 
 namespace magda {
@@ -35,12 +46,14 @@ MagdaAudioEngine::MagdaAudioEngine(AudioEngineOptions options) {
     // starts a plugin scan. The CLI is such a caller.
     auto wrapper = std::make_unique<TracktionEngineWrapper>();
     wrapper->setForceHeadless(options.headless);
+    wrapper->setOpensAudioInterface(false);
     fork_ = wrapper.get();
     tracktion_ = std::move(wrapper);
 
     // Here rather than in initialize(), so that everything below can ask it
     // things without first asking whether it exists. It renders nothing until
     // start() puts it on a device.
+    audioIO_ = std::make_unique<AudioIOService>();
     host_ = std::make_unique<daw::engine_host::EngineHost>();
 
     // No edit accessor: the half of the API that reads a te::Edit is #2554's.
@@ -129,26 +142,14 @@ bool MagdaAudioEngine::initialize() {
     // device scan would take it back out of every "all" route.
     host_->registerVirtualMidiSource(qwertyMidiDeviceId());
 
-    // After the fork, because the device is its to open: the settings UI, the
-    // channel lists and the driver choice are all still on that side, and two
-    // device managers over one interface is the failure this class exists not
-    // to have. What changes is who fills the buffer.
-    host_->setHardwareOutputProvider([this] {
-        return daw::engine_host::EngineHost::HardwareChannelCatalog{
-            .enabledChannels = fork_->getEnabledWaveChannels(false),
-            .namesByChannel = fork_->getOutputDeviceNamesByChannel()};
-    });
-    host_->setHardwareInputProvider([this] {
-        return daw::engine_host::EngineHost::HardwareChannelCatalog{
-            .enabledChannels = fork_->getEnabledWaveChannels(true),
-            .namesByChannel = fork_->getInputDeviceNamesByChannel()};
-    });
-    fork_->setWaveDevicesChangedCallback([this] {
-        host_->refreshHardwareOutputs();
-        host_->refreshHardwareInputs();
-    });
-    if (auto* devices = tracktion_->getDeviceManager())
-        host_->start(*devices);
+    // The fork opened no interface (#2747); this one is the only one, and the
+    // headless CLI renders offline without it.
+    host_->setHardwareOutputProvider([this] { return hardwareCatalog(*audioIO_, false); });
+    host_->setHardwareInputProvider([this] { return hardwareCatalog(*audioIO_, true); });
+    audioIO_->addListener(this);
+    if (!fork_->isHeadlessRuntime())
+        audioIO_->open();
+    host_->start(audioIO_->getDeviceManager());
 
     // The MidiBridge is a service both engines share, so the activity light and
     // every live note are pointed at this engine's meters and this engine's
@@ -175,10 +176,10 @@ void MagdaAudioEngine::shutdown() {
 
     // The bridge goes with the fork below, and the API outlives this call.
     api_->setMidiBridge(nullptr);
-    fork_->setWaveDevicesChangedCallback({});
+    audioIO_->removeListener(this);
 
-    // Before the fork's, which closes the device this is rendering into.
     host_->stop();
+    audioIO_->getDeviceManager().closeAudioDevice();
     tracktion_->shutdown();
     initialised_ = false;
 }
@@ -193,9 +194,7 @@ juce::File MagdaAudioEngine::getEditFile() const {
     return juce::File{};
 }
 void MagdaAudioEngine::play() {
-    // The fork's guard, and it is about the device rather than about the
-    // engine: both render through the one the fork opens, and starting into a
-    // device that is still being enumerated is a glitch either way.
+    // The fork's guard, while it is still enumerating MIDI devices at startup.
     if (tracktion_->isDevicesLoading())
         return;
 
@@ -323,30 +322,35 @@ void MagdaAudioEngine::processSessionStateEvents() {
     host_->processSessionStateEvents();
 }
 juce::AudioDeviceManager* MagdaAudioEngine::getDeviceManager() {
-    return tracktion_->getDeviceManager();
+    return &audioIO_->getDeviceManager();
 }
 juce::BigInteger MagdaAudioEngine::getEnabledWaveChannels(bool input) const {
-    return tracktion_->getEnabledWaveChannels(input);
+    return hardwareCatalog(*audioIO_, input).enabledChannels;
 }
 std::map<int, juce::String> MagdaAudioEngine::getOutputDeviceNamesByChannel() const {
-    return tracktion_->getOutputDeviceNamesByChannel();
+    return hardwareCatalog(*audioIO_, false).namesByChannel;
 }
 std::map<int, juce::String> MagdaAudioEngine::getInputDeviceNamesByChannel() const {
-    return tracktion_->getInputDeviceNamesByChannel();
+    return hardwareCatalog(*audioIO_, true).namesByChannel;
 }
 void MagdaAudioEngine::setEnabledWaveChannels(bool input, const juce::BigInteger& channels) {
-    tracktion_->setEnabledWaveChannels(input, channels);
-    if (input)
-        host_->refreshHardwareInputs();
-    else
-        host_->refreshHardwareOutputs();
+    // Audio Settings' channel toggles: exactly these open, and are saved (#2747).
+    auto settings = audioIO_->openSettings();
+    auto& selected = input ? settings.inputChannels : settings.outputChannels;
+    selected.clear();
+    for (auto bit = channels.findNextSetBit(0); bit >= 0; bit = channels.findNextSetBit(bit + 1))
+        selected.push_back(bit);
+    audioIO_->apply(settings);
 }
-void MagdaAudioEngine::rescanWaveDevices(bool enableInputs, bool enableOutputs) {
-    tracktion_->rescanWaveDevices(enableInputs, enableOutputs);
-    if (enableInputs)
-        host_->refreshHardwareInputs();
-    if (enableOutputs)
-        host_->refreshHardwareOutputs();
+void MagdaAudioEngine::rescanWaveDevices(bool, bool) {
+    // Audio Settings has just opened an interface on the manager itself; what it
+    // opened is saved as the choice, as Tracktion saved its own (#2747).
+    if (audioIO_->getActiveConfiguration().backend.isNotEmpty())
+        audioIO_->apply(audioIO_->openSettings());
+}
+void MagdaAudioEngine::audioIOChanged() {
+    host_->refreshHardwareOutputs();
+    host_->refreshHardwareInputs();
 }
 bool MagdaAudioEngine::isDevicesLoading() const {
     return tracktion_->isDevicesLoading();

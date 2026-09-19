@@ -76,6 +76,9 @@ class AudioIOService : private juce::ChangeListener {
 
     ActiveConfiguration getActiveConfiguration() const;
 
+    /** @brief What is open, in the form apply() takes. */
+    AudioIOSettings openSettings() const;
+
     /** @brief Where an audio callback attaches. Configuration goes through open() and apply(). */
     juce::AudioDeviceManager& getDeviceManager() {
         return manager_;

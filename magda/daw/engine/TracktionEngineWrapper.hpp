@@ -76,6 +76,16 @@ class TracktionEngineWrapper : public AudioEngine,
 
     bool isHeadlessRuntime() const;
 
+    /**
+     * @brief Whether Tracktion opens the audio interface, or leaves it to another owner (#2747).
+     *
+     * Before initialiseServices(). False keeps plugin formats and MIDI but gives Tracktion no
+     * audio backends, so the native engine's AudioIOService is the only one open.
+     */
+    void setOpensAudioInterface(bool opensAudioInterface) {
+        opensAudioInterface_ = opensAudioInterface;
+    }
+
     // Initialize the engine
     bool initialize() override;
 
@@ -193,7 +203,6 @@ class TracktionEngineWrapper : public AudioEngine,
     juce::BigInteger getEnabledWaveChannels(bool input) const override;
     std::map<int, juce::String> getOutputDeviceNamesByChannel() const override;
     std::map<int, juce::String> getInputDeviceNamesByChannel() const override;
-    void setWaveDevicesChangedCallback(std::function<void()> callback);
     void setEnabledWaveChannels(bool input, const juce::BigInteger& channels) override;
     void rescanWaveDevices(bool enableInputs, bool enableOutputs) override;
     bool isDevicesLoading() const override {
@@ -656,15 +665,9 @@ class TracktionEngineWrapper : public AudioEngine,
     void handleMidiDeviceChanges(tracktion::DeviceManager& dm);
     void handlePlaybackContextReallocation(tracktion::DeviceManager& dm);
     void notifyDeviceLoadingComplete(const juce::String& message);
-    void notifyWaveDevicesChanged();
 
     // Tracktion Engine components
     std::unique_ptr<tracktion::Engine> engine_;
-    std::function<void()> waveDevicesChanged_;
-    juce::BigInteger knownOutputChannels_;
-    std::map<int, juce::String> knownOutputNames_;
-    juce::BigInteger knownInputChannels_;
-    std::map<int, juce::String> knownInputNames_;
     std::unique_ptr<tracktion::Edit> currentEdit_;
 
     // Position-aware beats<->seconds facade over currentEdit_->tempoSequence.
@@ -714,6 +717,7 @@ class TracktionEngineWrapper : public AudioEngine,
     bool justStarted_ = false;   // True for one frame after play starts
     bool justLooped_ = false;    // True for one frame after loop
     bool forceHeadless_ = false;
+    bool opensAudioInterface_ = true;
 
     // Device change tracking
     int lastKnownDeviceCount_ = 0;
