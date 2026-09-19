@@ -9,8 +9,10 @@ audio clip and a growing waveform preview.
 ## Ownership and lifecycle
 
 `EngineHost` owns audio takes beside MIDI takes, outside the render plan. The
-resolved callback-channel list, device generation, and reported latency form
-the audio route identity. Record flushes
+resolved callback-channel list, device generation, and automatic recording
+adjustment form the audio route identity. The adjustment is the active
+interface's reported input plus output latency, matching Tracktion's automatic
+record adjustment. Record flushes
 pending arm/input changes, creates the take, registers its stream with
 `RecordThread`, and publishes it through the existing `RecordingFeed`. The live
 epoch still decides whether the take may capture, so plan replacement cannot
@@ -19,8 +21,9 @@ feed a take under stale arm state.
 Monitor state affects audibility only. An armed track records its selected
 input with Monitor Off, and the take reads the hardware callback before the
 track chain. Mono recordings remain one-channel files; stereo inputs preserve
-their two packed callback channels. The device-reported input latency is handed
-to `TakeRecorder`, which removes it from the head of the captured material.
+their two packed callback channels. The device-reported input-plus-output
+latency is handed to `TakeRecorder`, which removes it from the head of the
+captured material.
 
 Disarm, input rerouting, track deletion, transport stop, device stop, project
 replacement, tempo/signature changes, and loop changes use the same close path.
@@ -51,7 +54,7 @@ the waveform preview stops gaining detail after that bound.
 This slice covers native Arrangement recording from the currently selected
 hardware audio channel or stereo pair, including live previews, loop passes,
 count-in/punch boundaries already supplied by the native transport, lifecycle
-edits, and device-reported input-latency correction.
+edits, and device-reported round-trip latency correction.
 
 Session audio-slot recording is documented separately in
 [`native-session-audio-recording.md`](native-session-audio-recording.md).
@@ -94,7 +97,7 @@ remain outside this slice.
 - A Release build was not run.
 
 The callback fixture covers Monitor Off capture, packed stereo content, the
-live peak preview, device input-latency head correction, playback of the
+live peak preview, round-trip device latency head correction, playback of the
 materialized clip, disarm finalization, and device-stop cleanup. The recorder
 unit suite remains the focused evidence for count-in and loop-pass file
 boundaries. Hardware listening and latency feel still require the checks above and the broader

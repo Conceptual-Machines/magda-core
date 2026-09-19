@@ -782,7 +782,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     struct ActiveAudioRoute {
         juce::String input;
         std::vector<int> channels;
-        int latencySamples = 0;
+        int recordingAdjustmentSamples = 0;
         std::uint64_t deviceGeneration = 0;
         std::optional<int> sessionScene;
 
@@ -872,11 +872,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (session_ == nullptr)
             return;
 
-        const auto latency = inputLatencySamples_.load(std::memory_order_relaxed);
+        const auto adjustment = recordingAdjustmentSamples_.load(std::memory_order_relaxed);
         const auto generation = inputGeneration_.load(std::memory_order_relaxed);
         audioRecordingRoutes_[track.id] = ActiveAudioRoute{.input = track.audioInputDevice,
                                                            .channels = channels,
-                                                           .latencySamples = latency,
+                                                           .recordingAdjustmentSamples = adjustment,
                                                            .deviceGeneration = generation,
                                                            .sessionScene = sessionScene};
         const engine::TakeKey key{track.id, engine::RecordMaterial::audio};
@@ -887,11 +887,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                  sessionScene ? engine::RecordTarget::slot : engine::RecordTarget::arrangement,
              .scene = sessionScene.value_or(-1),
              .maxPeaks = kRecordingPreviewPeaks},
-            [this, channels = std::move(channels), latency, sessionScene,
+            [this, channels = std::move(channels), adjustment, sessionScene,
              trackId = track.id](engine::RecordTap& tap) {
                 engine::TakeRecorderSettings settings;
                 settings.channels = channels;
-                settings.latencySamples = latency;
+                settings.latencySamples = adjustment;
                 settings.directory = ProjectManager::getInstance().getRecordingsDirectory();
                 settings.name = "Track " + juce::String(trackId);
                 if (sessionScene)
@@ -1340,7 +1340,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                 const ActiveAudioRoute wanted{
                     .input = track->audioInputDevice,
                     .channels = *channels,
-                    .latencySamples = inputLatencySamples_.load(std::memory_order_relaxed),
+                    .recordingAdjustmentSamples =
+                        recordingAdjustmentSamples_.load(std::memory_order_relaxed),
                     .deviceGeneration = inputGeneration_.load(std::memory_order_relaxed),
                     .sessionScene = target.scene};
                 if (active == audioRecordingRoutes_.end() || active->second != wanted)
@@ -1408,7 +1409,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             const ActiveAudioRoute wanted{
                 .input = track.audioInputDevice,
                 .channels = *channels,
-                .latencySamples = inputLatencySamples_.load(std::memory_order_relaxed),
+                .recordingAdjustmentSamples =
+                    recordingAdjustmentSamples_.load(std::memory_order_relaxed),
                 .deviceGeneration = inputGeneration_.load(std::memory_order_relaxed),
                 .sessionScene = {}};
             if (activeAudio != audioRecordingRoutes_.end() && activeAudio->second == wanted)
@@ -2330,7 +2332,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         rate_.store(device->getCurrentSampleRate());
         blockSize_.store(device->getCurrentBufferSizeSamples());
         inputChannels_.store(device->getActiveInputChannels().countNumberOfSetBits());
-        inputLatencySamples_.store(device->getInputLatencyInSamples(), std::memory_order_relaxed);
+        recordingAdjustmentSamples_.store(device->getInputLatencyInSamples() +
+                                              device->getOutputLatencyInSamples(),
+                                          std::memory_order_relaxed);
         inputGeneration_.fetch_add(1, std::memory_order_relaxed);
         audioRunning_.store(true, std::memory_order_release);
         renderedStale_.store(true, std::memory_order_release);
@@ -2881,7 +2885,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     HardwareInputMap hardwareInputs_;
     std::set<juce::String> unresolvedInputs_;
     std::atomic<bool> hardwareInputsStale_{true};
-    std::atomic<int> inputLatencySamples_{0};
+    /// Automatic take correction owned by the active interface: its input and
+    /// output latency, positive because TakeRecorder removes it from the head.
+    std::atomic<int> recordingAdjustmentSamples_{0};
     std::atomic<std::uint64_t> inputGeneration_{0};
 
     // Declared so that destruction unwinds inwards: the session lets go of the

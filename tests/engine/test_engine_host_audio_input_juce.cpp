@@ -18,6 +18,9 @@ namespace {
 
 constexpr int kInputs = 4;
 constexpr int kBlockSize = 480;
+constexpr int kInputLatency = 120;
+constexpr int kOutputLatency = 240;
+constexpr int kRecordingAdjustment = kInputLatency + kOutputLatency;
 
 juce::BigInteger channels(std::initializer_list<int> set) {
     juce::BigInteger result;
@@ -102,7 +105,7 @@ class InputPumpDevice final : public juce::AudioIODevice {
         return active_;
     }
     int getOutputLatencyInSamples() override {
-        return 0;
+        return outputLatencySamples;
     }
     int getInputLatencyInSamples() override {
         if (++latencyReads_ == pumpAtLatencyRead_) {
@@ -149,6 +152,7 @@ class InputPumpDevice final : public juce::AudioIODevice {
     }
 
     int inputLatencySamples = 0;
+    int outputLatencySamples = 0;
 
   private:
     juce::AudioIODeviceCallback* callback_ = nullptr;
@@ -420,7 +424,8 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
         expect(devices.initialise(kInputs, 2, nullptr, true).isEmpty());
         if (devices.device == nullptr)
             return;
-        devices.device->inputLatencySamples = kBlockSize;
+        devices.device->inputLatencySamples = kInputLatency;
+        devices.device->outputLatencySamples = kOutputLatency;
 
         auto& tracks = magda::TrackManager::getInstance();
         const auto track = tracks.createTrack("Recorded loopback");
@@ -471,13 +476,20 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
             expect(reader != nullptr, "the recorded WAV can be read");
             if (reader != nullptr) {
                 expectEquals(static_cast<int>(reader->numChannels), 2);
-                expectEquals(static_cast<int>(reader->lengthInSamples), 3 * kBlockSize,
-                             "device input latency is removed from the head");
+                expectEquals(static_cast<int>(reader->lengthInSamples),
+                             4 * kBlockSize - kRecordingAdjustment,
+                             "device input and output latency are removed from the head");
                 juce::AudioBuffer<float> captured(2, 1);
                 reader->read(&captured, 0, 1, 0, true, true);
                 expectWithinAbsoluteError(captured.getSample(0, 0), levelOf(2), 0.0001f);
                 expectWithinAbsoluteError(captured.getSample(1, 0), levelOf(3), 0.0001f);
             }
+            expectWithinAbsoluteError(clip->placement.startBeat, 0.0, 0.0000001,
+                                      "correction keeps the take on its record-start beat");
+            expectWithinAbsoluteError(clip->placement.lengthBeats,
+                                      static_cast<double>(4 * kBlockSize - kRecordingAdjustment) /
+                                          48000.0 * 2.0,
+                                      0.0000001, "timeline length matches the corrected file");
         }
 
         host.stopPlaying();
@@ -565,6 +577,8 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
         expect(devices.initialise(kInputs, 2, nullptr, true).isEmpty());
         if (devices.device == nullptr)
             return;
+        devices.device->inputLatencySamples = kInputLatency;
+        devices.device->outputLatencySamples = kOutputLatency;
         auto& tracks = magda::TrackManager::getInstance();
         const auto track = tracks.createTrack("Audio Session target");
         tracks.setTrackAudioInput(track, "Loopback 1");
@@ -609,8 +623,15 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
             expect(reader != nullptr);
             if (reader != nullptr) {
                 expectEquals(static_cast<int>(reader->numChannels), 1);
-                expectEquals(static_cast<int>(reader->lengthInSamples), 4 * kBlockSize);
+                expectEquals(static_cast<int>(reader->lengthInSamples),
+                             4 * kBlockSize - kRecordingAdjustment,
+                             "Session uses the same round-trip correction as Arrangement");
             }
+            expectWithinAbsoluteError(clip->placement.startBeat, 0.0, 0.0000001);
+            expectWithinAbsoluteError(
+                clip->placement.lengthBeats,
+                static_cast<double>(4 * kBlockSize - kRecordingAdjustment) / 48000.0 * 2.0,
+                0.0000001, "Session timeline length matches the corrected file");
         }
 
         host.processSessionStateEvents();
@@ -677,22 +698,46 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
         devices.device->pump();
         devices.device->pump();
 
+        devices.device->inputLatencySamples = kInputLatency;
+        devices.device->outputLatencySamples = kOutputLatency;
         devices.device->pumpAfterFutureLatencyReads(2);
-        devices.device->restart(channels({0, 1, 2, 3}), 96000.0);
+        devices.device->restart(channels({0, 1, 2, 3}));
         settle(host);
         expect(host.isRecording());
-        expectEquals(static_cast<int>(magda::ClipManager::getInstance()
-                                          .getClipsOnTrack(track, magda::ClipView::Arrangement)
-                                          .size()),
-                     1, "the old device epoch became one clip");
+        auto& clips = magda::ClipManager::getInstance();
+        const auto beforeRestart = clips.getClipsOnTrack(track, magda::ClipView::Arrangement);
+        expectEquals(static_cast<int>(beforeRestart.size()), 1,
+                     "the old correction became one clip");
+        const auto oldClipId =
+            beforeRestart.empty() ? magda::INVALID_CLIP_ID : beforeRestart.front();
+        if (const auto* oldClip = clips.getClip(oldClipId)) {
+            auto reader = readerFor(*oldClip);
+            expect(reader != nullptr);
+            if (reader != nullptr)
+                expectEquals(static_cast<int>(reader->lengthInSamples), 2 * kBlockSize,
+                             "the old file keeps only its zero-correction epoch");
+        }
 
         devices.device->pump();
         devices.device->pump();
         host.stopMidiRecording();
-        expectEquals(static_cast<int>(magda::ClipManager::getInstance()
-                                          .getClipsOnTrack(track, magda::ClipView::Arrangement)
-                                          .size()),
-                     2, "the restarted device recorded a second clip");
+        const auto afterRestart = clips.getClipsOnTrack(track, magda::ClipView::Arrangement);
+        expectEquals(static_cast<int>(afterRestart.size()), 2,
+                     "the changed correction records into a second clip");
+        for (const auto id : afterRestart) {
+            if (id == oldClipId)
+                continue;
+            const auto* newClip = clips.getClip(id);
+            expect(newClip != nullptr);
+            if (newClip == nullptr)
+                continue;
+            auto reader = readerFor(*newClip);
+            expect(reader != nullptr);
+            if (reader != nullptr)
+                expectEquals(static_cast<int>(reader->lengthInSamples),
+                             2 * kBlockSize - kRecordingAdjustment,
+                             "the new file uses one correction throughout");
+        }
 
         host.stop();
         devices.closeAudioDevice();

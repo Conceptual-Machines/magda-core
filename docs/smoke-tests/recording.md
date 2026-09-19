@@ -42,14 +42,14 @@ confirm once.
 
 | Convention | Rule |
 |---|---|
-| Input latency | What arrives has already happened. A **positive** latency drops that many samples from the head of the take; a **negative** one pads the head with that much silence. |
+| Automatic audio correction | Native and Tracktion both use the active interface's **input + output latency**. What arrives has already happened: a **positive** correction drops that many samples from the head of the take; a **negative** correction pads the head with that much silence. |
 | Count-in | Never part of the take. The take starts where the count-in ends. |
 | Loop record | One file per pass, loop-aligned. The active take is the last **whole** pass. |
 | Lead-in | A first pass that did not start on the loop is a lead-in, not a take — unless there is no whole pass, and then it stays where it was recorded. |
 | Slot take | Starts on the sample its launch fired on, ends where the run ended. A re-launch closes the take rather than extending it. |
 | Held MIDI note | A note still down when the take ends lasts until it does. Across a loop wrap it belongs to one pass, once. |
 
-## 1. Input latency is the right number
+## 1. The automatic round-trip correction is the right number
 
 - [ ] Loopback: feed an output back into an input physically. Record a sharp
       transient played from the arrangement at a known beat.

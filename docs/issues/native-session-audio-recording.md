@@ -20,8 +20,8 @@ Arrangement.
 
 Re-click, per-track or global Back to Arrangement, disarm, input changes,
 device stop and project teardown use the existing Session target lifecycle.
-Input latency is removed from the recorded head just as it is for Arrangement
-audio.
+The active interface's input plus output latency is removed from the recorded
+head just as it is for Arrangement audio.
 
 ## Publication
 
