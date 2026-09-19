@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "../../../audio/MidiBridge.hpp"
+#include "../../utils/ChannelLabels.hpp"
 #include "RoutingSelector.hpp"
 #include "core/TechnicalText.hpp"
 #include "core/TrackInfo.hpp"
@@ -63,14 +64,14 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
                 return "In " + juce::String(channelIndex + 1);
             };
 
+            const auto channelNames = device->getInputChannelNames();
+
             // Stereo pairs (ID 10+)
             int id = 10;
             for (int i = 0; i < activeIndices.size(); i += 2) {
                 if (i + 1 < activeIndices.size()) {
-                    int ch1 = activeIndices[i] + 1;
-                    int ch2 = activeIndices[i + 1] + 1;
-                    juce::String pairName = juce::String(ch1) + "-" + juce::String(ch2);
-                    options.push_back({id, pairName});
+                    options.push_back({id, ChannelLabels::pair(channelNames, activeIndices[i],
+                                                               activeIndices[i + 1])});
                     // Use actual TE device name for routing
                     if (outChannelMapping)
                         (*outChannelMapping)[id] = "stereo:" + getDeviceName(activeIndices[i]);
@@ -85,8 +86,7 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
             // Mono channels (ID 100+)
             id = 100;
             for (int activeIndice : activeIndices) {
-                int channelNum = activeIndice + 1;
-                options.push_back({id, juce::String(channelNum) + " (mono)"});
+                options.push_back({id, ChannelLabels::mono(channelNames, activeIndice)});
                 if (outChannelMapping)
                     (*outChannelMapping)[id] = getDeviceName(activeIndice);
                 ++id;
@@ -279,13 +279,14 @@ inline void populateAudioOutputOptions(
             for (const auto& g : groups)
                 (g.channels.size() == 2 ? stereoCount : monoCount)++;
 
+            const auto channelNames = device->getOutputChannelNames();
+
             int id = 10;
             for (const auto& g : groups) {
                 if (g.channels.size() != 2)
                     continue;
-                juce::String pairName =
-                    juce::String(g.channels[0] + 1) + "-" + juce::String(g.channels[1] + 1);
-                options.push_back({id, pairName});
+                options.push_back(
+                    {id, ChannelLabels::pair(channelNames, g.channels[0], g.channels[1])});
                 if (outChannelMapping)
                     (*outChannelMapping)[id] = "stereo:" + g.name;
                 ++id;
@@ -299,7 +300,7 @@ inline void populateAudioOutputOptions(
             for (const auto& g : groups) {
                 if (g.channels.size() != 1)
                     continue;
-                options.push_back({id, juce::String(g.channels[0] + 1) + " (mono)"});
+                options.push_back({id, ChannelLabels::mono(channelNames, g.channels[0])});
                 if (outChannelMapping)
                     (*outChannelMapping)[id] = g.name;
                 ++id;

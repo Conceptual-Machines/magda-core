@@ -185,6 +185,8 @@ set(TEST_SOURCES
     # TransportLayout builds into magda_daw_app, so pull its implementation in.
     ui/test_transport_layout.cpp
     ../magda/daw/ui/panels/TransportLayout.cpp
+    # Hardware channels labelled by the interface's own names (#2734)
+    ui/test_channel_labels.cpp
     # Panel tab layout survives a restart (#2103). The panel sources live in
     # magda_daw_app rather than the magda_daw library, so pull them in directly.
     ui/test_panel_tab_persistence.cpp
