@@ -88,6 +88,20 @@ class AudioIOService : public AudioIOControl, private juce::ChangeListener {
     void removeCallback(juce::AudioIODeviceCallback* callback) override {
         manager_.removeAudioCallback(callback);
     }
+
+    void setMidiInputEnabled(const juce::String& identifier, bool enabled) override {
+        manager_.setMidiInputDeviceEnabled(identifier, enabled);
+    }
+    bool isMidiInputEnabled(const juce::String& identifier) const override {
+        return manager_.isMidiInputDeviceEnabled(identifier);
+    }
+    void setDefaultMidiOutput(const juce::String& identifier) override {
+        manager_.setDefaultMidiOutputDevice(identifier);
+    }
+    juce::String defaultMidiOutput() const override {
+        return manager_.getDefaultMidiOutputIdentifier();
+    }
+
     Status status() const override;
 
     /** @brief What @p interfaceName calls its channels, whether or not it is open. */

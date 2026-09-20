@@ -40,6 +40,11 @@ class TracktionAudioIO final : public AudioIOControl, private juce::ChangeListen
 
     void addCallback(juce::AudioIODeviceCallback* callback) override;
     void removeCallback(juce::AudioIODeviceCallback* callback) override;
+    void setMidiInputEnabled(const juce::String& identifier, bool enabled) override;
+    bool isMidiInputEnabled(const juce::String& identifier) const override;
+    void setDefaultMidiOutput(const juce::String& identifier) override;
+    juce::String defaultMidiOutput() const override;
+
     Status status() const override;
 
   private:

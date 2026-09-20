@@ -180,6 +180,22 @@ void TracktionAudioIO::removeCallback(juce::AudioIODeviceCallback* callback) {
     manager().removeAudioCallback(callback);
 }
 
+void TracktionAudioIO::setMidiInputEnabled(const juce::String& identifier, bool enabled) {
+    manager().setMidiInputDeviceEnabled(identifier, enabled);
+}
+
+bool TracktionAudioIO::isMidiInputEnabled(const juce::String& identifier) const {
+    return manager().isMidiInputDeviceEnabled(identifier);
+}
+
+void TracktionAudioIO::setDefaultMidiOutput(const juce::String& identifier) {
+    manager().setDefaultMidiOutputDevice(identifier);
+}
+
+juce::String TracktionAudioIO::defaultMidiOutput() const {
+    return manager().getDefaultMidiOutputIdentifier();
+}
+
 AudioIOControl::Status TracktionAudioIO::status() const {
     Status status;
     if (auto* device = manager().getCurrentAudioDevice()) {

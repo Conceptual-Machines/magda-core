@@ -66,6 +66,18 @@ class AudioIOControl : public HardwareChannels {
     virtual void addCallback(juce::AudioIODeviceCallback* callback) = 0;
     virtual void removeCallback(juce::AudioIODeviceCallback* callback) = 0;
 
+    // ===== MIDI enablement (#2755) =====
+    //
+    // The same manager owns it, so it is asked here rather than through the engine. The
+    // choice itself is Config's (inactiveMidiInputs); this is what JUCE is told about it.
+
+    virtual void setMidiInputEnabled(const juce::String& identifier, bool enabled) = 0;
+    virtual bool isMidiInputEnabled(const juce::String& identifier) const = 0;
+
+    /** @brief Empty identifier means no output. */
+    virtual void setDefaultMidiOutput(const juce::String& identifier) = 0;
+    virtual juce::String defaultMidiOutput() const = 0;
+
     /** @brief What the open interface is doing, for the status readout. */
     struct Status {
         juce::String interfaceName;

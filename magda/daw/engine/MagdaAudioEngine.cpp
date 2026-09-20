@@ -352,9 +352,6 @@ void MagdaAudioEngine::processSessionStateEvents() {
     // without telling anyone (#2304).
     host_->processSessionStateEvents();
 }
-juce::AudioDeviceManager* MagdaAudioEngine::getDeviceManager() {
-    return &audioIO_->getDeviceManager();
-}
 AudioIOControl* MagdaAudioEngine::getAudioIO() {
     return audioIO_.get();
 }
