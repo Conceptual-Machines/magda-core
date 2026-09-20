@@ -129,7 +129,7 @@ class MidiBridge : public juce::MidiInputCallback {
      * dangling pointer between shutdown steps.
      */
     void clearAudioBridge() {
-        audioBridge_ = nullptr;
+        audioBridge_.store(nullptr, std::memory_order_release);
     }
 
     /**
@@ -138,7 +138,7 @@ class MidiBridge : public juce::MidiInputCallback {
      * Lets the activity light work with no AudioBridge, under the magda engine.
      */
     void setMeters(TrackMeters* meters) {
-        meters_ = meters;
+        meters_.store(meters, std::memory_order_release);
     }
 
     /**
@@ -148,16 +148,6 @@ class MidiBridge : public juce::MidiInputCallback {
      * call to drain, the way stopAllInputs waits on activeCallbacks_.
      */
     void setLiveSink(LiveMidiSink* sink);
-
-    /**
-     * @brief Enable/disable forwarding MIDI to instrument plugins.
-     *
-     * When enabled, incoming MIDI is injected into Tracktion tracks.
-     * @param enabled True to forward MIDI to plugins
-     */
-    void setMidiToPluginsEnabled(bool enabled) {
-        forwardMidiToPlugins_ = enabled;
-    }
 
     // =========================================================================
     // MIDI Device Enumeration
@@ -375,11 +365,14 @@ class MidiBridge : public juce::MidiInputCallback {
     const void* owner_ = nullptr;
     std::function<std::vector<MidiDeviceInfo>()> virtualInputs_;
 
-    // AudioBridge reference for triggering MIDI activity (not owned)
-    AudioBridge* audioBridge_ = nullptr;
+    // What the MIDI callback thread reads and the message thread swaps out at teardown,
+    // so atomic for the same reason @ref liveSink_ is. Each read loads once into a local:
+    // testing the member and then dereferencing it is two loads, and the engine can go
+    // between them. None are owned here.
+    std::atomic<AudioBridge*> audioBridge_{nullptr};
 
-    // Shared MIDI-activity monitor; not owned (#2579).
-    TrackMeters* meters_ = nullptr;
+    // Shared MIDI-activity monitor (#2579).
+    std::atomic<TrackMeters*> meters_{nullptr};
 
     // Where live MIDI goes under the magda engine; not owned (#2579).
     std::atomic<LiveMidiSink*> liveSink_{nullptr};
@@ -403,15 +396,12 @@ class MidiBridge : public juce::MidiInputCallback {
     // Synchronization for UI thread access
     mutable juce::CriticalSection routingLock_;
 
-    // Whether to forward MIDI to instrument plugins
-    bool forwardMidiToPlugins_ = true;
-
     // Global MIDI event queue for debug monitor (audio thread → UI thread)
     MidiEventQueue globalEventQueue_;
 
-    // Recording note queue for real-time MIDI preview (not owned)
-    RecordingNoteQueue* recordingQueue_ = nullptr;
-    std::atomic<double>* transportPosition_ = nullptr;
+    // Recording note queue for real-time MIDI preview
+    std::atomic<RecordingNoteQueue*> recordingQueue_{nullptr};
+    std::atomic<std::atomic<double>*> transportPosition_{nullptr};
 
     // Shutdown guard: prevents CoreMIDI callbacks from accessing destroyed state
     std::atomic<bool> isShuttingDown_{false};
