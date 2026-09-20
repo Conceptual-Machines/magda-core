@@ -15,6 +15,7 @@
 #include "core/TechnicalText.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"
+#include "engine/PluginService.hpp"
 
 namespace magda::daw::ui {
 
@@ -902,16 +903,9 @@ void ParameterConfigDialog::loadParameters(const juce::String& uniqueId) {
 
     DBG("Scanning parameters for " << uniqueId);
 
-    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-    if (!audioEngine) {
-        DBG("No audio engine available");
-        buildMockParameters();
-        return;
-    }
-
     parameters_.clear();
     scanInputs_.clear();
-    for (auto& scanned : audioEngine->scanPluginParameters(uniqueId, false)) {
+    for (auto& scanned : magda::PluginService::getInstance().scanParameters(uniqueId, false)) {
         MockParameterInfo info;
         info.name = scanned.name;
         info.stableId = scanned.stableId;
@@ -939,13 +933,9 @@ void ParameterConfigDialog::loadParameters(const juce::String& uniqueId) {
 }
 
 bool ParameterConfigDialog::scanInternalParameters(const juce::String& pluginId) {
-    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-    if (audioEngine == nullptr)
-        return false;
-
     parameters_.clear();
     scanInputs_.clear();
-    for (auto& scanned : audioEngine->scanPluginParameters(pluginId, true)) {
+    for (auto& scanned : magda::PluginService::getInstance().scanParameters(pluginId, true)) {
         MockParameterInfo info;
         info.name = scanned.name;
         info.stableId = scanned.stableId;

@@ -21,6 +21,7 @@
 #include "core/TrackCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
+#include "engine/PluginService.hpp"
 #include "ui/debug/DebugSettings.hpp"
 #include "ui/panels/content/PluginBrowserContent.hpp"
 #include "ui/themes/DarkTheme.hpp"
@@ -728,10 +729,7 @@ void ChainPanel::onAddDeviceClicked() {
     menu.addSubMenu("Internal", internalMenu);
 
     // --- External plugins from KnownPluginList ---
-    juce::Array<juce::PluginDescription> externalPlugins;
-    if (auto* engine = magda::TrackManager::getInstance().getAudioEngine()) {
-        externalPlugins = engine->getPreferredPluginTypes();
-    }
+    const auto externalPlugins = magda::PluginService::getInstance().preferredTypes();
 
     if (!externalPlugins.isEmpty()) {
         // Group by manufacturer

@@ -3,6 +3,7 @@
 
 #include "SharedTestEngine.hpp"
 #include "magda/daw/audio/AudioBridge.hpp"
+#include "magda/daw/engine/PluginService.hpp"
 
 using namespace magda;
 
@@ -214,11 +215,11 @@ class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
 
         auto& wrapper = magda::test::getSharedEngine();
 
-        bool scanning = wrapper.isScanning();
+        bool scanning = magda::PluginService::getInstance().isScanRunning();
         expect(scanning == true || scanning == false, "Scanning state should be boolean");
 
         wrapper.getKnownPluginList();
-        wrapper.getPluginListFile();
+        magda::PluginService::listFile();
         expect(true, "Plugin list operations are safe");
     }
 

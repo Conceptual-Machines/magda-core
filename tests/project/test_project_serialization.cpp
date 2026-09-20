@@ -220,7 +220,6 @@ class ProjectBoundaryResetEngine : public AudioEngine {
         return nullptr;
     }
 
-    void setPluginScanStatusCallback(std::function<void(const juce::String&)>) override {}
     void setMidiDevicesReadyCallback(std::function<void()>) override {}
 
     AudioBridge* getAudioBridge() override {
@@ -291,47 +290,6 @@ class ProjectBoundaryResetEngine : public AudioEngine {
 
     InsertRenderCaptureService* getInsertRenderCaptureService() override {
         return nullptr;
-    }
-
-    juce::Array<juce::PluginDescription> getKnownPluginTypes() const override {
-        return {};
-    }
-
-    juce::Array<juce::PluginDescription> getPreferredPluginTypes() const override {
-        return {};
-    }
-
-    void addPluginListChangeListener(juce::ChangeListener*) override {}
-    void removePluginListChangeListener(juce::ChangeListener*) override {}
-    void startPluginScan(std::function<void(float, const juce::String&)>) override {}
-    void abortPluginScan() override {}
-
-    void detectNewPlugins(std::function<void(PluginScanPhase, const juce::String&)>,
-                          std::function<void(bool, int, int, const juce::StringArray&)>) override {}
-
-    void setPluginScanCompletionCallback(
-        std::function<void(bool, int, const juce::StringArray&)>) override {}
-
-    bool isPluginScanRunning() const override {
-        return false;
-    }
-
-    std::vector<ExcludedPlugin> getExcludedPlugins() const override {
-        return {};
-    }
-
-    void setExcludedPlugins(const std::vector<ExcludedPlugin>&) override {}
-
-    juce::File getPluginScanReportFile() const override {
-        return {};
-    }
-
-    std::vector<std::string> getSystemPluginSearchPaths() const override {
-        return {};
-    }
-
-    std::vector<ScannedPluginParameter> scanPluginParameters(const juce::String&, bool) override {
-        return {};
     }
 
     bool upsertGrooveTemplate(const GrooveTemplateData&) override {

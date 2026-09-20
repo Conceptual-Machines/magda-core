@@ -31,9 +31,9 @@
 #include "core/PluginParameterConfigStore.hpp"
 #include "core/PluginPreferences.hpp"
 #include "core/TrackManager.hpp"
-#include "engine/AudioEngine.hpp"
 #include "engine/AudioEngineChoice.hpp"
 #include "engine/PluginMetadataStore.hpp"
+#include "engine/PluginService.hpp"
 
 namespace magda::daw::ui {
 
@@ -541,12 +541,14 @@ void PluginBrowserContent::resized() {
 }
 
 void PluginBrowserContent::onActivated() {
-    // Get engine from TrackManager if not already set
-    if (!engine_) {
-        if (auto* engine = TrackManager::getInstance().getAudioEngine()) {
-            setEngine(engine);
-        }
-    }
+    // The known list arrives with the engine, which need not have been up when this
+    // panel was built.
+    if (listening_ || PluginService::getInstance().knownList() == nullptr)
+        return;
+
+    PluginService::getInstance().addListChangeListener(this);
+    listening_ = true;
+    refreshPluginList();
 }
 
 void PluginBrowserContent::onDeactivated() {
@@ -606,11 +608,10 @@ void PluginBrowserContent::buildInternalPluginList() {
 }
 
 void PluginBrowserContent::loadExternalPlugins() {
-    if (!engine_) {
+    const auto pluginTypes = PluginService::getInstance().preferredTypes();
+    if (pluginTypes.isEmpty())
         return;
-    }
 
-    const auto pluginTypes = engine_->getPreferredPluginTypes();
     try {
         const auto records = magda::PluginMetadataStore::defaultForCurrentThread().query();
         auto mergedPlugins = mergeExternalPluginMetadata(pluginTypes, records);
@@ -629,27 +630,10 @@ void PluginBrowserContent::loadExternalPlugins() {
     DBG("Loaded " << pluginTypes.size() << " external plugins from KnownPluginList fallback");
 }
 
-void PluginBrowserContent::setEngine(magda::AudioEngine* engine) {
-    // Unregister from old engine's KnownPluginList
-    if (engine_) {
-        engine_->removePluginListChangeListener(this);
-    }
-
-    engine_ = engine;
-
-    // Register as change listener so we auto-refresh after plugin scans
-    if (engine_) {
-        engine_->addPluginListChangeListener(this);
-    }
-
-    refreshPluginList();
-}
-
 PluginBrowserContent::~PluginBrowserContent() {
     magda::PluginPreferences::getInstance().removeListener(this);
-    if (engine_) {
-        engine_->removePluginListChangeListener(this);
-    }
+    if (listening_)
+        PluginService::getInstance().removeListChangeListener(this);
     // Clear root item before TreeView destructor runs
     pluginTree_.setRootItem(nullptr);
 }

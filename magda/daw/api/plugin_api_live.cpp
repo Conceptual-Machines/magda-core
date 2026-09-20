@@ -19,6 +19,7 @@
 #include "../core/TrackManager.hpp"
 #include "../core/aliases/ParamNameNormalize.hpp"
 #include "../engine/AudioEngine.hpp"
+#include "../engine/PluginService.hpp"
 
 namespace magda {
 namespace {
@@ -105,15 +106,11 @@ int voiceModeNameToInt(const juce::String& name) {
 }  // namespace
 
 std::vector<DeviceInfo> PluginApiLive::getExternalPlugins() const {
-    if (auto* engine = TrackManager::getInstance().getAudioEngine())
-        return toDeviceInfo(engine->getPreferredPluginTypes());
-    return {};
+    return toDeviceInfo(PluginService::getInstance().preferredTypes());
 }
 
 std::vector<DeviceInfo> PluginApiLive::getAllExternalPlugins() const {
-    if (auto* engine = TrackManager::getInstance().getAudioEngine())
-        return toDeviceInfo(engine->getKnownPluginTypes());
-    return {};
+    return toDeviceInfo(PluginService::getInstance().knownTypes());
 }
 
 std::optional<SequencerRuntimeContext> PluginApiLive::getStepSequencerContext(

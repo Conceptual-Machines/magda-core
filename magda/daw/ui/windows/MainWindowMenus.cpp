@@ -982,14 +982,7 @@ void MainWindow::setupMenuCallbacks() {
 
     callbacks.onConnectionSettings = [this]() { ConnectionsDialog::showDialog(this); };
 
-    callbacks.onPluginSettings = [this]() {
-        if (!mainComponent)
-            return;
-        auto* engine = mainComponent->getAudioEngine();
-        if (!engine)
-            return;
-        PluginSettingsDialog::showDialog(engine, this);
-    };
+    callbacks.onPluginSettings = [this]() { PluginSettingsDialog::showDialog(this); };
 
     // Initialize the menu manager with callbacks
     MenuManager::getInstance().initialize(callbacks);

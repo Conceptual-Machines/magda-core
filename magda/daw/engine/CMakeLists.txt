@@ -22,11 +22,13 @@ target_sources(magda_daw PRIVATE
     PluginExclusions.cpp
     PluginMetadataStore.cpp
     PluginScanner.cpp
+    PluginService.cpp
     PluginScanCoordinator.cpp
     ScanWorker.cpp
     PluginWindowManager.cpp
     # Headers (listed for IDE visibility)
     AudioEngine.hpp
+    PluginService.hpp
     DeviceParameterScan.hpp
     AudioEngineChoice.hpp
     OfflineRenderHelper.hpp

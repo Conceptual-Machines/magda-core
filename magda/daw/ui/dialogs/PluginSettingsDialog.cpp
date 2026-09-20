@@ -8,8 +8,8 @@
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
 #include "core/TechnicalText.hpp"
-#include "engine/AudioEngine.hpp"
 #include "engine/PluginScanCoordinator.hpp"
+#include "engine/PluginService.hpp"
 
 namespace magda {
 
@@ -96,19 +96,13 @@ juce::Component* PluginSettingsDialog::ExcludedTableModel::refreshComponentForCe
 // PluginSettingsDialog
 // =============================================================================
 
-PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
-    : scanProgressBar_(scanProgress_), engine_(engine) {
+PluginSettingsDialog::PluginSettingsDialog() : scanProgressBar_(scanProgress_) {
     setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
     // Load current data
     customPaths_ = Config::getInstance().getCustomPluginPaths();
 
-    if (engine_) {
-        excludedPlugins_ = engine_->getExcludedPlugins();
-    }
-
-    // Populate system plugin directories from format manager
-    if (engine_)
-        systemPaths_ = engine_->getSystemPluginSearchPaths();
+    excludedPlugins_ = PluginService::getInstance().excludedPlugins();
+    systemPaths_ = PluginService::getInstance().systemSearchPaths();
 
     // Wire up models
     systemDirListModel_.paths = &systemPaths_;
@@ -168,8 +162,6 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
     // Scan section
     scanButton_.setButtonText(tr("plugin_settings.button.scan"));
     scanButton_.onClick = [this]() {
-        if (!engine_)
-            return;
         // Apply settings first so custom paths are used during scan
         applySettings();
 
@@ -182,18 +174,19 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
 
         auto safeThis = juce::Component::SafePointer<PluginSettingsDialog>(this);
 
-        engine_->startPluginScan([safeThis](float progress, const juce::String& pluginName) {
-            juce::MessageManager::callAsync([safeThis, progress, pluginName]() {
-                if (safeThis == nullptr)
-                    return;
-                safeThis->scanProgress_ = static_cast<double>(progress);
-                safeThis->scanStatusLabel_.setText(tr("plugin_settings.status.scanning") + " " +
-                                                       pluginDisplayName(pluginName),
-                                                   juce::dontSendNotification);
+        PluginService::getInstance().startScan(
+            [safeThis](float progress, const juce::String& pluginName) {
+                juce::MessageManager::callAsync([safeThis, progress, pluginName]() {
+                    if (safeThis == nullptr)
+                        return;
+                    safeThis->scanProgress_ = static_cast<double>(progress);
+                    safeThis->scanStatusLabel_.setText(tr("plugin_settings.status.scanning") + " " +
+                                                           pluginDisplayName(pluginName),
+                                                       juce::dontSendNotification);
+                });
             });
-        });
 
-        engine_->setPluginScanCompletionCallback(
+        PluginService::getInstance().setScanCompletionCallback(
             [safeThis](bool success, int numPlugins, const juce::StringArray& failedPlugins) {
                 juce::MessageManager::callAsync([safeThis, success, numPlugins, failedPlugins]() {
                     if (safeThis == nullptr)
@@ -224,11 +217,9 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
                     safeThis->updatePluginCountLabel();
 
                     // Refresh excluded plugins list
-                    if (safeThis->engine_) {
-                        safeThis->excludedPlugins_ = safeThis->engine_->getExcludedPlugins();
-                        safeThis->excludedTable_.updateContent();
-                        safeThis->excludedTable_.repaint();
-                    }
+                    safeThis->excludedPlugins_ = PluginService::getInstance().excludedPlugins();
+                    safeThis->excludedTable_.updateContent();
+                    safeThis->excludedTable_.repaint();
                 });
             });
     };
@@ -236,8 +227,6 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
 
     scanNewButton_.setButtonText(tr("plugin_settings.button.scan_new"));
     scanNewButton_.onClick = [this]() {
-        if (!engine_)
-            return;
         applySettings();
 
         setScanningUIEnabled(false);
@@ -249,7 +238,7 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
 
         auto safeThis = juce::Component::SafePointer<PluginSettingsDialog>(this);
 
-        engine_->detectNewPlugins(
+        PluginService::getInstance().detectNewPlugins(
             [safeThis](PluginScanPhase phase, const juce::String& currentPlugin) {
                 juce::MessageManager::callAsync([safeThis, phase, currentPlugin]() {
                     if (safeThis == nullptr)
@@ -310,11 +299,9 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
                     juce::ignoreUnused(totalCount);
                     safeThis->updatePluginCountLabel();
 
-                    if (safeThis->engine_) {
-                        safeThis->excludedPlugins_ = safeThis->engine_->getExcludedPlugins();
-                        safeThis->excludedTable_.updateContent();
-                        safeThis->excludedTable_.repaint();
-                    }
+                    safeThis->excludedPlugins_ = PluginService::getInstance().excludedPlugins();
+                    safeThis->excludedTable_.updateContent();
+                    safeThis->excludedTable_.repaint();
                 });
             });
     };
@@ -322,11 +309,9 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
 
     viewReportButton_.setButtonText(tr("plugin_settings.button.view_report"));
     viewReportButton_.onClick = [this]() {
-        if (engine_) {
-            auto reportFile = engine_->getPluginScanReportFile();
-            if (reportFile.existsAsFile())
-                reportFile.startAsProcess();
-        }
+        auto reportFile = PluginService::getInstance().scanReportFile();
+        if (reportFile.existsAsFile())
+            reportFile.startAsProcess();
     };
     addAndMakeVisible(viewReportButton_);
 
@@ -576,13 +561,11 @@ void PluginSettingsDialog::applySettings() {
         PluginPreferences::getInstance().setExternalPluginFormatPreference(
             static_cast<PluginFormat>(selected - 1));
 
-    if (engine_) {
-        engine_->setExcludedPlugins(excludedPlugins_);
-    }
+    PluginService::getInstance().setExcludedPlugins(excludedPlugins_);
 }
 
 bool PluginSettingsDialog::isScanRunning() const {
-    return engine_ && engine_->isPluginScanRunning();
+    return PluginService::getInstance().isScanRunning();
 }
 
 // DialogWindow subclass that prevents closing while a scan is in progress
@@ -602,8 +585,8 @@ class PluginSettingsDialogWindow : public juce::DialogWindow {
     PluginSettingsDialog* content_;
 };
 
-void PluginSettingsDialog::showDialog(AudioEngine* engine, juce::Component* /*parent*/) {
-    auto* dialog = new PluginSettingsDialog(engine);
+void PluginSettingsDialog::showDialog(juce::Component* /*parent*/) {
+    auto* dialog = new PluginSettingsDialog();
     auto bg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
 
     auto* window = new PluginSettingsDialogWindow(tr("dialogs.plugin_settings"), bg, false, dialog);
