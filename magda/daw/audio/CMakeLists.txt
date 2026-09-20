@@ -477,17 +477,27 @@ target_sources(magda_daw PRIVATE
     AudioBridgeMixer.hpp
     CompService.cpp
     CompService.hpp
+    # The one owner of hardware audio I/O (#2746)
+    io/AudioIOService.cpp
+    io/AudioIOService.hpp
+    io/HardwareRouteNames.cpp
+    io/HardwareRouteNames.hpp
+    io/TracktionAudioSettings.cpp
+    io/TracktionAudioSettings.hpp
     AudioThumbnailManager.cpp
     WaveformPeakCache.cpp
     DeviceMeteringManager.cpp
     analysis/MixAnalysisInput.cpp
     analysis/OfflineMixAnalysis.cpp
     MidiBridge.cpp
+    midi/ActiveMidiInputs.cpp
+    midi/ActiveMidiInputs.hpp
     midi/MidiDeviceMatch.cpp
     midi/MidiInputRouter.cpp
     midi/MidiInputRouter.hpp
     faust/FaustModelEdits.cpp
     faust/FaustModelEdits.hpp
+    sampling/SamplerMedia.cpp
     sampling/SamplerModelEdits.cpp
     sampling/SamplerModelEdits.hpp
     sidechain/SidechainRoutingManager.cpp

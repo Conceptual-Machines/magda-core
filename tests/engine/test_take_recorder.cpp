@@ -326,10 +326,28 @@ TEST_CASE("The take's first sample is the one under the playhead at record start
         Rig rig(emptyDirectory("latency_positive"), floatTake({0, 1}, 128));
         rig.play();
         rig.run(256);
+        REQUIRE(rig.recorder().requestPostRoll());
+        rig.run(128);
+
+        const auto take = rig.recorder().finish();
+        const auto stored = readBack(take.file);
+        REQUIRE(stored.getNumSamples() == 256);
+        CHECK(firstArrival(stored) == 128);
+        CHECK(arrivalAt(stored, stored.getNumSamples() - 1) == 383);
+        CHECK(take.lengthBeats == Catch::Approx(256.0 / kBeatSamples));
+    }
+
+    SECTION("a take shorter than its correction still keeps its timeline length") {
+        Rig rig(emptyDirectory("latency_longer_than_take"), floatTake({0, 1}, 128));
+        rig.play();
+        rig.run(64);
+        REQUIRE(rig.recorder().requestPostRoll());
+        rig.run(128);
 
         const auto stored = readBack(rig.recorder().finish().file);
-        CHECK(stored.getNumSamples() == 128);
+        REQUIRE(stored.getNumSamples() == 64);
         CHECK(firstArrival(stored) == 128);
+        CHECK(arrivalAt(stored, stored.getNumSamples() - 1) == 191);
     }
 
     SECTION("a negative latency stands silence in for what never arrived") {
@@ -488,11 +506,14 @@ TEST_CASE("A loop shorter than the input latency still splits every pass",
     rig.loop(0.0, static_cast<double>(kLoopSamples) / kBeatSamples);
     rig.play();
     rig.run(10 * kLoopSamples);
+    REQUIRE(rig.recorder().requestPostRoll());
+    rig.run(kLatency);
 
     const auto take = rig.recorder().finish();
 
-    // Ten loops delivered, less the two the head correction gave up.
-    REQUIRE(take.clip.takes.size() == 8);
+    // Ten loops delivered. Post-roll replaces the two loops discarded from
+    // the head, so every timeline pass reaches its file boundary.
+    REQUIRE(take.clip.takes.size() == 10);
     for (const auto& pass : take.clip.takes)
         CHECK(readBack(juce::File(pass.filePath)).getNumSamples() == kLoopSamples);
 }
@@ -606,6 +627,28 @@ TEST_CASE("A stop mid-pass keeps what was recorded up to it", "[engine][io][reco
     const auto take = rig.recorder().finish();
     CHECK(readBack(take.file).getNumSamples() == 1000);
     CHECK(take.lengthBeats == Catch::Approx(1000.0 / kBeatSamples));
+}
+
+TEST_CASE("Punch-out captures the delayed tail without extending the take",
+          "[engine][io][record][2461][2751]") {
+    constexpr int kAdjustment = 128;
+    constexpr int kTimelineSamples = 1000;
+
+    Rig rig(emptyDirectory("punch_out_post_roll"), floatTake({0, 1}, kAdjustment));
+    rig.play();
+    rig.run(kTimelineSamples);
+    rig.recorder().punchOut();
+    rig.run(kAdjustment);
+
+    CHECK_FALSE(rig.recorder().rolling());
+    INFO("a self-stopped take does not notify until the host requests its close");
+    CHECK_FALSE(rig.recorder().readyToClose());
+    const auto take = rig.recorder().finish();
+    const auto stored = readBack(take.file);
+    REQUIRE(stored.getNumSamples() == kTimelineSamples);
+    CHECK(firstArrival(stored) == kAdjustment);
+    CHECK(arrivalAt(stored, stored.getNumSamples() - 1) == kTimelineSamples + kAdjustment - 1);
+    CHECK(take.lengthBeats == Catch::Approx(static_cast<double>(kTimelineSamples) / kBeatSamples));
 }
 
 TEST_CASE("A mono input is recorded mono", "[engine][io][record][2461]") {
@@ -762,7 +805,8 @@ TEST_CASE("A transport wrap inside a run does not split the slot take",
     CHECK(take.lengthBeats == Catch::Approx(5.0));
 }
 
-TEST_CASE("A slot take is corrected for the input's latency too", "[engine][io][record][2464]") {
+TEST_CASE("A slot take captures its recording-adjustment tail too",
+          "[engine][io][record][2464][2751]") {
     SlotLaunch launch;
 
     Rig rig(emptyDirectory("slot_latency"), slotTake(launch, 128));
@@ -771,14 +815,16 @@ TEST_CASE("A slot take is corrected for the input's latency too", "[engine][io][
 
     launch.launch(1.0);
     rig.run(3 * kBeatSamples);
+    launch.stop(3.0);
+    rig.run(128);
 
     const auto stored = readBack(rig.recorder().finish().file);
-    REQUIRE(stored.getNumSamples() == (2 * kBeatSamples) - 128);
+    REQUIRE(stored.getNumSamples() == 2 * kBeatSamples);
 
     // Dropped from the head of the run, not from the head of the block it
-    // fired in.
+    // fired in, and replaced by input captured after the run ended.
     CHECK(arrivalAt(stored, 0) == kBeatSamples + 128);
-    CHECK(arrivalAt(stored, stored.getNumSamples() - 1) == (3 * kBeatSamples) - 1);
+    CHECK(arrivalAt(stored, stored.getNumSamples() - 1) == (3 * kBeatSamples) + 127);
 }
 
 TEST_CASE("A scene's takes all begin on the same sample", "[engine][io][record][2464]") {

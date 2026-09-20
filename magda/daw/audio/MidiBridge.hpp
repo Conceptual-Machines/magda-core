@@ -143,6 +143,15 @@ class MidiBridge : public juce::MidiInputCallback {
         midiDeviceListListeners_.call([](Listener& l) { l.midiDeviceListChanged(); });
     }
 
+    /**
+     * @brief Audio Settings changed which inputs are active: reopen, relist and reroute.
+     *
+     * @ref onActiveInputsChanged is the rendering engine's rerouting; the bridge only lists
+     * and opens.
+     */
+    void activeInputsChanged();
+    std::function<void()> onActiveInputsChanged;
+
     struct Listener {
         virtual ~Listener() = default;
         virtual void midiDeviceListChanged() = 0;

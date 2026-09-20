@@ -32,6 +32,7 @@
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
+#include "engine/PluginService.hpp"
 #include "ui/components/chain/DeviceSlotComponent.hpp"
 #include "ui/components/chain/NodeComponent.hpp"
 #include "ui/components/chain/RackComponent.hpp"
@@ -2925,10 +2926,7 @@ void TrackChainContent::onAddDeviceClicked() {
     }
     menu.addSubMenu("Internal", internalMenu);
 
-    juce::Array<juce::PluginDescription> externalPlugins;
-    if (auto* engine = magda::TrackManager::getInstance().getAudioEngine()) {
-        externalPlugins = engine->getPreferredPluginTypes();
-    }
+    const auto externalPlugins = magda::PluginService::getInstance().preferredTypes();
 
     if (!externalPlugins.isEmpty()) {
         std::map<juce::String, juce::PopupMenu> byManufacturer;

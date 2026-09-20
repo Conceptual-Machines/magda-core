@@ -3,6 +3,8 @@
 #include <cstdlib>
 
 #include "../../audio/AudioDriverUtils.hpp"
+#include "../../audio/MidiBridge.hpp"
+#include "../../audio/io/AudioIOControl.hpp"
 #include "../../core/Config.hpp"
 #include "../../engine/AudioEngine.hpp"
 #include "../../engine/AudioEngineChoice.hpp"
@@ -77,9 +79,8 @@ constexpr int kRowSpacing = 4;
 
 }  // namespace
 
-CustomChannelSelector::CustomChannelSelector(juce::AudioDeviceManager* deviceManager, bool isInput,
-                                             AudioEngine* audioEngine)
-    : deviceManager_(deviceManager), audioEngine_(audioEngine), isInput_(isInput) {
+CustomChannelSelector::CustomChannelSelector(AudioIOControl& audio, bool isInput)
+    : audio_(audio), isInput_(isInput) {
     setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
     titleLabel_.setText(isInput ? "Audio Inputs:" : "Audio Outputs:", juce::dontSendNotification);
     titleLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
@@ -89,47 +90,24 @@ CustomChannelSelector::CustomChannelSelector(juce::AudioDeviceManager* deviceMan
     viewport_.setScrollBarsShown(true, false);
     addAndMakeVisible(viewport_);
 
-    updateFromDevice();
+    refresh();
 }
 
 CustomChannelSelector::~CustomChannelSelector() {
     setLookAndFeel(nullptr);
 }
 
-void CustomChannelSelector::updateFromDevice() {
-    // Clear existing toggles
+void CustomChannelSelector::refresh() {
     channelToggles_.clear();
 
-    auto* device = deviceManager_->getCurrentAudioDevice();
-    if (!device) {
-        DBG("CustomChannelSelector::updateFromDevice - No current audio device!");
-        return;
-    }
+    const auto chosen = audio_.chosen();
+    const juce::String interfaceName = isInput_ ? chosen.inputInterface : chosen.outputInterface;
+    const auto channelNames = audio_.channelNames(chosen.backend, interfaceName, isInput_);
 
-    DBG("CustomChannelSelector::updateFromDevice - Device: " + device->getName() +
-        " (isInput=" + juce::String(isInput_ ? "true" : "false") + ")");
+    juce::BigInteger activeChannels;
+    for (const auto channel : isInput_ ? chosen.inputChannels : chosen.outputChannels)
+        activeChannels.setBit(channel);
 
-    // Get channel names from hardware device
-    auto channelNames = isInput_ ? device->getInputChannelNames() : device->getOutputChannelNames();
-
-    // Build active channels from the engine's wave-device state (JUCE bits are always all-on).
-    juce::BigInteger activeChannels = audioEngine_ != nullptr
-                                          ? audioEngine_->getEnabledWaveChannels(isInput_)
-                                          : juce::BigInteger{};
-    if (audioEngine_ == nullptr) {
-        // Fallback: read from JUCE setup
-        auto setup = deviceManager_->getAudioDeviceSetup();
-        activeChannels = isInput_ ? setup.inputChannels : setup.outputChannels;
-    }
-
-    DBG("  Channel count: " + juce::String(channelNames.size()));
-    DBG("  Active channels: " + activeChannels.toString(2));
-    for (int i = 0; i < channelNames.size(); ++i) {
-        DBG("    Channel " + juce::String(i) + ": " + channelNames[i]);
-    }
-
-    // Show ALL available channels from the device, regardless of which are currently active
-    // The user can then select which ones to enable/disable
     int numChannels = channelNames.size();
 
     // Read current preview output channel from Config (only relevant for output)
@@ -249,7 +227,7 @@ void CustomChannelSelector::onChannelToggled(int channelIndex, bool isStereo) {
     }
 
     refreshChannelStates();
-    applyToDevice();
+    applyTicks();
 }
 
 void CustomChannelSelector::refreshChannelStates() {
@@ -293,45 +271,19 @@ void CustomChannelSelector::onPreviewToggled(int startChannel) {
     DBG("Preview output changed to channels " << (startChannel + 1) << "-" << (startChannel + 2));
 }
 
-void CustomChannelSelector::applyToDevice() {
-    auto* device = deviceManager_->getCurrentAudioDevice();
-    if (!device)
-        return;
-
-    // Build BigInteger representing active channels
-    juce::BigInteger activeChannels;
-
+void CustomChannelSelector::applyTicks() {
+    auto settings = audio_.chosen();
+    auto& channels = isInput_ ? settings.inputChannels : settings.outputChannels;
+    channels.clear();
     for (const auto& toggle : channelToggles_) {
-        if (toggle.button->getToggleState()) {
-            if (toggle.isStereo) {
-                // Stereo pair - enable both channels
-                activeChannels.setBit(toggle.startChannel, true);
-                activeChannels.setBit(toggle.startChannel + 1, true);
-            } else {
-                // Mono channel
-                activeChannels.setBit(toggle.startChannel, true);
-            }
-        }
+        if (!toggle.button->getToggleState())
+            continue;
+        channels.push_back(toggle.startChannel);
+        if (toggle.isStereo)
+            channels.push_back(toggle.startChannel + 1);
     }
-
-    // Always enable all hardware channels at JUCE level — Tracktion expects this.
-    // Channel selection is handled at the TE WaveInputDevice enable/disable level.
-    auto setup = deviceManager_->getAudioDeviceSetup();
-    if (isInput_) {
-        setup.inputChannels.clear();
-        setup.inputChannels.setRange(0, device->getInputChannelNames().size(), true);
-    } else {
-        setup.outputChannels.clear();
-        setup.outputChannels.setRange(0, device->getOutputChannelNames().size(), true);
-    }
-
-    deviceManager_->setAudioDeviceSetup(setup, true);
-
-    // Flush pending async updates so wave device list rebuilds before audio callback fires (#719)
-    juce::MessageManager::getInstance()->runDispatchLoopUntil(0);
-
-    if (audioEngine_ != nullptr)
-        audioEngine_->setEnabledWaveChannels(isInput_, activeChannels);
+    std::ranges::sort(channels);
+    audio_.apply(settings);
 }
 
 void CustomChannelSelector::paint(juce::Graphics& g) {
@@ -394,11 +346,12 @@ void CustomChannelSelector::resized() {
 AudioSettingsDialog::AudioSettingsDialog(AudioEngine* audioEngine)
     : deviceRefreshSpinner_(deviceRefreshProgress_),
       deviceManager_(audioEngine != nullptr ? audioEngine->getDeviceManager() : nullptr),
-      audioEngine_(audioEngine) {
+      audioEngine_(audioEngine),
+      audio_(audioEngine != nullptr ? audioEngine->getAudioIO() : nullptr) {
     setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
 
     // Input device selection dropdown
-    inputDeviceLabel_.setText("Input Device:", juce::dontSendNotification);
+    inputDeviceLabel_.setText("Input Interface:", juce::dontSendNotification);
     inputDeviceLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     addAndMakeVisible(inputDeviceLabel_);
 
@@ -406,7 +359,7 @@ AudioSettingsDialog::AudioSettingsDialog(AudioEngine* audioEngine)
     addAndMakeVisible(inputDeviceComboBox_);
 
     // Output device selection dropdown
-    outputDeviceLabel_.setText("Output Device:", juce::dontSendNotification);
+    outputDeviceLabel_.setText("Output Interface:", juce::dontSendNotification);
     outputDeviceLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     addAndMakeVisible(outputDeviceLabel_);
 
@@ -471,6 +424,8 @@ AudioSettingsDialog::AudioSettingsDialog(AudioEngine* audioEngine)
     engineRestartLabel_.setColour(juce::Label::textColourId, juce::Colours::white.withAlpha(0.72f));
     addAndMakeVisible(engineRestartLabel_);
 
+    activeMidiInputs_ = std::make_unique<ActiveMidiInputs>(*deviceManager_);
+
     // Create the device selector component (MIDI only, no audio device selection)
     deviceSelector_ = std::make_unique<juce::AudioDeviceSelectorComponent>(
         *deviceManager_,
@@ -491,26 +446,16 @@ AudioSettingsDialog::AudioSettingsDialog(AudioEngine* audioEngine)
     deviceManager_->addChangeListener(this);
 
     // Create custom channel selectors for inputs and outputs
-    inputChannelSelector_ =
-        std::make_unique<CustomChannelSelector>(deviceManager_, true, audioEngine_);
+    inputChannelSelector_ = std::make_unique<CustomChannelSelector>(*audio_, true);
     addAndMakeVisible(*inputChannelSelector_);
 
-    outputChannelSelector_ =
-        std::make_unique<CustomChannelSelector>(deviceManager_, false, audioEngine_);
+    outputChannelSelector_ = std::make_unique<CustomChannelSelector>(*audio_, false);
     addAndMakeVisible(*outputChannelSelector_);
 
-    // Setup device name label
     deviceNameLabel_.setFont(FontManager::getInstance().getUIFontBold(16.0f));
     deviceNameLabel_.setJustificationType(juce::Justification::centred);
-    if (auto* device = deviceManager_->getCurrentAudioDevice()) {
-        juce::String labelText = "Current Device: " + device->getName();
-        labelText += " (" + juce::String(device->getInputChannelNames().size()) + " in, ";
-        labelText += juce::String(device->getOutputChannelNames().size()) + " out)";
-        deviceNameLabel_.setText(labelText, juce::dontSendNotification);
-    } else {
-        deviceNameLabel_.setText("No audio device selected", juce::dontSendNotification);
-    }
     addAndMakeVisible(deviceNameLabel_);
+    refreshChosenInterface();
 
     // Setup close button
     closeButton_.setButtonText("Close");
@@ -541,19 +486,24 @@ void AudioSettingsDialog::changeListenerCallback(juce::ChangeBroadcaster* source
     if (source != deviceManager_)
         return;
 
-    // The active driver / device may have changed (e.g. user switched to ASIO in
-    // the selector). Re-list the combos against the now-current driver type.
-    showDeviceRefreshIndicator(true);
-    populateDeviceLists();
-    resized();
+    if (activeMidiInputs_->saveChanges() && audioEngine_ != nullptr)
+        if (auto* midi = audioEngine_->getMidiBridge())
+            midi->activeInputsChanged();
 
-    if (auto* device = deviceManager_->getCurrentAudioDevice()) {
-        juce::String labelText = "Current Device: " + device->getName();
-        labelText += " (" + juce::String(device->getInputChannelNames().size()) + " in, ";
-        labelText += juce::String(device->getOutputChannelNames().size()) + " out)";
-        deviceNameLabel_.setText(labelText, juce::dontSendNotification);
+    // The JUCE selector changes the backend, rate and block size on the manager itself.
+    keepSelectorChanges();
+
+    // A channel toggle reopens the interface too, and its lists are already right.
+    const auto chosen = audio_->chosen();
+    if (chosen.backend == listed_.backend && chosen.inputInterface == listed_.inputInterface &&
+        chosen.outputInterface == listed_.outputInterface) {
+        showOpenInterface();
+        hideDeviceRefreshIndicator();
+        return;
     }
 
+    showDeviceRefreshIndicator(true);
+    refreshChosenInterface();
     hideDeviceRefreshIndicator();
 }
 
@@ -670,18 +620,18 @@ void AudioSettingsDialog::populateDeviceLists() {
         }
     }
 
-    // Select current devices
-    auto setup = deviceManager_->getAudioDeviceSetup();
+    // The chosen interfaces, which include one chosen with no channels open on it.
+    const auto chosen = audio_->chosen();
 
-    int inputIndex = inputDevices.indexOf(setup.inputDeviceName);
+    int inputIndex = inputDevices.indexOf(juce::String(chosen.inputInterface));
     if (singleDeviceDriver && inputIndex < 0)
-        inputIndex = inputDevices.indexOf(setup.outputDeviceName);
+        inputIndex = inputDevices.indexOf(juce::String(chosen.outputInterface));
     if (inputIndex >= 0) {
         inputDeviceComboBox_.setSelectedId(inputIndex + 1, juce::dontSendNotification);
     }
 
     if (!singleDeviceDriver) {
-        int outputIndex = outputDevices.indexOf(setup.outputDeviceName);
+        int outputIndex = outputDevices.indexOf(juce::String(chosen.outputInterface));
         if (outputIndex >= 0) {
             outputDeviceComboBox_.setSelectedId(outputIndex + 1, juce::dontSendNotification);
         }
@@ -691,7 +641,7 @@ void AudioSettingsDialog::populateDeviceLists() {
 void AudioSettingsDialog::updateDevicePickerMode() {
     const bool singleDeviceDriver = isSingleDeviceDriver(*deviceManager_);
 
-    inputDeviceLabel_.setText(singleDeviceDriver ? "Device:" : "Input Device:",
+    inputDeviceLabel_.setText(singleDeviceDriver ? "Interface:" : "Input Interface:",
                               juce::dontSendNotification);
     outputDeviceLabel_.setVisible(!singleDeviceDriver);
     outputDeviceComboBox_.setVisible(!singleDeviceDriver);
@@ -731,167 +681,118 @@ void AudioSettingsDialog::showDeviceRefreshIndicator(bool flushRepaint) {
 }
 
 void AudioSettingsDialog::hideDeviceRefreshIndicator() {
+    if (!deviceRefreshSpinner_.isVisible())
+        return;
     deviceRefreshSpinner_.setVisible(false);
     deviceRefreshLabel_.setVisible(false);
     resized();
 }
 
 void AudioSettingsDialog::onInputDeviceSelected() {
-    int selectedId = inputDeviceComboBox_.getSelectedId();
-    if (selectedId == 0)
-        return;
-
-    juce::String selectedDeviceName = inputDeviceComboBox_.getItemText(selectedId - 1);
-    const bool singleDeviceDriver = isSingleDeviceDriver(*deviceManager_);
-
-    // Get current setup
-    auto setup = deviceManager_->getAudioDeviceSetup();
-
-    applySelectedAudioDeviceName(setup, selectedDeviceName, true, singleDeviceDriver);
-    setup.useDefaultInputChannels = true;
-    setup.useDefaultOutputChannels = true;
-
-    // Apply new device setup
-    auto result = deviceManager_->setAudioDeviceSetup(setup, true);
-
-    // If it fails (e.g. CoreAudio can't aggregate different input+output devices),
-    // retry with the new device as BOTH input and output.
-    if (!singleDeviceDriver && !result.isEmpty() && setup.outputDeviceName != selectedDeviceName) {
-        setup.outputDeviceName = selectedDeviceName;
-        result = deviceManager_->setAudioDeviceSetup(setup, true);
-
-        if (result.isEmpty()) {
-            for (int i = 0; i < outputDeviceComboBox_.getNumItems(); ++i) {
-                if (outputDeviceComboBox_.getItemText(i) == selectedDeviceName) {
-                    outputDeviceComboBox_.setSelectedId(i + 1, juce::dontSendNotification);
-                    break;
-                }
-            }
-        }
-    }
-
-    if (!result.isEmpty()) {
-        DBG("Failed to switch input device: " << result);
-        // Reset combo box to match actual device state
-        auto actualSetup = deviceManager_->getAudioDeviceSetup();
-        for (int i = 0; i < inputDeviceComboBox_.getNumItems(); ++i) {
-            if (inputDeviceComboBox_.getItemText(i) == actualSetup.inputDeviceName) {
-                inputDeviceComboBox_.setSelectedId(i + 1, juce::dontSendNotification);
-                break;
-            }
-        }
-        juce::AlertWindow::showMessageBoxAsync(
-            juce::AlertWindow::WarningIcon, "Audio Device Error",
-            singleDeviceDriver
-                ? "Could not open \"" + selectedDeviceName + "\".\n\nError: " + result
-                : "Could not switch to \"" + selectedDeviceName +
-                      "\".\n\nThe device may be unavailable or incompatible with the "
-                      "current output device.\n\nError: " +
-                      result);
-        return;
-    }
-
-    enableAllChannelsOnCurrentDevice();
-
-    if (audioEngine_ != nullptr)
-        audioEngine_->rescanWaveDevices(true, false);
-
-    // Update channel selectors to reflect new device
-    inputChannelSelector_->updateFromDevice();
-    outputChannelSelector_->updateFromDevice();
-
-    // Update device name label
-    auto finalSetup = deviceManager_->getAudioDeviceSetup();
-    juce::String labelText = "Input: " + finalSetup.inputDeviceName;
-    labelText += " | Output: " + finalSetup.outputDeviceName;
-    deviceNameLabel_.setText(labelText, juce::dontSendNotification);
+    if (const auto id = inputDeviceComboBox_.getSelectedId(); id > 0)
+        chooseInterface(inputDeviceComboBox_.getItemText(id - 1), true);
 }
 
 void AudioSettingsDialog::onOutputDeviceSelected() {
     if (isSingleDeviceDriver(*deviceManager_))
         return;
-
-    int selectedId = outputDeviceComboBox_.getSelectedId();
-    if (selectedId == 0)
-        return;
-
-    juce::String selectedDeviceName = outputDeviceComboBox_.getItemText(selectedId - 1);
-
-    // Get current setup
-    auto setup = deviceManager_->getAudioDeviceSetup();
-
-    applySelectedAudioDeviceName(setup, selectedDeviceName, false, false);
-    setup.useDefaultOutputChannels = true;
-    setup.useDefaultInputChannels = true;
-
-    // Apply new device setup
-    auto result = deviceManager_->setAudioDeviceSetup(setup, true);
-
-    // If it fails (e.g. CoreAudio can't aggregate different input+output devices),
-    // retry with the new device as BOTH input and output.
-    if (!result.isEmpty() && setup.inputDeviceName != selectedDeviceName) {
-        setup.inputDeviceName = selectedDeviceName;
-        result = deviceManager_->setAudioDeviceSetup(setup, true);
-
-        // Update the input combo box to reflect the change
-        if (result.isEmpty()) {
-            for (int i = 0; i < inputDeviceComboBox_.getNumItems(); ++i) {
-                if (inputDeviceComboBox_.getItemText(i) == selectedDeviceName) {
-                    inputDeviceComboBox_.setSelectedId(i + 1, juce::dontSendNotification);
-                    break;
-                }
-            }
-        }
-    }
-
-    if (!result.isEmpty()) {
-        DBG("Failed to switch output device: " << result);
-        // Reset combo box to match actual device state
-        auto actualSetup = deviceManager_->getAudioDeviceSetup();
-        for (int i = 0; i < outputDeviceComboBox_.getNumItems(); ++i) {
-            if (outputDeviceComboBox_.getItemText(i) == actualSetup.outputDeviceName) {
-                outputDeviceComboBox_.setSelectedId(i + 1, juce::dontSendNotification);
-                break;
-            }
-        }
-        juce::AlertWindow::showMessageBoxAsync(
-            juce::AlertWindow::WarningIcon, "Audio Device Error",
-            "Could not switch to \"" + selectedDeviceName +
-                "\".\n\nThe device may be unavailable or incompatible with the "
-                "current input device.\n\nError: " +
-                result);
-        return;
-    }
-
-    enableAllChannelsOnCurrentDevice();
-
-    if (audioEngine_ != nullptr)
-        audioEngine_->rescanWaveDevices(false, true);
-
-    // Update both channel selectors to reflect new device
-    inputChannelSelector_->updateFromDevice();
-    outputChannelSelector_->updateFromDevice();
-
-    // Update device name label
-    auto finalSetup = deviceManager_->getAudioDeviceSetup();
-    juce::String labelText = "Input: " + finalSetup.inputDeviceName;
-    labelText += " | Output: " + finalSetup.outputDeviceName;
-    deviceNameLabel_.setText(labelText, juce::dontSendNotification);
+    if (const auto id = outputDeviceComboBox_.getSelectedId(); id > 0)
+        chooseInterface(outputDeviceComboBox_.getItemText(id - 1), false);
 }
 
-void AudioSettingsDialog::enableAllChannelsOnCurrentDevice() {
-    // Flush pending async updates so wave device list rebuilds before audio callback fires (#719)
-    juce::MessageManager::getInstance()->runDispatchLoopUntil(0);
+namespace {
 
-    // Enable all channels on the current device — it may have a different channel count
+/**
+ * @brief Keep the chosen channels that @p settings' interfaces have, falling back to stereo out.
+ *
+ * Nothing is opened because an interface advertises it (#2528); @p outputsNew says the output
+ * interface changed, and only then does an empty output selection become stereo.
+ */
+void keepChannelsTheyHave(AudioIOControl& audio, AudioIOSettings& settings, bool outputsNew) {
+    const auto keep = [&](std::vector<int>& channels, const std::string& interfaceName,
+                          bool inputs) {
+        const auto count = audio.channelNames(settings.backend, interfaceName, inputs).size();
+        std::erase_if(channels, [count](int channel) { return channel >= count; });
+    };
+    keep(settings.inputChannels, settings.inputInterface, true);
+    keep(settings.outputChannels, settings.outputInterface, false);
+    if (outputsNew && settings.outputChannels.empty())
+        settings.outputChannels = {0, 1};
+}
+
+}  // namespace
+
+void AudioSettingsDialog::chooseInterface(const juce::String& interfaceName, bool inputs) {
+    const auto single = isSingleDeviceDriver(*deviceManager_);
+    auto settings = audio_->chosen();
+    if (single || inputs)
+        settings.inputInterface = interfaceName.toStdString();
+    if (single || !inputs)
+        settings.outputInterface = interfaceName.toStdString();
+    keepChannelsTheyHave(*audio_, settings, single || !inputs);
+
+    showDeviceRefreshIndicator(true);
+    auto error = audio_->apply(settings);
+
+    // CoreAudio cannot pair some interfaces (no shared sample rate), so use this one both ways.
+    if (error.isNotEmpty() && !single && settings.inputInterface != settings.outputInterface) {
+        settings.inputInterface = settings.outputInterface = interfaceName.toStdString();
+        keepChannelsTheyHave(*audio_, settings, true);
+        error = audio_->apply(settings);
+    }
+
+    if (error.isNotEmpty())
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::AlertWindow::WarningIcon, "Audio Interface Error",
+            "Could not open \"" + interfaceName + "\".\n\nError: " + error);
+
+    refreshChosenInterface();
+    hideDeviceRefreshIndicator();
+}
+
+void AudioSettingsDialog::keepSelectorChanges() {
+    auto* device = deviceManager_->getCurrentAudioDevice();
+    if (device == nullptr)
+        return;
+
+    auto settings = audio_->chosen();
+    const auto backend = device->getTypeName().toStdString();
+    const auto rate = device->getCurrentSampleRate();
+    const auto blockSize = device->getCurrentBufferSizeSamples();
+    if (settings.backend == backend && settings.sampleRate == rate &&
+        settings.bufferSize == blockSize)
+        return;
+
+    if (settings.backend != backend) {
+        // The selector opened the new backend's default interface; the choice follows it.
+        const auto setup = deviceManager_->getAudioDeviceSetup();
+        settings.backend = backend;
+        settings.inputInterface = setup.inputDeviceName.toStdString();
+        settings.outputInterface = setup.outputDeviceName.toStdString();
+        keepChannelsTheyHave(*audio_, settings, true);
+    }
+    settings.sampleRate = rate;
+    settings.bufferSize = blockSize;
+    audio_->apply(settings);
+}
+
+void AudioSettingsDialog::refreshChosenInterface() {
+    listed_ = audio_->chosen();
+    populateDeviceLists();
+    inputChannelSelector_->refresh();
+    outputChannelSelector_->refresh();
+    showOpenInterface();
+    resized();
+}
+
+void AudioSettingsDialog::showOpenInterface() {
     if (auto* device = deviceManager_->getCurrentAudioDevice()) {
-        auto newSetup = deviceManager_->getAudioDeviceSetup();
-        newSetup.inputChannels.clear();
-        newSetup.inputChannels.setRange(0, device->getInputChannelNames().size(), true);
-        newSetup.outputChannels.clear();
-        newSetup.outputChannels.setRange(0, device->getOutputChannelNames().size(), true);
-        deviceManager_->setAudioDeviceSetup(newSetup, true);
-        juce::MessageManager::getInstance()->runDispatchLoopUntil(0);
+        deviceNameLabel_.setText("Current Interface: " + device->getName() + " (" +
+                                     juce::String(device->getInputChannelNames().size()) + " in, " +
+                                     juce::String(device->getOutputChannelNames().size()) + " out)",
+                                 juce::dontSendNotification);
+    } else {
+        deviceNameLabel_.setText("No audio interface open", juce::dontSendNotification);
     }
 }
 
@@ -904,9 +805,9 @@ void AudioSettingsDialog::savePreferencesIfNeeded() {
     // Count enabled channels from the engine's wave-device state.
     int inputChannelCount = 0;
     int outputChannelCount = 0;
-    if (audioEngine_ != nullptr) {
-        inputChannelCount = audioEngine_->getEnabledWaveChannels(true).getHighestBit() + 1;
-        outputChannelCount = audioEngine_->getEnabledWaveChannels(false).getHighestBit() + 1;
+    if (auto* hardware = audioEngine_ != nullptr ? audioEngine_->getAudioIO() : nullptr) {
+        inputChannelCount = hardware->inputs().open.getHighestBit() + 1;
+        outputChannelCount = hardware->outputs().open.getHighestBit() + 1;
     } else {
         // Fallback: count from JUCE setup
         for (int i = 0; i < setup.inputChannels.getHighestBit() + 1; ++i) {
@@ -946,7 +847,8 @@ void AudioSettingsDialog::onAudioEngineSelected() {
 
 void AudioSettingsDialog::showDialog(juce::Component* parent, AudioEngine* audioEngine) {
     juce::ignoreUnused(parent);
-    if (audioEngine == nullptr || audioEngine->getDeviceManager() == nullptr) {
+    if (audioEngine == nullptr || audioEngine->getDeviceManager() == nullptr ||
+        audioEngine->getAudioIO() == nullptr) {
         juce::AlertWindow::showMessageBoxAsync(
             juce::AlertWindow::WarningIcon, "Audio Settings",
             "Audio engine not initialized. Cannot open audio settings.");

@@ -102,7 +102,7 @@ class PumpDevice final : public juce::AudioIODevice {
         return {};
     }
     int getOutputLatencyInSamples() override {
-        return 0;
+        return outputLatencySamples;
     }
     int getInputLatencyInSamples() override {
         return 0;
@@ -121,6 +121,7 @@ class PumpDevice final : public juce::AudioIODevice {
     }
 
     float lastMagnitude = 0.0f;
+    int outputLatencySamples = 0;
 
   private:
     juce::AudioIODeviceCallback* callback_ = nullptr;
@@ -180,6 +181,7 @@ class EngineHostMidiRecordingTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { disarmingClosesTheTakeOnce(); });
         magda::test::runWithCleanJuceState([this] { rollingPunchOutLeavesPlaybackRunning(); });
         magda::test::runWithCleanJuceState([this] { deviceStopClosesTheTake(); });
+        magda::test::runWithCleanJuceState([this] { correctedMidiTakeKeepsItsTail(); });
         magda::test::runWithCleanJuceState([this] { loopPassesAndHeldNoteAreMaterialized(); });
         magda::test::runWithCleanJuceState([this] { projectBoundaryDropsTheOldTake(); });
         magda::test::runWithCleanJuceState([this] { previewTracksTheCallbackAndFinalClip(); });
@@ -194,6 +196,7 @@ class EngineHostMidiRecordingTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { sessionSlotsShareOneBoundary(); });
         magda::test::runWithCleanJuceState([this] { sessionAllInputSurvivesReconcile(); });
         magda::test::runWithCleanJuceState([this] { reclickFinishesSessionTakeOnce(); });
+        magda::test::runWithCleanJuceState([this] { switchingSessionSlotsKeepsNewTarget(); });
         magda::test::runWithCleanJuceState([this] { queuedSessionCancellationRetiresTake(); });
         magda::test::runWithCleanJuceState([this] { timerHarvestsFinishedSessionTake(); });
         magda::test::runWithCleanJuceState([this] { countInIsNotPartOfTheTake(); });
@@ -251,7 +254,6 @@ class EngineHostMidiRecordingTest final : public juce::UnitTest {
         expect(open(devices), "fake device opens");
         if (devices.device == nullptr)
             return;
-
         auto& tracks = magda::TrackManager::getInstance();
         const auto trackId = tracks.createTrack("Punch window");
         preparePunchTrack(trackId);
@@ -893,6 +895,48 @@ class EngineHostMidiRecordingTest final : public juce::UnitTest {
         host.stop();
     }
 
+    void correctedMidiTakeKeepsItsTail() {
+        beginTest("output-latency correction preserves a MIDI take's tail and length");
+        PumpDeviceManager devices;
+        expect(open(devices), "fake device opens");
+        if (devices.device == nullptr)
+            return;
+        devices.device->outputLatencySamples = 960;
+
+        auto& tracks = magda::TrackManager::getInstance();
+        const auto trackId = tracks.createTrack("Corrected MIDI tail");
+        tracks.setTrackInputMonitor(trackId, magda::InputMonitorMode::Off);
+        tracks.setTrackMidiInput(trackId, "keyboard");
+        tracks.setTrackRecordArmed(trackId, true);
+        magda::daw::engine_host::EngineHost host;
+        host.registerVirtualMidiSource("keyboard");
+        host.start(devices);
+        settle();
+        expect(host.startMidiRecording(0.0));
+        devices.device->pump();
+        devices.device->pump();
+
+        host.stopMidiRecording();
+        host.pushMidi("keyboard", juce::MidiMessage::noteOn(1, 66, (juce::uint8)100));
+        devices.device->pump();
+        host.pushMidi("keyboard", juce::MidiMessage::noteOff(1, 66));
+        devices.device->pump();
+        settle();
+
+        const auto clips = clipsOn(trackId);
+        expectEquals(static_cast<int>(clips.size()), 1);
+        if (clips.size() == 1) {
+            expectWithinAbsoluteError(clips[0].placement.lengthBeats, 0.04, 0.001,
+                                      "the correction does not shorten the take");
+            expectEquals(static_cast<int>(clips[0].midiNotes.size()), 1,
+                         "events in the correction-sized tail are retained");
+            if (clips[0].midiNotes.size() == 1)
+                expectEquals(clips[0].midiNotes[0].noteNumber, 66);
+        }
+        host.stop();
+        devices.closeAudioDevice();
+    }
+
     void loopPassesAndHeldNoteAreMaterialized() {
         beginTest("loop passes become takes and a held note is clipped at the wrap once");
         PumpDeviceManager devices;
@@ -1110,6 +1154,7 @@ class EngineHostMidiRecordingTest final : public juce::UnitTest {
         expect(open(devices), "fake device opens");
         if (devices.device == nullptr)
             return;
+        devices.device->outputLatencySamples = 480;
 
         auto& tracks = magda::TrackManager::getInstance();
         const auto trackId = tracks.createTrack("Session MIDI");
@@ -1143,11 +1188,14 @@ class EngineHostMidiRecordingTest final : public juce::UnitTest {
         expect(host.recordingPreviews().at(trackId).target ==
                magda::RecordingTargetKind::SessionSlot);
         host.stopMidiRecording();
+        devices.device->pump();
+        settle();
 
         expect(!host.isSessionSlotRecordArmed(trackId, 2));
         expect(!host.isSessionSlotRecording(trackId, 2));
         expect(tracks.getTrack(trackId)->playbackMode == magda::TrackPlaybackMode::Session,
                "the materialized slot keeps the recording handle's ownership");
+        devices.device->pump();
         host.processSessionStateEvents();
         expect(tracks.getTrack(trackId)->activeSessionClipId != magda::INVALID_CLIP_ID,
                "the materialized clip takes over the recording target's run");
@@ -1577,6 +1625,7 @@ class EngineHostMidiRecordingTest final : public juce::UnitTest {
         expect(open(devices), "fake device opens");
         if (devices.device == nullptr)
             return;
+        devices.device->outputLatencySamples = 480;
 
         auto& tracks = magda::TrackManager::getInstance();
         const auto trackId = tracks.createTrack("Session re-click");
@@ -1595,15 +1644,64 @@ class EngineHostMidiRecordingTest final : public juce::UnitTest {
         devices.device->pump();
 
         host.armSessionSlotRecording(trackId, 0);
+        devices.device->pump();
+        settle();
+        devices.device->pump();
+        host.processSessionStateEvents();
         expect(!host.isSessionSlotRecordArmed(trackId, 0));
         expect(!host.isSessionSlotRecording(trackId, 0));
-        expectEquals(static_cast<int>(sessionClipsOn(trackId).size()), 1);
+        const auto completed = sessionClipsOn(trackId);
+        expectEquals(static_cast<int>(completed.size()), 1);
+        if (completed.size() == 1)
+            expect(host.sessionClipPlayState(completed[0].id) ==
+                       magda::SessionClipPlayState::Stopped,
+                   "deferred MIDI and audio slot stops share Back to Arrangement semantics");
+        expect(tracks.getTrack(trackId)->playbackMode == magda::TrackPlaybackMode::Arrangement);
         expect(clipsOn(trackId).empty());
         tracks.setTrackInputMonitor(trackId, magda::InputMonitorMode::In);
         settle();
         expectEquals(static_cast<int>(sessionClipsOn(trackId).size()), 1,
                      "later reconciliation does not materialize the take twice");
         expect(clipsOn(trackId).empty(), "later edits cannot start Arrangement recording");
+
+        host.stop();
+        devices.closeAudioDevice();
+    }
+
+    void switchingSessionSlotsKeepsNewTarget() {
+        beginTest("switching Session record slots preserves the new target through post-roll");
+        PumpDeviceManager devices;
+        expect(open(devices), "fake device opens");
+        if (devices.device == nullptr)
+            return;
+        devices.device->outputLatencySamples = 480;
+
+        auto& tracks = magda::TrackManager::getInstance();
+        const auto trackId = tracks.createTrack("Session record switch");
+        tracks.setTrackMidiInput(trackId, "keyboard");
+        tracks.setTrackRecordArmed(trackId, true);
+        magda::daw::engine_host::EngineHost host;
+        host.registerVirtualMidiSource("keyboard");
+        host.start(devices);
+        settle();
+        host.armSessionSlotRecording(trackId, 0);
+        host.beginArmedSessionSlotRecordings();
+        devices.device->pump();
+        devices.device->pump();
+        expect(host.isSessionSlotRecording(trackId, 0));
+
+        host.armSessionSlotRecording(trackId, 1);
+        devices.device->pump();
+        settle();
+
+        expect(!host.isSessionSlotRecordArmed(trackId, 0));
+        expect(host.isSessionSlotRecordArmed(trackId, 1),
+               "the second click becomes the target after the first take is harvested");
+        expect(!host.isSessionSlotRecording(trackId, 1));
+        const auto completed = sessionClipsOn(trackId);
+        expectEquals(static_cast<int>(completed.size()), 1);
+        if (completed.size() == 1)
+            expectEquals(completed[0].sceneIndex, 0);
 
         host.stop();
         devices.closeAudioDevice();

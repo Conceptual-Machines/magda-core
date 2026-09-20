@@ -4,25 +4,12 @@
 #include <utility>
 
 #include "../audio/AudioBridge.hpp"
-#include "../engine/AudioEngine.hpp"
+#include "../engine/PluginService.hpp"
 #include "RackInfo.hpp"
 
 namespace magda {
 
 namespace {
-
-/// Flush the grid's live plugins into the model before it is snapshotted.
-///
-/// A pad plugin's patch reaches `DeviceInfo` only when the Drum Grid's state is
-/// captured (`PluginManager::captureDrumGridPads`), and the ordinary sync does
-/// not do it. Without this, undoing the removal of a pad whose sampler had been
-/// edited since it was added restores the sampler as it was added, not as it
-/// sounded. `RemoveDeviceByPathCommand` captures for the same reason.
-void capturePadPluginStates(const ChainNodePath& gridPath) {
-    auto& tm = TrackManager::getInstance();
-    if (auto* engine = tm.getAudioEngine())
-        engine->capturePluginStateAt(gridPath);
-}
 
 PadRack snapshotPads(const ChainNodePath& gridPath) {
     PadRack pads;
@@ -56,7 +43,10 @@ void EditPadsCommand::execute() {
     if (!edit_)
         return;
 
-    capturePadPluginStates(gridPath_);
+    // Under the Tracktion renderer this flushes pad-plugin patches into the grid
+    // before the snapshot. Native pad snapshots do not yet have an equivalent
+    // child-instance capture path; that limitation predates the service move.
+    PluginService::getInstance().capturePluginStateAt(gridPath_);
     padsBefore_ = snapshotPads(gridPath_);
 
     edit_();

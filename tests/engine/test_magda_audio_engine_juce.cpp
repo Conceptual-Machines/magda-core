@@ -110,14 +110,9 @@ class MagdaAudioEngineTest final : public juce::UnitTest {
         engine.onPunchRegionChanged(0.0, 1.0, true, true);
         engine.onPunchEnabledChanged(true, true);
 
-        // The rest of the surface, each already named.
-        expect(engine.getPluginWindowManager() == nullptr, "No window onto a fork instance");
+        // The rest of the surface, each already named. The window manager, the media list
+        // and the ripple left the interface with #2757, so nothing here asks for them.
         expect(engine.getInsertRenderCaptureService() == nullptr, "and no insert capture pass");
-        expect(engine.getSamplerMediaReferences().empty(), "and no media list off an Edit");
-        expect(engine.createTempoSequenceRippleCommand(magda::TempoSequenceRippleMode::Insert,
-                                                       magda::BeatPosition{0.0},
-                                                       magda::BeatPosition{4.0}) == nullptr,
-               "and no ripple command");
 
         const auto named = magda::MagdaAudioEngine::unwiredMethods();
         for (const auto* wired :
@@ -127,9 +122,13 @@ class MagdaAudioEngineTest final : public juce::UnitTest {
             expect(!named.contains(wired), juce::String(wired) + " is wired through the host");
         for (const auto* wired : {"onPunchRegionChanged", "onPunchEnabledChanged"})
             expect(!named.contains(wired), juce::String(wired) + " is wired through the host");
-        for (const auto* method : {"getPluginWindowManager", "getInsertRenderCaptureService",
-                                   "getSamplerMediaReferences", "createTempoSequenceRippleCommand"})
+        for (const auto* method : {"getInsertRenderCaptureService"})
             expect(named.contains(method), juce::String(method) + " says it is not wired");
+
+        // #2757 took these off the interface, so the engine no longer answers for them at all.
+        for (const auto* gone : {"getPluginWindowManager", "getSamplerMediaReferences",
+                                 "createTempoSequenceRippleCommand"})
+            expect(!named.contains(gone), juce::String(gone) + " no longer reports unwired");
 
         engine.shutdown();
     }

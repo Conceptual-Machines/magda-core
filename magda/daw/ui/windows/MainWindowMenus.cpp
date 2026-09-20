@@ -1,3 +1,7 @@
+#include <algorithm>
+#include <atomic>
+#include <set>
+
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
 #include "../../core/UpdateChecker.hpp"
@@ -8,6 +12,7 @@
 #include "../dialogs/ControllersDialog.hpp"
 #include "../dialogs/ExportAudioDialog.hpp"
 #include "../dialogs/ExportMidiDialog.hpp"
+#include "../dialogs/FourOscConversionPrompt.hpp"
 #include "../dialogs/PluginSettingsDialog.hpp"
 #include "../dialogs/PreferencesDialog.hpp"
 #include "../dialogs/ProjectSettingsDialog.hpp"
@@ -90,7 +95,311 @@ class CollectFilesProgressWindow : public juce::ThreadWithProgressWindow {
     bool cancelled_ = false;
 };
 
+// Directory traversal can be slow on a large sample drive. Keep it off the
+// message thread, and return only the pure path matches; applying them remains
+// a message-thread ProjectManager operation.
+class MissingMediaSearchWindow : public juce::ThreadWithProgressWindow {
+  public:
+    using Completion =
+        std::function<void(std::vector<ProjectManager::MissingMediaFile>,
+                           std::vector<ProjectManager::MissingMediaReplacement>, bool)>;
+
+    MissingMediaSearchWindow(std::vector<ProjectManager::MissingMediaFile> missing,
+                             juce::File directory, Completion completion)
+        : ThreadWithProgressWindow(trEllipsis("missing_media.searching"), true, true),
+          missing_(std::move(missing)),
+          directory_(std::move(directory)),
+          completion_(std::move(completion)) {
+        setProgress(-1.0);
+        setStatusMessage(directory_.getFullPathName());
+    }
+
+    void run() override {
+        matches_ = ProjectManager::searchForMissingMedia(missing_, directory_,
+                                                         [this] { return threadShouldExit(); });
+        cancelled_ = threadShouldExit();
+    }
+
+    void threadComplete(bool userPressedCancel) override {
+        auto missing = std::move(missing_);
+        auto matches = std::move(matches_);
+        auto completion = std::move(completion_);
+        const bool cancelled = userPressedCancel || cancelled_;
+        delete this;
+
+        juce::MessageManager::callAsync([missing = std::move(missing), matches = std::move(matches),
+                                         completion = std::move(completion), cancelled]() mutable {
+            completion(std::move(missing), std::move(matches), cancelled);
+        });
+    }
+
+  private:
+    std::vector<ProjectManager::MissingMediaFile> missing_;
+    juce::File directory_;
+    Completion completion_;
+    std::vector<ProjectManager::MissingMediaReplacement> matches_;
+    bool cancelled_ = false;
+};
+
+std::vector<ProjectManager::MissingMediaFile> stillReferenced(
+    std::vector<ProjectManager::MissingMediaFile> files) {
+    std::set<juce::String> referencedPaths;
+    for (const auto& reference : ProjectManager::getInstance().getReferencedMediaFiles())
+        referencedPaths.insert(reference.path);
+    std::erase_if(files, [&referencedPaths](const auto& file) {
+        return !referencedPaths.contains(file.path);
+    });
+    return files;
+}
+
 }  // namespace
+
+bool MainWindow::isCurrentProjectGeneration(std::uint64_t generation) const {
+    return projectOpenGeneration_ == generation && ProjectManager::getInstance().hasOpenProject();
+}
+
+void MainWindow::offerMissingMediaRecovery(std::vector<ProjectManager::MissingMediaFile> missing,
+                                           std::uint64_t generation) {
+    if (!isCurrentProjectGeneration(generation))
+        return;
+    if (missing.empty()) {
+        daw::ui::offerFourOscConversion();
+        return;
+    }
+
+    int referenceCount = 0;
+    juce::StringArray paths;
+    constexpr size_t kMaxShownPaths = 6;
+    for (size_t i = 0; i < missing.size(); ++i) {
+        referenceCount += missing[i].referenceCount;
+        if (i < kMaxShownPaths)
+            paths.add(missing[i].path);
+    }
+    if (missing.size() > kMaxShownPaths)
+        paths.add(
+            tr("missing_media.more")
+                .replace("{0}", juce::String(static_cast<int>(missing.size() - kMaxShownPaths))));
+
+    const auto message = tr("missing_media.intro")
+                             .replace("{0}", juce::String(static_cast<int>(missing.size())))
+                             .replace("{1}", juce::String(referenceCount)) +
+                         "\n\n" + paths.joinIntoString("\n");
+
+    const auto safeThis = juce::Component::SafePointer<MainWindow>(this);
+    juce::AlertWindow::showAsync(
+        juce::MessageBoxOptions{}
+            .withIconType(juce::MessageBoxIconType::WarningIcon)
+            .withTitle(tr("missing_media.title"))
+            .withMessage(message)
+            .withButton(tr("missing_media.search_folder"))
+            .withButton(tr("missing_media.locate_files"))
+            .withButton(tr("missing_media.keep_offline"))
+            .withAssociatedComponent(this),
+        [safeThis, missing = std::move(missing), generation](int result) mutable {
+            if (safeThis == nullptr || !safeThis->isCurrentProjectGeneration(generation))
+                return;
+            if (result == 1) {
+                safeThis->chooseMissingMediaSearchFolder(std::move(missing), generation);
+            } else if (result == 2) {
+                safeThis->locateMissingMediaFiles(std::move(missing), 0, generation, 0);
+            } else {
+                daw::ui::offerFourOscConversion();
+            }
+        });
+}
+
+void MainWindow::chooseMissingMediaSearchFolder(
+    std::vector<ProjectManager::MissingMediaFile> missing, std::uint64_t generation) {
+    if (!isCurrentProjectGeneration(generation))
+        return;
+    if (fileChooser_ != nullptr) {
+        daw::ui::offerFourOscConversion();
+        return;
+    }
+
+    auto initialDirectory =
+        ProjectManager::getInstance().getCurrentProjectFile().getParentDirectory();
+    fileChooser_ =
+        std::make_unique<juce::FileChooser>(tr("missing_media.choose_folder"), initialDirectory);
+    const auto safeThis = juce::Component::SafePointer<MainWindow>(this);
+    fileChooser_->launchAsync(
+        juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+        [safeThis, missing = std::move(missing),
+         generation](const juce::FileChooser& chooser) mutable {
+            if (safeThis == nullptr)
+                return;
+            const auto directory = chooser.getResult();
+            safeThis->fileChooser_.reset();
+            if (!safeThis->isCurrentProjectGeneration(generation))
+                return;
+            if (!directory.isDirectory()) {
+                daw::ui::offerFourOscConversion();
+                return;
+            }
+
+            const auto completionSafe = safeThis;
+            (new MissingMediaSearchWindow(
+                 std::move(missing), directory,
+                 [completionSafe,
+                  generation](std::vector<ProjectManager::MissingMediaFile> searched,
+                              std::vector<ProjectManager::MissingMediaReplacement> matches,
+                              bool cancelled) mutable {
+                     if (completionSafe != nullptr)
+                         completionSafe->completeMissingMediaSearch(generation, std::move(searched),
+                                                                    std::move(matches), cancelled);
+                 }))
+                ->launchThread();
+        });
+}
+
+void MainWindow::completeMissingMediaSearch(
+    std::uint64_t generation, std::vector<ProjectManager::MissingMediaFile> missing,
+    std::vector<ProjectManager::MissingMediaReplacement> matches, bool cancelled) {
+    if (!isCurrentProjectGeneration(generation))
+        return;
+
+    auto& projects = ProjectManager::getInstance();
+    const int repaired = cancelled ? 0 : projects.relinkMissingMediaFiles(matches);
+    auto remaining = stillReferenced(std::move(missing));
+    if (remaining.empty()) {
+        finishMissingMediaRecovery(
+            tr("missing_media.all_relinked").replace("{0}", juce::String(repaired)), generation);
+        return;
+    }
+
+    auto message = cancelled
+                       ? tr("missing_media.search_cancelled")
+                       : tr("missing_media.search_result")
+                             .replace("{0}", juce::String(repaired))
+                             .replace("{1}", juce::String(static_cast<int>(remaining.size())));
+    const auto safeThis = juce::Component::SafePointer<MainWindow>(this);
+    juce::AlertWindow::showAsync(
+        juce::MessageBoxOptions{}
+            .withIconType(juce::MessageBoxIconType::InfoIcon)
+            .withTitle(tr("missing_media.title"))
+            .withMessage(message)
+            .withButton(tr("missing_media.locate_remaining"))
+            .withButton(tr("missing_media.keep_offline"))
+            .withAssociatedComponent(this),
+        [safeThis, remaining = std::move(remaining), generation, repaired](int result) mutable {
+            if (safeThis == nullptr || !safeThis->isCurrentProjectGeneration(generation))
+                return;
+            if (result == 1)
+                safeThis->locateMissingMediaFiles(std::move(remaining), 0, generation, repaired);
+            else
+                daw::ui::offerFourOscConversion();
+        });
+}
+
+void MainWindow::locateMissingMediaFiles(std::vector<ProjectManager::MissingMediaFile> missing,
+                                         size_t index, std::uint64_t generation,
+                                         int repairedCount) {
+    if (!isCurrentProjectGeneration(generation))
+        return;
+    if (index >= missing.size()) {
+        const auto remaining = stillReferenced(missing);
+        finishMissingMediaRecovery(
+            remaining.empty()
+                ? tr("missing_media.all_relinked").replace("{0}", juce::String(repairedCount))
+                : tr("missing_media.search_result")
+                      .replace("{0}", juce::String(repairedCount))
+                      .replace("{1}", juce::String(static_cast<int>(remaining.size()))),
+            generation);
+        return;
+    }
+    if (fileChooser_ != nullptr) {
+        daw::ui::offerFourOscConversion();
+        return;
+    }
+
+    const auto& item = missing[index];
+    auto initialDirectory =
+        ProjectManager::localFileForStoredMediaPath(item.path).getParentDirectory();
+    if (!initialDirectory.isDirectory())
+        initialDirectory =
+            ProjectManager::getInstance().getCurrentProjectFile().getParentDirectory();
+    auto title = tr("missing_media.locate_title")
+                     .replace("{0}", ProjectManager::missingMediaFileName(item.path))
+                     .replace("{1}", juce::String(static_cast<int>(index + 1)))
+                     .replace("{2}", juce::String(static_cast<int>(missing.size())));
+    fileChooser_ = std::make_unique<juce::FileChooser>(title, initialDirectory, "*");
+
+    const auto safeThis = juce::Component::SafePointer<MainWindow>(this);
+    fileChooser_->launchAsync(
+        juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+        [safeThis, missing = std::move(missing), index, generation,
+         repairedCount](const juce::FileChooser& chooser) mutable {
+            if (safeThis == nullptr)
+                return;
+            const auto replacement = chooser.getResult();
+            safeThis->fileChooser_.reset();
+            if (!safeThis->isCurrentProjectGeneration(generation))
+                return;
+            if (!replacement.existsAsFile()) {
+                const auto remaining = stillReferenced(missing);
+                safeThis->finishMissingMediaRecovery(
+                    tr("missing_media.search_result")
+                        .replace("{0}", juce::String(repairedCount))
+                        .replace("{1}", juce::String(static_cast<int>(remaining.size()))),
+                    generation);
+                return;
+            }
+
+            const bool repaired = ProjectManager::getInstance().relinkMissingMediaFile(
+                missing[index].path, replacement);
+            if (!repaired) {
+                const auto referenced = ProjectManager::getInstance().getReferencedMediaFiles();
+                const bool stillPresent =
+                    std::ranges::any_of(referenced, [&missing, index](const auto& file) {
+                        return file.path == missing[index].path;
+                    });
+                if (!stillPresent) {
+                    safeThis->locateMissingMediaFiles(std::move(missing), index + 1, generation,
+                                                      repairedCount);
+                    return;
+                }
+
+                const auto retrySafe = safeThis;
+                juce::AlertWindow::showAsync(
+                    juce::MessageBoxOptions{}
+                        .withIconType(juce::MessageBoxIconType::WarningIcon)
+                        .withTitle(tr("missing_media.title"))
+                        .withMessage(tr("missing_media.relink_failed"))
+                        .withButton(tr("missing_media.retry"))
+                        .withButton(tr("missing_media.skip"))
+                        .withAssociatedComponent(safeThis.getComponent()),
+                    [retrySafe, missing = std::move(missing), index, generation,
+                     repairedCount](int result) mutable {
+                        if (retrySafe == nullptr ||
+                            !retrySafe->isCurrentProjectGeneration(generation))
+                            return;
+                        retrySafe->locateMissingMediaFiles(std::move(missing),
+                                                           result == 1 ? index : index + 1,
+                                                           generation, repairedCount);
+                    });
+                return;
+            }
+            safeThis->locateMissingMediaFiles(std::move(missing), index + 1, generation,
+                                              repairedCount + 1);
+        });
+}
+
+void MainWindow::finishMissingMediaRecovery(const juce::String& message, std::uint64_t generation) {
+    if (!isCurrentProjectGeneration(generation))
+        return;
+    const auto safeThis = juce::Component::SafePointer<MainWindow>(this);
+    juce::AlertWindow::showAsync(juce::MessageBoxOptions{}
+                                     .withIconType(juce::MessageBoxIconType::InfoIcon)
+                                     .withTitle(tr("missing_media.title"))
+                                     .withMessage(message)
+                                     .withButton(tr("dialogs.ok"))
+                                     .withAssociatedComponent(this),
+                                 [safeThis, generation](int) {
+                                     if (safeThis != nullptr &&
+                                         safeThis->isCurrentProjectGeneration(generation))
+                                         daw::ui::offerFourOscConversion();
+                                 });
+}
 
 void MainWindow::openProjectFile(const juce::File& file) {
     if (!file.existsAsFile())
@@ -1005,14 +1314,7 @@ void MainWindow::setupMenuCallbacks() {
 
     callbacks.onConnectionSettings = [this]() { ConnectionsDialog::showDialog(this); };
 
-    callbacks.onPluginSettings = [this]() {
-        if (!mainComponent)
-            return;
-        auto* engine = mainComponent->getAudioEngine();
-        if (!engine)
-            return;
-        PluginSettingsDialog::showDialog(engine, this);
-    };
+    callbacks.onPluginSettings = [this]() { PluginSettingsDialog::showDialog(this); };
 
     // Initialize the menu manager with callbacks
     MenuManager::getInstance().initialize(callbacks);

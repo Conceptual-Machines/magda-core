@@ -10,9 +10,7 @@
 #include "SearchTextEditor.hpp"
 #include "core/PluginPreferences.hpp"
 
-namespace magda {
-class AudioEngine;
-}  // namespace magda
+namespace magda {}  // namespace magda
 
 namespace magda::daw::ui {
 
@@ -85,7 +83,6 @@ class PluginBrowserContent : public PanelContent,
     /**
      * @brief Set the engine for plugin scanning
      */
-    void setEngine(magda::AudioEngine* engine);
 
     /**
      * @brief Refresh the plugin list from the engine's KnownPluginList
@@ -125,7 +122,8 @@ class PluginBrowserContent : public PanelContent,
 
     // Plugin data
     std::vector<PluginBrowserInfo> plugins_;
-    magda::AudioEngine* engine_ = nullptr;  // For plugin scanning
+    /// Registered on the plugin list, which only exists once an engine is up.
+    bool listening_ = false;
     bool favoritesLoaded_ = false;
     bool aliasesLoaded_ = false;
 

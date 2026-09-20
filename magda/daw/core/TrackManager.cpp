@@ -11,6 +11,7 @@
 #include "../audio/TracktionHelpers.hpp"
 #include "../audio/plugins/SidechainTriggerBus.hpp"
 #include "../engine/AudioEngine.hpp"
+#include "../engine/PluginService.hpp"
 #include "ChainWalk.hpp"
 #include "ClipManager.hpp"
 #include "Config.hpp"
@@ -1583,7 +1584,16 @@ void TrackManager::setTrackMixerFaderTopInset(TrackId trackId, int inset) {
 }
 
 void TrackManager::setAudioEngine(AudioEngine* audioEngine) {
+    auto& plugins = PluginService::getInstance();
+    if (auto* provider = dynamic_cast<PluginStateProvider*>(audioEngine_))
+        plugins.forgetStateProvider(*provider);
+
     audioEngine_ = audioEngine;
+
+    // The state service follows the renderer selected for this project, not every
+    // initialized engine that happens to remain alive (notably the shared test engine).
+    if (auto* provider = dynamic_cast<PluginStateProvider*>(audioEngine_))
+        plugins.useStateProvider(*provider);
 
     // Sync existing tracks' MIDI routing (in case tracks were created before engine was set)
     // Only set up MidiBridge monitoring; TE-level MIDI routing is handled by

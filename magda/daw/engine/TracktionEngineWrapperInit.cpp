@@ -22,8 +22,9 @@
     #include "MagdaAudioEngine.hpp"
 #endif
 #include "MagdaEngineBehaviour.hpp"
+#include "MagdaPropertyStorage.hpp"
 #include "MagdaUIBehaviour.hpp"
-#include "PluginScanCoordinator.hpp"
+#include "PluginService.hpp"
 #include "PluginWindowManager.hpp"
 #include "TempoLaneSync.hpp"
 #include "TracktionEngineWrapper.hpp"
@@ -90,49 +91,18 @@ void TracktionEngineWrapper::initializePluginFormats() {
     // Register ToneGeneratorPlugin (not registered by default)
     engine_->getPluginManager().createBuiltInType<tracktion::ToneGeneratorPlugin>();
 
-    // Enable out-of-process scanning to prevent plugin crashes from crashing the app
+    // Out-of-process, so a plugin that crashes on scan does not take the app with it.
     auto& pluginManager = engine_->getPluginManager();
     pluginManager.setUsesSeparateProcessForScanning(true);
-    DBG("Enabled out-of-process plugin scanning");
 
-    // Load saved plugin list from persistent storage
-    loadPluginList();
+    // The list Tracktion's own hosting reads is the one the service answers off, until
+    // the fork goes (#2557).
+    auto& plugins = PluginService::getInstance();
+    plugins.useEngineList(pluginManager.pluginFormatManager, pluginManager.knownPluginList);
+    plugins.setInternalParameterScanner(
+        [this](const juce::String& pluginId) { return scanInternalParametersInEdit(pluginId); });
+    plugins.openList(!isHeadlessRuntime() && Config::getInstance().getScanPluginsOnStartup());
 
-    // Drop entries whose files have been uninstalled. Unconditional —
-    // the scan-on-startup flag only governs detecting *new* plugins.
-    // Persist + resync the cached count so PluginSettingsDialog doesn't
-    // show a stale total after the prune.
-    auto& knownPlugins = pluginManager.knownPluginList;
-    if (pruneMissingPlugins(knownPlugins, pluginManager.pluginFormatManager) > 0) {
-        savePluginList();
-        Config::getInstance().setTotalPluginCount(knownPlugins.getNumTypes());
-        Config::getInstance().save();
-    }
-
-    // Auto-detect newly installed plugins (if enabled). The splash screen
-    // wants a flat string; format the phase here.
-    if (!isHeadlessRuntime() && Config::getInstance().getScanPluginsOnStartup()) {
-        auto splashStatus = onPluginScanStatus;
-        detectNewPlugins(
-            [splashStatus](PluginScanPhase phase, const juce::String& currentPlugin) {
-                if (!splashStatus)
-                    return;
-                switch (phase) {
-                    case PluginScanPhase::Discovering:
-                        splashStatus("Checking for new plugins...");
-                        break;
-                    case PluginScanPhase::UpToDate:
-                        splashStatus("Plugins up to date");
-                        break;
-                    case PluginScanPhase::Scanning:
-                        splashStatus("Scanning: " + pluginDisplayName(currentPlugin));
-                        break;
-                }
-            },
-            nullptr);
-    }
-
-    // Log registered plugin formats
     auto& formatManager = pluginManager.pluginFormatManager;
     DBG("Plugin formats registered by Tracktion Engine: " << formatManager.getNumFormats());
     for (int i = 0; i < formatManager.getNumFormats(); ++i) {
@@ -340,10 +310,11 @@ void TracktionEngineWrapper::setupMidiDevices() {
 bool TracktionEngineWrapper::initialiseServices() {
     // Initialize Tracktion Engine with custom UIBehaviour for plugin windows
     juce::Logger::writeToLog("[Init] Creating Tracktion Engine...");
-    auto uiBehaviour = std::make_unique<MagdaUIBehaviour>();
-    auto engineBehaviour = std::make_unique<MagdaEngineBehaviour>();
-    engine_ = std::make_unique<tracktion::Engine>("MAGDA", std::move(uiBehaviour),
-                                                  std::move(engineBehaviour));
+    engine_ = std::make_unique<tracktion::Engine>(
+        std::make_unique<MagdaPropertyStorage>("MAGDA", opensAudioInterface_),
+        std::make_unique<MagdaUIBehaviour>(),
+        std::make_unique<MagdaEngineBehaviour>(opensAudioInterface_));
+    audioIO_ = std::make_unique<TracktionAudioIO>(engine_->getDeviceManager());
 
     // Here rather than in the AudioBridge's constructor, which is the fork's
     // and is never built under the native engine (#2600). The provider asks
@@ -365,15 +336,22 @@ bool TracktionEngineWrapper::initialiseServices() {
     juce::Logger::writeToLog("[Init] initializePluginFormats() done");
 
     if (!isHeadlessRuntime()) {
-        // Initialize device manager with preferred settings
-        juce::Logger::writeToLog("[Init] initializeDeviceManager()...");
-        initializeDeviceManager();
-        juce::Logger::writeToLog("[Init] initializeDeviceManager() done");
+        if (opensAudioInterface_) {
+            // Initialize device manager with preferred settings
+            juce::Logger::writeToLog("[Init] initializeDeviceManager()...");
+            initializeDeviceManager();
+            juce::Logger::writeToLog("[Init] initializeDeviceManager() done");
 
-        // Configure audio devices if user has preferences
-        juce::Logger::writeToLog("[Init] configureAudioDevices()...");
-        configureAudioDevices();
-        juce::Logger::writeToLog("[Init] configureAudioDevices() done");
+            // Configure audio devices if user has preferences
+            juce::Logger::writeToLog("[Init] configureAudioDevices()...");
+            configureAudioDevices();
+            juce::Logger::writeToLog("[Init] configureAudioDevices() done");
+        } else {
+            // MIDI still scans and hot-plugs through Tracktion's DeviceManager; with no backends
+            // it opens no audio interface.
+            juce::Logger::writeToLog("[Init] Tracktion opens no audio interface");
+            engine_->getDeviceManager().initialise(0, 0);
+        }
 
         // Setup MIDI devices
         juce::Logger::writeToLog("[Init] setupMidiDevices()...");
@@ -390,16 +368,25 @@ bool TracktionEngineWrapper::initialiseServices() {
 
     installProjectStateHooks();
 
-    // Ensure devicesLoading_ is cleared so transport isn't blocked
-    // The async changeListenerCallback may not fire if no MIDI devices are present
-    if (devicesLoading_) {
-        devicesLoading_ = false;
-    }
-
     return engine_ != nullptr;
 }
 
 void TracktionEngineWrapper::installProjectStateHooks() {
+    // What this engine answers for, off the services that own each concern (#2757). The
+    // native engine registers its own formatter over this one when it comes up.
+    GrooveLibrary::getInstance().setStore(
+        [this] { return readGrooveTemplates(); },
+        [this](const GrooveTemplateData& groove) { return upsertGrooveTemplate(groove); });
+    SamplerMedia::getInstance().setProvider([this] { return getSamplerMediaReferences(); });
+    setTempoSequenceRippleBuilder(
+        [this](TempoSequenceRippleMode mode, BeatPosition start, BeatPosition end) {
+            return buildTempoSequenceRipple(mode, start, end);
+        });
+    setDeviceParameterFormatter(
+        [this](const ChainNodePath& devicePath, int paramIndex, float normalised) {
+            return formatDeviceParameter(devicePath, paramIndex, normalised);
+        });
+
     // Installed before any AudioBridge exists, and under the magda engine none
     // ever is, so the plugin-state half is checked at save time (#2579).
     auto alive = aliveFlag_;
@@ -409,13 +396,12 @@ void TracktionEngineWrapper::installProjectStateHooks() {
 
     // Wire up state capture before project save
     ProjectManager::getInstance().onBeforeSave = [this, alive]() {
-        // Asked of whichever engine is rendering: only the instance that
-        // rendered holds the chunk a project saves (#2581). The warp markers
+        // The service is fed by whichever engine renders: only that instance
+        // holds the chunk a project saves (#2758). The warp markers
         // stay the bridge's, being the fork's own clip state -- and the bridge
         // is read here rather than captured, because these hooks are installed
         // before there is one (#2579).
-        if (auto* engine = TrackManager::getInstance().getAudioEngine())
-            engine->captureAllPluginStates();
+        PluginService::getInstance().captureAllPluginStates();
 
         if (*alive && audioBridge_)
             audioBridge_->captureWarpMarkerStates();
@@ -522,6 +508,8 @@ bool TracktionEngineWrapper::initialisePlayback() {
     // Create AudioBridge for TrackManager synchronization
     audioBridge_ = std::make_unique<AudioBridge>(*engine_, *currentEdit_, meters_, deviceMeters_);
     audioBridge_->syncAll();
+    if (midiBridge_)
+        midiBridge_->onActiveInputsChanged = [this] { audioBridge_->refreshActiveMidiInputs(); };
 
 #ifndef MAGDA_NO_AUTO_TEMPO_LANE_SYNC
     // Keep the edit-scoped Tempo automation lane and tempoSequence in sync.
@@ -602,13 +590,22 @@ bool TracktionEngineWrapper::initialize() {
 void TracktionEngineWrapper::shutdown() {
     DBG("TracktionEngineWrapper::shutdown - starting...");
 
+    // Stop the service reaching the AudioBridge before that bridge is torn down. This is
+    // also safe for a wrapper that was never selected as TrackManager's renderer.
+    GrooveLibrary::getInstance().forgetStore();
+    SamplerMedia::getInstance().forgetProvider();
+    forgetTempoSequenceRippleBuilder();
+    forgetDeviceParameterFormatter();
+
+    PluginService::getInstance().forgetStateProvider(*this);
+
     // Signal that this object is being destroyed so pending callAsync lambdas
     // that captured aliveFlag_ can bail out instead of dereferencing `this`.
     *aliveFlag_ = false;
 
-    // Wait for background plugin discovery to finish before tearing down
-    if (pluginDiscoveryThread_.joinable())
-        pluginDiscoveryThread_.join();
+    // The service answers off the list this engine owns, so it lets go -- and joins its
+    // discovery thread -- before any of it is torn down (#2756).
+    PluginService::getInstance().forgetEngineList();
 
     // Release test tone plugin first (before Edit is destroyed)
     testTonePlugin_.reset();
@@ -622,6 +619,7 @@ void TracktionEngineWrapper::shutdown() {
     if (engine_) {
         engine_->getDeviceManager().removeChangeListener(this);
     }
+    audioIO_.reset();
 
     // CRITICAL: Close all plugin windows FIRST (before plugins are destroyed)
     // This prevents malloc errors from windows trying to access destroyed plugins
@@ -655,8 +653,10 @@ void TracktionEngineWrapper::shutdown() {
     ProjectManager::getInstance().onAfterLoad = std::move(previousAfterLoad_);
 
     // Clear MidiBridge's reference to AudioBridge before destroying it
-    if (midiBridge_)
+    if (midiBridge_) {
         midiBridge_->clearAudioBridge();
+        midiBridge_->onActiveInputsChanged = nullptr;
+    }
 
     // Destroy AudioBridge first (it references Edit and Engine)
     if (audioBridge_) {

@@ -727,6 +727,9 @@ class AudioBridge : public TrackManagerListener,
      */
     void onMidiDevicesAvailable();
 
+    /** @brief Reroute every track after Audio Settings changed which MIDI inputs are active. */
+    void refreshActiveMidiInputs();
+
     /**
      * @brief Wires the recording-preview queue for track-routed MIDI input.
      *

@@ -417,21 +417,11 @@ void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track, bool syncM
         // Sync routing selectors from current track state
         if (audioEngine_ && audioInSelector && audioOutSelector && midiInSelector &&
             midiOutSelector) {
-            auto* deviceManager = audioEngine_->getDeviceManager();
-            auto* device = deviceManager ? deviceManager->getCurrentAudioDevice() : nullptr;
-            auto* midiBridge = audioEngine_->getMidiBridge();
-            juce::BigInteger enabledIn, enabledOut;
-            std::map<int, juce::String> teInputDeviceNames, teOutputDeviceNames;
-            enabledOut = audioEngine_->getEnabledWaveChannels(false);
-            teOutputDeviceNames = audioEngine_->getOutputDeviceNamesByChannel();
-            enabledIn = audioEngine_->getEnabledWaveChannels(true);
-            teInputDeviceNames = audioEngine_->getInputDeviceNamesByChannel();
             RoutingSyncHelper::syncSelectorsFromTrack(
                 track, audioInSelector.get(), midiInSelector.get(), audioOutSelector.get(),
-                midiOutSelector.get(), midiBridge, device, trackId_, outputTrackMapping_,
-                midiOutputTrackMapping_, &inputTrackMapping_, enabledIn, enabledOut,
-                &inputChannelMapping_, teInputDeviceNames, &midiInputTrackMapping_,
-                &outputChannelMapping_, teOutputDeviceNames);
+                midiOutSelector.get(), audioEngine_->getMidiBridge(), audioEngine_->getAudioIO(),
+                trackId_, outputTrackMapping_, midiOutputTrackMapping_, &inputTrackMapping_,
+                &inputChannelMapping_, &midiInputTrackMapping_, &outputChannelMapping_);
         }
     }
 
@@ -802,24 +792,16 @@ void MixerView::ChannelStrip::setupControls() {
 
         // Populate routing options from real data and wire callbacks
         if (audioEngine_) {
-            auto* deviceManager = audioEngine_->getDeviceManager();
-            auto* device = deviceManager ? deviceManager->getCurrentAudioDevice() : nullptr;
             auto* midiBridge = audioEngine_->getMidiBridge();
+            const auto* hardware = audioEngine_->getAudioIO();
 
-            juce::BigInteger enabledInputChannels, enabledOutputChannels;
-            std::map<int, juce::String> teInputDeviceNames, teOutputDeviceNames;
-            enabledOutputChannels = audioEngine_->getEnabledWaveChannels(false);
-            teOutputDeviceNames = audioEngine_->getOutputDeviceNamesByChannel();
-            enabledInputChannels = audioEngine_->getEnabledWaveChannels(true);
-            teInputDeviceNames = audioEngine_->getInputDeviceNamesByChannel();
-
-            audioInSelector->meterInputsFrom(deviceManager);
-            RoutingSyncHelper::populateAudioInputOptions(audioInSelector.get(), device, trackId_,
-                                                         &inputTrackMapping_, enabledInputChannels,
-                                                         &inputChannelMapping_, teInputDeviceNames);
+            audioInSelector->meterInputsFrom(audioEngine_->getDeviceManager());
+            RoutingSyncHelper::populateAudioInputOptions(
+                audioInSelector.get(), RoutingSyncHelper::openDirection(hardware, true), trackId_,
+                &inputTrackMapping_, &inputChannelMapping_);
             RoutingSyncHelper::populateAudioOutputOptions(
-                audioOutSelector.get(), trackId_, device, outputTrackMapping_,
-                enabledOutputChannels, &outputChannelMapping_, teOutputDeviceNames);
+                audioOutSelector.get(), trackId_, RoutingSyncHelper::openDirection(hardware, false),
+                outputTrackMapping_, &outputChannelMapping_);
             RoutingSyncHelper::populateMidiInputOptions(midiInSelector.get(), midiBridge, trackId_,
                                                         &midiInputTrackMapping_);
             RoutingSyncHelper::populateMidiOutputOptions(midiOutSelector.get(), midiBridge,
@@ -1932,10 +1914,12 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
     // debugPanel_->onMetricsChanged = [this]() { rebuildChannelStrips(); };
     // addAndMakeVisible(*debugPanel_);
 
-    // Listen for MIDI device list changes
+    // Listen for MIDI device list changes, and for hardware channels opening or closing
     if (audioEngine_) {
         if (auto* mb = audioEngine_->getMidiBridge())
             mb->addMidiDeviceListListener(this);
+        if (auto* hardware = audioEngine_->getAudioIO())
+            hardware->addListener(this);
     }
 
     // Start timer for meter animation (30fps)
@@ -1946,10 +1930,16 @@ void MixerView::midiDeviceListChanged() {
     juce::MessageManager::callAsync([this]() { tracksChanged(); });
 }
 
+void MixerView::hardwareChannelsChanged() {
+    tracksChanged();
+}
+
 MixerView::~MixerView() {
     if (audioEngine_) {
         if (auto* mb = audioEngine_->getMidiBridge())
             mb->removeMidiDeviceListListener(this);
+        if (auto* hardware = audioEngine_->getAudioIO())
+            hardware->removeListener(this);
     }
     stopTimer();
     TrackManager::getInstance().removeListener(this);

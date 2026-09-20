@@ -80,6 +80,7 @@ set(TEST_SOURCES
     devices/test_plugin_metadata_store.cpp
     devices/test_external_plugin_lookup.cpp
     devices/test_prune_missing_plugins.cpp
+    devices/test_plugin_service_state.cpp
     devices/test_known_plugin_list_duplicates.cpp
     devices/test_device_parameter_pagination.cpp
     devices/test_mutable_clouds.cpp
@@ -140,6 +141,7 @@ set(TEST_SOURCES
     automation/test_modulation_baker.cpp
     # Clip-based automation lanes: gap-hold + bake flattener (issue #1087)
     automation/test_automation_clip_lanes.cpp
+    devices/test_plugin_service_teardown.cpp
     devices/test_scan_report.cpp
     devices/test_drum_grid_plugin.cpp
     # The sampler's one cross-thread boundary (#2384): what the audio thread may
@@ -189,6 +191,10 @@ set(TEST_SOURCES
     ../magda/daw/ui/panels/TransportLayout.cpp
     # Hardware channels labelled by the interface's own names (#2734)
     ui/test_channel_labels.cpp
+    # Tracktion's saved audio interface, migrated to AudioIOService (#2746)
+    audio/test_tracktion_audio_settings.cpp
+    # Hardware channels named as saved routes name them (#2747)
+    audio/test_hardware_route_names.cpp
     # The input levels behind the input menu's meters
     ui/test_hardware_input_levels.cpp
     ../magda/daw/ui/components/mixer/HardwareInputLevels.cpp
@@ -512,7 +518,8 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES engine/test_clip_warp.cpp)
     list(APPEND TEST_SOURCES midi/test_midi_clip_playback.cpp)
     list(APPEND TEST_SOURCES clips/test_editor_playhead_fold.cpp)
-    list(APPEND TEST_SOURCES audio/test_groove_template.cpp)
+    list(APPEND TEST_SOURCES audio/test_groove_library.cpp
+    audio/test_groove_template.cpp)
     list(APPEND TEST_SOURCES audio/test_transient_detector.cpp)
     list(APPEND TEST_SOURCES audio/test_source_loop_info.cpp)
 
@@ -845,6 +852,14 @@ target_sources(magda_juce_tests PRIVATE
     devices/test_external_plugin_state_restore_juce.cpp
     agents/test_chord_progression_converter_juce.cpp
     ui/test_audio_driver_type_selection_juce.cpp
+    # AudioIOService opening only the channels asked for (#2746)
+    audio/test_audio_io_service_juce.cpp
+    # Audio Settings' Active MIDI inputs, saved in Config
+    audio/test_active_midi_inputs_juce.cpp
+    # Tracktion keeping MIDI and opening no audio interface under native (#2747)
+    engine/test_tracktion_without_audio_juce.cpp
+    # Audio Settings driving Tracktion's interface through its wave devices (#2749)
+    engine/test_tracktion_audio_io_juce.cpp
     automation/test_tempo_sequence_ripple_juce.cpp
     ../magda/daw/ui/components/chain/slot/StepSequencerClipExport.cpp
 )
@@ -878,6 +893,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         engine/test_engine_host_publish_juce.cpp
         engine/test_engine_host_audio_input_juce.cpp
         engine/test_engine_host_hardware_outputs_juce.cpp
+        engine/test_groove_entries_juce.cpp
         engine/test_engine_host_midi_recording_juce.cpp
         engine/test_engine_host_session_capture_juce.cpp
 

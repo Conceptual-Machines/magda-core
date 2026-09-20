@@ -348,6 +348,65 @@ class ProjectManager {
      */
     juce::File getImportedDirectory() const;
 
+    /** One distinct project media path which cannot currently be opened. */
+    struct MissingMediaFile {
+        juce::String path;
+        int referenceCount = 0;
+
+        bool operator==(const MissingMediaFile&) const = default;
+    };
+
+    /** A user- or search-selected replacement for one missing path. */
+    struct MissingMediaReplacement {
+        juce::String missingPath;
+        juce::File replacement;
+
+        bool operator==(const MissingMediaReplacement&) const = default;
+    };
+
+    /** Return every distinct referenced clip, take, sampler and drum-pad path. */
+    std::vector<MissingMediaFile> getReferencedMediaFiles() const;
+
+    /**
+     * Filter a reference snapshot down to paths which do not exist locally.
+     * This performs filesystem I/O and is safe to run away from the message
+     * thread once getReferencedMediaFiles() has captured the model state.
+     */
+    static std::vector<MissingMediaFile> findMissingMediaFiles(
+        const std::vector<MissingMediaFile>& referenced,
+        const std::function<bool()>& shouldStop = {});
+
+    /** Synchronous convenience wrapper, primarily for non-UI callers and tests. */
+    std::vector<MissingMediaFile> getMissingMediaFiles() const;
+
+    /** Filename display which accepts paths authored on any supported platform. */
+    static juce::String missingMediaFileName(juce::String path);
+
+    /**
+     * Convert a stored path to a local file only when its syntax belongs to
+     * the current platform. Foreign absolute paths return an empty File.
+     */
+    static juce::File localFileForStoredMediaPath(juce::String path);
+
+    /**
+     * Search a directory tree for conservative, unambiguous filename matches.
+     * Duplicate filenames are resolved only when their trailing directory
+     * components identify one candidate uniquely. This method performs only
+     * filesystem I/O and is safe to run away from the message thread.
+     */
+    static std::vector<MissingMediaReplacement> searchForMissingMedia(
+        const std::vector<MissingMediaFile>& missing, const juce::File& directory,
+        const std::function<bool()>& shouldStop = {});
+
+    /**
+     * Repoint all project references named by replacements. Invalid targets and
+     * paths which are no longer referenced are ignored. Returns the number of
+     * distinct paths actually repaired and marks the project dirty when nonzero.
+     */
+    int relinkMissingMediaFiles(const std::vector<MissingMediaReplacement>& replacements);
+
+    bool relinkMissingMediaFile(const juce::String& missingPath, const juce::File& replacement);
+
     /**
      * @brief Delete temp media directories older than 7 days.
      * Call once at app launch.

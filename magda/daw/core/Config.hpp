@@ -6,6 +6,7 @@
 #include <array>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -17,6 +18,24 @@ class ConfigListener {
   public:
     virtual ~ConfigListener() = default;
     virtual void configChanged() = 0;
+};
+
+/**
+ * @brief The audio interface the user chose, as AudioIOService saves it (#2746).
+ *
+ * Channels are explicit indices, never a count: what opens is exactly these,
+ * less any the interface does not have.
+ */
+struct AudioIOSettings {
+    std::string backend;
+    std::string inputInterface;
+    std::string outputInterface;
+    double sampleRate = 0.0;  // 0 = the interface's current rate
+    int bufferSize = 0;       // 0 = the interface's default
+    std::vector<int> inputChannels;
+    std::vector<int> outputChannels;
+
+    bool operator==(const AudioIOSettings&) const = default;
 };
 
 /**
@@ -380,6 +399,23 @@ class Config {
     void setPreferredOutputChannels(int channels) {
         preferredOutputChannels = channels;
     }
+
+    /** @brief Empty until the user has chosen, or Tracktion's choice has been migrated. */
+    const std::optional<AudioIOSettings>& getAudioIO() const {
+        return audioIO;
+    }
+    void setAudioIO(std::optional<AudioIOSettings> settings) {
+        audioIO = std::move(settings);
+    }
+
+    /** @brief MIDI inputs switched off in Audio Settings, by name: no track lists or hears them. */
+    const std::vector<std::string>& getInactiveMidiInputs() const {
+        return inactiveMidiInputs;
+    }
+    void setInactiveMidiInputs(std::vector<std::string> names) {
+        inactiveMidiInputs = std::move(names);
+    }
+    bool isMidiInputActive(const juce::String& name) const;
 
     // Custom Plugin Paths
     std::vector<std::string> getCustomPluginPaths() const {
@@ -1624,6 +1660,8 @@ class Config {
     std::string audioEngine = "tracktion";  // Which engine renders (#2559)
     int preferredInputChannels = 0;   // Preferred input channel count (0 = use device default)
     int preferredOutputChannels = 0;  // Preferred output channel count (0 = use device default)
+    std::optional<AudioIOSettings> audioIO;
+    std::vector<std::string> inactiveMidiInputs;  // Names, so a new port starts active
 
     // Language
     std::string language = "en";  // Language code, matches lang/<code>.json

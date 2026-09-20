@@ -7,6 +7,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -66,6 +67,15 @@ class EngineHost {
     };
     using HardwareChannelProvider = std::function<HardwareChannelCatalog()>;
 
+    /** @brief One named groove, as the app's library holds it (#2757). */
+    struct GrooveEntry {
+        std::string name;
+        std::vector<float> latenesses;
+        int notesPerBeat = 2;
+        bool parameterized = false;
+    };
+    using GrooveProvider = std::function<std::vector<GrooveEntry>()>;
+
     EngineHost();
     ~EngineHost();
 
@@ -92,6 +102,19 @@ class EngineHost {
      */
     void setPluginServices(juce::AudioPluginFormatManager& formats,
                            const juce::KnownPluginList& knownPlugins);
+
+    /**
+     * @brief Supply the grooves a clip can name, read at each publish (#2757).
+     *
+     * Handed in rather than looked up, so a compile stays a pure function of what it was
+     * given. Without one no clip grooves, which is what this got before the library
+     * existed.
+     */
+    void setGrooveProvider(GrooveProvider provider);
+
+    /// Recompile the clips after the groove library changes: a groove already on a
+    /// playing clip keeps the one it was compiled with until this asks again.
+    void refreshGrooves();
 
     /// Supply the Tracktion wave-device names behind persisted output routes.
     void setHardwareOutputProvider(HardwareChannelProvider provider);
@@ -172,6 +195,9 @@ class EngineHost {
     /// keyboard -- so a track routed to "all" is bound to it at the next
     /// publish and stays bound to it. Message thread.
     void registerVirtualMidiSource(const juce::String& deviceId);
+
+    /// Rebind "all" routes after the inputs Audio Settings has active changed. Message thread.
+    void refreshMidiInputs();
 
     // ===== Plugin state =====
     //

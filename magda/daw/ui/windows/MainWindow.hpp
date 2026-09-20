@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -89,6 +90,21 @@ class MainWindow : public juce::DocumentWindow,
     void refreshThemedLookAndFeels();
     // Hot-reload callback: the active user theme file changed on disk.
     void onActiveThemeFileChanged();
+    // Offered after load when clip/take/sampler paths no longer exist. The
+    // individual steps are asynchronous so file choosers never block audio or
+    // the message thread.
+    void offerMissingMediaRecovery(std::vector<ProjectManager::MissingMediaFile> missing,
+                                   std::uint64_t generation);
+    void chooseMissingMediaSearchFolder(std::vector<ProjectManager::MissingMediaFile> missing,
+                                        std::uint64_t generation);
+    void locateMissingMediaFiles(std::vector<ProjectManager::MissingMediaFile> missing,
+                                 size_t index, std::uint64_t generation, int repairedCount);
+    void completeMissingMediaSearch(std::uint64_t generation,
+                                    std::vector<ProjectManager::MissingMediaFile> missing,
+                                    std::vector<ProjectManager::MissingMediaReplacement> matches,
+                                    bool cancelled);
+    void finishMissingMediaRecovery(const juce::String& message, std::uint64_t generation);
+    bool isCurrentProjectGeneration(std::uint64_t generation) const;
     class MainComponent;
     MainComponent* mainComponent = nullptr;       // Raw pointer - owned by DocumentWindow
     AudioEngine* externalAudioEngine_ = nullptr;  // Non-owning pointer to external engine
@@ -96,6 +112,7 @@ class MainWindow : public juce::DocumentWindow,
     // File chooser for async file import
     std::unique_ptr<juce::FileChooser> fileChooser_;
     std::string appliedTheme_;
+    std::uint64_t projectOpenGeneration_ = 0;
     // Last-applied density multiplier; -1 forces the first apply to run.
     float appliedDensityScale_ = -1.0f;
     std::string appliedFontFamily_;
@@ -262,7 +279,7 @@ class MainWindow::MainComponent : public juce::Component,
     void setupResizeHandles();
     void setupViewModeListener();
     void setupAudioEngineCallbacks(AudioEngine* engine);
-    void setupDeviceLoadingCallback();
+    void setupLoadingOverlay();
 
     // Layout helpers
     void layoutTransportArea(juce::Rectangle<int>& bounds);

@@ -7,6 +7,7 @@
 #include "core/TrackCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
+#include "engine/PluginService.hpp"
 #include "ui/components/chain/DeviceSlotComponent.hpp"
 #include "ui/components/chain/NodeComponent.hpp"
 #include "ui/themes/DarkTheme.hpp"
@@ -460,10 +461,7 @@ void PostFxPanelContent::showAddDeviceMenu() {
     }
     menu.addSubMenu("Internal", internalMenu);
 
-    juce::Array<juce::PluginDescription> externalPlugins;
-    if (auto* engine = magda::TrackManager::getInstance().getAudioEngine()) {
-        externalPlugins = engine->getPreferredPluginTypes();
-    }
+    const auto externalPlugins = magda::PluginService::getInstance().preferredTypes();
     if (!externalPlugins.isEmpty()) {
         std::map<juce::String, juce::PopupMenu> byManufacturer;
         for (int i = 0; i < externalPlugins.size(); ++i) {

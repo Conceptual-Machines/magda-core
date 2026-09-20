@@ -3,6 +3,7 @@
 
 #include "SharedTestEngine.hpp"
 #include "magda/daw/audio/AudioBridge.hpp"
+#include "magda/daw/engine/PluginService.hpp"
 
 using namespace magda;
 
@@ -21,7 +22,6 @@ class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
         testConstants();
         testHeadlessDetection();
         testTransportOperations();
-        testDeviceLoadingState();
         testTriggerStateTracking();
         testBridgeAccess();
         testMetronomeOperations();
@@ -109,25 +109,6 @@ class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
         wrapper.setTempo(120.0);
         double tempo = wrapper.getTempo();
         expect(tempo > 0.0, "Tempo should be positive");
-    }
-
-    void testDeviceLoadingState() {
-        beginTest("Device loading state");
-
-        auto& wrapper = magda::test::getSharedEngine();
-
-        bool isLoading = wrapper.isDevicesLoading();
-        expect(isLoading == true || isLoading == false, "Device loading state should be boolean");
-
-        // Test callback setting
-        bool callbackCalled = false;
-        wrapper.onDevicesLoadingChanged = [&](bool /*loading*/, const juce::String& /*message*/) {
-            callbackCalled = true;
-        };
-
-        expect(true, "Callback set without crash");
-
-        wrapper.onDevicesLoadingChanged = nullptr;
     }
 
     void testTriggerStateTracking() {
@@ -234,11 +215,11 @@ class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
 
         auto& wrapper = magda::test::getSharedEngine();
 
-        bool scanning = wrapper.isScanning();
+        bool scanning = magda::PluginService::getInstance().isScanRunning();
         expect(scanning == true || scanning == false, "Scanning state should be boolean");
 
         wrapper.getKnownPluginList();
-        wrapper.getPluginListFile();
+        magda::PluginService::listFile();
         expect(true, "Plugin list operations are safe");
     }
 
@@ -260,7 +241,6 @@ class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
         wrapper.getCurrentPosition();
         wrapper.isPlaying();
         wrapper.getTempo();
-        wrapper.isDevicesLoading();
 
         expect(true, "Concurrent access patterns work");
     }

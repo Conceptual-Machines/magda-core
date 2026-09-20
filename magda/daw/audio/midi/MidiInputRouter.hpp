@@ -41,6 +41,9 @@ class MidiInputRouter : private juce::AsyncUpdater {
     void setSurfaceOnlyMidiInputPort(const juce::String& midiDeviceIdOrName);
     void clearSurfaceOnlyMidiInputPorts();
 
+    /** @brief Drop and reapply routes after Audio Settings changed which inputs are active. */
+    void refreshActiveMidiInputs();
+
     void updateMidiInputRouting();
 
     /// Coalesced entry point for input-monitor changes. A real monitor-mode
@@ -137,7 +140,10 @@ class MidiInputRouter : private juce::AsyncUpdater {
 
     bool isSurfaceOnlyMidiInput(const juce::String& liveIdentifier,
                                 const juce::String& liveName) const;
-    void removeSurfaceOnlyMidiInputTargets();
+
+    /** @brief A port no track hears: a control surface's, or one Audio Settings switched off. */
+    bool isUnheardMidiInput(const juce::String& liveIdentifier, const juce::String& liveName) const;
+    void removeUnheardMidiInputTargets();
 
     /// Feedback guard (#1623): true when this input port belongs to the
     /// hardware an External Instrument on this track sends MIDI to — routing

@@ -11,6 +11,7 @@
 #include "../audio/plugins/MagdaDevice.hpp"
 #include "../audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "../engine/AudioEngine.hpp"
+#include "../engine/PluginService.hpp"
 #include "ChainWalk.hpp"
 #include "DeviceState.hpp"
 #include "DeviceStateCommands.hpp"
@@ -1976,14 +1977,18 @@ namespace {
 /// one. The projection direction: the model already holds the document, the
 /// engine adapter is told to match it.
 void projectAuthoredStateToEngine(AudioEngine* audioEngine, const ChainNodePath& devicePath,
-                                  const juce::String& docText, const juce::String& deviceType) {
+                                  const juce::String& docText, const juce::String& deviceType,
+                                  bool resetWhenUndecodable = true) {
     if (audioEngine == nullptr)
+        return;
+
+    namespace ta = daw::audio::tracktion_adapter;
+    auto tree = ta::devicePluginTreeFromState(docText);
+    if (!tree.isValid() && !resetWhenUndecodable)
         return;
 
     if (auto* bridge = audioEngine->getAudioBridge()) {
         if (auto plugin = bridge->getPlugin(devicePath)) {
-            namespace ta = daw::audio::tracktion_adapter;
-            auto tree = ta::devicePluginTreeFromState(docText);
             if (!tree.isValid()) {
                 tree = juce::ValueTree(tracktion::engine::IDs::PLUGIN);
                 tree.setProperty(tracktion::engine::IDs::type, deviceType, nullptr);
@@ -2102,10 +2107,17 @@ bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
     live->gainValue = std::pow(10.0f, presetDevice.gainDb / 20.0f);
     live->pluginState = stripPresetRuntimePluginState(presetDevice.pluginState);
 
-    // The rendering engine, not the bridge: only the live instance has the
-    // state (#2573). It may rewrite live->parameters.
-    if (audioEngine_ != nullptr)
-        audioEngine_->applyPluginStateAt(devicePath);
+    if (live->format == PluginFormat::Internal) {
+        // Internal authored state is projected onto either the bridge plugin or the
+        // native rendered device. A preset without a decodable snapshot leaves
+        // authored-only live settings alone, matching the external chunk path.
+        projectAuthoredStateToEngine(audioEngine_, devicePath, live->pluginState, live->pluginId,
+                                     /*resetWhenUndecodable=*/false);
+    } else {
+        // The hosted-plugin provider owns the live chunk and may rewrite the model's
+        // parameter cache while applying it (#2573, #2758).
+        PluginService::getInstance().applyPluginStateAt(devicePath);
+    }
 
     // Notify listeners — devicePropertyChanged covers gain/macros/mods refresh
     // via the AudioBridge sync path, then push each parameter individually so

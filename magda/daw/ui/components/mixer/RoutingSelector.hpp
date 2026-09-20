@@ -91,6 +91,7 @@ class RoutingSelector : public juce::Component, private juce::Timer {
 
     // Available options
     void setOptions(const std::vector<RoutingOption>& options);
+    void addOption(RoutingOption option);
     void clearOptions();
 
     /** Returns the ID of the first channel option (skipping "None"/separators), or -1. */

@@ -68,6 +68,7 @@
 #include "drum_grid/DrumGridUI.hpp"
 #include "engine/AudioEngine.hpp"
 #include "engine/AudioEngineChoice.hpp"
+#include "engine/PluginService.hpp"
 #include "media_db/ClapAudioEncoder.hpp"
 #include "media_db/ClapTextEncoder.hpp"
 #include "media_db/MediaDbContext.hpp"
@@ -1444,11 +1445,7 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
         // External plugin: look it up in KnownPluginList
         juce::String fileOrId = obj.getProperty("fileOrIdentifier").toString();
 
-        auto* audioEngine = tm.getAudioEngine();
-        if (!audioEngine)
-            return;
-
-        for (const auto& desc : audioEngine->getKnownPluginTypes()) {
+        for (const auto& desc : magda::PluginService::getInstance().knownTypes()) {
             if (pluginDescriptionMatchesDrop(desc, fileOrId, uniqueId)) {
                 if (desc.isInstrument)
                     postPadEdit(
@@ -1770,10 +1767,7 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
             // External plugin: look it up in KnownPluginList
             juce::String fileOrId = obj.getProperty("fileOrIdentifier").toString();
 
-            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-            if (!audioEngine)
-                return;
-            for (const auto& desc : audioEngine->getKnownPluginTypes()) {
+            for (const auto& desc : magda::PluginService::getInstance().knownTypes()) {
                 if (pluginDescriptionMatchesDrop(desc, fileOrId, uniqueId)) {
                     if (isMidiFxPlugin(desc))
                         return;
@@ -1873,10 +1867,7 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
         menu.addSubMenu("Internal FX", internalFxMenu);
 
         // External plugins from KnownPluginList
-        juce::Array<juce::PluginDescription> externalPlugins;
-        if (auto* engine = magda::TrackManager::getInstance().getAudioEngine()) {
-            externalPlugins = engine->getPreferredPluginTypes();
-        }
+        const auto externalPlugins = magda::PluginService::getInstance().preferredTypes();
 
         if (!externalPlugins.isEmpty()) {
             juce::PopupMenu externalInstrumentMenu;

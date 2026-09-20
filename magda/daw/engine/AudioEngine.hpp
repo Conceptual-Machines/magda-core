@@ -16,12 +16,10 @@
 #include "../core/ChainNodePath.hpp"
 #include "../core/ClipTypes.hpp"
 #include "../core/HostedParameterEdit.hpp"
-#include "../core/ParameterDetector.hpp"
 #include "../core/TempoMap.hpp"
 #include "../core/TimeTypes.hpp"
 #include "AudioEngineChoice.hpp"
 #include "AudioEngineListener.hpp"
-#include "PluginExclusions.hpp"
 
 namespace juce {
 class AudioDeviceManager;
@@ -35,44 +33,13 @@ namespace magda {
 
 class AudioBridge;
 class DeviceMeters;
+class AudioIOControl;
 class InsertRenderCaptureService;
 
 class MagdaApi;
 class MidiBridge;
-class PluginWindowManager;
 struct TrackMeters;
 class UndoableCommand;
-
-enum class PluginScanPhase {
-    Discovering,
-    UpToDate,
-    Scanning,
-};
-
-struct GrooveTemplateData {
-    juce::String name;
-    int notesPerBeat = 2;
-    bool parameterized = true;
-    std::vector<float> latenessProportions;
-};
-
-struct ScannedPluginParameter {
-    juce::String name;
-
-    /// The parameter's own id, which is what a saved config is matched by
-    /// (PluginParameterConfigEntry::id). Empty for a parameter that declares
-    /// none, which falls back to its position.
-    juce::String stableId;
-
-    float defaultValue = 0.5f;
-    juce::String unit;
-    float rangeMin = 0.0f;
-    float rangeMax = 1.0f;
-    float rangeCenter = 0.5f;
-    ParameterScale scale = ParameterScale::Linear;
-    std::vector<juce::String> valueTable;
-    ParameterScanInput scanInput;
-};
 
 enum class OfflineRenderFormat {
     Wav,
@@ -90,12 +57,6 @@ enum class OfflineRenderDither {
 inline OfflineRenderDither defaultOfflineRenderDither(int bitDepth) {
     return bitDepth >= 32 ? OfflineRenderDither::None : OfflineRenderDither::Tpdf;
 }
-
-enum class TempoSequenceRippleMode {
-    Insert,
-    Delete,
-    Duplicate,
-};
 
 struct OfflineRenderRequest {
     juce::File destination;
@@ -136,11 +97,6 @@ struct OfflineRenderRequest {
 struct OfflineRenderResult {
     bool success = false;
     juce::String error;
-};
-
-struct SamplerMediaReference {
-    juce::File source;
-    std::function<void(const juce::File&)> replace;
 };
 
 class OfflineRenderTask {
@@ -293,18 +249,9 @@ class AudioEngine : public AudioEngineListener {
 
     // ===== Device Management =====
     virtual juce::AudioDeviceManager* getDeviceManager() = 0;
-    virtual juce::BigInteger getEnabledWaveChannels(bool input) const = 0;
-    virtual std::map<int, juce::String> getOutputDeviceNamesByChannel() const {
-        return {};
-    }
-    virtual std::map<int, juce::String> getInputDeviceNamesByChannel() const {
-        return {};
-    }
-    virtual void setEnabledWaveChannels(bool input, const juce::BigInteger& channels) = 0;
-    virtual void rescanWaveDevices(bool enableInputs, bool enableOutputs) = 0;
-    virtual bool isDevicesLoading() const = 0;
-    virtual void setDevicesLoadingCallback(
-        std::function<void(bool, const juce::String&)> callback) = 0;
+
+    /** @brief The audio interface: what the routing menus read and Audio Settings drives. */
+    virtual AudioIOControl* getAudioIO() = 0;
 
     // ===== Startup hooks =====
     //
@@ -313,9 +260,6 @@ class AudioEngine : public AudioEngineListener {
     // app owns the startup sequence and must not have to know which engine it
     // was given -- naming a concrete type there is what made the choice
     // unreachable from the running app (#2551).
-
-    /** Startup plugin-detection status, for the splash screen. */
-    virtual void setPluginScanStatusCallback(std::function<void(const juce::String&)> callback) = 0;
 
     /** Fires the first time MIDI devices become available, and on subsequent
         device-list changes. Work needing MIDI output ports open waits for this:
@@ -351,38 +295,6 @@ class AudioEngine : public AudioEngineListener {
      */
     virtual std::shared_ptr<daw::audio::MagdaDevice> renderedDevice(
         const ChainNodePath& /*devicePath*/) const {
-        return {};
-    }
-
-    // ===== Plugin state =====
-    //
-    // Only the rendering instance has an up to date state chunk, so these go
-    // to whichever engine is rendering (#2581). All three are synchronous:
-    // callers save the project or copy the device as soon as they return.
-
-    /** @brief Read every live plugin's state back into the model. */
-    virtual void captureAllPluginStates() = 0;
-
-    /** @brief The same for the one device at @p devicePath. */
-    virtual void capturePluginStateAt(const ChainNodePath& devicePath) = 0;
-
-    /** @brief Write the model's state for @p devicePath into the plugin (#2573). */
-    virtual void applyPluginStateAt(const ChainNodePath& devicePath) = 0;
-
-    /**
-     * @brief The plugin's own text for a parameter value, or empty (#2600).
-     *
-     * @p paramIndex is the plan/TE slot ParameterInfo carries and
-     * @p normalised the position the live parameter holds. Empty means "this
-     * engine cannot say", and every caller formats from the parameter's range
-     * instead (ParameterUtils::formatValue), so an engine that answers nothing
-     * degrades rather than breaks.
-     *
-     * Whichever engine renders the device is the one that can answer, the same
-     * split as the state and the editor above.
-     */
-    virtual juce::String formatDeviceParameter(const ChainNodePath& /*devicePath*/,
-                                               int /*paramIndex*/, float /*normalised*/) const {
         return {};
     }
 
@@ -458,36 +370,7 @@ class AudioEngine : public AudioEngineListener {
 
     // ===== Application Services =====
     virtual MagdaApi& getMagdaApi() = 0;
-    virtual PluginWindowManager* getPluginWindowManager() = 0;
-    virtual const PluginWindowManager* getPluginWindowManager() const = 0;
     virtual InsertRenderCaptureService* getInsertRenderCaptureService() = 0;
-
-    // ===== Plugin Discovery =====
-    virtual juce::Array<juce::PluginDescription> getKnownPluginTypes() const = 0;
-    virtual juce::Array<juce::PluginDescription> getPreferredPluginTypes() const = 0;
-    virtual void addPluginListChangeListener(juce::ChangeListener* listener) = 0;
-    virtual void removePluginListChangeListener(juce::ChangeListener* listener) = 0;
-    virtual void startPluginScan(
-        std::function<void(float, const juce::String&)> progressCallback) = 0;
-    virtual void abortPluginScan() = 0;
-    virtual void detectNewPlugins(
-        std::function<void(PluginScanPhase, const juce::String&)> statusCallback,
-        std::function<void(bool, int, int, const juce::StringArray&)> completionCallback) = 0;
-    virtual void setPluginScanCompletionCallback(
-        std::function<void(bool, int, const juce::StringArray&)> callback) = 0;
-    virtual bool isPluginScanRunning() const = 0;
-    virtual std::vector<ExcludedPlugin> getExcludedPlugins() const = 0;
-    virtual void setExcludedPlugins(const std::vector<ExcludedPlugin>& excludedPlugins) = 0;
-    virtual juce::File getPluginScanReportFile() const = 0;
-    virtual std::vector<std::string> getSystemPluginSearchPaths() const = 0;
-
-    // ===== Plugin Parameter Discovery =====
-    virtual std::vector<ScannedPluginParameter> scanPluginParameters(const juce::String& pluginId,
-                                                                     bool internalPlugin) = 0;
-
-    // ===== Groove Templates =====
-    virtual bool upsertGrooveTemplate(const GrooveTemplateData& groove) = 0;
-    virtual juce::StringArray getGrooveTemplateNames() const = 0;
 
     // ===== Offline Rendering =====
     virtual std::unique_ptr<OfflineRenderSession> createOfflineRenderSession(
@@ -500,13 +383,6 @@ class AudioEngine : public AudioEngineListener {
      * and leaves it unfrozen when there is nothing to render or the render fails.
      */
     virtual void setTrackFrozen(TrackId trackId, bool frozen) = 0;
-
-    // ===== Project Media =====
-    virtual std::vector<SamplerMediaReference> getSamplerMediaReferences() = 0;
-
-    // ===== Edit-Wide Tempo Sequences =====
-    virtual std::unique_ptr<UndoableCommand> createTempoSequenceRippleCommand(
-        TempoSequenceRippleMode mode, BeatPosition start, BeatPosition end) = 0;
 
     // ===== MIDI Preview =====
     /**

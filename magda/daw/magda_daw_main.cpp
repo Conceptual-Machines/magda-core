@@ -35,6 +35,7 @@
 #include "core/UpdateChecker.hpp"
 #include "core/controllers/ControllerActivation.hpp"
 #include "core/controllers/ControllerProfileRegistry.hpp"
+#include "engine/PluginService.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "magda/scripting/LuaController.hpp"
 #include "magda/scripting/LuaScriptStore.hpp"
@@ -309,11 +310,13 @@ class MagdaDAWApplication : public JUCEApplication {
         if (splashScreen_ && daw_engine_)
             splashScreen_->setEngine(daw_engine_->engineName());
 
-        // Show plugin scan status on splash screen
-        daw_engine_->setPluginScanStatusCallback([this](const juce::String& status) {
-            if (splashScreen_)
-                splashScreen_->setStatus(status);
-        });
+        // Show plugin scan status on splash screen. Before initialize(), which is where
+        // the startup detect runs.
+        magda::PluginService::getInstance().setScanStatusCallback(
+            [this](const juce::String& status) {
+                if (splashScreen_)
+                    splashScreen_->setStatus(status);
+            });
 
         if (splashScreen_)
             splashScreen_->setStatus("Initializing audio engine...");

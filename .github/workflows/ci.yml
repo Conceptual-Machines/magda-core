@@ -500,16 +500,143 @@ jobs:
         echo "- ✅ Dangerous pattern scan" >> $GITHUB_STEP_SUMMARY
         echo "- ✅ Binary file verification" >> $GITHUB_STEP_SUMMARY
 
-  build-and-test-macos:
+  # Prefer the two local Apple Silicon runners, alternating between them when
+  # both are idle, but never leave a CI run queued behind one that is already
+  # building. The runner API is the only process-independent availability
+  # signal GitHub exposes: busy=true covers a Ninja build as well as the short
+  # configure/test parts of the same job.
+  #
+  # Both runners have unique labels so a round-robin choice cannot be claimed
+  # by the other otherwise-compatible runner.
+  pick-macos-runner:
     needs: release-pr-gate
-    runs-on: [self-hosted, macOS]
+    runs-on: ubuntu-latest
     if: |
       (github.event_name != 'workflow_dispatch' ||
        github.event.inputs.skip-cpp-build != 'true') &&
       (github.event_name != 'push' ||
        needs.release-pr-gate.outputs.proceed == 'true')
+    outputs:
+      labels: ${{ steps.pick.outputs.labels }}
+    steps:
+      - name: Pick macOS runner
+        id: pick
+        env:
+          GH_TOKEN: ${{ secrets.RUNNER_STATUS_PAT }}
+        run: |
+          set -euo pipefail
+
+          hosted() {
+            echo 'labels=["macos-15"]' >> "$GITHUB_OUTPUT"
+            echo "$1"
+            exit 0
+          }
+
+          if [ -z "${GH_TOKEN:-}" ]; then
+            hosted "No RUNNER_STATUS_PAT available in this context; falling back to macos-15"
+          fi
+
+          runners=$(gh api "repos/${{ github.repository }}/actions/runners" 2>/dev/null) \
+            || hosted "Could not read runner status; falling back to macos-15"
+
+          primary=$(printf '%s' "$runners" | jq -r '
+            .runners[]
+            | select(any(.labels[]; .name == "LRomagnoli-UKMAC25"))
+            | [.status, .busy] | @tsv' | head -n1)
+          secondary=$(printf '%s' "$runners" | jq -r '
+            .runners[]
+            | select(any(.labels[]; .name == "magda-macos-secondary"))
+            | [.status, .busy] | @tsv' | head -n1)
+
+          primary_status=$(printf '%s' "$primary" | cut -f1)
+          primary_busy=$(printf '%s' "$primary" | cut -f2)
+          secondary_status=$(printf '%s' "$secondary" | cut -f1)
+          secondary_busy=$(printf '%s' "$secondary" | cut -f2)
+
+          # busy=true is not set until GitHub has assigned a queued job. Reserve
+          # one local runner for every older selector or queued macOS build so
+          # simultaneous runs choose first, second, then hosted instead of all
+          # observing the first runner as idle. Run IDs are monotonic, which
+          # gives simultaneous selectors a stable order.
+          reservations=0
+          run_ids=$(gh api "repos/${{ github.repository }}/actions/workflows/ci.yml/runs?per_page=100" \
+            --jq '[.workflow_runs[]
+                   | select(.id < ${{ github.run_id }})
+                   | select(.status != "completed")
+                   | .id] | .[]' 2>/dev/null || echo unknown)
+
+          if [ "$run_ids" = "unknown" ]; then
+            hosted "Could not check contending CI runs; falling back to macos-15"
+          fi
+
+          for id in $run_ids; do
+            count=$(gh api "repos/${{ github.repository }}/actions/runs/$id/jobs" \
+              --jq '[.jobs[]
+                     | select((.name == "pick-macos-runner" and .status != "completed")
+                              or (.name == "build-and-test-macos" and .status == "queued"
+                                  and ((.labels // []) | index("self-hosted"))))]
+                    | length' 2>/dev/null || echo unknown)
+            case "$count" in
+              ''|*[!0-9]*) hosted "Could not check contending macOS jobs; falling back to macos-15" ;;
+            esac
+            reservations=$((reservations + count))
+          done
+
+          primary_available=false
+          secondary_available=false
+          [ "$primary_status" = "online" ] && [ "$primary_busy" != "true" ] \
+            && primary_available=true
+          [ "$secondary_status" = "online" ] && [ "$secondary_busy" != "true" ] \
+            && secondary_available=true
+
+          available=0
+          [ "$primary_available" = true ] && available=$((available + 1))
+          [ "$secondary_available" = true ] && available=$((available + 1))
+
+          # Earlier selectors/queued jobs own the available local slots first.
+          # With two simultaneous idle selections, consecutive run numbers give
+          # them opposite round-robin preferences. A third goes hosted.
+          if [ "$reservations" -ge "$available" ]; then
+            hosted "Falling back to macos-15 (all $available available local runner(s) already reserved)"
+          fi
+
+          choose_primary() {
+            echo 'labels=["self-hosted","macOS","ARM64","LRomagnoli-UKMAC25"]' >> "$GITHUB_OUTPUT"
+            echo "Using local runner: LRomagnoli-UKMAC25"
+            exit 0
+          }
+
+          choose_secondary() {
+            echo 'labels=["self-hosted","macOS","ARM64","magda-macos-secondary"]' >> "$GITHUB_OUTPUT"
+            echo "Using local runner: macOS-ARM64"
+            exit 0
+          }
+
+          if [ "$primary_available" = true ] && [ "$secondary_available" = true ]; then
+            if [ $(( ${{ github.run_number }} % 2 )) -eq 0 ]; then
+              choose_primary
+            else
+              choose_secondary
+            fi
+          fi
+
+          [ "$primary_available" = true ] && choose_primary
+          [ "$secondary_available" = true ] && choose_secondary
+
+          hosted "Falling back to macos-15 (LRomagnoli-UKMAC25: ${primary_status:-not-found}/${primary_busy:-unknown}; macOS-ARM64: ${secondary_status:-not-found}/${secondary_busy:-unknown}; earlier reservations: $reservations)"
+
+  build-and-test-macos:
+    needs: pick-macos-runner
+    runs-on: ${{ fromJSON(needs.pick-macos-runner.outputs.labels) }}
+    if: |
+      github.event_name != 'workflow_dispatch' ||
+      github.event.inputs.skip-cpp-build != 'true'
 
     steps:
+    - name: Install hosted runner dependencies
+      if: runner.environment == 'github-hosted'
+      run: brew install llvm@20 ninja
+
     - uses: actions/checkout@v7
       with:
         lfs: true

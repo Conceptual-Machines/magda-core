@@ -9,21 +9,19 @@
 
 namespace magda {
 
-class AudioEngine;
-
 /**
  * Plugin Settings dialog for managing custom plugin directories
  * and the excluded plugins list.
  */
 class PluginSettingsDialog : public juce::Component {
   public:
-    PluginSettingsDialog(AudioEngine* engine);
+    PluginSettingsDialog();
     ~PluginSettingsDialog() override;
 
     void resized() override;
     void paint(juce::Graphics& g) override;
 
-    static void showDialog(AudioEngine* engine, juce::Component* parent);
+    static void showDialog(juce::Component* parent);
 
     /** Returns true if a plugin scan is currently in progress. */
     bool isScanRunning() const;
@@ -97,8 +95,6 @@ class PluginSettingsDialog : public juce::Component {
     // Buttons
     juce::TextButton okButton_;
     juce::TextButton cancelButton_;
-
-    AudioEngine* engine_;
 
     void updatePluginCountLabel();
     void setupSectionHeader(juce::Label& header, const juce::String& text);

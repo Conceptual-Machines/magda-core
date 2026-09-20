@@ -12,6 +12,14 @@ namespace magda {
 
 class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
   public:
+    /** @brief @p opensAudioInterface false leaves Tracktion no audio backends to open (#2747). */
+    explicit MagdaEngineBehaviour(bool opensAudioInterface = true)
+        : opensAudioInterface_(opensAudioInterface) {}
+
+    bool addSystemAudioIODeviceTypes() override {
+        return opensAudioInterface_;
+    }
+
     // Prevent TE from auto-initialising the device manager during Engine construction.
     // We do it ourselves in initializeDeviceManager() after validating saved state,
     // to avoid CoreAudio hangs from broken Settings.xml entries.
@@ -82,6 +90,9 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         DBG("MagdaEngineBehaviour::createCustomPlugin - unknown type: " << type);
         return {};
     }
+
+  private:
+    bool opensAudioInterface_;
 };
 
 }  // namespace magda
