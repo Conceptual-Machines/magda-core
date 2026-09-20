@@ -527,8 +527,6 @@ class ActiveTheme {
     static SyntaxPalette activeSyntaxPalette_;
 };
 
-using DarkTheme = ActiveTheme;
-
 // Owns theme identity and runtime selection. ActiveTheme provides the
 // colour-role facade, while theme lifecycle APIs live here.
 class ThemeManager {
