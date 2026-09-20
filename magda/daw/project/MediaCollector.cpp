@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "../audio/AudioThumbnailManager.hpp"
+#include "../audio/sampling/SamplerMedia.hpp"
 #include "../core/ClipInfo.hpp"
 #include "../core/ClipManager.hpp"
 #include "../core/TrackManager.hpp"
@@ -132,7 +133,7 @@ MediaCollector::Plan MediaCollector::scan() {
 
     // 2 + 3. Samplers (standalone, incl. inside instrument racks) and drum pads.
     if (auto* engine = TrackManager::getInstance().getAudioEngine()) {
-        for (auto& reference : engine->getSamplerMediaReferences()) {
+        for (auto& reference : magda::SamplerMedia::getInstance().references()) {
             const auto idx = resolve(reference.source.getFullPathName());
             if (idx >= 0)
                 plan.items[static_cast<size_t>(idx)].samplerRefs.push_back(

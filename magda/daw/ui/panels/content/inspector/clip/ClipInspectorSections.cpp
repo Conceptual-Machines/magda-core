@@ -28,6 +28,7 @@
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
+#include "music/GrooveLibrary.hpp"
 #include "project/ProjectManager.hpp"
 
 namespace magda::daw::ui {
@@ -1544,7 +1545,7 @@ void ClipInspector::showGroovePicker() {
 
     auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
     if (audioEngine) {
-        auto names = audioEngine->getGrooveTemplateNames();
+        auto names = magda::GrooveLibrary::getInstance().names();
 
         struct GroupDef {
             juce::String heading;

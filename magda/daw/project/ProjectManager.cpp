@@ -9,6 +9,7 @@
 #include <unordered_set>
 
 #include "../audio/AudioThumbnailManager.hpp"
+#include "../audio/sampling/SamplerMedia.hpp"
 #include "../core/AutomationManager.hpp"
 #include "../core/ClipManager.hpp"
 #include "../core/Config.hpp"
@@ -233,7 +234,7 @@ bool relinkMediaPaths(const std::function<juce::String(const juce::String&)>& re
     // samplers and drum pads pointing into it along too.
     bool relinkedSamplers = false;
     if (auto* audioEngine = TrackManager::getInstance().getAudioEngine()) {
-        for (auto& reference : audioEngine->getSamplerMediaReferences()) {
+        for (auto& reference : magda::SamplerMedia::getInstance().references()) {
             const auto newPath = resolve(reference.source.getFullPathName());
             if (newPath.isNotEmpty()) {
                 reference.replace(juce::File(newPath));

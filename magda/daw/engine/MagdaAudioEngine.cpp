@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "../api/magda_api_live.hpp"
+#include "../audio/DeviceParameterDisplayTextProvider.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/UndoManager.hpp"  // complete type for the unique_ptr this forwards
 #include "PluginService.hpp"
@@ -133,6 +134,19 @@ bool MagdaAudioEngine::initialize() {
     host_->setPluginServices(*PluginService::getInstance().formats(),
                              *PluginService::getInstance().knownList());
 
+    // The host first, because an external plugin under this engine has no copy in the fork
+    // at all (#2579); the fork answers for the internal devices it still syncs, which is
+    // the only reason this does not simply go to the host (#2757).
+    setDeviceParameterFormatter(
+        [this](const ChainNodePath& devicePath, int paramIndex, float normalised) {
+            if (host_ != nullptr) {
+                auto text = host_->formatDeviceParameter(devicePath, paramIndex, normalised);
+                if (text.isNotEmpty())
+                    return text;
+            }
+            return fork_->formatDeviceParameter(devicePath, paramIndex, normalised);
+        });
+
     meterInto();
 
     // Named before the first publish, so a track routed to "all" hears the
@@ -181,6 +195,8 @@ void MagdaAudioEngine::shutdown() {
     // The bridge goes with the fork below, and the API outlives this call.
     api_->setMidiBridge(nullptr);
     audioIO_->removeListener(this);
+
+    forgetDeviceParameterFormatter();
 
     host_->stop();
     audioIO_->getDeviceManager().closeAudioDevice();
@@ -387,23 +403,6 @@ bool MagdaAudioEngine::isDeviceEditorOpen(const ChainNodePath& devicePath) const
     return host_->isDeviceEditorOpen(devicePath);
 }
 
-/**
- * @brief The engine that renders the device is the one that can name its value.
- *
- * The host first, because an external plugin under this engine has no copy in
- * the fork at all (#2579); the fork answers for the internal devices it still
- * syncs, which is also the only reason this does not simply go to the host.
- */
-juce::String MagdaAudioEngine::formatDeviceParameter(const ChainNodePath& devicePath,
-                                                     int paramIndex, float normalised) const {
-    if (host_ != nullptr) {
-        auto text = host_->formatDeviceParameter(devicePath, paramIndex, normalised);
-        if (text.isNotEmpty())
-            return text;
-    }
-
-    return tracktion_->formatDeviceParameter(devicePath, paramIndex, normalised);
-}
 /** @brief The host's instance is the one filling the ring a faceplate draws (#2585). */
 std::shared_ptr<daw::audio::MagdaDevice> MagdaAudioEngine::renderedDevice(
     const ChainNodePath& devicePath) const {
@@ -447,25 +446,11 @@ MagdaApi& MagdaAudioEngine::getMagdaApi() {
 // Null for good: it drives te::ExternalPlugin::windowState, and the instance a
 // window would open onto is not the one rendering. Editors are the host's
 // (#2580); what null costs is the mixer's icon, which is #2668.
-PluginWindowManager* MagdaAudioEngine::getPluginWindowManager() {
-    reportUnwired("getPluginWindowManager", "#2668");
-    return nullptr;
-}
-const PluginWindowManager* MagdaAudioEngine::getPluginWindowManager() const {
-    reportUnwired("getPluginWindowManager", "#2668");
-    return nullptr;
-}
 InsertRenderCaptureService* MagdaAudioEngine::getInsertRenderCaptureService() {
     // Null makes a bounce skip the capture pass, so an external insert's return
     // renders as silence. It needs this engine's own hardware input (#2588).
     reportUnwired("getInsertRenderCaptureService", "#2588");
     return nullptr;
-}
-bool MagdaAudioEngine::upsertGrooveTemplate(const GrooveTemplateData& groove) {
-    return tracktion_->upsertGrooveTemplate(groove);
-}
-juce::StringArray MagdaAudioEngine::getGrooveTemplateNames() const {
-    return tracktion_->getGrooveTemplateNames();
 }
 std::unique_ptr<OfflineRenderSession> MagdaAudioEngine::createOfflineRenderSession(
     bool resumePlaybackWhenFinished) {
@@ -513,16 +498,6 @@ void MagdaAudioEngine::setTrackFrozen(TrackId trackId, bool frozen) {
     tracks.setTrackFrozen(trackId, true);
 }
 
-std::vector<SamplerMediaReference> MagdaAudioEngine::getSamplerMediaReferences() {
-    reportUnwired("getSamplerMediaReferences", "#2554");
-    return {};
-}
-std::unique_ptr<UndoableCommand> MagdaAudioEngine::createTempoSequenceRippleCommand(
-    TempoSequenceRippleMode mode, BeatPosition start, BeatPosition end) {
-    juce::ignoreUnused(mode, start, end);
-    reportUnwired("createTempoSequenceRippleCommand", "#2554");
-    return nullptr;
-}
 void MagdaAudioEngine::previewNoteOnTrack(const std::string& track_id, int noteNumber, int velocity,
                                           bool isNoteOn) {
     TrackId trackId = INVALID_TRACK_ID;

@@ -38,16 +38,8 @@ class InsertRenderCaptureService;
 
 class MagdaApi;
 class MidiBridge;
-class PluginWindowManager;
 struct TrackMeters;
 class UndoableCommand;
-
-struct GrooveTemplateData {
-    juce::String name;
-    int notesPerBeat = 2;
-    bool parameterized = true;
-    std::vector<float> latenessProportions;
-};
 
 enum class OfflineRenderFormat {
     Wav,
@@ -65,12 +57,6 @@ enum class OfflineRenderDither {
 inline OfflineRenderDither defaultOfflineRenderDither(int bitDepth) {
     return bitDepth >= 32 ? OfflineRenderDither::None : OfflineRenderDither::Tpdf;
 }
-
-enum class TempoSequenceRippleMode {
-    Insert,
-    Delete,
-    Duplicate,
-};
 
 struct OfflineRenderRequest {
     juce::File destination;
@@ -111,11 +97,6 @@ struct OfflineRenderRequest {
 struct OfflineRenderResult {
     bool success = false;
     juce::String error;
-};
-
-struct SamplerMediaReference {
-    juce::File source;
-    std::function<void(const juce::File&)> replace;
 };
 
 class OfflineRenderTask {
@@ -318,23 +299,6 @@ class AudioEngine : public AudioEngineListener {
     }
 
     /**
-     * @brief The plugin's own text for a parameter value, or empty (#2600).
-     *
-     * @p paramIndex is the plan/TE slot ParameterInfo carries and
-     * @p normalised the position the live parameter holds. Empty means "this
-     * engine cannot say", and every caller formats from the parameter's range
-     * instead (ParameterUtils::formatValue), so an engine that answers nothing
-     * degrades rather than breaks.
-     *
-     * Whichever engine renders the device is the one that can answer, the same
-     * split as the state and the editor above.
-     */
-    virtual juce::String formatDeviceParameter(const ChainNodePath& /*devicePath*/,
-                                               int /*paramIndex*/, float /*normalised*/) const {
-        return {};
-    }
-
-    /**
      * @brief Every parameter the plugin at @p devicePath reports (#2629).
      *
      * Message thread. Empty for a path this engine holds no instance for.
@@ -406,13 +370,7 @@ class AudioEngine : public AudioEngineListener {
 
     // ===== Application Services =====
     virtual MagdaApi& getMagdaApi() = 0;
-    virtual PluginWindowManager* getPluginWindowManager() = 0;
-    virtual const PluginWindowManager* getPluginWindowManager() const = 0;
     virtual InsertRenderCaptureService* getInsertRenderCaptureService() = 0;
-
-    // ===== Groove Templates =====
-    virtual bool upsertGrooveTemplate(const GrooveTemplateData& groove) = 0;
-    virtual juce::StringArray getGrooveTemplateNames() const = 0;
 
     // ===== Offline Rendering =====
     virtual std::unique_ptr<OfflineRenderSession> createOfflineRenderSession(
@@ -425,13 +383,6 @@ class AudioEngine : public AudioEngineListener {
      * and leaves it unfrozen when there is nothing to render or the render fails.
      */
     virtual void setTrackFrozen(TrackId trackId, bool frozen) = 0;
-
-    // ===== Project Media =====
-    virtual std::vector<SamplerMediaReference> getSamplerMediaReferences() = 0;
-
-    // ===== Edit-Wide Tempo Sequences =====
-    virtual std::unique_ptr<UndoableCommand> createTempoSequenceRippleCommand(
-        TempoSequenceRippleMode mode, BeatPosition start, BeatPosition end) = 0;
 
     // ===== MIDI Preview =====
     /**

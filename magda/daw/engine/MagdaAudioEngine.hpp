@@ -158,8 +158,6 @@ class MagdaAudioEngine final : public AudioEngine,
     bool hideDeviceEditor(const ChainNodePath& devicePath) override;
     bool toggleDeviceEditor(const ChainNodePath& devicePath) override;
     bool isDeviceEditorOpen(const ChainNodePath& devicePath) const override;
-    juce::String formatDeviceParameter(const ChainNodePath& devicePath, int paramIndex,
-                                       float normalised) const override;
 
     std::shared_ptr<daw::audio::MagdaDevice> renderedDevice(
         const ChainNodePath& devicePath) const override;
@@ -173,18 +171,10 @@ class MagdaAudioEngine final : public AudioEngine,
     MidiBridge* getMidiBridge() override;
     const MidiBridge* getMidiBridge() const override;
     MagdaApi& getMagdaApi() override;
-    PluginWindowManager* getPluginWindowManager() override;
-    const PluginWindowManager* getPluginWindowManager() const override;
     InsertRenderCaptureService* getInsertRenderCaptureService() override;
-    bool upsertGrooveTemplate(const GrooveTemplateData& groove) override;
-    juce::StringArray getGrooveTemplateNames() const override;
     std::unique_ptr<OfflineRenderSession> createOfflineRenderSession(
         bool resumePlaybackWhenFinished) override;
     void setTrackFrozen(TrackId trackId, bool frozen) override;
-    std::vector<SamplerMediaReference> getSamplerMediaReferences() override;
-    std::unique_ptr<UndoableCommand> createTempoSequenceRippleCommand(TempoSequenceRippleMode mode,
-                                                                      BeatPosition start,
-                                                                      BeatPosition end) override;
     void previewNoteOnTrack(const std::string& track_id, int noteNumber, int velocity,
                             bool isNoteOn) override;
     void onTransportPlay(double positionSeconds) override;
