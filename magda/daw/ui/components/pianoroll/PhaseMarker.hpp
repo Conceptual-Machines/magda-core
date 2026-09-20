@@ -4,7 +4,7 @@
 
 #include <cmath>
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "core/ClipInfo.hpp"
 
 namespace magda {
@@ -20,13 +20,13 @@ inline bool paintPhaseMarker(juce::Graphics& g, const ClipInfo* clip, int phaseX
     }
 
     if (forceVisible || clip->midiOffset > 0.0) {
-        g.setColour(DarkTheme::getColour(DarkTheme::OFFSET_MARKER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::OFFSET_MARKER));
         g.fillRect(phaseX - 1, 0, 2, height);
         return true;
     }
 
     if (nearPhaseMarker) {
-        g.setColour(DarkTheme::getColour(DarkTheme::OFFSET_MARKER).withAlpha(0.4f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::OFFSET_MARKER).withAlpha(0.4f));
         g.fillRect(phaseX - 1, 0, 2, height);
         return true;
     }

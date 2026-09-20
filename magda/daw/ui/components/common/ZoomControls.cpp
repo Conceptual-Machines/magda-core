@@ -1,6 +1,6 @@
 #include "ZoomControls.hpp"
 
-#include "DarkTheme.hpp"
+#include "ActiveTheme.hpp"
 
 namespace magda {
 
@@ -27,11 +27,11 @@ ZoomControls::ZoomControls() {
 
 void ZoomControls::paint(juce::Graphics& g) {
     // Background
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND_ALT));
     g.fillRoundedRectangle(getLocalBounds().toFloat(), 4.0f);
 
     // Subtle border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.5f));
     g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(0.5f), 4.0f, 1.0f);
 }
 
@@ -103,13 +103,13 @@ void ZoomControls::handleSliderChange() {
 void ZoomControls::setupButton(juce::TextButton& button, const juce::String& text) {
     button.setButtonText(text);
     button.setColour(juce::TextButton::buttonColourId,
-                     DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                     ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
     button.setColour(juce::TextButton::buttonOnColourId,
-                     DarkTheme::getColour(DarkTheme::BUTTON_ACTIVE));
+                     ActiveTheme::getColour(ActiveTheme::BUTTON_ACTIVE));
     button.setColour(juce::TextButton::textColourOffId,
-                     DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                     ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     button.setColour(juce::TextButton::textColourOnId,
-                     DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                     ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
 }
 
 void ZoomControls::setupSlider() {
@@ -120,11 +120,11 @@ void ZoomControls::setupSlider() {
 
     // Custom colors
     zoomSlider.setColour(juce::Slider::backgroundColourId,
-                         DarkTheme::getColour(DarkTheme::SURFACE));
+                         ActiveTheme::getColour(ActiveTheme::SURFACE));
     zoomSlider.setColour(juce::Slider::trackColourId,
-                         DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
+                         ActiveTheme::getColour(ActiveTheme::CONTROL_VALUE_FILL));
     zoomSlider.setColour(juce::Slider::thumbColourId,
-                         DarkTheme::getColour(DarkTheme::CONTROL_SLIDER_THUMB));
+                         ActiveTheme::getColour(ActiveTheme::CONTROL_SLIDER_THUMB));
 }
 
 }  // namespace magda

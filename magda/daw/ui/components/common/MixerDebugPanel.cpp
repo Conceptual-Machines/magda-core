@@ -1,6 +1,6 @@
 #include "MixerDebugPanel.hpp"
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "MixerMetrics.hpp"
 
@@ -53,18 +53,18 @@ void MixerDebugPanel::paint(juce::Graphics& g) {
     g.fillRoundedRectangle(getLocalBounds().toFloat(), 8.0f);
 
     // Border
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
     g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1), 8.0f, 2.0f);
 
     // Resize handle indicator at top
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.5f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.5f));
     int handleWidth = 40;
     int handleX = (getWidth() - handleWidth) / 2;
     g.fillRoundedRectangle(static_cast<float>(handleX), 3.0f, static_cast<float>(handleWidth), 3.0f,
                            1.5f);
 
     // Title
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     g.setFont(13.0f);
     g.drawText("Mixer Debug (F12)", 10, 12, getWidth() - 20, 20, juce::Justification::centred);
 }
@@ -170,7 +170,7 @@ void MixerDebugPanel::addIntSlider(const juce::String& name, int* valuePtr, int 
     row.label = std::make_unique<juce::Label>();
     row.label->setText(name + ": " + juce::String(*valuePtr), juce::dontSendNotification);
     row.label->setColour(juce::Label::textColourId,
-                         DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                         ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     row.label->setFont(FontManager::getInstance().getUIFont(11.0f));
     contentComponent_->addAndMakeVisible(*row.label);
 
@@ -179,11 +179,11 @@ void MixerDebugPanel::addIntSlider(const juce::String& name, int* valuePtr, int 
     row.slider->setRange(min, max, 1);
     row.slider->setValue(*valuePtr, juce::dontSendNotification);
     row.slider->setColour(juce::Slider::backgroundColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
+                          ActiveTheme::getColour(ActiveTheme::SURFACE));
     row.slider->setColour(juce::Slider::trackColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+                          ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
     row.slider->setColour(juce::Slider::thumbColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).brighter());
+                          ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).brighter());
 
     auto* labelPtr = row.label.get();
     auto* slider = row.slider.get();
@@ -210,7 +210,7 @@ void MixerDebugPanel::addFloatSlider(const juce::String& name, float* valuePtr, 
     row.label = std::make_unique<juce::Label>();
     row.label->setText(name + ": " + juce::String(*valuePtr, 2), juce::dontSendNotification);
     row.label->setColour(juce::Label::textColourId,
-                         DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                         ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     row.label->setFont(FontManager::getInstance().getUIFont(11.0f));
     contentComponent_->addAndMakeVisible(*row.label);
 
@@ -219,11 +219,11 @@ void MixerDebugPanel::addFloatSlider(const juce::String& name, float* valuePtr, 
     row.slider->setRange(min, max, interval);
     row.slider->setValue(*valuePtr, juce::dontSendNotification);
     row.slider->setColour(juce::Slider::backgroundColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
+                          ActiveTheme::getColour(ActiveTheme::SURFACE));
     row.slider->setColour(juce::Slider::trackColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+                          ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
     row.slider->setColour(juce::Slider::thumbColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).brighter());
+                          ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).brighter());
 
     auto* labelPtr = row.label.get();
     auto* slider = row.slider.get();

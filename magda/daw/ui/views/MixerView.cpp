@@ -18,7 +18,7 @@
 #include "../components/mixer/LevelMeter.hpp"
 #include "../components/mixer/LevelMeterScale.hpp"
 #include "../components/mixer/RoutingSyncHelper.hpp"
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "../utils/SelectionPolicy.hpp"
 #include "components/chain/custom_ui/DeviceTelemetrySources.hpp"
@@ -81,7 +81,7 @@ class AddSendButton : public juce::Button {
         // does nothing is worse than one that says why.
         const auto opacity = isEnabled() ? 1.0f : 0.35f;
 
-        auto textBg = DarkTheme::getColour(DarkTheme::BUTTON_NORMAL);
+        auto textBg = ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL);
         if (isDown)
             textBg = textBg.darker(0.2f);
         else if (isHighlighted)
@@ -90,12 +90,13 @@ class AddSendButton : public juce::Button {
         g.fillRect(bounds);
 
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withMultipliedAlpha(opacity));
+        g.setColour(
+            ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withMultipliedAlpha(opacity));
         g.drawText("Add Send", bounds.reduced(6, 0), juce::Justification::centredLeft);
 
         // Inverted from the Add Send row: text colour as background, button
         // background as the "+" glyph colour.
-        auto plusBg = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+        auto plusBg = ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY);
         if (isDown)
             plusBg = plusBg.darker(0.2f);
         else if (isHighlighted)
@@ -104,7 +105,8 @@ class AddSendButton : public juce::Button {
         g.fillRect(plusRect);
 
         g.setFont(FontManager::getInstance().getUIFont(11.0f));
-        g.setColour(DarkTheme::getColour(DarkTheme::BUTTON_NORMAL).withMultipliedAlpha(opacity));
+        g.setColour(
+            ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL).withMultipliedAlpha(opacity));
         g.drawText("+", plusRect, juce::Justification::centred);
     }
 };
@@ -200,8 +202,8 @@ class MixerView::ChannelStrip::SendResizeHandle : public juce::Component {
 
     void paint(juce::Graphics& g) override {
         // Single subtle line, highlights on hover
-        g.setColour(isHovering_ ? DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)
-                                : DarkTheme::getColour(DarkTheme::SEPARATOR));
+        g.setColour(isHovering_ ? ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)
+                                : ActiveTheme::getColour(ActiveTheme::SEPARATOR));
         int y = getHeight() / 2;
         g.fillRect(4, y, getWidth() - 8, 2);
     }
@@ -302,7 +304,8 @@ class MixerView::ChannelStrip::DbScale : public juce::Component {
             float tickHeight = metrics.tickHeight();
             float tickW = isZero ? tickLong : tickShort;
 
-            g.setColour(DarkTheme::getColour(isZero ? DarkTheme::TEXT_PRIMARY : DarkTheme::BORDER));
+            g.setColour(
+                ActiveTheme::getColour(isZero ? ActiveTheme::TEXT_PRIMARY : ActiveTheme::BORDER));
             g.fillRect(0.0f, y - tickHeight / 2.0f, tickW, tickHeight);
 
             juce::String labelText;
@@ -314,8 +317,8 @@ class MixerView::ChannelStrip::DbScale : public juce::Component {
             }
 
             g.setFont(isZero ? boldFont : baseFont);
-            g.setColour(
-                DarkTheme::getColour(isZero ? DarkTheme::TEXT_PRIMARY : DarkTheme::TEXT_SECONDARY));
+            g.setColour(ActiveTheme::getColour(isZero ? ActiveTheme::TEXT_PRIMARY
+                                                      : ActiveTheme::TEXT_SECONDARY));
 
             float textHeight = metrics.labelTextHeight;
             float textY = y - textHeight / 2.0f;
@@ -435,7 +438,8 @@ void MixerView::ChannelStrip::setupControls() {
                                   : trackName_,
                         juce::dontSendNotification);
     trackLabel->setJustificationType(juce::Justification::centred);
-    trackLabel->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    trackLabel->setColour(juce::Label::textColourId,
+                          ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     trackLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     trackLabel->setFont(FontManager::getInstance().getUIFont(10.0f));
     trackLabel->setInterceptsMouseClicks(false, false);
@@ -493,7 +497,8 @@ void MixerView::ChannelStrip::setupControls() {
     peakLabel = std::make_unique<ClickableLabel>();
     peakLabel->setText("-inf", juce::dontSendNotification);
     peakLabel->setJustificationType(juce::Justification::centred);
-    peakLabel->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    peakLabel->setColour(juce::Label::textColourId,
+                         ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     peakLabel->setFont(FontManager::getInstance().getMonoFont(10.0f));
     peakLabel->setTooltip("Click to reset peak");
     peakLabel->onClick = [this]() { resetPeak(); };
@@ -588,11 +593,11 @@ void MixerView::ChannelStrip::setupControls() {
     // Solo target toggle, matching the track header.
     soloButton =
         std::make_unique<magda::SvgButton>("solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
-    soloButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    soloButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    soloButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
-    soloButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
-                                          DarkTheme::ICON_ON_ACCENT);
+    soloButton->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    soloButton->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+    soloButton->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
+    soloButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
+                                          ActiveTheme::ICON_ON_ACCENT);
     soloButton->setIconPadding(5.0f);
     soloButton->setTooltip(tr("tracks.solo.tooltip"));
     soloButton->setClickingTogglesState(true);
@@ -608,11 +613,11 @@ void MixerView::ChannelStrip::setupControls() {
     if (!isMaster_) {
         recordButton = std::make_unique<magda::SvgButton>("record", BinaryData::track_record_svg,
                                                           BinaryData::track_record_svgSize);
-        recordButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-        recordButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-        recordButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
-        recordButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
-                                                DarkTheme::ICON_ON_ACCENT);
+        recordButton->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+        recordButton->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+        recordButton->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
+        recordButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
+                                                ActiveTheme::ICON_ON_ACCENT);
         recordButton->setIconPadding(5.0f);
         recordButton->setTooltip(tr("tracks.record.tooltip"));
         recordButton->setClickingTogglesState(true);
@@ -1137,7 +1142,7 @@ void MixerView::ChannelStrip::rebuildSendSlots(const std::vector<SendInfo>& send
         slot->nameLabel->setText(destName, juce::dontSendNotification);
         slot->nameLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
         slot->nameLabel->setColour(juce::Label::textColourId,
-                                   DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                   ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         slot->nameLabel->setJustificationType(juce::Justification::centredLeft);
         sendContainer_->addAndMakeVisible(*slot->nameLabel);
 
@@ -1161,9 +1166,9 @@ void MixerView::ChannelStrip::rebuildSendSlots(const std::vector<SendInfo>& send
             juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
             juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
         slot->removeButton->setColour(juce::TextButton::buttonColourId,
-                                      DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                                      ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
         slot->removeButton->setColour(juce::TextButton::textColourOffId,
-                                      DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                      ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         slot->removeButton->onClick = [this, busIdx]() {
             UndoManager::getInstance().executeCommand(
                 std::make_unique<RemoveSendCommand>(trackId_, busIdx));
@@ -1185,14 +1190,14 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
 
     // Background
     if (selected) {
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
     } else {
-        g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
     }
     g.fillRect(ownBounds);
 
     // Separator on right side of own column
-    g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
     g.fillRect(ownBounds.getRight() - 1, 0, 1, ownBounds.getHeight());
 
     // Channel color indicator at top — skip for group parents with children (group header provides
@@ -1203,19 +1208,19 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
         if (selected) {
             // Selected: lifted label background behind the strip (shared
             // selection fill with the arrange headers / session view).
-            g.setColour(DarkTheme::getColour(DarkTheme::TRACK_HEADER_SELECTED));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TRACK_HEADER_SELECTED));
             g.fillRect(0, 0, ownBounds.getWidth() - 1, labelRowBottom);
         }
         // Thin colour bar always shown, including when selected.
         g.setColour(trackColour_);
         g.fillRect(0, 0, ownBounds.getWidth() - 1, stripHeight);
-        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
         g.fillRect(0, labelRowBottom, ownBounds.getWidth() - 1, 1);
     }
 
     // Divider at the bottom of the sends region
     if (sendsRegionBottomY_ >= 0) {
-        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
         g.fillRect(0, sendsRegionBottomY_, ownBounds.getWidth() - 1, 1);
     }
 
@@ -1227,12 +1232,12 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
 
         if (selected) {
             // Selected: lifted header like regular channels
-            g.setColour(DarkTheme::getColour(DarkTheme::TRACK_HEADER_SELECTED));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TRACK_HEADER_SELECTED));
             g.fillRect(0, 0, fullBounds.getWidth(), groupHeaderHeight);
         } else {
             // Plain panel background, with just a thin colour bar on top (like a
             // regular channel header) — not the full-width colour flood.
-            g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
             g.fillRect(0, 0, fullBounds.getWidth(), groupHeaderHeight);
 
             g.setColour(trackColour_);
@@ -1240,7 +1245,8 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
         }
 
         // Horizontal separator below header (neutral, not the track colour)
-        g.setColour(DarkTheme::getColour(selected ? DarkTheme::BORDER : DarkTheme::SEPARATOR));
+        g.setColour(
+            ActiveTheme::getColour(selected ? ActiveTheme::BORDER : ActiveTheme::SEPARATOR));
         g.fillRect(0, groupHeaderHeight, fullBounds.getWidth(), 1);
     }
 }
@@ -1721,19 +1727,21 @@ void MixerView::ChannelStrip::lookAndFeelChanged() {
     // selection-dependent, so mirror the logic in setSelected().
     if (trackLabel)
         trackLabel->setColour(juce::Label::textColourId,
-                              DarkTheme::getColour(selected ? DarkTheme::TRACK_HEADER_SELECTED_TEXT
-                                                            : DarkTheme::TEXT_PRIMARY));
+                              ActiveTheme::getColour(selected
+                                                         ? ActiveTheme::TRACK_HEADER_SELECTED_TEXT
+                                                         : ActiveTheme::TEXT_PRIMARY));
     if (peakLabel)
         peakLabel->setColour(juce::Label::textColourId,
-                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                             ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
 }
 
 void MixerView::ChannelStrip::setSelected(bool shouldBeSelected) {
     if (selected != shouldBeSelected) {
         selected = shouldBeSelected;
         trackLabel->setColour(juce::Label::textColourId,
-                              DarkTheme::getColour(selected ? DarkTheme::TRACK_HEADER_SELECTED_TEXT
-                                                            : DarkTheme::TEXT_PRIMARY));
+                              ActiveTheme::getColour(selected
+                                                         ? ActiveTheme::TRACK_HEADER_SELECTED_TEXT
+                                                         : ActiveTheme::TEXT_PRIMARY));
         repaint();
     }
 }
@@ -2008,9 +2016,9 @@ void MixerView::rebuildChannelStrips() {
                 juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
                 juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
             strip->expandToggle_->setColour(juce::TextButton::buttonColourId,
-                                            DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                                            ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
             strip->expandToggle_->setColour(juce::TextButton::textColourOffId,
-                                            DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                            ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
             strip->expandToggle_->onClick = [this, trackId]() {
                 auto* t = TrackManager::getInstance().getTrack(trackId);
                 if (t) {
@@ -2246,10 +2254,10 @@ void MixerView::masterChannelChanged() {
 
 void MixerView::paint(juce::Graphics& g) {
     MAGDA_MONITOR_SCOPE("UIFrame");
-    g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
 
     // Left border (visible when side panel is collapsed)
-    g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
     g.fillRect(0, 0, 1, getHeight());
 
     // Plugin drag overlay
@@ -2259,9 +2267,9 @@ void MixerView::paint(juce::Graphics& g) {
             // Highlight the specific strip being hovered
             auto* strip = orderedStrips_[dropTargetStripIndex_];
             auto stripBounds = getLocalArea(strip, strip->getLocalBounds());
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.25f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.25f));
             g.fillRect(stripBounds);
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.6f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.6f));
             g.drawRect(stripBounds, 2);
         } else {
             // Hovering empty area — show "new track" indicator at right edge of channel area
@@ -2272,14 +2280,14 @@ void MixerView::paint(juce::Graphics& g) {
             indicatorX = std::max(indicatorX, vpBounds.getX());
             auto indicatorBounds = juce::Rectangle<int>(indicatorX, vpBounds.getY(), indicatorWidth,
                                                         vpBounds.getHeight());
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.15f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.15f));
             g.fillRect(indicatorBounds);
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.4f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.4f));
             g.drawRect(indicatorBounds, 2);
 
             // Draw "+" icon
             auto centre = indicatorBounds.getCentre().toFloat();
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.7f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.7f));
             g.drawLine(centre.getX() - 10, centre.getY(), centre.getX() + 10, centre.getY(), 2.0f);
             g.drawLine(centre.getX(), centre.getY() - 10, centre.getX(), centre.getY() + 10, 2.0f);
         }

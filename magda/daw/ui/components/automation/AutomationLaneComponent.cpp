@@ -9,8 +9,8 @@
 #include "../../../core/ParameterUtils.hpp"
 #include "../../../core/UndoManager.hpp"
 #include "../../state/TimelineController.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/CursorManager.hpp"
-#include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 
 namespace magda {
@@ -44,8 +44,8 @@ void AutomationLaneComponent::paint(juce::Graphics& g) {
 
     // Background
     juce::Colour bgColour = isSelected_
-                                ? DarkTheme::getColour(DarkTheme::AUTOMATION_LANE_SELECTED)
-                                : DarkTheme::getColour(DarkTheme::AUTOMATION_LANE_BACKGROUND);
+                                ? ActiveTheme::getColour(ActiveTheme::AUTOMATION_LANE_SELECTED)
+                                : ActiveTheme::getColour(ActiveTheme::AUTOMATION_LANE_BACKGROUND);
     g.fillAll(bgColour);
 
     // Reserve the top handle strip first (top-handle hosts), so the header
@@ -54,19 +54,19 @@ void AutomationLaneComponent::paint(juce::Graphics& g) {
 
     // Header area - just a simple background (name is painted by TrackHeadersPanel)
     auto headerBounds = bounds.removeFromTop(HEADER_HEIGHT);
-    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_LANE_HEADER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_LANE_HEADER));
     g.fillRect(headerBounds);
 
     // Header border
-    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_DIVIDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_DIVIDER));
     g.drawHorizontalLine(headerBounds.getBottom() - 1, 0.0f, static_cast<float>(getWidth()));
 
     // Resize handle strip: bottom edge by default, top edge for bottom-anchored
     // hosts (the master automation band).
     auto resizeArea = getResizeHandleArea();
-    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_DIVIDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_DIVIDER));
     g.fillRect(resizeArea);
-    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_DIVIDER_LIGHT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_DIVIDER_LIGHT));
     int handleLineY =
         resizeHandleAtTop_ ? RESIZE_HANDLE_HEIGHT - 1 : getHeight() - RESIZE_HANDLE_HEIGHT;
     g.drawHorizontalLine(handleLineY, 0.0f, static_cast<float>(getWidth()));
@@ -80,9 +80,9 @@ void AutomationLaneComponent::paint(juce::Graphics& g) {
         const int x1 = SCALE_LABEL_WIDTH + static_cast<int>(drawClipEndBeat_ * pixelsPerBeat_);
         const auto rect = juce::Rectangle<int>(x0, contentY, juce::jmax(2, x1 - x0),
                                                juce::jmax(1, contentHeight));
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0.15f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0.15f));
         g.fillRoundedRectangle(rect.toFloat(), 3.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0.5f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0.5f));
         g.drawRoundedRectangle(rect.toFloat().reduced(0.5f), 3.0f, 1.0f);
     }
 }
@@ -113,9 +113,9 @@ void AutomationLaneComponent::paintOverChildren(juce::Graphics& g) {
         const int width = static_cast<int>(copyGhostLengthBeats_ * pixelsPerBeat_);
         const auto rect =
             juce::Rectangle<int>(x0, contentY, juce::jmax(2, width), juce::jmax(1, contentHeight));
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0.15f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0.15f));
         g.fillRoundedRectangle(rect.toFloat(), 3.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0.5f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0.5f));
         g.drawRoundedRectangle(rect.toFloat().reduced(0.5f), 3.0f, 1.0f);
     }
 
@@ -670,11 +670,11 @@ void AutomationLaneComponent::paintScaleLabels(juce::Graphics& g, juce::Rectangl
         return;
 
     // Background for scale area
-    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_LANE_SCALE_BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_LANE_SCALE_BACKGROUND));
     g.fillRect(area);
 
     // Right border
-    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_DIVIDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_DIVIDER));
     g.drawVerticalLine(area.getRight() - 1, static_cast<float>(area.getY()),
                        static_cast<float>(area.getBottom()));
 
@@ -693,7 +693,7 @@ void AutomationLaneComponent::paintScaleLabelsFor(juce::Graphics& g, juce::Recta
     // Get parameter info for this target
     ParameterInfo paramInfo = getParameterInfoForTarget(target);
 
-    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_SCALE_TEXT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_SCALE_TEXT));
     g.setFont(FontManager::getInstance().getUIFont(9.0f));
 
     // Helper lambda to draw a label at a real value position

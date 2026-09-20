@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "VelocityLaneUtils.hpp"
 #include "core/ClipInfo.hpp"
@@ -302,11 +302,11 @@ void CCLaneComponent::paintGrid(juce::Graphics& g) {
     auto bounds = getLocalBounds();
 
     // Background
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND_ALT));
     g.fillRect(bounds);
 
     g.setFont(FontManager::getInstance().getUIFont(9.0f));
-    auto labelColour = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.6f);
+    auto labelColour = ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.6f);
     constexpr int labelMargin = 2;
     constexpr int labelWidth = 36;
     constexpr int labelH = 12;
@@ -322,11 +322,11 @@ void CCLaneComponent::paintGrid(juce::Graphics& g) {
 
         // Center line (0 semitones = y 0.5)
         int centerY = yToPixel(0.5);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.8f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.8f));
         g.drawHorizontalLine(centerY, 0.0f, static_cast<float>(bounds.getWidth()));
 
         // Draw semitone grid lines symmetrically around center
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.4f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.4f));
         for (int st = 1; st <= pitchBendRange_; ++st) {
             double frac = static_cast<double>(st) / pitchBendRange_;
             int yUp = yToPixel(0.5 + frac * 0.5);
@@ -362,7 +362,7 @@ void CCLaneComponent::paintGrid(juce::Graphics& g) {
         // --- Unipolar CC grid ---
 
         // Horizontal grid lines at 25%, 50%, 75%, 100%
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.5f));
         for (int pct : {25, 50, 75, 100}) {
             int y = yToPixel(pct / 100.0);
             g.drawHorizontalLine(y, 0.0f, static_cast<float>(bounds.getWidth()));
@@ -390,7 +390,7 @@ void CCLaneComponent::paintGrid(juce::Graphics& g) {
     }
 
     // Top border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawHorizontalLine(0, 0.0f, static_cast<float>(bounds.getWidth()));
 }
 

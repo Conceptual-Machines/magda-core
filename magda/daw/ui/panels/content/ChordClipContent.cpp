@@ -18,7 +18,7 @@
 #include "music/ChordEngine.hpp"
 #include "music/ChordEnums.hpp"
 #include "ui/components/common/InternalFileDrag.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/InspectorComboBoxLookAndFeel.hpp"
 #include "ui/utils/AudioFileTypes.hpp"
 
@@ -131,10 +131,11 @@ class ChordEditorPopup : public juce::Component {
         auto style = [this](juce::ComboBox& c) {
             c.setLookAndFeel(&laf_);
             c.setColour(juce::ComboBox::backgroundColourId,
-                        DarkTheme::getColour(DarkTheme::SURFACE));
+                        ActiveTheme::getColour(ActiveTheme::SURFACE));
             c.setColour(juce::ComboBox::textColourId,
-                        DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-            c.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+                        ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+            c.setColour(juce::ComboBox::outlineColourId,
+                        ActiveTheme::getColour(ActiveTheme::BORDER));
             addAndMakeVisible(c);
         };
 
@@ -478,7 +479,7 @@ void ChordClipContent::paintOverChildren(juce::Graphics& g) {
         return;
 
     const juce::Rectangle<int> ghost(x1 + 1, chordRowTop() + 2, x2 - x1 - 2, chordRowHeight() - 4);
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
     g.setColour(accent.withAlpha(0.22f));
     g.fillRoundedRectangle(ghost.toFloat(), 4.0f);
     g.setColour(accent.withAlpha(0.7f));

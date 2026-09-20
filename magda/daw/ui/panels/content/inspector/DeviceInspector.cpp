@@ -1,6 +1,6 @@
 #include "DeviceInspector.hpp"
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "core/DeviceCatalogMetadata.hpp"
 #include "core/RackInfo.hpp"
@@ -11,52 +11,52 @@ namespace magda::daw::ui {
 
 DeviceInspector::DeviceInspector() {
     chainNodeTypeLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    chainNodeTypeLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    chainNodeTypeLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     addChildComponent(chainNodeTypeLabel_);
 
     chainNodeNameLabel_.setText("Name", juce::dontSendNotification);
     chainNodeNameLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    chainNodeNameLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    chainNodeNameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     addChildComponent(chainNodeNameLabel_);
 
     chainNodeNameValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
-    chainNodeNameValue_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    chainNodeNameValue_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     addChildComponent(chainNodeNameValue_);
 
     latencyLabel_.setText("Latency", juce::dontSendNotification);
     latencyLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    latencyLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    latencyLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     addChildComponent(latencyLabel_);
 
     latencyValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
-    latencyValue_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    latencyValue_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     addChildComponent(latencyValue_);
 
     categoryLabel_.setText("Category", juce::dontSendNotification);
     categoryLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    categoryLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    categoryLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     addChildComponent(categoryLabel_);
 
     categoryValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
-    categoryValue_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    categoryValue_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     addChildComponent(categoryValue_);
 
     codenameLabel_.setText("Codename", juce::dontSendNotification);
     codenameLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    codenameLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    codenameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     addChildComponent(codenameLabel_);
 
     codenameValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
-    codenameValue_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    codenameValue_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     addChildComponent(codenameValue_);
 
     descriptionLabel_.setText("Description", juce::dontSendNotification);
     descriptionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    descriptionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    descriptionLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     addChildComponent(descriptionLabel_);
 
     descriptionValue_.setBaseFont(FontManager::getInstance().getUIFont(12.0f));
-    descriptionValue_.setBaseColour(DarkTheme::getTextColour());
+    descriptionValue_.setBaseColour(ActiveTheme::getTextColour());
     addChildComponent(descriptionValue_);
 }
 
@@ -86,7 +86,7 @@ void DeviceInspector::trackDevicesChanged(int trackId) {
 }
 
 void DeviceInspector::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getBackgroundColour());
+    g.fillAll(ActiveTheme::getBackgroundColour());
 }
 
 void DeviceInspector::resized() {

@@ -18,7 +18,7 @@
 #include "slot/DeviceSlotParamLayoutFactory.hpp"
 #include "slot/DeviceSlotParameterPaging.hpp"
 #include "ui/debug/DebugSettings.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
@@ -40,16 +40,17 @@ juce::String yesNo(bool value) {
 
 PadDeviceSlot::PadDeviceSlot() {
     nameLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     nameLabel_.setJustificationType(juce::Justification::centredLeft);
     nameLabel_.setInterceptsMouseClicks(true, false);
     nameLabel_.addMouseListener(this, false);
     addAndMakeVisible(nameLabel_);
 
     deleteButton_.setButtonText(juce::CharPointer_UTF8("\xc3\x97"));  // multiplication sign
-    auto deleteColour = DarkTheme::getColour(DarkTheme::ACCENT_MODULATION)
-                            .interpolatedWith(DarkTheme::getColour(DarkTheme::STATUS_ERROR), 0.5f)
-                            .darker(0.2f);
+    auto deleteColour =
+        ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION)
+            .interpolatedWith(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR), 0.5f)
+            .darker(0.2f);
     deleteButton_.setColour(juce::TextButton::buttonColourId, deleteColour);
     deleteButton_.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     deleteButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
@@ -67,7 +68,7 @@ PadDeviceSlot::PadDeviceSlot() {
     uiButton_->setClickingTogglesState(true);
     uiButton_->setNormalColor(juce::Colour(0xFFB3B3B3).withAlpha(0.5f));
     uiButton_->setActiveColor(juce::Colours::white);
-    uiButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    uiButton_->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     addChildComponent(*uiButton_);
 
     // On/power button
@@ -75,10 +76,10 @@ PadDeviceSlot::PadDeviceSlot() {
                                                    BinaryData::power_svgSize);
     onButton_->setClickingTogglesState(true);
     onButton_->setToggleState(true, juce::dontSendNotification);
-    onButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+    onButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
     onButton_->setActiveColor(juce::Colours::white);
     onButton_->setActiveBackgroundColor(
-        DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).darker(0.3f));
+        ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).darker(0.3f));
     onButton_->setActive(true);
     onButton_->onClick = [this]() {
         const bool active = onButton_->getToggleState();
@@ -613,12 +614,12 @@ void PadDeviceSlot::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds().toFloat();
     float cornerRadius = collapsed_ ? 4.0f : 0.0f;
 
-    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
     g.fillRoundedRectangle(bounds, cornerRadius);
 
     // Selection border (matches NodeComponent style)
     if (selected_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_SCALE_TEXT));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_SCALE_TEXT));
         g.drawRoundedRectangle(bounds.reduced(1.0f), 4.0f, 2.0f);
     }
 
@@ -627,7 +628,7 @@ void PadDeviceSlot::paint(juce::Graphics& g) {
         // Text area = nameLabel_ bounds (below buttons)
         auto textArea = nameLabel_.getBounds();
         if (textArea.getHeight() > 20) {
-            g.setColour(DarkTheme::getTextColour());
+            g.setColour(ActiveTheme::getTextColour());
             g.setFont(FontManager::getInstance().getUIFont(9.0f));
 
             g.saveState();
@@ -718,7 +719,7 @@ void PadDeviceSlot::resized() {
 
     // Expanded: restore visibility and text colour
     nameLabel_.setVisible(true);
-    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     if (device_.pluginId.isNotEmpty()) {
         const bool isSampler =
             device_.pluginId.equalsIgnoreCase(daw::audio::MagdaSamplerPlugin::xmlTypeName);

@@ -1,6 +1,6 @@
 #include "ZoomScrollBar.hpp"
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 
 namespace magda {
@@ -21,16 +21,16 @@ void ZoomScrollBar::paint(juce::Graphics& g) {
     // Draw track background. The horizontal bar sits in a parent-painted row
     // matching the master/content backgrounds, so avoid adding a dark gutter fill.
     if (orientation == Orientation::Vertical) {
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
         g.fillRoundedRectangle(trackBounds.toFloat(), 3.0f);
     }
 
     // Draw track border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRoundedRectangle(trackBounds.toFloat(), 3.0f, 1.0f);
 
     // Draw thumb
-    auto thumbColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
+    auto thumbColour = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
     if (dragMode != DragMode::None) {
         thumbColour = thumbColour.brighter(0.2f);
     }
@@ -43,7 +43,7 @@ void ZoomScrollBar::paint(juce::Graphics& g) {
 
     // Draw label if set (fixed position on right/bottom)
     if (label.isNotEmpty()) {
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
 
         if (orientation == Orientation::Horizontal) {

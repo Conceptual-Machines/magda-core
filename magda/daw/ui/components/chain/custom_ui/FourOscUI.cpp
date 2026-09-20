@@ -4,7 +4,7 @@
 #include <cstdint>
 
 #include "BinaryData.h"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/InspectorComboBoxLookAndFeel.hpp"
 
@@ -18,7 +18,7 @@ FourOscUI::FourOscUI() {
     tabs_ = std::make_unique<LayoutStableTabbedComponent>(juce::TabbedButtonBar::TabsAtTop);
     tabs_->setTabBarDepth(20);
 
-    auto tabBg = DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f);
+    auto tabBg = ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f);
 
     oscTab_ = std::make_unique<OscTab>(*this);
     filterTab_ = std::make_unique<FilterTab>(*this);
@@ -86,9 +86,9 @@ void FourOscUI::setCurrentTabIndex(int index) {
 }
 
 void FourOscUI::paint(juce::Graphics& g) {
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(getLocalBounds(), 1);
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
     g.fillRect(getLocalBounds().reduced(1));
 }
 
@@ -99,7 +99,7 @@ void FourOscUI::resized() {
 void FourOscUI::lookAndFeelChanged() {
     // Re-apply cached theme colours after a live theme switch. Hidden tab
     // pages are not in the component tree, so refresh all tabs explicitly.
-    auto tabBg = DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f);
+    auto tabBg = ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f);
     for (int i = 0; i < tabs_->getNumTabs(); ++i)
         tabs_->setTabBackgroundColour(i, tabBg);
 
@@ -193,7 +193,7 @@ namespace {
 void setupLabelStatic(juce::Label& label, const juce::String& text, juce::Component* parent) {
     label.setText(text, juce::dontSendNotification);
     label.setFont(FontManager::getInstance().getUIFont(9.0f));
-    label.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    label.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     label.setJustificationType(juce::Justification::centred);
     parent->addAndMakeVisible(label);
 }
@@ -527,9 +527,9 @@ void FourOscUI::OscTab::refreshThemeColours() {
     for (auto* label :
          {&hdrWave_, &hdrTune_, &hdrFine_, &hdrLevel_, &hdrPW_, &hdrDetune_, &hdrSpread_, &hdrPan_,
           &hdrVoices_, &modeLabel_, &gVoicesLabel_, &legatoLabel_, &masterLabel_})
-        label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     for (auto& row : rows_)
-        row.label.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        row.label.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     repaint();
 }
 
@@ -804,7 +804,7 @@ void FourOscUI::FilterTab::setupLabel(juce::Label& label, const juce::String& te
 void FourOscUI::FilterTab::refreshThemeColours() {
     for (auto* label : {&typeLabel_, &slopeLabel_, &freqLabel_, &resLabel_, &keyLabel_, &velLabel_,
                         &amountLabel_, &atkLabel_, &decLabel_, &susLabel_, &relLabel_})
-        label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     repaint();
 }
 
@@ -952,7 +952,7 @@ void FourOscUI::AmpTab::setupLabel(juce::Label& label, const juce::String& text)
 
 void FourOscUI::AmpTab::refreshThemeColours() {
     for (auto* label : {&atkLabel_, &decLabel_, &susLabel_, &relLabel_, &velLabel_})
-        label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     repaint();
 }
 
@@ -977,7 +977,7 @@ struct ModMatrixButtonLookAndFeel : juce::LookAndFeel_V4 {
             bgColour = bgColour.brighter(0.08f);
         g.setColour(bgColour);
         g.fillRect(bounds);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRect(bounds, 1.0f);
     }
 
@@ -1067,15 +1067,15 @@ FourOscUI::ModEnvTab::ModEnvTab(FourOscUI& owner) : owner_(owner) {
     // Mod destination section
     addDestBtn1_.setLookAndFeel(&ModMatrixButtonLookAndFeel::getInstance());
     addDestBtn1_.setColour(juce::TextButton::buttonColourId,
-                           DarkTheme::getColour(DarkTheme::SURFACE));
-    addDestBtn1_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+                           ActiveTheme::getColour(ActiveTheme::SURFACE));
+    addDestBtn1_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
     addDestBtn1_.onClick = [this] { showAddDestPopup(2, "Env 1"); };  // env1=2
     addAndMakeVisible(addDestBtn1_);
 
     addDestBtn2_.setLookAndFeel(&ModMatrixButtonLookAndFeel::getInstance());
     addDestBtn2_.setColour(juce::TextButton::buttonColourId,
-                           DarkTheme::getColour(DarkTheme::SURFACE));
-    addDestBtn2_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+                           ActiveTheme::getColour(ActiveTheme::SURFACE));
+    addDestBtn2_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
     addDestBtn2_.onClick = [this] { showAddDestPopup(3, "Env 2"); };  // env2=3
     addAndMakeVisible(addDestBtn2_);
 
@@ -1188,21 +1188,22 @@ void FourOscUI::ModEnvTab::setupLabel(juce::Label& label, const juce::String& te
 
 void FourOscUI::ModEnvTab::refreshThemeColours() {
     for (auto* label : {&hdrAtk_, &hdrDec_, &hdrSus_, &hdrRel_})
-        label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     for (auto& row : rows_)
-        row.label.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        row.label.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     for (auto* btn : {&addDestBtn1_, &addDestBtn2_}) {
-        btn->setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-        btn->setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+        btn->setColour(juce::TextButton::buttonColourId,
+                       ActiveTheme::getColour(ActiveTheme::SURFACE));
+        btn->setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
     }
     for (auto& row : modDestRows_) {
         if (row.destLabel)
-            row.destLabel->setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+            row.destLabel->setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
         if (row.deleteButton) {
             row.deleteButton->setColour(juce::TextButton::buttonColourId,
-                                        DarkTheme::getColour(DarkTheme::SURFACE));
+                                        ActiveTheme::getColour(ActiveTheme::SURFACE));
             row.deleteButton->setColour(juce::TextButton::textColourOffId,
-                                        DarkTheme::getColour(DarkTheme::ACCENT_RED));
+                                        ActiveTheme::getColour(ActiveTheme::ACCENT_RED));
         }
     }
     repaint();
@@ -1262,15 +1263,15 @@ FourOscUI::LFOTab::LFOTab(FourOscUI& owner) : owner_(owner) {
     // Mod destination section
     addDestBtn1_.setLookAndFeel(&ModMatrixButtonLookAndFeel::getInstance());
     addDestBtn1_.setColour(juce::TextButton::buttonColourId,
-                           DarkTheme::getColour(DarkTheme::SURFACE));
-    addDestBtn1_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+                           ActiveTheme::getColour(ActiveTheme::SURFACE));
+    addDestBtn1_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
     addDestBtn1_.onClick = [this] { showAddDestPopup(0, "LFO 1"); };  // lfo1=0
     addAndMakeVisible(addDestBtn1_);
 
     addDestBtn2_.setLookAndFeel(&ModMatrixButtonLookAndFeel::getInstance());
     addDestBtn2_.setColour(juce::TextButton::buttonColourId,
-                           DarkTheme::getColour(DarkTheme::SURFACE));
-    addDestBtn2_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+                           ActiveTheme::getColour(ActiveTheme::SURFACE));
+    addDestBtn2_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
     addDestBtn2_.onClick = [this] { showAddDestPopup(1, "LFO 2"); };  // lfo2=1
     addAndMakeVisible(addDestBtn2_);
 
@@ -1379,10 +1380,10 @@ void FourOscUI::LFOTab::paint(juce::Graphics& g) {
             continue;
 
         // Frame + baseline.
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).darker(0.25f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).darker(0.25f));
         g.fillRect(b);
         const float midY = b.getCentreY();
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawHorizontalLine(static_cast<int>(midY), b.getX(), b.getRight());
 
         if (row.shape == 0)  // Off: flat line only
@@ -1432,7 +1433,7 @@ void FourOscUI::LFOTab::paint(juce::Graphics& g) {
                     p.lineTo(px, py);
             }
         }
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).brighter(0.3f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).brighter(0.3f));
         g.strokePath(p, juce::PathStrokeType(1.5f, juce::PathStrokeType::curved,
                                              juce::PathStrokeType::rounded));
     }
@@ -1444,21 +1445,22 @@ void FourOscUI::LFOTab::setupLabel(juce::Label& label, const juce::String& text)
 
 void FourOscUI::LFOTab::refreshThemeColours() {
     for (auto* label : {&hdrWave_, &hdrRate_, &hdrDepth_, &hdrSync_})
-        label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     for (auto& row : rows_)
-        row.label.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        row.label.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     for (auto* btn : {&addDestBtn1_, &addDestBtn2_}) {
-        btn->setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-        btn->setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+        btn->setColour(juce::TextButton::buttonColourId,
+                       ActiveTheme::getColour(ActiveTheme::SURFACE));
+        btn->setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
     }
     for (auto& row : modDestRows_) {
         if (row.destLabel)
-            row.destLabel->setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+            row.destLabel->setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
         if (row.deleteButton) {
             row.deleteButton->setColour(juce::TextButton::buttonColourId,
-                                        DarkTheme::getColour(DarkTheme::SURFACE));
+                                        ActiveTheme::getColour(ActiveTheme::SURFACE));
             row.deleteButton->setColour(juce::TextButton::textColourOffId,
-                                        DarkTheme::getColour(DarkTheme::ACCENT_RED));
+                                        ActiveTheme::getColour(ActiveTheme::ACCENT_RED));
         }
     }
     repaint();
@@ -1764,7 +1766,7 @@ void FourOscUI::FXTab::refreshThemeColours() {
     for (auto* label : {&distLabel_, &revSizeLabel_, &revDampLabel_, &revWidthLabel_, &revMixLabel_,
                         &delFbLabel_, &delXfLabel_, &delMixLabel_, &chSpeedLabel_, &chDepthLabel_,
                         &chWidthLabel_, &chMixLabel_})
-        label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     repaint();
 }
 
@@ -1815,7 +1817,7 @@ void FourOscUI::LFOTab::rebuildModRows() {
         juce::String label = entry.sourceName + " > " + entry.paramName;
         row.destLabel = std::make_unique<juce::Label>("", label);
         row.destLabel->setLookAndFeel(&ModMatrixButtonLookAndFeel::getInstance());
-        row.destLabel->setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        row.destLabel->setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
         row.destLabel->setJustificationType(juce::Justification::centredLeft);
         modListContent_->addAndMakeVisible(*row.destLabel);
 
@@ -1838,9 +1840,9 @@ void FourOscUI::LFOTab::rebuildModRows() {
         row.deleteButton = std::make_unique<juce::TextButton>("X");
         row.deleteButton->setLookAndFeel(&ModMatrixButtonLookAndFeel::getInstance());
         row.deleteButton->setColour(juce::TextButton::buttonColourId,
-                                    DarkTheme::getColour(DarkTheme::SURFACE));
+                                    ActiveTheme::getColour(ActiveTheme::SURFACE));
         row.deleteButton->setColour(juce::TextButton::textColourOffId,
-                                    DarkTheme::getColour(DarkTheme::ACCENT_RED));
+                                    ActiveTheme::getColour(ActiveTheme::ACCENT_RED));
         row.deleteButton->onClick = [this, paramIdx, srcId] {
             if (owner_.onModEntryRemoved)
                 owner_.onModEntryRemoved(paramIdx, srcId);
@@ -1870,7 +1872,7 @@ void FourOscUI::LFOTab::showAddDestPopup(int modSourceId, const juce::String& so
     auto* addBtn = new juce::TextButton("Add");
     addBtn->setBounds(60, 40, 80, 24);
     addBtn->setColour(juce::TextButton::buttonColourId,
-                      DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                      ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     popup->addAndMakeVisible(addBtn);
 
     auto& addBtnRef = (modSourceId == 0) ? addDestBtn1_ : addDestBtn2_;
@@ -1939,7 +1941,7 @@ void FourOscUI::ModEnvTab::rebuildModRows() {
         juce::String label = entry.sourceName + " > " + entry.paramName;
         row.destLabel = std::make_unique<juce::Label>("", label);
         row.destLabel->setLookAndFeel(&ModMatrixButtonLookAndFeel::getInstance());
-        row.destLabel->setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        row.destLabel->setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
         row.destLabel->setJustificationType(juce::Justification::centredLeft);
         modListContent_->addAndMakeVisible(*row.destLabel);
 
@@ -1962,9 +1964,9 @@ void FourOscUI::ModEnvTab::rebuildModRows() {
         row.deleteButton = std::make_unique<juce::TextButton>("X");
         row.deleteButton->setLookAndFeel(&ModMatrixButtonLookAndFeel::getInstance());
         row.deleteButton->setColour(juce::TextButton::buttonColourId,
-                                    DarkTheme::getColour(DarkTheme::SURFACE));
+                                    ActiveTheme::getColour(ActiveTheme::SURFACE));
         row.deleteButton->setColour(juce::TextButton::textColourOffId,
-                                    DarkTheme::getColour(DarkTheme::ACCENT_RED));
+                                    ActiveTheme::getColour(ActiveTheme::ACCENT_RED));
         row.deleteButton->onClick = [this, paramIdx, srcId] {
             if (owner_.onModEntryRemoved)
                 owner_.onModEntryRemoved(paramIdx, srcId);
@@ -1994,7 +1996,7 @@ void FourOscUI::ModEnvTab::showAddDestPopup(int modSourceId, const juce::String&
     auto* addBtn = new juce::TextButton("Add");
     addBtn->setBounds(60, 40, 80, 24);
     addBtn->setColour(juce::TextButton::buttonColourId,
-                      DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                      ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     popup->addAndMakeVisible(addBtn);
 
     // env1=2, env2=3 -> button index 0 or 1

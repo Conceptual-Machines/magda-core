@@ -3,7 +3,7 @@
 #include <BinaryData.h>
 
 #include "core/DrumGridPads.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
@@ -12,7 +12,7 @@ namespace magda::daw::ui {
 PadChainRowComponent::PadChainRowComponent(int padIndex) : padIndex_(padIndex) {
     // Name label - clicks pass through to parent for selection
     nameLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     nameLabel_.setJustificationType(juce::Justification::centredLeft);
     nameLabel_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(nameLabel_);
@@ -56,8 +56,9 @@ PadChainRowComponent::PadChainRowComponent(int padIndex) : padIndex_(padIndex) {
 
     // Output bus selector button
     outputButton_.setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE).brighter(0.05f));
-    outputButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+                            ActiveTheme::getColour(ActiveTheme::SURFACE).brighter(0.05f));
+    outputButton_.setColour(juce::TextButton::textColourOffId,
+                            ActiveTheme::getSecondaryTextColour());
     outputButton_.onClick = [this]() {
         juce::PopupMenu menu;
         menu.addItem(1, "Main", true, currentBusOutput_ == 0);
@@ -81,12 +82,12 @@ PadChainRowComponent::PadChainRowComponent(int padIndex) : padIndex_(padIndex) {
 
     // Mute button
     muteButton_.setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
+                          ActiveTheme::getColour(ActiveTheme::SURFACE));
     muteButton_.setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::STATUS_WARNING));
-    muteButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+                          ActiveTheme::getColour(ActiveTheme::STATUS_WARNING));
+    muteButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
     muteButton_.setColour(juce::TextButton::textColourOnId,
-                          DarkTheme::getColour(DarkTheme::BACKGROUND));
+                          ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     muteButton_.setClickingTogglesState(true);
     muteButton_.onClick = [this]() {
         if (onMuteChanged)
@@ -97,12 +98,12 @@ PadChainRowComponent::PadChainRowComponent(int padIndex) : padIndex_(padIndex) {
 
     // Solo button
     soloButton_.setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
+                          ActiveTheme::getColour(ActiveTheme::SURFACE));
     soloButton_.setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
-    soloButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+                          ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
+    soloButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
     soloButton_.setColour(juce::TextButton::textColourOnId,
-                          DarkTheme::getColour(DarkTheme::BACKGROUND));
+                          ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     soloButton_.setClickingTogglesState(true);
     soloButton_.onClick = [this]() {
         if (onSoloChanged)
@@ -116,10 +117,10 @@ PadChainRowComponent::PadChainRowComponent(int padIndex) : padIndex_(padIndex) {
                                                    BinaryData::power_svgSize);
     onButton_->setClickingTogglesState(true);
     onButton_->setToggleState(true, juce::dontSendNotification);
-    onButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+    onButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
     onButton_->setActiveColor(juce::Colours::white);
     onButton_->setActiveBackgroundColor(
-        DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).darker(0.3f));
+        ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).darker(0.3f));
     onButton_->setActive(true);
     onButton_->onClick = [this]() {
         bool active = onButton_->getToggleState();
@@ -139,8 +140,8 @@ PadChainRowComponent::PadChainRowComponent(int padIndex) : padIndex_(padIndex) {
     deleteButton_.setButtonText(juce::String::fromUTF8("\xc3\x97"));  // x symbol
     deleteButton_.setColour(
         juce::TextButton::buttonColourId,
-        DarkTheme::getColour(DarkTheme::ACCENT_MODULATION)
-            .interpolatedWith(DarkTheme::getColour(DarkTheme::STATUS_ERROR), 0.5f)
+        ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION)
+            .interpolatedWith(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR), 0.5f)
             .darker(0.2f));
     deleteButton_.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     deleteButton_.onClick = [this]() {
@@ -163,17 +164,17 @@ void PadChainRowComponent::paint(juce::Graphics& g) {
 
     // Background - highlight if selected
     if (selected_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.2f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.2f));
     } else {
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.02f));
     }
     g.fillRoundedRectangle(bounds.toFloat(), 2.0f);
 
     // Border - accent color if selected
     if (selected_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     } else {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     }
     g.drawRoundedRectangle(bounds.toFloat(), 2.0f, 1.0f);
 }

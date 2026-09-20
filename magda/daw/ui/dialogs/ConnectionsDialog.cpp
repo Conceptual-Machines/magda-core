@@ -13,7 +13,7 @@
 #include "../../api/remote_api_host.hpp"
 #include "../../api/remote_audit.hpp"
 #include "../../api/remote_clients.hpp"
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
 #include "core/AppPaths.hpp"
@@ -28,7 +28,7 @@ namespace {
 
 void styleLabel(juce::Label& label, float size = 12.0f) {
     label.setFont(FontManager::getInstance().getUIFont(size));
-    label.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    label.setColour(juce::Label::textColourId, ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     label.setJustificationType(juce::Justification::centredLeft);
 }
 
@@ -65,9 +65,10 @@ juce::String commentBlock(const juce::String& sentence) {
 
 void styleReadOnlyEditor(juce::TextEditor& ed) {
     ed.setFont(FontManager::getInstance().getUIFont(12.0f));
-    ed.setColour(juce::TextEditor::backgroundColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-    ed.setColour(juce::TextEditor::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    ed.setColour(juce::TextEditor::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+    ed.setColour(juce::TextEditor::backgroundColourId,
+                 ActiveTheme::getColour(ActiveTheme::SURFACE));
+    ed.setColour(juce::TextEditor::textColourId, ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+    ed.setColour(juce::TextEditor::outlineColourId, ActiveTheme::getColour(ActiveTheme::BORDER));
 }
 
 }  // namespace
@@ -92,7 +93,7 @@ class TransportPage : public juce::Component, private juce::Timer {
     TransportPage(magda::remote::Transport transport, juce::String keyPrefix)
         : transport_(transport), keyPrefix_(std::move(keyPrefix)) {
         blurbLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
-        blurbLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        blurbLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
         blurbLabel_.setJustificationType(juce::Justification::topLeft);
         blurbLabel_.setText(named("blurb"), juce::dontSendNotification);
         addAndMakeVisible(blurbLabel_);
@@ -100,9 +101,9 @@ class TransportPage : public juce::Component, private juce::Timer {
         enableToggle_.setButtonText(
             named("enable").replace("{1}", magda::technicalText(magda::TechnicalTextToken::Api)));
         enableToggle_.setColour(juce::ToggleButton::textColourId,
-                                DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                                ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         enableToggle_.setColour(juce::ToggleButton::tickColourId,
-                                DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                                ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         // Applied on the spot: this toggle owns a socket, and one that leaves it
         // in the opposite state to what the checkbox shows is worse than no
         // feedback at all. Only this transport is touched — the other one keeps
@@ -145,7 +146,8 @@ class TransportPage : public juce::Component, private juce::Timer {
         addAndMakeVisible(copyButton_);
 
         hintLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-        hintLabel_.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        hintLabel_.setColour(juce::Label::textColourId,
+                             ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         hintLabel_.setJustificationType(juce::Justification::topLeft);
         hintLabel_.setText(
             named("hint").replace("{1}", magda::technicalText(magda::TechnicalTextToken::Magda)),
@@ -337,18 +339,18 @@ class TransportPage : public juce::Component, private juce::Timer {
             statusLabel_.setText(key("status_listening").replace("{0}", juce::String(port())),
                                  juce::dontSendNotification);
             statusLabel_.setColour(juce::Label::textColourId,
-                                   DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                                   ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         } else if (enabled) {
             // Enabled and not listening. At startup that means "not up yet"; a
             // second later it means the port was taken, which is the one failure
             // a user can act on and the one they cannot otherwise see.
             statusLabel_.setText(key("status_enabled"), juce::dontSendNotification);
             statusLabel_.setColour(juce::Label::textColourId,
-                                   DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                                   ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         } else {
             statusLabel_.setText(key("status_off"), juce::dontSendNotification);
             statusLabel_.setColour(juce::Label::textColourId,
-                                   DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                                   ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         }
 
         bool copyable = false;
@@ -647,7 +649,7 @@ class RemoteClientsPage : public juce::Component, private juce::Timer {
   public:
     RemoteClientsPage() {
         blurbLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
-        blurbLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        blurbLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
         blurbLabel_.setJustificationType(juce::Justification::topLeft);
         blurbLabel_.setText(tr("connections.clients.blurb"), juce::dontSendNotification);
         addAndMakeVisible(blurbLabel_);
@@ -657,7 +659,8 @@ class RemoteClientsPage : public juce::Component, private juce::Timer {
         addAndMakeVisible(clientsViewport_);
 
         emptyLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-        emptyLabel_.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        emptyLabel_.setColour(juce::Label::textColourId,
+                              ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         emptyLabel_.setJustificationType(juce::Justification::centred);
         emptyLabel_.setText(tr("connections.clients.none"), juce::dontSendNotification);
         addAndMakeVisible(emptyLabel_);
@@ -709,12 +712,12 @@ class RemoteClientsPage : public juce::Component, private juce::Timer {
             nameLabel_.setText(name_, juce::dontSendNotification);
             nameLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
             nameLabel_.setColour(juce::Label::textColourId,
-                                 DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                                 ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
             addAndMakeVisible(nameLabel_);
 
             statusLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
             statusLabel_.setColour(juce::Label::textColourId,
-                                   DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                                   ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
             addAndMakeVisible(statusLabel_);
 
             for (const auto scope : magda::remote::allScopeValues()) {
@@ -726,9 +729,9 @@ class RemoteClientsPage : public juce::Component, private juce::Timer {
                 // refusal would break the one link this page exists to make.
                 toggle->setButtonText(magda::remote::scopeName(scope));
                 toggle->setColour(juce::ToggleButton::textColourId,
-                                  DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                                  ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
                 toggle->setColour(juce::ToggleButton::tickColourId,
-                                  DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                                  ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
                 // `read` is what being admitted means, so it is shown ticked
                 // and cannot be cleared — a row granting nothing at all would
                 // be indistinguishable from a client that was never granted,
@@ -779,8 +782,8 @@ class RemoteClientsPage : public juce::Component, private juce::Timer {
                           : tr("connections.clients.not_connected"),
                 juce::dontSendNotification);
             statusLabel_.setColour(juce::Label::textColourId,
-                                   connected ? DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)
-                                             : DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                                   connected ? ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)
+                                             : ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
             disconnectButton_.setEnabled(connected);
         }
 
@@ -805,14 +808,14 @@ class RemoteClientsPage : public juce::Component, private juce::Timer {
 
         void paint(juce::Graphics& g) override {
             const auto card = getLocalBounds().toFloat().reduced(1.0f);
-            g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND_ALT));
             g.fillRoundedRectangle(card, 3.0f);
             // Outlined, not just tinted (#2142). A name sits directly above its
             // own checkboxes and the next name directly below them, so with only
             // a fill to separate them a list scrolled to mid-row reads as a row
             // of checkboxes belonging to the name underneath. The border says
             // where one client ends.
-            g.setColour(DarkTheme::getBorderColour());
+            g.setColour(ActiveTheme::getBorderColour());
             g.drawRoundedRectangle(card, 3.0f, 1.0f);
         }
 
@@ -1129,7 +1132,7 @@ class OscSurfacesPage : public juce::Component, private juce::Timer {
 
         status_.setFont(FontManager::getInstance().getUIFont(kStatusFontSize));
         status_.setColour(juce::Label::textColourId,
-                          DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                          ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     }
 
     /// The address behind the selected entry. The two presets are spelled out
@@ -1271,7 +1274,7 @@ ConnectionsDialog::ConnectionsDialog() {
     oscPage_ = std::make_unique<OscSurfacesPage>();
     remoteClientsPage_ = std::make_unique<RemoteClientsPage>();
 
-    auto tabBg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+    auto tabBg = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
     // Transports first, in the order most users meet them, then the grants that
     // apply to whichever they used. Clients is last rather than beside a
     // transport because it belongs to both: turning an endpoint on and saying
@@ -1294,7 +1297,7 @@ ConnectionsDialog::~ConnectionsDialog() {
 }
 
 void ConnectionsDialog::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
 }
 
 void ConnectionsDialog::resized() {
@@ -1319,7 +1322,7 @@ class SelfClosingDialogWindow : public juce::DialogWindow {
 
 void ConnectionsDialog::showDialog(juce::Component* /*parent*/) {
     auto* dialog = new ConnectionsDialog();
-    auto bg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+    auto bg = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
 
     auto* window = new SelfClosingDialogWindow(tr("connections.title"), bg);
     window->setContentOwned(dialog, true);

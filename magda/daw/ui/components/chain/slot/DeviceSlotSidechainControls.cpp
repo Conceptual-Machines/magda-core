@@ -7,7 +7,7 @@
 
 #include "core/PluginCapabilities.hpp"
 #include "core/TrackManager.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 

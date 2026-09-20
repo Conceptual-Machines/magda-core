@@ -6,7 +6,7 @@
 
 #include "../../../agents/llama_model_manager.hpp"
 #include "../../scripting_app.hpp"
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "audio/midi/MidiDeviceMatch.hpp"
 #include "core/Config.hpp"
@@ -139,10 +139,10 @@ void FooterBar::mouseUp(const juce::MouseEvent& e) {
 }
 
 void FooterBar::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
 
     // Draw top border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawLine(0.0f, 0.0f, static_cast<float>(getWidth()), 0.0f, 1.0f);
 
     // Enabled-controller badges on the left.
@@ -150,7 +150,7 @@ void FooterBar::paint(juce::Graphics& g) {
     g.setFont(font);
     for (const auto& b : controllerBadges_) {
         // Pill background.
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
         g.fillRoundedRectangle(b.hitArea.toFloat(), 4.0f);
 
         // Connection dot — green when the live MIDI port is available, dim
@@ -159,12 +159,13 @@ void FooterBar::paint(juce::Graphics& g) {
             static_cast<float>(b.hitArea.getX() + kBadgeDotPad),
             static_cast<float>(b.hitArea.getCentreY() - kBadgeDotSize / 2.0f),
             static_cast<float>(kBadgeDotSize), static_cast<float>(kBadgeDotSize));
-        g.setColour(b.connected ? DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.95f)
-                                : DarkTheme::getColour(DarkTheme::TEXT_DIM).withAlpha(0.55f));
+        g.setColour(b.connected
+                        ? ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.95f)
+                        : ActiveTheme::getColour(ActiveTheme::TEXT_DIM).withAlpha(0.55f));
         g.fillEllipse(dotArea);
 
         // Label.
-        g.setColour(DarkTheme::getTextColour());
+        g.setColour(ActiveTheme::getTextColour());
         auto textArea = b.hitArea;
         textArea.removeFromLeft(kBadgeDotPad + kBadgeDotSize + 4);
         textArea.removeFromRight(kBadgePadX / 2);
@@ -180,21 +181,21 @@ void FooterBar::paint(juce::Graphics& g) {
         juce::Colour dotColour;
         switch (state) {
             case LocalModelState::Loaded:
-                dotColour = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.95f);
+                dotColour = ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.95f);
                 break;
             case LocalModelState::Loading:
-                dotColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.95f);
+                dotColour = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.95f);
                 break;
             case LocalModelState::Idle:
                 dotColour = juce::Colour(0xFFE5B84B);
                 break;
             case LocalModelState::Unavailable:
-                dotColour = DarkTheme::getColour(DarkTheme::TEXT_DIM).withAlpha(0.55f);
+                dotColour = ActiveTheme::getColour(ActiveTheme::TEXT_DIM).withAlpha(0.55f);
                 break;
         }
 
         auto dotArea = button->getBounds().toFloat().removeFromBottom(8.0f).removeFromRight(8.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
         g.fillEllipse(dotArea.expanded(1.5f));
         g.setColour(dotColour);
         g.fillEllipse(dotArea.reduced(1.5f));
@@ -288,12 +289,12 @@ void FooterBar::setupButtons() {
 
     const std::array<IconData, NUM_MODES> icons = {{
         {BinaryData::iconsessionboldm_svg, BinaryData::iconsessionboldm_svgSize, ViewMode::Live,
-         "Session", "footer.tooltip.session", DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE)},
+         "Session", "footer.tooltip.session", ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE)},
         {BinaryData::iconarrangementboldm_svg, BinaryData::iconarrangementboldm_svgSize,
          ViewMode::Arrange, "Arrangement", "footer.tooltip.arrangement",
-         DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION)},
+         ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION)},
         {BinaryData::iconmixboldm_svg, BinaryData::iconmixboldm_svgSize, ViewMode::Mix, "Mix",
-         "footer.tooltip.mix", DarkTheme::getColour(DarkTheme::ACCENT_MODULATION)},
+         "footer.tooltip.mix", ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION)},
     }};
 
     for (size_t i = 0; i < NUM_MODES; ++i) {
@@ -310,8 +311,8 @@ void FooterBar::setupButtons() {
         // Per-stage accent — same restrained palette the mixer uses for track
         // strips: muted normal/hover, full-strength accent on the active stage
         // with a low-alpha tint behind it.
-        modeButtons[i]->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        modeButtons[i]->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        modeButtons[i]->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        modeButtons[i]->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         modeButtons[i]->setActiveColor(icons[i].accent);
         modeButtons[i]->setActiveBackgroundColor(icons[i].accent.withAlpha(0.2f));
 
@@ -348,9 +349,9 @@ void FooterBar::setupLocalModelButtons() {
     for (size_t i = 0; i < icons.size(); ++i) {
         localModelButtons_[i] = std::make_unique<SvgButton>(icons[i].name, icons[i].data,
                                                             static_cast<size_t>(icons[i].size));
-        localModelButtons_[i]->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        localModelButtons_[i]->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        localModelButtons_[i]->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        localModelButtons_[i]->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        localModelButtons_[i]->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+        localModelButtons_[i]->setPressedColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         localModelButtons_[i]->setIconPadding(3.0f);
         localModelButtons_[i]->onClick = [this]() {
             if (onLocalModelsClicked)

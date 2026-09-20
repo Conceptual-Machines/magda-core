@@ -9,7 +9,7 @@
 #include "../../../project/ProjectManager.hpp"
 #include "../../components/common/InternalFileDrag.hpp"
 #include "../../components/common/SvgButton.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FileBrowserLookAndFeel.hpp"
 #include "../../themes/FontManager.hpp"
 #include "AudioThumbnailManager.hpp"
@@ -102,10 +102,10 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
             "Stop Scan", BinaryData::server_stop_svg, BinaryData::server_stop_svgSize);
         stopIndexingButton_->setTooltip("Stop scanning after the current file");
         stopIndexingButton_->setOriginalColor(juce::Colour(0xffb3b3b3));
-        stopIndexingButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        stopIndexingButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        stopIndexingButton_->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
-        stopIndexingButton_->setBorderColor(DarkTheme::getBorderColour());
+        stopIndexingButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        stopIndexingButton_->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+        stopIndexingButton_->setPressedColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+        stopIndexingButton_->setBorderColor(ActiveTheme::getBorderColour());
         stopIndexingButton_->setCornerRadius(5.0f);
         stopIndexingButton_->setIconPadding(10.0f);
         stopIndexingButton_->setVisible(false);
@@ -203,11 +203,11 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
         auto bounds = getLocalBounds();
 
         // Background
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
         g.fillRect(bounds);
 
         // Border
-        g.setColour(DarkTheme::getBorderColour());
+        g.setColour(ActiveTheme::getBorderColour());
         g.drawRect(bounds, 1);
 
         // Indexing status preempts everything else — the user explicitly
@@ -215,7 +215,7 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
         // filesystem browser or the DB browser, and this panel is the one
         // shared place above the result lists.
         if (indexingStatus_.isNotEmpty() && !currentFile_.existsAsFile()) {
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
             g.setFont(FontManager::getInstance().getUIFont(11.0F));
             if (indexingActive_) {
                 bounds.removeFromRight(48);
@@ -232,8 +232,8 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
                 auto waveformBounds = bounds.reduced(4);
                 magda::AudioThumbnailManager::getInstance().drawWaveform(
                     g, waveformBounds, currentFile_.getFullPathName(), 0.0,
-                    thumbnail->getTotalLength(), DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY),
-                    1.0f);
+                    thumbnail->getTotalLength(),
+                    ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY), 1.0f);
 
                 // Draw playhead
                 if (playbackPosition_ > 0.0) {
@@ -241,18 +241,18 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
                     float xPos = waveformBounds.getX() +
                                  static_cast<float>(playbackPosition_ / totalLength) *
                                      waveformBounds.getWidth();
-                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
                     g.drawVerticalLine(static_cast<int>(xPos),
                                        static_cast<float>(waveformBounds.getY()),
                                        static_cast<float>(waveformBounds.getBottom()));
                 }
             } else {
-                g.setColour(DarkTheme::getSecondaryTextColour());
+                g.setColour(ActiveTheme::getSecondaryTextColour());
                 g.setFont(FontManager::getInstance().getUIFont(11.0f));
                 g.drawText("Loading waveform...", bounds, juce::Justification::centred);
             }
         } else {
-            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.setColour(ActiveTheme::getSecondaryTextColour());
             g.setFont(FontManager::getInstance().getUIFont(11.0f));
             g.drawText("No file selected", bounds, juce::Justification::centred);
         }
@@ -321,9 +321,9 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
         projectButton_->setToggleable(true);
         projectButton_->setClickingTogglesState(true);
         projectButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-        projectButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        projectButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        projectButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        projectButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        projectButton_->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+        projectButton_->setActiveColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         projectButton_->onClick = [this]() {
             auto& pm = magda::ProjectManager::getInstance();
             // Prefer the media directory (works for both saved and unsaved projects)
@@ -345,9 +345,9 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
         diskButton_->setToggleable(true);
         diskButton_->setClickingTogglesState(true);
         diskButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-        diskButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        diskButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        diskButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        diskButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        diskButton_->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+        diskButton_->setActiveColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         diskButton_->onClick = [this]() {
             if (!onLocationSelected) {
                 return;
@@ -368,9 +368,9 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
         libraryButton_->setToggleable(true);
         libraryButton_->setClickingTogglesState(true);
         libraryButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-        libraryButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        libraryButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        libraryButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        libraryButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        libraryButton_->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+        libraryButton_->setActiveColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         libraryButton_->setTooltip("Media database");
         libraryButton_->onClick = [this]() {
             if (onLibrarySelected) {
@@ -422,14 +422,14 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
     }
 
     void paint(juce::Graphics& g) override {
-        g.fillAll(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.fillAll(ActiveTheme::getColour(ActiveTheme::SURFACE));
 
         // Right border
-        g.setColour(DarkTheme::getBorderColour());
+        g.setColour(ActiveTheme::getBorderColour());
         g.fillRect(getWidth() - 1, 0, 1, getHeight());
 
         // Separator line between nav buttons and favorites
-        g.setColour(DarkTheme::getBorderColour());
+        g.setColour(ActiveTheme::getBorderColour());
         g.fillRect(4, separatorY_, getWidth() - 9, 1);
     }
 
@@ -469,9 +469,9 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
             juce::File dir(path);
             auto btn = std::make_unique<FavoriteButton>(dir.getFileName());
             btn->setOriginalColor(juce::Colour(0xFFB3B3B3));
-            btn->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-            btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-            btn->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+            btn->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+            btn->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+            btn->setActiveColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
             btn->setTooltip(dir.getFileName() + "\n" + path);
 
             auto pathCopy = path;
@@ -655,14 +655,14 @@ class MediaExplorerContent::SearchResultsComponent : public juce::Component,
     }
 
     void paint(juce::Graphics& g) override {
-        g.fillAll(DarkTheme::getPanelBackgroundColour());
+        g.fillAll(ActiveTheme::getPanelBackgroundColour());
         if (results_.isEmpty()) {
             bool done = false;
             {
                 const juce::ScopedLock sl(lock_);
                 done = doneGeneration_ == generation_;
             }
-            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.setColour(ActiveTheme::getSecondaryTextColour());
             g.setFont(FontManager::getInstance().getUIFont(12.0f));
             g.drawText(done ? "No matches" : "Searching...", getLocalBounds(),
                        juce::Justification::centred);
@@ -681,13 +681,13 @@ class MediaExplorerContent::SearchResultsComponent : public juce::Component,
         const auto& file = results_.getReference(row);
 
         if (rowIsSelected) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
             g.fillRect(0, 0, width, height);
         }
 
         // Name, then the containing folder relative to the searched root
         // (dimmed) so equally-named samples stay distinguishable.
-        g.setColour(DarkTheme::getTextColour());
+        g.setColour(ActiveTheme::getTextColour());
         const auto nameFont =
             FontManager::getInstance().getUIFont(static_cast<float>(height) * 0.6f);
         g.setFont(nameFont);
@@ -703,7 +703,7 @@ class MediaExplorerContent::SearchResultsComponent : public juce::Component,
         const auto relativeDir = file.getParentDirectory().getRelativePathFrom(displayRoot_);
         if (relativeDir.isNotEmpty() && relativeDir != ".") {
             bounds.removeFromLeft(8);
-            g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.7f));
+            g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(0.7f));
             g.setFont(FontManager::getInstance().getUIFont(static_cast<float>(height) * 0.5f));
             g.drawText(relativeDir, bounds, juce::Justification::centredLeft);
         }
@@ -858,9 +858,9 @@ MediaExplorerContent::MediaExplorerContent() {
     midiFilterActive_ = magda::Config::getInstance().getBrowserFilterMidi();
     presetFilterActive_ = magda::Config::getInstance().getBrowserFilterPreset();
 
-    const auto audioActiveTint = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
-    const auto midiActiveTint = DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION);
-    const auto presetActiveTint = DarkTheme::getColour(DarkTheme::ACCENT_MODULATION);
+    const auto audioActiveTint = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
+    const auto midiActiveTint = ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION);
+    const auto presetActiveTint = ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION);
 
     auto setupFilter = [&](std::unique_ptr<magda::SvgButton>& btn, const juce::String& name,
                            const char* svg, int svgSize, juce::Colour activeTint, bool initialState,
@@ -892,7 +892,7 @@ MediaExplorerContent::MediaExplorerContent() {
     presetFilterButton_->onClick = [this]() { onTypeIconClicked(presetFilterButton_.get()); };
     addAndMakeVisible(*presetFilterButton_);
 
-    const auto progressionActiveTint = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE);
+    const auto progressionActiveTint = ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE);
     setupFilter(progressionFilterButton_, "Progressions", BinaryData::iconchordtrackboldm_svg,
                 BinaryData::iconchordtrackboldm_svgSize, progressionActiveTint,
                 progressionFilterActive_, "Show chord progressions");
@@ -958,10 +958,11 @@ MediaExplorerContent::MediaExplorerContent() {
     // Setup preview controls with icon buttons
     const auto stylePreviewTransportButton = [](magda::SvgButton& button) {
         button.setIconPadding(0.0f);
-        button.setStateColourReplacement(juce::Colour(0xFF1A1A1A), DarkTheme::PIANO_ROLL_BACKGROUND,
-                                         DarkTheme::ACCENT_PRIMARY);
-        button.setStateColourReplacement(juce::Colour(0xFFBCBCBC), DarkTheme::ICON_TRANSPORT,
-                                         DarkTheme::TEXT_BRIGHT);
+        button.setStateColourReplacement(juce::Colour(0xFF1A1A1A),
+                                         ActiveTheme::PIANO_ROLL_BACKGROUND,
+                                         ActiveTheme::ACCENT_PRIMARY);
+        button.setStateColourReplacement(juce::Colour(0xFFBCBCBC), ActiveTheme::ICON_TRANSPORT,
+                                         ActiveTheme::TEXT_BRIGHT);
     };
 
     playButton_ =
@@ -1711,42 +1712,42 @@ bool MediaExplorerContent::isPresetFile(const juce::File& file) {
 }
 
 void MediaExplorerContent::applyThemeColours() {
-    searchBox_.setTextToShowWhenEmpty("Search media...", DarkTheme::getSecondaryTextColour());
+    searchBox_.setTextToShowWhenEmpty("Search media...", ActiveTheme::getSecondaryTextColour());
     searchBox_.setColour(juce::TextEditor::backgroundColourId,
-                         DarkTheme::getColour(DarkTheme::SURFACE));
-    searchBox_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
+                         ActiveTheme::getColour(ActiveTheme::SURFACE));
+    searchBox_.setColour(juce::TextEditor::textColourId, ActiveTheme::getTextColour());
     searchBox_.setColour(juce::TextEditor::highlightColourId,
-                         DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.45f));
-    searchBox_.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
-    searchBox_.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
+                         ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.45f));
+    searchBox_.setColour(juce::TextEditor::highlightedTextColourId, ActiveTheme::getTextColour());
+    searchBox_.setColour(juce::TextEditor::outlineColourId, ActiveTheme::getBorderColour());
 
     viewModeSelector_.setColour(juce::ComboBox::backgroundColourId,
-                                DarkTheme::getColour(DarkTheme::SURFACE));
-    viewModeSelector_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-    viewModeSelector_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getBorderColour());
+                                ActiveTheme::getColour(ActiveTheme::SURFACE));
+    viewModeSelector_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
+    viewModeSelector_.setColour(juce::ComboBox::outlineColourId, ActiveTheme::getBorderColour());
 
     for (auto* button : {&homeButton_, &musicButton_, &desktopButton_, &browseButton_}) {
         button->setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-        button->setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+                          ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
+        button->setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
     }
 
     volumeSlider_.setColour(juce::Slider::backgroundColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE));
+                            ActiveTheme::getColour(ActiveTheme::SURFACE));
     volumeSlider_.setColour(juce::Slider::thumbColourId,
-                            DarkTheme::getColour(DarkTheme::CONTROL_SLIDER_THUMB));
+                            ActiveTheme::getColour(ActiveTheme::CONTROL_SLIDER_THUMB));
     volumeSlider_.setColour(juce::Slider::trackColourId,
-                            DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
+                            ActiveTheme::getColour(ActiveTheme::CONTROL_VALUE_FILL));
 
-    autoPlayButton_.setColour(juce::ToggleButton::textColourId, DarkTheme::getTextColour());
+    autoPlayButton_.setColour(juce::ToggleButton::textColourId, ActiveTheme::getTextColour());
     autoPlayButton_.setColour(juce::ToggleButton::tickColourId,
-                              DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                              ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     autoPlayButton_.setColour(juce::ToggleButton::tickDisabledColourId,
-                              DarkTheme::getSecondaryTextColour());
+                              ActiveTheme::getSecondaryTextColour());
 
-    fileInfoLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
-    formatLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    propertiesLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    fileInfoLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
+    formatLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
+    propertiesLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
 
     applyFileBrowserThemeColours();
 }
@@ -1756,27 +1757,27 @@ void MediaExplorerContent::applyFileBrowserThemeColours() {
         return;
 
     fileBrowser_->setColour(juce::FileBrowserComponent::currentPathBoxBackgroundColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE));
+                            ActiveTheme::getColour(ActiveTheme::SURFACE));
     fileBrowser_->setColour(juce::FileBrowserComponent::currentPathBoxTextColourId,
-                            DarkTheme::getTextColour());
+                            ActiveTheme::getTextColour());
     fileBrowser_->setColour(juce::FileBrowserComponent::filenameBoxBackgroundColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE));
+                            ActiveTheme::getColour(ActiveTheme::SURFACE));
     fileBrowser_->setColour(juce::FileBrowserComponent::filenameBoxTextColourId,
-                            DarkTheme::getTextColour());
+                            ActiveTheme::getTextColour());
     fileBrowser_->setColour(juce::DirectoryContentsDisplayComponent::highlightColourId,
-                            DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+                            ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
     fileBrowser_->setColour(juce::DirectoryContentsDisplayComponent::textColourId,
-                            DarkTheme::getTextColour());
+                            ActiveTheme::getTextColour());
 
     // FileListComponent/FileTreeComponent::findColour does not inherit from the
     // parent FileBrowserComponent, so the display component needs its own set.
     if (auto* display = dynamic_cast<juce::Component*>(fileBrowser_->getDisplayComponent())) {
         display->setColour(juce::DirectoryContentsDisplayComponent::highlightColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+                           ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
         display->setColour(juce::DirectoryContentsDisplayComponent::textColourId,
-                           DarkTheme::getTextColour());
+                           ActiveTheme::getTextColour());
         display->setColour(juce::DirectoryContentsDisplayComponent::highlightedTextColourId,
-                           DarkTheme::getTextColour());
+                           ActiveTheme::getTextColour());
     }
 }
 
@@ -1786,7 +1787,7 @@ void MediaExplorerContent::lookAndFeelChanged() {
 }
 
 void MediaExplorerContent::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getPanelBackgroundColour());
+    g.fillAll(ActiveTheme::getPanelBackgroundColour());
 }
 
 void MediaExplorerContent::resized() {

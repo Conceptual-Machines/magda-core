@@ -24,7 +24,7 @@
 #include "engine/PluginService.hpp"
 #include "ui/debug/DebugSettings.hpp"
 #include "ui/panels/content/PluginBrowserContent.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui {
@@ -140,11 +140,11 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
         const bool appendHighlighted =
             owner_.dragInsertIndex_ == static_cast<int>(elementSlots_->size()) ||
             owner_.dropInsertIndex_ == static_cast<int>(elementSlots_->size());
-        auto appendColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)
+        auto appendColour = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)
                                 .withAlpha(appendHighlighted ? 0.18f : 0.07f);
         g.setColour(appendColour);
         g.fillRoundedRectangle(appendZone.reduced(4, 6).toFloat(), 3.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)
                         .withAlpha(appendHighlighted ? 0.75f : 0.28f));
         g.drawRoundedRectangle(appendZone.reduced(4, 6).toFloat(), 3.0f, 1.0f);
 
@@ -153,7 +153,7 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
             int indicatorIndex =
                 owner_.dragInsertIndex_ >= 0 ? owner_.dragInsertIndex_ : owner_.dropInsertIndex_;
             int indicatorX = owner_.calculateIndicatorX(indicatorIndex);
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
             g.fillRect(indicatorX - 2, 0, 4, getHeight());
         }
 
@@ -355,9 +355,9 @@ ChainPanel::ChainPanel()
     // Add device button (inside the container, after all slots)
     addDeviceButton_.setButtonText("+");
     addDeviceButton_.setColour(juce::TextButton::buttonColourId,
-                               DarkTheme::getColour(DarkTheme::SURFACE));
+                               ActiveTheme::getColour(ActiveTheme::SURFACE));
     addDeviceButton_.setColour(juce::TextButton::textColourOffId,
-                               DarkTheme::getSecondaryTextColour());
+                               ActiveTheme::getSecondaryTextColour());
     addDeviceButton_.onClick = [this]() { onAddDeviceClicked(); };
     addDeviceButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     elementSlotsContainer_->addAndMakeVisible(addDeviceButton_);
@@ -451,9 +451,9 @@ void ChainPanel::lookAndFeelChanged() {
     // The add-device button captures concrete colours at construction;
     // re-apply so a live theme switch restyles it.
     addDeviceButton_.setColour(juce::TextButton::buttonColourId,
-                               DarkTheme::getColour(DarkTheme::SURFACE));
+                               ActiveTheme::getColour(ActiveTheme::SURFACE));
     addDeviceButton_.setColour(juce::TextButton::textColourOffId,
-                               DarkTheme::getSecondaryTextColour());
+                               ActiveTheme::getSecondaryTextColour());
 }
 
 void ChainPanel::mouseEnter(const juce::MouseEvent&) {

@@ -10,7 +10,7 @@
 #include "core/Config.hpp"
 #include "ui/components/chain/layout/NodeHeaderStyles.hpp"
 #include "ui/components/common/SvgButton.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallComboBoxLookAndFeel.hpp"
 
@@ -28,7 +28,7 @@ OscilloscopeUI::OscilloscopeUI() {
 
     timeLabel_.setText("Time", juce::dontSendNotification);
     timeLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
-    timeLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    timeLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     timeLabel_.setJustificationType(juce::Justification::centredRight);
     addAndMakeVisible(timeLabel_);
 
@@ -39,11 +39,11 @@ OscilloscopeUI::OscilloscopeUI() {
     // built-in text box, which uses the default font and shows raw decimals.
     timeSlider_.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     timeSlider_.setColour(juce::Slider::backgroundColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
+                          ActiveTheme::getColour(ActiveTheme::SURFACE));
     timeSlider_.setColour(juce::Slider::trackColourId,
-                          DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
+                          ActiveTheme::getColour(ActiveTheme::CONTROL_VALUE_FILL));
     timeSlider_.setColour(juce::Slider::thumbColourId,
-                          DarkTheme::getColour(DarkTheme::CONTROL_SLIDER_THUMB));
+                          ActiveTheme::getColour(ActiveTheme::CONTROL_SLIDER_THUMB));
     timeSlider_.onValueChange = [this] {
         updateTimeReadout();
         if (telemetry_ != nullptr) {
@@ -70,23 +70,23 @@ OscilloscopeUI::OscilloscopeUI() {
     addAndMakeVisible(timeSlider_);
 
     timeValueLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
-    timeValueLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    timeValueLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     timeValueLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(timeValueLabel_);
     updateTimeReadout();
 
     colourLabel_.setText("Color", juce::dontSendNotification);
     colourLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
-    colourLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    colourLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     colourLabel_.setJustificationType(juce::Justification::centredRight);
     addChildComponent(colourLabel_);  // only shown in the stacked compact layout
 
     colourCombo_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
     colourCombo_.setColour(juce::ComboBox::backgroundColourId,
-                           DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
-    colourCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+                           ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.1f));
+    colourCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
     colourCombo_.setColour(juce::ComboBox::outlineColourId,
-                           DarkTheme::getColour(DarkTheme::BORDER));
+                           ActiveTheme::getColour(ActiveTheme::BORDER));
     for (int i = 0; i < kAnalyzerColourCount; ++i)
         colourCombo_.addItem(kAnalyzerColourNames[i], i + 1);
     colourCombo_.onChange = [this] {
@@ -108,7 +108,7 @@ OscilloscopeUI::OscilloscopeUI() {
     popoutButton_ = std::make_unique<magda::SvgButton>("Pop out", BinaryData::open_in_new_svg,
                                                        BinaryData::open_in_new_svgSize);
     daw::ui::node_header::applyHeaderIconStyle(*popoutButton_,
-                                               DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                                               ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     popoutButton_->onClick = [this] { openPopout(); };
     addChildComponent(*popoutButton_);  // shown only in compact mode
 
@@ -122,26 +122,26 @@ OscilloscopeUI::~OscilloscopeUI() {
 
 void OscilloscopeUI::lookAndFeelChanged() {
     // Re-apply cached theme colours after a live theme switch.
-    timeLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    colourLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    timeValueLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    timeLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
+    colourLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
+    timeValueLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
 
     timeSlider_.setColour(juce::Slider::backgroundColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
+                          ActiveTheme::getColour(ActiveTheme::SURFACE));
     timeSlider_.setColour(juce::Slider::trackColourId,
-                          DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
+                          ActiveTheme::getColour(ActiveTheme::CONTROL_VALUE_FILL));
     timeSlider_.setColour(juce::Slider::thumbColourId,
-                          DarkTheme::getColour(DarkTheme::CONTROL_SLIDER_THUMB));
+                          ActiveTheme::getColour(ActiveTheme::CONTROL_SLIDER_THUMB));
 
     colourCombo_.setColour(juce::ComboBox::backgroundColourId,
-                           DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
-    colourCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+                           ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.1f));
+    colourCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
     colourCombo_.setColour(juce::ComboBox::outlineColourId,
-                           DarkTheme::getColour(DarkTheme::BORDER));
+                           ActiveTheme::getColour(ActiveTheme::BORDER));
 
     if (popoutButton_)
-        daw::ui::node_header::applyHeaderIconStyle(*popoutButton_,
-                                                   DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        daw::ui::node_header::applyHeaderIconStyle(
+            *popoutButton_, ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
 
     repaint();
 }
@@ -408,7 +408,7 @@ void OscilloscopeUI::paint(juce::Graphics& g) {
     }
     auto area = bounds.toFloat().reduced(4.0f);
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     g.fillRoundedRectangle(area, 4.0f);
 
     const float midY = area.getCentreY();
@@ -421,18 +421,18 @@ void OscilloscopeUI::paint(juce::Graphics& g) {
         const float amp = std::pow(10.0f, dbfs / 20.0f) * 0.9f;  // 0.9 = trace headroom
         const float yTop = midY - amp * halfH;
         const float yBot = midY + amp * halfH;
-        g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::GRID_LINE));
         g.drawHorizontalLine(static_cast<int>(yTop), area.getX(), area.getRight());
         g.drawHorizontalLine(static_cast<int>(yBot), area.getX(), area.getRight());
         if (!compact_) {
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
             g.drawText(juce::String(static_cast<int>(dbfs)),
                        juce::Rectangle<float>(area.getX() + 2.0f, yTop - 6.0f, 28.0f, 12.0f),
                        juce::Justification::centredLeft);
         }
     }
     // Centre line (0 reference / silence).
-    g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::GRID_LINE));
     g.drawHorizontalLine(static_cast<int>(midY), area.getX(), area.getRight());
 
     if (static_cast<int>(window_.size()) < readCount_ || displaySamples_ < 2)
@@ -498,14 +498,14 @@ void OscilloscopeUI::paint(juce::Graphics& g) {
         auto strip = getLocalBounds();
         strip.removeFromBottom(expandedControlsHeight());
         strip = strip.removeFromBottom(kChevronStripH);
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
         g.fillRect(strip);
-        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
         g.drawHorizontalLine(strip.getY(), static_cast<float>(strip.getX()),
                              static_cast<float>(strip.getRight()));
         // Chevron points down to open (controls below) and up to collapse.
         drawAnalyzerExpandChevron(g, chevronRect_, controlsExpanded_,
-                                  DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                                  ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         // Pop-out is the SvgButton (open_in_new) positioned in the strip.
     }
 }

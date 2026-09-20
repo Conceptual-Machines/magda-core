@@ -12,7 +12,7 @@
 #include "params/ParamLinkResolver.hpp"
 #include "params/ParamModulationPainter.hpp"
 #include "params/ParamWidgetSetup.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -30,13 +30,13 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
     setInterceptsMouseClicks(true, true);
 
     nameLabel_.setJustificationType(juce::Justification::centredLeft);
-    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     nameLabel_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(nameLabel_);
 
     valueSlider_.setRange(0.0, 1.0, 0.01);
     valueSlider_.setValue(0.5, juce::dontSendNotification);
-    valueSlider_.setTextColour(DarkTheme::getTextColour());
+    valueSlider_.setTextColour(ActiveTheme::getTextColour());
     valueSlider_.setBackgroundColour(juce::Colours::transparentBlack);
     valueSlider_.setShowFillIndicator(false);
     valueSlider_.onValueChanged = [this](double value) {
@@ -77,7 +77,7 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
     amountLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
     amountLabel_.setColour(juce::Label::textColourId, juce::Colours::white);
     amountLabel_.setColour(juce::Label::backgroundColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.95f));
+                           ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.95f));
     amountLabel_.setJustificationType(juce::Justification::centred);
     amountLabel_.setVisible(false);
     amountLabel_.setAlwaysOnTop(true);
@@ -408,7 +408,7 @@ void ParamSlotComponent::showLinkModeSlider(bool /*isNewLink*/, float initialAmo
         linkModeSlider_->setRange(0.0, 100.0, 1.0);
         linkModeSlider_->setTextValueSuffix("%");
         linkModeSlider_->setColour(juce::Slider::backgroundColourId,
-                                   DarkTheme::getColour(DarkTheme::SURFACE));
+                                   ActiveTheme::getColour(ActiveTheme::SURFACE));
 
         auto safeThis = juce::Component::SafePointer<ParamSlotComponent>(this);
         linkModeSlider_->onValueChange = [safeThis]() {
@@ -443,8 +443,9 @@ void ParamSlotComponent::showLinkModeSlider(bool /*isNewLink*/, float initialAmo
         linkModeSlider_->setTextBoxStyle(juce::Slider::TextBoxRight, false, 52, 18);
     }
 
-    auto accentColor = activeMod_.isValid() ? DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION)
-                                            : DarkTheme::getColour(DarkTheme::ACCENT_MODULATION);
+    auto accentColor = activeMod_.isValid()
+                           ? ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION)
+                           : ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION);
     linkModeSlider_->setColour(juce::Slider::thumbColourId, accentColor);
     linkModeSlider_->setColour(juce::Slider::trackColourId, accentColor.withAlpha(0.5f));
 
@@ -720,25 +721,25 @@ void ParamSlotComponent::applyTooltip(const juce::String& tooltip) {
 void ParamSlotComponent::setFonts(const juce::Font& labelFont, const juce::Font& valueFont) {
     nameLabel_.setFont(labelFont);
     valueSlider_.setFont(valueFont);
-    valueSlider_.setTextColour(DarkTheme::getTextColour());
+    valueSlider_.setTextColour(ActiveTheme::getTextColour());
     valueSlider_.setBackgroundColour(juce::Colours::transparentBlack);
 }
 
 void ParamSlotComponent::lookAndFeelChanged() {
-    const auto primaryText = DarkTheme::getTextColour();
+    const auto primaryText = ActiveTheme::getTextColour();
 
-    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     valueSlider_.setTextColour(primaryText);
 
     if (boolToggle_) {
         boolToggle_->setColour(juce::ToggleButton::textColourId, primaryText);
         boolToggle_->setColour(juce::ToggleButton::tickColourId,
-                               DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                               ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     }
 
     if (momentaryButton_) {
         momentaryButton_->setColour(juce::TextButton::buttonColourId,
-                                    DarkTheme::getColour(DarkTheme::SURFACE));
+                                    ActiveTheme::getColour(ActiveTheme::SURFACE));
         momentaryButton_->setColour(juce::TextButton::textColourOffId, primaryText);
     }
 
@@ -771,9 +772,9 @@ void ParamSlotComponent::paint(juce::Graphics& g) {
         auto bounds = getLocalBounds();
         int labelHeight = juce::jmin(12, getHeight() / 3);
         auto valueBounds = bounds.withTrimmedTop(labelHeight);
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
         g.fillRect(valueBounds);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRect(valueBounds);
     }
 }
@@ -781,7 +782,7 @@ void ParamSlotComponent::paint(juce::Graphics& g) {
 void ParamSlotComponent::paintOverChildren(juce::Graphics& g) {
     // Disabled overlay
     if (!isEnabled()) {
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).withAlpha(0.6f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).withAlpha(0.6f));
         g.fillRect(getLocalBounds());
         return;
     }
@@ -789,15 +790,15 @@ void ParamSlotComponent::paintOverChildren(juce::Graphics& g) {
     // Draw link mode / drag-over / selection highlight
     if (isInLinkMode_) {
         auto color = activeMod_.isValid()
-                         ? DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.15f)
-                         : DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).withAlpha(0.15f);
+                         ? ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.15f)
+                         : ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).withAlpha(0.15f);
         g.setColour(color);
         g.fillRoundedRectangle(getLocalBounds().toFloat(), 2.0f);
     } else if (isDragOver_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.15f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.15f));
         g.fillRoundedRectangle(getLocalBounds().toFloat(), 2.0f);
     } else if (selected_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_SCALE_TEXT));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_SCALE_TEXT));
         g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(0.5f), 2.0f, 2.0f);
     }
 
@@ -813,7 +814,7 @@ void ParamSlotComponent::paintOverChildren(juce::Graphics& g) {
         auto slider = valueSlider_.getBounds().toFloat();
         juce::Rectangle<float> dot(slider.getRight() - margin - dotSize, slider.getY() + margin,
                                    dotSize, dotSize);
-        g.setColour(DarkTheme::getColour(DarkTheme::MIDI_LEARN).withAlpha(0.85f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_LEARN).withAlpha(0.85f));
         g.fillEllipse(dot);
     }
 
@@ -823,7 +824,7 @@ void ParamSlotComponent::paintOverChildren(juce::Graphics& g) {
             std::fmod(static_cast<float>(juce::Time::getMillisecondCounterHiRes() * 0.003), 1.0f);
         // 0.7 + 0.3*sin keeps alpha in [0.4, 1.0]; 0.4 + 0.6*sin went negative.
         float alpha = 0.7f + 0.3f * std::sin(phase * juce::MathConstants<float>::twoPi);
-        g.setColour(DarkTheme::getColour(DarkTheme::MIDI_LEARN).withAlpha(alpha));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_LEARN).withAlpha(alpha));
         g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 2.0f, 2.0f);
     }
 
@@ -977,7 +978,7 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
             amountLabel_.setText(juce::String(percent) + "%", juce::dontSendNotification);
             amountLabel_.setColour(
                 juce::Label::backgroundColourId,
-                DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.95f));
+                ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.95f));
 
             if (!amountLabel_.isOnDesktop()) {
                 amountLabel_.addToDesktop(juce::ComponentPeer::windowIsTemporary |
@@ -1020,7 +1021,7 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
             amountLabel_.setText(juce::String(percent) + "%", juce::dontSendNotification);
             amountLabel_.setColour(
                 juce::Label::backgroundColourId,
-                DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).withAlpha(0.95f));
+                ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).withAlpha(0.95f));
 
             if (!amountLabel_.isOnDesktop()) {
                 amountLabel_.addToDesktop(juce::ComponentPeer::windowIsTemporary |

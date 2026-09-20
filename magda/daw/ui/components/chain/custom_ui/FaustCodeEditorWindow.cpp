@@ -2,7 +2,7 @@
 
 #include "ui/code/FaustTokeniser.hpp"
 #include "ui/code/SyntaxTheme.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/DialogLookAndFeel.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -36,16 +36,17 @@ class FaustCodeEditorWindow::Content : public juce::Component {
         statusOutput_.setCaretVisible(false);
         statusOutput_.setFont(FontManager::getInstance().getMonoFont(11.0f));
         statusOutput_.setColour(juce::TextEditor::backgroundColourId,
-                                DarkTheme::getSyntaxColour(SyntaxColourRole::EDITOR_BACKGROUND));
+                                ActiveTheme::getSyntaxColour(SyntaxColourRole::EDITOR_BACKGROUND));
         statusOutput_.setColour(juce::TextEditor::textColourId,
-                                DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_TEXT));
+                                ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_TEXT));
         statusOutput_.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
         statusOutput_.setColour(juce::TextEditor::focusedOutlineColourId,
                                 juce::Colours::transparentBlack);
-        statusOutput_.setColour(juce::TextEditor::highlightColourId,
-                                DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.45f));
+        statusOutput_.setColour(
+            juce::TextEditor::highlightColourId,
+            ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.45f));
         statusOutput_.setColour(juce::TextEditor::highlightedTextColourId,
-                                DarkTheme::getTextColour());
+                                ActiveTheme::getTextColour());
         statusOutput_.setTooltip("Select compiler output and press Cmd/Ctrl+C to copy");
         addAndMakeVisible(statusOutput_);
 
@@ -84,9 +85,10 @@ class FaustCodeEditorWindow::Content : public juce::Component {
         juce::String err;
         if (onCompile_ && onCompile_(src, err)) {
             setCompilerOutput("Compiled OK",
-                              DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_PROMPT));
+                              ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_PROMPT));
         } else {
-            setCompilerOutput(err, DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_ERROR));
+            setCompilerOutput(err,
+                              ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_ERROR));
         }
     }
 
@@ -108,7 +110,7 @@ class FaustCodeEditorWindow::Content : public juce::Component {
 
 FaustCodeEditorWindow::FaustCodeEditorWindow(const juce::String& title,
                                              const juce::String& initialSource, CompileFn onCompile)
-    : juce::DocumentWindow(title, DarkTheme::getColour(DarkTheme::BACKGROUND),
+    : juce::DocumentWindow(title, ActiveTheme::getColour(ActiveTheme::BACKGROUND),
                            juce::DocumentWindow::allButtons) {
     content_ = std::make_unique<Content>(initialSource, std::move(onCompile));
     setContentNonOwned(content_.get(), true);
@@ -128,7 +130,7 @@ void FaustCodeEditorWindow::closeButtonPressed() {
 
 void FaustCodeEditorWindow::lookAndFeelChanged() {
     juce::DocumentWindow::lookAndFeelChanged();
-    setBackgroundColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    setBackgroundColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
 }
 
 }  // namespace magda::daw::ui

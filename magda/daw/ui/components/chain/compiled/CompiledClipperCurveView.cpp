@@ -3,7 +3,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaClipperCompiledPlugin.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -140,15 +140,15 @@ void CompiledClipperCurveView::resampleFromDevice() {
 
 void CompiledClipperCurveView::paint(juce::Graphics& g) {
     const auto bounds = getLocalBounds();
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).darker(0.06f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).darker(0.06f));
     g.fillRect(bounds);
 
     auto plot = bounds.toFloat().reduced(kPlotPad, kPlotPad);
     if (plot.getWidth() < 32.0f || plot.getHeight() < 32.0f)
         return;
 
-    const auto border = DarkTheme::getColour(DarkTheme::BORDER);
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION);
+    const auto border = ActiveTheme::getColour(ActiveTheme::BORDER);
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION);
 
     g.setColour(border.withAlpha(0.55f));
     g.drawRect(plot, 1.0f);
@@ -211,7 +211,7 @@ void CompiledClipperCurveView::paint(juce::Graphics& g) {
     const float drivenAmp = smoothedInputAmp_ * driveLin;
     const float dotX = xToScreen(drivenAmp);
     const float dotY = yToScreen(clipForMode(mode_, drivenAmp));
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.95f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.95f));
     g.fillEllipse(dotX - 3.5f, dotY - 3.5f, 7.0f, 7.0f);
 }
 

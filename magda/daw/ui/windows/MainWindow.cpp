@@ -25,7 +25,7 @@
 #include "../state/KeyMappingStore.hpp"
 #include "../state/TimelineController.hpp"
 #include "../state/TimelineEvents.hpp"
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FileBrowserLookAndFeel.hpp"
 #include "../themes/MixerMetrics.hpp"
@@ -107,7 +107,7 @@ class MainWindow::MainComponent::LoadingOverlay : public juce::Component, privat
         float bgAlpha = 0.9f * alpha_;
 
         // Box background with rounded corners
-        g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND).withAlpha(bgAlpha));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND).withAlpha(bgAlpha));
         g.fillRoundedRectangle(notificationBounds.toFloat(), 6.0f);
 
         // Box border
@@ -172,7 +172,7 @@ class MainWindow::MainComponent::ResizeHandle : public juce::Component {
     }
 
     void paint(juce::Graphics& g) override {
-        g.setColour(DarkTheme::getColour(DarkTheme::RESIZE_HANDLE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::RESIZE_HANDLE));
         g.fillAll();
     }
 
@@ -206,7 +206,7 @@ class MainWindow::MainComponent::ResizeHandle : public juce::Component {
 
 // MainWindow implementation
 MainWindow::MainWindow(AudioEngine* audioEngine)
-    : DocumentWindow("MAGDA", DarkTheme::getBackgroundColour(), DocumentWindow::allButtons),
+    : DocumentWindow("MAGDA", ActiveTheme::getBackgroundColour(), DocumentWindow::allButtons),
       externalAudioEngine_(audioEngine) {
     juce::Logger::writeToLog("[MainWindow] Constructor started");
     // Use native window decorations on every platform, including Linux. Linux
@@ -435,13 +435,13 @@ void MainWindow::onActiveThemeFileChanged() {
 void MainWindow::refreshThemedLookAndFeels() {
     if (auto* lookAndFeel =
             dynamic_cast<juce::LookAndFeel_V4*>(&juce::LookAndFeel::getDefaultLookAndFeel())) {
-        DarkTheme::applyToLookAndFeel(*lookAndFeel);
+        ActiveTheme::applyToLookAndFeel(*lookAndFeel);
     }
-    DarkTheme::applyToLookAndFeel(daw::ui::DialogLookAndFeel::getInstance());
-    DarkTheme::applyToLookAndFeel(daw::ui::SmallButtonLookAndFeel::getInstance());
-    DarkTheme::applyToLookAndFeel(daw::ui::FlatTabButtonLookAndFeel::getInstance());
-    DarkTheme::applyToLookAndFeel(daw::ui::SmallComboBoxLookAndFeel::getInstance());
-    // Not a DarkTheme::applyToLookAndFeel target: it pushes its own scrollbar
+    ActiveTheme::applyToLookAndFeel(daw::ui::DialogLookAndFeel::getInstance());
+    ActiveTheme::applyToLookAndFeel(daw::ui::SmallButtonLookAndFeel::getInstance());
+    ActiveTheme::applyToLookAndFeel(daw::ui::FlatTabButtonLookAndFeel::getInstance());
+    ActiveTheme::applyToLookAndFeel(daw::ui::SmallComboBoxLookAndFeel::getInstance());
+    // Not an ActiveTheme::applyToLookAndFeel target: it pushes its own scrollbar
     // colour into its table, which no repaint would refresh.
     daw::ui::FileBrowserLookAndFeel::getInstance().refreshThemeColours();
 
@@ -459,7 +459,7 @@ void MainWindow::refreshThemedLookAndFeels() {
 
     // Theme colours live in both JUCE colour IDs and custom paint code. A
     // look-and-feel change reaches every child so controls that cache colours
-    // can refresh, while repaint covers direct DarkTheme lookups at paint time.
+    // can refresh, while repaint covers direct ActiveTheme lookups at paint time.
     for (int i = juce::TopLevelWindow::getNumTopLevelWindows(); --i >= 0;) {
         if (auto* window = juce::TopLevelWindow::getTopLevelWindow(i))
             window->sendLookAndFeelChange();
@@ -477,7 +477,7 @@ void MainWindow::closeButtonPressed() {
 // stale colour shows straight through as a strip along the top of the window.
 void MainWindow::lookAndFeelChanged() {
     juce::DocumentWindow::lookAndFeelChanged();
-    setBackgroundColour(DarkTheme::getBackgroundColour());
+    setBackgroundColour(ActiveTheme::getBackgroundColour());
 }
 
 void MainWindow::applyPanelVisibilityFromConfig() {
@@ -1404,7 +1404,7 @@ juce::ApplicationCommandTarget* MainWindow::MainComponent::getNextCommandTarget(
 }
 
 void MainWindow::MainComponent::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getBackgroundColour());
+    g.fillAll(ActiveTheme::getBackgroundColour());
 }
 
 void MainWindow::MainComponent::resized() {

@@ -6,7 +6,7 @@
 #include "../../../utils/CurveLabelLayout.hpp"
 #include "audio/plugins/compiled/MagdaEqCompiledPlugin.hpp"
 #include "core/GestureRouter.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -321,7 +321,7 @@ bool CompiledEqCurveView::wantsFullBody() const {
 
 void CompiledEqCurveView::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds().toFloat();
-    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
     g.fillRoundedRectangle(bounds, 4.0f);
 
     plotArea_ = bounds.reduced(kPlotPadX, kPlotPadY);
@@ -334,10 +334,10 @@ void CompiledEqCurveView::paint(juce::Graphics& g) {
         plotArea_.getY() + kCollapseButtonMargin, kCollapseButtonSize, kCollapseButtonSize);
 
     // 0 dB centre line + ±12 dB guides.
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.18f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.18f));
     g.drawLine(plotArea_.getX(), dbToY(0.0f, plotArea_), plotArea_.getRight(),
                dbToY(0.0f, plotArea_), 1.0f);
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.08f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.08f));
     for (float guideDb : {-12.0f, 12.0f})
         g.drawLine(plotArea_.getX(), dbToY(guideDb, plotArea_), plotArea_.getRight(),
                    dbToY(guideDb, plotArea_), 1.0f);
@@ -386,9 +386,9 @@ void CompiledEqCurveView::paint(juce::Graphics& g) {
     fill.lineTo(plotArea_.getRight(), dbToY(0.0f, plotArea_));
     fill.lineTo(plotArea_.getX(), dbToY(0.0f, plotArea_));
     fill.closeSubPath();
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_INFO).withAlpha(0.18f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_INFO).withAlpha(0.18f));
     g.fillPath(fill);
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_INFO));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_INFO));
     g.strokePath(curve, juce::PathStrokeType(1.5f));
 
     // Per-band dot. Position uses band's centre freq and (for shelf/bell)
@@ -416,11 +416,11 @@ void CompiledEqCurveView::paint(juce::Graphics& g) {
         // Halo on the active band so the user has a clear "I'm grabbing
         // this one" cue while dragging.
         if (isActive) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_INFO).withAlpha(0.25f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_INFO).withAlpha(0.25f));
             g.fillEllipse(dotX - 9.0f, dotY - 9.0f, 18.0f, 18.0f);
         }
         const float dotRadius = isActive ? 4.5f : 3.5f;
-        const auto dotColour = DarkTheme::getColour(DarkTheme::ACCENT_INFO);
+        const auto dotColour = ActiveTheme::getColour(ActiveTheme::ACCENT_INFO);
         if (bandEnabled) {
             g.setColour(dotColour.withAlpha(0.95f));
             g.fillEllipse(dotX - dotRadius, dotY - dotRadius, dotRadius * 2.0f, dotRadius * 2.0f);
@@ -431,7 +431,7 @@ void CompiledEqCurveView::paint(juce::Graphics& g) {
         }
         // Band number, above the dot. The readout strip is only spoken for
         // while the band is active, so an inactive band's number may use it.
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.85f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.85f));
         g.drawFittedText(juce::String(b + 1),
                          CurveLabelLayout::aboveAnchor(plotArea_, dotX, dotY, kBandNumberWidth,
                                                        kBandNumberHeight, kBandNumberGap,
@@ -448,7 +448,7 @@ void CompiledEqCurveView::paint(juce::Graphics& g) {
                     ? (frequencyReadout(band.freq) + " / " + juce::String(band.gainDb, 1) + " dB")
                     : (juce::String(bandTypeShortName(band.type)) + "  " +
                        frequencyReadout(band.freq));
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.9f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.9f));
             g.drawFittedText(label,
                              CurveLabelLayout::centredIn(plotArea_, dotX,
                                                          plotArea_.getY() + kReadoutTopInset,
@@ -462,10 +462,10 @@ void CompiledEqCurveView::paint(juce::Graphics& g) {
     // collapsed ("click to expand the grid"), down when expanded ("click to
     // hide the grid"). Drawn last so it sits on top of curve/dots.
     const bool collapsed = compiledPlugin_ != nullptr && compiledPlugin_->isCurveCollapsed();
-    const auto chevronColour = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY)
+    const auto chevronColour = ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY)
                                    .withAlpha(collapseButtonHovered_ ? 0.95f : 0.55f);
     if (collapseButtonHovered_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.08f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.08f));
         g.fillRoundedRectangle(collapseButtonArea_, 3.0f);
     }
     const auto centre = collapseButtonArea_.getCentre();
@@ -770,9 +770,9 @@ void CompiledEqCurveView::drawSpectrumOverlay(juce::Graphics& g, juce::Rectangle
 
     const auto prePath = buildPath(preSpectrumDb_);
     const auto postPath = buildPath(postSpectrumDb_);
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.16f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.16f));
     g.strokePath(prePath, juce::PathStrokeType(1.0f));
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_INFO).withAlpha(0.32f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_INFO).withAlpha(0.32f));
     g.strokePath(postPath, juce::PathStrokeType(1.1f));
 }
 

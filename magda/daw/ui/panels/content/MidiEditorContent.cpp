@@ -23,8 +23,8 @@
 #include "ui/state/TimelineController.hpp"
 #include "ui/state/TimelineEvents.hpp"
 #include "ui/state/TimelineState.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/CursorManager.hpp"
-#include "ui/themes/DarkTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -143,15 +143,15 @@ VerticalZoomStrip::VerticalZoomStrip(int minValue, int maxValue)
 
 void VerticalZoomStrip::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
-    g.fillAll(magda::DarkTheme::getColour(magda::DarkTheme::BACKGROUND_ALT));
+    g.fillAll(magda::ActiveTheme::getColour(magda::ActiveTheme::BACKGROUND_ALT));
 
-    g.setColour(magda::DarkTheme::getColour(magda::DarkTheme::SEPARATOR));
+    g.setColour(magda::ActiveTheme::getColour(magda::ActiveTheme::SEPARATOR));
     g.drawVerticalLine(bounds.getX(), 0.0f, static_cast<float>(bounds.getBottom()));
     g.drawVerticalLine(bounds.getRight() - 1, 0.0f, static_cast<float>(bounds.getBottom()));
 
     const int centreX = bounds.getCentreX();
     const int centreY = bounds.getCentreY();
-    g.setColour(magda::DarkTheme::getColour(magda::DarkTheme::TEXT_DIM));
+    g.setColour(magda::ActiveTheme::getColour(magda::ActiveTheme::TEXT_DIM));
     for (int y = centreY - 18; y <= centreY + 18; y += 9)
         g.fillEllipse(static_cast<float>(centreX - 1), static_cast<float>(y - 1), 2.0f, 2.0f);
 }

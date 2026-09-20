@@ -1,6 +1,6 @@
 #include "LayoutDebugPanel.hpp"
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "LayoutConfig.hpp"
 
 namespace magda {
@@ -31,11 +31,11 @@ void LayoutDebugPanel::paint(juce::Graphics& g) {
     g.fillRoundedRectangle(getLocalBounds().toFloat(), 8.0f);
 
     // Border
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1), 8.0f, 2.0f);
 
     // Title
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     g.setFont(13.0f);
     g.drawText("Layout Debug (F11)", 10, 5, getWidth() - 20, 20, juce::Justification::centred);
 }
@@ -61,7 +61,7 @@ void LayoutDebugPanel::addSlider(const juce::String& name, int* valuePtr, int mi
     row.label = std::make_unique<juce::Label>();
     row.label->setText(name + ": " + juce::String(*valuePtr), juce::dontSendNotification);
     row.label->setColour(juce::Label::textColourId,
-                         DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                         ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     row.label->setFont(11.0f);
     addAndMakeVisible(*row.label);
 
@@ -70,11 +70,11 @@ void LayoutDebugPanel::addSlider(const juce::String& name, int* valuePtr, int mi
     row.slider->setRange(min, max, 1);
     row.slider->setValue(*valuePtr, juce::dontSendNotification);
     row.slider->setColour(juce::Slider::backgroundColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
+                          ActiveTheme::getColour(ActiveTheme::SURFACE));
     row.slider->setColour(juce::Slider::trackColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                          ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     row.slider->setColour(juce::Slider::thumbColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).brighter());
+                          ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).brighter());
 
     // Capture valuePtr and label by pointer for the lambda
     auto* labelPtr = row.label.get();

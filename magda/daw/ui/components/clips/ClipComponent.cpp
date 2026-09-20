@@ -13,8 +13,8 @@
 #include "../../panels/state/PanelController.hpp"
 #include "../../state/TimelineController.hpp"
 #include "../../state/TimelineEvents.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/CursorManager.hpp"
-#include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../utils/SelectionPolicy.hpp"
 #include "../common/Toast.hpp"
@@ -970,7 +970,7 @@ void ClipComponent::paintChordClip(juce::Graphics& g, const ClipInfo& clip,
         // The chord blocks (glassy card + spine) take the chord track's colour
         // live, so they stay correct after a track recolour (matches the
         // piano-roll grid notes for chord clips).
-        auto blockColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
+        auto blockColour = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
         if (auto* chordTrack = magda::TrackManager::getInstance().getTrack(
                 magda::TrackManager::getInstance().getChordTrackId()))
             blockColour = chordTrack->colour;
@@ -1045,7 +1045,7 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
     const bool selected = isSelected_ || SelectionManager::getInstance().isClipSelected(clipId_);
     const auto headerColour = selected ? juce::Colours::black : deriveTrackSwatch(clip.colour);
     const auto headerForeground =
-        selected ? juce::Colours::white : DarkTheme::getColour(DarkTheme::BACKGROUND);
+        selected ? juce::Colours::white : ActiveTheme::getColour(ActiveTheme::BACKGROUND);
 
     // Extended 2px past its bottom so the lower corners get cut off by the body
     // and only the top pair reads as rounded.
@@ -1067,7 +1067,7 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
             if (linkIcon) {
                 auto themedIcon = linkIcon->createCopy();
                 themedIcon->replaceColour(juce::Colour(0xFFB3B3B3), headerForeground);
-                DarkTheme::applyToSvgIcon(*themedIcon);
+                ActiveTheme::applyToSvgIcon(*themedIcon);
                 themedIcon->drawWithin(g, iconArea.toFloat(), juce::RectanglePlacement::centred,
                                        1.0f);
             }
@@ -1083,7 +1083,7 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
             if (chordIcon) {
                 auto themedIcon = chordIcon->createCopy();
                 themedIcon->replaceColour(juce::Colour(0xFFB3B3B3), headerForeground);
-                DarkTheme::applyToSvgIcon(*themedIcon);
+                ActiveTheme::applyToSvgIcon(*themedIcon);
                 themedIcon->drawWithin(g, iconArea.toFloat(), juce::RectanglePlacement::centred,
                                        1.0f);
             }
@@ -1132,7 +1132,7 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
             if (loopIcon) {
                 auto themedIcon = loopIcon->createCopy();
                 themedIcon->replaceColour(juce::Colour(0xFFBCBCBC), headerForeground);
-                DarkTheme::applyToSvgIcon(*themedIcon);
+                ActiveTheme::applyToSvgIcon(*themedIcon);
                 themedIcon->drawWithin(g, loopArea.toFloat(), juce::RectanglePlacement::centred,
                                        1.0f);
             }
@@ -1316,7 +1316,7 @@ void ClipComponent::paintFadeHandles(juce::Graphics& g, const ClipInfo& clip,
     float half = hs * 0.5f;
     auto waveTop = static_cast<float>(waveformArea.getY());
 
-    auto handleColour = DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION);
+    auto handleColour = ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION);
     const auto fades = computeEffectiveFades(clip);
 
     // Fade-in handle: only visible on hover

@@ -1,6 +1,6 @@
 #include "MidiDrawerComponent.hpp"
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "CCLaneComponent.hpp"
 #include "VelocityLaneComponent.hpp"
@@ -21,13 +21,13 @@ MidiDrawerComponent::MidiDrawerComponent() {
     pbRangeLabel_->setJustificationType(juce::Justification::centred);
     pbRangeLabel_->setFont(FontManager::getInstance().getUIFont(10.0f));
     pbRangeLabel_->setColour(juce::Label::textColourId,
-                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                             ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     pbRangeLabel_->setColour(juce::Label::backgroundColourId, juce::Colour(0x00000000));
     pbRangeLabel_->setColour(juce::Label::outlineColourId, juce::Colour(0x00000000));
     pbRangeLabel_->setColour(juce::TextEditor::backgroundColourId,
-                             DarkTheme::getColour(DarkTheme::BACKGROUND));
+                             ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     pbRangeLabel_->setColour(juce::TextEditor::textColourId,
-                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                             ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     pbRangeLabel_->setTooltip("Pitch bend range (semitones)");
     pbRangeLabel_->onTextChange = [this]() {
         int range = pbRangeLabel_->getText().getIntValue();
@@ -176,21 +176,21 @@ void MidiDrawerComponent::paint(juce::Graphics& g) {
     // Left margin background
     if (leftMargin_ > 0) {
         auto leftArea = fullBounds.removeFromLeft(leftMargin_);
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND_ALT));
         g.fillRect(leftArea);
 
         // Top border across full width
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawHorizontalLine(0, 0.0f, static_cast<float>(getWidth()));
 
         // Right edge of left column
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.5f));
         g.drawVerticalLine(leftMargin_ - 1, 0.0f, static_cast<float>(getHeight()));
     }
 
     // Resize handle at top edge (in the main area)
     auto handleArea = fullBounds.removeFromTop(RESIZE_HANDLE_HEIGHT);
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.fillRect(handleArea.removeFromTop(1));
 
     // Lane headers in the left margin column
@@ -201,7 +201,7 @@ void MidiDrawerComponent::paint(juce::Graphics& g) {
     if (pbRangeLabel_->isVisible() && leftMargin_ > 4) {
         auto labelBounds = pbRangeLabel_->getBounds();
         g.setFont(FontManager::getInstance().getUIFont(9.0f));
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         g.drawText("Range", 2, juce::jmax(0, labelBounds.getY() - 14), leftMargin_ - 4, 12,
                    juce::Justification::centred, false);
     }
@@ -209,7 +209,7 @@ void MidiDrawerComponent::paint(juce::Graphics& g) {
 
 void MidiDrawerComponent::paintOverChildren(juce::Graphics& g) {
     // Separator lines between stacked lanes
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.5f));
     for (int i = 1; i < getLaneCount(); ++i) {
         auto row = getLaneRowBounds(i);
         if (!row.isEmpty())
@@ -218,7 +218,7 @@ void MidiDrawerComponent::paintOverChildren(juce::Graphics& g) {
 }
 
 void MidiDrawerComponent::paintLaneHeaders(juce::Graphics& g) {
-    const auto textColour = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+    const auto textColour = ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY);
 
     // Control name at the top of each lane's row, close button on removable lanes
     for (int lane = 0; lane < getLaneCount(); ++lane) {

@@ -4,7 +4,7 @@
 #include <functional>
 #include <utility>
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "HardwareInputLevels.hpp"
 #include "LevelMeterBallistics.hpp"
@@ -87,13 +87,13 @@ void InputLevelBars::paint(juce::Graphics& g, juce::Rectangle<int> area, int bar
         const auto bar = bars.removeFromTop(static_cast<float>(barHeight));
         bars.removeFromTop(static_cast<float>(kGap));
 
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
         g.fillRect(bar);
 
         const auto db = level_meter_scale::gainToDb(level);
-        g.setColour(DarkTheme::getColour(db >= 0.0f     ? DarkTheme::LEVEL_METER_RED
-                                         : db >= -12.0f ? DarkTheme::LEVEL_METER_YELLOW
-                                                        : DarkTheme::LEVEL_METER_GREEN));
+        g.setColour(ActiveTheme::getColour(db >= 0.0f     ? ActiveTheme::LEVEL_METER_RED
+                                           : db >= -12.0f ? ActiveTheme::LEVEL_METER_YELLOW
+                                                          : ActiveTheme::LEVEL_METER_GREEN));
         g.fillRect(bar.withWidth(bar.getWidth() * level_meter_scale::dbToMeterPos(db)));
     }
 }
@@ -109,7 +109,7 @@ void RoutingSelector::paint(juce::Graphics& g) {
 
     // Background: always use BUTTON_NORMAL, brighter on hover. Read-only
     // controls are dimmed and never react to hover.
-    auto bgColour = DarkTheme::getColour(DarkTheme::BUTTON_NORMAL);
+    auto bgColour = ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL);
     if (readOnly_) {
         bgColour = bgColour.withAlpha(0.5f);
     } else if (isHovering_) {
@@ -126,7 +126,7 @@ void RoutingSelector::paint(juce::Graphics& g) {
     g.fillRect(dropdownArea);
 
     // Draw separator line between main and dropdown
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.35f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.35f));
     g.drawLine(dropdownArea.getX(), dropdownArea.getY() + 2, dropdownArea.getX(),
                dropdownArea.getBottom() - 2, 1.0f);
 
@@ -140,7 +140,7 @@ void RoutingSelector::paint(juce::Graphics& g) {
     if (labelBars_.meters())
         textBounds.removeFromRight(static_cast<float>(LABEL_METER_WIDTH + 2));
     g.setColour(
-        DarkTheme::getColour(readOnly_ ? DarkTheme::TEXT_SECONDARY : DarkTheme::TEXT_PRIMARY)
+        ActiveTheme::getColour(readOnly_ ? ActiveTheme::TEXT_SECONDARY : ActiveTheme::TEXT_PRIMARY)
             .withAlpha(readOnly_ ? 0.6f : 1.0f));
     g.setFont(FontManager::getInstance().getUIFont(9.0f));
     const juce::String displayText =
@@ -158,11 +158,11 @@ void RoutingSelector::paint(juce::Graphics& g) {
     arrow.addTriangle(arrowX - arrowSize, arrowY - arrowSize * 0.5f, arrowX + arrowSize,
                       arrowY - arrowSize * 0.5f, arrowX, arrowY + arrowSize * 0.5f);
 
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.62f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.62f));
     g.fillPath(arrow);
 
     // Draw border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.8f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.8f));
     g.drawRoundedRectangle(bounds.reduced(0.5f), 2.0f, 1.0f);
 }
 

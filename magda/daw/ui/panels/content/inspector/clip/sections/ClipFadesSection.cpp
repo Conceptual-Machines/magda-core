@@ -1,6 +1,6 @@
 #include "ClipFadesSection.hpp"
 
-#include "../../../../../themes/DarkTheme.hpp"
+#include "../../../../../themes/ActiveTheme.hpp"
 #include "../../../../../themes/FontManager.hpp"
 #include "../../../../../themes/SmallButtonLookAndFeel.hpp"
 #include "BinaryData.h"
@@ -37,7 +37,7 @@ void ClipFadesSection::initControls() {
     // Section label
     sectionLabel_.setText("Fades", juce::dontSendNotification);
     sectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    sectionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    sectionLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     addChildComponent(sectionLabel_);
 
     // ── Arrangement-only controls ──
@@ -106,10 +106,10 @@ void ClipFadesSection::initControls() {
     auto setupTypeBtn = [this](std::unique_ptr<magda::SvgButton>& btn, const FadeTypeIcon& icon) {
         btn = std::make_unique<magda::SvgButton>(icon.name, icon.data, icon.size);
         btn->setOriginalColor(juce::Colour(0xFFE3E3E3));
-        btn->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        btn->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
-        btn->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+        btn->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        btn->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+        btn->setActiveColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+        btn->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
         btn->setBorderThickness(1.0f);
         btn->setTooltip(icon.tooltip);
         btn->setClickingTogglesState(false);
@@ -151,10 +151,10 @@ void ClipFadesSection::initControls() {
                                     const FadeBehaviourIcon& icon) {
         btn = std::make_unique<magda::SvgButton>(icon.name, icon.data, icon.size);
         btn->setOriginalColor(juce::Colour(0xFFE3E3E3));
-        btn->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        btn->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
-        btn->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+        btn->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        btn->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+        btn->setActiveColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+        btn->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
         btn->setBorderThickness(1.0f);
         btn->setTooltip(icon.tooltip);
         btn->setClickingTogglesState(false);
@@ -218,12 +218,13 @@ void ClipFadesSection::initControls() {
     autoCrossfadeToggle_.setButtonText("AUTO-XFADE");
     autoCrossfadeToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     autoCrossfadeToggle_.setColour(juce::TextButton::buttonColourId,
-                                   DarkTheme::getColour(DarkTheme::SURFACE));
+                                   ActiveTheme::getColour(ActiveTheme::SURFACE));
     autoCrossfadeToggle_.setColour(juce::TextButton::buttonOnColourId,
-                                   DarkTheme::getAccentColour().withAlpha(0.3f));
+                                   ActiveTheme::getAccentColour().withAlpha(0.3f));
     autoCrossfadeToggle_.setColour(juce::TextButton::textColourOffId,
-                                   DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    autoCrossfadeToggle_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+                                   ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    autoCrossfadeToggle_.setColour(juce::TextButton::textColourOnId,
+                                   ActiveTheme::getAccentColour());
     autoCrossfadeToggle_.onClick = [this]() {
         auto pid = primaryClipId();
         if (pid == magda::INVALID_CLIP_ID)
@@ -245,7 +246,7 @@ void ClipFadesSection::initControls() {
 
     launchFadeLabel_.setText("Launch", juce::dontSendNotification);
     launchFadeLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    launchFadeLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    launchFadeLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     launchFadeLabel_.setTooltip("Launch fade smoothing (0 = preserve transient)");
     addChildComponent(launchFadeLabel_);
 

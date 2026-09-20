@@ -10,7 +10,7 @@
 #include "engine/PluginService.hpp"
 #include "ui/components/chain/DeviceSlotComponent.hpp"
 #include "ui/components/chain/NodeComponent.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
@@ -33,11 +33,11 @@ class PostFxPanelContent::Container : public juce::Component, public juce::DragA
                                         PostFxPanelContent::APPEND_ZONE_WIDTH, getHeight());
         const bool appendHi = owner_.dragInsertIndex_ == static_cast<int>(owner_.slots_.size()) ||
                               owner_.dropInsertIndex_ == static_cast<int>(owner_.slots_.size());
-        g.setColour(
-            DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(appendHi ? 0.18f : 0.06f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)
+                        .withAlpha(appendHi ? 0.18f : 0.06f));
         g.fillRoundedRectangle(appendZone.reduced(6, 10).toFloat(), 4.0f);
-        g.setColour(
-            DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(appendHi ? 0.75f : 0.24f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)
+                        .withAlpha(appendHi ? 0.75f : 0.24f));
         g.drawRoundedRectangle(appendZone.reduced(6, 10).toFloat(), 4.0f, 1.0f);
 
         // "POST-FX" watermark as upright stacked letters, sitting above the "+"
@@ -49,7 +49,7 @@ class PostFxPanelContent::Container : public juce::Component, public juce::DragA
             const int plusTop = appendZone.getCentreY() - 10;  // "+" is 20px, centred
             const int regionTop = appendZone.getY() + 10;
             int y = juce::jmax(regionTop, (regionTop + plusTop - stackH) / 2);
-            g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.5f));
+            g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(0.5f));
             g.setFont(FontManager::getInstance().getUIFont(11.0f));
             for (int i = 0; i < text.length(); ++i) {
                 g.drawText(juce::String::charToString(text[i]),
@@ -63,7 +63,7 @@ class PostFxPanelContent::Container : public juce::Component, public juce::DragA
         if (owner_.slots_.empty() && owner_.dragInsertIndex_ < 0 && owner_.dropInsertIndex_ < 0) {
             auto hintArea = getLocalBounds();
             hintArea.setRight(appendZone.getX());
-            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.setColour(ActiveTheme::getSecondaryTextColour());
             g.setFont(FontManager::getInstance().getUIFont(12.0f));
             g.drawText("Drop effects here to process after the FX chain", hintArea,
                        juce::Justification::centred);
@@ -73,7 +73,7 @@ class PostFxPanelContent::Container : public juce::Component, public juce::DragA
             owner_.dragInsertIndex_ >= 0 ? owner_.dragInsertIndex_ : owner_.dropInsertIndex_;
         if (insertIndex >= 0) {
             const int x = owner_.indicatorX(insertIndex);
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
             g.fillRect(x - 1, 2, 2, getHeight() - 4);
         }
     }
@@ -150,8 +150,8 @@ class PostFxPanelContent::FaderSideTag : public juce::Component, public juce::To
 
     void paint(juce::Graphics& g) override {
         // State, not decoration: full alpha, and accented while hovered.
-        g.setColour(hovered_ ? DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)
-                             : DarkTheme::getSecondaryTextColour());
+        g.setColour(hovered_ ? ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)
+                             : ActiveTheme::getSecondaryTextColour());
         g.setFont(FontManager::getInstance().getUIFont(9.5f));
         const int lineH = getHeight() / 2;
         g.drawText(isPostFader() ? "POST" : "PRE", juce::Rectangle<int>(0, 0, getWidth(), lineH),
@@ -223,8 +223,8 @@ PostFxPanelContent::PostFxPanelContent() {
 
     addButton_.setButtonText("+");
     addButton_.setColour(juce::TextButton::buttonColourId,
-                         DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.24f));
-    addButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+                         ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.24f));
+    addButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
     addButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     addButton_.onClick = [this]() { showAddDeviceMenu(); };
     container_->addAndMakeVisible(addButton_);
@@ -440,7 +440,7 @@ void PostFxPanelContent::layoutSlots() {
 void PostFxPanelContent::paint(juce::Graphics& g) {
     // No header bar; the "POST-FX" watermark runs vertically down the add strip
     // (drawn by the container).
-    g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
 }
 
 void PostFxPanelContent::showAddDeviceMenu() {

@@ -7,8 +7,8 @@
 
 #include "core/GestureRouter.hpp"
 #include "ui/components/common/InternalFileDrag.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/CursorManager.hpp"
-#include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 #include "ui/utils/AudioFileTypes.hpp"
@@ -26,7 +26,7 @@ SamplerUI::SamplerUI() {
     // Sample name label
     sampleNameLabel_.setText("No sample loaded", juce::dontSendNotification);
     sampleNameLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    sampleNameLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    sampleNameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     sampleNameLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(sampleNameLabel_);
 
@@ -140,9 +140,9 @@ SamplerUI::SamplerUI() {
         std::make_unique<magda::SvgButton>("Loop", BinaryData::loop_svg, BinaryData::loop_svgSize);
     loopButton_->setIconPadding(0.0f);
     loopButton_->setStateColourReplacement(
-        juce::Colour(0xFF1A1A1A), DarkTheme::PIANO_ROLL_BACKGROUND, DarkTheme::ACCENT_PRIMARY);
-    loopButton_->setStateColourReplacement(juce::Colour(0xFFBCBCBC), DarkTheme::ICON_TRANSPORT,
-                                           DarkTheme::TEXT_BRIGHT);
+        juce::Colour(0xFF1A1A1A), ActiveTheme::PIANO_ROLL_BACKGROUND, ActiveTheme::ACCENT_PRIMARY);
+    loopButton_->setStateColourReplacement(juce::Colour(0xFFBCBCBC), ActiveTheme::ICON_TRANSPORT,
+                                           ActiveTheme::TEXT_BRIGHT);
     loopButton_->onClick = [this]() {
         bool newState = !loopButton_->isActive();
         loopButton_->setActive(newState);
@@ -324,12 +324,12 @@ SamplerUI::SamplerUI() {
         btn->setLookAndFeel(&FlatTabButtonLookAndFeel::getInstance());
         btn->setClickingTogglesState(false);
         btn->setColour(juce::TextButton::buttonColourId,
-                       DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
+                       ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.10f));
         btn->setColour(juce::TextButton::buttonOnColourId,
-                       DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
-        btn->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+                       ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+        btn->setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
         btn->setColour(juce::TextButton::textColourOnId,
-                       DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
+                       ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT));
         btn->setConnectedEdges((m > 0 ? juce::Button::ConnectedOnLeft : 0) |
                                (m < 2 ? juce::Button::ConnectedOnRight : 0));
         btn->onClick = [this, m]() { setVoiceMode(m); };
@@ -380,7 +380,7 @@ SamplerUI::~SamplerUI() {
 void SamplerUI::setupLabel(juce::Label& label, const juce::String& text) {
     label.setText(text, juce::dontSendNotification);
     label.setFont(FontManager::getInstance().getUIFont(9.0f));
-    label.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    label.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     label.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(label);
 }
@@ -388,26 +388,26 @@ void SamplerUI::setupLabel(juce::Label& label, const juce::String& text) {
 void SamplerUI::lookAndFeelChanged() {
     // Re-apply cached theme colours after a live theme switch.
     sampleNameLabel_.setColour(juce::Label::textColourId,
-                               hasSampleName_ ? DarkTheme::getTextColour()
-                                              : DarkTheme::getSecondaryTextColour());
+                               hasSampleName_ ? ActiveTheme::getTextColour()
+                                              : ActiveTheme::getSecondaryTextColour());
 
     for (auto& btn : voiceModeButtons_) {
         if (!btn)
             continue;
         btn->setColour(juce::TextButton::buttonColourId,
-                       DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
+                       ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.10f));
         btn->setColour(juce::TextButton::buttonOnColourId,
-                       DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
-        btn->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+                       ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+        btn->setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
         btn->setColour(juce::TextButton::textColourOnId,
-                       DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
+                       ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT));
     }
 
     for (auto* label :
          {&rootNoteLabel_, &startLabel_, &endLabel_, &loopStartLabel_, &loopEndLabel_,
           &attackLabel_, &decayLabel_, &sustainLabel_, &releaseLabel_, &pitchLabel_, &fineLabel_,
           &levelLabel_, &velAmountLabel_, &voiceModeLabel_, &glideLabel_})
-        label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
 
     repaint();
 }
@@ -444,10 +444,11 @@ void SamplerUI::updateParameters(float attack, float decay, float sustain, float
     hasSampleName_ = sampleName.isNotEmpty();
     if (hasSampleName_) {
         sampleNameLabel_.setText(sampleName, juce::dontSendNotification);
-        sampleNameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        sampleNameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     } else {
         sampleNameLabel_.setText("No sample loaded", juce::dontSendNotification);
-        sampleNameLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        sampleNameLabel_.setColour(juce::Label::textColourId,
+                                   ActiveTheme::getSecondaryTextColour());
     }
 }
 
@@ -947,9 +948,9 @@ void SamplerUI::timerCallback() {
 
 void SamplerUI::paint(juce::Graphics& g) {
     // Background
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(getLocalBounds(), 1);
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
     g.fillRect(getLocalBounds().reduced(1));
 
     // Waveform area
@@ -961,12 +962,12 @@ void SamplerUI::paint(juce::Graphics& g) {
         g.reduceClipRegion(waveformArea);
 
         // Draw waveform
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
         auto pathBounds = waveformArea.reduced(0, 2).toFloat();
         g.saveState();
         g.addTransform(juce::AffineTransform::translation(pathBounds.getX(), pathBounds.getY()));
         g.fillPath(waveformPath_);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.7f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.7f));
         g.strokePath(waveformPath_, juce::PathStrokeType(0.5f));
         g.restoreState();
 
@@ -979,12 +980,12 @@ void SamplerUI::paint(juce::Graphics& g) {
             float lStartX = secondsToPixelX(loopStartSlider_.getValue(), waveformArea);
             float lEndX = secondsToPixelX(loopEndSlider_.getValue(), waveformArea);
             if (lEndX > lStartX) {
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.15f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.15f));
                 g.fillRect(lStartX, static_cast<float>(waveformArea.getY()), lEndX - lStartX,
                            static_cast<float>(waveformArea.getHeight()));
 
                 // Top drag bar
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.5f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.5f));
                 g.fillRect(lStartX, static_cast<float>(waveformArea.getY()), lEndX - lStartX,
                            static_cast<float>(kLoopBarHeight));
             }
@@ -993,7 +994,7 @@ void SamplerUI::paint(juce::Graphics& g) {
         // Sample start marker (orange vertical line)
         if (sampleLength_ > 0.0) {
             float startX = secondsToPixelX(startSlider_.getValue(), waveformArea);
-            g.setColour(DarkTheme::getColour(DarkTheme::SAMPLER_START_MARKER));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::SAMPLER_START_MARKER));
             g.drawVerticalLine(static_cast<int>(startX), static_cast<float>(waveformArea.getY()),
                                static_cast<float>(waveformArea.getBottom()));
         }
@@ -1001,14 +1002,14 @@ void SamplerUI::paint(juce::Graphics& g) {
         // Sample end marker (red vertical line)
         if (sampleLength_ > 0.0) {
             float endX = secondsToPixelX(endSlider_.getValue(), waveformArea);
-            g.setColour(DarkTheme::getColour(DarkTheme::SAMPLER_END_MARKER));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::SAMPLER_END_MARKER));
             g.drawVerticalLine(static_cast<int>(endX), static_cast<float>(waveformArea.getY()),
                                static_cast<float>(waveformArea.getBottom()));
         }
 
         // Loop start/end markers (green vertical lines)
         if (loopButton_->isActive() && sampleLength_ > 0.0) {
-            auto green = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE);
+            auto green = ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE);
 
             float lStartX = secondsToPixelX(loopStartSlider_.getValue(), waveformArea);
             g.setColour(green);
@@ -1024,16 +1025,16 @@ void SamplerUI::paint(juce::Graphics& g) {
         // Playhead (white vertical line)
         if (playheadPosition_ > 0.0 && sampleLength_ > 0.0) {
             float phX = secondsToPixelX(playheadPosition_, waveformArea);
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT));
             g.drawVerticalLine(static_cast<int>(phX), static_cast<float>(waveformArea.getY()),
                                static_cast<float>(waveformArea.getBottom()));
         }
 
         g.restoreState();  // Restore clip region
     } else {
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
         g.fillRect(waveformArea);
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
         g.drawText("Drop sample or click Load", waveformArea, juce::Justification::centred);
     }
@@ -1041,7 +1042,7 @@ void SamplerUI::paint(juce::Graphics& g) {
     // --- Divider between the left (waveform) and right (synth) columns ---
     auto body = getLocalBounds().reduced(4);
     body.removeFromTop(kNameRowH + 2);
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     auto wave = getWaveformBounds();
     g.drawVerticalLine(wave.getRight() + 2, static_cast<float>(body.getY()),
                        static_cast<float>(body.getBottom()));

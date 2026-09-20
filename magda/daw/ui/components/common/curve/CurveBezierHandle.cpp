@@ -1,7 +1,7 @@
 #include "CurveBezierHandle.hpp"
 
 #include "CurvePointComponent.hpp"
-#include "magda/daw/ui/themes/DarkTheme.hpp"
+#include "magda/daw/ui/themes/ActiveTheme.hpp"
 
 namespace magda {
 
@@ -20,18 +20,19 @@ void CurveBezierHandle::paint(juce::Graphics& g) {
     float radius = HANDLE_SIZE / 2.0f;
 
     // Handle fill - lighter when hovered
-    juce::Colour handleColour = isHovered_ ? DarkTheme::getColour(DarkTheme::AUTOMATION_POINT)
-                                           : DarkTheme::getColour(DarkTheme::AUTOMATION_SCALE_TEXT);
+    juce::Colour handleColour = isHovered_
+                                    ? ActiveTheme::getColour(ActiveTheme::AUTOMATION_POINT)
+                                    : ActiveTheme::getColour(ActiveTheme::AUTOMATION_SCALE_TEXT);
 
     if (isDragging_) {
-        handleColour = DarkTheme::getColour(DarkTheme::TEXT_BRIGHT);
+        handleColour = ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT);
     }
 
     g.setColour(handleColour);
     g.fillEllipse(centerX - radius, centerY - radius, HANDLE_SIZE, HANDLE_SIZE);
 
     // Handle outline
-    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_DIVIDER_LIGHT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_DIVIDER_LIGHT));
     g.drawEllipse(centerX - radius, centerY - radius, HANDLE_SIZE, HANDLE_SIZE, 1.0f);
 }
 

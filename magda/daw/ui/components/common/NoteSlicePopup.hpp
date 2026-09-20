@@ -6,7 +6,7 @@
 
 #include "core/ClipInfo.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {

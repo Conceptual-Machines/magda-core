@@ -27,7 +27,7 @@ bool LFOPhaseOverlay::hitTest(int /*x*/, int /*y*/) {
 
 void LFOPhaseOverlay::paint(juce::Graphics& g) {
     // Background (opaque)
-    g.fillAll(DarkTheme::getColour(DarkTheme::CURVE_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::CURVE_BACKGROUND));
 
     if (!modInfo_ || getWidth() <= 0 || getHeight() <= 0)
         return;
@@ -41,12 +41,12 @@ void LFOPhaseOverlay::paintGrid(juce::Graphics& g) {
     auto bounds = getLocalBounds();
 
     // Horizontal center line (0.5 value)
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0x20 / 255.0f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0x20 / 255.0f));
     int centerY = bounds.getHeight() / 2;
     g.drawHorizontalLine(centerY, 0.0f, static_cast<float>(bounds.getWidth()));
 
     // Quarter lines (0.25, 0.75 value)
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0x10 / 255.0f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0x10 / 255.0f));
     g.drawHorizontalLine(bounds.getHeight() / 4, 0.0f, static_cast<float>(bounds.getWidth()));
     g.drawHorizontalLine(bounds.getHeight() * 3 / 4, 0.0f, static_cast<float>(bounds.getWidth()));
 
@@ -57,7 +57,7 @@ void LFOPhaseOverlay::paintGrid(juce::Graphics& g) {
     }
 
     // Phase 0.5 line (center) slightly brighter
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0x20 / 255.0f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0x20 / 255.0f));
     g.drawVerticalLine(bounds.getWidth() / 2, 0.0f, static_cast<float>(bounds.getHeight()));
 }
 
@@ -151,7 +151,7 @@ void LFOPhaseOverlay::paintPhaseIndicator(juce::Graphics& g) {
                   dotSize);
 
     // Draw white outline
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT));
     g.drawEllipse(static_cast<float>(x) - dotRadius, static_cast<float>(y) - dotRadius, dotSize,
                   dotSize, 1.0f);
 }

@@ -2,7 +2,7 @@
 
 #include <cmath>
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "PitchFoldMap.hpp"
 #include "core/ClipInfo.hpp"
@@ -56,7 +56,7 @@ void PianoRollKeyboard::paint(juce::Graphics& g) {
 
         if (isPressed) {
             // Highlight color for pressed key
-            g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_KEY_HIGHLIGHT));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_KEY_HIGHLIGHT));
         } else if (isBlackKey(note)) {
             g.setColour(juce::Colour(accidentalKeyColour));
         } else {
@@ -65,7 +65,7 @@ void PianoRollKeyboard::paint(juce::Graphics& g) {
         g.fillRect(keyArea);
 
         if (highlightedNotes_.find(note) != highlightedNotes_.end()) {
-            g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_PITCH_HIGHLIGHT)
+            g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_PITCH_HIGHLIGHT)
                             .withAlpha(0x55 / 255.0f));
             g.fillRect(keyArea);
         }

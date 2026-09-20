@@ -4,7 +4,7 @@
 
 #include "core/ParameterUtils.hpp"
 #include "ui/components/chain/layout/DeviceSlotHeaderLayout.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/LocalizedText.hpp"
 
@@ -30,26 +30,26 @@ class ParamPageTabLookAndFeel final : public juce::LookAndFeel_V4 {
         const bool isFront = button.isFrontTab();
 
         if (isFront)
-            g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
         else if (isMouseOver)
-            g.setColour(DarkTheme::getColour(DarkTheme::SURFACE_HOVER));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE_HOVER));
         else
-            g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND_ALT));
         g.fillRect(area);
 
         // The selected page is marked by an accent rule along the bottom edge,
         // where it reads as attached to the grid below it. Unselected tabs get
         // a hairline instead, which keeps the row of them on one baseline.
         if (isFront) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
             g.fillRect(area.getX(), area.getBottom() - 2, area.getWidth(), 2);
         } else {
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
             g.fillRect(area.getX(), area.getBottom() - 1, area.getWidth(), 1);
         }
 
         auto textColour =
-            isFront ? DarkTheme::getTextColour() : DarkTheme::getSecondaryTextColour();
+            isFront ? ActiveTheme::getTextColour() : ActiveTheme::getSecondaryTextColour();
         if (isMouseDown)
             textColour = textColour.brighter(0.2f);
         g.setColour(textColour);
@@ -88,7 +88,7 @@ class ParamPageTabBar final : public juce::TabbedButtonBar {
                   int currentPage) {
         suppressCallback_ = true;
         clearTabs();
-        const auto tabColour = DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f);
+        const auto tabColour = ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f);
         for (int page = 0; page < totalPages; ++page)
             addTab(layout.pageName(device, page), tabColour, -1);
         setCurrentTabIndex(currentPage, false);
@@ -174,7 +174,7 @@ ParamHostComponent::ParamHostComponent(std::unique_ptr<DeviceParamLayout> layout
 
     pageLabel_ = std::make_unique<juce::Label>();
     pageLabel_->setFont(FontManager::getInstance().getUIFont(9.0f));
-    pageLabel_->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    pageLabel_->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     pageLabel_->setJustificationType(juce::Justification::centred);
     addAndMakeVisible(*pageLabel_);
 

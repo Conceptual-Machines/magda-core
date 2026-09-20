@@ -4,7 +4,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaGrainDelayCompiledPlugin.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -136,7 +136,7 @@ void CompiledGrainDelayCurveView::resampleFromPlugin() {
 
 void CompiledGrainDelayCurveView::paint(juce::Graphics& g) {
     const auto bounds = getLocalBounds();
-    const auto plotBg = DarkTheme::getColour(DarkTheme::BACKGROUND).darker(0.06f);
+    const auto plotBg = ActiveTheme::getColour(ActiveTheme::BACKGROUND).darker(0.06f);
     g.setColour(plotBg);
     g.fillRect(bounds);
 
@@ -144,7 +144,7 @@ void CompiledGrainDelayCurveView::paint(juce::Graphics& g) {
     if (plot.getWidth() < 8.0f || plot.getHeight() < 8.0f)
         return;
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.55f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.55f));
     g.drawRect(plot, 1.0f);
 
     // Clip everything that follows to the plot's interior so wet rects
@@ -157,7 +157,7 @@ void CompiledGrainDelayCurveView::paint(juce::Graphics& g) {
     // pitched up, below when pitched down — so the bipolar axis carries
     // direction, not just amplitude.
     const float midY = plot.getCentreY();
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.35f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.35f));
     g.drawHorizontalLine(static_cast<int>(std::round(midY)), plot.getX(), plot.getRight());
 
     const float fb = juce::jlimit(0.0f, 0.999f, feedback_);
@@ -184,15 +184,15 @@ void CompiledGrainDelayCurveView::paint(juce::Graphics& g) {
 
     if (sync_ && bpm_ > 1.0f) {
         const float beatSec = 60.0f / bpm_;
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.18f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.18f));
         for (float t = beatSec; t <= windowSec; t += beatSec) {
             const float x = plotXOffset + (t / windowSec) * plotWidthInner;
             g.drawVerticalLine(static_cast<int>(std::round(x)), plot.getY(), plot.getBottom());
         }
     }
 
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE);
-    const auto grainColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE);
+    const auto grainColour = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
 
     // Pitch shifts the wet rectangles vertically — grains float above the
     // midline at +st and below at -st. ±0.7·halfH at ±24 st leaves room

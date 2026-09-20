@@ -9,7 +9,7 @@
 #include "drum_grid/DrumGridUI.hpp"
 #include "drum_grid/PadDeviceSlot.hpp"
 #include "modulation/ModulationOwnerPath.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui::drum_grid_slot {
@@ -247,7 +247,7 @@ bool paintHeaderLogo(juce::Graphics& g, bool isDrumGrid, bool collapsed, int hea
 
     auto font = FontManager::getInstance().getMicrogrammaFont(11.0f);
     g.setFont(font);
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
     g.drawText("MDG2000", textStartX, textY, availableWidth, textHeight,
                juce::Justification::centredLeft, false);
     return true;
@@ -278,8 +278,8 @@ bool paintContentHeader(juce::Graphics& g, bool isDrumGrid, bool bypassed,
     if (!isDrumGrid)
         return false;
 
-    const auto textColour = bypassed ? DarkTheme::getSecondaryTextColour().withAlpha(0.5f)
-                                     : DarkTheme::getSecondaryTextColour();
+    const auto textColour = bypassed ? ActiveTheme::getSecondaryTextColour().withAlpha(0.5f)
+                                     : ActiveTheme::getSecondaryTextColour();
     g.setColour(textColour);
     g.setFont(FontManager::getInstance().getMicrogrammaFont(9.0f));
     g.drawText("MAGDA Drum Grid", textArea, juce::Justification::centredLeft);

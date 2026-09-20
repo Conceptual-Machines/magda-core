@@ -4,7 +4,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaModCompiledPlugin.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -163,7 +163,7 @@ void CompiledModCurveView::resampleFromPlugin() {
 
 void CompiledModCurveView::paint(juce::Graphics& g) {
     const auto bounds = getLocalBounds();
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).darker(0.06f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).darker(0.06f));
     g.fillRect(bounds);
 
     auto plot = bounds.toFloat().reduced(kPlotPadX, kPlotPadY);
@@ -171,21 +171,21 @@ void CompiledModCurveView::paint(juce::Graphics& g) {
     if (plot.getWidth() < 8.0f || plot.getHeight() < 8.0f)
         return;
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.55f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.55f));
     g.drawRect(plot, 1.0f);
 
     juce::Graphics::ScopedSaveState clipGuard(g);
     g.reduceClipRegion(plot.toNearestInt());
 
     // Zero-crossing midline.
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.30f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.30f));
     const float midY = plot.getCentreY();
     g.drawHorizontalLine(static_cast<int>(std::round(midY)), plot.getX(), plot.getRight());
 
     // Beat grid: one vertical per LFO period when synced (the period IS one
     // musical division). When free, no grid.
     if (sync_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.22f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.22f));
         for (int i = 1; i < kCyclesVisible; ++i) {
             const float frac = static_cast<float>(i) / static_cast<float>(kCyclesVisible);
             const float x = plot.getX() + frac * plot.getWidth();
@@ -195,9 +195,9 @@ void CompiledModCurveView::paint(juce::Graphics& g) {
 
     // LFO trace. Phase scrolls so the playhead stays at the right edge —
     // the part visible is "what already happened" for the LFO.
-    const auto accent = mode_ == 1   ? DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE)
-                        : mode_ == 2 ? DarkTheme::getColour(DarkTheme::ACCENT_MODULATION)
-                                     : DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY_SOFT);
+    const auto accent = mode_ == 1   ? ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE)
+                        : mode_ == 2 ? ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION)
+                                     : ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY_SOFT);
 
     const float depthScale = 0.10f + 0.85f * depth_;
     const float halfHeight = plot.getHeight() * 0.45f * depthScale;
@@ -228,7 +228,7 @@ void CompiledModCurveView::paint(juce::Graphics& g) {
     // Mode badge.
     const char* modeLabel = mode_ == 1 ? "VIBRATO" : mode_ == 2 ? "AUTOPAN" : "TREMOLO";
     g.setFont(11.0f);
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.75f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.75f));
     g.drawText(
         modeLabel,
         juce::Rectangle<float>(plot.getX() + 6.0f, plot.getY() + 4.0f, 80.0f, 14.0f).toNearestInt(),
@@ -258,7 +258,7 @@ void CompiledModCurveView::paint(juce::Graphics& g) {
         rateLabel =
             rateHz_ >= 10.0f ? juce::String(rateHz_, 1) + " Hz" : juce::String(rateHz_, 2) + " Hz";
     }
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.6f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.6f));
     g.drawText(
         rateLabel,
         juce::Rectangle<float>(plot.getRight() - 80.0f - 6.0f, plot.getY() + 4.0f, 80.0f, 14.0f)

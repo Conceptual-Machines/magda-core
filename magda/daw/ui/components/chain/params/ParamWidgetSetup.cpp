@@ -4,7 +4,7 @@
 #include <limits>
 
 #include "core/ParameterUtils.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 #include "ui/themes/SmallComboBoxLookAndFeel.hpp"
 
@@ -86,9 +86,9 @@ void configureSliderFormatting(TextSlider& slider, const magda::ParameterInfo& i
 
 void configureBoolToggle(juce::ToggleButton& toggle, const magda::ParameterInfo& info,
                          std::function<void(double)> onValueChanged) {
-    toggle.setColour(juce::ToggleButton::textColourId, DarkTheme::getTextColour());
+    toggle.setColour(juce::ToggleButton::textColourId, ActiveTheme::getTextColour());
     toggle.setColour(juce::ToggleButton::tickColourId,
-                     DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                     ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     toggle.onClick = [&toggle, cb = std::move(onValueChanged)]() {
         if (cb) {
             cb(toggle.getToggleState() ? 1.0 : 0.0);
@@ -104,15 +104,16 @@ void configureMomentaryButton(MomentaryParamButton& button,
     button.setValueChangedCallback(std::move(onValueChanged));
     button.setButtonText("PUSH");
     button.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-    button.setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-    button.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+    button.setColour(juce::TextButton::buttonColourId,
+                     ActiveTheme::getColour(ActiveTheme::SURFACE));
+    button.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
 }
 
 void configureDiscreteCombo(juce::ComboBox& combo, const magda::ParameterInfo& info,
                             std::function<void(double)> onValueChanged) {
     combo.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
     combo.setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
-    combo.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+    combo.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
     combo.setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
     combo.setJustificationType(juce::Justification::centred);
 
@@ -148,10 +149,10 @@ bool wantsSegmentedChoices(const magda::ParameterInfo& info) {
 
 void applyChoiceButtonColours(juce::TextButton& button) {
     button.setColour(juce::TextButton::buttonColourId,
-                     DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
+                     ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.10f));
     button.setColour(juce::TextButton::buttonOnColourId,
-                     DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
-    button.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+                     ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+    button.setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
     button.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
 }
 

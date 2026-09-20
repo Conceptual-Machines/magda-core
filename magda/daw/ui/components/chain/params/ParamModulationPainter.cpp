@@ -1,6 +1,6 @@
 #include "params/ParamModulationPainter.hpp"
 
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -60,7 +60,7 @@ void paintVerticalModulationIndicators(juce::Graphics& g, const ModulationPaintC
     if (ctx.isInLinkMode) {
         if (ctx.isLinkModeDrag && ctx.activeMod.isValid()) {
             const int barHeight = static_cast<int>(maxHeight * ctx.linkModeDragCurrentAmount);
-            drawVerticalBar(g, DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION), modX, startY,
+            drawVerticalBar(g, ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION), modX, startY,
                             amountBarWidth, barHeight);
         }
 
@@ -74,7 +74,7 @@ void paintVerticalModulationIndicators(juce::Graphics& g, const ModulationPaintC
                 if (const auto* link = macro->getLink(target)) {
                     const int barHeight = static_cast<int>(maxHeight * link->amount);
                     drawVerticalBar(
-                        g, DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).withAlpha(0.9f),
+                        g, ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).withAlpha(0.9f),
                         macroX, startY, amountBarWidth, barHeight);
                 }
             }
@@ -90,8 +90,8 @@ void paintVerticalModulationIndicators(juce::Graphics& g, const ModulationPaintC
                 if (const auto* link = modPtr->getLink(target)) {
                     if (link->enabled) {
                         const int barHeight = static_cast<int>(maxHeight * link->amount);
-                        drawVerticalBar(g, DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION), modX,
-                                        startY, amountBarWidth, barHeight);
+                        drawVerticalBar(g, ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION),
+                                        modX, startY, amountBarWidth, barHeight);
                     }
                 }
             }
@@ -102,7 +102,8 @@ void paintVerticalModulationIndicators(juce::Graphics& g, const ModulationPaintC
         const float selectedMacroModulation = getSelectedDeviceMacroModulation(ctx.linkCtx);
         if (selectedMacroModulation != 0.0f) {
             const int barHeight = static_cast<int>(maxHeight * selectedMacroModulation);
-            drawVerticalBar(g, DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).withAlpha(0.9f),
+            drawVerticalBar(g,
+                            ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).withAlpha(0.9f),
                             macroX, startY, amountBarWidth, barHeight);
             return;
         }
@@ -112,7 +113,8 @@ void paintVerticalModulationIndicators(juce::Graphics& g, const ModulationPaintC
         const float totalMacroModulation = computeTotalMacroModulation(ctx.linkCtx);
         if (totalMacroModulation != 0.0f) {
             const int barHeight = static_cast<int>(maxHeight * totalMacroModulation);
-            drawVerticalBar(g, DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).withAlpha(0.6f),
+            drawVerticalBar(g,
+                            ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).withAlpha(0.6f),
                             macroX, startY, movementBarWidth, barHeight);
         }
     }
@@ -120,8 +122,8 @@ void paintVerticalModulationIndicators(juce::Graphics& g, const ModulationPaintC
     const float totalModModulation = computeTotalModModulation(ctx.linkCtx);
     if (totalModModulation != 0.0f) {
         const int barHeight = static_cast<int>(maxHeight * totalModModulation);
-        drawVerticalBar(g, DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.6f), modX,
-                        startY, movementBarWidth, barHeight);
+        drawVerticalBar(g, ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.6f),
+                        modX, startY, movementBarWidth, barHeight);
     }
 }
 }  // namespace
@@ -162,8 +164,8 @@ void paintModulationIndicators(juce::Graphics& g, const ModulationPaintContext& 
             int startX = leftX + static_cast<int>(maxWidth * ctx.currentParamValue);
             int barWidth = static_cast<int>(maxWidth * ctx.linkModeDragCurrentAmount);
 
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
-            drawHorizontalBar(g, DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION), startX, y,
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
+            drawHorizontalBar(g, ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION), startX, y,
                               barWidth, amountBarHeight);
         }
 
@@ -185,7 +187,7 @@ void paintModulationIndicators(juce::Graphics& g, const ModulationPaintContext& 
                     int barWidth = static_cast<int>(maxWidth * linkAmount);
 
                     drawHorizontalBar(
-                        g, DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).withAlpha(0.9f),
+                        g, ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).withAlpha(0.9f),
                         startX, y, barWidth, amountBarHeight);
                 }
             }
@@ -208,7 +210,7 @@ void paintModulationIndicators(juce::Graphics& g, const ModulationPaintContext& 
                         int startX = leftX + static_cast<int>(maxWidth * ctx.currentParamValue);
                         int barWidth = static_cast<int>(maxWidth * linkAmount);
 
-                        drawHorizontalBar(g, DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION),
+                        drawHorizontalBar(g, ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION),
                                           startX, y, barWidth, amountBarHeight);
                     }
                 }
@@ -223,8 +225,9 @@ void paintModulationIndicators(juce::Graphics& g, const ModulationPaintContext& 
             int startX = leftX + static_cast<int>(maxWidth * ctx.currentParamValue);
             int barWidth = static_cast<int>(maxWidth * selectedMacroModulation);
 
-            drawHorizontalBar(g, DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).withAlpha(0.9f),
-                              startX, y, barWidth, amountBarHeight);
+            drawHorizontalBar(
+                g, ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).withAlpha(0.9f), startX,
+                y, barWidth, amountBarHeight);
             return;
         }
     }
@@ -239,8 +242,9 @@ void paintModulationIndicators(juce::Graphics& g, const ModulationPaintContext& 
             int startX = leftX + static_cast<int>(maxWidth * ctx.currentParamValue);
             int barWidth = static_cast<int>(maxWidth * totalMacroModulation);
 
-            drawHorizontalBar(g, DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).withAlpha(0.6f),
-                              startX, y, barWidth, movementBarHeight);
+            drawHorizontalBar(
+                g, ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).withAlpha(0.6f), startX,
+                y, barWidth, movementBarHeight);
         }
     }
 
@@ -253,7 +257,7 @@ void paintModulationIndicators(juce::Graphics& g, const ModulationPaintContext& 
         int startX = leftX + static_cast<int>(maxWidth * ctx.currentParamValue);
         int barWidth = static_cast<int>(maxWidth * totalModModulation);
 
-        drawHorizontalBar(g, DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.6f),
+        drawHorizontalBar(g, ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.6f),
                           startX, y, barWidth, movementBarHeight);
     }
 }

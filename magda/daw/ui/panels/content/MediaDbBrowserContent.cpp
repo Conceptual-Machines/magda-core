@@ -21,7 +21,7 @@
 #include "../../../media_db/MediaModelDownloader.hpp"
 #include "../../components/chain/layout/DeviceSlotHeaderLayout.hpp"
 #include "../../components/common/InternalFileDrag.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FileBrowserLookAndFeel.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallComboBoxLookAndFeel.hpp"
@@ -159,21 +159,21 @@ juce::Image makePresetDragImage(const juce::StringArray& names) {
     auto bounds =
         juce::Rectangle<float>(0.0F, 0.0F, static_cast<float>(width), static_cast<float>(height))
             .reduced(0.5F);
-    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).withAlpha(0.96F));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE).withAlpha(0.96F));
     g.fillRoundedRectangle(bounds, 6.0F);
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     g.drawRoundedRectangle(bounds, 6.0F, 1.5F);
 
     // Two offset squares read as a stacked "preset".
     const float gy = static_cast<float>(height) * 0.5F;
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     g.fillRoundedRectangle(8.0F, gy - 6.0F, 8.0F, 8.0F, 2.0F);
-    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).withAlpha(0.96F));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE).withAlpha(0.96F));
     g.fillRoundedRectangle(11.0F, gy - 2.5F, 8.0F, 8.0F, 2.0F);
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     g.drawRoundedRectangle(11.0F, gy - 2.5F, 8.0F, 8.0F, 2.0F, 1.0F);
 
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     g.setFont(font);
     g.drawText(text, juce::Rectangle<int>(padLeft, 0, width - padLeft - padRight, height),
                juce::Justification::centredLeft, true);
@@ -481,13 +481,13 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
     void paintRowBackground(juce::Graphics& g, int rowNumber, int /*width*/, int /*height*/,
                             bool rowIsSelected) override {
         if (rowIsSelected) {
-            g.fillAll(DarkTheme::getColour(DarkTheme::SURFACE_HOVER));
+            g.fillAll(ActiveTheme::getColour(ActiveTheme::SURFACE_HOVER));
             return;
         }
         if (rowNumber >= 0 && rowNumber < static_cast<int>(owner_.results_.size())) {
             const auto& r = owner_.results_[static_cast<size_t>(rowNumber)];
             if (r.kind == "audio" && r.tagged) {
-                g.fillAll(DarkTheme::getAccentColour().withAlpha(0.055F));
+                g.fillAll(ActiveTheme::getAccentColour().withAlpha(0.055F));
             }
         }
     }
@@ -529,22 +529,23 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
 
         switch (columnId) {
             case kColName: {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
                 if (r.userEdited) {
                     const float dotR = 3.0F;
-                    g.setColour(DarkTheme::getAccentColour());
+                    g.setColour(ActiveTheme::getAccentColour());
                     g.fillEllipse(8.0F, static_cast<float>(height) * 0.5F - dotR, dotR * 2.0F,
                                   dotR * 2.0F);
                 }
                 const bool rowMissing = integrityFor(r) == RowIntegrity::Missing;
                 if (rowMissing) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.55F));
+                    g.setColour(
+                        ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.55F));
                     g.setFont(font.italicised());
                 } else if (r.kind == "audio" && !r.tagged) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
                     g.setFont(font.italicised());
                 } else {
-                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
                 }
                 g.drawText(displayNameFor(r), cell.withTrimmedLeft(18).reduced(0, 2),
                            juce::Justification::centredLeft, true);
@@ -569,32 +570,32 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
                 } else {  // Missing
                     g.setColour(juce::Colour(0xFFD05A4A));
                     g.fillEllipse(rect);
-                    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE_HOVER));
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE_HOVER));
                     g.drawLine(cx - r2 * 0.6F, cy + r2 * 0.6F, cx + r2 * 0.6F, cy - r2 * 0.6F,
                                1.4F);
                 }
                 break;
             }
             case kColFamily:
-                drawPill(juce::String(r.family), DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY),
-                         true);
+                drawPill(juce::String(r.family),
+                         ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY), true);
                 break;
             case kColShape:
-                drawPill(juce::String(r.shape), DarkTheme::getColour(DarkTheme::TEXT_PRIMARY),
+                drawPill(juce::String(r.shape), ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY),
                          true);
                 break;
             case kColBpm:
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
                 g.drawText(prettyBpm(r.bpm), cell.reduced(6, 2), juce::Justification::centredRight,
                            true);
                 break;
             case kColKey:
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
                 g.drawText(prettyKey(r.keyRoot, r.keyScale), cell.reduced(6, 2),
                            juce::Justification::centredRight, true);
                 break;
             case kColDuration:
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
                 g.drawText(prettyDuration(r.durationS), cell.reduced(6, 2),
                            juce::Justification::centredRight, true);
                 break;
@@ -602,7 +603,7 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
                 // Comma-joined tag list, single-line, truncated at the cell
                 // edge. Hidden by default in the docked browser; visible in
                 // the pop-out window where there's more horizontal room.
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
                 juce::String joined;
                 for (const auto& t : r.tags) {
                     if (joined.isNotEmpty()) {
@@ -1028,10 +1029,10 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
 
     auto& header = resultsTable_.getHeader();
     header.setColour(juce::TableHeaderComponent::backgroundColourId,
-                     DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05F));
+                     ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05F));
     header.setColour(juce::TableHeaderComponent::textColourId,
-                     DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    header.setColour(juce::TableHeaderComponent::outlineColourId, DarkTheme::getBorderColour());
+                     ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    header.setColour(juce::TableHeaderComponent::outlineColourId, ActiveTheme::getBorderColour());
     // appearsOnColumnMenu — right-click the header to show/hide any column.
     // JUCE drives the visibility toggle itself once the flag is set.
     const int flags = juce::TableHeaderComponent::visible | juce::TableHeaderComponent::resizable |
@@ -1069,7 +1070,7 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     emptyState_.setFont(FontManager::getInstance().getUIFont(13.0F));
     emptyState_.setJustificationType(juce::Justification::centred);
     emptyState_.setColour(juce::Label::textColourId,
-                          DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                          ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     emptyState_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(emptyState_);
 
@@ -1092,7 +1093,7 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     pageLabel_.setFont(FontManager::getInstance().getUIFont(11.0F));
     pageLabel_.setJustificationType(juce::Justification::centred);
     pageLabel_.setColour(juce::Label::textColourId,
-                         DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                         ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     pageLabel_.setInterceptsMouseClicks(false, false);
     prevPageBtn_->setVisible(false);
     nextPageBtn_->setVisible(false);
@@ -1106,7 +1107,7 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     statusLabel_.setFont(FontManager::getInstance().getUIFont(10.0F));
     statusLabel_.setJustificationType(juce::Justification::centredLeft);
     statusLabel_.setColour(juce::Label::textColourId,
-                           DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                           ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     statusLabel_.setMinimumHorizontalScale(1.0F);  // truncate long paths, don't shrink the font
     statusLabel_.setInterceptsMouseClicks(false, false);
     statusLabel_.setVisible(false);
@@ -1150,39 +1151,42 @@ MediaDbBrowserContent::~MediaDbBrowserContent() {
 }
 
 void MediaDbBrowserContent::applyThemeColours() {
-    bpmLabel_.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    bpmLabel_.setColour(juce::Label::textColourId,
+                        ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
 
     for (auto* cb : {&familyFilter_, &shapeFilter_, &keyFilter_}) {
-        cb->setColour(juce::ComboBox::backgroundColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-        cb->setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-        cb->setColour(juce::ComboBox::outlineColourId, DarkTheme::getBorderColour());
+        cb->setColour(juce::ComboBox::backgroundColourId,
+                      ActiveTheme::getColour(ActiveTheme::SURFACE));
+        cb->setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
+        cb->setColour(juce::ComboBox::outlineColourId, ActiveTheme::getBorderColour());
     }
 
     const auto styleEditor = [](juce::TextEditor& e, const juce::String& placeholder) {
-        e.setTextToShowWhenEmpty(placeholder, DarkTheme::getSecondaryTextColour());
-        e.setColour(juce::TextEditor::backgroundColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-        e.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
-        e.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
+        e.setTextToShowWhenEmpty(placeholder, ActiveTheme::getSecondaryTextColour());
+        e.setColour(juce::TextEditor::backgroundColourId,
+                    ActiveTheme::getColour(ActiveTheme::SURFACE));
+        e.setColour(juce::TextEditor::textColourId, ActiveTheme::getTextColour());
+        e.setColour(juce::TextEditor::outlineColourId, ActiveTheme::getBorderColour());
     };
     styleEditor(bpmMinBox_, "min");
     styleEditor(bpmMaxBox_, "max");
     styleEditor(tagsFilter_, "tags (e.g. drum 808)");
 
     resultsTable_.setColour(juce::ListBox::backgroundColourId,
-                            DarkTheme::getColour(DarkTheme::BACKGROUND));
-    resultsTable_.setColour(juce::ListBox::outlineColourId, DarkTheme::getBorderColour());
+                            ActiveTheme::getColour(ActiveTheme::BACKGROUND));
+    resultsTable_.setColour(juce::ListBox::outlineColourId, ActiveTheme::getBorderColour());
 
     // The column-label header draws through the LookAndFeel with its own
     // colour ids; set them on the component (same pattern as the
     // TrackManager/ParameterConfig/PluginSettings tables).
     auto& header = resultsTable_.getHeader();
     header.setColour(juce::TableHeaderComponent::backgroundColourId,
-                     DarkTheme::getColour(DarkTheme::SURFACE));
-    header.setColour(juce::TableHeaderComponent::textColourId, DarkTheme::getTextColour());
+                     ActiveTheme::getColour(ActiveTheme::SURFACE));
+    header.setColour(juce::TableHeaderComponent::textColourId, ActiveTheme::getTextColour());
     header.setColour(juce::TableHeaderComponent::outlineColourId,
-                     DarkTheme::getColour(DarkTheme::SEPARATOR));
+                     ActiveTheme::getColour(ActiveTheme::SEPARATOR));
     header.setColour(juce::TableHeaderComponent::highlightColourId,
-                     DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+                     ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
 }
 
 void MediaDbBrowserContent::lookAndFeelChanged() {
@@ -1191,7 +1195,7 @@ void MediaDbBrowserContent::lookAndFeelChanged() {
 }
 
 void MediaDbBrowserContent::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::SURFACE));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::SURFACE));
 }
 
 void MediaDbBrowserContent::resized() {
@@ -2656,7 +2660,8 @@ void MediaDbBrowserContent::runIndexing(const juce::File& dir,
 class MediaDbBrowserContent::PopOutWindow : public juce::DocumentWindow {
   public:
     PopOutWindow()
-        : juce::DocumentWindow("MAGDA - Media Browser", DarkTheme::getColour(DarkTheme::BACKGROUND),
+        : juce::DocumentWindow("MAGDA - Media Browser",
+                               ActiveTheme::getColour(ActiveTheme::BACKGROUND),
                                juce::DocumentWindow::allButtons) {
         setUsingNativeTitleBar(true);
         setResizable(true, false);
@@ -2675,7 +2680,7 @@ class MediaDbBrowserContent::PopOutWindow : public juce::DocumentWindow {
     // window left open across a theme switch keeps the old palette.
     void lookAndFeelChanged() override {
         juce::DocumentWindow::lookAndFeelChanged();
-        setBackgroundColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+        setBackgroundColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     }
 
   private:

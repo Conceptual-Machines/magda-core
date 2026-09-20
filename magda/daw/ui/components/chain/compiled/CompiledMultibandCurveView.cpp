@@ -6,7 +6,7 @@
 #include "../../../utils/CurveLabelLayout.hpp"
 #include "audio/plugins/compiled/MagdaMultibandCompiledPlugin.hpp"
 #include "core/GestureRouter.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -689,20 +689,20 @@ void CompiledMultibandCurveView::mouseWheelMove(const juce::MouseEvent& e,
 
 void CompiledMultibandCurveView::paint(juce::Graphics& g) {
     const auto bounds = getLocalBounds();
-    g.fillAll(DarkTheme::getColour(DarkTheme::TEXT_DARK));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::TEXT_DARK));
 
     auto plot = bounds.toFloat().reduced(kPlotPadX, kPlotPadY);
     plotArea_ = plot;
     if (plot.getWidth() < 8.0f || plot.getHeight() < 8.0f)
         return;
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.45f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.45f));
     g.drawRect(plot, 1.0f);
 
     juce::Graphics::ScopedSaveState clipGuard(g);
     g.reduceClipRegion(plot.toNearestInt());
 
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0.06f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0.06f));
     for (float decade : {100.0f, 1000.0f, 10000.0f})
         g.drawVerticalLine(static_cast<int>(std::round(freqToX(decade))), plot.getY(),
                            plot.getBottom());
@@ -713,9 +713,9 @@ void CompiledMultibandCurveView::paint(juce::Graphics& g) {
     const float highX = freqToX(highXoHz_);
     const std::array<float, 4> bandEdges{{plot.getX(), lowX, highX, plot.getRight()}};
     const std::array<juce::Colour, 3> bandColours{{
-        DarkTheme::getColour(DarkTheme::MULTIBAND_LOW),
-        DarkTheme::getColour(DarkTheme::MULTIBAND_MID),
-        DarkTheme::getColour(DarkTheme::MULTIBAND_HIGH),
+        ActiveTheme::getColour(ActiveTheme::MULTIBAND_LOW),
+        ActiveTheme::getColour(ActiveTheme::MULTIBAND_MID),
+        ActiveTheme::getColour(ActiveTheme::MULTIBAND_HIGH),
     }};
     const std::array<juce::String, 3> bandNames{{"LOW", "MID", "HIGH"}};
     const std::array<Handle, 3> lowerThresholdHandles{
@@ -774,12 +774,12 @@ void CompiledMultibandCurveView::paint(juce::Graphics& g) {
         g.drawLine(x0 + 2.0f, yUpper, x1 - 2.0f, yUpper, upperHot ? 2.4f : 1.6f);
         g.drawLine(x0 + 2.0f, yLower, x1 - 2.0f, yLower, lowerHot ? 2.4f : 1.6f);
 
-        g.setColour(
-            DarkTheme::getColour(DarkTheme::MULTIBAND_LIMIT).withAlpha(limitHot ? 0.95f : 0.55f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::MULTIBAND_LIMIT)
+                        .withAlpha(limitHot ? 0.95f : 0.55f));
         g.drawLine(x0 + 2.0f, yLimit, x1 - 2.0f, yLimit, limitHot ? 2.0f : 1.1f);
 
         g.setFont(10.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0.34f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0.34f));
         g.drawText(
             bandNames[idx],
             juce::Rectangle<float>(x0 + 4.0f, plot.getY() + 3.0f, 38.0f, 12.0f).toNearestInt(),
@@ -867,16 +867,18 @@ void CompiledMultibandCurveView::paint(juce::Graphics& g) {
                 labelArea.setY(
                     juce::jlimit(plot.getY(), plot.getBottom() - labelArea.getHeight(), yLabel));
             }
-            g.setColour(
-                ((upperHot || lowerHot) ? colour : DarkTheme::getColour(DarkTheme::MULTIBAND_LIMIT))
-                    .withAlpha(0.95f));
+            g.setColour(((upperHot || lowerHot)
+                             ? colour
+                             : ActiveTheme::getColour(ActiveTheme::MULTIBAND_LIMIT))
+                            .withAlpha(0.95f));
             g.drawText(label, labelArea.toNearestInt(), juce::Justification::centred);
         }
     }
 
     auto drawXo = [&](float x, Handle h, float hz) {
         const bool active = hoveredHandle_ == h || draggedHandle_ == h;
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(active ? 0.95f : 0.5f));
+        g.setColour(
+            ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(active ? 0.95f : 0.5f));
         g.fillRect(juce::Rectangle<float>(x - (active ? 1.0f : 0.5f), plot.getY(),
                                           active ? 2.0f : 1.0f, plot.getHeight()));
         if (active) {
@@ -899,7 +901,7 @@ void CompiledMultibandCurveView::paint(juce::Graphics& g) {
 
     const bool collapsed = compiledPlugin_ != nullptr && compiledPlugin_->isCurveCollapsed();
     if (collapseButtonHovered_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0.08f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0.08f));
         g.fillRoundedRectangle(collapseButtonArea_, 3.0f);
     }
     const auto centre = collapseButtonArea_.getCentre();
@@ -914,7 +916,7 @@ void CompiledMultibandCurveView::paint(juce::Graphics& g) {
         chevron.lineTo(centre.x, centre.y + armLen * 0.5f);
         chevron.lineTo(centre.x + armLen, centre.y - armLen * 0.5f);
     }
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT)
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT)
                     .withAlpha(collapseButtonHovered_ ? 0.95f : 0.5f));
     g.strokePath(chevron, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved,
                                                juce::PathStrokeType::rounded));

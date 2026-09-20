@@ -7,7 +7,7 @@
 
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda {
 
@@ -789,7 +789,7 @@ void LFOCurveEditor::paint(juce::Graphics& g) {
     CurveEditorBase::paint(g);
 
     if (drawContentBorder_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_GUIDE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_GUIDE));
         g.drawRect(getContentBounds(), 1);
     }
 
@@ -860,7 +860,7 @@ void LFOCurveEditor::paintGrid(juce::Graphics& g) {
         int y = static_cast<int>(yToPixelF(value));
         // Center line is brighter
         bool isCenter = (i * 2 == gridDivisionsY_);
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT)
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT)
                         .withAlpha((isCenter ? 0x20 : 0x10) / 255.0f));
         g.drawHorizontalLine(y, 0.0f, width);
     }
@@ -871,7 +871,7 @@ void LFOCurveEditor::paintGrid(juce::Graphics& g) {
         double phase = static_cast<double>(i) / gridDivisionsX_;
         int x = static_cast<int>(xToPixelF(phase));
         bool isCenter = (i * 2 == gridDivisionsX_);
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT)
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT)
                         .withAlpha((isCenter ? 0x20 : 0x10) / 255.0f));
         g.drawVerticalLine(x, 0.0f, height);
     }
@@ -891,7 +891,7 @@ void LFOCurveEditor::paintLoopRegion(juce::Graphics& g) {
     auto loopEndX = static_cast<float>(xToPixelF(static_cast<double>(modInfo_->loopEnd)));
 
     // Shade areas outside the loop region
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DARK).withAlpha(0x30 / 255.0f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DARK).withAlpha(0x30 / 255.0f));
     if (loopStartX > content.getX()) {
         g.fillRect(juce::Rectangle<float>(
             static_cast<float>(content.getX()), static_cast<float>(content.getY()),

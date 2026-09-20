@@ -2,7 +2,7 @@
 
 #include <cmath>
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/LocalizedText.hpp"
 
@@ -176,16 +176,17 @@ void ValueLabelControl::showEditor(const juce::String& initialText) {
     editor_->selectAll();
     editor_->setJustification(justification_);
     editor_->setColour(juce::TextEditor::backgroundColourId,
-                       DarkTheme::getColour(DarkTheme::SURFACE));
-    editor_->setColour(juce::TextEditor::textColourId,
-                       customTextColour_.value_or(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY)));
+                       ActiveTheme::getColour(ActiveTheme::SURFACE));
+    editor_->setColour(
+        juce::TextEditor::textColourId,
+        customTextColour_.value_or(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY)));
     // Opens fully selected, so the accent covers the whole value at an opaque
     // strength and the text on it is on-accent content. A caller's custom text
     // colour is chosen against SURFACE and does not carry over.
     editor_->setColour(juce::TextEditor::highlightColourId,
-                       DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                       ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     editor_->setColour(juce::TextEditor::highlightedTextColourId,
-                       DarkTheme::getColour(DarkTheme::ICON_ON_ACCENT));
+                       ActiveTheme::getColour(ActiveTheme::ICON_ON_ACCENT));
     editor_->setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
     editor_->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
 
@@ -251,14 +252,14 @@ void ValueLabelControl::paint(juce::Graphics& g) {
     const float alpha = isEnabled() ? 1.0f : 0.4f;
 
     if (drawBackground_) {
-        g.setColour(customBackgroundColour_.value_or(DarkTheme::getColour(DarkTheme::SURFACE))
+        g.setColour(customBackgroundColour_.value_or(ActiveTheme::getColour(ActiveTheme::SURFACE))
                         .withMultipliedAlpha(alpha));
         g.fillRoundedRectangle(bounds, 2.0f);
     }
 
     if (showFillIndicator_) {
         auto fillBase =
-            customFillColour_.value_or(DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
+            customFillColour_.value_or(ActiveTheme::getColour(ActiveTheme::CONTROL_VALUE_FILL));
         g.setColour(fillBase.withMultipliedAlpha(alpha));
 
         if (fillMode_ == FillMode::PanCentre) {
@@ -294,8 +295,8 @@ void ValueLabelControl::paint(juce::Graphics& g) {
 
     const bool hasTint = tintState_ != TintState::None;
     const juce::Colour tintColour = tintState_ == TintState::Overridden
-                                        ? DarkTheme::getColour(DarkTheme::TEXT_DISABLED)
-                                        : DarkTheme::getColour(DarkTheme::ACCENT_MODULATION);
+                                        ? ActiveTheme::getColour(ActiveTheme::TEXT_DISABLED)
+                                        : ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION);
 
     if (hasTint) {
         // Automation highlight: a self-contained overlay (fill + outline) drawn
@@ -307,15 +308,15 @@ void ValueLabelControl::paint(juce::Graphics& g) {
         g.drawRoundedRectangle(bounds.reduced(0.5f), 2.0f, 1.5f);
     } else if (drawBorder_) {
         const juce::Colour borderColour = (dragging_ || coEditing_)
-                                              ? DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)
-                                              : DarkTheme::getColour(DarkTheme::BORDER);
+                                              ? ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)
+                                              : ActiveTheme::getColour(ActiveTheme::BORDER);
         g.setColour(borderColour.withMultipliedAlpha(alpha));
         g.drawRoundedRectangle(bounds.reduced(0.5f), 2.0f, 1.0f);
     }
 
     if (!editor_ && showText_) {
         const auto textColour =
-            customTextColour_.value_or(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY))
+            customTextColour_.value_or(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY))
                 .withMultipliedAlpha(alpha);
         g.setColour(textColour);
         g.setFont(font_);

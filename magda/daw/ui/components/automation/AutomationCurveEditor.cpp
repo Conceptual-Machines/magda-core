@@ -9,7 +9,7 @@
 #include "core/ParameterUtils.hpp"
 #include "core/RangesHelpers.hpp"
 #include "core/UndoManager.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda {
@@ -62,7 +62,7 @@ AutomationCurveEditor::AutomationCurveEditor(AutomationLaneId laneId) : laneId_(
 void AutomationCurveEditor::refreshCurveColour() {
     const auto* lane = AutomationManager::getInstance().getLane(laneId_);
     const bool disabled = lane && isAutomationPersistentlyDisabled(lane->authorityState);
-    setCurveColour(disabled ? DarkTheme::TEXT_DISABLED : DarkTheme::ACCENT_MODULATION);
+    setCurveColour(disabled ? ActiveTheme::TEXT_DISABLED : ActiveTheme::ACCENT_MODULATION);
 }
 
 AutomationCurveEditor::~AutomationCurveEditor() {
@@ -212,7 +212,7 @@ void AutomationCurveEditor::paintGrid(juce::Graphics& g) {
         if (res > 0.0 && res * pixelsPerBeat_ >= 4.0) {
             const double domainStart = pixelToX(0);
             const double domainEnd = pixelToX(getWidth());
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0x14 / 255.0f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0x14 / 255.0f));
             for (double beat = std::ceil(domainStart / res - 1.0e-9) * res; beat <= domainEnd;
                  beat += res) {
                 g.drawVerticalLine(xToPixel(beat), 0.0f, static_cast<float>(getHeight()));
@@ -280,7 +280,7 @@ void AutomationCurveEditor::paintGrid(juce::Graphics& g) {
             continue;
         int y = yToPixel(norm);
         bool isZeroLine = zeroNorm >= 0.0 && std::abs(norm - zeroNorm) < 0.002;
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT)
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT)
                         .withAlpha(isZeroLine ? 0x50 / 255.0f : 0x18 / 255.0f));
         g.drawHorizontalLine(y, 0.0f, width);
     }
@@ -314,7 +314,7 @@ void AutomationCurveEditor::paintClipBorders(juce::Graphics& g) {
     const int endX = xToPixel(clipOffset_ + span);
 
     // Same colour language as the piano roll's clip boundaries.
-    g.setColour(DarkTheme::getColour(DarkTheme::CLIP_BOUNDARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::CLIP_BOUNDARY));
     g.fillRect(startX, 0, 1, getHeight());
     g.fillRect(endX, 0, 1, getHeight());
 }
@@ -376,15 +376,16 @@ void AutomationCurveEditor::showPointValueEditor(uint32_t pointId) {
         valueEditor_->setSelectAllWhenFocused(true);
         valueEditor_->setFont(FontManager::getInstance().getUIFont(11.0f));
         valueEditor_->setColour(juce::TextEditor::backgroundColourId,
-                                DarkTheme::getColour(DarkTheme::INPUT_BACKGROUND));
-        valueEditor_->setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
+                                ActiveTheme::getColour(ActiveTheme::INPUT_BACKGROUND));
+        valueEditor_->setColour(juce::TextEditor::textColourId, ActiveTheme::getTextColour());
         valueEditor_->setColour(juce::TextEditor::outlineColourId,
-                                DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                                ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         valueEditor_->setColour(juce::TextEditor::focusedOutlineColourId,
-                                DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
-        valueEditor_->setColour(juce::CaretComponent::caretColourId, DarkTheme::getTextColour());
-        valueEditor_->setColour(juce::TextEditor::highlightColourId,
-                                DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.4f));
+                                ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+        valueEditor_->setColour(juce::CaretComponent::caretColourId, ActiveTheme::getTextColour());
+        valueEditor_->setColour(
+            juce::TextEditor::highlightColourId,
+            ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.4f));
         valueEditor_->onReturnKey = [this]() { commitPointValueEdit(); };
         valueEditor_->onEscapeKey = [this]() { hidePointValueEditor(); };
         valueEditor_->onFocusLost = [this]() { commitPointValueEdit(); };
@@ -476,7 +477,7 @@ void AutomationCurveEditor::paintOverChildren(juce::Graphics& g) {
             constexpr float dotRadius = dotSize / 2.0f;
             g.setColour(getCurveColour());
             g.fillEllipse(x - dotRadius, y - dotRadius, dotSize, dotSize);
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT));
             g.drawEllipse(x - dotRadius, y - dotRadius, dotSize, dotSize, 1.5f);
         }
     }
@@ -500,7 +501,8 @@ void AutomationCurveEditor::paintOverrideOverlay(juce::Graphics& g) {
         return;
 
     const int y = yToPixel(*currentValue);
-    const auto overlayColour = DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).withAlpha(0.65f);
+    const auto overlayColour =
+        ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).withAlpha(0.65f);
 
     g.setColour(overlayColour.withAlpha(0.12f));
     g.fillRect(content.withY(y - 2).withHeight(4));
@@ -518,7 +520,7 @@ void AutomationCurveEditor::paintOverrideOverlay(juce::Graphics& g) {
     const int ty = juce::jlimit(content.getY(), content.getBottom() - textH, y - textH - 4);
     auto labelRect = juce::Rectangle<int>(tx, ty, textW, textH);
 
-    g.setColour(DarkTheme::getColour(DarkTheme::TOOLTIP_BACKGROUND).withAlpha(0xDD / 255.0f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TOOLTIP_BACKGROUND).withAlpha(0xDD / 255.0f));
     g.fillRoundedRectangle(labelRect.toFloat(), 3.0f);
     g.setColour(overlayColour.brighter(0.2f));
     g.drawRoundedRectangle(labelRect.toFloat(), 3.0f, 1.0f);

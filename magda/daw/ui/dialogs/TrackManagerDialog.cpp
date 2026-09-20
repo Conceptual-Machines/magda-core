@@ -1,6 +1,6 @@
 #include "TrackManagerDialog.hpp"
 
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "core/StringTable.hpp"
 #include "core/TechnicalText.hpp"
 
@@ -21,7 +21,7 @@ class TrackManagerDialog::ContentComponent : public juce::Component,
         // Table setup
         table_.setModel(this);
         table_.setColour(juce::ListBox::backgroundColourId,
-                         DarkTheme::getColour(DarkTheme::SURFACE));
+                         ActiveTheme::getColour(ActiveTheme::SURFACE));
         table_.setRowHeight(26);
         table_.setHeaderHeight(28);
 
@@ -37,16 +37,16 @@ class TrackManagerDialog::ContentComponent : public juce::Component,
 
         // Style the header
         header.setColour(juce::TableHeaderComponent::backgroundColourId,
-                         DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+                         ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
         header.setColour(juce::TableHeaderComponent::textColourId,
-                         DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                         ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
 
         addAndMakeVisible(table_);
 
         // Info label
         infoLabel_.setText(tr("track_manager.label.hint"), juce::dontSendNotification);
         infoLabel_.setColour(juce::Label::textColourId,
-                             DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                             ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         infoLabel_.setJustificationType(juce::Justification::centred);
         addAndMakeVisible(infoLabel_);
 
@@ -62,7 +62,7 @@ class TrackManagerDialog::ContentComponent : public juce::Component,
     }
 
     void paint(juce::Graphics& g) override {
-        g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+        g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
     }
 
     void resized() override {
@@ -85,9 +85,9 @@ class TrackManagerDialog::ContentComponent : public juce::Component,
     void paintRowBackground(juce::Graphics& g, int rowNumber, int /*width*/, int /*height*/,
                             bool rowIsSelected) override {
         if (rowIsSelected) {
-            g.fillAll(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+            g.fillAll(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
         } else if (rowNumber % 2 == 0) {
-            g.fillAll(DarkTheme::getColour(DarkTheme::SURFACE).darker(0.05f));
+            g.fillAll(ActiveTheme::getColour(ActiveTheme::SURFACE).darker(0.05f));
         }
     }
 
@@ -102,7 +102,7 @@ class TrackManagerDialog::ContentComponent : public juce::Component,
         if (row.isMaster) {
             if (columnId == TrackName) {
                 // Draw master track name with special styling
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
                 g.drawText(magda::technicalText(magda::TechnicalTextToken::Master), 5, 0,
                            width - 10, height, juce::Justification::centredLeft);
             } else {
@@ -123,7 +123,7 @@ class TrackManagerDialog::ContentComponent : public juce::Component,
 
         if (columnId == TrackName) {
             // Draw track name with indentation for hierarchy
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
             int indent = row.depth * 20;
             juce::String displayName = track->name;
 
@@ -147,16 +147,16 @@ class TrackManagerDialog::ContentComponent : public juce::Component,
         auto checkBounds = juce::Rectangle<int>((width - 16) / 2, (height - 16) / 2, 16, 16);
 
         // Checkbox border
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRect(checkBounds, 1);
 
         // Checked state
         if (isChecked) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
             g.fillRect(checkBounds.reduced(3));
 
             // Draw checkmark
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
             juce::Path checkPath;
             float cx = checkBounds.getCentreX();
             float cy = checkBounds.getCentreY();
@@ -264,8 +264,8 @@ class TrackManagerDialog::ContentComponent : public juce::Component,
 // ============================================================================
 
 TrackManagerDialog::TrackManagerDialog()
-    : DialogWindow(tr("dialogs.track_manager"), DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND),
-                   true) {
+    : DialogWindow(tr("dialogs.track_manager"),
+                   ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND), true) {
     content_ = std::make_unique<ContentComponent>();
     setContentOwned(content_.release(), true);
     centreWithSize(500, 400);

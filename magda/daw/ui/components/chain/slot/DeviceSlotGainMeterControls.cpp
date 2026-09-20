@@ -7,7 +7,7 @@
 #include "layout/NodeHeaderStyles.hpp"
 #include "ui/components/mixer/LevelMeter.hpp"
 #include "ui/components/mixer/LevelMeterScale.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -19,7 +19,7 @@ void setupDeviceSlotGainMeterControls(
     gainLabel.setRange(-60.0, 12.0, 0.0);
     gainLabel.setValue(device.gainDb, juce::dontSendNotification);
     gainLabel.setFontSize(10.0f);
-    gainLabel.setFillColour(DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
+    gainLabel.setFillColour(ActiveTheme::getColour(ActiveTheme::CONTROL_VALUE_FILL));
     gainLabel.setFillProportionMapper(magda::level_meter_scale::dbFillProportion);
     gainLabel.onValueChange = [&gainLabel, getNodePath]() {
         const auto nodePath = getNodePath();

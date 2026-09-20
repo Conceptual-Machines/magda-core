@@ -4,7 +4,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaPhaserCompiledPlugin.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -243,7 +243,7 @@ void CompiledPhaserCurveView::mouseUp(const juce::MouseEvent& e) {
 
 void CompiledPhaserCurveView::paint(juce::Graphics& g) {
     const auto bounds = getLocalBounds();
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).darker(0.06f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).darker(0.06f));
     g.fillRect(bounds);
 
     auto plot = bounds.toFloat().reduced(kPlotPadX, kPlotPadY);
@@ -251,20 +251,20 @@ void CompiledPhaserCurveView::paint(juce::Graphics& g) {
     if (plot.getWidth() < 8.0f || plot.getHeight() < 8.0f)
         return;
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.55f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.55f));
     g.drawRect(plot, 1.0f);
 
     juce::Graphics::ScopedSaveState clipGuard(g);
     g.reduceClipRegion(plot.toNearestInt());
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.18f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.18f));
     for (float decade : {100.0f, 1000.0f, 10000.0f}) {
         const float x = freqToX(decade);
         g.drawVerticalLine(static_cast<int>(std::round(x)), plot.getY(), plot.getBottom());
     }
 
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY_SOFT);
-    const auto sweepColour = DarkTheme::getColour(DarkTheme::ACCENT_MODULATION);
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY_SOFT);
+    const auto sweepColour = ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION);
     const float minX = freqToX(minHz_);
     const float maxX = freqToX(maxHz_);
     const float sweepLeft = std::min(minX, maxX);
@@ -328,7 +328,7 @@ void CompiledPhaserCurveView::paint(juce::Graphics& g) {
     auto drawHandle = [&](float x, Handle handle) {
         const bool active = handle == hoveredHandle_ || handle == draggedHandle_;
         g.setColour(
-            DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(active ? 0.95f : 0.62f));
+            ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(active ? 0.95f : 0.62f));
         const float thickness = active ? 2.0f : 1.0f;
         g.fillRect(
             juce::Rectangle<float>(x - thickness * 0.5f, plot.getY(), thickness, plot.getHeight()));
@@ -341,7 +341,7 @@ void CompiledPhaserCurveView::paint(juce::Graphics& g) {
             return;
         const auto text = hz >= 1000.0f ? juce::String(hz / 1000.0f, 2) + " kHz"
                                         : juce::String(static_cast<int>(std::round(hz))) + " Hz";
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         g.setFont(11.0f);
         const int textW = 64;
         const int textH = 14;

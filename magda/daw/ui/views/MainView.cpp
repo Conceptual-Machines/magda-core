@@ -16,7 +16,7 @@
 #include "../components/mixer/LevelMeter.hpp"
 #include "../components/mixer/LevelMeterScale.hpp"
 #include "../components/navigation/SongNavigatorPanel.hpp"
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "Config.hpp"
 #include "audio/TrackMeters.hpp"
@@ -382,10 +382,10 @@ void MainView::setupComponents() {
                                     const char* svgData, size_t svgSize) {
         btn = std::make_unique<SvgButton>(name, svgData, svgSize);
         btn->setOriginalColor(juce::Colour(0xFFB3B3B3));
-        btn->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        btn->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
-        btn->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+        btn->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        btn->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+        btn->setPressedColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+        btn->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
         btn->setBorderThickness(1.0f);
         btn->setWantsKeyboardFocus(false);
         addAndMakeVisible(*btn);
@@ -460,17 +460,17 @@ void MainView::setupComponents() {
         trackHeadersPanel->toggleIORouting();
         // Update button appearance to reflect state
         if (trackHeadersPanel->isIORoutingVisible()) {
-            ioToggleButton->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+            ioToggleButton->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         } else {
             ioToggleButton->setNormalColor(
-                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.3f));
+                ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.3f));
         }
         updateContentSizes();
     };
     ioToggleButton->setTooltip("Toggle I/O routing");
     if (!trackHeadersPanel->isIORoutingVisible()) {
         ioToggleButton->setNormalColor(
-            DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.3f));
+            ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.3f));
     }
 
     setupCornerButton(addTrackButton, "AddTrack", BinaryData::add_svg, BinaryData::add_svgSize);
@@ -498,14 +498,14 @@ void MainView::setupComponents() {
                       BinaryData::horizontal_svgSize);
     hAxisIcon->setInterceptsMouseClicks(false, false);
     // Faint watermark rather than a solid grey glyph.
-    hAxisIcon->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.28f));
-    hAxisIcon->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.28f));
+    hAxisIcon->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.28f));
+    hAxisIcon->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.28f));
     hAxisIcon->setBorderThickness(0.0f);
 
     setupCornerButton(vAxisIcon, "VAxis", BinaryData::vertical_svg, BinaryData::vertical_svgSize);
     vAxisIcon->setInterceptsMouseClicks(false, false);
-    vAxisIcon->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.28f));
-    vAxisIcon->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.28f));
+    vAxisIcon->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.28f));
+    vAxisIcon->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.28f));
     vAxisIcon->setBorderThickness(0.0f);
 
     // Set up scroll synchronization
@@ -899,27 +899,27 @@ void MainView::viewModeChanged(ViewMode mode, const AudioEngineProfile& /*profil
 }
 
 void MainView::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
 
     // Draw top border for visual separation from transport above
-    g.setColour(DarkTheme::getBorderColour());
+    g.setColour(ActiveTheme::getBorderColour());
     g.fillRect(0, 0, getWidth(), 1);
 
     // Draw corner toolbar separator lines
     if (!markerLaneSeparatorLine.isEmpty()) {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.fillRect(markerLaneSeparatorLine);
     }
     if (!cornerSeparatorLine.isEmpty()) {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.fillRect(cornerSeparatorLine);
     }
     if (!cornerBottomBorderLine.isEmpty()) {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.fillRect(cornerBottomBorderLine);
     }
     if (!markerCornerRightBorderLine.isEmpty()) {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.fillRect(markerCornerRightBorderLine);
     }
 
@@ -929,9 +929,9 @@ void MainView::paint(juce::Graphics& g) {
     auto headerArea = headerColumn.removeFrom(contentArea, trackHeaderWidth);
     headerColumn.removeSpacing(contentArea, LayoutConfig::getInstance().componentSpacing);
 
-    g.setColour(DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND));
     g.fillRect(contentArea);
-    g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
     g.fillRect(headerArea);
 
     // Draw resize handles
@@ -1722,7 +1722,7 @@ void MainView::PlayheadComponent::paint(juce::Graphics& g) {
                 std::abs(editX - handleX(state.selection.endBeats)) <= 5)
                 triAlpha = 0.55f;
         }
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(triAlpha));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(triAlpha));
         // Fill the playhead row: top edge at y0, tip at the row bottom.
         const auto ph = static_cast<float>(LayoutConfig::getInstance().playheadRowHeight);
         juce::Path triangle;
@@ -1735,7 +1735,7 @@ void MainView::PlayheadComponent::paint(juce::Graphics& g) {
         playX < getWidth()) {
         // Draw thin vertical line extending the full track area, starting at the
         // top of the track content (just below the playhead/triangle row).
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.85f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.85f));
         const auto lineTop = static_cast<float>(LayoutConfig::getInstance().playheadRowHeight);
         g.drawLine(static_cast<float>(playX), lineTop, static_cast<float>(playX),
                    static_cast<float>(getHeight()), 1.5f);
@@ -1943,9 +1943,9 @@ void MainView::paintResizeHandle(juce::Graphics& g) {
 
     // Draw subtle resize handle with hover effect
     if (isHovered || isResizingHeaders) {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).brighter(0.3f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).brighter(0.3f));
     } else {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     }
 
     // Draw a thinner visual line in the center
@@ -1954,7 +1954,7 @@ void MainView::paintResizeHandle(juce::Graphics& g) {
 
     // Draw a subtle highlight line when hovered or resizing
     if (isHovered || isResizingHeaders) {
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.4f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.4f));
         g.fillRect(centerX, handleArea.getY() + 4, 1, handleArea.getHeight() - 8);
     }
 }
@@ -1984,9 +1984,9 @@ void MainView::paintMasterResizeHandle(juce::Graphics& g) {
 
     // Draw subtle resize handle with hover effect
     if (isHovered || isResizingMasterStrip) {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).brighter(0.3f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).brighter(0.3f));
     } else {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     }
 
     // Draw a horizontal line
@@ -1995,7 +1995,7 @@ void MainView::paintMasterResizeHandle(juce::Graphics& g) {
 
     // Draw a subtle highlight line when hovered or resizing
     if (isHovered || isResizingMasterStrip) {
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.4f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.4f));
         g.fillRect(handleArea.getX() + 4, centerY, handleArea.getWidth() - 8, 1);
     }
 }
@@ -2306,7 +2306,7 @@ void MainView::SelectionOverlayComponent::drawTimeSelection(juce::Graphics& g) {
     // Crisp accent-blue edges at the selection's vertical boundaries, matching
     // the blue range strip in the ruler and keeping the selection distinct from
     // the near-white playhead.
-    const auto edgeColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.9f);
+    const auto edgeColour = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.9f);
     g.setColour(edgeColour);
     for (const auto& r : litRects) {
         g.fillRect(r.getX(), r.getY(), 1, r.getHeight());
@@ -2349,7 +2349,7 @@ void MainView::SelectionOverlayComponent::drawLoopRegion(juce::Graphics& g) {
 
     // Use different colors based on enabled state
     bool enabled = state.loop.enabled;
-    juce::Colour regionColour = enabled ? DarkTheme::getColour(DarkTheme::LOOP_REGION)
+    juce::Colour regionColour = enabled ? ActiveTheme::getColour(ActiveTheme::LOOP_REGION)
                                         : juce::Colour(0x15808080);  // Light grey, very transparent
 
     // Draw the semi-transparent loop region fill only. The loop range is marked
@@ -2467,12 +2467,13 @@ void MainView::MasterHeaderPanel::setupControls() {
                                     BinaryData::automation_master_header_svgSize);
     automationButton->setTooltip(tr("tracks.automation"));
     automationButton->setColour(juce::TextButton::buttonColourId,
-                                DarkTheme::getColour(DarkTheme::SURFACE));
+                                ActiveTheme::getColour(ActiveTheme::SURFACE));
     automationButton->setColour(juce::TextButton::buttonOnColourId,
-                                DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
-    automationButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    automationButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    automationButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+                                ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+    automationButton->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    automationButton->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+    automationButton->setActiveBackgroundColor(
+        ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
     automationButton->setIconPadding(2.5f);
     automationButton->onClick = [this]() {
         // Alt/Option-click toggles global show/hide of all automation lanes.
@@ -2490,9 +2491,9 @@ void MainView::MasterHeaderPanel::setupControls() {
     hideButton->setTooltip("Hide master track");
     hideButton->setOriginalColor(juce::Colour(0xFFB3B3B3));
     hideButton->setNormalColor(juce::Colour(0xFFB3B3B3));
-    hideButton->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    hideButton->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
-    hideButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    hideButton->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+    hideButton->setPressedColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+    hideButton->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     hideButton->setBorderThickness(1.0f);
     hideButton->onClick = []() {
         TrackManager::getInstance().setMasterVisible(
@@ -2520,7 +2521,7 @@ void MainView::MasterHeaderPanel::setupControls() {
     peakValueLabel->setJustificationType(juce::Justification::centredLeft);
     peakValueLabel->setFont(FontManager::getInstance().getMonoFont(9.0f));
     peakValueLabel->setColour(juce::Label::textColourId,
-                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                              ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     peakValueLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     peakValueLabel->setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
     peakValueLabel->setTooltip("Click to reset peak");
@@ -2535,16 +2536,16 @@ void MainView::MasterHeaderPanel::setupControls() {
 
 void MainView::MasterHeaderPanel::paint(juce::Graphics& g) {
     // Background
-    g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
 
     // Border
     auto bounds = getLocalBounds();
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(bounds, 1);
 
     // "Master" label at top
     auto labelArea = bounds.reduced(6, 2).removeFromTop(14);
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     g.setFont(FontManager::getInstance().getUIFont(11.0f));
     g.drawText(magda::technicalText(magda::TechnicalTextToken::Master), labelArea,
                juce::Justification::centredLeft);
@@ -2660,14 +2661,14 @@ MainView::MasterContentPanel::MasterContentPanel() = default;
 
 void MainView::MasterContentPanel::paint(juce::Graphics& g) {
     // Background matching track content area
-    g.fillAll(DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND));
 
     // Border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(getLocalBounds(), 1);
 
     // Draw a subtle indicator that this is the master output area
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.3f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.3f));
     g.setFont(FontManager::getInstance().getUIFont(11.0f));
     g.drawText(tr("common.master_output"), getLocalBounds(), juce::Justification::centred);
 }
@@ -2802,7 +2803,7 @@ void MainView::AuxHeadersPanel::rebuildAuxRows() {
         juce::String auxName = "Aux " + juce::String(track.auxBusIndex + 1);
         row->nameLabel = std::make_unique<juce::Label>("auxName", auxName);
         row->nameLabel->setColour(juce::Label::textColourId,
-                                  DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                                  ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         row->nameLabel->setFont(FontManager::getInstance().getUIFont(11.0f));
         addAndMakeVisible(*row->nameLabel);
 
@@ -2839,13 +2840,13 @@ void MainView::AuxHeadersPanel::rebuildAuxRows() {
             juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
             juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
         row->muteButton->setColour(juce::TextButton::buttonColourId,
-                                   DarkTheme::getColour(DarkTheme::SURFACE));
+                                   ActiveTheme::getColour(ActiveTheme::SURFACE));
         row->muteButton->setColour(juce::TextButton::buttonOnColourId,
-                                   DarkTheme::getColour(DarkTheme::STATUS_WARNING));
+                                   ActiveTheme::getColour(ActiveTheme::STATUS_WARNING));
         row->muteButton->setColour(juce::TextButton::textColourOffId,
-                                   DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                                   ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         row->muteButton->setColour(juce::TextButton::textColourOnId,
-                                   DarkTheme::getColour(DarkTheme::BACKGROUND));
+                                   ActiveTheme::getColour(ActiveTheme::BACKGROUND));
         row->muteButton->setClickingTogglesState(true);
         row->muteButton->setToggleState(track.muted, juce::dontSendNotification);
         auto* muteBtnPtr = row->muteButton.get();
@@ -2861,13 +2862,13 @@ void MainView::AuxHeadersPanel::rebuildAuxRows() {
             juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
             juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
         row->soloButton->setColour(juce::TextButton::buttonColourId,
-                                   DarkTheme::getColour(DarkTheme::SURFACE));
+                                   ActiveTheme::getColour(ActiveTheme::SURFACE));
         row->soloButton->setColour(juce::TextButton::buttonOnColourId,
-                                   DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+                                   ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
         row->soloButton->setColour(juce::TextButton::textColourOffId,
-                                   DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                                   ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         row->soloButton->setColour(juce::TextButton::textColourOnId,
-                                   DarkTheme::getColour(DarkTheme::BACKGROUND));
+                                   ActiveTheme::getColour(ActiveTheme::BACKGROUND));
         row->soloButton->setClickingTogglesState(true);
         row->soloButton->setToggleState(track.soloed, juce::dontSendNotification);
         auto* soloBtnPtr = row->soloButton.get();
@@ -2886,11 +2887,11 @@ void MainView::AuxHeadersPanel::rebuildAuxRows() {
 
 void MainView::AuxHeadersPanel::paint(juce::Graphics& g) {
     // Slightly different background to distinguish from regular tracks
-    g.fillAll(DarkTheme::getColour(DarkTheme::SURFACE).darker(0.1f));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::SURFACE).darker(0.1f));
 
     // Draw borders between rows
     int rowHeight = getHeight() / juce::jmax(1, static_cast<int>(auxRows_.size()));
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(getLocalBounds(), 1);
 
     for (size_t i = 1; i < auxRows_.size(); ++i) {
@@ -2959,10 +2960,10 @@ void MainView::AuxHeadersPanel::updateMetering(AudioEngine* engine) {
 
 void MainView::AuxContentPanel::paint(juce::Graphics& g) {
     // Background matching track content but slightly different to distinguish aux
-    g.fillAll(DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND).darker(0.05f));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND).darker(0.05f));
 
     // Border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(getLocalBounds(), 1);
 
     if (auxTrackCount_ > 0) {

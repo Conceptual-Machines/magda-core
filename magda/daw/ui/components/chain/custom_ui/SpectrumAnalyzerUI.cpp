@@ -14,7 +14,7 @@
 #include "core/TrackMeasurementManager.hpp"
 #include "ui/components/chain/layout/NodeHeaderStyles.hpp"
 #include "ui/components/common/SvgButton.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallComboBoxLookAndFeel.hpp"
 
@@ -66,16 +66,16 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
     auto styleLabel = [this](juce::Label& l, const juce::String& text) {
         l.setText(text, juce::dontSendNotification);
         l.setFont(FontManager::getInstance().getUIFont(10.0f));
-        l.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        l.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
         l.setJustificationType(juce::Justification::centredRight);
         addAndMakeVisible(l);
     };
     auto styleCombo = [this](juce::ComboBox& c) {
         c.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
         c.setColour(juce::ComboBox::backgroundColourId,
-                    DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
-        c.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-        c.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+                    ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.1f));
+        c.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
+        c.setColour(juce::ComboBox::outlineColourId, ActiveTheme::getColour(ActiveTheme::BORDER));
         addAndMakeVisible(c);
     };
 
@@ -140,7 +140,7 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
     // shade the clashing frequency zones. Top row, full-editor / pop-out only.
     overlayLabel_.setText("Overlay", juce::dontSendNotification);
     overlayLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
-    overlayLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    overlayLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     overlayLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(overlayLabel_);
     overlayCombo_.addItem("Off", 1);
@@ -158,7 +158,7 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
     popoutButton_ = std::make_unique<magda::SvgButton>("Pop out", BinaryData::open_in_new_svg,
                                                        BinaryData::open_in_new_svgSize);
     daw::ui::node_header::applyHeaderIconStyle(*popoutButton_,
-                                               DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                                               ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     popoutButton_->onClick = [this] { openPopout(); };
     addChildComponent(*popoutButton_);  // shown only in compact mode
 
@@ -180,18 +180,19 @@ SpectrumAnalyzerUI::~SpectrumAnalyzerUI() {
 void SpectrumAnalyzerUI::lookAndFeelChanged() {
     // Re-apply cached theme colours after a live theme switch.
     for (auto* label : {&fftLabel_, &slopeLabel_, &speedLabel_, &colourLabel_, &overlayLabel_})
-        label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
 
     for (auto* combo : {&fftCombo_, &slopeCombo_, &speedCombo_, &colourCombo_, &overlayCombo_}) {
         combo->setColour(juce::ComboBox::backgroundColourId,
-                         DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
-        combo->setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-        combo->setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+                         ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.1f));
+        combo->setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
+        combo->setColour(juce::ComboBox::outlineColourId,
+                         ActiveTheme::getColour(ActiveTheme::BORDER));
     }
 
     if (popoutButton_)
-        daw::ui::node_header::applyHeaderIconStyle(*popoutButton_,
-                                                   DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        daw::ui::node_header::applyHeaderIconStyle(
+            *popoutButton_, ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
 
     repaint();
 }
@@ -679,10 +680,10 @@ juce::Rectangle<float> SpectrumAnalyzerUI::plotArea() const {
 void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
     const auto plot = plotArea();
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     g.fillRoundedRectangle(plot, 4.0f);
 
-    g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::GRID_LINE));
     for (float f : {100.0f, 1000.0f, 10000.0f})
         g.drawVerticalLine(static_cast<int>(freqToX(f, plot)), plot.getY(), plot.getBottom());
 
@@ -690,10 +691,10 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
     g.setFont(FontManager::getInstance().getUIFont(9.0f));
     for (float db = kMaxDb; db >= kMinDb; db -= 20.0f) {
         const float y = dbToY(db, plot);
-        g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::GRID_LINE));
         g.drawHorizontalLine(static_cast<int>(y), plot.getX(), plot.getRight());
         if (!compact_) {
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
             const float ly = (db >= kMaxDb - 0.01f) ? y + 1.0f : y - 11.0f;
             g.drawText(juce::String(static_cast<int>(db)),
                        juce::Rectangle<float>(plot.getX() + 2.0f, ly, 30.0f, 11.0f),
@@ -704,7 +705,7 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
     // Frequency axis labels along the bottom of the plot.
     if (!compact_) {
         g.setFont(FontManager::getInstance().getUIFont(9.0f));
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         auto freqLabel = [&](float f, const juce::String& s) {
             const float x = freqToX(f, plot);
             g.drawText(s, juce::Rectangle<float>(x - 18.0f, plot.getBottom() - 13.0f, 36.0f, 12.0f),
@@ -723,7 +724,7 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
         // Clash zones first, so the spectrum traces sit on top of the shading.
         // Kept faint (a tint, not a block) so it marks the region without burying
         // the traces; severity nudges the opacity within a narrow range.
-        const auto clash = DarkTheme::getColour(DarkTheme::MIDI_LEARN);
+        const auto clash = ActiveTheme::getColour(ActiveTheme::MIDI_LEARN);
         for (const auto& f : maskingFindings_) {
             const float x0 = freqToX(f.loHz, plot);
             const float x1 = freqToX(f.hiHz, plot);
@@ -751,7 +752,7 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
                     op.lineTo(x, y);
                 }
             }
-            g.setColour(DarkTheme::getColour(DarkTheme::SPECTRUM_OVERLAY).withAlpha(0.7f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::SPECTRUM_OVERLAY).withAlpha(0.7f));
             g.strokePath(op, juce::PathStrokeType(1.5f));
         }
     }
@@ -763,14 +764,14 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
         auto strip = getLocalBounds();
         strip.removeFromBottom(expandedControlsHeight());
         strip = strip.removeFromBottom(kChevronStripH);
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
         g.fillRect(strip);
-        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
         g.drawHorizontalLine(strip.getY(), static_cast<float>(strip.getX()),
                              static_cast<float>(strip.getRight()));
         // Chevron points down to open (controls below) and up to collapse.
         drawAnalyzerExpandChevron(g, chevronRect_, controlsExpanded_,
-                                  DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                                  ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         // Pop-out is the SvgButton (open_in_new) positioned in the strip.
     };
 
@@ -814,9 +815,9 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
         const int bin = juce::jlimit(1, numBins_ - 1, juce::roundToInt(freq / binHz));
         const float db = smoothedDb_[static_cast<size_t>(bin)];
 
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM).withAlpha(0.6f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM).withAlpha(0.6f));
         g.drawVerticalLine(static_cast<int>(mx), plot.getY(), plot.getBottom());
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_INFO));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_INFO));
         g.fillEllipse(mx - 2.5f, dbToY(db, plot) - 2.5f, 5.0f, 5.0f);
 
         const juce::String fTxt =
@@ -824,10 +825,10 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
                             : juce::String(juce::roundToInt(freq)) + " Hz";
         const juce::String txt = fTxt + "   " + juce::String(db, 1) + " dB";
         auto box = plot.reduced(6.0f, 4.0f).removeFromTop(14.0f).withWidth(150.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).withAlpha(0.75f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).withAlpha(0.75f));
         g.fillRect(box);
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         g.drawText(txt, box, juce::Justification::centredLeft);
     }
 

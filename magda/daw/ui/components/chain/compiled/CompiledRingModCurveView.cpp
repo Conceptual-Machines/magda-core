@@ -4,7 +4,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaRingModCompiledPlugin.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -166,20 +166,20 @@ void CompiledRingModCurveView::resampleFromPlugin() {
 
 void CompiledRingModCurveView::paint(juce::Graphics& g) {
     const auto bounds = getLocalBounds();
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).darker(0.06f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).darker(0.06f));
     g.fillRect(bounds);
 
     auto plot = bounds.toFloat().reduced(kPlotPadX, kPlotPadY);
     if (plot.getWidth() < 8.0f || plot.getHeight() < 8.0f)
         return;
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.55f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.55f));
     g.drawRect(plot, 1.0f);
 
     juce::Graphics::ScopedSaveState clipGuard(g);
     g.reduceClipRegion(plot.toNearestInt());
 
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_MODULATION);
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION);
 
     // Split: thin top strip (spectrum) + main waveform area below. Waveform
     // fills the full horizontal width.
@@ -201,7 +201,7 @@ void CompiledRingModCurveView::paint(juce::Graphics& g) {
                                               spectrumStrip.getHeight()));
 
             // Decade ticks.
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.25f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.25f));
             for (float decade : {100.0f, 1000.0f, 10000.0f}) {
                 const float x = freqToX(decade, spectrumStrip);
                 g.drawVerticalLine(static_cast<int>(std::round(x)), spectrumStrip.getY(),
@@ -220,7 +220,7 @@ void CompiledRingModCurveView::paint(juce::Graphics& g) {
                 freqDisp >= 1000.0f ? juce::String(freqDisp / 1000.0f, 2) + " kHz"
                                     : juce::String(freqDisp, freqDisp >= 100.0f ? 0 : 1) + " Hz";
             g.setFont(11.0f);
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.85f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.85f));
             g.drawText(freqLabel,
                        juce::Rectangle<float>(spectrumStrip.getX() + 4.0f, spectrumStrip.getY(),
                                               90.0f, spectrumStrip.getHeight())
@@ -228,7 +228,7 @@ void CompiledRingModCurveView::paint(juce::Graphics& g) {
                        juce::Justification::centredLeft);
 
             const char* shapeLabel = shape_ == 1 ? "TRI" : shape_ == 2 ? "SQR" : "SIN";
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.6f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.6f));
             g.drawText(shapeLabel,
                        juce::Rectangle<float>(spectrumStrip.getRight() - 60.0f,
                                               spectrumStrip.getY(), 54.0f,
@@ -238,7 +238,7 @@ void CompiledRingModCurveView::paint(juce::Graphics& g) {
         } else {
             // Sidechain mode: the oscillator settings don't apply. Just say so.
             g.setFont(11.0f);
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.85f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.85f));
             g.drawText("CARRIER: SIDECHAIN", spectrumStrip.toNearestInt(),
                        juce::Justification::centred);
         }
@@ -249,14 +249,14 @@ void CompiledRingModCurveView::paint(juce::Graphics& g) {
         return;
 
     const float midY = plot.getCentreY();
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.30f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.30f));
     g.drawHorizontalLine(static_cast<int>(std::round(midY)), plot.getX(), plot.getRight());
 
     if (sidechainMode) {
         // No waveform to preview — the carrier IS the host-routed audio bus.
         // Just show a centred label so the panel doesn't read as "broken".
         g.setFont(13.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.55f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.55f));
         g.drawText(juce::String::fromUTF8("CARRIER \xe2\x86\x90 SIDECHAIN INPUT"),
                    plot.withSizeKeepingCentre(plot.getWidth(), 20.0f).toNearestInt(),
                    juce::Justification::centred);

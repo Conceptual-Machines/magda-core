@@ -13,7 +13,7 @@
 #include "core/AutomationManager.hpp"
 #include "core/ParameterInfo.hpp"
 #include "core/ParameterUtils.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -38,8 +38,8 @@ class TextSlider : public juce::Component,
 
     TextSlider(Format format = Format::Decimal) : format_(format) {
         valueControl_.setFont(FontManager::getInstance().getUIFont(12.0f));
-        textColourRole_ = DarkTheme::TEXT_PRIMARY;
-        valueControl_.setTextColour(DarkTheme::getTextColour());
+        textColourRole_ = ActiveTheme::TEXT_PRIMARY;
+        valueControl_.setTextColour(ActiveTheme::getTextColour());
         valueControl_.setJustification(juce::Justification::centred);
         valueControl_.onMouseDown = [this](const juce::MouseEvent& e) { mouseDown(e); };
         valueControl_.onMouseDrag = [this](const juce::MouseEvent& e) { mouseDrag(e); };
@@ -196,7 +196,7 @@ class TextSlider : public juce::Component,
     }
 
     void setTextColour(const juce::Colour& colour) {
-        textColourRole_ = DarkTheme::findDarkPaletteRole(colour);
+        textColourRole_ = ActiveTheme::findPaletteRole(colour);
         valueControl_.setTextColour(colour);
     }
 
@@ -368,15 +368,15 @@ class TextSlider : public juce::Component,
                 juce::Rectangle<int>(bounds.getX() - handleOverhang, handleY - handleH / 2,
                                      bounds.getWidth() + handleOverhang * 2, handleH);
 
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DARK).withAlpha(0.55f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DARK).withAlpha(0.55f));
             g.fillRect(thumbRect.translated(0, 1));
 
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SLIDER_THUMB));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SLIDER_THUMB));
             g.fillRect(thumbRect);
         } else if (meterPeakL_ > 0.001f || meterPeakR_ > 0.001f) {
-            g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
             g.fillRoundedRectangle(bounds.toFloat(), 2.0f);
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
             g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 2.0f, 1.0f);
 
             if (meterPeakL_ > 0.001f || meterPeakR_ > 0.001f) {
@@ -399,18 +399,20 @@ class TextSlider : public juce::Component,
                     float barNorm = static_cast<float>(barW) / w;
 
                     if (barNorm <= zeroDbNorm * 0.7f) {
-                        g.setColour(
-                            DarkTheme::getColour(DarkTheme::TEXT_SLIDER_METER_LOW).withAlpha(0.5f));
+                        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SLIDER_METER_LOW)
+                                        .withAlpha(0.5f));
                         g.fillRect(barArea);
                     } else {
                         juce::ColourGradient gradient(
-                            DarkTheme::getColour(DarkTheme::TEXT_SLIDER_METER_LOW).withAlpha(0.5f),
+                            ActiveTheme::getColour(ActiveTheme::TEXT_SLIDER_METER_LOW)
+                                .withAlpha(0.5f),
                             0.0f, 0.0f,
-                            DarkTheme::getColour(DarkTheme::TEXT_SLIDER_METER_HIGH).withAlpha(0.5f),
+                            ActiveTheme::getColour(ActiveTheme::TEXT_SLIDER_METER_HIGH)
+                                .withAlpha(0.5f),
                             w, 0.0f, false);
-                        gradient.addColour(
-                            zeroDbNorm, DarkTheme::getColour(DarkTheme::TEXT_SLIDER_METER_WARNING)
-                                            .withAlpha(0.5f));
+                        gradient.addColour(zeroDbNorm, ActiveTheme::getColour(
+                                                           ActiveTheme::TEXT_SLIDER_METER_WARNING)
+                                                           .withAlpha(0.5f));
                         g.setGradientFill(gradient);
                         g.fillRect(barArea);
                     }
@@ -428,8 +430,8 @@ class TextSlider : public juce::Component,
             auto boundsF = getLocalBounds().toFloat();
             const juce::Colour tint =
                 automationVisualState_ == magda::AutomationVisualState::Overridden
-                    ? DarkTheme::getColour(DarkTheme::TEXT_DISABLED)
-                    : DarkTheme::getColour(DarkTheme::ACCENT_MODULATION);
+                    ? ActiveTheme::getColour(ActiveTheme::TEXT_DISABLED)
+                    : ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION);
             g.setColour(tint.withAlpha(0.18f));
             g.fillRect(boundsF);
             g.setColour(tint);
@@ -439,7 +441,7 @@ class TextSlider : public juce::Component,
 
     void lookAndFeelChanged() override {
         if (textColourRole_)
-            valueControl_.setTextColour(DarkTheme::getColour(*textColourRole_));
+            valueControl_.setTextColour(ActiveTheme::getColour(*textColourRole_));
 
         valueControl_.repaint();
         repaint();

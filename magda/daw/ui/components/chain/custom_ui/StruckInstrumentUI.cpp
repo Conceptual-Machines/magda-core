@@ -4,17 +4,17 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaCompiledPolyInstrument.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
 
 namespace {
-const ThemedColour kBg{DarkTheme::INSTRUMENT_BACKGROUND};
-const ThemedColour kPanel{DarkTheme::INSTRUMENT_PANEL};
-const ThemedColour kBorder{DarkTheme::INSTRUMENT_BORDER};
-const ThemedColour kText{DarkTheme::INSTRUMENT_TEXT};
-const ThemedColour kDim{DarkTheme::INSTRUMENT_TEXT_DIM};
+const ThemedColour kBg{ActiveTheme::INSTRUMENT_BACKGROUND};
+const ThemedColour kPanel{ActiveTheme::INSTRUMENT_PANEL};
+const ThemedColour kBorder{ActiveTheme::INSTRUMENT_BORDER};
+const ThemedColour kText{ActiveTheme::INSTRUMENT_TEXT};
+const ThemedColour kDim{ActiveTheme::INSTRUMENT_TEXT_DIM};
 const juce::Colour kExc{0xffd6a24c};   // exciter accent (amber)
 const juce::Colour kReso{0xff5b8fd0};  // resonator accent (blue)
 

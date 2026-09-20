@@ -4,7 +4,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaReverbCompiledPlugin.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -112,7 +112,7 @@ void CompiledReverbCurveView::resampleFromDevice() {
 
 void CompiledReverbCurveView::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds().toFloat();
-    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
     g.fillRoundedRectangle(bounds, 4.0f);
 
     plotArea_ = bounds.reduced(kPlotPadX, kPlotPadY);
@@ -162,8 +162,8 @@ void CompiledReverbCurveView::paint(juce::Graphics& g) {
     lowFill.closeSubPath();
     highFill.closeSubPath();
 
-    const auto accentLow = DarkTheme::getColour(DarkTheme::ACCENT_INFO).withAlpha(0.32f);
-    const auto accentHigh = DarkTheme::getColour(DarkTheme::ACCENT_INFO).withAlpha(0.7f);
+    const auto accentLow = ActiveTheme::getColour(ActiveTheme::ACCENT_INFO).withAlpha(0.32f);
+    const auto accentHigh = ActiveTheme::getColour(ActiveTheme::ACCENT_INFO).withAlpha(0.7f);
 
     g.setColour(accentLow);
     g.fillPath(lowFill);
@@ -174,12 +174,12 @@ void CompiledReverbCurveView::paint(juce::Graphics& g) {
     if (predelayS > 0.0f) {
         const float x0 = timeToX(0.0f);
         const float x1 = timeToX(predelayS);
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.08f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.08f));
         g.fillRect(juce::Rectangle<float>(x0, plotArea_.getY(), x1 - x0, plotArea_.getHeight()));
     }
 
     // Baseline + bounding rect.
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.18f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.18f));
     g.drawLine(plotArea_.getX(), plotArea_.getBottom(), plotArea_.getRight(), plotArea_.getBottom(),
                1.0f);
 
@@ -187,14 +187,14 @@ void CompiledReverbCurveView::paint(juce::Graphics& g) {
     const float t60Time = predelayS + t60Low;
     if (t60Time < visibleSeconds) {
         const float xT60 = timeToX(t60Time);
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.35f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.35f));
         const float dashes[] = {3.0f, 3.0f};
         juce::Line<float> line(xT60, plotArea_.getY() + 4.0f, xT60, plotArea_.getBottom());
         g.drawDashedLine(line, dashes, 2, 1.0f);
     }
 
     // Engine label, top-right.
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.55f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.55f));
     g.drawFittedText(engineLabelFor(engine_),
                      juce::Rectangle<int>(static_cast<int>(plotArea_.getRight()) - 60,
                                           static_cast<int>(plotArea_.getY()) + 2, 56, 14),

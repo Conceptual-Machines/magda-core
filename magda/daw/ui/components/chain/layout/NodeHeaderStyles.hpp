@@ -5,7 +5,7 @@
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/mixer/LevelMeter.hpp"
 #include "ui/components/mixer/LevelMeterScale.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui::node_header {
@@ -26,7 +26,7 @@ class FlatGainSliderLookAndFeel : public juce::LookAndFeel_V4 {
                           juce::Slider& /*slider*/) override {
         constexpr float thumbHeight = 2.0f;
         const float thumbY = sliderPos - thumbHeight * 0.5f;
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.fillRect(static_cast<float>(x), thumbY, static_cast<float>(width), thumbHeight);
     }
 
@@ -56,9 +56,9 @@ class MixKnobLookAndFeel : public juce::LookAndFeel_V4 {
         const float cy = bounds.getCentreY();
 
         // Body
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
         g.fillEllipse(cx - radius, cy - radius, radius * 2.0f, radius * 2.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawEllipse(cx - radius, cy - radius, radius * 2.0f, radius * 2.0f, 1.0f);
 
         // Pointer: -135deg = fully dry, +135deg = fully wet (standard knob sweep)
@@ -66,7 +66,7 @@ class MixKnobLookAndFeel : public juce::LookAndFeel_V4 {
         constexpr float endAngle = 2.356194f;     // +3π/4
         const float angle = startAngle + sliderPosProportional * (endAngle - startAngle);
         const float pointerR = radius - 2.0f;
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         const float px = cx + std::sin(angle) * pointerR;
         const float py = cy - std::cos(angle) * pointerR;
         g.drawLine(cx, cy, px, py, 1.5f);
@@ -165,7 +165,7 @@ inline void applyHeaderIconStyle(magda::SvgButton& btn, juce::Colour activeBg,
                                  bool toggling = true) {
     btn.setIconPadding(2.0f);
     btn.setOriginalColor(juce::Colour(0xFFB3B3B3));
-    btn.setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.5f));
+    btn.setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.5f));
     btn.setActiveColor(juce::Colours::white);
     btn.setActiveBackgroundColor(activeBg);
     if (toggling)

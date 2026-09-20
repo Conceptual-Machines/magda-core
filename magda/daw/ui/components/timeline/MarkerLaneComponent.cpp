@@ -5,7 +5,7 @@
 
 #include "../../../core/Config.hpp"
 #include "../../layout/LayoutConfig.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 
 namespace magda {
@@ -40,10 +40,10 @@ void MarkerLaneComponent::setController(TimelineController* controller) {
 }
 
 void MarkerLaneComponent::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::TIMELINE_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::TIMELINE_BACKGROUND));
 
     auto bounds = getLocalBounds();
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.65f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.65f));
     g.fillRect(bounds.removeFromTop(1));
     g.fillRect(bounds.removeFromBottom(1));
 
@@ -68,15 +68,15 @@ void MarkerLaneComponent::paint(juce::Graphics& g) {
         g.fillPath(flag);
 
         g.setColour(selected ? juce::Colours::white.withAlpha(0.85f)
-                             : DarkTheme::getColour(DarkTheme::BORDER).brighter(0.3f));
+                             : ActiveTheme::getColour(ActiveTheme::BORDER).brighter(0.3f));
         g.strokePath(flag, juce::PathStrokeType(selected ? 1.4f : 1.0f));
 
         const int labelX = x + 8;
         const int labelW = juce::jmax(0, getWidth() - labelX - 4);
         if (labelW > 20) {
-            auto labelColour = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+            auto labelColour = ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY);
             if (selected || hovered)
-                labelColour = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
+                labelColour = ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY);
             g.setColour(labelColour);
             g.drawFittedText(marker.name, labelX, kLaneTopInset + 1, juce::jmin(96, labelW), 16,
                              juce::Justification::centredLeft, 1);

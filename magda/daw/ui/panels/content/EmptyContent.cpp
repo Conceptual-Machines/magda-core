@@ -1,6 +1,6 @@
 #include "EmptyContent.hpp"
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -9,7 +9,7 @@ EmptyContent::EmptyContent() {
 }
 
 void EmptyContent::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getPanelBackgroundColour());
+    g.fillAll(ActiveTheme::getPanelBackgroundColour());
 }
 
 void EmptyContent::resized() {

@@ -35,7 +35,7 @@ SvgButton::~SvgButton() = default;
 
 juce::Colour SvgButton::resolveThemeColour(juce::Colour colour,
                                            const std::optional<ColourRole>& role) {
-    return role ? DarkTheme::getColour(*role).withAlpha(colour.getFloatAlpha()) : colour;
+    return role ? ActiveTheme::getColour(*role).withAlpha(colour.getFloatAlpha()) : colour;
 }
 
 void SvgButton::setStateColourReplacement(juce::Colour sourceColour, juce::Colour inactiveColour,
@@ -44,8 +44,8 @@ void SvgButton::setStateColourReplacement(juce::Colour sourceColour, juce::Colou
         sourceColour,
         inactiveColour,
         activeColour,
-        DarkTheme::findDarkPaletteRole(inactiveColour),
-        DarkTheme::findDarkPaletteRole(activeColour),
+        ActiveTheme::findPaletteRole(inactiveColour),
+        ActiveTheme::findPaletteRole(activeColour),
     };
 
     for (auto& existing : stateColourReplacements_) {
@@ -64,8 +64,8 @@ void SvgButton::setStateColourReplacement(juce::Colour sourceColour, ColourRole 
                                           ColourRole activeRole) {
     const auto replacement = StateColourReplacement{
         sourceColour,
-        DarkTheme::getColour(inactiveRole),
-        DarkTheme::getColour(activeRole),
+        ActiveTheme::getColour(inactiveRole),
+        ActiveTheme::getColour(activeRole),
         inactiveRole,
         activeRole,
     };
@@ -107,7 +107,7 @@ void SvgButton::applyThemedTints(juce::Drawable& icon, bool drawOn,
 
     // Stage 2: generic role mapping for everything that is not a per-button
     // tint (backgrounds, secondary strokes, shared glyph greys).
-    DarkTheme::applyToSvgIcon(icon);
+    ActiveTheme::applyToSvgIcon(icon);
 
     // Stage 3: land the tints. Nothing can re-map them now.
     for (const auto& [sentinel, target] : staged)
@@ -131,13 +131,13 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
         return;
 
     const auto normal = hasNormalColor_ ? resolveThemeColour(normalColor, normalColorRole_)
-                                        : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+                                        : ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY);
     const auto hover = hasHoverColor_ ? resolveThemeColour(hoverColor, hoverColorRole_)
-                                      : DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
+                                      : ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY);
     const auto pressed = hasPressedColor_ ? resolveThemeColour(pressedColor, pressedColorRole_)
-                                          : DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
+                                          : ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
     const auto activeColour = hasActiveColor_ ? resolveThemeColour(activeColor, activeColorRole_)
-                                              : DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
+                                              : ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
     const auto normalBackground =
         resolveThemeColour(normalBackgroundColor, normalBackgroundColorRole_);
     const auto activeBackground =

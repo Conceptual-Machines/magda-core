@@ -11,7 +11,7 @@ namespace {
 // Canonical camelCase names, one per ColourRole, IN ENUM ORDER. The static
 // assert below guarantees the count matches; the ordering must track the
 // enum exactly (same positional contract as the palette arrays in
-// DarkTheme.cpp).
+// ActiveTheme.cpp).
 constexpr std::array<const char*, static_cast<std::size_t>(ColourRole::count)> kColourRoleNames{{
     "e0",
     "e1",

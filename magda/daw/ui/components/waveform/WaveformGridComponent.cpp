@@ -8,8 +8,8 @@
 
 #include "../../state/TimelineController.hpp"
 #include "../../state/TimelineState.hpp"  // GridConstants (shared adaptive grid interval)
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/CursorManager.hpp"
-#include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../timeline/TimeRuler.hpp"
 #include "WarpedWaveformRenderer.hpp"
@@ -98,7 +98,7 @@ void WaveformGridComponent::paint(juce::Graphics& g) {
     }
 
     // Background
-    g.fillAll(DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND));
 
     if (editingClipId_ != magda::INVALID_CLIP_ID) {
         const auto* clip = getClip();
@@ -500,13 +500,13 @@ void WaveformGridComponent::paintWaveformOverlays(juce::Graphics& g, const magda
     }
 
     // Center line — clipped to visible rect
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawHorizontalLine(visibleRect.getCentreY(), static_cast<float>(visibleRect.getX()),
                          static_cast<float>(visibleRect.getRight()));
 
     // Clip boundary indicator line at clip end
     if (layout.clipEndPixel > visibleRect.getX() && layout.clipEndPixel < visibleRect.getRight()) {
-        g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
+        g.setColour(ActiveTheme::getAccentColour().withAlpha(0.8f));
         g.fillRect(layout.clipEndPixel - 1, visibleRect.getY(), 2, visibleRect.getHeight());
     }
 
@@ -719,7 +719,7 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
     // offset is represented by the phase marker inside the loop region.
     if (!isLooped) {
         int offsetX = timeToPixel(baseTime + offsetPosition);
-        auto offsetColour = DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION);
+        auto offsetColour = ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION);
         float offsetAlpha = 0.8f;
         g.setColour(offsetColour.withAlpha(offsetAlpha));
         g.fillRect(offsetX - 1, 0, 2, bounds.getHeight());
@@ -730,7 +730,7 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
     // Loop phase marker (orange) — only visible when looped, shows phase within loop region
     if (hasVisibleLoopPhase) {
         int phaseX = timeToPixel(baseTime + displayInfo_.loopPhasePositionSeconds);
-        auto phaseColour = DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION);
+        auto phaseColour = ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION);
         g.setColour(phaseColour.withAlpha(0.8f));
         g.fillRect(phaseX - 1, 0, 2, bounds.getHeight());
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
@@ -742,7 +742,7 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
     {
         float leftGhostAlpha = showPreLoop_ ? 0.7f : 1.0f;
         float rightGhostAlpha = showPostLoop_ ? 0.7f : 1.0f;
-        auto bgColour = DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND);
+        auto bgColour = ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND);
         int clipStartX = timeToPixel(baseTime + sampleStart);
 
         // In loop mode, the right boundary is the loop end.
@@ -820,7 +820,7 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
             if (activeClipEnd > offsetPosition &&
                 activeClipEnd < displayInfo_.fileExtentTimeline() - 0.0001) {
                 int activeClipEndX = timeToPixel(baseTime + activeClipEnd);
-                auto activeEndColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
+                auto activeEndColour = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
                 g.setColour(activeEndColour.withAlpha(0.9f));
                 g.fillRect(activeClipEndX - 1, 0, 2, bounds.getHeight());
             }
@@ -906,7 +906,7 @@ void WaveformGridComponent::paintTransientMarkers(juce::Graphics& g, const magda
 
 void WaveformGridComponent::paintNoClipMessage(juce::Graphics& g) {
     auto bounds = getLocalBounds();
-    g.setColour(DarkTheme::getSecondaryTextColour());
+    g.setColour(ActiveTheme::getSecondaryTextColour());
     g.setFont(FontManager::getInstance().getUIFont(14.0f));
     g.drawText("No audio clip selected", bounds, juce::Justification::centred, false);
 }

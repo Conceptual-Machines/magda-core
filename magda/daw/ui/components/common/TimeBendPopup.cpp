@@ -35,7 +35,7 @@ TimeBendPopup::TimeBendPopup(magda::ClipId clipId, std::vector<size_t> noteIndic
     // Depth slider
     depthLabel_.setText("DEPTH", juce::dontSendNotification);
     depthLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    depthLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    depthLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     depthLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(depthLabel_);
 
@@ -54,7 +54,7 @@ TimeBendPopup::TimeBendPopup(magda::ClipId clipId, std::vector<size_t> noteIndic
     // Skew slider
     skewLabel_.setText("SKEW", juce::dontSendNotification);
     skewLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    skewLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    skewLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     skewLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(skewLabel_);
 
@@ -73,7 +73,7 @@ TimeBendPopup::TimeBendPopup(magda::ClipId clipId, std::vector<size_t> noteIndic
     // Cycles slider
     cyclesLabel_.setText("CYCLES", juce::dontSendNotification);
     cyclesLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    cyclesLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    cyclesLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     cyclesLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(cyclesLabel_);
 
@@ -92,7 +92,7 @@ TimeBendPopup::TimeBendPopup(magda::ClipId clipId, std::vector<size_t> noteIndic
     // Quantize slider
     quantizeLabel_.setText("QUANT", juce::dontSendNotification);
     quantizeLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    quantizeLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    quantizeLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     quantizeLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(quantizeLabel_);
 
@@ -113,7 +113,7 @@ TimeBendPopup::TimeBendPopup(magda::ClipId clipId, std::vector<size_t> noteIndic
     // Quantize subdivisions slider
     quantizeSubLabel_.setText("SUB", juce::dontSendNotification);
     quantizeSubLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    quantizeSubLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    quantizeSubLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     quantizeSubLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(quantizeSubLabel_);
 
@@ -149,8 +149,8 @@ TimeBendPopup::TimeBendPopup(magda::ClipId clipId, std::vector<size_t> noteIndic
 
     // Apply button
     applyButton_.setColour(juce::TextButton::buttonColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.6f));
-    applyButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+                           ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.6f));
+    applyButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
     applyButton_.onClick = [this] {
         if (!syncSelectionFromManager())
             return;
@@ -172,8 +172,9 @@ TimeBendPopup::TimeBendPopup(magda::ClipId clipId, std::vector<size_t> noteIndic
 
     // Cancel button
     cancelButton_.setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.15f));
-    cancelButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+                            ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.15f));
+    cancelButton_.setColour(juce::TextButton::textColourOffId,
+                            ActiveTheme::getSecondaryTextColour());
     cancelButton_.onClick = [this] {
         restoreOriginals();
         applied_ = true;  // prevent destructor double-restore
@@ -258,20 +259,20 @@ void TimeBendPopup::restoreOriginals() {
 
 void TimeBendPopup::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds().toFloat();
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     g.fillRoundedRectangle(bounds, 4.0f);
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRoundedRectangle(bounds.reduced(0.5f), 4.0f, 1.0f);
 
     // Title bar
     auto titleArea = getLocalBounds().removeFromTop(TITLE_BAR_HEIGHT);
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.08f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.08f));
     g.fillRect(titleArea);
-    g.setColour(DarkTheme::getSecondaryTextColour());
+    g.setColour(ActiveTheme::getSecondaryTextColour());
     g.setFont(FontManager::getInstance().getUIFont(10.0f));
     g.drawText("TIME BEND", titleArea.reduced(6, 0), juce::Justification::centredLeft);
     // Separator
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.5f));
     g.drawHorizontalLine(TITLE_BAR_HEIGHT, 0.0f, static_cast<float>(getWidth()));
 }
 

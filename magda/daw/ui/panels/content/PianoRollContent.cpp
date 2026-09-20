@@ -10,7 +10,7 @@
 #include "../../core/SelectionManager.hpp"
 #include "../../state/TimelineController.hpp"
 #include "../../state/TimelineEvents.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "BinaryData.h"
 #include "audio/MidiBridge.hpp"
@@ -100,8 +100,8 @@ PianoRollContent::PianoRollContent() {
     previewToggle_ = std::make_unique<magda::SvgButton>("NotePreview", BinaryData::master_off_svg,
                                                         BinaryData::master_off_svgSize);
     previewToggle_->setTooltip("Preview notes (click a note to hear it)");
-    previewToggle_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    previewToggle_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    previewToggle_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    previewToggle_->setActiveColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     syncNotePreviewToggle(*previewToggle_, isNotePreviewEnabled());
     previewToggle_->onClick = [this]() {
         setNotePreviewEnabled(!isNotePreviewEnabled());
@@ -142,7 +142,7 @@ PianoRollContent::PianoRollContent() {
                                                          BinaryData::refresh_svgSize);
     chordDetectBtn_->setTooltip("Recalculate chords from notes");
     chordDetectBtn_->setOriginalColor(juce::Colour(0xFFE3E3E3));
-    chordDetectBtn_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    chordDetectBtn_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     chordDetectBtn_->onClick = [this]() { detectChordsFromNotes(); };
     chordDetectBtn_->setVisible(showChordRow_);
     addAndMakeVisible(chordDetectBtn_.get());
@@ -169,7 +169,7 @@ PianoRollContent::PianoRollContent() {
                                                         BinaryData::chevron_down_svgSize);
     gridToggleBtn_->setTooltip("Show / hide the piano roll");
     gridToggleBtn_->setOriginalColor(juce::Colour(0xFFE3E3E3));
-    gridToggleBtn_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    gridToggleBtn_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     gridToggleBtn_->onClick = [this]() { onGridToggleClicked(); };
     addChildComponent(gridToggleBtn_.get());
 
@@ -939,7 +939,7 @@ void PianoRollContent::onGridResolutionChanged() {
 // ============================================================================
 
 void PianoRollContent::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getPanelBackgroundColour());
+    g.fillAll(ActiveTheme::getPanelBackgroundColour());
 
     if (getWidth() <= 0 || getHeight() <= 0)
         return;
@@ -960,7 +960,7 @@ void PianoRollContent::paint(juce::Graphics& g) {
         drawChordRow(g, chordArea);
 
         // Horizontal separator at bottom of chord row — full width
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawHorizontalLine(chordRowTop() + chordRowHeight() - 1,
                              static_cast<float>(sidebarWidth()), static_cast<float>(getWidth()));
     }
@@ -979,7 +979,7 @@ void PianoRollContent::paintOverChildren(juce::Graphics& g) {
     // The ruler now sits at the very top; extend its tick-area border line
     // through the sidebar/keyboard corner.
     int tickLineY = RULER_HEIGHT - LayoutConfig::getInstance().rulerMajorTickHeight;
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.fillRect(sidebarWidth(), tickLineY, ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH,
                1);
 
@@ -991,7 +991,7 @@ void PianoRollContent::paintOverChildren(juce::Graphics& g) {
         if (gridComponent_->getPlayheadDisplayX(gridX)) {
             const int contentX = viewport_->getX() + gridX - viewport_->getViewPositionX();
             if (contentX >= chordLaneLeftX() && contentX <= getWidth()) {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
                 g.fillRect(contentX - 1, chordRowTop(), 2, chordRowHeight());
             }
         }
@@ -1846,11 +1846,11 @@ void PianoRollContent::setClip(magda::ClipId clipId) {
 
 void PianoRollContent::drawSidebar(juce::Graphics& g, juce::Rectangle<int> area) {
     // Draw sidebar background
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND_ALT));
     g.fillRect(area);
 
     // Draw right separator line
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawVerticalLine(area.getRight() - 1, static_cast<float>(area.getY()),
                        static_cast<float>(area.getBottom()));
 
@@ -1882,11 +1882,11 @@ void PianoRollContent::drawSidebar(juce::Graphics& g, juce::Rectangle<int> area)
 
 void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area) {
     // Draw chord row background
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND_ALT));
     g.fillRect(area);
 
     // Draw bottom border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawLine(static_cast<float>(area.getX()), static_cast<float>(area.getBottom() - 1),
                static_cast<float>(area.getRight()), static_cast<float>(area.getBottom() - 1), 1.0f);
 
@@ -1914,7 +1914,7 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
         // Empty-state hint. The chord lane is populated by chord detection, so
         // say how to get chords here: the chord-track editor adds them on click;
         // a normal track detects them from its own notes via the scan button.
-        g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.4f));
+        g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(0.4f));
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
         const juce::String hint = chordFocusMode()
                                       ? "Click the lane to add a chord"
@@ -1937,7 +1937,7 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
     // The accent spine takes its colour from the chord track (the chord that
     // owns the spine always belongs to the chord track, whether shown on its
     // own lane or as an overlay on a MIDI track).
-    juce::Colour chordTrackColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
+    juce::Colour chordTrackColour = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
     if (auto* chordTrackInfo = magda::TrackManager::getInstance().getTrack(
             magda::TrackManager::getInstance().getChordTrackId()))
         chordTrackColour = chordTrackInfo->colour;
@@ -1969,7 +1969,7 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
             selectedChordGroup() != 0 && annotation.chordGroup == selectedChordGroup();
         const bool previewing =
             previewChordGroup() != 0 && annotation.chordGroup == previewChordGroup();
-        const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
+        const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
 
         // The intended chord-track chord shown alongside this track's chord.
         // (Agreement/disagreement signalling is deferred — see follow-up issue.)
@@ -1978,7 +1978,7 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
 
         // A playing block glows green; otherwise the accent-blue card.
         const auto fillColour =
-            previewing ? DarkTheme::getColour(DarkTheme::STATUS_SUCCESS) : accent;
+            previewing ? ActiveTheme::getColour(ActiveTheme::STATUS_SUCCESS) : accent;
         const float fillAlpha = previewing ? 0.40f : selected ? 0.22f : 0.13f;
 
         // Slate card fill.
@@ -2003,19 +2003,19 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
             g.setFont(FontManager::getInstance().getUIFontMedium(13.0f));
             if (isChordTrackLane) {
                 // Chord track's own chord: left, with spine.
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
                 g.drawText(notation.format(annotation.chordName),
                            blockBounds.withTrimmedLeft(12).withTrimmedRight(4),
                            juce::Justification::centredLeft, true);
             } else {
                 // MIDI track chord: always right, no decoration.
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
                 g.drawText(notation.format(annotation.chordName),
                            blockBounds.withTrimmedLeft(8).withTrimmedRight(8),
                            juce::Justification::centredRight, true);
                 // Intended chord-track chord (overlay only): left, with spine.
                 if (comparing) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
                     g.drawText(notation.format(intendedName),
                                blockBounds.withTrimmedLeft(12).withTrimmedRight(4),
                                juce::Justification::centredLeft, true);
@@ -2082,7 +2082,7 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
             }
             if (blockBounds.getWidth() > 14) {
                 g.setFont(FontManager::getInstance().getUIFontMedium(13.0f));
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
                 g.drawText(notation.format(mc.name),
                            blockBounds.withTrimmedLeft(12).withTrimmedRight(4),
                            juce::Justification::centredLeft, true);
@@ -2227,17 +2227,17 @@ void PianoRollContent::detectChordsFromNotes() {
 
 void PianoRollContent::drawVelocityHeader(juce::Graphics& g, juce::Rectangle<int> area) {
     // Draw header background
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND_ALT));
     g.fillRect(area);
 
     // Draw top border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawHorizontalLine(area.getY(), static_cast<float>(area.getX()),
                          static_cast<float>(area.getRight()));
 
     // Draw lane label in keyboard area (legacy path only, without MidiDrawer)
     auto labelArea = area.removeFromLeft(KEYBOARD_WIDTH);
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     g.setFont(magda::FontManager::getInstance().getUIFont(11.0f));
     g.drawText("Velocity", labelArea.reduced(4, 0), juce::Justification::centredLeft, true);
 }

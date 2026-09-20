@@ -42,7 +42,7 @@ bool CurveEditorBase::isPointSelected(uint32_t pointId) const {
 
 void CurveEditorBase::paint(juce::Graphics& g) {
     // Background
-    g.fillAll(DarkTheme::getColour(DarkTheme::CURVE_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::CURVE_BACKGROUND));
 
     // Grid
     paintGrid(g);
@@ -96,9 +96,9 @@ void CurveEditorBase::paintOverChildren(juce::Graphics& g) {
             ty = pcBounds.getBottom() + 2;
 
         auto tooltipRect = juce::Rectangle<int>(tx, ty, textW, textH);
-        g.setColour(DarkTheme::getColour(DarkTheme::CURVE_TOOLTIP_BACKGROUND));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::CURVE_TOOLTIP_BACKGROUND));
         g.fillRoundedRectangle(tooltipRect.toFloat(), 3.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::CURVE_TOOLTIP_TEXT));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::CURVE_TOOLTIP_TEXT));
         g.drawText(label, tooltipRect, juce::Justification::centred, false);
         break;
     }
@@ -112,7 +112,7 @@ void CurveEditorBase::paintGrid(juce::Graphics& g) {
     auto bounds = getLocalBounds();
 
     // Subtle horizontal grid lines (value levels at 25%, 50%, 75%)
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0x15 / 255.0f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0x15 / 255.0f));
     for (int i = 1; i < 4; ++i) {
         int y = bounds.getHeight() * i / 4;
         g.drawHorizontalLine(y, 0.0f, static_cast<float>(bounds.getWidth()));

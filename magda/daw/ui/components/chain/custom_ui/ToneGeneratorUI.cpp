@@ -1,6 +1,6 @@
 #include "custom_ui/ToneGeneratorUI.hpp"
 
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -55,11 +55,11 @@ void ToneGeneratorUI::updateParameters(float frequency, float level, int wavefor
 
 void ToneGeneratorUI::paint(juce::Graphics& g) {
     // Draw subtle border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(getLocalBounds(), 1);
 
     // Draw background
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
     g.fillRect(getLocalBounds().reduced(1));
 }
 

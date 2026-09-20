@@ -54,11 +54,12 @@ ArpeggiatorUI::ArpeggiatorUI() {
     latchButton_.setClickingTogglesState(true);
     latchButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     latchButton_.setColour(juce::TextButton::buttonColourId,
-                           DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
+                           ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.1f));
     latchButton_.setColour(juce::TextButton::buttonOnColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.6f));
-    latchButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
-    latchButton_.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+                           ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.6f));
+    latchButton_.setColour(juce::TextButton::textColourOffId,
+                           ActiveTheme::getSecondaryTextColour());
+    latchButton_.setColour(juce::TextButton::textColourOnId, ActiveTheme::getTextColour());
     latchButton_.onClick = [this] {
         const bool on = latchButton_.getToggleState();
         latchButton_.setButtonText(on ? "ON" : "OFF");
@@ -364,7 +365,7 @@ void ArpeggiatorUI::resized() {
 void ArpeggiatorUI::setupLabel(juce::Label& label, const juce::String& text) {
     label.setText(text, juce::dontSendNotification);
     label.setFont(FontManager::getInstance().getUIFont(9.0f));
-    label.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    label.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     label.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(label);
 }
@@ -372,9 +373,9 @@ void ArpeggiatorUI::setupLabel(juce::Label& label, const juce::String& text) {
 void ArpeggiatorUI::setupCombo(juce::ComboBox& combo) {
     combo.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
     combo.setColour(juce::ComboBox::backgroundColourId,
-                    DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
-    combo.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-    combo.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+                    ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.1f));
+    combo.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
+    combo.setColour(juce::ComboBox::outlineColourId, ActiveTheme::getColour(ActiveTheme::BORDER));
     addAndMakeVisible(combo);
 }
 
@@ -389,21 +390,23 @@ void ArpeggiatorUI::lookAndFeelChanged() {
          {&patternLabel_, &rateLabel_, &octavesLabel_, &latchLabel_, &rampLabel_, &depthLabel_,
           &skewLabel_, &cyclesLabel_, &quantizeLabel_, &quantizeSubLabel_, &gateLabel_,
           &swingLabel_, &velModeLabel_, &fixedVelLabel_})
-        label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
 
     for (auto* combo : {&patternCombo_, &velModeCombo_}) {
         combo->setColour(juce::ComboBox::backgroundColourId,
-                         DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
-        combo->setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-        combo->setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+                         ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.1f));
+        combo->setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
+        combo->setColour(juce::ComboBox::outlineColourId,
+                         ActiveTheme::getColour(ActiveTheme::BORDER));
     }
 
     latchButton_.setColour(juce::TextButton::buttonColourId,
-                           DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
+                           ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.1f));
     latchButton_.setColour(juce::TextButton::buttonOnColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.6f));
-    latchButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
-    latchButton_.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+                           ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.6f));
+    latchButton_.setColour(juce::TextButton::textColourOffId,
+                           ActiveTheme::getSecondaryTextColour());
+    latchButton_.setColour(juce::TextButton::textColourOnId, ActiveTheme::getTextColour());
 
     repaint();
 }

@@ -6,7 +6,7 @@
 #include "core/ControlTarget.hpp"
 #include "core/TrackManager.hpp"
 #include "ui/components/chain/modulation/SyncDivisionUi.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
@@ -17,7 +17,7 @@ namespace {
 void setupSmallLabel(juce::Label& label, const juce::String& text, juce::Component* parent) {
     label.setText(text, juce::dontSendNotification);
     label.setFont(FontManager::getInstance().getUIFont(9.0f));
-    label.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    label.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     label.setJustificationType(juce::Justification::centred);
     parent->addAndMakeVisible(label);
 }
@@ -79,11 +79,11 @@ SidechainUI::SidechainUI() {
     modeButton_.setClickingTogglesState(true);
     modeButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     modeButton_.setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
+                          ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.1f));
     modeButton_.setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getAccentColour().withAlpha(0.6f));
-    modeButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
-    modeButton_.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+                          ActiveTheme::getAccentColour().withAlpha(0.6f));
+    modeButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
+    modeButton_.setColour(juce::TextButton::textColourOnId, ActiveTheme::getTextColour());
     modeButton_.setToggleState(true, juce::dontSendNotification);
     modeButton_.setButtonText("1-Shot");
     modeButton_.onClick = [this]() {
@@ -103,11 +103,11 @@ SidechainUI::SidechainUI() {
         button.setRadioGroupId(0x5343);
         button.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
         button.setColour(juce::TextButton::buttonColourId,
-                         DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
+                         ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.1f));
         button.setColour(juce::TextButton::buttonOnColourId,
-                         DarkTheme::getAccentColour().withAlpha(0.6f));
-        button.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
-        button.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+                         ActiveTheme::getAccentColour().withAlpha(0.6f));
+        button.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
+        button.setColour(juce::TextButton::textColourOnId, ActiveTheme::getTextColour());
         button.onClick = [this, mode]() {
             if (onParameterChanged)
                 onParameterChanged(daw::audio::SidechainPlugin::kChannelModeParamIndex,
@@ -209,9 +209,9 @@ std::vector<LinkableTextSlider*> SidechainUI::getLinkableSliders() {
 }
 
 void SidechainUI::paint(juce::Graphics& g) {
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(getLocalBounds(), 1);
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
     g.fillRect(getLocalBounds().reduced(1));
 }
 

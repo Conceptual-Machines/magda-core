@@ -1,6 +1,6 @@
 #include "PresetBrowserContent.hpp"
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -11,24 +11,24 @@ PresetBrowserContent::PresetBrowserContent() {
     // Setup title
     titleLabel_.setText("Presets", juce::dontSendNotification);
     titleLabel_.setFont(FontManager::getInstance().getUIFont(14.0f));
-    titleLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    titleLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     addAndMakeVisible(titleLabel_);
 
     // Setup search box
-    searchBox_.setTextToShowWhenEmpty("Search presets...", DarkTheme::getSecondaryTextColour());
+    searchBox_.setTextToShowWhenEmpty("Search presets...", ActiveTheme::getSecondaryTextColour());
     searchBox_.setColour(juce::TextEditor::backgroundColourId,
-                         DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    searchBox_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
-    searchBox_.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
+                         ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
+    searchBox_.setColour(juce::TextEditor::textColourId, ActiveTheme::getTextColour());
+    searchBox_.setColour(juce::TextEditor::outlineColourId, ActiveTheme::getBorderColour());
     addAndMakeVisible(searchBox_);
 }
 
 void PresetBrowserContent::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getPanelBackgroundColour());
+    g.fillAll(ActiveTheme::getPanelBackgroundColour());
 
     // Placeholder content area
     auto contentArea = getLocalBounds().reduced(10).withTrimmedTop(70);
-    g.setColour(DarkTheme::getSecondaryTextColour());
+    g.setColour(ActiveTheme::getSecondaryTextColour());
     g.setFont(FontManager::getInstance().getUIFont(12.0f));
     g.drawText("Preset browser will appear here", contentArea, juce::Justification::centredTop);
 }

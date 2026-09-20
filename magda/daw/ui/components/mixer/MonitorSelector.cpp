@@ -1,7 +1,7 @@
 #include "MonitorSelector.hpp"
 
 #include "../../../core/StringTable.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "BinaryData.h"
 
@@ -55,7 +55,7 @@ void MonitorSelector::paint(juce::Graphics& g) {
     auto iconArea = getIconArea().toFloat();
     auto dropdownArea = getDropdownArea().toFloat();
 
-    auto bgColour = DarkTheme::getColour(DarkTheme::BUTTON_NORMAL);
+    auto bgColour = ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL);
     if (isHovering_)
         bgColour = bgColour.brighter(0.1f);
 
@@ -66,7 +66,7 @@ void MonitorSelector::paint(juce::Graphics& g) {
     g.fillRect(dropdownArea);
 
     // Separator before the dropdown arrow.
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawLine(dropdownArea.getX(), dropdownArea.getY() + 2, dropdownArea.getX(),
                dropdownArea.getBottom() - 2, 1.0f);
 
@@ -74,12 +74,12 @@ void MonitorSelector::paint(juce::Graphics& g) {
     // tinted green / blue. Colour conveys the active state.
     if (auto* icon = isActiveMode() ? speakerIcon_.get() : speakerOffIcon_.get()) {
         const auto tint =
-            mode_ == InputMonitorMode::In     ? DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE)
-            : mode_ == InputMonitorMode::Auto ? DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)
-                                              : DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
+            mode_ == InputMonitorMode::In     ? ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE)
+            : mode_ == InputMonitorMode::Auto ? ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)
+                                              : ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY);
         auto iconCopy = icon->createCopy();
         iconCopy->replaceColour(juce::Colour(kSpeakerSourceColour), tint);
-        DarkTheme::applyToSvgIcon(*iconCopy);
+        ActiveTheme::applyToSvgIcon(*iconCopy);
         iconCopy->drawWithin(g, iconArea.reduced(3.0f), juce::RectanglePlacement::centred, 1.0f);
     }
 
@@ -91,11 +91,11 @@ void MonitorSelector::paint(juce::Graphics& g) {
     juce::Path arrow;
     arrow.addTriangle(arrowX - arrowSize, arrowY - arrowSize * 0.5f, arrowX + arrowSize,
                       arrowY - arrowSize * 0.5f, arrowX, arrowY + arrowSize * 0.5f);
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     g.fillPath(arrow);
 
     // Border.
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(bounds, 1.0f);
 }
 

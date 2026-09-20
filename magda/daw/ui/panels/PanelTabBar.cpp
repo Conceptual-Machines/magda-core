@@ -1,6 +1,6 @@
 #include "PanelTabBar.hpp"
 
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "BinaryData.h"
 
 namespace magda::daw::ui {
@@ -52,10 +52,10 @@ PanelTabBar::PanelTabBar(PanelLocation location) : location_(location) {
 
 void PanelTabBar::paint(juce::Graphics& g) {
     // Draw background
-    g.fillAll(DarkTheme::getPanelBackgroundColour().darker(0.1f));
+    g.fillAll(ActiveTheme::getPanelBackgroundColour().darker(0.1f));
 
     // Draw top border
-    g.setColour(DarkTheme::getBorderColour());
+    g.setColour(ActiveTheme::getBorderColour());
     g.fillRect(0, 0, getWidth(), 1);
 }
 
@@ -183,10 +183,11 @@ void PanelTabBar::setupButton(size_t index, PanelContentType type) {
     btn->setClickingTogglesState(false);
 
     // Set colors
-    btn->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    btn->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_INFO));
-    btn->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_INFO).withAlpha(0.35f));
+    btn->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    btn->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+    btn->setActiveColor(ActiveTheme::getColour(ActiveTheme::ACCENT_INFO));
+    btn->setActiveBackgroundColor(
+        ActiveTheme::getColour(ActiveTheme::ACCENT_INFO).withAlpha(0.35f));
 
     // Click handler
     btn->onClick = [this, index]() {

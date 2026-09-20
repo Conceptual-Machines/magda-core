@@ -9,7 +9,7 @@
 #include "../../core/TrackManager.hpp"
 #include "../../engine/AudioEngine.hpp"
 #include "../../engine/AudioEngineChoice.hpp"
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
 #include "../utils/ChannelLabels.hpp"
@@ -250,7 +250,7 @@ void CustomChannelSelector::applyTicks() {
 }
 
 void CustomChannelSelector::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::SURFACE));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::SURFACE));
 }
 
 int CustomChannelSelector::rowsHeight() const {
@@ -580,7 +580,7 @@ void AudioSettingsDialog::hardwareChannelsChanged() {
 }
 
 void AudioSettingsDialog::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
 }
 
 void AudioSettingsDialog::lookAndFeelChanged() {
@@ -1045,7 +1045,7 @@ void AudioSettingsDialog::showDialog(juce::Component* parent, AudioEngine* audio
 
     juce::DialogWindow::LaunchOptions options;
     options.dialogTitle = "Audio/MIDI Settings";
-    options.dialogBackgroundColour = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+    options.dialogBackgroundColour = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
     options.content.setOwned(dialog);
     options.escapeKeyTriggersCloseButton = true;
     options.useNativeTitleBar = true;

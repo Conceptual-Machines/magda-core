@@ -1,6 +1,6 @@
 #include "ClipTakesSection.hpp"
 
-#include "../../../../../themes/DarkTheme.hpp"
+#include "../../../../../themes/ActiveTheme.hpp"
 #include "../../../../../themes/FontManager.hpp"
 #include "../../../../../themes/InspectorComboBoxLookAndFeel.hpp"
 #include "../../../../../themes/SmallButtonLookAndFeel.hpp"
@@ -29,14 +29,15 @@ ClipTakesSection::~ClipTakesSection() {
 void ClipTakesSection::initControls() {
     sectionLabel_.setText("Takes", juce::dontSendNotification);
     sectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    sectionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    sectionLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     sectionLabel_.setJustificationType(juce::Justification::centredLeft);
     addChildComponent(sectionLabel_);
 
     takesCombo_.setColour(juce::ComboBox::backgroundColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
-    takesCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-    takesCombo_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+                          ActiveTheme::getColour(ActiveTheme::SURFACE));
+    takesCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
+    takesCombo_.setColour(juce::ComboBox::outlineColourId,
+                          ActiveTheme::getColour(ActiveTheme::BORDER));
     takesCombo_.setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
     takesCombo_.onChange = [this]() {
         auto& clipManager = magda::ClipManager::getInstance();
@@ -67,9 +68,9 @@ void ClipTakesSection::initControls() {
     clearCompButton_.setButtonText("Clear Comp");
     clearCompButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     clearCompButton_.setColour(juce::TextButton::buttonColourId,
-                               DarkTheme::getColour(DarkTheme::SURFACE));
+                               ActiveTheme::getColour(ActiveTheme::SURFACE));
     clearCompButton_.setColour(juce::TextButton::textColourOffId,
-                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                               ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     clearCompButton_.onClick = [this]() {
         auto& clipManager = magda::ClipManager::getInstance();
         const auto* clip = clipManager.getClip(primaryClipId());

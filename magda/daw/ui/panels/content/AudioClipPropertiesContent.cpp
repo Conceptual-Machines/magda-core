@@ -3,7 +3,7 @@
 #include <cmath>
 
 #include "../components/common/Toast.hpp"
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "../themes/InspectorComboBoxLookAndFeel.hpp"
 #include "../themes/SmallButtonLookAndFeel.hpp"
@@ -135,7 +135,7 @@ void AudioClipPropertiesContent::createControls() {
         auto label = std::make_unique<juce::Label>("", text);
         label->setFont(sectionFont);
         label->setColour(juce::Label::textColourId,
-                         DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                         ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         label->setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(*label);
         return label;
@@ -146,7 +146,7 @@ void AudioClipPropertiesContent::createControls() {
         auto label = std::make_unique<juce::Label>("", text);
         label->setFont(labelFont);
         label->setColour(juce::Label::textColourId,
-                         DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                         ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         label->setJustificationType(juce::Justification::centredRight);
         addAndMakeVisible(*label);
         return label;
@@ -156,12 +156,13 @@ void AudioClipPropertiesContent::createControls() {
     auto makeToggle = [&](const juce::String& text) {
         auto btn = std::make_unique<juce::TextButton>(text);
         btn->setLookAndFeel(&smallLF);
-        btn->setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
+        btn->setColour(juce::TextButton::buttonColourId,
+                       ActiveTheme::getColour(ActiveTheme::SURFACE));
         btn->setColour(juce::TextButton::buttonOnColourId,
-                       DarkTheme::getAccentColour().withAlpha(0.3f));
+                       ActiveTheme::getAccentColour().withAlpha(0.3f));
         btn->setColour(juce::TextButton::textColourOffId,
-                       DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        btn->setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+                       ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        btn->setColour(juce::TextButton::textColourOnId, ActiveTheme::getAccentColour());
         btn->setClickingTogglesState(false);
         btn->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
                                juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
@@ -268,10 +269,10 @@ void AudioClipPropertiesContent::createControls() {
     modeLabel_ = makeLabel("Mode");
     stretchModeCombo_ = std::make_unique<juce::ComboBox>();
     stretchModeCombo_->setColour(juce::ComboBox::backgroundColourId,
-                                 DarkTheme::getColour(DarkTheme::SURFACE));
-    stretchModeCombo_->setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+                                 ActiveTheme::getColour(ActiveTheme::SURFACE));
+    stretchModeCombo_->setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
     stretchModeCombo_->setColour(juce::ComboBox::outlineColourId,
-                                 DarkTheme::getColour(DarkTheme::BORDER));
+                                 ActiveTheme::getColour(ActiveTheme::BORDER));
     // Combo IDs are persisted mode values plus one because JUCE reserves ID 0.
     stretchModeCombo_->addItem("Off", time_stretch_mode::kDisabled + 1);
     stretchModeCombo_->addItem("Signalsmith", time_stretch_mode::kSignalsmith + 1);
@@ -338,10 +339,10 @@ void AudioClipPropertiesContent::createControls() {
     keyLabel_ = makeLabel("Key");
     keyRootCombo_ = std::make_unique<juce::ComboBox>();
     keyRootCombo_->setColour(juce::ComboBox::backgroundColourId,
-                             DarkTheme::getColour(DarkTheme::SURFACE));
-    keyRootCombo_->setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+                             ActiveTheme::getColour(ActiveTheme::SURFACE));
+    keyRootCombo_->setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
     keyRootCombo_->setColour(juce::ComboBox::outlineColourId,
-                             DarkTheme::getColour(DarkTheme::BORDER));
+                             ActiveTheme::getColour(ActiveTheme::BORDER));
     static constexpr const char* kKeyRoots[] = {"C",  "C#", "D",  "D#", "E",  "F",
                                                 "F#", "G",  "G#", "A",  "A#", "B"};
     keyRootCombo_->addItem("--", 1);
@@ -626,17 +627,17 @@ void AudioClipPropertiesContent::updateFromClip() {
 }
 
 void AudioClipPropertiesContent::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getPanelBackgroundColour());
+    g.fillAll(ActiveTheme::getPanelBackgroundColour());
 
     if (clipId_ == magda::INVALID_CLIP_ID && multiClipIds_.empty()) {
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.5f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.5f));
         g.setFont(FontManager::getInstance().getUIFont(13.0f));
         g.drawText("No audio clip selected", getLocalBounds(), juce::Justification::centred);
         return;
     }
 
     // Vertical divider between columns
-    g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
     int divX = getWidth() / 2;
     g.drawVerticalLine(divX, static_cast<float>(V_PAD), static_cast<float>(getHeight() - V_PAD));
 }

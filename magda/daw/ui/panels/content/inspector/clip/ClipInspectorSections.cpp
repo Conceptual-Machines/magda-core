@@ -6,7 +6,7 @@
 #include "../../../../components/common/SvgButton.hpp"
 #include "../../../../components/common/Toast.hpp"
 #include "../../../../state/TimelineController.hpp"
-#include "../../../../themes/DarkTheme.hpp"
+#include "../../../../themes/ActiveTheme.hpp"
 #include "../../../../themes/FontManager.hpp"
 #include "../../../../themes/InspectorComboBoxLookAndFeel.hpp"
 #include "../../../../themes/SmallButtonLookAndFeel.hpp"
@@ -79,13 +79,13 @@ class ClipInspector::GroovePickerPopup : public juce::Component {
         categoryList_.setModel(&categoryModel_);
         categoryList_.setRowHeight(22);
         categoryList_.setColour(juce::ListBox::backgroundColourId,
-                                DarkTheme::getColour(DarkTheme::SURFACE));
+                                ActiveTheme::getColour(ActiveTheme::SURFACE));
         categoryList_.setOutlineThickness(0);
 
         templateList_.setModel(&templateModel_);
         templateList_.setRowHeight(22);
         templateList_.setColour(juce::ListBox::backgroundColourId,
-                                DarkTheme::getColour(DarkTheme::SURFACE));
+                                ActiveTheme::getColour(ActiveTheme::SURFACE));
         templateList_.setOutlineThickness(0);
 
         // Click on category → update right column
@@ -149,8 +149,8 @@ class ClipInspector::GroovePickerPopup : public juce::Component {
     }
 
     void paint(juce::Graphics& g) override {
-        g.fillAll(DarkTheme::getColour(DarkTheme::SURFACE));
-        g.setColour(DarkTheme::getBorderColour());
+        g.fillAll(ActiveTheme::getColour(ActiveTheme::SURFACE));
+        g.setColour(ActiveTheme::getBorderColour());
         g.drawRect(getLocalBounds());
         // Separator between columns
         int catWidth = getWidth() * 2 / 5;
@@ -176,11 +176,11 @@ class ClipInspector::GroovePickerPopup : public juce::Component {
             if (!categories_ || row < 0 || row >= static_cast<int>(categories_->size()))
                 return;
             if (rowIsSelected) {
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.25f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.25f));
                 g.fillRect(0, 0, width, height);
             }
-            g.setColour(rowIsSelected ? DarkTheme::getTextColour()
-                                      : DarkTheme::getSecondaryTextColour());
+            g.setColour(rowIsSelected ? ActiveTheme::getTextColour()
+                                      : ActiveTheme::getSecondaryTextColour());
             g.setFont(FontManager::getInstance().getUIFont(11.0f));
             g.drawText((*categories_)[static_cast<size_t>(row)].name, 8, 0, width - 8, height,
                        juce::Justification::centredLeft);
@@ -217,10 +217,10 @@ class ClipInspector::GroovePickerPopup : public juce::Component {
             if (row < 0 || row >= items_.size())
                 return;
             if (rowIsSelected) {
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.25f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.25f));
                 g.fillRect(0, 0, width, height);
             }
-            g.setColour(DarkTheme::getTextColour());
+            g.setColour(ActiveTheme::getTextColour());
             g.setFont(FontManager::getInstance().getUIFont(11.0f));
             g.drawText(items_[row], 8, 0, width - 8, height, juce::Justification::centredLeft);
         }
@@ -253,9 +253,9 @@ void ClipInspector::initClipPropertiesSection() {
     clipNameLabel_.setVisible(false);  // Not used anymore
 
     clipNameValue_.setFont(FontManager::getInstance().getUIFont(14.0f));  // Larger for header
-    clipNameValue_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    clipNameValue_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     clipNameValue_.setColour(juce::Label::backgroundColourId,
-                             DarkTheme::getColour(DarkTheme::SURFACE));
+                             ActiveTheme::getColour(ActiveTheme::SURFACE));
     clipNameValue_.setEditable(true);
     clipNameValue_.onTextChange = [this]() {
         if (primaryClipId() != magda::INVALID_CLIP_ID) {
@@ -369,7 +369,7 @@ void ClipInspector::initClipPropertiesSection() {
 
     // Clip file path (read-only, inside viewport)
     clipFilePathLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
-    clipFilePathLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipFilePathLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipFilePathLabel_.setJustificationType(juce::Justification::centredLeft);
     clipPropsContainer_.addChildComponent(clipFilePathLabel_);
 
@@ -378,7 +378,7 @@ void ClipInspector::initClipPropertiesSection() {
     clipTypeIcon_ = std::make_unique<magda::SvgButton>("Type", BinaryData::iconaudioboldm_svg,
                                                        BinaryData::iconaudioboldm_svgSize);
     clipTypeIcon_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    clipTypeIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    clipTypeIcon_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     clipTypeIcon_->setIconPadding(1.0f);
     clipTypeIcon_->setInterceptsMouseClicks(false, false);
     clipTypeIcon_->setTooltip("Audio clip");
@@ -392,7 +392,7 @@ void ClipInspector::initClipPropertiesSection() {
     // recolor from black rather than the #B3B3B3 the audio icon uses — otherwise
     // the recolor misses and this icon renders black while the audio one is grey.
     clipViewIcon_->setOriginalColor(juce::Colour(0xFF000000));
-    clipViewIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    clipViewIcon_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     clipViewIcon_->setIconPadding(1.0f);
     clipViewIcon_->setInterceptsMouseClicks(false, false);
     clipViewIcon_->setTooltip("Arrangement clip");
@@ -405,7 +405,7 @@ void ClipInspector::initClipPropertiesSection() {
     clipGhostIcon_ = std::make_unique<magda::SvgButton>("Ghost", BinaryData::link_flat_svg,
                                                         BinaryData::link_flat_svgSize);
     clipGhostIcon_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    clipGhostIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    clipGhostIcon_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     clipGhostIcon_->setNormalBackgroundColor(juce::Colour(0xff2A2A2A));
     clipGhostIcon_->setBorderColor(juce::Colour(0xff555555));
     clipGhostIcon_->setBorderThickness(1.0f);
@@ -421,12 +421,12 @@ void ClipInspector::initClipPropertiesSection() {
         "ClipEnabled", BinaryData::toggle_off_svg, BinaryData::toggle_off_svgSize,
         BinaryData::toggle_on_svg, BinaryData::toggle_on_svgSize);
     // Chip-style bordered button, matching the view|type chip next to it.
-    clipEnabledToggle_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    clipEnabledToggle_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    clipEnabledToggle_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
-                                                  DarkTheme::ICON_NEUTRAL);
+    clipEnabledToggle_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+    clipEnabledToggle_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     clipEnabledToggle_->setStateColourReplacement(
-        juce::Colour(0xFF1E1E1E), DarkTheme::ICON_ON_ACCENT, DarkTheme::ICON_ON_ACCENT);
+        juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL, ActiveTheme::ICON_NEUTRAL);
+    clipEnabledToggle_->setStateColourReplacement(
+        juce::Colour(0xFF1E1E1E), ActiveTheme::ICON_ON_ACCENT, ActiveTheme::ICON_ON_ACCENT);
     clipEnabledToggle_->setBorderThickness(1.0f);
     clipEnabledToggle_->setIconPadding(2.0f);
     clipEnabledToggle_->setClickingTogglesState(false);
@@ -453,8 +453,9 @@ void ClipInspector::initClipPropertiesSection() {
 
     // Source BPM (editable — shown at bottom with WARP/BEAT buttons)
     clipBpmValue_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipBpmValue_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    clipBpmValue_.setColour(juce::Label::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+    clipBpmValue_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
+    clipBpmValue_.setColour(juce::Label::outlineColourId,
+                            ActiveTheme::getColour(ActiveTheme::BORDER));
     clipBpmValue_.setJustificationType(juce::Justification::centred);
     clipBpmValue_.setEditable(true);
     clipBpmValue_.onTextChange = [this]() {
@@ -480,7 +481,7 @@ void ClipInspector::initClipPropertiesSection() {
 
     clipBpmUnitLabel_.setText("BPM", juce::dontSendNotification);
     clipBpmUnitLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipBpmUnitLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipBpmUnitLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipBpmUnitLabel_.setJustificationType(juce::Justification::centredLeft);
     clipPropsContainer_.addChildComponent(clipBpmUnitLabel_);
 
@@ -508,7 +509,7 @@ void ClipInspector::initClipPropertiesSection() {
 
     clipBeatsUnitLabel_.setText("Beats", juce::dontSendNotification);
     clipBeatsUnitLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipBeatsUnitLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipBeatsUnitLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipBeatsUnitLabel_.setJustificationType(juce::Justification::centredLeft);
     clipPropsContainer_.addChildComponent(clipBeatsUnitLabel_);
 
@@ -516,7 +517,7 @@ void ClipInspector::initClipPropertiesSection() {
     clipPositionIcon_ = std::make_unique<magda::SvgButton>("Position", BinaryData::position_svg,
                                                            BinaryData::position_svgSize);
     clipPositionIcon_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    clipPositionIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    clipPositionIcon_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     clipPositionIcon_->setIconPadding(1.0f);
     clipPositionIcon_->setInterceptsMouseClicks(false, false);
     clipPropsContainer_.addChildComponent(*clipPositionIcon_);
@@ -524,18 +525,19 @@ void ClipInspector::initClipPropertiesSection() {
     // Row labels for position grid
     playbackColumnLabel_.setText("position", juce::dontSendNotification);
     playbackColumnLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    playbackColumnLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    playbackColumnLabel_.setColour(juce::Label::textColourId,
+                                   ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(playbackColumnLabel_);
 
     loopColumnLabel_.setText("loop", juce::dontSendNotification);
     loopColumnLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    loopColumnLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    loopColumnLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(loopColumnLabel_);
 
     // Clip start
     clipStartLabel_.setText("start", juce::dontSendNotification);
     clipStartLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipStartLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipStartLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(clipStartLabel_);
 
     clipStartValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
@@ -566,7 +568,7 @@ void ClipInspector::initClipPropertiesSection() {
     // Clip end
     clipEndLabel_.setText("end", juce::dontSendNotification);
     clipEndLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipEndLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipEndLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(clipEndLabel_);
 
     clipEndValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
@@ -598,7 +600,7 @@ void ClipInspector::initClipPropertiesSection() {
     // Clip length (shown in position row, 3rd column)
     clipLengthLabel_.setText("len", juce::dontSendNotification);
     clipLengthLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipLengthLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipLengthLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(clipLengthLabel_);
 
     clipLengthValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
@@ -634,9 +636,9 @@ void ClipInspector::initClipPropertiesSection() {
     clipLoopToggle_ = std::make_unique<magda::SvgButton>("Loop", BinaryData::loop_icon_svg,
                                                          BinaryData::loop_icon_svgSize);
     clipLoopToggle_->setOriginalColor(juce::Colour(0xFFBCBCBC));
-    clipLoopToggle_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    clipLoopToggle_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     clipLoopToggle_->setActiveColor(juce::Colours::white);
-    clipLoopToggle_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    clipLoopToggle_->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     clipLoopToggle_->setClickingTogglesState(false);
     clipLoopToggle_->onClick = [this]() {
         if (selectedClipIds_.empty())
@@ -675,9 +677,9 @@ void ClipInspector::initClipPropertiesSection() {
     audioPropsCollapseToggle_.setColour(juce::TextButton::buttonOnColourId,
                                         juce::Colours::transparentBlack);
     audioPropsCollapseToggle_.setColour(juce::TextButton::textColourOffId,
-                                        DarkTheme::getSecondaryTextColour());
+                                        ActiveTheme::getSecondaryTextColour());
     audioPropsCollapseToggle_.setColour(juce::TextButton::textColourOnId,
-                                        DarkTheme::getSecondaryTextColour());
+                                        ActiveTheme::getSecondaryTextColour());
     audioPropsCollapseToggle_.setConnectedEdges(
         juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
         juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
@@ -692,7 +694,7 @@ void ClipInspector::initClipPropertiesSection() {
 
     audioPropsLabel_.setText("Audio Properties", juce::dontSendNotification);
     audioPropsLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    audioPropsLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    audioPropsLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     audioPropsLabel_.setJustificationType(juce::Justification::centredLeft);
     clipPropsContainer_.addChildComponent(audioPropsLabel_);
 
@@ -700,12 +702,12 @@ void ClipInspector::initClipPropertiesSection() {
     clipWarpToggle_.setButtonText("WARP");
     clipWarpToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     clipWarpToggle_.setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::SURFACE));
+                              ActiveTheme::getColour(ActiveTheme::SURFACE));
     clipWarpToggle_.setColour(juce::TextButton::buttonOnColourId,
-                              DarkTheme::getAccentColour().withAlpha(0.3f));
+                              ActiveTheme::getAccentColour().withAlpha(0.3f));
     clipWarpToggle_.setColour(juce::TextButton::textColourOffId,
-                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    clipWarpToggle_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+                              ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    clipWarpToggle_.setColour(juce::TextButton::textColourOnId, ActiveTheme::getAccentColour());
     clipWarpToggle_.setClickingTogglesState(false);
     clipWarpToggle_.onClick = [this]() {
         if (selectedClipIds_.empty())
@@ -726,12 +728,13 @@ void ClipInspector::initClipPropertiesSection() {
     clipAutoTempoToggle_.setButtonText("BEAT");
     clipAutoTempoToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     clipAutoTempoToggle_.setColour(juce::TextButton::buttonColourId,
-                                   DarkTheme::getColour(DarkTheme::SURFACE));
+                                   ActiveTheme::getColour(ActiveTheme::SURFACE));
     clipAutoTempoToggle_.setColour(juce::TextButton::buttonOnColourId,
-                                   DarkTheme::getAccentColour().withAlpha(0.3f));
+                                   ActiveTheme::getAccentColour().withAlpha(0.3f));
     clipAutoTempoToggle_.setColour(juce::TextButton::textColourOffId,
-                                   DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    clipAutoTempoToggle_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+                                   ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    clipAutoTempoToggle_.setColour(juce::TextButton::textColourOnId,
+                                   ActiveTheme::getAccentColour());
     clipAutoTempoToggle_.setClickingTogglesState(false);
     clipAutoTempoToggle_.setTooltip(
         "Lock clip to musical time (bars/beats) instead of absolute time.\n"
@@ -850,10 +853,10 @@ void ClipInspector::initClipPropertiesSection() {
 
     // Stretch mode selector (algorithm)
     stretchModeCombo_.setColour(juce::ComboBox::backgroundColourId,
-                                DarkTheme::getColour(DarkTheme::SURFACE));
-    stretchModeCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+                                ActiveTheme::getColour(ActiveTheme::SURFACE));
+    stretchModeCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
     stretchModeCombo_.setColour(juce::ComboBox::outlineColourId,
-                                DarkTheme::getColour(DarkTheme::BORDER));
+                                ActiveTheme::getColour(ActiveTheme::BORDER));
     // Mode values match TimeStretcher::Mode enum (combo ID = mode + 1)
     stretchModeCombo_.addItem("Off", time_stretch_mode::kDisabled + 1);
     stretchModeCombo_.addItem("Signalsmith", time_stretch_mode::kSignalsmith + 1);
@@ -876,7 +879,7 @@ void ClipInspector::initClipPropertiesSection() {
     // below. Scale (major/minor) is intentionally not exposed.
     clipKeyLabel_.setText("KEY", juce::dontSendNotification);
     clipKeyLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipKeyLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipKeyLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipKeyLabel_.setJustificationType(juce::Justification::centredLeft);
     clipPropsContainer_.addChildComponent(clipKeyLabel_);
 
@@ -887,10 +890,10 @@ void ClipInspector::initClipPropertiesSection() {
     // (stretchModeCombo_). InspectorComboBoxLookAndFeel below restyles the
     // popup menu — these setColour calls control the closed widget.
     clipKeyRootCombo_.setColour(juce::ComboBox::backgroundColourId,
-                                DarkTheme::getColour(DarkTheme::SURFACE));
-    clipKeyRootCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+                                ActiveTheme::getColour(ActiveTheme::SURFACE));
+    clipKeyRootCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
     clipKeyRootCombo_.setColour(juce::ComboBox::outlineColourId,
-                                DarkTheme::getColour(DarkTheme::BORDER));
+                                ActiveTheme::getColour(ActiveTheme::BORDER));
     clipKeyRootCombo_.addItem("--", 1);
     for (int i = 0; i < 12; ++i) {
         clipKeyRootCombo_.addItem(kKeyRoots[i], i + 2);
@@ -994,7 +997,7 @@ void ClipInspector::initClipPropertiesSection() {
     // Loop start
     clipLoopStartLabel_.setText("start", juce::dontSendNotification);
     clipLoopStartLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipLoopStartLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipLoopStartLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(clipLoopStartLabel_);
 
     clipLoopStartValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
@@ -1046,7 +1049,7 @@ void ClipInspector::initClipPropertiesSection() {
     // Loop end (derived: loopStart + loopLength)
     clipLoopEndLabel_.setText("end", juce::dontSendNotification);
     clipLoopEndLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipLoopEndLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipLoopEndLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(clipLoopEndLabel_);
 
     clipLoopEndValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
@@ -1132,7 +1135,7 @@ void ClipInspector::initClipPropertiesSection() {
     // Source read offset / loop phase (same model field, mode-specific label)
     clipLoopPhaseLabel_.setText("phase", juce::dontSendNotification);
     clipLoopPhaseLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipLoopPhaseLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipLoopPhaseLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(clipLoopPhaseLabel_);
 
     clipLoopPhaseValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
@@ -1179,16 +1182,16 @@ void ClipInspector::initClipPropertiesSection() {
 void ClipInspector::initSessionLaunchSection() {
     launchModeLabel_.setText("Launch Mode", juce::dontSendNotification);
     launchModeLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    launchModeLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    launchModeLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(launchModeLabel_);
 
     launchModeCombo_.addItem("Trigger", 1);
     launchModeCombo_.addItem("Toggle", 2);
     launchModeCombo_.setColour(juce::ComboBox::backgroundColourId,
-                               DarkTheme::getColour(DarkTheme::SURFACE));
-    launchModeCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+                               ActiveTheme::getColour(ActiveTheme::SURFACE));
+    launchModeCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
     launchModeCombo_.setColour(juce::ComboBox::outlineColourId,
-                               DarkTheme::getColour(DarkTheme::SEPARATOR));
+                               ActiveTheme::getColour(ActiveTheme::SEPARATOR));
     launchModeCombo_.onChange = [this]() {
         if (selectedClipIds_.empty())
             return;
@@ -1204,7 +1207,8 @@ void ClipInspector::initSessionLaunchSection() {
 
     launchQuantizeLabel_.setText("Launch Quantize", juce::dontSendNotification);
     launchQuantizeLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    launchQuantizeLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    launchQuantizeLabel_.setColour(juce::Label::textColourId,
+                                   ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(launchQuantizeLabel_);
 
     launchQuantizeCombo_.addItem("None", 1);
@@ -1217,10 +1221,10 @@ void ClipInspector::initSessionLaunchSection() {
     launchQuantizeCombo_.addItem("1/8", 8);
     launchQuantizeCombo_.addItem("1/16", 9);
     launchQuantizeCombo_.setColour(juce::ComboBox::backgroundColourId,
-                                   DarkTheme::getColour(DarkTheme::SURFACE));
-    launchQuantizeCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+                                   ActiveTheme::getColour(ActiveTheme::SURFACE));
+    launchQuantizeCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
     launchQuantizeCombo_.setColour(juce::ComboBox::outlineColourId,
-                                   DarkTheme::getColour(DarkTheme::SEPARATOR));
+                                   ActiveTheme::getColour(ActiveTheme::SEPARATOR));
     launchQuantizeCombo_.onChange = [this]() {
         if (selectedClipIds_.empty())
             return;
@@ -1238,7 +1242,7 @@ void ClipInspector::initSessionLaunchSection() {
 
     followActionLabel_.setText("Follow Action", juce::dontSendNotification);
     followActionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    followActionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    followActionLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(followActionLabel_);
 
     followActionCombo_.addItem("None", 1);
@@ -1248,10 +1252,10 @@ void ClipInspector::initSessionLaunchSection() {
     followActionCombo_.addItem("Stop", 5);
     followActionCombo_.addItem("Play Again", 6);
     followActionCombo_.setColour(juce::ComboBox::backgroundColourId,
-                                 DarkTheme::getColour(DarkTheme::SURFACE));
-    followActionCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+                                 ActiveTheme::getColour(ActiveTheme::SURFACE));
+    followActionCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
     followActionCombo_.setColour(juce::ComboBox::outlineColourId,
-                                 DarkTheme::getColour(DarkTheme::SEPARATOR));
+                                 ActiveTheme::getColour(ActiveTheme::SEPARATOR));
     followActionCombo_.onChange = [this]() {
         if (selectedClipIds_.empty())
             return;
@@ -1269,7 +1273,7 @@ void ClipInspector::initSessionLaunchSection() {
     followActionDelayLabel_.setText("Follow Delay (beats)", juce::dontSendNotification);
     followActionDelayLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     followActionDelayLabel_.setColour(juce::Label::textColourId,
-                                      DarkTheme::getSecondaryTextColour());
+                                      ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(followActionDelayLabel_);
 
     followActionDelaySlider_.setRange(0.0, 64.0, 0.25);
@@ -1291,7 +1295,7 @@ void ClipInspector::initSessionLaunchSection() {
     followActionLoopCountLabel_.setText("Follow Loops", juce::dontSendNotification);
     followActionLoopCountLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     followActionLoopCountLabel_.setColour(juce::Label::textColourId,
-                                          DarkTheme::getSecondaryTextColour());
+                                          ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(followActionLoopCountLabel_);
 
     followActionLoopCountSlider_.setRange(1.0, 64.0, 1.0);
@@ -1334,17 +1338,17 @@ void ClipInspector::initViewport() {
 void ClipInspector::initPitchSection() {
     pitchSectionLabel_.setText("Pitch", juce::dontSendNotification);
     pitchSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    pitchSectionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    pitchSectionLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(pitchSectionLabel_);
 
     autoPitchToggle_.setButtonText("AUTO-PITCH");
     autoPitchToggle_.setColour(juce::TextButton::buttonColourId,
-                               DarkTheme::getColour(DarkTheme::SURFACE));
+                               ActiveTheme::getColour(ActiveTheme::SURFACE));
     autoPitchToggle_.setColour(juce::TextButton::buttonOnColourId,
-                               DarkTheme::getAccentColour().withAlpha(0.3f));
+                               ActiveTheme::getAccentColour().withAlpha(0.3f));
     autoPitchToggle_.setColour(juce::TextButton::textColourOffId,
-                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    autoPitchToggle_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+                               ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    autoPitchToggle_.setColour(juce::TextButton::textColourOnId, ActiveTheme::getAccentColour());
     autoPitchToggle_.onClick = [this]() {
         if (selectedClipIds_.empty())
             return;
@@ -1365,12 +1369,12 @@ void ClipInspector::initPitchSection() {
     analogPitchToggle_.setButtonText("ANALOG");
     analogPitchToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     analogPitchToggle_.setColour(juce::TextButton::buttonColourId,
-                                 DarkTheme::getColour(DarkTheme::SURFACE));
+                                 ActiveTheme::getColour(ActiveTheme::SURFACE));
     analogPitchToggle_.setColour(juce::TextButton::buttonOnColourId,
-                                 DarkTheme::getAccentColour().withAlpha(0.3f));
+                                 ActiveTheme::getAccentColour().withAlpha(0.3f));
     analogPitchToggle_.setColour(juce::TextButton::textColourOffId,
-                                 DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    analogPitchToggle_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+                                 ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    analogPitchToggle_.setColour(juce::TextButton::textColourOnId, ActiveTheme::getAccentColour());
     analogPitchToggle_.setTooltip(
         "Analog pitch shift: resample instead of time-stretch.\n"
         "Changes playback speed to change pitch (tape/vinyl/sampler behavior).");
@@ -1392,10 +1396,10 @@ void ClipInspector::initPitchSection() {
     clipPropsContainer_.addChildComponent(analogPitchToggle_);
 
     autoPitchModeCombo_.setColour(juce::ComboBox::backgroundColourId,
-                                  DarkTheme::getColour(DarkTheme::SURFACE));
-    autoPitchModeCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+                                  ActiveTheme::getColour(ActiveTheme::SURFACE));
+    autoPitchModeCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
     autoPitchModeCombo_.setColour(juce::ComboBox::outlineColourId,
-                                  DarkTheme::getColour(DarkTheme::BORDER));
+                                  ActiveTheme::getColour(ActiveTheme::BORDER));
     autoPitchModeCombo_.addItem("Pitch Track", 1);
     autoPitchModeCombo_.addItem("Chord Mono", 2);
     autoPitchModeCombo_.addItem("Chord Poly", 3);
@@ -1429,16 +1433,16 @@ void ClipInspector::initPitchSection() {
 
     midiTransposeLabel_.setText("Transpose", juce::dontSendNotification);
     midiTransposeLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
-    midiTransposeLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    midiTransposeLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     midiTransposeLabel_.setJustificationType(juce::Justification::centredLeft);
     clipPropsContainer_.addChildComponent(midiTransposeLabel_);
 
     midiTransposeDownBtn_.setButtonText("-");
     midiTransposeDownBtn_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     midiTransposeDownBtn_.setColour(juce::TextButton::buttonColourId,
-                                    DarkTheme::getColour(DarkTheme::SURFACE));
+                                    ActiveTheme::getColour(ActiveTheme::SURFACE));
     midiTransposeDownBtn_.setColour(juce::TextButton::textColourOffId,
-                                    DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                                    ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     midiTransposeDownBtn_.setTooltip("Transpose down (Shift = octave)");
     midiTransposeDownBtn_.onClick = [transposeAction]() {
         transposeAction(-1, juce::ModifierKeys::currentModifiers.isShiftDown());
@@ -1448,9 +1452,9 @@ void ClipInspector::initPitchSection() {
     midiTransposeUpBtn_.setButtonText("+");
     midiTransposeUpBtn_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     midiTransposeUpBtn_.setColour(juce::TextButton::buttonColourId,
-                                  DarkTheme::getColour(DarkTheme::SURFACE));
+                                  ActiveTheme::getColour(ActiveTheme::SURFACE));
     midiTransposeUpBtn_.setColour(juce::TextButton::textColourOffId,
-                                  DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                                  ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     midiTransposeUpBtn_.setTooltip("Transpose up (Shift = octave)");
     midiTransposeUpBtn_.onClick = [transposeAction]() {
         transposeAction(1, juce::ModifierKeys::currentModifiers.isShiftDown());
@@ -1490,14 +1494,15 @@ void ClipInspector::initPitchSection() {
 void ClipInspector::initGrooveSection() {
     grooveSectionLabel_.setText("Groove", juce::dontSendNotification);
     grooveSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    grooveSectionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    grooveSectionLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(grooveSectionLabel_);
 
     // Groove template picker button
     grooveTemplateButton_.setButtonText("None");
     grooveTemplateButton_.setColour(juce::TextButton::buttonColourId,
-                                    DarkTheme::getColour(DarkTheme::SURFACE));
-    grooveTemplateButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+                                    ActiveTheme::getColour(ActiveTheme::SURFACE));
+    grooveTemplateButton_.setColour(juce::TextButton::textColourOffId,
+                                    ActiveTheme::getTextColour());
     grooveTemplateButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     grooveTemplateButton_.onClick = [this]() { showGroovePicker(); };
     clipPropsContainer_.addChildComponent(grooveTemplateButton_);
@@ -1505,7 +1510,8 @@ void ClipInspector::initGrooveSection() {
     // Groove strength slider
     grooveStrengthLabel_.setText("Strength", juce::dontSendNotification);
     grooveStrengthLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
-    grooveStrengthLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    grooveStrengthLabel_.setColour(juce::Label::textColourId,
+                                   ActiveTheme::getSecondaryTextColour());
     grooveStrengthLabel_.setJustificationType(juce::Justification::centredLeft);
     clipPropsContainer_.addChildComponent(grooveStrengthLabel_);
 
@@ -1616,7 +1622,8 @@ void ClipInspector::onGrooveTemplateSelected(const juce::String& templateName) {
 void ClipInspector::initMixSection() {
     clipMixSectionLabel_.setText("Mix", juce::dontSendNotification);
     clipMixSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipMixSectionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipMixSectionLabel_.setColour(juce::Label::textColourId,
+                                   ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(clipMixSectionLabel_);
 
     clipVolumeValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Decibels);
@@ -1692,18 +1699,18 @@ void ClipInspector::initPlaybackSection() {
     beatDetectionSectionLabel_.setText("Playback", juce::dontSendNotification);
     beatDetectionSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     beatDetectionSectionLabel_.setColour(juce::Label::textColourId,
-                                         DarkTheme::getSecondaryTextColour());
+                                         ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(beatDetectionSectionLabel_);
 
     reverseToggle_.setButtonText("REVERSE");
     reverseToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     reverseToggle_.setColour(juce::TextButton::buttonColourId,
-                             DarkTheme::getColour(DarkTheme::SURFACE));
+                             ActiveTheme::getColour(ActiveTheme::SURFACE));
     reverseToggle_.setColour(juce::TextButton::buttonOnColourId,
-                             DarkTheme::getAccentColour().withAlpha(0.3f));
+                             ActiveTheme::getAccentColour().withAlpha(0.3f));
     reverseToggle_.setColour(juce::TextButton::textColourOffId,
-                             DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    reverseToggle_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+                             ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    reverseToggle_.setColour(juce::TextButton::textColourOnId, ActiveTheme::getAccentColour());
     reverseToggle_.onClick = [this]() {
         if (selectedClipIds_.empty())
             return;
@@ -1720,13 +1727,13 @@ void ClipInspector::initPlaybackSection() {
 
     autoDetectBeatsToggle_.setButtonText("AUTO-DETECT");
     autoDetectBeatsToggle_.setColour(juce::TextButton::buttonColourId,
-                                     DarkTheme::getColour(DarkTheme::SURFACE));
+                                     ActiveTheme::getColour(ActiveTheme::SURFACE));
     autoDetectBeatsToggle_.setColour(juce::TextButton::buttonOnColourId,
-                                     DarkTheme::getAccentColour().withAlpha(0.3f));
+                                     ActiveTheme::getAccentColour().withAlpha(0.3f));
     autoDetectBeatsToggle_.setColour(juce::TextButton::textColourOffId,
-                                     DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                     ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     autoDetectBeatsToggle_.setColour(juce::TextButton::textColourOnId,
-                                     DarkTheme::getAccentColour());
+                                     ActiveTheme::getAccentColour());
     autoDetectBeatsToggle_.onClick = [this]() {
         if (selectedClipIds_.empty())
             return;
@@ -1769,13 +1776,13 @@ void ClipInspector::initPlaybackSection() {
     transientSectionLabel_.setText("Transient Detection", juce::dontSendNotification);
     transientSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     transientSectionLabel_.setColour(juce::Label::textColourId,
-                                     DarkTheme::getSecondaryTextColour());
+                                     ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(transientSectionLabel_);
 
     transientSensitivityLabel_.setText("Sensitivity", juce::dontSendNotification);
     transientSensitivityLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
     transientSensitivityLabel_.setColour(juce::Label::textColourId,
-                                         DarkTheme::getSecondaryTextColour());
+                                         ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(transientSensitivityLabel_);
 
     transientSensitivityValue_ =
@@ -1820,18 +1827,19 @@ void ClipInspector::initFadesSection() {
 void ClipInspector::initChannelsSection() {
     channelsSectionLabel_.setText("Channels", juce::dontSendNotification);
     channelsSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    channelsSectionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    channelsSectionLabel_.setColour(juce::Label::textColourId,
+                                    ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(channelsSectionLabel_);
 
     leftChannelToggle_.setButtonText("L");
     leftChannelToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     leftChannelToggle_.setColour(juce::TextButton::buttonColourId,
-                                 DarkTheme::getColour(DarkTheme::SURFACE));
+                                 ActiveTheme::getColour(ActiveTheme::SURFACE));
     leftChannelToggle_.setColour(juce::TextButton::buttonOnColourId,
-                                 DarkTheme::getAccentColour().withAlpha(0.3f));
+                                 ActiveTheme::getAccentColour().withAlpha(0.3f));
     leftChannelToggle_.setColour(juce::TextButton::textColourOffId,
-                                 DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    leftChannelToggle_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+                                 ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    leftChannelToggle_.setColour(juce::TextButton::textColourOnId, ActiveTheme::getAccentColour());
     leftChannelToggle_.onClick = [this]() {
         if (selectedClipIds_.empty())
             return;
@@ -1852,12 +1860,12 @@ void ClipInspector::initChannelsSection() {
     rightChannelToggle_.setButtonText("R");
     rightChannelToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     rightChannelToggle_.setColour(juce::TextButton::buttonColourId,
-                                  DarkTheme::getColour(DarkTheme::SURFACE));
+                                  ActiveTheme::getColour(ActiveTheme::SURFACE));
     rightChannelToggle_.setColour(juce::TextButton::buttonOnColourId,
-                                  DarkTheme::getAccentColour().withAlpha(0.3f));
+                                  ActiveTheme::getAccentColour().withAlpha(0.3f));
     rightChannelToggle_.setColour(juce::TextButton::textColourOffId,
-                                  DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    rightChannelToggle_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+                                  ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    rightChannelToggle_.setColour(juce::TextButton::textColourOnId, ActiveTheme::getAccentColour());
     rightChannelToggle_.onClick = [this]() {
         if (selectedClipIds_.empty())
             return;

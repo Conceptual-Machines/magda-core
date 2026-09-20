@@ -44,7 +44,7 @@
 #include "project/ProjectManager.hpp"
 #include "scripting_app.hpp"
 #include "ui/dialogs/SplashScreen.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/MainLookAndFeel.hpp"
 #include "ui/themes/UserTheme.hpp"
@@ -274,7 +274,7 @@ class MagdaDAWApplication : public JUCEApplication {
         // dark internally if the id is unknown or the file is invalid.
         magda::applyThemeById(magda::Config::getInstance().getTheme());
         lookAndFeel_ = std::make_unique<magda::MainLookAndFeel>();
-        magda::DarkTheme::applyToLookAndFeel(*lookAndFeel_);
+        magda::ActiveTheme::applyToLookAndFeel(*lookAndFeel_);
         juce::LookAndFeel::setDefaultLookAndFeel(lookAndFeel_.get());
 
         // 5. Apply HiDPI scale before any window is created.

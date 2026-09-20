@@ -5,8 +5,8 @@
 #include <set>
 
 #include "../../components/pianoroll/PhaseMarker.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/CursorManager.hpp"
-#include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../utils/SelectionPolicy.hpp"
 #include "BinaryData.h"
@@ -470,7 +470,7 @@ class DrumGridClipGrid : public juce::Component,
         auto bounds = getLocalBounds();
 
         // Background
-        g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
+        g.fillAll(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
 
         if (!padRows_ || padRows_->empty())
             return;
@@ -478,7 +478,7 @@ class DrumGridClipGrid : public juce::Component,
         int numRows = static_cast<int>(padRows_->size());
 
         // Draw horizontal row lines
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.5f));
         for (int i = 0; i <= numRows; ++i) {
             int y = i * rowHeight_;
             g.drawHorizontalLine(y, 0.0f, static_cast<float>(bounds.getWidth()));
@@ -494,7 +494,7 @@ class DrumGridClipGrid : public juce::Component,
 
             // Pass 1: Subdivision lines at grid resolution (finest, drawn first)
             if (gridResolutionBeats_ > 0.0) {
-                g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.45f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.45f));
                 int numLines =
                     static_cast<int>(std::ceil((beatsVisible + 1.0) / gridResolutionBeats_));
                 for (int i = 0; i <= numLines; i++) {
@@ -511,7 +511,7 @@ class DrumGridClipGrid : public juce::Component,
             }
 
             // Pass 2: Beat lines
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.55f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.55f));
             for (int b = 1; b <= static_cast<int>(beatsVisible) + 1; b++) {
                 if (b % tsNum == 0)
                     continue;
@@ -523,7 +523,7 @@ class DrumGridClipGrid : public juce::Component,
             }
 
             // Pass 3: Bar lines
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.85f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.85f));
             for (int bar = 0; bar * tsNum <= static_cast<int>(beatsVisible) + 1; bar++) {
                 int x = static_cast<int>(static_cast<double>(bar * tsNum) * pixelsPerBeat_) +
                         GRID_LEFT_PADDING;
@@ -623,7 +623,7 @@ class DrumGridClipGrid : public juce::Component,
             if (contentBeat) {
                 int playheadX = beatToPixel(clipBeatToDisplayBeat(*contentBeat));
                 if (playheadX >= 0 && playheadX <= bounds.getWidth()) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
                     g.fillRect(playheadX - 1, 0, 2, numRows * rowHeight_);
                 }
             }
@@ -1367,7 +1367,7 @@ class DrumGridClipGrid : public juce::Component,
         const int width =
             juce::jmax(4, static_cast<int>(getDefaultNoteLengthBeats() * pixelsPerBeat_));
         const int height = rowHeight_ - 2;
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.35f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.35f));
         for (double beat : repeatStampBeats()) {
             const int x = beatToPixel(clipBeatToDisplayBeat(beat));
             g.fillRoundedRectangle(static_cast<float>(x), static_cast<float>(y + 1),
@@ -1729,13 +1729,13 @@ class DrumGridRowLabels : public juce::Component {
         rowEditor_->setBorder({1, 2, 1, 2});
         rowEditor_->setIndents(4, 1);
         rowEditor_->setColour(juce::TextEditor::backgroundColourId,
-                              DarkTheme::getColour(DarkTheme::BACKGROUND));
+                              ActiveTheme::getColour(ActiveTheme::BACKGROUND));
         rowEditor_->setColour(juce::TextEditor::textColourId,
-                              DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                              ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         rowEditor_->setColour(juce::TextEditor::outlineColourId,
-                              DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                              ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         rowEditor_->setColour(juce::TextEditor::focusedOutlineColourId,
-                              DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                              ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         juce::String seed;
         if (getRowLabel)
             seed = getRowLabel(noteNumber);
@@ -1759,7 +1759,7 @@ class DrumGridRowLabels : public juce::Component {
         auto bounds = getLocalBounds();
 
         // Background
-        g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
+        g.fillAll(ActiveTheme::getColour(ActiveTheme::BACKGROUND_ALT));
 
         if (!padRows_ || padRows_->empty())
             return;
@@ -1776,19 +1776,19 @@ class DrumGridRowLabels : public juce::Component {
 
             // Alternating row background
             if (i % 2 == 0) {
-                g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.08f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.08f));
                 g.fillRect(0, y, bounds.getWidth(), rowHeight_);
             }
 
             // Row separator
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.3f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.3f));
             g.drawHorizontalLine(y + rowHeight_, 0.0f, static_cast<float>(bounds.getWidth()));
 
             const auto& padRow = (*padRows_)[i];
 
             // Live-input highlight for monitored notes currently held.
             if (pressedNotes_.count(padRow.noteNumber) != 0) {
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.35f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.35f));
                 g.fillRect(0, y, bounds.getWidth(), rowHeight_);
             }
 
@@ -1808,9 +1808,9 @@ class DrumGridRowLabels : public juce::Component {
                             static_cast<float>(y) + static_cast<float>(rowHeight_ - pillH) / 2.0f,
                             static_cast<float>(pillW), static_cast<float>(pillH));
                         g.setColour(
-                            DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.85f));
+                            ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.85f));
                         g.fillRoundedRectangle(pill, 3.0f);
-                        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+                        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
                         g.drawText(shortTag, pill.toNearestInt(), juce::Justification::centred,
                                    false);
                         textX += pillW + 4;
@@ -1818,8 +1818,8 @@ class DrumGridRowLabels : public juce::Component {
                 }
 
                 // Pad name (after the role pill)
-                g.setColour(padRow.hasChain ? DarkTheme::getColour(DarkTheme::TEXT_PRIMARY)
-                                            : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                g.setColour(padRow.hasChain ? ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY)
+                                            : ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
                 g.drawText(padRow.name,
                            juce::Rectangle<int>(textX, y + 1, juce::jmax(0, textRight - textX),
                                                 rowHeight_ - 2),
@@ -1832,11 +1832,11 @@ class DrumGridRowLabels : public juce::Component {
             bool isHovered = (hoverRow_ == i);
 
             if (isPlaying) {
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
             } else if (isHovered) {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.7f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.7f));
             } else {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.3f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.3f));
             }
 
             // Draw play triangle
@@ -1848,7 +1848,7 @@ class DrumGridRowLabels : public juce::Component {
         }
 
         // Right border
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawVerticalLine(bounds.getWidth() - 1, 0.0f, static_cast<float>(bounds.getHeight()));
     }
 
@@ -1991,7 +1991,7 @@ class DrumGridLabelDivider : public juce::Component {
         // Idle: invisible (inherits the parent's bg). Hover/drag: subtle accent
         // so the user can see the hit zone they grabbed.
         if (isMouseOverOrDragging()) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.5f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.5f));
             g.fillRect(getLocalBounds());
         }
     }
@@ -2056,8 +2056,8 @@ DrumGridClipContent::DrumGridClipContent() {
     previewToggle_ = std::make_unique<magda::SvgButton>("NotePreview", BinaryData::master_off_svg,
                                                         BinaryData::master_off_svgSize);
     previewToggle_->setTooltip("Preview notes (click a note to hear it)");
-    previewToggle_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    previewToggle_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    previewToggle_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    previewToggle_->setActiveColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     syncNotePreviewToggle(*previewToggle_, isNotePreviewEnabled());
     previewToggle_->onClick = [this]() {
         setNotePreviewEnabled(!isNotePreviewEnabled());
@@ -2446,7 +2446,7 @@ void DrumGridClipContent::onGridResolutionChanged() {
 // ============================================================================
 
 void DrumGridClipContent::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getPanelBackgroundColour());
+    g.fillAll(ActiveTheme::getPanelBackgroundColour());
 
     if (getWidth() <= 0 || getHeight() <= 0)
         return;
@@ -2798,10 +2798,10 @@ void DrumGridClipContent::applyOverlayTracks() {
 // ============================================================================
 
 void DrumGridClipContent::drawSidebar(juce::Graphics& g, juce::Rectangle<int> area) {
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND_ALT));
     g.fillRect(area);
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawVerticalLine(area.getRight() - 1, static_cast<float>(area.getY()),
                        static_cast<float>(area.getBottom()));
 

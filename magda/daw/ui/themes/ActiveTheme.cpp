@@ -1,4 +1,4 @@
-#include "DarkTheme.hpp"
+#include "ActiveTheme.hpp"
 
 #include <algorithm>
 #include <iterator>
@@ -7,7 +7,7 @@ namespace magda {
 
 namespace {
 
-constexpr DarkTheme::Palette darkPalette{
+constexpr ActiveTheme::Palette darkPalette{
     // Elevation ramp
     0xFF0C0F14,  // E0
     0xFF151A21,  // E1
@@ -175,7 +175,7 @@ constexpr DarkTheme::Palette darkPalette{
     0xFF404050,  // MIXER_KNOB_GUIDE
 };
 
-constexpr DarkTheme::SyntaxPalette darkSyntaxPalette{
+constexpr ActiveTheme::SyntaxPalette darkSyntaxPalette{
     0xFF0C0F14,  // EDITOR_BACKGROUND
     0xFFE8EDF1,  // EDITOR_DEFAULT_TEXT
     0xFF252526,  // LINE_NUMBER_BACKGROUND
@@ -217,7 +217,7 @@ constexpr std::size_t syntaxColourRoleIndex(SyntaxColourRole role) {
     return static_cast<std::size_t>(role);
 }
 
-constexpr DarkTheme::Palette lightPalette = [] {
+constexpr ActiveTheme::Palette lightPalette = [] {
     auto palette = darkPalette;
     const auto set = [&palette](ColourRole role, juce::uint32 colour) {
         palette[colourRoleIndex(role)] = colour;
@@ -381,7 +381,7 @@ constexpr DarkTheme::Palette lightPalette = [] {
     return palette;
 }();
 
-constexpr DarkTheme::SyntaxPalette lightSyntaxPalette{
+constexpr ActiveTheme::SyntaxPalette lightSyntaxPalette{
     0xFFF7F8FA,  // EDITOR_BACKGROUND
     0xFF202830,  // EDITOR_DEFAULT_TEXT
     0xFFEAEDF0,  // LINE_NUMBER_BACKGROUND
@@ -415,7 +415,7 @@ constexpr DarkTheme::SyntaxPalette lightSyntaxPalette{
     0xFF35434E,  // CHAT_TOKEN_PUNCTUATION
 };
 
-constexpr DarkTheme::Palette highContrastPalette = [] {
+constexpr ActiveTheme::Palette highContrastPalette = [] {
     auto palette = darkPalette;
 
     // High-contrast palette: pure-black surfaces with bright, saturated
@@ -570,7 +570,7 @@ constexpr DarkTheme::Palette highContrastPalette = [] {
     return palette;
 }();
 
-constexpr DarkTheme::SyntaxPalette highContrastSyntaxPalette = [] {
+constexpr ActiveTheme::SyntaxPalette highContrastSyntaxPalette = [] {
     auto palette = darkSyntaxPalette;
 
     palette[syntaxColourRoleIndex(SyntaxColourRole::EDITOR_BACKGROUND)] = 0xFF000000;
@@ -610,54 +610,41 @@ constexpr DarkTheme::SyntaxPalette highContrastSyntaxPalette = [] {
 
 }  // namespace
 
-DarkTheme::Palette DarkTheme::activePalette_ = darkPalette;
-DarkTheme::SyntaxPalette DarkTheme::activeSyntaxPalette_ = darkSyntaxPalette;
+ActiveTheme::Palette ActiveTheme::activePalette_ = darkPalette;
+ActiveTheme::SyntaxPalette ActiveTheme::activeSyntaxPalette_ = darkSyntaxPalette;
 
-const DarkTheme::Palette& DarkTheme::getDarkPalette() {
-    return darkPalette;
-}
-
-const DarkTheme::Palette& DarkTheme::getActivePalette() {
+const ActiveTheme::Palette& ActiveTheme::getActivePalette() {
     return activePalette_;
 }
 
-void DarkTheme::setActivePalette(const Palette& palette) {
+void ActiveTheme::setActivePalette(const Palette& palette) {
     activePalette_ = palette;
 }
 
-void DarkTheme::resetToDarkPalette() {
-    activePalette_ = darkPalette;
-    activeSyntaxPalette_ = darkSyntaxPalette;
-}
-
-const DarkTheme::SyntaxPalette& DarkTheme::getDarkSyntaxPalette() {
-    return darkSyntaxPalette;
-}
-
-const DarkTheme::SyntaxPalette& DarkTheme::getActiveSyntaxPalette() {
+const ActiveTheme::SyntaxPalette& ActiveTheme::getActiveSyntaxPalette() {
     return activeSyntaxPalette_;
 }
 
-void DarkTheme::setActiveSyntaxPalette(const SyntaxPalette& palette) {
+void ActiveTheme::setActiveSyntaxPalette(const SyntaxPalette& palette) {
     activeSyntaxPalette_ = palette;
 }
 
 bool ThemeManager::setActiveBuiltInTheme(const std::string& themeId) {
     if (themeId == kDarkThemeId) {
-        DarkTheme::activePalette_ = darkPalette;
-        DarkTheme::activeSyntaxPalette_ = darkSyntaxPalette;
+        ActiveTheme::activePalette_ = darkPalette;
+        ActiveTheme::activeSyntaxPalette_ = darkSyntaxPalette;
         return true;
     }
 
     if (themeId == kLightThemeId) {
-        DarkTheme::activePalette_ = lightPalette;
-        DarkTheme::activeSyntaxPalette_ = lightSyntaxPalette;
+        ActiveTheme::activePalette_ = lightPalette;
+        ActiveTheme::activeSyntaxPalette_ = lightSyntaxPalette;
         return true;
     }
 
     if (themeId == kHighContrastThemeId) {
-        DarkTheme::activePalette_ = highContrastPalette;
-        DarkTheme::activeSyntaxPalette_ = highContrastSyntaxPalette;
+        ActiveTheme::activePalette_ = highContrastPalette;
+        ActiveTheme::activeSyntaxPalette_ = highContrastSyntaxPalette;
         return true;
     }
 
@@ -669,10 +656,10 @@ bool ThemeManager::isBuiltInTheme(const std::string& themeId) {
 }
 
 bool ThemeManager::isLightTheme() {
-    return DarkTheme::getColour(DarkTheme::BACKGROUND).getPerceivedBrightness() >= 0.5f;
+    return ActiveTheme::getColour(ActiveTheme::BACKGROUND).getPerceivedBrightness() >= 0.5f;
 }
 
-const DarkTheme::Palette& ThemeManager::builtInPalette(const std::string& themeId) {
+const ActiveTheme::Palette& ThemeManager::builtInPalette(const std::string& themeId) {
     if (themeId == kLightThemeId)
         return lightPalette;
     if (themeId == kHighContrastThemeId)
@@ -680,7 +667,7 @@ const DarkTheme::Palette& ThemeManager::builtInPalette(const std::string& themeI
     return darkPalette;
 }
 
-const DarkTheme::SyntaxPalette& ThemeManager::builtInSyntaxPalette(const std::string& themeId) {
+const ActiveTheme::SyntaxPalette& ThemeManager::builtInSyntaxPalette(const std::string& themeId) {
     if (themeId == kLightThemeId)
         return lightSyntaxPalette;
     if (themeId == kHighContrastThemeId)
@@ -688,7 +675,7 @@ const DarkTheme::SyntaxPalette& ThemeManager::builtInSyntaxPalette(const std::st
     return darkSyntaxPalette;
 }
 
-std::optional<ColourRole> DarkTheme::findDarkPaletteRole(juce::Colour colour) {
+std::optional<ColourRole> ActiveTheme::findPaletteRole(juce::Colour colour) {
     const auto rgb = colour.getARGB() & 0x00FFFFFFu;
     const auto findRole = [rgb](const Palette& palette) -> std::optional<ColourRole> {
         const auto hasThisRgb = [rgb](auto entry) { return (entry & 0x00FFFFFFu) == rgb; };
@@ -704,7 +691,7 @@ std::optional<ColourRole> DarkTheme::findDarkPaletteRole(juce::Colour colour) {
     return findRole(darkPalette);
 }
 
-void DarkTheme::applyToSvgIcon(juce::Drawable& drawable) {
+void ActiveTheme::applyToSvgIcon(juce::Drawable& drawable) {
     // All replacements preserve the current Dark output exactly. On another
     // palette they let the control icon follow the corresponding semantic
     // colour without editing its SVG payload.
@@ -756,19 +743,19 @@ void DarkTheme::applyToSvgIcon(juce::Drawable& drawable) {
         drawable.replaceColour(juce::Colour(sentinelKey++), getColour(mapping.role));
 }
 
-juce::uint32 DarkTheme::getColourValue(ColourRole role) {
+juce::uint32 ActiveTheme::getColourValue(ColourRole role) {
     const auto index = static_cast<std::size_t>(role);
     jassert(index < activePalette_.size());
     return activePalette_[index];
 }
 
-juce::uint32 DarkTheme::getSyntaxColourValue(SyntaxColourRole role) {
+juce::uint32 ActiveTheme::getSyntaxColourValue(SyntaxColourRole role) {
     const auto index = static_cast<std::size_t>(role);
     jassert(index < activeSyntaxPalette_.size());
     return activeSyntaxPalette_[index];
 }
 
-void DarkTheme::applyToLookAndFeel(juce::LookAndFeel_V4& laf) {
+void ActiveTheme::applyToLookAndFeel(juce::LookAndFeel_V4& laf) {
     // V4 ColourScheme drives the title bar background (widgetBackground) and a
     // few other top-level surfaces that the colour-ID system doesn't reach.
     laf.setColourScheme({
