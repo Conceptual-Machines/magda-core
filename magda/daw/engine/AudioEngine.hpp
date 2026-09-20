@@ -317,21 +317,6 @@ class AudioEngine : public AudioEngineListener {
         return {};
     }
 
-    // ===== Plugin state =====
-    //
-    // Only the rendering instance has an up to date state chunk, so these go
-    // to whichever engine is rendering (#2581). All three are synchronous:
-    // callers save the project or copy the device as soon as they return.
-
-    /** @brief Read every live plugin's state back into the model. */
-    virtual void captureAllPluginStates() = 0;
-
-    /** @brief The same for the one device at @p devicePath. */
-    virtual void capturePluginStateAt(const ChainNodePath& devicePath) = 0;
-
-    /** @brief Write the model's state for @p devicePath into the plugin (#2573). */
-    virtual void applyPluginStateAt(const ChainNodePath& devicePath) = 0;
-
     /**
      * @brief The plugin's own text for a parameter value, or empty (#2600).
      *

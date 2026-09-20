@@ -45,6 +45,7 @@ struct ProjectInfo;
  * - Receive state change notifications from TimelineController
  */
 class TracktionEngineWrapper : public AudioEngine,
+                               public PluginStateProvider,
                                public TransportInterface,
                                public TrackInterface,
                                public ClipInterface,
@@ -302,7 +303,7 @@ class TracktionEngineWrapper : public AudioEngine,
         return deviceMeters_;
     }
 
-    /** @brief Read the bridge's plugins back into the model. They are what this renders. */
+    /** @brief Feed PluginService from the bridge's instances. They are what this renders. */
     void captureAllPluginStates() override;
     void capturePluginStateAt(const ChainNodePath& devicePath) override;
     void applyPluginStateAt(const ChainNodePath& devicePath) override;

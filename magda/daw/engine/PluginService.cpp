@@ -160,6 +160,30 @@ void PluginService::forgetEngineList() {
     internalScanner_ = nullptr;
 }
 
+void PluginService::useStateProvider(PluginStateProvider& provider) {
+    std::erase(stateProviders_, &provider);
+    stateProviders_.push_back(&provider);
+}
+
+void PluginService::forgetStateProvider(const PluginStateProvider& provider) {
+    std::erase(stateProviders_, &provider);
+}
+
+void PluginService::captureAllPluginStates() {
+    if (!stateProviders_.empty())
+        stateProviders_.back()->captureAllPluginStates();
+}
+
+void PluginService::capturePluginStateAt(const ChainNodePath& devicePath) {
+    if (!stateProviders_.empty())
+        stateProviders_.back()->capturePluginStateAt(devicePath);
+}
+
+void PluginService::applyPluginStateAt(const ChainNodePath& devicePath) {
+    if (!stateProviders_.empty())
+        stateProviders_.back()->applyPluginStateAt(devicePath);
+}
+
 PluginScanCoordinator& PluginService::coordinator() const {
     if (!coordinator_)
         coordinator_ = std::make_unique<PluginScanCoordinator>();

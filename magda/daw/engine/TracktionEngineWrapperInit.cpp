@@ -381,13 +381,12 @@ void TracktionEngineWrapper::installProjectStateHooks() {
 
     // Wire up state capture before project save
     ProjectManager::getInstance().onBeforeSave = [this, alive]() {
-        // Asked of whichever engine is rendering: only the instance that
-        // rendered holds the chunk a project saves (#2581). The warp markers
+        // The service is fed by whichever engine renders: only that instance
+        // holds the chunk a project saves (#2758). The warp markers
         // stay the bridge's, being the fork's own clip state -- and the bridge
         // is read here rather than captured, because these hooks are installed
         // before there is one (#2579).
-        if (auto* engine = TrackManager::getInstance().getAudioEngine())
-            engine->captureAllPluginStates();
+        PluginService::getInstance().captureAllPluginStates();
 
         if (*alive && audioBridge_)
             audioBridge_->captureWarpMarkerStates();
@@ -494,6 +493,7 @@ bool TracktionEngineWrapper::initialisePlayback() {
     // Create AudioBridge for TrackManager synchronization
     audioBridge_ = std::make_unique<AudioBridge>(*engine_, *currentEdit_, meters_, deviceMeters_);
     audioBridge_->syncAll();
+    PluginService::getInstance().useStateProvider(*this);
     if (midiBridge_)
         midiBridge_->onActiveInputsChanged = [this] { audioBridge_->refreshActiveMidiInputs(); };
 
@@ -575,6 +575,10 @@ bool TracktionEngineWrapper::initialize() {
 
 void TracktionEngineWrapper::shutdown() {
     DBG("TracktionEngineWrapper::shutdown - starting...");
+
+    // Stop the service reaching the AudioBridge before that bridge is torn down. A
+    // services-only wrapper never registered, and cannot displace another engine here.
+    PluginService::getInstance().forgetStateProvider(*this);
 
     // Signal that this object is being destroyed so pending callAsync lambdas
     // that captured aliveFlag_ can bail out instead of dereferencing `this`.

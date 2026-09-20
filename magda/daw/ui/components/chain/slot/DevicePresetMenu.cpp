@@ -4,6 +4,7 @@
 #include "core/PresetManager.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"
+#include "engine/PluginService.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -188,8 +189,7 @@ void showMagdaPresetMenu(juce::Component* targetComponent, const juce::String& p
 std::optional<magda::DeviceInfo> snapshotDeviceForPreset(const magda::DeviceInfo& fallbackDevice,
                                                          const magda::ChainNodePath& nodePath) {
     auto& trackManager = magda::TrackManager::getInstance();
-    if (auto* engine = trackManager.getAudioEngine())
-        engine->capturePluginStateAt(nodePath);
+    magda::PluginService::getInstance().capturePluginStateAt(nodePath);
 
     if (auto* live = trackManager.getDeviceInChainByPath(nodePath))
         return *live;

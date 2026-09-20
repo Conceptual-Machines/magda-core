@@ -246,12 +246,6 @@ class ProjectBoundaryResetEngine : public AudioEngine {
         return deviceMeters_;
     }
 
-    void captureAllPluginStates() override {}
-
-    void capturePluginStateAt(const ChainNodePath&) override {}
-
-    void applyPluginStateAt(const ChainNodePath&) override {}
-
     bool showDeviceEditor(const ChainNodePath&) override {
         return false;
     }

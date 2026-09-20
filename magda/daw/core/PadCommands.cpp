@@ -5,6 +5,7 @@
 
 #include "../audio/AudioBridge.hpp"
 #include "../engine/AudioEngine.hpp"
+#include "../engine/PluginService.hpp"
 #include "RackInfo.hpp"
 
 namespace magda {
@@ -19,9 +20,7 @@ namespace {
 /// edited since it was added restores the sampler as it was added, not as it
 /// sounded. `RemoveDeviceByPathCommand` captures for the same reason.
 void capturePadPluginStates(const ChainNodePath& gridPath) {
-    auto& tm = TrackManager::getInstance();
-    if (auto* engine = tm.getAudioEngine())
-        engine->capturePluginStateAt(gridPath);
+    PluginService::getInstance().capturePluginStateAt(gridPath);
 }
 
 PadRack snapshotPads(const ChainNodePath& gridPath) {

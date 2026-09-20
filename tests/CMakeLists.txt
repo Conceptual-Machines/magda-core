@@ -80,6 +80,7 @@ set(TEST_SOURCES
     devices/test_plugin_metadata_store.cpp
     devices/test_external_plugin_lookup.cpp
     devices/test_prune_missing_plugins.cpp
+    devices/test_plugin_service_state.cpp
     devices/test_known_plugin_list_duplicates.cpp
     devices/test_device_parameter_pagination.cpp
     devices/test_mutable_clouds.cpp

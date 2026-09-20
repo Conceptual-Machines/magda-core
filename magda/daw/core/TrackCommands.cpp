@@ -8,6 +8,7 @@
 
 #include "../audio/AudioBridge.hpp"
 #include "../engine/AudioEngine.hpp"
+#include "../engine/PluginService.hpp"
 #include "../project/ProjectManager.hpp"
 #include "ClipManager.hpp"
 #include "RangesHelpers.hpp"
@@ -322,10 +323,8 @@ void DuplicateTrackCommand::execute() {
 
     // Capture current plugin state so the duplicate gets the source's live settings.
     // Skipped when we're stripping the FX chain anyway — nothing to carry over.
-    if (duplicateDevices_) {
-        if (auto* engine = trackManager.getAudioEngine())
-            engine->captureAllPluginStates();
-    }
+    if (duplicateDevices_)
+        PluginService::getInstance().captureAllPluginStates();
 
     duplicatedTrackId_ = trackManager.duplicateTrack(sourceTrackId_, duplicateDevices_);
 
@@ -881,9 +880,7 @@ void CreateTrackWithDeviceCommand::undo() {
 namespace {
 
 void capturePluginStateAt(const ChainNodePath& devicePath) {
-    auto& tm = TrackManager::getInstance();
-    if (auto* engine = tm.getAudioEngine())
-        engine->capturePluginStateAt(devicePath);
+    PluginService::getInstance().capturePluginStateAt(devicePath);
 }
 
 /// Flush every live plugin under @p chainPath into the model before it is taken

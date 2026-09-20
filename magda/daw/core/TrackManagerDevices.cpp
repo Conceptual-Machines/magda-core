@@ -11,6 +11,7 @@
 #include "../audio/plugins/MagdaDevice.hpp"
 #include "../audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "../engine/AudioEngine.hpp"
+#include "../engine/PluginService.hpp"
 #include "ChainWalk.hpp"
 #include "DeviceState.hpp"
 #include "DeviceStateCommands.hpp"
@@ -2102,10 +2103,9 @@ bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
     live->gainValue = std::pow(10.0f, presetDevice.gainDb / 20.0f);
     live->pluginState = stripPresetRuntimePluginState(presetDevice.pluginState);
 
-    // The rendering engine, not the bridge: only the live instance has the
-    // state (#2573). It may rewrite live->parameters.
-    if (audioEngine_ != nullptr)
-        audioEngine_->applyPluginStateAt(devicePath);
+    // The plugin service reaches whichever engine renders the live instance. It may
+    // rewrite live->parameters while applying the chunk (#2573, #2758).
+    PluginService::getInstance().applyPluginStateAt(devicePath);
 
     // Notify listeners — devicePropertyChanged covers gain/macros/mods refresh
     // via the AudioBridge sync path, then push each parameter individually so
