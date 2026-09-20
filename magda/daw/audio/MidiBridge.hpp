@@ -1,10 +1,18 @@
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
+/**
+ * @file MidiBridge.hpp
+ * @brief MIDI devices, routing and monitoring, owned by the app rather than an engine (#2759).
+ */
 
+#include <juce_audio_devices/juce_audio_devices.h>
+
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 #include "../core/MidiTypes.hpp"
 #include "../core/TypeIds.hpp"
@@ -13,20 +21,10 @@
 
 namespace magda {
 
-namespace te = tracktion;
-
 // Forward declarations
 class AudioBridge;
 struct TrackMeters;
 
-/**
- * @brief Bridges MAGDA's MIDI model to Tracktion Engine's MIDI system.
- *
- * Enumerates and manages MIDI input/output devices, routes inputs to tracks,
- * and monitors MIDI activity for visualization, with thread-safe
- * communication between the UI and audio threads. The MIDI counterpart to
- * AudioBridge.
- */
 // ============================================================================
 // RawMidiListener
 // ============================================================================
@@ -75,14 +73,50 @@ class LiveMidiSink {
 // MidiBridge
 // ============================================================================
 
+/**
+ * @brief The MIDI devices, the routes onto tracks, and the activity the UI draws.
+ *
+ * The app's, not an engine's (#2759): the ports stay open across an engine switch, and the
+ * routing menus, the controller layer, the QWERTY keyboard and the MIDI monitor all ask
+ * here rather than asking whichever engine renders. Whichever engine that is attaches
+ * through @ref useEngine and leaves through @ref forgetEngine.
+ *
+ * The one instance lives as long as the process and is never destroyed; @ref getInstance
+ * says why.
+ */
 class MidiBridge : public juce::MidiInputCallback {
   public:
-    explicit MidiBridge(te::Engine& engine);
-    ~MidiBridge() override;
+    static MidiBridge& getInstance();
 
-    // Explicitly delete move operations (copy operations deleted by JUCE macro)
     MidiBridge(MidiBridge&&) = delete;
     MidiBridge& operator=(MidiBridge&&) = delete;
+
+    /**
+     * @brief The engine that renders is attaching, offering @p virtualInputs of its own.
+     *
+     * Tracktion's enabled virtual devices under the fork, the QWERTY keyboard under the
+     * native engine: devices the system's MIDI list never holds but a track can route to.
+     *
+     * @p owner is an opaque token for whoever may hand the service back. A later attach
+     * replaces it, which is how the native engine layers over the fork it holds.
+     */
+    void useEngine(const void* owner, std::function<std::vector<MidiDeviceInfo>()> virtualInputs);
+
+    /** @brief Whether @p owner is the engine attached, for a teardown shared with others. */
+    bool isAttachedTo(const void* owner) const {
+        return owner != nullptr && owner_ == owner;
+    }
+
+    /**
+     * @brief That engine is going away: stop the inputs and forget what it lent.
+     *
+     * Does nothing unless @p owner is the engine attached, so a wrapper that never
+     * attached, or one another has since replaced, cannot unwind the live engine's MIDI.
+     *
+     * Inputs stop here rather than at destruction, because a callback arriving after the
+     * engine is gone has nowhere to route.
+     */
+    void forgetEngine(const void* owner);
 
     /**
      * @brief Set the AudioBridge reference used for triggering MIDI activity
@@ -180,8 +214,7 @@ class MidiBridge : public juce::MidiInputCallback {
      *
      * `deviceNameOrId` matches against either the device's display name
      * (what scripts see in `e.port`) or its JUCE identifier. The output
-     * stays open for the lifetime of MidiBridge so subsequent sends are
-     * cheap.
+     * stays open until the engine is forgotten, so subsequent sends are cheap.
      *
      * Thread-safe. Returns false if the device cannot be found or opened.
      */
@@ -212,17 +245,6 @@ class MidiBridge : public juce::MidiInputCallback {
      * @param deviceId Device identifier
      */
     void disableMidiInput(const juce::String& deviceId);
-
-    /**
-     * @brief Stop all MIDI inputs and wait for in-flight callbacks to drain.
-     * Call before destruction to avoid CoreMIDI race conditions.
-     */
-    void stopAllInputs();
-
-    /**
-     * @brief Check if a MIDI input is enabled
-     */
-    bool isMidiInputEnabled(const juce::String& deviceId) const;
 
     // =========================================================================
     // Track MIDI Routing
@@ -327,9 +349,19 @@ class MidiBridge : public juce::MidiInputCallback {
     /// Enables or disables the QWERTY device on the fork, and for the sink path.
     void setQwertyEnabled(bool enabled);
 
+    /// What the native engine's virtual-input list reads, having no fork device to ask.
+    bool isQwertyEnabled() const {
+        return qwertyEnabled_;
+    }
+
     void resetTestState();
 
   private:
+    MidiBridge();
+
+    /// Stop all MIDI inputs and drain in-flight callbacks, so none races the teardown.
+    void stopAllInputs();
+
     // MidiInputCallback implementation
     void handleIncomingMidiMessage(juce::MidiInput* source,
                                    const juce::MidiMessage& message) override;
@@ -339,7 +371,9 @@ class MidiBridge : public juce::MidiInputCallback {
     // only when the track is being monitored. Caller must hold routingLock_.
     void notifyNoteEventIfMonitored(TrackId trackId, int noteNumber, int velocity, bool isNoteOn);
 
-    te::Engine& engine_;
+    // Whoever attached, and what they offer beside the system's inputs (#2759).
+    const void* owner_ = nullptr;
+    std::function<std::vector<MidiDeviceInfo>()> virtualInputs_;
 
     // AudioBridge reference for triggering MIDI activity (not owned)
     AudioBridge* audioBridge_ = nullptr;
@@ -363,7 +397,7 @@ class MidiBridge : public juce::MidiInputCallback {
     std::unordered_map<juce::String, std::unique_ptr<juce::MidiInput>> activeMidiInputs_;
 
     // Active MIDI outputs (JUCE identifier → MidiOutput). Opened lazily by
-    // sendMidi() and kept alive until MidiBridge is destroyed.
+    // sendMidi() and kept alive until the engine is forgotten.
     std::unordered_map<juce::String, std::unique_ptr<juce::MidiOutput>> activeMidiOutputs_;
 
     // Synchronization for UI thread access
@@ -386,9 +420,10 @@ class MidiBridge : public juce::MidiInputCallback {
     /** @brief Open what a route names once it is plugged in, and close what was unplugged. */
     void refreshMidiInputs();
 
+    // Only while an engine is attached: it registers with a JUCE global that must be let
+    // go of on the message thread, and this static outlives the message manager (#2759).
     // Last, so it disconnects before anything its callback reads is destroyed.
-    juce::MidiDeviceListConnection deviceList_ =
-        juce::MidiDeviceListConnection::make([this] { refreshMidiInputs(); });
+    juce::MidiDeviceListConnection deviceList_;
 
     juce::ListenerList<Listener> midiDeviceListListeners_;
 
@@ -396,7 +431,8 @@ class MidiBridge : public juce::MidiInputCallback {
     juce::Array<RawMidiListener*> rawMidiListeners_;
     juce::CriticalSection rawMidiListenersLock_;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiBridge)
+    // No leak detector: the one instance outlives it on purpose, and would be reported.
+    JUCE_DECLARE_NON_COPYABLE(MidiBridge)
 };
 
 }  // namespace magda

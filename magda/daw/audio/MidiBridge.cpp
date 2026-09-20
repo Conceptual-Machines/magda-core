@@ -14,8 +14,53 @@
 
 namespace magda {
 
-MidiBridge::MidiBridge(te::Engine& engine) : engine_(engine) {
+MidiBridge& MidiBridge::getInstance() {
+    // Deliberately never destroyed. A static's destructor runs after the message manager,
+    // and this holds things JUCE only lets go of on that thread -- the device-list
+    // connection asserts it outright. Teardown is forgetEngine(), which the engine calls
+    // while the app is still up; what is left at exit is the OS's to reclaim (#2759).
+    static auto* instance = new MidiBridge();
+    return *instance;
+}
+
+MidiBridge::MidiBridge() {
     DBG("MidiBridge initialized");
+}
+
+void MidiBridge::useEngine(const void* owner,
+                           std::function<std::vector<MidiDeviceInfo>()> virtualInputs) {
+    owner_ = owner;
+    virtualInputs_ = std::move(virtualInputs);
+    isShuttingDown_.store(false, std::memory_order_release);
+    deviceList_ = juce::MidiDeviceListConnection::make([this] { refreshMidiInputs(); });
+}
+
+void MidiBridge::forgetEngine(const void* owner) {
+    if (!isAttachedTo(owner))
+        return;
+
+    // The sink is the engine handing the service back. Still installed, it is about to be
+    // a destroyed object that the MIDI callback thread can still push a note through
+    // (#2579) -- and this outlives it, so nothing else would catch that.
+    jassert(liveSink_.load(std::memory_order_acquire) == nullptr);
+
+    // The device list first so nothing reopens an input, then the inputs themselves:
+    // stopAllInputs() does not return until every callback in flight has left. Only
+    // after that is it safe to drop what those callbacks read.
+    deviceList_.reset();
+    stopAllInputs();
+
+    owner_ = nullptr;
+    clearAudioBridge();
+    onActiveInputsChanged = nullptr;
+    virtualInputs_ = nullptr;
+    meters_ = nullptr;
+    setRecordingQueue(nullptr, nullptr);
+
+    // Outputs after inputs, so any in-flight controller-feedback sends from listener
+    // callbacks have already drained.
+    juce::ScopedLock lock(routingLock_);
+    activeMidiOutputs_.clear();
 }
 
 void MidiBridge::setAudioBridge(AudioBridge* audioBridge) {
@@ -27,19 +72,6 @@ void MidiBridge::setLiveSink(LiveMidiSink* sink) {
     if (sink == nullptr)
         while (activeCallbacks_.load(std::memory_order_acquire) > 0)
             juce::Thread::sleep(1);
-}
-
-MidiBridge::~MidiBridge() {
-    // A sink still installed here is an owner that went first, leaving the
-    // MIDI callback thread a dangling pushMidi (#2579).
-    jassert(liveSink_.load(std::memory_order_acquire) == nullptr);
-
-    stopAllInputs();
-
-    // Tear down outputs after inputs so any in-flight controller-feedback
-    // sends from listener callbacks have already drained.
-    juce::ScopedLock lock(routingLock_);
-    activeMidiOutputs_.clear();
 }
 
 void MidiBridge::stopAllInputs() {
@@ -103,33 +135,13 @@ std::vector<MidiDeviceInfo> MidiBridge::getAvailableMidiInputs() const {
     auto devices = midiInputs | std::views::filter(isActive) |
                    std::views::transform(asPhysicalDevice) | toStd<std::vector<MidiDeviceInfo>>();
 
-    // Under the native engine, messages arrive under a physical device's
-    // identifier or under qwertyMidiDeviceId(). Those are the ids to offer.
-    if (liveSink_.load(std::memory_order_acquire) != nullptr) {
-        if (qwertyEnabled_)
-            devices.emplace_back(qwertyMidiDeviceId(), kQwertyMidiDeviceName, /*enabled=*/true);
-        return devices;
+    // The attached engine's own inputs, which the system's list never holds. The routing
+    // selectors refresh on midiDeviceListChanged, so a device switched off between calls
+    // is gone from the next one.
+    if (virtualInputs_) {
+        const auto engineDevices = virtualInputs_();
+        devices.insert(devices.end(), engineDevices.begin(), engineDevices.end());
     }
-
-    // Include TE virtual MIDI devices only when enabled. The routing
-    // selectors refresh via onMidiDeviceListChanged when the device
-    // state changes, so the filter is effective.
-    const auto isEnabledVirtualInput = [](const std::shared_ptr<te::MidiInputDevice>& dev) {
-        return dynamic_cast<te::VirtualMidiInputDevice*>(dev.get()) != nullptr && dev->isEnabled();
-    };
-    const auto asVirtualDevice = [](const std::shared_ptr<te::MidiInputDevice>& dev) {
-        MidiDeviceInfo info;
-        info.id = dev->getDeviceID();
-        info.name = dev->getName();
-        info.isEnabled = dev->isEnabled();
-        info.isAvailable = true;
-        return info;
-    };
-
-    const auto teDevices = engine_.getDeviceManager().getMidiInDevices();
-    std::ranges::copy(teDevices | std::views::filter(isEnabledVirtualInput) |
-                          std::views::transform(asVirtualDevice),
-                      std::back_inserter(devices));
 
     return devices;
 }
@@ -305,11 +317,6 @@ void MidiBridge::refreshMidiInputs() {
         enableMidiInput(deviceId);
 }
 
-bool MidiBridge::isMidiInputEnabled(const juce::String& deviceId) const {
-    auto device = engine_.getDeviceManager().findMidiInputDeviceForID(deviceId);
-    return device ? device->isEnabled() : false;
-}
-
 void MidiBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDeviceId) {
     juce::ScopedLock lock(routingLock_);
 
@@ -353,6 +360,11 @@ void MidiBridge::clearTrackMidiInput(TrackId trackId) {
 }
 
 void MidiBridge::resetTestState() {
+    // The service outlives every case in a binary, so a teardown in one must not leave
+    // the next one's MIDI switched off. The ports themselves are left alone: clearing the
+    // routes below is what stops a message reaching anything.
+    isShuttingDown_.store(false, std::memory_order_release);
+
     juce::ScopedLock lock(routingLock_);
     trackMidiInputs_.clear();
     monitoredTracks_.clear();

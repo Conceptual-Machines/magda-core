@@ -49,8 +49,7 @@ class TracktionEngineWrapper;
  * AudioEngine is 80 pure virtuals and roughly 25 of them are not engine
  * questions: plugin scanning and exclusion lists, groove templates, the device
  * manager, the sampler media list, the tempo-ripple command. getAudioBridge
- * hands back a type built around te::Edit and is answered null here;
- * getMidiBridge is the fork's, and a MidiBridge needs no Edit.
+ * hands back a type built around te::Edit and is answered null here.
  *
  * Narrowing that interface first would have made this a refactor with nothing
  * audible at the end of it, so instead this owns a TracktionEngineWrapper and
@@ -71,8 +70,8 @@ class TracktionEngineWrapper;
  *
  * ## What the Tracktion engine is under this one
  *
- * Services: the engine, the plugin formats, MIDI, the MidiBridge and the
- * project save hooks. No audio interface: that is @ref audioIO_'s (#2747).
+ * Services: the engine, the plugin formats, MIDI and the project save hooks.
+ * No audio interface: that is @ref audioIO_'s (#2747).
  * `initialisePlayback()` is never called, so there is no Edit and so no
  * playback context, and nothing on that side can fill an output buffer.
  * tests/engine/test_magda_audio_engine_juce.cpp pins it.
@@ -167,8 +166,6 @@ class MagdaAudioEngine final : public AudioEngine,
     EditReceipt editHostedParameter(const ChainNodePath& devicePath, int paramIndex,
                                     float normalised, EditOrigin origin,
                                     std::function<void(EditCompletion)> completed = {}) override;
-    MidiBridge* getMidiBridge() override;
-    const MidiBridge* getMidiBridge() const override;
     MagdaApi& getMagdaApi() override;
     InsertRenderCaptureService* getInsertRenderCaptureService() override;
     std::unique_ptr<OfflineRenderSession> createOfflineRenderSession(
@@ -262,7 +259,7 @@ class MagdaAudioEngine final : public AudioEngine,
 
     /// This engine's own facade onto the model; the fork builds a second one in
     /// initialisePlayback(), which is never called here. Last, so it lets go of
-    /// the fork's MidiBridge before the fork does.
+    /// the MIDI service before the fork hands it back.
     std::unique_ptr<MagdaApiLive> api_;
 };
 

@@ -128,8 +128,7 @@ MainView::MainView(AudioEngine* audioEngine) : horizontalZoom(10.0), audioEngine
     ControllerRouter::getInstance().reconfigure();
     ControllerRouter::getInstance().setParamWriter(
         std::make_unique<DefaultControllerParamWriter>());
-    if (auto* midiBridge = audioEngine_->getMidiBridge())
-        ControllerRouter::getInstance().setMidiBridge(midiBridge);
+    ControllerRouter::getInstance().setMidiBridge(&MidiBridge::getInstance());
 
     // Attach MIDI Learn coordinator to the router and seed scope from config
     magda::MidiLearnCoordinator::getInstance().attach(ControllerRouter::getInstance());

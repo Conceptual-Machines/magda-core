@@ -1,12 +1,8 @@
 #include "midi/QwertyMidiKeyboard.hpp"
 
-#include <tracktion_engine/tracktion_engine.h>
-
 #include "MidiBridge.hpp"
 
 namespace magda {
-
-QwertyMidiKeyboard::QwertyMidiKeyboard(MidiBridge& midiBridge) : midiBridge_(midiBridge) {}
 
 QwertyMidiKeyboard::~QwertyMidiKeyboard() {
     allNotesOff();
@@ -97,11 +93,11 @@ int QwertyMidiKeyboard::keyToNote(int keyCode) const {
 }
 
 void QwertyMidiKeyboard::sendNoteOn(int note) {
-    midiBridge_.playQwertyNote(note, velocity_, /*isNoteOn=*/true);
+    MidiBridge::getInstance().playQwertyNote(note, velocity_, /*isNoteOn=*/true);
 }
 
 void QwertyMidiKeyboard::sendNoteOff(int note) {
-    midiBridge_.playQwertyNote(note, velocity_, /*isNoteOn=*/false);
+    MidiBridge::getInstance().playQwertyNote(note, velocity_, /*isNoteOn=*/false);
 }
 
 void QwertyMidiKeyboard::allNotesOff() {

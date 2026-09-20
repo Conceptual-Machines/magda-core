@@ -943,12 +943,11 @@ class SessionView::MiniIOStrip : public juce::Component {
         if (!track)
             return;
 
-        auto* midiBridge = audioEngine_ ? audioEngine_->getMidiBridge() : nullptr;
         const auto* hardware = audioEngine_ ? audioEngine_->getAudioIO() : nullptr;
 
         RoutingSyncHelper::syncSelectorsFromTrack(
             *track, audioInSelector_.get(), midiInSelector_.get(), audioOutSelector_.get(),
-            midiOutSelector_.get(), midiBridge, hardware, trackId_, outputTrackMapping_,
+            midiOutSelector_.get(), hardware, trackId_, outputTrackMapping_,
             midiOutputTrackMapping_, &inputTrackMapping_, &inputChannelMapping_,
             &midiInputTrackMapping_, &outputChannelMapping_);
     }
@@ -975,7 +974,6 @@ class SessionView::MiniIOStrip : public juce::Component {
         if (!audioEngine_)
             return;
 
-        auto* midiBridge = audioEngine_->getMidiBridge();
         const auto* hardware = audioEngine_->getAudioIO();
 
         audioInSelector_->meterInputsFrom(audioEngine_->getAudioIO());
@@ -985,9 +983,9 @@ class SessionView::MiniIOStrip : public juce::Component {
         RoutingSyncHelper::populateAudioOutputOptions(
             audioOutSelector_.get(), trackId_, RoutingSyncHelper::openDirection(hardware, false),
             outputTrackMapping_, &outputChannelMapping_);
-        RoutingSyncHelper::populateMidiInputOptions(midiInSelector_.get(), midiBridge, trackId_,
+        RoutingSyncHelper::populateMidiInputOptions(midiInSelector_.get(), trackId_,
                                                     &midiInputTrackMapping_);
-        RoutingSyncHelper::populateMidiOutputOptions(midiOutSelector_.get(), midiBridge,
+        RoutingSyncHelper::populateMidiOutputOptions(midiOutSelector_.get(),
                                                      midiOutputTrackMapping_, trackId_);
 
         // Sync current track state into selectors
@@ -995,8 +993,6 @@ class SessionView::MiniIOStrip : public juce::Component {
     }
 
     void setupRoutingCallbacks() {
-        auto* midiBridge = audioEngine_ ? audioEngine_->getMidiBridge() : nullptr;
-
         audioInSelector_->onEnabledChanged = [this](bool enabled) {
             if (enabled) {
                 midiInSelector_->setEnabled(false);
@@ -1028,7 +1024,7 @@ class SessionView::MiniIOStrip : public juce::Component {
             }
         };
 
-        midiInSelector_->onEnabledChanged = [this, midiBridge](bool enabled) {
+        midiInSelector_->onEnabledChanged = [this](bool enabled) {
             if (enabled) {
                 audioInSelector_->setEnabled(false);
                 TrackManager::getInstance().setTrackAudioInput(trackId_, "");
@@ -1043,8 +1039,8 @@ class SessionView::MiniIOStrip : public juce::Component {
                             trackId_, "track:" + juce::String(it->second));
                     else
                         TrackManager::getInstance().setTrackMidiInput(trackId_, "all");
-                } else if (selectedId >= 10 && midiBridge) {
-                    auto midiInputs = midiBridge->getAvailableMidiInputs();
+                } else if (selectedId >= 10) {
+                    auto midiInputs = MidiBridge::getInstance().getAvailableMidiInputs();
                     int deviceIndex = selectedId - 10;
                     if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiInputs.size()))
                         TrackManager::getInstance().setTrackMidiInput(trackId_,
@@ -1059,7 +1055,7 @@ class SessionView::MiniIOStrip : public juce::Component {
             }
         };
 
-        midiInSelector_->onSelectionChanged = [this, midiBridge](int selectedId) {
+        midiInSelector_->onSelectionChanged = [this](int selectedId) {
             if (selectedId == 2) {
                 TrackManager::getInstance().setTrackMidiInput(trackId_, "");
             } else if (selectedId == 1) {
@@ -1070,8 +1066,8 @@ class SessionView::MiniIOStrip : public juce::Component {
                 if (it != midiInputTrackMapping_.end())
                     TrackManager::getInstance().setTrackMidiInput(
                         trackId_, "track:" + juce::String(it->second));
-            } else if (selectedId >= 10 && midiBridge) {
-                auto midiInputs = midiBridge->getAvailableMidiInputs();
+            } else if (selectedId >= 10) {
+                auto midiInputs = MidiBridge::getInstance().getAvailableMidiInputs();
                 int deviceIndex = selectedId - 10;
                 if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiInputs.size()))
                     TrackManager::getInstance().setTrackMidiInput(trackId_,
@@ -1111,7 +1107,7 @@ class SessionView::MiniIOStrip : public juce::Component {
                 TrackManager::getInstance().setTrackMidiOutput(trackId_, "");
         };
 
-        midiOutSelector_->onSelectionChanged = [this, midiBridge](int selectedId) {
+        midiOutSelector_->onSelectionChanged = [this](int selectedId) {
             if (selectedId == 1) {
                 TrackManager::getInstance().setTrackMidiOutput(trackId_, "");
             } else if (selectedId >= 200) {
@@ -1119,8 +1115,8 @@ class SessionView::MiniIOStrip : public juce::Component {
                 auto it = midiOutputTrackMapping_.find(selectedId);
                 if (it != midiOutputTrackMapping_.end())
                     TrackManager::getInstance().routeMidiOutputToTrack(trackId_, it->second);
-            } else if (selectedId >= 10 && midiBridge) {
-                auto midiOutputs = midiBridge->getAvailableMidiOutputs();
+            } else if (selectedId >= 10) {
+                auto midiOutputs = MidiBridge::getAvailableMidiOutputs();
                 int deviceIndex = selectedId - 10;
                 if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiOutputs.size()))
                     TrackManager::getInstance().setTrackMidiOutput(trackId_,
@@ -1525,6 +1521,8 @@ class SessionView::MiniMasterStrip : public juce::Component {
 };
 
 SessionView::SessionView() {
+    MidiBridge::getInstance().addMidiDeviceListListener(this);
+
     // Get current view mode
     currentViewMode_ = ViewModeController::getInstance().getViewMode();
     syncMixerVisibilityFromConfig();
@@ -1704,9 +1702,8 @@ SessionView::SessionView() {
 }
 
 SessionView::~SessionView() {
+    MidiBridge::getInstance().removeMidiDeviceListListener(this);
     if (audioEngine_) {
-        if (auto* mb = audioEngine_->getMidiBridge())
-            mb->removeMidiDeviceListListener(this);
         if (auto* hardware = audioEngine_->getAudioIO())
             hardware->removeListener(this);
     }
@@ -3593,15 +3590,11 @@ void SessionView::setSessionPlayheadPositions(const std::unordered_map<ClipId, d
 void SessionView::setAudioEngine(AudioEngine* engine) {
     // Unregister from old engine
     if (audioEngine_) {
-        if (auto* mb = audioEngine_->getMidiBridge())
-            mb->removeMidiDeviceListListener(this);
         if (auto* hardware = audioEngine_->getAudioIO())
             hardware->removeListener(this);
     }
     audioEngine_ = engine;
     if (audioEngine_) {
-        if (auto* mb = audioEngine_->getMidiBridge())
-            mb->addMidiDeviceListListener(this);
         if (auto* hardware = audioEngine_->getAudioIO())
             hardware->addListener(this);
         startTimerHz(30);  // 30Hz meter refresh

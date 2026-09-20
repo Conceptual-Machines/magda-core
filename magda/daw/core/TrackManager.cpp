@@ -867,10 +867,8 @@ void TrackManager::startMidiMonitoring(const TrackInfo& track, const juce::Strin
     // MidiBridge activity monitor.
     if (!audioEngine_ || !track.takesExternalInput())
         return;
-    if (auto* midiBridge = audioEngine_->getMidiBridge()) {
-        midiBridge->setTrackMidiInput(track.id, deviceId);
-        midiBridge->startMonitoring(track.id);
-    }
+    MidiBridge::getInstance().setTrackMidiInput(track.id, deviceId);
+    MidiBridge::getInstance().startMonitoring(track.id);
 }
 
 TrackRestorePosition TrackManager::restorePositionOf(TrackId trackId) const {
@@ -1686,24 +1684,20 @@ void TrackManager::setTrackMidiInput(TrackId trackId, const juce::String& device
     // Forward to MidiBridge for MIDI activity monitoring (UI indicators).
     // MidiBridge is a hardware MIDI input callback — "track:" sources are
     // routed internally via MidiInputRouter, so clear any hardware routing.
-    if (audioEngine_) {
-        if (auto* midiBridge = audioEngine_->getMidiBridge()) {
-            if (deviceId.isEmpty() || deviceId.startsWith("track:")) {
-                midiBridge->clearTrackMidiInput(trackId);
-                midiBridge->stopMonitoring(trackId);
-            } else {
-                midiBridge->setTrackMidiInput(trackId, deviceId);
-                midiBridge->startMonitoring(trackId);
-            }
-        }
-
-        // Forward to AudioBridge for Tracktion Engine MIDI routing (actual plugin input)
-        if (auto* audioBridge = audioEngine_->getAudioBridge()) {
-            // Convert our deviceId to AudioBridge format
-            // "all" stays as "all", empty clears routing, otherwise use the device ID
-            audioBridge->setTrackMidiInput(trackId, deviceId);
-        }
+    auto& midiBridge = MidiBridge::getInstance();
+    if (deviceId.isEmpty() || deviceId.startsWith("track:")) {
+        midiBridge.clearTrackMidiInput(trackId);
+        midiBridge.stopMonitoring(trackId);
+    } else {
+        midiBridge.setTrackMidiInput(trackId, deviceId);
+        midiBridge.startMonitoring(trackId);
     }
+
+    // Forward to AudioBridge for Tracktion Engine MIDI routing (actual plugin input)
+    // "all" stays as "all", empty clears routing, otherwise use the device ID
+    if (audioEngine_)
+        if (auto* audioBridge = audioEngine_->getAudioBridge())
+            audioBridge->setTrackMidiInput(trackId, deviceId);
 
     // Notify listeners (inspector, track headers will update)
     notifyTrackPropertyChanged(trackId);

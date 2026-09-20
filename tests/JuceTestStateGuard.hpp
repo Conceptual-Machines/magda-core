@@ -39,11 +39,11 @@ inline void resetJuceProjectState() {
     trackManager.clearAllTracks();
     trackManager.setAudioEngine(nullptr);
 
+    MidiBridge::getInstance().resetTestState();
+
     if (engine) {
         if (auto* audioBridge = engine->getAudioBridge())
             audioBridge->resetTestState();
-        if (auto* midiBridge = engine->getMidiBridge())
-            midiBridge->resetTestState();
         if (auto* edit = engine->getEdit()) {
             if (auto* ctx = edit->getCurrentPlaybackContext();
                 ctx && ctx->isPlaybackGraphAllocated())

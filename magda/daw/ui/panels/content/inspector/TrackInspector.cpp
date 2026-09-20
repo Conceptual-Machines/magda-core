@@ -577,9 +577,8 @@ TrackInspector::~TrackInspector() {
     for (auto& label : sendDestLabels_)
         clearLocalizedLabelPainter(*label);
 
+    magda::MidiBridge::getInstance().removeMidiDeviceListListener(this);
     if (audioEngine_) {
-        if (auto* mb = audioEngine_->getMidiBridge())
-            mb->removeMidiDeviceListListener(this);
         if (auto* hardware = audioEngine_->getAudioIO())
             hardware->removeListener(this);
     }
@@ -592,19 +591,16 @@ void TrackInspector::timerCallback() {
     if (!audioEngine_)
         return;
 
-    auto* midiBridge = audioEngine_->getMidiBridge();
-    if (midiBridge) {
-        size_t inputCount = midiBridge->getAvailableMidiInputs().size();
-        size_t outputCount = midiBridge->getAvailableMidiOutputs().size();
+    size_t inputCount = magda::MidiBridge::getInstance().getAvailableMidiInputs().size();
+    size_t outputCount = magda::MidiBridge::getAvailableMidiOutputs().size();
 
-        if (inputCount != lastMidiInputCount_ || outputCount != lastMidiOutputCount_) {
-            lastMidiInputCount_ = inputCount;
-            lastMidiOutputCount_ = outputCount;
-            populateMidiInputOptions();
-            populateMidiOutputOptions();
-            if (selectedTrackId_ != magda::INVALID_TRACK_ID)
-                updateRoutingSelectorsFromTrack();
-        }
+    if (inputCount != lastMidiInputCount_ || outputCount != lastMidiOutputCount_) {
+        lastMidiInputCount_ = inputCount;
+        lastMidiOutputCount_ = outputCount;
+        populateMidiInputOptions();
+        populateMidiOutputOptions();
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
+            updateRoutingSelectorsFromTrack();
     }
 }
 
@@ -1694,8 +1690,7 @@ void TrackInspector::populateRoutingSelectors() {
         return;
 
     // Register for device list changes (QWERTY keyboard toggle, etc.)
-    if (auto* mb = audioEngine_->getMidiBridge())
-        mb->addMidiDeviceListListener(this);
+    magda::MidiBridge::getInstance().addMidiDeviceListListener(this);
     if (auto* hardware = audioEngine_->getAudioIO())
         hardware->addListener(this);
 
@@ -1704,8 +1699,6 @@ void TrackInspector::populateRoutingSelectors() {
     populateMidiInputOptions();
     populateAudioOutputOptions();
     populateMidiOutputOptions();
-
-    auto* midiBridge = audioEngine_->getMidiBridge();
 
     // Audio input selector callbacks (mutually exclusive with MIDI input)
     audioInputSelector_->onEnabledChanged = [this](bool enabled) {
@@ -1760,7 +1753,7 @@ void TrackInspector::populateRoutingSelectors() {
     };
 
     // MIDI input selector callbacks (mutually exclusive with audio input)
-    inputSelector_->onEnabledChanged = [this, midiBridge](bool enabled) {
+    inputSelector_->onEnabledChanged = [this](bool enabled) {
         if (selectedTrackId_ == magda::INVALID_TRACK_ID)
             return;
 
@@ -1780,8 +1773,8 @@ void TrackInspector::populateRoutingSelectors() {
                 } else {
                     magda::TrackManager::getInstance().setTrackMidiInput(selectedTrackId_, "all");
                 }
-            } else if (selectedId >= 10 && midiBridge) {
-                auto midiInputs = midiBridge->getAvailableMidiInputs();
+            } else if (selectedId >= 10) {
+                auto midiInputs = magda::MidiBridge::getInstance().getAvailableMidiInputs();
                 int deviceIndex = selectedId - 10;
                 if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiInputs.size())) {
                     magda::TrackManager::getInstance().setTrackMidiInput(
@@ -1797,7 +1790,7 @@ void TrackInspector::populateRoutingSelectors() {
         }
     };
 
-    inputSelector_->onSelectionChanged = [this, midiBridge](int selectedId) {
+    inputSelector_->onSelectionChanged = [this](int selectedId) {
         if (selectedTrackId_ == magda::INVALID_TRACK_ID)
             return;
 
@@ -1812,8 +1805,8 @@ void TrackInspector::populateRoutingSelectors() {
                 magda::TrackManager::getInstance().setTrackMidiInput(
                     selectedTrackId_, "track:" + juce::String(it->second));
             }
-        } else if (selectedId >= 10 && midiBridge) {
-            auto midiInputs = midiBridge->getAvailableMidiInputs();
+        } else if (selectedId >= 10) {
+            auto midiInputs = magda::MidiBridge::getInstance().getAvailableMidiInputs();
             int deviceIndex = selectedId - 10;
             if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiInputs.size())) {
                 magda::TrackManager::getInstance().setTrackMidiInput(selectedTrackId_,
@@ -1873,7 +1866,7 @@ void TrackInspector::populateRoutingSelectors() {
         // When enabling, don't set anything yet — user picks a device from dropdown
     };
 
-    midiOutputSelector_->onSelectionChanged = [this, midiBridge](int selectedId) {
+    midiOutputSelector_->onSelectionChanged = [this](int selectedId) {
         if (selectedTrackId_ == magda::INVALID_TRACK_ID)
             return;
 
@@ -1886,8 +1879,8 @@ void TrackInspector::populateRoutingSelectors() {
                 magda::TrackManager::getInstance().routeMidiOutputToTrack(selectedTrackId_,
                                                                           it->second);
             }
-        } else if (selectedId >= 10 && midiBridge) {
-            auto midiOutputs = midiBridge->getAvailableMidiOutputs();
+        } else if (selectedId >= 10) {
+            auto midiOutputs = magda::MidiBridge::getAvailableMidiOutputs();
             int deviceIndex = selectedId - 10;
             if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiOutputs.size())) {
                 magda::TrackManager::getInstance().setTrackMidiOutput(selectedTrackId_,
@@ -1919,16 +1912,14 @@ void TrackInspector::populateAudioOutputOptions() {
 void TrackInspector::populateMidiInputOptions() {
     if (!inputSelector_ || !audioEngine_)
         return;
-    magda::RoutingSyncHelper::populateMidiInputOptions(inputSelector_.get(),
-                                                       audioEngine_->getMidiBridge(),
-                                                       selectedTrackId_, &midiInputTrackMapping_);
+    magda::RoutingSyncHelper::populateMidiInputOptions(inputSelector_.get(), selectedTrackId_,
+                                                       &midiInputTrackMapping_);
 }
 
 void TrackInspector::populateMidiOutputOptions() {
     if (!midiOutputSelector_ || !audioEngine_)
         return;
     magda::RoutingSyncHelper::populateMidiOutputOptions(midiOutputSelector_.get(),
-                                                        audioEngine_->getMidiBridge(),
                                                         midiOutputTrackMapping_, selectedTrackId_);
 }
 
@@ -1945,9 +1936,9 @@ void TrackInspector::updateRoutingSelectorsFromTrack() {
 
     magda::RoutingSyncHelper::syncSelectorsFromTrack(
         *track, audioInputSelector_.get(), inputSelector_.get(), outputSelector_.get(),
-        midiOutputSelector_.get(), audioEngine_->getMidiBridge(), audioEngine_->getAudioIO(),
-        selectedTrackId_, outputTrackMapping_, midiOutputTrackMapping_, &inputTrackMapping_,
-        &inputChannelMapping_, &midiInputTrackMapping_, &outputChannelMapping_);
+        midiOutputSelector_.get(), audioEngine_->getAudioIO(), selectedTrackId_,
+        outputTrackMapping_, midiOutputTrackMapping_, &inputTrackMapping_, &inputChannelMapping_,
+        &midiInputTrackMapping_, &outputChannelMapping_);
 }
 
 }  // namespace magda::daw::ui

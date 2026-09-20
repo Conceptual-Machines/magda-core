@@ -1,11 +1,7 @@
 #include <juce_core/juce_core.h>
-#include <tracktion_engine/tracktion_engine.h>
 
-#include "SharedTestEngine.hpp"
 #include "magda/daw/audio/MidiBridge.hpp"
 #include "magda/daw/core/MidiTypes.hpp"
-
-namespace te = tracktion;
 
 // Covers the note-event fan-out shared by the real-MIDI path
 // (handleIncomingMidiMessage) and the synthesized QWERTY path
@@ -21,6 +17,9 @@ class MidiBridgeNoteEventsTest final : public juce::UnitTest {
         testSynthesizedNoteSilentWhenNotMonitored();
         testSynthesizedNoteSilentForUnroutedDevice();
         testAllRoutingMatchesSynthesizedNote();
+
+        // The callbacks above close over stack frames that are gone.
+        magda::MidiBridge::getInstance().resetTestState();
     }
 
   private:
@@ -33,6 +32,13 @@ class MidiBridgeNoteEventsTest final : public juce::UnitTest {
         magda::TrackId lastTrack = magda::INVALID_TRACK_ID;
         magda::MidiNoteEvent lastEvent{};
     };
+
+    /// The one service, with the previous case's routes and callbacks cleared off it.
+    static magda::MidiBridge& freshBridge() {
+        auto& bridge = magda::MidiBridge::getInstance();
+        bridge.resetTestState();
+        return bridge;
+    }
 
     // Installs an onNoteEvent callback that records what it receives.
     static void captureInto(magda::MidiBridge& bridge, Capture& capture) {
@@ -49,7 +55,7 @@ class MidiBridgeNoteEventsTest final : public juce::UnitTest {
     void testSynthesizedNoteFiresForMonitoredTrack() {
         beginTest("Synthesized note fires onNoteEvent for a monitored, routed track");
 
-        magda::MidiBridge bridge(*magda::test::getSharedEngine().getEngine());
+        auto& bridge = freshBridge();
         bridge.setTrackMidiInput(kTrackId, kDeviceId);
         bridge.startMonitoring(kTrackId);
 
@@ -72,7 +78,7 @@ class MidiBridgeNoteEventsTest final : public juce::UnitTest {
     void testSynthesizedNoteSilentWhenNotMonitored() {
         beginTest("Synthesized note does not fire when the track is not monitored");
 
-        magda::MidiBridge bridge(*magda::test::getSharedEngine().getEngine());
+        auto& bridge = freshBridge();
         bridge.setTrackMidiInput(kTrackId, kDeviceId);
         // Deliberately no startMonitoring(): routed but not monitored.
 
@@ -94,7 +100,7 @@ class MidiBridgeNoteEventsTest final : public juce::UnitTest {
     void testSynthesizedNoteSilentForUnroutedDevice() {
         beginTest("Synthesized note does not fire when the device is not routed to the track");
 
-        magda::MidiBridge bridge(*magda::test::getSharedEngine().getEngine());
+        auto& bridge = freshBridge();
         bridge.setTrackMidiInput(kTrackId, kDeviceId);
         bridge.startMonitoring(kTrackId);
 
@@ -109,7 +115,7 @@ class MidiBridgeNoteEventsTest final : public juce::UnitTest {
     void testAllRoutingMatchesSynthesizedNote() {
         beginTest("\"all\" input routing matches any synthesized source device");
 
-        magda::MidiBridge bridge(*magda::test::getSharedEngine().getEngine());
+        auto& bridge = freshBridge();
         bridge.setTrackMidiInput(kTrackId, "all");
         bridge.startMonitoring(kTrackId);
 
