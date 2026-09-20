@@ -355,6 +355,25 @@
     "alert.cancelled": "Collect was cancelled. Some files may not have been copied.",
     "alert.no_edit": "Open or create a project first."
   },
+  "missing_media": {
+    "title": "Missing Media",
+    "intro": "This project references {0} missing file(s) from {1} reference(s). Search a folder automatically, locate each file yourself, or keep the offline placeholders.",
+    "more": "…and {0} more",
+    "search_folder": "Search Folder…",
+    "locate_files": "Locate Files…",
+    "locate_remaining": "Locate Remaining…",
+    "keep_offline": "Keep Offline",
+    "choose_folder": "Choose a folder to search for missing media",
+    "searching": "Searching for Missing Media",
+    "search_cancelled": "The search was cancelled. The missing files remain offline.",
+    "search_result": "Reconnected {0} file(s). {1} file(s) are still missing.",
+    "all_relinked": "Reconnected {0} missing file(s). Save the project to keep the new locations.",
+    "still_missing": "{0} file(s) remain offline. Their clips will continue to show placeholders.",
+    "locate_title": "Locate {0} ({1} of {2})",
+    "relink_failed": "That file could not be attached to the missing project media.",
+    "retry": "Retry…",
+    "skip": "Skip"
+  },
   "common": {
     "master": "Master",
     "master_output": "Master Output"

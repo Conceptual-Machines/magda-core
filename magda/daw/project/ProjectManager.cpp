@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <functional>
 #include <map>
+#include <set>
 #include <unordered_set>
 
 #include "../audio/AudioThumbnailManager.hpp"
@@ -171,14 +172,16 @@ void moveMediaTree(const juce::File& srcDir, const juce::File& dstDir,
 // Re-point everything that can name a media file — pooled clip sources, take
 // paths, and sampler/drum-pad samples — through `resolve`, which returns the
 // new path for a file that moved or an empty string for one that did not.
-// Returns true if anything was re-pointed.
-bool relinkMediaPaths(const std::function<juce::String(const juce::String&)>& resolve) {
+// Returns the distinct old paths that were actually re-pointed.
+std::set<juce::String> relinkMediaPaths(
+    const std::function<juce::String(const juce::String&)>& resolve) {
     auto& clipManager = ClipManager::getInstance();
     auto& pool = SourcePool::getInstance();
     auto& thumbs = AudioThumbnailManager::getInstance();
 
     std::vector<ClipId> updatedClipIds;
     std::unordered_set<SourceId> relinkedSources;
+    std::set<juce::String> relinkedPaths;
 
     for (const auto& clipInfo : clipManager.getClips()) {
         if (!clipInfo.isAudio())
@@ -195,12 +198,18 @@ bool relinkMediaPaths(const std::function<juce::String(const juce::String&)>& re
             if (newPath.isEmpty())
                 continue;
 
-            touched = true;
-            if (event.sourceId == INVALID_SOURCE_ID ||
-                !relinkedSources.insert(event.sourceId).second)
+            if (event.sourceId == INVALID_SOURCE_ID)
                 continue;
 
+            if (!relinkedSources.insert(event.sourceId).second) {
+                touched = true;
+                relinkedPaths.insert(oldPath);
+                continue;
+            }
+
             const auto owner = pool.relink(event.sourceId, newPath);
+            if (owner == INVALID_SOURCE_ID)
+                continue;
             if (owner != INVALID_SOURCE_ID && owner != event.sourceId) {
                 // The destination was already pooled under another source: move
                 // the events across rather than leaving two entries claiming
@@ -209,17 +218,21 @@ bool relinkMediaPaths(const std::function<juce::String(const juce::String&)>& re
             }
             thumbs.invalidateFile(oldPath);
             thumbs.invalidateFile(newPath);
+            touched = true;
+            relinkedPaths.insert(oldPath);
         }
 
         if (auto* clip = clipManager.getClip(clipInfo.id)) {
             for (auto& take : clip->audio().takes) {
-                const auto newPath = resolve(take.filePath);
+                const auto oldPath = take.filePath;
+                const auto newPath = resolve(oldPath);
                 if (newPath.isEmpty())
                     continue;
-                thumbs.invalidateFile(take.filePath);
+                thumbs.invalidateFile(oldPath);
                 thumbs.invalidateFile(newPath);
                 take.filePath = newPath;
                 touched = true;
+                relinkedPaths.insert(oldPath);
             }
         }
 
@@ -232,18 +245,37 @@ bool relinkMediaPaths(const std::function<juce::String(const juce::String&)>& re
 
     // Collected samples live in imported/, so a media tree that moves takes the
     // samplers and drum pads pointing into it along too.
-    bool relinkedSamplers = false;
-    if (auto* audioEngine = TrackManager::getInstance().getAudioEngine()) {
-        for (auto& reference : magda::SamplerMedia::getInstance().references()) {
-            const auto newPath = resolve(reference.source.getFullPathName());
-            if (newPath.isNotEmpty()) {
-                reference.replace(juce::File(newPath));
-                relinkedSamplers = true;
-            }
+    for (auto& reference : magda::SamplerMedia::getInstance().references()) {
+        const auto oldPath = reference.source.getFullPathName();
+        const auto newPath = resolve(oldPath);
+        if (newPath.isNotEmpty()) {
+            reference.replace(juce::File(newPath));
+            relinkedPaths.insert(oldPath);
         }
     }
 
-    return !updatedClipIds.empty() || relinkedSamplers;
+    return relinkedPaths;
+}
+
+juce::StringArray pathComponents(juce::String path) {
+    path = path.replaceCharacter('\\', '/');
+    juce::StringArray components;
+    components.addTokens(path, "/", {});
+    components.removeEmptyStrings();
+    return components;
+}
+
+int commonPathSuffixLength(const juce::String& first, const juce::String& second) {
+    const auto firstParts = pathComponents(first);
+    const auto secondParts = pathComponents(second);
+    int score = 0;
+    for (int firstIndex = firstParts.size() - 1, secondIndex = secondParts.size() - 1;
+         firstIndex >= 0 && secondIndex >= 0 &&
+         firstParts[firstIndex].equalsIgnoreCase(secondParts[secondIndex]);
+         --firstIndex, --secondIndex) {
+        ++score;
+    }
+    return score;
 }
 
 }  // namespace
@@ -921,6 +953,182 @@ juce::File ProjectManager::getImportedDirectory() const {
     return mediaDirectory_.getChildFile(kImportedDir);
 }
 
+std::vector<ProjectManager::MissingMediaFile> ProjectManager::getReferencedMediaFiles() const {
+    std::vector<MissingMediaFile> referenced;
+    std::map<juce::String, size_t> indexByPath;
+
+    const auto add = [&referenced, &indexByPath](const juce::String& path) {
+        if (path.isEmpty())
+            return;
+
+        const auto found = indexByPath.find(path);
+        if (found != indexByPath.end()) {
+            ++referenced[found->second].referenceCount;
+            return;
+        }
+
+        indexByPath[path] = referenced.size();
+        referenced.push_back({path, 1});
+    };
+
+    for (const auto& clip : ClipManager::getInstance().getClips()) {
+        if (!clip.isAudio())
+            continue;
+        for (const auto& event : clip.audio().events)
+            add(event.sourceFilePath());
+        for (const auto& take : clip.audio().takes)
+            add(take.filePath);
+    }
+
+    for (const auto& reference : magda::SamplerMedia::getInstance().references())
+        add(reference.source.getFullPathName());
+
+    std::ranges::sort(referenced, {}, [](const MissingMediaFile& file) { return file.path; });
+    return referenced;
+}
+
+std::vector<ProjectManager::MissingMediaFile> ProjectManager::findMissingMediaFiles(
+    const std::vector<MissingMediaFile>& referenced, const std::function<bool()>& shouldStop) {
+    std::vector<MissingMediaFile> missing;
+    for (const auto& file : referenced) {
+        if (shouldStop && shouldStop())
+            return {};
+        const auto localFile = localFileForStoredMediaPath(file.path);
+        if (localFile == juce::File{} || !localFile.existsAsFile())
+            missing.push_back(file);
+    }
+    return missing;
+}
+
+std::vector<ProjectManager::MissingMediaFile> ProjectManager::getMissingMediaFiles() const {
+    return findMissingMediaFiles(getReferencedMediaFiles());
+}
+
+juce::String ProjectManager::missingMediaFileName(juce::String path) {
+    path = path.replaceCharacter('\\', '/');
+    return path.fromLastOccurrenceOf("/", false, false);
+}
+
+juce::File ProjectManager::localFileForStoredMediaPath(juce::String path) {
+    if (path.isEmpty())
+        return {};
+
+    const auto normalized = path.replaceCharacter('\\', '/');
+    const bool hasDrive = normalized.length() >= 3 &&
+                          juce::CharacterFunctions::isLetter(normalized[0]) &&
+                          normalized[1] == ':' && normalized[2] == '/';
+    const bool isUnc = normalized.startsWith("//");
+
+#if JUCE_WINDOWS
+    if (!hasDrive && !isUnc)
+        return {};
+    return juce::File(normalized.replaceCharacter('/', '\\'));
+#else
+    if (hasDrive || isUnc || !normalized.startsWithChar('/'))
+        return {};
+    return juce::File(normalized);
+#endif
+}
+
+std::vector<ProjectManager::MissingMediaReplacement> ProjectManager::searchForMissingMedia(
+    const std::vector<MissingMediaFile>& missing, const juce::File& directory,
+    const std::function<bool()>& shouldStop) {
+    if (!directory.isDirectory() || missing.empty())
+        return {};
+
+    std::map<juce::String, int> missingCountByName;
+    for (const auto& file : missing)
+        ++missingCountByName[missingMediaFileName(file.path).toLowerCase()];
+
+    std::map<juce::String, std::vector<juce::File>> candidatesByName;
+    for (const auto& entry :
+         juce::RangedDirectoryIterator(directory, true, "*", juce::File::findFiles)) {
+        if (shouldStop && shouldStop())
+            return {};
+        const auto file = entry.getFile();
+        const auto name = file.getFileName().toLowerCase();
+        if (missingCountByName.contains(name))
+            candidatesByName[name].push_back(file);
+    }
+
+    // Build proposals first, then reject any replacement selected for two old
+    // paths. A single kick.wav must never silently replace two different kicks.
+    std::vector<MissingMediaReplacement> proposals;
+    for (const auto& file : missing) {
+        if (shouldStop && shouldStop())
+            return {};
+
+        const auto nameKey = missingMediaFileName(file.path).toLowerCase();
+        const auto candidatesIt = candidatesByName.find(nameKey);
+        if (candidatesIt == candidatesByName.end())
+            continue;
+        const auto& candidates = candidatesIt->second;
+
+        if (candidates.size() == 1 && missingCountByName[nameKey] == 1) {
+            proposals.push_back({file.path, candidates.front()});
+            continue;
+        }
+
+        int bestScore = 0;
+        int bestCount = 0;
+        juce::File best;
+        for (const auto& candidate : candidates) {
+            const int score = commonPathSuffixLength(file.path, candidate.getFullPathName());
+            if (score > bestScore) {
+                bestScore = score;
+                bestCount = 1;
+                best = candidate;
+            } else if (score == bestScore) {
+                ++bestCount;
+            }
+        }
+        // A score of one is the filename itself. Require at least one unique
+        // trailing directory component before resolving duplicate names.
+        if (bestScore > 1 && bestCount == 1)
+            proposals.push_back({file.path, best});
+    }
+
+    std::map<juce::String, int> proposalCountByReplacement;
+    for (const auto& proposal : proposals)
+        ++proposalCountByReplacement[proposal.replacement.getFullPathName()];
+
+    std::vector<MissingMediaReplacement> matches;
+    for (auto& proposal : proposals)
+        if (proposalCountByReplacement[proposal.replacement.getFullPathName()] == 1)
+            matches.push_back(std::move(proposal));
+    return matches;
+}
+
+int ProjectManager::relinkMissingMediaFiles(
+    const std::vector<MissingMediaReplacement>& replacements) {
+    if (replacements.empty())
+        return 0;
+
+    std::map<juce::String, juce::String> paths;
+    for (const auto& replacement : replacements) {
+        if (replacement.missingPath.isNotEmpty() && replacement.replacement.existsAsFile()) {
+            paths[replacement.missingPath] = replacement.replacement.getFullPathName();
+        }
+    }
+    if (paths.empty())
+        return 0;
+
+    const auto changedPaths = relinkMediaPaths([&paths](const juce::String& path) {
+        const auto found = paths.find(path);
+        return found == paths.end() ? juce::String{} : found->second;
+    });
+    if (changedPaths.empty())
+        return 0;
+
+    markDirty();
+    return static_cast<int>(changedPaths.size());
+}
+
+bool ProjectManager::relinkMissingMediaFile(const juce::String& missingPath,
+                                            const juce::File& replacement) {
+    return relinkMissingMediaFiles({{missingPath, replacement}}) == 1;
+}
+
 void ProjectManager::createTempMediaDirectory() {
     auto tempRoot = getWritableTempRoot().getChildFile(kTempRootDir);
     tempRoot.createDirectory();
@@ -1032,7 +1240,7 @@ void ProjectManager::foldLegacyMediaDirectories(const juce::File& mediaRoot) {
 
     // The paths in the .mgd on disk still name folders that just went away, so
     // the project genuinely differs from its file until it is saved again.
-    if (relinkMediaPaths(resolve))
+    if (!relinkMediaPaths(resolve).empty())
         markDirty();
 }
 

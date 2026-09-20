@@ -11,6 +11,7 @@
 #include "AudioClipTestHelpers.hpp"
 #include "magda/daw/audio/DeviceMeters.hpp"
 #include "magda/daw/audio/TrackMeters.hpp"
+#include "magda/daw/audio/sampling/SamplerMedia.hpp"
 #include "magda/daw/core/AppPaths.hpp"
 #include "magda/daw/core/AutomationManager.hpp"
 #include "magda/daw/core/ChainWalk.hpp"
@@ -364,6 +365,25 @@ class ScopedProjectAudioEngine {
     AudioEngine* previousEngine = nullptr;
 };
 
+class ScopedSamplerMediaProvider {
+  public:
+    explicit ScopedSamplerMediaProvider(juce::File& path) : path_(path) {
+        SamplerMedia::getInstance().setProvider([this] {
+            if (path_ == juce::File{})
+                return std::vector<SamplerMediaReference>{};
+            return std::vector<SamplerMediaReference>{
+                {path_, [this](const juce::File& replacement) { path_ = replacement; }}};
+        });
+    }
+
+    ~ScopedSamplerMediaProvider() {
+        SamplerMedia::getInstance().forgetProvider();
+    }
+
+  private:
+    juce::File& path_;
+};
+
 }  // namespace
 
 // Test fixture to ensure clean state and temp file cleanup between tests
@@ -468,6 +488,135 @@ struct ScopedTestDataDir {
         dir.deleteRecursively();
     }
 };
+
+TEST_CASE("Missing project media is discovered, searched and relinked",
+          "[project][missing-media][71]") {
+    ProjectTestFixture fixture;
+    auto& projects = ProjectManager::getInstance();
+
+    const auto scratch = testTempRoot().getNonexistentChildFile("missing_media_recovery", "");
+    REQUIRE(scratch.createDirectory());
+    fixture.tempDirs.push_back(scratch);
+
+    const auto oldPath =
+        scratch.getChildFile("gone").getChildFile("drums").getChildFile("kick.wav");
+    const auto oldSamplerPath =
+        scratch.getChildFile("gone").getChildFile("pads").getChildFile("snare.wav");
+    const auto existingPath = scratch.getChildFile("still_here.wav");
+    REQUIRE(existingPath.replaceWithText("existing audio"));
+
+    ProjectBoundaryResetEngine engine;
+    ScopedProjectAudioEngine scopedEngine(&engine);
+    auto samplerMediaPath = oldSamplerPath;
+    ScopedSamplerMediaProvider scopedSamplerMedia(samplerMediaPath);
+
+    const auto trackId = TrackManager::getInstance().createTrack("Audio", TrackType::Media);
+    const auto missingClip = ClipManager::getInstance().createAudioClipBeats(
+        trackId, 0.0, 4.0, oldPath.getFullPathName(), ClipView::Arrangement, 120.0);
+    REQUIRE(missingClip != INVALID_CLIP_ID);
+    auto* clip = ClipManager::getInstance().getClip(missingClip);
+    REQUIRE(clip != nullptr);
+    clip->audio().takes.push_back({oldPath.getFullPathName(), 1.0});
+
+    REQUIRE(ClipManager::getInstance().createAudioClipBeats(
+                trackId, 8.0, 4.0, existingPath.getFullPathName(), ClipView::Arrangement, 120.0) !=
+            INVALID_CLIP_ID);
+
+    auto missing = projects.getMissingMediaFiles();
+    const std::vector<ProjectManager::MissingMediaFile> expectedMissing{
+        {oldPath.getFullPathName(), 2}, {oldSamplerPath.getFullPathName(), 1}};
+    REQUIRE(missing == expectedMissing);
+
+    const auto searchRoot = scratch.getChildFile("moved_library");
+    const auto replacement = searchRoot.getChildFile("drums").getChildFile("kick.wav");
+    const auto samplerReplacement = searchRoot.getChildFile("pads").getChildFile("snare.wav");
+    REQUIRE(replacement.getParentDirectory().createDirectory());
+    REQUIRE(samplerReplacement.getParentDirectory().createDirectory());
+    REQUIRE(replacement.replaceWithText("moved audio"));
+    REQUIRE(samplerReplacement.replaceWithText("moved sample"));
+
+    const auto matches = ProjectManager::searchForMissingMedia(missing, searchRoot);
+    const std::vector<ProjectManager::MissingMediaReplacement> expectedMatches{
+        {oldPath.getFullPathName(), replacement},
+        {oldSamplerPath.getFullPathName(), samplerReplacement}};
+    REQUIRE(matches == expectedMatches);
+
+    const auto projectFile = fixture.createTempProjectFile(".mgd");
+    REQUIRE(projects.saveProjectAs(projectFile));
+    REQUIRE_FALSE(projects.isDirty());
+
+    auto matchesWithUnusedPath = matches;
+    matchesWithUnusedPath.push_back(
+        {scratch.getChildFile("gone").getChildFile("unused.wav").getFullPathName(), replacement});
+    REQUIRE(projects.relinkMissingMediaFiles(matchesWithUnusedPath) == 2);
+    REQUIRE(projects.isDirty());
+    REQUIRE(projects.getMissingMediaFiles().empty());
+
+    clip = ClipManager::getInstance().getClip(missingClip);
+    REQUIRE(clip != nullptr);
+    REQUIRE(audioEventRef(*clip).sourceFilePath() == replacement.getFullPathName());
+    REQUIRE(clip->audio().takes[0].filePath == replacement.getFullPathName());
+    REQUIRE(samplerMediaPath == samplerReplacement);
+}
+
+TEST_CASE("Missing media search leaves ambiguous filenames for the user",
+          "[project][missing-media][71]") {
+    ProjectTestFixture fixture;
+    const auto scratch = testTempRoot().getNonexistentChildFile("missing_media_ambiguity", "");
+    REQUIRE(scratch.createDirectory());
+    fixture.tempDirs.push_back(scratch);
+
+    const auto drums = scratch.getChildFile("drums").getChildFile("kick.wav");
+    const auto percussion = scratch.getChildFile("percussion").getChildFile("kick.wav");
+    REQUIRE(drums.getParentDirectory().createDirectory());
+    REQUIRE(percussion.getParentDirectory().createDirectory());
+    REQUIRE(drums.replaceWithText("drums"));
+    REQUIRE(percussion.replaceWithText("percussion"));
+
+    SECTION("A filename-only tie is not guessed") {
+        const std::vector<ProjectManager::MissingMediaFile> missing{{"/old/kick.wav", 1}};
+        REQUIRE(ProjectManager::searchForMissingMedia(missing, scratch).empty());
+    }
+
+    SECTION("A unique trailing directory match disambiguates each file") {
+        const std::vector<ProjectManager::MissingMediaFile> missing{
+            {"/old/drums/kick.wav", 1}, {"/old/percussion/kick.wav", 1}};
+        const auto matches = ProjectManager::searchForMissingMedia(missing, scratch);
+        REQUIRE(matches.size() == 2);
+        const ProjectManager::MissingMediaReplacement expectedDrums{"/old/drums/kick.wav", drums};
+        const ProjectManager::MissingMediaReplacement expectedPercussion{"/old/percussion/kick.wav",
+                                                                         percussion};
+        REQUIRE(matches[0] == expectedDrums);
+        REQUIRE(matches[1] == expectedPercussion);
+    }
+
+    SECTION("A filename-only candidate is not returned as an empty file") {
+        const auto singleRoot = scratch.getChildFile("single");
+        const auto singleDrums = singleRoot.getChildFile("drums").getChildFile("kick.wav");
+        REQUIRE(singleDrums.getParentDirectory().createDirectory());
+        REQUIRE(singleDrums.replaceWithText("single drums"));
+
+        const std::vector<ProjectManager::MissingMediaFile> missing{
+            {"/old/drums/kick.wav", 1}, {"/old/percussion/kick.wav", 1}};
+        const auto matches = ProjectManager::searchForMissingMedia(missing, singleRoot);
+        const std::vector<ProjectManager::MissingMediaReplacement> expected{
+            {"/old/drums/kick.wav", singleDrums}};
+        REQUIRE(matches == expected);
+    }
+}
+
+TEST_CASE("Stored missing-media paths are handled without host-platform assertions",
+          "[project][missing-media][71]") {
+#if JUCE_WINDOWS
+    const juce::String foreignPath = "/Volumes/Samples/kick.wav";
+#else
+    const juce::String foreignPath = "C:\\Samples\\kick.wav";
+#endif
+    const std::vector<ProjectManager::MissingMediaFile> referenced{{foreignPath, 1}};
+    REQUIRE(ProjectManager::missingMediaFileName(foreignPath) == "kick.wav");
+    REQUIRE(ProjectManager::localFileForStoredMediaPath(foreignPath) == juce::File{});
+    REQUIRE(ProjectManager::findMissingMediaFiles(referenced) == referenced);
+}
 
 TEST_CASE("Project Serialization Basics", "[project][serialization]") {
     ProjectTestFixture fixture;
