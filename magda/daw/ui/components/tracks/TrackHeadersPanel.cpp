@@ -625,9 +625,6 @@ void TrackHeadersPanel::viewModeChanged(ViewMode mode, const AudioEngineProfile&
 void TrackHeadersPanel::populateAudioInputOptions(RoutingSelector* selector, TrackId trackId) {
     if (!selector || !audioEngine_)
         return;
-    auto* deviceManager = audioEngine_->getDeviceManager();
-    if (!deviceManager)
-        return;
     // If no trackId provided, find it from the existing trackHeaders
     if (trackId == INVALID_TRACK_ID) {
         for (const auto& h : trackHeaders) {
@@ -637,7 +634,7 @@ void TrackHeadersPanel::populateAudioInputOptions(RoutingSelector* selector, Tra
             }
         }
     }
-    selector->meterInputsFrom(deviceManager);
+    selector->meterInputsFrom(audioEngine_->getAudioIO());
     RoutingSyncHelper::populateAudioInputOptions(
         selector, RoutingSyncHelper::openDirection(audioEngine_->getAudioIO(), true), trackId,
         &inputTrackMapping_, &inputChannelMapping_);

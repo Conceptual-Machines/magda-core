@@ -49,24 +49,23 @@ float InputChannelLevels::level(int physicalChannel) const {
     return levels_[static_cast<std::size_t>(physicalChannel)].load(std::memory_order_relaxed);
 }
 
-std::shared_ptr<HardwareInputLevels> HardwareInputLevels::acquire(
-    juce::AudioDeviceManager& devices) {
+std::shared_ptr<HardwareInputLevels> HardwareInputLevels::acquire(AudioIOControl& audio) {
     static std::weak_ptr<HardwareInputLevels> shared;
 
-    if (auto existing = shared.lock(); existing != nullptr && &existing->devices_ == &devices)
+    if (auto existing = shared.lock(); existing != nullptr && &existing->audio_ == &audio)
         return existing;
 
-    std::shared_ptr<HardwareInputLevels> created(new HardwareInputLevels(devices));
+    std::shared_ptr<HardwareInputLevels> created(new HardwareInputLevels(audio));
     shared = created;
     return created;
 }
 
-HardwareInputLevels::HardwareInputLevels(juce::AudioDeviceManager& devices) : devices_(devices) {
-    devices_.addAudioCallback(this);
+HardwareInputLevels::HardwareInputLevels(AudioIOControl& audio) : audio_(audio) {
+    audio_.addCallback(this);
 }
 
 HardwareInputLevels::~HardwareInputLevels() {
-    devices_.removeAudioCallback(this);
+    audio_.removeCallback(this);
 }
 
 void HardwareInputLevels::audioDeviceIOCallbackWithContext(

@@ -129,7 +129,6 @@ class MagdaAudioEngine final : public AudioEngine,
     int getCountInMode() const override;
     void updateTriggerState() override;
     void processSessionStateEvents() override;
-    juce::AudioDeviceManager* getDeviceManager() override;
     AudioIOControl* getAudioIO() override;
     void setMidiDevicesReadyCallback(std::function<void()> callback) override;
     AudioBridge* getAudioBridge() override;

@@ -201,7 +201,7 @@ class TracktionEngineWrapper : public AudioEngine,
     int getCountInMode() const override;
 
     // Device management
-    juce::AudioDeviceManager* getDeviceManager() override;
+    juce::AudioDeviceManager* getDeviceManager();
     AudioIOControl* getAudioIO() override;
 
     // AudioEngineListener implementation (receives state changes from UI)

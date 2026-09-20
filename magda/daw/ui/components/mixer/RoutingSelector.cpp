@@ -218,20 +218,20 @@ void RoutingSelector::setSelectedId(int id) {
     }
 }
 
-void RoutingSelector::meterInputsFrom(juce::AudioDeviceManager* devices) {
-    inputDevices_ = devices;
+void RoutingSelector::meterInputsFrom(AudioIOControl* audio) {
+    inputAudio_ = audio;
     updateMetering();
 }
 
 void RoutingSelector::updateMetering() {
     const auto hasInputs =
-        inputDevices_ != nullptr && std::ranges::any_of(options_, [](const RoutingOption& option) {
+        inputAudio_ != nullptr && std::ranges::any_of(options_, [](const RoutingOption& option) {
             return !option.inputChannels.empty();
         });
     if (!hasInputs)
         inputLevels_.reset();
     else if (inputLevels_ == nullptr)
-        inputLevels_ = HardwareInputLevels::acquire(*inputDevices_);
+        inputLevels_ = HardwareInputLevels::acquire(*inputAudio_);
 
     const auto selected = std::ranges::find(options_, selectedId_, &RoutingOption::id);
     const auto metered =

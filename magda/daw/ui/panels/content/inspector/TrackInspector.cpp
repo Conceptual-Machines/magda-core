@@ -1899,10 +1899,7 @@ void TrackInspector::populateRoutingSelectors() {
 void TrackInspector::populateAudioInputOptions() {
     if (!audioInputSelector_ || !audioEngine_)
         return;
-    auto* deviceManager = audioEngine_->getDeviceManager();
-    if (!deviceManager)
-        return;
-    audioInputSelector_->meterInputsFrom(deviceManager);
+    audioInputSelector_->meterInputsFrom(audioEngine_->getAudioIO());
     magda::RoutingSyncHelper::populateAudioInputOptions(
         audioInputSelector_.get(),
         magda::RoutingSyncHelper::openDirection(audioEngine_->getAudioIO(), true), selectedTrackId_,

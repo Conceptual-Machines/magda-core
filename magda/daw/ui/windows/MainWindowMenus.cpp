@@ -956,13 +956,6 @@ void MainWindow::setupMenuCallbacks() {
         }
         DBG("engine valid");
 
-        auto* deviceManager = engine->getDeviceManager();
-        if (!deviceManager) {
-            DBG("ERROR: deviceManager is null");
-            return;
-        }
-        DBG("deviceManager valid - showing dialog");
-
         AudioSettingsDialog::showDialog(this, engine);
     };
 

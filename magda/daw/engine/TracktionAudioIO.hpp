@@ -32,7 +32,26 @@ class TracktionAudioIO final : public AudioIOControl, private juce::ChangeListen
     juce::StringArray channelNames(const juce::String& backend, const juce::String& interfaceName,
                                    bool inputs) override;
 
+    juce::StringArray backendNames() override;
+    juce::StringArray interfaceNames(const juce::String& backend, bool inputs) override;
+    juce::String defaultInterface(const juce::String& backend, bool inputs) override;
+    bool isSingleInterfaceBackend(const juce::String& backend) override;
+    std::vector<double> availableSampleRates() const override;
+    std::vector<int> availableBufferSizes() const override;
+
+    void addCallback(juce::AudioIODeviceCallback* callback) override;
+    void removeCallback(juce::AudioIODeviceCallback* callback) override;
+    void setMidiInputEnabled(const juce::String& identifier, bool enabled) override;
+    bool isMidiInputEnabled(const juce::String& identifier) const override;
+    void setDefaultMidiOutput(const juce::String& identifier) override;
+    juce::String defaultMidiOutput() const override;
+
+    Status status() const override;
+
   private:
+    /// The JUCE manager behind Tracktion's own, which is what the interfaces are listed off.
+    juce::AudioDeviceManager& manager() const;
+
     void changeListenerCallback(juce::ChangeBroadcaster*) override;
 
     tracktion::DeviceManager& devices_;

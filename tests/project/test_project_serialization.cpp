@@ -213,10 +213,6 @@ class ProjectBoundaryResetEngine : public AudioEngine {
     void updateTriggerState() override {}
     void processSessionStateEvents() override {}
 
-    juce::AudioDeviceManager* getDeviceManager() override {
-        return nullptr;
-    }
-
     AudioIOControl* getAudioIO() override {
         return nullptr;
     }

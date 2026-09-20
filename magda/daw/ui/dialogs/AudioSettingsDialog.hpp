@@ -4,11 +4,38 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "../../audio/io/AudioIOControl.hpp"
-#include "../../audio/midi/ActiveMidiInputs.hpp"
 
 namespace magda {
 
 class AudioEngine;
+
+/**
+ * @brief The MIDI inputs available, ticked where Config has them active (#2755).
+ *
+ * MAGDA's own rather than the one juce::AudioDeviceSelectorComponent drew, so the choice
+ * is Config's and JUCE is told about it rather than asked.
+ */
+class MidiInputList final : public juce::Component {
+  public:
+    explicit MidiInputList(AudioIOControl& audio);
+
+    void resized() override;
+
+    /** @brief Re-read the devices present and what Config says about them. */
+    void refresh();
+
+    /** @brief What the rows need, so the section packs under the list rather than around it. */
+    int preferredHeight() const;
+
+  private:
+    void toggle(int index);
+
+    AudioIOControl& audio_;
+    juce::Viewport viewport_;
+    juce::Component rows_;
+    juce::Array<juce::MidiDeviceInfo> devices_;
+    std::vector<std::unique_ptr<juce::ToggleButton>> toggles_;
+};
 
 /**
  * @brief The chosen interface's channels one way, as stereo pairs and mono channels.
@@ -70,9 +97,7 @@ class CustomChannelSelector : public juce::Component {
  * Dialog for configuring audio and MIDI device settings.
  * Uses custom channel selectors for fine-grained control.
  */
-class AudioSettingsDialog : public juce::Component,
-                            private juce::ChangeListener,
-                            private juce::ComboBox::Listener {
+class AudioSettingsDialog : public juce::Component, private HardwareChannels::Listener {
   public:
     explicit AudioSettingsDialog(AudioEngine* audioEngine);
     ~AudioSettingsDialog() override;
@@ -86,8 +111,7 @@ class AudioSettingsDialog : public juce::Component,
 
     // Re-list the device combos when the driver type or device changes (e.g. the
     // user picks a different driver in the AudioDeviceSelectorComponent).
-    void changeListenerCallback(juce::ChangeBroadcaster* source) override;
-    void comboBoxChanged(juce::ComboBox* comboBoxThatHasChanged) override;
+    void hardwareChannelsChanged() override;
 
     // Static method to show as modal dialog
     static void showDialog(juce::Component* parent, AudioEngine* audioEngine);
@@ -95,18 +119,25 @@ class AudioSettingsDialog : public juce::Component,
   private:
     void populateDeviceLists();
     void updateDevicePickerMode();
-    void attachDriverTypeComboListener();
-    void detachDriverTypeComboListener();
     void showDeviceRefreshIndicator(bool flushRepaint);
     void hideDeviceRefreshIndicator();
     void onInputDeviceSelected();
     void onOutputDeviceSelected();
+    void onDriverSelected();
+    void onSampleRateSelected();
+    void onBufferSizeSelected();
+
+    /** @brief List the rates and block sizes the open interface offers. */
+    void populateStreamLists();
+    void populateMidiOutputs();
+    void refreshMidiControls();
+
+    /** @brief Apply @p settings, saying so when the device refuses the stream it offered. */
+    void applyStreamChange(const AudioIOSettings& settings, const juce::String& what,
+                           const juce::String& asked);
 
     /** @brief Open @p interfaceName one way, keeping the channels chosen where it has them. */
     void chooseInterface(const juce::String& interfaceName, bool inputs);
-
-    /** @brief Keep the backend, rate and block size the JUCE selector changed on the manager. */
-    void keepSelectorChanges();
 
     /** @brief Relist the interfaces and their channels, after the backend or an interface moved. */
     void refreshChosenInterface();
@@ -114,12 +145,12 @@ class AudioSettingsDialog : public juce::Component,
     void savePreferencesIfNeeded();
     void onAudioEngineSelected();
 
-    /// Before the selector, which reads the ticks it sets.
-    std::unique_ptr<ActiveMidiInputs> activeMidiInputs_;
-    std::unique_ptr<juce::AudioDeviceSelectorComponent> deviceSelector_;
+    std::unique_ptr<MidiInputList> midiInputList_;
     std::unique_ptr<CustomChannelSelector> inputChannelSelector_;
     std::unique_ptr<CustomChannelSelector> outputChannelSelector_;
 
+    juce::Label driverLabel_;
+    juce::ComboBox driverComboBox_;
     juce::Label inputDeviceLabel_;
     juce::ComboBox inputDeviceComboBox_;
     juce::Label outputDeviceLabel_;
@@ -129,6 +160,23 @@ class AudioSettingsDialog : public juce::Component,
     juce::Label deviceRefreshLabel_;
     juce::ToggleButton setAsPreferredCheckbox_;
 
+    juce::Label sampleRateLabel_;
+    juce::ComboBox sampleRateComboBox_;
+    juce::Label bufferSizeLabel_;
+    juce::ComboBox bufferSizeComboBox_;
+
+    juce::Label midiInputsLabel_;
+    juce::Label midiOutputLabel_;
+    juce::ComboBox midiOutputComboBox_;
+    juce::TextButton bluetoothMidiButton_;
+
+    /// Listed with the output items, so a selection never indexes a list that has moved.
+    std::vector<juce::String> midiOutputIds_;
+
+    /// MIDI hot-plug and Bluetooth pairing, which no audio notification covers.
+    juce::MidiDeviceListConnection midiDevices_ =
+        juce::MidiDeviceListConnection::make([this] { refreshMidiControls(); });
+
     // Which engine renders. Here because it is an audio-device-level choice and
     // this is where a user already comes to change one (#2559).
     juce::Label engineLabel_;
@@ -137,13 +185,11 @@ class AudioSettingsDialog : public juce::Component,
 
     juce::TextButton closeButton_;
     juce::Label deviceNameLabel_;
-    juce::AudioDeviceManager* deviceManager_;
     AudioEngine* audioEngine_;
     AudioIOControl* audio_;
 
     /// The backend and interfaces the lists show, so a channel toggle does not rebuild them.
     AudioIOSettings listed_;
-    juce::ComboBox* driverTypeComboBox_ = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioSettingsDialog)
 };

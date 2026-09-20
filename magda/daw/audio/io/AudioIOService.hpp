@@ -72,6 +72,39 @@ class AudioIOService : public AudioIOControl, private juce::ChangeListener {
     juce::StringArray getBackendNames();
     juce::StringArray getInterfaceNames(const juce::String& backend, bool inputs);
 
+    juce::StringArray backendNames() override {
+        return getBackendNames();
+    }
+    juce::StringArray interfaceNames(const juce::String& backend, bool inputs) override {
+        return getInterfaceNames(backend, inputs);
+    }
+    juce::String defaultInterface(const juce::String& backend, bool inputs) override;
+    bool isSingleInterfaceBackend(const juce::String& backend) override;
+    std::vector<double> availableSampleRates() const override;
+    std::vector<int> availableBufferSizes() const override;
+
+    void addCallback(juce::AudioIODeviceCallback* callback) override {
+        manager_.addAudioCallback(callback);
+    }
+    void removeCallback(juce::AudioIODeviceCallback* callback) override {
+        manager_.removeAudioCallback(callback);
+    }
+
+    void setMidiInputEnabled(const juce::String& identifier, bool enabled) override {
+        manager_.setMidiInputDeviceEnabled(identifier, enabled);
+    }
+    bool isMidiInputEnabled(const juce::String& identifier) const override {
+        return manager_.isMidiInputDeviceEnabled(identifier);
+    }
+    void setDefaultMidiOutput(const juce::String& identifier) override {
+        manager_.setDefaultMidiOutputDevice(identifier);
+    }
+    juce::String defaultMidiOutput() const override {
+        return manager_.getDefaultMidiOutputIdentifier();
+    }
+
+    Status status() const override;
+
     /** @brief What @p interfaceName calls its channels, whether or not it is open. */
     juce::StringArray getChannelNames(const juce::String& backend,
                                       const juce::String& interfaceName, bool inputs);

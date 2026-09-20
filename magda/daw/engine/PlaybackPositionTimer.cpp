@@ -2,6 +2,7 @@
 
 #include <juce_audio_devices/juce_audio_devices.h>
 
+#include "../audio/io/AudioIOControl.hpp"
 #include "AudioEngine.hpp"
 #include "core/ClipManager.hpp"
 #include "ui/state/TimelineController.hpp"
@@ -94,18 +95,10 @@ void PlaybackPositionTimer::timerCallback() {
     // CPU usage + xrun update (throttled)
     if (onCpuUsageUpdate && ++cpuUpdateCounter_ >= CPU_UPDATE_TICKS) {
         cpuUpdateCounter_ = 0;
-        auto* dm = engine_.getDeviceManager();
-        if (dm) {
-            juce::String deviceName;
-            double sampleRate = 0.0;
-            int bufferSize = 0;
-            if (auto* device = dm->getCurrentAudioDevice()) {
-                deviceName = device->getName();
-                sampleRate = device->getCurrentSampleRate();
-                bufferSize = device->getCurrentBufferSizeSamples();
-            }
-            onCpuUsageUpdate(static_cast<float>(dm->getCpuUsage()), dm->getXRunCount(), deviceName,
-                             sampleRate, bufferSize);
+        if (auto* audioIO = engine_.getAudioIO()) {
+            const auto status = audioIO->status();
+            onCpuUsageUpdate(static_cast<float>(status.cpuUsage), status.xruns,
+                             status.interfaceName, status.sampleRate, status.bufferSize);
         }
     }
 }

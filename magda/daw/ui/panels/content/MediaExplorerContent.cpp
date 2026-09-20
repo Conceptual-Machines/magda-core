@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <system_error>
 
+#include "../../../audio/io/AudioIOControl.hpp"
 #include "../../../core/Config.hpp"
 #include "../../../project/ProjectManager.hpp"
 #include "../../components/common/InternalFileDrag.hpp"
@@ -1202,9 +1203,8 @@ MediaExplorerContent::~MediaExplorerContent() {
     // CRITICAL: Remove audio callback before destroying player/transport
     // to prevent use-after-free from audio thread
     if (audioEngine_ != nullptr) {
-        if (auto* deviceManager = audioEngine_->getDeviceManager()) {
-            deviceManager->removeAudioCallback(previewCallback_.get());
-        }
+        if (auto* audioIO = audioEngine_->getAudioIO())
+            audioIO->removeCallback(previewCallback_.get());
     }
 
     audioSourcePlayer_.setSource(nullptr);
@@ -1376,19 +1376,17 @@ void MediaExplorerContent::setAudioEngine(magda::AudioEngine* engine) {
 
     // Remove callback from old device manager if it exists
     if (audioEngine_ != nullptr) {
-        if (auto* oldDeviceManager = audioEngine_->getDeviceManager()) {
-            oldDeviceManager->removeAudioCallback(previewCallback_.get());
-        }
+        if (auto* audioIO = audioEngine_->getAudioIO())
+            audioIO->removeCallback(previewCallback_.get());
     }
 
     audioEngine_ = engine;
 
     // Add callback to new device manager if it exists
     if (audioEngine_ != nullptr) {
-        if (auto* deviceManager = audioEngine_->getDeviceManager()) {
-            // Register the preview callback wrapper (routes audio to configured stereo pair)
-            deviceManager->addAudioCallback(previewCallback_.get());
-        }
+        // Routes audio to the configured stereo pair, beside the engine's own callback.
+        if (auto* audioIO = audioEngine_->getAudioIO())
+            audioIO->addCallback(previewCallback_.get());
     }
 }
 

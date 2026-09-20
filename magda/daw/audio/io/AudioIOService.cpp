@@ -102,6 +102,49 @@ juce::StringArray AudioIOService::getInterfaceNames(const juce::String& backend,
     return found != nullptr ? found->getDeviceNames(inputs) : juce::StringArray{};
 }
 
+juce::String AudioIOService::defaultInterface(const juce::String& backend, bool inputs) {
+    auto* found = backendNamed(backend);
+    if (found == nullptr)
+        return {};
+
+    found->scanForDevices();
+    const auto names = found->getDeviceNames(inputs);
+    return names[found->getDefaultDeviceIndex(inputs)];
+}
+
+bool AudioIOService::isSingleInterfaceBackend(const juce::String& backend) {
+    const auto* found = backendNamed(backend);
+    return found != nullptr && found->hasSeparateInputsAndOutputs() == false;
+}
+
+std::vector<double> AudioIOService::availableSampleRates() const {
+    std::vector<double> rates;
+    if (auto* device = manager_.getCurrentAudioDevice())
+        for (const auto rate : device->getAvailableSampleRates())
+            rates.push_back(rate);
+    return rates;
+}
+
+std::vector<int> AudioIOService::availableBufferSizes() const {
+    std::vector<int> sizes;
+    if (auto* device = manager_.getCurrentAudioDevice())
+        for (const auto size : device->getAvailableBufferSizes())
+            sizes.push_back(size);
+    return sizes;
+}
+
+AudioIOControl::Status AudioIOService::status() const {
+    Status status;
+    if (auto* device = manager_.getCurrentAudioDevice()) {
+        status.interfaceName = device->getName();
+        status.sampleRate = device->getCurrentSampleRate();
+        status.bufferSize = device->getCurrentBufferSizeSamples();
+    }
+    status.cpuUsage = manager_.getCpuUsage();
+    status.xruns = manager_.getXRunCount();
+    return status;
+}
+
 juce::StringArray AudioIOService::getChannelNames(const juce::String& backend,
                                                   const juce::String& interfaceName, bool inputs) {
     // The open interface answers for itself rather than through a second instance of its driver.

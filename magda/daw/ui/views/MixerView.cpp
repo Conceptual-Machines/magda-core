@@ -795,7 +795,7 @@ void MixerView::ChannelStrip::setupControls() {
             auto* midiBridge = audioEngine_->getMidiBridge();
             const auto* hardware = audioEngine_->getAudioIO();
 
-            audioInSelector->meterInputsFrom(audioEngine_->getDeviceManager());
+            audioInSelector->meterInputsFrom(audioEngine_->getAudioIO());
             RoutingSyncHelper::populateAudioInputOptions(
                 audioInSelector.get(), RoutingSyncHelper::openDirection(hardware, true), trackId_,
                 &inputTrackMapping_, &inputChannelMapping_);

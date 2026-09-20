@@ -247,9 +247,6 @@ class AudioEngine : public AudioEngineListener {
     // ===== Session State Events (audio thread → message thread) =====
     virtual void processSessionStateEvents() = 0;
 
-    // ===== Device Management =====
-    virtual juce::AudioDeviceManager* getDeviceManager() = 0;
-
     /** @brief The audio interface: what the routing menus read and Audio Settings drives. */
     virtual AudioIOControl* getAudioIO() = 0;
 
