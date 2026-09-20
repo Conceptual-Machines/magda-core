@@ -72,6 +72,24 @@ class AudioIOService : public AudioIOControl, private juce::ChangeListener {
     juce::StringArray getBackendNames();
     juce::StringArray getInterfaceNames(const juce::String& backend, bool inputs);
 
+    juce::StringArray backendNames() override {
+        return getBackendNames();
+    }
+    juce::StringArray interfaceNames(const juce::String& backend, bool inputs) override {
+        return getInterfaceNames(backend, inputs);
+    }
+    bool isSingleInterfaceBackend(const juce::String& backend) override;
+    std::vector<double> availableSampleRates() const override;
+    std::vector<int> availableBufferSizes() const override;
+
+    void addCallback(juce::AudioIODeviceCallback* callback) override {
+        manager_.addAudioCallback(callback);
+    }
+    void removeCallback(juce::AudioIODeviceCallback* callback) override {
+        manager_.removeAudioCallback(callback);
+    }
+    Status status() const override;
+
     /** @brief What @p interfaceName calls its channels, whether or not it is open. */
     juce::StringArray getChannelNames(const juce::String& backend,
                                       const juce::String& interfaceName, bool inputs);

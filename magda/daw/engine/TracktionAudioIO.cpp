@@ -128,4 +128,68 @@ void TracktionAudioIO::changeListenerCallback(juce::ChangeBroadcaster*) {
     notifyChanged();
 }
 
+juce::AudioDeviceManager& TracktionAudioIO::manager() const {
+    return devices_.deviceManager;
+}
+
+juce::StringArray TracktionAudioIO::backendNames() {
+    juce::StringArray names;
+    for (const auto* backend : manager().getAvailableDeviceTypes())
+        names.add(backend->getTypeName());
+    return names;
+}
+
+juce::StringArray TracktionAudioIO::interfaceNames(const juce::String& backend, bool inputs) {
+    for (auto* type : manager().getAvailableDeviceTypes()) {
+        if (type->getTypeName() != backend)
+            continue;
+        type->scanForDevices();
+        return type->getDeviceNames(inputs);
+    }
+    return {};
+}
+
+bool TracktionAudioIO::isSingleInterfaceBackend(const juce::String& backend) {
+    for (const auto* type : manager().getAvailableDeviceTypes())
+        if (type->getTypeName() == backend)
+            return !type->hasSeparateInputsAndOutputs();
+    return false;
+}
+
+std::vector<double> TracktionAudioIO::availableSampleRates() const {
+    std::vector<double> rates;
+    if (auto* device = manager().getCurrentAudioDevice())
+        for (const auto rate : device->getAvailableSampleRates())
+            rates.push_back(rate);
+    return rates;
+}
+
+std::vector<int> TracktionAudioIO::availableBufferSizes() const {
+    std::vector<int> sizes;
+    if (auto* device = manager().getCurrentAudioDevice())
+        for (const auto size : device->getAvailableBufferSizes())
+            sizes.push_back(size);
+    return sizes;
+}
+
+void TracktionAudioIO::addCallback(juce::AudioIODeviceCallback* callback) {
+    manager().addAudioCallback(callback);
+}
+
+void TracktionAudioIO::removeCallback(juce::AudioIODeviceCallback* callback) {
+    manager().removeAudioCallback(callback);
+}
+
+AudioIOControl::Status TracktionAudioIO::status() const {
+    Status status;
+    if (auto* device = manager().getCurrentAudioDevice()) {
+        status.interfaceName = device->getName();
+        status.sampleRate = device->getCurrentSampleRate();
+        status.bufferSize = device->getCurrentBufferSizeSamples();
+    }
+    status.cpuUsage = manager().getCpuUsage();
+    status.xruns = manager().getXRunCount();
+    return status;
+}
+
 }  // namespace magda

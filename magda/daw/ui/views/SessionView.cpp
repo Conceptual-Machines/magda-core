@@ -978,7 +978,7 @@ class SessionView::MiniIOStrip : public juce::Component {
         auto* midiBridge = audioEngine_->getMidiBridge();
         const auto* hardware = audioEngine_->getAudioIO();
 
-        audioInSelector_->meterInputsFrom(audioEngine_->getDeviceManager());
+        audioInSelector_->meterInputsFrom(audioEngine_->getAudioIO());
         RoutingSyncHelper::populateAudioInputOptions(
             audioInSelector_.get(), RoutingSyncHelper::openDirection(hardware, true), trackId_,
             &inputTrackMapping_, &inputChannelMapping_);

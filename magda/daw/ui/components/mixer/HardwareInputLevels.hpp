@@ -6,6 +6,8 @@
 #include <atomic>
 #include <memory>
 
+#include "../../../audio/io/AudioIOControl.hpp"
+
 namespace magda {
 
 /**
@@ -43,8 +45,8 @@ class InputChannelLevels {
  */
 class HardwareInputLevels final : private juce::AudioIODeviceCallback {
   public:
-    /// The instance measuring @p devices, shared by every holder.
-    static std::shared_ptr<HardwareInputLevels> acquire(juce::AudioDeviceManager& devices);
+    /// The instance measuring @p audio, shared by every holder.
+    static std::shared_ptr<HardwareInputLevels> acquire(AudioIOControl& audio);
 
     ~HardwareInputLevels() override;
 
@@ -53,7 +55,7 @@ class HardwareInputLevels final : private juce::AudioIODeviceCallback {
     }
 
   private:
-    explicit HardwareInputLevels(juce::AudioDeviceManager& devices);
+    explicit HardwareInputLevels(AudioIOControl& audio);
 
     void audioDeviceIOCallbackWithContext(const float* const* inputs, int numInputs,
                                           float* const* outputs, int numOutputs, int numSamples,
@@ -61,7 +63,7 @@ class HardwareInputLevels final : private juce::AudioIODeviceCallback {
     void audioDeviceAboutToStart(juce::AudioIODevice* device) override;
     void audioDeviceStopped() override;
 
-    juce::AudioDeviceManager& devices_;
+    AudioIOControl& audio_;
     InputChannelLevels levels_;
 };
 

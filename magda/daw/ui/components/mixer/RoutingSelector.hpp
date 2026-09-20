@@ -12,6 +12,7 @@ class AudioDeviceManager;
 
 namespace magda {
 
+class AudioIOControl;
 class HardwareInputLevels;
 
 /** @brief Small level bars for a set of physical input channels, with meter ballistics. */
@@ -99,7 +100,7 @@ class RoutingSelector : public juce::Component, private juce::Timer {
 
     /// Where the label and the menu read the levels of options naming input
     /// channels. Null shows no meters.
-    void meterInputsFrom(juce::AudioDeviceManager* devices);
+    void meterInputsFrom(AudioIOControl* audio);
 
     // Callbacks
     std::function<void(bool enabled)> onEnabledChanged;
@@ -114,7 +115,7 @@ class RoutingSelector : public juce::Component, private juce::Timer {
     int selectedId_ = -1;
     std::vector<RoutingOption> options_;
 
-    juce::AudioDeviceManager* inputDevices_ = nullptr;
+    AudioIOControl* inputAudio_ = nullptr;
 
     /// Held while any option names an input channel. The menu's rows hold it weakly.
     std::shared_ptr<HardwareInputLevels> inputLevels_;
