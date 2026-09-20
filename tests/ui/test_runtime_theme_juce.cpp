@@ -10,8 +10,8 @@ class RuntimeThemeTest final : public juce::UnitTest {
 
     void runTest() override {
         beginTest("Dark palette is the default");
-        DarkThemeReset reset;
-        magda::ActiveTheme::resetToDarkPalette();
+        ThemeReset reset;
+        magda::ThemeManager::setActiveBuiltInTheme(magda::ThemeManager::kDarkThemeId);
         expect(magda::ActiveTheme::getColourValue(magda::ActiveTheme::BACKGROUND) == 0xFF0C0F14);
         expect(magda::ActiveTheme::getColourValue(magda::ActiveTheme::TEXT_PRIMARY) == 0xFFE8EDF1);
         expect(magda::ActiveTheme::getColourValue(magda::ActiveTheme::AUTOMATION_LANE_BACKGROUND) ==
@@ -49,7 +49,7 @@ class RuntimeThemeTest final : public juce::UnitTest {
         expect(*neutralIconRole == magda::ColourRole::ICON_NEUTRAL);
 
         beginTest("Active palette changes existing ActiveTheme lookups at runtime");
-        auto testPalette = magda::ActiveTheme::getDarkPalette();
+        auto testPalette = magda::ThemeManager::builtInPalette(magda::ThemeManager::kDarkThemeId);
         testPalette[static_cast<std::size_t>(magda::ColourRole::BACKGROUND)] = 0xFFF2F2F2;
         testPalette[static_cast<std::size_t>(magda::ColourRole::TEXT_PRIMARY)] = 0xFF121212;
         magda::ActiveTheme::setActivePalette(testPalette);
@@ -323,14 +323,15 @@ class RuntimeThemeTest final : public juce::UnitTest {
         expect(!magda::loadFactoryTheme("missing-factory-theme").has_value());
 
         beginTest("Reset restores the built-in dark palette");
-        magda::ActiveTheme::resetToDarkPalette();
-        expect(magda::ActiveTheme::getActivePalette() == magda::ActiveTheme::getDarkPalette());
+        magda::ThemeManager::setActiveBuiltInTheme(magda::ThemeManager::kDarkThemeId);
+        expect(magda::ActiveTheme::getActivePalette() ==
+               magda::ThemeManager::builtInPalette(magda::ThemeManager::kDarkThemeId));
     }
 
   private:
-    struct DarkThemeReset {
-        ~DarkThemeReset() {
-            magda::ActiveTheme::resetToDarkPalette();
+    struct ThemeReset {
+        ~ThemeReset() {
+            magda::ThemeManager::setActiveBuiltInTheme(magda::ThemeManager::kDarkThemeId);
         }
     };
 };

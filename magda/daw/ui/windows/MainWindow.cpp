@@ -441,7 +441,7 @@ void MainWindow::refreshThemedLookAndFeels() {
     ActiveTheme::applyToLookAndFeel(daw::ui::SmallButtonLookAndFeel::getInstance());
     ActiveTheme::applyToLookAndFeel(daw::ui::FlatTabButtonLookAndFeel::getInstance());
     ActiveTheme::applyToLookAndFeel(daw::ui::SmallComboBoxLookAndFeel::getInstance());
-    // Not a ActiveTheme::applyToLookAndFeel target: it pushes its own scrollbar
+    // Not an ActiveTheme::applyToLookAndFeel target: it pushes its own scrollbar
     // colour into its table, which no repaint would refresh.
     daw::ui::FileBrowserLookAndFeel::getInstance().refreshThemeColours();
 

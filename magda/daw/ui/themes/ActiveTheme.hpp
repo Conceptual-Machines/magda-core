@@ -468,19 +468,16 @@ class ActiveTheme {
 
     // Runtime palette API. Theme changes are expected to happen on JUCE's
     // message thread, alongside the LookAndFeel refresh they trigger.
-    static const Palette& getDarkPalette();
     static const Palette& getActivePalette();
     static void setActivePalette(const Palette& palette);
-    static void resetToDarkPalette();
 
-    static const SyntaxPalette& getDarkSyntaxPalette();
     static const SyntaxPalette& getActiveSyntaxPalette();
     static void setActiveSyntaxPalette(const SyntaxPalette& palette);
 
-    // Maps a colour from the active or default-Dark palette to its runtime
-    // role. This lets legacy UI code that already supplies an ActiveTheme colour
-    // retain its intent while resolving the final colour at paint time. Only
-    // RGB is considered: callers keep their own alpha value.
+    // Maps a hardcoded colour back to its role, trying the active palette
+    // first and the dark defaults second, so UI code that still names a dark
+    // colour follows the active theme at paint time. Only RGB is compared:
+    // callers keep their own alpha.
     static std::optional<ColourRole> findPaletteRole(juce::Colour colour);
 
     // Replaces the shared source colours used by bundled SVG controls with
@@ -528,7 +525,8 @@ class ActiveTheme {
 };
 
 // Owns theme identity and runtime selection. ActiveTheme provides the
-// colour-role facade, while theme lifecycle APIs live here.
+// colour-role facade; lifecycle APIs live here so that Light, High Contrast
+// and JSON themes do not reach through a type named for one palette.
 class ThemeManager {
   public:
     static constexpr const char* kDarkThemeId = "dark";

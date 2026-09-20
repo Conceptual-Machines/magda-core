@@ -613,25 +613,12 @@ constexpr ActiveTheme::SyntaxPalette highContrastSyntaxPalette = [] {
 ActiveTheme::Palette ActiveTheme::activePalette_ = darkPalette;
 ActiveTheme::SyntaxPalette ActiveTheme::activeSyntaxPalette_ = darkSyntaxPalette;
 
-const ActiveTheme::Palette& ActiveTheme::getDarkPalette() {
-    return darkPalette;
-}
-
 const ActiveTheme::Palette& ActiveTheme::getActivePalette() {
     return activePalette_;
 }
 
 void ActiveTheme::setActivePalette(const Palette& palette) {
     activePalette_ = palette;
-}
-
-void ActiveTheme::resetToDarkPalette() {
-    activePalette_ = darkPalette;
-    activeSyntaxPalette_ = darkSyntaxPalette;
-}
-
-const ActiveTheme::SyntaxPalette& ActiveTheme::getDarkSyntaxPalette() {
-    return darkSyntaxPalette;
 }
 
 const ActiveTheme::SyntaxPalette& ActiveTheme::getActiveSyntaxPalette() {

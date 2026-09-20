@@ -307,7 +307,7 @@ ThemeApplyResult applyThemeById(const std::string& themeId) {
     // candidate user-file path anyway so the caller can keep watching it and
     // recover the moment a valid file appears (built-in ids returned above).
     result.sourceFile = file;
-    ActiveTheme::resetToDarkPalette();
+    ThemeManager::setActiveBuiltInTheme(ThemeManager::kDarkThemeId);
     return result;
 }
 
