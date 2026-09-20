@@ -3373,16 +3373,23 @@ void PreferencesDialog::applySettings() {
 
     // Data path: needs a restart so the logger / plugin scanner / etc.
     // re-open at the new location. Persist Config, copy if requested, quit.
-    // The Browse-time prompt already told the user the app would restart on
-    // Apply, so no second confirmation is shown here.
     if (dataChanged) {
-        config.setDataDir(pathsPage->getNewDataPath());
-        config.save();
-        magda::paths::resolve();
+        auto& projectManager = ProjectManager::getInstance();
+        if (projectManager.isDirty() && !projectManager.showUnsavedChangesDialog())
+            return;
+
         if (copyData && !copyFolderIfNeeded(dataFrom, dataTo)) {
             showMigrationFailureAsync(dataFrom, dataTo);
             return;  // Don't quit if the copy failed — let the user investigate.
         }
+
+        // Stop autosave and clear the slot in both locations. The data copy may
+        // have carried the old slot into the new root.
+        projectManager.prepareForCleanShutdown();
+        config.setDataDir(pathsPage->getNewDataPath());
+        config.save();
+        magda::paths::resolve();
+        projectManager.discardUntitledAutosave();
         juce::JUCEApplication::quit();
     }
 }

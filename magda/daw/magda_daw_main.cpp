@@ -378,9 +378,6 @@ class MagdaDAWApplication : public JUCEApplication {
                                      "LuaController NOT created");
         }
 
-        // 3b. Clean up stale temp media directories from previous sessions
-        magda::ProjectManager::cleanupStaleTempDirectories();
-
         // 4. Create main window with full UI (pass the audio engine)
         juce::Logger::writeToLog("Creating MainWindow...");
         mainWindow_ = std::make_unique<magda::MainWindow>(daw_engine_.get());
@@ -485,9 +482,41 @@ class MagdaDAWApplication : public JUCEApplication {
             }
         }
 
+        // Recover a never-saved project before honoring a command-line open.
+        // A successful recovery owns this startup: immediately replacing the
+        // restored project with the command-line file would defeat recovery.
+        bool untitledRecoverySucceeded = false;
+        auto& projectManager = magda::ProjectManager::getInstance();
+        if (projectManager.hasUntitledAutosave()) {
+            if (projectManager.promptUntitledAutosaveRecovery()) {
+                untitledRecoverySucceeded = mainWindow_->recoverUntitledAutosave();
+                if (!untitledRecoverySucceeded) {
+                    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                           "Recovery Failed",
+                                                           projectManager.getLastError());
+                    projectManager.discardUntitledAutosave();
+                }
+            } else {
+                projectManager.discardUntitledAutosave();
+            }
+        }
+
+        // The normal startup state is a real untitled project, not merely the
+        // ProjectManager's pre-UI placeholder. This also enables the regular
+        // autosave tick before the user has visited File > New.
+        if (!untitledRecoverySucceeded)
+            projectManager.newProject();
+
+        // Never sweep the media tree backing a recovered project.
+        if (untitledRecoverySucceeded) {
+            magda::ProjectManager::cleanupStaleTempDirectories(projectManager.getMediaDirectory());
+        } else {
+            magda::ProjectManager::cleanupStaleTempDirectories();
+        }
+
         // Open project file if passed on command line (e.g. double-click .mgd in file manager)
         auto cmdLine = getCommandLineParameters();
-        if (cmdLine.isNotEmpty()) {
+        if (!untitledRecoverySucceeded && cmdLine.isNotEmpty()) {
             auto filePath = cmdLine.unquoted().trim();
             juce::File projectFile(filePath);
             if (projectFile.existsAsFile() && projectFile.hasFileExtension("mgd")) {
@@ -657,6 +686,7 @@ class MagdaDAWApplication : public JUCEApplication {
             if (!pm.showUnsavedChangesDialog())
                 return;  // User cancelled
         }
+        pm.prepareForCleanShutdown();
         quit();
     }
 };

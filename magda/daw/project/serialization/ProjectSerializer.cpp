@@ -247,6 +247,9 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
             outData.info.lastModified = juce::Time::fromISO8601(timeStr);
         }
 
+        // Internal recovery metadata. Ordinary project files omit it.
+        outData.info.autosaveMediaDirectory = obj->getProperty("autosaveMediaDirectory").toString();
+
         // Parse project settings
         auto projectVar = obj->getProperty("project");
         if (!projectVar.isObject()) {
@@ -478,6 +481,8 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
     obj->setProperty("magdaVersion", info.version);
     obj->setProperty("schemaVersion", kProjectSchemaVersion);
     obj->setProperty("lastModified", info.lastModified.toISO8601(true));
+    if (info.autosaveMediaDirectory.isNotEmpty())
+        obj->setProperty("autosaveMediaDirectory", info.autosaveMediaDirectory);
 
     // Project settings
     auto* projectObj = new juce::DynamicObject();
@@ -609,6 +614,7 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
     if (timeStr.isNotEmpty()) {
         outInfo.lastModified = juce::Time::fromISO8601(timeStr);
     }
+    outInfo.autosaveMediaDirectory = obj->getProperty("autosaveMediaDirectory").toString();
 
     // Parse project settings
     auto projectVar = obj->getProperty("project");

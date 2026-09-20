@@ -109,6 +109,8 @@ struct ProjectInfo {
     juce::String name;
     juce::String filePath;  // .mgd file path
 
+    juce::String autosaveMediaDirectory;
+
     // Playback settings
     double tempo = DEFAULT_BPM;
     int timeSignatureNumerator = DEFAULT_TIME_SIGNATURE_NUMERATOR;

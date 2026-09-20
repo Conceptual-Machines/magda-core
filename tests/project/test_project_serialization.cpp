@@ -3,6 +3,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <map>
@@ -484,6 +485,103 @@ struct ScopedTestDataDir {
         dir.deleteRecursively();
     }
 };
+
+TEST_CASE("Never-saved projects autosave and recover with their temp media",
+          "[project][autosave][1771]") {
+    ScopedTestDataDir dataDir("magda-untitled-autosave-test");
+    ProjectTestFixture fixture;
+    auto& projects = ProjectManager::getInstance();
+
+    ProjectManager::discardUntitledAutosave();
+    if (projects.isDirty())
+        REQUIRE(projects.saveProjectAs(fixture.createTempProjectFile(".mgd")));
+    REQUIRE(projects.newProject());
+    projects.setTempo(137.0);
+
+    const auto crashedMediaDirectory = projects.getMediaDirectory();
+    const auto recording = projects.getRecordingsDirectory().getChildFile("recovered.wav");
+    REQUIRE(recording.replaceWithText("recorded audio"));
+
+    REQUIRE(projects.performAutosave());
+    const auto autosave = ProjectManager::getUntitledAutosaveFile();
+    REQUIRE(autosave == dataDir.dir.getChildFile("autosave").getChildFile("Untitled.autosave"));
+    REQUIRE(autosave.existsAsFile());
+
+    StagedProjectData autosaved;
+    REQUIRE(ProjectSerializer::loadAndStage(autosave, autosaved));
+    REQUIRE(autosaved.info.tempo == Approx(137.0));
+    REQUIRE(autosaved.info.autosaveMediaDirectory == crashedMediaDirectory.getFullPathName());
+
+    projects.setTempo(91.0);
+    REQUIRE(projects.recoverUntitledAutosave());
+    REQUIRE(projects.getCurrentProjectFile() == juce::File());
+    REQUIRE(projects.getCurrentProjectInfo().tempo == Approx(137.0));
+    REQUIRE(projects.getCurrentProjectInfo().autosaveMediaDirectory.isEmpty());
+    REQUIRE(projects.getMediaDirectory() == crashedMediaDirectory);
+    REQUIRE(projects.isDirty());
+    REQUIRE(autosave.existsAsFile());
+
+    const auto destination = fixture.createTempProjectFile(".mgd");
+    const auto savedProject = ProjectTestFixture::wrappedPath(destination);
+    REQUIRE(projects.saveProjectAs(destination));
+    REQUIRE_FALSE(autosave.existsAsFile());
+
+    const auto migratedRecording =
+        savedProject.getParentDirectory()
+            .getChildFile(savedProject.getFileNameWithoutExtension() + "_Media")
+            .getChildFile("recordings")
+            .getChildFile(recording.getFileName());
+    REQUIRE(migratedRecording.existsAsFile());
+    REQUIRE(migratedRecording.loadFileAsString() == "recorded audio");
+
+    StagedProjectData saved;
+    REQUIRE(ProjectSerializer::loadAndStage(savedProject, saved));
+    REQUIRE(saved.info.autosaveMediaDirectory.isEmpty());
+}
+
+TEST_CASE("Clean shutdown removes the never-saved recovery slot", "[project][autosave][1771]") {
+    ScopedTestDataDir dataDir("magda-untitled-autosave-shutdown-test");
+    ProjectTestFixture fixture;
+    auto& projects = ProjectManager::getInstance();
+    if (projects.isDirty())
+        REQUIRE(projects.saveProjectAs(fixture.createTempProjectFile(".mgd")));
+    REQUIRE(projects.newProject());
+    projects.setTempo(129.0);
+
+    const auto autosave = ProjectManager::getUntitledAutosaveFile();
+    const auto mediaDirectory = projects.getMediaDirectory();
+    REQUIRE(projects.performAutosave());
+
+    projects.prepareForCleanShutdown();
+    const bool removed = !autosave.existsAsFile();
+    const bool removedMedia = !mediaDirectory.exists();
+    projects.setAutoSaveEnabled(true, 60);
+    REQUIRE(removed);
+    REQUIRE(removedMedia);
+}
+
+TEST_CASE("Temp media cleanup uses the writable temp root", "[project][autosave][1771]") {
+    const auto mediaRoot = testTempRoot().getChildFile("MAGDA");
+    const auto stale = mediaRoot.getChildFile("UnsavedProject_stale_1771");
+    const auto protectedDirectory = mediaRoot.getChildFile("UnsavedProject_protected_1771");
+    REQUIRE(stale.createDirectory());
+    REQUIRE(protectedDirectory.createDirectory());
+
+    const auto old = std::filesystem::file_time_type::clock::now() - std::chrono::hours(24 * 8);
+    std::error_code staleTimeError;
+    std::error_code protectedTimeError;
+    std::filesystem::last_write_time(stale.getFullPathName().toStdString(), old, staleTimeError);
+    std::filesystem::last_write_time(protectedDirectory.getFullPathName().toStdString(), old,
+                                     protectedTimeError);
+    REQUIRE_FALSE(staleTimeError);
+    REQUIRE_FALSE(protectedTimeError);
+
+    ProjectManager::cleanupStaleTempDirectories(protectedDirectory);
+    REQUIRE_FALSE(stale.exists());
+    REQUIRE(protectedDirectory.isDirectory());
+
+    protectedDirectory.deleteRecursively();
+}
 
 TEST_CASE("Missing project media is discovered, searched and relinked",
           "[project][missing-media][71]") {
