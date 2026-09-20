@@ -87,6 +87,11 @@ MainView::MainView(AudioEngine* audioEngine) : horizontalZoom(10.0), audioEngine
     auto& config = magda::Config::getInstance();
     config.load();
 
+    // ProjectManager exists before Config is loaded. Snapshot the real
+    // new-project preferences before any timeline/controller component reads
+    // the initial untitled ProjectInfo.
+    magda::ProjectManager::getInstance().seedCurrentProjectFromConfig();
+
     // Load parameter alias layers
     CuratedAliasLoader::loadFromBinary();
     AliasRegistry::getInstance().loadUserGlobal(config.getParamAliases());
@@ -1205,35 +1210,35 @@ void MainView::resized() {
         timelineController->dispatch(ViewportResizedEvent{viewportWidth, viewportHeight});
         timeline->setViewportWidth(viewportWidth);
 
-        // Set initial zoom to show configurable duration on first resize
-        if (!initialZoomSet) {
-            int availableWidth = viewportWidth - LayoutConfig::TIMELINE_LEFT_PADDING;
-
-            if (availableWidth > 0) {
-                auto& config = magda::Config::getInstance();
-                int zoomViewBars = config.getDefaultZoomViewBars();
-                // horizontalZoom is ppb: convert bars to beats
-                const auto& st = timelineController->getState();
-                double viewBeats = zoomViewBars * st.tempo.timeSignatureNumerator;
-                double zoomForDefaultView =
-                    (viewBeats > 0) ? static_cast<double>(availableWidth) / viewBeats : 10.0;
-
-                // Ensure minimum zoom level for usability
-                zoomForDefaultView = juce::jmax(zoomForDefaultView, 0.5);
-
-                // Dispatch initial zoom via controller
-                timelineController->dispatch(SetZoomCenteredEvent{zoomForDefaultView, 0.0});
-
-                DBG("INITIAL ZOOM: showing " << zoomViewBars
-                                             << " bars, availableWidth=" << availableWidth
-                                             << ", zoomForDefaultView=" << zoomForDefaultView);
-
-                initialZoomSet = true;
-            }
-        }
+        if (!initialZoomSet)
+            applyInitialZoomForProject(ProjectManager::getInstance().getCurrentProjectInfo());
     }
 
     updateContentSizes();
+}
+
+void MainView::applyInitialZoomForProject(const ProjectInfo& info) {
+    // A saved project view is restored by ProjectManager::onAfterLoad. Mark it
+    // handled so a subsequent resize cannot replace it with the default view.
+    if (info.horizontalZoom > 0.0) {
+        initialZoomSet = true;
+        return;
+    }
+
+    initialZoomSet = false;
+    if (!timelineViewport || !timelineController)
+        return;
+
+    const int availableWidth = timelineViewport->getWidth() - LayoutConfig::TIMELINE_LEFT_PADDING;
+    if (availableWidth <= 0)
+        return;
+
+    const auto& state = timelineController->getState();
+    const double viewBeats = info.defaults.zoomViewBars * state.tempo.timeSignatureNumerator;
+    const double zoom =
+        juce::jmax(viewBeats > 0.0 ? static_cast<double>(availableWidth) / viewBeats : 10.0, 0.5);
+    timelineController->dispatch(SetZoomCenteredEvent{zoom, 0.0});
+    initialZoomSet = true;
 }
 
 void MainView::setHorizontalZoom(double zoomFactor) {
@@ -2416,8 +2421,9 @@ void MainView::SelectionOverlayComponent::drawRecordingRegion(juce::Graphics& g)
 
         if (drawHeight > 0) {
             // Use the same style as a MIDI clip: darker fill of the default clip color
-            auto clipColour = juce::Colour(Config::getDefaultColour(
-                static_cast<int>(ClipManager::getInstance().getArrangementClips().size())));
+            auto clipColour = juce::Colour(
+                ProjectManager::getInstance().getCurrentProjectInfo().defaults.colourForIndex(
+                    static_cast<int>(ClipManager::getInstance().getArrangementClips().size())));
             g.setColour(clipColour.darker(0.3f));
             g.fillRoundedRectangle(startX, drawY, endX - startX, drawHeight, 3.0f);
 

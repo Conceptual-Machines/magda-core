@@ -100,6 +100,41 @@ inline bool ProjectMetadata::isEmpty() const {
 }
 
 /**
+ * Defaults used when new content is added to this project.
+ *
+ * Config seeds this block when the project is created. From then on the saved
+ * project owns the values, so opening it with a different user configuration
+ * does not change how new tracks and clips are initialized.
+ */
+struct ProjectColourEntry {
+    std::uint32_t colour = 0xFF5588AA;
+    juce::String name = "Blue";
+
+    bool operator==(const ProjectColourEntry&) const = default;
+};
+
+struct ProjectDefaults {
+    int zoomViewBars = 32;
+    bool autoCrossfade = true;
+    bool overlapPlaysBoth = false;
+    bool chordPreview = false;
+    bool postFxPostFader = true;
+    int clipColourMode = 0;  // 0 = inherit track, 1 = cycle through colourPalette
+    std::vector<ProjectColourEntry> colourPalette{
+        {0xFF5588AA, "Blue"},   {0xFF55AA88, "Teal"},   {0xFF88AA55, "Green"},
+        {0xFFAAAA55, "Yellow"}, {0xFFAA8855, "Orange"}, {0xFFAA5555, "Red"},
+        {0xFFAA55AA, "Purple"}, {0xFF5555AA, "Indigo"},
+    };
+
+    std::uint32_t colourForIndex(int index) const {
+        if (colourPalette.empty())
+            return 0xFF5588AA;
+        const auto positiveIndex = index < 0 ? 0U : static_cast<std::size_t>(index);
+        return colourPalette[positiveIndex % colourPalette.size()].colour;
+    }
+};
+
+/**
  * @brief Project-level settings and state
  *
  * Contains all project-level information including tempo, time signature,
@@ -120,6 +155,9 @@ struct ProjectInfo {
 
     // Total timeline length (per-project; seeded from Config default for new projects)
     int timelineLengthBars = 256;
+
+    // Creation and initial-view defaults, captured from Config for new projects.
+    ProjectDefaults defaults;
 
     // Render / bounce settings (per-project)
     /// The engine that last wrote this project, by its setting word

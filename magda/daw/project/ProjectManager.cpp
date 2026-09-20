@@ -328,6 +328,39 @@ int commonPathSuffixLength(const juce::String& first, const juce::String& second
 
 }  // namespace
 
+void ProjectManager::seedProjectFromConfig(ProjectInfo& project) {
+    const auto& config = Config::getInstance();
+    project.timelineLengthBars = config.getDefaultTimelineLengthBars();
+    project.defaults.zoomViewBars = config.getDefaultZoomViewBars();
+    project.defaults.autoCrossfade = config.getAutoCrossfadeByDefault();
+    project.defaults.overlapPlaysBoth = config.getClipOverlapPlaysBoth();
+    project.defaults.chordPreview = config.getChordPreviewOnByDefault();
+    project.defaults.postFxPostFader = config.getPostFxPostFaderByDefault();
+    project.defaults.clipColourMode = config.getClipColourMode();
+
+    project.defaults.colourPalette.clear();
+    for (const auto& entry : Config::defaultColourPalette)
+        project.defaults.colourPalette.push_back({entry.colour, entry.name});
+    for (const auto& entry : config.getTrackColourPalette())
+        project.defaults.colourPalette.push_back({entry.colour, juce::String(entry.name)});
+
+    project.sampleRate = config.getRenderSampleRate();
+    project.renderBitDepth = config.getRenderBitDepth();
+    project.bounceBitDepth = config.getBounceBitDepth();
+
+    // Credits describing the person rather than the work. Only the fields
+    // flagged for it are seeded - a stored default for the title or the year
+    // would be wrong in every project after the first.
+    const auto& metadataDefaults = config.getProjectMetadataDefaults();
+    for (const auto& field : kProjectMetadataFields) {
+        if (!field.seededFromDefaults)
+            continue;
+        const auto entry = metadataDefaults.find(field.key);
+        if (entry != metadataDefaults.end())
+            project.metadata.*field.member = juce::String(entry->second);
+    }
+}
+
 ProjectManager& ProjectManager::getInstance() {
     static ProjectManager instance;
     return instance;
@@ -401,26 +434,7 @@ bool ProjectManager::newProject() {
     currentProject_ = ProjectInfo();
     currentProject_.name = "Untitled";
     currentProject_.version = MAGDA_VERSION;
-    // Seed per-project settings from the global new-project defaults.
-    {
-        auto& config = Config::getInstance();
-        currentProject_.timelineLengthBars = config.getDefaultTimelineLengthBars();
-        currentProject_.sampleRate = config.getRenderSampleRate();
-        currentProject_.renderBitDepth = config.getRenderBitDepth();
-        currentProject_.bounceBitDepth = config.getBounceBitDepth();
-
-        // Credits describing the person rather than the work. Only the fields
-        // flagged for it are seeded - a stored default for the title or the year
-        // would be wrong in every project after the first.
-        const auto& metadataDefaults = config.getProjectMetadataDefaults();
-        for (const auto& field : kProjectMetadataFields) {
-            if (!field.seededFromDefaults)
-                continue;
-            const auto entry = metadataDefaults.find(field.key);
-            if (entry != metadataDefaults.end())
-                currentProject_.metadata.*field.member = juce::String(entry->second);
-        }
-    }
+    seedProjectFromConfig(currentProject_);
     currentFile_ = juce::File();
     isProjectOpen_ = true;
 
@@ -434,6 +448,11 @@ bool ProjectManager::newProject() {
     notifyProjectOpened();
 
     return true;
+}
+
+void ProjectManager::seedCurrentProjectFromConfig() {
+    if (!isProjectOpen_)
+        seedProjectFromConfig(currentProject_);
 }
 
 bool ProjectManager::saveProject() {
@@ -830,6 +849,7 @@ bool ProjectManager::closeProject() {
 
     // Reset state
     currentProject_ = ProjectInfo();
+    seedProjectFromConfig(currentProject_);
     currentFile_ = juce::File();
     mediaDirectory_ = juce::File();
     isProjectOpen_ = false;

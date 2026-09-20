@@ -23,6 +23,7 @@ namespace magda {
 
 // Forward declaration
 class AudioEngine;
+struct ProjectInfo;
 class SongNavigatorPanel;
 class MasterAutomationHeaderPanel;
 class MasterAutomationContentPanel;
@@ -45,6 +46,7 @@ class MainView : public juce::Component,
     // Zoom and scroll controls
     void setHorizontalZoom(double zoomFactor);
     void setVerticalZoom(double zoomFactor);
+    void applyInitialZoomForProject(const ProjectInfo& info);
     void scrollToPosition(double timePosition);
     void scrollToTrack(int trackIndex);
 

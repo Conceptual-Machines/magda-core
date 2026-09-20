@@ -420,6 +420,7 @@ void MainWindow::openProjectFile(const juce::File& file) {
                                    info.timeSignatureDenominator, info.loopEnabled,
                                    info.loopStartBeats, info.loopEndBeats, info.markers,
                                    info.timelineLengthBars);
+            safeThis->mainComponent->mainView->applyInitialZoomForProject(info);
         },
         [safeThis, file](bool success, const juce::String& error) {
             if (!safeThis)
@@ -460,6 +461,7 @@ bool MainWindow::recoverUntitledAutosave() {
                                    info.timeSignatureDenominator, info.loopEnabled,
                                    info.loopStartBeats, info.loopEndBeats, info.markers,
                                    info.timelineLengthBars);
+            safeThis->mainComponent->mainView->applyInitialZoomForProject(info);
         });
 
     if (!recovered)
@@ -488,6 +490,7 @@ void MainWindow::importDawProjectFile(const juce::File& file) {
                                    info.timeSignatureDenominator, info.loopEnabled,
                                    info.loopStartBeats, info.loopEndBeats, info.markers,
                                    info.timelineLengthBars);
+            safeThis->mainComponent->mainView->applyInitialZoomForProject(info);
         },
         [safeThis](bool ok, const juce::String& error) {
             // Empty error = user cancelled the unsaved-changes prompt; stay silent.
@@ -541,6 +544,7 @@ void MainWindow::setupMenuCallbacks() {
                                        info.timeSignatureDenominator, info.loopEnabled,
                                        info.loopStartBeats, info.loopEndBeats, info.markers,
                                        info.timelineLengthBars);
+                mainComponent->mainView->applyInitialZoomForProject(info);
             }
             // Select master channel by default
             SelectionManager::getInstance().selectTrack(MASTER_TRACK_ID);
@@ -600,11 +604,13 @@ void MainWindow::setupMenuCallbacks() {
 
             // Reset timeline/transport to defaults
             if (mainComponent && mainComponent->mainView) {
-                ProjectInfo defaults;
+                const auto& defaults = projectManager.getCurrentProjectInfo();
                 auto& tc = mainComponent->mainView->getTimelineController();
                 tc.restoreProjectState(defaults.tempo, defaults.timeSignatureNumerator,
                                        defaults.timeSignatureDenominator, defaults.loopEnabled,
-                                       defaults.loopStartBeats, defaults.loopEndBeats);
+                                       defaults.loopStartBeats, defaults.loopEndBeats,
+                                       defaults.markers, defaults.timelineLengthBars);
+                mainComponent->mainView->applyInitialZoomForProject(defaults);
             }
         }
     };

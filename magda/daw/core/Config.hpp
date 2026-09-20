@@ -75,7 +75,7 @@ class Config {
         listeners_.erase(std::remove(listeners_.begin(), listeners_.end(), l), listeners_.end());
     }
 
-    // Timeline Configuration (stored in bars)
+    // Defaults for newly created projects (stored in bars).
     int getDefaultTimelineLengthBars() const {
         return defaultTimelineLengthBars;
     }
@@ -486,8 +486,7 @@ class Config {
         followPlayhead = enabled;
     }
 
-    // Whether a newly created chord track auditions its progression on playback
-    // by default (the chord-track speaker toggle, which is the track's mute).
+    // Seed for a newly created project's chord-track audition default.
     bool getChordPreviewOnByDefault() const {
         return chordPreviewOnByDefault;
     }
@@ -495,9 +494,7 @@ class Config {
         chordPreviewOnByDefault = enabled;
     }
 
-    // Whether newly created audio clips get AUTO-XFADE enabled (#1499): their
-    // overlaps with other auto-crossfade audio clips play as crossfades
-    // instead of being trimmed away.
+    // Seed for a newly created project's AUTO-XFADE default (#1499).
     bool getAutoCrossfadeByDefault() const {
         return autoCrossfadeByDefault;
     }
@@ -505,9 +502,7 @@ class Config {
         autoCrossfadeByDefault = enabled;
     }
 
-    // Which side of the track fader a NEW track's post-FX stage (and its mixer
-    // analysis rail) starts on (#2094). Per track from then on, via the fader
-    // tag on the post-FX panel. The master track is always pre-fader.
+    // Seed for a newly created project's post-FX fader-side default (#2094).
     bool getPostFxPostFaderByDefault() const {
         return postFxPostFaderByDefault;
     }
@@ -515,8 +510,7 @@ class Config {
         postFxPostFaderByDefault = postFader;
     }
 
-    // What NEW clips start with (#2003): whether they play through an overlap
-    // rather than the stack silencing one side. Per clip from then on.
+    // Seed for a newly created project's clip-overlap default (#2003).
     void setClipOverlapPlaysBoth(bool playBoth) {
         clipOverlapPlaysBoth = playBoth;
     }
@@ -1104,7 +1098,7 @@ class Config {
         setLLMModel(model);
     }
 
-    // Unified default colour palette (tracks + clips share the same palette)
+    // Palette used to seed newly created projects (tracks + clips share it).
     struct ColourEntry {
         uint32_t colour;
         const char* name;
@@ -1139,7 +1133,7 @@ class Config {
         trackColourPalette = palette;
     }
 
-    // Clip colour mode: how new clips get their colour
+    // New-project seed for how new clips get their colour.
     // 0 = inherit from parent track, 1 = cycle through default palette
     int getClipColourMode() const {
         return clipColourMode;

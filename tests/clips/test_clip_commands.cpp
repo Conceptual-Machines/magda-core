@@ -8,7 +8,6 @@
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/ClipOcclusion.hpp"
 #include "magda/daw/core/ClipPropertyCommands.hpp"
-#include "magda/daw/core/Config.hpp"
 #include "magda/daw/core/TempoMap.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/project/ProjectManager.hpp"
@@ -2253,9 +2252,14 @@ TEST_CASE("FlattenClipStackCommand - commits what the stack plays into one clip"
     auto& proj = ProjectManager::getInstance();
     const double originalTempo = proj.getCurrentProjectInfo().tempo;
     proj.setTempo(120.0);
-    auto& config = Config::getInstance();
-    const bool originalPlaysBoth = config.getClipOverlapPlaysBoth();
-    config.setClipOverlapPlaysBoth(false);
+    auto& defaults = proj.getMutableProjectInfo().defaults;
+    const bool originalPlaysBoth = defaults.overlapPlaysBoth;
+    const juce::ScopeGuard restoreProjectState{
+        [&proj, &defaults, originalTempo, originalPlaysBoth] {
+            defaults.overlapPlaysBoth = originalPlaysBoth;
+            proj.setTempo(originalTempo);
+        }};
+    defaults.overlapPlaysBoth = false;
 
     auto& cm = ClipManager::getInstance();
     TrackId track = createTrack("Track", TrackType::Media);
@@ -2311,9 +2315,6 @@ TEST_CASE("FlattenClipStackCommand - commits what the stack plays into one clip"
         CHECK(merged->midiNotes[1].startBeat == Catch::Approx(7.0));
         CHECK(merged->midiNotes[2].startBeat == Catch::Approx(8.0));
     }
-
-    config.setClipOverlapPlaysBoth(originalPlaysBoth);
-    proj.setTempo(originalTempo);
 }
 
 TEST_CASE("FlattenClipStackCommand - only offers itself when there is a stack to fold",

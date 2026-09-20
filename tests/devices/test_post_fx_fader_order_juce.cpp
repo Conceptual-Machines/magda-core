@@ -26,9 +26,9 @@
 #include "magda/daw/audio/plugins/LevelsPlugin.hpp"
 #include "magda/daw/audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "magda/daw/core/ChainNodePath.hpp"
-#include "magda/daw/core/Config.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/engine/TracktionEngineWrapper.hpp"
+#include "magda/daw/project/ProjectManager.hpp"
 
 using namespace magda;
 
@@ -76,13 +76,14 @@ class PostFxFaderOrderTest final : public juce::UnitTest {
     PostFxFaderOrderTest() : juce::UnitTest("Post-FX Fader Order Tests", "magda") {}
 
     void runTest() override {
-        // New tracks seed their fader side from the preference (#2094), which is
-        // read off the machine's own config file. Pin it so these engine-order
-        // tests do not depend on how the developer running them has it set.
-        const bool previousDefault = Config::getInstance().getPostFxPostFaderByDefault();
-        Config::getInstance().setPostFxPostFaderByDefault(true);
+        // New tracks seed their fader side from the project default. Pin it so
+        // these engine-order tests do not depend on preceding project tests.
+        auto& projectDefaults = ProjectManager::getInstance().getMutableProjectInfo().defaults;
+        const bool previousDefault = projectDefaults.postFxPostFader;
+        projectDefaults.postFxPostFader = true;
         const juce::ScopeGuard restoreDefault{[previousDefault] {
-            Config::getInstance().setPostFxPostFaderByDefault(previousDefault);
+            ProjectManager::getInstance().getMutableProjectInfo().defaults.postFxPostFader =
+                previousDefault;
         }};
 
         magda::test::runWithCleanJuceState([this] {

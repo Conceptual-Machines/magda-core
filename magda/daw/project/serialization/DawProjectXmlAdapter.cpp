@@ -12,7 +12,6 @@
 #include <set>
 #include <tuple>
 
-#include "../../core/Config.hpp"
 #include "../../core/ParameterUtils.hpp"
 #include "../../core/TempoUtils.hpp"
 #include "version.hpp"
@@ -1352,7 +1351,7 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
         for (const auto& track : document.tracks)
             if (track.id == trackId && !track.colour.isTransparent())
                 return track.colour;
-        return juce::Colour(Config::getDefaultColour(0));
+        return juce::Colour(document.info.defaults.colourForIndex(0));
     };
 
     ClipId nextClipId = 1;

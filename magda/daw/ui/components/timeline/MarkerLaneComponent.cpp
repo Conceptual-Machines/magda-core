@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-#include "../../../core/Config.hpp"
+#include "../../../project/ProjectManager.hpp"
 #include "../../layout/LayoutConfig.hpp"
 #include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
@@ -212,8 +212,7 @@ void MarkerLaneComponent::showMarkerMenu(int markerId, juce::Point<int> screenPo
     menu.addItem(4, "Edit Position...");
     menu.addSeparator();
 
-    // Colour submenu built from the shared track/clip palette (default +
-    // user-defined custom colours) rather than a hardcoded marker-only set.
+    // Colour submenu uses the palette captured by this project.
     auto makeChip = [](juce::Colour colour) {
         juce::Image chip(juce::Image::ARGB, 14, 14, true);
         juce::Graphics cg(chip);
@@ -225,22 +224,12 @@ void MarkerLaneComponent::showMarkerMenu(int markerId, juce::Point<int> screenPo
     };
 
     juce::PopupMenu colourMenu;
-    for (size_t i = 0; i < Config::defaultColourPalette.size(); ++i) {
-        auto colour = juce::Colour(Config::defaultColourPalette[i].colour);
-        colourMenu.addItem(kColourMenuBase + static_cast<int>(i),
-                           Config::defaultColourPalette[i].name, true, false, makeChip(colour));
-    }
-
-    const auto customPalette = Config::getInstance().getTrackColourPalette();
-    const int customColourBase =
-        kColourMenuBase + static_cast<int>(Config::defaultColourPalette.size());
-    if (!customPalette.empty()) {
-        colourMenu.addSeparator();
-        for (size_t i = 0; i < customPalette.size(); ++i) {
-            auto colour = juce::Colour(customPalette[i].colour);
-            colourMenu.addItem(customColourBase + static_cast<int>(i),
-                               juce::String(customPalette[i].name), true, false, makeChip(colour));
-        }
+    const auto palette =
+        ProjectManager::getInstance().getCurrentProjectInfo().defaults.colourPalette;
+    for (size_t i = 0; i < palette.size(); ++i) {
+        const auto colour = juce::Colour(palette[i].colour);
+        colourMenu.addItem(kColourMenuBase + static_cast<int>(i), palette[i].name, true, false,
+                           makeChip(colour));
     }
     menu.addSubMenu("Colour", colourMenu);
     menu.addSeparator();
@@ -250,7 +239,7 @@ void MarkerLaneComponent::showMarkerMenu(int markerId, juce::Point<int> screenPo
     menu.showMenuAsync(
         juce::PopupMenu::Options().withTargetScreenArea({screenPosition.x, screenPosition.y, 1, 1}),
         [safeThis = juce::Component::SafePointer<MarkerLaneComponent>(this), markerId, snapshot,
-         customPalette](int result) {
+         palette](int result) {
             if (safeThis == nullptr || result == 0)
                 return;
             auto* tc = safeThis->timelineListener_.get();
@@ -264,17 +253,10 @@ void MarkerLaneComponent::showMarkerMenu(int markerId, juce::Point<int> screenPo
             } else if (result == 4) {
                 safeThis->showEditPositionDialog(markerId, snapshot);
             } else if (result >= kColourMenuBase) {
-                const int defaultCount = static_cast<int>(Config::defaultColourPalette.size());
-                const int idx = result - kColourMenuBase;
-                juce::Colour colour;
-                if (idx < defaultCount) {
-                    colour = juce::Colour(Config::getDefaultColour(idx));
-                } else {
-                    const auto customIdx = static_cast<size_t>(idx - defaultCount);
-                    if (customIdx >= customPalette.size())
-                        return;
-                    colour = juce::Colour(customPalette[customIdx].colour);
-                }
+                const auto idx = static_cast<size_t>(result - kColourMenuBase);
+                if (idx >= palette.size())
+                    return;
+                const auto colour = juce::Colour(palette[idx].colour);
                 tc->dispatch(
                     UpdateMarkerEvent{markerId, snapshot.positionBeats, snapshot.name, colour});
             }

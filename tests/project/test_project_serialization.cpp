@@ -1082,6 +1082,116 @@ TEST_CASE("Project Serialization Basics", "[project][serialization]") {
     }
 }
 
+TEST_CASE("Project creation defaults roundtrip and support legacy files",
+          "[project][serialization][defaults]") {
+    SECTION("Every project default roundtrips") {
+        ProjectInfo info;
+        info.defaults.zoomViewBars = 17;
+        info.defaults.autoCrossfade = false;
+        info.defaults.overlapPlaysBoth = true;
+        info.defaults.chordPreview = true;
+        info.defaults.postFxPostFader = false;
+        info.defaults.clipColourMode = 1;
+        info.defaults.colourPalette = {
+            {0xFF010203, "Ink"},
+            {0xFF111213, "Slate"},
+            {0xFF212223, "Smoke"},
+        };
+
+        const auto json = ProjectSerializer::serializeProject(info);
+        const auto* projectObj = json.getDynamicObject()->getProperty("project").getDynamicObject();
+        REQUIRE(projectObj != nullptr);
+        REQUIRE(projectObj->getProperty("defaults").isObject());
+
+        ProjectInfo loaded;
+        REQUIRE(ProjectSerializer::deserializeProject(json, loaded));
+        CHECK(loaded.defaults.zoomViewBars == 17);
+        CHECK_FALSE(loaded.defaults.autoCrossfade);
+        CHECK(loaded.defaults.overlapPlaysBoth);
+        CHECK(loaded.defaults.chordPreview);
+        CHECK_FALSE(loaded.defaults.postFxPostFader);
+        CHECK(loaded.defaults.clipColourMode == 1);
+        CHECK(loaded.defaults.colourPalette == info.defaults.colourPalette);
+    }
+
+    SECTION("A missing defaults block falls back to current Config defaults") {
+        auto& config = Config::getInstance();
+        const auto oldTimelineBars = config.getDefaultTimelineLengthBars();
+        const auto oldZoomBars = config.getDefaultZoomViewBars();
+        const auto oldAutoCrossfade = config.getAutoCrossfadeByDefault();
+        const auto oldOverlap = config.getClipOverlapPlaysBoth();
+        const auto oldChordPreview = config.getChordPreviewOnByDefault();
+        const auto oldPostFx = config.getPostFxPostFaderByDefault();
+        const auto oldColourMode = config.getClipColourMode();
+        const auto oldPalette = config.getTrackColourPalette();
+        const juce::ScopeGuard restore{[&config, oldTimelineBars, oldZoomBars, oldAutoCrossfade,
+                                        oldOverlap, oldChordPreview, oldPostFx, oldColourMode,
+                                        oldPalette] {
+            config.setDefaultTimelineLengthBars(oldTimelineBars);
+            config.setDefaultZoomViewBars(oldZoomBars);
+            config.setAutoCrossfadeByDefault(oldAutoCrossfade);
+            config.setClipOverlapPlaysBoth(oldOverlap);
+            config.setChordPreviewOnByDefault(oldChordPreview);
+            config.setPostFxPostFaderByDefault(oldPostFx);
+            config.setClipColourMode(oldColourMode);
+            config.setTrackColourPalette(oldPalette);
+        }};
+
+        config.setDefaultTimelineLengthBars(713);
+        config.setDefaultZoomViewBars(23);
+        config.setAutoCrossfadeByDefault(false);
+        config.setClipOverlapPlaysBoth(true);
+        config.setChordPreviewOnByDefault(true);
+        config.setPostFxPostFaderByDefault(false);
+        config.setClipColourMode(1);
+        config.setTrackColourPalette({{0xFF123456, "Legacy fallback sentinel"}});
+
+        auto json = ProjectSerializer::serializeProject(ProjectInfo{});
+        auto* projectObj = json.getDynamicObject()->getProperty("project").getDynamicObject();
+        REQUIRE(projectObj != nullptr);
+        projectObj->removeProperty("defaults");
+        projectObj->removeProperty("timelineLengthBars");
+
+        ProjectInfo loaded;
+        REQUIRE(ProjectSerializer::deserializeProject(json, loaded));
+
+        CHECK(loaded.timelineLengthBars == 713);
+        CHECK(loaded.defaults.zoomViewBars == 23);
+        CHECK_FALSE(loaded.defaults.autoCrossfade);
+        CHECK(loaded.defaults.overlapPlaysBoth);
+        CHECK(loaded.defaults.chordPreview);
+        CHECK_FALSE(loaded.defaults.postFxPostFader);
+        CHECK(loaded.defaults.clipColourMode == 1);
+        REQUIRE(loaded.defaults.colourPalette.size() == Config::defaultColourPalette.size() + 1);
+        CHECK(loaded.defaults.colourPalette.back().colour == 0xFF123456);
+        CHECK(loaded.defaults.colourPalette.back().name == "Legacy fallback sentinel");
+    }
+
+    SECTION("Individual missing keys fall back without replacing saved keys") {
+        auto& config = Config::getInstance();
+        const auto oldAutoCrossfade = config.getAutoCrossfadeByDefault();
+        const juce::ScopeGuard restore{
+            [&config, oldAutoCrossfade] { config.setAutoCrossfadeByDefault(oldAutoCrossfade); }};
+        config.setAutoCrossfadeByDefault(false);
+
+        ProjectInfo info;
+        info.defaults.zoomViewBars = 19;
+        info.defaults.autoCrossfade = true;
+
+        auto json = ProjectSerializer::serializeProject(info);
+        auto* projectObj = json.getDynamicObject()->getProperty("project").getDynamicObject();
+        REQUIRE(projectObj != nullptr);
+        auto* defaultsObj = projectObj->getProperty("defaults").getDynamicObject();
+        REQUIRE(defaultsObj != nullptr);
+        defaultsObj->removeProperty("autoCrossfade");
+
+        ProjectInfo loaded;
+        REQUIRE(ProjectSerializer::deserializeProject(json, loaded));
+        CHECK(loaded.defaults.zoomViewBars == 19);
+        CHECK_FALSE(loaded.defaults.autoCrossfade);
+    }
+}
+
 TEST_CASE("A device's parameter selections are saved as slots", "[project][serialization]") {
     using magda::DeviceInfo;
     using magda::ParameterInfo;
@@ -2523,6 +2633,55 @@ TEST_CASE("A new project is seeded with the stored credit defaults",
     }
 
     config.setProjectMetadataDefaults(restore);
+}
+
+TEST_CASE("A project snapshot captures creation defaults and the editable colour palette",
+          "[project][manager][defaults]") {
+    auto& config = Config::getInstance();
+    const auto oldTimelineBars = config.getDefaultTimelineLengthBars();
+    const auto oldZoomBars = config.getDefaultZoomViewBars();
+    const auto oldAutoCrossfade = config.getAutoCrossfadeByDefault();
+    const auto oldOverlap = config.getClipOverlapPlaysBoth();
+    const auto oldChordPreview = config.getChordPreviewOnByDefault();
+    const auto oldPostFx = config.getPostFxPostFaderByDefault();
+    const auto oldColourMode = config.getClipColourMode();
+    const auto oldPalette = config.getTrackColourPalette();
+    const juce::ScopeGuard restore{[&config, oldTimelineBars, oldZoomBars, oldAutoCrossfade,
+                                    oldOverlap, oldChordPreview, oldPostFx, oldColourMode,
+                                    oldPalette] {
+        config.setDefaultTimelineLengthBars(oldTimelineBars);
+        config.setDefaultZoomViewBars(oldZoomBars);
+        config.setAutoCrossfadeByDefault(oldAutoCrossfade);
+        config.setClipOverlapPlaysBoth(oldOverlap);
+        config.setChordPreviewOnByDefault(oldChordPreview);
+        config.setPostFxPostFaderByDefault(oldPostFx);
+        config.setClipColourMode(oldColourMode);
+        config.setTrackColourPalette(oldPalette);
+    }};
+
+    config.setDefaultTimelineLengthBars(619);
+    config.setDefaultZoomViewBars(13);
+    config.setAutoCrossfadeByDefault(false);
+    config.setClipOverlapPlaysBoth(true);
+    config.setChordPreviewOnByDefault(true);
+    config.setPostFxPostFaderByDefault(false);
+    config.setClipColourMode(1);
+    config.setTrackColourPalette({{0xFF102938, "User cyan"}, {0xFF564738, "User brown"}});
+
+    ProjectInfo project;
+    ProjectManager::seedProjectFromConfig(project);
+    CHECK(project.timelineLengthBars == 619);
+    CHECK(project.defaults.zoomViewBars == 13);
+    CHECK_FALSE(project.defaults.autoCrossfade);
+    CHECK(project.defaults.overlapPlaysBoth);
+    CHECK(project.defaults.chordPreview);
+    CHECK_FALSE(project.defaults.postFxPostFader);
+    CHECK(project.defaults.clipColourMode == 1);
+    REQUIRE(project.defaults.colourPalette.size() == Config::defaultColourPalette.size() + 2);
+    CHECK(project.defaults.colourPalette[Config::defaultColourPalette.size()].colour == 0xFF102938);
+    CHECK(project.defaults.colourPalette[Config::defaultColourPalette.size()].name == "User cyan");
+    CHECK(project.defaults.colourPalette.back().colour == 0xFF564738);
+    CHECK(project.defaults.colourPalette.back().name == "User brown");
 }
 
 TEST_CASE("DeviceInfo pluginState roundtrip", "[project][serialization][pluginState]") {

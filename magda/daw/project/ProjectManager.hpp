@@ -86,6 +86,15 @@ class ProjectManager {
      */
     bool newProject();
 
+    /** Copy Config's new-project preferences into a ProjectInfo snapshot. */
+    static void seedProjectFromConfig(ProjectInfo& project);
+
+    /**
+     * Seed the initial untitled project after Config has been loaded.
+     * This does not notify listeners or mark the project dirty.
+     */
+    void seedCurrentProjectFromConfig();
+
     /**
      * @brief Save project to current file
      * @return true on success, false if no current file or save failed

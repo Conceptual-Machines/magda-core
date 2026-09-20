@@ -12,11 +12,8 @@
 #include "../../media_db/MediaDbContext.hpp"
 #include "../../media_db/MediaDbQuery.hpp"
 #include "../../media_db/PresetDbIndexer.hpp"
-#include "../../project/ProjectInfo.hpp"
 #include "../../project/ProjectManager.hpp"
 #include "../components/common/TextSlider.hpp"
-#include "../state/TimelineController.hpp"
-#include "../state/TimelineEvents.hpp"
 #include "../themes/ActiveTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
@@ -3352,12 +3349,6 @@ void PreferencesDialog::applySettings() {
     // Apply auto-save settings
     ProjectManager::getInstance().setAutoSaveEnabled(config.getAutoSaveEnabled(),
                                                      config.getAutoSaveIntervalSeconds());
-
-    // Apply timeline length to live session
-    if (auto* tc = TimelineController::getCurrent()) {
-        double newLength = tc->getState().tempo.barsToTime(config.getDefaultTimelineLengthBars());
-        tc->dispatch(SetTimelineLengthEvent{newLength});
-    }
 
     // Apply panel visibility and layout to live session
     for (int i = juce::TopLevelWindow::getNumTopLevelWindows(); --i >= 0;) {

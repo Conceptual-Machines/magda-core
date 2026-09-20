@@ -18,7 +18,6 @@
 #include "../automation/AutomationLaneComponent.hpp"
 #include "../clips/ClipComponent.hpp"
 #include "../common/InternalFileDrag.hpp"
-#include "Config.hpp"
 #include "TrackControlsPolicy.hpp"
 #include "core/AppPaths.hpp"
 #include "core/AutomationCommands.hpp"
@@ -124,10 +123,10 @@ std::vector<FileDropGhost> makeMidiDropGhosts(const juce::File& midiFile, double
 }  // namespace
 
 TrackContentPanel::TrackContentPanel() {
-    // Load configuration values, converting bars → seconds at default tempo
-    auto& config = magda::Config::getInstance();
+    // Load the project value, converting bars → seconds at default tempo.
     TempoState defaultTempo;
-    timelineLength = defaultTempo.barsToTime(config.getDefaultTimelineLengthBars());
+    timelineLength = defaultTempo.barsToTime(
+        ProjectManager::getInstance().getCurrentProjectInfo().timelineLengthBars);
 
     // Set up the component
     setSize(1000, 200);
@@ -524,7 +523,9 @@ void TrackContentPanel::paintOverChildren(juce::Graphics& g) {
                 const int y0 = topY + i * ghostHeight;
                 const int y1 = y0 + ghostHeight;
 
-                const auto tint = juce::Colour(Config::getDefaultColour(baseIndex + i));
+                const auto tint = juce::Colour(
+                    ProjectManager::getInstance().getCurrentProjectInfo().defaults.colourForIndex(
+                        baseIndex + i));
 
                 // Ghost clip: starts at dropX, width derived from file duration.
                 double duration = fileDropGhosts_[static_cast<size_t>(i)].durationSeconds;
@@ -824,8 +825,9 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
         juce::Rectangle<int> bounds(clipX, trackY, clipW, trackH);
 
         // Use the same colour the final clip will get (based on current clip count)
-        juce::Colour baseColour = juce::Colour(Config::getDefaultColour(
-            static_cast<int>(ClipManager::getInstance().getArrangementClips().size())));
+        juce::Colour baseColour = juce::Colour(
+            ProjectManager::getInstance().getCurrentProjectInfo().defaults.colourForIndex(
+                static_cast<int>(ClipManager::getInstance().getArrangementClips().size())));
 
         // Background fill
         g.setColour(baseColour.darker(0.3f));
@@ -1983,7 +1985,9 @@ void TrackContentPanel::paintClipDrawPreview(juce::Graphics& g) {
     const auto rect =
         juce::Rectangle<int>(x, trackArea.getY() + 2, width, trackArea.getHeight() - 4);
 
-    const auto colour = juce::Colour(Config::getDefaultColour(drawingClipTrackIndex_));
+    const auto colour =
+        juce::Colour(ProjectManager::getInstance().getCurrentProjectInfo().defaults.colourForIndex(
+            drawingClipTrackIndex_));
     g.setColour(colour.withAlpha(0.28f));
     g.fillRoundedRectangle(rect.toFloat(), 3.0f);
     g.setColour(colour.brighter(0.25f).withAlpha(0.9f));

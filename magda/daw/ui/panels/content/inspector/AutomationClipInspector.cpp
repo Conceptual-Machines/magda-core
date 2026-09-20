@@ -4,8 +4,8 @@
 #include "../../themes/FontManager.hpp"
 #include "BinaryData.h"
 #include "core/AutomationCommands.hpp"
-#include "core/Config.hpp"
 #include "core/UndoManager.hpp"
+#include "project/ProjectManager.hpp"
 
 namespace magda::daw::ui {
 
@@ -66,25 +66,16 @@ AutomationClipInspector::AutomationClipInspector() {
         menu.addSeparator();
         menu.addItem(2, "Inherit from Track");
         menu.addSeparator();
-        for (size_t i = 0; i < magda::Config::defaultColourPalette.size(); ++i) {
-            auto colour = juce::Colour(magda::Config::defaultColourPalette[i].colour);
-            menu.addItem(static_cast<int>(i + 3), magda::Config::defaultColourPalette[i].name, true,
-                         false, makeChip(colour));
-        }
-        const auto customPalette = magda::Config::getInstance().getTrackColourPalette();
-        const int customOffset = static_cast<int>(magda::Config::defaultColourPalette.size()) + 3;
-        if (!customPalette.empty()) {
-            menu.addSeparator();
-            for (size_t i = 0; i < customPalette.size(); ++i) {
-                auto colour = juce::Colour(customPalette[i].colour);
-                menu.addItem(customOffset + static_cast<int>(i),
-                             juce::String(customPalette[i].name), true, false, makeChip(colour));
-            }
+        const auto palette =
+            magda::ProjectManager::getInstance().getCurrentProjectInfo().defaults.colourPalette;
+        for (size_t i = 0; i < palette.size(); ++i) {
+            const auto colour = juce::Colour(palette[i].colour);
+            menu.addItem(static_cast<int>(i + 3), palette[i].name, true, false, makeChip(colour));
         }
 
         menu.showMenuAsync(
             juce::PopupMenu::Options().withTargetComponent(colourSwatch_.get()),
-            [this, customPalette, customOffset](int result) {
+            [this, palette](int result) {
                 if (result == 0)
                     return;
                 const auto* clip = getClip();
@@ -101,13 +92,11 @@ AutomationClipInspector::AutomationClipInspector() {
                     if (!trackColour)
                         return;
                     newColour = *trackColour;
-                } else if (result < customOffset) {
-                    newColour = juce::Colour(magda::Config::getDefaultColour(result - 3));
                 } else {
-                    const auto idx = static_cast<size_t>(result - customOffset);
-                    if (idx >= customPalette.size())
+                    const auto idx = static_cast<size_t>(result - 3);
+                    if (idx >= palette.size())
                         return;
-                    newColour = juce::Colour(customPalette[idx].colour);
+                    newColour = juce::Colour(palette[idx].colour);
                 }
                 magda::UndoManager::getInstance().executeCommand(
                     std::make_unique<magda::SetAutomationClipColourCommand>(clip->id, newColour));

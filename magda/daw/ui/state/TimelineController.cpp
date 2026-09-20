@@ -17,14 +17,13 @@ TimelineController::TimelineController() {
     // Set as current instance for global access
     currentInstance_ = this;
 
-    // Load configuration values (bars → seconds using default 120 BPM)
-    auto& config = magda::Config::getInstance();
-    state.timelineLengthBeats =
-        config.getDefaultTimelineLengthBars() * state.tempo.timeSignatureNumerator;
-    state.timelineLength = state.tempo.barsToTime(config.getDefaultTimelineLengthBars());
+    // Load the current project's values (bars → seconds using default 120 BPM).
+    const auto& project = ProjectManager::getInstance().getCurrentProjectInfo();
+    state.timelineLengthBeats = project.timelineLengthBars * state.tempo.timeSignatureNumerator;
+    state.timelineLength = state.tempo.barsToTime(project.timelineLengthBars);
 
     // Set default zoom (ppb) to show a reasonable view duration
-    double defaultViewDuration = state.tempo.barsToTime(config.getDefaultZoomViewBars());
+    double defaultViewDuration = state.tempo.barsToTime(project.defaults.zoomViewBars);
     if (defaultViewDuration > 0 && state.zoom.viewportWidth > 0) {
         double beats = state.secondsToBeats(defaultViewDuration);
         if (beats > 0)
@@ -1372,11 +1371,12 @@ void TimelineController::restoreProjectState(double tempo, int timeSigNum, int t
     state.tempo.timeSignatureNumerator = clampTimeSignatureValue(timeSigNum);
     state.tempo.timeSignatureDenominator = clampTimeSignatureValue(timeSigDen);
 
-    // Timeline length is a per-project property; fall back to the global default
-    // (e.g. older projects without the field) when not supplied.
-    const int lengthBars = (timelineLengthBars > 0)
-                               ? timelineLengthBars
-                               : magda::Config::getInstance().getDefaultTimelineLengthBars();
+    // Timeline length is a per-project property. Deserialization has already
+    // seeded old projects from the new-project preference.
+    const int lengthBars =
+        (timelineLengthBars > 0)
+            ? timelineLengthBars
+            : ProjectManager::getInstance().getCurrentProjectInfo().timelineLengthBars;
     state.timelineLengthBeats = lengthBars * state.tempo.timeSignatureNumerator;
     state.timelineLength = state.tempo.barsToTime(lengthBars);
 
