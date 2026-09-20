@@ -496,6 +496,8 @@ TEST_CASE("Never-saved projects autosave and recover with their temp media",
     auto& projects = ProjectManager::getInstance();
 
     ProjectManager::discardUntitledAutosave();
+    if (projects.isDirty())
+        REQUIRE(projects.saveProjectAs(fixture.createTempProjectFile(".mgd")));
     REQUIRE(projects.newProject());
     projects.setTempo(137.0);
 
@@ -542,7 +544,10 @@ TEST_CASE("Never-saved projects autosave and recover with their temp media",
 
 TEST_CASE("Clean shutdown removes the never-saved recovery slot", "[project][autosave][1771]") {
     ScopedTestDataDir dataDir("magda-untitled-autosave-shutdown-test");
+    ProjectTestFixture fixture;
     auto& projects = ProjectManager::getInstance();
+    if (projects.isDirty())
+        REQUIRE(projects.saveProjectAs(fixture.createTempProjectFile(".mgd")));
     REQUIRE(projects.newProject());
     projects.setTempo(129.0);
 
