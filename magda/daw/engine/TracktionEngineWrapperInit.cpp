@@ -24,7 +24,7 @@
 #include "MagdaEngineBehaviour.hpp"
 #include "MagdaPropertyStorage.hpp"
 #include "MagdaUIBehaviour.hpp"
-#include "PluginScanCoordinator.hpp"
+#include "PluginService.hpp"
 #include "PluginWindowManager.hpp"
 #include "TempoLaneSync.hpp"
 #include "TracktionEngineWrapper.hpp"
@@ -91,49 +91,18 @@ void TracktionEngineWrapper::initializePluginFormats() {
     // Register ToneGeneratorPlugin (not registered by default)
     engine_->getPluginManager().createBuiltInType<tracktion::ToneGeneratorPlugin>();
 
-    // Enable out-of-process scanning to prevent plugin crashes from crashing the app
+    // Out-of-process, so a plugin that crashes on scan does not take the app with it.
     auto& pluginManager = engine_->getPluginManager();
     pluginManager.setUsesSeparateProcessForScanning(true);
-    DBG("Enabled out-of-process plugin scanning");
 
-    // Load saved plugin list from persistent storage
-    loadPluginList();
+    // The list Tracktion's own hosting reads is the one the service answers off, until
+    // the fork goes (#2557).
+    auto& plugins = PluginService::getInstance();
+    plugins.useEngineList(pluginManager.pluginFormatManager, pluginManager.knownPluginList);
+    plugins.setInternalParameterScanner(
+        [this](const juce::String& pluginId) { return scanInternalParametersInEdit(pluginId); });
+    plugins.openList(!isHeadlessRuntime() && Config::getInstance().getScanPluginsOnStartup());
 
-    // Drop entries whose files have been uninstalled. Unconditional —
-    // the scan-on-startup flag only governs detecting *new* plugins.
-    // Persist + resync the cached count so PluginSettingsDialog doesn't
-    // show a stale total after the prune.
-    auto& knownPlugins = pluginManager.knownPluginList;
-    if (pruneMissingPlugins(knownPlugins, pluginManager.pluginFormatManager) > 0) {
-        savePluginList();
-        Config::getInstance().setTotalPluginCount(knownPlugins.getNumTypes());
-        Config::getInstance().save();
-    }
-
-    // Auto-detect newly installed plugins (if enabled). The splash screen
-    // wants a flat string; format the phase here.
-    if (!isHeadlessRuntime() && Config::getInstance().getScanPluginsOnStartup()) {
-        auto splashStatus = onPluginScanStatus;
-        detectNewPlugins(
-            [splashStatus](PluginScanPhase phase, const juce::String& currentPlugin) {
-                if (!splashStatus)
-                    return;
-                switch (phase) {
-                    case PluginScanPhase::Discovering:
-                        splashStatus("Checking for new plugins...");
-                        break;
-                    case PluginScanPhase::UpToDate:
-                        splashStatus("Plugins up to date");
-                        break;
-                    case PluginScanPhase::Scanning:
-                        splashStatus("Scanning: " + pluginDisplayName(currentPlugin));
-                        break;
-                }
-            },
-            nullptr);
-    }
-
-    // Log registered plugin formats
     auto& formatManager = pluginManager.pluginFormatManager;
     DBG("Plugin formats registered by Tracktion Engine: " << formatManager.getNumFormats());
     for (int i = 0; i < formatManager.getNumFormats(); ++i) {
@@ -611,9 +580,9 @@ void TracktionEngineWrapper::shutdown() {
     // that captured aliveFlag_ can bail out instead of dereferencing `this`.
     *aliveFlag_ = false;
 
-    // Wait for background plugin discovery to finish before tearing down
-    if (pluginDiscoveryThread_.joinable())
-        pluginDiscoveryThread_.join();
+    // The service answers off the list this engine owns, so it lets go -- and joins its
+    // discovery thread -- before any of it is torn down (#2756).
+    PluginService::getInstance().forgetEngineList();
 
     // Release test tone plugin first (before Edit is destroyed)
     testTonePlugin_.reset();

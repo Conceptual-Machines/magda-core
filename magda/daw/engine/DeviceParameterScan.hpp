@@ -2,7 +2,7 @@
 
 #include <vector>
 
-#include "AudioEngine.hpp"
+#include "PluginService.hpp"
 
 namespace magda {
 

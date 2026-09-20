@@ -129,7 +129,6 @@ class MagdaAudioEngine final : public AudioEngine,
     void processSessionStateEvents() override;
     juce::AudioDeviceManager* getDeviceManager() override;
     AudioIOControl* getAudioIO() override;
-    void setPluginScanStatusCallback(std::function<void(const juce::String&)> callback) override;
     void setMidiDevicesReadyCallback(std::function<void()> callback) override;
     AudioBridge* getAudioBridge() override;
     const AudioBridge* getAudioBridge() const override;
@@ -175,24 +174,6 @@ class MagdaAudioEngine final : public AudioEngine,
     PluginWindowManager* getPluginWindowManager() override;
     const PluginWindowManager* getPluginWindowManager() const override;
     InsertRenderCaptureService* getInsertRenderCaptureService() override;
-    juce::Array<juce::PluginDescription> getKnownPluginTypes() const override;
-    juce::Array<juce::PluginDescription> getPreferredPluginTypes() const override;
-    void addPluginListChangeListener(juce::ChangeListener* listener) override;
-    void removePluginListChangeListener(juce::ChangeListener* listener) override;
-    void startPluginScan(std::function<void(float, const juce::String&)> progressCallback) override;
-    void abortPluginScan() override;
-    void detectNewPlugins(
-        std::function<void(PluginScanPhase, const juce::String&)> statusCallback,
-        std::function<void(bool, int, int, const juce::StringArray&)> completionCallback) override;
-    void setPluginScanCompletionCallback(
-        std::function<void(bool, int, const juce::StringArray&)> callback) override;
-    bool isPluginScanRunning() const override;
-    std::vector<ExcludedPlugin> getExcludedPlugins() const override;
-    void setExcludedPlugins(const std::vector<ExcludedPlugin>& excludedPlugins) override;
-    juce::File getPluginScanReportFile() const override;
-    std::vector<std::string> getSystemPluginSearchPaths() const override;
-    std::vector<ScannedPluginParameter> scanPluginParameters(const juce::String& pluginId,
-                                                             bool internalPlugin) override;
     bool upsertGrooveTemplate(const GrooveTemplateData& groove) override;
     juce::StringArray getGrooveTemplateNames() const override;
     std::unique_ptr<OfflineRenderSession> createOfflineRenderSession(

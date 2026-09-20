@@ -8,6 +8,7 @@
 #include "../api/magda_api_live.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/UndoManager.hpp"  // complete type for the unique_ptr this forwards
+#include "PluginService.hpp"
 #include "RenderProgressWindow.hpp"
 #include "TracktionEngineWrapper.hpp"
 #include "host/EngineHost.hpp"
@@ -129,7 +130,8 @@ bool MagdaAudioEngine::initialize() {
 
     // Before the device, so the first publish can already load the plugins a
     // project names rather than going without them until the second (#2566).
-    host_->setPluginServices(fork_->getPluginFormatManager(), fork_->getKnownPluginList());
+    host_->setPluginServices(*PluginService::getInstance().formats(),
+                             *PluginService::getInstance().knownList());
 
     meterInto();
 
@@ -326,10 +328,6 @@ void MagdaAudioEngine::hardwareChannelsChanged() {
     host_->refreshHardwareOutputs();
     host_->refreshHardwareInputs();
 }
-void MagdaAudioEngine::setPluginScanStatusCallback(
-    std::function<void(const juce::String&)> callback) {
-    tracktion_->setPluginScanStatusCallback(std::move(callback));
-}
 void MagdaAudioEngine::setMidiDevicesReadyCallback(std::function<void()> callback) {
     tracktion_->setMidiDevicesReadyCallback(std::move(callback));
 }
@@ -473,53 +471,6 @@ InsertRenderCaptureService* MagdaAudioEngine::getInsertRenderCaptureService() {
     // renders as silence. It needs this engine's own hardware input (#2588).
     reportUnwired("getInsertRenderCaptureService", "#2588");
     return nullptr;
-}
-juce::Array<juce::PluginDescription> MagdaAudioEngine::getKnownPluginTypes() const {
-    return tracktion_->getKnownPluginTypes();
-}
-juce::Array<juce::PluginDescription> MagdaAudioEngine::getPreferredPluginTypes() const {
-    return tracktion_->getPreferredPluginTypes();
-}
-void MagdaAudioEngine::addPluginListChangeListener(juce::ChangeListener* listener) {
-    tracktion_->addPluginListChangeListener(listener);
-}
-void MagdaAudioEngine::removePluginListChangeListener(juce::ChangeListener* listener) {
-    tracktion_->removePluginListChangeListener(listener);
-}
-void MagdaAudioEngine::startPluginScan(
-    std::function<void(float, const juce::String&)> progressCallback) {
-    tracktion_->startPluginScan(progressCallback);
-}
-void MagdaAudioEngine::abortPluginScan() {
-    tracktion_->abortPluginScan();
-}
-void MagdaAudioEngine::detectNewPlugins(
-    std::function<void(PluginScanPhase, const juce::String&)> statusCallback,
-    std::function<void(bool, int, int, const juce::StringArray&)> completionCallback) {
-    tracktion_->detectNewPlugins(statusCallback, completionCallback);
-}
-void MagdaAudioEngine::setPluginScanCompletionCallback(
-    std::function<void(bool, int, const juce::StringArray&)> callback) {
-    tracktion_->setPluginScanCompletionCallback(callback);
-}
-bool MagdaAudioEngine::isPluginScanRunning() const {
-    return tracktion_->isPluginScanRunning();
-}
-std::vector<ExcludedPlugin> MagdaAudioEngine::getExcludedPlugins() const {
-    return tracktion_->getExcludedPlugins();
-}
-void MagdaAudioEngine::setExcludedPlugins(const std::vector<ExcludedPlugin>& excludedPlugins) {
-    tracktion_->setExcludedPlugins(excludedPlugins);
-}
-juce::File MagdaAudioEngine::getPluginScanReportFile() const {
-    return tracktion_->getPluginScanReportFile();
-}
-std::vector<std::string> MagdaAudioEngine::getSystemPluginSearchPaths() const {
-    return tracktion_->getSystemPluginSearchPaths();
-}
-std::vector<ScannedPluginParameter> MagdaAudioEngine::scanPluginParameters(
-    const juce::String& pluginId, bool internalPlugin) {
-    return tracktion_->scanPluginParameters(pluginId, internalPlugin);
 }
 bool MagdaAudioEngine::upsertGrooveTemplate(const GrooveTemplateData& groove) {
     return tracktion_->upsertGrooveTemplate(groove);

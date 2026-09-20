@@ -4,7 +4,7 @@
 #include "magda/daw/audio/plugins/InternalPluginRegistry.hpp"
 #include "magda/daw/audio/plugins/MagdaDevice.hpp"
 #include "magda/daw/engine/DeviceParameterScan.hpp"
-#include "magda/daw/engine/TracktionEngineWrapper.hpp"
+#include "magda/daw/engine/PluginService.hpp"
 
 namespace {
 
@@ -129,11 +129,10 @@ TEST_CASE("An id no registered device answers to scans as nothing",
 }
 
 TEST_CASE("The internal scan needs no Edit to build a plugin in", "[device-parameter-scan][2601]") {
-    // What the native engine has: the fork's services and no Edit of its own.
-    // Until the device answered for itself this branch returned nothing, and
+    // No engine is up, so no Edit and no fallback scanner: the catalog is the only
+    // answer. Until the device answered for itself this branch returned nothing, and
     // Configure Parameters fell back to a mock list for every MAGDA device.
-    magda::TracktionEngineWrapper wrapper;
-    const auto scanned = wrapper.scanPluginParameters("arpeggiator", true);
+    const auto scanned = magda::PluginService::getInstance().scanParameters("arpeggiator", true);
 
     REQUIRE_FALSE(scanned.empty());
     CHECK(scanned.size() == magda::scanDeviceParameters("arpeggiator").size());

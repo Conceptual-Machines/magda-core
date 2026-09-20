@@ -16,12 +16,10 @@
 #include "../core/ChainNodePath.hpp"
 #include "../core/ClipTypes.hpp"
 #include "../core/HostedParameterEdit.hpp"
-#include "../core/ParameterDetector.hpp"
 #include "../core/TempoMap.hpp"
 #include "../core/TimeTypes.hpp"
 #include "AudioEngineChoice.hpp"
 #include "AudioEngineListener.hpp"
-#include "PluginExclusions.hpp"
 
 namespace juce {
 class AudioDeviceManager;
@@ -44,35 +42,11 @@ class PluginWindowManager;
 struct TrackMeters;
 class UndoableCommand;
 
-enum class PluginScanPhase {
-    Discovering,
-    UpToDate,
-    Scanning,
-};
-
 struct GrooveTemplateData {
     juce::String name;
     int notesPerBeat = 2;
     bool parameterized = true;
     std::vector<float> latenessProportions;
-};
-
-struct ScannedPluginParameter {
-    juce::String name;
-
-    /// The parameter's own id, which is what a saved config is matched by
-    /// (PluginParameterConfigEntry::id). Empty for a parameter that declares
-    /// none, which falls back to its position.
-    juce::String stableId;
-
-    float defaultValue = 0.5f;
-    juce::String unit;
-    float rangeMin = 0.0f;
-    float rangeMax = 1.0f;
-    float rangeCenter = 0.5f;
-    ParameterScale scale = ParameterScale::Linear;
-    std::vector<juce::String> valueTable;
-    ParameterScanInput scanInput;
 };
 
 enum class OfflineRenderFormat {
@@ -306,9 +280,6 @@ class AudioEngine : public AudioEngineListener {
     // was given -- naming a concrete type there is what made the choice
     // unreachable from the running app (#2551).
 
-    /** Startup plugin-detection status, for the splash screen. */
-    virtual void setPluginScanStatusCallback(std::function<void(const juce::String&)> callback) = 0;
-
     /** Fires the first time MIDI devices become available, and on subsequent
         device-list changes. Work needing MIDI output ports open waits for this:
         a SysEx send issued before JUCE opens the port is dropped. */
@@ -453,29 +424,6 @@ class AudioEngine : public AudioEngineListener {
     virtual PluginWindowManager* getPluginWindowManager() = 0;
     virtual const PluginWindowManager* getPluginWindowManager() const = 0;
     virtual InsertRenderCaptureService* getInsertRenderCaptureService() = 0;
-
-    // ===== Plugin Discovery =====
-    virtual juce::Array<juce::PluginDescription> getKnownPluginTypes() const = 0;
-    virtual juce::Array<juce::PluginDescription> getPreferredPluginTypes() const = 0;
-    virtual void addPluginListChangeListener(juce::ChangeListener* listener) = 0;
-    virtual void removePluginListChangeListener(juce::ChangeListener* listener) = 0;
-    virtual void startPluginScan(
-        std::function<void(float, const juce::String&)> progressCallback) = 0;
-    virtual void abortPluginScan() = 0;
-    virtual void detectNewPlugins(
-        std::function<void(PluginScanPhase, const juce::String&)> statusCallback,
-        std::function<void(bool, int, int, const juce::StringArray&)> completionCallback) = 0;
-    virtual void setPluginScanCompletionCallback(
-        std::function<void(bool, int, const juce::StringArray&)> callback) = 0;
-    virtual bool isPluginScanRunning() const = 0;
-    virtual std::vector<ExcludedPlugin> getExcludedPlugins() const = 0;
-    virtual void setExcludedPlugins(const std::vector<ExcludedPlugin>& excludedPlugins) = 0;
-    virtual juce::File getPluginScanReportFile() const = 0;
-    virtual std::vector<std::string> getSystemPluginSearchPaths() const = 0;
-
-    // ===== Plugin Parameter Discovery =====
-    virtual std::vector<ScannedPluginParameter> scanPluginParameters(const juce::String& pluginId,
-                                                                     bool internalPlugin) = 0;
 
     // ===== Groove Templates =====
     virtual bool upsertGrooveTemplate(const GrooveTemplateData& groove) = 0;

@@ -2,9 +2,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "magda/daw/engine/TracktionEngineWrapper.hpp"
+#include "magda/daw/engine/PluginService.hpp"
 
-using magda::TracktionEngineWrapper;
+using magda::PluginService;
 
 namespace {
 
@@ -105,7 +105,7 @@ TEST_CASE("pruneMissingPlugins removes stale entries across formats", "[plugin][
 
     REQUIRE(list.getNumTypes() == 3);
 
-    const int removed = TracktionEngineWrapper::pruneMissingPlugins(list, formatManager);
+    const int removed = PluginService::pruneMissingPlugins(list, formatManager);
 
     CHECK(removed == 2);
     CHECK(list.getNumTypes() == 1);
@@ -123,7 +123,7 @@ TEST_CASE("pruneMissingPlugins is a no-op when nothing is stale", "[plugin][prun
     juce::KnownPluginList list;
     list.addType(makeDesc("Existing", temp.getFullPathName()));
 
-    const int removed = TracktionEngineWrapper::pruneMissingPlugins(list, formatManager);
+    const int removed = PluginService::pruneMissingPlugins(list, formatManager);
 
     CHECK(removed == 0);
     CHECK(list.getNumTypes() == 1);
@@ -133,7 +133,7 @@ TEST_CASE("pruneMissingPlugins handles an empty list", "[plugin][prune]") {
     juce::AudioPluginFormatManager formatManager;
     registerTestFormats(formatManager);
     juce::KnownPluginList list;
-    CHECK(TracktionEngineWrapper::pruneMissingPlugins(list, formatManager) == 0);
+    CHECK(PluginService::pruneMissingPlugins(list, formatManager) == 0);
     CHECK(list.getNumTypes() == 0);
 }
 
@@ -153,7 +153,7 @@ TEST_CASE("pruneMissingPlugins preserves entries on an unavailable external volu
     list.addType(makeDesc("UninstalledLocalVST3", makeAbsentAbsolutePath("Uninstalled.vst3")));
 
     bool probedExternalRoot = false;
-    const int removed = TracktionEngineWrapper::pruneMissingPlugins(
+    const int removed = PluginService::pruneMissingPlugins(
         list, formatManager, [&external, &probedExternalRoot](const juce::String& root) {
             if (root == external.volumeRoot) {
                 probedExternalRoot = true;
@@ -183,11 +183,11 @@ TEST_CASE("pruneMissingPlugins removes a missing plugin when its external volume
     list.addType(makeDesc("UninstalledExternalVST3", external.pluginPath));
 
     juce::String probedRoot;
-    const int removed = TracktionEngineWrapper::pruneMissingPlugins(
-        list, formatManager, [&probedRoot](const juce::String& root) {
-            probedRoot = root;
-            return true;
-        });
+    const int removed = PluginService::pruneMissingPlugins(list, formatManager,
+                                                           [&probedRoot](const juce::String& root) {
+                                                               probedRoot = root;
+                                                               return true;
+                                                           });
 
     CHECK(probedRoot == external.volumeRoot);
     CHECK(removed == 1);

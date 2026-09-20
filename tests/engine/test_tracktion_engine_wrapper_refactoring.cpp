@@ -2,6 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "SharedTestEngine.hpp"
+#include "magda/daw/engine/PluginService.hpp"
 
 // =============================================================================
 // Unit Tests for TracktionEngineWrapper Refactoring
@@ -169,13 +170,13 @@ TEST_CASE("TracktionEngineWrapper - Plugin scanning state", "[engine][refactorin
     auto& wrapper = magda::test::getSharedEngine();
 
     SECTION("Plugin scanning state is queryable") {
-        bool scanning = wrapper.isScanning();
+        bool scanning = magda::PluginService::getInstance().isScanRunning();
         REQUIRE((scanning == true || scanning == false));
     }
 
     SECTION("Plugin list operations are safe") {
         REQUIRE_NOTHROW(wrapper.getKnownPluginList());
-        REQUIRE_NOTHROW(wrapper.getPluginListFile());
+        REQUIRE_NOTHROW(magda::PluginService::listFile());
     }
 }
 

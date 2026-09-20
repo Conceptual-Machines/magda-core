@@ -17,6 +17,7 @@
 #include "../interfaces/track_interface.hpp"
 #include "../interfaces/transport_interface.hpp"
 #include "AudioEngine.hpp"
+#include "PluginService.hpp"
 #include "TracktionAudioIO.hpp"
 
 namespace magda {
@@ -26,7 +27,6 @@ class AudioBridge;
 class InsertRenderCaptureService;
 class MagdaApi;
 class MidiBridge;
-class PluginScanCoordinator;
 class PluginWindowManager;
 class SessionClipScheduler;
 class SessionRecorder;
@@ -170,9 +170,6 @@ class TracktionEngineWrapper : public AudioEngine,
     void setTempo(double bpm) override;
     double getTempo() const override;
     const TempoMap* tempoMap() const override;
-    void setPluginScanStatusCallback(std::function<void(const juce::String&)> callback) override {
-        onPluginScanStatus = std::move(callback);
-    }
     void setMidiDevicesReadyCallback(std::function<void()> callback) override {
         onMidiDevicesReady = std::move(callback);
     }
@@ -412,122 +409,25 @@ class TracktionEngineWrapper : public AudioEngine,
     }
 
     // =========================================================================
-    // Plugin Scanning
+    // Plugins
     // =========================================================================
 
     /**
-     * @brief Start scanning for VST3/AU plugins on the system
-     * @param progressCallback Called with (progress 0-1, current plugin name) during scan
-     *
-     * NOTE: Plugin scanning happens in-process. If a plugin crashes during scanning,
-     * it will crash the application. The "dead man's pedal" file tracks which plugin
-     * was being scanned, so it will be skipped on the next scan attempt.
-     *
-     * Crash files are stored in: ~/Library/Application Support/MAGDA/
-     * Call clearPluginExclusions() to retry scanning problematic plugins.
-     */
-    void startPluginScan(std::function<void(float, const juce::String&)> progressCallback) override;
-
-    /**
-     * @brief Abort an in-progress plugin scan
-     */
-    void abortPluginScan() override;
-
-    /**
-     * @brief Clear the plugin exclusion list to retry scanning problematic plugins
-     *
-     * Call this if you want to give previously-excluded plugins another chance.
-     * After clearing, the next scan will attempt all plugins again.
-     */
-    void clearPluginExclusions();
-
-    /**
-     * @brief Get the plugin scan coordinator for accessing exclusion data
-     */
-    PluginScanCoordinator* getPluginScanCoordinator();
-    const PluginScanCoordinator* getPluginScanCoordinator() const;
-
-    /**
-     * @brief Check if a plugin scan is currently in progress
-     */
-    bool isScanning() const {
-        return isScanning_;
-    }
-
-    /**
-     * @brief Get the list of known/discovered plugins
-     * @return Reference to the KnownPluginList
+     * @brief The pair Tracktion's own hosting reads, which PluginService answers off
+     * until the fork goes (#2557), and magda::engine creates a plan's plugins with (#2566).
      */
     juce::KnownPluginList& getKnownPluginList();
     const juce::KnownPluginList& getKnownPluginList() const;
-
-    /**
-     * @brief The formats this build can open a plugin with.
-     *
-     * The plugin manager's own, handed to magda::engine so it can create the
-     * plugins a plan names (#2566); getKnownPluginList() is the other half of
-     * the same question.
-     */
     juce::AudioPluginFormatManager& getPluginFormatManager();
-    juce::Array<juce::PluginDescription> getKnownPluginTypes() const override;
-    void addPluginListChangeListener(juce::ChangeListener* listener) override;
-    void removePluginListChangeListener(juce::ChangeListener* listener) override;
 
     /**
-     * @brief Get plugins for browser/menu presentation, honoring user format
-     * preference on macOS while leaving exact KnownPluginList lookup available
-     * through getKnownPluginList().
-     */
-    juce::Array<juce::PluginDescription> getPreferredPluginTypes() const override;
-
-    /**
-     * @brief Save the plugin list to persistent storage
-     * Called after plugin scanning completes
-     */
-    void savePluginList();
-
-    /**
-     * @brief Load the plugin list from persistent storage
-     * Called on startup to restore previously scanned plugins
-     */
-    void loadPluginList();
-
-    /**
-     * @brief Phases reported by detectNewPlugins's status callback. Callers
-     * format their own user-facing strings so the engine doesn't bake in
-     * English text that bypasses localization.
-     */
-    /**
-     * @brief Detect and scan newly installed plugins.
+     * @brief Every parameter a Tracktion internal plugin declares, built in the current Edit.
      *
-     * Compares plugin directories against the cached list and incrementally
-     * scans any new files not already known. Skips plugins on the exclusion
-     * list (use startPluginScan for an exhaustive rescan).
-     *
-     * @param statusCallback Optional progress reporter; receives a phase enum
-     * and the plugin path being scanned (empty for non-Scanning phases).
-     * @param completionCallback Optional one-shot callback fired when the
-     * operation finishes. addedCount is the number of new plugins added
-     * this run (zero in the up-to-date case); totalCount is the size of the
-     * known plugin list after the run.
+     * Installed on PluginService as the fallback for a plugin its catalog does not know:
+     * 4OSC and the rest of Tracktion's own need an Edit to exist in (#2601).
      */
-    void detectNewPlugins(
-        std::function<void(PluginScanPhase phase, const juce::String& currentPlugin)>
-            statusCallback,
-        std::function<void(bool success, int addedCount, int totalCount,
-                           const juce::StringArray& failedPlugins)>
-            completionCallback) override;
-    void setPluginScanCompletionCallback(
-        std::function<void(bool, int, const juce::StringArray&)> callback) override {
-        onPluginScanComplete = std::move(callback);
-    }
-    bool isPluginScanRunning() const override;
-    std::vector<ExcludedPlugin> getExcludedPlugins() const override;
-    void setExcludedPlugins(const std::vector<ExcludedPlugin>& excludedPlugins) override;
-    juce::File getPluginScanReportFile() const override;
-    std::vector<std::string> getSystemPluginSearchPaths() const override;
-    std::vector<ScannedPluginParameter> scanPluginParameters(const juce::String& pluginId,
-                                                             bool internalPlugin) override;
+    std::vector<ScannedPluginParameter> scanInternalParametersInEdit(const juce::String& pluginId);
+
     bool upsertGrooveTemplate(const GrooveTemplateData& data) override;
     juce::StringArray getGrooveTemplateNames() const override;
     std::unique_ptr<OfflineRenderSession> createOfflineRenderSession(
@@ -537,56 +437,6 @@ class TracktionEngineWrapper : public AudioEngine,
     std::unique_ptr<UndoableCommand> createTempoSequenceRippleCommand(TempoSequenceRippleMode mode,
                                                                       BeatPosition start,
                                                                       BeatPosition end) override;
-
-    /**
-     * @brief Remove entries from the given known-plugin list whose plugins
-     * are no longer installed. Delegates per-entry to
-     * AudioPluginFormatManager::doesPluginStillExist so each format decides
-     * correctly — VST3 checks the bundle path, AU queries AudioComponentFindNext
-     * on the identifier (a plain File::exists() skips every AU entry because
-     * their fileOrIdentifier is "AudioUnit:..." and not an absolute path).
-     * Missing file-based plugins on an unavailable external volume are retained:
-     * the missing path does not prove that the plugin was uninstalled.
-     *
-     * @param volumeIsMounted Optional test seam. Receives the external-volume
-     * root inferred from a plugin path and returns whether that root is mounted.
-     * Production callers omit it and use the native mount table.
-     * Returns the number of entries removed.
-     */
-    static int pruneMissingPlugins(juce::KnownPluginList& knownPlugins,
-                                   juce::AudioPluginFormatManager& formatManager,
-                                   std::function<bool(const juce::String&)> volumeIsMounted = {});
-
-    /**
-     * @brief Remove entries that share (path, format) with a freshly-scanned
-     * descriptor but whose uid is not in the fresh scan's results.
-     *
-     * Vendors bump VST3 uniqueIds across major versions; JUCE keys
-     * KnownPluginList by (path, deprecatedUid, uniqueId) so the old and new
-     * entries coexist on the same .vst3 file and the user sees a duplicate
-     * row even though only one binary is installed (#1005). Multi-component
-     * VST3s (Vital, Kontakt, MeldaProduction bundles) legitimately expose
-     * several uids per path, so we keep every uid the current scan returned
-     * and only drop ones that didn't.
-     *
-     * Entries whose (path, format) wasn't seen this scan (excluded plugins,
-     * formats not enabled this run) are left untouched. Returns the number
-     * of entries removed.
-     */
-    static int removeSupersededEntries(juce::KnownPluginList& knownPlugins,
-                                       const juce::Array<juce::PluginDescription>& freshScan);
-
-    /**
-     * @brief Clear scanned plugins while preserving user metadata
-     * Use this before a fresh rescan
-     */
-    void clearPluginList();
-
-    /**
-     * @brief Get the database path where plugin metadata is stored
-     * @return Path to plugin_metadata.db
-     */
-    static juce::File getPluginListFile();
 
     // =========================================================================
     // PDC (Plugin Delay Compensation) Query
@@ -605,15 +455,6 @@ class TracktionEngineWrapper : public AudioEngine,
      * @return Maximum latency in seconds
      */
     double getGlobalLatencySeconds() const;
-
-    /**
-     * @brief Callback when plugin scan completes
-     * Called with (success, number of plugins found, failed plugins)
-     */
-    std::function<void(bool, int, const juce::StringArray&)> onPluginScanComplete;
-
-    /** Callback for startup plugin detection status (shown on splash screen). */
-    std::function<void(const juce::String&)> onPluginScanStatus;
 
     /** Fires the first time MIDI devices become available (and on subsequent
      *  device-list changes). Use this to defer work that needs MIDI output
@@ -764,12 +605,6 @@ class TracktionEngineWrapper : public AudioEngine,
 
     std::atomic<bool> offlineRenderActive_{false};  // an offline render owns the edit
 
-    // Plugin scanning state
-    bool isScanning_ = false;
-    bool pluginMetadataLoaded_ = false;
-    std::function<void(float, const juce::String&)> scanProgressCallback_;
-    mutable std::unique_ptr<PluginScanCoordinator> pluginScanCoordinator_;
-    std::thread pluginDiscoveryThread_;
     std::shared_ptr<std::atomic<bool>> aliveFlag_ = std::make_shared<std::atomic<bool>>(true);
 
     /// The save and load hooks as they were before this installed its own, put

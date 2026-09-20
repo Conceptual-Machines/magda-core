@@ -13,7 +13,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "magda/daw/engine/TracktionEngineWrapper.hpp"
+#include "magda/daw/engine/PluginService.hpp"
 
 namespace {
 
@@ -124,7 +124,7 @@ TEST_CASE("pruneMissingPlugins does not collapse name collisions", "[plugin][dup
     list.addType(makeDesc("Serum", path, 0xBBBB));
 
     REQUIRE(list.getNumTypes() == 2);
-    const int removed = magda::TracktionEngineWrapper::pruneMissingPlugins(list, formatManager);
+    const int removed = magda::PluginService::pruneMissingPlugins(list, formatManager);
 
     CHECK(removed == 0);
     CHECK(list.getNumTypes() == 2);
@@ -214,7 +214,7 @@ TEST_CASE("removeSupersededEntries drops old uid when vendor bumps it", "[plugin
     juce::Array<juce::PluginDescription> freshScan;
     freshScan.add(makeDesc("Nebula De-Esser", path, 0xBBBB));  // new install
 
-    const int removed = magda::TracktionEngineWrapper::removeSupersededEntries(list, freshScan);
+    const int removed = magda::PluginService::removeSupersededEntries(list, freshScan);
 
     CHECK(removed == 1);
     CHECK(list.getNumTypes() == 0);  // fresh entry isn't added by this helper
@@ -232,7 +232,7 @@ TEST_CASE("removeSupersededEntries keeps multi-component VST3 entries", "[plugin
     freshScan.add(makeDesc("Vital", path, 0x1111));
     freshScan.add(makeDesc("Vital", path, 0x2222));
 
-    const int removed = magda::TracktionEngineWrapper::removeSupersededEntries(list, freshScan);
+    const int removed = magda::PluginService::removeSupersededEntries(list, freshScan);
 
     CHECK(removed == 0);
     CHECK(list.getNumTypes() == 2);
@@ -249,7 +249,7 @@ TEST_CASE("removeSupersededEntries keeps system + user installs", "[plugin][dupl
     freshScan.add(makeDesc("Serum", "/Library/Audio/Plug-Ins/VST3/Serum.vst3", 0xAAAA));
     freshScan.add(makeDesc("Serum", "/Users/me/Library/Audio/Plug-Ins/VST3/Serum.vst3", 0xAAAA));
 
-    const int removed = magda::TracktionEngineWrapper::removeSupersededEntries(list, freshScan);
+    const int removed = magda::PluginService::removeSupersededEntries(list, freshScan);
 
     CHECK(removed == 0);
     CHECK(list.getNumTypes() == 2);
@@ -266,7 +266,7 @@ TEST_CASE("removeSupersededEntries keeps cross-format VST3 + AU entries", "[plug
     freshScan.add(makeDesc("Massive X", "/Library/Audio/Plug-Ins/VST3/Massive X.vst3", 0xAAAA));
     freshScan.add(makeDesc("Massive X", "AudioUnit:Effects/aumu,MaXX,NIcm", 0xAAAA, "AudioUnit"));
 
-    const int removed = magda::TracktionEngineWrapper::removeSupersededEntries(list, freshScan);
+    const int removed = magda::PluginService::removeSupersededEntries(list, freshScan);
 
     CHECK(removed == 0);
     CHECK(list.getNumTypes() == 2);
@@ -284,7 +284,7 @@ TEST_CASE("removeSupersededEntries leaves entries whose path was not rescanned",
     juce::Array<juce::PluginDescription> freshScan;
     freshScan.add(makeDesc("Serum", "/Library/Audio/Plug-Ins/VST3/Serum.vst3", 0xAAAA));
 
-    const int removed = magda::TracktionEngineWrapper::removeSupersededEntries(list, freshScan);
+    const int removed = magda::PluginService::removeSupersededEntries(list, freshScan);
 
     CHECK(removed == 0);
     CHECK(list.getNumTypes() == 2);

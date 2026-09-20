@@ -1,0 +1,202 @@
+#pragma once
+
+/**
+ * @file PluginService.hpp
+ * @brief The one owner of plugin discovery: formats, the known list, the scan (#2756).
+ */
+
+#include <juce_audio_processors/juce_audio_processors.h>
+
+#include <atomic>
+#include <functional>
+#include <memory>
+#include <string>
+#include <thread>
+#include <vector>
+
+#include "../core/ParameterDetector.hpp"
+#include "PluginExclusions.hpp"
+
+namespace magda {
+
+class PluginScanCoordinator;
+
+enum class PluginScanPhase {
+    Discovering,
+    UpToDate,
+    Scanning,
+};
+
+struct ScannedPluginParameter {
+    juce::String name;
+
+    /// The parameter's own id, which is what a saved config is matched by
+    /// (PluginParameterConfigEntry::id). Empty for a parameter that declares
+    /// none, which falls back to its position.
+    juce::String stableId;
+
+    float defaultValue = 0.5f;
+    juce::String unit;
+    float rangeMin = 0.0f;
+    float rangeMax = 1.0f;
+    float rangeCenter = 0.5f;
+    ParameterScale scale = ParameterScale::Linear;
+    std::vector<juce::String> valueTable;
+    ParameterScanInput scanInput;
+};
+
+/**
+ * @brief What plugins exist on this machine, and how that list is kept. Message thread.
+ *
+ * A scan is not an engine question, so neither engine answers one (#2756). The app asks
+ * this. Tracktion's Engine still owns the KnownPluginList its own hosting reads, so until
+ * the fork goes (#2557) the service is pointed at that pair rather than owning one.
+ */
+class PluginService {
+  public:
+    static PluginService& getInstance();
+
+    PluginService(const PluginService&) = delete;
+    PluginService& operator=(const PluginService&) = delete;
+
+    /** @brief Answer off @p formats and @p list, which outlive this or are dropped first. */
+    void useEngineList(juce::AudioPluginFormatManager& formats, juce::KnownPluginList& list);
+
+    /// The engine is going away: forget its pair and the scanner it installed.
+    void forgetEngineList();
+
+    /**
+     * @brief Load the saved list, drop what is gone, and look for what is new.
+     *
+     * @p autoDetectNewPlugins is the user's setting; a headless run passes false whatever
+     * it says, because the detect reports to a splash that is not there.
+     */
+    void openList(bool autoDetectNewPlugins);
+
+    juce::AudioPluginFormatManager* formats() const {
+        return formats_;
+    }
+    juce::KnownPluginList* knownList() const {
+        return list_;
+    }
+
+    juce::Array<juce::PluginDescription> knownTypes() const;
+
+    /**
+     * @brief Plugins for browser and menu presentation, honouring the user's format
+     * preference on macOS. knownList() is the exact-lookup half of the same question.
+     */
+    juce::Array<juce::PluginDescription> preferredTypes() const;
+
+    void addListChangeListener(juce::ChangeListener* listener);
+    void removeListChangeListener(juce::ChangeListener* listener);
+
+    /**
+     * @brief Rescan every plugin on the system, out of process.
+     *
+     * The exclusion cache is busted first, so a plugin the user has since fixed is not
+     * excluded forever for having failed once (#1005).
+     */
+    void startScan(std::function<void(float, const juce::String&)> progressCallback);
+    void abortScan();
+
+    /**
+     * @brief Scan only what is installed but not yet known.
+     *
+     * @p statusCallback receives a phase and the path being scanned (empty outside
+     * Scanning), so callers format their own localized text. @p completionCallback's
+     * addedCount is what this run added, totalCount the list size afterwards.
+     */
+    void detectNewPlugins(
+        std::function<void(PluginScanPhase, const juce::String&)> statusCallback,
+        std::function<void(bool, int, int, const juce::StringArray&)> completionCallback);
+
+    void setScanCompletionCallback(std::function<void(bool, int, const juce::StringArray&)> cb) {
+        onScanComplete_ = std::move(cb);
+    }
+
+    /// The splash screen's line, already formatted; openList() is what writes to it.
+    void setScanStatusCallback(std::function<void(const juce::String&)> cb) {
+        onScanStatus_ = std::move(cb);
+    }
+
+    bool isScanRunning() const;
+
+    std::vector<ExcludedPlugin> excludedPlugins() const;
+    void setExcludedPlugins(const std::vector<ExcludedPlugin>& excluded);
+    void clearExclusions();
+    juce::File scanReportFile() const;
+
+    /** @brief Where VST3 and AudioUnit look by default, deduplicated. */
+    std::vector<std::string> systemSearchPaths() const;
+
+    /**
+     * @brief Every parameter @p pluginId declares, for the parameter-config dialog.
+     *
+     * A MAGDA device answers off the catalog, an external plugin is opened straight from
+     * the format manager, and a plugin that is neither is the fork's to answer (#2601).
+     */
+    std::vector<ScannedPluginParameter> scanParameters(const juce::String& pluginId,
+                                                       bool internalPlugin);
+
+    /// Tracktion's own internal plugins need an Edit to be built in, which only the fork has.
+    void setInternalParameterScanner(
+        std::function<std::vector<ScannedPluginParameter>(const juce::String&)> scanner) {
+        internalScanner_ = std::move(scanner);
+    }
+
+    void saveList();
+    void clearList();
+
+    /**
+     * @brief Drop entries whose plugins are no longer installed. Returns how many went.
+     *
+     * Per-entry via doesPluginStillExist so each format decides: a plain File::exists()
+     * skips every AU entry, whose fileOrIdentifier is "AudioUnit:..." and not a path. A
+     * file-based plugin on an unmounted external volume is kept, since the missing path
+     * does not prove it was uninstalled. @p volumeIsMounted is a test seam for that.
+     */
+    static int pruneMissingPlugins(juce::KnownPluginList& knownPlugins,
+                                   juce::AudioPluginFormatManager& formatManager,
+                                   std::function<bool(const juce::String&)> volumeIsMounted = {});
+
+    /**
+     * @brief Drop entries sharing (path, format) with a fresh descriptor but a uid the scan
+     * did not return. Returns how many went.
+     *
+     * Vendors bump VST3 uniqueIds across major versions and JUCE keys KnownPluginList by
+     * (path, deprecatedUid, uniqueId), so old and new coexist on one .vst3 file as a
+     * duplicate row for a single installed binary (#1005). Multi-component VST3s (Vital,
+     * Kontakt) legitimately expose several uids per path, so every uid this scan returned
+     * is kept, and a (path, format) this run did not scan is left alone.
+     */
+    static int removeSupersededEntries(juce::KnownPluginList& knownPlugins,
+                                       const juce::Array<juce::PluginDescription>& freshScan);
+
+    /** @brief Where plugin metadata is stored. */
+    static juce::File listFile();
+
+  private:
+    PluginService();
+    ~PluginService();
+
+    PluginScanCoordinator& coordinator() const;
+    void loadList();
+
+    juce::AudioPluginFormatManager* formats_ = nullptr;
+    juce::KnownPluginList* list_ = nullptr;
+
+    bool scanning_ = false;
+    bool metadataLoaded_ = false;
+    mutable std::unique_ptr<PluginScanCoordinator> coordinator_;
+    std::thread discoveryThread_;
+
+    /// The discovery thread hops back to the message thread; this is what tells it not to.
+    std::shared_ptr<std::atomic<bool>> alive_ = std::make_shared<std::atomic<bool>>(true);
+
+    std::function<void(bool, int, const juce::StringArray&)> onScanComplete_;
+    std::function<void(const juce::String&)> onScanStatus_;
+    std::function<std::vector<ScannedPluginParameter>(const juce::String&)> internalScanner_;
+};
+
+}  // namespace magda
