@@ -274,40 +274,14 @@ class ProjectBoundaryResetEngine : public AudioEngine {
         std::abort();
     }
 
-    PluginWindowManager* getPluginWindowManager() override {
-        return nullptr;
-    }
-
-    const PluginWindowManager* getPluginWindowManager() const override {
-        return nullptr;
-    }
-
     InsertRenderCaptureService* getInsertRenderCaptureService() override {
         return nullptr;
-    }
-
-    bool upsertGrooveTemplate(const GrooveTemplateData&) override {
-        return false;
-    }
-
-    juce::StringArray getGrooveTemplateNames() const override {
-        return {};
     }
 
     std::unique_ptr<OfflineRenderSession> createOfflineRenderSession(bool) override {
         return nullptr;
     }
     void setTrackFrozen(TrackId, bool) override {}
-
-    std::vector<SamplerMediaReference> getSamplerMediaReferences() override {
-        return {};
-    }
-
-    std::unique_ptr<UndoableCommand> createTempoSequenceRippleCommand(TempoSequenceRippleMode,
-                                                                      BeatPosition,
-                                                                      BeatPosition) override {
-        return nullptr;
-    }
 
     void previewNoteOnTrack(const std::string&, int, int, bool) override {}
 

@@ -3,6 +3,7 @@
 # without linking their INTERFACE_SOURCES into a second static archive.
 add_library(magda_music STATIC
     ChordEngine.cpp
+    GrooveLibrary.cpp
     ChordSuggestionEngine.cpp
     ChordCache.hpp
     ChordEngine.hpp

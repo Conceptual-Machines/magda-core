@@ -161,6 +161,35 @@ juce::StringArray TracktionEngineWrapper::getGrooveTemplateNames() const {
                               : juce::StringArray{};
 }
 
+std::vector<GrooveTemplateData> TracktionEngineWrapper::readGrooveTemplates() {
+    std::vector<GrooveTemplateData> grooves;
+    if (engine_ == nullptr)
+        return grooves;
+
+    // The manager's getters read its active list, which leaves out every parameterized
+    // groove until this is on -- including the swing presets it ships (#2757). upsert
+    // turns it on too, so the library would otherwise gain them only after a write.
+    auto& manager = engine_->getGrooveTemplateManager();
+    manager.useParameterizedGrooves(true);
+
+    for (int i = 0; i < manager.getNumTemplates(); ++i) {
+        const auto* groove = manager.getTemplate(i);
+        if (groove == nullptr)
+            continue;
+
+        GrooveTemplateData data;
+        data.name = groove->getName();
+        data.notesPerBeat = groove->getNotesPerBeat();
+        data.parameterized = groove->isParameterized();
+        // Full strength: the stored proportion is what the library holds, and a clip's
+        // own strength is folded in when an engine compiles the groove.
+        for (int note = 0; note < groove->getNumberOfNotes(); ++note)
+            data.latenessProportions.push_back(groove->getLatenessProportion(note, 1.0f));
+        grooves.push_back(std::move(data));
+    }
+    return grooves;
+}
+
 void TracktionEngineWrapper::captureAllPluginStates() {
     if (audioBridge_ != nullptr)
         audioBridge_->captureAllPluginStates();

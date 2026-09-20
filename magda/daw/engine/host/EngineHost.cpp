@@ -40,6 +40,7 @@
 #include "EngineRuntimeFactory.hpp"
 #include "EngineTrace.hpp"
 #include "ExternalPluginLoader.hpp"
+#include "GrooveEntries.hpp"
 #include "HardwareInputMap.hpp"
 #include "LiveMidiCollector.hpp"
 #include "LiveMidiQueue.hpp"
@@ -1875,7 +1876,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             }
             sessionCapture_.prepare(lanes, tempoMap().bpmAt(0.0));
             auto snapshot = std::make_shared<const engine::ClipSnapshot>(
-                engine::compileClipSnapshot(lanes, clipSources(), tempoMap()));
+                engine::compileClipSnapshot(lanes, clipSources(), tempoMap(), grooves()));
             report("clips", snapshot->diagnostics);
 
             traceEdit(EngineTrace::Kind::Publish);
@@ -3078,6 +3079,13 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     engine::RenderContext context_{};
     juce::AudioBuffer<float> scratch_;
+    /// The app's library, in the engine's own shape. Empty when nothing supplies one,
+    /// which compiles every clip ungrooved.
+    engine::GrooveTemplateSet grooves() const {
+        return grooveProvider_ ? grooveSetFrom(grooveProvider_()) : engine::GrooveTemplateSet{};
+    }
+
+    EngineHost::GrooveProvider grooveProvider_;
     EngineHost::HardwareChannelProvider hardwareOutputProvider_;
     std::map<std::string, engine::HardwareOutputRoute> hardwareOutputs_;
     std::map<std::string, engine::HardwareOutputRoute> publishedHardwareOutputs_;
@@ -3210,6 +3218,28 @@ void EngineHost::setPluginServices(juce::AudioPluginFormatManager& formats,
     impl_->loader_.setServices(&formats, &knownPlugins);
     impl_->formats_ = &formats;
     impl_->knownPlugins_ = &knownPlugins;
+}
+
+engine::GrooveTemplateSet grooveSetFrom(std::vector<EngineHost::GrooveEntry> entries) {
+    engine::GrooveTemplateSet set;
+    for (auto& entry : entries) {
+        // Read before the move below takes it.
+        const auto numNotes = static_cast<int>(entry.latenesses.size());
+        set.add({.name = std::move(entry.name),
+                 .latenesses = std::move(entry.latenesses),
+                 .numNotes = numNotes,
+                 .notesPerBeat = entry.notesPerBeat,
+                 .parameterized = entry.parameterized});
+    }
+    return set;
+}
+
+void EngineHost::setGrooveProvider(GrooveProvider provider) {
+    impl_->grooveProvider_ = std::move(provider);
+}
+
+void EngineHost::refreshGrooves() {
+    impl_->wantClips();
 }
 
 void EngineHost::setHardwareOutputProvider(HardwareChannelProvider provider) {

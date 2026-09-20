@@ -11,13 +11,16 @@
 #include "../audio/DeviceMeters.hpp"
 #include "../audio/TrackMeters.hpp"
 #include "../audio/midi/RecordingNoteQueue.hpp"
+#include "../audio/sampling/SamplerMedia.hpp"
 #include "../command.hpp"
 #include "../interfaces/clip_interface.hpp"
 #include "../interfaces/mixer_interface.hpp"
 #include "../interfaces/track_interface.hpp"
 #include "../interfaces/transport_interface.hpp"
+#include "../music/GrooveLibrary.hpp"
 #include "AudioEngine.hpp"
 #include "PluginService.hpp"
+#include "TempoSequenceRipple.hpp"
 #include "TracktionAudioIO.hpp"
 
 namespace magda {
@@ -320,7 +323,7 @@ class TracktionEngineWrapper : public AudioEngine,
 
     /** @brief The fork's processor formats the value (#2600). */
     juce::String formatDeviceParameter(const ChainNodePath& devicePath, int paramIndex,
-                                       float normalised) const override;
+                                       float normalised) const;
 
     /** @brief The MAGDA device inside the fork's plugin at @p devicePath (#2585). */
     std::shared_ptr<daw::audio::MagdaDevice> renderedDevice(
@@ -357,10 +360,10 @@ class TracktionEngineWrapper : public AudioEngine,
      * @brief Get the PluginWindowManager for safe plugin window lifecycle management
      * @return Pointer to PluginWindowManager, or nullptr if not initialized
      */
-    PluginWindowManager* getPluginWindowManager() override {
+    PluginWindowManager* getPluginWindowManager() {
         return pluginWindowManager_.get();
     }
-    const PluginWindowManager* getPluginWindowManager() const override {
+    const PluginWindowManager* getPluginWindowManager() const {
         return pluginWindowManager_.get();
     }
 
@@ -428,15 +431,18 @@ class TracktionEngineWrapper : public AudioEngine,
      */
     std::vector<ScannedPluginParameter> scanInternalParametersInEdit(const juce::String& pluginId);
 
-    bool upsertGrooveTemplate(const GrooveTemplateData& data) override;
-    juce::StringArray getGrooveTemplateNames() const override;
+    bool upsertGrooveTemplate(const GrooveTemplateData& data);
+    juce::StringArray getGrooveTemplateNames() const;
+
+    /// Tracktion's manager is where the shipped grooves are seeded and where the list
+    /// persists, so it is what fills GrooveLibrary at startup (#2757).
+    std::vector<GrooveTemplateData> readGrooveTemplates();
     std::unique_ptr<OfflineRenderSession> createOfflineRenderSession(
         bool resumePlaybackWhenFinished) override;
     void setTrackFrozen(TrackId trackId, bool frozen) override;
-    std::vector<SamplerMediaReference> getSamplerMediaReferences() override;
-    std::unique_ptr<UndoableCommand> createTempoSequenceRippleCommand(TempoSequenceRippleMode mode,
-                                                                      BeatPosition start,
-                                                                      BeatPosition end) override;
+    std::vector<SamplerMediaReference> getSamplerMediaReferences();
+    std::unique_ptr<UndoableCommand> buildTempoSequenceRipple(TempoSequenceRippleMode mode,
+                                                              BeatPosition start, BeatPosition end);
 
     // =========================================================================
     // PDC (Plugin Delay Compensation) Query
