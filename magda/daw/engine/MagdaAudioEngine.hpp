@@ -9,6 +9,7 @@
 #include "../audio/io/AudioIOService.hpp"
 #include "AudioEngine.hpp"
 #include "AudioEngineChoice.hpp"
+#include "PluginService.hpp"
 
 namespace magda::daw::engine_host {
 class EngineHost;
@@ -80,6 +81,7 @@ class TracktionEngineWrapper;
 namespace magda {
 
 class MagdaAudioEngine final : public AudioEngine,
+                               public PluginStateProvider,
                                public LiveMidiSink,
                                private HardwareChannels::Listener {
   public:

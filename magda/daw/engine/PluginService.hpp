@@ -2,7 +2,7 @@
 
 /**
  * @file PluginService.hpp
- * @brief The one owner of plugin discovery: formats, the known list, the scan (#2756).
+ * @brief The owner of plugin discovery and live hosted-plugin state (#2756, #2758).
  */
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -21,6 +21,17 @@
 namespace magda {
 
 class PluginScanCoordinator;
+struct ChainNodePath;
+
+/** @brief The live plugin instances a PluginService reads and writes (#2758). */
+class PluginStateProvider {
+  public:
+    virtual ~PluginStateProvider();
+
+    virtual void captureAllPluginStates() = 0;
+    virtual void capturePluginStateAt(const ChainNodePath& devicePath) = 0;
+    virtual void applyPluginStateAt(const ChainNodePath& devicePath) = 0;
+};
 
 enum class PluginScanPhase {
     Discovering,
@@ -47,11 +58,12 @@ struct ScannedPluginParameter {
 };
 
 /**
- * @brief What plugins exist on this machine, and how that list is kept. Message thread.
+ * @brief What plugins exist and the seam to the instances currently rendering. Message thread.
  *
- * A scan is not an engine question, so neither engine answers one (#2756). The app asks
- * this. Tracktion's Engine still owns the KnownPluginList its own hosting reads, so until
- * the fork goes (#2557) the service is pointed at that pair rather than owning one.
+ * A scan is not an engine question, and neither is the project operation of capturing a
+ * hosted plugin's state, so neither lives on AudioEngine (#2756, #2758). Tracktion's Engine
+ * still owns the KnownPluginList its own hosting reads, so until the fork goes (#2557) the
+ * service is pointed at that pair rather than owning one.
  */
 class PluginService {
   public:
@@ -150,6 +162,24 @@ class PluginService {
     void clearList();
 
     /**
+     * @brief Make @p provider the source of live hosted-plugin state.
+     * @return The provider this replaced, for a scoped test to restore explicitly.
+     */
+    PluginStateProvider* useStateProvider(PluginStateProvider& provider);
+
+    /// Drop @p provider if it is still current; a replacement is never revived implicitly.
+    void forgetStateProvider(const PluginStateProvider& provider);
+
+    /** @brief Read every live hosted plugin's state back into the project model. */
+    void captureAllPluginStates();
+
+    /** @brief Read the hosted plugin at @p devicePath back into the project model. */
+    void capturePluginStateAt(const ChainNodePath& devicePath);
+
+    /** @brief Apply the project model's state at @p devicePath to its hosted plugin. */
+    void applyPluginStateAt(const ChainNodePath& devicePath);
+
+    /**
      * @brief Drop entries whose plugins are no longer installed. Returns how many went.
      *
      * Per-entry via doesPluginStillExist so each format decides: a plain File::exists()
@@ -197,6 +227,9 @@ class PluginService {
 
     PluginScanCoordinator& coordinator() const;
     void loadList();
+    PluginStateProvider* currentProvider() const {
+        return stateProvider_;
+    }
 
     juce::AudioPluginFormatManager* formats_ = nullptr;
     juce::KnownPluginList* list_ = nullptr;
@@ -216,6 +249,7 @@ class PluginService {
     std::function<void(bool, int, const juce::StringArray&)> onScanComplete_;
     std::function<void(const juce::String&)> onScanStatus_;
     std::function<std::vector<ScannedPluginParameter>(const juce::String&)> internalScanner_;
+    PluginStateProvider* stateProvider_ = nullptr;
 };
 
 }  // namespace magda

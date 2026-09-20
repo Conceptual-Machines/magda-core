@@ -132,8 +132,11 @@ bool shouldPreserveUnavailablePlugin(
 }  // namespace
 
 PluginService& PluginService::getInstance() {
-    static PluginService service;
-    return service;
+    // Engines and test harnesses may themselves be function-local statics. Keep the
+    // process service alive until exit so their destructors can safely unregister and
+    // release its borrowed engine list without depending on static construction order.
+    static auto* service = new PluginService();
+    return *service;
 }
 
 PluginService::PluginService() = default;
@@ -142,6 +145,10 @@ PluginService::~PluginService() {
     *alive_ = false;
     if (discoveryThread_.joinable())
         discoveryThread_.join();
+}
+
+PluginStateProvider::~PluginStateProvider() {
+    PluginService::getInstance().forgetStateProvider(*this);
 }
 
 void PluginService::useEngineList(juce::AudioPluginFormatManager& formats,
@@ -164,6 +171,30 @@ void PluginService::forgetEngineList() {
     formats_ = nullptr;
     list_ = nullptr;
     internalScanner_ = nullptr;
+}
+
+PluginStateProvider* PluginService::useStateProvider(PluginStateProvider& provider) {
+    return std::exchange(stateProvider_, &provider);
+}
+
+void PluginService::forgetStateProvider(const PluginStateProvider& provider) {
+    if (stateProvider_ == &provider)
+        stateProvider_ = nullptr;
+}
+
+void PluginService::captureAllPluginStates() {
+    if (auto* provider = currentProvider())
+        provider->captureAllPluginStates();
+}
+
+void PluginService::capturePluginStateAt(const ChainNodePath& devicePath) {
+    if (auto* provider = currentProvider())
+        provider->capturePluginStateAt(devicePath);
+}
+
+void PluginService::applyPluginStateAt(const ChainNodePath& devicePath) {
+    if (auto* provider = currentProvider())
+        provider->applyPluginStateAt(devicePath);
 }
 
 PluginScanCoordinator& PluginService::coordinator() const {

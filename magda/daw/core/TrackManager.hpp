@@ -238,7 +238,7 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void shutdown() {
         tracks_.clear();  // Clear JUCE::String objects before JUCE cleanup
         listeners_.clear();
-        audioEngine_ = nullptr;
+        setAudioEngine(nullptr);
     }
 
     /**

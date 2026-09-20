@@ -166,6 +166,9 @@ bool MagdaAudioEngine::initialize() {
     return true;
 }
 void MagdaAudioEngine::shutdown() {
+    // Stop the service reaching the host before it is stopped or destroyed.
+    PluginService::getInstance().forgetStateProvider(*this);
+
     // The host is destroyed before the fork (member order), so the sink has to
     // be gone before the queue behind it is. setLiveSink(nullptr) returns only
     // once any in-flight MIDI callback has left.
@@ -340,32 +343,18 @@ const AudioBridge* MagdaAudioEngine::getAudioBridge() const {
     return nullptr;
 }
 
-/**
- * @brief Both engines, in that order (#2581).
- *
- * The fork first, because a MAGDA device's state is captured nowhere else and
- * its synced plugin is still where that is read from. The instances this
- * renders through go over the top: for an external plugin the fork holds a
- * parallel copy that never heard a note, and the chunk that copy writes is the
- * one the project was loaded with.
- */
+/** @brief Read hosted external-plugin state through EngineHost (#2758). */
 void MagdaAudioEngine::captureAllPluginStates() {
-    tracktion_->captureAllPluginStates();
-
     if (host_ != nullptr)
         host_->captureExternalPluginStates();
 }
 
 void MagdaAudioEngine::capturePluginStateAt(const ChainNodePath& devicePath) {
-    tracktion_->capturePluginStateAt(devicePath);
-
     if (host_ != nullptr)
         host_->captureExternalPluginStateAt(devicePath);
 }
 
 void MagdaAudioEngine::applyPluginStateAt(const ChainNodePath& devicePath) {
-    tracktion_->applyPluginStateAt(devicePath);
-
     if (host_ != nullptr)
         host_->applyExternalPluginStateAt(devicePath);
 }
