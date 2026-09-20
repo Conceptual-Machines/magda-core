@@ -44,6 +44,15 @@ class AudioIOControl : public HardwareChannels {
     virtual juce::StringArray interfaceNames(const juce::String& backend, bool inputs) = 0;
 
     /**
+     * @brief What @p backend opens by default one way, or empty when it has nothing.
+     *
+     * Its own answer rather than the first name listed: enumeration order is not the
+     * default, and a backend picks deliberately -- ASIO prefers ASIO4ALL and steers around
+     * interfaces it knows are trouble.
+     */
+    virtual juce::String defaultInterface(const juce::String& backend, bool inputs) = 0;
+
+    /**
      * @brief Whether @p backend names one interface for both directions.
      *
      * ASIO and the single-device backends do, and Audio Settings offers one picker for

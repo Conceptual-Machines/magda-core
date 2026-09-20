@@ -130,6 +130,11 @@ class AudioSettingsDialog : public juce::Component, private HardwareChannels::Li
     /** @brief List the rates and block sizes the open interface offers. */
     void populateStreamLists();
     void populateMidiOutputs();
+    void refreshMidiControls();
+
+    /** @brief Apply @p settings, saying so when the device refuses the stream it offered. */
+    void applyStreamChange(const AudioIOSettings& settings, const juce::String& what,
+                           const juce::String& asked);
 
     /** @brief Open @p interfaceName one way, keeping the channels chosen where it has them. */
     void chooseInterface(const juce::String& interfaceName, bool inputs);
@@ -164,6 +169,13 @@ class AudioSettingsDialog : public juce::Component, private HardwareChannels::Li
     juce::Label midiOutputLabel_;
     juce::ComboBox midiOutputComboBox_;
     juce::TextButton bluetoothMidiButton_;
+
+    /// Listed with the output items, so a selection never indexes a list that has moved.
+    std::vector<juce::String> midiOutputIds_;
+
+    /// MIDI hot-plug and Bluetooth pairing, which no audio notification covers.
+    juce::MidiDeviceListConnection midiDevices_ =
+        juce::MidiDeviceListConnection::make([this] { refreshMidiControls(); });
 
     // Which engine renders. Here because it is an audio-device-level choice and
     // this is where a user already comes to change one (#2559).

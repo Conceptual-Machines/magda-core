@@ -78,6 +78,7 @@ class AudioIOService : public AudioIOControl, private juce::ChangeListener {
     juce::StringArray interfaceNames(const juce::String& backend, bool inputs) override {
         return getInterfaceNames(backend, inputs);
     }
+    juce::String defaultInterface(const juce::String& backend, bool inputs) override;
     bool isSingleInterfaceBackend(const juce::String& backend) override;
     std::vector<double> availableSampleRates() const override;
     std::vector<int> availableBufferSizes() const override;

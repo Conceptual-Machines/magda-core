@@ -102,6 +102,16 @@ juce::StringArray AudioIOService::getInterfaceNames(const juce::String& backend,
     return found != nullptr ? found->getDeviceNames(inputs) : juce::StringArray{};
 }
 
+juce::String AudioIOService::defaultInterface(const juce::String& backend, bool inputs) {
+    auto* found = backendNamed(backend);
+    if (found == nullptr)
+        return {};
+
+    found->scanForDevices();
+    const auto names = found->getDeviceNames(inputs);
+    return names[found->getDefaultDeviceIndex(inputs)];
+}
+
 bool AudioIOService::isSingleInterfaceBackend(const juce::String& backend) {
     const auto* found = backendNamed(backend);
     return found != nullptr && found->hasSeparateInputsAndOutputs() == false;

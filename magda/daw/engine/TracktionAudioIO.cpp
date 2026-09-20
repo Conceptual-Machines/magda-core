@@ -149,6 +149,16 @@ juce::StringArray TracktionAudioIO::interfaceNames(const juce::String& backend, 
     return {};
 }
 
+juce::String TracktionAudioIO::defaultInterface(const juce::String& backend, bool inputs) {
+    for (auto* type : manager().getAvailableDeviceTypes()) {
+        if (type->getTypeName() != backend)
+            continue;
+        type->scanForDevices();
+        return type->getDeviceNames(inputs)[type->getDefaultDeviceIndex(inputs)];
+    }
+    return {};
+}
+
 bool TracktionAudioIO::isSingleInterfaceBackend(const juce::String& backend) {
     for (const auto* type : manager().getAvailableDeviceTypes())
         if (type->getTypeName() == backend)

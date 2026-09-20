@@ -31,44 +31,6 @@ AudioEngineChoice engineForItemId(int itemId) {
 
 }  // namespace
 
-namespace {
-
-bool comboItemsMatchDriverTypes(const juce::ComboBox& comboBox,
-                                juce::AudioDeviceManager& deviceManager) {
-    const auto& deviceTypes = deviceManager.getAvailableDeviceTypes();
-    if (comboBox.getNumItems() != deviceTypes.size())
-        return false;
-
-    for (int i = 0; i < deviceTypes.size(); ++i) {
-        auto* type = deviceTypes.getUnchecked(i);
-        if (type == nullptr || comboBox.getItemText(i) != type->getTypeName())
-            return false;
-    }
-
-    return true;
-}
-
-juce::ComboBox* findDriverTypeComboBox(juce::Component& root,
-                                       juce::AudioDeviceManager& deviceManager) {
-    for (int i = 0; i < root.getNumChildComponents(); ++i) {
-        auto* child = root.getChildComponent(i);
-        if (child == nullptr)
-            continue;
-
-        if (auto* comboBox = dynamic_cast<juce::ComboBox*>(child);
-            comboBox != nullptr && comboItemsMatchDriverTypes(*comboBox, deviceManager)) {
-            return comboBox;
-        }
-
-        if (auto* nested = findDriverTypeComboBox(*child, deviceManager))
-            return nested;
-    }
-
-    return nullptr;
-}
-
-}  // namespace
-
 // ============================================================================
 // CustomChannelSelector Implementation
 // ============================================================================
@@ -543,10 +505,13 @@ AudioSettingsDialog::AudioSettingsDialog(AudioEngine* audioEngine)
     midiOutputComboBox_.onChange = [this]() {
         if (audio_ == nullptr)
             return;
-        const auto id = midiOutputComboBox_.getSelectedId();
-        const auto devices = juce::MidiOutput::getAvailableDevices();
-        audio_->setDefaultMidiOutput(id > 1 && id - 2 < devices.size() ? devices[id - 2].identifier
-                                                                       : juce::String());
+        // By the identifier listed with the item: re-reading the device array here would
+        // index a fresh list with an id from the old one, and pick the wrong output
+        // whenever MIDI was plugged or unplugged since.
+        const auto index = midiOutputComboBox_.getSelectedId() - 2;
+        audio_->setDefaultMidiOutput(index >= 0 && index < static_cast<int>(midiOutputIds_.size())
+                                         ? midiOutputIds_[static_cast<std::size_t>(index)]
+                                         : juce::String());
     };
     addAndMakeVisible(midiOutputComboBox_);
 
@@ -593,6 +558,12 @@ AudioSettingsDialog::~AudioSettingsDialog() {
 }
 
 void AudioSettingsDialog::hardwareChannelsChanged() {
+    // Deliberately not the MIDI controls. Rebuilding the input list reapplies every
+    // Config-active port, and JUCE broadcasts a manager change after attempting the open
+    // whether or not it succeeded -- so a busy port never reaches the state asked for, and
+    // refreshing from here would retry it on its own notification forever. Hot-plug and
+    // pairing come through MidiDeviceListConnection instead.
+
     // A channel toggle reopens the interface too, and its lists are already right.
     const auto chosen = audio_->chosen();
     if (chosen.backend == listed_.backend && chosen.inputInterface == listed_.inputInterface &&
@@ -887,10 +858,8 @@ void AudioSettingsDialog::onDriverSelected() {
     // Nothing is carried over: the interfaces and their channels belong to the backend
     // that named them, so the new one opens its own defaults (#2528).
     settings.backend = backend.toStdString();
-    const auto interfaces = audio_->interfaceNames(backend, false);
-    settings.outputInterface = interfaces.isEmpty() ? "" : interfaces[0].toStdString();
-    const auto inputs = audio_->interfaceNames(backend, true);
-    settings.inputInterface = inputs.isEmpty() ? "" : inputs[0].toStdString();
+    settings.outputInterface = audio_->defaultInterface(backend, false).toStdString();
+    settings.inputInterface = audio_->defaultInterface(backend, true).toStdString();
     settings.inputChannels.clear();
     settings.outputChannels = {0, 1};
 
@@ -913,7 +882,7 @@ void AudioSettingsDialog::onSampleRateSelected() {
     if (settings.sampleRate == rate)
         return;
     settings.sampleRate = rate;
-    audio_->apply(settings);
+    applyStreamChange(settings, "sample rate", juce::String(rate, 0) + " Hz");
 }
 
 void AudioSettingsDialog::onBufferSizeSelected() {
@@ -926,7 +895,24 @@ void AudioSettingsDialog::onBufferSizeSelected() {
     if (settings.bufferSize == size)
         return;
     settings.bufferSize = size;
-    audio_->apply(settings);
+    applyStreamChange(settings, "buffer size", juce::String(size) + " samples");
+}
+
+void AudioSettingsDialog::applyStreamChange(const AudioIOSettings& settings,
+                                            const juce::String& what, const juce::String& asked) {
+    // A device can refuse a combination it advertises, and JUCE drops the open device when
+    // it does -- silently, leaving no audio and no reason for it.
+    showDeviceRefreshIndicator(true);
+    const auto error = audio_->apply(settings);
+    if (error.isNotEmpty())
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::AlertWindow::WarningIcon, "Audio Interface Error",
+            "Could not set the " + what + " to " + asked + ".\n\nError: " + error);
+
+    // Either way: on success the lists follow the new stream, and on failure they show what
+    // is actually open rather than what was asked for.
+    refreshChosenInterface();
+    hideDeviceRefreshIndicator();
 }
 
 void AudioSettingsDialog::populateStreamLists() {
@@ -961,13 +947,21 @@ void AudioSettingsDialog::populateMidiOutputs() {
 
     const auto open = audio_->defaultMidiOutput();
     const auto devices = juce::MidiOutput::getAvailableDevices();
+    midiOutputIds_.clear();
     for (int i = 0; i < devices.size(); ++i) {
         midiOutputComboBox_.addItem(devices[i].name, i + 2);
+        midiOutputIds_.push_back(devices[i].identifier);
         if (devices[i].identifier == open)
             midiOutputComboBox_.setSelectedId(i + 2, juce::dontSendNotification);
     }
     if (midiOutputComboBox_.getSelectedId() == 0)
         midiOutputComboBox_.setSelectedId(1, juce::dontSendNotification);
+}
+
+void AudioSettingsDialog::refreshMidiControls() {
+    if (midiInputList_ != nullptr)
+        midiInputList_->refresh();
+    populateMidiOutputs();
 }
 
 void AudioSettingsDialog::refreshChosenInterface() {

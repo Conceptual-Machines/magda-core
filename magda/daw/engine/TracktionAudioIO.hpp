@@ -34,6 +34,7 @@ class TracktionAudioIO final : public AudioIOControl, private juce::ChangeListen
 
     juce::StringArray backendNames() override;
     juce::StringArray interfaceNames(const juce::String& backend, bool inputs) override;
+    juce::String defaultInterface(const juce::String& backend, bool inputs) override;
     bool isSingleInterfaceBackend(const juce::String& backend) override;
     std::vector<double> availableSampleRates() const override;
     std::vector<int> availableBufferSizes() const override;
