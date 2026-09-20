@@ -151,7 +151,11 @@ void PluginService::useEngineList(juce::AudioPluginFormatManager& formats,
 }
 
 void PluginService::forgetEngineList() {
-    // The discovery thread reads the format manager, so it goes before the pair does.
+    // Both write through the borrowed pair on a later turn: the coordinator's completion
+    // callback off its timer, the discovery thread off its message-thread hop. The
+    // coordinator outlives the engine now that the service owns it, so a scan left running
+    // here would finish against a destroyed list.
+    abortScan();
     if (discoveryThread_.joinable())
         discoveryThread_.join();
 
