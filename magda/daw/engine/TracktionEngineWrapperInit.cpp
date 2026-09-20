@@ -493,7 +493,6 @@ bool TracktionEngineWrapper::initialisePlayback() {
     // Create AudioBridge for TrackManager synchronization
     audioBridge_ = std::make_unique<AudioBridge>(*engine_, *currentEdit_, meters_, deviceMeters_);
     audioBridge_->syncAll();
-    PluginService::getInstance().useStateProvider(*this);
     if (midiBridge_)
         midiBridge_->onActiveInputsChanged = [this] { audioBridge_->refreshActiveMidiInputs(); };
 
@@ -576,8 +575,8 @@ bool TracktionEngineWrapper::initialize() {
 void TracktionEngineWrapper::shutdown() {
     DBG("TracktionEngineWrapper::shutdown - starting...");
 
-    // Stop the service reaching the AudioBridge before that bridge is torn down. A
-    // services-only wrapper never registered, and cannot displace another engine here.
+    // Stop the service reaching the AudioBridge before that bridge is torn down. This is
+    // also safe for a wrapper that was never selected as TrackManager's renderer.
     PluginService::getInstance().forgetStateProvider(*this);
 
     // Signal that this object is being destroyed so pending callAsync lambdas

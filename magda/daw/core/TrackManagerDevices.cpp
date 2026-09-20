@@ -2103,9 +2103,15 @@ bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
     live->gainValue = std::pow(10.0f, presetDevice.gainDb / 20.0f);
     live->pluginState = stripPresetRuntimePluginState(presetDevice.pluginState);
 
-    // The plugin service reaches whichever engine renders the live instance. It may
-    // rewrite live->parameters while applying the chunk (#2573, #2758).
-    PluginService::getInstance().applyPluginStateAt(devicePath);
+    if (live->format == PluginFormat::Internal) {
+        // Internal authored state is projected onto either the bridge plugin or the
+        // native rendered device. It is not an externally hosted plugin chunk.
+        projectAuthoredStateToEngine(audioEngine_, devicePath, live->pluginState, live->pluginId);
+    } else {
+        // The hosted-plugin provider owns the live chunk and may rewrite the model's
+        // parameter cache while applying it (#2573, #2758).
+        PluginService::getInstance().applyPluginStateAt(devicePath);
+    }
 
     // Notify listeners — devicePropertyChanged covers gain/macros/mods refresh
     // via the AudioBridge sync path, then push each parameter individually so

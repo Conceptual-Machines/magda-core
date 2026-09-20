@@ -132,8 +132,11 @@ bool shouldPreserveUnavailablePlugin(
 }  // namespace
 
 PluginService& PluginService::getInstance() {
-    static PluginService service;
-    return service;
+    // Engines and test harnesses may themselves be function-local statics. Keep the
+    // process service alive until exit so their destructors can safely unregister and
+    // release its borrowed engine list without depending on static construction order.
+    static auto* service = new PluginService();
+    return *service;
 }
 
 PluginService::PluginService() = default;
@@ -142,6 +145,10 @@ PluginService::~PluginService() {
     *alive_ = false;
     if (discoveryThread_.joinable())
         discoveryThread_.join();
+}
+
+PluginStateProvider::~PluginStateProvider() {
+    PluginService::getInstance().forgetStateProvider(*this);
 }
 
 void PluginService::useEngineList(juce::AudioPluginFormatManager& formats,
@@ -160,28 +167,28 @@ void PluginService::forgetEngineList() {
     internalScanner_ = nullptr;
 }
 
-void PluginService::useStateProvider(PluginStateProvider& provider) {
-    std::erase(stateProviders_, &provider);
-    stateProviders_.push_back(&provider);
+PluginStateProvider* PluginService::useStateProvider(PluginStateProvider& provider) {
+    return std::exchange(stateProvider_, &provider);
 }
 
 void PluginService::forgetStateProvider(const PluginStateProvider& provider) {
-    std::erase(stateProviders_, &provider);
+    if (stateProvider_ == &provider)
+        stateProvider_ = nullptr;
 }
 
 void PluginService::captureAllPluginStates() {
-    if (!stateProviders_.empty())
-        stateProviders_.back()->captureAllPluginStates();
+    if (stateProvider_ != nullptr)
+        stateProvider_->captureAllPluginStates();
 }
 
 void PluginService::capturePluginStateAt(const ChainNodePath& devicePath) {
-    if (!stateProviders_.empty())
-        stateProviders_.back()->capturePluginStateAt(devicePath);
+    if (stateProvider_ != nullptr)
+        stateProvider_->capturePluginStateAt(devicePath);
 }
 
 void PluginService::applyPluginStateAt(const ChainNodePath& devicePath) {
-    if (!stateProviders_.empty())
-        stateProviders_.back()->applyPluginStateAt(devicePath);
+    if (stateProvider_ != nullptr)
+        stateProvider_->applyPluginStateAt(devicePath);
 }
 
 PluginScanCoordinator& PluginService::coordinator() const {

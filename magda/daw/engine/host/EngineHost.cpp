@@ -2939,8 +2939,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (session_ == nullptr)
             return;
 
-        // Internal devices are handled by the fork. Asking for one here
-        // would find no external plugin and log a spurious failure.
+        // Only externally hosted devices expose ExternalPluginState through EngineHost.
+        // Internal-device snapshots use their separate authored-state paths.
         auto asked = false;
         for (const auto key : keysOfDeviceAt(devicePath))
             if (factory_.isExternalKey(key)) {

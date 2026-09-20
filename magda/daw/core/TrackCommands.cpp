@@ -7,7 +7,6 @@
 #include <utility>
 
 #include "../audio/AudioBridge.hpp"
-#include "../engine/AudioEngine.hpp"
 #include "../engine/PluginService.hpp"
 #include "../project/ProjectManager.hpp"
 #include "ClipManager.hpp"
@@ -879,10 +878,6 @@ void CreateTrackWithDeviceCommand::undo() {
 
 namespace {
 
-void capturePluginStateAt(const ChainNodePath& devicePath) {
-    PluginService::getInstance().capturePluginStateAt(devicePath);
-}
-
 /// Flush every live plugin under @p chainPath into the model before it is taken
 /// out, so an undo restores the subtree as it sounded rather than as it was
 /// assembled. A Drum Grid's pads ride along in its own state (#2207), so the
@@ -891,7 +886,8 @@ void capturePluginStatesUnder(const std::vector<ChainElement>& elements,
                               const ChainNodePath& chainPath) {
     for (const auto& element : elements) {
         if (isDevice(element)) {
-            capturePluginStateAt(chainPath.withDevice(magda::getDevice(element).id));
+            PluginService::getInstance().capturePluginStateAt(
+                chainPath.withDevice(magda::getDevice(element).id));
             continue;
         }
 
@@ -992,7 +988,7 @@ void RemoveDeviceByPathCommand::execute() {
         return;
 
     // Flush live plugin state into DeviceInfo so undo restores how it sounded.
-    capturePluginStateAt(devicePath_);
+    PluginService::getInstance().capturePluginStateAt(devicePath_);
 
     device = tm.getDeviceInChainByPath(devicePath_);
     if (device == nullptr)

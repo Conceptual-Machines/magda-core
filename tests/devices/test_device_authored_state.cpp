@@ -1,5 +1,6 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <memory>
 
 #include "../../magda/daw/audio/plugins/OscilloscopePlugin.hpp"
 #include "../../magda/daw/audio/plugins/SpectrumAnalyzerPlugin.hpp"
@@ -7,6 +8,8 @@
 #include "../../magda/daw/core/DeviceStateCommands.hpp"
 #include "../../magda/daw/core/TrackManager.hpp"
 #include "../../magda/daw/core/UndoManager.hpp"
+#include "../../magda/daw/engine/PluginService.hpp"
+#include "../../magda/daw/engine/TracktionEngineWrapper.hpp"
 
 using namespace magda;
 namespace ds = magda::device_state;
@@ -18,6 +21,37 @@ namespace ds = magda::device_state;
 // ============================================================================
 
 namespace {
+
+class RenderedDeviceEngine final : public TracktionEngineWrapper {
+  public:
+    RenderedDeviceEngine()
+        : rendered(std::make_shared<daw::audio::OscilloscopePlugin>(
+              daw::audio::DevicePluginDefaults::Oscilloscope{})) {}
+
+    AudioBridge* getAudioBridge() override {
+        return nullptr;
+    }
+    const AudioBridge* getAudioBridge() const override {
+        return nullptr;
+    }
+    std::shared_ptr<daw::audio::MagdaDevice> renderedDevice(const ChainNodePath&) const override {
+        return rendered;
+    }
+    void captureAllPluginStates() override {
+        ++captureAllCalls;
+    }
+    void capturePluginStateAt(const ChainNodePath&) override {
+        ++captureOneCalls;
+    }
+    void applyPluginStateAt(const ChainNodePath&) override {
+        ++applyOneCalls;
+    }
+
+    std::shared_ptr<daw::audio::OscilloscopePlugin> rendered;
+    int captureAllCalls = 0;
+    int captureOneCalls = 0;
+    int applyOneCalls = 0;
+};
 
 ChainNodePath addInternalDevice(const juce::String& pluginId, const juce::String& pluginState) {
     auto& tracks = TrackManager::getInstance();
@@ -247,4 +281,53 @@ TEST_CASE("The projection puts an analyser's document onto the running device",
     CHECK(spectrum.slopeDbPerOct() == Catch::Approx(3.0f));
     CHECK(spectrum.smoothing() == Catch::Approx(0.25f));
     CHECK(spectrum.traceColourIndex() == 2);
+}
+
+TEST_CASE("An internal-device preset is projected onto the native rendered device",
+          "[device-authored-state][2663][device-presets]") {
+    auto& tracks = TrackManager::getInstance();
+    RenderedDeviceEngine engine;
+    tracks.setAudioEngine(&engine);
+
+    const auto path = addInternalDevice("oscilloscope", {});
+    ds::Doc presetState;
+    presetState.deviceType = "oscilloscope";
+    presetState.root.props.set(juce::Identifier("timebaseMs"), 250.0f);
+    presetState.root.props.set(juce::Identifier("traceColour"), 3);
+
+    const auto* live = tracks.getDeviceInChainByPath(path);
+    REQUIRE(live != nullptr);
+    auto preset = *live;
+    preset.pluginState = ds::encode(presetState);
+
+    REQUIRE(tracks.applyDevicePreset(path, preset));
+    CHECK(engine.rendered->timebaseMs() == Catch::Approx(250.0f));
+    CHECK(engine.rendered->traceColourIndex() == 3);
+
+    tracks.setAudioEngine(nullptr);
+    tracks.clearAllTracks();
+}
+
+TEST_CASE("PluginService follows TrackManager's active renderer",
+          "[plugin][state-service][test-isolation]") {
+    auto& tracks = TrackManager::getInstance();
+    auto& plugins = PluginService::getInstance();
+    RenderedDeviceEngine engine;
+    const auto path = ChainNodePath::topLevelDevice(1, 1);
+
+    tracks.setAudioEngine(&engine);
+    plugins.captureAllPluginStates();
+    plugins.capturePluginStateAt(path);
+    plugins.applyPluginStateAt(path);
+    CHECK(engine.captureAllCalls == 1);
+    CHECK(engine.captureOneCalls == 1);
+    CHECK(engine.applyOneCalls == 1);
+
+    tracks.setAudioEngine(nullptr);
+    plugins.captureAllPluginStates();
+    plugins.capturePluginStateAt(path);
+    plugins.applyPluginStateAt(path);
+    CHECK(engine.captureAllCalls == 1);
+    CHECK(engine.captureOneCalls == 1);
+    CHECK(engine.applyOneCalls == 1);
 }

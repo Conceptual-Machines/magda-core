@@ -146,7 +146,6 @@ class MagdaAudioEngine final : public AudioEngine,
     const DeviceMeters& deviceMeters() const override {
         return deviceMeters_;
     }
-    /** @brief Feed PluginService from the EngineHost instances this engine renders. */
     void captureAllPluginStates() override;
     void capturePluginStateAt(const ChainNodePath& devicePath) override;
     void applyPluginStateAt(const ChainNodePath& devicePath) override;

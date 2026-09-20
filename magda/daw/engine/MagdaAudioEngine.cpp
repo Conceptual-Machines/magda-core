@@ -162,7 +162,6 @@ bool MagdaAudioEngine::initialize() {
         midi->onActiveInputsChanged = [this] { host_->refreshMidiInputs(); };
     }
 
-    PluginService::getInstance().useStateProvider(*this);
     initialised_ = true;
     return true;
 }
@@ -344,12 +343,7 @@ const AudioBridge* MagdaAudioEngine::getAudioBridge() const {
     return nullptr;
 }
 
-/**
- * @brief Read the external plugins this engine renders through EngineHost (#2758).
- *
- * Internal devices write their authored state through the model already. The services-only
- * fork has no AudioBridge and no live plugin instances of its own.
- */
+/** @brief Read hosted external-plugin state through EngineHost (#2758). */
 void MagdaAudioEngine::captureAllPluginStates() {
     if (host_ != nullptr)
         host_->captureExternalPluginStates();

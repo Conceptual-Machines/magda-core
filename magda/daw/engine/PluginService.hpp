@@ -25,7 +25,7 @@ struct ChainNodePath;
 /** @brief The live plugin instances a PluginService reads and writes (#2758). */
 class PluginStateProvider {
   public:
-    virtual ~PluginStateProvider() = default;
+    virtual ~PluginStateProvider();
 
     virtual void captureAllPluginStates() = 0;
     virtual void capturePluginStateAt(const ChainNodePath& devicePath) = 0;
@@ -162,14 +162,11 @@ class PluginService {
 
     /**
      * @brief Make @p provider the source of live hosted-plugin state.
-     *
-     * Providers are retained as a stack so a short-lived engine in a test can leave the
-     * application's provider as it found it. A services-only Tracktion wrapper never
-     * registers: it has no AudioBridge and therefore no live instances to offer.
+     * @return The provider this replaced, for a scoped test to restore explicitly.
      */
-    void useStateProvider(PluginStateProvider& provider);
+    PluginStateProvider* useStateProvider(PluginStateProvider& provider);
 
-    /// Drop @p provider without disturbing a different engine that registered after it.
+    /// Drop @p provider if it is still current; a replacement is never revived implicitly.
     void forgetStateProvider(const PluginStateProvider& provider);
 
     /** @brief Read every live hosted plugin's state back into the project model. */
@@ -230,7 +227,7 @@ class PluginService {
     std::function<void(bool, int, const juce::StringArray&)> onScanComplete_;
     std::function<void(const juce::String&)> onScanStatus_;
     std::function<std::vector<ScannedPluginParameter>(const juce::String&)> internalScanner_;
-    std::vector<PluginStateProvider*> stateProviders_;
+    PluginStateProvider* stateProvider_ = nullptr;
 };
 
 }  // namespace magda

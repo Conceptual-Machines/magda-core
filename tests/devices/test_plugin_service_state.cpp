@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <memory>
 
 #include "magda/daw/core/ChainNodePath.hpp"
 #include "magda/daw/engine/PluginService.hpp"
@@ -30,12 +31,15 @@ class RecordingStateProvider final : public magda::PluginStateProvider {
 
 class ScopedStateProvider {
   public:
-    explicit ScopedStateProvider(RecordingStateProvider& provider) : provider_(provider) {
-        magda::PluginService::getInstance().useStateProvider(provider_);
-    }
+    explicit ScopedStateProvider(RecordingStateProvider& provider)
+        : provider_(provider),
+          previous_(magda::PluginService::getInstance().useStateProvider(provider_)) {}
 
     ~ScopedStateProvider() {
-        magda::PluginService::getInstance().forgetStateProvider(provider_);
+        auto& service = magda::PluginService::getInstance();
+        service.forgetStateProvider(provider_);
+        if (previous_ != nullptr)
+            service.useStateProvider(*previous_);
     }
 
     ScopedStateProvider(const ScopedStateProvider&) = delete;
@@ -43,6 +47,7 @@ class ScopedStateProvider {
 
   private:
     RecordingStateProvider& provider_;
+    magda::PluginStateProvider* previous_ = nullptr;
 };
 
 }  // namespace
@@ -80,4 +85,42 @@ TEST_CASE("PluginService sends state operations to the current renderer",
 
     CHECK(first.applyOneCalls == 1);
     CHECK(first.lastApplied == restoredPath);
+}
+
+TEST_CASE("PluginService state operations are silent without a renderer",
+          "[plugin][state-service]") {
+    auto& service = magda::PluginService::getInstance();
+    RecordingStateProvider placeholder;
+    ScopedStateProvider registration(placeholder);
+    service.forgetStateProvider(placeholder);
+
+    const auto path = magda::ChainNodePath::topLevelDevice(5, 13);
+    service.captureAllPluginStates();
+    service.capturePluginStateAt(path);
+    service.applyPluginStateAt(path);
+
+    CHECK(placeholder.captureAllCalls == 0);
+    CHECK(placeholder.captureOneCalls == 0);
+    CHECK(placeholder.applyOneCalls == 0);
+}
+
+TEST_CASE("PluginService never falls back to a replaced renderer", "[plugin][state-service]") {
+    auto& service = magda::PluginService::getInstance();
+    RecordingStateProvider first;
+    ScopedStateProvider firstRegistration(first);
+    RecordingStateProvider second;
+
+    CHECK(service.useStateProvider(second) == &first);
+    service.forgetStateProvider(second);
+    service.captureAllPluginStates();
+
+    CHECK(first.captureAllCalls == 0);
+    CHECK(second.captureAllCalls == 0);
+
+    // A provider also clears itself if its owner is destroyed without an explicit shutdown.
+    auto temporary = std::make_unique<RecordingStateProvider>();
+    CHECK(service.useStateProvider(*temporary) == nullptr);
+    temporary.reset();
+    service.captureAllPluginStates();
+    CHECK(first.captureAllCalls == 0);
 }

@@ -303,7 +303,6 @@ class TracktionEngineWrapper : public AudioEngine,
         return deviceMeters_;
     }
 
-    /** @brief Feed PluginService from the bridge's instances. They are what this renders. */
     void captureAllPluginStates() override;
     void capturePluginStateAt(const ChainNodePath& devicePath) override;
     void applyPluginStateAt(const ChainNodePath& devicePath) override;
