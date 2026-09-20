@@ -664,14 +664,25 @@ void TracktionEngineWrapper::shutdown() {
     ProjectManager::getInstance().onBeforeSave = std::move(previousBeforeSave_);
     ProjectManager::getInstance().onAfterLoad = std::move(previousAfterLoad_);
 
-    // Clear MidiBridge's reference to AudioBridge before destroying it -- but only when
-    // this wrapper is the one attached. A wrapper that never came up, or one the native
-    // engine has since layered over, would otherwise unwind the live engine's MIDI.
+    // Hand the MIDI service back BEFORE destroying the AudioBridge it was lent, and only
+    // when this wrapper is the one attached: a wrapper that never came up, or one the
+    // native engine has since layered over, would otherwise unwind the live engine's MIDI.
+    //
+    // Clearing the pointer is not enough on its own. A MIDI callback that already loaded
+    // it goes on holding it, so the AudioBridge has to outlive the drain rather than the
+    // store: forgetEngine() stops the inputs and does not return until every callback in
+    // flight has left. That also unregisters the CoreMIDI callbacks, which must happen
+    // while the MIDI devices still exist -- they are closed further down.
     auto& midiBridge = MidiBridge::getInstance();
     const bool ownsMidi = midiBridge.isAttachedTo(this);
     if (ownsMidi) {
-        midiBridge.clearAudioBridge();
-        midiBridge.onActiveInputsChanged = nullptr;
+        // Cancel any active MIDI Learn session before shutting down the router.
+        MidiLearnCoordinator::getInstance().cancelLearn();
+        // Shut down ControllerRouter before stopping MIDI inputs so it can unsubscribe
+        // cleanly.
+        ControllerRouter::getInstance().shutdown();
+        DBG("Stopping MIDI inputs...");
+        midiBridge.forgetEngine(this);
     }
 
     // Destroy AudioBridge first (it references Edit and Engine)
@@ -695,19 +706,6 @@ void TracktionEngineWrapper::shutdown() {
 
         DBG("Destroying Edit...");
         currentEdit_.reset();
-    }
-
-    // CRITICAL: hand the MIDI service back AFTER freeing the playback context but BEFORE
-    // closing devices. forgetEngine() stops all MIDI inputs, which unregisters the
-    // CoreMIDI callbacks, and that must happen while the MIDI devices still exist.
-    if (ownsMidi) {
-        // Cancel any active MIDI Learn session before shutting down the router.
-        MidiLearnCoordinator::getInstance().cancelLearn();
-        // Shut down ControllerRouter before stopping MIDI inputs so it can unsubscribe
-        // cleanly.
-        ControllerRouter::getInstance().shutdown();
-        DBG("Stopping MIDI inputs...");
-        midiBridge.forgetEngine(this);
     }
 
     // MagdaApi is a thin facade over singletons — safe to reset anytime,
