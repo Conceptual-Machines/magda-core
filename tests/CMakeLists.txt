@@ -141,6 +141,7 @@ set(TEST_SOURCES
     automation/test_modulation_baker.cpp
     # Clip-based automation lanes: gap-hold + bake flattener (issue #1087)
     automation/test_automation_clip_lanes.cpp
+    devices/test_plugin_service_teardown.cpp
     devices/test_scan_report.cpp
     devices/test_drum_grid_plugin.cpp
     # The sampler's one cross-thread boundary (#2384): what the audio thread may

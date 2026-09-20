@@ -8,6 +8,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -74,7 +75,7 @@ class PluginService {
     /** @brief Answer off @p formats and @p list, which outlive this or are dropped first. */
     void useEngineList(juce::AudioPluginFormatManager& formats, juce::KnownPluginList& list);
 
-    /// The engine is going away: forget its pair and the scanner it installed.
+    /// The engine is going away: end any scan, then forget its pair and its scanner.
     void forgetEngineList();
 
     /**
@@ -206,6 +207,20 @@ class PluginService {
     /** @brief Where plugin metadata is stored. */
     static juce::File listFile();
 
+#ifdef MAGDA_ENABLE_TEST_HOOKS
+    /// Stands in for a scan the coordinator has live, which needs the out-of-process
+    /// scanner a test has no way to drive.
+    void testBeginScan() {
+        scanning_ = true;
+    }
+    std::uint64_t testAttachment() const {
+        return attachment_;
+    }
+    bool testWouldAcceptWorkFrom(std::uint64_t attachment) const {
+        return attachment == attachment_;
+    }
+#endif
+
   private:
     PluginService();
     ~PluginService();
@@ -218,6 +233,10 @@ class PluginService {
 
     juce::AudioPluginFormatManager* formats_ = nullptr;
     juce::KnownPluginList* list_ = nullptr;
+
+    /// Which attachment the pair above belongs to. Work queued under an earlier one is
+    /// dropped rather than applied to whatever is attached when it runs.
+    std::uint64_t attachment_ = 0;
 
     bool scanning_ = false;
     bool metadataLoaded_ = false;
