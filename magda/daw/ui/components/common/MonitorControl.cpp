@@ -2,7 +2,7 @@
 
 #include <BinaryData.h>
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "core/StringTable.hpp"
 #include "core/TrackManager.hpp"
 #include "core/TrackPropertyCommands.hpp"
@@ -17,13 +17,13 @@ constexpr int kOff = 1, kIn = 2, kAuto = 3;
 MonitorControl::MonitorControl()
     : SvgButton("Monitor", BinaryData::monitor_off_svg, BinaryData::monitor_off_svgSize,
                 BinaryData::monitor_on_svg, BinaryData::monitor_on_svgSize) {
-    setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
-    setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
-                              DarkTheme::ICON_ON_ACCENT);
-    setStateColourReplacement(juce::Colour(0xFF1E1E1E), DarkTheme::ICON_NEUTRAL,
-                              DarkTheme::ICON_ON_ACCENT);
+    setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+    setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE));
+    setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
+                              ActiveTheme::ICON_ON_ACCENT);
+    setStateColourReplacement(juce::Colour(0xFF1E1E1E), ActiveTheme::ICON_NEUTRAL,
+                              ActiveTheme::ICON_ON_ACCENT);
     setIconPadding(5.0f);
     setTooltip(tr("tracks.input_monitoring"));
 
@@ -115,11 +115,11 @@ void MonitorControl::updateVisual(InputMonitorMode mode) {
             setActive(false);
             break;
         case InputMonitorMode::In:
-            setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
+            setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE));
             setActive(true);
             break;
         case InputMonitorMode::Auto:
-            setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+            setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
             setActive(true);
             break;
     }

@@ -15,7 +15,7 @@
 #include "../../debug/DebugSettings.hpp"
 #include "../../dialogs/ChainTreeDialog.hpp"
 #include "../../dialogs/GainStagingDialog.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/MixerMetrics.hpp"
 #include "../../themes/SmallButtonLookAndFeel.hpp"
@@ -87,7 +87,7 @@ std::vector<magda::ChainNodePath> dragObjectToChainNodePaths(const juce::Dynamic
 }
 
 juce::Colour analysisToggleAccent(ColourRole role) {
-    const auto accent = DarkTheme::getColour(role);
+    const auto accent = ActiveTheme::getColour(role);
     if (ThemeManager::isLightTheme())
         return accent.withMultipliedSaturation(1.15f).darker(0.10f);
 
@@ -96,12 +96,12 @@ juce::Colour analysisToggleAccent(ColourRole role) {
 
 void applyAnalysisToggleTheme(magda::SvgButton& button, juce::Colour activeColour) {
     const bool light = ThemeManager::isLightTheme();
-    button.setNormalColor(DarkTheme::getSecondaryTextColour());
-    button.setHoverColor(DarkTheme::getTextColour());
+    button.setNormalColor(ActiveTheme::getSecondaryTextColour());
+    button.setHoverColor(ActiveTheme::getTextColour());
     button.setActiveColor(light ? activeColour.darker(0.12f) : juce::Colours::white.darker(0.18f));
     button.setActiveBackgroundColor(activeColour.withAlpha(light ? 0.10f : 0.20f));
     button.setActiveBorderColor(activeColour);
-    button.setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    button.setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
 }
 }  // namespace
 
@@ -115,13 +115,13 @@ class GainMeterComponent : public juce::Component,
     GainMeterComponent() {
         // Editable label for dB value
         dbLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-        dbLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        dbLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
         dbLabel_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
         dbLabel_.setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
         dbLabel_.setColour(juce::Label::outlineWhenEditingColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                           ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         dbLabel_.setColour(juce::Label::backgroundWhenEditingColourId,
-                           DarkTheme::getColour(DarkTheme::BACKGROUND));
+                           ActiveTheme::getColour(ActiveTheme::BACKGROUND));
         dbLabel_.setJustificationType(juce::Justification::centred);
         dbLabel_.setEditable(false, true, false);  // Single-click to edit
         dbLabel_.addListener(this);
@@ -166,7 +166,7 @@ class GainMeterComponent : public juce::Component,
         auto meterArea = bounds.removeFromTop(bounds.getHeight() - 14).reduced(2);
 
         // Background
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
         g.fillRoundedRectangle(meterArea.toFloat(), 2.0f);
 
         // Meter fill (from bottom up)
@@ -174,11 +174,11 @@ class GainMeterComponent : public juce::Component,
         auto fillArea = meterArea.removeFromBottom(static_cast<int>(fillHeight));
 
         // Gradient from green (low) to yellow to red (high)
-        juce::ColourGradient gradient(DarkTheme::getColour(DarkTheme::GAIN_METER_LOW), 0.0f,
+        juce::ColourGradient gradient(ActiveTheme::getColour(ActiveTheme::GAIN_METER_LOW), 0.0f,
                                       static_cast<float>(meterArea.getBottom()),
-                                      DarkTheme::getColour(DarkTheme::GAIN_METER_HIGH), 0.0f,
+                                      ActiveTheme::getColour(ActiveTheme::GAIN_METER_HIGH), 0.0f,
                                       static_cast<float>(meterArea.getY()), false);
-        gradient.addColour(0.7, DarkTheme::getColour(DarkTheme::GAIN_METER_WARNING));
+        gradient.addColour(0.7, ActiveTheme::getColour(ActiveTheme::GAIN_METER_WARNING));
         g.setGradientFill(gradient);
         g.fillRect(fillArea);
 
@@ -186,7 +186,7 @@ class GainMeterComponent : public juce::Component,
         auto gainNormalized = static_cast<float>((gainDb_ + 60.0) / 66.0);  // -60 to +6 dB
         int gainY =
             meterArea.getY() + static_cast<int>((1.0f - gainNormalized) * meterArea.getHeight());
-        g.setColour(DarkTheme::getTextColour());
+        g.setColour(ActiveTheme::getTextColour());
         g.drawHorizontalLine(gainY, static_cast<float>(meterArea.getX()),
                              static_cast<float>(meterArea.getRight()));
 
@@ -205,7 +205,7 @@ class GainMeterComponent : public juce::Component,
         g.fillPath(triangle);
 
         // Border
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         auto fullMeterArea = getLocalBounds().removeFromTop(getHeight() - 14).reduced(2);
         g.drawRoundedRectangle(fullMeterArea.toFloat(), 2.0f, 1.0f);
     }
@@ -307,7 +307,7 @@ class DeviceButtonLookAndFeel : public juce::LookAndFeel_V4 {
         g.setColour(baseColour);
         g.fillRoundedRectangle(bounds, cornerRadius);
 
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRoundedRectangle(bounds, cornerRadius, 1.0f);
     }
 
@@ -397,11 +397,11 @@ class TrackChainContent::ChainContainer : public juce::Component,
         const bool appendHighlighted =
             owner_.dragInsertIndex_ == static_cast<int>(owner_.nodeComponents_.size()) ||
             owner_.dropInsertIndex_ == static_cast<int>(owner_.nodeComponents_.size());
-        auto appendColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)
+        auto appendColour = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)
                                 .withAlpha(appendHighlighted ? 0.18f : 0.06f);
         g.setColour(appendColour);
         g.fillRoundedRectangle(appendZone.reduced(6, 10).toFloat(), 4.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)
                         .withAlpha(appendHighlighted ? 0.75f : 0.24f));
         g.drawRoundedRectangle(appendZone.reduced(6, 10).toFloat(), 4.0f, 1.0f);
 
@@ -410,7 +410,7 @@ class TrackChainContent::ChainContainer : public juce::Component,
             int indicatorIndex =
                 owner_.dragInsertIndex_ >= 0 ? owner_.dragInsertIndex_ : owner_.dropInsertIndex_;
             int indicatorX = owner_.calculateIndicatorX(indicatorIndex);
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
             g.fillRect(indicatorX - 2, 0, 4, getHeight());
         }
 
@@ -763,9 +763,10 @@ TrackChainContent::TrackChainContent()
     addAndMakeVisible(*chainViewport_);
 
     addDeviceButton_.setButtonText("+");
-    addDeviceButton_.setColour(juce::TextButton::buttonColourId,
-                               DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.24f));
-    addDeviceButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+    addDeviceButton_.setColour(
+        juce::TextButton::buttonColourId,
+        ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.24f));
+    addDeviceButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
     addDeviceButton_.onClick = [this]() { onAddDeviceClicked(); };
     addDeviceButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     chainContainer_->addAndMakeVisible(addDeviceButton_);
@@ -774,7 +775,7 @@ TrackChainContent::TrackChainContent()
     noSelectionLabel_.setText("Select a track to view its signal chain",
                               juce::dontSendNotification);
     noSelectionLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
-    noSelectionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    noSelectionLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     noSelectionLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(noSelectionLabel_);
 
@@ -785,10 +786,11 @@ TrackChainContent::TrackChainContent()
                                                            BinaryData::iconmodsboldm_svgSize);
     globalModsButton_->setClickingTogglesState(true);
     globalModsButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    globalModsButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+    globalModsButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
     globalModsButton_->setActiveColor(juce::Colours::white);
-    globalModsButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
-    globalModsButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    globalModsButton_->setActiveBackgroundColor(
+        ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
+    globalModsButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     globalModsButton_->onClick = [this]() {
         globalModsButton_->setActive(globalModsButton_->getToggleState());
         globalModsVisible_ = globalModsButton_->getToggleState();
@@ -809,10 +811,10 @@ TrackChainContent::TrackChainContent()
         std::make_unique<magda::SvgButton>("Macro", BinaryData::knob_svg, BinaryData::knob_svgSize);
     macroButton_->setClickingTogglesState(true);
     macroButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    macroButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+    macroButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
     macroButton_->setActiveColor(juce::Colours::white);
-    macroButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
-    macroButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    macroButton_->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
+    macroButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     macroButton_->onClick = [this]() {
         macroButton_->setActive(macroButton_->getToggleState());
         globalMacrosVisible_ = macroButton_->getToggleState();
@@ -832,9 +834,10 @@ TrackChainContent::TrackChainContent()
     addRackButton_ = std::make_unique<magda::SvgButton>("Rack", BinaryData::iconracksboldm_svg,
                                                         BinaryData::iconracksboldm_svgSize);
     addRackButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));  // Match SVG fill color
-    addRackButton_->setNormalColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
-    addRackButton_->setHoverColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).brighter(0.2f));
-    addRackButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    addRackButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+    addRackButton_->setHoverColor(
+        ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).brighter(0.2f));
+    addRackButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     addRackButton_->onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             magda::TrackManager::getInstance().addRackToTrack(selectedTrackId_);
@@ -846,9 +849,9 @@ TrackChainContent::TrackChainContent()
     treeViewButton_ = std::make_unique<magda::SvgButton>("Tree", BinaryData::icontreeviewboldm_svg,
                                                          BinaryData::icontreeviewboldm_svgSize);
     treeViewButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    treeViewButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-    treeViewButton_->setHoverColor(DarkTheme::getTextColour());
-    treeViewButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    treeViewButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
+    treeViewButton_->setHoverColor(ActiveTheme::getTextColour());
+    treeViewButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     treeViewButton_->onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             magda::ChainTreeDialog::show(selectedTrackId_);
@@ -863,9 +866,9 @@ TrackChainContent::TrackChainContent()
         std::make_unique<magda::SvgButton>("Presets", BinaryData::iconpresetsroundboldm_svg,
                                            BinaryData::iconpresetsroundboldm_svgSize);
     presetButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    presetButton_->setNormalColor(DarkTheme::getColour(DarkTheme::PRESET_INDIGO));
-    presetButton_->setHoverColor(DarkTheme::getColour(DarkTheme::PRESET_INDIGO).brighter(0.2f));
-    presetButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    presetButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::PRESET_INDIGO));
+    presetButton_->setHoverColor(ActiveTheme::getColour(ActiveTheme::PRESET_INDIGO).brighter(0.2f));
+    presetButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     presetButton_->setTooltip("MAGDA Track Presets");
     presetButton_->onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID)
@@ -880,10 +883,10 @@ TrackChainContent::TrackChainContent()
     // (the SVG uses currentColor).
     gainStagingButton_ = std::make_unique<magda::SvgButton>(
         "GainStaging", BinaryData::gainstaging_svg, BinaryData::gainstaging_svgSize);
-    gainStagingButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-    gainStagingButton_->setHoverColor(DarkTheme::getTextColour());
+    gainStagingButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
+    gainStagingButton_->setHoverColor(ActiveTheme::getTextColour());
     gainStagingButton_->setActiveColor(juce::Colours::white.darker(0.18f));
-    gainStagingButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    gainStagingButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     gainStagingButton_->onClick = [this]() {
         if (selectedTrackId_ == magda::INVALID_TRACK_ID || aiProcessing_)
             return;
@@ -933,21 +936,22 @@ TrackChainContent::TrackChainContent()
     };
     setupAnalysisToggle(oscToggleButton_, "Oscilloscope", BinaryData::oscilloscope3_svg,
                         BinaryData::oscilloscope3_svgSize, "Oscilloscope (post-FX)", "oscilloscope",
-                        "Oscilloscope", analysisToggleAccent(DarkTheme::ACCENT_POSITIVE));
+                        "Oscilloscope", analysisToggleAccent(ActiveTheme::ACCENT_POSITIVE));
     setupAnalysisToggle(specToggleButton_, "Spectrum", BinaryData::iconspectrumboldm_svg,
                         BinaryData::iconspectrumboldm_svgSize, "Spectrum Analyzer (post-FX)",
                         "spectrumanalyzer", "Spectrum Analyzer",
-                        analysisToggleAccent(DarkTheme::ACCENT_INFO));
+                        analysisToggleAccent(ActiveTheme::ACCENT_INFO));
     setupAnalysisToggle(levelsToggleButton_, "Levels", BinaryData::iconlevelsboldm_svg,
                         BinaryData::iconlevelsboldm_svgSize, "Levels meter (post-FX)", "levels",
-                        "Levels", analysisToggleAccent(DarkTheme::ACCENT_PRIMARY));
+                        "Levels", analysisToggleAccent(ActiveTheme::ACCENT_PRIMARY));
 
     // Post-FX panel show/hide toggle. The panel itself lives in BottomPanel,
     // which wires onPostFxPanelToggled / setPostFxPanelOpen.
     postFxPanelButton_ = std::make_unique<magda::SvgButton>("PostFx", BinaryData::postfx_svg,
                                                             BinaryData::postfx_svgSize);
     postFxPanelButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    applyAnalysisToggleTheme(*postFxPanelButton_, DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    applyAnalysisToggleTheme(*postFxPanelButton_,
+                             ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     postFxPanelButton_->setTooltip("Show/hide the post-FX panel");
     postFxPanelButton_->onClick = [this]() {
         if (onPostFxPanelToggled)
@@ -959,19 +963,19 @@ TrackChainContent::TrackChainContent()
 
     // Track name label - clicks pass through for track selection
     trackNameLabel_.setFont(FontManager::getInstance().getUIFontBold(11.0f));
-    trackNameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    trackNameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     trackNameLabel_.setJustificationType(juce::Justification::centredRight);
     trackNameLabel_.setInterceptsMouseClicks(false, false);
     addChildComponent(trackNameLabel_);
 
     // Mute button (arrange track-header style)
     muteButton_.setOriginalColor(juce::Colour(0xFFB3B3B3));
-    muteButton_.setNormalColor(DarkTheme::getSecondaryTextColour());
-    muteButton_.setHoverColor(DarkTheme::getTextColour());
-    muteButton_.setActiveColor(DarkTheme::getColour(DarkTheme::BACKGROUND));
-    muteButton_.setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    muteButton_.setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    muteButton_.setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
+    muteButton_.setNormalColor(ActiveTheme::getSecondaryTextColour());
+    muteButton_.setHoverColor(ActiveTheme::getTextColour());
+    muteButton_.setActiveColor(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
+    muteButton_.setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    muteButton_.setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+    muteButton_.setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::STATUS_WARNING));
     muteButton_.setIconPadding(3.5f);
     muteButton_.setTooltip(tr("tracks.mute.tooltip"));
     muteButton_.setClickingTogglesState(true);
@@ -1002,15 +1006,15 @@ TrackChainContent::TrackChainContent()
     monitorButton_.setButtonText("-");
     monitorButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     monitorButton_.setColour(juce::TextButton::buttonColourId,
-                             DarkTheme::getColour(DarkTheme::SURFACE));
+                             ActiveTheme::getColour(ActiveTheme::SURFACE));
     monitorButton_.setColour(juce::TextButton::buttonOnColourId,
-                             DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
+                             ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE));
     monitorButton_.setColour(juce::TextButton::textColourOffId,
-                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                             ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     monitorButton_.setColour(juce::TextButton::textColourOnId,
-                             DarkTheme::getColour(DarkTheme::BACKGROUND));
+                             ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     monitorButton_.setColour(juce::ComboBox::outlineColourId,
-                             DarkTheme::getColour(DarkTheme::BORDER));
+                             ActiveTheme::getColour(ActiveTheme::BORDER));
     monitorButton_.setTooltip("Input monitoring (Off/In/Auto)");
     monitorButton_.onClick = [this]() {
         if (selectedTrackId_ == magda::INVALID_TRACK_ID)
@@ -1037,12 +1041,12 @@ TrackChainContent::TrackChainContent()
 
     // Solo button (arrange track-header style)
     soloButton_.setOriginalColor(juce::Colour(0xFFB3B3B3));
-    soloButton_.setNormalColor(DarkTheme::getSecondaryTextColour());
-    soloButton_.setHoverColor(DarkTheme::getTextColour());
-    soloButton_.setActiveColor(DarkTheme::getColour(DarkTheme::BACKGROUND));
-    soloButton_.setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    soloButton_.setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    soloButton_.setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+    soloButton_.setNormalColor(ActiveTheme::getSecondaryTextColour());
+    soloButton_.setHoverColor(ActiveTheme::getTextColour());
+    soloButton_.setActiveColor(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
+    soloButton_.setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    soloButton_.setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+    soloButton_.setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
     soloButton_.setIconPadding(5.0f);
     soloButton_.setTooltip(tr("tracks.solo.tooltip"));
     soloButton_.setClickingTogglesState(true);
@@ -1060,7 +1064,7 @@ TrackChainContent::TrackChainContent()
     volumeLabel_.setFillProportionMapper(magda::level_meter_scale::dbFillProportion);
     volumeLabel_.setValue(0.0, juce::dontSendNotification);  // Unity gain (0 dB)
     volumeLabel_.setFontSize(10.0f);
-    volumeLabel_.setFillColour(DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
+    volumeLabel_.setFillColour(ActiveTheme::getColour(ActiveTheme::CONTROL_VALUE_FILL));
     volumeLabel_.onValueChange = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             float gain = dbToGain(static_cast<float>(volumeLabel_.getValue()));
@@ -1074,7 +1078,7 @@ TrackChainContent::TrackChainContent()
     panLabel_.setRange(-1.0, 1.0, 0.0);
     panLabel_.setValue(0.0, juce::dontSendNotification);  // Center
     panLabel_.setFontSize(10.0f);
-    panLabel_.setFillColour(DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
+    panLabel_.setFillColour(ActiveTheme::getColour(ActiveTheme::CONTROL_VALUE_FILL));
     panLabel_.onValueChange = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             magda::UndoManager::getInstance().executeCommand(
@@ -1091,10 +1095,10 @@ TrackChainContent::TrackChainContent()
     chainBypassButton_->setToggleState(true,
                                        juce::dontSendNotification);  // Start active (not bypassed)
     chainBypassButton_->setOriginalColor(juce::Colour(0xFFE6E6E6));
-    chainBypassButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+    chainBypassButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
     chainBypassButton_->setActiveColor(juce::Colours::white);
     chainBypassButton_->setActiveBackgroundColor(
-        DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).darker(0.3f));
+        ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).darker(0.3f));
     chainBypassButton_->setActive(true);  // Start active
     chainBypassButton_->onClick = [this]() {
         bool active = chainBypassButton_->getToggleState();
@@ -1117,7 +1121,7 @@ TrackChainContent::TrackChainContent()
     linkModeLabel_.setText("LINK MODE", juce::dontSendNotification);
     linkModeLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     linkModeLabel_.setColour(juce::Label::textColourId,
-                             DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+                             ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
     linkModeLabel_.setJustificationType(juce::Justification::centred);
     // The banner spans the full header. It is status-only and must not trap
     // clicks intended for the mod/macro controls underneath it.
@@ -1130,7 +1134,7 @@ TrackChainContent::TrackChainContent()
     gainStagingLabel_.setText("GAIN STAGING", juce::dontSendNotification);
     gainStagingLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     gainStagingLabel_.setColour(juce::Label::textColourId,
-                                DarkTheme::getColour(DarkTheme::STATUS_DANGER));
+                                ActiveTheme::getColour(ActiveTheme::STATUS_DANGER));
     gainStagingLabel_.setJustificationType(juce::Justification::centred);
     gainStagingLabel_.setMinimumHorizontalScale(0.5f);  // let the AI summary shrink to fit
     // The banner spans the whole header bar; it must NOT eat clicks meant for
@@ -1163,30 +1167,32 @@ TrackChainContent::TrackChainContent()
 void TrackChainContent::lookAndFeelChanged() {
     mixerLookAndFeel_.refreshThemeColours();
     if (chainBypassButton_) {
-        chainBypassButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+        chainBypassButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
         chainBypassButton_->setActiveColor(juce::Colours::white);
         chainBypassButton_->setActiveBackgroundColor(
-            DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).darker(0.3f));
+            ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).darker(0.3f));
         chainBypassButton_->repaint();
     }
 
     if (oscToggleButton_)
         applyAnalysisToggleTheme(*oscToggleButton_,
-                                 analysisToggleAccent(DarkTheme::ACCENT_POSITIVE));
+                                 analysisToggleAccent(ActiveTheme::ACCENT_POSITIVE));
     if (specToggleButton_)
-        applyAnalysisToggleTheme(*specToggleButton_, analysisToggleAccent(DarkTheme::ACCENT_INFO));
+        applyAnalysisToggleTheme(*specToggleButton_,
+                                 analysisToggleAccent(ActiveTheme::ACCENT_INFO));
     if (levelsToggleButton_)
         applyAnalysisToggleTheme(*levelsToggleButton_,
-                                 analysisToggleAccent(DarkTheme::ACCENT_PRIMARY));
+                                 analysisToggleAccent(ActiveTheme::ACCENT_PRIMARY));
     if (postFxPanelButton_)
         applyAnalysisToggleTheme(*postFxPanelButton_,
-                                 DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                                 ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
 
     // The add-device button captures concrete colours at construction;
     // re-apply so a live theme switch restyles it.
-    addDeviceButton_.setColour(juce::TextButton::buttonColourId,
-                               DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.24f));
-    addDeviceButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+    addDeviceButton_.setColour(
+        juce::TextButton::buttonColourId,
+        ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.24f));
+    addDeviceButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
 
     repaint();
 }
@@ -1746,7 +1752,7 @@ void TrackChainContent::hideGlobalMacroEditor() {
 }
 
 void TrackChainContent::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getPanelBackgroundColour());
+    g.fillAll(ActiveTheme::getPanelBackgroundColour());
 
     if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
         auto bounds = getLocalBounds();
@@ -1764,7 +1770,7 @@ void TrackChainContent::paint(juce::Graphics& g) {
 
         if (panelAreaWidth > 0) {
             // Vertical separator between panels and chain content
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
             g.drawVerticalLine(panelAreaWidth, static_cast<float>(bounds.getY()),
                                static_cast<float>(bounds.getBottom()));
         }
@@ -2136,7 +2142,7 @@ void TrackChainContent::modLinkModeChanged(bool active, const magda::ModSelectio
     linkModeLabel_.setVisible(active);
     if (active) {
         linkModeLabel_.setColour(juce::Label::textColourId,
-                                 DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+                                 ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
     }
     resized();
 }
@@ -2146,7 +2152,7 @@ void TrackChainContent::macroLinkModeChanged(bool active,
     linkModeLabel_.setVisible(active);
     if (active) {
         linkModeLabel_.setColour(juce::Label::textColourId,
-                                 DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+                                 ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
     }
     resized();
 }
@@ -2167,14 +2173,14 @@ void TrackChainContent::refreshGainStagingButton() {
     const bool onThisTrack = gs.getActiveTrack() == selectedTrackId_;
     const bool collecting = gs.getMode() == magda::GainStagingMode::Collecting && onThisTrack;
 
-    const auto yellow = DarkTheme::getColour(DarkTheme::STATUS_WARNING);
+    const auto yellow = ActiveTheme::getColour(ActiveTheme::STATUS_WARNING);
 
     if (aiProcessing_) {
         gainStagingButton_->setActiveBackgroundColor(yellow.withAlpha(0.20f));
         gainStagingButton_->setActiveBorderColor(yellow);
         gainStagingButton_->setTooltip("Gain staging: AI is analysing the chain...");
     } else if (collecting) {
-        const auto red = DarkTheme::getColour(DarkTheme::STATUS_DANGER);
+        const auto red = ActiveTheme::getColour(ActiveTheme::STATUS_DANGER);
         gainStagingButton_->setActiveBackgroundColor(red.withAlpha(0.20f));
         gainStagingButton_->setActiveBorderColor(red);
         gainStagingButton_->setTooltip("Gain staging: stop and apply");
@@ -2201,7 +2207,7 @@ void TrackChainContent::refreshGainStagingButton() {
     } else if (collecting) {
         gainStagingLabel_.setText("GAIN STAGING", juce::dontSendNotification);
         gainStagingLabel_.setColour(juce::Label::textColourId,
-                                    DarkTheme::getColour(DarkTheme::STATUS_DANGER));
+                                    ActiveTheme::getColour(ActiveTheme::STATUS_DANGER));
     }
 }
 
@@ -2311,23 +2317,23 @@ class AiReasoningOverlay : public juce::Component {
         if (area.getWidth() > 560)
             area = area.withSizeKeepingCentre(560, area.getHeight());
 
-        g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
         g.fillRoundedRectangle(area.toFloat(), 8.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         g.drawRoundedRectangle(area.toFloat(), 8.0f, 1.5f);
 
         auto inner = area.reduced(16);
         auto titleArea = inner.removeFromTop(22);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         g.setFont(FontManager::getInstance().getUIFontBold(15.0f));
         g.drawText("AI gain staging", titleArea, juce::Justification::topLeft);
 
         auto hintArea = inner.removeFromBottom(18);
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.setFont(FontManager::getInstance().getUIFont(11.0f));
         g.drawText("click to dismiss", hintArea, juce::Justification::topRight);
 
-        g.setColour(DarkTheme::getTextColour());
+        g.setColour(ActiveTheme::getTextColour());
         g.setFont(FontManager::getInstance().getUIFont(13.0f));
         g.drawFittedText(text_, inner, juce::Justification::topLeft, 40);
     }

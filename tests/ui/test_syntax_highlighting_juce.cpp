@@ -5,7 +5,7 @@
 #include "magda/daw/ui/code/DSLTokeniser.hpp"
 #include "magda/daw/ui/code/FaustTokeniser.hpp"
 #include "magda/daw/ui/code/SyntaxTheme.hpp"
-#include "magda/daw/ui/themes/DarkTheme.hpp"
+#include "magda/daw/ui/themes/ActiveTheme.hpp"
 
 // Coverage for the shared syntax-highlighting layer (#1936): one token
 // vocabulary across languages, the Faust tokeniser that the runtime device
@@ -168,13 +168,13 @@ class SyntaxHighlightingTest final : public juce::UnitTest {
 
             auto palette = ThemeManager::builtInSyntaxPalette("dark");
             palette[static_cast<std::size_t>(SyntaxColourRole::DSL_TOKEN_KEYWORD)] = 0xFF123456;
-            DarkTheme::setActiveSyntaxPalette(palette);
+            ActiveTheme::setActiveSyntaxPalette(palette);
 
             const auto themed = codeTokenColourScheme();
             expect(themed.types[codeToken_keyword].colour == juce::Colour(0xFF123456),
                    "a user theme's syntax colours reach every language");
 
-            DarkTheme::setActiveSyntaxPalette(ThemeManager::builtInSyntaxPalette("dark"));
+            ActiveTheme::setActiveSyntaxPalette(ThemeManager::builtInSyntaxPalette("dark"));
         }
 
         beginTest("Editor surfaces take their chrome from the syntax palette");
@@ -185,18 +185,18 @@ class SyntaxHighlightingTest final : public juce::UnitTest {
 
             applyCodeEditorTheme(editor, tokeniser);
             expect(editor.findColour(juce::CodeEditorComponent::backgroundColourId) ==
-                   DarkTheme::getSyntaxColour(SyntaxColourRole::EDITOR_BACKGROUND));
+                   ActiveTheme::getSyntaxColour(SyntaxColourRole::EDITOR_BACKGROUND));
             expect(editor.findColour(juce::CodeEditorComponent::lineNumberTextId) ==
-                   DarkTheme::getSyntaxColour(SyntaxColourRole::LINE_NUMBER_TEXT));
+                   ActiveTheme::getSyntaxColour(SyntaxColourRole::LINE_NUMBER_TEXT));
             expect(editor.findColour(juce::CaretComponent::caretColourId) ==
-                   DarkTheme::getSyntaxColour(SyntaxColourRole::EDITOR_CARET));
+                   ActiveTheme::getSyntaxColour(SyntaxColourRole::EDITOR_CARET));
 
             // The DSL console keeps its own caret / selection pair.
             applyCodeEditorTheme(editor, tokeniser, CodeEditorSurface::DslConsole);
             expect(editor.findColour(juce::CaretComponent::caretColourId) ==
-                   DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_CARET));
+                   ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_CARET));
             expect(editor.findColour(juce::CodeEditorComponent::highlightColourId) ==
-                   DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_SELECTION));
+                   ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_SELECTION));
         }
     }
 };

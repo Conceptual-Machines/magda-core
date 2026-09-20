@@ -1,7 +1,7 @@
 #include "LevelsUI.hpp"
 
 #include "audio/analysis/TrackMeasurer.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui {
@@ -24,10 +24,10 @@ juce::String fmtLu(float v) {
 // Colour a true-peak value: hot near/over 0 dBTP, warm approaching it.
 juce::Colour peakColour(float dbtp) {
     if (dbtp >= -0.1f)
-        return magda::DarkTheme::getColour(magda::DarkTheme::ACCENT_RED);
+        return magda::ActiveTheme::getColour(magda::ActiveTheme::ACCENT_RED);
     if (dbtp >= -3.0f)
-        return magda::DarkTheme::getColour(magda::DarkTheme::STATUS_WARNING);
-    return magda::DarkTheme::getColour(magda::DarkTheme::ACCENT_POSITIVE);
+        return magda::ActiveTheme::getColour(magda::ActiveTheme::STATUS_WARNING);
+    return magda::ActiveTheme::getColour(magda::ActiveTheme::ACCENT_POSITIVE);
 }
 
 }  // namespace
@@ -35,7 +35,7 @@ juce::Colour peakColour(float dbtp) {
 LevelsUI::LevelsUI() {
     setOpaque(false);
 
-    using DT = magda::DarkTheme;
+    using DT = magda::ActiveTheme;
     resetButton_.setTooltip("Restart integrated loudness, peak hold and PLR");
     resetButton_.setColour(juce::TextButton::buttonColourId, DT::getColour(DT::SURFACE));
     resetButton_.setColour(juce::TextButton::textColourOffId, DT::getColour(DT::TEXT_DIM));
@@ -104,7 +104,7 @@ void LevelsUI::timerCallback() {
 }
 
 void LevelsUI::paint(juce::Graphics& g) {
-    using DT = magda::DarkTheme;
+    using DT = magda::ActiveTheme;
     auto bounds = getLocalBounds().toFloat().reduced(2.0f);
     g.setColour(DT::getColour(DT::BACKGROUND));
     g.fillRoundedRectangle(bounds, 4.0f);

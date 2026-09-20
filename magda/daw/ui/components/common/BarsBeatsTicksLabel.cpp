@@ -4,7 +4,7 @@
 #include <cmath>
 #include <cstdio>
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "ValueEditGesture.hpp"
 
@@ -37,7 +37,7 @@ void BarsBeatsTicksLabel::setTextColour(juce::Colour colour) {
 juce::Colour BarsBeatsTicksLabel::getTextColour() const {
     if (hasCustomTextColour_)
         return customTextColour_;
-    return DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
+    return ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY);
 }
 
 void BarsBeatsTicksLabel::setOverlayLabel(const juce::String& label) {
@@ -158,11 +158,11 @@ void BarsBeatsTicksLabel::paint(juce::Graphics& g) {
 
     if (drawBackground_) {
         // Background
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
         g.fillRoundedRectangle(bounds, 2.0f);
 
         // Border
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRoundedRectangle(bounds.reduced(0.5f), 2.0f, 1.0f);
     }
 
@@ -416,17 +416,17 @@ void BarsBeatsTicksLabel::SegmentLabel::startEditing() {
     editor_->selectAll();
     editor_->setJustification(juce::Justification::centred);
     editor_->setColour(juce::TextEditor::backgroundColourId,
-                       DarkTheme::getColour(DarkTheme::SURFACE));
+                       ActiveTheme::getColour(ActiveTheme::SURFACE));
     editor_->setColour(juce::TextEditor::textColourId,
-                       DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                       ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     // The field opens with everything selected, so the accent covers the whole
     // value at an opaque strength. Text sitting on it is on-accent content, not
     // text on a surface, and TEXT_PRIMARY is the wrong end of the palette for
     // that on a light theme.
     editor_->setColour(juce::TextEditor::highlightColourId,
-                       DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                       ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     editor_->setColour(juce::TextEditor::highlightedTextColourId,
-                       DarkTheme::getColour(DarkTheme::ICON_ON_ACCENT));
+                       ActiveTheme::getColour(ActiveTheme::ICON_ON_ACCENT));
     editor_->setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
     editor_->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
 

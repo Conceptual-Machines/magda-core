@@ -2,7 +2,7 @@
 
 #include <limits>
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "PitchFoldMap.hpp"
 
@@ -24,10 +24,10 @@ OctaveLabelStrip::OctaveLabelStrip() {
 void OctaveLabelStrip::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
 
-    g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_BACKGROUND));
     g.fillRect(bounds);
 
-    g.setColour(DarkTheme::getColour(DarkTheme::ICON_NEUTRAL));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ICON_NEUTRAL));
     g.setFont(FontManager::getInstance().getUIFont(10.0f));
 
     const int labelHeight = LABEL_HEIGHT;
@@ -51,11 +51,11 @@ void OctaveLabelStrip::paint(juce::Graphics& g) {
             const int labelY = y + (noteHeight_ - labelHeight) / 2;
             auto labelArea =
                 juce::Rectangle<int>(bounds.getX(), labelY, bounds.getWidth(), labelHeight);
-            g.setColour(DarkTheme::getColour(DarkTheme::ICON_NEUTRAL));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ICON_NEUTRAL));
             g.drawText(noteLabel(note), labelArea.reduced(2, 0), juce::Justification::centred,
                        false);
             if (octave != prevOctave) {
-                g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
                 g.drawHorizontalLine(y, static_cast<float>(bounds.getX()),
                                      static_cast<float>(bounds.getRight()));
             }
@@ -76,19 +76,19 @@ void OctaveLabelStrip::paint(juce::Graphics& g) {
 
             auto labelArea =
                 juce::Rectangle<int>(bounds.getX(), labelY, bounds.getWidth(), labelHeight);
-            g.setColour(DarkTheme::getColour(DarkTheme::ICON_NEUTRAL));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ICON_NEUTRAL));
             g.drawText(noteLabel(note), labelArea.reduced(2, 0), juce::Justification::centred,
                        false);
 
             // Hairline at the octave boundary (bottom of C row).
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
             g.drawHorizontalLine(y + noteHeight_, static_cast<float>(bounds.getX()),
                                  static_cast<float>(bounds.getRight()));
         }
     }
 
     // Right border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawVerticalLine(bounds.getRight() - 1, static_cast<float>(bounds.getY()),
                        static_cast<float>(bounds.getBottom()));
 }

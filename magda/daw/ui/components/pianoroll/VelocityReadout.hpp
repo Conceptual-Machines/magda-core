@@ -2,7 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 
 namespace magda {
@@ -42,12 +42,12 @@ class VelocityReadout : public juce::Component, private juce::Timer {
 
     void paint(juce::Graphics& g) override {
         auto bounds = getLocalBounds().toFloat();
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).withAlpha(0.92f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).withAlpha(0.92f));
         g.fillRoundedRectangle(bounds, 4.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRoundedRectangle(bounds.reduced(0.5f), 4.0f, 1.0f);
 
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         g.setFont(FontManager::getInstance().getUIFont(12.0f));
         g.drawText("v " + juce::String(velocity_), getLocalBounds(), juce::Justification::centred,
                    false);

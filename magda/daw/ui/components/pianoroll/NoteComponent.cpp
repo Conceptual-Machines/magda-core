@@ -2,8 +2,8 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/CursorManager.hpp"
-#include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../utils/SelectionPolicy.hpp"
 #include "NoteGridHost.hpp"
@@ -18,8 +18,8 @@ constexpr float kNoteLabelVerticalPadding = 1.0f;
 
 juce::Colour getContrastingNoteLabelColour(juce::Colour fillColour) {
     return fillColour.getPerceivedBrightness() >= 0.5f
-               ? magda::DarkTheme::getColour(magda::DarkTheme::TEXT_DARK).withAlpha(0.78f)
-               : magda::DarkTheme::getColour(magda::DarkTheme::TEXT_BRIGHT).withAlpha(0.88f);
+               ? magda::ActiveTheme::getColour(magda::ActiveTheme::TEXT_DARK).withAlpha(0.78f)
+               : magda::ActiveTheme::getColour(magda::ActiveTheme::TEXT_BRIGHT).withAlpha(0.88f);
 }
 
 }  // namespace
@@ -51,7 +51,7 @@ void NoteComponent::paint(juce::Graphics& g) {
     g.fillRoundedRectangle(bounds, CORNER_RADIUS);
 
     // Border
-    g.setColour(isSelected_ ? DarkTheme::getColour(DarkTheme::TEXT_BRIGHT)
+    g.setColour(isSelected_ ? ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT)
                             : fillColour.brighter(0.4f));
     float strokeWidth = isSelected_ ? 2.0f : 1.0f;
     g.drawRoundedRectangle(bounds.reduced(0.5f), CORNER_RADIUS, strokeWidth);
@@ -75,7 +75,7 @@ void NoteComponent::paint(juce::Graphics& g) {
 
     // Resize handle highlights
     if (hoverLeftEdge_ || hoverRightEdge_) {
-        auto handleColour = DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0.4f);
+        auto handleColour = ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0.4f);
         if (hoverLeftEdge_) {
             g.setColour(handleColour);
             g.fillRect(0, 0, RESIZE_HANDLE_WIDTH, getHeight());

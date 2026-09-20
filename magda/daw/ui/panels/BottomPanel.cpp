@@ -5,7 +5,7 @@
 #include "../components/common/SvgButton.hpp"
 #include "../state/TimelineController.hpp"
 #include "../state/TimelineEvents.hpp"
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "../themes/SmallButtonLookAndFeel.hpp"
 #include "AudioBridge.hpp"
@@ -101,7 +101,7 @@ class BottomPanel::PropsResizeHandle : public juce::Component {
     }
 
     void paint(juce::Graphics& g) override {
-        g.setColour(DarkTheme::getColour(DarkTheme::RESIZE_HANDLE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::RESIZE_HANDLE));
         g.fillAll();
     }
 
@@ -136,10 +136,10 @@ class BottomPanel::HeaderBar : public juce::Component {
     std::function<void()> onDoubleClick;
 
     void paint(juce::Graphics& g) override {
-        g.setColour(DarkTheme::getPanelBackgroundColour());
+        g.setColour(ActiveTheme::getPanelBackgroundColour());
         g.fillAll();
         // Bottom border
-        g.setColour(DarkTheme::getBorderColour());
+        g.setColour(ActiveTheme::getBorderColour());
         g.fillRect(0, getHeight() - 1, getWidth(), 1);
     }
 
@@ -231,8 +231,8 @@ BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
     propsCollapseButton_ = std::make_unique<SvgButton>("PropsCollapse", BinaryData::right_close_svg,
                                                        BinaryData::right_close_svgSize);
     propsCollapseButton_->setOriginalColor(juce::Colour(0xFFBCBCBC));
-    propsCollapseButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    propsCollapseButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    propsCollapseButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    propsCollapseButton_->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     propsCollapseButton_->setTooltip("Toggle properties panel");
     propsCollapseButton_->onClick = [this]() {
         propsPanelCollapsed_ = !propsPanelCollapsed_;
@@ -501,9 +501,9 @@ void BottomPanel::setupHeaderControls() {
     // Clip Inspector loop toggle (both drive the same clip loop). Green stays the
     // ruler's range-marker language.
     loopButton_->setOriginalColor(juce::Colour(0xFFBCBCBC));
-    loopButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    loopButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     loopButton_->setActiveColor(juce::Colours::white);
-    loopButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    loopButton_->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     loopButton_->setClickingTogglesState(false);  // manual active state
     loopButton_->onClick = [this]() {
         // Automation clip editor: loop lives on the automation clip (same
@@ -545,10 +545,10 @@ void BottomPanel::setupHeaderControls() {
     clipEnabledButton_ = std::make_unique<SvgButton>("ClipEnabled", BinaryData::power_svg,
                                                      BinaryData::power_svgSize);
     clipEnabledButton_->setTooltip("Enable/disable clip");
-    clipEnabledButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+    clipEnabledButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
     clipEnabledButton_->setActiveColor(juce::Colours::white);
     clipEnabledButton_->setActiveBackgroundColor(
-        DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).darker(0.3f));
+        ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).darker(0.3f));
     clipEnabledButton_->setClickingTogglesState(false);  // manual active state
     clipEnabledButton_->onClick = [this]() {
         const auto clipId = getActiveEditingClipId();
@@ -569,10 +569,10 @@ void BottomPanel::setupHeaderControls() {
     // Note slice button: one geometry, with pressed colour supplied in code.
     sliceButton_ = std::make_unique<SvgButton>("NoteSlice", BinaryData::note_slice_svg,
                                                BinaryData::note_slice_svgSize);
-    sliceButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
-                                            DarkTheme::ACCENT_INFO);
+    sliceButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
+                                            ActiveTheme::ACCENT_INFO);
     sliceButton_->setTooltip("Slice selected notes");
-    sliceButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    sliceButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     sliceButton_->setBorderThickness(1.0f);
     sliceButton_->setCornerRadius(3.0f);
     sliceButton_->onClick = [this]() {
@@ -596,10 +596,10 @@ void BottomPanel::setupHeaderControls() {
     // Time bend button: one geometry, with pressed colour supplied in code.
     bendButton_ = std::make_unique<SvgButton>("TimeBend", BinaryData::time_bend_svg,
                                               BinaryData::time_bend_svgSize);
-    bendButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
-                                           DarkTheme::ACCENT_INFO);
+    bendButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
+                                           ActiveTheme::ACCENT_INFO);
     bendButton_->setTooltip("Time Bend selected notes");
-    bendButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    bendButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     bendButton_->setBorderThickness(1.0f);
     bendButton_->setCornerRadius(3.0f);
     bendButton_->onClick = [this]() {
@@ -628,10 +628,10 @@ void BottomPanel::setupHeaderControls() {
 void BottomPanel::refreshHeaderControlColours() {
     // These are timing/quantize controls, so they follow the primary accent
     // (like the loop toggle beside them), not the modulation accent.
-    const auto surface = DarkTheme::getColour(DarkTheme::SURFACE).darker(0.2f);
-    const auto accentOn = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).darker(0.3f);
-    const auto textOff = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
+    const auto surface = ActiveTheme::getColour(ActiveTheme::SURFACE).darker(0.2f);
+    const auto accentOn = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).darker(0.3f);
+    const auto textOff = ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY);
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
 
     for (auto* button : {timeModeButton_.get(), autoGridButton_.get(), snapButton_.get()}) {
         if (button == nullptr)
@@ -685,7 +685,7 @@ void BottomPanel::paint(juce::Graphics& g) {
 
     // Sidebar column divider in header (for MIDI editor tab icons)
     if (hasHeader && showEditorTabs_) {
-        g.setColour(DarkTheme::getBorderColour());
+        g.setColour(ActiveTheme::getBorderColour());
         g.fillRect(SIDEBAR_WIDTH, 0, 1, HeaderBar::HEIGHT - 1);
 
         // Update bend button active state based on note selection
@@ -699,7 +699,7 @@ void BottomPanel::paint(juce::Graphics& g) {
     // Vertical border on the left of the collapsed side panel strip
     auto drawCollapsedBorder = [&](bool show, bool collapsed) {
         if (show && collapsed) {
-            g.setColour(DarkTheme::getBorderColour());
+            g.setColour(ActiveTheme::getBorderColour());
             int stripX = getWidth() - 28;
             int top = hasHeader ? HeaderBar::HEIGHT : 0;
             g.fillRect(stripX, top, 1, getHeight() - top);
@@ -970,8 +970,8 @@ void BottomPanel::ensureChordPanelCreated() {
     chordCollapseButton_ = std::make_unique<SvgButton>("ChordCollapse", BinaryData::right_close_svg,
                                                        BinaryData::right_close_svgSize);
     chordCollapseButton_->setOriginalColor(juce::Colour(0xFFBCBCBC));
-    chordCollapseButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    chordCollapseButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    chordCollapseButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    chordCollapseButton_->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     chordCollapseButton_->setTooltip("Toggle chord panel");
     chordCollapseButton_->onClick = [this]() {
         chordPanelCollapsed_ = !chordPanelCollapsed_;

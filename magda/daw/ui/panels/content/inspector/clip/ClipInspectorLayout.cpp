@@ -1,4 +1,4 @@
-#include "../../../../themes/DarkTheme.hpp"
+#include "../../../../themes/ActiveTheme.hpp"
 #include "../ClipInspector.hpp"
 
 namespace magda::daw::ui {
@@ -463,7 +463,7 @@ void ClipInspector::resized() {
 
 void ClipInspector::ClipPropsContainer::paint(juce::Graphics& g) {
     // Draw separator lines between sections
-    g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
     for (int y : separatorYPositions) {
         g.drawHorizontalLine(y, 0.0f, static_cast<float>(getWidth()));
     }

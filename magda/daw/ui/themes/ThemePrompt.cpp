@@ -1,6 +1,6 @@
 #include "ThemePrompt.hpp"
 
-#include "DarkTheme.hpp"
+#include "ActiveTheme.hpp"
 #include "ThemeSerialization.hpp"
 #include "UserTheme.hpp"
 

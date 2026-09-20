@@ -2,7 +2,7 @@
 
 #include "../../core/Config.hpp"
 #include "../../project/ProjectManager.hpp"
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
 #include "core/StringTable.hpp"
@@ -161,7 +161,7 @@ ExportAudioDialog::~ExportAudioDialog() {
 }
 
 void ExportAudioDialog::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
 }
 
 void ExportAudioDialog::lookAndFeelChanged() {
@@ -371,7 +371,7 @@ void ExportAudioDialog::showDialog(juce::Component* parent,
 
     juce::DialogWindow::LaunchOptions options;
     options.dialogTitle = tr("dialogs.export_audio");
-    options.dialogBackgroundColour = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+    options.dialogBackgroundColour = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
     options.content.setOwned(dialog);
     options.escapeKeyTriggersCloseButton = true;
     options.useNativeTitleBar = true;

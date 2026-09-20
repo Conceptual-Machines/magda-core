@@ -19,7 +19,7 @@
 #include "modulation/MacroPanelComponent.hpp"
 #include "modulation/ModsPanelComponent.hpp"
 #include "modulation/ModulatorEditorPanel.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
@@ -53,8 +53,8 @@ juce::Image createChainNodeDragImage(const juce::String& label, int itemCount) {
     juce::Graphics g(image);
 
     auto bounds = image.getBounds().toFloat().reduced(1.0f);
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
-    const auto bg = DarkTheme::getColour(DarkTheme::SURFACE).withAlpha(0.92f);
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
+    const auto bg = ActiveTheme::getColour(ActiveTheme::SURFACE).withAlpha(0.92f);
 
     g.setColour(bg);
     g.fillRoundedRectangle(bounds, 6.0f);
@@ -213,10 +213,10 @@ NodeComponent::NodeComponent() {
                                                        BinaryData::power_svgSize);
     bypassButton_->setClickingTogglesState(true);
     bypassButton_->setOriginalColor(juce::Colour(0xFFE6E6E6));
-    bypassButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+    bypassButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
     bypassButton_->setActiveColor(juce::Colours::white);
     bypassButton_->setActiveBackgroundColor(
-        DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).darker(0.3f));
+        ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).darker(0.3f));
     bypassButton_->setActive(true);  // Default: not bypassed = active
     bypassButton_->onClick = [this]() {
         bool bypassed = !bypassButton_->getToggleState();  // Toggle OFF = bypassed
@@ -229,7 +229,7 @@ NodeComponent::NodeComponent() {
 
     // Name label - clicks pass through for selection
     nameLabel_.setFont(FontManager::getInstance().getUIFontBold(10.0f));
-    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     nameLabel_.setJustificationType(juce::Justification::centredLeft);
     nameLabel_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(nameLabel_);
@@ -238,8 +238,8 @@ NodeComponent::NodeComponent() {
     deleteButton_.setButtonText(juce::String::fromUTF8("\xc3\x97"));  // × symbol
     deleteButton_.setColour(
         juce::TextButton::buttonColourId,
-        DarkTheme::getColour(DarkTheme::ACCENT_MODULATION)
-            .interpolatedWith(DarkTheme::getColour(DarkTheme::STATUS_ERROR), 0.5f)
+        ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION)
+            .interpolatedWith(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR), 0.5f)
             .darker(0.2f));
     deleteButton_.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     deleteButton_.onClick = [this]() {
@@ -254,9 +254,9 @@ NodeComponent::NodeComponent() {
     for (auto& modSlotButton : modSlotButtons_) {
         modSlotButton = std::make_unique<juce::TextButton>("+");
         modSlotButton->setColour(juce::TextButton::buttonColourId,
-                                 DarkTheme::getColour(DarkTheme::SURFACE));
+                                 ActiveTheme::getColour(ActiveTheme::SURFACE));
         modSlotButton->setColour(juce::TextButton::textColourOffId,
-                                 DarkTheme::getSecondaryTextColour());
+                                 ActiveTheme::getSecondaryTextColour());
         modSlotButton->onClick = [this, &modSlotButton]() {
             juce::PopupMenu menu;
             menu.addItem(1, "LFO");
@@ -281,9 +281,9 @@ NodeComponent::NodeComponent() {
         knob->setRange(0.0, 1.0, 0.01);
         knob->setValue(0.5);
         knob->setColour(juce::Slider::rotarySliderFillColourId,
-                        DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+                        ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
         knob->setColour(juce::Slider::rotarySliderOutlineColourId,
-                        DarkTheme::getColour(DarkTheme::SURFACE));
+                        ActiveTheme::getColour(ActiveTheme::SURFACE));
         addChildComponent(*knob);
         paramKnobs_.push_back(std::move(knob));
     }
@@ -296,26 +296,26 @@ NodeComponent::~NodeComponent() {
 }
 
 void NodeComponent::lookAndFeelChanged() {
-    bypassButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+    bypassButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
     bypassButton_->setActiveBackgroundColor(
-        DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).darker(0.3f));
-    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).darker(0.3f));
+    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     deleteButton_.setColour(
         juce::TextButton::buttonColourId,
-        DarkTheme::getColour(DarkTheme::ACCENT_MODULATION)
-            .interpolatedWith(DarkTheme::getColour(DarkTheme::STATUS_ERROR), 0.5f)
+        ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION)
+            .interpolatedWith(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR), 0.5f)
             .darker(0.2f));
 
     for (auto& button : modSlotButtons_) {
         button->setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
-        button->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+                          ActiveTheme::getColour(ActiveTheme::SURFACE));
+        button->setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
     }
     for (auto& knob : paramKnobs_) {
         knob->setColour(juce::Slider::rotarySliderFillColourId,
-                        DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+                        ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
         knob->setColour(juce::Slider::rotarySliderOutlineColourId,
-                        DarkTheme::getColour(DarkTheme::SURFACE));
+                        ActiveTheme::getColour(ActiveTheme::SURFACE));
     }
     repaint();
 }
@@ -331,9 +331,9 @@ void NodeComponent::paint(juce::Graphics& g) {
             auto paramArea = bounds.removeFromLeft(getParamPanelWidth());
             g.saveState();
             g.setOpacity(paramPanelAlpha_);
-            g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.02f));
             g.fillRect(paramArea);
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
             g.drawRect(paramArea);
             paintParamPanel(g, paramArea);
             g.restoreState();
@@ -343,9 +343,9 @@ void NodeComponent::paint(juce::Graphics& g) {
         int extraRightWidthCollapsed = getExtraRightPanelWidth();
         if (extraRightWidthCollapsed > 0) {
             auto extraRightArea = bounds.removeFromLeft(extraRightWidthCollapsed);
-            g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.02f));
             g.fillRect(extraRightArea);
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
             g.drawRect(extraRightArea);
             paintExtraRightPanel(g, extraRightArea);
         }
@@ -354,9 +354,9 @@ void NodeComponent::paint(juce::Graphics& g) {
             auto modArea = bounds.removeFromLeft(getModPanelWidth());
             g.saveState();
             g.setOpacity(modPanelAlpha_);
-            g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.02f));
             g.fillRect(modArea);
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
             g.drawRect(modArea);
             paintModPanel(g, modArea);
             g.restoreState();
@@ -366,9 +366,9 @@ void NodeComponent::paint(juce::Graphics& g) {
         int extraWidthCollapsed = getExtraLeftPanelWidth();
         if (extraWidthCollapsed > 0) {
             auto extraArea = bounds.removeFromLeft(extraWidthCollapsed);
-            g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.02f));
             g.fillRect(extraArea);
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
             g.drawRect(extraArea);
             paintExtraLeftPanel(g, extraArea);
         }
@@ -376,9 +376,9 @@ void NodeComponent::paint(juce::Graphics& g) {
         // AI panel - after mod editor, before main content
         if (aiPanelVisible_) {
             auto aiArea = bounds.removeFromLeft(getAIPanelWidth());
-            g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.02f));
             g.fillRect(aiArea);
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
             g.drawRect(aiArea);
             paintAIPanel(g, aiArea);
         }
@@ -386,25 +386,25 @@ void NodeComponent::paint(juce::Graphics& g) {
         // === RIGHT SIDE PANEL (even when collapsed) ===
         if (gainPanelVisible_) {
             auto gainArea = bounds.removeFromRight(getGainPanelWidth());
-            g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.02f));
             g.fillRect(gainArea);
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
             g.drawRect(gainArea);
             paintGainPanel(g, gainArea);
         }
 
         // === COLLAPSED MAIN STRIP (remaining bounds) ===
         // Background
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.03f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.03f));
         g.fillRoundedRectangle(bounds.toFloat(), 4.0f);
 
         // Border
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRoundedRectangle(bounds.toFloat(), 4.0f, 1.0f);
 
         // Draw name vertically (rotated 90 degrees) in the text area below buttons
         g.saveState();
-        g.setColour(DarkTheme::getTextColour());
+        g.setColour(ActiveTheme::getTextColour());
         g.setFont(FontManager::getInstance().getUIFontBold(10.0f));
 
         auto center = collapsedTextArea_.getCentre().toFloat();
@@ -427,9 +427,9 @@ void NodeComponent::paint(juce::Graphics& g) {
         auto paramArea = bounds.removeFromLeft(getParamPanelWidth());
         g.saveState();
         g.setOpacity(paramPanelAlpha_);
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.02f));
         g.fillRect(paramArea);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRect(paramArea);
         paintParamPanel(g, paramArea);
         g.restoreState();
@@ -439,9 +439,9 @@ void NodeComponent::paint(juce::Graphics& g) {
     int extraRightWidth = getExtraRightPanelWidth();
     if (extraRightWidth > 0) {
         auto extraRightArea = bounds.removeFromLeft(extraRightWidth);
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.02f));
         g.fillRect(extraRightArea);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRect(extraRightArea);
         paintExtraRightPanel(g, extraRightArea);
     }
@@ -450,9 +450,9 @@ void NodeComponent::paint(juce::Graphics& g) {
         auto modArea = bounds.removeFromLeft(getModPanelWidth());
         g.saveState();
         g.setOpacity(modPanelAlpha_);
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.02f));
         g.fillRect(modArea);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRect(modArea);
         paintModPanel(g, modArea);
         g.restoreState();
@@ -462,9 +462,9 @@ void NodeComponent::paint(juce::Graphics& g) {
     int extraWidth = getExtraLeftPanelWidth();
     if (extraWidth > 0) {
         auto extraArea = bounds.removeFromLeft(extraWidth);
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.02f));
         g.fillRect(extraArea);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRect(extraArea);
         paintExtraLeftPanel(g, extraArea);
     }
@@ -472,9 +472,9 @@ void NodeComponent::paint(juce::Graphics& g) {
     // AI panel — sits between the mod editor and the main content
     if (aiPanelVisible_) {
         auto aiArea = bounds.removeFromLeft(getAIPanelWidth());
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.02f));
         g.fillRect(aiArea);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRect(aiArea);
         paintAIPanel(g, aiArea);
     }
@@ -482,20 +482,20 @@ void NodeComponent::paint(juce::Graphics& g) {
     // === RIGHT SIDE PANEL: [Gain] (squared corners) ===
     if (gainPanelVisible_) {
         auto gainArea = bounds.removeFromRight(getGainPanelWidth());
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.02f));
         g.fillRect(gainArea);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRect(gainArea);
         paintGainPanel(g, gainArea);
     }
 
     // === MAIN NODE AREA (remaining bounds) ===
     // Background
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.03f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.03f));
     g.fillRoundedRectangle(bounds.toFloat(), 4.0f);
 
     // Border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRoundedRectangle(bounds.toFloat(), 4.0f, 1.0f);
 
     // Header separator (only if header visible)
@@ -539,12 +539,12 @@ void NodeComponent::paintOverChildren(juce::Graphics& g) {
             float y = anchor.y - dotSize * 0.5f;
 
             if (hasAutomapBindings_) {
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.95f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.95f));
                 g.fillEllipse(x, y, dotSize, dotSize);
                 x += dotSize + gapBetweenDots;
             }
             if (hasPinnedBindings_) {
-                g.setColour(DarkTheme::getColour(DarkTheme::MIDI_LEARN).withAlpha(0.9f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_LEARN).withAlpha(0.9f));
                 g.fillEllipse(x, y, dotSize, dotSize);
             }
         }
@@ -552,7 +552,7 @@ void NodeComponent::paintOverChildren(juce::Graphics& g) {
 
     // Selection border (over everything including side panels)
     if (selected_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_SCALE_TEXT));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_SCALE_TEXT));
         g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 4.0f, 2.0f);
     }
 }
@@ -966,13 +966,13 @@ int NodeComponent::getExtraRightPanelWidth() const {
 void NodeComponent::paintModPanel(juce::Graphics& g, juce::Rectangle<int> panelArea) {
     // If we have a real mods panel, just draw the header
     if (modsPanel_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
         g.setFont(FontManager::getInstance().getUIFontBold(9.0f));
         g.drawText("MODS", panelArea.removeFromTop(16), juce::Justification::centred);
         return;
     }
     // Default: draw labeled placeholder (vertical side panel)
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
     g.setFont(FontManager::getInstance().getUIFont(8.0f));
     g.drawText("MOD", panelArea.removeFromTop(16), juce::Justification::centred);
 }
@@ -980,7 +980,7 @@ void NodeComponent::paintModPanel(juce::Graphics& g, juce::Rectangle<int> panelA
 void NodeComponent::paintExtraLeftPanel(juce::Graphics& g, juce::Rectangle<int> panelArea) {
     // Draw modulator editor panel header if visible
     if (modulatorEditorVisible_ && modulatorEditorPanel_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).darker(0.2f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).darker(0.2f));
         g.setFont(FontManager::getInstance().getUIFontBold(9.0f));
         g.drawText("MOD EDIT", panelArea.removeFromTop(16), juce::Justification::centred);
     }
@@ -989,13 +989,13 @@ void NodeComponent::paintExtraLeftPanel(juce::Graphics& g, juce::Rectangle<int> 
 void NodeComponent::paintParamPanel(juce::Graphics& g, juce::Rectangle<int> panelArea) {
     // If we have a real macros panel, just draw the header
     if (macroPanel_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
         g.setFont(FontManager::getInstance().getUIFontBold(9.0f));
         g.drawText("MACROS", panelArea.removeFromTop(16), juce::Justification::centred);
         return;
     }
     // Default: draw labeled placeholder (vertical side panel)
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
     g.setFont(FontManager::getInstance().getUIFont(8.0f));
     g.drawText("PRM", panelArea.removeFromTop(16), juce::Justification::centred);
 }
@@ -1005,7 +1005,7 @@ void NodeComponent::paintGainPanel(juce::Graphics& g, juce::Rectangle<int> panel
     auto meterArea = panelArea.reduced(4, 8);
 
     // Meter background
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     g.fillRoundedRectangle(meterArea.toFloat(), 2.0f);
 
     // Mock meter fill (would be driven by actual audio level)
@@ -1014,16 +1014,16 @@ void NodeComponent::paintGainPanel(juce::Graphics& g, juce::Rectangle<int> panel
     auto fillArea = meterArea.removeFromBottom(fillHeight);
 
     // Gradient from green to yellow to red
-    juce::ColourGradient gradient(DarkTheme::getColour(DarkTheme::GAIN_METER_LOW), 0.0f,
+    juce::ColourGradient gradient(ActiveTheme::getColour(ActiveTheme::GAIN_METER_LOW), 0.0f,
                                   static_cast<float>(meterArea.getBottom()),
-                                  DarkTheme::getColour(DarkTheme::GAIN_METER_HIGH), 0.0f,
+                                  ActiveTheme::getColour(ActiveTheme::GAIN_METER_HIGH), 0.0f,
                                   static_cast<float>(meterArea.getY()), false);
-    gradient.addColour(0.7, DarkTheme::getColour(DarkTheme::GAIN_METER_WARNING));
+    gradient.addColour(0.7, ActiveTheme::getColour(ActiveTheme::GAIN_METER_WARNING));
     g.setGradientFill(gradient);
     g.fillRect(fillArea);
 
     // Border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRoundedRectangle(panelArea.reduced(4, 8).toFloat(), 2.0f, 1.0f);
 }
 
@@ -1103,7 +1103,7 @@ void NodeComponent::paintAIPanel(juce::Graphics& g, juce::Rectangle<int> panelAr
     // Header label — the AIPanelComponent (when mounted) draws the input/
     // output below this strip; resizedAIPanel positions it skipping the 16px
     // header band.
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     g.setFont(FontManager::getInstance().getUIFontBold(9.0f));
     g.drawText("AI", panelArea.removeFromTop(16), juce::Justification::centred);
 }
@@ -1119,7 +1119,7 @@ void NodeComponent::resizedAIPanel(juce::Rectangle<int> panelArea) {
 void NodeComponent::paintExtraRightPanel(juce::Graphics& g, juce::Rectangle<int> panelArea) {
     // Draw macro editor panel header if visible
     if (macroEditorVisible_ && macroEditorPanel_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).darker(0.2f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).darker(0.2f));
         g.setFont(FontManager::getInstance().getUIFontBold(9.0f));
         g.drawText("MACRO EDIT", panelArea.removeFromTop(16), juce::Justification::centred);
     }

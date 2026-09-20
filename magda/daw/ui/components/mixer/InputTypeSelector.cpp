@@ -1,6 +1,6 @@
 #include "InputTypeSelector.hpp"
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 
 namespace magda {
@@ -19,7 +19,7 @@ void InputTypeSelector::paint(juce::Graphics& g) {
     auto audioActiveColour =
         juce::Colour(0xFF446644);  // Green tint (matches RoutingSelector AudioIn)
     auto midiActiveColour = juce::Colour(0xFF446666);  // Cyan tint (matches RoutingSelector MidiIn)
-    auto inactiveColour = DarkTheme::getColour(DarkTheme::BUTTON_NORMAL);
+    auto inactiveColour = ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL);
 
     // Audio segment
     auto audioBg = isAudio ? audioActiveColour : inactiveColour;
@@ -40,7 +40,7 @@ void InputTypeSelector::paint(juce::Graphics& g) {
     g.fillRect(midiArea);
 
     // Separator line between segments
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawLine(midiArea.getX(), midiArea.getY() + 2, midiArea.getX(), midiArea.getBottom() - 2,
                1.0f);
 
@@ -48,8 +48,8 @@ void InputTypeSelector::paint(juce::Graphics& g) {
     auto font = FontManager::getInstance().getUIFont(9.0f);
     g.setFont(font);
 
-    auto textColour = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
-    auto dimTextColour = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+    auto textColour = ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY);
+    auto dimTextColour = ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY);
 
     g.setColour(isAudio ? textColour : dimTextColour);
     g.drawText("A", audioArea, juce::Justification::centred, false);
@@ -58,7 +58,7 @@ void InputTypeSelector::paint(juce::Graphics& g) {
     g.drawText("M", midiArea, juce::Justification::centred, false);
 
     // Border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(getLocalBounds().toFloat(), 1.0f);
 }
 

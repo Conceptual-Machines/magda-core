@@ -4,7 +4,7 @@
 
 #include <cmath>
 
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "core/ClipManager.hpp"
 
@@ -250,7 +250,7 @@ class ClipSlotButton : public juce::TextButton {
             const bool stoppedCue =
                 isSelected || clipHasLaunchIntent || clipIsPlaying || clipIsQueued;
             const auto iconColour =
-                running      ? DarkTheme::getColour(DarkTheme::ACCENT_INFO)
+                running      ? ActiveTheme::getColour(ActiveTheme::ACCENT_INFO)
                 : stoppedCue ? (isSelected ? juce::Colour(0xFFA0A0A0) : juce::Colour(0xFF505050))
                              : juce::Colours::black;
 
@@ -301,7 +301,7 @@ class ClipSlotButton : public juce::TextButton {
 
             if (trackIsRecordArmed) {
                 float radius = 5.0f;
-                auto recordColour = DarkTheme::getColour(DarkTheme::STATUS_DANGER);
+                auto recordColour = ActiveTheme::getColour(ActiveTheme::STATUS_DANGER);
 
                 if (slotIsRecording) {
                     auto contentArea = getLocalBounds().withTrimmedLeft(PLAY_BUTTON_WIDTH);
@@ -382,7 +382,7 @@ class SceneButton : public juce::TextButton {
             triangle.addTriangle(centre.getX() - size * 0.7f, centre.getY() - size,
                                  centre.getX() - size * 0.7f, centre.getY() + size,
                                  centre.getX() + size, centre.getY());
-            g.setColour(hasAnyPlaying ? DarkTheme::getColour(DarkTheme::ACCENT_INFO)
+            g.setColour(hasAnyPlaying ? ActiveTheme::getColour(ActiveTheme::ACCENT_INFO)
                                       : juce::Colours::white);
             g.fillPath(triangle);
         } else {
@@ -511,14 +511,14 @@ class MiniDbScale : public juce::Component {
                 continue;
             lastDrawnY = y;
 
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
             g.fillRect(0.0f, y - 0.5f, 2.0f, 1.0f);
             g.fillRect(width - 2.0f, y - 0.5f, 2.0f, 1.0f);
 
             int dbInt = static_cast<int>(db);
             juce::String text = juce::String(std::abs(dbInt));
 
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
             g.drawText(text, 0, static_cast<int>(y - labelH / 2.0f), static_cast<int>(width),
                        static_cast<int>(labelH), juce::Justification::centred, false);
         }

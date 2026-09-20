@@ -4,7 +4,7 @@
 
 #include "../../audio/AudioThumbnailManager.hpp"
 #include "../state/TimelineController.hpp"
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "BinaryData.h"
 #include "core/ClipDisplayInfo.hpp"
@@ -25,17 +25,17 @@ class SessionClipEditor::WaveformDisplay : public juce::Component {
         auto bounds = getLocalBounds();
 
         // Background
-        g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
+        g.fillAll(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
 
         // Border
-        g.setColour(DarkTheme::getBorderColour());
+        g.setColour(ActiveTheme::getBorderColour());
         g.drawRect(bounds, 1);
 
         // Get clip info
         const auto* clip = ClipManager::getInstance().getClip(clipId_);
         if (!clip || !clip->isAudio() || magda::audioEventRef(*clip).sourceFilePath().isEmpty()) {
             // No waveform to show
-            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.setColour(ActiveTheme::getSecondaryTextColour());
             g.setFont(FontManager::getInstance().getUIFont(14.0f));
             g.drawText("No audio source", bounds, juce::Justification::centred);
             return;
@@ -63,7 +63,7 @@ class SessionClipEditor::WaveformDisplay : public juce::Component {
             double endTime = di.sourceFileEnd;
 
             // Draw waveform
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
             thumbnail->drawChannels(g, waveformBounds, startTime, endTime, 1.0f);
 
             if (magda::audioEventRef(*clip).reversed && di.fileExtentTimeline() > 0.0 &&
@@ -114,10 +114,11 @@ class SessionClipEditor::WaveformDisplay : public juce::Component {
                                                     loopEndX - loopStartX,
                                                     waveformBounds.getHeight());
 
-                    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.2f));
+                    g.setColour(
+                        ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.2f));
                     g.fillRect(loopRegion);
 
-                    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
                     g.drawVerticalLine(loopStartX, waveformBounds.getY(),
                                        waveformBounds.getBottom());
                     g.drawVerticalLine(loopEndX, waveformBounds.getY(), waveformBounds.getBottom());
@@ -130,7 +131,7 @@ class SessionClipEditor::WaveformDisplay : public juce::Component {
             }
         } else {
             // Waveform loading
-            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.setColour(ActiveTheme::getSecondaryTextColour());
             g.setFont(FontManager::getInstance().getUIFont(14.0f));
             g.drawText("Loading waveform...", bounds, juce::Justification::centred);
         }
@@ -178,7 +179,7 @@ void SessionClipEditor::setupHeader() {
     // Clip name label
     clipNameLabel_ = std::make_unique<juce::Label>();
     clipNameLabel_->setFont(FontManager::getInstance().getUIFontBold(16.0f));
-    clipNameLabel_->setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    clipNameLabel_->setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     clipNameLabel_->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(*clipNameLabel_);
 
@@ -208,15 +209,15 @@ void SessionClipEditor::setupHeader() {
     // Length label
     lengthLabel_ = std::make_unique<juce::Label>();
     lengthLabel_->setFont(FontManager::getInstance().getUIFont(12.0f));
-    lengthLabel_->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    lengthLabel_->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     lengthLabel_->setJustificationType(juce::Justification::centredRight);
     addAndMakeVisible(*lengthLabel_);
 
     // Close button
     closeButton_ = std::make_unique<juce::TextButton>(juce::String::fromUTF8("✕"));
     closeButton_->setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    closeButton_->setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+                            ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
+    closeButton_->setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
     closeButton_->onClick = [this]() {
         if (onCloseRequested)
             onCloseRequested();
@@ -234,7 +235,7 @@ void SessionClipEditor::setupFooter() {
     offsetLabel_ = std::make_unique<juce::Label>();
     offsetLabel_->setText("Offset (s):", juce::dontSendNotification);
     offsetLabel_->setFont(FontManager::getInstance().getUIFont(12.0f));
-    offsetLabel_->setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    offsetLabel_->setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     offsetLabel_->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(*offsetLabel_);
 
@@ -243,14 +244,14 @@ void SessionClipEditor::setupFooter() {
         std::make_unique<juce::Slider>(juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight);
     offsetSlider_->setRange(0.0, 60.0, 0.01);  // 0-60 seconds
     offsetSlider_->setColour(juce::Slider::backgroundColourId,
-                             DarkTheme::getColour(DarkTheme::SURFACE));
+                             ActiveTheme::getColour(ActiveTheme::SURFACE));
     offsetSlider_->setColour(juce::Slider::thumbColourId,
-                             DarkTheme::getColour(DarkTheme::CONTROL_SLIDER_THUMB));
+                             ActiveTheme::getColour(ActiveTheme::CONTROL_SLIDER_THUMB));
     offsetSlider_->setColour(juce::Slider::trackColourId,
-                             DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
-    offsetSlider_->setColour(juce::Slider::textBoxTextColourId, DarkTheme::getTextColour());
+                             ActiveTheme::getColour(ActiveTheme::CONTROL_VALUE_FILL));
+    offsetSlider_->setColour(juce::Slider::textBoxTextColourId, ActiveTheme::getTextColour());
     offsetSlider_->setColour(juce::Slider::textBoxBackgroundColourId,
-                             DarkTheme::getColour(DarkTheme::SURFACE));
+                             ActiveTheme::getColour(ActiveTheme::SURFACE));
     offsetSlider_->onValueChange = [this]() {
         UndoManager::getInstance().executeCommand(
             std::make_unique<SetClipOffsetCommand>(clipId_, offsetSlider_->getValue()));
@@ -263,16 +264,16 @@ void SessionClipEditor::setupFooter() {
 }
 
 void SessionClipEditor::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
 
     // Draw header background
     auto headerBounds = getLocalBounds().removeFromTop(HEADER_HEIGHT);
-    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
     g.fillRect(headerBounds);
 
     // Draw footer background
     auto footerBounds = getLocalBounds().withTop(getHeight() - FOOTER_HEIGHT);
-    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
     g.fillRect(footerBounds);
 }
 
@@ -368,7 +369,7 @@ void SessionClipEditor::updateControls() {
 // ============================================================================
 
 SessionClipEditorWindow::SessionClipEditorWindow(ClipId clipId, const juce::String& clipName)
-    : DocumentWindow("Edit Clip: " + clipName, DarkTheme::getColour(DarkTheme::BACKGROUND),
+    : DocumentWindow("Edit Clip: " + clipName, ActiveTheme::getColour(ActiveTheme::BACKGROUND),
                      DocumentWindow::closeButton) {
     setUsingNativeTitleBar(true);
 
@@ -392,7 +393,7 @@ void SessionClipEditorWindow::closeButtonPressed() {
 
 void SessionClipEditorWindow::lookAndFeelChanged() {
     juce::DocumentWindow::lookAndFeelChanged();
-    setBackgroundColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    setBackgroundColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
 }
 
 }  // namespace magda

@@ -8,8 +8,8 @@
 
 #include "../../state/TimelineController.hpp"
 #include "../../state/TimelineEvents.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/CursorManager.hpp"
-#include "../../themes/DarkTheme.hpp"
 #include "../../utils/SelectionPolicy.hpp"
 #include "../../windows/CommandIDs.hpp"
 #include "PhaseMarker.hpp"
@@ -116,7 +116,7 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
 
         // Dim everything outside selected clip regions
         if (!selectedRegions.empty()) {
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DARK).withAlpha(0x20 / 255.0f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DARK).withAlpha(0x20 / 255.0f));
             int prevEnd = bounds.getX();
             std::ranges::sort(selectedRegions, {}, &ClipRegion::startX);
             for (const auto& region : selectedRegions) {
@@ -134,13 +134,13 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
         // Clip start boundary
         int clipStartX = beatToPixel(clipStartBeats_);
         if (clipStartX >= 0 && clipStartX <= bounds.getRight()) {
-            g.setColour(DarkTheme::getColour(DarkTheme::CLIP_BOUNDARY));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::CLIP_BOUNDARY));
             g.fillRect(clipStartX - 1, 0, 2, bounds.getHeight());
         }
 
         // Dim area before clip start
         if (clipStartX > bounds.getX()) {
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DARK).withAlpha(0x60 / 255.0f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DARK).withAlpha(0x60 / 255.0f));
             g.fillRect(bounds.getX(), bounds.getY(), clipStartX - bounds.getX(),
                        bounds.getHeight());
         }
@@ -149,12 +149,13 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
         if (!loopEnabled_) {
             int clipEndX = beatToPixel(clipStartBeats_ + clipLengthBeats_);
             if (clipEndX >= 0 && clipEndX <= bounds.getRight()) {
-                g.setColour(DarkTheme::getColour(DarkTheme::CLIP_BOUNDARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::CLIP_BOUNDARY));
                 g.fillRect(clipEndX - 1, 0, 2, bounds.getHeight());
             }
 
             if (clipEndX < bounds.getRight()) {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DARK).withAlpha(0x60 / 255.0f));
+                g.setColour(
+                    ActiveTheme::getColour(ActiveTheme::TEXT_DARK).withAlpha(0x60 / 255.0f));
                 g.fillRect(clipEndX, bounds.getY(), bounds.getRight() - clipEndX,
                            bounds.getHeight());
             }
@@ -164,12 +165,13 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
         if (!loopEnabled_) {
             int clipEndX = beatToPixel(clipLengthBeats_);
             if (clipEndX >= 0 && clipEndX <= bounds.getRight()) {
-                g.setColour(DarkTheme::getColour(DarkTheme::CLIP_BOUNDARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::CLIP_BOUNDARY));
                 g.fillRect(clipEndX - 1, 0, 2, bounds.getHeight());
             }
 
             if (clipEndX < bounds.getRight()) {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DARK).withAlpha(0x60 / 255.0f));
+                g.setColour(
+                    ActiveTheme::getColour(ActiveTheme::TEXT_DARK).withAlpha(0x60 / 255.0f));
                 g.fillRect(clipEndX, bounds.getY(), bounds.getRight() - clipEndX,
                            bounds.getHeight());
             }
@@ -211,7 +213,7 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
     // Draw chord drop preview (vertical line during DnD drag)
     if (chordDropActive_) {
         int lineX = beatToPixel(chordDropBeat_);
-        g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_CHORD_PREVIEW).withAlpha(0.8f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_CHORD_PREVIEW).withAlpha(0.8f));
         g.drawLine(static_cast<float>(lineX), 0.f, static_cast<float>(lineX),
                    static_cast<float>(bounds.getHeight()), 2.0f);
     }
@@ -223,19 +225,21 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
 
         // Draw the span region
         if (endX > startX) {
-            g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_CHORD_PREVIEW).withAlpha(0.12f));
+            g.setColour(
+                ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_CHORD_PREVIEW).withAlpha(0.12f));
             g.fillRect(startX, 0, endX - startX, bounds.getHeight());
         }
 
         // Draw blinking start line
         float alpha = pendingChord_.blinkOn ? 0.9f : 0.3f;
-        g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_CHORD_PREVIEW).withAlpha(alpha));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_CHORD_PREVIEW).withAlpha(alpha));
         g.drawLine(static_cast<float>(startX), 0.f, static_cast<float>(startX),
                    static_cast<float>(bounds.getHeight()), 2.0f);
 
         // Draw end line at mouse position
         if (endX > startX + 2) {
-            g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_CHORD_PREVIEW).withAlpha(0.5f));
+            g.setColour(
+                ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_CHORD_PREVIEW).withAlpha(0.5f));
             g.drawLine(static_cast<float>(endX), 0.f, static_cast<float>(endX),
                        static_cast<float>(bounds.getHeight()), 1.0f);
         }
@@ -281,12 +285,12 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
         double displayBeat = relativeMode_ ? (cursorBeats - clipStartBeats_) : cursorBeats;
         int cursorX = beatToPixel(displayBeat);
         if (cursorX >= 0 && cursorX <= bounds.getRight()) {
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DARK).withAlpha(0.5f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DARK).withAlpha(0.5f));
             g.drawLine(static_cast<float>(cursorX - 1), 0.f, static_cast<float>(cursorX - 1),
                        static_cast<float>(bounds.getHeight()), 1.f);
             g.drawLine(static_cast<float>(cursorX + 1), 0.f, static_cast<float>(cursorX + 1),
                        static_cast<float>(bounds.getHeight()), 1.f);
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT));
             g.drawLine(static_cast<float>(cursorX), 0.f, static_cast<float>(cursorX),
                        static_cast<float>(bounds.getHeight()), 2.f);
         }
@@ -296,7 +300,7 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
     {
         int playheadX = 0;
         if (getPlayheadDisplayX(playheadX) && playheadX >= 0 && playheadX <= bounds.getRight()) {
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
             g.fillRect(playheadX - 1, 0, 2, bounds.getHeight());
         }
     }
@@ -304,11 +308,11 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
     // Draw rubber band selection rectangle
     if (isDragSelecting_) {
         auto selectionRect = juce::Rectangle<int>(dragSelectStart_, dragSelectEnd_).toFloat();
-        g.setColour(
-            DarkTheme::getColour(DarkTheme::PIANO_ROLL_PITCH_HIGHLIGHT).withAlpha(0x30 / 255.0f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_PITCH_HIGHLIGHT)
+                        .withAlpha(0x30 / 255.0f));
         g.fillRect(selectionRect);
-        g.setColour(
-            DarkTheme::getColour(DarkTheme::PIANO_ROLL_PITCH_HIGHLIGHT).withAlpha(0xAA / 255.0f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_PITCH_HIGHLIGHT)
+                        .withAlpha(0xAA / 255.0f));
         g.drawRect(selectionRect, 1.0f);
     }
 }
@@ -431,7 +435,7 @@ void PianoRollGridComponent::paintOverlayNotes(juce::Graphics& g) {
 
 void PianoRollGridComponent::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
     // Background - match the white key color from keyboard
-    g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_GRID_BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_GRID_BACKGROUND));
     g.fillRect(area);
 
     // Use the full timeline length for drawing grid lines
@@ -452,14 +456,14 @@ void PianoRollGridComponent::paintGrid(juce::Graphics& g, juce::Rectangle<int> a
 
         // Black key rows are darker
         if (isBlackKey(noteForRow(row))) {
-            g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_GRID_BLACK_KEY));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_GRID_BLACK_KEY));
             g.fillRect(gridArea.getX(), y, gridArea.getWidth(), noteHeight_);
         }
     }
 
     if (!selectedPitchRows_.empty()) {
-        g.setColour(
-            DarkTheme::getColour(DarkTheme::PIANO_ROLL_PITCH_HIGHLIGHT).withAlpha(0x55 / 255.0f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_PITCH_HIGHLIGHT)
+                        .withAlpha(0x55 / 255.0f));
         for (int note : selectedPitchRows_) {
             int y = noteNumberToY(note);
             if (y + noteHeight_ < area.getY() || y > area.getBottom())
@@ -470,13 +474,13 @@ void PianoRollGridComponent::paintGrid(juce::Graphics& g, juce::Rectangle<int> a
 
     // Fill left padding area with solid panel background (covers the alternating rows)
     if (leftPadding_ > 0) {
-        g.setColour(DarkTheme::getPanelBackgroundColour());
+        g.setColour(ActiveTheme::getPanelBackgroundColour());
         g.fillRect(area.getX(), area.getY(), leftPadding_, area.getHeight());
     }
 
     // Draw horizontal grid lines at each row boundary (at bottom of each row, -1 to match
     // keyboard)
-    g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_GRID_SUBDIVISION));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_GRID_SUBDIVISION));
     for (int row = 0; row < rows; row++) {
         int y = row * noteHeight_ + noteHeight_ - 1;
         if (y >= area.getY() && y <= area.getBottom()) {
@@ -504,7 +508,7 @@ void PianoRollGridComponent::paintBeatLines(juce::Graphics& g, juce::Rectangle<i
     // Pass 1: Subdivision lines at grid resolution (finest, drawn first)
     // Use integer counter to avoid floating-point drift (important for triplets etc.)
     {
-        g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_GRID_SUBDIVISION));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_GRID_SUBDIVISION));
         int numLines = static_cast<int>(std::ceil(lengthBeats / gridRes));
         for (int i = 0; i <= numLines; i++) {
             double beat = i * gridRes;
@@ -521,7 +525,7 @@ void PianoRollGridComponent::paintBeatLines(juce::Graphics& g, juce::Rectangle<i
     }
 
     // Pass 2: Beat lines (always visible)
-    g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_GRID_BEAT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_GRID_BEAT));
     for (int b = 1; b <= static_cast<int>(lengthBeats); b++) {
         // Skip bar boundaries (drawn in pass 3)
         if (b % tsNum == 0)
@@ -532,7 +536,7 @@ void PianoRollGridComponent::paintBeatLines(juce::Graphics& g, juce::Rectangle<i
     }
 
     // Pass 3: Bar lines (brightest, always visible, drawn last)
-    g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_GRID_BAR));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_GRID_BAR));
     for (int bar = 0; bar * tsNum <= static_cast<int>(lengthBeats); bar++) {
         int x = beatToPixel(static_cast<double>(bar * tsNum));
         if (x >= left && x <= right)
@@ -2547,13 +2551,13 @@ bool PianoRollGridComponent::isBlackKey(int noteNumber) {
 
 juce::Colour PianoRollGridComponent::getClipColour() const {
     const auto* clip = ClipManager::getInstance().getClip(clipId_);
-    return clip ? clip->colour : DarkTheme::getColour(DarkTheme::PIANO_ROLL_PITCH_HIGHLIGHT);
+    return clip ? clip->colour : ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_PITCH_HIGHLIGHT);
 }
 
 juce::Colour PianoRollGridComponent::getColourForClip(ClipId clipId) const {
     const auto* clip = ClipManager::getInstance().getClip(clipId);
     if (!clip) {
-        return DarkTheme::getColour(DarkTheme::PIANO_ROLL_FALLBACK_CLIP);
+        return ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_FALLBACK_CLIP);
     }
 
     // Chord clips follow the chord track's colour live (rather than the colour
@@ -3319,12 +3323,12 @@ void PianoRollGridComponent::paintExpressionPointLabel(juce::Graphics& g, const 
         y = screen.y + 8.0f;
 
     juce::Rectangle<float> bubble(x, y, w, h);
-    g.setColour(
-        DarkTheme::getColour(DarkTheme::PIANO_ROLL_TOOLTIP_BACKGROUND).withAlpha(0xEE / 255.0f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_TOOLTIP_BACKGROUND)
+                    .withAlpha(0xEE / 255.0f));
     g.fillRoundedRectangle(bubble, 3.0f);
-    g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_GRID_SUBDIVISION));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_GRID_SUBDIVISION));
     g.drawRoundedRectangle(bubble, 3.0f, 1.0f);
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT));
     g.setFont(font);
     g.drawText(text, bubble, juce::Justification::centred, false);
 }
@@ -3406,7 +3410,7 @@ void PianoRollGridComponent::paintPitchExpression(juce::Graphics& g) {
                     for (size_t p = 0; p < points.size(); ++p) {
                         auto screen = expressionPointToScreen(clipId, note, points[p]);
                         const float r = 3.5f;
-                        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
+                        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT));
                         g.fillEllipse(screen.x - r, screen.y - r, r * 2.0f, r * 2.0f);
                         g.setColour(curveColour.darker(0.6f));
                         g.drawEllipse(screen.x - r, screen.y - r, r * 2.0f, r * 2.0f, 1.0f);

@@ -4,7 +4,7 @@
 
 #include <utility>
 
-#include "DarkTheme.hpp"
+#include "ActiveTheme.hpp"
 #include "FontManager.hpp"
 
 namespace magda {
@@ -73,7 +73,7 @@ class MainLookAndFeel : public juce::LookAndFeel_V4 {
     juce::Button* createDocumentWindowButton(int buttonType) override {
         juce::Path shape;
         const float crossThickness = 0.15f;
-        const auto glyph = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
+        const auto glyph = ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY);
 
         if (buttonType == juce::DocumentWindow::closeButton) {
             shape.addLineSegment({0.0f, 0.0f, 1.0f, 1.0f}, crossThickness);

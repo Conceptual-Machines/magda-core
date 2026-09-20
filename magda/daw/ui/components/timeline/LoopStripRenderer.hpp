@@ -2,7 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 
 namespace magda::LoopStripRenderer {
 
@@ -25,7 +25,7 @@ inline void draw(juce::Graphics& g, float xStart, float xEnd, int stripTop, int 
         return;
 
     const auto base =
-        enabled ? DarkTheme::getColour(DarkTheme::LOOP_MARKER) : juce::Colour(0xFF808080);
+        enabled ? ActiveTheme::getColour(ActiveTheme::LOOP_MARKER) : juce::Colour(0xFF808080);
     const auto top = static_cast<float>(stripTop);
     const auto bottom = static_cast<float>(stripTop + stripHeight);
     const float mid = (top + bottom) * 0.5f;

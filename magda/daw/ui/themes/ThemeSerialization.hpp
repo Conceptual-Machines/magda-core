@@ -4,7 +4,7 @@
 
 #include <optional>
 
-#include "DarkTheme.hpp"
+#include "ActiveTheme.hpp"
 
 // Stable string keys and colour parsing for user-authored JSON themes (#88).
 //

@@ -8,7 +8,7 @@
 #include "core/TrackManager.hpp"
 #include "core/controllers/BindingRegistry.hpp"
 #include "core/controllers/MidiLearnCoordinator.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -77,7 +77,7 @@ MacroKnobComponent::MacroKnobComponent(int macroIndex) : macroIndex_(macroIndex)
     // Name label - editable on double-click
     nameLabel_.setText(currentMacro_.name, juce::dontSendNotification);
     nameLabel_.setFont(FontManager::getInstance().getUIFont(8.0f));
-    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     nameLabel_.setJustificationType(juce::Justification::centred);
     nameLabel_.setEditable(false, true, false);  // Single-click doesn't edit, double-click does
     nameLabel_.onTextChange = [this]() { onNameLabelEdited(); };
@@ -101,11 +101,11 @@ MacroKnobComponent::MacroKnobComponent(int macroIndex) : macroIndex_(macroIndex)
     // Link button - toggles link mode for this macro (using link_flat icon)
     linkButton_ = std::make_unique<magda::SvgButton>("Link", BinaryData::link_flat_svg,
                                                      BinaryData::link_flat_svgSize);
-    linkButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-    linkButton_->setHoverColor(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
-    linkButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+    linkButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
+    linkButton_->setHoverColor(ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
+    linkButton_->setActiveColor(ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
     linkButton_->setActiveBackgroundColor(
-        DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).withAlpha(0.2f));
+        ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).withAlpha(0.2f));
     linkButton_->onClick = [this]() { onLinkButtonClicked(); };
     addAndMakeVisible(*linkButton_);
 
@@ -236,19 +236,19 @@ void MacroKnobComponent::paint(juce::Graphics& g) {
 
     // Background - purple tint when in link mode, normal otherwise
     if (isInLinkMode) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).withAlpha(0.15f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).withAlpha(0.15f));
         g.fillRoundedRectangle(bounds.toFloat(), 3.0f);
     } else {
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).brighter(0.04f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE).brighter(0.04f));
         g.fillRoundedRectangle(bounds.toFloat(), 3.0f);
     }
 
     // Border - grey when selected, default otherwise
     if (selected_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_SCALE_TEXT));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_SCALE_TEXT));
         g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 3.0f, 2.0f);
     } else {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 3.0f, 1.0f);
     }
 
@@ -264,11 +264,11 @@ void MacroKnobComponent::paint(juce::Graphics& g) {
     auto knobRect = juce::Rectangle<float>(knobX, knobY, knobDiameter, knobDiameter);
 
     // Knob body (dark circle)
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     g.fillEllipse(knobRect);
 
     // Knob border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).brighter(0.2f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).brighter(0.2f));
     g.drawEllipse(knobRect.reduced(0.5f), 1.0f);
 
     // Value arc - JUCE addCentredArc uses 0 at TOP (12 o'clock), clockwise positive
@@ -283,7 +283,7 @@ void MacroKnobComponent::paint(juce::Graphics& g) {
     float arcRadius = knobDiameter / 2.0f - 3.0f;
     arcPath.addCentredArc(knobRect.getCentreX(), knobRect.getCentreY(), arcRadius, arcRadius, 0.0f,
                           startAngle, valueAngle, true);
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
     g.strokePath(arcPath, juce::PathStrokeType(2.0f));
 
     // Draw pointer line - JUCE angles: 0 at top, clockwise positive
@@ -292,7 +292,7 @@ void MacroKnobComponent::paint(juce::Graphics& g) {
     float pointerX = knobRect.getCentreX() + std::sin(valueAngle) * pointerLength;
     float pointerY = knobRect.getCentreY() - std::cos(valueAngle) * pointerLength;
 
-    g.setColour(DarkTheme::getTextColour());
+    g.setColour(ActiveTheme::getTextColour());
     g.drawLine(knobRect.getCentreX(), knobRect.getCentreY(), pointerX, pointerY, 1.5f);
 
     // Binding indicator dot at top-right.
@@ -310,11 +310,11 @@ void MacroKnobComponent::paint(juce::Graphics& g) {
                                    dotSize);
         juce::Colour colour;
         if (hasLearnedBinding_)
-            colour = DarkTheme::getColour(DarkTheme::MIDI_LEARN).withAlpha(0.9f);
+            colour = ActiveTheme::getColour(ActiveTheme::MIDI_LEARN).withAlpha(0.9f);
         else if (automapShadowed_)
-            colour = DarkTheme::getColour(DarkTheme::TEXT_DIM).withAlpha(0.55f);
+            colour = ActiveTheme::getColour(ActiveTheme::TEXT_DIM).withAlpha(0.55f);
         else
-            colour = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.9f);
+            colour = ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.9f);
         g.setColour(colour);
         g.fillEllipse(dot);
     }

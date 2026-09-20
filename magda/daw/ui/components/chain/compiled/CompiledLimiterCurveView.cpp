@@ -3,7 +3,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaLimiterCompiledPlugin.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -179,7 +179,7 @@ void CompiledLimiterCurveView::mouseUp(const juce::MouseEvent& e) {
 
 void CompiledLimiterCurveView::paint(juce::Graphics& g) {
     const auto bounds = getLocalBounds();
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).darker(0.06f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).darker(0.06f));
     g.fillRect(bounds);
 
     auto area = bounds.toFloat().reduced(kPlotPadX, kPlotPadY);
@@ -192,11 +192,11 @@ void CompiledLimiterCurveView::paint(juce::Graphics& g) {
     auto readoutStrip = area.removeFromBottom(14.0f);
     meterArea_ = area;
 
-    const auto border = DarkTheme::getColour(DarkTheme::BORDER);
-    const auto text = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE);
-    const auto grColour = DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION);
-    const auto inColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
+    const auto border = ActiveTheme::getColour(ActiveTheme::BORDER);
+    const auto text = ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY);
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE);
+    const auto grColour = ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION);
+    const auto inColour = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
 
     g.setColour(border.withAlpha(0.55f));
     g.drawRect(meterArea_, 1.0f);

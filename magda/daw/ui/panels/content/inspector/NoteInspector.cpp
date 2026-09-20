@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "core/ClipManager.hpp"
 #include "core/MidiNoteCommands.hpp"
@@ -13,7 +13,7 @@ namespace magda::daw::ui {
 NoteInspector::NoteInspector() {
     // Note count (shown when multiple notes selected)
     noteCountLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
-    noteCountLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    noteCountLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     addAndMakeVisible(noteCountLabel_);
 
     // ========================================================================
@@ -22,7 +22,7 @@ NoteInspector::NoteInspector() {
 
     notePitchLabel_.setText("Pitch", juce::dontSendNotification);
     notePitchLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    notePitchLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    notePitchLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     addChildComponent(notePitchLabel_);
 
     notePitchValue_ =
@@ -64,7 +64,7 @@ NoteInspector::NoteInspector() {
 
     noteVelocityLabel_.setText("Velocity", juce::dontSendNotification);
     noteVelocityLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    noteVelocityLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    noteVelocityLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     addChildComponent(noteVelocityLabel_);
 
     noteVelocityValue_ =
@@ -109,7 +109,7 @@ NoteInspector::NoteInspector() {
 
     noteStartLabel_.setText("Start", juce::dontSendNotification);
     noteStartLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    noteStartLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    noteStartLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     addChildComponent(noteStartLabel_);
 
     noteStartValue_ =
@@ -152,7 +152,7 @@ NoteInspector::NoteInspector() {
 
     noteLengthLabel_.setText("Length", juce::dontSendNotification);
     noteLengthLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    noteLengthLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    noteLengthLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     addChildComponent(noteLengthLabel_);
 
     noteLengthValue_ =
@@ -207,7 +207,7 @@ void NoteInspector::onDeactivated() {
 }
 
 void NoteInspector::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getBackgroundColour());
+    g.fillAll(ActiveTheme::getBackgroundColour());
 }
 
 void NoteInspector::resized() {

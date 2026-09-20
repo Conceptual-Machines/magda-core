@@ -481,7 +481,7 @@ class ActiveTheme {
     // role. This lets legacy UI code that already supplies an ActiveTheme colour
     // retain its intent while resolving the final colour at paint time. Only
     // RGB is considered: callers keep their own alpha value.
-    static std::optional<ColourRole> findDarkPaletteRole(juce::Colour colour);
+    static std::optional<ColourRole> findPaletteRole(juce::Colour colour);
 
     // Replaces the shared source colours used by bundled SVG controls with
     // their active palette roles. Source colours remain asset implementation

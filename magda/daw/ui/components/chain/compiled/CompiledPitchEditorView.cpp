@@ -3,7 +3,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaPitchCompiledPlugin.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -89,7 +89,7 @@ void CompiledPitchEditorView::timerCallback() {
 
 void CompiledPitchEditorView::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds().toFloat();
-    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
     g.fillRoundedRectangle(bounds, 4.0f);
 
     auto plot = bounds.reduced(kPadX, kPadY);
@@ -97,8 +97,8 @@ void CompiledPitchEditorView::paint(juce::Graphics& g) {
         return;
 
     const float baselineY = plot.getCentreY() + 4.0f;
-    const auto textColour = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_INFO);
+    const auto textColour = ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY);
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_INFO);
 
     // Ruler baseline.
     g.setColour(textColour.withAlpha(0.18f));

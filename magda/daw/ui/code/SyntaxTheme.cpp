@@ -2,7 +2,7 @@
 
 #include <iterator>
 
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -38,13 +38,13 @@ static_assert(std::size(kTokenRoles) == static_cast<std::size_t>(codeToken_count
 juce::CodeEditorComponent::ColourScheme codeTokenColourScheme() {
     juce::CodeEditorComponent::ColourScheme cs;
     for (const auto& entry : kTokenRoles)
-        cs.set(entry.name, DarkTheme::getSyntaxColour(entry.role));
+        cs.set(entry.name, ActiveTheme::getSyntaxColour(entry.role));
     return cs;
 }
 
 void applyCodeEditorTheme(juce::CodeEditorComponent& editor, juce::CodeTokeniser& tokeniser,
                           CodeEditorSurface surface) {
-    const auto syntax = [](SyntaxColourRole role) { return DarkTheme::getSyntaxColour(role); };
+    const auto syntax = [](SyntaxColourRole role) { return ActiveTheme::getSyntaxColour(role); };
     const bool console = surface == CodeEditorSurface::DslConsole;
 
     editor.setColour(juce::CodeEditorComponent::backgroundColourId,

@@ -24,7 +24,7 @@
 #include "../../../core/UndoManager.hpp"
 #include "../../../engine/AudioEngine.hpp"
 #include "../../layout/LayoutConfig.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallButtonLookAndFeel.hpp"
 #include "../../utils/SelectionPolicy.hpp"
@@ -168,8 +168,8 @@ class MidiActivityIndicator : public juce::Component {
         // Inactive state: neutral dimmed dot (dark on the selected fill)
         g.setColour(
             onSelectedHeader_
-                ? DarkTheme::getColour(DarkTheme::TRACK_HEADER_SELECTED_TEXT).withAlpha(0.3f)
-                : DarkTheme::getColour(DarkTheme::TEXT_DIM).withAlpha(0.4f));
+                ? ActiveTheme::getColour(ActiveTheme::TRACK_HEADER_SELECTED_TEXT).withAlpha(0.3f)
+                : ActiveTheme::getColour(ActiveTheme::TEXT_DIM).withAlpha(0.4f));
         g.fillEllipse(dotBounds);
 
         // Active state: bright cyan glow
@@ -216,10 +216,10 @@ class SessionModeButton : public juce::Component {
             // draw time, matching the transport's SvgButton path.
             auto themedIcon = resumeDrawable_->createCopy();
             themedIcon->replaceColour(juce::Colour(0xFF1A1A1A),
-                                      DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+                                      ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
             themedIcon->replaceColour(juce::Colour(0xFFB3B3B3),
-                                      DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
-            DarkTheme::applyToSvgIcon(*themedIcon);
+                                      ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT));
+            ActiveTheme::applyToSvgIcon(*themedIcon);
             themedIcon->drawWithin(g, iconArea, juce::RectanglePlacement::centred, 1.0f);
         }
     }
@@ -249,19 +249,19 @@ class TrackNameLabel : public juce::Label {
   protected:
     juce::TextEditor* createEditorComponent() override {
         auto* editor = juce::Label::createEditorComponent();
-        editor->setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
+        editor->setColour(juce::TextEditor::textColourId, ActiveTheme::getTextColour());
         editor->setColour(juce::TextEditor::backgroundColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
+                          ActiveTheme::getColour(ActiveTheme::SURFACE));
         editor->setColour(juce::TextEditor::outlineColourId,
-                          DarkTheme::getColour(DarkTheme::BORDER));
+                          ActiveTheme::getColour(ActiveTheme::BORDER));
         editor->setColour(juce::TextEditor::focusedOutlineColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                          ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         editor->setColour(juce::CaretComponent::caretColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                          ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         editor->setColour(juce::TextEditor::highlightColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                          ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         editor->setColour(juce::TextEditor::highlightedTextColourId,
-                          DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
+                          ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT));
         return editor;
     }
 
@@ -280,8 +280,9 @@ void applyRoutingIconImage(juce::Component* component, const char* svgData, int 
     if (button == nullptr)
         return;
     if (auto svg = juce::Drawable::createFromImageData(svgData, svgSize)) {
-        svg->replaceColour(juce::Colour(0xFFB3B3B3), DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        DarkTheme::applyToSvgIcon(*svg);
+        svg->replaceColour(juce::Colour(0xFFB3B3B3),
+                           ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+        ActiveTheme::applyToSvgIcon(*svg);
         button->setImages(svg.get());
     }
 }
@@ -291,13 +292,14 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     // Create UI components
     nameLabel = std::make_unique<TrackNameLabel>("trackName", trackName);
     nameLabel->setEditable(false, true);
-    nameLabel->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    nameLabel->setColour(juce::Label::textColourId,
+                         ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     nameLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
-    nameLabel->setColour(juce::Label::textWhenEditingColourId, DarkTheme::getTextColour());
+    nameLabel->setColour(juce::Label::textWhenEditingColourId, ActiveTheme::getTextColour());
     nameLabel->setColour(juce::Label::backgroundWhenEditingColourId,
-                         DarkTheme::getColour(DarkTheme::SURFACE));
+                         ActiveTheme::getColour(ActiveTheme::SURFACE));
     nameLabel->setColour(juce::Label::outlineWhenEditingColourId,
-                         DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                         ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     nameLabel->setFont(FontManager::getInstance().getUIFontBold(12.0f));
 
     // Track mute: speaker toggle (matching the master/inspector speaker instead
@@ -323,11 +325,11 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     // amber chip.
     soloButton =
         std::make_unique<magda::SvgButton>("solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
-    soloButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    soloButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    soloButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
-    soloButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
-                                          DarkTheme::ICON_ON_ACCENT);
+    soloButton->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    soloButton->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+    soloButton->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
+    soloButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
+                                          ActiveTheme::ICON_ON_ACCENT);
     soloButton->setIconPadding(5.0f);
     soloButton->setTooltip(tr("tracks.solo.tooltip"));
     soloButton->setClickingTogglesState(true);
@@ -337,11 +339,11 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     // (track_record_on) on a red chip.
     recordButton = std::make_unique<magda::SvgButton>("record", BinaryData::track_record_svg,
                                                       BinaryData::track_record_svgSize);
-    recordButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    recordButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    recordButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
-    recordButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
-                                            DarkTheme::ICON_ON_ACCENT);
+    recordButton->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    recordButton->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+    recordButton->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
+    recordButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
+                                            ActiveTheme::ICON_ON_ACCENT);
     recordButton->setIconPadding(5.0f);
     recordButton->setTooltip(tr("tracks.record.tooltip"));
     recordButton->setClickingTogglesState(true);
@@ -358,14 +360,15 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     automationButton->setTooltip(tr("tracks.automation"));
     automationButton->setEnabled(true);
     automationButton->setColour(juce::TextButton::buttonColourId,
-                                DarkTheme::getColour(DarkTheme::SURFACE));
+                                ActiveTheme::getColour(ActiveTheme::SURFACE));
     automationButton->setColour(juce::TextButton::buttonOnColourId,
-                                DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
-    automationButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    automationButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    automationButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
-    automationButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
-                                                DarkTheme::TEXT_BRIGHT);
+                                ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+    automationButton->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    automationButton->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+    automationButton->setActiveBackgroundColor(
+        ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
+    automationButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
+                                                ActiveTheme::TEXT_BRIGHT);
     automationButton->setIconPadding(2.5f);
 
     // Volume label (shows dB, draggable)
@@ -376,7 +379,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
 
     masterPeakLabel = std::make_unique<juce::Label>("masterPeak", "-inf");
     masterPeakLabel->setColour(juce::Label::textColourId,
-                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                               ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     masterPeakLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     masterPeakLabel->setFont(FontManager::getInstance().getMonoFont(10.0f));
     masterPeakLabel->setJustificationType(juce::Justification::centredLeft);
@@ -435,13 +438,13 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     audioColumnLabel = std::make_unique<juce::Label>("audioCol", "Audio");
     audioColumnLabel->setFont(FontManager::getInstance().getUIFont(8.0f));
     audioColumnLabel->setColour(juce::Label::textColourId,
-                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     audioColumnLabel->setJustificationType(juce::Justification::centred);
 
     midiColumnLabel = std::make_unique<juce::Label>("midiCol", "MIDI");
     midiColumnLabel->setFont(FontManager::getInstance().getUIFont(8.0f));
     midiColumnLabel->setColour(juce::Label::textColourId,
-                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                               ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     midiColumnLabel->setJustificationType(juce::Justification::centred);
 
     // I/O routing icons (non-interactive visual indicators)
@@ -1170,10 +1173,10 @@ void TrackHeadersPanel::updateRoutingSelectorFromTrack(TrackHeader& header,
 }
 
 void TrackHeadersPanel::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
 
     // Draw border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(getLocalBounds(), 1);
 
     // Draw track headers and automation lane headers
@@ -1333,14 +1336,14 @@ void TrackHeadersPanel::updateHeaderSelectionColours() {
         const bool sel = selectedTrackIndices_.count(static_cast<int>(i)) > 0;
         trackHeaders[i]->nameLabel->setColour(
             juce::Label::textColourId,
-            DarkTheme::getColour(sel ? DarkTheme::TRACK_HEADER_SELECTED_TEXT
-                                     : DarkTheme::TEXT_PRIMARY));
+            ActiveTheme::getColour(sel ? ActiveTheme::TRACK_HEADER_SELECTED_TEXT
+                                       : ActiveTheme::TEXT_PRIMARY));
         trackHeaders[i]->nameLabel->setColour(juce::Label::textWhenEditingColourId,
-                                              DarkTheme::getTextColour());
+                                              ActiveTheme::getTextColour());
         trackHeaders[i]->nameLabel->setColour(juce::Label::backgroundWhenEditingColourId,
-                                              DarkTheme::getColour(DarkTheme::SURFACE));
+                                              ActiveTheme::getColour(ActiveTheme::SURFACE));
         trackHeaders[i]->nameLabel->setColour(juce::Label::outlineWhenEditingColourId,
-                                              DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                                              ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         static_cast<MidiActivityIndicator*>(trackHeaders[i]->midiIndicator.get())
             ->setOnSelectedHeader(sel);
     }
@@ -1353,7 +1356,7 @@ void TrackHeadersPanel::lookAndFeelChanged() {
     // (handled by updateHeaderSelectionColours); the compact peak and column
     // labels are plain secondary-text labels.
     updateHeaderSelectionColours();
-    const auto secondary = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+    const auto secondary = ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY);
     for (auto& header : trackHeaders) {
         if (!header)
             continue;
@@ -2026,7 +2029,7 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
 
     // Draw indent guide lines for nested tracks on outer side
     if (header.depth > 0) {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.5f));
         for (int d = 0; d < header.depth; ++d) {
             int x = headersOnRight_ ? area.getRight() - d * INDENT_WIDTH - INDENT_WIDTH / 2
                                     : area.getX() + d * INDENT_WIDTH + INDENT_WIDTH / 2;
@@ -2040,17 +2043,18 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
     // tracks. The timeline content lane keeps its softer TRACK_SELECTED tint
     // so the clip area doesn't brighten with it.
     auto bgArea = outer.trimmed(area, indent);
-    const auto selectedBg = DarkTheme::getColour(DarkTheme::TRACK_HEADER_SELECTED);
+    const auto selectedBg = ActiveTheme::getColour(ActiveTheme::TRACK_HEADER_SELECTED);
     if (header.isGroup) {
         g.setColour(isSelected ? selectedBg
-                               : DarkTheme::getColour(DarkTheme::SURFACE).brighter(0.05f));
+                               : ActiveTheme::getColour(ActiveTheme::SURFACE).brighter(0.05f));
     } else {
-        g.setColour(isSelected ? selectedBg : DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND));
+        g.setColour(isSelected ? selectedBg
+                               : ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND));
     }
     g.fillRect(bgArea);
 
     // Border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(bgArea, 1);
 
     // Group indicator colour strip on the outer edge, full header height. Same
@@ -2071,7 +2075,7 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
         // Dark elevated header band behind the name. On a selected header the
         // band matches the lifted body so the whole header reads as one slab.
         auto nameBandArea = bgArea.withHeight(nameBandHeight);
-        g.setColour(isSelected ? selectedBg : DarkTheme::getColour(DarkTheme::SURFACE_HOVER));
+        g.setColour(isSelected ? selectedBg : ActiveTheme::getColour(ActiveTheme::SURFACE_HOVER));
         g.fillRect(nameBandArea);
 
         // Colour spine on the outer (left, or right when swapped) edge,
@@ -2093,7 +2097,7 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
     }
 
     // Separator line at the bottom of the name strip
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.5f));
     g.drawHorizontalLine(bgArea.getY() + nameBandHeight, static_cast<float>(bgArea.getX()),
                          static_cast<float>(bgArea.getRight()));
 
@@ -2116,7 +2120,7 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
 }
 
 void TrackHeadersPanel::paintResizeHandle(juce::Graphics& g, juce::Rectangle<int> area) {
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.fillRect(area);
 }
 
@@ -2822,18 +2826,18 @@ int TrackHeadersPanel::getVisibleHeaderIndex(TrackId trackId) const {
 }
 
 void TrackHeadersPanel::updateCollapseButtonIcon(TrackHeader& header) {
-    auto colour = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
+    auto colour = ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY);
     if (header.isCollapsed) {
         auto icon = juce::Drawable::createFromImageData(BinaryData::chevron_right_svg,
                                                         BinaryData::chevron_right_svgSize);
         icon->replaceColour(juce::Colour(0xFFB3B3B3), colour);
-        DarkTheme::applyToSvgIcon(*icon);
+        ActiveTheme::applyToSvgIcon(*icon);
         header.collapseButton->setImages(icon.get());
     } else {
         auto icon = juce::Drawable::createFromImageData(BinaryData::chevron_down_svg,
                                                         BinaryData::chevron_down_svgSize);
         icon->replaceColour(juce::Colour(0xFFB3B3B3), colour);
-        DarkTheme::applyToSvgIcon(*icon);
+        ActiveTheme::applyToSvgIcon(*icon);
         header.collapseButton->setImages(icon.get());
     }
 }
@@ -3433,7 +3437,7 @@ void TrackHeadersPanel::paintDragFeedback(juce::Graphics& g) {
         return;
 
     // Draw semi-transparent overlay on all dragged tracks
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
     bool isMultiDrag =
         selectedTrackIndices_.size() > 1 && selectedTrackIndices_.count(draggedTrackIndex_) > 0;
     if (isMultiDrag) {
@@ -3465,7 +3469,7 @@ void TrackHeadersPanel::paintDropIndicatorLine(juce::Graphics& g) {
     }
 
     // Draw cyan line with arrow indicators
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
 
     // Main line
     g.fillRect(0, indicatorY - 2, getWidth(), 4);
@@ -3489,11 +3493,11 @@ void TrackHeadersPanel::paintDropTargetGroupHighlight(juce::Graphics& g) {
     auto targetArea = getTrackHeaderArea(dropTargetIndex_);
 
     // Draw orange border around the group
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
     g.drawRect(targetArea, 3);
 
     // Draw subtle fill
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.15f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.15f));
     g.fillRect(targetArea);
 }
 

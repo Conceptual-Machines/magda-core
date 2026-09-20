@@ -11,8 +11,8 @@
 #include "../../interaction/ArrangementHitTester.hpp"
 #include "../../panels/state/PanelController.hpp"
 #include "../../state/TimelineEvents.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/CursorManager.hpp"
-#include "../../themes/DarkTheme.hpp"
 #include "../../utils/SelectionPolicy.hpp"
 #include "../../utils/TimelineUtils.hpp"
 #include "../automation/AutomationLaneComponent.hpp"
@@ -455,7 +455,7 @@ void TrackContentPanel::rebuildGroupExtentCache() {
 }
 
 void TrackContentPanel::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND));
 
     // Rebuild group extent cache if dirty (at most once per paint)
     if (groupExtentCacheDirty_)
@@ -726,8 +726,8 @@ void TrackContentPanel::paintTrackLane(juce::Graphics& g, const TrackLane& /*lan
         return;
 
     // Background (semi-transparent to let grid show through)
-    auto bgColour = isSelected ? DarkTheme::getColour(DarkTheme::TRACK_SELECTED)
-                               : DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND);
+    auto bgColour = isSelected ? ActiveTheme::getColour(ActiveTheme::TRACK_SELECTED)
+                               : ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND);
     g.setColour(bgColour.withAlpha(0.7f));
     g.fillRect(paintArea);
 
@@ -737,7 +737,7 @@ void TrackContentPanel::paintTrackLane(juce::Graphics& g, const TrackLane& /*lan
     // of around the lane. A clip moving away leaves its old bounds as the
     // damage, so that box stayed behind as a ghost outline (#2026). Fills are
     // uniform and can stay clipped; outlines cannot.
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(area, 1);
 
     // Frozen overlay

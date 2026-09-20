@@ -8,7 +8,7 @@
 #include "../../../audio/DeviceParameterList.hpp"
 #include "../../../core/ParameterUtils.hpp"
 #include "../../../engine/AudioEngine.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../chain/layout/NodeHeaderStyles.hpp"
 #include "../common/SvgButton.hpp"
@@ -60,8 +60,8 @@ void MiniChainRow::setDevice(const ChainNodePath& devicePath, AudioEngine* engin
     if (wantUiButton && uiButton_ == nullptr) {
         uiButton_ = std::make_unique<SvgButton>("UI", BinaryData::open_in_new_svg,
                                                 BinaryData::open_in_new_svgSize);
-        daw::ui::node_header::applyHeaderIconStyle(*uiButton_,
-                                                   DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        daw::ui::node_header::applyHeaderIconStyle(
+            *uiButton_, ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         uiButton_->onClick = [this]() {
             if (engine_ == nullptr)
                 return;
@@ -160,7 +160,7 @@ void MiniChainRow::resolveParams() {
         auto label = std::make_unique<juce::Label>();
         label->setText(paramInfo.name, juce::dontSendNotification);
         label->setFont(FontManager::getInstance().getUIFont(9.0f));
-        label->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        label->setColour(juce::Label::textColourId, ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         label->setJustificationType(juce::Justification::centredLeft);
         label->setInterceptsMouseClicks(false, false);
         label->setAlpha(paramsAlpha_);
@@ -175,7 +175,7 @@ void MiniChainRow::resolveParams() {
         slider->setValue(ParameterUtils::modelToRealValue({paramInfo.currentValue}, paramInfo),
                          juce::dontSendNotification);
         slider->setFont(FontManager::getInstance().getUIFont(10.0f));
-        slider->setTextColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        slider->setTextColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         // By value: this outlives the list it was described from, and a
         // hosted plugin's ordinary parameter is not in the document to look up
         // again (docs/specs/hosted-plugin-parameter-control.md).
@@ -339,24 +339,24 @@ void MiniChainRow::paint(juce::Graphics& g) {
     auto headRect = getLocalBounds().removeFromTop(kCollapsedHeight);
 
     // Row background
-    g.setColour(DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
     g.fillRect(headRect);
 
     // Bypass dot — green when active, dim when bypassed.
     constexpr int dotSize = 8;
     auto dotBounds = bypassRect_.withSizeKeepingCentre(dotSize, dotSize).toFloat();
-    g.setColour(bypassed_ ? DarkTheme::getColour(DarkTheme::TEXT_DISABLED)
-                          : DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
+    g.setColour(bypassed_ ? ActiveTheme::getColour(ActiveTheme::TEXT_DISABLED)
+                          : ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE));
     g.fillEllipse(dotBounds);
 
     // Device name
     g.setFont(FontManager::getInstance().getUIFont(10.0f));
-    g.setColour(bypassed_ ? DarkTheme::getColour(DarkTheme::TEXT_DIM)
-                          : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    g.setColour(bypassed_ ? ActiveTheme::getColour(ActiveTheme::TEXT_DIM)
+                          : ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     g.drawText(deviceName_, nameRect_.reduced(2, 0), juce::Justification::centredLeft, true);
 
     // Chevron (down when expanded, right when collapsed).
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
     auto centre = chevronRect_.getCentre().toFloat();
     juce::Path arrow;
     if (expanded_) {
@@ -405,7 +405,8 @@ void MiniChainRow::lookAndFeelChanged() {
     // SvgButton re-resolve their own colours from stored roles on repaint.
     for (auto& label : paramLabels_)
         if (label)
-            label->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_DIM));
+            label->setColour(juce::Label::textColourId,
+                             ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
 }
 
 void MiniChainRow::mouseDown(const juce::MouseEvent& event) {

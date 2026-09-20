@@ -1,7 +1,7 @@
 #include "DebugDialog.hpp"
 
 #include "../../audio/MidiBridge.hpp"
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "DebugSettings.hpp"
 
@@ -31,13 +31,13 @@ class DebugDialog::Content : public juce::Component, private juce::Timer {
         // Title
         titleLabel_.setText("Debug Settings", juce::dontSendNotification);
         titleLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
-        titleLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        titleLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
         addAndMakeVisible(titleLabel_);
 
         // Bottom panel height
         bottomPanelLabel_.setText("Bottom Panel Height:", juce::dontSendNotification);
         bottomPanelLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
-        bottomPanelLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        bottomPanelLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
         addAndMakeVisible(bottomPanelLabel_);
 
         bottomPanelSlider_.setRange(100, 600, 1);
@@ -53,7 +53,7 @@ class DebugDialog::Content : public juce::Component, private juce::Timer {
         // Device slot width
         deviceWidthLabel_.setText("Device Slot Width:", juce::dontSendNotification);
         deviceWidthLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
-        deviceWidthLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        deviceWidthLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
         addAndMakeVisible(deviceWidthLabel_);
 
         deviceWidthSlider_.setRange(100, 400, 1);
@@ -69,7 +69,7 @@ class DebugDialog::Content : public juce::Component, private juce::Timer {
         // Button font size
         buttonFontLabel_.setText("Button Font Size:", juce::dontSendNotification);
         buttonFontLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
-        buttonFontLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        buttonFontLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
         addAndMakeVisible(buttonFontLabel_);
 
         buttonFontSlider_.setRange(6, 16, 0.5);
@@ -85,7 +85,7 @@ class DebugDialog::Content : public juce::Component, private juce::Timer {
         // Param label font size
         paramFontLabel_.setText("Param Label Font Size:", juce::dontSendNotification);
         paramFontLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
-        paramFontLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        paramFontLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
         addAndMakeVisible(paramFontLabel_);
 
         paramFontSlider_.setRange(6, 14, 0.5);
@@ -101,7 +101,7 @@ class DebugDialog::Content : public juce::Component, private juce::Timer {
         // Param value font size
         paramValueFontLabel_.setText("Param Value Font Size:", juce::dontSendNotification);
         paramValueFontLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
-        paramValueFontLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        paramValueFontLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
         addAndMakeVisible(paramValueFontLabel_);
 
         paramValueFontSlider_.setRange(6, 14, 0.5);
@@ -117,7 +117,7 @@ class DebugDialog::Content : public juce::Component, private juce::Timer {
         // === MIDI Monitor Section ===
         midiMonitorLabel_.setText("MIDI Monitor", juce::dontSendNotification);
         midiMonitorLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
-        midiMonitorLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        midiMonitorLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
         addAndMakeVisible(midiMonitorLabel_);
 
         midiLog_.setMultiLine(true);
@@ -126,9 +126,9 @@ class DebugDialog::Content : public juce::Component, private juce::Timer {
         midiLog_.setCaretVisible(false);
         midiLog_.setFont(FontManager::getInstance().getMonoFont(11.0f));
         midiLog_.setColour(juce::TextEditor::backgroundColourId,
-                           DarkTheme::getColour(DarkTheme::BACKGROUND));
+                           ActiveTheme::getColour(ActiveTheme::BACKGROUND));
         midiLog_.setColour(juce::TextEditor::textColourId,
-                           DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                           ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         addAndMakeVisible(midiLog_);
 
         clearButton_.setButtonText("Clear");
@@ -146,7 +146,7 @@ class DebugDialog::Content : public juce::Component, private juce::Timer {
     }
 
     void paint(juce::Graphics& g) override {
-        g.fillAll(DarkTheme::getPanelBackgroundColour());
+        g.fillAll(ActiveTheme::getPanelBackgroundColour());
     }
 
     void resized() override {
@@ -288,7 +288,7 @@ class DebugDialog::Content : public juce::Component, private juce::Timer {
 // DebugDialog
 //==============================================================================
 DebugDialog::DebugDialog()
-    : DocumentWindow("Debug Settings", DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND),
+    : DocumentWindow("Debug Settings", ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND),
                      DocumentWindow::closeButton) {
     content_ = std::make_unique<Content>();
     setContentNonOwned(content_.get(), true);
@@ -305,7 +305,7 @@ void DebugDialog::closeButtonPressed() {
 
 void DebugDialog::lookAndFeelChanged() {
     juce::DocumentWindow::lookAndFeelChanged();
-    setBackgroundColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    setBackgroundColour(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
 }
 
 void DebugDialog::show() {

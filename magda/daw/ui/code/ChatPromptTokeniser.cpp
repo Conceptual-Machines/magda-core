@@ -1,6 +1,6 @@
 #include "ChatPromptTokeniser.hpp"
 
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -98,11 +98,12 @@ int ChatPromptTokeniser::readNextToken(juce::CodeDocument::Iterator& source) {
 
 juce::CodeEditorComponent::ColourScheme ChatPromptTokeniser::getDefaultColourScheme() {
     juce::CodeEditorComponent::ColourScheme cs;
-    cs.set("Text", DarkTheme::getSyntaxColour(SyntaxColourRole::CHAT_TOKEN_TEXT));
-    cs.set("PluginAlias", DarkTheme::getSyntaxColour(SyntaxColourRole::CHAT_TOKEN_PLUGIN_ALIAS));
-    cs.set("ParamAlias", DarkTheme::getSyntaxColour(SyntaxColourRole::CHAT_TOKEN_PARAM_ALIAS));
-    cs.set("SlashCommand", DarkTheme::getSyntaxColour(SyntaxColourRole::CHAT_TOKEN_SLASH_COMMAND));
-    cs.set("Punctuation", DarkTheme::getSyntaxColour(SyntaxColourRole::CHAT_TOKEN_PUNCTUATION));
+    cs.set("Text", ActiveTheme::getSyntaxColour(SyntaxColourRole::CHAT_TOKEN_TEXT));
+    cs.set("PluginAlias", ActiveTheme::getSyntaxColour(SyntaxColourRole::CHAT_TOKEN_PLUGIN_ALIAS));
+    cs.set("ParamAlias", ActiveTheme::getSyntaxColour(SyntaxColourRole::CHAT_TOKEN_PARAM_ALIAS));
+    cs.set("SlashCommand",
+           ActiveTheme::getSyntaxColour(SyntaxColourRole::CHAT_TOKEN_SLASH_COMMAND));
+    cs.set("Punctuation", ActiveTheme::getSyntaxColour(SyntaxColourRole::CHAT_TOKEN_PUNCTUATION));
     return cs;
 }
 

@@ -1,7 +1,7 @@
 #include "CurvePointComponent.hpp"
 
 #include "CurveEditorBase.hpp"
-#include "magda/daw/ui/themes/DarkTheme.hpp"
+#include "magda/daw/ui/themes/ActiveTheme.hpp"
 
 namespace magda {
 
@@ -22,11 +22,11 @@ void CurvePointComponent::paint(juce::Graphics& g) {
     const float scale = pointScale();
     float radius = (isSelected_ ? POINT_SIZE_SELECTED : POINT_SIZE) * scale / 2.0f;
     float pointSize = radius * 2.0f;
-    const auto accent = DarkTheme::getColour(DarkTheme::CURVE_POINT);
+    const auto accent = ActiveTheme::getColour(ActiveTheme::CURVE_POINT);
 
     // Draw connection lines to handles if visible
     if (handlesVisible_ && isSelected_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0x88 / 255.0f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0x88 / 255.0f));
 
         if (inHandle_ && inHandle_->isVisible()) {
             auto handleCenter = inHandle_->getBounds().getCentre().toFloat();
@@ -56,7 +56,7 @@ void CurvePointComponent::paint(juce::Graphics& g) {
     if (isSelected_) {
         const auto rr = radius + 2.0f;
         const auto ring = juce::Rectangle<float>(centerX - rr, centerY - rr, rr * 2.0f, rr * 2.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0.9f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0.9f));
         if (isHardPoint)
             g.drawRect(ring, 1.5f);
         else

@@ -7,7 +7,7 @@
 #include "../../../core/UndoManager.hpp"
 #include "AutomationLaneComponent.hpp"
 #include "BinaryData.h"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda {
@@ -51,7 +51,7 @@ void AutomationClipComponent::paint(juce::Graphics& g) {
     g.fillRoundedRectangle(bounds.toFloat(), 3.0f);
 
     // Draw border (kept solid so the clip bounds stay crisp)
-    g.setColour(isSelected_ ? DarkTheme::getColour(DarkTheme::TEXT_BRIGHT)
+    g.setColour(isSelected_ ? ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT)
                             : bgColour.withAlpha(0.9f));
     g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 3.0f, 1.0f);
 
@@ -71,18 +71,18 @@ void AutomationClipComponent::paint(juce::Graphics& g) {
         if (loopIcon) {
             auto themedIcon = loopIcon->createCopy();
             themedIcon->replaceColour(juce::Colour(0xFFBCBCBC),
-                                      DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
-            DarkTheme::applyToSvgIcon(*themedIcon);
+                                      ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT));
+            ActiveTheme::applyToSvgIcon(*themedIcon);
             themedIcon->drawWithin(g, loopArea.toFloat(), juce::RectanglePlacement::centred, 1.0f);
         }
     }
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT));
     g.setFont(FontManager::getInstance().getUIFont(10.0f));
     g.drawText(clip->name, headerArea, juce::Justification::centredLeft, true);
 
     // Resize handles visual indication when hovered
     if (isHovered_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0x44 / 255.0f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0x44 / 255.0f));
         g.fillRect(0, 0, RESIZE_EDGE_WIDTH, getHeight());
         g.fillRect(getWidth() - RESIZE_EDGE_WIDTH, 0, RESIZE_EDGE_WIDTH, getHeight());
     }
@@ -95,7 +95,7 @@ void AutomationClipComponent::paint(juce::Graphics& g) {
         // hide them entirely (same threshold as MIDI/audio clip loop markers).
         constexpr double MIN_LOOP_MARKER_PIXEL_WIDTH = 32.0;
         if (stride >= MIN_LOOP_MARKER_PIXEL_WIDTH) {
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0xAA / 255.0f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0xAA / 255.0f));
             for (double x = stride; x < getWidth(); x += stride)
                 g.drawVerticalLine(static_cast<int>(std::round(x)), 0.0f,
                                    static_cast<float>(getHeight()));
@@ -169,7 +169,7 @@ void AutomationClipComponent::paintMiniCurve(juce::Graphics& g, juce::Rectangle<
 
     g.saveState();
     g.reduceClipRegion(getLocalBounds());
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0xAA / 255.0f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0xAA / 255.0f));
     g.strokePath(curvePath, juce::PathStrokeType(1.5f));
     g.restoreState();
 }

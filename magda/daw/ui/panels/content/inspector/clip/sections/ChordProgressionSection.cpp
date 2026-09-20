@@ -7,7 +7,7 @@
 #include "core/TrackManager.hpp"
 #include "music/NotationSettings.hpp"
 #include "ui/state/TimelineController.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -57,12 +57,12 @@ void ChordProgressionSection::paint(juce::Graphics& g) {
 
     auto area = getLocalBounds();
 
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     g.setFont(FontManager::getInstance().getUIFontMedium(11.0f));
     g.drawText("PROGRESSION", area.removeFromTop(HEADER_H), juce::Justification::centredLeft);
 
     if (clip->chordAnnotations.empty()) {
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.6f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.6f));
         g.setFont(FontManager::getInstance().getUIFont(11.0f));
         g.drawText("No chords yet - click the chord lane to add one.", area.removeFromTop(ROW_H),
                    juce::Justification::centredLeft);
@@ -90,7 +90,7 @@ void ChordProgressionSection::paint(juce::Graphics& g) {
         const double beat = std::fmod(c.beatPosition, bar) + 1.0;
 
         // Bar.beat marker
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         g.setFont(FontManager::getInstance().getMonoFont(11.0f));
         g.drawText(juce::String(barNum) + "." + juce::String(static_cast<int>(beat)),
                    row.removeFromLeft(40), juce::Justification::centredLeft);
@@ -100,7 +100,7 @@ void ChordProgressionSection::paint(juce::Graphics& g) {
                    juce::Justification::centredRight);
 
         // Chord name
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         g.setFont(FontManager::getInstance().getUIFontMedium(12.0f));
         g.drawText(notation.format(c.chordName), row, juce::Justification::centredLeft, true);
     }

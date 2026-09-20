@@ -5,7 +5,7 @@
 #include "core/TechnicalText.hpp"
 #include "engine/AudioEngineChoice.hpp"
 #include "magda.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda {
@@ -29,7 +29,7 @@ class AboutDialog::ContentComponent : public juce::Component {
             if (logo_) {
                 // Recolor the SVG to match theme
                 logo_->replaceColour(juce::Colour(0xFF000000),
-                                     DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                     ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
             }
         }
 
@@ -39,8 +39,8 @@ class AboutDialog::ContentComponent : public juce::Component {
                                        BinaryData::conceptualmachinesbadge_svgSize))) {
             conceptualMachinesBadge_ = juce::Drawable::createFromSVG(*xml);
             if (conceptualMachinesBadge_) {
-                conceptualMachinesBadge_->replaceColour(juce::Colour(0xFFE7DFD2),
-                                                        DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                conceptualMachinesBadge_->replaceColour(
+                    juce::Colour(0xFFE7DFD2), ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
             }
         }
 
@@ -50,7 +50,7 @@ class AboutDialog::ContentComponent : public juce::Component {
             teLogo_ = juce::Drawable::createFromSVG(*xml);
             if (teLogo_) {
                 teLogo_->replaceColour(juce::Colour(0xFF000000),
-                                       DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                                       ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
             }
         }
 
@@ -60,7 +60,7 @@ class AboutDialog::ContentComponent : public juce::Component {
             juceLogo_ = juce::Drawable::createFromSVG(*xml);
             if (juceLogo_) {
                 juceLogo_->replaceColour(juce::Colour(0xFF000000),
-                                         DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                                         ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
             }
         }
 
@@ -70,7 +70,7 @@ class AboutDialog::ContentComponent : public juce::Component {
             faustLogo_ = juce::Drawable::createFromSVG(*xml);
             if (faustLogo_) {
                 faustLogo_->replaceColour(juce::Colour(0xFFD9D9D9),
-                                          DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                                          ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
             }
         }
 
@@ -79,7 +79,7 @@ class AboutDialog::ContentComponent : public juce::Component {
             std::make_unique<juce::HyperlinkButton>("MAGDA", juce::URL("https://magda.land"));
         titleLink_->setFont(FontManager::getInstance().getMicrogrammaFont(28.0f), false);
         titleLink_->setColour(juce::HyperlinkButton::textColourId,
-                              DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                              ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         addAndMakeVisible(*titleLink_);
 
         conceptualMachinesLink_ =
@@ -91,7 +91,7 @@ class AboutDialog::ContentComponent : public juce::Component {
     }
 
     void paint(juce::Graphics& g) override {
-        g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+        g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
 
         auto bounds = getLocalBounds();
 
@@ -109,7 +109,7 @@ class AboutDialog::ContentComponent : public juce::Component {
 
         // Subtitle
         g.setFont(fm.getUIFont(14.0f));
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         // Brand tagline — MAGDA acronym expansion, do not translate.
         g.drawText("Multi-Agent Digital Audio", bounds.removeFromTop(24),
                    juce::Justification::centred);
@@ -122,7 +122,7 @@ class AboutDialog::ContentComponent : public juce::Component {
             versionText << " (" << engineName_ << ")";
 
         g.setFont(fm.getUIFont(12.0f));
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         g.drawText(versionText, bounds.removeFromTop(20), juce::Justification::centred);
 
         // Credits line
@@ -134,13 +134,13 @@ class AboutDialog::ContentComponent : public juce::Component {
         int gap = 4;
         int dotGap = 4;
 
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawHorizontalLine(creditsArea.getY(), static_cast<float>(creditsArea.getX()),
                              static_cast<float>(creditsArea.getRight()));
         creditsArea.removeFromTop(6);
 
         auto row = creditsArea.removeFromTop(20);
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
 
         juce::GlyphArrangement ga;
         auto measure = [&](const juce::String& text) {
@@ -207,7 +207,7 @@ class AboutDialog::ContentComponent : public juce::Component {
                                                  juce::RectanglePlacement::centred, 1.0f);
         }
         g.setFont(fm.getUIFont(9.0f));
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         g.drawText(kConceptualMachinesCopyright, creditsArea.removeFromTop(16),
                    juce::Justification::centred);
     }
@@ -268,7 +268,7 @@ juce::Component::SafePointer<AboutDialog> AboutDialog::currentInstance_;
 AboutDialog::AboutDialog(juce::String engineName)
     : DialogWindow(tr("dialogs.about")
                        .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Magda)),
-                   DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND), true) {
+                   ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND), true) {
     setContentOwned(new ContentComponent(std::move(engineName)), true);
     setUsingNativeTitleBar(false);
     setResizable(false, false);

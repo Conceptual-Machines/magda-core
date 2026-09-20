@@ -4,7 +4,7 @@
 
 #include "BinaryData.h"
 #include "ui/components/common/InternalFileDrag.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/utils/AudioFileTypes.hpp"
 
@@ -14,7 +14,7 @@ namespace {
 void setupLabelStatic(juce::Label& label, const juce::String& text, juce::Component* parent) {
     label.setText(text, juce::dontSendNotification);
     label.setFont(FontManager::getInstance().getUIFont(9.0f));
-    label.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    label.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     label.setJustificationType(juce::Justification::centred);
     parent->addAndMakeVisible(label);
 }
@@ -24,7 +24,7 @@ ImpulseResponseUI::ImpulseResponseUI() {
     // IR name label
     irNameLabel_.setText("No IR loaded", juce::dontSendNotification);
     irNameLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    irNameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    irNameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     irNameLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(irNameLabel_);
 
@@ -134,9 +134,9 @@ void ImpulseResponseUI::updateFromParameters(const std::vector<magda::ParameterI
 }
 
 void ImpulseResponseUI::paint(juce::Graphics& g) {
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(getLocalBounds(), 1);
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
     g.fillRect(getLocalBounds().reduced(1));
 }
 

@@ -50,7 +50,7 @@
 #include "../../components/common/SvgButton.hpp"
 #include "../../dialogs/AISettingsDialog.hpp"
 #include "../../state/TimelineController.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallButtonLookAndFeel.hpp"
 #include "../../themes/ThemePrompt.hpp"
@@ -174,8 +174,8 @@ class AIChatConsoleContent::AutocompletePopup : public juce::Component, public j
         listBox_.setModel(this);
         listBox_.setRowHeight(22);
         listBox_.setColour(juce::ListBox::backgroundColourId,
-                           DarkTheme::getColour(DarkTheme::SURFACE));
-        listBox_.setColour(juce::ListBox::outlineColourId, DarkTheme::getBorderColour());
+                           ActiveTheme::getColour(ActiveTheme::SURFACE));
+        listBox_.setColour(juce::ListBox::outlineColourId, ActiveTheme::getBorderColour());
         addAndMakeVisible(listBox_);
     }
 
@@ -321,36 +321,36 @@ class AIChatConsoleContent::AutocompletePopup : public juce::Component, public j
             return;
 
         if (rowIsSelected) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
             g.fillRect(0, 0, width, height);
         }
 
         if (mode_ == Mode::Alias) {
             const auto& entry = *filtered_[static_cast<size_t>(rowNumber)];
-            g.setColour(DarkTheme::getAccentColour());
+            g.setColour(ActiveTheme::getAccentColour());
             g.setFont(FontManager::getInstance().getMonoFont(11.0f));
             g.drawText("@" + entry.alias, 6, 0, width / 2, height,
                        juce::Justification::centredLeft);
-            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.setColour(ActiveTheme::getSecondaryTextColour());
             g.setFont(FontManager::getInstance().getUIFont(10.0f));
             g.drawText(entry.pluginName, width / 2, 0, width / 2 - 6, height,
                        juce::Justification::centredRight);
         } else if (mode_ == Mode::SlashCommand) {
             const auto& cmd = *filteredCommands_[static_cast<size_t>(rowNumber)];
-            g.setColour(DarkTheme::getAccentColour());
+            g.setColour(ActiveTheme::getAccentColour());
             g.setFont(FontManager::getInstance().getMonoFont(11.0f));
             g.drawText("/" + cmd.name, 6, 0, width / 3, height, juce::Justification::centredLeft);
-            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.setColour(ActiveTheme::getSecondaryTextColour());
             g.setFont(FontManager::getInstance().getUIFont(10.0f));
             g.drawText(cmd.description, width / 3, 0, width * 2 / 3 - 6, height,
                        juce::Justification::centredLeft);
         } else {
             const auto& entry = *filteredParams_[static_cast<size_t>(rowNumber)];
-            g.setColour(DarkTheme::getAccentColour());
+            g.setColour(ActiveTheme::getAccentColour());
             g.setFont(FontManager::getInstance().getMonoFont(11.0f));
             g.drawText("@" + entry.pluginAlias + "." + entry.paramAlias, 6, 0, width / 2, height,
                        juce::Justification::centredLeft);
-            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.setColour(ActiveTheme::getSecondaryTextColour());
             g.setFont(FontManager::getInstance().getUIFont(10.0f));
             const auto& displayName =
                 entry.paramName.isNotEmpty() ? entry.paramName : juce::String("parameter");
@@ -399,10 +399,10 @@ class AIChatConsoleContent::MidiContextPopup : public juce::Component, private j
         clearButton_.setButtonText("Clear");
         for (auto* button : {&useSelectionButton_, &clearButton_}) {
             button->setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                              ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
             button->setColour(juce::TextButton::buttonOnColourId,
-                              DarkTheme::getColour(DarkTheme::SURFACE_HOVER));
-            button->setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+                              ActiveTheme::getColour(ActiveTheme::SURFACE_HOVER));
+            button->setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
             addAndMakeVisible(*button);
         }
 
@@ -421,8 +421,8 @@ class AIChatConsoleContent::MidiContextPopup : public juce::Component, private j
         listBox_.setRowHeight(kRowHeight);
         listBox_.setOutlineThickness(0);
         listBox_.setColour(juce::ListBox::backgroundColourId,
-                           DarkTheme::getColour(DarkTheme::SURFACE));
-        listBox_.setColour(juce::ListBox::outlineColourId, DarkTheme::getBorderColour());
+                           ActiveTheme::getColour(ActiveTheme::SURFACE));
+        listBox_.setColour(juce::ListBox::outlineColourId, ActiveTheme::getBorderColour());
         addAndMakeVisible(listBox_);
 
         buildRows();
@@ -432,8 +432,8 @@ class AIChatConsoleContent::MidiContextPopup : public juce::Component, private j
     }
 
     void paint(juce::Graphics& g) override {
-        g.fillAll(DarkTheme::getColour(DarkTheme::SURFACE));
-        g.setColour(DarkTheme::getBorderColour());
+        g.fillAll(ActiveTheme::getColour(ActiveTheme::SURFACE));
+        g.setColour(ActiveTheme::getBorderColour());
         g.drawRect(getLocalBounds(), 1);
     }
 
@@ -472,10 +472,10 @@ class AIChatConsoleContent::MidiContextPopup : public juce::Component, private j
         const auto& row = rows_[static_cast<std::size_t>(rowNumber)];
 
         if (rowIsSelected)
-            g.fillAll(DarkTheme::getColour(DarkTheme::SURFACE_HOVER));
+            g.fillAll(ActiveTheme::getColour(ActiveTheme::SURFACE_HOVER));
 
         if (row.kind == Row::Kind::Empty) {
-            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.setColour(ActiveTheme::getSecondaryTextColour());
             g.setFont(FontManager::getInstance().getMonoFont(11.0f));
             g.drawText(row.label, 8, 0, width - 16, height, juce::Justification::centredLeft);
             return;
@@ -498,10 +498,10 @@ class AIChatConsoleContent::MidiContextPopup : public juce::Component, private j
         const int indent = row.kind == Row::Kind::Clip ? 24 : 8;
         auto tick = juce::Rectangle<float>(static_cast<float>(indent),
                                            static_cast<float>(height - 13) / 2.0f, 13.0f, 13.0f);
-        g.setColour(DarkTheme::getBorderColour());
+        g.setColour(ActiveTheme::getBorderColour());
         g.drawRoundedRectangle(tick, 2.0f, 1.0f);
         if (checked || partial) {
-            g.setColour(DarkTheme::getAccentColour());
+            g.setColour(ActiveTheme::getAccentColour());
             if (partial) {
                 g.fillRect(tick.reduced(3.0f).withHeight(2.0f).withCentre(tick.getCentre()));
             } else {
@@ -515,8 +515,8 @@ class AIChatConsoleContent::MidiContextPopup : public juce::Component, private j
 
         const int textX = indent + 20;
         const int textRightPadding = row.detail.isNotEmpty() ? 92 : 8;
-        g.setColour(row.kind == Row::Kind::Track ? DarkTheme::getTextColour()
-                                                 : DarkTheme::getSecondaryTextColour());
+        g.setColour(row.kind == Row::Kind::Track ? ActiveTheme::getTextColour()
+                                                 : ActiveTheme::getSecondaryTextColour());
         g.setFont(row.kind == Row::Kind::Track
                       ? FontManager::getInstance().getMonoFont(11.0f).boldened()
                       : FontManager::getInstance().getMonoFont(11.0f));
@@ -524,7 +524,7 @@ class AIChatConsoleContent::MidiContextPopup : public juce::Component, private j
                    juce::Justification::centredLeft, true);
 
         if (row.detail.isNotEmpty()) {
-            g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.65f));
+            g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(0.65f));
             g.setFont(FontManager::getInstance().getMonoFont(9.5f));
             const int detailWidth = 82;
             g.drawText(row.detail, width - detailWidth - 8, 0, detailWidth, height,
@@ -897,11 +897,11 @@ void AIChatConsoleContent::RequestThread::run() {
                 safeThis->chatHistory_.moveCaretToEnd();
                 safeThis->chatHistory_.setColour(
                     juce::TextEditor::textColourId,
-                    DarkTheme::getSecondaryTextColour().withAlpha(0.5f));
+                    ActiveTheme::getSecondaryTextColour().withAlpha(0.5f));
                 safeThis->chatHistory_.insertTextAtCaret(
                     juce::String(magda::MixAnalysisAgent::getUserCaveat()) + "\n\n");
                 safeThis->chatHistory_.setColour(juce::TextEditor::textColourId,
-                                                 DarkTheme::getSecondaryTextColour());
+                                                 ActiveTheme::getSecondaryTextColour());
             }
 
             safeThis->chatHistory_.moveCaretToEnd();
@@ -926,7 +926,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
     chatHistory_.setReadOnly(true);
     chatHistory_.setFont(monoFont);
     chatHistory_.setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
-    chatHistory_.setColour(juce::TextEditor::textColourId, DarkTheme::getSecondaryTextColour());
+    chatHistory_.setColour(juce::TextEditor::textColourId, ActiveTheme::getSecondaryTextColour());
     chatHistory_.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
     chatHistory_.setColour(juce::TextEditor::focusedOutlineColourId,
                            juce::Colours::transparentBlack);
@@ -934,8 +934,8 @@ AIChatConsoleContent::AIChatConsoleContent() {
     // highlightedTextColourId to BLACK, which is invisible on a dark
     // background, so dragging over the transcript made the text vanish.
     chatHistory_.setColour(juce::TextEditor::highlightColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
-    chatHistory_.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
+                           ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+    chatHistory_.setColour(juce::TextEditor::highlightedTextColourId, ActiveTheme::getTextColour());
     chatHistory_.setText(juce::String::charToString(0x25C6) + " MAGDA\n\n");
     addAndMakeVisible(chatHistory_);
 
@@ -955,14 +955,14 @@ AIChatConsoleContent::AIChatConsoleContent() {
     // the same solid colour as the panel drawn behind it in paint() instead
     // of relying on transparency — matches dslEditor_'s approach below.
     inputBox_->setColour(juce::CodeEditorComponent::backgroundColourId,
-                         DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                         ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
     inputBox_->setColour(juce::CodeEditorComponent::defaultTextColourId,
-                         DarkTheme::getTextColour());
+                         ActiveTheme::getTextColour());
     inputBox_->setColour(juce::CodeEditorComponent::lineNumberBackgroundId,
                          juce::Colours::transparentBlack);
     inputBox_->setColour(juce::CodeEditorComponent::highlightColourId,
-                         DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
-    inputBox_->setColour(juce::CaretComponent::caretColourId, DarkTheme::getTextColour());
+                         ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+    inputBox_->setColour(juce::CaretComponent::caretColourId, ActiveTheme::getTextColour());
     inputDocument_.addListener(this);
     addAndMakeVisible(*inputBox_);
 
@@ -988,7 +988,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
 
     // Context label (always visible, inside bottom bar)
     contextLabel_.setFont(FontManager::getInstance().getMonoFont(11.0f));
-    contextLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    contextLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     contextLabel_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     contextLabel_.setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
     contextLabel_.setBorderSize(juce::BorderSize<int>(0, 2, 0, 4));
@@ -1000,12 +1000,12 @@ AIChatConsoleContent::AIChatConsoleContent() {
 
     outputModeButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     outputModeButton_.setColour(juce::TextButton::buttonColourId,
-                                DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                                ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
     outputModeButton_.setColour(juce::TextButton::buttonOnColourId,
-                                DarkTheme::getAccentColour().withAlpha(0.28f));
+                                ActiveTheme::getAccentColour().withAlpha(0.28f));
     outputModeButton_.setColour(juce::TextButton::textColourOffId,
-                                DarkTheme::getSecondaryTextColour());
-    outputModeButton_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+                                ActiveTheme::getSecondaryTextColour());
+    outputModeButton_.setColour(juce::TextButton::textColourOnId, ActiveTheme::getAccentColour());
     outputModeButton_.setMouseCursor(juce::MouseCursor::PointingHandCursor);
     outputModeButton_.onClick = [this]() {
         if (midiOutputMode_ == MidiOutputMode::ReviseLast) {
@@ -1026,7 +1026,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
     analysisChip_.setJustificationType(juce::Justification::centredLeft);
     analysisChip_.setFont(juce::Font(11.0f));
     analysisChip_.setColour(juce::Label::textColourId,
-                            DarkTheme::getColour(DarkTheme::ACCENT_INFO));
+                            ActiveTheme::getColour(ActiveTheme::ACCENT_INFO));
     analysisChip_.setInterceptsMouseClicks(false, false);
     addChildComponent(analysisChip_);
     magda::MixAnalysisService::getInstance().addListener(this);
@@ -1093,12 +1093,12 @@ AIChatConsoleContent::AIChatConsoleContent() {
     dslOutput_.setFont(FontManager::getInstance().getMonoFont(12.0f));
     dslOutput_.setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     dslOutput_.setColour(juce::TextEditor::textColourId,
-                         DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_PROMPT));
+                         ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_PROMPT));
     dslOutput_.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
     dslOutput_.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
     dslOutput_.setColour(juce::TextEditor::highlightColourId,
-                         DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
-    dslOutput_.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
+                         ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+    dslOutput_.setColour(juce::TextEditor::highlightedTextColourId, ActiveTheme::getTextColour());
     dslOutput_.setText("MAGDA DSL Console\nCtrl+Enter to execute.\n\n");
 
     // DSL code editor. Surface and token colours both come from the theme's
@@ -1108,7 +1108,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
     dslEditor_->setFont(FontManager::getInstance().getMonoFont(13.0f));
     applyCodeEditorTheme(*dslEditor_, dslTokeniser_, CodeEditorSurface::DslConsole);
     dslEditor_->setColour(juce::CodeEditorComponent::backgroundColourId,
-                          DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                          ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
     dslEditor_->setLineNumbersShown(true);
     dslEditor_->setTabSize(2, true);
     dslEditor_->setScrollbarThickness(8);
@@ -1116,10 +1116,11 @@ AIChatConsoleContent::AIChatConsoleContent() {
 
     // DSL status bar
     dslStatusLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    dslStatusLabel_.setColour(juce::Label::backgroundColourId,
-                              DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_STATUS_BACKGROUND));
+    dslStatusLabel_.setColour(
+        juce::Label::backgroundColourId,
+        ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_STATUS_BACKGROUND));
     dslStatusLabel_.setColour(juce::Label::textColourId,
-                              DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_STATUS_TEXT));
+                              ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_STATUS_TEXT));
 #if JUCE_MAC
     dslStatusLabel_.setText("  MAGDA DSL  |  Cmd+Enter: Run  |  Cmd+L: Clear",
                             juce::dontSendNotification);
@@ -1139,7 +1140,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
     // Config status bar
     configStatusLabel_.setFont(FontManager::getInstance().getMonoFont(10.0f));
     configStatusLabel_.setColour(juce::Label::textColourId,
-                                 DarkTheme::getSecondaryTextColour().withAlpha(0.6f));
+                                 ActiveTheme::getSecondaryTextColour().withAlpha(0.6f));
     configStatusLabel_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     configStatusLabel_.setJustificationType(juce::Justification::centredLeft);
     // Clickable: opens AI Settings so the footer both reports and edits config.
@@ -1464,7 +1465,7 @@ void AIChatConsoleContent::setThemedButtonIcon(juce::DrawableButton& button, con
                                                std::size_t svgDataSize) {
     auto icon = juce::Drawable::createFromImageData(svgData, svgDataSize);
     if (icon)
-        DarkTheme::applyToSvgIcon(*icon);
+        ActiveTheme::applyToSvgIcon(*icon);
     button.setImages(icon.get());
 }
 
@@ -1481,21 +1482,21 @@ void AIChatConsoleContent::lookAndFeelChanged() {
     // juce::Colour at construction, so re-apply them here or they keep the old
     // palette after a live theme change. updateConfigStatus() re-applies
     // configStatusLabel_'s state colour.
-    chatHistory_.setColour(juce::TextEditor::textColourId, DarkTheme::getSecondaryTextColour());
+    chatHistory_.setColour(juce::TextEditor::textColourId, ActiveTheme::getSecondaryTextColour());
     chatHistory_.setColour(juce::TextEditor::highlightColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
-    chatHistory_.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
+                           ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+    chatHistory_.setColour(juce::TextEditor::highlightedTextColourId, ActiveTheme::getTextColour());
     dslOutput_.setColour(juce::TextEditor::highlightColourId,
-                         DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
-    dslOutput_.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
+                         ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+    dslOutput_.setColour(juce::TextEditor::highlightedTextColourId, ActiveTheme::getTextColour());
     if (inputBox_ != nullptr) {
         inputBox_->setColour(juce::CodeEditorComponent::backgroundColourId,
-                             DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                             ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
         inputBox_->setColour(juce::CodeEditorComponent::defaultTextColourId,
-                             DarkTheme::getTextColour());
+                             ActiveTheme::getTextColour());
         inputBox_->setColour(juce::CodeEditorComponent::highlightColourId,
-                             DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
-        inputBox_->setColour(juce::CaretComponent::caretColourId, DarkTheme::getTextColour());
+                             ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+        inputBox_->setColour(juce::CaretComponent::caretColourId, ActiveTheme::getTextColour());
         // A CodeEditorComponent caches the scheme it got from its tokeniser at
         // construction, so the @plugin / /command colours need re-installing.
         inputBox_->setColourScheme(inputTokeniser_.getDefaultColourScheme());
@@ -1503,15 +1504,16 @@ void AIChatConsoleContent::lookAndFeelChanged() {
     if (dslEditor_ != nullptr) {
         applyCodeEditorTheme(*dslEditor_, dslTokeniser_, CodeEditorSurface::DslConsole);
         dslEditor_->setColour(juce::CodeEditorComponent::backgroundColourId,
-                              DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                              ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
     }
-    dslStatusLabel_.setColour(juce::Label::backgroundColourId,
-                              DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_STATUS_BACKGROUND));
+    dslStatusLabel_.setColour(
+        juce::Label::backgroundColourId,
+        ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_STATUS_BACKGROUND));
     dslStatusLabel_.setColour(juce::Label::textColourId,
-                              DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_STATUS_TEXT));
-    contextLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+                              ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_STATUS_TEXT));
+    contextLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     analysisChip_.setColour(juce::Label::textColourId,
-                            DarkTheme::getColour(DarkTheme::ACCENT_INFO));
+                            ActiveTheme::getColour(ActiveTheme::ACCENT_INFO));
     updateConfigStatus();
 
     repaint();
@@ -1548,16 +1550,16 @@ void AIChatConsoleContent::appendToChat(const juce::String& text) {
 }
 
 void AIChatConsoleContent::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getPanelBackgroundColour());
+    g.fillAll(ActiveTheme::getPanelBackgroundColour());
 
     if (activeTab_ == ConsoleTab::AI) {
         // Draw chat history + status footer as one rounded panel
         auto chatBounds = chatHistory_.getBounds().toFloat();
         auto statusBounds = configStatusLabel_.getBounds().toFloat();
         auto chatPanel = chatBounds.getUnion(statusBounds);
-        g.setColour(DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
         g.fillRoundedRectangle(chatPanel, 4.0f);
-        g.setColour(DarkTheme::getBorderColour());
+        g.setColour(ActiveTheme::getBorderColour());
         g.drawRoundedRectangle(chatPanel, 4.0f, 1.0f);
 
         // Separator between chat and status footer
@@ -1570,9 +1572,9 @@ void AIChatConsoleContent::paint(juce::Graphics& g) {
         auto barBounds = bottomBarBounds_;
         auto combined = inputBounds.getUnion(barBounds).toFloat();
 
-        g.setColour(DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
         g.fillRoundedRectangle(combined, 4.0f);
-        g.setColour(DarkTheme::getBorderColour());
+        g.setColour(ActiveTheme::getBorderColour());
         g.drawRoundedRectangle(combined, 4.0f, 1.0f);
 
         // Thin horizontal border between input and bottom bar
@@ -1599,8 +1601,9 @@ void AIChatConsoleContent::paint(juce::Graphics& g) {
 
             if (icon) {
                 auto iconBounds = contextIconBounds_.toFloat().reduced(6.0f);
-                auto colour = contextEnabled_ ? DarkTheme::getAccentColour()
-                                              : DarkTheme::getSecondaryTextColour().withAlpha(0.3f);
+                auto colour = contextEnabled_
+                                  ? ActiveTheme::getAccentColour()
+                                  : ActiveTheme::getSecondaryTextColour().withAlpha(0.3f);
                 static const auto svgGrey = juce::Colour(0xFFB3B3B3);
                 static const auto svgWhite = juce::Colours::white;
                 auto iconCopy = icon->createCopy();
@@ -1618,9 +1621,9 @@ void AIChatConsoleContent::paint(juce::Graphics& g) {
     } else {
         // Draw DSL output area as rounded panel
         auto outputBounds = dslOutput_.getBounds().toFloat();
-        g.setColour(DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
         g.fillRoundedRectangle(outputBounds, 4.0f);
-        g.setColour(DarkTheme::getBorderColour());
+        g.setColour(ActiveTheme::getBorderColour());
         g.drawRoundedRectangle(outputBounds, 4.0f, 1.0f);
     }
 }
@@ -1728,9 +1731,9 @@ void AIChatConsoleContent::setupTabButtons() {
     // ICON_ON_ACCENT keeps the active glyph legible on the accent chip in
     // every theme; a literal white got funnelled to TEXT_BRIGHT and vanished
     // on themes whose bright text sits near the accent.
-    aiTabButton_->setActiveColor(DarkTheme::ICON_ON_ACCENT);
-    aiTabButton_->setNormalBackgroundColor(DarkTheme::SURFACE);
-    aiTabButton_->setActiveBackgroundColor(DarkTheme::ACCENT_PRIMARY);
+    aiTabButton_->setActiveColor(ActiveTheme::ICON_ON_ACCENT);
+    aiTabButton_->setNormalBackgroundColor(ActiveTheme::SURFACE);
+    aiTabButton_->setActiveBackgroundColor(ActiveTheme::ACCENT_PRIMARY);
     aiTabButton_->setClickingTogglesState(true);
     aiTabButton_->setRadioGroupId(9001);
     aiTabButton_->setToggleState(true, juce::dontSendNotification);
@@ -1741,9 +1744,9 @@ void AIChatConsoleContent::setupTabButtons() {
     dslTabButton_ = std::make_unique<magda::SvgButton>("DSLTab", BinaryData::script_svg,
                                                        BinaryData::script_svgSize);
     dslTabButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    dslTabButton_->setActiveColor(DarkTheme::ICON_ON_ACCENT);
-    dslTabButton_->setNormalBackgroundColor(DarkTheme::SURFACE);
-    dslTabButton_->setActiveBackgroundColor(DarkTheme::ACCENT_PRIMARY);
+    dslTabButton_->setActiveColor(ActiveTheme::ICON_ON_ACCENT);
+    dslTabButton_->setNormalBackgroundColor(ActiveTheme::SURFACE);
+    dslTabButton_->setActiveBackgroundColor(ActiveTheme::ACCENT_PRIMARY);
     dslTabButton_->setClickingTogglesState(true);
     dslTabButton_->setRadioGroupId(9001);
     dslTabButton_->setTooltip("DSL Console");
@@ -1794,7 +1797,7 @@ void AIChatConsoleContent::executeDSL() {
 
     // Echo
     appendDSLOutput("> " + code + "\n",
-                    DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_PROMPT));
+                    ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_PROMPT));
 
     // Built-in commands
     if (code == "help") {
@@ -1806,7 +1809,7 @@ void AIChatConsoleContent::executeDSL() {
                         "  .notes.add(pitch=C4, beat=0) - Add note\n"
                         "  .notes.add_chord(root=C4, quality=major)\n"
                         "  filter(tracks, ...).delete()  - Bulk operations\n\n",
-                        DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_INFO));
+                        ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_INFO));
         dslDocument_.replaceAllContent({});
         return;
     }
@@ -1826,10 +1829,10 @@ void AIChatConsoleContent::executeDSL() {
         if (results.isEmpty())
             results = "OK";
         appendDSLOutput(results + "\n\n",
-                        DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_TEXT));
+                        ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_TEXT));
     } else {
         appendDSLOutput("Error: " + juce::String(interpreter.getError()) + "\n\n",
-                        DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_ERROR));
+                        ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_ERROR));
     }
 
     dslDocument_.replaceAllContent({});
@@ -2356,8 +2359,9 @@ void AIChatConsoleContent::updateContextBar() {
     displayText += "  " + juce::String::charToString(0x25BE);
     contextLabel_.setText(displayText, juce::dontSendNotification);
     contextLabel_.setColour(juce::Label::textColourId,
-                            contextEnabled_ ? DarkTheme::getAccentColour()
-                                            : DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
+                            contextEnabled_
+                                ? ActiveTheme::getAccentColour()
+                                : ActiveTheme::getSecondaryTextColour().withAlpha(0.3f));
     updateOutputModeButton();
     resized();
     repaint();
@@ -2408,18 +2412,18 @@ void AIChatConsoleContent::updateConfigStatus() {
             status += " | No model loaded";
             serverToggleButton_->updateSvgData(BinaryData::server_play_svg,
                                                BinaryData::server_play_svgSize);
-            serverToggleButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-            serverToggleButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+            serverToggleButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
+            serverToggleButton_->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
             serverToggleButton_->setVisible(true);
             configStatusLabel_.setColour(juce::Label::textColourId,
-                                         DarkTheme::getSecondaryTextColour());
+                                         ActiveTheme::getSecondaryTextColour());
         }
         serverToggleButton_->repaint();
     } else {
         if (serverToggleButton_)
             serverToggleButton_->setVisible(false);
         configStatusLabel_.setColour(juce::Label::textColourId,
-                                     DarkTheme::getSecondaryTextColour());
+                                     ActiveTheme::getSecondaryTextColour());
     }
 
     configStatusLabel_.setText(status, juce::dontSendNotification);

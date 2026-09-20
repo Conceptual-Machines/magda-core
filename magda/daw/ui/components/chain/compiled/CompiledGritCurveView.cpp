@@ -4,7 +4,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaGritCompiledPlugin.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -115,14 +115,14 @@ void CompiledGritCurveView::resampleFromPlugin() {
 
 void CompiledGritCurveView::paint(juce::Graphics& g) {
     const auto bounds = getLocalBounds();
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).darker(0.06f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).darker(0.06f));
     g.fillRect(bounds);
 
     auto plot = bounds.toFloat().reduced(kPlotPadX, kPlotPadY);
     if (plot.getWidth() < 8.0f || plot.getHeight() < 8.0f)
         return;
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.55f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.55f));
     g.drawRect(plot, 1.0f);
 
     juce::Graphics::ScopedSaveState clipGuard(g);
@@ -130,14 +130,14 @@ void CompiledGritCurveView::paint(juce::Graphics& g) {
 
     // Decade grid lines (100 Hz / 1 kHz / 10 kHz) — keeps the log axis
     // legible without a full ruler.
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.22f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.22f));
     for (float decade : {100.0f, 1000.0f, 10000.0f}) {
         const float n = freqToNorm(decade);
         const float x = plot.getX() + n * plot.getWidth();
         g.drawVerticalLine(static_cast<int>(std::round(x)), plot.getY(), plot.getBottom());
     }
 
-    const auto carrierColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
+    const auto carrierColour = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
     const float amount01 = juce::jlimit(0.0f, 1.0f, amount_);
     const float plotBottom = plot.getBottom();
     const float plotTop = plot.getY();

@@ -22,14 +22,14 @@ NoteSlicePopup::NoteSlicePopup(magda::ClipId clipId, size_t noteCount)
     setWantsKeyboardFocus(true);
 
     countLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
-    countLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    countLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     countLabel_.setJustificationType(juce::Justification::centredLeft);
     countLabel_.setText(juce::String(noteCount_) + (noteCount_ == 1 ? " note" : " notes"),
                         juce::dontSendNotification);
     addAndMakeVisible(countLabel_);
 
     subdivisionsLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    subdivisionsLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    subdivisionsLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     subdivisionsLabel_.setJustificationType(juce::Justification::centredLeft);
     subdivisionsLabel_.setText("SLICES", juce::dontSendNotification);
     addAndMakeVisible(subdivisionsLabel_);
@@ -43,14 +43,15 @@ NoteSlicePopup::NoteSlicePopup(magda::ClipId clipId, size_t noteCount)
     addAndMakeVisible(subdivisionsSlider_);
 
     applyButton_.setColour(juce::TextButton::buttonColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.6f));
-    applyButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+                           ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.6f));
+    applyButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
     applyButton_.onClick = [this] { apply(); };
     addAndMakeVisible(applyButton_);
 
     cancelButton_.setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.15f));
-    cancelButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+                            ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.15f));
+    cancelButton_.setColour(juce::TextButton::textColourOffId,
+                            ActiveTheme::getSecondaryTextColour());
     cancelButton_.onClick = [this] { cancel(); };
     addAndMakeVisible(cancelButton_);
 
@@ -91,19 +92,19 @@ bool NoteSlicePopup::keyPressed(const juce::KeyPress& key) {
 
 void NoteSlicePopup::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds().toFloat();
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     g.fillRoundedRectangle(bounds, 4.0f);
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRoundedRectangle(bounds.reduced(0.5f), 4.0f, 1.0f);
 
     auto titleArea = getLocalBounds().removeFromTop(TITLE_BAR_HEIGHT);
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.08f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.08f));
     g.fillRect(titleArea);
-    g.setColour(DarkTheme::getSecondaryTextColour());
+    g.setColour(ActiveTheme::getSecondaryTextColour());
     g.setFont(FontManager::getInstance().getUIFont(10.0f));
     g.drawText("NOTE SLICE", titleArea.reduced(6, 0), juce::Justification::centredLeft);
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.5f));
     g.drawHorizontalLine(TITLE_BAR_HEIGHT, 0.0f, static_cast<float>(getWidth()));
 
     auto preview = getLocalBounds();
@@ -111,9 +112,9 @@ void NoteSlicePopup::paint(juce::Graphics& g) {
     preview = preview.removeFromTop(PREVIEW_HEIGHT).reduced(PADDING, 4);
 
     auto note = preview.reduced(4, 8).toFloat();
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.16f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.16f));
     g.fillRoundedRectangle(note, 3.0f);
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.85f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.85f));
     g.drawRoundedRectangle(note, 3.0f, 1.0f);
 
     const int subdivisions = juce::roundToInt(subdivisionsSlider_.getValue());

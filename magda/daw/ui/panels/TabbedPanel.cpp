@@ -2,7 +2,7 @@
 
 #include <BinaryData.h>
 
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "content/MediaExplorerContent.hpp"
 #include "content/inspector/InspectorContainer.hpp"
 
@@ -72,7 +72,7 @@ void TabbedPanel::paint(juce::Graphics& g) {
 }
 
 void TabbedPanel::paintBackground(juce::Graphics& g) {
-    auto bg = DarkTheme::getPanelBackgroundColour();
+    auto bg = ActiveTheme::getPanelBackgroundColour();
     g.fillAll(bg);
 
     // Subtle gradient on collapsed side panels for depth
@@ -92,7 +92,7 @@ void TabbedPanel::paintBackground(juce::Graphics& g) {
 }
 
 void TabbedPanel::paintBorder(juce::Graphics& g) {
-    g.setColour(DarkTheme::getBorderColour());
+    g.setColour(ActiveTheme::getBorderColour());
 
     // Draw borders based on panel location
     switch (location_) {

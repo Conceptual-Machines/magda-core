@@ -1,6 +1,6 @@
 #include "modulation/ModsPanelComponent.hpp"
 
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -17,11 +17,11 @@ void AddModButton::paint(juce::Graphics& g) {
     }
 
     // Hover state - highlight background
-    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).brighter(0.08f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE).brighter(0.08f));
     g.fillRoundedRectangle(bounds.toFloat(), 3.0f);
 
     // + icon
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
     auto centerX = bounds.getCentreX();
     auto centerY = bounds.getCentreY();
     float size = 20.0f;
@@ -30,7 +30,7 @@ void AddModButton::paint(juce::Graphics& g) {
 
     // "Add Mod" text
     g.setFont(FontManager::getInstance().getUIFont(8.0f));
-    g.setColour(DarkTheme::getSecondaryTextColour());
+    g.setColour(ActiveTheme::getSecondaryTextColour());
     g.drawText("Add Mod", bounds.removeFromBottom(16), juce::Justification::centred);
 }
 
@@ -299,7 +299,7 @@ void ModsPanelComponent::paint(juce::Graphics& g) {
     int itemHeight = (bounds.getHeight() - (rows - 1) * GRID_SPACING) / rows;
 
     // Draw grid cell outlines for all slots
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.5f));
 
     for (int i = 0; i < visibleCount; ++i) {
         int col = i % gridCols;

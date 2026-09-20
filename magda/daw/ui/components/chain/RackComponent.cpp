@@ -15,7 +15,7 @@
 #include "core/TrackCommands.hpp"
 #include "engine/AudioEngine.hpp"
 #include "layout/NodeHeaderStyles.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
@@ -102,7 +102,7 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
                                                     BinaryData::iconmodsboldm_svgSize);
     modButton_->setToggleState(modPanelVisible_, juce::dontSendNotification);
     node_header::applyHeaderIconStyle(*modButton_,
-                                      DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+                                      ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
     modButton_->setActive(modPanelVisible_);
     modButton_->onClick = [this]() {
         modButton_->setActive(modButton_->getToggleState());
@@ -115,7 +115,7 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
         std::make_unique<magda::SvgButton>("Macro", BinaryData::knob_svg, BinaryData::knob_svgSize);
     macroButton_->setToggleState(paramPanelVisible_, juce::dontSendNotification);
     node_header::applyHeaderIconStyle(*macroButton_,
-                                      DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+                                      ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
     macroButton_->setActive(paramPanelVisible_);
     macroButton_->onClick = [this]() {
         macroButton_->setActive(macroButton_->getToggleState());
@@ -129,10 +129,11 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     deltaButton_->setTooltip("Delta Solo: processed rack signal minus dry input");
     deltaButton_->setLookAndFeel(&node_header::getDeltaSoloButtonLookAndFeel());
     deltaButton_->setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE));
+                            ActiveTheme::getColour(ActiveTheme::SURFACE));
     deltaButton_->setColour(juce::TextButton::buttonOnColourId,
-                            DarkTheme::getColour(DarkTheme::ACCENT_INFO).darker(0.3f));
-    deltaButton_->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+                            ActiveTheme::getColour(ActiveTheme::ACCENT_INFO).darker(0.3f));
+    deltaButton_->setColour(juce::TextButton::textColourOffId,
+                            ActiveTheme::getSecondaryTextColour());
     deltaButton_->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
     deltaButton_->onClick = [this]() {
         const bool enabled = deltaButton_->getToggleState();
@@ -149,7 +150,7 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
         std::make_unique<magda::SvgButton>("Presets", BinaryData::iconpresetsroundboldm_svg,
                                            BinaryData::iconpresetsroundboldm_svgSize);
     node_header::applyHeaderIconStyle(*presetButton_,
-                                      DarkTheme::getColour(DarkTheme::PRESET_INDIGO),
+                                      ActiveTheme::getColour(ActiveTheme::PRESET_INDIGO),
                                       /*toggling*/ false);
     presetButton_->setActive(true);
     presetButton_->setIconPadding(4.5f);
@@ -186,7 +187,7 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     // "Chains:" label - clicks pass through for selection
     chainsLabel_.setText("Chains:", juce::dontSendNotification);
     chainsLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    chainsLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    chainsLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     chainsLabel_.setJustificationType(juce::Justification::centredLeft);
     chainsLabel_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(chainsLabel_);
@@ -194,9 +195,9 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     // Add chain button (in content area, next to Chains: label)
     addChainButton_.setButtonText("+");
     addChainButton_.setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::SURFACE));
+                              ActiveTheme::getColour(ActiveTheme::SURFACE));
     addChainButton_.setColour(juce::TextButton::textColourOffId,
-                              DarkTheme::getSecondaryTextColour());
+                              ActiveTheme::getSecondaryTextColour());
     addChainButton_.onClick = [this]() { onAddChainClicked(); };
     addChainButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     addAndMakeVisible(addChainButton_);
@@ -276,7 +277,7 @@ void RackComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> content
     // Chains label separator (below "Chains:" label), stopping before the meter strip
     int chainsSeparatorY = contentArea.getY() + CHAINS_LABEL_HEIGHT;
     int lineRight = contentArea.getRight() - METER_STRIP_WIDTH - 4 - 2;
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawHorizontalLine(chainsSeparatorY, static_cast<float>(contentArea.getX() + 2),
                          static_cast<float>(lineRight));
 }

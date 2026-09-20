@@ -3,8 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "ActiveTheme.hpp"
 #include "CursorManager.hpp"
-#include "DarkTheme.hpp"
 #include "FontManager.hpp"
 #include "LayoutConfig.hpp"
 #include "LoopStripRenderer.hpp"
@@ -23,12 +23,12 @@ TimeRuler::~TimeRuler() {
 
 void TimeRuler::paint(juce::Graphics& g) {
     // Background
-    g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::BACKGROUND_ALT));
 
     int height = getHeight();
     int tickAreaTop = height - tickHeightMajor();
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
 
     // Border line above ticks
     g.fillRect(0, tickAreaTop, getWidth(), 1);
@@ -481,7 +481,7 @@ void TimeRuler::drawSecondsMode(juce::Graphics& g) {
 
         // Draw tick
         g.setColour(
-            DarkTheme::getColour(isMajor ? DarkTheme::TEXT_SECONDARY : DarkTheme::TEXT_DIM));
+            ActiveTheme::getColour(isMajor ? ActiveTheme::TEXT_SECONDARY : ActiveTheme::TEXT_DIM));
         g.drawVerticalLine(x, static_cast<float>(tickBottom - tickHeight),
                            static_cast<float>(tickBottom));
 
@@ -490,7 +490,7 @@ void TimeRuler::drawSecondsMode(juce::Graphics& g) {
             bool hasLoop = loopEnabled && loopLength > 0.0;
             int loopSpace = hasLoop ? LOOP_STRIP_HEIGHT : 0;
             int lblBottom = tickBottom - tickHeightMajor() - loopSpace;
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
             juce::String label = formatTimeLabel(time, interval);
             g.drawText(label, x - 30, 1, 60, lblBottom - 1, juce::Justification::centredTop, false);
         }
@@ -606,20 +606,20 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
                 GridConstants::classifyBeatPosition(beatsFromOrigin, barLengthBeats);
 
             if (isBarStart) {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
                 g.drawVerticalLine(x, static_cast<float>(tickBottom - tickHeightMajor()),
                                    static_cast<float>(tickBottom));
             } else if (isBeatStart) {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.7f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.7f));
                 g.drawVerticalLine(x, static_cast<float>(tickBottom - mediumTickHeight),
                                    static_cast<float>(tickBottom));
             } else {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
                 g.drawVerticalLine(x, static_cast<float>(tickBottom - tickHeightMinor()),
                                    static_cast<float>(tickBottom));
             }
         } else {
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
             g.drawVerticalLine(x, static_cast<float>(tickBottom - tickHeightMinor()),
                                static_cast<float>(tickBottom));
         }
@@ -645,7 +645,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
 
             int bar = static_cast<int>(barStep) + 1;
             if ((bar - 1) % barLabelInterval == 0) {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
                 g.setFont(FontManager::getInstance().getUIFont(12.0f).boldened());
                 g.drawText(juce::String(bar), x - 35, labelY, 70, labelHeight,
                            juce::Justification::centred);
@@ -653,7 +653,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
 
             // Also draw bar tick for non-aligned grids (aligned grids drew it in pass 1)
             if (!gridAligned) {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
                 g.drawVerticalLine(x, static_cast<float>(tickBottom - tickHeightMajor()),
                                    static_cast<float>(tickBottom));
             }
@@ -696,14 +696,14 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             if (std::abs(x - barX) < 40)
                 continue;
 
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
             g.setFont(FontManager::getInstance().getUIFont(10.0f));
             g.drawText(juce::String(bar) + "." + juce::String(beatInBar), x - 25, labelY, 50,
                        labelHeight, juce::Justification::centred);
 
             // Also draw beat tick for non-aligned grids
             if (!gridAligned) {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.7f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.7f));
                 g.drawVerticalLine(x, static_cast<float>(tickBottom - mediumTickHeight),
                                    static_cast<float>(tickBottom));
             }
@@ -768,7 +768,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             bool isOn16th = std::abs(pos16th - sixteenth) < eps && sixteenth > 0;
 
             if (isOn16th) {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
                 g.setFont(FontManager::getInstance().getUIFont(8.0f));
                 g.drawText(juce::String(bar) + "." + juce::String(beatInBar) + "." +
                                juce::String(sixteenth + 1),
@@ -834,7 +834,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
         int handleX = timeToPixel(playheadHandlePosition_);
         if (handleX >= 0 && handleX <= width) {
             int tickAreaTop = height - tickHeightMajor();
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
 
             // Size the triangle to the playhead band (the tick area below the
             // label divider) so it fills that rectangle instead of poking past
@@ -853,7 +853,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
         int playheadX = timeToPixel(playheadPosition);
         if (playheadX >= 0 && playheadX <= width) {
             int tickAreaTop = height - tickHeightMajor();
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
             g.fillRect(playheadX - 1, tickAreaTop, 2, tickHeightMajor());
         }
     }

@@ -8,7 +8,7 @@
 #include "audio/plugins/ArpeggiatorPlugin.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/common/RampCurveDisplay.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {

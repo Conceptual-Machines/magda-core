@@ -4,7 +4,7 @@
 #include <cmath>
 #include <cstdio>
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "ValueEditGesture.hpp"
 #include "core/AutomationManager.hpp"

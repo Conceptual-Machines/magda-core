@@ -1,7 +1,7 @@
 #include "slot/DeviceSlotContentPainter.hpp"
 
 #include "drum_grid/DeviceSlotDrumGridBridge.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -28,7 +28,7 @@ void paintSeparators(juce::Graphics& g, juce::Rectangle<int> contentArea,
     if (meterStripWidth > 0) {
         const int lineX = contentArea.getRight() - meterStripWidth - 4;
         const int meterTop = contentArea.getY() + (skipContentHeader ? 0 : contentHeaderHeight);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawVerticalLine(lineX, static_cast<float>(meterTop + 2),
                            static_cast<float>(contentArea.getBottom() - 2));
     }
@@ -37,7 +37,7 @@ void paintSeparators(juce::Graphics& g, juce::Rectangle<int> contentArea,
     const auto right = static_cast<float>(contentArea.getRight() - 2);
     const int headerBottom = contentArea.getY() + contentHeaderHeight;
     if (!skipContentHeader) {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawHorizontalLine(headerBottom, left, right);
     }
 
@@ -60,7 +60,7 @@ void paintSeparators(juce::Graphics& g, juce::Rectangle<int> contentArea,
 bool paintLoadState(juce::Graphics& g, juce::Rectangle<int> contentArea,
                     magda::DeviceLoadState loadState) {
     if (loadState == magda::DeviceLoadState::Loading) {
-        g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.6f));
+        g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(0.6f));
         g.setFont(FontManager::getInstance().getUIFont(11.0f));
         g.drawText("Loading...", contentArea, juce::Justification::centred);
         return true;
@@ -79,8 +79,8 @@ bool paintLoadState(juce::Graphics& g, juce::Rectangle<int> contentArea,
 void paintMidiUtilityHeader(juce::Graphics& g, juce::Rectangle<int> headerArea,
                             juce::Rectangle<int> textArea,
                             const DeviceSlotContentPaintState& state) {
-    const auto textColour = state.bypassed ? DarkTheme::getSecondaryTextColour().withAlpha(0.5f)
-                                           : DarkTheme::getSecondaryTextColour();
+    const auto textColour = state.bypassed ? ActiveTheme::getSecondaryTextColour().withAlpha(0.5f)
+                                           : ActiveTheme::getSecondaryTextColour();
     g.setColour(textColour);
 
     if ((state.traits.isStepSequencer || state.traits.isPolyStepSequencer) &&
@@ -88,9 +88,9 @@ void paintMidiUtilityHeader(juce::Graphics& g, juce::Rectangle<int> headerArea,
         const int maxSteps = juce::jmax(1, state.stepRecording.maxSteps);
         const int displayPosition = juce::jlimit(0, maxSteps - 1, state.stepRecording.position);
         g.saveState();
-        g.setColour(DarkTheme::getColour(DarkTheme::STEP_RECORD).withAlpha(0.9f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::STEP_RECORD).withAlpha(0.9f));
         g.fillRect(headerArea);
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT));
         g.setFont(FontManager::getInstance().getMicrogrammaFont(9.0f));
         g.drawText("STEP RECORDING  " + juce::String(displayPosition + 1) + "/" +
                        juce::String(maxSteps),
@@ -110,8 +110,8 @@ void paintMidiUtilityHeader(juce::Graphics& g, juce::Rectangle<int> headerArea,
 
 void paintTracktionHeader(juce::Graphics& g, juce::Rectangle<int> textArea,
                           const DeviceSlotContentPaintState& state) {
-    const auto textColour = state.bypassed ? DarkTheme::getSecondaryTextColour().withAlpha(0.5f)
-                                           : DarkTheme::getSecondaryTextColour();
+    const auto textColour = state.bypassed ? ActiveTheme::getSecondaryTextColour().withAlpha(0.5f)
+                                           : ActiveTheme::getSecondaryTextColour();
     g.setColour(textColour);
 
     constexpr int logoSize = 14;
@@ -126,8 +126,8 @@ void paintTracktionHeader(juce::Graphics& g, juce::Rectangle<int> textArea,
 
 void paintExternalHeader(juce::Graphics& g, juce::Rectangle<int> textArea,
                          const DeviceSlotContentPaintState& state) {
-    const auto textColour = state.bypassed ? DarkTheme::getSecondaryTextColour().withAlpha(0.5f)
-                                           : DarkTheme::getSecondaryTextColour();
+    const auto textColour = state.bypassed ? ActiveTheme::getSecondaryTextColour().withAlpha(0.5f)
+                                           : ActiveTheme::getSecondaryTextColour();
     g.setColour(textColour);
     g.setFont(FontManager::getInstance().getUIFont(9.0f));
     g.drawText(state.manufacturer + " / " + state.deviceName, textArea,

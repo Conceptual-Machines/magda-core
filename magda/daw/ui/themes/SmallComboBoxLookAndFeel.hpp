@@ -2,7 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "DarkTheme.hpp"
+#include "ActiveTheme.hpp"
 #include "FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -22,11 +22,11 @@ class SmallComboBoxLookAndFeel : public juce::LookAndFeel_V4 {
         float cornerRadius = 2.0f;
 
         // Background
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
         g.fillRoundedRectangle(bounds, cornerRadius);
 
         // Border
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRoundedRectangle(bounds.reduced(0.5f), cornerRadius, 1.0f);
 
         // Draw chevron arrow on the right
@@ -40,7 +40,7 @@ class SmallComboBoxLookAndFeel : public juce::LookAndFeel_V4 {
         arrow.lineTo(arrowX + arrowWidth / 2.0f, arrowY + arrowHeight / 2.0f);
         arrow.lineTo(arrowX + arrowWidth, arrowY - arrowHeight / 2.0f);
 
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.strokePath(arrow, juce::PathStrokeType(1.2f));
     }
 
@@ -52,7 +52,7 @@ class SmallComboBoxLookAndFeel : public juce::LookAndFeel_V4 {
     }
 
     void drawLabel(juce::Graphics& g, juce::Label& label) override {
-        label.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        label.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
         juce::LookAndFeel_V4::drawLabel(g, label);
     }
 
@@ -70,7 +70,7 @@ class SmallComboBoxLookAndFeel : public juce::LookAndFeel_V4 {
                            const juce::Drawable* icon, const juce::Colour* textColour) override {
         if (isSeparator) {
             auto separatorArea = area.reduced(5, 0).withHeight(1);
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
             g.fillRect(separatorArea);
             return;
         }
@@ -78,13 +78,13 @@ class SmallComboBoxLookAndFeel : public juce::LookAndFeel_V4 {
         auto textArea = area.reduced(8, 0);
 
         if (isHighlighted && isActive) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.3f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.3f));
             g.fillRect(area);
         }
 
         g.setColour(textColour != nullptr ? *textColour
-                                          : (isActive ? DarkTheme::getTextColour()
-                                                      : DarkTheme::getSecondaryTextColour()));
+                                          : (isActive ? ActiveTheme::getTextColour()
+                                                      : ActiveTheme::getSecondaryTextColour()));
         g.setFont(getPopupMenuFont());
         g.drawFittedText(text, textArea, juce::Justification::centredLeft, 1);
 
@@ -104,9 +104,9 @@ class SmallComboBoxLookAndFeel : public juce::LookAndFeel_V4 {
     }
 
     void drawPopupMenuBackground(juce::Graphics& g, int width, int height) override {
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
         g.fillRect(0, 0, width, height);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRect(0, 0, width, height);
     }
 

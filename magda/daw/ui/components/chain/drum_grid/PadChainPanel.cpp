@@ -5,7 +5,7 @@
 #include <algorithm>
 
 #include "core/TrackManager.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
@@ -25,8 +25,8 @@ juce::String yesNo(bool value) {
 
 PadChainPanel::PadChainPanel() {
     addButton_.setColour(juce::TextButton::buttonColourId,
-                         DarkTheme::getColour(DarkTheme::SURFACE));
-    addButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+                         ActiveTheme::getColour(ActiveTheme::SURFACE));
+    addButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
     addButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     addButton_.onClick = [this]() {
         if (onAddDeviceClicked && currentPadIndex_ >= 0)
@@ -277,7 +277,7 @@ void PadChainPanel::itemDropped(const SourceDetails& details) {
 
 void PadChainPanel::paint(juce::Graphics& g) {
     // Background
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     g.fillRect(getLocalBounds());
 
     // Draw drop insertion indicator
@@ -294,7 +294,7 @@ void PadChainPanel::paint(juce::Graphics& g) {
                       ARROW_WIDTH / 2;
         }
 
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         g.fillRect(insertX, 4, 2, getHeight() - 8);
     }
 }

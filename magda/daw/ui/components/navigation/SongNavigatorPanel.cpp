@@ -2,7 +2,7 @@
 
 #include "../../../core/ClipInfo.hpp"
 #include "../../layout/LayoutConfig.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 
 namespace magda {
 
@@ -100,7 +100,7 @@ juce::Rectangle<float> SongNavigatorPanel::getViewportBox() const {
 // ===== Painting =====
 
 void SongNavigatorPanel::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND));
 
     auto bounds = getLocalBounds();
 
@@ -128,7 +128,7 @@ void SongNavigatorPanel::paint(juce::Graphics& g) {
             }
         }
 
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.5f));
         g.fillRect(0, 0, getWidth(), kRulerHeight);
         g.setFont(8.0f);
 
@@ -137,10 +137,10 @@ void SongNavigatorPanel::paint(juce::Graphics& g) {
             if (x >= getWidth() - 2) {
                 return;
             }
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.6f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.6f));
             g.drawVerticalLine(x, static_cast<float>(kRulerHeight),
                                static_cast<float>(getHeight()));
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.7f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.7f));
             g.drawText(juce::String(barNumber), x + 2, 0, 40, kRulerHeight,
                        juce::Justification::centredLeft);
         };
@@ -222,7 +222,7 @@ void SongNavigatorPanel::paint(juce::Graphics& g) {
     if (controller_) {
         const double playBeats = controller_->getState().playhead.playbackPositionBeats;
         const int px = beatToX(playBeats);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.9f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.9f));
         g.drawVerticalLine(px, static_cast<float>(kRulerHeight), static_cast<float>(getHeight()));
     }
 
@@ -230,14 +230,14 @@ void SongNavigatorPanel::paint(juce::Graphics& g) {
     // project is empty - a big selection rectangle over a blank strip is noise.
     if (hasContent) {
         const auto box = getViewportBox();
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_INFO).withAlpha(0.15f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_INFO).withAlpha(0.15f));
         g.fillRect(box);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_INFO).withAlpha(0.9f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_INFO).withAlpha(0.9f));
         g.drawRect(box, 1.5f);
     }
 
     // Outer border.
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(bounds, 1);
 }
 

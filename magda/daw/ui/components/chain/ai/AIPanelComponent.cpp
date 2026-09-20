@@ -9,7 +9,7 @@
 #include "../../../../agents/internal_plugins.hpp"
 #include "../../../../agents/llm_presets.hpp"
 #include "../../../../agents/mcp/MCPServerManager.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "core/Config.hpp"
 #include "core/TrackManager.hpp"
@@ -84,15 +84,15 @@ class AIPanelComponent::GenerateThread : public juce::Thread {
 // treatment AIChatConsoleContent gives its own editors.
 void AIPanelComponent::applySelectionColours(juce::TextEditor& editor) {
     editor.setColour(juce::TextEditor::highlightColourId,
-                     DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
-    editor.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
+                     ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+    editor.setColour(juce::TextEditor::highlightedTextColourId, ActiveTheme::getTextColour());
 }
 
 void AIPanelComponent::setThemedIcon(juce::DrawableButton& button, const void* svgData,
                                      std::size_t svgDataSize) {
     auto icon = juce::Drawable::createFromImageData(svgData, svgDataSize);
     if (icon)
-        DarkTheme::applyToSvgIcon(*icon);
+        ActiveTheme::applyToSvgIcon(*icon);
     button.setImages(icon.get());
 }
 
@@ -102,22 +102,23 @@ AIPanelComponent::AIPanelComponent() {
     output_.setScrollbarsShown(true);
     output_.setCaretVisible(false);
     output_.setColour(juce::TextEditor::backgroundColourId,
-                      DarkTheme::getColour(DarkTheme::BACKGROUND));
+                      ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     output_.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
     output_.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
     output_.setColour(juce::TextEditor::textColourId,
-                      DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                      ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     applySelectionColours(output_);
     output_.setFont(FontManager::getInstance().getUIFont(11.0f));
     addAndMakeVisible(output_);
 
     input_.setMultiLine(false);
     input_.setReturnKeyStartsNewLine(false);
-    input_.setTextToShowWhenEmpty("describe the sound...",
-                                  DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.4f));
+    input_.setTextToShowWhenEmpty(
+        "describe the sound...", ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.4f));
     input_.setColour(juce::TextEditor::backgroundColourId,
-                     DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
-    input_.setColour(juce::TextEditor::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                     ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
+    input_.setColour(juce::TextEditor::textColourId,
+                     ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     applySelectionColours(input_);
     input_.setFont(FontManager::getInstance().getUIFont(11.0f));
     input_.onReturnKey = [this]() { submitPrompt(); };
@@ -128,7 +129,7 @@ AIPanelComponent::AIPanelComponent() {
     // surfaces without a restart.
     modelLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
     modelLabel_.setColour(juce::Label::textColourId,
-                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.5f));
+                          ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.5f));
     modelLabel_.setJustificationType(juce::Justification::centredLeft);
     modelLabel_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(modelLabel_);
@@ -260,14 +261,14 @@ void AIPanelComponent::restoreOutput(const juce::String& text) {
         if (lineEnd < 0)
             lineEnd = text.length();
         output_.setColour(juce::TextEditor::textColourId,
-                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                          ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         output_.insertTextAtCaret(text.substring(pos, markerIdx));
         output_.setColour(juce::TextEditor::textColourId, juce::Colours::yellow);
         output_.insertTextAtCaret(text.substring(markerIdx, lineEnd));
         pos = lineEnd;
     }
     output_.setColour(juce::TextEditor::textColourId,
-                      DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                      ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     if (pos < text.length())
         output_.insertTextAtCaret(text.substring(pos));
     output_.moveCaretToEnd();
@@ -288,14 +289,15 @@ void AIPanelComponent::setDevicePluginId(const juce::String& pluginId) {
     if (coderSupported) {
         input_.setTextToShowWhenEmpty(
             "describe an effect or instrument...",
-            DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.4f));
+            ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.4f));
     } else if (soundSupported) {
         input_.setTextToShowWhenEmpty(
-            "describe the sound...", DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.4f));
+            "describe the sound...",
+            ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.4f));
     } else {
         input_.setTextToShowWhenEmpty(
             "AI not supported for this device",
-            DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.4f));
+            ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.4f));
     }
 
     // The Faust MCP strip is only relevant to coder (Faust) devices — a 4OSC
@@ -356,20 +358,21 @@ void AIPanelComponent::lookAndFeelChanged() {
     // keep whatever colour they were written with, which is the intent for the
     // yellow / green status lines.
     output_.setColour(juce::TextEditor::backgroundColourId,
-                      DarkTheme::getColour(DarkTheme::BACKGROUND));
+                      ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     output_.setColour(juce::TextEditor::textColourId,
-                      DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                      ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     applySelectionColours(output_);
 
     input_.setColour(juce::TextEditor::backgroundColourId,
-                     DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
-    input_.setColour(juce::TextEditor::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    input_.setTextToShowWhenEmpty("describe the sound...",
-                                  DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.4f));
+                     ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
+    input_.setColour(juce::TextEditor::textColourId,
+                     ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+    input_.setTextToShowWhenEmpty(
+        "describe the sound...", ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.4f));
     applySelectionColours(input_);
 
     modelLabel_.setColour(juce::Label::textColourId,
-                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.5f));
+                          ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.5f));
 
     // Both footer icons hold a recoloured copy of their SVG, so a palette
     // switch needs them rebuilt rather than just repainted.
@@ -379,11 +382,11 @@ void AIPanelComponent::lookAndFeelChanged() {
 }
 
 void AIPanelComponent::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
     // NodeComponent paints a border around the panel strip, but our fillAll
     // above wipes the left / right / bottom edges of it. Redraw the border
     // here so the panel has a consistent outline on all four sides.
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(getLocalBounds(), 1);
 
     // Faust MCP status light: dot at the left of the top strip. Grey when
@@ -393,7 +396,7 @@ void AIPanelComponent::paint(juce::Graphics& g) {
         const float cx = static_cast<float>(mcpStripBounds_.getX()) + r * 0.5f + 2.0f;
         const auto cy = static_cast<float>(mcpStripBounds_.getCentreY());
         const auto dot = !mcpEnabled_
-                             ? DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.3f)
+                             ? ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.3f)
                              : (mcpRunning_ ? juce::Colours::limegreen
                                             : juce::Colours::limegreen.withAlpha(0.7f));
         g.setColour(dot);
@@ -409,11 +412,11 @@ void AIPanelComponent::paint(juce::Graphics& g) {
         juce::Path arc;
         arc.addCentredArc(cx, cy, radius, radius, 0.0f, busySpinnerPhase_,
                           busySpinnerPhase_ + juce::MathConstants<float>::pi * 1.45f, true);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         g.strokePath(arc, juce::PathStrokeType(1.8f, juce::PathStrokeType::curved,
                                                juce::PathStrokeType::rounded));
 
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.6f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.6f));
         g.setFont(FontManager::getInstance().getUIFont(9.0f));
         g.drawText("designing...", busyIndicatorBounds_.withTrimmedLeft(16),
                    juce::Justification::centredLeft, false);
@@ -429,7 +432,7 @@ void AIPanelComponent::updateMcpStatus() {
     juce::Colour colour;
     if (!mcpEnabled_) {
         text = "Faust MCP off";
-        colour = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.5f);
+        colour = ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.5f);
     } else if (mcpRunning_) {
         text = "Faust MCP connected";
         colour = juce::Colours::limegreen;
@@ -486,7 +489,7 @@ void AIPanelComponent::submitPrompt() {
     auto current = output_.getText();
     if (current.isNotEmpty() && !current.endsWithChar('\n')) {
         output_.setColour(juce::TextEditor::textColourId,
-                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                          ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         output_.insertTextAtCaret("\n");
     }
     streamingStart_ = output_.getText().length();
@@ -579,7 +582,7 @@ void AIPanelComponent::onGenerationFinished(juce::String status, juce::String co
             output_.setHighlightedRegion(
                 juce::Range<int>(streamingStart_, output_.getText().length()));
             output_.setColour(juce::TextEditor::textColourId,
-                              DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                              ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
             output_.insertTextAtCaret(description);
         }
     }
@@ -591,25 +594,25 @@ void AIPanelComponent::onGenerationFinished(juce::String status, juce::String co
         output_.moveCaretToEnd();
         if (auto t = output_.getText(); t.isNotEmpty() && !t.endsWithChar('\n')) {
             output_.setColour(juce::TextEditor::textColourId,
-                              DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                              ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
             output_.insertTextAtCaret("\n");
         }
         output_.setColour(juce::TextEditor::textColourId, juce::Colours::limegreen);
         output_.insertTextAtCaret(
             juce::String(juce::CharPointer_UTF8("\xe2\x9c\x93 compilation verified (MCP)")));
         output_.setColour(juce::TextEditor::textColourId,
-                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                          ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     }
 
     output_.moveCaretToEnd();
     auto current = output_.getText();
     if (current.isNotEmpty() && !current.endsWithChar('\n')) {
         output_.setColour(juce::TextEditor::textColourId,
-                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                          ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         output_.insertTextAtCaret("\n");
     }
     output_.setColour(juce::TextEditor::textColourId,
-                      DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                      ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     output_.insertTextAtCaret(juce::String(juce::CharPointer_UTF8("\xe2\x86\x92 ")) + status);
 
     // Remind the user the result is a starting point. The caveat text comes
@@ -622,7 +625,7 @@ void AIPanelComponent::onGenerationFinished(juce::String status, juce::String co
         output_.setColour(juce::TextEditor::textColourId, juce::Colours::yellow);
         output_.insertTextAtCaret("\n\n" + pendingCaveat_);
         output_.setColour(juce::TextEditor::textColourId,
-                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                          ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     }
     output_.moveCaretToEnd();
     streamingStart_ = -1;
@@ -666,7 +669,7 @@ void AIPanelComponent::timerCallback() {
 void AIPanelComponent::appendOutput(const juce::String& line) {
     output_.moveCaretToEnd();
     output_.setColour(juce::TextEditor::textColourId,
-                      DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                      ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     if (output_.getText().isNotEmpty())
         output_.insertTextAtCaret("\n");
     output_.insertTextAtCaret(line);

@@ -3,7 +3,7 @@
 #include <cmath>
 
 #include "core/GestureRouter.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -114,7 +114,7 @@ void DrumVoiceUI::ensureControls(int count) {
 
         c.label = std::make_unique<juce::Label>();
         c.label->setFont(FontManager::getInstance().getUIFont(10.0f));
-        c.label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        c.label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
         c.label->setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(*c.label);
 
@@ -189,10 +189,10 @@ void DrumVoiceUI::layoutGrid(juce::Rectangle<int> area, const std::vector<int>& 
 }
 
 void DrumVoiceUI::paint(juce::Graphics& g) {
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
     g.fillRect(getLocalBounds());
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.setFont(FontManager::getInstance().getUIFont(11.0f));
 
     auto titleArea = getLocalBounds().removeFromTop(kSectionTitleH).reduced(kCellPad, 0);
@@ -205,7 +205,7 @@ void DrumVoiceUI::paint(juce::Graphics& g) {
     // section's decay never rescales another's graph.
     for (size_t i = 0; i < sectionTitleAreas_.size() && i < sections_.size(); ++i) {
         const auto& s = sections_[i];
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.setFont(FontManager::getInstance().getUIFont(11.0f));
         g.drawText(s.title, sectionTitleAreas_[i].reduced(2, 0), juce::Justification::centredLeft,
                    false);
@@ -309,7 +309,7 @@ void DrumVoiceUI::drawEnvelope(juce::Graphics& g, juce::Rectangle<int> area, con
         p.lineTo(xA + (xD - xA) * pn, bot - (bot - top) * e);
     }
 
-    auto accent = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
+    auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
     g.setColour(accent.withAlpha(0.18f));
     juce::Path fill = p;
     fill.lineTo(r.getX(), bot);

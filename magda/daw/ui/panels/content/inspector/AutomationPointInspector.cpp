@@ -2,7 +2,7 @@
 
 #include <cmath>
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "core/AutomationCommands.hpp"
 #include "core/AutomationInfo.hpp"
@@ -16,14 +16,14 @@ namespace {
 void styleLabel(juce::Label& label, const juce::String& text) {
     label.setText(text, juce::dontSendNotification);
     label.setFont(FontManager::getInstance().getUIFont(11.0f));
-    label.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    label.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
 }
 
 }  // namespace
 
 AutomationPointInspector::AutomationPointInspector() {
     countLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
-    countLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    countLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     addAndMakeVisible(countLabel_);
 
     styleLabel(valueLabel_, "Value");
@@ -90,7 +90,7 @@ void AutomationPointInspector::onDeactivated() {
 }
 
 void AutomationPointInspector::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getBackgroundColour());
+    g.fillAll(ActiveTheme::getBackgroundColour());
 }
 
 const std::vector<magda::AutomationPoint>* AutomationPointInspector::sourcePoints() const {

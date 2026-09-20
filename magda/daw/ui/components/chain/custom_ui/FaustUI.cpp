@@ -11,7 +11,7 @@
 #include "core/AppPaths.hpp"
 #include "custom_ui/FaustCodeEditorWindow.hpp"
 #include "ui/components/common/SvgButton.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -33,12 +33,12 @@ FaustUI::FaustUI() {
     logo_ = juce::Drawable::createFromImageData(BinaryData::fausttextlogo_svg,
                                                 BinaryData::fausttextlogo_svgSize);
     if (logo_)
-        logo_->replaceColour(juce::Colour(0xFFD9D9D9), DarkTheme::getSecondaryTextColour());
+        logo_->replaceColour(juce::Colour(0xFFD9D9D9), ActiveTheme::getSecondaryTextColour());
     if (logo_)
-        DarkTheme::applyToSvgIcon(*logo_);
+        ActiveTheme::applyToSvgIcon(*logo_);
 
     nameLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     nameLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(nameLabel_);
 
@@ -337,7 +337,7 @@ void FaustUI::showCodeEditor() {
 void FaustUI::paint(juce::Graphics& g) {
     const auto bounds = getLocalBounds();
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
     g.fillRect(bounds);
 
     if (logo_) {
@@ -347,7 +347,7 @@ void FaustUI::paint(juce::Graphics& g) {
 
     // Single vertical rules between the three bands. Full height, so the
     // strip reads as columns rather than a boxed name with loose icons.
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawVerticalLine(logoRuleX_, static_cast<float>(bounds.getY()),
                        static_cast<float>(bounds.getBottom()));
     g.drawVerticalLine(actionRuleX_, static_cast<float>(bounds.getY()),
@@ -355,13 +355,13 @@ void FaustUI::paint(juce::Graphics& g) {
 
     // Second identity row: the credit line under the patch name it describes.
     if (showMetaRow_ && metaText_.isNotEmpty() && !metaBounds_.isEmpty()) {
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.setFont(FontManager::getInstance().getUIFont(9.0f));
         g.drawText(metaText_, metaBounds_, juce::Justification::centredLeft, true);
     }
 
     // Re-set the colour: the meta row above leaves the text colour behind.
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawHorizontalLine(bounds.getBottom() - 1, static_cast<float>(bounds.getX()),
                          static_cast<float>(bounds.getRight()));
 }
@@ -419,10 +419,10 @@ void FaustUI::resized() {
 
 void FaustUI::lookAndFeelChanged() {
     if (logo_) {
-        logo_->replaceColour(juce::Colour(0xFFD9D9D9), DarkTheme::getSecondaryTextColour());
-        DarkTheme::applyToSvgIcon(*logo_);
+        logo_->replaceColour(juce::Colour(0xFFD9D9D9), ActiveTheme::getSecondaryTextColour());
+        ActiveTheme::applyToSvgIcon(*logo_);
     }
-    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
 }
 
 }  // namespace magda::daw::ui

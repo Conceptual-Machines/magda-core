@@ -3,7 +3,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaDimensionCompiledPlugin.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -82,7 +82,7 @@ void CompiledDimensionView::timerCallback() {
 
 void CompiledDimensionView::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds().toFloat();
-    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
     g.fillRoundedRectangle(bounds, 4.0f);
 
     auto plot = bounds.reduced(kPadX, kPadY);
@@ -97,16 +97,16 @@ void CompiledDimensionView::paint(juce::Graphics& g) {
     const float centreX = plot.getCentreX();
     const float reach = plot.getWidth() * 0.4f * spread;
 
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.18f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.18f));
     g.drawLine(plot.getX() + 4.0f, centreY, plot.getRight() - 4.0f, centreY, 1.0f);
 
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_INFO);
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_INFO);
     g.setColour(accent.withAlpha(0.95f));
     g.fillEllipse(centreX - reach - 4.0f, centreY - 4.0f, 8.0f, 8.0f);
     g.fillEllipse(centreX + reach - 4.0f, centreY - 4.0f, 8.0f, 8.0f);
 
     // Engine label, top-right corner — same convention as the Reverb view.
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.55f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.55f));
     g.drawFittedText(engineLabel(engine_),
                      juce::Rectangle<int>(static_cast<int>(plot.getRight()) - 80,
                                           static_cast<int>(plot.getY()) + 2, 76, 14),

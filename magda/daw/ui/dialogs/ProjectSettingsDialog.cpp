@@ -3,7 +3,7 @@
 #include "../../core/StringTable.hpp"
 #include "../../project/ProjectManager.hpp"
 #include "../state/TimelineController.hpp"
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
 #include "ProjectFormatChoices.hpp"
@@ -44,7 +44,7 @@ constexpr size_t kMetaGridCount = kProjectMetadataFields.size() - 1;
 void setupFieldLabel(juce::Component& owner, juce::Label& label, const juce::String& text) {
     label.setText(text, juce::dontSendNotification);
     label.setFont(FontManager::getInstance().getUIFont(14.0f));
-    label.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    label.setColour(juce::Label::textColourId, ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     owner.addAndMakeVisible(label);
 }
 }  // namespace
@@ -67,11 +67,11 @@ ProjectSettingsDialog::MetadataPage::MetadataPage() {
 
         row.editor.setFont(FontManager::getInstance().getUIFont(13.0f));
         row.editor.setColour(juce::TextEditor::backgroundColourId,
-                             DarkTheme::getColour(DarkTheme::SURFACE));
+                             ActiveTheme::getColour(ActiveTheme::SURFACE));
         row.editor.setColour(juce::TextEditor::textColourId,
-                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                             ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         row.editor.setColour(juce::TextEditor::outlineColourId,
-                             DarkTheme::getColour(DarkTheme::BORDER));
+                             ActiveTheme::getColour(ActiveTheme::BORDER));
         addAndMakeVisible(row.editor);
     }
 }
@@ -93,7 +93,7 @@ void ProjectSettingsDialog::MetadataPage::load(const ProjectInfo& info) {
     // instead of freezing whatever the project was called the first time
     // somebody opened this dialog.
     rows_.front().editor.setTextToShowWhenEmpty(info.name,
-                                                DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                                                ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
 }
 
 void ProjectSettingsDialog::MetadataPage::apply(ProjectInfo& info) const {
@@ -194,7 +194,7 @@ void ProjectSettingsDialog::GeneralPage::resized() {
 ProjectSettingsDialog::ProjectSettingsDialog() {
     setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
 
-    const auto tabBg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+    const auto tabBg = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
     tabs_.addTab(tr("project_settings.section.general"), tabBg, &generalPage_, false);
     tabs_.addTab(tr("project_settings.section.metadata"), tabBg, &metadataPage_, false);
     tabs_.setTabBarDepth(kTabBarDepth);
@@ -252,7 +252,7 @@ void ProjectSettingsDialog::applySettings() {
 }
 
 void ProjectSettingsDialog::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
 }
 
 void ProjectSettingsDialog::lookAndFeelChanged() {
@@ -277,7 +277,7 @@ void ProjectSettingsDialog::showDialog(juce::Component* parent) {
 
     juce::DialogWindow::LaunchOptions options;
     options.dialogTitle = tr("menu.file.project_settings");
-    options.dialogBackgroundColour = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+    options.dialogBackgroundColour = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
     options.content.setOwned(dialog);
     options.escapeKeyTriggersCloseButton = true;
     options.useNativeTitleBar = true;

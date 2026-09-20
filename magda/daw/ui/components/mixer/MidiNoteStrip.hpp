@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <array>
 
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda {
@@ -52,7 +52,7 @@ class MidiNoteStrip : public juce::Component, private juce::Timer {
 
     void paint(juce::Graphics& g) override {
         auto bounds = getLocalBounds().toFloat();
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
         g.fillRoundedRectangle(bounds, 1.0f);
 
         float height = bounds.getHeight();
@@ -63,7 +63,7 @@ class MidiNoteStrip : public juce::Component, private juce::Timer {
         if (noteRange <= 0.0f)
             return;
 
-        auto accent = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE);
+        auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE);
 
         for (int n = lowNote_; n <= highNote_; ++n) {
             float level = notes_[static_cast<size_t>(n)].display;

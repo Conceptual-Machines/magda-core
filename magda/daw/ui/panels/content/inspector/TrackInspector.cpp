@@ -16,7 +16,7 @@
 #include "../../components/common/ColourSwatch.hpp"
 #include "../../components/mixer/RoutingSyncHelper.hpp"
 #include "../../state/TimelineController.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/DialogLookAndFeel.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallButtonLookAndFeel.hpp"
@@ -162,7 +162,7 @@ TrackInspector::TrackInspector() {
         auto glyph = juce::Drawable::createFromImageData(BinaryData::BoldMGlyph_svg,
                                                          BinaryData::BoldMGlyph_svgSize);
         if (glyph)
-            glyph->replaceColour(juce::Colour(0xFF0A0A0A), DarkTheme::getSecondaryTextColour());
+            glyph->replaceColour(juce::Colour(0xFF0A0A0A), ActiveTheme::getSecondaryTextColour());
         masterGlyph_->setImages(glyph.get());
     }
     masterGlyph_->setEdgeIndent(0);
@@ -207,11 +207,11 @@ TrackInspector::TrackInspector() {
     // Solo button (arrange track-header style)
     soloButton_ =
         std::make_unique<SvgButton>("solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
-    soloButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    soloButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    soloButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
-    soloButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
-                                           DarkTheme::ICON_ON_ACCENT);
+    soloButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    soloButton_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+    soloButton_->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
+    soloButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
+                                           ActiveTheme::ICON_ON_ACCENT);
     soloButton_->setIconPadding(5.0f);  // match the arrange track-header solo glyph
     soloButton_->setInactiveIconOpacity(0.58f);
     soloButton_->setClickingTogglesState(true);
@@ -227,11 +227,11 @@ TrackInspector::TrackInspector() {
     // Record button (arrange track-header style)
     recordButton_ = std::make_unique<SvgButton>("record", BinaryData::track_record_svg,
                                                 BinaryData::track_record_svgSize);
-    recordButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    recordButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    recordButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
-    recordButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
-                                             DarkTheme::ICON_ON_ACCENT);
+    recordButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    recordButton_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+    recordButton_->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
+    recordButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
+                                             ActiveTheme::ICON_ON_ACCENT);
     recordButton_->setIconPadding(5.0f);  // match the arrange track-header record glyph
     recordButton_->setInactiveIconOpacity(0.58f);
     recordButton_->setClickingTogglesState(true);
@@ -251,12 +251,12 @@ TrackInspector::TrackInspector() {
     enableButton_ = std::make_unique<SvgButton>(
         "enable", BinaryData::toggle_off_svg, BinaryData::toggle_off_svgSize,
         BinaryData::toggle_on_svg, BinaryData::toggle_on_svgSize);
-    enableButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    enableButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    enableButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
-                                             DarkTheme::ICON_NEUTRAL);
-    enableButton_->setStateColourReplacement(juce::Colour(0xFF1E1E1E), DarkTheme::ICON_ON_ACCENT,
-                                             DarkTheme::ICON_ON_ACCENT);
+    enableButton_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+    enableButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    enableButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
+                                             ActiveTheme::ICON_NEUTRAL);
+    enableButton_->setStateColourReplacement(juce::Colour(0xFF1E1E1E), ActiveTheme::ICON_ON_ACCENT,
+                                             ActiveTheme::ICON_ON_ACCENT);
     enableButton_->setBorderThickness(1.0f);
     enableButton_->setIconPadding(2.0f);
     enableButton_->setTooltip(tr("tracks.enable.tooltip"));
@@ -290,12 +290,12 @@ TrackInspector::TrackInspector() {
     // expands the "Automated" section below.
     automationIndicator_ = std::make_unique<SvgButton>("Automation", BinaryData::automation_svg,
                                                        BinaryData::automation_svgSize);
-    automationIndicator_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    automationIndicator_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    automationIndicator_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    automationIndicator_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
     automationIndicator_->setActiveBackgroundColor(
-        DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+        ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
     automationIndicator_->setStateColourReplacement(
-        juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL, DarkTheme::TEXT_BRIGHT);
+        juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL, ActiveTheme::TEXT_BRIGHT);
     automationIndicator_->setIconPadding(2.5f);
     automationIndicator_->onClick = [this]() {
         automatedSectionExpanded_ = !automatedSectionExpanded_;
@@ -365,18 +365,19 @@ TrackInspector::TrackInspector() {
     automatedSectionLabel_.setText(tr("inspector.automated"), juce::dontSendNotification);
     automatedSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     automatedSectionLabel_.setColour(juce::Label::textColourId,
-                                     DarkTheme::getSecondaryTextColour());
+                                     ActiveTheme::getSecondaryTextColour());
     addAndMakeVisible(automatedSectionLabel_);
 
     automatedParamsLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
-    automatedParamsLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    automatedParamsLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     automatedParamsLabel_.setJustificationType(juce::Justification::topLeft);
     addAndMakeVisible(automatedParamsLabel_);
 
     // Routing section
     routingSectionLabel_.setText(tr("inspector.routing"), juce::dontSendNotification);
     routingSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    routingSectionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    routingSectionLabel_.setColour(juce::Label::textColourId,
+                                   ActiveTheme::getSecondaryTextColour());
     addAndMakeVisible(routingSectionLabel_);
 
     // Input type selector (hidden, kept for internal state)
@@ -412,14 +413,14 @@ TrackInspector::TrackInspector() {
     audioColumnLabel_.setText(magda::technicalText(magda::TechnicalTextToken::Audio),
                               juce::dontSendNotification);
     audioColumnLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    audioColumnLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    audioColumnLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     audioColumnLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(audioColumnLabel_);
 
     midiColumnLabel_.setText(magda::technicalText(magda::TechnicalTextToken::Midi),
                              juce::dontSendNotification);
     midiColumnLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    midiColumnLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    midiColumnLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     midiColumnLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(midiColumnLabel_);
 
@@ -441,42 +442,42 @@ TrackInspector::TrackInspector() {
     sendReceiveSectionLabel_.setText(tr("inspector.sends"), juce::dontSendNotification);
     sendReceiveSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     sendReceiveSectionLabel_.setColour(juce::Label::textColourId,
-                                       DarkTheme::getSecondaryTextColour());
+                                       ActiveTheme::getSecondaryTextColour());
     addAndMakeVisible(sendReceiveSectionLabel_);
 
     addSendButton_ =
         std::make_unique<SvgButton>("AddSend", BinaryData::add_svg, BinaryData::add_svgSize);
     addSendButton_->setTooltip(tr("inspector.add_send"));
     addSendButton_->setIconPadding(4.0f);
-    addSendButton_->setOriginalColor(DarkTheme::getSecondaryTextColour());
+    addSendButton_->setOriginalColor(ActiveTheme::getSecondaryTextColour());
     addSendButton_->onClick = [this]() { showAddSendMenu(); };
     addAndMakeVisible(*addSendButton_);
 
     noSendsLabel_.setText(tr("inspector.no_sends"), juce::dontSendNotification);
     noSendsLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
-    noSendsLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    noSendsLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     addAndMakeVisible(noSendsLabel_);
 
     // Clips section
     clipsSectionLabel_.setText(tr("inspector.clips"), juce::dontSendNotification);
     clipsSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipsSectionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipsSectionLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     addAndMakeVisible(clipsSectionLabel_);
 
     clipCountLabel_.setText(tr("inspector.clip_count.other").replace("{0}", "0"),
                             juce::dontSendNotification);
     clipCountLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
-    clipCountLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    clipCountLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     addAndMakeVisible(clipCountLabel_);
 
     // Latency display
     latencyLabel_.setText(tr("inspector.latency"), juce::dontSendNotification);
     latencyLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    latencyLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    latencyLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     addAndMakeVisible(latencyLabel_);
 
     latencyValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
-    latencyValue_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    latencyValue_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     addAndMakeVisible(latencyValue_);
 
     for (auto* label :
@@ -491,10 +492,10 @@ TrackInspector::TrackInspector() {
 }
 
 void TrackInspector::applyThemeColours() {
-    const auto primary = DarkTheme::getTextColour();
-    const auto secondary = DarkTheme::getSecondaryTextColour();
-    const auto surface = DarkTheme::getColour(DarkTheme::SURFACE);
-    const auto border = DarkTheme::getBorderColour();
+    const auto primary = ActiveTheme::getTextColour();
+    const auto secondary = ActiveTheme::getSecondaryTextColour();
+    const auto surface = ActiveTheme::getColour(ActiveTheme::SURFACE);
+    const auto border = ActiveTheme::getBorderColour();
 
     for (auto* label : {&trackNameLabel_, &routingSectionLabel_, &audioColumnLabel_,
                         &midiColumnLabel_, &sendReceiveSectionLabel_, &noSendsLabel_,
@@ -510,13 +511,13 @@ void TrackInspector::applyThemeColours() {
     trackNameValue_.setColour(juce::Label::textWhenEditingColourId, primary);
     trackNameValue_.setColour(juce::Label::backgroundWhenEditingColourId, surface);
     trackNameValue_.setColour(juce::Label::outlineWhenEditingColourId,
-                              DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                              ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
 
     for (auto& label : sendDestLabels_)
         label->setColour(juce::Label::textColourId, primary);
     for (auto& button : sendDeleteButtons_) {
         button->setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                          ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
         button->setColour(juce::TextButton::textColourOffId, secondary);
     }
 
@@ -544,7 +545,7 @@ void TrackInspector::rebuildRoutingIcons() {
         if (button == nullptr)
             return;
         if (auto svg = juce::Drawable::createFromImageData(svgData, svgSize)) {
-            DarkTheme::applyToSvgIcon(*svg);
+            ActiveTheme::applyToSvgIcon(*svg);
             button->setImages(svg.get());
         }
     };
@@ -623,10 +624,10 @@ void TrackInspector::onDeactivated() {
 }
 
 void TrackInspector::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
 
     // Draw section separators
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     auto area = getLocalBounds().reduced(8);
     for (int y : sectionSeparatorYs_) {
         g.drawHorizontalLine(y, static_cast<float>(area.getX()),
@@ -1530,7 +1531,7 @@ void TrackInspector::rebuildSendsUI() {
         const auto* destTrack = magda::TrackManager::getInstance().getTrack(send.destTrackId);
         destLabel->setText(destTrack ? destTrack->name : "?", juce::dontSendNotification);
         destLabel->setFont(FontManager::getInstance().getUIFont(10.0f));
-        destLabel->setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        destLabel->setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
         useLocalizedLabelPainter(*destLabel);
         addAndMakeVisible(*destLabel);
         sendDestLabels_.push_back(std::move(destLabel));
@@ -1595,9 +1596,9 @@ void TrackInspector::rebuildSendsUI() {
                                      juce::Button::ConnectedOnRight | juce::Button::ConnectedOnTop |
                                      juce::Button::ConnectedOnBottom);
         deleteBtn->setColour(juce::TextButton::buttonColourId,
-                             DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                             ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
         deleteBtn->setColour(juce::TextButton::textColourOffId,
-                             DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                             ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         deleteBtn->onClick = [srcId, busIndex]() {
             magda::UndoManager::getInstance().executeCommand(
                 std::make_unique<magda::RemoveSendCommand>(srcId, busIndex));

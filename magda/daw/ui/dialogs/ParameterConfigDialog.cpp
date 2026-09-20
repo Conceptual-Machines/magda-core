@@ -5,7 +5,7 @@
 #include <cmath>
 #include <utility>
 
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
 #include "audio/plugins/InternalPluginRegistry.hpp"
@@ -36,7 +36,7 @@ class AIPromptEditorComponent : public juce::Component {
         description_.setText(
             "These instructions are added to every sound-design request for this plug-in.",
             juce::dontSendNotification);
-        description_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        description_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
         description_.setFont(FontManager::getInstance().getUIFont(11.0f));
         addAndMakeVisible(description_);
 
@@ -47,28 +47,28 @@ class AIPromptEditorComponent : public juce::Component {
         editor_.setTextToShowWhenEmpty(
             "Example: Prefer classic analogue signal paths, keep output levels conservative, "
             "and use oscillator 2 only for subtle detuning.",
-            DarkTheme::getColour(DarkTheme::TEXT_DIM));
+            ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         editor_.setColour(juce::TextEditor::backgroundColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
-        editor_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
-        editor_.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
+                          ActiveTheme::getColour(ActiveTheme::SURFACE));
+        editor_.setColour(juce::TextEditor::textColourId, ActiveTheme::getTextColour());
+        editor_.setColour(juce::TextEditor::outlineColourId, ActiveTheme::getBorderColour());
         addAndMakeVisible(editor_);
 
         clearButton_.setButtonText("Clear");
         clearButton_.setColour(juce::TextButton::buttonColourId,
-                               DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                               ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
         clearButton_.onClick = [this]() { editor_.clear(); };
         addAndMakeVisible(clearButton_);
 
         cancelButton_.setButtonText("Cancel");
         cancelButton_.setColour(juce::TextButton::buttonColourId,
-                                DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                                ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
         cancelButton_.onClick = [this]() { close(0); };
         addAndMakeVisible(cancelButton_);
 
         saveButton_.setButtonText("Done");
         saveButton_.setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                              ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         saveButton_.onClick = [this]() {
             if (onSave_)
                 onSave_(editor_.getText().trim());
@@ -125,7 +125,7 @@ void ParameterConfigDialog::showAiPromptEditor() {
 
     juce::DialogWindow::LaunchOptions options;
     options.dialogTitle = "AI Prompt - " + pluginName_;
-    options.dialogBackgroundColour = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+    options.dialogBackgroundColour = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
     options.content.setOwned(editor);
     options.escapeKeyTriggersCloseButton = true;
     options.useNativeTitleBar = true;
@@ -145,9 +145,9 @@ class ParameterConfigDialog::ToggleCell : public juce::Component {
     ToggleCell(ParameterConfigDialog& owner, int row, int column)
         : owner_(owner), row_(row), column_(column) {
         toggle_.setColour(juce::ToggleButton::tickColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                          ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         toggle_.setColour(juce::ToggleButton::tickDisabledColourId,
-                          DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                          ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         toggle_.onClick = [this]() {
             int paramIndex = owner_.getParamIndexForRow(row_);
             if (paramIndex >= 0 && paramIndex < static_cast<int>(owner_.parameters_.size())) {
@@ -220,8 +220,8 @@ class ParameterConfigDialog::ComboCell : public juce::Component {
         combo_.addItem(magda::technicalText(magda::TechnicalTextToken::Boolean), 10);
 
         combo_.setColour(juce::ComboBox::backgroundColourId,
-                         DarkTheme::getColour(DarkTheme::SURFACE));
-        combo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+                         ActiveTheme::getColour(ActiveTheme::SURFACE));
+        combo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
         combo_.setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
 
         combo_.onChange = [this]() {
@@ -271,8 +271,8 @@ class ParameterConfigDialog::RangeCell : public juce::Component {
   public:
     RangeCell(ParameterConfigDialog& owner, int row) : owner_(owner), row_(row) {
         editor_.setColour(juce::TextEditor::backgroundColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
-        editor_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
+                          ActiveTheme::getColour(ActiveTheme::SURFACE));
+        editor_.setColour(juce::TextEditor::textColourId, ActiveTheme::getTextColour());
         editor_.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
         editor_.setFont(FontManager::getInstance().getUIFont(11.0f));
         editor_.setJustification(juce::Justification::centredLeft);
@@ -406,14 +406,14 @@ ParameterConfigDialog::ParameterConfigDialog(juce::String pluginName)
     // Title
     titleLabel_.setText("Configure Parameters - " + pluginName_, juce::dontSendNotification);
     titleLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
-    titleLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    titleLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     addAndMakeVisible(titleLabel_);
 
     // Setup table
     table_.setModel(this);
     table_.setColour(juce::ListBox::backgroundColourId,
-                     DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
-    table_.setColour(juce::ListBox::outlineColourId, DarkTheme::getBorderColour());
+                     ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
+    table_.setColour(juce::ListBox::outlineColourId, ActiveTheme::getBorderColour());
     table_.setOutlineThickness(1);
     table_.setRowHeight(28);
 
@@ -426,15 +426,15 @@ ParameterConfigDialog::ParameterConfigDialog(juce::String pluginName)
     header.addColumn("Range", Range, 180, 120, 300);
 
     header.setColour(juce::TableHeaderComponent::backgroundColourId,
-                     DarkTheme::getColour(DarkTheme::SURFACE));
-    header.setColour(juce::TableHeaderComponent::textColourId, DarkTheme::getTextColour());
+                     ActiveTheme::getColour(ActiveTheme::SURFACE));
+    header.setColour(juce::TableHeaderComponent::textColourId, ActiveTheme::getTextColour());
 
     addAndMakeVisible(table_);
 
     // Buttons
     okButton_.setButtonText("OK");
     okButton_.setColour(juce::TextButton::buttonColourId,
-                        DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                        ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     okButton_.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     okButton_.onClick = [this]() {
         saveParameterConfiguration();
@@ -446,8 +446,8 @@ ParameterConfigDialog::ParameterConfigDialog(juce::String pluginName)
 
     cancelButton_.setButtonText("Cancel");
     cancelButton_.setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    cancelButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+                            ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
+    cancelButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
     cancelButton_.onClick = [this]() {
         if (auto* dw = findParentComponentOfClass<juce::DialogWindow>()) {
             dw->exitModalState(0);
@@ -457,8 +457,8 @@ ParameterConfigDialog::ParameterConfigDialog(juce::String pluginName)
 
     applyButton_.setButtonText("Apply");
     applyButton_.setColour(juce::TextButton::buttonColourId,
-                           DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    applyButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+                           ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
+    applyButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
     applyButton_.onClick = [this]() {
         saveParameterConfiguration();
         DBG("Applied parameter config");
@@ -469,7 +469,7 @@ ParameterConfigDialog::ParameterConfigDialog(juce::String pluginName)
     // independently bulk-edit each checkbox column; internal plugins narrow
     // this selector to Mini FX in showForPlugin().
     bulkColumnLabel_.setText("Column:", juce::dontSendNotification);
-    bulkColumnLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    bulkColumnLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     bulkColumnLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     addAndMakeVisible(bulkColumnLabel_);
 
@@ -478,22 +478,22 @@ ParameterConfigDialog::ParameterConfigDialog(juce::String pluginName)
     bulkColumnSelector_.addItem("AI Agent", ColumnIds::AI);
     bulkColumnSelector_.setSelectedId(ColumnIds::Visible, juce::dontSendNotification);
     bulkColumnSelector_.setColour(juce::ComboBox::backgroundColourId,
-                                  DarkTheme::getColour(DarkTheme::SURFACE));
-    bulkColumnSelector_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-    bulkColumnSelector_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getBorderColour());
+                                  ActiveTheme::getColour(ActiveTheme::SURFACE));
+    bulkColumnSelector_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
+    bulkColumnSelector_.setColour(juce::ComboBox::outlineColourId, ActiveTheme::getBorderColour());
     addAndMakeVisible(bulkColumnSelector_);
 
     selectAllButton_.setButtonText("Select All");
     selectAllButton_.setColour(juce::TextButton::buttonColourId,
-                               DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    selectAllButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+                               ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
+    selectAllButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
     selectAllButton_.onClick = [this]() { selectAllParameters(); };
     addAndMakeVisible(selectAllButton_);
 
     deselectAllButton_.setButtonText("Deselect All");
     deselectAllButton_.setColour(juce::TextButton::buttonColourId,
-                                 DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    deselectAllButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+                                 ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
+    deselectAllButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
     deselectAllButton_.onClick = [this]() { deselectAllParameters(); };
     addAndMakeVisible(deselectAllButton_);
 
@@ -502,8 +502,8 @@ ParameterConfigDialog::ParameterConfigDialog(juce::String pluginName)
     // strings give away.
     detectButton_.setButtonText("Detect");
     detectButton_.setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    detectButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+                            ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
+    detectButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
     detectButton_.onClick = [this]() { runHeuristicDetection(); };
     addAndMakeVisible(detectButton_);
 
@@ -511,8 +511,8 @@ ParameterConfigDialog::ParameterConfigDialog(juce::String pluginName)
     // back to a plain 0–100 % view.
     resetButton_.setButtonText("Reset");
     resetButton_.setColour(juce::TextButton::buttonColourId,
-                           DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    resetButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+                           ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
+    resetButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
     resetButton_.onClick = [this]() {
         auto* alert = new juce::AlertWindow(
             "Reset parameter configuration?",
@@ -539,7 +539,7 @@ ParameterConfigDialog::ParameterConfigDialog(juce::String pluginName)
     // AI Detect button
     aiDetectButton_.setButtonText("AI Detect");
     aiDetectButton_.setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+                              ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
     aiDetectButton_.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     aiDetectButton_.onClick = [this]() {
         if (detecting_) {
@@ -555,27 +555,28 @@ ParameterConfigDialog::ParameterConfigDialog(juce::String pluginName)
     addAndMakeVisible(aiDetectButton_);
 
     // AI status label (shows streaming tokens)
-    aiStatusLabel_.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_DIM));
+    aiStatusLabel_.setColour(juce::Label::textColourId,
+                             ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
     aiStatusLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
     aiStatusLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(aiStatusLabel_);
 
     // Search box
     searchLabel_.setText("Search:", juce::dontSendNotification);
-    searchLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    searchLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     addAndMakeVisible(searchLabel_);
 
     searchBox_.setColour(juce::TextEditor::backgroundColourId,
-                         DarkTheme::getColour(DarkTheme::SURFACE));
-    searchBox_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
-    searchBox_.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
+                         ActiveTheme::getColour(ActiveTheme::SURFACE));
+    searchBox_.setColour(juce::TextEditor::textColourId, ActiveTheme::getTextColour());
+    searchBox_.setColour(juce::TextEditor::outlineColourId, ActiveTheme::getBorderColour());
     searchBox_.onTextChange = [this]() { filterParameters(searchBox_.getText()); };
     addAndMakeVisible(searchBox_);
 
     aiPromptButton_.setButtonText("AI Prompt...");
     aiPromptButton_.setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    aiPromptButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+                              ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
+    aiPromptButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
     aiPromptButton_.setTooltip(
         "Edit persistent instructions added to every AI sound-design request for this plug-in.");
     aiPromptButton_.onClick = [this]() { showAiPromptEditor(); };
@@ -589,7 +590,7 @@ ParameterConfigDialog::ParameterConfigDialog(juce::String pluginName)
 }
 
 void ParameterConfigDialog::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
 
     if (detecting_ && !aiSpinnerBounds_.isEmpty()) {
         const auto spinner = aiSpinnerBounds_.toFloat();
@@ -599,7 +600,7 @@ void ParameterConfigDialog::paint(juce::Graphics& g) {
         juce::Path arc;
         arc.addCentredArc(centre.x, centre.y, radius, radius, 0.0f, aiSpinnerPhase_,
                           aiSpinnerPhase_ + juce::MathConstants<float>::pi * 1.45f, true);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
         g.strokePath(arc, juce::PathStrokeType(2.0f, juce::PathStrokeType::curved,
                                                juce::PathStrokeType::rounded));
     }
@@ -672,11 +673,11 @@ int ParameterConfigDialog::getNumRows() {
 void ParameterConfigDialog::paintRowBackground(juce::Graphics& g, int rowNumber, int width,
                                                int height, bool rowIsSelected) {
     if (rowIsSelected) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.2f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.2f));
     } else if (rowNumber % 2 == 0) {
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).withAlpha(0.3f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE).withAlpha(0.3f));
     } else {
-        g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
     }
     g.fillRect(0, 0, width, height);
 }
@@ -692,7 +693,7 @@ void ParameterConfigDialog::paintCell(juce::Graphics& g, int rowNumber, int colu
 
     const auto& param = parameters_[static_cast<size_t>(paramIndex)];
 
-    g.setColour(DarkTheme::getTextColour());
+    g.setColour(ActiveTheme::getTextColour());
     g.setFont(FontManager::getInstance().getUIFont(11.0f));
 
     if (columnId == ParamName) {
@@ -823,7 +824,7 @@ void ParameterConfigDialog::show(const juce::String& pluginName, juce::Component
 
     juce::DialogWindow::LaunchOptions options;
     options.dialogTitle = "Parameter Configuration";
-    options.dialogBackgroundColour = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+    options.dialogBackgroundColour = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
     options.content.setOwned(dialog);
     options.escapeKeyTriggersCloseButton = true;
     options.useNativeTitleBar = true;
@@ -865,7 +866,7 @@ void ParameterConfigDialog::showForPlugin(const juce::String& uniqueId,
 
     juce::DialogWindow::LaunchOptions options;
     options.dialogTitle = "Configure Parameters - " + pluginName;
-    options.dialogBackgroundColour = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+    options.dialogBackgroundColour = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
     options.content.setOwned(dialog);
     options.escapeKeyTriggersCloseButton = true;
     options.useNativeTitleBar = true;
@@ -1071,7 +1072,7 @@ void ParameterConfigDialog::setDetecting(bool detecting) {
     if (detecting) {
         aiDetectButton_.setButtonText("Cancel");
         aiDetectButton_.setColour(juce::TextButton::buttonColourId,
-                                  DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                                  ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
         cancelButton_.setEnabled(false);
         aiSpinnerPhase_ = 0.0f;
         aiStatusLabel_.setText(juce::String(aiResolved_) + " / " + juce::String(aiTotal_) +
@@ -1081,7 +1082,7 @@ void ParameterConfigDialog::setDetecting(bool detecting) {
     } else {
         aiDetectButton_.setButtonText("AI Detect");
         aiDetectButton_.setColour(juce::TextButton::buttonColourId,
-                                  DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+                                  ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
         cancelButton_.setEnabled(true);
         stopTimer();
     }

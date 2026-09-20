@@ -3,7 +3,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaBitcrusherCompiledPlugin.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -71,15 +71,15 @@ void CompiledBitcrusherEditorView::timerCallback() {
 
 void CompiledBitcrusherEditorView::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds().toFloat();
-    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
     g.fillRoundedRectangle(bounds, 4.0f);
 
     auto plot = bounds.reduced(kPadX, kPadY);
     if (plot.getWidth() < 32.0f || plot.getHeight() < 16.0f)
         return;
 
-    const auto textColour = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_INFO);
+    const auto textColour = ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY);
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_INFO);
 
     // Centre axis.
     g.setColour(textColour.withAlpha(0.15f));

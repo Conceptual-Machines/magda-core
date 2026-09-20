@@ -2,17 +2,17 @@
 
 #include <cmath>
 
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
 
 namespace {
-const ThemedColour kBg{DarkTheme::INSTRUMENT_BACKGROUND};
-const ThemedColour kPanel{DarkTheme::INSTRUMENT_PANEL};
-const ThemedColour kBorder{DarkTheme::INSTRUMENT_BORDER};
-const ThemedColour kText{DarkTheme::INSTRUMENT_TEXT};
-const ThemedColour kDim{DarkTheme::INSTRUMENT_TEXT_DIM};
+const ThemedColour kBg{ActiveTheme::INSTRUMENT_BACKGROUND};
+const ThemedColour kPanel{ActiveTheme::INSTRUMENT_PANEL};
+const ThemedColour kBorder{ActiveTheme::INSTRUMENT_BORDER};
+const ThemedColour kText{ActiveTheme::INSTRUMENT_TEXT};
+const ThemedColour kDim{ActiveTheme::INSTRUMENT_TEXT_DIM};
 const juce::Colour cBow{0xffc9c9d0};
 const juce::Colour cBlow{0xffe0556f};
 const juce::Colour cStrike{0xff45c8d0};

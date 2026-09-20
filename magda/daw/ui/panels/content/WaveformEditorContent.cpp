@@ -4,8 +4,8 @@
 #include <limits>
 
 #include "../../state/TimelineController.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/CursorManager.hpp"
-#include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallButtonLookAndFeel.hpp"
 #include "audio/AudioBridge.hpp"
@@ -77,10 +77,11 @@ class WaveformEditorContent::ScrollNotifyingViewport : public juce::Viewport {
 class WaveformEditorContent::ButtonLookAndFeel : public juce::LookAndFeel_V4 {
   public:
     ButtonLookAndFeel() {
-        setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-        setColour(juce::TextButton::buttonOnColourId, DarkTheme::getAccentColour().withAlpha(0.3f));
-        setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
-        setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+        setColour(juce::TextButton::buttonColourId, ActiveTheme::getColour(ActiveTheme::SURFACE));
+        setColour(juce::TextButton::buttonOnColourId,
+                  ActiveTheme::getAccentColour().withAlpha(0.3f));
+        setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
+        setColour(juce::TextButton::textColourOnId, ActiveTheme::getAccentColour());
     }
 
     juce::Font getTextButtonFont(juce::TextButton&, int /*buttonHeight*/) override {
@@ -103,7 +104,7 @@ class WaveformEditorContent::ButtonLookAndFeel : public juce::LookAndFeel_V4 {
         g.setColour(baseColour);
         g.fillRoundedRectangle(bounds, 3.0f);
 
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRoundedRectangle(bounds, 3.0f, 1.0f);
     }
 
@@ -181,7 +182,7 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
         if (editPos >= clipStart && editPos <= clipEnd) {
             int editX = arrangementToSourceX(editPos);
             if (editX >= 0 && editX < getWidth()) {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
                 juce::Path triangle;
                 triangle.addTriangle(static_cast<float>(editX - 5), 0.0f,
                                      static_cast<float>(editX + 5), 0.0f, static_cast<float>(editX),
@@ -200,7 +201,7 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
                     displayPositionToX(di.sessionPlayheadToDisplayPosition(sessionPos));
 
                 if (playX >= 0 && playX < getWidth()) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
                     g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
                                static_cast<float>(getHeight()), 1.5f);
                 }
@@ -225,7 +226,7 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
                 double sourcePos = di.loopRegionStartSource + wrapped;
                 int playX = sourcePositionToX(sourcePos);
                 if (playX >= 0 && playX < getWidth()) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
                     g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
                                static_cast<float>(getHeight()), 1.5f);
                 }
@@ -234,7 +235,7 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
 
             int playX = arrangementToSourceX(playPos);
             if (playX >= 0 && playX < getWidth()) {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
                 g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
                            static_cast<float>(getHeight()), 1.5f);
             }
@@ -383,7 +384,7 @@ WaveformEditorContent::WaveformEditorContent() {
         std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::Integer);
     gridNumeratorLabel_->setRange(1.0, 128.0, 1.0);
     gridNumeratorLabel_->setValue(static_cast<double>(gridNumerator_), juce::dontSendNotification);
-    gridNumeratorLabel_->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+    gridNumeratorLabel_->setTextColour(ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
     gridNumeratorLabel_->setShowFillIndicator(false);
     gridNumeratorLabel_->setFontSize(12.0f);
     gridNumeratorLabel_->setDoubleClickResetsValue(true);
@@ -395,7 +396,7 @@ WaveformEditorContent::WaveformEditorContent() {
 
     gridSlashLabel_ = std::make_unique<juce::Label>("gridSlash", "/");
     gridSlashLabel_->setFont(magda::FontManager::getInstance().getUIFont(11.0f));
-    gridSlashLabel_->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    gridSlashLabel_->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     gridSlashLabel_->setJustificationType(juce::Justification::centred);
     addAndMakeVisible(gridSlashLabel_.get());
 
@@ -404,7 +405,7 @@ WaveformEditorContent::WaveformEditorContent() {
     gridDenominatorLabel_->setRange(2.0, 32.0, 4.0);
     gridDenominatorLabel_->setValue(static_cast<double>(gridDenominator_),
                                     juce::dontSendNotification);
-    gridDenominatorLabel_->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+    gridDenominatorLabel_->setTextColour(ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
     gridDenominatorLabel_->setShowFillIndicator(false);
     gridDenominatorLabel_->setFontSize(12.0f);
     gridDenominatorLabel_->setDoubleClickResetsValue(true);
@@ -434,11 +435,11 @@ WaveformEditorContent::WaveformEditorContent() {
     snapButton_->setClickingTogglesState(true);
     snapButton_->setToggleState(false, juce::dontSendNotification);
     snapButton_->setColour(juce::TextButton::buttonColourId,
-                           DarkTheme::getColour(DarkTheme::SURFACE).darker(0.2f));
+                           ActiveTheme::getColour(ActiveTheme::SURFACE).darker(0.2f));
     snapButton_->setColour(juce::TextButton::buttonOnColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).darker(0.3f));
+                           ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).darker(0.3f));
     snapButton_->setColour(juce::TextButton::textColourOffId,
-                           DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                           ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     snapButton_->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
     snapButton_->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
                                    juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
@@ -452,11 +453,11 @@ WaveformEditorContent::WaveformEditorContent() {
     gridButton_->setClickingTogglesState(true);
     gridButton_->setToggleState(gridVisible_, juce::dontSendNotification);
     gridButton_->setColour(juce::TextButton::buttonColourId,
-                           DarkTheme::getColour(DarkTheme::SURFACE).darker(0.2f));
+                           ActiveTheme::getColour(ActiveTheme::SURFACE).darker(0.2f));
     gridButton_->setColour(juce::TextButton::buttonOnColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).darker(0.3f));
+                           ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).darker(0.3f));
     gridButton_->setColour(juce::TextButton::textColourOffId,
-                           DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                           ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     gridButton_->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
     gridButton_->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
                                    juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
@@ -712,7 +713,7 @@ WaveformEditorContent::~WaveformEditorContent() {
 void WaveformEditorContent::paint(juce::Graphics& g) {
     if (getWidth() <= 0 || getHeight() <= 0)
         return;
-    g.fillAll(DarkTheme::getPanelBackgroundColour());
+    g.fillAll(ActiveTheme::getPanelBackgroundColour());
 }
 
 void WaveformEditorContent::paintOverChildren(juce::Graphics& g) {
@@ -720,12 +721,12 @@ void WaveformEditorContent::paintOverChildren(juce::Graphics& g) {
     // list what is selected instead. Editing happens in the properties panel.
     if (!multiClipNames_.isEmpty()) {
         auto bounds = getLocalBounds();
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         g.setFont(FontManager::getInstance().getUIFont(14.0f));
         auto headline = juce::String(multiClipNames_.size()) + " clips selected";
         auto textArea = bounds.withSizeKeepingCentre(bounds.getWidth() - 40, 60);
         g.drawText(headline, textArea.removeFromTop(24), juce::Justification::centred);
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.6f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.6f));
         g.setFont(FontManager::getInstance().getUIFont(12.0f));
         g.drawText(multiClipNames_.joinIntoString(", "), textArea, juce::Justification::centredTop,
                    true);
@@ -747,9 +748,9 @@ void WaveformEditorContent::paintOverChildren(juce::Graphics& g) {
     if (area.isEmpty())
         return;
 
-    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).withAlpha(0.88f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE).withAlpha(0.88f));
     g.fillRoundedRectangle(area.toFloat(), 6.0f);
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.9f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.9f));
     g.drawRoundedRectangle(area.toFloat().reduced(0.5f), 6.0f, 1.0f);
 
     auto spinnerArea = area.removeFromLeft(32).reduced(8).toFloat();
@@ -760,11 +761,11 @@ void WaveformEditorContent::paintOverChildren(juce::Graphics& g) {
         const float angle = transientSpinnerPhase_ + t * juce::MathConstants<float>::twoPi;
         const float alpha = 0.18f + 0.72f * t;
         const auto p = centre + juce::Point<float>(std::cos(angle), std::sin(angle)) * radius;
-        g.setColour(DarkTheme::getAccentColour().withAlpha(alpha));
+        g.setColour(ActiveTheme::getAccentColour().withAlpha(alpha));
         g.fillEllipse(p.x - 1.6f, p.y - 1.6f, 3.2f, 3.2f);
     }
 
-    g.setColour(DarkTheme::getTextColour());
+    g.setColour(ActiveTheme::getTextColour());
     g.setFont(FontManager::getInstance().getUIFont(12.0f));
     g.drawText("Updating transients", area.reduced(0, 1), juce::Justification::centredLeft, false);
 }

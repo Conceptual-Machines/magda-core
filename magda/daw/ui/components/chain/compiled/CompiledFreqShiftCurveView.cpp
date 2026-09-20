@@ -4,7 +4,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaFreqShiftCompiledPlugin.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -103,24 +103,24 @@ void CompiledFreqShiftCurveView::resampleFromPlugin() {
 
 void CompiledFreqShiftCurveView::paint(juce::Graphics& g) {
     const auto bounds = getLocalBounds();
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).darker(0.06f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).darker(0.06f));
     g.fillRect(bounds);
 
     auto plot = bounds.toFloat().reduced(kPlotPadX, kPlotPadY);
     if (plot.getWidth() < 8.0f || plot.getHeight() < 8.0f)
         return;
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.55f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.55f));
     g.drawRect(plot, 1.0f);
 
     juce::Graphics::ScopedSaveState clipGuard(g);
     g.reduceClipRegion(plot.toNearestInt());
 
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_MODULATION);
-    const auto dimText = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.55f);
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION);
+    const auto dimText = ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.55f);
 
     // Linear frequency axis grid at 500 Hz / 1 kHz / 1.5 kHz.
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.22f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.22f));
     for (float gridHz : {500.0f, 1000.0f, 1500.0f}) {
         const float x = hzToX(gridHz, plot);
         g.drawVerticalLine(static_cast<int>(std::round(x)), plot.getY(), plot.getBottom());
@@ -129,7 +129,7 @@ void CompiledFreqShiftCurveView::paint(juce::Graphics& g) {
     // Big shift readout, top centre.
     const juce::String sign = shiftHz_ > 0.0f ? "+" : "";
     const juce::String shiftLabel = sign + juce::String(shiftHz_, 1) + " Hz";
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.9f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.9f));
     g.setFont(18.0f);
     g.drawText(shiftLabel,
                juce::Rectangle<float>(plot.getX(), plot.getY() + 4.0f, plot.getWidth(), 22.0f)
@@ -154,7 +154,7 @@ void CompiledFreqShiftCurveView::paint(juce::Graphics& g) {
 
     // Axis line.
     const float axisY = strip.getCentreY();
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.45f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.45f));
     g.drawHorizontalLine(static_cast<int>(std::round(axisY)), strip.getX(), strip.getRight());
 
     // Decade tick labels.
@@ -172,7 +172,7 @@ void CompiledFreqShiftCurveView::paint(juce::Graphics& g) {
 
     // Input marker at reference Hz.
     const float inX = hzToX(kReferenceHz, strip);
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.55f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.55f));
     g.fillEllipse(inX - 4.0f, axisY - 4.0f, 8.0f, 8.0f);
 
     // Output markers — L and R diverge with spread.

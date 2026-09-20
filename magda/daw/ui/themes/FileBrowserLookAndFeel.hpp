@@ -2,8 +2,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "ActiveTheme.hpp"
 #include "BinaryData.h"
-#include "DarkTheme.hpp"
 #include "FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -29,7 +29,7 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
     // MainWindow re-applies it alongside the other shared look-and-feels.
     void refreshThemeColours() {
         setColour(juce::ScrollBar::thumbColourId,
-                  DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.5f));
+                  ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.5f));
         setColour(juce::ScrollBar::backgroundColourId, juce::Colours::transparentBlack);
     }
     ~FileBrowserLookAndFeel() override = default;
@@ -59,7 +59,7 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
         arrow.lineTo(arrowX + arrowWidth / 2.0f, arrowY + arrowHeight / 2.0f);
         arrow.lineTo(arrowX + arrowWidth, arrowY - arrowHeight / 2.0f);
 
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.strokePath(arrow, juce::PathStrokeType(1.2f));
     }
 
@@ -96,7 +96,7 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
                            const juce::Drawable* icon, const juce::Colour* textColour) override {
         if (isSeparator) {
             auto separatorArea = area.reduced(5, 0).withHeight(1);
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
             g.fillRect(separatorArea);
             return;
         }
@@ -104,13 +104,13 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
         auto textArea = area.reduced(8, 0);
 
         if (isHighlighted && isActive) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.3f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.3f));
             g.fillRect(area);
         }
 
         g.setColour(textColour != nullptr ? *textColour
-                                          : (isActive ? DarkTheme::getTextColour()
-                                                      : DarkTheme::getSecondaryTextColour()));
+                                          : (isActive ? ActiveTheme::getTextColour()
+                                                      : ActiveTheme::getSecondaryTextColour()));
         g.setFont(getPopupMenuFont());
         g.drawFittedText(text, textArea, juce::Justification::centredLeft, 1);
 
@@ -118,9 +118,9 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
     }
 
     void drawPopupMenuBackground(juce::Graphics& g, int width, int height) override {
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
         g.fillRect(0, 0, width, height);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRect(0, 0, width, height);
     }
 
@@ -160,7 +160,7 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
         // background, which lands on near-black here — draw a themed one.
         juce::Path p;
         p.addTriangle(0.0f, 0.0f, 1.0f, isOpen ? 0.0f : 0.5f, isOpen ? 0.5f : 0.0f, 1.0f);
-        g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(isMouseOver ? 1.0f : 0.7f));
+        g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(isMouseOver ? 1.0f : 0.7f));
         g.fillPath(p, p.getTransformToScaleToFit(
                           area.reduced(area.getWidth() / 4.0f, area.getHeight() / 4.0f), true));
     }
@@ -193,8 +193,8 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
             if (midiDrawable_) {
                 auto themedIcon = midiDrawable_->createCopy();
                 themedIcon->replaceColour(juce::Colour(0xFFB3B3B3),
-                                          DarkTheme::getSecondaryTextColour());
-                DarkTheme::applyToSvgIcon(*themedIcon);
+                                          ActiveTheme::getSecondaryTextColour());
+                ActiveTheme::applyToSvgIcon(*themedIcon);
                 themedIcon->drawWithin(
                     g,
                     juce::Rectangle<float>(2.0f, 2.0f, x - 4.0f, static_cast<float>(height) - 4.0f),
@@ -239,7 +239,7 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
                              1);
 
             g.setFont(FontManager::getInstance().getUIFont(static_cast<float>(height) * 0.5f));
-            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.setColour(ActiveTheme::getSecondaryTextColour());
 
             g.drawFittedText(fileSizeDescription, sizeX, 0, dateX - sizeX - 8, height,
                              juce::Justification::centredRight, 1);
@@ -262,14 +262,14 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
         arrowPath.addArrow({50.0f, 100.0f, 50.0f, 0.0f}, 40.0f, 100.0f, 50.0f);
 
         juce::DrawablePath arrowImage;
-        arrowImage.setFill(DarkTheme::getSecondaryTextColour());
+        arrowImage.setFill(ActiveTheme::getSecondaryTextColour());
         arrowImage.setPath(arrowPath);
 
         goUpButton->setImages(&arrowImage);
         goUpButton->setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::SURFACE));
+                              ActiveTheme::getColour(ActiveTheme::SURFACE));
         goUpButton->setColour(juce::TextButton::buttonOnColourId,
-                              DarkTheme::getColour(DarkTheme::SURFACE_HOVER));
+                              ActiveTheme::getColour(ActiveTheme::SURFACE_HOVER));
 
         return goUpButton;
     }
@@ -307,7 +307,7 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
 
         if (auto* listAsComp = dynamic_cast<juce::Component*>(fileListComponent)) {
             listAsComp->setColour(juce::ListBox::backgroundColourId,
-                                  DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+                                  ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
             listAsComp->setBounds(x, y, w, browserComp.getHeight() - y - bottomSectionHeight);
             y = listAsComp->getBottom() + 4;
         }

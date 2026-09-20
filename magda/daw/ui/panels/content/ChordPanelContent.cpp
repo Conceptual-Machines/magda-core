@@ -36,9 +36,9 @@ void ScaleBlockComponent::paint(juce::Graphics& g) {
 
     // Green-tinted background — brighter when selected
     float baseAlpha = selected_ ? 0.35f : 0.15f;
-    auto colour = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(baseAlpha);
+    auto colour = ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(baseAlpha);
     if (isMouseOver())
-        colour = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(baseAlpha + 0.15f);
+        colour = ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(baseAlpha + 0.15f);
 
     g.setColour(colour);
     g.fillRoundedRectangle(bounds, 3.0f);
@@ -46,13 +46,13 @@ void ScaleBlockComponent::paint(juce::Graphics& g) {
     // Border when selected or hovered
     if (selected_ || isMouseOver()) {
         float borderAlpha = selected_ ? 0.7f : 0.5f;
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(borderAlpha));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(borderAlpha));
         g.drawRoundedRectangle(bounds.reduced(0.5f), 3.0f, 1.0f);
     }
 
     // Scale name
-    g.setColour(selected_ ? DarkTheme::getTextColour()
-                          : DarkTheme::getTextColour().withAlpha(0.8f));
+    g.setColour(selected_ ? ActiveTheme::getTextColour()
+                          : ActiveTheme::getTextColour().withAlpha(0.8f));
     g.setFont(FontManager::getInstance().getUIFont(10.0f));
     g.drawText(magda::music::NotationSettings::getInstance().formatRoot(juce::String(scale_.name)),
                getLocalBounds().reduced(4, 0), juce::Justification::centred);
@@ -112,14 +112,14 @@ void ScaleChordsPopup::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds().toFloat();
 
     // Dark background with border
-    g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
     g.fillRoundedRectangle(bounds, 6.0f);
-    g.setColour(DarkTheme::getBorderColour().brighter(0.2f));
+    g.setColour(ActiveTheme::getBorderColour().brighter(0.2f));
     g.drawRoundedRectangle(bounds.reduced(0.5f), 6.0f, 1.0f);
 
     // Title
     auto titleArea = getLocalBounds().reduced(10, 6).removeFromTop(20);
-    g.setColour(DarkTheme::getTextColour());
+    g.setColour(ActiveTheme::getTextColour());
     g.setFont(FontManager::getInstance().getUIFont(12.0f).boldened());
     g.drawText(magda::music::NotationSettings::getInstance().formatRoot(juce::String(scale_.name)),
                titleArea, juce::Justification::centredLeft);
@@ -217,10 +217,10 @@ void BrowseScaleRowComponent::paint(juce::Graphics& g) {
     float baseAlpha = 0.08f;
     if (isMouseOver())
         baseAlpha = 0.2f;
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(baseAlpha));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(baseAlpha));
     g.fillRoundedRectangle(bounds, 3.0f);
 
-    g.setColour(DarkTheme::getTextColour().withAlpha(0.8f));
+    g.setColour(ActiveTheme::getTextColour().withAlpha(0.8f));
     g.setFont(FontManager::getInstance().getUIFont(10.0f));
     g.drawText(magda::music::NotationSettings::getInstance().formatRoot(juce::String(scale_.name)),
                bounds.reduced(6, 0), juce::Justification::centredLeft);
@@ -279,12 +279,12 @@ class AIContainerComponent : public juce::Component {
         float alpha = greyOut ? 0.3f : 1.0f;
 
         for (auto& row : paintData.rows) {
-            g.setColour(DarkTheme::getAccentColour().withAlpha(alpha));
+            g.setColour(ActiveTheme::getAccentColour().withAlpha(alpha));
             g.setFont(FontManager::getInstance().getUIFont(11.0f).boldened());
             g.drawText(row.name, row.nameArea, juce::Justification::centredLeft);
 
             if (row.description.isNotEmpty() && !row.descArea.isEmpty()) {
-                g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(alpha));
+                g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(alpha));
                 g.setFont(FontManager::getInstance().getUIFont(9.5f));
                 g.drawText(row.description, row.descArea, juce::Justification::centredLeft);
             }
@@ -295,12 +295,12 @@ class AIContainerComponent : public juce::Component {
         if (loading && paintData.rows.empty()) {
             int y = 8;
             if (promptText.isNotEmpty()) {
-                g.setColour(DarkTheme::getTextColour());
+                g.setColour(ActiveTheme::getTextColour());
                 g.setFont(FontManager::getInstance().getUIFont(11.0f));
                 g.drawText(promptText, 4, y, getWidth() - 8, 20, juce::Justification::centredLeft);
                 y += 24;
             }
-            g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.5f));
+            g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(0.5f));
             g.setFont(FontManager::getInstance().getUIFont(11.0f));
             g.drawText("Generating...", 4, y, getWidth() - 8, 20, juce::Justification::centredLeft);
             promptBottom = juce::jmax(promptBottom, y + 28);
@@ -310,14 +310,14 @@ class AIContainerComponent : public juce::Component {
         if (streamingText.isNotEmpty()) {
             auto font = FontManager::getInstance().getUIFont(9.5f);
             g.setFont(font);
-            g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.7f));
+            g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(0.7f));
 
             int textY = promptBottom;
             int textWidth = getWidth() - 8;
             auto layout = juce::TextLayout();
             juce::AttributedString attrStr;
             attrStr.append(streamingText, font,
-                           DarkTheme::getSecondaryTextColour().withAlpha(0.7f));
+                           ActiveTheme::getSecondaryTextColour().withAlpha(0.7f));
             attrStr.setWordWrap(juce::AttributedString::WordWrap::byWord);
             layout.createLayout(attrStr, static_cast<float>(textWidth));
             layout.draw(g, juce::Rectangle<float>(4.0f, static_cast<float>(textY),
@@ -712,12 +712,12 @@ void ChordPanelContent::enterBrowseMode() {
             btn->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
             btn->setClickingTogglesState(true);
             btn->setColour(juce::TextButton::buttonColourId,
-                           DarkTheme::getColour(DarkTheme::SURFACE));
-            btn->setColour(juce::TextButton::buttonOnColourId, DarkTheme::getAccentColour());
+                           ActiveTheme::getColour(ActiveTheme::SURFACE));
+            btn->setColour(juce::TextButton::buttonOnColourId, ActiveTheme::getAccentColour());
             btn->setColour(juce::TextButton::textColourOffId,
-                           DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                           ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
             btn->setColour(juce::TextButton::textColourOnId,
-                           DarkTheme::getColour(DarkTheme::BACKGROUND));
+                           ActiveTheme::getColour(ActiveTheme::BACKGROUND));
             btn->onClick = [this, i]() {
                 bool on = browseKeyButtons_[static_cast<size_t>(i)]->getToggleState();
                 // Exclusive toggle: deselect others
@@ -1050,7 +1050,7 @@ void ChordPanelContent::layoutAIProgressionRows() {
         if (container->streamingText.isNotEmpty()) {
             auto font = FontManager::getInstance().getUIFont(9.5f);
             juce::AttributedString attrStr;
-            attrStr.append(container->streamingText, font, DarkTheme::getSecondaryTextColour());
+            attrStr.append(container->streamingText, font, ActiveTheme::getSecondaryTextColour());
             attrStr.setWordWrap(juce::AttributedString::WordWrap::byWord);
             juce::TextLayout layout;
             layout.createLayout(attrStr, static_cast<float>(containerWidth - 8));
@@ -1624,12 +1624,13 @@ void ChordPanelContent::setupFooterControls() {
         auto btn = std::make_unique<juce::TextButton>(text);
         btn->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
         btn->setClickingTogglesState(true);
-        btn->setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-        btn->setColour(juce::TextButton::buttonOnColourId, DarkTheme::getAccentColour());
+        btn->setColour(juce::TextButton::buttonColourId,
+                       ActiveTheme::getColour(ActiveTheme::SURFACE));
+        btn->setColour(juce::TextButton::buttonOnColourId, ActiveTheme::getAccentColour());
         btn->setColour(juce::TextButton::textColourOffId,
-                       DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                       ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         btn->setColour(juce::TextButton::textColourOnId,
-                       DarkTheme::getColour(DarkTheme::BACKGROUND));
+                       ActiveTheme::getColour(ActiveTheme::BACKGROUND));
         addAndMakeVisible(btn.get());
         return btn;
     };
@@ -1640,9 +1641,9 @@ void ChordPanelContent::setupFooterControls() {
         std::make_unique<juce::TextButton>(magda::music::NotationSettings::getInstance().label());
     notationBtn_->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     notationBtn_->setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE));
+                            ActiveTheme::getColour(ActiveTheme::SURFACE));
     notationBtn_->setColour(juce::TextButton::textColourOffId,
-                            DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                            ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     notationBtn_->setTooltip("Note notation: C / Do (solfege) / both");
     notationBtn_->onClick = [this]() {
         magda::music::NotationSettings::getInstance().cycle();
@@ -1703,9 +1704,9 @@ void ChordPanelContent::setupFooterControls() {
     scaleFilterBtn_->setToggleState(true, juce::dontSendNotification);
     scaleFilterBtn_->setActive(true);
     scaleFilterBtn_->setOriginalColor(juce::Colour(0xFFB3B3B3));  // SVG fill color
-    scaleFilterBtn_->setActiveColor(DarkTheme::getColour(DarkTheme::BACKGROUND));
-    scaleFilterBtn_->setActiveBackgroundColor(DarkTheme::getAccentColour());
-    scaleFilterBtn_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    scaleFilterBtn_->setActiveColor(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
+    scaleFilterBtn_->setActiveBackgroundColor(ActiveTheme::getAccentColour());
+    scaleFilterBtn_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     scaleFilterBtn_->setTooltip("Filter suggestions by detected scales");
     scaleFilterBtn_->onClick = [this]() {
         bool on = scaleFilterBtn_->getToggleState();
@@ -1720,7 +1721,7 @@ void ChordPanelContent::setupFooterControls() {
     browseBtn_ = std::make_unique<magda::SvgButton>("Browse", BinaryData::browser_svg,
                                                     BinaryData::browser_svgSize);
     browseBtn_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    browseBtn_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    browseBtn_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     browseBtn_->setTooltip("Browse scales");
     browseBtn_->onClick = [this]() { enterBrowseMode(); };
     addAndMakeVisible(browseBtn_.get());
@@ -1728,7 +1729,7 @@ void ChordPanelContent::setupFooterControls() {
     backBtn_ = std::make_unique<magda::SvgButton>("Back", BinaryData::chevron_left_svg,
                                                   BinaryData::chevron_left_svgSize);
     backBtn_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    backBtn_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    backBtn_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     backBtn_->setTooltip("Back to suggestions");
     backBtn_->onClick = [this]() { exitBrowseMode(); };
     backBtn_->setVisible(false);
@@ -1737,7 +1738,7 @@ void ChordPanelContent::setupFooterControls() {
     clearHistoryBtn_ = std::make_unique<magda::SvgButton>("ClearHistory", BinaryData::delete_svg,
                                                           BinaryData::delete_svgSize);
     clearHistoryBtn_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    clearHistoryBtn_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    clearHistoryBtn_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     clearHistoryBtn_->setTooltip("Clear chord history and reset detection");
     clearHistoryBtn_->onClick = [this]() {
         if (chordPlugin_)
@@ -1754,9 +1755,9 @@ void ChordPanelContent::setupFooterControls() {
     ksTabBtn_->setOriginalColor(juce::Colour(0xFFE3E3E3));
     // ICON_ON_ACCENT keeps the active glyph legible on the accent chip in
     // every theme (see the AI console tab buttons).
-    ksTabBtn_->setActiveColor(DarkTheme::ICON_ON_ACCENT);
-    ksTabBtn_->setNormalBackgroundColor(DarkTheme::SURFACE);
-    ksTabBtn_->setActiveBackgroundColor(DarkTheme::ACCENT_PRIMARY);
+    ksTabBtn_->setActiveColor(ActiveTheme::ICON_ON_ACCENT);
+    ksTabBtn_->setNormalBackgroundColor(ActiveTheme::SURFACE);
+    ksTabBtn_->setActiveBackgroundColor(ActiveTheme::ACCENT_PRIMARY);
     ksTabBtn_->setTooltip("Krumhansl-Schmuckler profile suggestions");
     ksTabBtn_->onClick = [this]() { switchToTab(SuggestionTab::KS); };
     addAndMakeVisible(ksTabBtn_.get());
@@ -1766,16 +1767,16 @@ void ChordPanelContent::setupFooterControls() {
     aiTabBtn_->setClickingTogglesState(true);
     aiTabBtn_->setRadioGroupId(1001);
     aiTabBtn_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    aiTabBtn_->setActiveColor(DarkTheme::ICON_ON_ACCENT);
-    aiTabBtn_->setNormalBackgroundColor(DarkTheme::SURFACE);
-    aiTabBtn_->setActiveBackgroundColor(DarkTheme::ACCENT_MODULATION);
+    aiTabBtn_->setActiveColor(ActiveTheme::ICON_ON_ACCENT);
+    aiTabBtn_->setNormalBackgroundColor(ActiveTheme::SURFACE);
+    aiTabBtn_->setActiveBackgroundColor(ActiveTheme::ACCENT_MODULATION);
     aiTabBtn_->setTooltip("AI chord progression suggestions");
     aiTabBtn_->onClick = [this]() { switchToTab(SuggestionTab::AI); };
     addAndMakeVisible(aiTabBtn_.get());
 
     aiModelLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
     aiModelLabel_.setColour(juce::Label::textColourId,
-                            DarkTheme::getSecondaryTextColour().withAlpha(0.6f));
+                            ActiveTheme::getSecondaryTextColour().withAlpha(0.6f));
     aiModelLabel_.setJustificationType(juce::Justification::centredLeft);
     aiModelLabel_.setVisible(false);
     addAndMakeVisible(aiModelLabel_);
@@ -1794,11 +1795,11 @@ void ChordPanelContent::setupFooterControls() {
     aiInputBox_->setReturnKeyStartsNewLine(false);
     aiInputBox_->setFont(FontManager::getInstance().getUIFont(11.0f));
     aiInputBox_->setColour(juce::TextEditor::backgroundColourId,
-                           DarkTheme::getColour(DarkTheme::SURFACE));
-    aiInputBox_->setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
-    aiInputBox_->setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
+                           ActiveTheme::getColour(ActiveTheme::SURFACE));
+    aiInputBox_->setColour(juce::TextEditor::textColourId, ActiveTheme::getTextColour());
+    aiInputBox_->setColour(juce::TextEditor::outlineColourId, ActiveTheme::getBorderColour());
     aiInputBox_->setTextToShowWhenEmpty("Describe a chord progression...",
-                                        DarkTheme::getSecondaryTextColour().withAlpha(0.5f));
+                                        ActiveTheme::getSecondaryTextColour().withAlpha(0.5f));
     aiInputBox_->onReturnKey = [this]() { requestAISuggestions(); };
     aiInputBox_->setVisible(false);
     addAndMakeVisible(aiInputBox_.get());
@@ -1806,7 +1807,7 @@ void ChordPanelContent::setupFooterControls() {
     aiSendBtn_ = std::make_unique<magda::SvgButton>("AISend", BinaryData::send_svg,
                                                     BinaryData::send_svgSize);
     aiSendBtn_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    aiSendBtn_->setNormalColor(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+    aiSendBtn_->setNormalColor(ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
     aiSendBtn_->onClick = [this]() { requestAISuggestions(); };
     aiSendBtn_->setVisible(false);
     addAndMakeVisible(aiSendBtn_.get());
@@ -1833,16 +1834,16 @@ void ChordPanelContent::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
 
     // Background
-    g.setColour(DarkTheme::getBackgroundColour());
+    g.setColour(ActiveTheme::getBackgroundColour());
     g.fillRect(bounds);
 
     // Left border
-    g.setColour(DarkTheme::getBorderColour());
+    g.setColour(ActiveTheme::getBorderColour());
     g.fillRect(bounds.getX(), bounds.getY(), 1, bounds.getHeight());
 
     // Placeholder when no plugin connected
     if (!chordPlugin_) {
-        g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
+        g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(0.3f));
         g.setFont(FontManager::getInstance().getUIFont(12.0f));
         g.drawText("No MIDI device", bounds, juce::Justification::centred);
         return;
@@ -1856,24 +1857,24 @@ void ChordPanelContent::paint(juce::Graphics& g) {
         auto area = col.reduced(PADDING, 0);
 
         // "CHORD" header
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.setFont(headerFont);
         g.drawText("CHORD", area.removeFromTop(SECTION_HEADER_HEIGHT),
                    juce::Justification::centredLeft);
 
         // Current chord display box
         auto chordBox = area.removeFromTop(44);
-        g.setColour(DarkTheme::getBackgroundColour().brighter(0.06f));
+        g.setColour(ActiveTheme::getBackgroundColour().brighter(0.06f));
         g.fillRoundedRectangle(chordBox.toFloat(), 4.0f);
-        g.setColour(DarkTheme::getBorderColour());
+        g.setColour(ActiveTheme::getBorderColour());
         g.drawRoundedRectangle(chordBox.toFloat(), 4.0f, 1.0f);
 
         if (currentChord_.isEmpty()) {
-            g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.4f));
+            g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(0.4f));
             g.setFont(FontManager::getInstance().getUIFont(13.0f));
             g.drawText("Play...", chordBox, juce::Justification::centred);
         } else {
-            g.setColour(DarkTheme::getAccentColour());
+            g.setColour(ActiveTheme::getAccentColour());
             g.setFont(FontManager::getInstance().getUIFont(20.0f).boldened());
             g.drawText(currentChord_, chordBox, juce::Justification::centred);
         }
@@ -1883,7 +1884,7 @@ void ChordPanelContent::paint(juce::Graphics& g) {
         // "HISTORY" header with clear button
         {
             auto histHeaderArea = area.removeFromTop(SECTION_HEADER_HEIGHT);
-            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.setColour(ActiveTheme::getSecondaryTextColour());
             g.setFont(headerFont);
             g.drawText("HISTORY", histHeaderArea, juce::Justification::centredLeft);
         }
@@ -1894,26 +1895,26 @@ void ChordPanelContent::paint(juce::Graphics& g) {
         auto col = suggestionsCol_;
 
         // Column separator
-        g.setColour(DarkTheme::getBorderColour());
+        g.setColour(ActiveTheme::getBorderColour());
         g.fillRect(col.getX(), col.getY() + 4, 1, col.getHeight() - 8);
 
         auto area = col.reduced(PADDING, 0);
 
         if (browseMode_) {
             // Browse mode header
-            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.setColour(ActiveTheme::getSecondaryTextColour());
             g.setFont(headerFont);
             g.drawText("BROWSE SCALES", area.removeFromTop(SECTION_HEADER_HEIGHT),
                        juce::Justification::centredLeft);
         } else {
             auto tabArea = area.removeFromTop(SECTION_HEADER_HEIGHT);
             // Horizontal border below tab header
-            g.setColour(DarkTheme::getBorderColour());
+            g.setColour(ActiveTheme::getBorderColour());
             g.fillRect(col.getX() + PADDING, tabArea.getBottom(), col.getWidth() - 2 * PADDING, 1);
 
             if (suggestionTab_ == SuggestionTab::KS) {
                 if (suggestionBlocks_.empty() && chordPlugin_) {
-                    g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
+                    g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(0.3f));
                     g.setFont(FontManager::getInstance().getUIFont(11.0f));
                     area.removeFromTop(8);
                     g.drawText("Play to get suggestions", area.removeFromTop(20),
@@ -1922,7 +1923,7 @@ void ChordPanelContent::paint(juce::Graphics& g) {
             } else {
                 // AI tab content — draw progression names and descriptions
                 if (!aiLoading_ && (!chordPlugin_ || chordPlugin_->getAIProgressions().empty())) {
-                    g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
+                    g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(0.3f));
                     g.setFont(FontManager::getInstance().getUIFont(11.0f));
                     area.removeFromTop(8);
                     g.drawText("Type a prompt or press Send", area.removeFromTop(20),
@@ -1937,25 +1938,25 @@ void ChordPanelContent::paint(juce::Graphics& g) {
         auto col = keyScaleCol_;
 
         // Column separator
-        g.setColour(DarkTheme::getBorderColour());
+        g.setColour(ActiveTheme::getBorderColour());
         g.fillRect(col.getX(), col.getY() + 4, 1, col.getHeight() - 8);
 
         auto area = col.reduced(PADDING, 0);
 
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.setFont(headerFont);
         g.drawText("KEY", area.removeFromTop(SECTION_HEADER_HEIGHT),
                    juce::Justification::centredLeft);
 
         if (detectedKey_.isNotEmpty()) {
             area.removeFromTop(4);
-            g.setColour(DarkTheme::getTextColour());
+            g.setColour(ActiveTheme::getTextColour());
             g.setFont(FontManager::getInstance().getUIFont(16.0f).boldened());
             g.drawText(magda::music::NotationSettings::getInstance().formatRoot(detectedKey_),
                        area.removeFromTop(24), juce::Justification::centredLeft);
         } else {
             area.removeFromTop(4);
-            g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
+            g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(0.3f));
             g.setFont(FontManager::getInstance().getUIFont(11.0f));
             g.drawText("Detecting...", area.removeFromTop(20), juce::Justification::centredLeft);
         }
@@ -1964,7 +1965,7 @@ void ChordPanelContent::paint(juce::Graphics& g) {
 
         // "SCALES" header
         if (!scaleBlocks_.empty()) {
-            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.setColour(ActiveTheme::getSecondaryTextColour());
             g.setFont(headerFont);
             g.drawText("SCALES", area.removeFromTop(SECTION_HEADER_HEIGHT),
                        juce::Justification::centredLeft);
@@ -1974,7 +1975,7 @@ void ChordPanelContent::paint(juce::Graphics& g) {
 
     // --- Border above browse button ---
     if (chordPlugin_ && keyScaleCol_.getWidth() > 0 && browseBtn_ && browseBtn_->isVisible()) {
-        g.setColour(DarkTheme::getBorderColour());
+        g.setColour(ActiveTheme::getBorderColour());
         int browseTopY = browseBtn_->getY() - 6;
         g.fillRect(keyScaleCol_.getX() + PADDING, browseTopY, keyScaleCol_.getWidth() - 2 * PADDING,
                    1);
@@ -1983,7 +1984,7 @@ void ChordPanelContent::paint(juce::Graphics& g) {
     // --- Footer separator line ---
     if (chordPlugin_) {
         int footerY = getHeight() - FOOTER_HEIGHT;
-        g.setColour(DarkTheme::getBorderColour());
+        g.setColour(ActiveTheme::getBorderColour());
         g.fillRect(0, footerY, getWidth(), 1);
     }
 }

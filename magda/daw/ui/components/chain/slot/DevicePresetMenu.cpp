@@ -5,7 +5,7 @@
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"
 #include "engine/PluginService.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -92,14 +92,14 @@ class PluginPresetsButtonLookAndFeel : public juce::LookAndFeel_V4 {
                               const juce::Colour& /*bgColour*/, bool isHighlighted,
                               bool isDown) override {
         auto bounds = button.getLocalBounds().toFloat().reduced(0.5f);
-        auto bg = DarkTheme::getColour(DarkTheme::SURFACE);
+        auto bg = ActiveTheme::getColour(ActiveTheme::SURFACE);
         if (isDown)
             bg = bg.darker(0.2f);
         else if (isHighlighted)
             bg = bg.brighter(0.1f);
         g.setColour(bg);
         g.fillRoundedRectangle(bounds, 3.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRoundedRectangle(bounds, 3.0f, 1.0f);
     }
 
@@ -111,7 +111,7 @@ class PluginPresetsButtonLookAndFeel : public juce::LookAndFeel_V4 {
 
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
         g.setColour(
-            DarkTheme::getTextColour().withMultipliedAlpha(button.isEnabled() ? 1.0f : 0.5f));
+            ActiveTheme::getTextColour().withMultipliedAlpha(button.isEnabled() ? 1.0f : 0.5f));
         g.drawText(button.getButtonText(), bounds.toFloat(), juce::Justification::centredLeft,
                    /*useEllipses*/ true);
 
@@ -122,7 +122,7 @@ class PluginPresetsButtonLookAndFeel : public juce::LookAndFeel_V4 {
         chevron.startNewSubPath(cx - halfSize, cy - 1.0f);
         chevron.lineTo(cx, cy + 1.5f);
         chevron.lineTo(cx + halfSize, cy - 1.0f);
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.strokePath(chevron, juce::PathStrokeType(1.0f, juce::PathStrokeType::curved,
                                                    juce::PathStrokeType::rounded));
     }

@@ -9,7 +9,7 @@
 
 #include "../../../../agents/sound_design_agent.hpp"
 #include "../../dialogs/ParameterConfigDialog.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallComboBoxLookAndFeel.hpp"
 #include "PluginBrowserMetadataMerge.hpp"
@@ -188,7 +188,7 @@ class PluginBrowserContent::PluginTreeItem : public juce::TreeViewItem {
 
         // Highlight if selected
         if (isSelected()) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
             g.fillRect(bounds);
         }
 
@@ -221,7 +221,7 @@ class PluginBrowserContent::PluginTreeItem : public juce::TreeViewItem {
         auto formatBounds = bounds.removeFromRight(40);
 
         // Plugin name
-        g.setColour(DarkTheme::getTextColour());
+        g.setColour(ActiveTheme::getTextColour());
         g.setFont(FontManager::getInstance().getUIFont(12.0f));
         auto nameBounds = bounds.reduced(4, 0);
         juce::GlyphArrangement glyphs;
@@ -233,11 +233,11 @@ class PluginBrowserContent::PluginTreeItem : public juce::TreeViewItem {
         // Alias after the name (dimmed)
         if (plugin_.alias.isNotEmpty()) {
             auto aliasBounds = nameBounds.withLeft(nameBounds.getX() + nameWidth + 6);
-            g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.5f));
+            g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(0.5f));
             g.setFont(FontManager::getInstance().getUIFont(10.0f));
             g.drawText("@" + plugin_.alias, aliasBounds, juce::Justification::centredLeft);
         }
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.setFont(FontManager::getInstance().getUIFont(9.0f));
         g.drawText(plugin_.format, formatBounds, juce::Justification::centredRight);
     }
@@ -309,12 +309,12 @@ class PluginBrowserContent::CategoryTreeItem : public juce::TreeViewItem {
 
         // Highlight if selected
         if (isSelected()) {
-            g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
             g.fillRect(bounds);
         }
 
         // Folder icon
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         g.setFont(FontManager::getInstance().getUIFont(12.0f));
         juce::String folderIcon =
             isOpen() ? juce::String::fromUTF8("▼ ") : juce::String::fromUTF8("▶ ");
@@ -326,13 +326,13 @@ class PluginBrowserContent::CategoryTreeItem : public juce::TreeViewItem {
         }
 
         // Category name
-        g.setColour(DarkTheme::getTextColour());
+        g.setColour(ActiveTheme::getTextColour());
         g.setFont(FontManager::getInstance().getUIFontBold(12.0f));
         g.drawText(name_, bounds.reduced(4, 0), juce::Justification::centredLeft);
 
         // Item count
         auto countBounds = bounds.removeFromRight(40);
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
         g.drawText("(" + juce::String(getNumSubItems()) + ")", countBounds,
                    juce::Justification::centredRight);
@@ -475,34 +475,34 @@ PluginBrowserContent::PluginBrowserContent() {
 }
 
 void PluginBrowserContent::applyThemeColours() {
-    searchBox_.setTextToShowWhenEmpty("Search plugins...", DarkTheme::getSecondaryTextColour());
+    searchBox_.setTextToShowWhenEmpty("Search plugins...", ActiveTheme::getSecondaryTextColour());
     searchBox_.setColour(juce::TextEditor::backgroundColourId,
-                         DarkTheme::getColour(DarkTheme::SURFACE));
-    searchBox_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
+                         ActiveTheme::getColour(ActiveTheme::SURFACE));
+    searchBox_.setColour(juce::TextEditor::textColourId, ActiveTheme::getTextColour());
     searchBox_.setColour(juce::TextEditor::highlightColourId,
-                         DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.45f));
-    searchBox_.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
-    searchBox_.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
+                         ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.45f));
+    searchBox_.setColour(juce::TextEditor::highlightedTextColourId, ActiveTheme::getTextColour());
+    searchBox_.setColour(juce::TextEditor::outlineColourId, ActiveTheme::getBorderColour());
 
     viewModeSelector_.setColour(juce::ComboBox::backgroundColourId,
-                                DarkTheme::getColour(DarkTheme::SURFACE));
-    viewModeSelector_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-    viewModeSelector_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getBorderColour());
+                                ActiveTheme::getColour(ActiveTheme::SURFACE));
+    viewModeSelector_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
+    viewModeSelector_.setColour(juce::ComboBox::outlineColourId, ActiveTheme::getBorderColour());
 
     pluginTree_.setColour(juce::TreeView::backgroundColourId,
-                          DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
-    pluginTree_.setColour(juce::TreeView::linesColourId, DarkTheme::getBorderColour());
+                          ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
+    pluginTree_.setColour(juce::TreeView::linesColourId, ActiveTheme::getBorderColour());
 
     loadCategoryIcons();
 }
 
 void PluginBrowserContent::loadCategoryIcons() {
-    const auto tint = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+    const auto tint = ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY);
     const auto loadIcon = [tint](const char* data, int size) {
         auto icon = juce::Drawable::createFromImageData(data, size);
         if (icon) {
             icon->replaceColour(juce::Colour(0xFFB3B3B3), tint);
-            DarkTheme::applyToSvgIcon(*icon);
+            ActiveTheme::applyToSvgIcon(*icon);
         }
         return icon;
     };
@@ -522,7 +522,7 @@ void PluginBrowserContent::lookAndFeelChanged() {
 }
 
 void PluginBrowserContent::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getPanelBackgroundColour());
+    g.fillAll(ActiveTheme::getPanelBackgroundColour());
 }
 
 void PluginBrowserContent::resized() {

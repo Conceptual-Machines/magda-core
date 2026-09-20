@@ -4,7 +4,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaSaturatorCompiledPlugin.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -142,14 +142,14 @@ float CompiledSaturatorCurveView::shapeSample(Mode mode, float x) {
 
 void CompiledSaturatorCurveView::paint(juce::Graphics& g) {
     const auto bounds = getLocalBounds();
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).darker(0.06f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).darker(0.06f));
     g.fillRect(bounds);
 
     auto plot = bounds.toFloat().reduced(kPlotPadX, kPlotPadY);
     if (plot.getWidth() < 8.0f || plot.getHeight() < 8.0f)
         return;
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.55f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.55f));
     g.drawRect(plot, 1.0f);
 
     const float midX = plot.getCentreX();
@@ -160,11 +160,11 @@ void CompiledSaturatorCurveView::paint(juce::Graphics& g) {
     // Axes — slightly brighter centre crosshair plus quarter rules. Same
     // grid the legacy MagdaDriveCurveView used so the visual reads
     // familiar.
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.4f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.4f));
     g.drawHorizontalLine(static_cast<int>(std::round(midY)), plot.getX(), plot.getRight());
     g.drawVerticalLine(static_cast<int>(std::round(midX)), plot.getY(), plot.getBottom());
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.18f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.18f));
     for (float t : {-0.5f, 0.5f}) {
         const float x = midX + t * halfW;
         const float y = midY - t * halfH;
@@ -207,7 +207,7 @@ void CompiledSaturatorCurveView::paint(juce::Graphics& g) {
     fillPath.lineTo(plot.getRight(), midY);
     fillPath.closeSubPath();
 
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE);
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE);
     g.setColour(accent.withAlpha(0.13f));
     g.fillPath(fillPath);
     g.setColour(accent.withAlpha(0.9f));

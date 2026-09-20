@@ -5,7 +5,7 @@
 #include "../../components/common/GridDivisionMenu.hpp"
 #include "../../components/waveform/ClipWaveformPainter.hpp"
 #include "../../state/TimelineController.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "BinaryData.h"
 #include "core/AutomationInfo.hpp"
@@ -30,7 +30,7 @@ constexpr double kMaxZoom = 500.0;
 
 AutomationClipEditorContent::AutomationClipEditorContent() {
     titleLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
-    titleLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    titleLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     addAndMakeVisible(titleLabel_);
 
     timeRuler_ = std::make_unique<magda::TimeRuler>();
@@ -83,11 +83,11 @@ void AutomationClipEditorContent::buildHeaderControls() {
     const auto makeSnapButton = [this](const juce::String& text) {
         auto button = std::make_unique<juce::TextButton>(text);
         button->setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE).darker(0.2f));
+                          ActiveTheme::getColour(ActiveTheme::SURFACE).darker(0.2f));
         button->setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).darker(0.3f));
+                          ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).darker(0.3f));
         button->setColour(juce::TextButton::textColourOffId,
-                          DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                          ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         button->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
         button->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
                                   juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
@@ -241,9 +241,9 @@ void AutomationClipEditorContent::onDeactivated() {
 }
 
 void AutomationClipEditorContent::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getBackgroundColour());
+    g.fillAll(ActiveTheme::getBackgroundColour());
     if (editor_ == nullptr) {
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.setFont(FontManager::getInstance().getUIFont(13.0f));
         g.drawText("No automation clip selected", getLocalBounds(), juce::Justification::centred);
         return;

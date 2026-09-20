@@ -9,7 +9,7 @@
 #include "audio/plugins/InternalPluginRegistry.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"
-#include "themes/DarkTheme.hpp"
+#include "themes/ActiveTheme.hpp"
 #include "themes/FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -166,7 +166,8 @@ ExternalInsertUI::ExternalInsertUI(bool isInstrument) : isInstrument_(isInstrume
     auto setupLabel = [this](juce::Label& label, const juce::String& text) {
         label.setText(text, juce::dontSendNotification);
         label.setFont(FontManager::getInstance().getUIFont(12.0f));
-        label.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        label.setColour(juce::Label::textColourId,
+                        ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         label.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(label);
     };
@@ -186,9 +187,9 @@ ExternalInsertUI::ExternalInsertUI(bool isInstrument) : isInstrument_(isInstrume
     latencyValue_.setEditable(true);
     latencyValue_.setText("0.0", juce::dontSendNotification);
     latencyValue_.setColour(juce::Label::backgroundColourId,
-                            DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+                            ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
     latencyValue_.setColour(juce::Label::textColourId,
-                            DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                            ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     latencyValue_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(latencyValue_);
     latencyValue_.onTextChange = [this] {
@@ -200,7 +201,7 @@ ExternalInsertUI::ExternalInsertUI(bool isInstrument) : isInstrument_(isInstrume
 
     warningLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     warningLabel_.setColour(juce::Label::textColourId,
-                            DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                            ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     warningLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(warningLabel_);
 }

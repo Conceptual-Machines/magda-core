@@ -4,7 +4,7 @@
 
 #include "audio/plugins/compiled/MagdaUtilityCompiledPlugin.hpp"
 #include "ui/components/mixer/LevelMeterScale.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui {
@@ -35,7 +35,7 @@ juce::String formatGainDb(double value) {
 void styleNameLabel(juce::Label& label, const juce::String& text) {
     label.setText(text, juce::dontSendNotification);
     label.setFont(juce::Font(juce::FontOptions{9.0f}));
-    label.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    label.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     label.setJustificationType(juce::Justification::centred);
     label.setMinimumHorizontalScale(0.72f);
     label.setInterceptsMouseClicks(false, false);
@@ -43,7 +43,7 @@ void styleNameLabel(juce::Label& label, const juce::String& text) {
 
 void styleReadoutLabel(juce::Label& label) {
     label.setFont(juce::Font(juce::FontOptions{10.0f}));
-    label.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    label.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     label.setJustificationType(juce::Justification::centred);
     label.setMinimumHorizontalScale(0.72f);
     label.setInterceptsMouseClicks(false, false);
@@ -53,7 +53,7 @@ void styleReadoutLabel(juce::Label& label) {
 CompiledUtilityView::CompiledUtilityView(juce::String /*pluginId*/) {
     using Util = magda::daw::audio::compiled::MagdaUtilityCompiledPlugin;
 
-    const auto fillColour = DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL);
+    const auto fillColour = ActiveTheme::getColour(ActiveTheme::CONTROL_VALUE_FILL);
 
     gainFader_.setRange(-60.0, 12.0, 0.0);
     gainFader_.setValue(0.0, juce::dontSendNotification);
@@ -115,10 +115,10 @@ CompiledUtilityView::CompiledUtilityView(juce::String /*pluginId*/) {
     addAndMakeVisible(widthName_);
     addAndMakeVisible(xoverName_);
 
-    const auto surface = DarkTheme::getColour(DarkTheme::SURFACE);
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION);
-    const auto inactive = DarkTheme::getSecondaryTextColour();
-    const auto bg = DarkTheme::getColour(DarkTheme::BACKGROUND);
+    const auto surface = ActiveTheme::getColour(ActiveTheme::SURFACE);
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION);
+    const auto inactive = ActiveTheme::getSecondaryTextColour();
+    const auto bg = ActiveTheme::getColour(ActiveTheme::BACKGROUND);
 
     for (int i = 0; i < 4; ++i) {
         auto& btn = btns_[static_cast<size_t>(i)];

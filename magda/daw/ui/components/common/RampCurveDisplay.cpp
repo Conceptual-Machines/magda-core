@@ -1,7 +1,7 @@
 #include "RampCurveDisplay.hpp"
 
 #include "audio/sequencer/StepClock.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -11,11 +11,11 @@ void RampCurveDisplay::paint(juce::Graphics& g) {
         return;
 
     // Background
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.08f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.08f));
     g.fillRoundedRectangle(outerBounds, 2.0f);
 
     // Border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.3f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.3f));
     g.drawRoundedRectangle(outerBounds.reduced(0.5f), 2.0f, 0.5f);
 
     // Inset for curve content (padding inside the border)
@@ -26,7 +26,7 @@ void RampCurveDisplay::paint(juce::Graphics& g) {
     float y0 = bounds.getY();
 
     // Grid lines (4x4)
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.4f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.4f));
     for (int i = 1; i < 4; ++i) {
         float fx = x0 + w * (static_cast<float>(i) / 4.0f);
         float fy = y0 + h * (static_cast<float>(i) / 4.0f);
@@ -35,7 +35,7 @@ void RampCurveDisplay::paint(juce::Graphics& g) {
     }
 
     // Diagonal reference line (linear)
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.3f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.3f));
     g.drawLine(x0, y0 + h, x0 + w, y0, 0.5f);
 
     // Tick distribution — overlaid at bottom edge, only when large enough
@@ -43,7 +43,7 @@ void RampCurveDisplay::paint(juce::Graphics& g) {
         constexpr float TICK_H = 10.0f;
         float tickY0 = y0 + h - TICK_H;
         float tickY1 = y0 + h;
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.35f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.35f));
         for (int i = 0; i < numTicks_; ++i) {
             double t = static_cast<double>(i) / static_cast<double>(numTicks_);
             double curved = daw::audio::sequencer::StepClock::applyRampCurveWithCycles(
@@ -71,7 +71,7 @@ void RampCurveDisplay::paint(juce::Graphics& g) {
         // Fading trail (gradient from transparent to green)
         constexpr float TRAIL_W = 30.0f;
         float trailLeft = std::max(x0, sweepX - TRAIL_W);
-        auto trailColour = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE);
+        auto trailColour = ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE);
         g.setGradientFill(juce::ColourGradient(trailColour.withAlpha(0.0f), trailLeft, tickY0,
                                                trailColour.withAlpha(0.25f), sweepX, tickY0,
                                                false));
@@ -99,7 +99,7 @@ void RampCurveDisplay::paint(juce::Graphics& g) {
         else
             curvePath.lineTo(px, py);
     }
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE));
     g.strokePath(curvePath, juce::PathStrokeType(1.5f));
 
     // Handle at the control point: (s, s+depth) in graph space.
@@ -110,14 +110,14 @@ void RampCurveDisplay::paint(juce::Graphics& g) {
     float hy = y0 + h - (s + depth_) * h;
     hx = juce::jlimit(x0 + HANDLE_R, x0 + w - HANDLE_R, hx);
     hy = juce::jlimit(y0 + HANDLE_R, y0 + h - HANDLE_R, hy);
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     if (hardAngle_) {
         g.fillRect(hx - HANDLE_R, hy - HANDLE_R, HANDLE_R * 2.0f, HANDLE_R * 2.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE));
         g.drawRect(hx - HANDLE_R, hy - HANDLE_R, HANDLE_R * 2.0f, HANDLE_R * 2.0f, 1.5f);
     } else {
         g.fillEllipse(hx - HANDLE_R, hy - HANDLE_R, HANDLE_R * 2.0f, HANDLE_R * 2.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE));
         g.drawEllipse(hx - HANDLE_R, hy - HANDLE_R, HANDLE_R * 2.0f, HANDLE_R * 2.0f, 1.5f);
     }
 }

@@ -5,7 +5,7 @@
 #include "../../../audio/AudioBridge.hpp"
 #include "../../../audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "../../../engine/AudioEngine.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/MixerMetrics.hpp"
 #include "../../utils/SelectionPolicy.hpp"
@@ -98,8 +98,8 @@ class MasterChannelStrip::ResizeHandle : public juce::Component {
     }
 
     void paint(juce::Graphics& g) override {
-        g.setColour(isHovering_ ? DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)
-                                : DarkTheme::getColour(DarkTheme::SEPARATOR));
+        g.setColour(isHovering_ ? ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)
+                                : ActiveTheme::getColour(ActiveTheme::SEPARATOR));
         int y = getHeight() / 2;
         g.fillRect(4, y, getWidth() - 8, 2);
     }
@@ -195,7 +195,8 @@ class MasterChannelStrip::DbScale : public juce::Component {
             float tickHeight = metrics.tickHeight();
             float tickW = isZero ? tickLong : tickShort;
 
-            g.setColour(DarkTheme::getColour(isZero ? DarkTheme::TEXT_PRIMARY : DarkTheme::BORDER));
+            g.setColour(
+                ActiveTheme::getColour(isZero ? ActiveTheme::TEXT_PRIMARY : ActiveTheme::BORDER));
             g.fillRect(0.0f, y - tickHeight / 2.0f, tickW, tickHeight);
 
             juce::String labelText;
@@ -207,8 +208,8 @@ class MasterChannelStrip::DbScale : public juce::Component {
             }
 
             g.setFont(isZero ? boldFont : baseFont);
-            g.setColour(
-                DarkTheme::getColour(isZero ? DarkTheme::TEXT_PRIMARY : DarkTheme::TEXT_SECONDARY));
+            g.setColour(ActiveTheme::getColour(isZero ? ActiveTheme::TEXT_PRIMARY
+                                                      : ActiveTheme::TEXT_SECONDARY));
 
             float textHeight = metrics.labelTextHeight;
             float textY = y - textHeight / 2.0f;
@@ -285,7 +286,8 @@ void MasterChannelStrip::setupControls() {
     // Title label
     titleLabel = std::make_unique<juce::Label>(
         "Master", magda::technicalText(magda::TechnicalTextToken::Master));
-    titleLabel->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    titleLabel->setColour(juce::Label::textColourId,
+                          ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     titleLabel->setFont(FontManager::getInstance().getUIFont(12.0f));
     titleLabel->setJustificationType(juce::Justification::centredLeft);
     titleLabel->setInterceptsMouseClicks(false, false);
@@ -301,7 +303,7 @@ void MasterChannelStrip::setupControls() {
     peakValueLabel->setText("-inf", juce::dontSendNotification);
     peakValueLabel->setJustificationType(juce::Justification::centred);
     peakValueLabel->setColour(juce::Label::textColourId,
-                              DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                              ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     peakValueLabel->setFont(FontManager::getInstance().getMonoFont(10.0f));
     peakValueLabel->setTooltip("Click to reset peak");
     peakValueLabel->onClick = [this]() { resetPeak(); };
@@ -472,7 +474,7 @@ void MasterChannelStrip::setupControls() {
     auto hpIcon = juce::Drawable::createFromImageData(BinaryData::headphones_svg,
                                                       BinaryData::headphones_svgSize);
     if (hpIcon)
-        DarkTheme::applyToSvgIcon(*hpIcon);
+        ActiveTheme::applyToSvgIcon(*hpIcon);
     headphoneIcon_ =
         std::make_unique<juce::DrawableButton>("Headphones", juce::DrawableButton::ImageFitted);
     headphoneIcon_->setImages(hpIcon.get());
@@ -523,10 +525,10 @@ void MasterChannelStrip::setupControls() {
 }
 
 void MasterChannelStrip::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
 
     // Draw border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(getLocalBounds(), 1);
 
     auto ownBounds = getLocalBounds();
@@ -536,7 +538,7 @@ void MasterChannelStrip::paint(juce::Graphics& g) {
         g.setColour(juce::Colours::black);
         g.fillRect(1, 1, ownBounds.getWidth() - 2, labelRowBottom);
     }
-    g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
     g.fillRect(1, labelRowBottom, ownBounds.getWidth() - 2, 1);
 }
 
@@ -547,10 +549,10 @@ void MasterChannelStrip::lookAndFeelChanged() {
     if (titleLabel)
         titleLabel->setColour(juce::Label::textColourId,
                               selected_ ? juce::Colours::white
-                                        : DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                                        : ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     if (peakValueLabel)
         peakValueLabel->setColour(juce::Label::textColourId,
-                                  DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                                  ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
 }
 
 void MasterChannelStrip::setSelected(bool shouldBeSelected) {
@@ -558,7 +560,7 @@ void MasterChannelStrip::setSelected(bool shouldBeSelected) {
         selected_ = shouldBeSelected;
         titleLabel->setColour(juce::Label::textColourId,
                               selected_ ? juce::Colours::white
-                                        : DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                                        : ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         repaint();
     }
 }

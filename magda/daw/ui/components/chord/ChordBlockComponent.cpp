@@ -6,7 +6,7 @@
 #include "music/NotationSettings.hpp"
 #include "project/ProjectManager.hpp"
 #include "ui/components/common/InternalFileDrag.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -19,12 +19,12 @@ void ChordBlockComponent::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds().toFloat();
 
     // Background — accent blue at 20% alpha (matches piano roll chord row style)
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.2f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.2f));
     g.fillRoundedRectangle(bounds, 3.0f);
 
     // Border on hover
     if (isMouseOver()) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.5f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.5f));
         g.drawRoundedRectangle(bounds.reduced(0.5f), 3.0f, 1.0f);
     }
 
@@ -33,7 +33,7 @@ void ChordBlockComponent::paint(juce::Graphics& g) {
     // Chord name (in the active C / solfège notation)
     auto displayName =
         magda::music::NotationSettings::getInstance().format(chord_.getDisplayName());
-    g.setColour(DarkTheme::getTextColour());
+    g.setColour(ActiveTheme::getTextColour());
     if (degree_.isEmpty()) {
         g.setFont(FontManager::getInstance().getUIFont(11.0f));
         g.drawText(displayName, textBounds, juce::Justification::centred);
@@ -43,7 +43,7 @@ void ChordBlockComponent::paint(juce::Graphics& g) {
         g.setFont(FontManager::getInstance().getUIFont(11.0f));
         g.drawText(displayName, nameArea, juce::Justification::centredBottom);
 
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.setFont(FontManager::getInstance().getUIFont(9.0f));
         g.drawText(degree_, textBounds, juce::Justification::centredTop);
     }

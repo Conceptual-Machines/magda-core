@@ -3,7 +3,7 @@
 #include <utility>
 
 #include "core/AutomationInfo.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -29,7 +29,7 @@ void MacroLinkMatrixContent::paint(juce::Graphics& g) {
 
         // Alternating row background
         if (i % 2 == 0) {
-            g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).withAlpha(0.3f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE).withAlpha(0.3f));
             g.fillRect(rowBounds);
         }
 
@@ -37,31 +37,31 @@ void MacroLinkMatrixContent::paint(juce::Graphics& g) {
 
         // Delete button (x) on right - 14px
         auto deleteBounds = remaining.removeFromRight(14);
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.drawText("x", deleteBounds, juce::Justification::centred);
         remaining.removeFromRight(2);
 
         // Bipolar toggle - 16px
         auto bipolarBounds = remaining.removeFromRight(16);
-        g.setColour(link.bipolar ? DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION)
-                                 : DarkTheme::getSecondaryTextColour());
+        g.setColour(link.bipolar ? ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION)
+                                 : ActiveTheme::getSecondaryTextColour());
         g.drawText(link.bipolar ? "Bi" : "Un", bipolarBounds, juce::Justification::centred);
         remaining.removeFromRight(2);
 
         // Amount - 28px
         auto amountBounds = remaining.removeFromRight(28);
         int percent = static_cast<int>(link.amount * 100.0f);
-        g.setColour(DarkTheme::getTextColour());
+        g.setColour(ActiveTheme::getTextColour());
         g.drawText(juce::String(percent) + "%", amountBounds, juce::Justification::centredRight);
         remaining.removeFromRight(2);
 
         // Param name takes remaining space
-        g.setColour(DarkTheme::getTextColour());
+        g.setColour(ActiveTheme::getTextColour());
         g.drawText(link.paramName, remaining, juce::Justification::centredLeft, true);
     }
 
     if (links_.empty()) {
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.drawText("No links", getLocalBounds(), juce::Justification::centred);
     }
 }
@@ -123,7 +123,7 @@ MacroEditorPanel::MacroEditorPanel() {
 
     // Name label at top (editable)
     nameLabel_.setFont(FontManager::getInstance().getUIFontBold(10.0f));
-    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     nameLabel_.setJustificationType(juce::Justification::centred);
     nameLabel_.setText("No Macro Selected", juce::dontSendNotification);
     nameLabel_.setEditable(false, true);  // Single-click doesn't edit, double-click does
@@ -221,11 +221,11 @@ void MacroEditorPanel::updateFromMacro() {
 
 void MacroEditorPanel::paint(juce::Graphics& g) {
     // Background
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.03f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.03f));
     g.fillRect(getLocalBounds());
 
     // Border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(getLocalBounds());
 
     // Section headers
@@ -233,7 +233,7 @@ void MacroEditorPanel::paint(juce::Graphics& g) {
     bounds.removeFromTop(24);  // Skip name label
 
     // "Value" label
-    g.setColour(DarkTheme::getSecondaryTextColour());
+    g.setColour(ActiveTheme::getSecondaryTextColour());
     g.setFont(FontManager::getInstance().getUIFont(8.0f));
     g.drawText("Value", bounds.removeFromTop(12), juce::Justification::centredLeft);
     bounds.removeFromTop(20);  // Skip value slider

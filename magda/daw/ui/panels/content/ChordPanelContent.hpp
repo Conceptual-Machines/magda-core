@@ -12,7 +12,7 @@
 #include "core/Config.hpp"
 #include "music/ChordEngine.hpp"
 #include "music/Scales.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda {

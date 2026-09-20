@@ -17,7 +17,7 @@
 #include "../components/common/TextSlider.hpp"
 #include "../state/TimelineController.hpp"
 #include "../state/TimelineEvents.hpp"
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
 #include "../themes/UserTheme.hpp"
@@ -42,7 +42,7 @@ void setupTextSlider(juce::Component& owner, magda::daw::ui::TextSlider& slider,
     label.setText(labelText, juce::dontSendNotification);
     label.setFont(magda::FontManager::getInstance().getUIFont(12.0f));
     label.setColour(juce::Label::textColourId,
-                    magda::DarkTheme::getColour(magda::DarkTheme::TEXT_PRIMARY));
+                    magda::ActiveTheme::getColour(magda::ActiveTheme::TEXT_PRIMARY));
     label.setJustificationType(juce::Justification::centredLeft);
     owner.addAndMakeVisible(label);
 
@@ -71,18 +71,18 @@ void setupTextSlider(juce::Component& owner, magda::daw::ui::TextSlider& slider,
 void setupToggle(juce::Component& owner, juce::ToggleButton& toggle, const juce::String& text) {
     toggle.setButtonText(text);
     toggle.setColour(juce::ToggleButton::textColourId,
-                     magda::DarkTheme::getColour(magda::DarkTheme::TEXT_PRIMARY));
+                     magda::ActiveTheme::getColour(magda::ActiveTheme::TEXT_PRIMARY));
     toggle.setColour(juce::ToggleButton::tickColourId,
-                     magda::DarkTheme::getColour(magda::DarkTheme::ACCENT_PRIMARY));
+                     magda::ActiveTheme::getColour(magda::ActiveTheme::ACCENT_PRIMARY));
     toggle.setColour(juce::ToggleButton::tickDisabledColourId,
-                     magda::DarkTheme::getColour(magda::DarkTheme::TEXT_DIM));
+                     magda::ActiveTheme::getColour(magda::ActiveTheme::TEXT_DIM));
     owner.addAndMakeVisible(toggle);
 }
 
 void setupSectionHeader(juce::Component& owner, juce::Label& header, const juce::String& text) {
     header.setText(text, juce::dontSendNotification);
     header.setColour(juce::Label::textColourId,
-                     magda::DarkTheme::getColour(magda::DarkTheme::TEXT_SECONDARY));
+                     magda::ActiveTheme::getColour(magda::ActiveTheme::TEXT_SECONDARY));
     header.setFont(magda::FontManager::getInstance().getUIFontBold(14.0f));
     header.setJustificationType(juce::Justification::centredLeft);
     owner.addAndMakeVisible(header);
@@ -90,18 +90,18 @@ void setupSectionHeader(juce::Component& owner, juce::Label& header, const juce:
 
 void styleCombo(juce::ComboBox& combo) {
     combo.setColour(juce::ComboBox::backgroundColourId,
-                    magda::DarkTheme::getColour(magda::DarkTheme::SURFACE));
+                    magda::ActiveTheme::getColour(magda::ActiveTheme::SURFACE));
     combo.setColour(juce::ComboBox::textColourId,
-                    magda::DarkTheme::getColour(magda::DarkTheme::TEXT_PRIMARY));
+                    magda::ActiveTheme::getColour(magda::ActiveTheme::TEXT_PRIMARY));
     combo.setColour(juce::ComboBox::outlineColourId,
-                    magda::DarkTheme::getColour(magda::DarkTheme::BORDER));
+                    magda::ActiveTheme::getColour(magda::ActiveTheme::BORDER));
 }
 
 void setupComboLabel(juce::Component& owner, juce::Label& label, const juce::String& text) {
     label.setText(text, juce::dontSendNotification);
     label.setFont(magda::FontManager::getInstance().getUIFont(12.0f));
     label.setColour(juce::Label::textColourId,
-                    magda::DarkTheme::getColour(magda::DarkTheme::TEXT_PRIMARY));
+                    magda::ActiveTheme::getColour(magda::ActiveTheme::TEXT_PRIMARY));
     label.setJustificationType(juce::Justification::centredLeft);
     owner.addAndMakeVisible(label);
 }
@@ -138,7 +138,7 @@ void setupPathRowLabel(juce::Component& owner, juce::Label& label, const juce::S
     label.setText(text, juce::dontSendNotification);
     label.setFont(magda::FontManager::getInstance().getUIFont(size));
     label.setColour(juce::Label::textColourId,
-                    magda::DarkTheme::getColour(magda::DarkTheme::TEXT_PRIMARY));
+                    magda::ActiveTheme::getColour(magda::ActiveTheme::TEXT_PRIMARY));
     label.setJustificationType(juce::Justification::centredLeft);
     owner.addAndMakeVisible(label);
 }
@@ -147,11 +147,11 @@ void setupPathTextEditor(juce::Component& owner, juce::TextEditor& editor) {
     editor.setReadOnly(true);
     editor.setFont(magda::FontManager::getInstance().getUIFont(12.0f));
     editor.setColour(juce::TextEditor::backgroundColourId,
-                     magda::DarkTheme::getColour(magda::DarkTheme::SURFACE));
+                     magda::ActiveTheme::getColour(magda::ActiveTheme::SURFACE));
     editor.setColour(juce::TextEditor::textColourId,
-                     magda::DarkTheme::getColour(magda::DarkTheme::TEXT_PRIMARY));
+                     magda::ActiveTheme::getColour(magda::ActiveTheme::TEXT_PRIMARY));
     editor.setColour(juce::TextEditor::outlineColourId,
-                     magda::DarkTheme::getColour(magda::DarkTheme::BORDER));
+                     magda::ActiveTheme::getColour(magda::ActiveTheme::BORDER));
     owner.addAndMakeVisible(editor);
 }
 
@@ -241,7 +241,8 @@ class GeneralPage : public juce::Component {
         restartHint.setText(tr("preferences.language.restart_required"),
                             juce::dontSendNotification);
         restartHint.setFont(FontManager::getInstance().getUIFont(11.0f));
-        restartHint.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        restartHint.setColour(juce::Label::textColourId,
+                              ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         restartHint.setJustificationType(juce::Justification::centredLeft);
         restartHint.setVisible(false);
         addAndMakeVisible(restartHint);
@@ -641,16 +642,16 @@ class AppearancePage : public juce::Component {
                            juce::dontSendNotification);
         themeLabel.setFont(FontManager::getInstance().getUIFont(12.0f));
         themeLabel.setColour(juce::Label::textColourId,
-                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                             ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         themeLabel.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(themeLabel);
 
         themeCombo.setColour(juce::ComboBox::backgroundColourId,
-                             DarkTheme::getColour(DarkTheme::SURFACE));
+                             ActiveTheme::getColour(ActiveTheme::SURFACE));
         themeCombo.setColour(juce::ComboBox::textColourId,
-                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                             ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         themeCombo.setColour(juce::ComboBox::outlineColourId,
-                             DarkTheme::getColour(DarkTheme::BORDER));
+                             ActiveTheme::getColour(ActiveTheme::BORDER));
         rebuildThemeCombo();
         addAndMakeVisible(themeCombo);
 
@@ -709,7 +710,7 @@ class AppearancePage : public juce::Component {
         colourHeaderLabel.setText(tr("preferences.colours.colour"), juce::dontSendNotification);
         colourHeaderLabel.setFont(FontManager::getInstance().getUIFont(11.0f));
         colourHeaderLabel.setColour(juce::Label::textColourId,
-                                    DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                    ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         addAndMakeVisible(colourHeaderLabel);
 
         // "Hex (RGB)" — both terms are fixed technical notation, identical in
@@ -719,13 +720,13 @@ class AppearancePage : public juce::Component {
                                juce::dontSendNotification);
         hexHeaderLabel.setFont(FontManager::getInstance().getUIFont(11.0f));
         hexHeaderLabel.setColour(juce::Label::textColourId,
-                                 DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                 ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         addAndMakeVisible(hexHeaderLabel);
 
         nameHeaderLabel.setText(tr("preferences.colours.name"), juce::dontSendNotification);
         nameHeaderLabel.setFont(FontManager::getInstance().getUIFont(11.0f));
         nameHeaderLabel.setColour(juce::Label::textColourId,
-                                  DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                  ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         addAndMakeVisible(nameHeaderLabel);
 
         addColourButton.setButtonText(tr("preferences.button.add_colour"));
@@ -741,18 +742,18 @@ class AppearancePage : public juce::Component {
                                     juce::dontSendNotification);
         clipColourModeLabel.setFont(FontManager::getInstance().getUIFont(12.0f));
         clipColourModeLabel.setColour(juce::Label::textColourId,
-                                      DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                                      ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         clipColourModeLabel.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(clipColourModeLabel);
 
         clipColourModeCombo.addItem(tr("preferences.option.inherit_from_track"), 1);
         clipColourModeCombo.addItem(tr("preferences.option.cycle_palette"), 2);
         clipColourModeCombo.setColour(juce::ComboBox::backgroundColourId,
-                                      DarkTheme::getColour(DarkTheme::SURFACE));
+                                      ActiveTheme::getColour(ActiveTheme::SURFACE));
         clipColourModeCombo.setColour(juce::ComboBox::textColourId,
-                                      DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                                      ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         clipColourModeCombo.setColour(juce::ComboBox::outlineColourId,
-                                      DarkTheme::getColour(DarkTheme::BORDER));
+                                      ActiveTheme::getColour(ActiveTheme::BORDER));
         addAndMakeVisible(clipColourModeCombo);
     }
 
@@ -767,10 +768,10 @@ class AppearancePage : public juce::Component {
     }
 
     void lookAndFeelChanged() override {
-        const auto primary = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
-        const auto secondary = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
-        const auto surface = DarkTheme::getColour(DarkTheme::SURFACE);
-        const auto border = DarkTheme::getColour(DarkTheme::BORDER);
+        const auto primary = ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY);
+        const auto secondary = ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY);
+        const auto surface = ActiveTheme::getColour(ActiveTheme::SURFACE);
+        const auto border = ActiveTheme::getColour(ActiveTheme::BORDER);
 
         for (auto* label :
              {&themeHeader, &scaleHeader, &densityHeader, &coloursHeader, &colourHeaderLabel,
@@ -1212,10 +1213,11 @@ class AppearancePage : public juce::Component {
         auto hex = std::make_unique<juce::TextEditor>();
         hex->setFont(FontManager::getInstance().getUIFont(12.0f));
         hex->setColour(juce::TextEditor::backgroundColourId,
-                       DarkTheme::getColour(DarkTheme::SURFACE));
+                       ActiveTheme::getColour(ActiveTheme::SURFACE));
         hex->setColour(juce::TextEditor::textColourId,
-                       DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        hex->setColour(juce::TextEditor::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+                       ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+        hex->setColour(juce::TextEditor::outlineColourId,
+                       ActiveTheme::getColour(ActiveTheme::BORDER));
         hex->setInputRestrictions(6, "0123456789ABCDEFabcdef");
         hex->setText(juce::String::toHexString(static_cast<int>(colour & 0x00FFFFFF))
                          .paddedLeft('0', 6)
@@ -1229,11 +1231,11 @@ class AppearancePage : public juce::Component {
         auto nameEd = std::make_unique<juce::TextEditor>();
         nameEd->setFont(FontManager::getInstance().getUIFont(12.0f));
         nameEd->setColour(juce::TextEditor::backgroundColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
+                          ActiveTheme::getColour(ActiveTheme::SURFACE));
         nameEd->setColour(juce::TextEditor::textColourId,
-                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                          ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         nameEd->setColour(juce::TextEditor::outlineColourId,
-                          DarkTheme::getColour(DarkTheme::BORDER));
+                          ActiveTheme::getColour(ActiveTheme::BORDER));
         nameEd->setText(juce::String(name), juce::dontSendNotification);
         addAndMakeVisible(*nameEd);
         nameEditors_.push_back(std::move(nameEd));
@@ -1379,11 +1381,11 @@ class DefaultsPage : public juce::Component {
 
             row->editor.setFont(FontManager::getInstance().getUIFont(12.0f));
             row->editor.setColour(juce::TextEditor::backgroundColourId,
-                                  DarkTheme::getColour(DarkTheme::SURFACE));
+                                  ActiveTheme::getColour(ActiveTheme::SURFACE));
             row->editor.setColour(juce::TextEditor::textColourId,
-                                  DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                                  ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
             row->editor.setColour(juce::TextEditor::outlineColourId,
-                                  DarkTheme::getColour(DarkTheme::BORDER));
+                                  ActiveTheme::getColour(ActiveTheme::BORDER));
             addAndMakeVisible(row->editor);
             creditRows_.push_back(std::move(row));
         }
@@ -1488,7 +1490,8 @@ class DefaultsPage : public juce::Component {
     void setupComboLabel(juce::Label& label, const juce::String& text) {
         label.setText(text, juce::dontSendNotification);
         label.setFont(FontManager::getInstance().getUIFont(12.0f));
-        label.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        label.setColour(juce::Label::textColourId,
+                        ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         addAndMakeVisible(label);
     }
 
@@ -1517,7 +1520,7 @@ class RenderingPage : public juce::Component {
                                   juce::dontSendNotification);
         renderFolderLabel.setFont(FontManager::getInstance().getUIFont(12.0f));
         renderFolderLabel.setColour(juce::Label::textColourId,
-                                    DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                                    ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         renderFolderLabel.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(renderFolderLabel);
 
@@ -1525,7 +1528,7 @@ class RenderingPage : public juce::Component {
                                   juce::dontSendNotification);
         renderFolderValue.setFont(FontManager::getInstance().getUIFont(12.0f));
         renderFolderValue.setColour(juce::Label::textColourId,
-                                    DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                    ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         renderFolderValue.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(renderFolderValue);
 
@@ -1566,27 +1569,28 @@ class RenderingPage : public juce::Component {
         setupComboLabel(patternLabel, tr("preferences.label.export_pattern"));
         patternEditor.setFont(FontManager::getInstance().getUIFont(12.0f));
         patternEditor.setColour(juce::TextEditor::backgroundColourId,
-                                DarkTheme::getColour(DarkTheme::SURFACE));
+                                ActiveTheme::getColour(ActiveTheme::SURFACE));
         patternEditor.setColour(juce::TextEditor::textColourId,
-                                DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                                ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         patternEditor.setColour(juce::TextEditor::outlineColourId,
-                                DarkTheme::getColour(DarkTheme::BORDER));
+                                ActiveTheme::getColour(ActiveTheme::BORDER));
         addAndMakeVisible(patternEditor);
 
         setupComboLabel(bouncePatternLabel, tr("preferences.label.bounce_pattern"));
         bouncePatternEditor.setFont(FontManager::getInstance().getUIFont(12.0f));
         bouncePatternEditor.setColour(juce::TextEditor::backgroundColourId,
-                                      DarkTheme::getColour(DarkTheme::SURFACE));
+                                      ActiveTheme::getColour(ActiveTheme::SURFACE));
         bouncePatternEditor.setColour(juce::TextEditor::textColourId,
-                                      DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                                      ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         bouncePatternEditor.setColour(juce::TextEditor::outlineColourId,
-                                      DarkTheme::getColour(DarkTheme::BORDER));
+                                      ActiveTheme::getColour(ActiveTheme::BORDER));
         addAndMakeVisible(bouncePatternEditor);
 
         patternHint.setText(tr("preferences.label.pattern_tokens_hint"),
                             juce::dontSendNotification);
         patternHint.setFont(FontManager::getInstance().getUIFont(10.0f));
-        patternHint.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        patternHint.setColour(juce::Label::textColourId,
+                              ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         patternHint.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(patternHint);
     }
@@ -1677,7 +1681,8 @@ class RenderingPage : public juce::Component {
     void setupComboLabel(juce::Label& label, const juce::String& text) {
         label.setText(text, juce::dontSendNotification);
         label.setFont(FontManager::getInstance().getUIFont(12.0f));
-        label.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        label.setColour(juce::Label::textColourId,
+                        ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         label.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(label);
     }
@@ -1718,13 +1723,13 @@ class PathsPage : public juce::Component {
         dataLabel_.setText(tr("preferences.paths.label.folder"), juce::dontSendNotification);
         dataLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
         dataLabel_.setColour(juce::Label::textColourId,
-                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                             ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         dataLabel_.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(dataLabel_);
 
         dataValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
         dataValue_.setColour(juce::Label::textColourId,
-                             DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                             ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         dataValue_.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(dataValue_);
 
@@ -1756,7 +1761,8 @@ class PathsPage : public juce::Component {
         addAndMakeVisible(dataReset_);
 
         dataNote_.setFont(FontManager::getInstance().getUIFont(11.0f));
-        dataNote_.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        dataNote_.setColour(juce::Label::textColourId,
+                            ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         dataNote_.setJustificationType(juce::Justification::centredLeft);
         dataNote_.setText(tr("preferences.paths.note.data"), juce::dontSendNotification);
         addAndMakeVisible(dataNote_);
@@ -1767,13 +1773,13 @@ class PathsPage : public juce::Component {
         presetsLabel_.setText(tr("preferences.paths.label.folder"), juce::dontSendNotification);
         presetsLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
         presetsLabel_.setColour(juce::Label::textColourId,
-                                DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                                ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         presetsLabel_.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(presetsLabel_);
 
         presetsValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
         presetsValue_.setColour(juce::Label::textColourId,
-                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         presetsValue_.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(presetsValue_);
 
@@ -1804,14 +1810,15 @@ class PathsPage : public juce::Component {
 
         presetsNote_.setFont(FontManager::getInstance().getUIFont(11.0f));
         presetsNote_.setColour(juce::Label::textColourId,
-                               DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                               ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         presetsNote_.setJustificationType(juce::Justification::centredLeft);
         presetsNote_.setText(tr("preferences.paths.note.presets"), juce::dontSendNotification);
         addAndMakeVisible(presetsNote_);
 
         // --- Hint about Render Folder ---
         renderHint_.setFont(FontManager::getInstance().getUIFont(11.0f));
-        renderHint_.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        renderHint_.setColour(juce::Label::textColourId,
+                              ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         renderHint_.setJustificationType(juce::Justification::centredLeft);
         renderHint_.setText(tr("preferences.paths.note.render_hint"), juce::dontSendNotification);
         addAndMakeVisible(renderHint_);
@@ -1852,7 +1859,7 @@ class PathsPage : public juce::Component {
 
         dbStats_.setFont(magda::FontManager::getInstance().getUIFont(11.0f));
         dbStats_.setColour(juce::Label::textColourId,
-                           magda::DarkTheme::getColour(magda::DarkTheme::TEXT_SECONDARY));
+                           magda::ActiveTheme::getColour(magda::ActiveTheme::TEXT_SECONDARY));
         dbStats_.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(dbStats_);
 
@@ -2322,7 +2329,7 @@ class ShortcutsPage : public juce::Component {
   public:
     explicit ShortcutsPage(juce::ApplicationCommandManager* commandManager)
         : tabbedComponent_(juce::TabbedButtonBar::TabsAtTop) {
-        auto tabBg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+        auto tabBg = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
         keyboardPage_ = std::make_unique<KeyboardShortcutsPage>(commandManager);
         gesturesPage_ = std::make_unique<GestureBindingsPage>();
         tabbedComponent_.addTab("Keyboard", tabBg, keyboardPage_.get(), false);
@@ -2354,15 +2361,15 @@ class ShortcutsPage : public juce::Component {
             if (commandManager != nullptr) {
                 keyEditor_ = std::make_unique<juce::KeyMappingEditorComponent>(
                     *commandManager->getKeyMappings(), true);
-                keyEditor_->setColours(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND),
-                                       DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                keyEditor_->setColours(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND),
+                                       ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
                 addAndMakeVisible(*keyEditor_);
             } else {
                 missingLabel_.setText("Keyboard shortcuts are available from the main window.",
                                       juce::dontSendNotification);
                 missingLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
                 missingLabel_.setColour(juce::Label::textColourId,
-                                        DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                        ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
                 missingLabel_.setJustificationType(juce::Justification::centredLeft);
                 addAndMakeVisible(missingLabel_);
             }
@@ -2889,7 +2896,7 @@ class ShortcutsPage : public juce::Component {
             label.setText(text, juce::dontSendNotification);
             label.setFont(FontManager::getInstance().getUIFont(12.0f));
             label.setColour(juce::Label::textColourId,
-                            DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                            ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
             label.setJustificationType(juce::Justification::centredLeft);
         }
 
@@ -2897,7 +2904,7 @@ class ShortcutsPage : public juce::Component {
             label.setText(text, juce::dontSendNotification);
             label.setFont(FontManager::getInstance().getUIFontBold(11.0f));
             label.setColour(juce::Label::textColourId,
-                            DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                            ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
             label.setJustificationType(juce::Justification::centredLeft);
             addAndMakeVisible(label);
         }
@@ -2929,9 +2936,9 @@ class ShortcutsPage : public juce::Component {
 
             row->invert.setButtonText({});
             row->invert.setColour(juce::ToggleButton::tickColourId,
-                                  DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                                  ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
             row->invert.setColour(juce::ToggleButton::tickDisabledColourId,
-                                  DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                                  ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
 
             content_.addAndMakeVisible(row->contextLabel);
             content_.addAndMakeVisible(row->axisLabel);
@@ -3117,7 +3124,7 @@ PreferencesDialog::PreferencesDialog(juce::ApplicationCommandManager* commandMan
     setupPageViewport(pathsPageViewport, *pathsPage);
     setupPageViewport(defaultsPageViewport, *defaultsPage);
 
-    auto tabBg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+    auto tabBg = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
     tabbedComponent.addTab(tr("preferences.tab.general"), tabBg, &generalPageViewport, false);
     tabbedComponent.addTab(trOr("preferences.tab.appearance", "Appearance"), tabBg,
                            &appearancePageViewport, false);
@@ -3157,11 +3164,11 @@ PreferencesDialog::~PreferencesDialog() {
 }
 
 void PreferencesDialog::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
 }
 
 void PreferencesDialog::lookAndFeelChanged() {
-    const auto background = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+    const auto background = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
     for (int i = 0; i < tabbedComponent.getNumTabs(); ++i)
         tabbedComponent.setTabBackgroundColour(i, background);
 
@@ -3406,7 +3413,7 @@ void PreferencesDialog::showDialog(juce::Component* parent) {
 
     juce::DialogWindow::LaunchOptions options;
     options.dialogTitle = tr("dialogs.preferences");
-    options.dialogBackgroundColour = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+    options.dialogBackgroundColour = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
     options.content.setOwned(dialog);
     options.escapeKeyTriggersCloseButton = true;
     options.useNativeTitleBar = true;

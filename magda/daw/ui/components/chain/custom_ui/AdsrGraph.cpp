@@ -1,7 +1,7 @@
 #include "custom_ui/AdsrGraph.hpp"
 
 #include "core/ParameterUtils.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -77,8 +77,8 @@ AdsrGraph::Geometry AdsrGraph::computeGeometry() const {
 }
 
 void AdsrGraph::paint(juce::Graphics& gfx) {
-    const auto bg = DarkTheme::getColour(DarkTheme::BACKGROUND).darker(0.25f);
-    const auto line = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
+    const auto bg = ActiveTheme::getColour(ActiveTheme::BACKGROUND).darker(0.25f);
+    const auto line = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
     const auto fillC = line.withAlpha(0.18f);
     const auto handleC = line.brighter(0.2f);
 

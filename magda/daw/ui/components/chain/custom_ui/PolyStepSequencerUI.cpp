@@ -41,7 +41,7 @@ void drawStepRuler(juce::Graphics& g, juce::Rectangle<int> timelineArea,
     if (timelineArea.isEmpty())
         return;
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.04f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.04f));
     g.fillRect(timelineArea);
 
     const auto top = static_cast<float>(timelineArea.getY());
@@ -49,7 +49,7 @@ void drawStepRuler(juce::Graphics& g, juce::Rectangle<int> timelineArea,
 
     // Highlight the playing step.
     if (playStep >= 0 && playStep < count) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.45f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.45f));
         g.fillRect(
             juce::Rectangle<float>(cellArea.getX() + playStep * colW, top, colW, bottom - top));
     }
@@ -58,10 +58,10 @@ void drawStepRuler(juce::Graphics& g, juce::Rectangle<int> timelineArea,
     for (int i = 0; i < count; ++i) {
         const float x = cellArea.getX() + i * colW;
         const bool group = (i % 4 == 0);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(group ? 0.5f : 0.2f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(group ? 0.5f : 0.2f));
         g.drawVerticalLine(juce::roundToInt(x), group ? top : top + 4.0f, bottom);
         if (group) {
-            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.setColour(ActiveTheme::getSecondaryTextColour());
             g.drawText(
                 juce::String(i + 1),
                 juce::Rectangle<float>(x + 2.0f, top, colW - 2.0f, bottom - top).toNearestInt(),
@@ -69,7 +69,7 @@ void drawStepRuler(juce::Graphics& g, juce::Rectangle<int> timelineArea,
         }
     }
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.4f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.4f));
     g.drawHorizontalLine(timelineArea.getBottom() - 1, static_cast<float>(cellArea.getX()),
                          static_cast<float>(cellArea.getRight()));
 }
@@ -248,7 +248,7 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
             g.fillRect(rowRect.reduced(0.0f, 0.5f));
 
             if (note % 12 == 0) {
-                g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
                 g.drawText(polyNoteNameShort(note), rowRect.toNearestInt(),
                            juce::Justification::centred);
             }
@@ -266,11 +266,11 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
                     juce::Rectangle<float>(x + 0.5f, y + 0.5f, colW - 1.0f, rowH - 1.0f);
 
                 // Background: black-key rows darker, playhead column highlighted
-                juce::Colour bg = DarkTheme::getColour(DarkTheme::BACKGROUND)
+                juce::Colour bg = ActiveTheme::getColour(ActiveTheme::BACKGROUND)
                                       .brighter(isBlackKey(note) ? 0.04f : 0.10f);
                 if (i == playStep_)
                     bg = bg.overlaidWith(
-                        DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.18f));
+                        ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.18f));
                 if (!step.gate)
                     bg = bg.darker(0.3f);
                 g.setColour(bg);
@@ -288,7 +288,8 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
                 }
                 if (noteVel > 0) {
                     const float alpha = 0.35f + 0.6f * static_cast<float>(noteVel) / 127.0f;
-                    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(alpha));
+                    g.setColour(
+                        ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(alpha));
                     g.fillRoundedRectangle(cellRect, 1.5f);
                 }
             }
@@ -298,14 +299,14 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
         for (int i = 0; i <= count; ++i) {
             const float x = cellArea_.getX() + i * colW;
             g.setColour(
-                DarkTheme::getColour(DarkTheme::BORDER).withAlpha(i % 4 == 0 ? 0.4f : 0.15f));
+                ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(i % 4 == 0 ? 0.4f : 0.15f));
             g.drawVerticalLine(juce::roundToInt(x), static_cast<float>(cellArea_.getY()),
                                static_cast<float>(cellArea_.getBottom()));
         }
         for (int row = 0; row <= visibleNotes_; ++row) {
             const int noteBelow = lowNote_ + (visibleNotes_ - 1 - row);
             const float y = cellArea_.getY() + row * rowH;
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER)
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER)
                             .withAlpha((noteBelow + 1) % 12 == 0 ? 0.4f : 0.1f));
             g.drawHorizontalLine(juce::roundToInt(y), static_cast<float>(cellArea_.getX()),
                                  static_cast<float>(cellArea_.getRight()));
@@ -445,15 +446,15 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
         auto btn = area.reduced(2);
         const bool canShift = isUp ? (lowNote_ < 127 - visibleNotes_ + 1) : (lowNote_ > 0);
 
-        g.setColour(canShift ? DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.15f)
-                             : DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
+        g.setColour(canShift ? ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.15f)
+                             : ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
         g.fillRoundedRectangle(btn.toFloat(), 2.0f);
 
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.3f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.3f));
         g.drawRoundedRectangle(btn.toFloat(), 2.0f, 0.5f);
 
-        g.setColour(canShift ? DarkTheme::getTextColour()
-                             : DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
+        g.setColour(canShift ? ActiveTheme::getTextColour()
+                             : ActiveTheme::getSecondaryTextColour().withAlpha(0.3f));
         const auto cx = static_cast<float>(btn.getCentreX());
         const auto cy = static_cast<float>(btn.getCentreY());
         constexpr float arrowSize = 4.0f;
@@ -476,14 +477,14 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
         const bool enabled =
             isIn ? (visibleNotes_ > MIN_VISIBLE_NOTES) : (visibleNotes_ < MAX_VISIBLE_NOTES);
 
-        g.setColour(enabled ? DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.15f)
-                            : DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
+        g.setColour(enabled ? ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.15f)
+                            : ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
         g.fillRoundedRectangle(btn.toFloat(), 2.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.3f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.3f));
         g.drawRoundedRectangle(btn.toFloat(), 2.0f, 0.5f);
 
-        g.setColour(enabled ? DarkTheme::getTextColour()
-                            : DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
+        g.setColour(enabled ? ActiveTheme::getTextColour()
+                            : ActiveTheme::getSecondaryTextColour().withAlpha(0.3f));
         const auto cx = static_cast<float>(btn.getCentreX());
         const auto cy = static_cast<float>(btn.getCentreY());
         constexpr float s = 3.0f;
@@ -587,11 +588,11 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
             auto labelRect =
                 juce::Rectangle<float>(static_cast<float>(labelArea_.getX()), y,
                                        static_cast<float>(labelArea_.getWidth()), laneH);
-            g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND)
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND)
                             .brighter(laneIdx % 2 == 0 ? 0.18f : 0.12f));
             g.fillRect(labelRect.reduced(0.0f, 0.5f));
-            g.setColour(lane.orphan ? DarkTheme::getSecondaryTextColour()
-                                    : DarkTheme::getTextColour());
+            g.setColour(lane.orphan ? ActiveTheme::getSecondaryTextColour()
+                                    : ActiveTheme::getTextColour());
             g.drawText(lane.label, labelRect.toNearestInt().reduced(2, 0),
                        juce::Justification::centredLeft);
 
@@ -603,11 +604,11 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
                     juce::Rectangle<float>(x + 0.5f, y + 0.5f, colW - 1.0f, laneH - 1.0f);
 
                 // Background: alternate lane shading, playhead column highlighted
-                juce::Colour bg = DarkTheme::getColour(DarkTheme::BACKGROUND)
+                juce::Colour bg = ActiveTheme::getColour(ActiveTheme::BACKGROUND)
                                       .brighter(laneIdx % 2 == 0 ? 0.10f : 0.04f);
                 if (i == playStep_)
                     bg = bg.overlaidWith(
-                        DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.18f));
+                        ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.18f));
                 if (!step.gate)
                     bg = bg.darker(0.3f);
                 g.setColour(bg);
@@ -625,7 +626,8 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
                 }
                 if (noteVel > 0) {
                     const float alpha = 0.35f + 0.6f * static_cast<float>(noteVel) / 127.0f;
-                    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(alpha));
+                    g.setColour(
+                        ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(alpha));
                     g.fillRoundedRectangle(cellRect, 1.5f);
                 }
             }
@@ -635,13 +637,13 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
         for (int i = 0; i <= count; ++i) {
             const float x = cellArea_.getX() + i * colW;
             g.setColour(
-                DarkTheme::getColour(DarkTheme::BORDER).withAlpha(i % 4 == 0 ? 0.4f : 0.15f));
+                ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(i % 4 == 0 ? 0.4f : 0.15f));
             g.drawVerticalLine(juce::roundToInt(x), static_cast<float>(cellArea_.getY()),
                                static_cast<float>(cellArea_.getBottom()));
         }
         for (int row = 0; row <= visible; ++row) {
             const float y = cellArea_.getY() + row * laneH;
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.15f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.15f));
             g.drawHorizontalLine(juce::roundToInt(y), static_cast<float>(cellArea_.getX()),
                                  static_cast<float>(cellArea_.getRight()));
         }
@@ -871,15 +873,15 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
         const int maxOffset = juce::jmax(0, static_cast<int>(lanes_.size()) - visibleLaneCount());
         const bool canShift = isUp ? (scrollOffset_ < maxOffset) : (scrollOffset_ > 0);
 
-        g.setColour(canShift ? DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.15f)
-                             : DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
+        g.setColour(canShift ? ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.15f)
+                             : ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
         g.fillRoundedRectangle(btn.toFloat(), 2.0f);
 
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.3f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.3f));
         g.drawRoundedRectangle(btn.toFloat(), 2.0f, 0.5f);
 
-        g.setColour(canShift ? DarkTheme::getTextColour()
-                             : DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
+        g.setColour(canShift ? ActiveTheme::getTextColour()
+                             : ActiveTheme::getSecondaryTextColour().withAlpha(0.3f));
         const auto cx = static_cast<float>(btn.getCentreX());
         const auto cy = static_cast<float>(btn.getCentreY());
         constexpr float arrowSize = 4.0f;
@@ -952,9 +954,10 @@ PolyStepSequencerUI::PolyStepSequencerUI() {
     setupLabel(dirLabel_, "DIR");
     dirCombo_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
     dirCombo_.setColour(juce::ComboBox::backgroundColourId,
-                        DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
-    dirCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-    dirCombo_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+                        ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.1f));
+    dirCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
+    dirCombo_.setColour(juce::ComboBox::outlineColourId,
+                        ActiveTheme::getColour(ActiveTheme::BORDER));
     dirCombo_.addItem("Forward", 1);
     dirCombo_.addItem("Reverse", 2);
     dirCombo_.addItem("Ping-Pong", 3);
@@ -1058,11 +1061,11 @@ PolyStepSequencerUI::PolyStepSequencerUI() {
     // Theme font + box-style rounding, matching the side-panel sliders/combo.
     viewModeButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     viewModeButton_.setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
+                              ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.1f));
     viewModeButton_.setColour(juce::TextButton::buttonOnColourId,
-                              DarkTheme::getAccentColour().withAlpha(0.6f));
-    viewModeButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
-    viewModeButton_.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+                              ActiveTheme::getAccentColour().withAlpha(0.6f));
+    viewModeButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
+    viewModeButton_.setColour(juce::TextButton::textColourOnId, ActiveTheme::getTextColour());
     viewModeButton_.setTooltip("Switch between keys and drum-lane pattern views");
     viewModeButton_.onClick = [this] {
         drumViewActive_ = viewModeButton_.getToggleState();
@@ -1359,9 +1362,9 @@ void PolyStepSequencerUI::paint(juce::Graphics& g) {
     // Control side panel: subtle card + left separator, matching the device
     // mod/macro side panels.
     if (!sidePanelArea_.isEmpty()) {
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND_ALT));
         g.fillRect(sidePanelArea_);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.5f));
         g.drawVerticalLine(sidePanelArea_.getX(), static_cast<float>(sidePanelArea_.getY()),
                            static_cast<float>(sidePanelArea_.getBottom()));
     }
@@ -1381,7 +1384,7 @@ void PolyStepSequencerUI::drawToggleRow(juce::Graphics& g, juce::Rectangle<int> 
     g.setFont(FontManager::getInstance().getUIFont(7.0f));
 
     // Row label, aligned with the grid's left gutter
-    g.setColour(DarkTheme::getSecondaryTextColour());
+    g.setColour(ActiveTheme::getSecondaryTextColour());
     g.drawText(label, area.removeFromLeft(LEFT_GUTTER_WIDTH), juce::Justification::centredLeft);
 
     float boxW = static_cast<float>(area.getWidth()) / static_cast<float>(count);
@@ -1395,12 +1398,12 @@ void PolyStepSequencerUI::drawToggleRow(juce::Graphics& g, juce::Rectangle<int> 
 
         bool on = isTieRow ? step.tie : step.gate;
         if (on) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.7f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.7f));
             g.fillRoundedRectangle(rect, 2.0f);
-            g.setColour(DarkTheme::getTextColour());
+            g.setColour(ActiveTheme::getTextColour());
             g.drawText(isTieRow ? "T" : "G", rect.toNearestInt(), juce::Justification::centred);
         } else {
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.2f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.2f));
             g.fillRoundedRectangle(rect, 2.0f);
         }
     }
@@ -1415,7 +1418,7 @@ void PolyStepSequencerUI::drawBarLane(juce::Graphics& g, juce::Rectangle<int> ar
     g.setFont(FontManager::getInstance().getUIFont(7.0f));
 
     // Lane label, aligned with the grid's left gutter
-    g.setColour(DarkTheme::getSecondaryTextColour());
+    g.setColour(ActiveTheme::getSecondaryTextColour());
     g.drawText(label, area.removeFromLeft(LEFT_GUTTER_WIDTH), juce::Justification::centredLeft);
 
     float boxW = static_cast<float>(area.getWidth()) / static_cast<float>(count);
@@ -1428,7 +1431,7 @@ void PolyStepSequencerUI::drawBarLane(juce::Graphics& g, juce::Rectangle<int> ar
                                    static_cast<float>(area.getHeight()) - 2.0f);
 
         // Background
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.2f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.2f));
         g.fillRoundedRectangle(rect, 2.0f);
 
         // Value bar from the bottom
@@ -1436,8 +1439,8 @@ void PolyStepSequencerUI::drawBarLane(juce::Graphics& g, juce::Rectangle<int> ar
                                     : static_cast<float>(step.velocity) / 127.0f;
         if (ratio > 0.0f) {
             auto bar = rect.withTrimmedTop(rect.getHeight() * (1.0f - ratio));
-            g.setColour((isProbability ? DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION)
-                                       : DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY))
+            g.setColour((isProbability ? ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION)
+                                       : ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY))
                             .withAlpha(0.7f));
             g.fillRoundedRectangle(bar, 2.0f);
         }
@@ -1556,7 +1559,7 @@ void PolyStepSequencerUI::mouseUp(const juce::MouseEvent&) {
 void PolyStepSequencerUI::setupLabel(juce::Label& label, const juce::String& text) {
     label.setText(text, juce::dontSendNotification);
     label.setFont(FontManager::getInstance().getUIFont(9.0f));
-    label.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    label.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     label.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(label);
 }
@@ -1572,19 +1575,20 @@ void PolyStepSequencerUI::lookAndFeelChanged() {
     for (auto* label :
          {&rateLabel_, &stepsLabel_, &dirLabel_, &swingLabel_, &gateLengthLabel_, &quantizeLabel_,
           &quantizeSubLabel_, &rampLabel_, &depthLabel_, &skewLabel_, &cyclesLabel_})
-        label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
 
     dirCombo_.setColour(juce::ComboBox::backgroundColourId,
-                        DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
-    dirCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-    dirCombo_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+                        ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.1f));
+    dirCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
+    dirCombo_.setColour(juce::ComboBox::outlineColourId,
+                        ActiveTheme::getColour(ActiveTheme::BORDER));
 
     viewModeButton_.setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
+                              ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.1f));
     viewModeButton_.setColour(juce::TextButton::buttonOnColourId,
-                              DarkTheme::getAccentColour().withAlpha(0.6f));
-    viewModeButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
-    viewModeButton_.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+                              ActiveTheme::getAccentColour().withAlpha(0.6f));
+    viewModeButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
+    viewModeButton_.setColour(juce::TextButton::textColourOnId, ActiveTheme::getTextColour());
 
     repaint();
 }

@@ -5,7 +5,7 @@
 
 #include "audio/plugins/compiled/MagdaCompressorCompiledPlugin.hpp"
 #include "core/GestureRouter.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -246,7 +246,7 @@ void CompiledCompressorCurveView::mouseUp(const juce::MouseEvent& e) {
 
 void CompiledCompressorCurveView::paint(juce::Graphics& g) {
     const auto bounds = getLocalBounds();
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).darker(0.06f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).darker(0.06f));
     g.fillRect(bounds);
 
     auto area = bounds.toFloat().reduced(kPlotPadX, kPlotPadY);
@@ -257,12 +257,13 @@ void CompiledCompressorCurveView::paint(juce::Graphics& g) {
     if (plotArea_.getWidth() < 16.0f || plotArea_.getHeight() < 16.0f)
         return;
 
-    const auto border = DarkTheme::getColour(DarkTheme::BORDER);
-    const auto text = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE);
-    const auto grColour = DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION);
-    const auto keyColour = externalSidechain_ ? DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY_SOFT)
-                                              : DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
+    const auto border = ActiveTheme::getColour(ActiveTheme::BORDER);
+    const auto text = ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY);
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE);
+    const auto grColour = ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION);
+    const auto keyColour = externalSidechain_
+                               ? ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY_SOFT)
+                               : ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY);
 
     g.setColour(border.withAlpha(0.55f));
     g.drawRect(plotArea_, 1.0f);
@@ -332,7 +333,7 @@ void CompiledCompressorCurveView::paint(juce::Graphics& g) {
 
         const float inY = dbToY(smoothedInputPeakDb_);
         const float outY = dbToY(smoothedOutputPeakDb_);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.65f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.65f));
         g.drawLine(plotArea_.getX(), inY, plotArea_.getRight(), inY, 1.0f);
         g.setColour(accent.withAlpha(0.65f));
         g.drawLine(plotArea_.getX(), outY, plotArea_.getRight(), outY, 1.0f);

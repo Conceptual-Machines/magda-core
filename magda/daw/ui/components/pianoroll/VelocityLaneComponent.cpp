@@ -3,7 +3,7 @@
 #include <algorithm>
 
 #include "../../state/TimelineController.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "VelocityLaneUtils.hpp"
 #include "core/ClipInfo.hpp"
@@ -162,7 +162,7 @@ size_t VelocityLaneComponent::findNoteAtX(int x) const {
 
 juce::Colour VelocityLaneComponent::getClipColour() const {
     const auto* clip = ClipManager::getInstance().getClip(clipId_);
-    return clip ? clip->colour : DarkTheme::getAccentColour();
+    return clip ? clip->colour : ActiveTheme::getAccentColour();
 }
 
 int VelocityLaneComponent::interpolateVelocity(float t) const {
@@ -262,11 +262,11 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
 
     // Background
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND_ALT));
     g.fillRect(bounds);
 
     // Draw horizontal grid lines at 25%, 50%, 75%, 100%
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.5f));
     int margin = 2;
     int usableHeight = getHeight() - (margin * 2);
 
@@ -278,7 +278,7 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
     // Value labels on the left
     {
         g.setFont(FontManager::getInstance().getUIFont(9.0f));
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.6f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.6f));
         constexpr int labelMargin = 2;
         constexpr int labelWidth = 24;
 
@@ -455,7 +455,7 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
                     }
                 }
 
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0.6f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0.6f));
                 g.strokePath(curvePath, juce::PathStrokeType(1.5f));
             }
 
@@ -474,17 +474,17 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
                 diamond.closeSubPath();
 
                 g.setColour(isCurveHandleDragging_
-                                ? DarkTheme::getColour(DarkTheme::TEXT_BRIGHT)
-                                : DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0.8f));
+                                ? ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT)
+                                : ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0.8f));
                 g.fillPath(diamond);
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DARK).withAlpha(0.5f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DARK).withAlpha(0.5f));
                 g.strokePath(diamond, juce::PathStrokeType(1.0f));
             }
         }
     }
 
     // Draw top border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawHorizontalLine(0, 0.0f, static_cast<float>(bounds.getWidth()));
 }
 

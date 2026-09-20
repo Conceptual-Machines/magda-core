@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
 #include "core/Config.hpp"
@@ -28,11 +28,11 @@ void PluginSettingsDialog::DirectoryListModel::paintListBoxItem(int rowNumber, j
         return;
 
     if (rowIsSelected) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
         g.fillRect(0, 0, width, height);
     }
 
-    g.setColour(DarkTheme::getTextColour());
+    g.setColour(ActiveTheme::getTextColour());
     g.setFont(FontManager::getInstance().getUIFont(12.0f));
     g.drawText(juce::String((*paths)[static_cast<size_t>(rowNumber)]), 4, 0, width - 8, height,
                juce::Justification::centredLeft);
@@ -50,9 +50,9 @@ void PluginSettingsDialog::ExcludedTableModel::paintRowBackground(juce::Graphics
                                                                   int /*rowNumber*/, int width,
                                                                   int height, bool rowIsSelected) {
     if (rowIsSelected) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
     } else {
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
     }
     g.fillRect(0, 0, width, height);
 }
@@ -65,7 +65,7 @@ void PluginSettingsDialog::ExcludedTableModel::paintCell(juce::Graphics& g, int 
 
     const auto& entry = (*entries)[static_cast<size_t>(rowNumber)];
 
-    g.setColour(DarkTheme::getTextColour());
+    g.setColour(ActiveTheme::getTextColour());
     g.setFont(FontManager::getInstance().getUIFont(11.0f));
 
     juce::String text;
@@ -114,8 +114,8 @@ PluginSettingsDialog::PluginSettingsDialog() : scanProgressBar_(scanProgress_) {
 
     systemDirsList_.setModel(&systemDirListModel_);
     systemDirsList_.setColour(juce::ListBox::backgroundColourId,
-                              DarkTheme::getColour(DarkTheme::SURFACE));
-    systemDirsList_.setColour(juce::ListBox::outlineColourId, DarkTheme::getBorderColour());
+                              ActiveTheme::getColour(ActiveTheme::SURFACE));
+    systemDirsList_.setColour(juce::ListBox::outlineColourId, ActiveTheme::getBorderColour());
     systemDirsList_.setOutlineThickness(1);
     systemDirsList_.setRowHeight(22);
     addAndMakeVisible(systemDirsList_);
@@ -125,8 +125,8 @@ PluginSettingsDialog::PluginSettingsDialog() : scanProgressBar_(scanProgress_) {
 
     directoriesList_.setModel(&dirListModel_);
     directoriesList_.setColour(juce::ListBox::backgroundColourId,
-                               DarkTheme::getColour(DarkTheme::SURFACE));
-    directoriesList_.setColour(juce::ListBox::outlineColourId, DarkTheme::getBorderColour());
+                               ActiveTheme::getColour(ActiveTheme::SURFACE));
+    directoriesList_.setColour(juce::ListBox::outlineColourId, ActiveTheme::getBorderColour());
     directoriesList_.setOutlineThickness(1);
     directoriesList_.setRowHeight(22);
     addAndMakeVisible(directoriesList_);
@@ -319,13 +319,13 @@ PluginSettingsDialog::PluginSettingsDialog() : scanProgressBar_(scanProgress_) {
     scanOnStartupToggle_.setToggleState(Config::getInstance().getScanPluginsOnStartup(),
                                         juce::dontSendNotification);
     scanOnStartupToggle_.setColour(juce::ToggleButton::textColourId,
-                                   DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                   ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     addAndMakeVisible(scanOnStartupToggle_);
 
     formatPreferenceLabel_.setText(tr("plugin_settings.label.external_format_preference"),
                                    juce::dontSendNotification);
     formatPreferenceLabel_.setColour(juce::Label::textColourId,
-                                     DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                     ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     formatPreferenceLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
     addAndMakeVisible(formatPreferenceLabel_);
 
@@ -346,10 +346,10 @@ PluginSettingsDialog::PluginSettingsDialog() : scanProgressBar_(scanProgress_) {
             .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Lv2)),
         static_cast<int>(PluginFormat::LV2) + 1);
     formatPreferenceSelector_.setColour(juce::ComboBox::backgroundColourId,
-                                        DarkTheme::getColour(DarkTheme::SURFACE));
-    formatPreferenceSelector_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+                                        ActiveTheme::getColour(ActiveTheme::SURFACE));
+    formatPreferenceSelector_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
     formatPreferenceSelector_.setColour(juce::ComboBox::outlineColourId,
-                                        DarkTheme::getBorderColour());
+                                        ActiveTheme::getBorderColour());
     auto currentFormatPreference =
         PluginPreferences::getInstance().externalPluginFormatPreference();
 #if !JUCE_MAC
@@ -367,13 +367,13 @@ PluginSettingsDialog::PluginSettingsDialog() : scanProgressBar_(scanProgress_) {
     addAndMakeVisible(scanProgressBar_);
 
     scanStatusLabel_.setColour(juce::Label::textColourId,
-                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                               ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     scanStatusLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     scanStatusLabel_.setVisible(false);
     addAndMakeVisible(scanStatusLabel_);
 
     pluginCountLabel_.setColour(juce::Label::textColourId,
-                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     pluginCountLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     updatePluginCountLabel();
     addAndMakeVisible(pluginCountLabel_);
@@ -383,16 +383,16 @@ PluginSettingsDialog::PluginSettingsDialog() : scanProgressBar_(scanProgress_) {
 
     excludedTable_.setModel(&excludedTableModel_);
     excludedTable_.setColour(juce::ListBox::backgroundColourId,
-                             DarkTheme::getColour(DarkTheme::SURFACE));
-    excludedTable_.setColour(juce::ListBox::outlineColourId, DarkTheme::getBorderColour());
+                             ActiveTheme::getColour(ActiveTheme::SURFACE));
+    excludedTable_.setColour(juce::ListBox::outlineColourId, ActiveTheme::getBorderColour());
     excludedTable_.setOutlineThickness(1);
     excludedTable_.getHeader().addColumn(tr("plugin_settings.column.plugin"), 1, 250, 100, 400);
     excludedTable_.getHeader().addColumn(tr("plugin_settings.column.reason"), 2, 80, 60, 150);
     excludedTable_.getHeader().addColumn(tr("plugin_settings.column.date"), 3, 150, 80, 250);
     excludedTable_.getHeader().setColour(juce::TableHeaderComponent::backgroundColourId,
-                                         DarkTheme::getColour(DarkTheme::SURFACE));
+                                         ActiveTheme::getColour(ActiveTheme::SURFACE));
     excludedTable_.getHeader().setColour(juce::TableHeaderComponent::textColourId,
-                                         DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                         ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     excludedTable_.setMultipleSelectionEnabled(true);
     addAndMakeVisible(excludedTable_);
 
@@ -453,7 +453,7 @@ PluginSettingsDialog::~PluginSettingsDialog() {
 }
 
 void PluginSettingsDialog::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
 }
 
 void PluginSettingsDialog::resized() {
@@ -587,7 +587,7 @@ class PluginSettingsDialogWindow : public juce::DialogWindow {
 
 void PluginSettingsDialog::showDialog(juce::Component* /*parent*/) {
     auto* dialog = new PluginSettingsDialog();
-    auto bg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+    auto bg = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
 
     auto* window = new PluginSettingsDialogWindow(tr("dialogs.plugin_settings"), bg, false, dialog);
     window->setContentOwned(dialog, true);
@@ -616,7 +616,8 @@ void PluginSettingsDialog::updatePluginCountLabel() {
 
 void PluginSettingsDialog::setupSectionHeader(juce::Label& header, const juce::String& text) {
     header.setText(text, juce::dontSendNotification);
-    header.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    header.setColour(juce::Label::textColourId,
+                     ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     header.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     header.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(header);

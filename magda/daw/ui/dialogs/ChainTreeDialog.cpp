@@ -2,7 +2,7 @@
 
 #include <utility>
 
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/StringTable.hpp"
@@ -30,13 +30,13 @@ class ChainTreeItemBase : public juce::TreeViewItem {
 
         // Highlight if selected
         if (isSelected()) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
             g.fillRect(bounds);
         }
 
         // Draw expand/collapse indicator for containers
         if (mightContainSubItems()) {
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
             g.setFont(FontManager::getInstance().getUIFont(12.0f));
             juce::String indicator =
                 isOpen() ? juce::String::fromUTF8("▼ ") : juce::String::fromUTF8("▶ ");
@@ -59,7 +59,7 @@ class ChainTreeItemBase : public juce::TreeViewItem {
         // Draw secondary text if present
         if (secondaryText_.isNotEmpty()) {
             auto secondaryBounds = bounds.removeFromRight(juce::jmin(100, bounds.getWidth() / 2));
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
             g.setFont(FontManager::getInstance().getUIFont(10.0f));
             g.drawText(secondaryText_, secondaryBounds, juce::Justification::centredRight);
         }
@@ -100,7 +100,7 @@ class ChainTreeItemBase : public juce::TreeViewItem {
 
   protected:
     virtual juce::Colour getItemColour() const {
-        return DarkTheme::getTextColour();
+        return ActiveTheme::getTextColour();
     }
 
     virtual juce::Font getItemFont() const {
@@ -182,7 +182,7 @@ class RackTreeItem : public ChainTreeItemBase {
 
   protected:
     juce::Colour getItemColour() const override {
-        return DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
+        return ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
     }
 };
 
@@ -200,7 +200,7 @@ class ChainTreeItem : public ChainTreeItemBase {
 
   protected:
     juce::Colour getItemColour() const override {
-        return DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+        return ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY);
     }
 };
 
@@ -215,8 +215,8 @@ class ChainTreeDialog::ContentComponent : public juce::Component,
     explicit ContentComponent(TrackId trackId) : trackId_(trackId) {
         // Setup tree view
         treeView_.setColour(juce::TreeView::backgroundColourId,
-                            DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
-        treeView_.setColour(juce::TreeView::linesColourId, DarkTheme::getBorderColour());
+                            ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
+        treeView_.setColour(juce::TreeView::linesColourId, ActiveTheme::getBorderColour());
         treeView_.setDefaultOpenness(true);
         treeView_.setMultiSelectEnabled(false);
         treeView_.setOpenCloseButtonsVisible(false);  // We draw our own
@@ -226,7 +226,7 @@ class ChainTreeDialog::ContentComponent : public juce::Component,
         // Info label
         infoLabel_.setText(tr("chain_tree.label.click_hint"), juce::dontSendNotification);
         infoLabel_.setColour(juce::Label::textColourId,
-                             DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                             ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         infoLabel_.setJustificationType(juce::Justification::centred);
         addAndMakeVisible(infoLabel_);
 
@@ -245,7 +245,7 @@ class ChainTreeDialog::ContentComponent : public juce::Component,
     }
 
     void paint(juce::Graphics& g) override {
-        g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+        g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
     }
 
     void resized() override {
@@ -411,7 +411,7 @@ class ChainTreeDialog::ContentComponent : public juce::Component,
 juce::Component::SafePointer<ChainTreeDialog> ChainTreeDialog::currentInstance_;
 
 ChainTreeDialog::ChainTreeDialog(TrackId trackId)
-    : DialogWindow(tr("dialogs.chain_tree"), DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND),
+    : DialogWindow(tr("dialogs.chain_tree"), ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND),
                    true),
       trackId_(trackId) {
     content_ = std::make_unique<ContentComponent>(trackId);

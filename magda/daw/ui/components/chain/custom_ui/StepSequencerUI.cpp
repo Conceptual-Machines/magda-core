@@ -63,9 +63,10 @@ StepSequencerUI::StepSequencerUI() {
     setupLabel(dirLabel_, "DIR");
     dirCombo_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
     dirCombo_.setColour(juce::ComboBox::backgroundColourId,
-                        DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
-    dirCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-    dirCombo_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+                        ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.1f));
+    dirCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
+    dirCombo_.setColour(juce::ComboBox::outlineColourId,
+                        ActiveTheme::getColour(ActiveTheme::BORDER));
     dirCombo_.addItem("Forward", 1);
     dirCombo_.addItem("Reverse", 2);
     dirCombo_.addItem("Ping-Pong", 3);
@@ -470,12 +471,12 @@ void StepSequencerUI::drawTimeline(juce::Graphics& g, juce::Rectangle<int> area)
     const auto top = static_cast<float>(area.getY());
     const auto bottom = static_cast<float>(area.getBottom());
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.04f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.04f));
     g.fillRect(area);
 
     // Highlight the playing step.
     if (currentPlayStep_ >= 0 && currentPlayStep_ < count) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.45f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.45f));
         g.fillRect(
             juce::Rectangle<float>(area.getX() + currentPlayStep_ * colW, top, colW, bottom - top));
     }
@@ -484,10 +485,10 @@ void StepSequencerUI::drawTimeline(juce::Graphics& g, juce::Rectangle<int> area)
     for (int i = 0; i < count; ++i) {
         const float x = area.getX() + i * colW;
         const bool group = (i % 4 == 0);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(group ? 0.5f : 0.2f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(group ? 0.5f : 0.2f));
         g.drawVerticalLine(juce::roundToInt(x), group ? top : top + 4.0f, bottom);
         if (group) {
-            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.setColour(ActiveTheme::getSecondaryTextColour());
             g.drawText(
                 juce::String(i + 1),
                 juce::Rectangle<float>(x + 2.0f, top, colW - 2.0f, bottom - top).toNearestInt(),
@@ -495,7 +496,7 @@ void StepSequencerUI::drawTimeline(juce::Graphics& g, juce::Rectangle<int> area)
         }
     }
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.4f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.4f));
     g.drawHorizontalLine(area.getBottom() - 1, static_cast<float>(area.getX()),
                          static_cast<float>(area.getRight()));
 }
@@ -516,13 +517,13 @@ void StepSequencerUI::drawStepBoxes(juce::Graphics& g, juce::Rectangle<int> area
                                               boxW - 1.0f, static_cast<float>(area.getHeight()));
 
         // Background
-        juce::Colour bg = DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.08f);
+        juce::Colour bg = ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.08f);
         if (i == currentPlayStep_)
-            bg = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.3f);
+            bg = ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.3f);
         if (i == selectedStep_)
             bg = bg.brighter(0.15f);
         if (i == dragTargetStep_ && dragSourceStep_ >= 0 && i != dragSourceStep_)
-            bg = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f);
+            bg = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f);
         if (!step.gate)
             bg = bg.darker(0.3f);
 
@@ -530,15 +531,15 @@ void StepSequencerUI::drawStepBoxes(juce::Graphics& g, juce::Rectangle<int> area
         g.fillRoundedRectangle(boxRect, 2.0f);
 
         // Border
-        juce::Colour border = DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.4f);
+        juce::Colour border = ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.4f);
         if (i == selectedStep_)
-            border = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE);
+            border = ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE);
         g.setColour(border);
         g.drawRoundedRectangle(boxRect, 2.0f, 0.5f);
 
         // Note name
         if (step.gate) {
-            g.setColour(DarkTheme::getTextColour());
+            g.setColour(ActiveTheme::getTextColour());
             g.drawText(noteNameShort(step.noteNumber + step.octaveShift * 12),
                        boxRect.toNearestInt(), juce::Justification::centred);
         }
@@ -555,7 +556,7 @@ void StepSequencerUI::drawAccentRow(juce::Graphics& g, juce::Rectangle<int> area
     g.setFont(font);
 
     // Row label
-    g.setColour(DarkTheme::getSecondaryTextColour());
+    g.setColour(ActiveTheme::getSecondaryTextColour());
     g.drawText("ACC", area.removeFromLeft(24), juce::Justification::centredLeft);
 
     auto startX = static_cast<float>(area.getX());
@@ -569,12 +570,12 @@ void StepSequencerUI::drawAccentRow(juce::Graphics& g, juce::Rectangle<int> area
                                    static_cast<float>(area.getHeight()) - 2.0f);
 
         if (step.accent) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.7f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.7f));
             g.fillRoundedRectangle(rect, 2.0f);
-            g.setColour(DarkTheme::getTextColour());
+            g.setColour(ActiveTheme::getTextColour());
             g.drawText("A", rect.toNearestInt(), juce::Justification::centred);
         } else {
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.2f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.2f));
             g.fillRoundedRectangle(rect, 2.0f);
         }
     }
@@ -589,7 +590,7 @@ void StepSequencerUI::drawGlideTieRow(juce::Graphics& g, juce::Rectangle<int> ar
     g.setFont(font);
 
     // Row label
-    g.setColour(DarkTheme::getSecondaryTextColour());
+    g.setColour(ActiveTheme::getSecondaryTextColour());
     g.drawText("G/T", area.removeFromLeft(24), juce::Justification::centredLeft);
 
     float boxW = static_cast<float>(area.getWidth()) / static_cast<float>(count);
@@ -602,17 +603,17 @@ void StepSequencerUI::drawGlideTieRow(juce::Graphics& g, juce::Rectangle<int> ar
                                    static_cast<float>(area.getHeight()) - 2.0f);
 
         if (step.tie) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.7f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.7f));
             g.fillRoundedRectangle(rect, 2.0f);
-            g.setColour(DarkTheme::getTextColour());
+            g.setColour(ActiveTheme::getTextColour());
             g.drawText("T", rect.toNearestInt(), juce::Justification::centred);
         } else if (step.glide) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.7f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.7f));
             g.fillRoundedRectangle(rect, 2.0f);
-            g.setColour(DarkTheme::getTextColour());
+            g.setColour(ActiveTheme::getTextColour());
             g.drawText("~", rect.toNearestInt(), juce::Justification::centred);
         } else {
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.2f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.2f));
             g.fillRoundedRectangle(rect, 2.0f);
         }
     }
@@ -652,16 +653,17 @@ void StepSequencerUI::drawKeyboard(juce::Graphics& g, juce::Rectangle<int> area)
         int midiNote = keyboardBaseNote_ + note;
         bool isSelected = (midiNote == selectedNote);
 
-        g.setColour(isSelected ? DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.4f)
-                               : juce::Colours::white.withAlpha(0.85f));
+        g.setColour(isSelected
+                        ? ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.4f)
+                        : juce::Colours::white.withAlpha(0.85f));
         g.fillRoundedRectangle(keyRect, 1.0f);
 
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.3f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.3f));
         g.drawRoundedRectangle(keyRect, 1.0f, 0.5f);
 
         // Note label on C keys
         if (note % 12 == 0) {
-            g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
             g.drawText(noteNameShort(midiNote),
                        keyRect.toNearestInt().withTrimmedTop(static_cast<int>(whiteKeyH * 0.6f)),
                        juce::Justification::centred);
@@ -684,11 +686,12 @@ void StepSequencerUI::drawKeyboard(juce::Graphics& g, juce::Rectangle<int> area)
         int midiNote = keyboardBaseNote_ + note;
         bool isSelected = (midiNote == selectedNote);
 
-        g.setColour(isSelected ? DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.6f)
-                               : juce::Colours::black.withAlpha(0.85f));
+        g.setColour(isSelected
+                        ? ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.6f)
+                        : juce::Colours::black.withAlpha(0.85f));
         g.fillRoundedRectangle(keyRect, 1.0f);
 
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.2f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.2f));
         g.drawRoundedRectangle(keyRect, 1.0f, 0.5f);
     }
 }
@@ -701,16 +704,16 @@ void StepSequencerUI::drawOctaveArrow(juce::Graphics& g, juce::Rectangle<int> ar
     bool canShift =
         isLeft ? (keyboardBaseNote_ > MIN_BASE_NOTE) : (keyboardBaseNote_ < MAX_BASE_NOTE);
 
-    g.setColour(canShift ? DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.15f)
-                         : DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
+    g.setColour(canShift ? ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.15f)
+                         : ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
     g.fillRoundedRectangle(btn.toFloat(), 2.0f);
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.3f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.3f));
     g.drawRoundedRectangle(btn.toFloat(), 2.0f, 0.5f);
 
     // Draw arrow triangle
-    g.setColour(canShift ? DarkTheme::getTextColour()
-                         : DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
+    g.setColour(canShift ? ActiveTheme::getTextColour()
+                         : ActiveTheme::getSecondaryTextColour().withAlpha(0.3f));
     float cx = btn.getCentreX();
     float cy = btn.getCentreY();
     float arrowSize = 5.0f;
@@ -983,7 +986,7 @@ void StepSequencerUI::showStepContextMenu(int stepIndex) {
 void StepSequencerUI::setupLabel(juce::Label& label, const juce::String& text) {
     label.setText(text, juce::dontSendNotification);
     label.setFont(FontManager::getInstance().getUIFont(9.0f));
-    label.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    label.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     label.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(label);
 }
@@ -998,12 +1001,13 @@ void StepSequencerUI::lookAndFeelChanged() {
     for (auto* label :
          {&rateLabel_, &stepsLabel_, &dirLabel_, &swingLabel_, &glideLabel_, &rampLabel_,
           &depthLabel_, &skewLabel_, &cyclesLabel_, &quantizeLabel_, &quantizeSubLabel_})
-        label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
 
     dirCombo_.setColour(juce::ComboBox::backgroundColourId,
-                        DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
-    dirCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-    dirCombo_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+                        ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.1f));
+    dirCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
+    dirCombo_.setColour(juce::ComboBox::outlineColourId,
+                        ActiveTheme::getColour(ActiveTheme::BORDER));
 
     repaint();
 }

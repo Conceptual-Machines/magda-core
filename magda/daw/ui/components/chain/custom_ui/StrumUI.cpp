@@ -1,6 +1,6 @@
 #include "custom_ui/StrumUI.hpp"
 
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallComboBoxLookAndFeel.hpp"
 
@@ -32,17 +32,17 @@ void StrumUI::OnsetStrip::paint(juce::Graphics& g) {
     if (b.getWidth() < 4.0f || b.getHeight() < 4.0f)
         return;
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.08f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.08f));
     g.fillRoundedRectangle(b, 2.0f);
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.3f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.3f));
     g.drawRoundedRectangle(b.reduced(0.5f), 2.0f, 0.5f);
 
     auto inner = b.reduced(8.0f, 6.0f);
     // Baseline.
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.4f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.4f));
     g.drawLine(inner.getX(), inner.getBottom(), inner.getRight(), inner.getBottom(), 1.0f);
 
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.7f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.7f));
     for (float u : onsets_) {
         float tx = inner.getX() + juce::jlimit(0.0f, 1.0f, u) * inner.getWidth();
         g.drawLine(tx, inner.getY(), tx, inner.getBottom(), 1.5f);
@@ -257,7 +257,7 @@ void StrumUI::resized() {
 void StrumUI::setupLabel(juce::Label& label, const juce::String& text) {
     label.setText(text, juce::dontSendNotification);
     label.setFont(FontManager::getInstance().getUIFont(9.0f));
-    label.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    label.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     label.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(label);
 }
@@ -265,9 +265,9 @@ void StrumUI::setupLabel(juce::Label& label, const juce::String& text) {
 void StrumUI::setupCombo(juce::ComboBox& combo) {
     combo.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
     combo.setColour(juce::ComboBox::backgroundColourId,
-                    DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
-    combo.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-    combo.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+                    ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.1f));
+    combo.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
+    combo.setColour(juce::ComboBox::outlineColourId, ActiveTheme::getColour(ActiveTheme::BORDER));
     addAndMakeVisible(combo);
 }
 
@@ -280,14 +280,15 @@ void StrumUI::lookAndFeelChanged() {
     // Re-apply cached theme colours after a live theme switch.
     for (auto* label : {&triggerLabel_, &orderLabel_, &shapeLabel_, &cyclesLabel_, &lengthLabel_,
                         &loopModeLabel_, &loopLabel_, &vizLabel_})
-        label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
 
     for (auto* combo :
          {&triggerCombo_, &orderCombo_, &shapeCombo_, &loopModeCombo_, &loopRateCombo_}) {
         combo->setColour(juce::ComboBox::backgroundColourId,
-                         DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
-        combo->setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-        combo->setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+                         ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.1f));
+        combo->setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
+        combo->setColour(juce::ComboBox::outlineColourId,
+                         ActiveTheme::getColour(ActiveTheme::BORDER));
     }
 
     repaint();

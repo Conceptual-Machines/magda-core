@@ -1,4 +1,4 @@
-#include "DarkTheme.hpp"
+#include "ActiveTheme.hpp"
 
 #include <algorithm>
 #include <iterator>
@@ -688,7 +688,7 @@ const ActiveTheme::SyntaxPalette& ThemeManager::builtInSyntaxPalette(const std::
     return darkSyntaxPalette;
 }
 
-std::optional<ColourRole> ActiveTheme::findDarkPaletteRole(juce::Colour colour) {
+std::optional<ColourRole> ActiveTheme::findPaletteRole(juce::Colour colour) {
     const auto rgb = colour.getARGB() & 0x00FFFFFFu;
     const auto findRole = [rgb](const Palette& palette) -> std::optional<ColourRole> {
         const auto hasThisRgb = [rgb](auto entry) { return (entry & 0x00FFFFFFu) == rgb; };
