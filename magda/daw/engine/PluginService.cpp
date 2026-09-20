@@ -177,18 +177,18 @@ void PluginService::forgetStateProvider(const PluginStateProvider& provider) {
 }
 
 void PluginService::captureAllPluginStates() {
-    if (stateProvider_ != nullptr)
-        stateProvider_->captureAllPluginStates();
+    if (auto* provider = currentProvider())
+        provider->captureAllPluginStates();
 }
 
 void PluginService::capturePluginStateAt(const ChainNodePath& devicePath) {
-    if (stateProvider_ != nullptr)
-        stateProvider_->capturePluginStateAt(devicePath);
+    if (auto* provider = currentProvider())
+        provider->capturePluginStateAt(devicePath);
 }
 
 void PluginService::applyPluginStateAt(const ChainNodePath& devicePath) {
-    if (stateProvider_ != nullptr)
-        stateProvider_->applyPluginStateAt(devicePath);
+    if (auto* provider = currentProvider())
+        provider->applyPluginStateAt(devicePath);
 }
 
 PluginScanCoordinator& PluginService::coordinator() const {

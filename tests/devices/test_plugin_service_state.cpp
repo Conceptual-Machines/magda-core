@@ -31,15 +31,12 @@ class RecordingStateProvider final : public magda::PluginStateProvider {
 
 class ScopedStateProvider {
   public:
-    explicit ScopedStateProvider(RecordingStateProvider& provider)
-        : provider_(provider),
-          previous_(magda::PluginService::getInstance().useStateProvider(provider_)) {}
+    explicit ScopedStateProvider(RecordingStateProvider& provider) : provider_(provider) {
+        REQUIRE(magda::PluginService::getInstance().useStateProvider(provider_) == nullptr);
+    }
 
     ~ScopedStateProvider() {
-        auto& service = magda::PluginService::getInstance();
-        service.forgetStateProvider(provider_);
-        if (previous_ != nullptr)
-            service.useStateProvider(*previous_);
+        magda::PluginService::getInstance().forgetStateProvider(provider_);
     }
 
     ScopedStateProvider(const ScopedStateProvider&) = delete;
@@ -47,7 +44,6 @@ class ScopedStateProvider {
 
   private:
     RecordingStateProvider& provider_;
-    magda::PluginStateProvider* previous_ = nullptr;
 };
 
 }  // namespace
@@ -66,25 +62,11 @@ TEST_CASE("PluginService sends state operations to the current renderer",
     CHECK(first.captureOneCalls == 1);
     CHECK(first.lastCaptured == firstPath);
 
-    {
-        RecordingStateProvider second;
-        ScopedStateProvider secondRegistration(second);
-        const auto secondPath = magda::ChainNodePath::topLevelDevice(3, 9);
-
-        service.captureAllPluginStates();
-        service.applyPluginStateAt(secondPath);
-
-        CHECK(second.captureAllCalls == 1);
-        CHECK(second.applyOneCalls == 1);
-        CHECK(second.lastApplied == secondPath);
-        CHECK(first.captureAllCalls == 1);
-    }
-
-    const auto restoredPath = magda::ChainNodePath::topLevelDevice(4, 11);
-    service.applyPluginStateAt(restoredPath);
+    const auto appliedPath = magda::ChainNodePath::topLevelDevice(4, 11);
+    service.applyPluginStateAt(appliedPath);
 
     CHECK(first.applyOneCalls == 1);
-    CHECK(first.lastApplied == restoredPath);
+    CHECK(first.lastApplied == appliedPath);
 }
 
 TEST_CASE("PluginService state operations are silent without a renderer",

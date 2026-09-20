@@ -308,6 +308,32 @@ TEST_CASE("An internal-device preset is projected onto the native rendered devic
     tracks.clearAllTracks();
 }
 
+TEST_CASE("An internal preset without authored state leaves the rendered device alone",
+          "[device-authored-state][device-presets]") {
+    auto& tracks = TrackManager::getInstance();
+    RenderedDeviceEngine engine;
+    tracks.setAudioEngine(&engine);
+
+    ds::Doc liveState;
+    liveState.deviceType = "oscilloscope";
+    liveState.root.props.set(juce::Identifier("timebaseMs"), 500.0f);
+    liveState.root.props.set(juce::Identifier("traceColour"), 2);
+    projectAuthoredStateToDevice(*engine.rendered, ds::encode(liveState), "oscilloscope");
+
+    const auto path = addInternalDevice("oscilloscope", {});
+    const auto* live = tracks.getDeviceInChainByPath(path);
+    REQUIRE(live != nullptr);
+    auto preset = *live;
+    preset.pluginState.clear();
+
+    REQUIRE(tracks.applyDevicePreset(path, preset));
+    CHECK(engine.rendered->timebaseMs() == Catch::Approx(500.0f));
+    CHECK(engine.rendered->traceColourIndex() == 2);
+
+    tracks.setAudioEngine(nullptr);
+    tracks.clearAllTracks();
+}
+
 TEST_CASE("PluginService follows TrackManager's active renderer",
           "[plugin][state-service][test-isolation]") {
     auto& tracks = TrackManager::getInstance();

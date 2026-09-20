@@ -1977,14 +1977,18 @@ namespace {
 /// one. The projection direction: the model already holds the document, the
 /// engine adapter is told to match it.
 void projectAuthoredStateToEngine(AudioEngine* audioEngine, const ChainNodePath& devicePath,
-                                  const juce::String& docText, const juce::String& deviceType) {
+                                  const juce::String& docText, const juce::String& deviceType,
+                                  bool resetWhenUndecodable = true) {
     if (audioEngine == nullptr)
+        return;
+
+    namespace ta = daw::audio::tracktion_adapter;
+    auto tree = ta::devicePluginTreeFromState(docText);
+    if (!tree.isValid() && !resetWhenUndecodable)
         return;
 
     if (auto* bridge = audioEngine->getAudioBridge()) {
         if (auto plugin = bridge->getPlugin(devicePath)) {
-            namespace ta = daw::audio::tracktion_adapter;
-            auto tree = ta::devicePluginTreeFromState(docText);
             if (!tree.isValid()) {
                 tree = juce::ValueTree(tracktion::engine::IDs::PLUGIN);
                 tree.setProperty(tracktion::engine::IDs::type, deviceType, nullptr);
@@ -2105,8 +2109,10 @@ bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
 
     if (live->format == PluginFormat::Internal) {
         // Internal authored state is projected onto either the bridge plugin or the
-        // native rendered device. It is not an externally hosted plugin chunk.
-        projectAuthoredStateToEngine(audioEngine_, devicePath, live->pluginState, live->pluginId);
+        // native rendered device. A preset without a decodable snapshot leaves
+        // authored-only live settings alone, matching the external chunk path.
+        projectAuthoredStateToEngine(audioEngine_, devicePath, live->pluginState, live->pluginId,
+                                     /*resetWhenUndecodable=*/false);
     } else {
         // The hosted-plugin provider owns the live chunk and may rewrite the model's
         // parameter cache while applying it (#2573, #2758).

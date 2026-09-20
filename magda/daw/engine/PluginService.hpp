@@ -212,6 +212,9 @@ class PluginService {
 
     PluginScanCoordinator& coordinator() const;
     void loadList();
+    PluginStateProvider* currentProvider() const {
+        return stateProvider_;
+    }
 
     juce::AudioPluginFormatManager* formats_ = nullptr;
     juce::KnownPluginList* list_ = nullptr;
