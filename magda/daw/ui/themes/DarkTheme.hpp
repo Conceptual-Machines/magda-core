@@ -257,7 +257,7 @@ enum class SyntaxColourRole : std::size_t {
     count
 };
 
-class DarkTheme {
+class ActiveTheme {
   public:
     using Palette = std::array<juce::uint32, static_cast<std::size_t>(ColourRole::count)>;
     using SyntaxPalette =
@@ -478,7 +478,7 @@ class DarkTheme {
     static void setActiveSyntaxPalette(const SyntaxPalette& palette);
 
     // Maps a colour from the active or default-Dark palette to its runtime
-    // role. This lets legacy UI code that already supplies a DarkTheme colour
+    // role. This lets legacy UI code that already supplies an ActiveTheme colour
     // retain its intent while resolving the final colour at paint time. Only
     // RGB is considered: callers keep their own alpha value.
     static std::optional<ColourRole> findDarkPaletteRole(juce::Colour colour);
@@ -527,9 +527,10 @@ class DarkTheme {
     static SyntaxPalette activeSyntaxPalette_;
 };
 
-// Owns theme identity and runtime selection. DarkTheme remains the legacy
-// colour-role facade; neutral theme lifecycle APIs live here so Light and
-// future JSON themes do not inherit dark-only naming.
+using DarkTheme = ActiveTheme;
+
+// Owns theme identity and runtime selection. ActiveTheme provides the
+// colour-role facade, while theme lifecycle APIs live here.
 class ThemeManager {
   public:
     static constexpr const char* kDarkThemeId = "dark";
@@ -544,8 +545,8 @@ class ThemeManager {
     // Read-only access to a built-in table by id (dark/light/high-contrast;
     // unknown ids resolve to dark). Lets the JSON theme loader inherit a base
     // palette without disturbing the currently active one.
-    static const DarkTheme::Palette& builtInPalette(const std::string& themeId);
-    static const DarkTheme::SyntaxPalette& builtInSyntaxPalette(const std::string& themeId);
+    static const ActiveTheme::Palette& builtInPalette(const std::string& themeId);
+    static const ActiveTheme::SyntaxPalette& builtInSyntaxPalette(const std::string& themeId);
 };
 
 // User colours stay stored verbatim. Only their presentation swatch is
@@ -579,27 +580,27 @@ inline juce::Colour deriveClipBody(juce::Colour stored) {
 inline void refreshHostWindowBackground(juce::Component& content,
                                         ColourRole role = ColourRole::PANEL_BACKGROUND) {
     if (auto* window = content.findParentComponentOfClass<juce::ResizableWindow>())
-        window->setBackgroundColour(DarkTheme::getColour(role));
+        window->setBackgroundColour(ActiveTheme::getColour(role));
 }
 
 // Keeps named colours in a custom device UI bound to a role without forcing
-// every paint call to spell out DarkTheme::getColour(). The conversion and
+// every paint call to spell out ActiveTheme::getColour(). The conversion and
 // common modifiers resolve the active palette at the point of use.
 class ThemedColour {
   public:
     constexpr explicit ThemedColour(ColourRole role) : role_(role) {}
 
     operator juce::Colour() const {
-        return DarkTheme::getColour(role_);
+        return ActiveTheme::getColour(role_);
     }
     juce::Colour withAlpha(float alpha) const {
-        return DarkTheme::getColour(role_).withAlpha(alpha);
+        return ActiveTheme::getColour(role_).withAlpha(alpha);
     }
     juce::Colour brighter(float amount = 0.4f) const {
-        return DarkTheme::getColour(role_).brighter(amount);
+        return ActiveTheme::getColour(role_).brighter(amount);
     }
     juce::Colour darker(float amount = 0.4f) const {
-        return DarkTheme::getColour(role_).darker(amount);
+        return ActiveTheme::getColour(role_).darker(amount);
     }
 
   private:
