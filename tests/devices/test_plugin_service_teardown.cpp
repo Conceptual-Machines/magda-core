@@ -38,3 +38,27 @@ TEST_CASE("A released service answers with no plugins rather than crashing",
     CHECK_NOTHROW(service.addListChangeListener(&listener));
     CHECK_NOTHROW(service.removeListChangeListener(&listener));
 }
+
+TEST_CASE("A reattached engine does not inherit the previous one's queued discovery",
+          "[plugin-service][2756]") {
+    // Joining the discovery thread only guarantees its callAsync was queued. A shutdown and
+    // re-initialise inside one message-queue drain leaves that callback holding the old
+    // engine's results and callbacks, with the new engine's pointers non-null again.
+    juce::AudioPluginFormatManager formats;
+    juce::KnownPluginList list;
+    auto& service = magda::PluginService::getInstance();
+
+    service.useEngineList(formats, list);
+    const auto queuedUnder = service.testAttachment();
+    REQUIRE(service.testWouldAcceptWorkFrom(queuedUnder));
+
+    service.forgetEngineList();
+    CHECK_FALSE(service.testWouldAcceptWorkFrom(queuedUnder));
+
+    juce::AudioPluginFormatManager nextFormats;
+    juce::KnownPluginList nextList;
+    service.useEngineList(nextFormats, nextList);
+    CHECK_FALSE(service.testWouldAcceptWorkFrom(queuedUnder));
+
+    service.forgetEngineList();
+}

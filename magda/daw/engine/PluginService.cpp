@@ -146,6 +146,7 @@ PluginService::~PluginService() {
 
 void PluginService::useEngineList(juce::AudioPluginFormatManager& formats,
                                   juce::KnownPluginList& list) {
+    ++attachment_;
     formats_ = &formats;
     list_ = &list;
 }
@@ -159,6 +160,7 @@ void PluginService::forgetEngineList() {
     if (discoveryThread_.joinable())
         discoveryThread_.join();
 
+    ++attachment_;
     formats_ = nullptr;
     list_ = nullptr;
     internalScanner_ = nullptr;
@@ -443,8 +445,12 @@ void PluginService::detectNewPlugins(
         discoveryThread_.join();
 
     auto& formats = *formats_;
-    discoveryThread_ = std::thread([this, &formats, knownPaths, excludedPaths, customPaths,
-                                    statusCallback, completionCallback]() {
+    // Joining the thread below only guarantees its callAsync was queued, not that it ran.
+    // A shutdown and re-initialise inside one drain would otherwise let this engine's
+    // results scan into the next engine's list (#2756).
+    const auto attachment = attachment_;
+    discoveryThread_ = std::thread([this, &formats, attachment, knownPaths, excludedPaths,
+                                    customPaths, statusCallback, completionCallback]() {
         // Expensive recursive directory traversal, off the snapshots above.
         auto allPlugins =
             PluginScanCoordinator::discoverPluginFiles(formats, excludedPaths, customPaths);
@@ -459,9 +465,10 @@ void PluginService::detectNewPlugins(
         if (!*alive)
             return;
 
-        juce::MessageManager::callAsync([this, alive, newPlugins = std::move(newPlugins),
-                                         statusCallback, completionCallback]() mutable {
-            if (!*alive || !list_ || !formats_)
+        juce::MessageManager::callAsync([this, alive, attachment,
+                                         newPlugins = std::move(newPlugins), statusCallback,
+                                         completionCallback]() mutable {
+            if (!*alive || attachment != attachment_)
                 return;
 
             if (newPlugins.empty()) {
@@ -486,10 +493,10 @@ void PluginService::detectNewPlugins(
                     if (statusCallback)
                         statusCallback(PluginScanPhase::Scanning, currentPlugin);
                 },
-                [this, alive, completionCallback](
+                [this, alive, attachment, completionCallback](
                     bool success, const juce::Array<juce::PluginDescription>& plugins,
                     const juce::StringArray& failedPlugins) {
-                    if (!*alive || !list_)
+                    if (!*alive || attachment != attachment_)
                         return;
 
                     for (const auto& desc : plugins)

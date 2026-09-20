@@ -8,6 +8,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -182,6 +183,12 @@ class PluginService {
     void testBeginScan() {
         scanning_ = true;
     }
+    std::uint64_t testAttachment() const {
+        return attachment_;
+    }
+    bool testWouldAcceptWorkFrom(std::uint64_t attachment) const {
+        return attachment == attachment_;
+    }
 #endif
 
   private:
@@ -193,6 +200,10 @@ class PluginService {
 
     juce::AudioPluginFormatManager* formats_ = nullptr;
     juce::KnownPluginList* list_ = nullptr;
+
+    /// Which attachment the pair above belongs to. Work queued under an earlier one is
+    /// dropped rather than applied to whatever is attached when it runs.
+    std::uint64_t attachment_ = 0;
 
     bool scanning_ = false;
     bool metadataLoaded_ = false;
