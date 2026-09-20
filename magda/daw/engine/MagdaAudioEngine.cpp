@@ -202,17 +202,25 @@ void MagdaAudioEngine::shutdown() {
     PluginService::getInstance().forgetStateProvider(*this);
 
     // The host is destroyed before the fork (member order), so the sink has to be gone
-    // before the queue behind it is. setLiveSink(nullptr) returns only once any in-flight
-    // MIDI callback has left, which is what forgetEngine() then asserts.
+    // before the queue behind it is. clearLiveSink returns only once any in-flight MIDI
+    // callback has left, which is what forgetEngine() then asserts. Unconditional, and
+    // conditional on being this engine's sink rather than on owning MIDI: the sink is
+    // this object, so it is owed the service whether or not another engine has since
+    // attached over it.
     //
-    // This engine attached the service after the fork did, so it is the one that hands it
-    // back; the fork's shutdown below will find it no longer owns MIDI and leave it be.
-    // The router goes first so it unsubscribes before the inputs stop.
+    // The rest is the MIDI layer's, so it only runs while this engine is the one
+    // attached. shutdown() runs again from the destructor, and by then another engine may
+    // hold MIDI; unbinding its router or stopping its inputs is not this one's to do.
+    // Where this engine does still own it, it hands the service back here rather than
+    // leaving it to the fork below, having attached after the fork did. The router goes
+    // first so it unsubscribes before the inputs stop.
     auto& midi = MidiBridge::getInstance();
-    midi.setLiveSink(nullptr);
-    MidiLearnCoordinator::getInstance().cancelLearn();
-    ControllerRouter::getInstance().shutdown();
-    midi.forgetEngine(this);
+    midi.clearLiveSink(this);
+    if (midi.isAttachedTo(this)) {
+        MidiLearnCoordinator::getInstance().cancelLearn();
+        ControllerRouter::getInstance().shutdown();
+        midi.forgetEngine(this);
+    }
 
     // The API outlives this call.
     api_->setMidiBridge(nullptr);

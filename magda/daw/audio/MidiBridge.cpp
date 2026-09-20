@@ -67,6 +67,16 @@ void MidiBridge::setAudioBridge(AudioBridge* audioBridge) {
     audioBridge_.store(audioBridge, std::memory_order_release);
 }
 
+void MidiBridge::clearLiveSink(LiveMidiSink* sink) {
+    auto* installed = sink;
+    if (!liveSink_.compare_exchange_strong(installed, nullptr, std::memory_order_acq_rel,
+                                           std::memory_order_acquire))
+        return;
+
+    while (activeCallbacks_.load(std::memory_order_acquire) > 0)
+        juce::Thread::sleep(1);
+}
+
 void MidiBridge::setLiveSink(LiveMidiSink* sink) {
     liveSink_.store(sink, std::memory_order_release);
     if (sink == nullptr)

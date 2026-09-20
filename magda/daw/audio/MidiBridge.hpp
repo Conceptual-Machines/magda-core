@@ -149,6 +149,15 @@ class MidiBridge : public juce::MidiInputCallback {
      */
     void setLiveSink(LiveMidiSink* sink);
 
+    /**
+     * @brief Clear the sink, but only when @p sink is the one installed.
+     *
+     * What an engine being destroyed owes the service: the sink is that engine, so it
+     * must not be left behind. Conditional because a later engine's sink is not this
+     * one's to clear, and drains like setLiveSink(nullptr) when it does clear.
+     */
+    void clearLiveSink(LiveMidiSink* sink);
+
     // =========================================================================
     // MIDI Device Enumeration
     // =========================================================================
