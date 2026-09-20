@@ -3,6 +3,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <map>
@@ -570,9 +571,14 @@ TEST_CASE("Temp media cleanup uses the writable temp root", "[project][autosave]
     REQUIRE(stale.createDirectory());
     REQUIRE(protectedDirectory.createDirectory());
 
-    const auto old = juce::Time::getCurrentTime() - juce::RelativeTime::days(8);
-    REQUIRE(stale.setLastModificationTime(old));
-    REQUIRE(protectedDirectory.setLastModificationTime(old));
+    const auto old = std::filesystem::file_time_type::clock::now() - std::chrono::hours(24 * 8);
+    std::error_code staleTimeError;
+    std::error_code protectedTimeError;
+    std::filesystem::last_write_time(stale.getFullPathName().toStdString(), old, staleTimeError);
+    std::filesystem::last_write_time(protectedDirectory.getFullPathName().toStdString(), old,
+                                     protectedTimeError);
+    REQUIRE_FALSE(staleTimeError);
+    REQUIRE_FALSE(protectedTimeError);
 
     ProjectManager::cleanupStaleTempDirectories(protectedDirectory);
     REQUIRE_FALSE(stale.exists());
