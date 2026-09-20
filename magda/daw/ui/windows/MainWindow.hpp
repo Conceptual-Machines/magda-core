@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -86,6 +87,18 @@ class MainWindow : public juce::DocumentWindow,
     void refreshThemedLookAndFeels();
     // Hot-reload callback: the active user theme file changed on disk.
     void onActiveThemeFileChanged();
+    // Offered after load when clip/take/sampler paths no longer exist. The
+    // individual steps are asynchronous so file choosers never block audio or
+    // the message thread.
+    void offerMissingMediaRecovery();
+    void chooseMissingMediaSearchFolder(std::vector<ProjectManager::MissingMediaFile> missing,
+                                        juce::File projectFile);
+    void locateMissingMediaFiles(std::vector<ProjectManager::MissingMediaFile> missing,
+                                 size_t index, juce::File projectFile);
+    void completeMissingMediaSearch(const juce::File& projectFile,
+                                    std::vector<ProjectManager::MissingMediaReplacement> matches,
+                                    bool cancelled);
+    void finishMissingMediaRecovery(const juce::String& message);
     class MainComponent;
     MainComponent* mainComponent = nullptr;       // Raw pointer - owned by DocumentWindow
     AudioEngine* externalAudioEngine_ = nullptr;  // Non-owning pointer to external engine
@@ -93,6 +106,7 @@ class MainWindow : public juce::DocumentWindow,
     // File chooser for async file import
     std::unique_ptr<juce::FileChooser> fileChooser_;
     std::string appliedTheme_;
+    std::uint64_t projectOpenGeneration_ = 0;
     // Last-applied density multiplier; -1 forces the first apply to run.
     float appliedDensityScale_ = -1.0f;
     std::string appliedFontFamily_;

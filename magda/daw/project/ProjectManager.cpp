@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <functional>
 #include <map>
+#include <set>
 #include <unordered_set>
 
 #include "../audio/AudioThumbnailManager.hpp"
@@ -243,6 +244,32 @@ bool relinkMediaPaths(const std::function<juce::String(const juce::String&)>& re
     }
 
     return !updatedClipIds.empty() || relinkedSamplers;
+}
+
+juce::String storedFileName(juce::String path) {
+    path = path.replaceCharacter('\\', '/');
+    return path.fromLastOccurrenceOf("/", false, false);
+}
+
+juce::StringArray pathComponents(juce::String path) {
+    path = path.replaceCharacter('\\', '/');
+    juce::StringArray components;
+    components.addTokens(path, "/", {});
+    components.removeEmptyStrings();
+    return components;
+}
+
+int commonPathSuffixLength(const juce::String& first, const juce::String& second) {
+    const auto firstParts = pathComponents(first);
+    const auto secondParts = pathComponents(second);
+    int score = 0;
+    for (int firstIndex = firstParts.size() - 1, secondIndex = secondParts.size() - 1;
+         firstIndex >= 0 && secondIndex >= 0 &&
+         firstParts[firstIndex].equalsIgnoreCase(secondParts[secondIndex]);
+         --firstIndex, --secondIndex) {
+        ++score;
+    }
+    return score;
 }
 
 }  // namespace
@@ -918,6 +945,141 @@ juce::File ProjectManager::getImportedDirectory() const {
     if (mediaDirectory_ == juce::File())
         return {};
     return mediaDirectory_.getChildFile(kImportedDir);
+}
+
+std::vector<ProjectManager::MissingMediaFile> ProjectManager::getMissingMediaFiles() const {
+    std::vector<MissingMediaFile> missing;
+    std::map<juce::String, size_t> indexByPath;
+
+    const auto add = [&missing, &indexByPath](const juce::String& path) {
+        if (path.isEmpty() || juce::File(path).existsAsFile())
+            return;
+
+        const auto found = indexByPath.find(path);
+        if (found != indexByPath.end()) {
+            ++missing[found->second].referenceCount;
+            return;
+        }
+
+        indexByPath[path] = missing.size();
+        missing.push_back({path, 1});
+    };
+
+    for (const auto& clip : ClipManager::getInstance().getClips()) {
+        if (!clip.isAudio())
+            continue;
+        for (const auto& event : clip.audio().events)
+            add(event.sourceFilePath());
+        for (const auto& take : clip.audio().takes)
+            add(take.filePath);
+    }
+
+    if (auto* audioEngine = TrackManager::getInstance().getAudioEngine())
+        for (const auto& reference : audioEngine->getSamplerMediaReferences())
+            add(reference.source.getFullPathName());
+
+    std::ranges::sort(missing, {}, [](const MissingMediaFile& file) { return file.path; });
+    return missing;
+}
+
+std::vector<ProjectManager::MissingMediaReplacement> ProjectManager::searchForMissingMedia(
+    const std::vector<MissingMediaFile>& missing, const juce::File& directory,
+    const std::function<bool()>& shouldStop) {
+    if (!directory.isDirectory() || missing.empty())
+        return {};
+
+    std::map<juce::String, std::vector<juce::File>> candidatesByName;
+    for (const auto& entry :
+         juce::RangedDirectoryIterator(directory, true, "*", juce::File::findFiles)) {
+        if (shouldStop && shouldStop())
+            return {};
+        const auto file = entry.getFile();
+        candidatesByName[file.getFileName().toLowerCase()].push_back(file);
+    }
+
+    std::map<juce::String, int> missingCountByName;
+    for (const auto& file : missing)
+        ++missingCountByName[storedFileName(file.path).toLowerCase()];
+
+    // Build proposals first, then reject any replacement selected for two old
+    // paths. A single kick.wav must never silently replace two different kicks.
+    std::vector<MissingMediaReplacement> proposals;
+    for (const auto& file : missing) {
+        if (shouldStop && shouldStop())
+            return {};
+
+        const auto nameKey = storedFileName(file.path).toLowerCase();
+        const auto candidatesIt = candidatesByName.find(nameKey);
+        if (candidatesIt == candidatesByName.end())
+            continue;
+        const auto& candidates = candidatesIt->second;
+
+        if (candidates.size() == 1 && missingCountByName[nameKey] == 1) {
+            proposals.push_back({file.path, candidates.front()});
+            continue;
+        }
+
+        int bestScore = 1;  // filename-only matches remain ambiguous
+        int bestCount = 0;
+        juce::File best;
+        for (const auto& candidate : candidates) {
+            const int score = commonPathSuffixLength(file.path, candidate.getFullPathName());
+            if (score > bestScore) {
+                bestScore = score;
+                bestCount = 1;
+                best = candidate;
+            } else if (score == bestScore) {
+                ++bestCount;
+            }
+        }
+        if (bestCount == 1)
+            proposals.push_back({file.path, best});
+    }
+
+    std::map<juce::String, int> proposalCountByReplacement;
+    for (const auto& proposal : proposals)
+        ++proposalCountByReplacement[proposal.replacement.getFullPathName()];
+
+    std::vector<MissingMediaReplacement> matches;
+    for (auto& proposal : proposals)
+        if (proposalCountByReplacement[proposal.replacement.getFullPathName()] == 1)
+            matches.push_back(std::move(proposal));
+    return matches;
+}
+
+int ProjectManager::relinkMissingMediaFiles(
+    const std::vector<MissingMediaReplacement>& replacements) {
+    if (replacements.empty())
+        return 0;
+
+    std::set<juce::String> currentlyMissing;
+    for (const auto& file : getMissingMediaFiles())
+        currentlyMissing.insert(file.path);
+
+    std::map<juce::String, juce::String> paths;
+    for (const auto& replacement : replacements) {
+        if (currentlyMissing.contains(replacement.missingPath) &&
+            replacement.replacement.existsAsFile()) {
+            paths[replacement.missingPath] = replacement.replacement.getFullPathName();
+        }
+    }
+    if (paths.empty())
+        return 0;
+
+    const bool changed = relinkMediaPaths([&paths](const juce::String& path) {
+        const auto found = paths.find(path);
+        return found == paths.end() ? juce::String{} : found->second;
+    });
+    if (!changed)
+        return 0;
+
+    markDirty();
+    return static_cast<int>(paths.size());
+}
+
+bool ProjectManager::relinkMissingMediaFile(const juce::String& missingPath,
+                                            const juce::File& replacement) {
+    return relinkMissingMediaFiles({{missingPath, replacement}}) == 1;
 }
 
 void ProjectManager::createTempMediaDirectory() {
