@@ -954,7 +954,7 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     setupResizeHandles();
     setupViewModeListener();
     setupAudioEngineCallbacks(externalEngine);
-    setupDeviceLoadingCallback();
+    setupLoadingOverlay();
 
     // Sync persisted collapse state to PanelController so TabbedPanel UI matches
     // Note: LeftPanel uses PanelLocation::Right and RightPanel uses PanelLocation::Left
@@ -1263,62 +1263,13 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
     };
 }
 
-void MainWindow::MainComponent::setupDeviceLoadingCallback() {
+void MainWindow::MainComponent::setupLoadingOverlay() {
     // Create loading notification (non-blocking, bottom-right corner)
     loadingOverlay_ = std::make_unique<LoadingOverlay>();
-    addAndMakeVisible(*loadingOverlay_);
+    addChildComponent(*loadingOverlay_);
 
-    // Get audio engine (either external or internal)
-    auto* engine = getAudioEngine();
-    if (engine) {
-        // Show notification and disable transport if devices are still loading
-        if (engine->isDevicesLoading()) {
-            loadingOverlay_->setMessage(
-                trEllipsis("main_window.loading.scanning_devices")
-                    .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Audio))
-                    .replace("{1}", magda::technicalText(magda::TechnicalTextToken::Midi)));
-            loadingOverlay_->showWithFade();
-            loadingOverlay_->toFront(false);
-            transportPanel->setTransportEnabled(false);
-        } else {
-            loadingOverlay_->setVisible(false);
-            transportPanel->setTransportEnabled(true);
-        }
-
-        // Wire up callback to update/hide notification when devices finish loading
-        engine->setDevicesLoadingCallback([this](bool loading, const juce::String& message) {
-            juce::MessageManager::callAsync([this, loading, message]() {
-                // Enable/disable transport based on loading state
-                if (transportPanel) {
-                    transportPanel->setTransportEnabled(!loading);
-                }
-
-                if (loadingOverlay_) {
-                    if (loading) {
-                        loadingOverlay_->setMessage(message);
-                        loadingOverlay_->showWithFade();
-                        loadingOverlay_->toFront(false);
-                    } else {
-                        // Show the final device list briefly, then fade out
-                        loadingOverlay_->setMessage(message);
-                        loadingOverlay_->repaint();
-                        // Fade out after brief delay
-                        // Note: Don't capture 'this' - the overlay handles its own fade timer
-                        if (loadingOverlay_) {
-                            loadingOverlay_->hideWithFade();
-                        }
-                    }
-                }
-            });
-        });
-    } else {
-        // No Tracktion Engine wrapper, don't show notification
-        loadingOverlay_->setVisible(false);
-    }
-
-    // Stem separation reuses the same banner: show with live percent while a
-    // split runs, fade out when it completes (#1288). Fires on the message
-    // thread.
+    // Stem separation shows it: live percent while a split runs, fading out
+    // when it completes (#1288). Fires on the message thread.
     magda::stems::StemSeparationService::getInstance().setActivityCallback(
         [this](bool running, float progress) {
             if (running) {

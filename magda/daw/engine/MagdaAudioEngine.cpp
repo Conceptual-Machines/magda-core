@@ -193,10 +193,6 @@ juce::File MagdaAudioEngine::getEditFile() const {
     return juce::File{};
 }
 void MagdaAudioEngine::play() {
-    // The fork's guard, while it is still enumerating MIDI devices at startup.
-    if (tracktion_->isDevicesLoading())
-        return;
-
     host_->play();
 }
 void MagdaAudioEngine::stop() {
@@ -329,13 +325,6 @@ AudioIOControl* MagdaAudioEngine::getAudioIO() {
 void MagdaAudioEngine::hardwareChannelsChanged() {
     host_->refreshHardwareOutputs();
     host_->refreshHardwareInputs();
-}
-bool MagdaAudioEngine::isDevicesLoading() const {
-    return tracktion_->isDevicesLoading();
-}
-void MagdaAudioEngine::setDevicesLoadingCallback(
-    std::function<void(bool, const juce::String&)> callback) {
-    tracktion_->setDevicesLoadingCallback(callback);
 }
 void MagdaAudioEngine::setPluginScanStatusCallback(
     std::function<void(const juce::String&)> callback) {

@@ -259,7 +259,7 @@ class MainWindow::MainComponent : public juce::Component,
     void setupResizeHandles();
     void setupViewModeListener();
     void setupAudioEngineCallbacks(AudioEngine* engine);
-    void setupDeviceLoadingCallback();
+    void setupLoadingOverlay();
 
     // Layout helpers
     void layoutTransportArea(juce::Rectangle<int>& bounds);

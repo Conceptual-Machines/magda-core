@@ -297,9 +297,6 @@ class AudioEngine : public AudioEngineListener {
 
     /** @brief The audio interface: what the routing menus read and Audio Settings drives. */
     virtual AudioIOControl* getAudioIO() = 0;
-    virtual bool isDevicesLoading() const = 0;
-    virtual void setDevicesLoadingCallback(
-        std::function<void(bool, const juce::String&)> callback) = 0;
 
     // ===== Startup hooks =====
     //

@@ -108,10 +108,6 @@ class InputPumpDevice final : public juce::AudioIODevice {
         return outputLatencySamples;
     }
     int getInputLatencyInSamples() override {
-        if (++latencyReads_ == pumpAtLatencyRead_) {
-            pumpAtLatencyRead_ = 0;
-            juce::MessageManager::callAsync([this] { pump(); });
-        }
         return inputLatencySamples;
     }
 
@@ -122,13 +118,6 @@ class InputPumpDevice final : public juce::AudioIODevice {
         sampleRate_ = sampleRate;
         if (callback_ != nullptr)
             callback_->audioDeviceAboutToStart(this);
-    }
-
-    /// Queue one block while the host is between the rebuild and its next
-    /// async reconciliation. Two reads cover the outer restart and the
-    /// callback installation performed by the rebuild itself.
-    void pumpAfterFutureLatencyReads(int reads) {
-        pumpAtLatencyRead_ = latencyReads_ + reads;
     }
 
     /// One callback, inputs packed as a driver packs its active channels.
@@ -158,8 +147,6 @@ class InputPumpDevice final : public juce::AudioIODevice {
     juce::AudioIODeviceCallback* callback_ = nullptr;
     juce::BigInteger active_;
     double sampleRate_ = 48000.0;
-    int latencyReads_ = 0;
-    int pumpAtLatencyRead_ = 0;
     bool open_ = false;
 };
 
@@ -833,7 +820,6 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
 
         devices.device->inputLatencySamples = kInputLatency;
         devices.device->outputLatencySamples = kOutputLatency;
-        devices.device->pumpAfterFutureLatencyReads(2);
         devices.device->restart(channels({0, 1, 2, 3}), 96000.0);
         settle(host);
         expect(host.isRecording());
@@ -851,6 +837,9 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
                              "the old file keeps only its zero-correction epoch");
         }
 
+        // The replacement take is open the moment the rebuild has reinstalled the
+        // callback, so every block after it belongs to the new clip.
+        devices.device->pump();
         devices.device->pump();
         devices.device->pump();
         host.stopMidiRecording();
@@ -870,8 +859,7 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
             expect(reader != nullptr);
             if (reader != nullptr)
                 expectEquals(static_cast<int>(reader->lengthInSamples), 3 * kBlockSize,
-                             "the rebuilt take keeps the callback installed during rebuild and "
-                             "both explicit blocks");
+                             "the rebuilt take records every block after the rebuild");
         }
 
         host.stop();

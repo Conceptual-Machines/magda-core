@@ -42,11 +42,6 @@ CommandResponse TracktionEngineWrapper::processCommand(const Command& command) {
 
 // TransportInterface implementation
 void TracktionEngineWrapper::play() {
-    // Block playback while devices are loading to prevent audio glitches
-    if (devicesLoading_) {
-        return;
-    }
-
     // Block playback while an offline render owns the edit -- playing now would
     // rebuild the playback context against the in-flight render and corrupt the
     // node graph (NodeRenderContext asserts).
@@ -142,12 +137,6 @@ void TracktionEngineWrapper::pause() {
 }
 
 void TracktionEngineWrapper::record() {
-    // Block recording while devices are loading
-    if (devicesLoading_) {
-        juce::Logger::writeToLog("[Record] blocked - devices still loading");
-        return;
-    }
-
     if (currentEdit_) {
         // Push TrackInfo::recordArmed onto TE's destinations right before asking
         // TE to record. Covers the project-load case where a persisted armed
