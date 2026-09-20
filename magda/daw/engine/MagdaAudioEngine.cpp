@@ -9,6 +9,7 @@
 #include "../audio/DeviceParameterDisplayTextProvider.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/UndoManager.hpp"  // complete type for the unique_ptr this forwards
+#include "../music/GrooveLibrary.hpp"
 #include "PluginService.hpp"
 #include "RenderProgressWindow.hpp"
 #include "TracktionEngineWrapper.hpp"
@@ -146,6 +147,18 @@ bool MagdaAudioEngine::initialize() {
             }
             return fork_->formatDeviceParameter(devicePath, paramIndex, normalised);
         });
+
+    // Read at each publish, so a groove the agent adds mid-session reaches the next
+    // compile without a republish of its own (#2757).
+    host_->setGrooveProvider([] {
+        std::vector<daw::engine_host::EngineHost::GrooveEntry> entries;
+        for (const auto& groove : GrooveLibrary::getInstance().all())
+            entries.push_back({.name = groove.name.toStdString(),
+                               .latenesses = groove.latenessProportions,
+                               .notesPerBeat = groove.notesPerBeat,
+                               .parameterized = groove.parameterized});
+        return entries;
+    });
 
     meterInto();
 

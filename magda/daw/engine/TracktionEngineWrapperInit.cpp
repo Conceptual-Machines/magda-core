@@ -374,8 +374,8 @@ bool TracktionEngineWrapper::initialiseServices() {
 void TracktionEngineWrapper::installProjectStateHooks() {
     // What this engine answers for, off the services that own each concern (#2757). The
     // native engine registers its own formatter over this one when it comes up.
-    GrooveLibrary::getInstance().setBackend(
-        [this] { return getGrooveTemplateNames(); },
+    GrooveLibrary::getInstance().import(readGrooveTemplates());
+    GrooveLibrary::getInstance().setWriter(
         [this](const GrooveTemplateData& groove) { return upsertGrooveTemplate(groove); });
     SamplerMedia::getInstance().setProvider([this] { return getSamplerMediaReferences(); });
     setTempoSequenceRippleBuilder(
@@ -592,7 +592,7 @@ void TracktionEngineWrapper::shutdown() {
 
     // Stop the service reaching the AudioBridge before that bridge is torn down. This is
     // also safe for a wrapper that was never selected as TrackManager's renderer.
-    GrooveLibrary::getInstance().forgetBackend();
+    GrooveLibrary::getInstance().forgetWriter();
     SamplerMedia::getInstance().forgetProvider();
     forgetTempoSequenceRippleBuilder();
     forgetDeviceParameterFormatter();

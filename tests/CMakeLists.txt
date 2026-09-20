@@ -518,7 +518,8 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES engine/test_clip_warp.cpp)
     list(APPEND TEST_SOURCES midi/test_midi_clip_playback.cpp)
     list(APPEND TEST_SOURCES clips/test_editor_playhead_fold.cpp)
-    list(APPEND TEST_SOURCES audio/test_groove_template.cpp)
+    list(APPEND TEST_SOURCES audio/test_groove_library.cpp
+    audio/test_groove_template.cpp)
     list(APPEND TEST_SOURCES audio/test_transient_detector.cpp)
     list(APPEND TEST_SOURCES audio/test_source_loop_info.cpp)
 
@@ -892,6 +893,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         engine/test_engine_host_publish_juce.cpp
         engine/test_engine_host_audio_input_juce.cpp
         engine/test_engine_host_hardware_outputs_juce.cpp
+        engine/test_groove_entries_juce.cpp
         engine/test_engine_host_midi_recording_juce.cpp
         engine/test_engine_host_session_capture_juce.cpp
 

@@ -433,6 +433,10 @@ class TracktionEngineWrapper : public AudioEngine,
 
     bool upsertGrooveTemplate(const GrooveTemplateData& data);
     juce::StringArray getGrooveTemplateNames() const;
+
+    /// Tracktion's manager is where the shipped grooves are seeded and where the list
+    /// persists, so it is what fills GrooveLibrary at startup (#2757).
+    std::vector<GrooveTemplateData> readGrooveTemplates() const;
     std::unique_ptr<OfflineRenderSession> createOfflineRenderSession(
         bool resumePlaybackWhenFinished) override;
     void setTrackFrozen(TrackId trackId, bool frozen) override;

@@ -21,44 +21,59 @@ struct GrooveTemplateData {
 };
 
 /**
- * @brief Named grooves, read by the clip inspector and written by the groove API.
+ * @brief The named grooves, owned here rather than by whichever engine renders.
  *
- * Tracktion's GrooveTemplateManager owns the library its own quantize reads, so until the
- * fork goes (#2557) the engine registers the pair below rather than this owning a library.
+ * Both engines read this: the fork compiles each into a tracktion::GrooveTemplate, and the
+ * native engine compiles the same entries into an engine::GrooveTemplateSet at publish.
+ * Neither is asked for the list, which is what let a groove exist under one engine and not
+ * the other (#2757).
+ *
+ * The templates still persist through Tracktion's property storage, which is where the
+ * shipped defaults are seeded from, so the fork imports them in at startup and is written
+ * back to on every upsert. That half goes with the fork in #2557; the list does not.
  */
 class GrooveLibrary {
   public:
-    using Names = std::function<juce::StringArray()>;
-    using Upsert = std::function<bool(const GrooveTemplateData&)>;
+    /// Told to the fork so its manager stays the persistence behind the list.
+    using Writer = std::function<bool(const GrooveTemplateData&)>;
 
     static GrooveLibrary& getInstance();
 
     GrooveLibrary(const GrooveLibrary&) = delete;
     GrooveLibrary& operator=(const GrooveLibrary&) = delete;
 
-    void setBackend(Names names, Upsert upsert) {
-        names_ = std::move(names);
-        upsert_ = std::move(upsert);
-    }
-    void forgetBackend() {
-        names_ = nullptr;
-        upsert_ = nullptr;
+    /** @brief Take @p grooves as the library, replacing whatever was there. */
+    void import(std::vector<GrooveTemplateData> grooves);
+
+    void setWriter(Writer writer) {
+        writer_ = std::move(writer);
     }
 
-    juce::StringArray names() const {
-        return names_ ? names_() : juce::StringArray{};
+    /// The engine is going away; the list it imported stays.
+    void forgetWriter() {
+        writer_ = nullptr;
     }
 
-    /// False when nothing backs the library, or the groove names no lateness to apply.
-    bool upsert(const GrooveTemplateData& groove) const {
-        return upsert_ ? upsert_(groove) : false;
+    juce::StringArray names() const;
+
+    /** @brief Every groove, for an engine compiling them into its own representation. */
+    const std::vector<GrooveTemplateData>& all() const {
+        return grooves_;
     }
+
+    const GrooveTemplateData* find(const juce::String& name) const;
+
+    /**
+     * @brief Add @p groove, or replace the one of that name. False when it names nothing
+     * or carries no lateness to apply.
+     */
+    bool upsert(const GrooveTemplateData& groove);
 
   private:
     GrooveLibrary() = default;
 
-    Names names_;
-    Upsert upsert_;
+    std::vector<GrooveTemplateData> grooves_;
+    Writer writer_;
 };
 
 }  // namespace magda
