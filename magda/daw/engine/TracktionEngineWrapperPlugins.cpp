@@ -161,12 +161,17 @@ juce::StringArray TracktionEngineWrapper::getGrooveTemplateNames() const {
                               : juce::StringArray{};
 }
 
-std::vector<GrooveTemplateData> TracktionEngineWrapper::readGrooveTemplates() const {
+std::vector<GrooveTemplateData> TracktionEngineWrapper::readGrooveTemplates() {
     std::vector<GrooveTemplateData> grooves;
     if (engine_ == nullptr)
         return grooves;
 
+    // The manager's getters read its active list, which leaves out every parameterized
+    // groove until this is on -- including the swing presets it ships (#2757). upsert
+    // turns it on too, so the library would otherwise gain them only after a write.
     auto& manager = engine_->getGrooveTemplateManager();
+    manager.useParameterizedGrooves(true);
+
     for (int i = 0; i < manager.getNumTemplates(); ++i) {
         const auto* groove = manager.getTemplate(i);
         if (groove == nullptr)

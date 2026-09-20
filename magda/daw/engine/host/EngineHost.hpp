@@ -112,6 +112,10 @@ class EngineHost {
      */
     void setGrooveProvider(GrooveProvider provider);
 
+    /// Recompile the clips after the groove library changes: a groove already on a
+    /// playing clip keeps the one it was compiled with until this asks again.
+    void refreshGrooves();
+
     /// Supply the Tracktion wave-device names behind persisted output routes.
     void setHardwareOutputProvider(HardwareChannelProvider provider);
 

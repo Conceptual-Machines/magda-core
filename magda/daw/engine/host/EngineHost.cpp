@@ -3238,6 +3238,10 @@ void EngineHost::setGrooveProvider(GrooveProvider provider) {
     impl_->grooveProvider_ = std::move(provider);
 }
 
+void EngineHost::refreshGrooves() {
+    impl_->wantClips();
+}
+
 void EngineHost::setHardwareOutputProvider(HardwareChannelProvider provider) {
     impl_->hardwareOutputProvider_ = std::move(provider);
     impl_->requestHardwareOutputRefresh();

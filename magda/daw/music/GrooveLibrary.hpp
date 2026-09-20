@@ -37,6 +37,9 @@ class GrooveLibrary {
     /// Told to the fork so its manager stays the persistence behind the list.
     using Writer = std::function<bool(const GrooveTemplateData&)>;
 
+    /// The store's own list, which is what a write is read back through.
+    using Reader = std::function<std::vector<GrooveTemplateData>()>;
+
     static GrooveLibrary& getInstance();
 
     GrooveLibrary(const GrooveLibrary&) = delete;
@@ -45,13 +48,27 @@ class GrooveLibrary {
     /** @brief Take @p grooves as the library, replacing whatever was there. */
     void import(std::vector<GrooveTemplateData> grooves);
 
-    void setWriter(Writer writer) {
-        writer_ = std::move(writer);
-    }
+    /**
+     * @brief Put @p reader and @p writer behind the library, and take the store's list.
+     *
+     * The store canonicalises what it is given -- Tracktion trims and truncates a name,
+     * deduplicates it with a "(2)" suffix, and forces the parameterized flag to its own
+     * mode -- so every write is read back rather than assumed (#2757).
+     */
+    void setStore(Reader reader, Writer writer);
 
     /// The engine is going away; the list it imported stays.
-    void forgetWriter() {
+    void forgetStore() {
+        reader_ = nullptr;
         writer_ = nullptr;
+    }
+
+    /// Told when the list changes, so the native engine republishes what a clip compiled.
+    void setOnChanged(std::function<void()> onChanged) {
+        onChanged_ = std::move(onChanged);
+    }
+    void forgetOnChanged() {
+        onChanged_ = nullptr;
     }
 
     juce::StringArray names() const;
@@ -72,8 +89,12 @@ class GrooveLibrary {
   private:
     GrooveLibrary() = default;
 
+    void notifyChanged() const;
+
     std::vector<GrooveTemplateData> grooves_;
+    Reader reader_;
     Writer writer_;
+    std::function<void()> onChanged_;
 };
 
 }  // namespace magda

@@ -2,7 +2,9 @@
 
 #include <vector>
 
+#include "SharedTestEngine.hpp"
 #include "magda/daw/engine/host/GrooveEntries.hpp"
+#include "magda/daw/music/GrooveLibrary.hpp"
 
 namespace {
 
@@ -16,6 +18,27 @@ class GrooveEntriesTests final : public juce::UnitTest {
     void runTest() override {
         testEntriesReachTheSet();
         testNothingSuppliedGroovesNothing();
+        testShippedParameterizedGroovesAreImported();
+    }
+
+    void testShippedParameterizedGroovesAreImported() {
+        beginTest("The shipped parameterized grooves reach the library");
+
+        // Tracktion's manager hides every parameterized groove behind its active list,
+        // which is off by default, so these two ship with the fork and were missing from
+        // the library -- and from the native engine -- until the import turns it on.
+        magda::test::getSharedEngine();
+
+        const auto names = magda::GrooveLibrary::getInstance().names();
+        expect(names.contains("Basic 8th Swing"), "The 8th swing preset is in the library");
+        expect(names.contains("Basic 16th Swing"), "and so is the 16th");
+
+        const auto* groove = magda::GrooveLibrary::getInstance().find("Basic 8th Swing");
+        expect(groove != nullptr, "and it is findable by name");
+        if (groove != nullptr) {
+            expect(groove->parameterized, "and it kept the flag it ships with");
+            expect(!groove->latenessProportions.empty(), "and the lateness it grooves by");
+        }
     }
 
     void testEntriesReachTheSet() {

@@ -148,8 +148,9 @@ bool MagdaAudioEngine::initialize() {
             return fork_->formatDeviceParameter(devicePath, paramIndex, normalised);
         });
 
-    // Read at each publish, so a groove the agent adds mid-session reaches the next
-    // compile without a republish of its own (#2757).
+    // Read at each publish, and republished when the library changes: a groove already
+    // on a playing clip keeps the one it was compiled with otherwise (#2757).
+    GrooveLibrary::getInstance().setOnChanged([this] { host_->refreshGrooves(); });
     host_->setGrooveProvider([] {
         std::vector<daw::engine_host::EngineHost::GrooveEntry> entries;
         for (const auto& groove : GrooveLibrary::getInstance().all())
@@ -210,6 +211,7 @@ void MagdaAudioEngine::shutdown() {
     audioIO_->removeListener(this);
 
     forgetDeviceParameterFormatter();
+    GrooveLibrary::getInstance().forgetOnChanged();
 
     host_->stop();
     audioIO_->getDeviceManager().closeAudioDevice();
