@@ -349,66 +349,65 @@ void CustomChannelSelector::resized() {
 // =============================================================================
 
 MidiInputList::MidiInputList(AudioIOControl& audio) : audio_(audio) {
-    list_.setModel(this);
-    list_.setRowHeight(22);
-    list_.setColour(juce::ListBox::backgroundColourId, juce::Colours::transparentBlack);
-    addAndMakeVisible(list_);
+    viewport_.setViewedComponent(&rows_, false);
+    viewport_.setScrollBarsShown(true, false);
+    addAndMakeVisible(viewport_);
     refresh();
 }
 
 void MidiInputList::resized() {
-    list_.setBounds(getLocalBounds());
+    viewport_.setBounds(getLocalBounds());
+
+    const auto width = std::max(0, viewport_.getMaximumVisibleWidth());
+    rows_.setSize(width, preferredHeight());
+
+    auto top = 0;
+    for (auto& toggle : toggles_) {
+        toggle->setBounds(0, top, width, kToggleHeight);
+        top += kToggleHeight + kRowSpacing;
+    }
+}
+
+int MidiInputList::preferredHeight() const {
+    // One row when there is nothing, so the section keeps its shape on a machine with no
+    // MIDI at all rather than collapsing the label onto the button below it.
+    return std::max<int>(1, toggles_.size()) * (kToggleHeight + kRowSpacing);
 }
 
 void MidiInputList::refresh() {
     devices_ = juce::MidiInput::getAvailableDevices();
+    toggles_.clear();
 
     // Config is the choice; JUCE is told about it rather than asked (#2755).
     const auto& config = Config::getInstance();
-    for (const auto& device : devices_)
-        audio_.setMidiInputEnabled(device.identifier, config.isMidiInputActive(device.name));
+    for (int i = 0; i < devices_.size(); ++i) {
+        const auto& device = devices_[i];
+        const auto active = config.isMidiInputActive(device.name);
+        audio_.setMidiInputEnabled(device.identifier, active);
 
-    list_.updateContent();
-    list_.repaint();
-}
-
-int MidiInputList::getNumRows() {
-    return devices_.size();
-}
-
-void MidiInputList::paintListBoxItem(int row, juce::Graphics& g, int width, int height,
-                                     bool /*selected*/) {
-    if (!juce::isPositiveAndBelow(row, devices_.size()))
-        return;
-
-    const auto& device = devices_[row];
-    const auto active = Config::getInstance().isMidiInputActive(device.name);
-
-    auto tick = juce::Rectangle<int>(4, (height - 14) / 2, 14, 14);
-    g.setColour(juce::Colours::white.withAlpha(0.5f));
-    g.drawRect(tick, 1);
-    if (active) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
-        g.fillRect(tick.reduced(3));
+        // A real ToggleButton rather than a painted tick, so these read as the same
+        // control as the audio channels beside them.
+        auto button = std::make_unique<juce::ToggleButton>(device.name);
+        button->setTooltip(device.name);
+        button->setToggleState(active, juce::dontSendNotification);
+        button->onClick = [this, i]() { toggle(i); };
+        rows_.addAndMakeVisible(*button);
+        toggles_.push_back(std::move(button));
     }
 
-    g.setColour(juce::Colours::white.withAlpha(active ? 0.9f : 0.6f));
-    g.setFont(FontManager::getInstance().getUIFont(13.0f));
-    g.drawText(device.name, tick.getRight() + 8, 0, width - tick.getRight() - 12, height,
-               juce::Justification::centredLeft, true);
+    // The row count decides the section's height, so the dialog repacks around it.
+    if (auto* parent = getParentComponent())
+        parent->resized();
+    resized();
 }
 
-void MidiInputList::listBoxItemClicked(int row, const juce::MouseEvent&) {
-    toggle(row);
-}
-
-void MidiInputList::toggle(int row) {
-    if (!juce::isPositiveAndBelow(row, devices_.size()))
+void MidiInputList::toggle(int index) {
+    if (index < 0 || index >= devices_.size())
         return;
 
-    const auto& device = devices_[row];
+    const auto& device = devices_[index];
     auto& config = Config::getInstance();
-    const auto active = !config.isMidiInputActive(device.name);
+    const auto active = toggles_[static_cast<std::size_t>(index)]->getToggleState();
 
     auto inactive = config.getInactiveMidiInputs();
     std::erase_if(inactive, [&device](const std::string& name) {
@@ -420,7 +419,6 @@ void MidiInputList::toggle(int row) {
     config.save();
 
     audio_.setMidiInputEnabled(device.identifier, active);
-    list_.repaint();
 
     if (auto* engine = TrackManager::getInstance().getAudioEngine())
         if (auto* midi = engine->getMidiBridge())
@@ -695,20 +693,29 @@ void AudioSettingsDialog::resized() {
     auto midiArea = bounds.removeFromLeft(bounds.getWidth() / 2);
     bounds.removeFromLeft(10);  // spacing
 
+    // Packed top-down: the list takes what its rows need and the rest of the column is
+    // left empty, rather than stretching it and stranding the picker at the bottom.
     midiInputsLabel_.setBounds(midiArea.removeFromTop(22));
-    auto midiOutputArea = midiArea.removeFromBottom(28);
+
+    if (midiInputList_ != nullptr) {
+        // Capped so a machine with many inputs scrolls instead of pushing the rows below
+        // it out of the dialog.
+        const auto below = (bluetoothMidiButton_.isVisible() ? 26 + 8 : 0) + 28 + 8;
+        const auto listHeight =
+            juce::jmin(midiInputList_->preferredHeight(), midiArea.getHeight() - below);
+        midiInputList_->setBounds(midiArea.removeFromTop(juce::jmax(22, listHeight)));
+        midiArea.removeFromTop(8);  // spacing
+    }
+
+    if (bluetoothMidiButton_.isVisible()) {
+        bluetoothMidiButton_.setBounds(midiArea.removeFromTop(26).removeFromLeft(140));
+        midiArea.removeFromTop(8);  // spacing
+    }
+
+    auto midiOutputArea = midiArea.removeFromTop(28);
     midiOutputLabel_.setBounds(midiOutputArea.removeFromLeft(90));
     midiOutputArea.removeFromLeft(10);  // spacing
     midiOutputComboBox_.setBounds(midiOutputArea);
-    midiArea.removeFromBottom(5);  // spacing
-
-    if (bluetoothMidiButton_.isVisible()) {
-        bluetoothMidiButton_.setBounds(midiArea.removeFromBottom(26).removeFromLeft(140));
-        midiArea.removeFromBottom(5);  // spacing
-    }
-
-    if (midiInputList_ != nullptr)
-        midiInputList_->setBounds(midiArea);
 
     // Channel selectors on the right, split vertically
     auto inputArea = bounds.removeFromTop(bounds.getHeight() / 2);

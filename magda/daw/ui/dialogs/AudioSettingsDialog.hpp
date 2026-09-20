@@ -15,7 +15,7 @@ class AudioEngine;
  * MAGDA's own rather than the one juce::AudioDeviceSelectorComponent drew, so the choice
  * is Config's and JUCE is told about it rather than asked.
  */
-class MidiInputList final : public juce::Component, private juce::ListBoxModel {
+class MidiInputList final : public juce::Component {
   public:
     explicit MidiInputList(AudioIOControl& audio);
 
@@ -24,17 +24,17 @@ class MidiInputList final : public juce::Component, private juce::ListBoxModel {
     /** @brief Re-read the devices present and what Config says about them. */
     void refresh();
 
-  private:
-    int getNumRows() override;
-    void paintListBoxItem(int row, juce::Graphics& g, int width, int height,
-                          bool selected) override;
-    void listBoxItemClicked(int row, const juce::MouseEvent&) override;
+    /** @brief What the rows need, so the section packs under the list rather than around it. */
+    int preferredHeight() const;
 
-    void toggle(int row);
+  private:
+    void toggle(int index);
 
     AudioIOControl& audio_;
-    juce::ListBox list_;
+    juce::Viewport viewport_;
+    juce::Component rows_;
     juce::Array<juce::MidiDeviceInfo> devices_;
+    std::vector<std::unique_ptr<juce::ToggleButton>> toggles_;
 };
 
 /**
