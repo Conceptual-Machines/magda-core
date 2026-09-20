@@ -58,6 +58,9 @@ class MainWindow : public juce::DocumentWindow,
     /** Open a .mgd project file (used by menu, command line, and OS file association). */
     void openProjectFile(const juce::File& file);
 
+    /** Restore the global crash-recovery slot as the current untitled project. */
+    bool recoverUntitledAutosave();
+
     /** Import a .dawproject interchange archive as a new unsaved project. */
     void importDawProjectFile(const juce::File& file);
 

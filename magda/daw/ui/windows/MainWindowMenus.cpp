@@ -140,6 +140,29 @@ void MainWindow::openProjectFile(const juce::File& file) {
         });
 }
 
+bool MainWindow::recoverUntitledAutosave() {
+    auto safeThis = juce::Component::SafePointer<MainWindow>(this);
+    const bool recovered =
+        ProjectManager::getInstance().recoverUntitledAutosave([safeThis](const ProjectInfo& info) {
+            if (!safeThis || !safeThis->mainComponent || !safeThis->mainComponent->mainView)
+                return;
+            auto& tc = safeThis->mainComponent->mainView->getTimelineController();
+            tc.restoreProjectState(info.tempo, info.timeSignatureNumerator,
+                                   info.timeSignatureDenominator, info.loopEnabled,
+                                   info.loopStartBeats, info.loopEndBeats, info.markers,
+                                   info.timelineLengthBars);
+        });
+
+    if (!recovered)
+        return false;
+
+    SelectionManager::getInstance().clearSelection();
+    if (mainComponent && mainComponent->mainView) {
+        mainComponent->mainView->getTimelineController().dispatch(ClearTimeSelectionEvent{});
+    }
+    return true;
+}
+
 void MainWindow::importDawProjectFile(const juce::File& file) {
     if (!file.existsAsFile())
         return;

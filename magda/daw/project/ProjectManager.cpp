@@ -9,6 +9,7 @@
 #include <unordered_set>
 
 #include "../audio/AudioThumbnailManager.hpp"
+#include "../core/AppPaths.hpp"
 #include "../core/AutomationManager.hpp"
 #include "../core/ClipManager.hpp"
 #include "../core/Config.hpp"
@@ -73,6 +74,53 @@ juce::File getWritableTempRoot() {
         return privateTmp;
 
     return systemRoot;
+}
+
+std::vector<juce::File> getTempRoots() {
+    std::vector<juce::File> roots;
+    const auto addUnique = [&roots](const juce::File& root) {
+        if (root != juce::File() && std::find(roots.begin(), roots.end(), root) == roots.end())
+            roots.push_back(root);
+    };
+
+    addUnique(getWritableTempRoot());
+    addUnique(juce::File::getSpecialLocation(juce::File::tempDirectory));
+    addUnique(juce::File("/tmp"));
+    addUnique(juce::File("/private/tmp"));
+    return roots;
+}
+
+bool isManagedTempMediaDirectory(const juce::File& directory) {
+    if (!directory.isDirectory() || !directory.getFileName().startsWith(kTempPrefix))
+        return false;
+
+    for (const auto& root : getTempRoots()) {
+        if (directory.isAChildOf(root.getChildFile(kTempRootDir)))
+            return true;
+    }
+    return false;
+}
+
+juce::File createTempMediaDirectoryOnDisk() {
+    auto tempRoot = getWritableTempRoot().getChildFile(kTempRootDir);
+    tempRoot.createDirectory();
+
+    if (!tempRoot.isDirectory()) {
+        tempRoot = juce::File("/tmp").getChildFile(kTempRootDir);
+        tempRoot.createDirectory();
+    }
+
+    const auto timestamp = juce::Time::getCurrentTime().formatted("%Y%m%d_%H%M%S");
+    auto directory = tempRoot.getNonexistentChildFile(kTempPrefix + timestamp, {});
+    directory.createDirectory();
+
+    if (!directory.isDirectory()) {
+        auto fallbackRoot = juce::File("/tmp").getChildFile(kTempRootDir);
+        fallbackRoot.createDirectory();
+        directory = fallbackRoot.getNonexistentChildFile(kTempPrefix + timestamp, {});
+        directory.createDirectory();
+    }
+    return directory;
 }
 
 void resetTransportForProjectBoundary() {
@@ -305,6 +353,9 @@ bool ProjectManager::newProject() {
 
     beginProjectTeardown();
 
+    // The user either saved or explicitly abandoned the previous project.
+    deleteAutosaveFile();
+
     // Clear all project content from singleton managers. Source ids are
     // project-scoped like clip ids, so the pool empties here rather than in
     // clearAllClips, which the project LOAD path also calls after staging.
@@ -363,6 +414,8 @@ bool ProjectManager::saveProject() {
 }
 
 bool ProjectManager::saveProjectAs(const juce::File& file, MediaTransfer transfer) {
+    const bool wasUntitled = currentFile_.getFullPathName().isEmpty();
+
     // Ensure the .mgd file lives inside a wrapper folder named after the project.
     // If the user picked /path/to/MyProject.mgd, wrap it as /path/to/MyProject/MyProject.mgd.
     // If it's already inside a matching folder, use it as-is.
@@ -403,6 +456,7 @@ bool ProjectManager::saveProjectAs(const juce::File& file, MediaTransfer transfe
     ProjectInfo newProject = currentProject_;
     newProject.filePath = actualFile.getFullPathName();
     newProject.name = projectName;
+    newProject.autosaveMediaDirectory.clear();
 
     // Which engine wrote it, so opening it under the other one knows whether
     // this project has been through that engine's migration (#2437).
@@ -426,6 +480,8 @@ bool ProjectManager::saveProjectAs(const juce::File& file, MediaTransfer transfe
 
     clearDirty();
     deleteAutosaveFile();
+    if (wasUntitled)
+        discardUntitledAutosave();
 
     if (!wasOpen) {
         notifyProjectOpened();
@@ -470,6 +526,7 @@ bool ProjectManager::loadProject(const juce::File& file,
     }
 
     beginProjectTeardown();
+    deleteAutosaveFile();
 
     // Set tempo/time sig/loop on the audio engine BEFORE committing tracks & clips,
     // so that audio engine clip sync uses the correct BPM.
@@ -548,67 +605,70 @@ void ProjectManager::importDawProjectAsync(
         return;
     }
 
-    // Set up the project media directory first so embedded audio extracts into
-    // it (the "imported" subdir) and persists with the project, rather than into
-    // a throwaway temp folder. Done on the message thread before staging so the
-    // background thread has a valid extraction target.
-    createTempMediaDirectory();
-    ensureMediaSubdirectories(mediaDirectory_);
-    const auto importedDir = getImportedDirectory();
+    // Stage embedded media in a new directory without replacing the current
+    // project's media root. The new root becomes active only after the import
+    // has fully staged and its revision check succeeds.
+    const auto importMediaDirectory = createTempMediaDirectoryOnDisk();
+    ensureMediaSubdirectories(importMediaDirectory);
+    const auto importedDir = importMediaDirectory.getChildFile(kImportedDir);
 
     // Join any previous background load before starting a new one.
     joinBackgroundThread();
 
     const auto startingRevision = mutationRevision_;
     const auto& fileCopy = file;
-    loadThread_ =
-        std::thread([fileCopy, importedDir, startingRevision, onBeforeCommit, onComplete, this]() {
-            auto staged = std::make_shared<StagedProjectData>();
-            const bool ok =
-                ProjectSerializer::loadDawProjectAndStage(fileCopy, *staged, importedDir);
-            juce::String error;
-            if (!ok) {
-                DBG("Failed to import DAWproject: " + ProjectSerializer::getLastError());
-                error = ProjectSerializer::getLastError();
+    loadThread_ = std::thread([fileCopy, importedDir, importMediaDirectory, startingRevision,
+                               onBeforeCommit, onComplete, this]() {
+        auto staged = std::make_shared<StagedProjectData>();
+        const bool ok = ProjectSerializer::loadDawProjectAndStage(fileCopy, *staged, importedDir);
+        juce::String error;
+        if (!ok) {
+            DBG("Failed to import DAWproject: " + ProjectSerializer::getLastError());
+            error = ProjectSerializer::getLastError();
+        }
+
+        // Bounce back to the message thread for commit + notification.
+        juce::MessageManager::callAsync([this, staged, ok, error, importMediaDirectory,
+                                         startingRevision, onBeforeCommit, onComplete]() {
+            if (ok) {
+                if (mutationRevision_ != startingRevision) {
+                    importMediaDirectory.deleteRecursively();
+                    if (onComplete)
+                        onComplete(false, kProjectChangedWhileLoading);
+                    return;
+                }
+
+                beginProjectTeardown();
+                deleteAutosaveFile();
+
+                if (onBeforeCommit)
+                    onBeforeCommit(staged->info);
+
+                ProjectSerializer::commitStaged(*staged);
+
+                currentProject_ = staged->info;
+                currentProject_.filePath = {};
+                currentFile_ = juce::File();
+                mediaDirectory_ = importMediaDirectory;
+                isProjectOpen_ = true;
+
+                // An import has never been saved as a .mgd, so it starts dirty
+                // — but the previous project's undo stack still has to go.
+                UndoManager::getInstance().clearHistory();
+                clearDirty();
+                markDirty();
+                notifyProjectOpened();
+
+                if (onAfterLoad)
+                    onAfterLoad(currentProject_);
+            } else {
+                importMediaDirectory.deleteRecursively();
             }
 
-            // Bounce back to the message thread for commit + notification.
-            juce::MessageManager::callAsync(
-                [this, staged, ok, error, startingRevision, onBeforeCommit, onComplete]() {
-                    if (ok) {
-                        if (mutationRevision_ != startingRevision) {
-                            if (onComplete)
-                                onComplete(false, kProjectChangedWhileLoading);
-                            return;
-                        }
-
-                        beginProjectTeardown();
-
-                        if (onBeforeCommit)
-                            onBeforeCommit(staged->info);
-
-                        ProjectSerializer::commitStaged(*staged);
-
-                        currentProject_ = staged->info;
-                        currentProject_.filePath = {};
-                        currentFile_ = juce::File();
-                        isProjectOpen_ = true;
-
-                        // An import has never been saved as a .mgd, so it starts dirty
-                        // — but the previous project's undo stack still has to go.
-                        UndoManager::getInstance().clearHistory();
-                        clearDirty();
-                        markDirty();
-                        notifyProjectOpened();
-
-                        if (onAfterLoad)
-                            onAfterLoad(currentProject_);
-                    }
-
-                    if (onComplete)
-                        onComplete(ok, error);
-                });
+            if (onComplete)
+                onComplete(ok, error);
         });
+    });
 }
 
 void ProjectManager::loadProjectAsync(
@@ -673,6 +733,7 @@ void ProjectManager::loadProjectAsync(
                 }
 
                 beginProjectTeardown();
+                deleteAutosaveFile();
 
                 // Set tempo/time sig/loop BEFORE committing tracks & clips,
                 // so that audio engine clip sync uses the correct BPM.
@@ -723,9 +784,8 @@ bool ProjectManager::closeProject() {
         return false;
     }
 
-    deleteAutosaveFile();
-
     beginProjectTeardown();
+    deleteAutosaveFile();
 
     // Clear all project content from singleton managers. Source ids are
     // project-scoped like clip ids, so the pool empties here rather than in
@@ -921,24 +981,7 @@ juce::File ProjectManager::getImportedDirectory() const {
 }
 
 void ProjectManager::createTempMediaDirectory() {
-    auto tempRoot = getWritableTempRoot().getChildFile(kTempRootDir);
-    tempRoot.createDirectory();
-
-    if (!tempRoot.isDirectory()) {
-        tempRoot = juce::File("/tmp").getChildFile(kTempRootDir);
-        tempRoot.createDirectory();
-    }
-
-    juce::String timestamp = juce::Time::getCurrentTime().formatted("%Y%m%d_%H%M%S");
-    mediaDirectory_ = tempRoot.getNonexistentChildFile(kTempPrefix + timestamp, {});
-    mediaDirectory_.createDirectory();
-
-    if (!mediaDirectory_.isDirectory()) {
-        auto fallbackRoot = juce::File("/tmp").getChildFile(kTempRootDir);
-        fallbackRoot.createDirectory();
-        mediaDirectory_ = fallbackRoot.getNonexistentChildFile(kTempPrefix + timestamp, {});
-        mediaDirectory_.createDirectory();
-    }
+    mediaDirectory_ = createTempMediaDirectoryOnDisk();
 }
 
 void ProjectManager::ensureMediaSubdirectories(const juce::File& mediaRoot) {
@@ -976,9 +1019,7 @@ void ProjectManager::migrateMediaFiles(const juce::File& oldDir, const juce::Fil
 
     // Remove old temp directory if it's empty or under the temp root. A copy
     // leaves everything it read where it was.
-    auto tempRoot =
-        juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile(kTempRootDir);
-    if (transfer == MediaTransfer::Move && oldDir.isAChildOf(tempRoot)) {
+    if (transfer == MediaTransfer::Move && isManagedTempMediaDirectory(oldDir)) {
         oldDir.deleteRecursively();
     }
 }
@@ -1035,21 +1076,23 @@ void ProjectManager::foldLegacyMediaDirectories(const juce::File& mediaRoot) {
         markDirty();
 }
 
-void ProjectManager::cleanupStaleTempDirectories() {
-    auto tempRoot =
-        juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile(kTempRootDir);
-    if (!tempRoot.isDirectory())
-        return;
-
+void ProjectManager::cleanupStaleTempDirectories(const juce::File& protectedDirectory) {
     auto cutoff = juce::Time::getCurrentTime() - juce::RelativeTime::days(kStaleTempDays);
 
-    for (const auto& entry :
-         juce::RangedDirectoryIterator(tempRoot, false, "*", juce::File::findDirectories)) {
-        auto dir = entry.getFile();
-        if (dir.getFileName().startsWith(kTempPrefix)) {
-            if (dir.getLastModificationTime() < cutoff) {
+    for (const auto& root : getTempRoots()) {
+        const auto tempRoot = root.getChildFile(kTempRootDir);
+        if (!tempRoot.isDirectory())
+            continue;
+
+        for (const auto& entry :
+             juce::RangedDirectoryIterator(tempRoot, false, "*", juce::File::findDirectories)) {
+            const auto dir = entry.getFile();
+            if (!dir.getFileName().startsWith(kTempPrefix))
+                continue;
+            if (protectedDirectory != juce::File() && dir == protectedDirectory)
+                continue;
+            if (dir.getLastModificationTime() < cutoff)
                 dir.deleteRecursively();
-            }
         }
     }
 }
@@ -1068,36 +1111,140 @@ void ProjectManager::setAutoSaveEnabled(bool enabled, int intervalSeconds) {
 }
 
 void ProjectManager::autoSaveTick() {
-    if (autoSaveEnabled_ && isDirty_ && isProjectOpen_) {
-        performAutosave();
-    }
+    performAutosave();
 }
 
-void ProjectManager::performAutosave() {
-    // Only autosave if we have a saved project file
-    if (currentFile_.getFullPathName().isEmpty())
-        return;
+bool ProjectManager::performAutosave() {
+    if (!autoSaveEnabled_ || !isDirty_)
+        return false;
 
     // Capture live plugin state before serializing
     if (onBeforeSave)
         onBeforeSave();
 
-    auto autosaveFile = currentFile_.getParentDirectory().getChildFile(currentFile_.getFileName() +
-                                                                       kAutosaveExtension);
+    const bool isUntitled = currentFile_.getFullPathName().isEmpty();
+    auto autosaveFile = isUntitled ? getUntitledAutosaveFile()
+                                   : currentFile_.getParentDirectory().getChildFile(
+                                         currentFile_.getFileName() + kAutosaveExtension);
 
     ProjectInfo autosaveInfo = currentProject_;
+    autosaveInfo.autosaveMediaDirectory =
+        isUntitled ? mediaDirectory_.getFullPathName() : juce::String();
     autosaveInfo.touch();
 
-    ProjectSerializer::saveToFile(autosaveFile, autosaveInfo);
+    return ProjectSerializer::saveToFile(autosaveFile, autosaveInfo);
 }
 
 void ProjectManager::deleteAutosaveFile() {
-    if (currentFile_.getFullPathName().isEmpty())
+    if (currentFile_.getFullPathName().isEmpty()) {
+        discardUntitledAutosave();
+        if (isManagedTempMediaDirectory(mediaDirectory_))
+            mediaDirectory_.deleteRecursively();
         return;
+    }
 
     auto autosaveFile = getAutosaveFile(currentFile_);
     if (autosaveFile.existsAsFile())
         autosaveFile.deleteFile();
+}
+
+juce::File ProjectManager::getUntitledAutosaveFile() {
+    return paths::dataDir().getChildFile("autosave").getChildFile("Untitled.autosave");
+}
+
+bool ProjectManager::hasUntitledAutosave() {
+    return getUntitledAutosaveFile().existsAsFile();
+}
+
+void ProjectManager::discardUntitledAutosave() {
+    const auto autosaveFile = getUntitledAutosaveFile();
+    StagedProjectData staged;
+    const bool hasRecoverableMedia =
+        autosaveFile.existsAsFile() && ProjectSerializer::loadAndStage(autosaveFile, staged);
+
+    if (autosaveFile.existsAsFile())
+        autosaveFile.deleteFile();
+
+    if (hasRecoverableMedia) {
+        const juce::File mediaDirectory(staged.info.autosaveMediaDirectory);
+        if (isManagedTempMediaDirectory(mediaDirectory))
+            mediaDirectory.deleteRecursively();
+    }
+}
+
+void ProjectManager::prepareForCleanShutdown() {
+    autoSaveEnabled_ = false;
+    autoSaveTimer_.reset();
+    discardUntitledAutosave();
+    if (currentFile_.getFullPathName().isEmpty() && isManagedTempMediaDirectory(mediaDirectory_))
+        mediaDirectory_.deleteRecursively();
+}
+
+bool ProjectManager::promptUntitledAutosaveRecovery() {
+    const auto autosaveFile = getUntitledAutosaveFile();
+    if (!autosaveFile.existsAsFile())
+        return false;
+
+    return juce::AlertWindow::showOkCancelBox(
+        juce::AlertWindow::QuestionIcon, "Recover Unsaved Project",
+        "MAGDA found an autosave from an untitled project that did not close cleanly.\n\n"
+        "Autosave saved: " +
+            autosaveFile.getLastModificationTime().toString(true, true) +
+            "\n\nWould you like to recover it?",
+        "Recover", "Discard");
+}
+
+bool ProjectManager::recoverUntitledAutosave(
+    const std::function<void(const ProjectInfo&)>& onBeforeCommit) {
+    const auto autosaveFile = getUntitledAutosaveFile();
+    if (!autosaveFile.existsAsFile()) {
+        lastError_ = "No untitled autosave was found.";
+        return false;
+    }
+
+    StagedProjectData staged;
+    if (!ProjectSerializer::loadAndStage(autosaveFile, staged)) {
+        lastError_ = "The untitled autosave could not be recovered. It may be corrupted or from "
+                     "an incompatible version.";
+        return false;
+    }
+
+    const auto previousMediaDirectory = mediaDirectory_;
+    beginProjectTeardown();
+
+    if (onBeforeCommit)
+        onBeforeCommit(staged.info);
+
+    ProjectSerializer::commitStaged(staged);
+
+    const juce::File recoveredMediaDirectory(staged.info.autosaveMediaDirectory);
+    const bool canReclaimMedia = isManagedTempMediaDirectory(recoveredMediaDirectory);
+    if (previousMediaDirectory != recoveredMediaDirectory &&
+        isManagedTempMediaDirectory(previousMediaDirectory))
+        previousMediaDirectory.deleteRecursively();
+
+    currentProject_ = staged.info;
+    currentProject_.filePath.clear();
+    currentProject_.autosaveMediaDirectory.clear();
+    currentFile_ = juce::File();
+    isProjectOpen_ = true;
+
+    if (canReclaimMedia) {
+        mediaDirectory_ = recoveredMediaDirectory;
+    } else {
+        createTempMediaDirectory();
+    }
+    ensureMediaSubdirectories(mediaDirectory_);
+
+    UndoManager::getInstance().clearHistory();
+    clearDirty();
+    markDirty();
+    notifyProjectOpened();
+
+    if (onAfterLoad)
+        onAfterLoad(currentProject_);
+
+    return true;
 }
 
 juce::File ProjectManager::getAutosaveFile(const juce::File& projectFile) {

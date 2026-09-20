@@ -274,6 +274,32 @@ class ProjectManager {
         return autoSaveEnabled_;
     }
 
+    /** Run the same dirty/enabled check and save used by the autosave timer. */
+    bool performAutosave();
+
+    /** The single recovery slot used while the project has never been saved. */
+    static juce::File getUntitledAutosaveFile();
+
+    /** True when a previous session left a never-saved project to recover. */
+    static bool hasUntitledAutosave();
+
+    /** Ask whether the never-saved recovery slot should be restored. */
+    static bool promptUntitledAutosaveRecovery();
+
+    /**
+     * Restore the never-saved recovery slot as an untitled, dirty project.
+     * The slot remains until the project is saved, discarded, or cleanly quit,
+     * protecting recovery if the app crashes again before the next autosave.
+     */
+    bool recoverUntitledAutosave(
+        const std::function<void(const ProjectInfo&)>& onBeforeCommit = nullptr);
+
+    /** Delete the recovery slot and any managed temp-media tree it references. */
+    static void discardUntitledAutosave();
+
+    /** Remove session-only recovery state after the user approves a clean quit. */
+    void prepareForCleanShutdown();
+
     /**
      * @brief Check if an autosave file exists for the given project file
      * @param projectFile The .mgd project file
@@ -326,7 +352,7 @@ class ProjectManager {
      * @brief Delete temp media directories older than 7 days.
      * Call once at app launch.
      */
-    static void cleanupStaleTempDirectories();
+    static void cleanupStaleTempDirectories(const juce::File& protectedDirectory = {});
 
     /**
      * @brief Brackets an undoable command while it runs.
@@ -355,7 +381,6 @@ class ProjectManager {
     void joinBackgroundThread();
     void startAutoSaveTimer(int intervalMs);
     void autoSaveTick();
-    void performAutosave();
     void deleteAutosaveFile();
 
     ProjectInfo currentProject_;

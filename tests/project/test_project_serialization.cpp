@@ -551,6 +551,93 @@ struct ScopedTestDataDir {
     }
 };
 
+TEST_CASE("Never-saved projects autosave and recover with their temp media",
+          "[project][autosave][1771]") {
+    ScopedTestDataDir dataDir("magda-untitled-autosave-test");
+    ProjectTestFixture fixture;
+    auto& projects = ProjectManager::getInstance();
+
+    ProjectManager::discardUntitledAutosave();
+    REQUIRE(projects.newProject());
+    projects.setTempo(137.0);
+
+    const auto crashedMediaDirectory = projects.getMediaDirectory();
+    const auto recording = projects.getRecordingsDirectory().getChildFile("recovered.wav");
+    REQUIRE(recording.replaceWithText("recorded audio"));
+
+    REQUIRE(projects.performAutosave());
+    const auto autosave = ProjectManager::getUntitledAutosaveFile();
+    REQUIRE(autosave == dataDir.dir.getChildFile("autosave").getChildFile("Untitled.autosave"));
+    REQUIRE(autosave.existsAsFile());
+
+    StagedProjectData autosaved;
+    REQUIRE(ProjectSerializer::loadAndStage(autosave, autosaved));
+    REQUIRE(autosaved.info.tempo == Approx(137.0));
+    REQUIRE(autosaved.info.autosaveMediaDirectory == crashedMediaDirectory.getFullPathName());
+
+    projects.setTempo(91.0);
+    REQUIRE(projects.recoverUntitledAutosave());
+    REQUIRE(projects.getCurrentProjectFile() == juce::File());
+    REQUIRE(projects.getCurrentProjectInfo().tempo == Approx(137.0));
+    REQUIRE(projects.getCurrentProjectInfo().autosaveMediaDirectory.isEmpty());
+    REQUIRE(projects.getMediaDirectory() == crashedMediaDirectory);
+    REQUIRE(projects.isDirty());
+    REQUIRE(autosave.existsAsFile());
+
+    const auto destination = fixture.createTempProjectFile(".mgd");
+    const auto savedProject = ProjectTestFixture::wrappedPath(destination);
+    REQUIRE(projects.saveProjectAs(destination));
+    REQUIRE_FALSE(autosave.existsAsFile());
+
+    const auto migratedRecording =
+        savedProject.getParentDirectory()
+            .getChildFile(savedProject.getFileNameWithoutExtension() + "_Media")
+            .getChildFile("recordings")
+            .getChildFile(recording.getFileName());
+    REQUIRE(migratedRecording.existsAsFile());
+    REQUIRE(migratedRecording.loadFileAsString() == "recorded audio");
+
+    StagedProjectData saved;
+    REQUIRE(ProjectSerializer::loadAndStage(savedProject, saved));
+    REQUIRE(saved.info.autosaveMediaDirectory.isEmpty());
+}
+
+TEST_CASE("Clean shutdown removes the never-saved recovery slot", "[project][autosave][1771]") {
+    ScopedTestDataDir dataDir("magda-untitled-autosave-shutdown-test");
+    auto& projects = ProjectManager::getInstance();
+    REQUIRE(projects.newProject());
+    projects.setTempo(129.0);
+
+    const auto autosave = ProjectManager::getUntitledAutosaveFile();
+    const auto mediaDirectory = projects.getMediaDirectory();
+    REQUIRE(projects.performAutosave());
+
+    projects.prepareForCleanShutdown();
+    const bool removed = !autosave.existsAsFile();
+    const bool removedMedia = !mediaDirectory.exists();
+    projects.setAutoSaveEnabled(true, 60);
+    REQUIRE(removed);
+    REQUIRE(removedMedia);
+}
+
+TEST_CASE("Temp media cleanup uses the writable temp root", "[project][autosave][1771]") {
+    const auto mediaRoot = testTempRoot().getChildFile("MAGDA");
+    const auto stale = mediaRoot.getChildFile("UnsavedProject_stale_1771");
+    const auto protectedDirectory = mediaRoot.getChildFile("UnsavedProject_protected_1771");
+    REQUIRE(stale.createDirectory());
+    REQUIRE(protectedDirectory.createDirectory());
+
+    const auto old = juce::Time::getCurrentTime() - juce::RelativeTime::days(8);
+    REQUIRE(stale.setLastModificationTime(old));
+    REQUIRE(protectedDirectory.setLastModificationTime(old));
+
+    ProjectManager::cleanupStaleTempDirectories(protectedDirectory);
+    REQUIRE_FALSE(stale.exists());
+    REQUIRE(protectedDirectory.isDirectory());
+
+    protectedDirectory.deleteRecursively();
+}
+
 TEST_CASE("Project Serialization Basics", "[project][serialization]") {
     ProjectTestFixture fixture;
 
