@@ -520,12 +520,22 @@ void MainWindow::projectOpened(const ProjectInfo&) {
     updateWindowTitle();
     const auto generation = ++projectOpenGeneration_;
     const auto safeThis = juce::Component::SafePointer<MainWindow>(this);
-    // ProjectManager notifies listeners before its onAfterLoad hook. Defer the
-    // scan until that hook has restored engine-owned sampler and drum-pad state,
-    // and until the loading overlay has been dismissed by the completion callback.
+    // The project-open notification arrives before the async completion callback
+    // dismisses the loading overlay. Defer the snapshot so recovery UI cannot
+    // open behind that overlay, then keep filesystem probes off the message thread.
     juce::MessageManager::callAsync([safeThis, generation] {
-        if (safeThis != nullptr && safeThis->projectOpenGeneration_ == generation)
-            safeThis->offerMissingMediaRecovery();
+        if (safeThis == nullptr || !safeThis->isCurrentProjectGeneration(generation))
+            return;
+
+        auto referenced = ProjectManager::getInstance().getReferencedMediaFiles();
+        juce::Thread::launch([safeThis, generation, referenced = std::move(referenced)]() mutable {
+            auto missing = ProjectManager::findMissingMediaFiles(referenced);
+            juce::MessageManager::callAsync(
+                [safeThis, generation, missing = std::move(missing)]() mutable {
+                    if (safeThis != nullptr && safeThis->isCurrentProjectGeneration(generation))
+                        safeThis->offerMissingMediaRecovery(std::move(missing), generation);
+                });
+        });
     });
 }
 

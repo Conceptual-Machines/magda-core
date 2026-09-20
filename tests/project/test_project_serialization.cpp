@@ -11,6 +11,7 @@
 #include "AudioClipTestHelpers.hpp"
 #include "magda/daw/audio/DeviceMeters.hpp"
 #include "magda/daw/audio/TrackMeters.hpp"
+#include "magda/daw/audio/sampling/SamplerMedia.hpp"
 #include "magda/daw/core/AppPaths.hpp"
 #include "magda/daw/core/AutomationManager.hpp"
 #include "magda/daw/core/ChainWalk.hpp"
@@ -274,43 +275,14 @@ class ProjectBoundaryResetEngine : public AudioEngine {
         std::abort();
     }
 
-    PluginWindowManager* getPluginWindowManager() override {
-        return nullptr;
-    }
-
-    const PluginWindowManager* getPluginWindowManager() const override {
-        return nullptr;
-    }
-
     InsertRenderCaptureService* getInsertRenderCaptureService() override {
         return nullptr;
-    }
-
-    bool upsertGrooveTemplate(const GrooveTemplateData&) override {
-        return false;
-    }
-
-    juce::StringArray getGrooveTemplateNames() const override {
-        return {};
     }
 
     std::unique_ptr<OfflineRenderSession> createOfflineRenderSession(bool) override {
         return nullptr;
     }
     void setTrackFrozen(TrackId, bool) override {}
-
-    std::vector<SamplerMediaReference> getSamplerMediaReferences() override {
-        if (samplerMediaPath == juce::File{})
-            return {};
-        return {{samplerMediaPath,
-                 [this](const juce::File& replacement) { samplerMediaPath = replacement; }}};
-    }
-
-    std::unique_ptr<UndoableCommand> createTempoSequenceRippleCommand(TempoSequenceRippleMode,
-                                                                      BeatPosition,
-                                                                      BeatPosition) override {
-        return nullptr;
-    }
 
     void previewNoteOnTrack(const std::string&, int, int, bool) override {}
 
@@ -374,7 +346,6 @@ class ProjectBoundaryResetEngine : public AudioEngine {
     double position = 12.0;
     double loopStart = 0.0;
     double loopEnd = 0.0;
-    juce::File samplerMediaPath;
     TrackMeters meters_;
     DeviceMeters deviceMeters_;
 };
@@ -392,6 +363,25 @@ class ScopedProjectAudioEngine {
 
   private:
     AudioEngine* previousEngine = nullptr;
+};
+
+class ScopedSamplerMediaProvider {
+  public:
+    explicit ScopedSamplerMediaProvider(juce::File& path) : path_(path) {
+        SamplerMedia::getInstance().setProvider([this] {
+            if (path_ == juce::File{})
+                return std::vector<SamplerMediaReference>{};
+            return std::vector<SamplerMediaReference>{
+                {path_, [this](const juce::File& replacement) { path_ = replacement; }}};
+        });
+    }
+
+    ~ScopedSamplerMediaProvider() {
+        SamplerMedia::getInstance().forgetProvider();
+    }
+
+  private:
+    juce::File& path_;
 };
 
 }  // namespace
@@ -516,8 +506,9 @@ TEST_CASE("Missing project media is discovered, searched and relinked",
     REQUIRE(existingPath.replaceWithText("existing audio"));
 
     ProjectBoundaryResetEngine engine;
-    engine.samplerMediaPath = oldSamplerPath;
     ScopedProjectAudioEngine scopedEngine(&engine);
+    auto samplerMediaPath = oldSamplerPath;
+    ScopedSamplerMediaProvider scopedSamplerMedia(samplerMediaPath);
 
     const auto trackId = TrackManager::getInstance().createTrack("Audio", TrackType::Media);
     const auto missingClip = ClipManager::getInstance().createAudioClipBeats(
@@ -554,7 +545,10 @@ TEST_CASE("Missing project media is discovered, searched and relinked",
     REQUIRE(projects.saveProjectAs(projectFile));
     REQUIRE_FALSE(projects.isDirty());
 
-    REQUIRE(projects.relinkMissingMediaFiles(matches) == 2);
+    auto matchesWithUnusedPath = matches;
+    matchesWithUnusedPath.push_back(
+        {scratch.getChildFile("gone").getChildFile("unused.wav").getFullPathName(), replacement});
+    REQUIRE(projects.relinkMissingMediaFiles(matchesWithUnusedPath) == 2);
     REQUIRE(projects.isDirty());
     REQUIRE(projects.getMissingMediaFiles().empty());
 
@@ -562,7 +556,7 @@ TEST_CASE("Missing project media is discovered, searched and relinked",
     REQUIRE(clip != nullptr);
     REQUIRE(audioEventRef(*clip).sourceFilePath() == replacement.getFullPathName());
     REQUIRE(clip->audio().takes[0].filePath == replacement.getFullPathName());
-    REQUIRE(engine.samplerMediaPath == samplerReplacement);
+    REQUIRE(samplerMediaPath == samplerReplacement);
 }
 
 TEST_CASE("Missing media search leaves ambiguous filenames for the user",
@@ -595,6 +589,33 @@ TEST_CASE("Missing media search leaves ambiguous filenames for the user",
         REQUIRE(matches[0] == expectedDrums);
         REQUIRE(matches[1] == expectedPercussion);
     }
+
+    SECTION("A filename-only candidate is not returned as an empty file") {
+        const auto singleRoot = scratch.getChildFile("single");
+        const auto singleDrums = singleRoot.getChildFile("drums").getChildFile("kick.wav");
+        REQUIRE(singleDrums.getParentDirectory().createDirectory());
+        REQUIRE(singleDrums.replaceWithText("single drums"));
+
+        const std::vector<ProjectManager::MissingMediaFile> missing{
+            {"/old/drums/kick.wav", 1}, {"/old/percussion/kick.wav", 1}};
+        const auto matches = ProjectManager::searchForMissingMedia(missing, singleRoot);
+        const std::vector<ProjectManager::MissingMediaReplacement> expected{
+            {"/old/drums/kick.wav", singleDrums}};
+        REQUIRE(matches == expected);
+    }
+}
+
+TEST_CASE("Stored missing-media paths are handled without host-platform assertions",
+          "[project][missing-media][71]") {
+#if JUCE_WINDOWS
+    const juce::String foreignPath = "/Volumes/Samples/kick.wav";
+#else
+    const juce::String foreignPath = "C:\\Samples\\kick.wav";
+#endif
+    const std::vector<ProjectManager::MissingMediaFile> referenced{{foreignPath, 1}};
+    REQUIRE(ProjectManager::missingMediaFileName(foreignPath) == "kick.wav");
+    REQUIRE(ProjectManager::localFileForStoredMediaPath(foreignPath) == juce::File{});
+    REQUIRE(ProjectManager::findMissingMediaFiles(referenced) == referenced);
 }
 
 TEST_CASE("Project Serialization Basics", "[project][serialization]") {

@@ -90,15 +90,18 @@ class MainWindow : public juce::DocumentWindow,
     // Offered after load when clip/take/sampler paths no longer exist. The
     // individual steps are asynchronous so file choosers never block audio or
     // the message thread.
-    void offerMissingMediaRecovery();
+    void offerMissingMediaRecovery(std::vector<ProjectManager::MissingMediaFile> missing,
+                                   std::uint64_t generation);
     void chooseMissingMediaSearchFolder(std::vector<ProjectManager::MissingMediaFile> missing,
-                                        juce::File projectFile);
+                                        std::uint64_t generation);
     void locateMissingMediaFiles(std::vector<ProjectManager::MissingMediaFile> missing,
-                                 size_t index, juce::File projectFile);
-    void completeMissingMediaSearch(const juce::File& projectFile,
+                                 size_t index, std::uint64_t generation, int repairedCount);
+    void completeMissingMediaSearch(std::uint64_t generation,
+                                    std::vector<ProjectManager::MissingMediaFile> missing,
                                     std::vector<ProjectManager::MissingMediaReplacement> matches,
                                     bool cancelled);
-    void finishMissingMediaRecovery(const juce::String& message);
+    void finishMissingMediaRecovery(const juce::String& message, std::uint64_t generation);
+    bool isCurrentProjectGeneration(std::uint64_t generation) const;
     class MainComponent;
     MainComponent* mainComponent = nullptr;       // Raw pointer - owned by DocumentWindow
     AudioEngine* externalAudioEngine_ = nullptr;  // Non-owning pointer to external engine

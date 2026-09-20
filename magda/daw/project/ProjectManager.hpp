@@ -338,11 +338,29 @@ class ProjectManager {
         bool operator==(const MissingMediaReplacement&) const = default;
     };
 
+    /** Return every distinct referenced clip, take, sampler and drum-pad path. */
+    std::vector<MissingMediaFile> getReferencedMediaFiles() const;
+
     /**
-     * Return every distinct missing clip, take, sampler and drum-pad media path.
-     * Multiple model references to the same path are collapsed and counted.
+     * Filter a reference snapshot down to paths which do not exist locally.
+     * This performs filesystem I/O and is safe to run away from the message
+     * thread once getReferencedMediaFiles() has captured the model state.
      */
+    static std::vector<MissingMediaFile> findMissingMediaFiles(
+        const std::vector<MissingMediaFile>& referenced,
+        const std::function<bool()>& shouldStop = {});
+
+    /** Synchronous convenience wrapper, primarily for non-UI callers and tests. */
     std::vector<MissingMediaFile> getMissingMediaFiles() const;
+
+    /** Filename display which accepts paths authored on any supported platform. */
+    static juce::String missingMediaFileName(juce::String path);
+
+    /**
+     * Convert a stored path to a local file only when its syntax belongs to
+     * the current platform. Foreign absolute paths return an empty File.
+     */
+    static juce::File localFileForStoredMediaPath(juce::String path);
 
     /**
      * Search a directory tree for conservative, unambiguous filename matches.
@@ -356,8 +374,8 @@ class ProjectManager {
 
     /**
      * Repoint all project references named by replacements. Invalid targets and
-     * paths which are no longer missing are ignored. Returns the number of
-     * distinct missing paths repaired and marks the project dirty when nonzero.
+     * paths which are no longer referenced are ignored. Returns the number of
+     * distinct paths actually repaired and marks the project dirty when nonzero.
      */
     int relinkMissingMediaFiles(const std::vector<MissingMediaReplacement>& replacements);
 

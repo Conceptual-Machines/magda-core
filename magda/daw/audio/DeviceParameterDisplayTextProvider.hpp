@@ -1,5 +1,9 @@
 #pragma once
 
+#include <juce_core/juce_core.h>
+
+#include <functional>
+
 #include "core/ChainNodePath.hpp"
 
 namespace magda {
@@ -7,6 +11,19 @@ namespace magda {
 struct DeviceInfo;
 
 void installDeviceParameterDisplayTextProviderFactory();
+
+/**
+ * @brief How a device's parameter value is named, from whichever engine renders it.
+ *
+ * Only the instance that renders holds the plugin that can name a value, and under the
+ * native engine there is no fork bridge at all (#2600), so the engine registers this and
+ * an unformatted value falls back to its range.
+ */
+using DeviceParameterFormatter =
+    std::function<juce::String(const ChainNodePath&, int paramIndex, float normalised)>;
+
+void setDeviceParameterFormatter(DeviceParameterFormatter formatter);
+void forgetDeviceParameterFormatter();
 
 /**
  * @brief Give every parameter of @p device a live text provider (#2600).
