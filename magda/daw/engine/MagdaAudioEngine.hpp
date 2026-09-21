@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <map>
 #include <memory>
 
@@ -16,8 +17,8 @@ class EngineHost;
 }
 
 namespace magda {
+class GrooveStore;
 class MagdaApiLive;
-class TracktionEngineWrapper;
 }  // namespace magda
 
 /**
@@ -34,7 +35,7 @@ class TracktionEngineWrapper;
  * Selected in createDefaultAudioEngine rather than chosen at build time, so
  * both engines ship in one binary and switching them is a setting.
  *
- * ## What magda::engine answers, and what is still the fork's
+ * ## What magda::engine answers
  *
  * Transport, tempo, loop and metronome are held here, published to an
  * EngineSession and rendered from the audio device callback: what fills the
@@ -44,36 +45,15 @@ class TracktionEngineWrapper;
  * Recording and session launch are not wired yet (#2552, #2553) and say so
  * once in the log rather than answering silently.
  *
- * ## Why it holds a Tracktion engine
+ * No Tracktion object sits under it (#2761). What is not an engine question --
+ * plugin lists, grooves, MIDI, the project save hooks -- belongs to the app's
+ * services, which this lends what they need and takes back at shutdown.
  *
- * AudioEngine is 80 pure virtuals and roughly 25 of them are not engine
- * questions: plugin scanning and exclusion lists, groove templates, the device
- * manager, the sampler media list, the tempo-ripple command.
- *
- * Narrowing that interface first would have made this a refactor with nothing
- * audible at the end of it, so instead this owns a TracktionEngineWrapper and
- * delegates that half to it. Scanning a plugin list is not audio. #2554 is
- * where the delegation is cut and the sync layer becomes compiler passes.
- *
- * Written down rather than left implicit, because a delegation nobody declared
- * becomes the architecture.
-
  * ## What here is temporary
  *
- * The delegation and the member behind it go at #2554. The engine-selection
- * vocabulary -- this class being a choice at all, the environment variable, the
- * setting -- goes at #2557, when there is nothing left to choose between.
- *
- * Said here because scaffolding that nobody scheduled is how a cutover leaves a
- * permanent seam behind it.
- *
- * ## What the Tracktion engine is under this one
- *
- * Services: the engine, the plugin formats, MIDI and the project save hooks.
- * No audio interface: that is @ref audioIO_'s (#2747).
- * `initialisePlayback()` is never called, so there is no Edit and so no
- * playback context, and nothing on that side can fill an output buffer.
- * tests/engine/test_magda_audio_engine_juce.cpp pins it.
+ * The engine-selection vocabulary -- this class being a choice at all, the
+ * environment variable, the setting -- goes at #2557, when there is nothing left
+ * to choose between.
  */
 
 namespace magda {
@@ -81,7 +61,8 @@ namespace magda {
 class MagdaAudioEngine final : public AudioEngine,
                                public PluginStateProvider,
                                public LiveMidiSink,
-                               private HardwareChannels::Listener {
+                               private HardwareChannels::Listener,
+                               private MidiBridge::Listener {
   public:
     explicit MagdaAudioEngine(AudioEngineOptions options);
     ~MagdaAudioEngine() override;
@@ -189,11 +170,6 @@ class MagdaAudioEngine final : public AudioEngine,
     void audition(TrackId trackId, const juce::MidiMessage& message) override;
 
 #ifdef MAGDA_ENABLE_TEST_HOOKS
-    /** @brief The fork, so a test can assert what it was never brought up as. */
-    const TracktionEngineWrapper& fork() const {
-        return *fork_;
-    }
-
     /** @brief Every method that has named itself unwired, in the order it did. */
     static juce::StringArray unwiredMethods();
 #endif
@@ -222,6 +198,7 @@ class MagdaAudioEngine final : public AudioEngine,
     void reportUnwired(const char* method, const char* issue) const;
 
     void hardwareChannelsChanged() override;
+    void midiDeviceListChanged() override;
 
     /// Track and master meters, fed by the host (#2579).
     TrackMeters meters_;
@@ -242,25 +219,20 @@ class MagdaAudioEngine final : public AudioEngine,
     bool wasPlaying_ = false;
     double lastPosition_ = 0.0;
 
-    /// The half of the interface that is not an engine question. See the file
-    /// comment: this goes away with #2554.
-    std::unique_ptr<AudioEngine> tracktion_;
+    /// Told on a MIDI device-list change, when a device is listed.
+    std::function<void()> midiDevicesReady_;
 
-    /// The same object as itself. The plugin scan and the formats that can open
-    /// a plugin are the plugin manager's, and AudioEngine exposes neither
-    /// (#2566); a pointer rather than a cast so the ownership stays above.
-    TracktionEngineWrapper* fork_ = nullptr;
+    /// The groove library's persistence while this engine is up.
+    std::unique_ptr<GrooveStore> grooveStore_;
 
-    /// The one audio interface, which Tracktion leaves alone under this engine (#2747).
+    /// The one audio interface (#2747).
     std::unique_ptr<AudioIOService> audioIO_;
 
     /// What actually renders. Declared after the interface so it is destroyed
     /// first, being a callback on it.
     std::unique_ptr<daw::engine_host::EngineHost> host_;
 
-    /// This engine's own facade onto the model; the fork builds a second one in
-    /// initialisePlayback(), which is never called here. Last, so it lets go of
-    /// the MIDI service before the fork hands it back.
+    /// This engine's own facade onto the model.
     std::unique_ptr<MagdaApiLive> api_;
 };
 

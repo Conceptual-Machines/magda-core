@@ -242,6 +242,9 @@ juce_add_binary_data(MagdaAssets
     # plugin packs; MAGDA-internal plugin aliases live in
     # core/aliases/InternalPluginAliases.cpp).
     ../../assets/aliases/curated_index.json
+    # Tracktion's default grooves, which GrooveStore seeds an empty list with
+    ../../assets/grooves/groove_templates.xml
+    ../../assets/grooves/groove_templates_parameterized.xml
     # Factory themes - embedded JSON palettes listed between the built-in
     # themes and the user's own files (see UserTheme.cpp).
     ../../assets/themes/concrete_warehouse.json

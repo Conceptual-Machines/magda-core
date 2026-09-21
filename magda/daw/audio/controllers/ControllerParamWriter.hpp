@@ -1,12 +1,8 @@
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
-
 #include "../../core/aliases/TargetResolver.hpp"
 
 namespace magda {
-
-namespace te = tracktion;
 
 // ============================================================================
 // ControllerParamWriter (abstract)

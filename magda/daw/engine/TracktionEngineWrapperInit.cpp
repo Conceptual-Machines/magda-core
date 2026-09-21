@@ -17,7 +17,6 @@
     #include "MagdaAudioEngine.hpp"
 #endif
 #include "MagdaEngineBehaviour.hpp"
-#include "MagdaPropertyStorage.hpp"
 #include "MagdaUIBehaviour.hpp"
 #include "PluginService.hpp"
 #include "PluginWindowManager.hpp"
@@ -52,9 +51,6 @@ std::unique_ptr<AudioEngine> createDefaultAudioEngine(AudioEngineOptions options
     juce::Logger::writeToLog(juce::String("[engine] rendering through ") + nameOf(choice) +
                              " (#2551)");
 
-    // The native engine holds a fork of its own for the half of the interface
-    // that is not an engine question, so this is a choice between two engines
-    // rather than a choice about whether the fork is built.
 #if MAGDA_HAS_NATIVE_ENGINE
     if (choice == AudioEngineChoice::Magda)
         return std::make_unique<MagdaAudioEngine>(options);
@@ -295,9 +291,8 @@ bool TracktionEngineWrapper::initialiseServices() {
     // Initialize Tracktion Engine with custom UIBehaviour for plugin windows
     juce::Logger::writeToLog("[Init] Creating Tracktion Engine...");
     engine_ = std::make_unique<tracktion::Engine>(
-        std::make_unique<MagdaPropertyStorage>("MAGDA", opensAudioInterface_),
-        std::make_unique<MagdaUIBehaviour>(),
-        std::make_unique<MagdaEngineBehaviour>(opensAudioInterface_));
+        std::make_unique<tracktion::PropertyStorage>("MAGDA"), std::make_unique<MagdaUIBehaviour>(),
+        std::make_unique<MagdaEngineBehaviour>());
     audioIO_ = std::make_unique<TracktionAudioIO>(engine_->getDeviceManager());
 
     // Config before the devices, whose preferred settings it holds.
@@ -309,22 +304,15 @@ bool TracktionEngineWrapper::initialiseServices() {
     juce::Logger::writeToLog("[Init] initializePluginFormats() done");
 
     if (!isHeadlessRuntime()) {
-        if (opensAudioInterface_) {
-            // Initialize device manager with preferred settings
-            juce::Logger::writeToLog("[Init] initializeDeviceManager()...");
-            initializeDeviceManager();
-            juce::Logger::writeToLog("[Init] initializeDeviceManager() done");
+        // Initialize device manager with preferred settings
+        juce::Logger::writeToLog("[Init] initializeDeviceManager()...");
+        initializeDeviceManager();
+        juce::Logger::writeToLog("[Init] initializeDeviceManager() done");
 
-            // Configure audio devices if user has preferences
-            juce::Logger::writeToLog("[Init] configureAudioDevices()...");
-            configureAudioDevices();
-            juce::Logger::writeToLog("[Init] configureAudioDevices() done");
-        } else {
-            // MIDI still scans and hot-plugs through Tracktion's DeviceManager; with no backends
-            // it opens no audio interface.
-            juce::Logger::writeToLog("[Init] Tracktion opens no audio interface");
-            engine_->getDeviceManager().initialise(0, 0);
-        }
+        // Configure audio devices if user has preferences
+        juce::Logger::writeToLog("[Init] configureAudioDevices()...");
+        configureAudioDevices();
+        juce::Logger::writeToLog("[Init] configureAudioDevices() done");
 
         // Setup MIDI devices
         juce::Logger::writeToLog("[Init] setupMidiDevices()...");
@@ -356,8 +344,7 @@ bool TracktionEngineWrapper::initialiseServices() {
 }
 
 void TracktionEngineWrapper::lendEngineServices() {
-    // What this engine answers for, off the services that own each concern (#2757). The
-    // native engine registers its own formatter over this one when it comes up.
+    // What this engine answers for, off the services that own each concern (#2757).
     GrooveLibrary::getInstance().setStore(
         [this] { return readGrooveTemplates(); },
         [this](const GrooveTemplateData& groove) { return upsertGrooveTemplate(groove); });
@@ -549,8 +536,8 @@ void TracktionEngineWrapper::shutdown() {
     }
 
     // Hand the MIDI service back BEFORE destroying the AudioBridge it was lent, and only
-    // when this wrapper is the one attached: a wrapper that never came up, or one the
-    // native engine has since layered over, would otherwise unwind the live engine's MIDI.
+    // when this wrapper is the one attached: a wrapper that never came up, or one another
+    // engine has since attached over, would otherwise unwind the live engine's MIDI.
     //
     // Clearing the pointer is not enough on its own. A MIDI callback that already loaded
     // it goes on holding it, so the AudioBridge has to outlive the drain rather than the

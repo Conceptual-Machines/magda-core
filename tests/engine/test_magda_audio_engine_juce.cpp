@@ -8,7 +8,8 @@
 #include "magda/daw/api/project_api.hpp"
 #include "magda/daw/core/TempoMap.hpp"
 #include "magda/daw/engine/MagdaAudioEngine.hpp"
-#include "magda/daw/engine/TracktionEngineWrapper.hpp"
+#include "magda/daw/engine/PluginService.hpp"
+#include "magda/daw/music/GrooveLibrary.hpp"
 #include "magda/daw/project/ProjectInfo.hpp"
 
 /**
@@ -50,8 +51,13 @@ class MagdaAudioEngineTest final : public juce::UnitTest {
         magda::MagdaAudioEngine engine{magda::AudioEngineOptions{.headless = true}};
         expect(engine.initialize(), "The engine comes up headless");
 
-        expect(engine.fork().getEdit() == nullptr, "initialisePlayback() was never called");
-        expect(engine.fork().getAudioBridge() == nullptr, "and so nothing mirrors the model into");
+        // No Tracktion engine lends these (#2761): the plugin list and the grooves are the
+        // app's services' own.
+        auto& plugins = magda::PluginService::getInstance();
+        expect(plugins.formats() != nullptr && plugins.knownList() != nullptr,
+               "The plugin service has a list of its own");
+        expect(magda::GrooveLibrary::getInstance().find("Basic 8th Swing") != nullptr,
+               "The groove library holds the store's list");
 
         expect(engine.hasActiveEdit(), "An initialised engine has a project to play");
 
@@ -80,6 +86,7 @@ class MagdaAudioEngineTest final : public juce::UnitTest {
         engine.shutdown();
 
         expect(!listsQwerty(), "Shut down, the service has no engine's devices to offer");
+        expect(plugins.formats() == nullptr, "and the plugin service has let go of its list");
         magda::MidiBridge::getInstance().setQwertyEnabled(false);
         engine.shutdown();
     }

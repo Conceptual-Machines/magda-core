@@ -80,16 +80,6 @@ class TracktionEngineWrapper : public AudioEngine,
 
     bool isHeadlessRuntime() const;
 
-    /**
-     * @brief Whether Tracktion opens the audio interface, or leaves it to another owner (#2747).
-     *
-     * Before initialiseServices(). False keeps plugin formats and MIDI but gives Tracktion no
-     * audio backends, so the native engine's AudioIOService is the only one open.
-     */
-    void setOpensAudioInterface(bool opensAudioInterface) {
-        opensAudioInterface_ = opensAudioInterface;
-    }
-
     // Initialize the engine
     bool initialize() override;
 
@@ -541,7 +531,6 @@ class TracktionEngineWrapper : public AudioEngine,
     bool justStarted_ = false;   // True for one frame after play starts
     bool justLooped_ = false;    // True for one frame after loop
     bool forceHeadless_ = false;
-    bool opensAudioInterface_ = true;
 
     // Device change tracking
     int lastKnownDeviceCount_ = 0;

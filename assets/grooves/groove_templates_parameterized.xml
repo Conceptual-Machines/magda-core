@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Tracktion Engine's parameterized grooves (GPLv3), added when the list has none. -->
+
+<GROOVETEMPLATES>
+  <GROOVETEMPLATE parameterized="true" name="New Slightly Random" numberOfNotes="16" notesPerBeat="2">
+    <SHIFT delta="0.046"/>
+    <SHIFT delta="-0.033"/>
+    <SHIFT delta="-0.026"/>
+    <SHIFT delta="0.039"/>
+    <SHIFT delta="-0.039"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.026"/>
+    <SHIFT delta="-0.046"/>
+    <SHIFT delta="0.033"/>
+    <SHIFT delta="-0.053"/>
+    <SHIFT delta="0.039"/>
+    <SHIFT delta="-0.046"/>
+    <SHIFT delta="-0.033"/>
+    <SHIFT delta="0.039"/>
+    <SHIFT delta="0.053"/>
+    <SHIFT delta="-0.046"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE parameterized="true" name="new more random" numberOfNotes="16" notesPerBeat="2">
+    <SHIFT delta="0.145"/>
+    <SHIFT delta="0.026"/>
+    <SHIFT delta="-0.112"/>
+    <SHIFT delta="0.046"/>
+    <SHIFT delta="-0.092"/>
+    <SHIFT delta="0.151"/>
+    <SHIFT delta="0.079"/>
+    <SHIFT delta="-0.086"/>
+    <SHIFT delta="0.046"/>
+    <SHIFT delta="-0.138"/>
+    <SHIFT delta="-0.092"/>
+    <SHIFT delta="0.026"/>
+    <SHIFT delta="-0.053"/>
+    <SHIFT delta="0.105"/>
+    <SHIFT delta="0.026"/>
+    <SHIFT delta="-0.105"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE parameterized="true" name="Swing 1/4" numberOfNotes="2" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="1.0"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE parameterized="true" name="PushSwing 1/4" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="1.0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="1.0"/>
+    <SHIFT delta="-0.5"/>
+    <SHIFT delta="1.0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="1.0"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE parameterized="true" name="PullSwing 1/4" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="1.0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="1.0"/>
+    <SHIFT delta="- 0.5"/>
+    <SHIFT delta="1.0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="1.0"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE parameterized="true" name="PushSnare 1/4" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="-1.0"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE parameterized="true" name="PullSnare 1/4" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="1.0"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE parameterized="true" name="Swing 1/2" numberOfNotes="2" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="1.0"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE parameterized="true" name="PushSwing 1/2" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="1.0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="1.0"/>
+    <SHIFT delta="-0.5"/>
+    <SHIFT delta="1.0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="1.0"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE parameterized="true" name="PullSwing 1/2" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="1.0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="1.0"/>
+    <SHIFT delta="0.5"/>
+    <SHIFT delta="1.0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="1.0"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE parameterized="true" name="PushSnare 1/2" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="-1.0"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE parameterized="true" name="PullSnare 1/2" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="1.0"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE parameterized="true" name="Swing 1/1" numberOfNotes="2" notesPerBeat="1">
+    <SHIFT delta="0"/>
+    <SHIFT delta="1.0"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE parameterized="true" name="PushSwing 1/1" numberOfNotes="8" notesPerBeat="1">
+    <SHIFT delta="0"/>
+    <SHIFT delta="1.0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="1.0"/>
+    <SHIFT delta="-0.5"/>
+    <SHIFT delta="1.0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="1.0"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE parameterized="true" name="PullSwing 1/1" numberOfNotes="8" notesPerBeat="1">
+    <SHIFT delta="0"/>
+    <SHIFT delta="1.0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="1.0"/>
+    <SHIFT delta="0.5"/>
+    <SHIFT delta="1.0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="1.0"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE parameterized="true" name="PushSnare 1/1" numberOfNotes="8" notesPerBeat="1">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="-1.0"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE parameterized="true" name="PullSnare 1/1" numberOfNotes="8" notesPerBeat="1">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="1.0"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE parameterized="true" name="Slow Fast" numberOfNotes="4" notesPerBeat="1">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.5"/>
+    <SHIFT delta="1.0"/>
+    <SHIFT delta="0.5"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE parameterized="true" name="Fast Slow" numberOfNotes="4" notesPerBeat="1">
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.5"/>
+    <SHIFT delta="1.0"/>
+    <SHIFT delta="-0.5"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE parameterized="true" name="Slow Fast 2" numberOfNotes="8" notesPerBeat="1">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.25"/>
+    <SHIFT delta="0.5"/>
+    <SHIFT delta="0.75"/>
+    <SHIFT delta="1.0"/>
+    <SHIFT delta="0.75"/>
+    <SHIFT delta="0.5"/>
+    <SHIFT delta="0.25"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE parameterized="true" name="Fast Slow 2" numberOfNotes="8" notesPerBeat="1">
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.25"/>
+    <SHIFT delta="-0.50"/>
+    <SHIFT delta="-0.75"/>
+    <SHIFT delta="-1.00"/>
+    <SHIFT delta="-0.75"/>
+    <SHIFT delta="-0.50"/>
+    <SHIFT delta="-0.25"/>
+  </GROOVETEMPLATE>
+</GROOVETEMPLATES>

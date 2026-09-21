@@ -28,13 +28,12 @@ struct GrooveTemplateData {
  * Neither is asked for the list, which is what let a groove exist under one engine and not
  * the other (#2757).
  *
- * The templates still persist through Tracktion's property storage, which is where the
- * shipped defaults are seeded from, so the fork imports them in at startup and is written
- * back to on every upsert. That half goes with the fork in #2557; the list does not.
+ * The list persists in Tracktion's Settings.xml, through the fork's manager under that
+ * engine and through GrooveStore under the native one, in the same format (#2761).
  */
 class GrooveLibrary {
   public:
-    /// Told to the fork so its manager stays the persistence behind the list.
+    /// What persists a write: the fork's manager, or GrooveStore.
     using Writer = std::function<bool(const GrooveTemplateData&)>;
 
     /// The store's own list, which is what a write is read back through.

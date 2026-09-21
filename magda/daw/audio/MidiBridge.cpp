@@ -33,7 +33,10 @@ void MidiBridge::useEngine(const void* owner,
     owner_ = owner;
     virtualInputs_ = std::move(virtualInputs);
     isShuttingDown_.store(false, std::memory_order_release);
-    deviceList_ = juce::MidiDeviceListConnection::make([this] { refreshMidiInputs(); });
+    deviceList_ = juce::MidiDeviceListConnection::make([this] {
+        refreshMidiInputs();
+        notifyMidiDeviceListChanged();
+    });
 }
 
 void MidiBridge::forgetEngine(const void* owner) {

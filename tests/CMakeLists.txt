@@ -519,6 +519,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES midi/test_midi_clip_playback.cpp)
     list(APPEND TEST_SOURCES clips/test_editor_playhead_fold.cpp)
     list(APPEND TEST_SOURCES audio/test_groove_library.cpp
+    audio/test_groove_store.cpp
     audio/test_groove_template.cpp)
     list(APPEND TEST_SOURCES audio/test_transient_detector.cpp)
     list(APPEND TEST_SOURCES audio/test_source_loop_info.cpp)
@@ -858,8 +859,6 @@ target_sources(magda_juce_tests PRIVATE
     audio/test_audio_io_service_juce.cpp
     # Audio Settings' Active MIDI inputs, saved in Config
     audio/test_active_midi_inputs_juce.cpp
-    # Tracktion keeping MIDI and opening no audio interface under native (#2747)
-    engine/test_tracktion_without_audio_juce.cpp
     # Audio Settings driving Tracktion's interface through its wave devices (#2749)
     engine/test_tracktion_audio_io_juce.cpp
     automation/test_tempo_sequence_ripple_juce.cpp
