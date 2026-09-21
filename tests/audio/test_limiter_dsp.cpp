@@ -67,3 +67,33 @@ TEST_CASE("Limiter DSP output is post-limiter negative trim", "[limiter][dsp]") 
 
     REQUIRE(peakOf(buffer) <= dbToGain(-6.0f) + 0.0001f);
 }
+
+TEST_CASE("Limiter reports the latency its lookahead delays by", "[limiter][dsp]") {
+    const magda::daw::audio::compiled::MagdaLimiterCompiledPlugin device;
+    REQUIRE(device.properties().latencySeconds == MagdaLimiterDspCore::kLookaheadSeconds);
+
+    // 44.1 kHz puts the lookahead on a half sample, which juce::roundToInt takes to even.
+    for (const auto sampleRate : {44100.0, 48000.0, 96000.0}) {
+        const auto reported = juce::roundToInt(device.properties().latencySeconds * sampleRate);
+
+        juce::AudioBuffer<float> buffer(2, 1024);
+        buffer.clear();
+        buffer.setSample(0, 0, 0.25f);
+        buffer.setSample(1, 0, 0.25f);
+
+        MagdaLimiterDspCore limiter;
+        limiter.prepare(sampleRate, buffer.getNumSamples(), buffer.getNumChannels());
+
+        MagdaLimiterDspCore::Settings settings;
+        settings.thresholdDb = 0.0f;
+        limiter.process(buffer, 0, buffer.getNumSamples(), settings);
+
+        int loudest = 0;
+        for (int i = 0; i < buffer.getNumSamples(); ++i)
+            if (std::abs(buffer.getSample(0, i)) > std::abs(buffer.getSample(0, loudest)))
+                loudest = i;
+
+        INFO("sample rate " << sampleRate);
+        REQUIRE(loudest == reported);
+    }
+}

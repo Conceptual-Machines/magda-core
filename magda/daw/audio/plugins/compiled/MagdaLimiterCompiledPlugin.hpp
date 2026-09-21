@@ -9,6 +9,10 @@ namespace magda::daw::audio::compiled {
 
 class MagdaLimiterDspCore {
   public:
+    /// The lookahead line's length, reported as the device's latency. Rounded to samples with
+    /// juce::roundToInt, as the host rounds a reported latency, so the two agree at every rate.
+    static constexpr double kLookaheadSeconds = 0.005;
+
     struct Settings {
         float thresholdDb = -1.0f;
         float attackMs = 1.0f;
@@ -86,6 +90,9 @@ class MagdaLimiterCompiledPlugin : public MagdaCompiledEffect {
     std::vector<HostSlotInfo> slotInfos() const override;
     const char* slotIdPrefix() const override {
         return "magda_limiter_";
+    }
+    double latencySeconds() const override {
+        return MagdaLimiterDspCore::kLookaheadSeconds;
     }
     void onPrepare(double sampleRate, int maximumBlockSize) override;
     void onRelease() override;

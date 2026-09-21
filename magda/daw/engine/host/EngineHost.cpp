@@ -3449,6 +3449,14 @@ bool EngineHost::isSettled() const {
     return impl_->isSettled();
 }
 
+std::size_t EngineHost::pluginsLoading() const {
+    return impl_->loader_.loading();
+}
+
+int EngineHost::latencySamples() const {
+    return impl_->planRecordingAdjustmentSamples();
+}
+
 void EngineHost::stop() {
     impl_->detach();
 }

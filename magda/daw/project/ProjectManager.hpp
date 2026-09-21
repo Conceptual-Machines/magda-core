@@ -13,6 +13,8 @@
 
 namespace magda {
 
+struct StagedProjectData;
+
 /**
  * @brief Listener interface for project lifecycle events
  */
@@ -136,6 +138,16 @@ class ProjectManager {
      */
     bool loadProject(const juce::File& file,
                      const std::function<void(const ProjectInfo&)>& onBeforeCommit = nullptr);
+
+    /**
+     * @brief Make staged data the open project, as both load paths do after staging.
+     *
+     * @p file is where the project is saved, and decides its media directory.
+     * @p recoveredFromAutosave leaves the project dirty so the user saves it properly.
+     */
+    void commitStagedProject(StagedProjectData& staged, const juce::File& file,
+                             bool recoveredFromAutosave,
+                             const std::function<void(const ProjectInfo&)>& onBeforeCommit);
 
     /**
      * @brief Export the current project to a .dawproject interchange archive.

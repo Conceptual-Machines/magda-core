@@ -66,7 +66,7 @@ float MagdaLimiterDspCore::coefficient(float timeMs, double sampleRate) {
 
 void MagdaLimiterDspCore::prepare(double sampleRate, int, int numChannels) {
     sampleRate_ = sampleRate > 0.0 ? sampleRate : 44100.0;
-    delaySamples_ = std::max(1, static_cast<int>(std::ceil(sampleRate_ * 0.005)));
+    delaySamples_ = std::max(1, juce::roundToInt(sampleRate_ * kLookaheadSeconds));
     numLines_ = std::max(1, numChannels);
     lineStride_ = juce::nextPowerOfTwo(delaySamples_ + 1);
     lineMask_ = lineStride_ - 1;

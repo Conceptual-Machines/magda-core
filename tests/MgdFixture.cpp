@@ -386,9 +386,8 @@ juce::File fixtureCorpusDir() {
     return juce::File(MAGDA_TEST_CORPUS_DIR);
 }
 
-FixtureLoad loadFixture(const MgdFixture& fixture, const juce::File& scratchDirectory) {
-    FixtureLoad result;
-
+std::string stageFixture(const MgdFixture& fixture, const juce::File& scratchDirectory,
+                         StagedProjectData& staged, std::map<juce::String, juce::File>& written) {
     // Each fixture writes into its own directory under the scratch root, named
     // for the case. Two fixtures are allowed to reference files with the same
     // name -- they are different projects and nothing ties their sources
@@ -409,23 +408,15 @@ FixtureLoad loadFixture(const MgdFixture& fixture, const juce::File& scratchDire
     materialDirectory.createDirectory();
 
     const auto file = fixtureCorpusDir().getChildFile(fixture.file);
-    if (!file.existsAsFile()) {
-        result.failure =
-            "the fixture names a file that is not there: " + file.getFullPathName().toStdString();
-        return result;
-    }
+    if (!file.existsAsFile())
+        return "the fixture names a file that is not there: " +
+               file.getFullPathName().toStdString();
 
-    StagedProjectData staged;
-    if (!ProjectSerializer::loadAndStage(file, staged)) {
-        result.failure =
-            "the project would not load: " + ProjectSerializer::getLastError().toStdString();
-        return result;
-    }
+    if (!ProjectSerializer::loadAndStage(file, staged))
+        return "the project would not load: " + ProjectSerializer::getLastError().toStdString();
 
-    if (auto refusal = refuseUndeclaredPlugins(fixture, staged); !refusal.empty()) {
-        result.failure = std::move(refusal);
-        return result;
-    }
+    if (auto refusal = refuseUndeclaredPlugins(fixture, staged); !refusal.empty())
+        return refusal;
 
     auto sources = everySource(staged);
 
@@ -434,18 +425,14 @@ FixtureLoad loadFixture(const MgdFixture& fixture, const juce::File& scratchDire
     for (const auto* source : sources)
         paths.push_back(source->filePath);
 
-    if (auto refusal = refuseIndistinguishableSources(paths); !refusal.empty()) {
-        result.failure = std::move(refusal);
-        return result;
-    }
+    if (auto refusal = refuseIndistinguishableSources(paths); !refusal.empty())
+        return refusal;
 
     Declarations declared;
-    if (auto refusal = matchSources(fixture, sources, declared); !refusal.empty()) {
-        result.failure = std::move(refusal);
-        return result;
-    }
+    if (auto refusal = matchSources(fixture, sources, declared); !refusal.empty())
+        return refusal;
 
-    // --- the material, written and then read back ----------------------------
+    // The material, written and then read back.
     //
     // Written under the name the project referenced rather than under an
     // invented one, so a path in a failure message is still the path the
@@ -456,8 +443,14 @@ FixtureLoad loadFixture(const MgdFixture& fixture, const juce::File& scratchDire
     // the material was asked for; what the file is is what a leg will play, and
     // a spec whose duration does not survive the writer is a case rendering
     // something other than what it declared.
+    return writeAndRepoint(sources, declared, materialDirectory, written);
+}
 
-    if (auto refusal = writeAndRepoint(sources, declared, materialDirectory, result.written);
+FixtureLoad loadFixture(const MgdFixture& fixture, const juce::File& scratchDirectory) {
+    FixtureLoad result;
+
+    StagedProjectData staged;
+    if (auto refusal = stageFixture(fixture, scratchDirectory, staged, result.written);
         !refusal.empty()) {
         result.failure = std::move(refusal);
         return result;

@@ -1110,6 +1110,60 @@ add_test(NAME remote_service_live_juce
 add_test(NAME track_api_nested_racks_live_juce
          COMMAND magda_juce_tests "Track API Nested Racks Live")
 
+# The parity envelope bench (#2082): the app's two engines, headless on a device with no
+# hardware behind it, measured on the real-project corpus. Run by scripts/parity_bench.py on a
+# Release build (make parity-bench); docs/development/parity-bench.md has the method.
+set(MAGDA_TEST_EXECUTABLES magda_tests magda_juce_tests)
+if(MAGDA_BUILD_NATIVE_ENGINE)
+    juce_add_console_app(magda_parity_bench
+        VERSION "${MAGDA_BUNDLE_VERSION}"
+        COMPANY_NAME "Conceptual Machines"
+        PRODUCT_NAME "Magda Parity Bench"
+        BUNDLE_ID "com.MAGDA.MagdaParityBench"
+    )
+
+    target_sources(magda_parity_bench PRIVATE
+        parity/parity_bench_main.cpp
+        parity/EngineRig.cpp
+        parity/LatencyProbe.cpp
+        parity/ParityMeasure.cpp
+        parity/PumpDevice.cpp
+        parity/PumpThread.cpp
+        MgdFixture.cpp
+        MgdFixtures.cpp
+        NullDiffMaterial.cpp
+        NullDiffCompare.cpp
+        NullDiffCorpus.cpp
+        NullDiffHostedPlugin.cpp
+        TestConfigRedirect.cpp
+    )
+
+    target_link_libraries(magda_parity_bench PRIVATE
+        magda_daw
+        magda_engine
+        magda_engine_devices
+        magda_engine_host
+        $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_BROWSER_LINUX_DEPS>
+        $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>
+    )
+
+    target_compile_definitions(magda_parity_bench PRIVATE
+        MAGDA_ENABLE_TEST_HOOKS=1
+        MAGDA_TEST_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/corpus"
+    )
+
+    target_include_directories(magda_parity_bench PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/magda/daw
+        ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+
+    # The corpus's Faust project imports the standard library, as the app does.
+    magda_stage_faust_libraries(magda_parity_bench)
+
+    list(APPEND MAGDA_TEST_EXECUTABLES magda_parity_bench)
+endif()
+
 # Both test executables link magda_daw, which links ONNX Runtime. On Windows the
 # loader only searches the exe's directory, the cwd, and PATH, so without a copy
 # next to the test exe it resolves whatever stray onnxruntime.dll happens to be
@@ -1118,7 +1172,7 @@ add_test(NAME track_api_nested_racks_live_juce
 # ORT call SIGSEGVs. Copy the pinned DLLs next to each test exe, mirroring the
 # app bundle step in magda/daw/CMakeLists.txt.
 if(MAGDA_HAVE_CLAP AND WIN32)
-    foreach(test_target magda_tests magda_juce_tests)
+    foreach(test_target ${MAGDA_TEST_EXECUTABLES})
         add_custom_command(TARGET ${test_target} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${ONNXRUNTIME_LIB_DIR}/onnxruntime.dll"
@@ -1133,7 +1187,7 @@ endif()
 # transitive deps) next to each test exe instead of faulting at load. Unlike the
 # ONNX copy this is not gated on CLAP, since libxml2 is always linked.
 if(WIN32)
-    foreach(test_target magda_tests magda_juce_tests)
+    foreach(test_target ${MAGDA_TEST_EXECUTABLES})
         add_custom_command(TARGET ${test_target} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "$<TARGET_RUNTIME_DLLS:${test_target}>"

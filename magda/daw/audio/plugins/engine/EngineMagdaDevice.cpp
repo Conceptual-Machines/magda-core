@@ -188,8 +188,10 @@ void EngineMagdaDevice::prepare(const magda::engine::RenderContext& context) {
     // fork's adapter takes them at the same moment. A host that read them again
     // would be the only one of the two that noticed a device changing its mind,
     // which is a divergence rather than a correction.
-    latencySamples_ =
-        static_cast<int>(std::llround(properties_.latencySeconds * context.sampleRate));
+    //
+    // juce::roundToInt, which a device sizing its own delay line rounds with too
+    // (MagdaLimiterDspCore::kLookaheadSeconds).
+    latencySamples_ = juce::roundToInt(properties_.latencySeconds * context.sampleRate);
 
     channels_.assign(static_cast<std::size_t>(std::max(0, context.numChannels)), nullptr);
     sidechainChannels_.assign(static_cast<std::size_t>(std::max(0, properties_.sidechain.channels)),

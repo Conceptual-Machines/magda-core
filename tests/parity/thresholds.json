@@ -1,0 +1,10 @@
+{
+  "metrics": {
+    "cpu_mean_us": {"ratio": 1.10, "slack": 5.0},
+    "cpu_p99_us": {"ratio": 1.25, "slack": 25.0},
+    "session_mb": {"ratio": 1.10, "slack": 4.0},
+    "load_ms": {"ratio": 1.10, "slack": 25.0},
+    "latency_samples": {"ratio": 1.0, "slack": 0.0}
+  },
+  "divergences": []
+}

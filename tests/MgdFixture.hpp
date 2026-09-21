@@ -93,6 +93,10 @@
  * loaded stays resolvable while the others are.
  */
 
+namespace magda {
+struct StagedProjectData;
+}  // namespace magda
+
 namespace magda::nulldiff {
 
 /**
@@ -225,6 +229,16 @@ class PooledSourcesUnwind {
  * neither is anything else that reads the pool while it runs.
  */
 FixtureLoad loadFixture(const MgdFixture& fixture, const juce::File& scratchDirectory);
+
+/**
+ * @brief Stage @p fixture with every source repointed at its stand-in, and install nothing.
+ *
+ * What the parity bench hands to the app's own commit (#2082). @p written is keyed as
+ * FixtureLoad::written. Returns why it could not, or empty.
+ */
+std::string stageFixture(const MgdFixture& fixture, const juce::File& scratchDirectory,
+                         magda::StagedProjectData& staged,
+                         std::map<juce::String, juce::File>& written);
 
 /**
  * @brief Why @p paths cannot be stood in for, or empty if they can.

@@ -180,6 +180,12 @@ class EngineHost {
     /// What a test waits on after an edit or a device restart.
     bool isSettled() const;
 
+    /// External plugins still opening. Their ops pass audio through until each arrives.
+    std::size_t pluginsLoading() const;
+
+    /// The published plan's output latency, in samples. On the message thread.
+    int latencySamples() const;
+
     // ===== Live MIDI (#2579) =====
     //
     // Both queue one message for the next callback, from the message thread or
