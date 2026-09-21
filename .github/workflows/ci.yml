@@ -473,7 +473,10 @@ jobs:
         echo "Checking for accidentally committed binary files..."
 
         # Check for common binary extensions that shouldn't be in source control
-        BINARIES=$(find magda/ tests/ -type f \( \
+        # Faust's own source libraries use .lib by convention (the language's
+        # `library("x.lib")`), so the tree they live in is not a binary sweep.
+        BINARIES=$(find magda/ tests/ -type f \
+          -not -path "*/faust_dsp/lib/*" \( \
           -name "*.exe" -o \
           -name "*.dll" -o \
           -name "*.so" -o \

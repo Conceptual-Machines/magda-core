@@ -4,6 +4,7 @@ declare license "GPL-3.0";
 declare version "1.0";
 
 import("stdfaust.lib");
+msm = library("magda_smoothing.lib");
 
 // ============================================================================
 // User controls
@@ -12,7 +13,7 @@ import("stdfaust.lib");
 // Input gain into the nonlinearity. 0 dB = nominal, 24 dB pushes hard.
 // Heavily smoothed because automating drive otherwise zipper-distorts.
 drive_db = hslider("Drive [unit:dB] [idx:0]", 0.0, 0.0, 24.0, 0.1)
-           : si.smooth(ba.tau2pole(0.02));
+           : msm.smooth(ba.tau2pole(0.02));
 
 // Nonlinearity flavor. Stateless, so every branch can run cheaply per
 // sample - selectn fans out the math but only one waveshape is taken.
@@ -31,7 +32,7 @@ mode = nentry("Mode [idx:1] [style:menu{
 // removed downstream by a dcblocker so the user only hears the harmonic
 // colour, not a thump.
 bias = hslider("Bias [idx:2]", 0.0, -1.0, 1.0, 0.001)
-       : si.smooth(ba.tau2pole(0.02));
+       : msm.smooth(ba.tau2pole(0.02));
 
 // Post-distortion tilt EQ. Same idiom as magda_delay's Tone - blend a
 // 1 kHz LP and HP against the dry. 0 = flat, +1 = bright, -1 = dark.
@@ -43,7 +44,7 @@ mix = hslider("Mix [idx:4]", 1.0, 0.0, 1.0, 0.001);
 
 // Output trim after the dry/wet blend.
 output_db = hslider("Output [unit:dB] [idx:5]", 0.0, -24.0, 6.0, 0.1)
-            : si.smooth(ba.tau2pole(0.02));
+            : msm.smooth(ba.tau2pole(0.02));
 
 // ============================================================================
 // DSP

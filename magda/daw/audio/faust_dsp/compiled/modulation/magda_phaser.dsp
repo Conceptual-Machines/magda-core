@@ -4,6 +4,7 @@ declare license "GPL-3.0";
 declare version "1.0";
 
 import("stdfaust.lib");
+msm = library("magda_smoothing.lib");
 
 // ============================================================================
 // User controls
@@ -11,15 +12,15 @@ import("stdfaust.lib");
 
 rate     = hslider("Rate [unit:Hz] [scale:log] [scaleAnchor:1] [idx:0]",
                    0.5, 0.05, 10.0, 0.01)
-         : si.smooth(ba.tau2pole(0.05));
+         : msm.smooth(ba.tau2pole(0.05));
 
 // Sweep depth. 0..1 is conventional phasing; 2 turns it into pure-allpass
 // vibrato (per Faust's phaser2 docs).
 depth    = hslider("Depth [idx:1]", 1.0, 0.0, 2.0, 0.01)
-         : si.smooth(ba.tau2pole(0.02));
+         : msm.smooth(ba.tau2pole(0.02));
 
 feedback = hslider("Feedback [idx:2]", 0.3, -0.95, 0.95, 0.01)
-         : si.smooth(ba.tau2pole(0.02));
+         : msm.smooth(ba.tau2pole(0.02));
 
 // Stage count drives notch density. Faust's phaser2 takes Notches as a
 // macro arg, so we run all four stage counts in parallel and pick one.
@@ -28,14 +29,14 @@ stages   = nentry("Stages [idx:3] [style:menu{'2':0;'4':1;'6':2;'8':3}]",
 
 frqMin   = hslider("Min Hz [unit:Hz] [scale:log] [scaleAnchor:200] [idx:4]",
                    100, 30, 1000, 1)
-         : si.smooth(ba.tau2pole(0.05));
+         : msm.smooth(ba.tau2pole(0.05));
 
 frqMax   = hslider("Max Hz [unit:Hz] [scale:log] [scaleAnchor:2000] [idx:5]",
                    2000, 500, 8000, 1)
-         : si.smooth(ba.tau2pole(0.05));
+         : msm.smooth(ba.tau2pole(0.05));
 
 mix      = hslider("Mix [idx:6]", 0.6, 0.0, 1.0, 0.001)
-         : si.smooth(ba.tau2pole(0.02));
+         : msm.smooth(ba.tau2pole(0.02));
 
 // ============================================================================
 // DSP

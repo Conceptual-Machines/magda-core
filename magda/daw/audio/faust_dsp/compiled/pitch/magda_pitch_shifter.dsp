@@ -4,16 +4,17 @@ declare license "GPL-3.0";
 declare version "1.0";
 
 import("stdfaust.lib");
+msm = library("magda_smoothing.lib");
 
 // idx 0 is the wrapper-only Engine slot. DSP zones live at idx 1..5 and
 // are the same across all three Pitch engines so swapping between them
 // preserves the user's settings.
 
-pitchSemis = hslider("Pitch [unit:st] [idx:1]", 0.0, -24.0, 24.0, 0.01) : si.smooth(ba.tau2pole(0.05));
-fineCents  = hslider("Fine [unit:cents] [idx:2]", 0.0, -100.0, 100.0, 0.1) : si.smooth(ba.tau2pole(0.05));
+pitchSemis = hslider("Pitch [unit:st] [idx:1]", 0.0, -24.0, 24.0, 0.01) : msm.smooth(ba.tau2pole(0.05));
+fineCents  = hslider("Fine [unit:cents] [idx:2]", 0.0, -100.0, 100.0, 0.1) : msm.smooth(ba.tau2pole(0.05));
 textureMs  = hslider("Texture [unit:ms] [idx:3]", 50.0, 8.0, 200.0, 0.1);
-mix        = hslider("Mix [idx:4]", 1.0, 0.0, 1.0, 0.001) : si.smooth(ba.tau2pole(0.02));
-outDb      = hslider("Output [unit:dB] [idx:5]", 0.0, -24.0, 12.0, 0.1) : si.smooth(ba.tau2pole(0.02));
+mix        = hslider("Mix [idx:4]", 1.0, 0.0, 1.0, 0.001) : msm.smooth(ba.tau2pole(0.02));
+outDb      = hslider("Output [unit:dB] [idx:5]", 0.0, -24.0, 12.0, 0.1) : msm.smooth(ba.tau2pole(0.02));
 
 // Total shift in semitones - Fine is the per-cent trim added to the coarse
 // semitone setting.

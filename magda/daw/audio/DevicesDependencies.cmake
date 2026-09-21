@@ -191,10 +191,18 @@ endif()
 # that varies wildly. filter_svf swings 42 points between gcc and MSVC on one
 # `std::tan` per sample. A device therefore earns this flag by measuring
 # positive on all three platforms; it does not get it by default.
+#
+# Those figures predate #2661, which made the smoothing pole a per-sample
+# signal - the very work `-vec` slices here. All three enabled devices smooth
+# controls, so the table needs re-running before it backs the flag again.
 set(MAGDA_FAUST_VECTORIZE ON CACHE BOOL
     "Master switch for per-device Faust vectorization; devices still opt in individually")
 set(MAGDA_FAUST_VECTOR_SIZE 4 CACHE STRING
     "Faust -vs vector size used by devices that opt into vectorization")
+
+# MAGDA's own Faust libraries: on every compile's -I, and staged beside the
+# standard ones so runtime-compiled DSP resolves them too.
+set(MAGDA_FAUST_LIB_DIR "${CMAKE_SOURCE_DIR}/magda/daw/audio/faust_dsp/lib")
 
 # Add a build-time Faust DSP-to-C++ step and return the generated source path.
 # Pass VECTORIZE to generate this device as vectorizable sub-loops; do that
@@ -202,6 +210,8 @@ set(MAGDA_FAUST_VECTOR_SIZE 4 CACHE STRING
 function(magda_compile_faust_dsp DSP_FILE CLASS_NAME OUT_VAR)
     cmake_parse_arguments(ARG "VECTORIZE" "" "" ${ARGN})
 
+    file(GLOB _magda_faust_libs CONFIGURE_DEPENDS
+        "${MAGDA_FAUST_LIB_DIR}/*.lib")
     get_filename_component(DSP_NAME "${DSP_FILE}" NAME_WE)
     set(GENERATED_DIR "${CMAKE_BINARY_DIR}/compiled_dsps")
     set(GENERATED_CPP "${GENERATED_DIR}/${DSP_NAME}.generated.cpp")
@@ -218,10 +228,11 @@ function(magda_compile_faust_dsp DSP_FILE CLASS_NAME OUT_VAR)
                 -lang cpp
                 -cn ${CLASS_NAME}
                 -I "${CMAKE_SOURCE_DIR}/third_party/faust/libraries"
+                -I "${MAGDA_FAUST_LIB_DIR}"
                 ${_magda_faust_codegen_flags}
                 -o "${GENERATED_CPP}"
                 "${DSP_FILE}"
-        DEPENDS "${DSP_FILE}" $<TARGET_FILE:faust>
+        DEPENDS "${DSP_FILE}" ${_magda_faust_libs} $<TARGET_FILE:faust>
         COMMENT "faust → cpp: ${DSP_NAME}.dsp → ${CLASS_NAME}"
         VERBATIM
     )
@@ -243,6 +254,9 @@ function(magda_stage_faust_libraries TARGET_NAME)
     add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${CMAKE_SOURCE_DIR}/third_party/faust/libraries"
+            "${_magda_faust_libraries_destination}"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${MAGDA_FAUST_LIB_DIR}"
             "${_magda_faust_libraries_destination}"
         COMMENT "Copying Faust standard libraries for ${TARGET_NAME}"
     )

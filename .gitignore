@@ -59,6 +59,7 @@ Build/
 *.la
 *.a
 *.lib
+!magda/daw/audio/faust_dsp/lib/*.lib
 
 # Executables
 *.exe

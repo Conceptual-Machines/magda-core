@@ -4,6 +4,7 @@ declare license "GPL-3.0";
 declare version "1.0";
 
 import("stdfaust.lib");
+msm = library("magda_smoothing.lib");
 
 // ============================================================================
 // User controls - pinned to [idx:N] for stable host-slot ordering.
@@ -12,7 +13,7 @@ sync = checkbox("Sync [idx:0]");
 
 freq_hz = hslider("Frequency [unit:Hz] [scale:log] [scaleAnchor:200] [idx:1] [gate:!0]",
                   100.0, 1.0, 5000.0, 0.01)
-        : si.smooth(ba.tau2pole(0.02));
+        : msm.smooth(ba.tau2pole(0.02));
 
 division = nentry("Division [idx:2] [gate:0] [style:menu{
                     '1/32':0.125;
@@ -35,10 +36,10 @@ shape = nentry("Shape [idx:3] [style:menu{'Sine':0;'Triangle':1;'Square':2}]",
                0, 0, 2, 1);
 
 mix = hslider("Mix [idx:4]", 0.5, 0.0, 1.0, 0.001)
-    : si.smooth(ba.tau2pole(0.02));
+    : msm.smooth(ba.tau2pole(0.02));
 
 width = hslider("Width [idx:5]", 0.5, 0.0, 1.0, 0.01)
-      : si.smooth(ba.tau2pole(0.05));
+      : msm.smooth(ba.tau2pole(0.05));
 
 // Source selects whether the carrier is the internal oscillator or the
 // host-routed sidechain bus (channel 3 of the input). Switching to
@@ -55,7 +56,7 @@ bpm = nentry("BPM [role:projectTempo] [hidden:1] [idx:63]",
 // ============================================================================
 syncedHz = bpm / (60.0 * max(division, 0.001));
 carrierHz = ((1.0 - sync) * freq_hz + sync * syncedHz)
-          : si.smooth(ba.tau2pole(0.05));
+          : msm.smooth(ba.tau2pole(0.05));
 
 phaseAt(off) = os.lf_sawpos(carrierHz) + off : ma.frac;
 
