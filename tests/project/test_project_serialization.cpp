@@ -220,14 +220,6 @@ class ProjectBoundaryResetEngine : public AudioEngine {
 
     void setMidiDevicesReadyCallback(std::function<void()>) override {}
 
-    AudioBridge* getAudioBridge() override {
-        return nullptr;
-    }
-
-    const AudioBridge* getAudioBridge() const override {
-        return nullptr;
-    }
-
     TrackMeters& meters() override {
         return meters_;
     }

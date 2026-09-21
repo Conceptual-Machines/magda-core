@@ -56,7 +56,6 @@
 #include "../../themes/ThemePrompt.hpp"
 #include "BinaryData.h"
 #include "PluginBrowserContent.hpp"
-#include "audio/AudioBridge.hpp"
 #include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/DrumGridRoles.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"

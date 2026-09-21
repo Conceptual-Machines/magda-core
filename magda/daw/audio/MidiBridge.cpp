@@ -11,6 +11,7 @@
 #include "../core/TrackManager.hpp"
 #include "AudioBridge.hpp"
 #include "TrackMeters.hpp"
+#include "midi/MidiDeviceMatch.hpp"
 
 namespace magda {
 
@@ -284,6 +285,31 @@ void MidiBridge::activeInputsChanged() {
     notifyMidiDeviceListChanged();
     if (onActiveInputsChanged)
         onActiveInputsChanged();
+}
+
+void MidiBridge::setSurfaceOnlyInput(const juce::String& midiDeviceIdOrName) {
+    {
+        const juce::ScopedLock lock(surfaceOnlyInputsLock_);
+        surfaceOnlyInputs_.clear();
+        if (midiDeviceIdOrName.isNotEmpty()) {
+            surfaceOnlyInputs_.push_back(midiDeviceIdOrName);
+            if (auto resolved =
+                    midi::resolve(juce::MidiInput::getAvailableDevices(), midiDeviceIdOrName)) {
+                surfaceOnlyInputs_.push_back(resolved->identifier);
+                surfaceOnlyInputs_.push_back(resolved->name);
+            }
+        }
+    }
+    if (onActiveInputsChanged)
+        onActiveInputsChanged();
+}
+
+bool MidiBridge::isSurfaceOnlyInput(const juce::String& deviceId,
+                                    const juce::String& deviceName) const {
+    const juce::ScopedLock lock(surfaceOnlyInputsLock_);
+    return std::ranges::any_of(surfaceOnlyInputs_, [&](const juce::String& key) {
+        return midi::matches(key, deviceId, deviceName);
+    });
 }
 
 void MidiBridge::refreshMidiInputs() {

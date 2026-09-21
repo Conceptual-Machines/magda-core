@@ -4,15 +4,14 @@
 
 #include <set>
 
-#include "../audio/AudioBridge.hpp"
 #include "../audio/faust/FaustModelEdits.hpp"
-#include "../audio/plugins/DrumGridPlugin.hpp"
 #include "../audio/plugins/FaustInstrumentPlugin.hpp"
 #include "../audio/plugins/FaustPlugin.hpp"
 #include "../audio/plugins/IFaustEditorModel.hpp"
 #include "../audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "../audio/plugins/StepSequencerPlugin.hpp"
-#include "../audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
+#include "../core/ChainWalk.hpp"
+#include "../core/DrumGridPads.hpp"
 #include "../core/ParameterUtils.hpp"
 #include "../core/PresetManager.hpp"
 #include "../core/StepPatternCommands.hpp"
@@ -20,6 +19,7 @@
 #include "../core/aliases/ParamNameNormalize.hpp"
 #include "../engine/AudioEngine.hpp"
 #include "../engine/PluginService.hpp"
+#include "../engine/TracktionFork.hpp"
 
 namespace magda {
 namespace {
@@ -52,12 +52,6 @@ std::vector<DeviceInfo> toDeviceInfo(const juce::Array<juce::PluginDescription>&
 float deviceParameterValue(const DeviceInfo& device, int index, float fallback) {
     const auto* parameter = device.findParameterByIndex(index);
     return parameter != nullptr ? parameter->currentValue : fallback;
-}
-
-AudioBridge* getAudioBridge() {
-    if (auto* engine = TrackManager::getInstance().getAudioEngine())
-        return engine->getAudioBridge();
-    return nullptr;
 }
 
 int waveNameToShapeInt(const juce::String& name) {
@@ -151,59 +145,37 @@ std::optional<SequencerRuntimeContext> PluginApiLive::getPolySequencerContext(
     }
 
     // The drum grid this sequencer plays into names its lanes, so an agent can
-    // write "kick" rather than note 36. The chain is still the engine's to
-    // walk: the model has no ordering of a rack's inner plugins.
-    auto* bridge = getAudioBridge();
-    auto plugin = bridge != nullptr ? bridge->getPlugin(path) : nullptr;
-    auto* sequencer = daw::audio::tracktion_adapter::deviceFromPlugin<Seq>(plugin.get()) != nullptr
-                          ? plugin.get()
-                          : nullptr;
-    if (sequencer == nullptr)
-        return context;
-
-    auto* track = sequencer->getOwnerTrack();
+    // write "kick" rather than note 36: the first one after it in the chain.
+    const auto* track = TrackManager::getInstance().getTrack(path.trackId);
     if (track == nullptr)
         return context;
 
-    namespace te = tracktion::engine;
     bool passedSequencer = false;
-    daw::audio::DrumGridPlugin* drumGrid = nullptr;
-    daw::audio::DrumGridPlugin* fallback = nullptr;
-    for (auto* candidate : track->pluginList) {
-        if (candidate == sequencer) {
-            passedSequencer = true;
-            continue;
-        }
-
-        auto* found = dynamic_cast<daw::audio::DrumGridPlugin*>(candidate);
-        if (found == nullptr) {
-            if (auto* rack = dynamic_cast<te::RackInstance*>(candidate);
-                rack != nullptr && rack->type != nullptr) {
-                for (auto* inner : rack->type->getPlugins()) {
-                    found = dynamic_cast<daw::audio::DrumGridPlugin*>(inner);
-                    if (found != nullptr)
-                        break;
-                }
-            }
-        }
-
-        if (found != nullptr) {
-            if (passedSequencer) {
-                drumGrid = found;
-                break;
-            }
-            if (fallback == nullptr)
-                fallback = found;
-        }
-    }
+    const DeviceInfo* drumGrid = nullptr;
+    const DeviceInfo* fallback = nullptr;
+    chain_walk::forEachDevice(track->chain.fxChainElements, ChainNodePath::trackLevel(path.trackId),
+                              chain_walk::Pads::Skip,
+                              [&](const DeviceInfo& candidate, const ChainNodePath& candidatePath) {
+                                  if (candidatePath == path) {
+                                      passedSequencer = true;
+                                      return true;
+                                  }
+                                  if (!isPadRackDevice(candidate.pluginId) || !candidate.pads)
+                                      return true;
+                                  if (passedSequencer) {
+                                      drumGrid = &candidate;
+                                      return false;
+                                  }
+                                  if (fallback == nullptr)
+                                      fallback = &candidate;
+                                  return true;
+                              });
 
     if (drumGrid == nullptr && !passedSequencer)
         drumGrid = fallback;
     if (drumGrid != nullptr) {
-        for (const auto& chain : drumGrid->getChains()) {
-            if (chain != nullptr)
-                context.laneNames.emplace_back(chain->lowNote, chain->name);
-        }
+        for (const auto& pad : drumGrid->pads->chains)
+            context.laneNames.emplace_back(pad.lowNote, pad.name);
     }
     return context;
 }
@@ -361,8 +333,8 @@ juce::String PluginApiLive::applyFourOscUpdate(const ChainNodePath& path,
         ++parametersApplied;
     }
 
-    auto* bridge = getAudioBridge();
-    auto plugin = bridge != nullptr ? bridge->getPlugin(path) : nullptr;
+    // 4OSC is the fork's own synth, so its waves, filter and effects are too.
+    auto plugin = tracktion_fork::pluginAt(path);
     auto* fourOsc = dynamic_cast<tracktion::engine::FourOscPlugin*>(plugin.get());
 
     int wavesApplied = 0;
@@ -415,8 +387,7 @@ juce::String PluginApiLive::applyFourOscUpdate(const ChainNodePath& path,
         }
     }
 
-    if (bridge != nullptr)
-        bridge->getPluginManager().capturePluginState(path);
+    PluginService::getInstance().capturePluginStateAt(path);
 
     if (update.name.isNotEmpty()) {
         auto suggestedName = update.name;

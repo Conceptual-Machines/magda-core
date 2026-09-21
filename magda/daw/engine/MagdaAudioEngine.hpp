@@ -48,8 +48,7 @@ class TracktionEngineWrapper;
  *
  * AudioEngine is 80 pure virtuals and roughly 25 of them are not engine
  * questions: plugin scanning and exclusion lists, groove templates, the device
- * manager, the sampler media list, the tempo-ripple command. getAudioBridge
- * hands back a type built around te::Edit and is answered null here.
+ * manager, the sampler media list, the tempo-ripple command.
  *
  * Narrowing that interface first would have made this a refactor with nothing
  * audible at the end of it, so instead this owns a TracktionEngineWrapper and
@@ -130,8 +129,6 @@ class MagdaAudioEngine final : public AudioEngine,
     void processSessionStateEvents() override;
     AudioIOControl* getAudioIO() override;
     void setMidiDevicesReadyCallback(std::function<void()> callback) override;
-    AudioBridge* getAudioBridge() override;
-    const AudioBridge* getAudioBridge() const override;
     TrackMeters& meters() override {
         return meters_;
     }
@@ -147,6 +144,7 @@ class MagdaAudioEngine final : public AudioEngine,
     void captureAllPluginStates() override;
     void capturePluginStateAt(const ChainNodePath& devicePath) override;
     void applyPluginStateAt(const ChainNodePath& devicePath) override;
+    void projectAuthoredStateAt(const ChainNodePath& devicePath) override;
     std::optional<PluginPrograms> getPluginPrograms(const ChainNodePath& devicePath) override;
     bool setPluginCurrentProgram(const ChainNodePath& devicePath, int programIndex) override;
     bool loadPluginPresetFile(const ChainNodePath& devicePath, const juce::File& file) override;

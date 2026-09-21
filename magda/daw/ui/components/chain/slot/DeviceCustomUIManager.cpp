@@ -12,7 +12,6 @@
 #include <thread>
 #include <tuple>
 
-#include "audio/AudioBridge.hpp"
 #include "audio/DeviceMeters.hpp"
 #include "audio/plugins/ArpeggiatorPlugin.hpp"
 #include "audio/plugins/DrumGridPlugin.hpp"
@@ -69,6 +68,7 @@
 #include "engine/AudioEngine.hpp"
 #include "engine/AudioEngineChoice.hpp"
 #include "engine/PluginService.hpp"
+#include "engine/TracktionFork.hpp"
 #include "media_db/ClapAudioEncoder.hpp"
 #include "media_db/ClapTextEncoder.hpp"
 #include "media_db/MediaDbContext.hpp"
@@ -615,12 +615,7 @@ tracktion::engine::Plugin::Ptr DeviceCustomUIManager::getLivePlugin() const {
             return plugin;
     }
 
-    if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-        if (auto* bridge = audioEngine->getAudioBridge())
-            return bridge->getPlugin(devicePath_);
-    }
-
-    return {};
+    return magda::tracktion_fork::pluginAt(devicePath_);
 }
 
 std::shared_ptr<daw::audio::MagdaDevice> DeviceCustomUIManager::liveDevice() const {

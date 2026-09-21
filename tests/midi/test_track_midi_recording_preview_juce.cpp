@@ -87,7 +87,6 @@ class TrackMidiRecordingPreviewTest final : public juce::UnitTest {
         tm.setTrackRecordArmed(dstId, true);
         const auto inputSpec = "track:" + juce::String(srcId);
         tm.setTrackMidiInput(dstId, inputSpec);
-        bridge->setTrackMidiInput(dstId, inputSpec);
         pumpMessageLoop(120);
 
         auto* srcTrack = bridge->getAudioTrack(srcId);
@@ -154,7 +153,6 @@ class TrackMidiRecordingPreviewTest final : public juce::UnitTest {
                      "Re-armed destination must receive preview events again");
 
         tm.setTrackMidiInput(dstId, {});
-        bridge->setTrackMidiInput(dstId, {});
         pumpMessageLoop(120);
 
         events.clear();

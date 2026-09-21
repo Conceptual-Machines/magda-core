@@ -1,25 +1,16 @@
 #include "core/TrackMeasurementManager.hpp"
 
 #include "../engine/AudioEngine.hpp"
-#include "audio/AudioBridge.hpp"
-#include "audio/plugin_manager/PluginManager.hpp"
-#include "audio/plugins/TrackMeasurementPlugin.hpp"
+#include "audio/analysis/TrackMeasurementTap.hpp"
 #include "core/TrackManager.hpp"
 
 namespace magda {
 
 namespace {
 
-// The tap lifecycle lives in PluginManager, reached through the audio bridge.
-// Returns nullptr before the engine/bridge exist (early startup, headless).
-PluginManager* pluginManager() {
-    auto* engine = TrackManager::getInstance().getAudioEngine();
-    if (engine == nullptr)
-        return nullptr;
-    auto* bridge = engine->getAudioBridge();
-    if (bridge == nullptr)
-        return nullptr;
-    return &bridge->getPluginManager();
+// The taps live in whichever engine renders. Null before one exists (early startup, headless).
+AudioEngine* renderingEngine() {
+    return TrackManager::getInstance().getAudioEngine();
 }
 
 }  // namespace
@@ -55,17 +46,17 @@ void TrackMeasurementManager::setTrackEnabled(TrackId trackId, bool shouldEnable
 }
 
 void TrackMeasurementManager::applyTrack(TrackId trackId) {
-    auto* pm = pluginManager();
-    if (pm == nullptr)
+    auto* engine = renderingEngine();
+    if (engine == nullptr)
         return;
     const bool active = globalEnabled_ && enabledTracks_.count(trackId) > 0;
     if (active) {
-        if (auto* tap = pm->ensureTrackMeasurementTap(trackId)) {
+        if (auto* tap = engine->ensureTrackMeasurementTap(trackId)) {
             tap->setMeasurementEnabled(true);
             tap->setSpectrumCaptureEnabled(maskingEnabled_);
         }
     } else {
-        pm->removeTrackMeasurementTap(trackId);
+        engine->removeTrackMeasurementTap(trackId);
         latest_.erase(trackId);
     }
 }
@@ -79,11 +70,11 @@ void TrackMeasurementManager::updateTimer() {
 }
 
 void TrackMeasurementManager::timerCallback() {
-    auto* pm = pluginManager();
-    if (pm == nullptr)
+    auto* engine = renderingEngine();
+    if (engine == nullptr)
         return;
     for (TrackId trackId : enabledTracks_) {
-        if (auto* tap = pm->getTrackMeasurementTap(trackId))
+        if (auto* tap = engine->trackMeasurementTap(trackId))
             latest_[trackId] = tap->getSnapshot();
     }
     listeners_.call([](TrackMeasurementListener& l) { l.trackMeasurementsUpdated(); });
@@ -93,24 +84,24 @@ void TrackMeasurementManager::setMaskingAnalysisEnabled(bool shouldEnable) {
     if (maskingEnabled_ == shouldEnable)
         return;
     maskingEnabled_ = shouldEnable;
-    auto* pm = pluginManager();
-    if (pm == nullptr)
+    auto* engine = renderingEngine();
+    if (engine == nullptr)
         return;
     for (TrackId trackId : enabledTracks_)
-        if (auto* tap = pm->getTrackMeasurementTap(trackId))
+        if (auto* tap = engine->trackMeasurementTap(trackId))
             tap->setSpectrumCaptureEnabled(maskingEnabled_);
 }
 
 std::vector<daw::audio::MaskingFinding> TrackMeasurementManager::getMaskingFindings(
     const daw::audio::MaskingOptions& opts) const {
-    auto* pm = pluginManager();
-    if (pm == nullptr)
+    auto* engine = renderingEngine();
+    if (engine == nullptr)
         return {};
     auto& tm = TrackManager::getInstance();
     std::vector<daw::audio::TrackBandEnergies> tracks;
     tracks.reserve(enabledTracks_.size());
     for (TrackId trackId : enabledTracks_) {
-        auto* tap = pm->getTrackMeasurementTap(trackId);
+        auto* tap = engine->trackMeasurementTap(trackId);
         if (tap == nullptr)
             continue;
         daw::audio::TrackBandEnergies tbe;
@@ -125,10 +116,10 @@ std::vector<daw::audio::MaskingFinding> TrackMeasurementManager::getMaskingFindi
 
 size_t TrackMeasurementManager::readTrackSpectrumSamples(TrackId trackId, float* dest,
                                                          int numSamples, double& sampleRateOut) {
-    auto* pm = pluginManager();
-    if (pm == nullptr)
+    auto* engine = renderingEngine();
+    if (engine == nullptr)
         return 0;
-    auto* tap = pm->getTrackMeasurementTap(trackId);
+    auto* tap = engine->trackMeasurementTap(trackId);
     if (tap == nullptr)
         return 0;
     sampleRateOut = tap->getSampleRate();

@@ -77,7 +77,6 @@ class InputMonitorTrackRoutingTest final : public juce::UnitTest {
         // Route dest's audio input from the source track.
         const auto inputSpec = "track:" + juce::String(srcId);
         tm.setTrackAudioInput(dstId, inputSpec);
-        bridge->setTrackAudioInput(dstId, inputSpec);
         pumpMessageLoop(60);
 
         auto* srcTrack = bridge->getAudioTrack(srcId);
@@ -123,7 +122,6 @@ class InputMonitorTrackRoutingTest final : public juce::UnitTest {
         // the meter client for dst must be unregistered cleanly on the next
         // metering ticks (no dangling client left behind).
         tm.setTrackAudioInput(dstId, {});
-        bridge->setTrackAudioInput(dstId, {});
         pumpMessageLoop(120);
 
         transport.stop(false, false);

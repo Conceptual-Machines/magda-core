@@ -36,9 +36,9 @@
 #include "../views/MainView.hpp"
 #include "../views/MixerView.hpp"
 #include "../views/SessionView.hpp"
-#include "audio/AudioBridge.hpp"
 #include "audio/MidiBridge.hpp"
 #include "audio/midi/QwertyMidiKeyboard.hpp"
+#include "core/AutomationManager.hpp"
 #include "core/Config.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/ModulatorEngine.hpp"
@@ -1221,15 +1221,12 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
             SetGridQuantizeEvent{autoGrid, numerator, denominator});
     };
 
-    transportPanel->onAutomationWriteToggle = [this](bool enabled) {
-        auto* engine = getAudioEngine();
-        if (auto* bridge = engine != nullptr ? engine->getAudioBridge() : nullptr)
-            bridge->setAutomationWriteEnabled(enabled);
+    transportPanel->onAutomationWriteToggle = [](bool enabled) {
+        AutomationManager::getInstance().setAutomationMode(enabled ? AutomationMode::Write
+                                                                   : AutomationMode::Off);
     };
-    transportPanel->onAutomationModeChanged = [this](AutomationMode mode) {
-        auto* engine = getAudioEngine();
-        if (auto* bridge = engine != nullptr ? engine->getAudioBridge() : nullptr)
-            bridge->setAutomationMode(mode);
+    transportPanel->onAutomationModeChanged = [](AutomationMode mode) {
+        AutomationManager::getInstance().setAutomationMode(mode);
     };
 
     // Navigation callbacks

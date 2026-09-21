@@ -86,7 +86,11 @@ class AudioBridge : public TrackManagerListener,
 
     void tracksChanged() override;
     void trackPropertyChanged(int trackId) override;
+    void trackAudioInputChanged(TrackId trackId) override;
+    void trackMidiInputChanged(TrackId trackId) override;
     void trackSelectionChanged(TrackId trackId) override;
+    void chainElementMoving(const ChainNodePath& sourcePath,
+                            const ChainNodePath& destinationChain) override;
     void trackDevicesChanged(TrackId trackId) override;
     void deviceAdded(const ChainNodePath& devicePath, const DeviceInfo& device) override;
     void deviceModifiersChanged(TrackId trackId) override;
@@ -226,28 +230,6 @@ class AudioBridge : public TrackManagerListener,
     bool getTransientTimes(ClipId clipId);
 
     // =========================================================================
-    // Warp Markers
-    // =========================================================================
-
-    /** Enable warping: populate WarpTimeManager with markers at detected transients */
-    void enableWarp(ClipId clipId);
-
-    /** Disable warping: remove all warp markers */
-    void disableWarp(ClipId clipId);
-
-    /** Get current warp marker positions for display */
-    std::vector<WarpMarkerInfo> getWarpMarkers(ClipId clipId);
-
-    /** Add a warp marker. Returns index of inserted marker. */
-    int addWarpMarker(ClipId clipId, double sourceTime, double warpTime);
-
-    /** Move a warp marker's warp time. Returns actual position (clamped by TE). */
-    double moveWarpMarker(ClipId clipId, int index, double newWarpTime);
-
-    /** Remove a warp marker at index. */
-    void removeWarpMarker(ClipId clipId, int index);
-
-    // =========================================================================
     // Plugin State Capture
     // =========================================================================
 
@@ -256,11 +238,6 @@ class AudioBridge : public TrackManagerListener,
      * Call before saving a project to snapshot live plugin states.
      */
     void captureAllPluginStates();
-
-    /**
-     * @brief Capture warp marker positions from TE into ClipInfo for all warped clips.
-     */
-    void captureWarpMarkerStates();
 
     // =========================================================================
     // Plugin Loading
@@ -526,31 +503,6 @@ class AudioBridge : public TrackManagerListener,
     }
 
     // =========================================================================
-    // Automation Recording
-    // =========================================================================
-
-    /**
-     * @brief Enable/disable global automation write mode
-     * @param enabled When true, parameter changes during playback are recorded to armed lanes
-     */
-    void setAutomationWriteEnabled(bool enabled);
-
-    /**
-     * @brief Check if automation write mode is enabled
-     */
-    bool isAutomationWriteEnabled() const;
-
-    /**
-     * @brief Set the active automation mode (Off / Write / Touch / Latch).
-     *
-     * Off disarms recording. Write records any user-driven change while transport
-     * rolls. Touch records only while a control is held. Latch records while held
-     * and continues writing the held value after release until the transport stops.
-     */
-    void setAutomationMode(AutomationMode mode);
-    AutomationMode getAutomationMode() const;
-
-    // =========================================================================
     // Mixer Controls
     // =========================================================================
 
@@ -675,17 +627,6 @@ class AudioBridge : public TrackManagerListener,
      * allowing instrument plugins to receive live MIDI input.
      */
     void setTrackMidiInput(TrackId trackId, const juce::String& midiDeviceId);
-
-    /**
-     * @brief Mark one MIDI input as control-surface-only.
-     *
-     * Surface-only inputs remain available to raw MIDI listeners (Lua scripts,
-     * controller routing, monitors) but are excluded from Tracktion Engine live
-     * track input routing, including "all" routing. Empty clears the current
-     * surface-only input.
-     */
-    void setSurfaceOnlyMidiInputPort(const juce::String& midiDeviceIdOrName);
-    void clearSurfaceOnlyMidiInputPorts();
 
     /**
      * @brief Get current MIDI input source for a track

@@ -5,7 +5,6 @@
 #include <set>
 #include <unordered_map>
 
-#include "../../audio/AudioBridge.hpp"
 #include "../../audio/MeteringBuffer.hpp"
 #include "../../audio/MidiBridge.hpp"
 #include "../../audio/TrackMeters.hpp"

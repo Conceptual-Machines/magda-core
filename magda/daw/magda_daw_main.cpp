@@ -18,8 +18,8 @@
 #include "api/remote_api_host.hpp"
 #include "api/remote_audit.hpp"
 #include "api/remote_service.hpp"
-#include "audio/AudioBridge.hpp"
 #include "audio/AudioThumbnailManager.hpp"
+#include "audio/MidiBridge.hpp"
 #include "audio/controllers/ControllerParamReader.hpp"
 #include "audio/controllers/ControllerParamWriter.hpp"
 #include "audio/controllers/ControllerRouter.hpp"
@@ -772,8 +772,7 @@ bool MagdaDAWApplication::reloadActiveLuaScript() {
     if (scripts.empty()) {
         juce::Logger::writeToLog("[lua-debug] reloadActiveLuaScript: no scripts, unloading");
         luaController_->unloadScript();
-        if (auto* audioBridge = daw_engine_->getAudioBridge())
-            audioBridge->clearSurfaceOnlyMidiInputPorts();
+        magda::MidiBridge::getInstance().setSurfaceOnlyInput({});
         return false;
     }
 
@@ -797,8 +796,7 @@ bool MagdaDAWApplication::loadLuaScript(const juce::File& file) {
 
     const auto ports = getLuaScriptPortsFromConfig(file.getFileName());
     luaController_->setDawInputPort(ports.dawInputPort);
-    if (auto* audioBridge = daw_engine_->getAudioBridge())
-        audioBridge->setSurfaceOnlyMidiInputPort(ports.dawInputPort);
+    magda::MidiBridge::getInstance().setSurfaceOnlyInput(ports.dawInputPort);
     if (auto* liveApi = dynamic_cast<magda::MagdaApiLive*>(&daw_engine_->getMagdaApi()))
         liveApi->setDefaultMidiOutputPort(ports.midiOutputPort);
 
@@ -809,8 +807,7 @@ bool MagdaDAWApplication::loadLuaScript(const juce::File& file) {
         cfg.save();
         return true;
     }
-    if (auto* audioBridge = daw_engine_->getAudioBridge())
-        audioBridge->clearSurfaceOnlyMidiInputPorts();
+    magda::MidiBridge::getInstance().setSurfaceOnlyInput({});
     juce::Logger::writeToLog("[lua] Failed to load " + file.getFileName() + ": " +
                              luaController_->lastError());
     return false;
@@ -819,10 +816,7 @@ bool MagdaDAWApplication::loadLuaScript(const juce::File& file) {
 void MagdaDAWApplication::unloadLuaScript() {
     if (luaController_ != nullptr)
         luaController_->unloadScript();
-    if (daw_engine_ != nullptr) {
-        if (auto* audioBridge = daw_engine_->getAudioBridge())
-            audioBridge->clearSurfaceOnlyMidiInputPorts();
-    }
+    magda::MidiBridge::getInstance().setSurfaceOnlyInput({});
     auto& cfg = magda::Config::getInstance();
     cfg.setActiveLuaScript(std::string{});
     cfg.save();

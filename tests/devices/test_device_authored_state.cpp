@@ -28,14 +28,12 @@ class RenderedDeviceEngine final : public TracktionEngineWrapper {
         : rendered(std::make_shared<daw::audio::OscilloscopePlugin>(
               daw::audio::DevicePluginDefaults::Oscilloscope{})) {}
 
-    AudioBridge* getAudioBridge() override {
-        return nullptr;
-    }
-    const AudioBridge* getAudioBridge() const override {
-        return nullptr;
-    }
     std::shared_ptr<daw::audio::MagdaDevice> renderedDevice(const ChainNodePath&) const override {
         return rendered;
+    }
+    // Projects the way the native engine does, onto what it renders.
+    void projectAuthoredStateAt(const ChainNodePath& devicePath) override {
+        projectAuthoredStateToRenderedDevice(*this, devicePath);
     }
     void captureAllPluginStates() override {
         ++captureAllCalls;

@@ -53,7 +53,6 @@ class MagdaAudioEngineTest final : public juce::UnitTest {
         expect(engine.fork().getEdit() == nullptr, "initialisePlayback() was never called");
         expect(engine.fork().getAudioBridge() == nullptr, "and so nothing mirrors the model into");
 
-        expect(engine.getAudioBridge() == nullptr, "There is no bridge to hand out");
         expect(engine.hasActiveEdit(), "An initialised engine has a project to play");
 
         // MIDI is the app's service; what the engine lends it is the QWERTY keyboard,

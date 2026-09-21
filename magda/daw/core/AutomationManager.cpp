@@ -12,9 +12,8 @@
 #include "ParameterUtils.hpp"
 #include "RangesHelpers.hpp"
 #include "TrackManager.hpp"
-#include "audio/AudioBridge.hpp"
 #include "audio/automation/ControlTargetResolver.hpp"
-#include "engine/AudioEngine.hpp"
+#include "engine/TracktionFork.hpp"
 
 namespace magda {
 
@@ -106,13 +105,8 @@ std::optional<double> getCurrentTargetValueImpl(const AutomationTarget& target) 
             // Base value, NOT getCurrentValue(): the current value includes
             // live modifier output, and a bake/seed must ride on the knob
             // position, not on whatever the LFO happened to output right now.
-            if (auto* audioEngine = TrackManager::getInstance().getAudioEngine()) {
-                if (const auto* bridge = audioEngine->getAudioBridge()) {
-                    if (auto* teParam = bridge->resolveControlTarget(target))
-                        return laneNormalizedFromTEValue(target, teParam,
-                                                         teParam->getCurrentBaseValue());
-                }
-            }
+            if (auto* teParam = tracktion_fork::parameterFor(target))
+                return laneNormalizedFromTEValue(target, teParam, teParam->getCurrentBaseValue());
             auto resolved = TrackManager::getInstance().resolvePath(target.devicePath);
             if (!resolved.valid || !resolved.device)
                 return std::nullopt;
@@ -571,12 +565,11 @@ void AutomationManager::endTargetGesture(const AutomationTarget& target) {
         dispatchAuthorityEvent(laneId, AutomationAuthorityEvent::EndGesture);
 }
 
-bool AutomationManager::isWriteModeEnabled() {
-    auto* audioEngine = TrackManager::getInstance().getAudioEngine();
-    if (!audioEngine)
-        return false;
-    const auto* bridge = audioEngine->getAudioBridge();
-    return bridge && bridge->isAutomationWriteEnabled();
+void AutomationManager::setAutomationMode(AutomationMode mode) {
+    if (mode == automationMode_)
+        return;
+    automationMode_ = mode;
+    listeners_.call([mode](AutomationManagerListener& l) { l.automationModeChanged(mode); });
 }
 
 std::optional<double> AutomationManager::getCurrentTargetValue(const AutomationTarget& target) {

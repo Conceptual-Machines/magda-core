@@ -3,7 +3,6 @@
 #include <memory>
 #include <utility>
 
-#include "../audio/AudioBridge.hpp"
 #include "../engine/PluginService.hpp"
 #include "RackInfo.hpp"
 

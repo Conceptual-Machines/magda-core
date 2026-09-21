@@ -8,12 +8,9 @@
 #include "../themes/ActiveTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "../themes/SmallButtonLookAndFeel.hpp"
-#include "AudioBridge.hpp"
 #include "AudioEngine.hpp"
 #include "BinaryData.h"
-#include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
-#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "content/AudioClipPropertiesContent.hpp"
 #include "content/AutomationClipEditorContent.hpp"
 #include "content/ChordPanelContent.hpp"
@@ -23,6 +20,7 @@
 #include "content/PostFxPanelContent.hpp"
 #include "content/TrackChainContent.hpp"
 #include "content/WaveformEditorContent.hpp"
+#include "core/ChainWalk.hpp"
 #include "core/ClipPropertyCommands.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/PluginPreferences.hpp"
@@ -36,7 +34,6 @@
 namespace magda {
 
 namespace {
-namespace te = tracktion::engine;
 
 // MouseListener wrapper that fires a callback on right-click only. Used to
 // extend SvgButton-based tab buttons with a context menu — their onClick is
@@ -61,34 +58,24 @@ bool trackPrefersDrumGrid(TrackId trackId) {
     return magda::PluginPreferences::getInstance().prefersDrumGrid(
         magda::PluginPreferences::identifierForDevice(*instrument));
 }
-/** Return the first MidiChordEnginePlugin on a track, or nullptr. */
-daw::audio::MidiChordEnginePlugin* findChordEngine(TrackId trackId) {
-    auto* audioEngine = TrackManager::getInstance().getAudioEngine();
-    if (!audioEngine)
-        return nullptr;
-    auto* bridge = audioEngine->getAudioBridge();
-    if (!bridge)
-        return nullptr;
-    auto* teTrack = bridge->getAudioTrack(trackId);
-    if (!teTrack)
-        return nullptr;
+/** @brief The Chord Engine rendering on @p trackId, or null. */
+std::shared_ptr<daw::audio::MagdaDevice> chordEngineOn(TrackId trackId) {
+    auto& trackManager = TrackManager::getInstance();
+    auto* audioEngine = trackManager.getAudioEngine();
+    const auto* track = trackManager.getTrack(trackId);
+    if (audioEngine == nullptr || track == nullptr)
+        return {};
 
-    for (auto* plugin : teTrack->pluginList) {
-        if (auto* ce =
-                daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MidiChordEnginePlugin>(
-                    plugin))
-            return ce;
-        if (auto* rackInstance = dynamic_cast<te::RackInstance*>(plugin)) {
-            if (rackInstance->type != nullptr) {
-                for (auto* innerPlugin : rackInstance->type->getPlugins()) {
-                    if (auto* ce = daw::audio::tracktion_adapter::deviceFromPlugin<
-                            daw::audio::MidiChordEnginePlugin>(innerPlugin))
-                        return ce;
-                }
-            }
-        }
-    }
-    return nullptr;
+    std::shared_ptr<daw::audio::MagdaDevice> found;
+    chain_walk::forEachDevice(track->chain.fxChainElements, ChainNodePath::trackLevel(trackId),
+                              chain_walk::Pads::Skip,
+                              [&](const DeviceInfo& device, const ChainNodePath& path) {
+                                  if (!device.pluginId.equalsIgnoreCase("midichordengine"))
+                                      return true;
+                                  found = audioEngine->renderedDevice(path);
+                                  return found == nullptr;
+                              });
+    return found;
 }
 
 }  // namespace
@@ -1168,7 +1155,8 @@ void BottomPanel::updateContentBasedOnSelection() {
             if (clip)
                 midiTrackId = clip->trackId;
         }
-        auto* ce = (midiTrackId != INVALID_TRACK_ID) ? findChordEngine(midiTrackId) : nullptr;
+        auto device = midiTrackId != INVALID_TRACK_ID ? chordEngineOn(midiTrackId) : nullptr;
+        auto* ce = dynamic_cast<daw::audio::MidiChordEnginePlugin*>(device.get());
 
         showChordPanel_ = (ce != nullptr);
         if (ce) {
@@ -1177,6 +1165,8 @@ void BottomPanel::updateContentBasedOnSelection() {
         } else if (chordPanel_) {
             chordPanel_->setChordEngine(nullptr);
         }
+        // Held while the panel reads the raw pointer, so a rebuild cannot free it (#2585).
+        chordEngineDevice_ = std::move(device);
     }
 
     // Post-FX panel: shown only when its TrackChain header toggle is open (or

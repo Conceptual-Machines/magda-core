@@ -515,6 +515,27 @@ void AudioBridge::trackPropertyChanged(int trackId) {
     automationRecording_.onTrackPropertyChanged(trackId);
 }
 
+// Guarded like syncAll: reassigning a track input the graph already has, while it
+// plays, is not safe in Tracktion.
+void AudioBridge::trackAudioInputChanged(TrackId trackId) {
+    const auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+    if (trackInfo != nullptr &&
+        trackController_.getTrackAudioInput(trackId) != trackInfo->audioInputDevice)
+        trackController_.setTrackAudioInput(trackId, trackInfo->audioInputDevice);
+}
+
+void AudioBridge::trackMidiInputChanged(TrackId trackId) {
+    const auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+    if (trackInfo != nullptr &&
+        midiInputRouter_.getTrackMidiInput(trackId) != trackInfo->midiInputDevice)
+        midiInputRouter_.setTrackMidiInput(trackId, trackInfo->midiInputDevice);
+}
+
+void AudioBridge::chainElementMoving(const ChainNodePath& sourcePath,
+                                     const ChainNodePath& destinationChain) {
+    pluginManager_.prepareForChainElementMove(sourcePath, destinationChain);
+}
+
 void AudioBridge::trackSelectionChanged(TrackId newTrackId) {
     juce::ignoreUnused(newTrackId);
     updateMidiInputRouting();
@@ -803,26 +824,6 @@ te::Clip* AudioBridge::getSessionTeClip(ClipId clipId) {
 
 void AudioBridge::captureAllPluginStates() {
     pluginManager_.captureAllPluginStates();
-}
-
-void AudioBridge::captureWarpMarkerStates() {
-    auto& cm = ClipManager::getInstance();
-    for (auto& clip : cm.getArrangementClips()) {
-        if (clip.isAudio() && audioEventRef(clip).warpEnabled) {
-            auto markers = clipSynchronizer_.getWarpMarkers(clip.id);
-            DBG("captureWarpMarkerStates: clip "
-                << clip.id << " warpEnabled=" << (int)audioEventRef(clip).warpEnabled
-                << " markers=" << (int)markers.size());
-            if (auto* event = primaryEventOf(cm.getClip(clip.id))) {
-                event->warpMarkers.clear();
-                for (const auto& m : markers) {
-                    event->warpMarkers.push_back({m.sourceTime, m.warpTime});
-                }
-                DBG("captureWarpMarkerStates: stored " << event->warpMarkers.size()
-                                                       << " markers into the audio event");
-            }
-        }
-    }
 }
 
 te::Plugin::Ptr AudioBridge::loadBuiltInPlugin(const TrackId trackId, const juce::String& type) {
@@ -1418,26 +1419,6 @@ void AudioBridge::updateMetersFromGraph() {
 }
 
 // =============================================================================
-// Automation Recording
-// =============================================================================
-
-void AudioBridge::setAutomationWriteEnabled(bool enabled) {
-    automationRecording_.setWriteEnabled(enabled);
-}
-
-bool AudioBridge::isAutomationWriteEnabled() const {
-    return automationRecording_.isWriteEnabled();
-}
-
-void AudioBridge::setAutomationMode(AutomationMode mode) {
-    automationRecording_.setMode(mode);
-}
-
-AutomationMode AudioBridge::getAutomationMode() const {
-    return automationRecording_.getMode();
-}
-
-// =============================================================================
 // Mixer Controls
 // =============================================================================
 
@@ -1534,14 +1515,6 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
     midiInputRouter_.setTrackMidiInput(trackId, midiDeviceId);
 }
 
-void AudioBridge::setSurfaceOnlyMidiInputPort(const juce::String& midiDeviceIdOrName) {
-    midiInputRouter_.setSurfaceOnlyMidiInputPort(midiDeviceIdOrName);
-}
-
-void AudioBridge::clearSurfaceOnlyMidiInputPorts() {
-    midiInputRouter_.clearSurfaceOnlyMidiInputPorts();
-}
-
 juce::String AudioBridge::getTrackMidiInput(TrackId trackId) const {
     return midiInputRouter_.getTrackMidiInput(trackId);
 }
@@ -1578,7 +1551,7 @@ bool AudioBridge::togglePluginWindow(const ChainNodePath& devicePath) {
 }
 
 // =============================================================================
-// Warp Markers (delegated to ClipSynchronizer)
+// Transient Detection (delegated to ClipSynchronizer)
 // =============================================================================
 
 void AudioBridge::setTransientSensitivity(ClipId clipId, float sensitivity) {
@@ -1587,30 +1560,6 @@ void AudioBridge::setTransientSensitivity(ClipId clipId, float sensitivity) {
 
 bool AudioBridge::getTransientTimes(ClipId clipId) {
     return clipSynchronizer_.getTransientTimes(clipId);
-}
-
-void AudioBridge::enableWarp(ClipId clipId) {
-    clipSynchronizer_.enableWarp(clipId);
-}
-
-void AudioBridge::disableWarp(ClipId clipId) {
-    clipSynchronizer_.disableWarp(clipId);
-}
-
-std::vector<WarpMarkerInfo> AudioBridge::getWarpMarkers(ClipId clipId) {
-    return clipSynchronizer_.getWarpMarkers(clipId);
-}
-
-int AudioBridge::addWarpMarker(ClipId clipId, double sourceTime, double warpTime) {
-    return clipSynchronizer_.addWarpMarker(clipId, sourceTime, warpTime);
-}
-
-double AudioBridge::moveWarpMarker(ClipId clipId, int index, double newWarpTime) {
-    return clipSynchronizer_.moveWarpMarker(clipId, index, newWarpTime);
-}
-
-void AudioBridge::removeWarpMarker(ClipId clipId, int index) {
-    clipSynchronizer_.removeWarpMarker(clipId, index);
 }
 
 // =============================================================================

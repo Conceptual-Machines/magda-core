@@ -10,7 +10,6 @@
 #include <tuple>
 #include <unordered_map>
 
-#include "../../audio/AudioBridge.hpp"
 #include "../../audio/MeteringBuffer.hpp"
 #include "../../audio/TrackMeters.hpp"
 #include "../../engine/AudioEngine.hpp"

@@ -247,7 +247,6 @@ class SessionSlotRecordingIntegrationTest final : public juce::UnitTest {
         fixture.bridge->createAudioTrack(sourceTrackId, "Session Source");
         const auto trackInput = "track:" + juce::String(sourceTrackId);
         TrackManager::getInstance().setTrackAudioInput(fixture.trackId, trackInput);
-        fixture.bridge->setTrackAudioInput(fixture.trackId, trackInput);
         fixture.bridge->syncAllArmedTracksToTE();
 
         fixture.wrapper.armSessionSlotRecording(fixture.trackId, fixture.sceneIndex);

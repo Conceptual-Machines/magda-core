@@ -79,6 +79,49 @@ class ICompiledFaustPlugin {
 };
 
 /**
+ * @brief Slot @p index as the parameter list shows it: the active engine's modes and visibility.
+ *
+ * Empty for an index outside the host's slots.
+ */
+inline ParameterInfo hostSlotParameterInfo(const ICompiledFaustPlugin& host, int index) {
+    if (index < 0 || index >= host.hostSlotCount())
+        return {};
+
+    const auto& s = host.hostSlotInfo(index);
+    ParameterInfo info;
+    info.valueConvention = ParameterValueConvention::Real;
+    info.paramIndex = index;
+    info.name = s.name;
+    info.unit = s.unit;
+    info.scale = s.scale;
+    info.minValue = s.minValue;
+    info.maxValue = s.maxValue;
+    info.defaultValue = s.defaultValue;
+    info.currentValue = s.defaultValue;
+    if (std::isfinite(s.scaleAnchor))
+        info.scaleAnchor = s.scaleAnchor;
+    info.choices = s.choices;
+    info.gateSlotIndex = s.gateSlotIndex;
+    info.gateNegated = s.gateNegated;
+    if (s.name.equalsIgnoreCase("Mix") && std::abs(s.minValue) < 1.0e-6f &&
+        std::abs(s.maxValue - 1.0f) < 1.0e-6f)
+        info.displayFormat = DisplayFormat::Percent;
+
+    if (index == host.engineAwareModeSlot()) {
+        info.choices = host.modeChoicesForActiveEngine();
+        if (!info.choices.empty()) {
+            info.minValue = 0.0f;
+            info.maxValue = static_cast<float>(info.choices.size() - 1);
+        }
+    }
+    info.hidden = host.isSlotHiddenForActiveEngine(index);
+
+    info.teMinValue = 0.0f;
+    info.teMaxValue = 1.0f;
+    return info;
+}
+
+/**
  * Normalized parameter storage owned by a neutral compiled-Faust device.
  */
 class CompiledParameterValue {

@@ -23,7 +23,6 @@ namespace magda {
 namespace te = tracktion;
 class TrackController;
 class WarpMarkerManager;
-struct WarpMarkerInfo;
 
 /**
  * @brief Manages clip synchronization between ClipManager and Tracktion Engine
@@ -33,7 +32,7 @@ struct WarpMarkerInfo;
  * - ClipManagerListener implementation (clips changed, property changed)
  * - Arrangement clip synchronization (audio + MIDI)
  * - Session clip slot management (create, launch, stop)
- * - Warp marker delegation to WarpMarkerManager
+ * - Warp marker map mirrored from the model; transient detection via WarpMarkerManager
  *
  * Thread Safety:
  * - All operations assumed to run on message thread
@@ -43,7 +42,7 @@ struct WarpMarkerInfo;
  * Dependencies:
  * - te::Edit& (for clip creation, tempo sequence, playback context)
  * - TrackController& (for track lookup and creation)
- * - WarpMarkerManager& (for transient detection and warp markers)
+ * - WarpMarkerManager& (for transient detection)
  */
 class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener {
   public:
@@ -179,7 +178,7 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
     te::Clip* getSessionTeClip(ClipId clipId);
 
     // =========================================================================
-    // Warp Marker Operations (Delegated to WarpMarkerManager)
+    // Transient Detection (Delegated to WarpMarkerManager)
     // =========================================================================
 
     /**
@@ -195,50 +194,6 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
      * @return true if transients were found
      */
     bool getTransientTimes(ClipId clipId);
-
-    /**
-     * @brief Enable warp/time-stretch for a clip
-     * @param clipId The MAGDA clip ID
-     */
-    void enableWarp(ClipId clipId);
-
-    /**
-     * @brief Disable warp/time-stretch for a clip
-     * @param clipId The MAGDA clip ID
-     */
-    void disableWarp(ClipId clipId);
-
-    /**
-     * @brief Get all warp markers for a clip
-     * @param clipId The MAGDA clip ID
-     * @return Vector of warp marker information
-     */
-    std::vector<WarpMarkerInfo> getWarpMarkers(ClipId clipId);
-
-    /**
-     * @brief Add a warp marker to a clip
-     * @param clipId The MAGDA clip ID
-     * @param sourceTime Time in source audio
-     * @param warpTime Warped time position
-     * @return Index of the added marker
-     */
-    int addWarpMarker(ClipId clipId, double sourceTime, double warpTime);
-
-    /**
-     * @brief Move an existing warp marker
-     * @param clipId The MAGDA clip ID
-     * @param markerIndex Index of marker to move
-     * @param newWarpTime New warped time position
-     * @return Actual new warp time (may be clamped)
-     */
-    double moveWarpMarker(ClipId clipId, int markerIndex, double newWarpTime);
-
-    /**
-     * @brief Remove a warp marker from a clip
-     * @param clipId The MAGDA clip ID
-     * @param markerIndex Index of marker to remove
-     */
-    void removeWarpMarker(ClipId clipId, int markerIndex);
 
     // =========================================================================
     // Utilities

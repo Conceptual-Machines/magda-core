@@ -8,6 +8,7 @@
 #include "../audio/plugin_manager/ExternalPluginState.hpp"
 #include "../audio/plugin_manager/ExternalPluginStateUtil.hpp"
 #include "../audio/plugins/InternalPluginRegistry.hpp"
+#include "../audio/plugins/TrackMeasurementPlugin.hpp"
 #include "../audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "../audio/plugins/tracktion/TracktionInternalPluginAdapter.hpp"
 #include "../audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
@@ -232,6 +233,21 @@ void TracktionEngineWrapper::applyPluginStateAt(const ChainNodePath& devicePath)
         processor->populateParameters(*live, DeviceProcessor::ValueSource::Engine);
 }
 
+void TracktionEngineWrapper::projectAuthoredStateAt(const ChainNodePath& devicePath) {
+    const auto* device = TrackManager::getInstance().getDeviceInChainByPath(devicePath);
+    auto plugin = audioBridge_ != nullptr ? audioBridge_->getPlugin(devicePath) : nullptr;
+    if (device == nullptr || plugin == nullptr)
+        return;
+
+    // An empty snapshot is still a state, "nothing authored", as in projectAuthoredStateToDevice.
+    auto tree = daw::audio::tracktion_adapter::devicePluginTreeFromState(device->pluginState);
+    if (!tree.isValid()) {
+        tree = juce::ValueTree(tracktion::engine::IDs::PLUGIN);
+        tree.setProperty(tracktion::engine::IDs::type, device->pluginId, nullptr);
+    }
+    plugin->restorePluginStateFromValueTree(tree);
+}
+
 std::optional<PluginPrograms> TracktionEngineWrapper::getPluginPrograms(const ChainNodePath& path) {
     if (!audioBridge_)
         return std::nullopt;
@@ -299,6 +315,32 @@ std::shared_ptr<daw::audio::MagdaDevice> TracktionEngineWrapper::renderedDevice(
 
     return daw::audio::tracktion_adapter::deviceHandleFromPlugin(
         audioBridge_->getPlugin(devicePath));
+}
+
+double TracktionEngineWrapper::deviceLatencySeconds(const ChainNodePath& devicePath) const {
+    const auto* processor =
+        audioBridge_ != nullptr ? audioBridge_->getDeviceProcessor(devicePath) : nullptr;
+    const auto plugin = processor != nullptr ? processor->getPlugin() : nullptr;
+    return plugin != nullptr ? plugin->getLatencySeconds() : 0.0;
+}
+
+daw::audio::TrackMeasurementTap* TracktionEngineWrapper::ensureTrackMeasurementTap(
+    TrackId trackId) {
+    return audioBridge_ != nullptr
+               ? audioBridge_->getPluginManager().ensureTrackMeasurementTap(trackId)
+               : nullptr;
+}
+
+daw::audio::TrackMeasurementTap* TracktionEngineWrapper::trackMeasurementTap(
+    TrackId trackId) const {
+    return audioBridge_ != nullptr
+               ? audioBridge_->getPluginManager().getTrackMeasurementTap(trackId)
+               : nullptr;
+}
+
+void TracktionEngineWrapper::removeTrackMeasurementTap(TrackId trackId) {
+    if (audioBridge_ != nullptr)
+        audioBridge_->getPluginManager().removeTrackMeasurementTap(trackId);
 }
 
 }  // namespace magda

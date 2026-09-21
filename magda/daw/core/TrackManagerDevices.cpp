@@ -3,7 +3,6 @@
 #include <ranges>
 #include <span>
 
-#include "../audio/AudioBridge.hpp"
 #include "../audio/TracktionHelpers.hpp"
 #include "../audio/plugin_manager/ExternalPluginStateUtil.hpp"
 #include "../audio/plugins/DeviceCatalogParameters.hpp"
@@ -1009,12 +1008,7 @@ bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
         return false;
     }
 
-    if (audioEngine_) {
-        if (auto* bridge = audioEngine_->getAudioBridge()) {
-            bridge->getPluginManager().prepareForChainElementMove(sourceElementPath,
-                                                                  destinationChainPath);
-        }
-    }
+    notifyChainElementMoving(sourceElementPath, destinationChainPath);
 
     ChainElement element = std::move(*sourceIt);
     sourceElements->erase(sourceElements->begin() + sourceIndex);
@@ -1183,15 +1177,11 @@ RackId TrackManager::wrapChainElementsInRack(const std::vector<ChainNodePath>& p
     chain.id = presetChainId != INVALID_CHAIN_ID ? presetChainId : allocateChainId();
     chain.name = "Chain 1";
 
-    if (audioEngine_) {
-        if (auto* bridge = audioEngine_->getAudioBridge()) {
-            ChainNodePath destinationPath = sourceChainPath;
-            destinationPath.steps.push_back({ChainStepType::Rack, rack.id});
-            destinationPath.steps.push_back({ChainStepType::Chain, chain.id});
-            for (const auto& [_, path] : orderedPaths)
-                bridge->getPluginManager().prepareForChainElementMove(path, destinationPath);
-        }
-    }
+    ChainNodePath destinationPath = sourceChainPath;
+    destinationPath.steps.push_back({ChainStepType::Rack, rack.id});
+    destinationPath.steps.push_back({ChainStepType::Chain, chain.id});
+    for (const auto& [_, path] : orderedPaths)
+        notifyChainElementMoving(path, destinationPath);
 
     for (const auto& [index, _] : orderedPaths)
         chain.elements.push_back(std::move((*sourceElements)[static_cast<size_t>(index)]));
@@ -1973,38 +1963,16 @@ void TrackManager::setDeviceParameterValue(const ChainNodePath& devicePath,
 
 namespace {
 
-/// Push an internal device's state document into its running plugin, if it has
+/// Push an internal device's state document into its running instance, if it has
 /// one. The projection direction: the model already holds the document, the
-/// engine adapter is told to match it.
-void projectAuthoredStateToEngine(AudioEngine* audioEngine, const ChainNodePath& devicePath,
-                                  const juce::String& docText, const juce::String& deviceType,
+/// engine that renders is told to match it.
+void projectAuthoredStateToEngine(const ChainNodePath& devicePath, const juce::String& docText,
                                   bool resetWhenUndecodable = true) {
-    if (audioEngine == nullptr)
+    if (!resetWhenUndecodable &&
+        !daw::audio::tracktion_adapter::devicePluginTreeFromState(docText).isValid())
         return;
 
-    namespace ta = daw::audio::tracktion_adapter;
-    auto tree = ta::devicePluginTreeFromState(docText);
-    if (!tree.isValid() && !resetWhenUndecodable)
-        return;
-
-    if (auto* bridge = audioEngine->getAudioBridge()) {
-        if (auto plugin = bridge->getPlugin(devicePath)) {
-            if (!tree.isValid()) {
-                tree = juce::ValueTree(tracktion::engine::IDs::PLUGIN);
-                tree.setProperty(tracktion::engine::IDs::type, deviceType, nullptr);
-            }
-
-            plugin->restorePluginStateFromValueTree(tree);
-            return;
-        }
-    }
-
-    // No fork plugin means the native engine is rendering, and the device it
-    // holds is the same object the fork's plugin would have handed the tree to.
-    // Without this the edit reached the model and nothing told the instance
-    // (#2663).
-    if (auto device = audioEngine->renderedDevice(devicePath))
-        projectAuthoredStateToDevice(*device, docText, deviceType);
+    PluginService::getInstance().projectAuthoredStateAt(devicePath);
 }
 
 }  // namespace
@@ -2035,7 +2003,7 @@ bool TrackManager::updateDeviceAuthoredState(const ChainNodePath& devicePath,
     patch(doc);
 
     device->pluginState = device_state::encode(doc);
-    projectAuthoredStateToEngine(audioEngine_, devicePath, device->pluginState, device->pluginId);
+    projectAuthoredStateToEngine(devicePath, device->pluginState);
     notifyDevicePropertyChanged(devicePath);
     return true;
 }
@@ -2077,7 +2045,7 @@ bool TrackManager::setDeviceAuthoredState(const ChainNodePath& devicePath,
     }
 
     device->pluginState = std::move(canonical);
-    projectAuthoredStateToEngine(audioEngine_, devicePath, device->pluginState, device->pluginId);
+    projectAuthoredStateToEngine(devicePath, device->pluginState);
     notifyDevicePropertyChanged(devicePath);
     return true;
 }
@@ -2111,7 +2079,7 @@ bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
         // Internal authored state is projected onto either the bridge plugin or the
         // native rendered device. A preset without a decodable snapshot leaves
         // authored-only live settings alone, matching the external chunk path.
-        projectAuthoredStateToEngine(audioEngine_, devicePath, live->pluginState, live->pluginId,
+        projectAuthoredStateToEngine(devicePath, live->pluginState,
                                      /*resetWhenUndecodable=*/false);
     } else {
         // The hosted-plugin provider owns the live chunk and may rewrite the model's
@@ -2324,48 +2292,27 @@ void TrackManager::setDeviceParameterValueFromPlugin(DeviceId deviceId, int para
 }
 
 double TrackManager::getDeviceLatencySeconds(const ChainNodePath& devicePath) {
-    auto* device = getDeviceInChainByPath(devicePath);
-    if (!device || !audioEngine_)
+    if (!getDeviceInChainByPath(devicePath) || !audioEngine_)
         return 0.0;
-
-    if (auto* bridge = audioEngine_->getAudioBridge()) {
-        if (auto* processor = bridge->getPluginManager().getDeviceProcessor(devicePath)) {
-            if (auto plugin = processor->getPlugin())
-                return plugin->getLatencySeconds();
-        }
-    }
-    return 0.0;
+    return audioEngine_->deviceLatencySeconds(devicePath);
 }
 
 double TrackManager::getTrackLatencySeconds(TrackId trackId) {
-    if (!audioEngine_)
+    const auto* track = getTrack(trackId);
+    if (!audioEngine_ || !track)
         return 0.0;
 
-    auto* bridge = audioEngine_->getAudioBridge();
-    if (!bridge)
-        return 0.0;
-
-    auto* track = getTrack(trackId);
-    if (!track)
-        return 0.0;
-
-    auto& pm = bridge->getPluginManager();
-    double total = 0.0;
-
-    // Helper to get latency for a single device
-    auto getDeviceLatency = [&](const ChainNodePath& devicePath) -> double {
-        if (auto* proc = pm.getDeviceProcessor(devicePath)) {
-            if (auto plugin = proc->getPlugin())
-                return plugin->getLatencySeconds();
-        }
-        return 0.0;
+    const auto latencyOf = [this](const ChainNodePath& devicePath) {
+        return audioEngine_->deviceLatencySeconds(devicePath);
     };
+
+    double total = 0.0;
 
     // Sum latency across top-level chain elements
     for (const auto& element : track->chain.fxChainElements) {
         if (magda::isDevice(element)) {
             const auto& device = magda::getDevice(element);
-            total += getDeviceLatency(ChainNodePath::topLevelDevice(trackId, device.id));
+            total += latencyOf(ChainNodePath::topLevelDevice(trackId, device.id));
         } else if (magda::isRack(element)) {
             // For racks: each chain is parallel, so take the max chain latency
             const auto& rack = magda::getRack(element);
@@ -2375,7 +2322,7 @@ double TrackManager::getTrackLatencySeconds(TrackId trackId) {
                 for (const auto& chainElem : chain.elements) {
                     if (magda::isDevice(chainElem)) {
                         const auto& device = magda::getDevice(chainElem);
-                        chainLatency += getDeviceLatency(
+                        chainLatency += latencyOf(
                             ChainNodePath::chainDevice(trackId, rack.id, chain.id, device.id));
                     }
                 }

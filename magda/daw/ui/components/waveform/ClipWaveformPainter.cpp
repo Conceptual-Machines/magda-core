@@ -6,12 +6,10 @@
 #include <vector>
 
 #include "WarpedWaveformRenderer.hpp"
-#include "audio/AudioBridge.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/ClipDisplayInfo.hpp"
 #include "core/TempoUtils.hpp"
-#include "core/TrackManager.hpp"
-#include "engine/AudioEngine.hpp"
+#include "core/WarpMarkerCommands.hpp"
 
 namespace magda::daw::ui {
 
@@ -101,16 +99,10 @@ void paintClipWaveform(juce::Graphics& g, const ClipInfo& clip, ClipId clipId,
     float gainLinear = juce::Decibels::decibelsToGain(clip.volumeDB + clip.gainDB);
 
     bool useWarpedDraw = false;
-    std::vector<WarpMarkerInfo> warpMarkers;
+    std::vector<WarpMarker> warpMarkers;
     if (audioEventRef(clip).warpEnabled) {
-        auto* audioEngine = TrackManager::getInstance().getAudioEngine();
-        if (audioEngine) {
-            auto* bridge = audioEngine->getAudioBridge();
-            if (bridge) {
-                warpMarkers = bridge->getWarpMarkers(clipId);
-                useWarpedDraw = warpMarkers.size() >= 2;
-            }
-        }
+        warpMarkers = getClipWarpMarkers(clipId);
+        useWarpedDraw = warpMarkers.size() >= 2;
     }
 
     if (useWarpedDraw) {

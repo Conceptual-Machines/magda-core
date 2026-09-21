@@ -21,7 +21,6 @@
 #include "../tracks/TrackContentPanel.hpp"
 #include "../waveform/ClipWaveformPainter.hpp"
 #include "../waveform/WarpedWaveformRenderer.hpp"
-#include "audio/AudioBridge.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/AppPaths.hpp"
 #include "core/ChordAnnotationCommands.hpp"
@@ -37,6 +36,7 @@
 #include "core/TempoUtils.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
+#include "core/WarpMarkerCommands.hpp"
 #include "engine/AudioEngine.hpp"
 #include "stem_separation/DemucsSeparator.hpp"
 #include "stem_separation/StemSeparationService.hpp"
@@ -3402,12 +3402,9 @@ void ClipComponent::showContextMenu() {
         double gridInterval = 0.0;
         if (parentPanel_ && parentPanel_->getTimelineController())
             gridInterval = parentPanel_->getTimelineController()->getState().getSnapInterval();
-        auto* audioEngine = TrackManager::getInstance().getAudioEngine();
-        auto* bridge = audioEngine ? audioEngine->getAudioBridge() : nullptr;
-
-        auto hasWarpMarkers = [&](const ClipInfo* c, ClipId id) {
-            return c && c->isAudio() && magda::audioEventRef(*c).warpEnabled && bridge &&
-                   bridge->getWarpMarkers(id).size() > 2;
+        auto hasWarpMarkers = [](const ClipInfo* c, ClipId id) {
+            return c && c->isAudio() && magda::audioEventRef(*c).warpEnabled &&
+                   getClipWarpMarkers(id).size() > 2;
         };
 
         if (isMultiSelection) {
@@ -4319,19 +4316,17 @@ void ClipComponent::showContextMenu() {
 
             case 13: {  // Slice at Warp Markers In Place
                 double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
-                auto* audioEngine = TrackManager::getInstance().getAudioEngine();
-                auto* bridge = audioEngine ? audioEngine->getAudioBridge() : nullptr;
                 if (selectionManager.getSelectedClipCount() > 1) {
                     UndoManager::getInstance().beginCompoundOperation(
                         "Slice Clips at Warp Markers");
                     for (auto cid : selectionManager.getSelectedClips()) {
                         const auto* c = clipManager.getClip(cid);
                         if (c && c->isAudio())
-                            sliceClipAtWarpMarkers(cid, tempo, bridge);
+                            sliceClipAtWarpMarkers(cid, tempo);
                     }
                     UndoManager::getInstance().endCompoundOperation();
                 } else {
-                    sliceClipAtWarpMarkers(clipId_, tempo, bridge);
+                    sliceClipAtWarpMarkers(clipId_, tempo);
                 }
                 break;
             }
@@ -4343,27 +4338,23 @@ void ClipComponent::showContextMenu() {
                     gridInterval =
                         parentPanel_->getTimelineController()->getState().getSnapInterval();
                 }
-                auto* audioEngine = TrackManager::getInstance().getAudioEngine();
-                auto* bridge = audioEngine ? audioEngine->getAudioBridge() : nullptr;
                 if (selectionManager.getSelectedClipCount() > 1) {
                     UndoManager::getInstance().beginCompoundOperation("Slice Clips at Grid");
                     for (auto cid : selectionManager.getSelectedClips()) {
                         const auto* c = clipManager.getClip(cid);
                         if (c && c->isAudio())
-                            sliceClipAtGrid(cid, gridInterval, tempo, bridge);
+                            sliceClipAtGrid(cid, gridInterval, tempo);
                     }
                     UndoManager::getInstance().endCompoundOperation();
                 } else {
-                    sliceClipAtGrid(clipId_, gridInterval, tempo, bridge);
+                    sliceClipAtGrid(clipId_, gridInterval, tempo);
                 }
                 break;
             }
 
             case 15: {  // Slice at Warp Markers to Drum Grid
                 double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
-                auto* audioEngine = TrackManager::getInstance().getAudioEngine();
-                auto* bridge = audioEngine ? audioEngine->getAudioBridge() : nullptr;
-                sliceWarpMarkersToDrumGrid(clipId_, tempo, bridge);
+                sliceWarpMarkersToDrumGrid(clipId_, tempo);
                 break;
             }
 
@@ -4374,9 +4365,7 @@ void ClipComponent::showContextMenu() {
                     gridInterval =
                         parentPanel_->getTimelineController()->getState().getSnapInterval();
                 }
-                auto* audioEngine = TrackManager::getInstance().getAudioEngine();
-                auto* bridge = audioEngine ? audioEngine->getAudioBridge() : nullptr;
-                sliceAtGridToDrumGrid(clipId_, gridInterval, tempo, bridge);
+                sliceAtGridToDrumGrid(clipId_, gridInterval, tempo);
                 break;
             }
 

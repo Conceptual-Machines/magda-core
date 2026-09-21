@@ -4,7 +4,7 @@
 #include <cmath>
 #include <limits>
 
-#include "../audio/AudioBridge.hpp"
+#include "../audio/AudioThumbnailManager.hpp"
 #include "ClipManager.hpp"
 
 namespace magda {
@@ -59,101 +59,90 @@ double constrainWarpTime(const std::vector<WarpMarker>& markers, int index, doub
 }
 }  // namespace
 
+void seedWarpMarkersFromTransients(ClipId clipId, double bpm) {
+    auto& manager = ClipManager::getInstance();
+    const auto* clip = manager.getClip(clipId);
+    auto* event = primaryEventOf(manager.getClip(clipId));
+    if (clip == nullptr || event == nullptr)
+        return;
+
+    const double length = event->sourceDurationSeconds();
+    const auto* transients =
+        AudioThumbnailManager::getInstance().getCachedTransients(event->sourceFilePath());
+    std::vector<WarpMarker> markers;
+    if (transients != nullptr && std::isfinite(length) && length > 0.0) {
+        // Identity markers at the transients the clip shows, between the two boundaries.
+        const double visibleStart = event->anchorSeconds();
+        const double visibleEnd =
+            visibleStart + event->timelineToSource(clip->getTimelineLength(bpm));
+        markers.push_back({0.0, 0.0});
+        for (const double time : *transients)
+            if (time >= visibleStart && time <= visibleEnd && time > 0.0 && time < length)
+                markers.push_back({time, time});
+        markers.push_back({length, length});
+    }
+    storeMarkers(clipId, markers);
+}
+
+void clearWarpMarkers(ClipId clipId) {
+    storeMarkers(clipId, {});
+}
+
 // =============================================================================
 // AddWarpMarkerCommand
 // =============================================================================
 
-AddWarpMarkerCommand::AddWarpMarkerCommand(AudioBridge* bridge, ClipId clipId, double sourceTime,
-                                           double warpTime)
-    : bridge_(bridge), clipId_(clipId), sourceTime_(sourceTime), warpTime_(warpTime) {}
+AddWarpMarkerCommand::AddWarpMarkerCommand(ClipId clipId, double sourceTime, double warpTime)
+    : clipId_(clipId), sourceTime_(sourceTime), warpTime_(warpTime) {}
 
 void AddWarpMarkerCommand::execute() {
-    if (!bridge_) {
-        auto* event = primaryEventOf(ClipManager::getInstance().getClip(clipId_));
-        if (!event || !std::isfinite(sourceTime_) || !std::isfinite(warpTime_))
-            return;
-        auto markers = getClipWarpMarkers(clipId_);
-        auto at = std::lower_bound(
-            markers.begin(), markers.end(), sourceTime_,
-            [](const auto& marker, double time) { return marker.sourceTime < time; });
-        // Boundary markers already exist; duplicate source positions have no valid slope.
-        if (at == markers.begin() || at == markers.end() || at->sourceTime == sourceTime_)
-            return;
-        if (!oldMarkers_)
-            oldMarkers_ = event->warpMarkers;
-        addedIndex_ = static_cast<int>(at - markers.begin());
-        markers.insert(at, {sourceTime_, warpTime_});
-        markers[static_cast<size_t>(addedIndex_)].warpTime =
-            constrainWarpTime(markers, addedIndex_, warpTime_);
-        storeMarkers(clipId_, markers);
+    auto* event = primaryEventOf(ClipManager::getInstance().getClip(clipId_));
+    if (!event || !std::isfinite(sourceTime_) || !std::isfinite(warpTime_))
         return;
-    }
-
-    addedIndex_ = bridge_->addWarpMarker(clipId_, sourceTime_, warpTime_);
-    ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
+    auto markers = getClipWarpMarkers(clipId_);
+    auto at =
+        std::lower_bound(markers.begin(), markers.end(), sourceTime_,
+                         [](const auto& marker, double time) { return marker.sourceTime < time; });
+    // Boundary markers already exist; duplicate source positions have no valid slope.
+    if (at == markers.begin() || at == markers.end() || at->sourceTime == sourceTime_)
+        return;
+    if (!oldMarkers_)
+        oldMarkers_ = event->warpMarkers;
+    addedIndex_ = static_cast<int>(at - markers.begin());
+    markers.insert(at, {sourceTime_, warpTime_});
+    markers[static_cast<size_t>(addedIndex_)].warpTime =
+        constrainWarpTime(markers, addedIndex_, warpTime_);
+    storeMarkers(clipId_, markers);
 }
 
 void AddWarpMarkerCommand::undo() {
-    if (!bridge_) {
-        if (oldMarkers_)
-            storeMarkers(clipId_, *oldMarkers_);
-        return;
-    }
-    if (addedIndex_ < 0)
-        return;
-
-    bridge_->removeWarpMarker(clipId_, addedIndex_);
-    ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
-    addedIndex_ = -1;
+    if (oldMarkers_)
+        storeMarkers(clipId_, *oldMarkers_);
 }
 
 // =============================================================================
 // MoveWarpMarkerCommand
 // =============================================================================
 
-MoveWarpMarkerCommand::MoveWarpMarkerCommand(AudioBridge* bridge, ClipId clipId, int index,
-                                             double newWarpTime)
-    : bridge_(bridge), clipId_(clipId), index_(index), newWarpTime_(newWarpTime) {}
+MoveWarpMarkerCommand::MoveWarpMarkerCommand(ClipId clipId, int index, double newWarpTime)
+    : clipId_(clipId), index_(index), newWarpTime_(newWarpTime) {}
 
 void MoveWarpMarkerCommand::execute() {
-    if (!bridge_) {
-        auto* event = primaryEventOf(ClipManager::getInstance().getClip(clipId_));
-        auto markers = getClipWarpMarkers(clipId_);
-        if (!event || !std::isfinite(newWarpTime_) || index_ < 0 ||
-            index_ >= static_cast<int>(markers.size()))
-            return;
-        if (!oldMarkers_)
-            oldMarkers_ = event->warpMarkers;
-        markers[static_cast<size_t>(index_)].warpTime =
-            constrainWarpTime(markers, index_, newWarpTime_);
-        storeMarkers(clipId_, markers);
+    auto* event = primaryEventOf(ClipManager::getInstance().getClip(clipId_));
+    auto markers = getClipWarpMarkers(clipId_);
+    if (!event || !std::isfinite(newWarpTime_) || index_ < 0 ||
+        index_ >= static_cast<int>(markers.size()))
         return;
-    }
-
-    // Capture old position if we haven't already
-    if (!hasOldTime_) {
-        auto markers = bridge_->getWarpMarkers(clipId_);
-        if (index_ >= 0 && index_ < static_cast<int>(markers.size())) {
-            oldWarpTime_ = markers[static_cast<size_t>(index_)].warpTime;
-            hasOldTime_ = true;
-        }
-    }
-
-    bridge_->moveWarpMarker(clipId_, index_, newWarpTime_);
-    ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
+    if (!oldMarkers_)
+        oldMarkers_ = event->warpMarkers;
+    markers[static_cast<size_t>(index_)].warpTime =
+        constrainWarpTime(markers, index_, newWarpTime_);
+    storeMarkers(clipId_, markers);
 }
 
 void MoveWarpMarkerCommand::undo() {
-    if (!bridge_) {
-        if (oldMarkers_)
-            storeMarkers(clipId_, *oldMarkers_);
-        return;
-    }
-    if (!hasOldTime_)
-        return;
-
-    bridge_->moveWarpMarker(clipId_, index_, oldWarpTime_);
-    ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
+    if (oldMarkers_)
+        storeMarkers(clipId_, *oldMarkers_);
 }
 
 bool MoveWarpMarkerCommand::canMergeWith(const UndoableCommand* other) const {
@@ -166,63 +155,35 @@ bool MoveWarpMarkerCommand::canMergeWith(const UndoableCommand* other) const {
 }
 
 void MoveWarpMarkerCommand::mergeWith(const UndoableCommand* other) {
-    const auto* otherMove = dynamic_cast<const MoveWarpMarkerCommand*>(other);
-    if (otherMove) {
-        // Keep our oldWarpTime_, update newWarpTime_ to the latest
+    if (const auto* otherMove = dynamic_cast<const MoveWarpMarkerCommand*>(other))
         newWarpTime_ = otherMove->newWarpTime_;
-    }
 }
 
 // =============================================================================
 // RemoveWarpMarkerCommand
 // =============================================================================
 
-RemoveWarpMarkerCommand::RemoveWarpMarkerCommand(AudioBridge* bridge, ClipId clipId, int index)
-    : bridge_(bridge), clipId_(clipId), index_(index) {}
+RemoveWarpMarkerCommand::RemoveWarpMarkerCommand(ClipId clipId, int index)
+    : clipId_(clipId), index_(index) {}
 
 void RemoveWarpMarkerCommand::execute() {
-    if (!bridge_) {
-        auto* event = primaryEventOf(ClipManager::getInstance().getClip(clipId_));
-        auto markers = getClipWarpMarkers(clipId_);
-        if (!event || index_ < 0 || index_ >= static_cast<int>(markers.size()))
-            return;
-        if (!oldMarkers_)
-            oldMarkers_ = event->warpMarkers;
-        if (index_ == 0 || index_ + 1 == static_cast<int>(markers.size()))
-            markers[static_cast<size_t>(index_)].warpTime =
-                constrainWarpTime(markers, index_, markers[static_cast<size_t>(index_)].sourceTime);
-        else
-            markers.erase(markers.begin() + index_);
-        storeMarkers(clipId_, markers);
+    auto* event = primaryEventOf(ClipManager::getInstance().getClip(clipId_));
+    auto markers = getClipWarpMarkers(clipId_);
+    if (!event || index_ < 0 || index_ >= static_cast<int>(markers.size()))
         return;
-    }
-
-    // Capture state before removal
-    if (!hasCapturedState_) {
-        auto markers = bridge_->getWarpMarkers(clipId_);
-        if (index_ >= 0 && index_ < static_cast<int>(markers.size())) {
-            removedSourceTime_ = markers[static_cast<size_t>(index_)].sourceTime;
-            removedWarpTime_ = markers[static_cast<size_t>(index_)].warpTime;
-            hasCapturedState_ = true;
-        }
-    }
-
-    bridge_->removeWarpMarker(clipId_, index_);
-    ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
+    if (!oldMarkers_)
+        oldMarkers_ = event->warpMarkers;
+    if (index_ == 0 || index_ + 1 == static_cast<int>(markers.size()))
+        markers[static_cast<size_t>(index_)].warpTime =
+            constrainWarpTime(markers, index_, markers[static_cast<size_t>(index_)].sourceTime);
+    else
+        markers.erase(markers.begin() + index_);
+    storeMarkers(clipId_, markers);
 }
 
 void RemoveWarpMarkerCommand::undo() {
-    if (!bridge_) {
-        if (oldMarkers_)
-            storeMarkers(clipId_, *oldMarkers_);
-        return;
-    }
-    if (!hasCapturedState_)
-        return;
-
-    // Re-add the marker at its original position
-    bridge_->addWarpMarker(clipId_, removedSourceTime_, removedWarpTime_);
-    ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
+    if (oldMarkers_)
+        storeMarkers(clipId_, *oldMarkers_);
 }
 
 }  // namespace magda

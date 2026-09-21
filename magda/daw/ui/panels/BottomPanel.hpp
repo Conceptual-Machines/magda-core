@@ -17,6 +17,10 @@ namespace magda {
 class DraggableValueLabel;
 class SvgButton;
 
+namespace daw::audio {
+class MagdaDevice;
+}
+
 namespace daw::ui {
 class AudioClipPropertiesContent;
 class ChordPanelContent;
@@ -201,7 +205,9 @@ class BottomPanel : public daw::ui::TabbedPanel,
     std::unique_ptr<PropsResizeHandle> propsResizer_;
     std::unique_ptr<magda::SvgButton> propsCollapseButton_;
 
-    // Chord analysis side panel (right side, for MIDI device tracks)
+    // Chord analysis side panel (right side, for MIDI device tracks). The engine
+    // it reads is held here, declared first so it outlives the panel.
+    std::shared_ptr<daw::audio::MagdaDevice> chordEngineDevice_;
     std::unique_ptr<daw::ui::ChordPanelContent> chordPanel_;
     bool showChordPanel_ = false;
     bool chordPanelCollapsed_ = false;

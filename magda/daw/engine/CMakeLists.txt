@@ -18,6 +18,7 @@ target_sources(magda_daw PRIVATE
     TracktionEngineWrapperClips.cpp
     TracktionEngineWrapperRecording.cpp
     TracktionEngineWrapperPlugins.cpp
+    TracktionFork.cpp
     MagdaUIBehaviour.cpp
     PluginExclusions.cpp
     PluginMetadataStore.cpp
@@ -33,6 +34,7 @@ target_sources(magda_daw PRIVATE
     AudioEngineChoice.hpp
     OfflineRenderHelper.hpp
     TracktionEngineWrapper.hpp
+    TracktionFork.hpp
     MagdaUIBehaviour.hpp
 )
 

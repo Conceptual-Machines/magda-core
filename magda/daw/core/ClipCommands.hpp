@@ -914,8 +914,6 @@ class RecordSessionToArrangementCommand : public UndoableCommand {
 // Slice Utilities
 // ============================================================================
 
-class AudioBridge;
-
 /**
  * @brief Split a clip at multiple sorted ascending times as one undo step.
  *
@@ -931,7 +929,7 @@ void sliceClipAtTimes(ClipId clipId, const std::vector<double>& splitTimes, doub
  * Disables warp, converts each marker's sourceTime to a linear timeline
  * position, and calls sliceClipAtTimes.
  */
-void sliceClipAtWarpMarkers(ClipId clipId, double tempo, AudioBridge* bridge);
+void sliceClipAtWarpMarkers(ClipId clipId, double tempo);
 
 /**
  * @brief Slice a clip at regular grid intervals.
@@ -940,24 +938,25 @@ void sliceClipAtWarpMarkers(ClipId clipId, double tempo, AudioBridge* bridge);
  *
  * Disables warp if enabled, then splits at each grid line inside the clip.
  */
-void sliceClipAtGrid(ClipId clipId, double gridInterval, double tempo, AudioBridge* bridge);
+void sliceClipAtGrid(ClipId clipId, double gridInterval, double tempo);
 
 /**
  * @brief Create a DrumGrid track from an audio clip's warp markers.
  *
  * Each warp marker boundary becomes a pad in a new DrumGridPlugin.
  * A MIDI clip is created with notes that trigger each pad in sequence
- * to reproduce the original pattern.
+ * to reproduce the original pattern. Only while the fork renders: the pad
+ * macros are linked through its plugin.
  */
-void sliceWarpMarkersToDrumGrid(ClipId clipId, double tempo, AudioBridge* bridge);
+void sliceWarpMarkersToDrumGrid(ClipId clipId, double tempo);
 
 /**
  * @brief Create a DrumGrid track from an audio clip sliced at grid intervals.
  *
  * Each grid-aligned region becomes a pad in a new DrumGridPlugin.
  * A MIDI clip is created with notes that trigger each pad in sequence
- * to reproduce the original pattern.
+ * to reproduce the original pattern. Only while the fork renders, as above.
  */
-void sliceAtGridToDrumGrid(ClipId clipId, double gridInterval, double tempo, AudioBridge* bridge);
+void sliceAtGridToDrumGrid(ClipId clipId, double gridInterval, double tempo);
 
 }  // namespace magda
