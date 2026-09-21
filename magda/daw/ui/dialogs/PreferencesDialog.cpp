@@ -732,6 +732,10 @@ class AppearancePage : public juce::Component {
         };
         addAndMakeVisible(addColourButton);
 
+        applyPaletteToProjectToggle.setButtonText(
+            tr("preferences.toggle.apply_palette_to_project"));
+        addAndMakeVisible(applyPaletteToProjectToggle);
+
         // Clip colour mode
         setupSectionHeader(*this, clipColourHeader, tr("preferences.section.clip_colours"));
 
@@ -847,6 +851,8 @@ class AppearancePage : public juce::Component {
         const auto& palette = config.getTrackColourPalette();
         for (const auto& entry : palette)
             addColourRow(entry.colour, entry.name);
+        applyPaletteToProjectToggle.setToggleState(false, juce::dontSendNotification);
+        applyPaletteToProjectToggle.setEnabled(ProjectManager::getInstance().hasOpenProject());
 
         clipColourModeCombo.setSelectedId(config.getClipColourMode() + 1,
                                           juce::dontSendNotification);
@@ -882,6 +888,14 @@ class AppearancePage : public juce::Component {
         config.setClipColourMode(clipColourModeCombo.getSelectedId() - 1);
     }
 
+    bool shouldApplyPaletteToCurrentProject() const {
+        return applyPaletteToProjectToggle.getToggleState();
+    }
+
+    void clearApplyPaletteToCurrentProject() {
+        applyPaletteToProjectToggle.setToggleState(false, juce::dontSendNotification);
+    }
+
   private:
     // Two-column layout metrics. Below kTwoColumnMinWidth the page stacks into a
     // single column; at or above it, the tall colour block sits beside the
@@ -905,8 +919,8 @@ class AppearancePage : public juce::Component {
     }
 
     static int getRightColumnContentHeight() {
-        return kHeaderH + 4 + 18 + 4 + ((kColourRowH + 2) * MAX_PALETTE_SIZE) + 4 +
-               24                                     // Track colours (header, columns, rows, add)
+        return kHeaderH + 4 + 18 + 4 + ((kColourRowH + 2) * MAX_PALETTE_SIZE) + 4 + 24 + 4 +
+               kRowH                                  // Track colours (header, rows, add, apply)
                + kSectionGap + kHeaderH + 4 + kRowH;  // Clip colours
     }
 
@@ -990,6 +1004,8 @@ class AppearancePage : public juce::Component {
         } else {
             addColourButton.setVisible(false);
         }
+        b.removeFromTop(4);
+        applyPaletteToProjectToggle.setBounds(b.removeFromTop(kRowH));
     }
 
     void layoutClipColoursSection(juce::Rectangle<int>& b) {
@@ -1328,6 +1344,7 @@ class AppearancePage : public juce::Component {
     std::vector<std::unique_ptr<juce::TextEditor>> nameEditors_;
     std::vector<std::unique_ptr<juce::TextButton>> deleteButtons_;
     juce::TextButton addColourButton;
+    juce::ToggleButton applyPaletteToProjectToggle;
 
     // Display Scale controls (UI scale, UI font family, global font size).
     juce::Label scaleHeader;
@@ -3337,6 +3354,10 @@ void PreferencesDialog::applySettings() {
     // Apply non-path pages and persist.
     generalPage->applySettings(config);
     appearancePage->applySettings(config);
+    if (appearancePage->shouldApplyPaletteToCurrentProject()) {
+        ProjectManager::getInstance().applyConfigPaletteToCurrentProject();
+        appearancePage->clearApplyPaletteToCurrentProject();
+    }
     renderingPage->applySettings(config);
     shortcutsPage->applySettings(config);
     pathsPage->applySettings(config);  // no-op for path values

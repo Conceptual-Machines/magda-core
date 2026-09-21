@@ -1093,7 +1093,14 @@ TEST_CASE("DawProjectXmlAdapter gives a colourless clip on a colourless track a 
     REQUIRE(doc.clips.size() == 1);
 
     CHECK_FALSE(doc.clips[0].colour.isTransparent());
-    CHECK(doc.clips[0].colour == juce::Colour(Config::getDefaultColour(0)));
+    CHECK(doc.clips[0].colour == juce::Colour(ProjectInfo{}.defaults.colourForIndex(0)));
+
+    ProjectDefaults importedDefaults;
+    importedDefaults.colourPalette = {{0xFF123456, "Import colour"}};
+    ProjectDocument withSeed;
+    REQUIRE(DawProjectXmlAdapter::fromProjectXml(xml, withSeed, error, &importedDefaults));
+    REQUIRE(withSeed.clips.size() == 1);
+    CHECK(withSeed.clips[0].colour == juce::Colour(0xFF123456));
 }
 
 TEST_CASE("DawProjectXmlAdapter imports effect tracks as aux returns with send routing",

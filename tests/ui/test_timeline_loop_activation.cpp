@@ -342,7 +342,7 @@ TEST_CASE("Project restore does not borrow an invalid timeline length from the o
     magda::TimelineController controller;
     controller.restoreProjectState(120.0, 4, 4, false, 0.0, 0.0, {}, 0);
 
-    const auto expectedBars = magda::ProjectInfo{}.timelineLengthBars;
+    const auto expectedBars = magda::kDefaultTimelineLengthBars;
     REQUIRE(controller.getState().timelineLengthBeats == Catch::Approx(expectedBars * 4.0));
 }
 

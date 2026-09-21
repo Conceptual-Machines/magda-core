@@ -1371,10 +1371,9 @@ void TimelineController::restoreProjectState(double tempo, int timeSigNum, int t
     state.tempo.timeSignatureNumerator = clampTimeSignatureValue(timeSigNum);
     state.tempo.timeSignatureDenominator = clampTimeSignatureValue(timeSigDen);
 
-    // Timeline length is a per-project property. Deserialization has already
-    // seeded old projects from the new-project preference.
-    const int lengthBars =
-        timelineLengthBars > 0 ? timelineLengthBars : ProjectInfo{}.timelineLengthBars;
+    // A missing legacy field is seeded by deserialization. An explicitly
+    // invalid value uses a neutral schema default, never the outgoing project.
+    const int lengthBars = timelineLengthBars > 0 ? timelineLengthBars : kDefaultTimelineLengthBars;
     state.timelineLengthBeats = lengthBars * state.tempo.timeSignatureNumerator;
     state.timelineLength = state.tempo.barsToTime(lengthBars);
 

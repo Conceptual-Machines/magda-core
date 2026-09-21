@@ -28,10 +28,6 @@ namespace magda {
 
 thread_local juce::String ProjectSerializer::lastError_;
 
-namespace {
-ProjectInfo projectInfoFromConfig();
-}
-
 // ============================================================================
 // File I/O with gzip compression
 // ============================================================================
@@ -112,10 +108,18 @@ bool ProjectSerializer::exportToDawProject(const juce::File& file, const Project
 
 bool ProjectSerializer::loadDawProjectAndStage(const juce::File& file, StagedProjectData& outData,
                                                const juce::File& audioExtractionDir) {
+    return loadDawProjectAndStage(file, outData, audioExtractionDir,
+                                  ProjectManager::captureCreationSettingsFromConfig());
+}
+
+bool ProjectSerializer::loadDawProjectAndStage(const juce::File& file, StagedProjectData& outData,
+                                               const juce::File& audioExtractionDir,
+                                               const ProjectCreationSettings& creationSettings) {
     ProjectDocument document;
     juce::String error;
 
-    if (!DawProjectArchive::readFromFile(file, document, error, audioExtractionDir)) {
+    if (!DawProjectArchive::readFromFile(file, document, error, audioExtractionDir,
+                                         &creationSettings.defaults)) {
         lastError_ = std::move(error);
         return false;
     }
@@ -123,9 +127,8 @@ bool ProjectSerializer::loadDawProjectAndStage(const juce::File& file, StagedPro
     outData = NativeProjectDocumentAdapter::toStagedProjectData(document);
     // DAWproject has no MAGDA defaults block. An import is a new, unsaved
     // project, so snapshot this installation's new-project preferences once.
-    auto seeded = projectInfoFromConfig();
-    outData.info.timelineLengthBars = seeded.timelineLengthBars;
-    outData.info.defaults = std::move(seeded.defaults);
+    outData.info.timelineLengthBars = creationSettings.timelineLengthBars;
+    outData.info.defaults = creationSettings.defaults;
     return true;
 }
 
@@ -205,12 +208,6 @@ ProjectMetadata readProjectMetadata(juce::DynamicObject& projectObj) {
     return metadata;
 }
 
-ProjectInfo projectInfoFromConfig() {
-    ProjectInfo seeded;
-    ProjectManager::seedProjectFromConfig(seeded);
-    return seeded;
-}
-
 ProjectDefaults readProjectDefaults(juce::DynamicObject& projectObj, ProjectDefaults defaults) {
     // An old project has no defaults object. Seed every value from the current
     // new-project preferences first, then let whatever the file carries win.
@@ -231,8 +228,11 @@ ProjectDefaults readProjectDefaults(juce::DynamicObject& projectObj, ProjectDefa
     if (defaultsObj->hasProperty("clipColourMode"))
         defaults.clipColourMode = defaultsObj->getProperty("clipColourMode");
 
-    const auto paletteVar = defaultsObj->getProperty("colourPalette");
-    if (const auto* palette = paletteVar.getArray()) {
+    if (defaultsObj->hasProperty("colourPalette")) {
+        const auto paletteVar = defaultsObj->getProperty("colourPalette");
+        const auto* palette = paletteVar.getArray();
+        if (palette == nullptr)
+            return defaults;
         std::vector<ProjectColourEntry> parsed;
         parsed.reserve(static_cast<std::size_t>(palette->size()));
         for (int i = 0; i < palette->size(); ++i) {
@@ -241,13 +241,17 @@ ProjectDefaults readProjectDefaults(juce::DynamicObject& projectObj, ProjectDefa
             auto name = "Colour " + juce::String(i + 1);
             if (auto* entryObj = item.getDynamicObject()) {
                 encoded = entryObj->getProperty("colour").toString();
-                name = entryObj->getProperty("name").toString();
+                const auto savedName = entryObj->getProperty("name").toString();
+                if (savedName.isNotEmpty())
+                    name = savedName;
             }
-            if (encoded.isNotEmpty())
-                parsed.push_back({juce::Colour::fromString(encoded).getARGB(), name});
+            const bool validColour =
+                encoded.length() == 8 && encoded.containsOnly("0123456789abcdefABCDEF");
+            parsed.push_back({validColour ? juce::Colour::fromString(encoded).getARGB()
+                                          : ProjectColourEntry{}.colour,
+                              name});
         }
-        if (!parsed.empty())
-            defaults.colourPalette = std::move(parsed);
+        defaults.colourPalette = std::move(parsed);
     }
     return defaults;
 }
@@ -255,6 +259,11 @@ ProjectDefaults readProjectDefaults(juce::DynamicObject& projectObj, ProjectDefa
 }  // namespace
 
 bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& outData) {
+    return loadAndStage(file, outData, ProjectManager::captureCreationSettingsFromConfig());
+}
+
+bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& outData,
+                                     const ProjectCreationSettings& creationSettings) {
     try {
         // Check file exists
         if (!file.existsAsFile()) {
@@ -332,11 +341,10 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
 
         if (projectObj->hasProperty("sampleRate"))
             outData.info.sampleRate = projectObj->getProperty("sampleRate");
-        auto seeded = projectInfoFromConfig();
-        outData.info.timelineLengthBars = seeded.timelineLengthBars;
+        outData.info.timelineLengthBars = creationSettings.timelineLengthBars;
         if (projectObj->hasProperty("timelineLengthBars"))
             outData.info.timelineLengthBars = projectObj->getProperty("timelineLengthBars");
-        outData.info.defaults = readProjectDefaults(*projectObj, std::move(seeded.defaults));
+        outData.info.defaults = readProjectDefaults(*projectObj, creationSettings.defaults);
         if (projectObj->hasProperty("savedWithEngine"))
             outData.info.savedWithEngine = projectObj->getProperty("savedWithEngine").toString();
         if (projectObj->hasProperty("renderBitDepth"))
@@ -719,11 +727,11 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
 
     if (projectObj->hasProperty("sampleRate"))
         outInfo.sampleRate = projectObj->getProperty("sampleRate");
-    auto seeded = projectInfoFromConfig();
-    outInfo.timelineLengthBars = seeded.timelineLengthBars;
+    auto creationSettings = ProjectManager::captureCreationSettingsFromConfig();
+    outInfo.timelineLengthBars = creationSettings.timelineLengthBars;
     if (projectObj->hasProperty("timelineLengthBars"))
         outInfo.timelineLengthBars = projectObj->getProperty("timelineLengthBars");
-    outInfo.defaults = readProjectDefaults(*projectObj, std::move(seeded.defaults));
+    outInfo.defaults = readProjectDefaults(*projectObj, std::move(creationSettings.defaults));
     if (projectObj->hasProperty("savedWithEngine"))
         outInfo.savedWithEngine = projectObj->getProperty("savedWithEngine").toString();
     if (projectObj->hasProperty("renderBitDepth"))

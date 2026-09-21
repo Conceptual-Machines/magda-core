@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "ClipTypes.hpp"
+#include "DefaultColourPalette.hpp"
 
 namespace magda {
 
@@ -1099,26 +1100,8 @@ class Config {
     }
 
     // Palette used to seed newly created projects (tracks + clips share it).
-    struct ColourEntry {
-        uint32_t colour;
-        const char* name;
-    };
-
-    static constexpr std::array<ColourEntry, 8> defaultColourPalette = {{
-        {0xFF5588AA, "Blue"},
-        {0xFF55AA88, "Teal"},
-        {0xFF88AA55, "Green"},
-        {0xFFAAAA55, "Yellow"},
-        {0xFFAA8855, "Orange"},
-        {0xFFAA5555, "Red"},
-        {0xFFAA55AA, "Purple"},
-        {0xFF5555AA, "Indigo"},
-    }};
-
-    static uint32_t getDefaultColour(int index) {
-        return defaultColourPalette[static_cast<size_t>(index) % defaultColourPalette.size()]
-            .colour;
-    }
+    using ColourEntry = DefaultColourEntry;
+    static constexpr auto defaultColourPalette = kDefaultColourPalette;
 
     // Custom colour palette (user-defined via Preferences)
     struct TrackColourEntry {

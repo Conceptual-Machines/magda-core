@@ -123,7 +123,8 @@ bool DawProjectArchive::writeToFile(const juce::File& file, const ProjectDocumen
 }
 
 bool DawProjectArchive::readFromFile(const juce::File& file, ProjectDocument& outDocument,
-                                     juce::String& error, const juce::File& audioExtractionDir) {
+                                     juce::String& error, const juce::File& audioExtractionDir,
+                                     const ProjectDefaults* creationDefaults) {
     error.clear();
 
     if (!file.existsAsFile()) {
@@ -159,7 +160,7 @@ bool DawProjectArchive::readFromFile(const juce::File& file, ProjectDocument& ou
                                      metadataWarning);
     }
 
-    if (!DawProjectXmlAdapter::fromProjectXml(projectXml, outDocument, error))
+    if (!DawProjectXmlAdapter::fromProjectXml(projectXml, outDocument, error, creationDefaults))
         return false;
 
     // Extract embedded audio to disk and repoint clips at the extracted files,

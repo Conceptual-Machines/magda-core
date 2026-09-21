@@ -514,9 +514,10 @@ ClipId ClipManager::createMidiClipBeats(TrackId trackId, double startBeats, doub
     clip.trackId = trackId;
     clip.setMidiContent();
     clip.view = view;
+    const auto& projectDefaults = currentProjectDefaults();
     // Occlusion applies to audio and MIDI alike, so the project default seeds both
     // (#2003). Per clip from here on.
-    clip.overlapPlaysBoth = currentProjectDefaults().overlapPlaysBoth;
+    clip.overlapPlaysBoth = projectDefaults.overlapPlaysBoth;
     clip.name = generateClipName(ClipType::MIDI);
     // Chord-track clips are chord progressions, not generic MIDI clips.
     if (const auto* nameTrack = TrackManager::getInstance().getTrack(trackId);
@@ -529,7 +530,6 @@ ClipId ClipManager::createMidiClipBeats(TrackId trackId, double startBeats, doub
         }
         clip.name = "Progression " + juce::String(n);
     }
-    const auto& projectDefaults = currentProjectDefaults();
     if (projectDefaults.clipColourMode == 0) {
         const auto* track = TrackManager::getInstance().getTrack(trackId);
         clip.colour = track ? track->colour : juce::Colour(projectDefaults.colourForIndex(0));
@@ -576,9 +576,9 @@ ClipId ClipManager::createRecordedMidiClip(TrackId trackId, RecordedMidiClipData
     clip.setMidiContent();
     clip.view = view;
     clip.sceneIndex = sceneIndex;
-    clip.overlapPlaysBoth = currentProjectDefaults().overlapPlaysBoth;
-    clip.name = generateClipName(ClipType::MIDI);
     const auto& projectDefaults = currentProjectDefaults();
+    clip.overlapPlaysBoth = projectDefaults.overlapPlaysBoth;
+    clip.name = generateClipName(ClipType::MIDI);
     if (projectDefaults.clipColourMode == 0) {
         const auto* track = TrackManager::getInstance().getTrack(trackId);
         clip.colour = track ? track->colour : juce::Colour(projectDefaults.colourForIndex(0));

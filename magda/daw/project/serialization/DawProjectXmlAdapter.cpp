@@ -1106,7 +1106,8 @@ juce::String DawProjectXmlAdapter::toProjectXml(const ProjectDocument& document)
 }
 
 bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocument& outDocument,
-                                          juce::String& error) {
+                                          juce::String& error,
+                                          const ProjectDefaults* creationDefaults) {
     auto root = juce::parseXML(xml);
     if (!root || !root->hasTagName("Project")) {
         error = "DAWproject XML does not contain a Project root";
@@ -1114,6 +1115,8 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
     }
 
     ProjectDocument document;
+    if (creationDefaults != nullptr)
+        document.info.defaults = *creationDefaults;
     document.info.version = MAGDA_VERSION;
     document.info.name = "Imported DAWproject";
 

@@ -328,21 +328,31 @@ int commonPathSuffixLength(const juce::String& first, const juce::String& second
 
 }  // namespace
 
+ProjectCreationSettings ProjectManager::captureCreationSettingsFromConfig() {
+    const auto& config = Config::getInstance();
+    ProjectCreationSettings settings;
+    settings.timelineLengthBars = config.getDefaultTimelineLengthBars();
+    settings.defaults.zoomViewBars = config.getDefaultZoomViewBars();
+    settings.defaults.autoCrossfade = config.getAutoCrossfadeByDefault();
+    settings.defaults.overlapPlaysBoth = config.getClipOverlapPlaysBoth();
+    settings.defaults.chordPreview = config.getChordPreviewOnByDefault();
+    settings.defaults.postFxPostFader = config.getPostFxPostFaderByDefault();
+    settings.defaults.clipColourMode = config.getClipColourMode();
+
+    const auto customPalette = config.getTrackColourPalette();
+    settings.defaults.colourPalette.reserve(settings.defaults.colourPalette.size() +
+                                            customPalette.size());
+    for (const auto& entry : customPalette)
+        settings.defaults.colourPalette.push_back({entry.colour, juce::String(entry.name)});
+
+    return settings;
+}
+
 void ProjectManager::seedProjectFromConfig(ProjectInfo& project) {
     const auto& config = Config::getInstance();
-    project.timelineLengthBars = config.getDefaultTimelineLengthBars();
-    project.defaults.zoomViewBars = config.getDefaultZoomViewBars();
-    project.defaults.autoCrossfade = config.getAutoCrossfadeByDefault();
-    project.defaults.overlapPlaysBoth = config.getClipOverlapPlaysBoth();
-    project.defaults.chordPreview = config.getChordPreviewOnByDefault();
-    project.defaults.postFxPostFader = config.getPostFxPostFaderByDefault();
-    project.defaults.clipColourMode = config.getClipColourMode();
-
-    project.defaults.colourPalette.clear();
-    for (const auto& entry : Config::defaultColourPalette)
-        project.defaults.colourPalette.push_back({entry.colour, entry.name});
-    for (const auto& entry : config.getTrackColourPalette())
-        project.defaults.colourPalette.push_back({entry.colour, juce::String(entry.name)});
+    auto settings = captureCreationSettingsFromConfig();
+    project.timelineLengthBars = settings.timelineLengthBars;
+    project.defaults = std::move(settings.defaults);
 
     project.sampleRate = config.getRenderSampleRate();
     project.renderBitDepth = config.getRenderBitDepth();
@@ -359,6 +369,17 @@ void ProjectManager::seedProjectFromConfig(ProjectInfo& project) {
         if (entry != metadataDefaults.end())
             project.metadata.*field.member = juce::String(entry->second);
     }
+}
+
+void ProjectManager::applyConfigPaletteToCurrentProject() {
+    if (!isProjectOpen_)
+        return;
+
+    auto palette = captureCreationSettingsFromConfig().defaults.colourPalette;
+    if (currentProject_.defaults.colourPalette == palette)
+        return;
+    currentProject_.defaults.colourPalette = std::move(palette);
+    markDirty();
 }
 
 ProjectManager& ProjectManager::getInstance() {
@@ -451,8 +472,11 @@ bool ProjectManager::newProject() {
 }
 
 void ProjectManager::seedCurrentProjectFromConfig() {
-    if (!isProjectOpen_)
-        seedProjectFromConfig(currentProject_);
+    if (!isProjectOpen_) {
+        auto settings = captureCreationSettingsFromConfig();
+        currentProject_.timelineLengthBars = settings.timelineLengthBars;
+        currentProject_.defaults = std::move(settings.defaults);
+    }
 }
 
 bool ProjectManager::saveProject() {
@@ -667,12 +691,16 @@ void ProjectManager::importDawProjectAsync(
     // Join any previous background load before starting a new one.
     joinBackgroundThread();
 
+    // Config is mutable on the message thread. Never read it from the loader.
+    const auto creationSettings = captureCreationSettingsFromConfig();
+
     const auto startingRevision = mutationRevision_;
     const auto& fileCopy = file;
     loadThread_ = std::thread([fileCopy, importedDir, importMediaDirectory, startingRevision,
-                               onBeforeCommit, onComplete, this]() {
+                               creationSettings, onBeforeCommit, onComplete, this]() {
         auto staged = std::make_shared<StagedProjectData>();
-        const bool ok = ProjectSerializer::loadDawProjectAndStage(fileCopy, *staged, importedDir);
+        const bool ok = ProjectSerializer::loadDawProjectAndStage(fileCopy, *staged, importedDir,
+                                                                  creationSettings);
         juce::String error;
         if (!ok) {
             DBG("Failed to import DAWproject: " + ProjectSerializer::getLastError());
@@ -758,14 +786,17 @@ void ProjectManager::loadProjectAsync(
     // Join any previous background load before starting a new one
     joinBackgroundThread();
 
+    // Snapshot mutable Preferences before launching the background loader.
+    const auto creationSettings = captureCreationSettingsFromConfig();
+
     const auto startingRevision = mutationRevision_;
     const auto& originalFile = file;
 
     // Launch background thread for I/O + parse + staging
-    loadThread_ = std::thread([fileCopy, originalFile, recoveredFromAutosave, onBeforeCommit,
-                               onComplete, startingRevision, this]() {
+    loadThread_ = std::thread([fileCopy, originalFile, recoveredFromAutosave, creationSettings,
+                               onBeforeCommit, onComplete, startingRevision, this]() {
         auto staged = std::make_shared<StagedProjectData>();
-        bool ok = ProjectSerializer::loadAndStage(fileCopy, *staged);
+        bool ok = ProjectSerializer::loadAndStage(fileCopy, *staged, creationSettings);
         juce::String error;
         if (!ok) {
             DBG("Failed to load project: " + ProjectSerializer::getLastError());
@@ -849,10 +880,10 @@ bool ProjectManager::closeProject() {
 
     // Reset state
     currentProject_ = ProjectInfo();
-    seedProjectFromConfig(currentProject_);
+    isProjectOpen_ = false;
+    seedCurrentProjectFromConfig();
     currentFile_ = juce::File();
     mediaDirectory_ = juce::File();
-    isProjectOpen_ = false;
     UndoManager::getInstance().clearHistory();
     clearDirty();
     notifyProjectClosed();

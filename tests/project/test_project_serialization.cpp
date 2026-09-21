@@ -1190,6 +1190,39 @@ TEST_CASE("Project creation defaults roundtrip and support legacy files",
         CHECK(loaded.defaults.zoomViewBars == 19);
         CHECK_FALSE(loaded.defaults.autoCrossfade);
     }
+
+    SECTION("A saved empty palette stays empty across machines") {
+        ProjectInfo info;
+        info.defaults.colourPalette.clear();
+
+        ProjectInfo loaded;
+        REQUIRE(ProjectSerializer::deserializeProject(ProjectSerializer::serializeProject(info),
+                                                      loaded));
+        CHECK(loaded.defaults.colourPalette.empty());
+        CHECK(loaded.defaults.colourForIndex(0) == kDefaultColourPalette.front().colour);
+    }
+
+    SECTION("A malformed palette entry keeps its position") {
+        auto json = ProjectSerializer::serializeProject(ProjectInfo{});
+        auto* projectObj = json.getDynamicObject()->getProperty("project").getDynamicObject();
+        REQUIRE(projectObj != nullptr);
+        auto* defaultsObj = projectObj->getProperty("defaults").getDynamicObject();
+        REQUIRE(defaultsObj != nullptr);
+        defaultsObj->setProperty(
+            "colourPalette",
+            juce::JSON::parse(
+                R"([{"colour":"ff010203","name":"First"},{"name":"Missing"},{"colour":"not-a-colour","name":"Invalid"},{"colour":"ff040506","name":"Fourth"}])"));
+
+        ProjectInfo loaded;
+        REQUIRE(ProjectSerializer::deserializeProject(json, loaded));
+        REQUIRE(loaded.defaults.colourPalette.size() == 4);
+        CHECK(loaded.defaults.colourPalette[0].colour == 0xFF010203);
+        CHECK(loaded.defaults.colourPalette[1].colour == kDefaultColourPalette.front().colour);
+        CHECK(loaded.defaults.colourPalette[1].name == "Missing");
+        CHECK(loaded.defaults.colourPalette[2].colour == kDefaultColourPalette.front().colour);
+        CHECK(loaded.defaults.colourPalette[2].name == "Invalid");
+        CHECK(loaded.defaults.colourPalette[3].colour == 0xFF040506);
+    }
 }
 
 TEST_CASE("A device's parameter selections are saved as slots", "[project][serialization]") {
@@ -2610,6 +2643,8 @@ TEST_CASE("A new project is seeded with the stored credit defaults",
 
     auto& config = Config::getInstance();
     const auto restore = config.getProjectMetadataDefaults();
+    const juce::ScopeGuard restoreConfig{
+        [&config, restore] { config.setProjectMetadataDefaults(restore); }};
 
     std::map<std::string, std::string> defaults;
     for (const auto& field : kProjectMetadataFields)
@@ -2632,7 +2667,11 @@ TEST_CASE("A new project is seeded with the stored credit defaults",
         }
     }
 
-    config.setProjectMetadataDefaults(restore);
+    REQUIRE(ProjectManager::getInstance().closeProject());
+    CHECK_FALSE(ProjectManager::getInstance().hasOpenProject());
+    CHECK(ProjectManager::getInstance().getCurrentProjectInfo().metadata.isEmpty());
+    CHECK(ProjectManager::getInstance().getCurrentProjectInfo().timelineLengthBars ==
+          config.getDefaultTimelineLengthBars());
 }
 
 TEST_CASE("A project snapshot captures creation defaults and the editable colour palette",
@@ -2682,6 +2721,61 @@ TEST_CASE("A project snapshot captures creation defaults and the editable colour
     CHECK(project.defaults.colourPalette[Config::defaultColourPalette.size()].name == "User cyan");
     CHECK(project.defaults.colourPalette.back().colour == 0xFF564738);
     CHECK(project.defaults.colourPalette.back().name == "User brown");
+
+    const auto snapshot = ProjectManager::captureCreationSettingsFromConfig();
+    config.setDefaultTimelineLengthBars(111);
+    config.setTrackColourPalette({{0xFF998877, "Changed later"}});
+    CHECK(snapshot.timelineLengthBars == 619);
+    CHECK(snapshot.defaults.colourPalette.back().colour == 0xFF564738);
+
+    auto legacyJson = ProjectSerializer::serializeProject(ProjectInfo{});
+    auto* legacyProject = legacyJson.getDynamicObject()->getProperty("project").getDynamicObject();
+    REQUIRE(legacyProject != nullptr);
+    legacyProject->removeProperty("timelineLengthBars");
+    legacyProject->removeProperty("defaults");
+
+    const auto file = createTestTempFile(".mgd");
+    const juce::ScopeGuard removeFile{[file] { file.deleteFile(); }};
+    {
+        juce::FileOutputStream output(file);
+        REQUIRE(output.openedOk());
+        juce::GZIPCompressorOutputStream gzip(output, 9);
+        gzip.writeText(juce::JSON::toString(legacyJson), false, false, nullptr);
+        gzip.flush();
+    }
+
+    StagedProjectData staged;
+    REQUIRE(ProjectSerializer::loadAndStage(file, staged, snapshot));
+    CHECK(staged.info.timelineLengthBars == 619);
+    CHECK(staged.info.defaults.colourPalette.back().colour == 0xFF564738);
+}
+
+TEST_CASE("Preferences palette changes reach an open project only when explicitly applied",
+          "[project][manager][defaults]") {
+    ProjectTestFixture fixture;
+    auto& projects = ProjectManager::getInstance();
+    if (projects.isDirty())
+        REQUIRE(projects.saveProjectAs(fixture.createTempProjectFile(".mgd")));
+    REQUIRE(projects.newProject());
+
+    auto& config = Config::getInstance();
+    const auto previousPalette = config.getTrackColourPalette();
+    const juce::ScopeGuard restoreConfig{
+        [&config, previousPalette] { config.setTrackColourPalette(previousPalette); }};
+    const auto savedPalette = projects.getCurrentProjectInfo().defaults.colourPalette;
+
+    config.setTrackColourPalette({{0xFFEE1188, "Hot Pink"}});
+    CHECK(projects.getCurrentProjectInfo().defaults.colourPalette == savedPalette);
+
+    projects.applyConfigPaletteToCurrentProject();
+    REQUIRE(projects.getCurrentProjectInfo().defaults.colourPalette.size() ==
+            kDefaultColourPalette.size() + 1);
+    CHECK(projects.getCurrentProjectInfo().defaults.colourPalette.back().colour == 0xFFEE1188);
+    CHECK(projects.getCurrentProjectInfo().defaults.colourPalette.back().name == "Hot Pink");
+    CHECK(projects.isDirty());
+
+    REQUIRE(projects.saveProjectAs(fixture.createTempProjectFile(".mgd")));
+    REQUIRE(projects.closeProject());
 }
 
 TEST_CASE("DeviceInfo pluginState roundtrip", "[project][serialization][pluginState]") {

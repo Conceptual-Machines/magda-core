@@ -604,7 +604,7 @@ void MainWindow::setupMenuCallbacks() {
 
             // Reset timeline/transport to defaults
             if (mainComponent && mainComponent->mainView) {
-                const auto& defaults = projectManager.getCurrentProjectInfo();
+                const auto defaults = projectManager.getCurrentProjectInfo();
                 auto& tc = mainComponent->mainView->getTimelineController();
                 tc.restoreProjectState(defaults.tempo, defaults.timeSignatureNumerator,
                                        defaults.timeSignatureDenominator, defaults.loopEnabled,

@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "../core/DefaultColourPalette.hpp"
 #include "../core/TempoUtils.hpp"
 #include "version.hpp"
 
@@ -99,6 +100,13 @@ inline bool ProjectMetadata::isEmpty() const {
     return true;
 }
 
+struct ProjectColourEntry {
+    std::uint32_t colour = kDefaultColourPalette.front().colour;
+    juce::String name = kDefaultColourPalette.front().name;
+
+    bool operator==(const ProjectColourEntry&) const = default;
+};
+
 /**
  * Defaults used when new content is added to this project.
  *
@@ -106,13 +114,6 @@ inline bool ProjectMetadata::isEmpty() const {
  * project owns the values, so opening it with a different user configuration
  * does not change how new tracks and clips are initialized.
  */
-struct ProjectColourEntry {
-    std::uint32_t colour = 0xFF5588AA;
-    juce::String name = "Blue";
-
-    bool operator==(const ProjectColourEntry&) const = default;
-};
-
 struct ProjectDefaults {
     int zoomViewBars = 32;
     bool autoCrossfade = true;
@@ -120,18 +121,27 @@ struct ProjectDefaults {
     bool chordPreview = false;
     bool postFxPostFader = true;
     int clipColourMode = 0;  // 0 = inherit track, 1 = cycle through colourPalette
-    std::vector<ProjectColourEntry> colourPalette{
-        {0xFF5588AA, "Blue"},   {0xFF55AA88, "Teal"},   {0xFF88AA55, "Green"},
-        {0xFFAAAA55, "Yellow"}, {0xFFAA8855, "Orange"}, {0xFFAA5555, "Red"},
-        {0xFFAA55AA, "Purple"}, {0xFF5555AA, "Indigo"},
-    };
+    std::vector<ProjectColourEntry> colourPalette = [] {
+        std::vector<ProjectColourEntry> palette;
+        palette.reserve(kDefaultColourPalette.size());
+        for (const auto& entry : kDefaultColourPalette)
+            palette.push_back({entry.colour, entry.name});
+        return palette;
+    }();
 
     std::uint32_t colourForIndex(int index) const {
         if (colourPalette.empty())
-            return 0xFF5588AA;
+            return kDefaultColourPalette.front().colour;
         const auto positiveIndex = index < 0 ? 0U : static_cast<std::size_t>(index);
         return colourPalette[positiveIndex % colourPalette.size()].colour;
     }
+};
+
+inline constexpr int kDefaultTimelineLengthBars = 256;
+
+struct ProjectCreationSettings {
+    int timelineLengthBars = kDefaultTimelineLengthBars;
+    ProjectDefaults defaults;
 };
 
 /**
@@ -154,7 +164,7 @@ struct ProjectInfo {
     double sampleRate = 44100.0;   // project working/render sample rate
 
     // Total timeline length (per-project; seeded from Config default for new projects)
-    int timelineLengthBars = 256;
+    int timelineLengthBars = kDefaultTimelineLengthBars;
 
     // Creation and initial-view defaults, captured from Config for new projects.
     ProjectDefaults defaults;
