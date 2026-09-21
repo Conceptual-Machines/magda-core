@@ -12,7 +12,6 @@
 #include "../../core/AddressedParameters.hpp"
 #include "../../core/AutomationManager.hpp"
 #include "../../core/ClipManager.hpp"
-#include "../../core/Config.hpp"
 #include "../../core/DeviceParamMigrations.hpp"
 #include "../../core/DrumGridPads.hpp"
 #include "../../core/LegacyDeviceAliases.hpp"
@@ -30,7 +29,7 @@ namespace magda {
 thread_local juce::String ProjectSerializer::lastError_;
 
 namespace {
-ProjectDefaults projectDefaultsFromConfig();
+ProjectInfo projectInfoFromConfig();
 }
 
 // ============================================================================
@@ -124,8 +123,7 @@ bool ProjectSerializer::loadDawProjectAndStage(const juce::File& file, StagedPro
     outData = NativeProjectDocumentAdapter::toStagedProjectData(document);
     // DAWproject has no MAGDA defaults block. An import is a new, unsaved
     // project, so snapshot this installation's new-project preferences once.
-    ProjectInfo seeded;
-    ProjectManager::seedProjectFromConfig(seeded);
+    auto seeded = projectInfoFromConfig();
     outData.info.timelineLengthBars = seeded.timelineLengthBars;
     outData.info.defaults = std::move(seeded.defaults);
     return true;
@@ -207,16 +205,15 @@ ProjectMetadata readProjectMetadata(juce::DynamicObject& projectObj) {
     return metadata;
 }
 
-ProjectDefaults projectDefaultsFromConfig() {
+ProjectInfo projectInfoFromConfig() {
     ProjectInfo seeded;
     ProjectManager::seedProjectFromConfig(seeded);
-    return std::move(seeded.defaults);
+    return seeded;
 }
 
-ProjectDefaults readProjectDefaults(juce::DynamicObject& projectObj) {
+ProjectDefaults readProjectDefaults(juce::DynamicObject& projectObj, ProjectDefaults defaults) {
     // An old project has no defaults object. Seed every value from the current
     // new-project preferences first, then let whatever the file carries win.
-    auto defaults = projectDefaultsFromConfig();
     auto* defaultsObj = projectObj.getProperty("defaults").getDynamicObject();
     if (defaultsObj == nullptr)
         return defaults;
@@ -335,10 +332,11 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
 
         if (projectObj->hasProperty("sampleRate"))
             outData.info.sampleRate = projectObj->getProperty("sampleRate");
-        outData.info.timelineLengthBars = Config::getInstance().getDefaultTimelineLengthBars();
+        auto seeded = projectInfoFromConfig();
+        outData.info.timelineLengthBars = seeded.timelineLengthBars;
         if (projectObj->hasProperty("timelineLengthBars"))
             outData.info.timelineLengthBars = projectObj->getProperty("timelineLengthBars");
-        outData.info.defaults = readProjectDefaults(*projectObj);
+        outData.info.defaults = readProjectDefaults(*projectObj, std::move(seeded.defaults));
         if (projectObj->hasProperty("savedWithEngine"))
             outData.info.savedWithEngine = projectObj->getProperty("savedWithEngine").toString();
         if (projectObj->hasProperty("renderBitDepth"))
@@ -721,10 +719,11 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
 
     if (projectObj->hasProperty("sampleRate"))
         outInfo.sampleRate = projectObj->getProperty("sampleRate");
-    outInfo.timelineLengthBars = Config::getInstance().getDefaultTimelineLengthBars();
+    auto seeded = projectInfoFromConfig();
+    outInfo.timelineLengthBars = seeded.timelineLengthBars;
     if (projectObj->hasProperty("timelineLengthBars"))
         outInfo.timelineLengthBars = projectObj->getProperty("timelineLengthBars");
-    outInfo.defaults = readProjectDefaults(*projectObj);
+    outInfo.defaults = readProjectDefaults(*projectObj, std::move(seeded.defaults));
     if (projectObj->hasProperty("savedWithEngine"))
         outInfo.savedWithEngine = projectObj->getProperty("savedWithEngine").toString();
     if (projectObj->hasProperty("renderBitDepth"))

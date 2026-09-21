@@ -2400,6 +2400,7 @@ void MainView::SelectionOverlayComponent::drawRecordingRegion(juce::Graphics& g)
 
     int scrollY = owner.trackContentViewport->getViewPositionY();
     const auto& tracks = TrackManager::getInstance().getTracks();
+    const auto& projectDefaults = ProjectManager::getInstance().getCurrentProjectInfo().defaults;
 
     for (int trackIndex = 0; trackIndex < static_cast<int>(tracks.size()); ++trackIndex) {
         if (!tracks[trackIndex].recordArmed) {
@@ -2421,9 +2422,8 @@ void MainView::SelectionOverlayComponent::drawRecordingRegion(juce::Graphics& g)
 
         if (drawHeight > 0) {
             // Use the same style as a MIDI clip: darker fill of the default clip color
-            auto clipColour = juce::Colour(
-                ProjectManager::getInstance().getCurrentProjectInfo().defaults.colourForIndex(
-                    static_cast<int>(ClipManager::getInstance().getArrangementClips().size())));
+            auto clipColour = juce::Colour(projectDefaults.colourForIndex(
+                static_cast<int>(ClipManager::getInstance().getArrangementClips().size())));
             g.setColour(clipColour.darker(0.3f));
             g.fillRoundedRectangle(startX, drawY, endX - startX, drawHeight, 3.0f);
 

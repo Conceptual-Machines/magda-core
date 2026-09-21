@@ -480,6 +480,8 @@ void TrackContentPanel::paint(juce::Graphics& g) {
 }
 
 void TrackContentPanel::paintOverChildren(juce::Graphics& g) {
+    const auto& projectDefaults = ProjectManager::getInstance().getCurrentProjectInfo().defaults;
+
     // Draw marker guide lines above clips so cue points remain visible in the arrangement.
     paintMarkerGuides(g);
 
@@ -523,9 +525,7 @@ void TrackContentPanel::paintOverChildren(juce::Graphics& g) {
                 const int y0 = topY + i * ghostHeight;
                 const int y1 = y0 + ghostHeight;
 
-                const auto tint = juce::Colour(
-                    ProjectManager::getInstance().getCurrentProjectInfo().defaults.colourForIndex(
-                        baseIndex + i));
+                const auto tint = juce::Colour(projectDefaults.colourForIndex(baseIndex + i));
 
                 // Ghost clip: starts at dropX, width derived from file duration.
                 double duration = fileDropGhosts_[static_cast<size_t>(i)].durationSeconds;
@@ -791,6 +791,8 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
     if (previews.empty())
         return;
 
+    const auto& projectDefaults = ProjectManager::getInstance().getCurrentProjectInfo().defaults;
+
     constexpr int HEADER_HEIGHT = 16;
     constexpr float CORNER_RADIUS = 4.0f;
     constexpr int MIDI_MAX = 127;
@@ -825,9 +827,8 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
         juce::Rectangle<int> bounds(clipX, trackY, clipW, trackH);
 
         // Use the same colour the final clip will get (based on current clip count)
-        juce::Colour baseColour = juce::Colour(
-            ProjectManager::getInstance().getCurrentProjectInfo().defaults.colourForIndex(
-                static_cast<int>(ClipManager::getInstance().getArrangementClips().size())));
+        juce::Colour baseColour = juce::Colour(projectDefaults.colourForIndex(
+            static_cast<int>(ClipManager::getInstance().getArrangementClips().size())));
 
         // Background fill
         g.setColour(baseColour.darker(0.3f));
@@ -1973,6 +1974,8 @@ void TrackContentPanel::paintClipDrawPreview(juce::Graphics& g) {
         return;
     }
 
+    const auto& projectDefaults = ProjectManager::getInstance().getCurrentProjectInfo().defaults;
+
     const auto trackArea = getTrackLaneArea(drawingClipTrackIndex_);
     double start = juce::jmin(drawingClipStartBeat_, drawingClipEndBeat_);
     double end = juce::jmax(drawingClipStartBeat_, drawingClipEndBeat_);
@@ -1985,9 +1988,7 @@ void TrackContentPanel::paintClipDrawPreview(juce::Graphics& g) {
     const auto rect =
         juce::Rectangle<int>(x, trackArea.getY() + 2, width, trackArea.getHeight() - 4);
 
-    const auto colour =
-        juce::Colour(ProjectManager::getInstance().getCurrentProjectInfo().defaults.colourForIndex(
-            drawingClipTrackIndex_));
+    const auto colour = juce::Colour(projectDefaults.colourForIndex(drawingClipTrackIndex_));
     g.setColour(colour.withAlpha(0.28f));
     g.fillRoundedRectangle(rect.toFloat(), 3.0f);
     g.setColour(colour.brighter(0.25f).withAlpha(0.9f));

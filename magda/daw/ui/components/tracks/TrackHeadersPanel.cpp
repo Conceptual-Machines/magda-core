@@ -1203,6 +1203,8 @@ void TrackHeadersPanel::paint(juce::Graphics& g) {
     // Colours match what TrackManager::createTrack will assign (project palette
     // indexed by track count), so the preview is a faithful prediction.
     if (!ghostHeaderLabels_.isEmpty()) {
+        const auto& projectDefaults =
+            ProjectManager::getInstance().getCurrentProjectInfo().defaults;
         int topY = 0;
         for (int i = static_cast<int>(trackHeaders.size()) - 1; i >= 0; --i) {
             if (!trackHeaders[i]->isMaster) {
@@ -1219,9 +1221,7 @@ void TrackHeadersPanel::paint(juce::Graphics& g) {
 
         for (int i = 0; i < ghostHeaderLabels_.size(); ++i) {
             const int y0 = topY + i * ghostHeight;
-            const auto tint = juce::Colour(
-                ProjectManager::getInstance().getCurrentProjectInfo().defaults.colourForIndex(
-                    baseIndex + i));
+            const auto tint = juce::Colour(projectDefaults.colourForIndex(baseIndex + i));
             const bool isNewTrackDropTarget = pluginDragActive_ && pluginDropTrackIndex_ < 0;
             const auto outlineColour =
                 isNewTrackDropTarget ? juce::Colours::deepskyblue : tint.withAlpha(0.7f);
