@@ -156,9 +156,12 @@ bool restoreTracktionWavMetadata(const juce::File& file, const juce::StringPairA
     if (input == nullptr)
         return false;
     std::unique_ptr<juce::AudioFormatReader> reader(wav.createReaderFor(input.release(), true));
-    if (reader == nullptr ||
-        !reader->metadataValues.containsKey(juce::WavAudioFormat::bwavDescription))
+    if (reader == nullptr)
         return false;
+    // No block to put back: Tracktion overwrote nothing, so there is nothing
+    // here to call a failure.
+    if (!reader->metadataValues.containsKey(juce::WavAudioFormat::bwavDescription))
+        return true;
     reader.reset();
 
     if (!wav.replaceMetadataInFile(file, intended))

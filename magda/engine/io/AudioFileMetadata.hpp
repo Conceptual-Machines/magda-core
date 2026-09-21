@@ -3,6 +3,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 
 #include <cmath>
+#include <cstddef>
 #include <limits>
 #include <optional>
 #include <unordered_map>
@@ -22,6 +23,17 @@ struct AudioFileMetadata {
     juce::String originator;
 };
 
+constexpr std::size_t kBwavDescriptionBytes = 256;
+constexpr std::size_t kBwavOriginatorBytes = 32;
+
+/// BWF stores these in fixed byte arrays and JUCE cuts what overruns them;
+/// cutting here keeps the caller's copy equal to what the file will hold.
+inline juce::String clampedToBytes(juce::String text, std::size_t maxBytes) {
+    while (text.getNumBytesAsUTF8() > maxBytes)
+        text = text.dropLastCharacters(1);
+    return text;
+}
+
 /// Build the JUCE metadata map shared by every WAV writer. ACID stores whole
 /// beats and a MIDI root; the INFO keywords retain the full key name.
 inline std::unordered_map<juce::String, juce::String> wavMetadataFor(
@@ -29,7 +41,9 @@ inline std::unordered_map<juce::String, juce::String> wavMetadataFor(
     std::unordered_map<juce::String, juce::String> result;
     if (facts.description.isNotEmpty() || facts.originator.isNotEmpty()) {
         const auto bwav = juce::WavAudioFormat::createBWAVMetadata(
-            facts.description, facts.originator, {}, juce::Time::getCurrentTime(), 0, {});
+            clampedToBytes(facts.description, kBwavDescriptionBytes),
+            clampedToBytes(facts.originator, kBwavOriginatorBytes), {},
+            juce::Time::getCurrentTime(), 0, {});
         for (int i = 0; i < bwav.size(); ++i)
             result.emplace(bwav.getAllKeys()[i], bwav.getAllValues()[i]);
     }

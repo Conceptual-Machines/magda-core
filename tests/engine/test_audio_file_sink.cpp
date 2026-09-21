@@ -224,6 +224,32 @@ TEST_CASE("A WAV without render metadata has no BWF chunk", "[engine][io][2771]"
     CHECK_FALSE(reader->metadataValues.containsKey(juce::WavAudioFormat::bwavDescription));
 }
 
+TEST_CASE("BWF text is cut to what the chunk can hold", "[engine][io][2771]") {
+    // The originator is "MAGDA " plus a git-describe version, which grows with
+    // the commit count: over 32 bytes JUCE cuts it, and a caller comparing what
+    // it asked for against what came back would call a good render a failure.
+    magda::engine::AudioFileMetadata facts;
+    facts.originator = "MAGDA 1.234.567-8901-gabcdef012-dirty";
+    facts.description = juce::String::repeatedString("x", 300);
+
+    const auto values = magda::engine::wavMetadataFor(facts);
+    CHECK(values.at(juce::WavAudioFormat::bwavOriginator).getNumBytesAsUTF8() == 32);
+    CHECK(values.at(juce::WavAudioFormat::bwavDescription).getNumBytesAsUTF8() == 256);
+
+    AudioFileSpec spec;
+    spec.bitDepth = 32;
+    spec.metadata = facts;
+    const auto file = writeThrough("long-bwf-text.wav", spec, material(1, 128));
+    juce::WavAudioFormat wav;
+    std::unique_ptr<juce::AudioFormatReader> reader(
+        wav.createReaderFor(file.createInputStream().release(), true));
+    REQUIRE(reader != nullptr);
+    CHECK(reader->metadataValues[juce::WavAudioFormat::bwavOriginator] ==
+          values.at(juce::WavAudioFormat::bwavOriginator));
+    CHECK(reader->metadataValues[juce::WavAudioFormat::bwavDescription] ==
+          values.at(juce::WavAudioFormat::bwavDescription));
+}
+
 TEST_CASE("A fixed-point file is dithered unless the caller says otherwise",
           "[engine][io][render][2447]") {
     const auto source = material(1);
