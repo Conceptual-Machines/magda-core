@@ -4,7 +4,6 @@
 
 #include <algorithm>
 
-#include "../../../audio/AudioBridge.hpp"
 #include "../../../audio/DeviceParameterList.hpp"
 #include "../../../core/ParameterUtils.hpp"
 #include "../../../engine/AudioEngine.hpp"

@@ -6,7 +6,6 @@
 #include <set>
 #include <unordered_set>
 
-#include "../audio/AudioBridge.hpp"
 #include "../audio/MidiBridge.hpp"
 #include "../audio/TracktionHelpers.hpp"
 #include "../audio/plugins/SidechainTriggerBus.hpp"
@@ -1693,13 +1692,7 @@ void TrackManager::setTrackMidiInput(TrackId trackId, const juce::String& device
         midiBridge.startMonitoring(trackId);
     }
 
-    // Forward to AudioBridge for Tracktion Engine MIDI routing (actual plugin input)
-    // "all" stays as "all", empty clears routing, otherwise use the device ID
-    if (audioEngine_)
-        if (auto* audioBridge = audioEngine_->getAudioBridge())
-            audioBridge->setTrackMidiInput(trackId, deviceId);
-
-    // Notify listeners (inspector, track headers will update)
+    notifyTrackMidiInputChanged(trackId);
     notifyTrackPropertyChanged(trackId);
 }
 
@@ -1824,14 +1817,7 @@ void TrackManager::setTrackAudioInput(TrackId trackId, const juce::String& devic
     // Update track state
     track->audioInputDevice = deviceId;
 
-    // Forward to AudioBridge for actual routing
-    if (audioEngine_) {
-        if (auto* audioBridge = audioEngine_->getAudioBridge()) {
-            audioBridge->setTrackAudioInput(trackId, deviceId);
-        }
-    }
-
-    // Notify listeners
+    notifyTrackAudioInputChanged(trackId);
     notifyTrackPropertyChanged(trackId);
     syncMultiOutChildOutputsForSource(trackId);
 }
@@ -1848,14 +1834,6 @@ void TrackManager::setTrackAudioOutput(TrackId trackId, const juce::String& rout
     // Update track state
     track->audioOutputDevice = routing;
 
-    // Forward to AudioBridge for actual routing
-    if (audioEngine_) {
-        if (auto* audioBridge = audioEngine_->getAudioBridge()) {
-            audioBridge->setTrackAudioOutput(trackId, routing);
-        }
-    }
-
-    // Notify listeners
     notifyTrackPropertyChanged(trackId);
 }
 
@@ -3450,6 +3428,31 @@ void TrackManager::notifyTrackPropertyChanged(int trackId) {
     for (size_t i = 0; i < listeners_.size(); ++i) {
         if (listeners_[i])
             listeners_[i]->trackPropertyChanged(trackId);
+    }
+}
+
+void TrackManager::notifyTrackAudioInputChanged(TrackId trackId) {
+    ScopedNotifyGuard guard(*this);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->trackAudioInputChanged(trackId);
+    }
+}
+
+void TrackManager::notifyTrackMidiInputChanged(TrackId trackId) {
+    ScopedNotifyGuard guard(*this);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->trackMidiInputChanged(trackId);
+    }
+}
+
+void TrackManager::notifyChainElementMoving(const ChainNodePath& sourcePath,
+                                            const ChainNodePath& destinationChain) {
+    ScopedNotifyGuard guard(*this);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->chainElementMoving(sourcePath, destinationChain);
     }
 }
 

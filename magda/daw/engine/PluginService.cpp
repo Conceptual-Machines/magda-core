@@ -197,6 +197,11 @@ void PluginService::applyPluginStateAt(const ChainNodePath& devicePath) {
         provider->applyPluginStateAt(devicePath);
 }
 
+void PluginService::projectAuthoredStateAt(const ChainNodePath& devicePath) {
+    if (auto* provider = currentProvider())
+        provider->projectAuthoredStateAt(devicePath);
+}
+
 PluginScanCoordinator& PluginService::coordinator() const {
     if (!coordinator_)
         coordinator_ = std::make_unique<PluginScanCoordinator>();

@@ -128,6 +128,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testSpeedRatio();
         testBeatModeStretchEngineChangesReallocateGraph();
         testArrangementWarpClipboardPasteToSessionPreservesMarkers();
+        testForkFollowsModelMarkerEdits();
         testWarpMarkerSyncIsIdempotent();
         testTransientSensitivityChangesAreDebounced();
         testSingleWarpMarkerMapIsIgnored();
@@ -587,6 +588,13 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         }
     }
 
+    static std::vector<WarpMarker> markersOf(te::WaveAudioClip& clip) {
+        std::vector<WarpMarker> markers;
+        for (const auto* marker : clip.getWarpTimeManager().getMarkers())
+            markers.push_back({marker->sourceTime.inSeconds(), marker->warpTime.inSeconds()});
+        return markers;
+    }
+
     void testArrangementWarpClipboardPasteToSessionPreservesMarkers() {
         beginTest("Arrangement warp clipboard paste to session preserves markers");
 
@@ -601,12 +609,15 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
 
         primaryEventOf(source)->warpEnabled = true;
         primaryEventOf(source)->timeStretchMode = static_cast<int>(te::TimeStretcher::signalsmith);
-        f.clipSync->syncClipToEngine(sourceId);
+        primaryEventOf(source)->warpMarkers = {{0.0, 0.0}, {1.0, 1.25}, {5.0, 5.0}};
+        cm.forceNotifyClipPropertyChanged(sourceId);
 
-        const int insertedIndex = f.clipSync->addWarpMarker(sourceId, 1.0, 1.25);
-        expect(insertedIndex >= 0, "User warp marker should be inserted");
-        expectEquals(static_cast<int>(primaryEventOf(source)->warpMarkers.size()), 3,
-                     "Live TE marker edits should be mirrored into ClipInfo");
+        auto* sourceTeClip = f.getTeAudioClip(sourceId);
+        expect(sourceTeClip != nullptr, "Source TE clip should exist");
+        if (sourceTeClip == nullptr)
+            return;
+        expectEquals(static_cast<int>(markersOf(*sourceTeClip).size()), 3,
+                     "The model's marker map should reach the arrangement clip");
 
         cm.copyToClipboard({sourceId});
         auto pastedIds = cm.pasteFromClipboardBeats(0.0, f.trackId, ClipView::Session, 0);
@@ -636,13 +647,53 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
             return;
 
         expect(pastedTeClip->getWarpTime(), "Session TE clip should have warp enabled");
-        const auto pastedMarkers = f.clipSync->getWarpMarkers(pastedId);
+        const auto pastedMarkers = markersOf(*pastedTeClip);
         expectEquals(static_cast<int>(pastedMarkers.size()), 3,
                      "Session TE clip should restore every warp marker");
         if (pastedMarkers.size() == 3) {
             expectWithinAbsoluteError(pastedMarkers[1].sourceTime, 1.0, 0.001);
             expectWithinAbsoluteError(pastedMarkers[1].warpTime, 1.25, 0.001);
         }
+    }
+
+    void testForkFollowsModelMarkerEdits() {
+        beginTest("The fork follows the model's warp marker edits, including a cleared map");
+
+        Fixture f;
+        auto& cm = ClipManager::getInstance();
+        auto clipId =
+            cm.createAudioClip(f.trackId, 0.0, 5.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        auto* clip = cm.getClip(clipId);
+        expect(clip != nullptr, "Arrangement clip should exist");
+        if (clip == nullptr)
+            return;
+
+        primaryEventOf(clip)->warpEnabled = true;
+        primaryEventOf(clip)->warpMarkers = {{0.0, 0.0}, {1.0, 1.25}, {5.0, 5.0}};
+        cm.forceNotifyClipPropertyChanged(clipId);
+
+        auto* teClip = f.getTeAudioClip(clipId);
+        expect(teClip != nullptr, "Arrangement TE clip should exist");
+        if (teClip == nullptr)
+            return;
+        expectEquals(static_cast<int>(markersOf(*teClip).size()), 3);
+
+        // An edit after the first one used to be refused: more than two markers
+        // was read as a live map the model must not overwrite.
+        primaryEventOf(clip)->warpMarkers = {{0.0, 0.0}, {1.0, 1.5}, {2.0, 2.5}, {5.0, 5.0}};
+        cm.forceNotifyClipPropertyChanged(clipId);
+        const auto edited = markersOf(*teClip);
+        expectEquals(static_cast<int>(edited.size()), 4, "A later model edit should reach TE");
+        if (edited.size() == 4)
+            expectWithinAbsoluteError(edited[1].warpTime, 1.5, 0.001);
+
+        primaryEventOf(clip)->warpMarkers.clear();
+        cm.forceNotifyClipPropertyChanged(clipId);
+        const auto cleared = markersOf(*teClip);
+        expectEquals(static_cast<int>(cleared.size()), 2,
+                     "A cleared model map should leave only TE's boundaries");
+        if (cleared.size() == 2)
+            expectWithinAbsoluteError(cleared.front().warpTime, 0.0, 0.001);
     }
 
     void testWarpMarkerSyncIsIdempotent() {
@@ -685,22 +736,25 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
 
         magda::primaryEventOf(arrangement)->warpEnabled = true;
         f.clipSync->syncClipToEngine(arrangementId);
-        f.clipSync->enableWarp(arrangementId);
 
         auto* arrangementTeClip = f.getTeAudioClip(arrangementId);
         expect(arrangementTeClip != nullptr, "Arrangement TE clip should exist");
-        expectEquals(static_cast<int>(magda::primaryEventOf(arrangement)->warpMarkers.size()), 2,
-                     "Enabling warp without user markers should store only the boundaries");
-        if (arrangementTeClip == nullptr ||
-            magda::primaryEventOf(arrangement)->warpMarkers.size() != 2)
+        if (arrangementTeClip == nullptr)
             return;
 
         auto& arrangementWarpManager = arrangementTeClip->getWarpTimeManager();
-        const auto& arrangementMarkersBefore = arrangementWarpManager.getMarkers();
-        expectEquals(arrangementMarkersBefore.size(), 2);
-        if (arrangementMarkersBefore.size() != 2)
+        expectEquals(arrangementWarpManager.getMarkers().size(), 2);
+        if (arrangementWarpManager.getMarkers().size() != 2)
             return;
 
+        {
+            WarpStateMutationCounter arrangementMutations(arrangementWarpManager.state);
+            f.clipSync->syncClipToEngine(arrangementId);
+            expectEquals(arrangementMutations.mutationCount, 0,
+                         "An empty model map must not mutate TE's own boundaries");
+        }
+
+        magda::primaryEventOf(arrangement)->warpMarkers = markersOf(*arrangementTeClip);
         WarpStateMutationCounter arrangementMutations(arrangementWarpManager.state);
         f.clipSync->syncClipToEngine(arrangementId);
         expectEquals(arrangementMutations.mutationCount, 0,
@@ -718,24 +772,18 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
             return;
 
         primaryEventOf(session)->warpEnabled = true;
-        f.clipSync->enableWarp(sessionId);
-        expectEquals(static_cast<int>(primaryEventOf(session)->warpMarkers.size()), 2,
-                     "Session warp enable should store its boundary map");
-        if (primaryEventOf(session)->warpMarkers.size() != 2)
-            return;
-
         // Settle other lazily-created session properties before observing graph
         // reallocations caused by the property change under test.
         cm.forceNotifyMultipleClipPropertiesChanged({sessionId});
 
         auto& sessionWarpManager = sessionTeClip->getWarpTimeManager();
-        const auto& sessionMarkersBefore = sessionWarpManager.getMarkers();
-        expectEquals(sessionMarkersBefore.size(), 2);
-        if (sessionMarkersBefore.size() != 2)
+        expectEquals(sessionWarpManager.getMarkers().size(), 2);
+        if (sessionWarpManager.getMarkers().size() != 2)
             return;
 
         // Serialized doubles can differ by sub-microsecond rounding. This must
         // still compare equal rather than restarting playback on a gain change.
+        primaryEventOf(session)->warpMarkers = markersOf(*sessionTeClip);
         primaryEventOf(session)->warpMarkers.front().warpTime += 5.0e-7;
 
         WarpStateMutationCounter sessionMutations(sessionWarpManager.state);

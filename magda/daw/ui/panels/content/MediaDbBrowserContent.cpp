@@ -9,11 +9,9 @@
 #include <mutex>
 #include <unordered_map>
 
-#include "../../../audio/AudioBridge.hpp"
 #include "../../../audio/AudioThumbnailManager.hpp"
 #include "../../../core/ClipManager.hpp"
 #include "../../../core/TrackManager.hpp"
-#include "../../../engine/AudioEngine.hpp"
 #include "../../../media_db/MediaDatabase.hpp"
 #include "../../../media_db/MediaDbContext.hpp"
 #include "../../../media_db/MediaDbIndexer.hpp"
@@ -209,20 +207,7 @@ std::optional<std::vector<magda::WarpMarker>> currentWarpMarkersForClip(magda::C
         return std::nullopt;
     }
 
-    std::vector<magda::WarpMarker> markers;
-    if (auto* engine = magda::TrackManager::getInstance().getAudioEngine()) {
-        if (auto* bridge = engine->getAudioBridge()) {
-            const auto liveMarkers = bridge->getWarpMarkers(clipId);
-            markers.reserve(liveMarkers.size());
-            for (const auto& marker : liveMarkers) {
-                markers.push_back({marker.sourceTime, marker.warpTime});
-            }
-        }
-    }
-    if (markers.empty()) {
-        markers = magda::audioEventRef(*clip).warpMarkers;
-    }
-    return markers;
+    return magda::audioEventRef(*clip).warpMarkers;
 }
 
 juce::String formatIndexSummary(const std::filesystem::path& path,

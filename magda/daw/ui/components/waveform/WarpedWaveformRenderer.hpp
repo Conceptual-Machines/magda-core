@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "audio/AudioThumbnailManager.hpp"
-#include "audio/WarpMarkerManager.hpp"  // magda::WarpMarkerInfo
+#include "core/ClipInfo.hpp"
 
 namespace magda::daw::ui {
 
@@ -44,12 +44,12 @@ struct WarpedWaveformSpec {
 };
 
 inline void drawWarpedWaveform(juce::Graphics& g, magda::AudioThumbnailManager& thumbs,
-                               const juce::String& file, std::vector<magda::WarpMarkerInfo> markers,
+                               const juce::String& file, std::vector<magda::WarpMarker> markers,
                                const WarpedWaveformSpec& spec) {
     if (markers.size() < 2 || !spec.warpToPixelX || spec.clipArea.isEmpty())
         return;
 
-    std::ranges::sort(markers, {}, &magda::WarpMarkerInfo::warpTime);
+    std::ranges::sort(markers, {}, &magda::WarpMarker::warpTime);
 
     const double leftX = spec.clipArea.getX();
     const double rightX = spec.clipArea.getRight();

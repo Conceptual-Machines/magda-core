@@ -25,6 +25,20 @@ enum class AutomationCurveType {
 };
 
 /**
+ * @brief How the transport records automation.
+ *
+ * Off records nothing. Write records any user-driven change while the transport
+ * rolls. Touch records only while the control is held; Latch keeps writing the
+ * last held value after release until the transport stops.
+ */
+enum class AutomationMode {
+    Off,
+    Write,
+    Touch,
+    Latch,
+};
+
+/**
  * @brief Drawing/editing mode for automation curves
  */
 enum class AutomationDrawMode {

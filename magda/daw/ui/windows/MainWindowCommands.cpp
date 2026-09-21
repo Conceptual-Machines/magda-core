@@ -21,7 +21,6 @@
 #include "../views/MixerView.hpp"
 #include "../views/SessionView.hpp"
 #include "MainWindow.hpp"
-#include "audio/AudioBridge.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/ViewModeController.hpp"
 #include "engine/AudioEngine.hpp"

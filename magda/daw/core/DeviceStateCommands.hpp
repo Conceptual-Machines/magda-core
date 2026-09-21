@@ -11,6 +11,8 @@ class MagdaDevice;
 
 namespace magda {
 
+class AudioEngine;
+
 /**
  * @brief Undoable authored-state edits on an internal device's state document.
  *
@@ -75,5 +77,9 @@ bool writeDeviceSettings(const ChainNodePath& devicePath, const juce::NamedValue
  */
 void projectAuthoredStateToDevice(daw::audio::MagdaDevice& device, const juce::String& docText,
                                   const juce::String& deviceType);
+
+/// The model's authored state at @p devicePath onto the device @p engine renders there.
+void projectAuthoredStateToRenderedDevice(const AudioEngine& engine,
+                                          const ChainNodePath& devicePath);
 
 }  // namespace magda

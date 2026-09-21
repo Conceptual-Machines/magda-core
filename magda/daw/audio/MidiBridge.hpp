@@ -185,6 +185,14 @@ class MidiBridge : public juce::MidiInputCallback {
     void activeInputsChanged();
     std::function<void()> onActiveInputsChanged;
 
+    /**
+     * @brief Keep one input off every track, because a control surface reads it (#2760).
+     *
+     * Raw listeners still hear it. Empty clears it. Rerouted like an Audio Settings change.
+     */
+    void setSurfaceOnlyInput(const juce::String& midiDeviceIdOrName);
+    bool isSurfaceOnlyInput(const juce::String& deviceId, const juce::String& deviceName) const;
+
     struct Listener {
         virtual ~Listener() = default;
         virtual void midiDeviceListChanged() = 0;
@@ -404,6 +412,10 @@ class MidiBridge : public juce::MidiInputCallback {
 
     // Synchronization for UI thread access
     mutable juce::CriticalSection routingLock_;
+
+    // A std::vector: the instance is never destroyed, and a StringArray would count as a leak.
+    std::vector<juce::String> surfaceOnlyInputs_;
+    mutable juce::CriticalSection surfaceOnlyInputsLock_;
 
     // Global MIDI event queue for debug monitor (audio thread → UI thread)
     MidiEventQueue globalEventQueue_;

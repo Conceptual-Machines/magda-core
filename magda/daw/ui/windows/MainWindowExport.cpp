@@ -6,7 +6,6 @@
 #include "../dialogs/ExportAudioDialog.hpp"
 #include "../dialogs/ExportMidiDialog.hpp"
 #include "MainWindow.hpp"
-#include "audio/AudioBridge.hpp"
 #include "audio/insert_capture/InsertRenderCaptureService.hpp"
 #include "core/ClipManager.hpp"
 #include "core/Config.hpp"

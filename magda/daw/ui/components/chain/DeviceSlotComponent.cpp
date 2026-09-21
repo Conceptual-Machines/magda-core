@@ -6,7 +6,7 @@
 #include <utility>
 
 #include "ai/AIPanelComponent.hpp"
-#include "audio/AudioBridge.hpp"
+#include "audio/DeviceMeters.hpp"
 #include "audio/DeviceParameterList.hpp"
 #include "audio/plugin_manager/PluginManager.hpp"
 #include "audio/plugins/InternalPluginRegistry.hpp"

@@ -38,9 +38,6 @@ class MidiInputRouter : private juce::AsyncUpdater {
     juce::String getTrackMidiInput(TrackId trackId) const;
     bool setSessionSlotMidiRecordingTarget(TrackId trackId, int sceneIndex, bool enabled);
 
-    void setSurfaceOnlyMidiInputPort(const juce::String& midiDeviceIdOrName);
-    void clearSurfaceOnlyMidiInputPorts();
-
     /** @brief Drop and reapply routes after Audio Settings changed which inputs are active. */
     void refreshActiveMidiInputs();
 
@@ -138,9 +135,6 @@ class MidiInputRouter : private juce::AsyncUpdater {
     /// slots) back to the owning MAGDA track id.
     TrackId resolveTargetTrackId(te::EditItemID targetID) const;
 
-    bool isSurfaceOnlyMidiInput(const juce::String& liveIdentifier,
-                                const juce::String& liveName) const;
-
     /** @brief A port no track hears: a control surface's, or one Audio Settings switched off. */
     bool isUnheardMidiInput(const juce::String& liveIdentifier, const juce::String& liveName) const;
     void removeUnheardMidiInputTargets();
@@ -162,9 +156,6 @@ class MidiInputRouter : private juce::AsyncUpdater {
 
     std::shared_ptr<te::MidiInputDevice> qwertyMidiDevice_;
     bool qwertyNeedsContextRefresh_ = false;
-
-    juce::StringArray surfaceOnlyMidiInputPorts_;
-    mutable juce::CriticalSection surfaceOnlyMidiInputLock_;
 
     std::vector<std::pair<TrackId, juce::String>> pendingMidiRoutes_;
     te::EditPlaybackContext* lastPlaybackContext_ = nullptr;

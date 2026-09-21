@@ -10,19 +10,22 @@
 
 namespace magda {
 
-// Forward declare AudioBridge
-class AudioBridge;
-
-// Native marker reads include identity boundaries when the event has no authored map.
+// Marker reads include identity boundaries when the event has no authored map.
 // Both coordinates are seconds, including for clips trimmed into their source.
 std::vector<WarpMarker> getClipWarpMarkers(ClipId clipId);
+
+/// Seed a newly warped clip with identity markers at the transients it shows, if detected.
+void seedWarpMarkersFromTransients(ClipId clipId, double bpm);
+
+/// Drop the clip's authored marker map, leaving the identity boundaries.
+void clearWarpMarkers(ClipId clipId);
 
 /**
  * @brief Command for adding a warp marker
  */
 class AddWarpMarkerCommand : public UndoableCommand {
   public:
-    AddWarpMarkerCommand(AudioBridge* bridge, ClipId clipId, double sourceTime, double warpTime);
+    AddWarpMarkerCommand(ClipId clipId, double sourceTime, double warpTime);
 
     juce::String getDescription() const override {
         return "Add Warp Marker";
@@ -37,7 +40,6 @@ class AddWarpMarkerCommand : public UndoableCommand {
 
   private:
     std::optional<std::vector<WarpMarker>> oldMarkers_;
-    AudioBridge* bridge_;
     ClipId clipId_;
     double sourceTime_;
     double warpTime_;
@@ -49,7 +51,7 @@ class AddWarpMarkerCommand : public UndoableCommand {
  */
 class MoveWarpMarkerCommand : public UndoableCommand {
   public:
-    MoveWarpMarkerCommand(AudioBridge* bridge, ClipId clipId, int index, double newWarpTime);
+    MoveWarpMarkerCommand(ClipId clipId, int index, double newWarpTime);
 
     juce::String getDescription() const override {
         return "Move Warp Marker";
@@ -63,12 +65,9 @@ class MoveWarpMarkerCommand : public UndoableCommand {
 
   private:
     std::optional<std::vector<WarpMarker>> oldMarkers_;
-    AudioBridge* bridge_;
     ClipId clipId_;
     int index_;
-    double oldWarpTime_;
     double newWarpTime_;
-    bool hasOldTime_ = false;
 };
 
 /**
@@ -76,7 +75,7 @@ class MoveWarpMarkerCommand : public UndoableCommand {
  */
 class RemoveWarpMarkerCommand : public UndoableCommand {
   public:
-    RemoveWarpMarkerCommand(AudioBridge* bridge, ClipId clipId, int index);
+    RemoveWarpMarkerCommand(ClipId clipId, int index);
 
     juce::String getDescription() const override {
         return "Remove Warp Marker";
@@ -87,12 +86,8 @@ class RemoveWarpMarkerCommand : public UndoableCommand {
 
   private:
     std::optional<std::vector<WarpMarker>> oldMarkers_;
-    AudioBridge* bridge_;
     ClipId clipId_;
     int index_;
-    double removedSourceTime_;
-    double removedWarpTime_;
-    bool hasCapturedState_ = false;
 };
 
 }  // namespace magda

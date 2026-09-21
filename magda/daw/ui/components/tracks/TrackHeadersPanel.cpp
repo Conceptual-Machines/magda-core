@@ -6,7 +6,6 @@
 #include <ranges>
 #include <utility>
 
-#include "../../../audio/AudioBridge.hpp"
 #include "../../../audio/MidiBridge.hpp"
 #include "../../../audio/TrackMeters.hpp"
 #include "../../../core/AutomationCommands.hpp"

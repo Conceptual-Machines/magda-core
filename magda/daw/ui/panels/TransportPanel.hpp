@@ -4,7 +4,7 @@
 
 #include <memory>
 
-#include "../../audio/automation/AutomationRecordingEngine.hpp"  // for AutomationMode
+#include "../../core/AutomationTypes.hpp"
 #include "../components/common/BarsBeatsTicksLabel.hpp"
 #include "../components/common/DraggableValueLabel.hpp"
 #include "../components/common/GridDivisionMenu.hpp"

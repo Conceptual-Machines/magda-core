@@ -12,13 +12,14 @@
 #include "../core/RangesHelpers.hpp"
 #include "../engine/AudioEngine.hpp"
 #include "../engine/RenderProgressWindow.hpp"
+#include "../engine/TracktionFork.hpp"
 #include "../project/ProjectManager.hpp"
 #include "../ui/state/TimelineController.hpp"
-#include "audio/AudioBridge.hpp"
 #include "audio/insert_capture/InsertRenderCaptureService.hpp"
 #include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
+#include "core/ChainWalk.hpp"
 #include "core/ClipOcclusion.hpp"
 #include "core/ClipOperations.hpp"
 #include "core/ClipPlacementPolicy.hpp"
@@ -26,6 +27,7 @@
 #include "core/ControlTarget.hpp"
 #include "core/DrumGridPads.hpp"
 #include "core/TrackManager.hpp"
+#include "core/WarpMarkerCommands.hpp"
 
 namespace magda {
 
@@ -99,21 +101,22 @@ double timelineSecondsForBeat(double beat, const TempoMap* tempoMap) {
  * @brief Whether @p trackId hosts an enabled external insert with a send and a return.
  *
  * Its hardware return only exists live, so an offline bounce needs the
- * real-time capture pass first (#1623). Only the Tracktion engine hosts one.
+ * real-time capture pass first (#1623).
  */
-bool trackNeedsInsertCapture(AudioEngine& engine, TrackId trackId) {
-    auto* bridge = engine.getAudioBridge();
-    auto* track = bridge != nullptr ? bridge->getAudioTrack(trackId) : nullptr;
+bool trackNeedsInsertCapture(TrackId trackId) {
+    auto& trackManager = TrackManager::getInstance();
+    const auto* track = trackManager.getTrack(trackId);
     if (track == nullptr)
         return false;
 
-    const auto isRoutedInsert = [](te::Plugin* plugin) {
-        const auto* insert = dynamic_cast<te::InsertPlugin*>(plugin);
-        return insert != nullptr && insert->isEnabled() &&
-               insert->outputDevice.get().isNotEmpty() && insert->inputDevice.get().isNotEmpty();
-    };
-
-    return std::ranges::any_of(track->pluginList, isRoutedInsert);
+    const auto* routed = chain_walk::findDevice(
+        track->chain.fxChainElements, ChainNodePath::trackLevel(trackId), chain_walk::Pads::Skip,
+        [&trackManager](const DeviceInfo& device, const ChainNodePath& path) {
+            return device.insert.sendDevice.isNotEmpty() &&
+                   device.insert.returnDevice.isNotEmpty() &&
+                   trackManager.isDeviceEffectivelyEnabled(path, device);
+        });
+    return routed != nullptr;
 }
 
 // Runs the external-insert capture pass modally over [startSec, endSec]
@@ -2069,7 +2072,7 @@ void BounceInPlaceCommand::execute() {
     // with the chain still fully enabled (#1623). The taps substitute the
     // captured returns during the offline render below.
     InsertCaptureScope captureScope;
-    if (trackNeedsInsertCapture(*engine_, clip->trackId)) {
+    if (trackNeedsInsertCapture(clip->trackId)) {
         const double renderRate = ProjectManager::getInstance().getCurrentProjectInfo().sampleRate;
         if (!runInsertCapturePass(*engine_, bounceRange.startSeconds,
                                   bounceRange.endSeconds + kBounceTailSeconds, renderRate)) {
@@ -2244,7 +2247,7 @@ void BounceToNewTrackCommand::execute() {
 
     // External insert returns only exist live — capture them first (#1623).
     InsertCaptureScope captureScope;
-    if (trackNeedsInsertCapture(*engine_, sourceTrackId)) {
+    if (trackNeedsInsertCapture(sourceTrackId)) {
         if (!runInsertCapturePass(*engine_, bounceRange.startSeconds,
                                   bounceRange.endSeconds + kBounceTailSeconds,
                                   project.sampleRate)) {
@@ -2658,15 +2661,12 @@ void sliceClipAtTimes(ClipId clipId, const std::vector<double>& splitTimes, doub
     undoManager.endCompoundOperation();
 }
 
-void sliceClipAtWarpMarkers(ClipId clipId, double tempo, AudioBridge* bridge) {
-    if (!bridge)
-        return;
-
+void sliceClipAtWarpMarkers(ClipId clipId, double tempo) {
     auto* clip = ClipManager::getInstance().getClip(clipId);
     if (!clip || !clip->isAudio())
         return;
 
-    auto markers = bridge->getWarpMarkers(clipId);
+    auto markers = getClipWarpMarkers(clipId);
     if (markers.size() <= 2)
         return;  // Only boundary markers
 
@@ -2675,9 +2675,10 @@ void sliceClipAtWarpMarkers(ClipId clipId, double tempo, AudioBridge* bridge) {
     // markers define a non-linear mapping.  With warp off the linear formula
     // is correct, so we convert marker sourceTime values to the linear
     // timeline domain.
-    if (auto* warpEvent = clip->primaryEvent())
+    if (auto* warpEvent = clip->primaryEvent()) {
         warpEvent->warpEnabled = false;
-    bridge->disableWarp(clipId);
+        warpEvent->warpMarkers.clear();
+    }
 
     const double bpm = resolveTimelineBpm(tempo);
     double clipStart = clip->getTimelineStart(bpm);
@@ -2709,7 +2710,7 @@ void sliceClipAtWarpMarkers(ClipId clipId, double tempo, AudioBridge* bridge) {
     sliceClipAtTimes(clipId, splitTimes, tempo);
 }
 
-void sliceClipAtGrid(ClipId clipId, double gridInterval, double tempo, AudioBridge* bridge) {
+void sliceClipAtGrid(ClipId clipId, double gridInterval, double tempo) {
     if (gridInterval <= 0.0)
         return;
 
@@ -2720,8 +2721,7 @@ void sliceClipAtGrid(ClipId clipId, double gridInterval, double tempo, AudioBrid
     // Disable warp before splitting if enabled
     if (auto* warpEvent = clip->primaryEvent(); warpEvent != nullptr && warpEvent->warpEnabled) {
         warpEvent->warpEnabled = false;
-        if (bridge)
-            bridge->disableWarp(clipId);
+        warpEvent->warpMarkers.clear();
     }
 
     const double bpm = resolveTimelineBpm(tempo);
@@ -2863,7 +2863,7 @@ void linkAssignedDrumGridSamplerAdsrMacros(DeviceInfo& drumGridDevice, TrackId t
  * track, load each region to a pad, and write a MIDI clip.
  */
 void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipInfo& clip,
-                             const juce::File& audioFile, double tempo, AudioBridge* bridge) {
+                             const juce::File& audioFile, double tempo) {
     if (slices.empty())
         return;
 
@@ -2891,33 +2891,9 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
     if (drumGridDevice == nullptr)
         return;
 
-    // Find the DrumGridPlugin that was just created
-    auto* audioEngine = trackManager.getAudioEngine();
-    if (!audioEngine)
-        return;
-    if (!bridge)
-        return;
-    auto* teTrack = bridge->getAudioTrack(newTrackId);
-    if (!teTrack)
-        return;
-
-    daw::audio::DrumGridPlugin* drumGrid = nullptr;
-    for (auto* plugin : teTrack->pluginList) {
-        drumGrid = dynamic_cast<daw::audio::DrumGridPlugin*>(plugin);
-        if (drumGrid)
-            break;
-        if (auto* rackInstance = dynamic_cast<te::RackInstance*>(plugin)) {
-            if (rackInstance->type != nullptr) {
-                for (auto* innerPlugin : rackInstance->type->getPlugins()) {
-                    drumGrid = dynamic_cast<daw::audio::DrumGridPlugin*>(innerPlugin);
-                    if (drumGrid)
-                        break;
-                }
-            }
-        }
-        if (drumGrid)
-            break;
-    }
+    const auto gridPath = ChainNodePath::topLevelDevice(newTrackId, drumGridDeviceId);
+    auto gridPlugin = tracktion_fork::pluginAt(gridPath);
+    auto* drumGrid = dynamic_cast<daw::audio::DrumGridPlugin*>(gridPlugin.get());
 
     if (!drumGrid) {
         DBG("buildDrumGridFromSlices: DrumGridPlugin not found on new track");
@@ -2928,7 +2904,6 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
     // and the plugin follows by sync: the markers are what makes a slice a
     // slice, and written onto the plugin they would be gone at the next
     // rebuild, leaving sixteen pads playing the whole file (#2379).
-    const auto gridPath = ChainNodePath::topLevelDevice(newTrackId, drumGridDeviceId);
     for (int i = 0; i < numSlices; ++i) {
         const auto& slice = slices[static_cast<size_t>(i)];
         const auto samplerDeviceId =
@@ -2992,15 +2967,15 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
 
 }  // namespace
 
-void sliceWarpMarkersToDrumGrid(ClipId clipId, double tempo, AudioBridge* bridge) {
-    if (!bridge)
+void sliceWarpMarkersToDrumGrid(ClipId clipId, double tempo) {
+    if (!tracktion_fork::isRendering())
         return;
 
     auto* clip = ClipManager::getInstance().getClip(clipId);
     if (!clip || !clip->isAudio() || magda::audioEventRef(*clip).sourceFilePath().isEmpty())
         return;
 
-    auto markers = bridge->getWarpMarkers(clipId);
+    auto markers = getClipWarpMarkers(clipId);
     if (markers.size() <= 2)
         return;
 
@@ -3052,11 +3027,11 @@ void sliceWarpMarkersToDrumGrid(ClipId clipId, double tempo, AudioBridge* bridge
         slices.push_back({boundaries[i], boundaries[i + 1], tlPos});
     }
 
-    buildDrumGridFromSlices(slices, *clip, audioFile, tempo, bridge);
+    buildDrumGridFromSlices(slices, *clip, audioFile, tempo);
 }
 
-void sliceAtGridToDrumGrid(ClipId clipId, double gridInterval, double tempo, AudioBridge* bridge) {
-    if (!bridge || gridInterval <= 0.0)
+void sliceAtGridToDrumGrid(ClipId clipId, double gridInterval, double tempo) {
+    if (!tracktion_fork::isRendering() || gridInterval <= 0.0)
         return;
 
     auto* clip = ClipManager::getInstance().getClip(clipId);
@@ -3101,7 +3076,7 @@ void sliceAtGridToDrumGrid(ClipId clipId, double gridInterval, double tempo, Aud
         slices.push_back({srcStart, srcEnd, gridTimes[i]});
     }
 
-    buildDrumGridFromSlices(slices, *clip, audioFile, tempo, bridge);
+    buildDrumGridFromSlices(slices, *clip, audioFile, tempo);
 }
 
 }  // namespace magda

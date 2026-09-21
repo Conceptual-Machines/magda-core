@@ -8,6 +8,7 @@
 #include "../api/magda_api_live.hpp"
 #include "../audio/DeviceParameterDisplayTextProvider.hpp"
 #include "../audio/controllers/ControllerRouter.hpp"
+#include "../core/DeviceStateCommands.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/UndoManager.hpp"  // complete type for the unique_ptr this forwards
 #include "../core/controllers/MidiLearnCoordinator.hpp"
@@ -378,14 +379,6 @@ void MagdaAudioEngine::hardwareChannelsChanged() {
 void MagdaAudioEngine::setMidiDevicesReadyCallback(std::function<void()> callback) {
     tracktion_->setMidiDevicesReadyCallback(std::move(callback));
 }
-// Null because there is no Edit for one to mirror devices into: the file
-// comment says what the fork is under this engine.
-AudioBridge* MagdaAudioEngine::getAudioBridge() {
-    return nullptr;
-}
-const AudioBridge* MagdaAudioEngine::getAudioBridge() const {
-    return nullptr;
-}
 
 /** @brief Read hosted external-plugin state through EngineHost (#2758). */
 void MagdaAudioEngine::captureAllPluginStates() {
@@ -401,6 +394,10 @@ void MagdaAudioEngine::capturePluginStateAt(const ChainNodePath& devicePath) {
 void MagdaAudioEngine::applyPluginStateAt(const ChainNodePath& devicePath) {
     if (host_ != nullptr)
         host_->applyExternalPluginStateAt(devicePath);
+}
+
+void MagdaAudioEngine::projectAuthoredStateAt(const ChainNodePath& devicePath) {
+    projectAuthoredStateToRenderedDevice(*this, devicePath);
 }
 
 // The window opens onto the instance this renders through, and the fork holds

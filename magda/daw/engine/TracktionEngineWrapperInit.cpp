@@ -398,24 +398,14 @@ void TracktionEngineWrapper::installProjectStateHooks() {
             return formatDeviceParameter(devicePath, paramIndex, normalised);
         });
 
-    // Installed before any AudioBridge exists, and under the magda engine none
-    // ever is, so the plugin-state half is checked at save time (#2579).
-    auto alive = aliveFlag_;
-
     previousBeforeSave_ = std::move(ProjectManager::getInstance().onBeforeSave);
     previousAfterLoad_ = std::move(ProjectManager::getInstance().onAfterLoad);
 
     // Wire up state capture before project save
-    ProjectManager::getInstance().onBeforeSave = [this, alive]() {
+    ProjectManager::getInstance().onBeforeSave = []() {
         // The service is fed by whichever engine renders: only that instance
-        // holds the chunk a project saves (#2758). The warp markers
-        // stay the bridge's, being the fork's own clip state -- and the bridge
-        // is read here rather than captured, because these hooks are installed
-        // before there is one (#2579).
+        // holds the chunk a project saves (#2758).
         PluginService::getInstance().captureAllPluginStates();
-
-        if (*alive && audioBridge_)
-            audioBridge_->captureWarpMarkerStates();
 
         // Capture zoom/scroll state
         if (auto* tc = TimelineController::getCurrent()) {
@@ -610,10 +600,6 @@ void TracktionEngineWrapper::shutdown() {
     forgetDeviceParameterFormatter();
 
     PluginService::getInstance().forgetStateProvider(*this);
-
-    // Signal that this object is being destroyed so pending callAsync lambdas
-    // that captured aliveFlag_ can bail out instead of dereferencing `this`.
-    *aliveFlag_ = false;
 
     // The service answers off the list this engine owns, so it lets go -- and joins its
     // discovery thread -- before any of it is torn down (#2756).

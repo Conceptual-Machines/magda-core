@@ -22,11 +22,18 @@ class RecordingStateProvider final : public magda::PluginStateProvider {
         lastApplied = devicePath;
     }
 
+    void projectAuthoredStateAt(const magda::ChainNodePath& devicePath) override {
+        ++projectOneCalls;
+        lastProjected = devicePath;
+    }
+
     int captureAllCalls = 0;
     int captureOneCalls = 0;
     int applyOneCalls = 0;
+    int projectOneCalls = 0;
     magda::ChainNodePath lastCaptured;
     magda::ChainNodePath lastApplied;
+    magda::ChainNodePath lastProjected;
 };
 
 class ScopedStateProvider {

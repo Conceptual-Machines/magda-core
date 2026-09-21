@@ -29,6 +29,7 @@ inline void resetJuceProjectState() {
     SelectionManager::getInstance().clearSelection();
     UndoManager::getInstance().clearHistory();
     AutomationManager::getInstance().clearAll();
+    AutomationManager::getInstance().setAutomationMode(AutomationMode::Off);
 
     auto& clipManager = ClipManager::getInstance();
     clipManager.clearClipboard();

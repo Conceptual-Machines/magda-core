@@ -6,7 +6,6 @@
 #include <ranges>
 #include <utility>
 
-#include "../audio/AudioBridge.hpp"
 #include "../engine/PluginService.hpp"
 #include "../project/ProjectManager.hpp"
 #include "ClipManager.hpp"

@@ -31,6 +31,9 @@ class PluginStateProvider {
     virtual void captureAllPluginStates() = 0;
     virtual void capturePluginStateAt(const ChainNodePath& devicePath) = 0;
     virtual void applyPluginStateAt(const ChainNodePath& devicePath) = 0;
+
+    /// Push an internal device's authored state from the model onto its instance (#2760).
+    virtual void projectAuthoredStateAt(const ChainNodePath& devicePath) = 0;
 };
 
 enum class PluginScanPhase {
@@ -178,6 +181,9 @@ class PluginService {
 
     /** @brief Apply the project model's state at @p devicePath to its hosted plugin. */
     void applyPluginStateAt(const ChainNodePath& devicePath);
+
+    /** @brief Project the internal device at @p devicePath's authored state onto its instance. */
+    void projectAuthoredStateAt(const ChainNodePath& devicePath);
 
     /**
      * @brief Drop entries whose plugins are no longer installed. Returns how many went.

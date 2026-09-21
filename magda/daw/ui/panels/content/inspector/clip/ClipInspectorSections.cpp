@@ -13,7 +13,6 @@
 #include "../../../../utils/TimelineUtils.hpp"
 #include "../ClipInspector.hpp"
 #include "BinaryData.h"
-#include "audio/AudioBridge.hpp"
 #include "audio/CompService.hpp"
 #include "core/AudioClipSourceDisplay.hpp"
 #include "core/ClipBatchEdit.hpp"
@@ -28,6 +27,7 @@
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
+#include "engine/TracktionFork.hpp"
 #include "music/GrooveLibrary.hpp"
 #include "project/ProjectManager.hpp"
 
@@ -951,21 +951,8 @@ void ClipInspector::initClipPropertiesSection() {
                 }
             }
 
-            if (magda::audioEventRef(*clip).warpEnabled) {
-                markers = std::vector<magda::WarpMarker>{};
-                if (auto* engine = magda::TrackManager::getInstance().getAudioEngine()) {
-                    if (auto* bridge = engine->getAudioBridge()) {
-                        const auto liveMarkers = bridge->getWarpMarkers(primaryClipId());
-                        markers->reserve(liveMarkers.size());
-                        for (const auto& marker : liveMarkers) {
-                            markers->push_back({marker.sourceTime, marker.warpTime});
-                        }
-                    }
-                }
-                if (markers->empty()) {
-                    *markers = magda::audioEventRef(*clip).warpMarkers;
-                }
-            }
+            if (magda::audioEventRef(*clip).warpEnabled)
+                markers = magda::audioEventRef(*clip).warpMarkers;
         }
 
         const bool saved = magda::ClipManager::getInstance().saveClipToLibrary(primaryClipId(),
@@ -1793,14 +1780,8 @@ void ClipInspector::initPlaybackSection() {
     transientSensitivityValue_->onValueChange = [this]() {
         if (primaryClipId() == magda::INVALID_CLIP_ID)
             return;
-        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-        if (!audioEngine)
-            return;
-        auto* bridge = audioEngine->getAudioBridge();
-        if (bridge) {
-            bridge->setTransientSensitivity(
-                primaryClipId(), static_cast<float>(transientSensitivityValue_->getValue()));
-        }
+        magda::tracktion_fork::setTransientSensitivity(
+            primaryClipId(), static_cast<float>(transientSensitivityValue_->getValue()));
     };
     clipPropsContainer_.addChildComponent(*transientSensitivityValue_);
 }

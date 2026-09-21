@@ -38,34 +38,4 @@ bool ClipWarpSynchronizer::getTransientTimes(ClipId clipId) {
     return warpMarkerManager_.getTransientTimes(edit_, map, clipId);
 }
 
-void ClipWarpSynchronizer::enableWarp(ClipId clipId) {
-    auto map = buildClipMap(clipId);
-    warpMarkerManager_.enableWarp(edit_, map, clipId);
-}
-
-void ClipWarpSynchronizer::disableWarp(ClipId clipId) {
-    auto map = buildClipMap(clipId);
-    warpMarkerManager_.disableWarp(edit_, map, clipId);
-}
-
-std::vector<WarpMarkerInfo> ClipWarpSynchronizer::getWarpMarkers(ClipId clipId) {
-    auto map = buildClipMap(clipId);
-    return warpMarkerManager_.getWarpMarkers(edit_, map, clipId);
-}
-
-int ClipWarpSynchronizer::addWarpMarker(ClipId clipId, double sourceTime, double warpTime) {
-    auto map = buildClipMap(clipId);
-    return warpMarkerManager_.addWarpMarker(edit_, map, clipId, sourceTime, warpTime);
-}
-
-double ClipWarpSynchronizer::moveWarpMarker(ClipId clipId, int markerIndex, double newWarpTime) {
-    auto map = buildClipMap(clipId);
-    return warpMarkerManager_.moveWarpMarker(edit_, map, clipId, markerIndex, newWarpTime);
-}
-
-void ClipWarpSynchronizer::removeWarpMarker(ClipId clipId, int markerIndex) {
-    auto map = buildClipMap(clipId);
-    warpMarkerManager_.removeWarpMarker(edit_, map, clipId, markerIndex);
-}
-
 }  // namespace magda

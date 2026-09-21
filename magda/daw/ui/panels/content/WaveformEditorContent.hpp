@@ -180,7 +180,6 @@ class WaveformEditorContent : public PanelContent,
 
     // Warp marker helpers
     void refreshWarpMarkers();
-    static magda::AudioBridge* getBridge();
 
     // Slice helpers
     void sliceAtWarpMarkers();

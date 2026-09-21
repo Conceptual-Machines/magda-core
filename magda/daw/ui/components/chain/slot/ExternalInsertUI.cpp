@@ -4,11 +4,10 @@
 
 #include <vector>
 
-#include "audio/AudioBridge.hpp"
 #include "audio/plugins/InsertConfigBridge.hpp"
 #include "audio/plugins/InternalPluginRegistry.hpp"
 #include "core/TrackManager.hpp"
-#include "engine/AudioEngine.hpp"
+#include "engine/TracktionFork.hpp"
 #include "themes/ActiveTheme.hpp"
 #include "themes/FontManager.hpp"
 
@@ -21,11 +20,7 @@ namespace {
 // Resolve the live te::InsertPlugin for a device path, or nullptr if the slot is
 // not yet bound to a running plugin.
 te::InsertPlugin* liveInsert(const magda::ChainNodePath& path) {
-    if (auto* engine = magda::TrackManager::getInstance().getAudioEngine())
-        if (auto* bridge = engine->getAudioBridge())
-            if (auto plugin = bridge->getPlugin(path))
-                return dynamic_cast<te::InsertPlugin*>(plugin.get());
-    return nullptr;
+    return dynamic_cast<te::InsertPlugin*>(magda::tracktion_fork::pluginAt(path).get());
 }
 
 // After a send/return device change: the insert's send/return is wired straight
@@ -124,11 +119,6 @@ std::vector<magda::RoutingSelector::RoutingOption> buildOptions(
 // warning string when another enabled external insert shares one of this
 // insert's ports, empty otherwise.
 juce::String findPortConflict(const magda::ChainNodePath& myPath, te::InsertPlugin& mine) {
-    auto* engine = magda::TrackManager::getInstance().getAudioEngine();
-    auto* bridge = engine != nullptr ? engine->getAudioBridge() : nullptr;
-    if (bridge == nullptr)
-        return {};
-
     const auto mySend = mine.outputDevice.get();
     const auto myReturn = mine.inputDevice.get();
     if (mySend.isEmpty() && myReturn.isEmpty())
@@ -136,6 +126,7 @@ juce::String findPortConflict(const magda::ChainNodePath& myPath, te::InsertPlug
     if (mySend.isNotEmpty() && mySend == myReturn)
         return "Return uses the same port as the send";
 
+    // The others by what the model says they are: every edit here mirrors into it.
     for (const auto& track : magda::TrackManager::getInstance().getTracks()) {
         for (const auto& element : track.chain.fxChainElements) {
             if (!magda::isDevice(element))
@@ -144,16 +135,11 @@ juce::String findPortConflict(const magda::ChainNodePath& myPath, te::InsertPlug
             if (device.bypassed ||
                 !magda::daw::audio::internalPluginHasTag(device.pluginId, "external-insert"))
                 continue;
-            auto path = magda::ChainNodePath::topLevelDevice(track.id, device.id);
-            if (path == myPath)
+            if (magda::ChainNodePath::topLevelDevice(track.id, device.id) == myPath)
                 continue;
-            auto plugin = bridge->getPlugin(path);
-            auto* other = dynamic_cast<te::InsertPlugin*>(plugin.get());
-            if (other == nullptr)
-                continue;
-            if (mySend.isNotEmpty() && other->outputDevice.get() == mySend)
+            if (mySend.isNotEmpty() && device.insert.sendDevice == mySend)
                 return "Send port also used on " + track.name;
-            if (myReturn.isNotEmpty() && other->inputDevice.get() == myReturn)
+            if (myReturn.isNotEmpty() && device.insert.returnDevice == myReturn)
                 return "Return port also used on " + track.name;
         }
     }

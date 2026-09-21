@@ -4,7 +4,6 @@
 
 #include <vector>
 
-#include "audio/AudioBridge.hpp"
 #include "core/ClipDisplayInfo.hpp"
 #include "core/ClipInfo.hpp"
 #include "core/ClipManager.hpp"
@@ -154,7 +153,7 @@ class WaveformGridComponent : public juce::Component, public juce::ChangeListene
     void setWarpMode(bool enabled);
 
     /** Update warp markers for display */
-    void setWarpMarkers(const std::vector<magda::WarpMarkerInfo>& markers);
+    void setWarpMarkers(const std::vector<magda::WarpMarker>& markers);
 
     double getClipStartTime() const {
         return clipStartTime_;
@@ -274,7 +273,7 @@ class WaveformGridComponent : public juce::Component, public juce::ChangeListene
 
     // Warp mode state
     bool warpMode_ = false;
-    std::vector<magda::WarpMarkerInfo> warpMarkers_;
+    std::vector<magda::WarpMarker> warpMarkers_;
     int hoveredMarkerIndex_ = -1;
     int draggingMarkerIndex_ = -1;
     double dragStartWarpTime_ = 0.0;

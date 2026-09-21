@@ -258,23 +258,9 @@ void MidiInputRouter::enableAllMidiInputDevices() {
     DBG("All MIDI input devices enabled in Tracktion Engine");
 }
 
-bool MidiInputRouter::isSurfaceOnlyMidiInput(const juce::String& liveIdentifier,
-                                             const juce::String& liveName) const {
-    juce::StringArray keys;
-    {
-        juce::ScopedLock lock(surfaceOnlyMidiInputLock_);
-        keys = surfaceOnlyMidiInputPorts_;
-    }
-
-    const auto matchesLive = [&](const juce::String& key) {
-        return magda::midi::matches(key, liveIdentifier, liveName);
-    };
-    return std::ranges::any_of(keys, matchesLive);
-}
-
 bool MidiInputRouter::isUnheardMidiInput(const juce::String& liveIdentifier,
                                          const juce::String& liveName) const {
-    return isSurfaceOnlyMidiInput(liveIdentifier, liveName) ||
+    return MidiBridge::getInstance().isSurfaceOnlyInput(liveIdentifier, liveName) ||
            !Config::getInstance().isMidiInputActive(liveName);
 }
 
@@ -622,34 +608,6 @@ bool MidiInputRouter::setSessionSlotMidiRecordingTarget(TrackId trackId, int sce
     syncTrackMidiPreviewConsumers();
 
     return enabled ? armedSlot : true;
-}
-
-void MidiInputRouter::setSurfaceOnlyMidiInputPort(const juce::String& midiDeviceIdOrName) {
-    {
-        juce::ScopedLock lock(surfaceOnlyMidiInputLock_);
-        surfaceOnlyMidiInputPorts_.clear();
-        if (midiDeviceIdOrName.isNotEmpty()) {
-            surfaceOnlyMidiInputPorts_.addIfNotAlreadyThere(midiDeviceIdOrName);
-
-            if (auto resolved = magda::midi::resolve(juce::MidiInput::getAvailableDevices(),
-                                                     midiDeviceIdOrName)) {
-                surfaceOnlyMidiInputPorts_.addIfNotAlreadyThere(resolved->identifier);
-                surfaceOnlyMidiInputPorts_.addIfNotAlreadyThere(resolved->name);
-            }
-        }
-    }
-
-    removeUnheardMidiInputTargets();
-    updateMidiInputRouting();
-}
-
-void MidiInputRouter::clearSurfaceOnlyMidiInputPorts() {
-    {
-        juce::ScopedLock lock(surfaceOnlyMidiInputLock_);
-        surfaceOnlyMidiInputPorts_.clear();
-    }
-
-    updateMidiInputRouting();
 }
 
 juce::String MidiInputRouter::getTrackMidiInput(TrackId trackId) const {

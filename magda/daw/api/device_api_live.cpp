@@ -4,7 +4,6 @@
 #include <cmath>
 #include <memory>
 
-#include "../audio/AudioBridge.hpp"
 #include "../audio/DeviceParameterList.hpp"
 #include "../audio/plugins/InternalPluginRegistry.hpp"
 #include "../audio/plugins/compiled/CompiledPluginRegistry.hpp"

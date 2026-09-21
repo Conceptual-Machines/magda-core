@@ -16,7 +16,6 @@
 #include "api/project_api.hpp"
 #include "api/remote_api.hpp"
 #include "api/track_api.hpp"
-#include "audio/AudioBridge.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"
 #include "project/ProjectInfo.hpp"

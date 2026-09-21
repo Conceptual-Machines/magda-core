@@ -15,24 +15,6 @@ namespace magda {
 namespace te = tracktion;
 
 /**
- * @brief Automation recording mode.
- *
- * Off    — not armed; nothing is recorded.
- * Write  — record any user-driven parameter change while transport rolls
- *          (current default behavior).
- * Touch  — record only while the user is physically holding/dragging the
- *          parameter; on release, automation playback resumes.
- * Latch  — like Touch, but on release the last held value continues to be
- *          written into the lane until the transport stops.
- */
-enum class AutomationMode {
-    Off,
-    Write,
-    Touch,
-    Latch,
-};
-
-/**
  * @brief Records parameter changes into armed automation lanes during playback
  *
  * When automation write mode is enabled and the transport is playing, parameter
@@ -45,9 +27,11 @@ enum class AutomationMode {
  * Points are thinned to avoid flooding the curve with redundant data. All points
  * from a single recording pass are grouped into one compound undo operation.
  */
-class AutomationRecordingEngine {
+class AutomationRecordingEngine : private AutomationManagerListener {
   public:
+    /// Records by AutomationManager's mode, following it from construction on.
     explicit AutomationRecordingEngine(te::Edit& edit);
+    ~AutomationRecordingEngine() override;
 
     void setMode(AutomationMode mode);
     AutomationMode getMode() const;
@@ -79,6 +63,11 @@ class AutomationRecordingEngine {
 #endif
 
   private:
+    void automationLanesChanged() override {}
+    void automationModeChanged(AutomationMode mode) override {
+        setMode(mode);
+    }
+
     bool shouldRecord() const;
     static bool shouldIgnoreAutomationWriteback();
     // True when the active mode requires the user to be physically holding the

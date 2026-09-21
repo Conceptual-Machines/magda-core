@@ -101,12 +101,6 @@ class StubPlugin final : public juce::AudioPluginInstance {
 class FixtureEngine final : public TracktionEngineWrapper {
   public:
     explicit FixtureEngine(adapter::EngineExternalDevice& d) : device(d) {}
-    AudioBridge* getAudioBridge() override {
-        return nullptr;
-    }
-    const AudioBridge* getAudioBridge() const override {
-        return nullptr;
-    }
     HostParameters describeDeviceParameters(const ChainNodePath&) const override {
         return device.describeParameters();
     }

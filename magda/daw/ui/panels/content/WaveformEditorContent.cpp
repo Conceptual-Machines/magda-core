@@ -2,13 +2,13 @@
 
 #include <cmath>
 #include <limits>
+#include <utility>
 
 #include "../../state/TimelineController.hpp"
 #include "../../themes/ActiveTheme.hpp"
 #include "../../themes/CursorManager.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallButtonLookAndFeel.hpp"
-#include "audio/AudioBridge.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "audio/CompService.hpp"
 #include "core/ClipCommands.hpp"
@@ -19,7 +19,7 @@
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "core/WarpMarkerCommands.hpp"
-#include "engine/AudioEngine.hpp"
+#include "engine/TracktionFork.hpp"
 
 namespace magda::daw::ui {
 
@@ -568,28 +568,25 @@ WaveformEditorContent::WaveformEditorContent() {
 
     // Warp marker callbacks — route through UndoManager for undo support
     gridComponent_->onWarpMarkerAdd = [this](double sourceTime, double warpTime) {
-        auto* bridge = getBridge();
         if (editingClipId_ != magda::INVALID_CLIP_ID) {
-            UndoManager::getInstance().executeCommand(std::make_unique<AddWarpMarkerCommand>(
-                bridge, editingClipId_, sourceTime, warpTime));
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<AddWarpMarkerCommand>(editingClipId_, sourceTime, warpTime));
             refreshWarpMarkers();
         }
     };
 
     gridComponent_->onWarpMarkerMove = [this](int index, double newWarpTime) {
-        auto* bridge = getBridge();
         if (editingClipId_ != magda::INVALID_CLIP_ID) {
-            UndoManager::getInstance().executeCommand(std::make_unique<MoveWarpMarkerCommand>(
-                bridge, editingClipId_, index, newWarpTime));
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<MoveWarpMarkerCommand>(editingClipId_, index, newWarpTime));
             refreshWarpMarkers();
         }
     };
 
     gridComponent_->onWarpMarkerRemove = [this](int index) {
-        auto* bridge = getBridge();
         if (editingClipId_ != magda::INVALID_CLIP_ID) {
             UndoManager::getInstance().executeCommand(
-                std::make_unique<RemoveWarpMarkerCommand>(bridge, editingClipId_, index));
+                std::make_unique<RemoveWarpMarkerCommand>(editingClipId_, index));
             refreshWarpMarkers();
         }
     };
@@ -597,23 +594,20 @@ WaveformEditorContent::WaveformEditorContent() {
     // Warp marker reposition callback (Alt+drag: remove + add at new position)
     gridComponent_->onWarpMarkerReposition = [this](int index, double newSourceTime,
                                                     double newWarpTime) {
-        auto* bridge = getBridge();
         if (editingClipId_ != magda::INVALID_CLIP_ID) {
-            if (!bridge) {
-                const auto markers = magda::getClipWarpMarkers(editingClipId_);
-                // Keep the dragged marker's index stable and never remove it
-                // before an invalid replacement (including a boundary) is rejected.
-                if (index <= 0 || index + 1 >= static_cast<int>(markers.size()) ||
-                    !std::isfinite(newSourceTime) || !std::isfinite(newWarpTime) ||
-                    newSourceTime <= markers[static_cast<size_t>(index - 1)].sourceTime ||
-                    newSourceTime >= markers[static_cast<size_t>(index + 1)].sourceTime)
-                    return;
-            }
+            const auto markers = magda::getClipWarpMarkers(editingClipId_);
+            // Keep the dragged marker's index stable and never remove it
+            // before an invalid replacement (including a boundary) is rejected.
+            if (index <= 0 || index + 1 >= static_cast<int>(markers.size()) ||
+                !std::isfinite(newSourceTime) || !std::isfinite(newWarpTime) ||
+                newSourceTime <= markers[static_cast<size_t>(index - 1)].sourceTime ||
+                newSourceTime >= markers[static_cast<size_t>(index + 1)].sourceTime)
+                return;
             CompoundOperationScope scope("Reposition Warp Marker");
             UndoManager::getInstance().executeCommand(
-                std::make_unique<RemoveWarpMarkerCommand>(bridge, editingClipId_, index));
-            UndoManager::getInstance().executeCommand(std::make_unique<AddWarpMarkerCommand>(
-                bridge, editingClipId_, newSourceTime, newWarpTime));
+                std::make_unique<RemoveWarpMarkerCommand>(editingClipId_, index));
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<AddWarpMarkerCommand>(editingClipId_, newSourceTime, newWarpTime));
             refreshWarpMarkers();
         }
     };
@@ -974,22 +968,13 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
             bool warpEnabled = magda::audioEventRef(*clip).warpEnabled;
             gridComponent_->setWarpMode(warpEnabled);
 
-            if (warpEnabled) {
-                auto* bridge = getBridge();
-                if (bridge) {
-                    if (!wasWarpEnabled_) {
-                        bridge->enableWarp(editingClipId_);
-                        auto markers = bridge->getWarpMarkers(editingClipId_);
-                        gridComponent_->setWarpMarkers(markers);
-                    }
-                }
-            } else if (wasWarpEnabled_) {
-                auto* bridge = getBridge();
-                if (bridge) {
-                    bridge->disableWarp(editingClipId_);
-                }
-            }
-            wasWarpEnabled_ = warpEnabled;
+            // Latched first: the edit below notifies, and lands back here.
+            const bool wasWarpEnabled = std::exchange(wasWarpEnabled_, warpEnabled);
+            if (warpEnabled && !wasWarpEnabled)
+                magda::seedWarpMarkersFromTransients(editingClipId_,
+                                                     cachedBpm_ > 0.0 ? cachedBpm_ : 120.0);
+            else if (!warpEnabled && wasWarpEnabled)
+                magda::clearWarpMarkers(editingClipId_);
             refreshWarpMarkers();
         }
 
@@ -1500,21 +1485,7 @@ void WaveformEditorContent::zoomToTimeRange(double startTime, double endTime) {
 void WaveformEditorContent::refreshWarpMarkers() {
     if (editingClipId_ == magda::INVALID_CLIP_ID)
         return;
-    if (auto* bridge = getBridge()) {
-        gridComponent_->setWarpMarkers(bridge->getWarpMarkers(editingClipId_));
-    } else {
-        std::vector<magda::WarpMarkerInfo> markers;
-        for (const auto& marker : magda::getClipWarpMarkers(editingClipId_))
-            markers.push_back({marker.sourceTime, marker.warpTime});
-        gridComponent_->setWarpMarkers(markers);
-    }
-}
-
-magda::AudioBridge* WaveformEditorContent::getBridge() {
-    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-    if (!audioEngine)
-        return nullptr;
-    return audioEngine->getAudioBridge();
+    gridComponent_->setWarpMarkers(magda::getClipWarpMarkers(editingClipId_));
 }
 
 void WaveformEditorContent::requestTransientDetection() {
@@ -1523,16 +1494,12 @@ void WaveformEditorContent::requestTransientDetection() {
     if (editingClipId_ == magda::INVALID_CLIP_ID)
         return;
 
-    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-    if (!audioEngine)
-        return;
-
-    auto* bridge = audioEngine->getAudioBridge();
-    if (!bridge)
+    // Detection is the fork's until transients have an engine-neutral home.
+    if (!magda::tracktion_fork::isRendering())
         return;
 
     setTransientsUpdating(true);
-    if (bridge->getTransientTimes(editingClipId_)) {
+    if (magda::tracktion_fork::detectTransients(editingClipId_)) {
         const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
         if (clip && !magda::audioEventRef(*clip).sourceFilePath().isEmpty()) {
             const auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
@@ -1581,7 +1548,7 @@ void WaveformEditorContent::sliceAtWarpMarkers() {
         return;
 
     double tempo = cachedBpm_ > 0.0 ? cachedBpm_ : 120.0;
-    magda::sliceClipAtWarpMarkers(editingClipId_, tempo, getBridge());
+    magda::sliceClipAtWarpMarkers(editingClipId_, tempo);
 
     editingClipId_ = magda::INVALID_CLIP_ID;
     gridComponent_->setClip(magda::INVALID_CLIP_ID);
@@ -1597,7 +1564,7 @@ void WaveformEditorContent::sliceAtGrid() {
         return;
 
     double gridInterval = gridBeats * 60.0 / bpm;
-    magda::sliceClipAtGrid(editingClipId_, gridInterval, bpm, getBridge());
+    magda::sliceClipAtGrid(editingClipId_, gridInterval, bpm);
 
     editingClipId_ = magda::INVALID_CLIP_ID;
     gridComponent_->setClip(magda::INVALID_CLIP_ID);
@@ -1608,7 +1575,7 @@ void WaveformEditorContent::sliceWarpMarkersToDrumGrid() {
         return;
 
     double tempo = cachedBpm_ > 0.0 ? cachedBpm_ : 120.0;
-    magda::sliceWarpMarkersToDrumGrid(editingClipId_, tempo, getBridge());
+    magda::sliceWarpMarkersToDrumGrid(editingClipId_, tempo);
 }
 
 void WaveformEditorContent::sliceAtGridToDrumGrid() {
@@ -1621,7 +1588,7 @@ void WaveformEditorContent::sliceAtGridToDrumGrid() {
         return;
 
     double gridInterval = gridBeats * 60.0 / bpm;
-    magda::sliceAtGridToDrumGrid(editingClipId_, gridInterval, bpm, getBridge());
+    magda::sliceAtGridToDrumGrid(editingClipId_, gridInterval, bpm);
 }
 
 }  // namespace magda::daw::ui

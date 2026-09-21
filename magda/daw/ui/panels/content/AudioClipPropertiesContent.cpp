@@ -8,7 +8,6 @@
 #include "../themes/InspectorComboBoxLookAndFeel.hpp"
 #include "../themes/SmallButtonLookAndFeel.hpp"
 #include "BinaryData.h"
-#include "audio/AudioBridge.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/AudioClipSourceDisplay.hpp"
 #include "core/ClipManager.hpp"
@@ -17,7 +16,7 @@
 #include "core/TempoUtils.hpp"
 #include "core/TimeStretchModes.hpp"
 #include "core/UndoManager.hpp"
-#include "engine/AudioEngine.hpp"
+#include "engine/TracktionFork.hpp"
 #include "project/ProjectManager.hpp"
 #include "state/TimelineController.hpp"
 
@@ -391,21 +390,8 @@ void AudioClipPropertiesContent::createControls() {
         }
 
         std::optional<std::vector<magda::WarpMarker>> markers;
-        if (magda::audioEventRef(*clip).warpEnabled) {
-            markers = std::vector<magda::WarpMarker>{};
-            if (auto* engine = magda::TrackManager::getInstance().getAudioEngine()) {
-                if (auto* bridge = engine->getAudioBridge()) {
-                    const auto liveMarkers = bridge->getWarpMarkers(clipId_);
-                    markers->reserve(liveMarkers.size());
-                    for (const auto& marker : liveMarkers) {
-                        markers->push_back({marker.sourceTime, marker.warpTime});
-                    }
-                }
-            }
-            if (markers->empty()) {
-                *markers = magda::audioEventRef(*clip).warpMarkers;
-            }
-        }
+        if (magda::audioEventRef(*clip).warpEnabled)
+            markers = magda::audioEventRef(*clip).warpMarkers;
 
         const bool saved =
             magda::ClipManager::getInstance().saveClipToLibrary(clipId_, std::move(markers));
@@ -478,14 +464,8 @@ void AudioClipPropertiesContent::createControls() {
     transientSensValue_->onValueChange = [this]() {
         if (clipId_ == magda::INVALID_CLIP_ID)
             return;
-        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-        if (!audioEngine)
-            return;
-        auto* bridge = audioEngine->getAudioBridge();
-        if (!bridge)
-            return;
-        bridge->setTransientSensitivity(clipId_,
-                                        static_cast<float>(transientSensValue_->getValue()));
+        magda::tracktion_fork::setTransientSensitivity(
+            clipId_, static_cast<float>(transientSensValue_->getValue()));
     };
     addAndMakeVisible(*transientSensValue_);
 

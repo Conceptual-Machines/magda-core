@@ -281,13 +281,15 @@ class TracktionEngineWrapper : public AudioEngine,
     // =========================================================================
 
     /**
-     * @brief Get the AudioBridge for TrackManager-to-Tracktion synchronization
-     * @return Pointer to AudioBridge, or nullptr if not initialized
+     * @brief The fork's model-to-Tracktion sync, or null before an edit exists.
+     *
+     * The fork's own surface, not the engine interface's (#2760): the app reaches
+     * what only the fork has through TracktionFork.hpp.
      */
-    AudioBridge* getAudioBridge() override {
+    AudioBridge* getAudioBridge() {
         return audioBridge_.get();
     }
-    const AudioBridge* getAudioBridge() const override {
+    const AudioBridge* getAudioBridge() const {
         return audioBridge_.get();
     }
 
@@ -308,6 +310,7 @@ class TracktionEngineWrapper : public AudioEngine,
     void captureAllPluginStates() override;
     void capturePluginStateAt(const ChainNodePath& devicePath) override;
     void applyPluginStateAt(const ChainNodePath& devicePath) override;
+    void projectAuthoredStateAt(const ChainNodePath& devicePath) override;
 
     /** @brief The windows onto those same plugins (#2580). */
     std::optional<PluginPrograms> getPluginPrograms(const ChainNodePath& devicePath) override;
@@ -327,6 +330,12 @@ class TracktionEngineWrapper : public AudioEngine,
     /** @brief The MAGDA device inside the fork's plugin at @p devicePath (#2585). */
     std::shared_ptr<daw::audio::MagdaDevice> renderedDevice(
         const ChainNodePath& devicePath) const override;
+
+    double deviceLatencySeconds(const ChainNodePath& devicePath) const override;
+
+    daw::audio::TrackMeasurementTap* ensureTrackMeasurementTap(TrackId trackId) override;
+    daw::audio::TrackMeasurementTap* trackMeasurementTap(TrackId trackId) const override;
+    void removeTrackMeasurementTap(TrackId trackId) override;
 
     /**
      * @brief Export capture pass for External FX / Instrument devices (#1623)
@@ -476,8 +485,7 @@ class TracktionEngineWrapper : public AudioEngine,
     void configureAudioDevices();
     void setupMidiDevices();
 
-    /** @brief Install ProjectManager's save and load hooks. The plugin-state
-     *  half is guarded at save time, since there may be no AudioBridge (#2579). */
+    /** @brief Install ProjectManager's save and load hooks. */
     void installProjectStateHooks();
 
     // Change listener helper methods
@@ -595,8 +603,6 @@ class TracktionEngineWrapper : public AudioEngine,
     void createSessionSlotPreview(TrackId trackId, int sceneIndex);
 
     std::atomic<bool> offlineRenderActive_{false};  // an offline render owns the edit
-
-    std::shared_ptr<std::atomic<bool>> aliveFlag_ = std::make_shared<std::atomic<bool>>(true);
 
     /// The save and load hooks as they were before this installed its own, put
     /// back at shutdown so a second wrapper in a process does not strip the first's.

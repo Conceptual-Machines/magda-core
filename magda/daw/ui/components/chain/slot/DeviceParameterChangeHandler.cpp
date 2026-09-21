@@ -4,9 +4,7 @@
 #include <cmath>
 #include <iterator>
 
-#include "audio/AudioBridge.hpp"
 #include "audio/plugins/compiled/CompiledFaustInterface.hpp"
-#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"
@@ -32,37 +30,31 @@ bool refreshEngineAwareCompiledSlots(magda::DeviceInfo& device,
     int modeSlot = -1;
     bool layoutNeedsRefresh = false;
 
-    if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-        if (auto* bridge = audioEngine->getAudioBridge()) {
-            auto plugin = bridge->getPlugin(devicePath);
-            auto* compiled = daw::audio::tracktion_adapter::deviceFromPlugin<
-                daw::audio::compiled::ICompiledFaustPlugin>(plugin.get());
-            if (compiled != nullptr)
-                modeSlot = compiled->engineAwareModeSlot();
+    std::shared_ptr<daw::audio::MagdaDevice> rendered;
+    if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine())
+        rendered = audioEngine->renderedDevice(devicePath);
 
-            if (compiled != nullptr) {
-                if (auto* proc = bridge->getDeviceProcessor(devicePath)) {
-                    for (int slotIndex = 0; slotIndex < compiled->hostSlotCount(); ++slotIndex) {
-                        if (auto* paramInfo = device.findParameterByIndex(slotIndex)) {
-                            auto refreshedInfo = proc->getParameterInfo(slotIndex);
-                            refreshedInfo.currentValue = paramInfo->currentValue;
+    if (const auto* compiled =
+            dynamic_cast<const daw::audio::compiled::ICompiledFaustPlugin*>(rendered.get())) {
+        modeSlot = compiled->engineAwareModeSlot();
+        for (int slotIndex = 0; slotIndex < compiled->hostSlotCount(); ++slotIndex) {
+            if (auto* paramInfo = device.findParameterByIndex(slotIndex)) {
+                auto refreshedInfo =
+                    daw::audio::compiled::hostSlotParameterInfo(*compiled, slotIndex);
+                refreshedInfo.currentValue = paramInfo->currentValue;
 
-                            if (paramInfo->hidden != refreshedInfo.hidden)
-                                layoutNeedsRefresh = true;
+                if (paramInfo->hidden != refreshedInfo.hidden)
+                    layoutNeedsRefresh = true;
 
-                            const bool refreshMetadata =
-                                slotIndex == modeSlot || paramInfo->hidden != refreshedInfo.hidden;
-                            if (refreshMetadata)
-                                *paramInfo = refreshedInfo;
+                const bool refreshMetadata =
+                    slotIndex == modeSlot || paramInfo->hidden != refreshedInfo.hidden;
+                if (refreshMetadata)
+                    *paramInfo = refreshedInfo;
 
-                            if (!layoutNeedsRefresh && slotIndex == modeSlot &&
-                                changedParamIndex != modeSlot &&
-                                modeSlot < paramGrid.getSlotCount()) {
-                                if (auto* slot = paramGrid.getSlot(modeSlot))
-                                    slot->setParameterInfo(refreshedInfo);
-                            }
-                        }
-                    }
+                if (!layoutNeedsRefresh && slotIndex == modeSlot && changedParamIndex != modeSlot &&
+                    modeSlot < paramGrid.getSlotCount()) {
+                    if (auto* slot = paramGrid.getSlot(modeSlot))
+                        slot->setParameterInfo(refreshedInfo);
                 }
             }
         }

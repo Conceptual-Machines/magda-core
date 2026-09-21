@@ -21,7 +21,15 @@ float gainToDb(float gain) {
 }
 }  // namespace
 
-AutomationRecordingEngine::AutomationRecordingEngine(te::Edit& edit) : edit_(edit) {}
+AutomationRecordingEngine::AutomationRecordingEngine(te::Edit& edit) : edit_(edit) {
+    auto& automation = AutomationManager::getInstance();
+    setMode(automation.getAutomationMode());
+    automation.addListener(this);
+}
+
+AutomationRecordingEngine::~AutomationRecordingEngine() {
+    AutomationManager::getInstance().removeListener(this);
+}
 
 namespace {
 const char* modeName(AutomationMode m) {

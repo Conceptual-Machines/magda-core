@@ -55,12 +55,28 @@ class TrackManagerListener {
         juce::ignoreUnused(trackId);
     }
 
+    // Called when a track's audio input changes, just before its trackPropertyChanged
+    virtual void trackAudioInputChanged(TrackId trackId) {
+        juce::ignoreUnused(trackId);
+    }
+
+    // Called when a track's MIDI input changes, just before its trackPropertyChanged
+    virtual void trackMidiInputChanged(TrackId trackId) {
+        juce::ignoreUnused(trackId);
+    }
+
     // Called when master channel properties change
     virtual void masterChannelChanged() {}
 
     // Called when track selection changes
     virtual void trackSelectionChanged(TrackId trackId) {
         juce::ignoreUnused(trackId);
+    }
+
+    // Called just before the element at sourcePath moves into destinationChain
+    virtual void chainElementMoving(const ChainNodePath& sourcePath,
+                                    const ChainNodePath& destinationChain) {
+        juce::ignoreUnused(sourcePath, destinationChain);
     }
 
     // Called when devices on a track change (added, removed, reordered, bypassed)
@@ -1395,6 +1411,10 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     std::array<uint64_t, kMaxBusTracks> lastBusNoteOff_{};
 
     void notifyTrackPropertyChanged(int trackId);
+    void notifyTrackAudioInputChanged(TrackId trackId);
+    void notifyTrackMidiInputChanged(TrackId trackId);
+    void notifyChainElementMoving(const ChainNodePath& sourcePath,
+                                  const ChainNodePath& destinationChain);
     void notifyMasterChannelChanged();
     void notifyTrackSelectionChanged(TrackId trackId);
     void notifyDeviceModifiersChanged(TrackId trackId);

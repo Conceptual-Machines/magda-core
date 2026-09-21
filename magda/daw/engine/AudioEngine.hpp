@@ -27,11 +27,11 @@ class AudioDeviceManager;
 
 namespace magda::daw::audio {
 class MagdaDevice;
-}
+class TrackMeasurementTap;
+}  // namespace magda::daw::audio
 
 namespace magda {
 
-class AudioBridge;
 class DeviceMeters;
 class AudioIOControl;
 class InsertRenderCaptureService;
@@ -263,9 +263,6 @@ class AudioEngine : public AudioEngineListener {
     virtual void setMidiDevicesReadyCallback(std::function<void()> callback) = 0;
 
     // ===== Audio Management =====
-    virtual AudioBridge* getAudioBridge() = 0;
-    virtual const AudioBridge* getAudioBridge() const = 0;
-
     /// Track and master meters and MIDI activity, from an engine-neutral
     /// object both engines feed (#2579).
     virtual TrackMeters& meters() = 0;
@@ -308,6 +305,22 @@ class AudioEngine : public AudioEngineListener {
     virtual std::optional<float> observedParameter(const ChainNodePath& /*devicePath*/,
                                                    int /*paramIndex*/) const {
         return std::nullopt;
+    }
+
+    /// @p trackId's post-fader measurement tap, created on first ask; null where this engine
+    /// has none (#1388).
+    virtual daw::audio::TrackMeasurementTap* ensureTrackMeasurementTap(TrackId /*trackId*/) {
+        return nullptr;
+    }
+    virtual daw::audio::TrackMeasurementTap* trackMeasurementTap(TrackId /*trackId*/) const {
+        return nullptr;
+    }
+    virtual void removeTrackMeasurementTap(TrackId /*trackId*/) {}
+
+    /// The latency the instance at @p devicePath reports, in seconds; zero when this engine
+    /// holds none or cannot say.
+    virtual double deviceLatencySeconds(const ChainNodePath& /*devicePath*/) const {
+        return 0.0;
     }
 
     /// Whether an edit to this parameter was accepted and has not completed.

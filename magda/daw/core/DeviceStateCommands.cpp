@@ -4,6 +4,7 @@
 
 #include "../audio/plugins/MagdaDevice.hpp"
 #include "../audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
+#include "../engine/AudioEngine.hpp"
 #include "DeviceState.hpp"
 #include "ProjectManager.hpp"
 #include "TrackManager.hpp"
@@ -74,6 +75,13 @@ void projectAuthoredStateToDevice(daw::audio::MagdaDevice& device, const juce::S
     }
 
     device.restoreState(tree);
+}
+
+void projectAuthoredStateToRenderedDevice(const AudioEngine& engine,
+                                          const ChainNodePath& devicePath) {
+    const auto* device = TrackManager::getInstance().getDeviceInChainByPath(devicePath);
+    if (auto rendered = engine.renderedDevice(devicePath); rendered != nullptr && device != nullptr)
+        projectAuthoredStateToDevice(*rendered, device->pluginState, device->pluginId);
 }
 
 bool writeDeviceSettings(const ChainNodePath& devicePath, const juce::NamedValueSet& settings) {
