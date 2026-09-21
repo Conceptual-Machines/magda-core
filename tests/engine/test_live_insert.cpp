@@ -1,5 +1,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <limits>
+#include <map>
+#include <mutex>
 #include <vector>
 
 #include "clip/ClipSnapshotFeed.hpp"
@@ -201,7 +204,7 @@ TEST_CASE("A hardware MIDI port sends each message when it is due",
 
     std::vector<juce::MidiMessage> delivered;
     magda::daw::engine_host::HardwareMidiPort port(
-        nullptr, clock, [&](const juce::MidiMessage& message) { delivered.push_back(message); });
+        clock, [&](const juce::MidiMessage& message) { delivered.push_back(message); });
 
     const std::uint8_t on[] = {0x90, 60, 100};
     const std::uint8_t off[] = {0x80, 60, 0};
@@ -316,7 +319,7 @@ TEST_CASE("A release waits for what was queued before it", "[engine][host][inser
 
     std::vector<juce::MidiMessage> delivered;
     magda::daw::engine_host::HardwareMidiPort port(
-        nullptr, clock, [&](const juce::MidiMessage& message) { delivered.push_back(message); });
+        clock, [&](const juce::MidiMessage& message) { delivered.push_back(message); });
 
     const std::uint8_t on[] = {0x90, 60, 100};
     port.send(0, on, 3);
@@ -369,4 +372,50 @@ TEST_CASE("An insert whose port did not resolve is tried again when the port is 
     factory.setModel({track}, master());
     CHECK(factory.devicesToRebuild().contains(key));
     CHECK(factory.createInsert(key) != nullptr);
+}
+
+TEST_CASE("A port is opened again after a device change, as the same object",
+          "[engine][host][insert][midi]") {
+    // A synth unplugged and plugged back in comes back as a new endpoint. The insert
+    // rebuilt for it gets the port it had, now sending to the endpoint as it is (#2279).
+    std::mutex lock;
+    std::map<juce::String, juce::String> listed{{"Synth", "endpoint-1"}};
+    std::vector<juce::String> reached;
+
+    magda::daw::engine_host::MidiEndpoints endpoints{
+        .find = [&](const juce::String& name) -> std::optional<juce::String> {
+            const std::scoped_lock held(lock);
+            const auto found = listed.find(name);
+            return found != listed.end() ? std::optional(found->second) : std::nullopt;
+        },
+        .open = [&](const juce::String& identifier) -> magda::daw::engine_host::MidiSink {
+            return [&, identifier](const juce::MidiMessage&) {
+                const std::scoped_lock held(lock);
+                reached.push_back(identifier);
+            };
+        }};
+
+    magda::daw::engine_host::HardwareMidiOutputs outputs(endpoints);
+    auto* port = outputs.open("Synth");
+    REQUIRE(port != nullptr);
+
+    {
+        const std::scoped_lock held(lock);
+        listed.clear();
+    }
+    outputs.devicesChanged();
+    CHECK(outputs.open("Synth") == nullptr);
+
+    {
+        const std::scoped_lock held(lock);
+        listed["Synth"] = "endpoint-2";
+    }
+    CHECK(outputs.open("Synth") == port);
+
+    port->sendAfterQueued(juce::MidiMessage::noteOff(1, 60));
+    outputs.dispatchDue(std::numeric_limits<double>::infinity());
+
+    const std::scoped_lock held(lock);
+    REQUIRE(reached.size() == 1);
+    CHECK(reached[0] == "endpoint-2");
 }

@@ -14,10 +14,8 @@ constexpr int kDispatchIntervalMs = 1;
 
 }  // namespace
 
-HardwareMidiPort::HardwareMidiPort(std::unique_ptr<juce::MidiOutput> output,
-                                   const HardwareMidiClock& clock,
-                                   std::function<void(const juce::MidiMessage&)> sink)
-    : output_(std::move(output)), clock_(clock), sink_(std::move(sink)) {}
+HardwareMidiPort::HardwareMidiPort(const HardwareMidiClock& clock, MidiSink sink)
+    : clock_(clock), sink_(std::move(sink)) {}
 
 void HardwareMidiPort::send(int sample, const std::uint8_t* data, int size) {
     if (size < 1 || size > 3) {
@@ -74,37 +72,61 @@ void HardwareMidiPort::dispatchDue(double nowMs) {
 }
 
 void HardwareMidiPort::deliver(const juce::MidiMessage& message) {
-    if (output_ != nullptr)
-        output_->sendMessageNow(message);
-    else if (sink_)
+    if (sink_)
         sink_(message);
 }
 
-HardwareMidiOutputs::HardwareMidiOutputs() : juce::Thread("MAGDA insert MIDI") {}
+MidiEndpoints systemMidiEndpoints() {
+    return {
+        .find = [](const juce::String& name) -> std::optional<juce::String> {
+            if (const auto device = midi::resolve(juce::MidiOutput::getAvailableDevices(), name))
+                return device->identifier;
+            return std::nullopt;
+        },
+        .open = [](const juce::String& identifier) -> MidiSink {
+            std::shared_ptr<juce::MidiOutput> output = juce::MidiOutput::openDevice(identifier);
+            if (output == nullptr)
+                return {};
+            return [output](const juce::MidiMessage& message) { output->sendMessageNow(message); };
+        }};
+}
+
+HardwareMidiOutputs::HardwareMidiOutputs(MidiEndpoints endpoints)
+    : juce::Thread("MAGDA insert MIDI"), endpoints_(std::move(endpoints)) {}
 
 HardwareMidiOutputs::~HardwareMidiOutputs() {
     stopThread(1000);
 
     // Whatever is still queued goes now, releases last, so no note outlives the app.
-    for (auto& [name, port] : ports_)
-        port->dispatchDue(std::numeric_limits<double>::infinity());
+    dispatchDue(std::numeric_limits<double>::infinity());
 }
 
 HardwareMidiPort* HardwareMidiOutputs::open(const juce::String& name) {
+    const auto identifier = endpoints_.find(name);
+
     const std::scoped_lock lock(portsLock_);
-    if (const auto found = ports_.find(name); found != ports_.end())
-        return found->second.get();
+    const auto found = ports_.find(name);
+    if (!identifier.has_value())
+        return nullptr;
+    if (found != ports_.end() && found->second.generation == generation_)
+        return found->second.port.get();
 
-    const auto device = midi::resolve(juce::MidiOutput::getAvailableDevices(), name);
-    if (!device.has_value())
+    auto sink = endpoints_.open(*identifier);
+    if (!sink)
         return nullptr;
 
-    auto output = juce::MidiOutput::openDevice(device->identifier);
-    if (output == nullptr)
-        return nullptr;
+    // The same object, so an insert still holding it sends to the device as it is now.
+    if (found != ports_.end()) {
+        found->second.port->reopen(std::move(sink));
+        found->second.generation = generation_;
+        return found->second.port.get();
+    }
 
-    auto port = std::make_unique<HardwareMidiPort>(std::move(output), clock_);
-    auto* opened = ports_.emplace(name, std::move(port)).first->second.get();
+    auto* opened =
+        ports_
+            .emplace(name,
+                     Port{std::make_unique<HardwareMidiPort>(clock_, std::move(sink)), generation_})
+            .first->second.port.get();
 
     // Only once a port exists, so a session with no MIDI insert runs no thread for it.
     if (!isThreadRunning())
@@ -112,14 +134,20 @@ HardwareMidiPort* HardwareMidiOutputs::open(const juce::String& name) {
     return opened;
 }
 
+void HardwareMidiOutputs::devicesChanged() {
+    const std::scoped_lock lock(portsLock_);
+    ++generation_;
+}
+
+void HardwareMidiOutputs::dispatchDue(double nowMs) {
+    const std::scoped_lock lock(portsLock_);
+    for (auto& [name, port] : ports_)
+        port.port->dispatchDue(nowMs);
+}
+
 void HardwareMidiOutputs::run() {
     while (!threadShouldExit()) {
-        {
-            const std::scoped_lock lock(portsLock_);
-            const auto now = juce::Time::getMillisecondCounterHiRes();
-            for (auto& [name, port] : ports_)
-                port->dispatchDue(now);
-        }
+        dispatchDue(juce::Time::getMillisecondCounterHiRes());
         wait(kDispatchIntervalMs);
     }
 }
