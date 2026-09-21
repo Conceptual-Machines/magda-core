@@ -483,3 +483,38 @@ TEST_CASE("A MIDI send is told to release its notes where a device would be",
     CHECK(insert.releases == 1);
     CHECK(insert.sends == 2);
 }
+
+TEST_CASE("An external instrument's return is added to the audio it was never sent",
+          "[engine][plan][insert]") {
+    // Audio on the track did not leave the machine, so it carries on beside what the
+    // synth sends back, as past any instrument: a clip bounced in place is heard (#2279).
+    auto track = makeTrack(1);
+    track.midiInputDevice = "all";
+    track.chain.fxChainElements.push_back(makeDeviceElement(makeExternalInstrument(7)));
+
+    std::vector<TrackInfo> tracks{track};
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    INFO(magda::engine::dumpPlan(plan));
+
+    const auto returns = opsWithRole(plan, OpRole::InsertReturn);
+    const auto mixes = opsWithRole(plan, OpRole::DeviceInject);
+    REQUIRE(returns.size() == 1);
+    REQUIRE(mixes.size() == 1);
+
+    const auto& mix = plan.ops[static_cast<std::size_t>(mixes.front())];
+    CHECK(mix.kind == OpKind::MixAudio);
+    REQUIRE(mix.inputs.size() == 2);
+    CHECK(mix.inputs[0].valid());
+
+    // Through the alignment delay the mix puts on each of its inputs.
+    const auto& aligned = plan.ops[static_cast<std::size_t>(mix.inputs[1].op)];
+    CHECK(aligned.kind == OpKind::Delay);
+    CHECK(aligned.inputs[0].op == returns.front());
+
+    // An external effect sends the audio out, so what comes back replaces it.
+    auto fxTrack = makeTrack(2);
+    fxTrack.chain.fxChainElements.push_back(makeDeviceElement(makeExternalFx(8)));
+    std::vector<TrackInfo> fxTracks{fxTrack};
+    const auto fxPlan = magda::engine::compileRenderPlan(fxTracks, makeMaster());
+    CHECK(opsWithRole(fxPlan, OpRole::DeviceInject).empty());
+}
