@@ -830,6 +830,13 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         sources_.registerAvailableDevices();
         reconcileRecording();
         publishRouting(playedTracks());
+
+        // A MIDI port an insert sends to may have just arrived or gone (#2279).
+        if (factory_.holdsInserts()) {
+            factory_.rerouteInserts();
+            plan_.store(true, std::memory_order_relaxed);
+            triggerAsyncUpdate();
+        }
     }
 
     // ===== Arrangement input recording (#2553) =====

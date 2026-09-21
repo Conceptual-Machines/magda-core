@@ -81,8 +81,9 @@ class LiveMidiOutput {
      */
     virtual void send(int sample, const std::uint8_t* data, int size) = 0;
 
-    /// Off the audio thread, at once: a note released by an insert going away.
-    virtual void sendNow(const juce::MidiMessage& message) = 0;
+    /// Off the audio thread: a note released by an insert going away. Sent once everything
+    /// already queued has gone, so an off cannot overtake the on it ends.
+    virtual void sendAfterQueued(const juce::MidiMessage& message) = 0;
 };
 
 }  // namespace magda::engine

@@ -1,6 +1,7 @@
 #include "HardwareMidiOutput.hpp"
 
 #include <algorithm>
+#include <limits>
 
 #include "../../audio/midi/MidiDeviceMatch.hpp"
 
@@ -35,10 +36,14 @@ void HardwareMidiPort::send(int sample, const std::uint8_t* data, int size) {
     queued.dueMs = clock_.dueMs(sample);
     queued.size = static_cast<std::uint8_t>(size);
     std::copy_n(data, size, queued.bytes.begin());
+
+    if (queued.dueMs > lastDueMs_.load(std::memory_order_relaxed))
+        lastDueMs_.store(queued.dueMs, std::memory_order_relaxed);
 }
 
-void HardwareMidiPort::sendNow(const juce::MidiMessage& message) {
-    deliver(message);
+void HardwareMidiPort::sendAfterQueued(const juce::MidiMessage& message) {
+    const std::scoped_lock lock(releasesLock_);
+    releases_.push_back({lastDueMs_.load(std::memory_order_relaxed), message});
 }
 
 void HardwareMidiPort::dispatchDue(double nowMs) {
@@ -51,11 +56,21 @@ void HardwareMidiPort::dispatchDue(double nowMs) {
 
         const auto& queued = queue_[static_cast<std::size_t>(size1 > 0 ? start1 : start2)];
         if (queued.dueMs > nowMs)
-            return;
+            break;
 
         deliver(juce::MidiMessage(queued.bytes.data(), queued.size));
         fifo_.finishedRead(1);
     }
+
+    // After the queue: a release is due no earlier than anything queued before it, so a
+    // head still waiting was queued after every release that is due now.
+    const std::scoped_lock lock(releasesLock_);
+    const auto due =
+        std::stable_partition(releases_.begin(), releases_.end(),
+                              [nowMs](const Release& release) { return release.dueMs <= nowMs; });
+    for (auto release = releases_.begin(); release != due; ++release)
+        deliver(release->message);
+    releases_.erase(releases_.begin(), due);
 }
 
 void HardwareMidiPort::deliver(const juce::MidiMessage& message) {
@@ -69,6 +84,10 @@ HardwareMidiOutputs::HardwareMidiOutputs() : juce::Thread("MAGDA insert MIDI") {
 
 HardwareMidiOutputs::~HardwareMidiOutputs() {
     stopThread(1000);
+
+    // Whatever is still queued goes now, releases last, so no note outlives the app.
+    for (auto& [name, port] : ports_)
+        port->dispatchDue(std::numeric_limits<double>::infinity());
 }
 
 HardwareMidiPort* HardwareMidiOutputs::open(const juce::String& name) {

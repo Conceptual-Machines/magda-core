@@ -2,11 +2,15 @@
 #include <catch2/catch_test_macros.hpp>
 #include <vector>
 
+#include "clip/ClipSnapshotFeed.hpp"
+#include "clip/ClipStreamFeed.hpp"
 #include "core/TrackInfo.hpp"
 #include "exec/RuntimeStateStore.hpp"
 #include "io/LiveInput.hpp"
 #include "io/LiveInsert.hpp"
 #include "io/LiveOutput.hpp"
+#include "launch/SessionLauncher.hpp"
+#include "magda/daw/engine/host/EngineRuntimeFactory.hpp"
 #include "magda/daw/engine/host/HardwareMidiOutput.hpp"
 #include "plan/PlanCompiler.hpp"
 
@@ -38,7 +42,7 @@ class RecordingMidiOutput final : public LiveMidiOutput {
     void send(int sample, const std::uint8_t* data, int size) override {
         sent.push_back({sample, std::vector<std::uint8_t>(data, data + size)});
     }
-    void sendNow(const juce::MidiMessage& message) override {
+    void sendAfterQueued(const juce::MidiMessage& message) override {
         now.push_back(message);
     }
 
@@ -181,7 +185,7 @@ TEST_CASE("A MIDI send is timed from the callback and releases what it holds",
         device.end();
     }
 
-    // Gone with a note down: it is ended at once, off the audio thread.
+    // Gone with a note down: it is ended off the audio thread.
     REQUIRE(port.now.size() == 1);
     CHECK(port.now[0].isNoteOff());
     CHECK(port.now[0].getNoteNumber() == 67);
@@ -302,4 +306,67 @@ TEST_CASE("The store asks for an insert once for both halves, and keeps it",
     const auto before = store.size();
     CHECK(store.releaseDeleted(empty, engine::collectRuntimeStateIds(none, master()), nullptr) > 0);
     CHECK(store.size() < before);
+}
+
+TEST_CASE("A release waits for what was queued before it", "[engine][host][insert][midi]") {
+    // An insert going away ends its notes from off the audio thread, and a note-on it
+    // queued a moment earlier is still waiting: the off must not overtake it (#2279).
+    magda::daw::engine_host::HardwareMidiClock clock{
+        .startMs = 1000.0, .sampleRate = 1000.0, .outputLatencySamples = 10};
+
+    std::vector<juce::MidiMessage> delivered;
+    magda::daw::engine_host::HardwareMidiPort port(
+        nullptr, clock, [&](const juce::MidiMessage& message) { delivered.push_back(message); });
+
+    const std::uint8_t on[] = {0x90, 60, 100};
+    port.send(0, on, 3);
+    port.sendAfterQueued(juce::MidiMessage::noteOff(1, 60));
+
+    port.dispatchDue(1005.0);
+    CHECK(delivered.empty());
+
+    port.dispatchDue(1010.0);
+    REQUIRE(delivered.size() == 2);
+    CHECK(delivered[0].isNoteOn());
+    CHECK(delivered[1].isNoteOff());
+
+    // With nothing queued, a release goes at the next look.
+    port.sendAfterQueued(juce::MidiMessage::noteOff(1, 61));
+    port.dispatchDue(1010.0);
+    REQUIRE(delivered.size() == 3);
+    CHECK(delivered[2].getNoteNumber() == 61);
+}
+
+TEST_CASE("An insert whose port did not resolve is tried again when the port is corrected",
+          "[engine][host][insert]") {
+    // A name moves no op, so a failed insert is remembered by the config it was tried
+    // from; otherwise picking a port that exists would never rebuild it (#2279).
+    magda::daw::engine_host::EngineRuntimeFactory factory;
+    engine::ClipSnapshotFeed clips;
+    engine::ClipStreamFeed streams;
+    engine::LaunchHandleFeed handles;
+    LiveInputFeed inputs;
+    LiveOutputFeed outputs;
+    factory.attach(clips, streams, handles, inputs, outputs);
+    factory.routeInsertsWith([](const InsertConfig& insert) -> std::optional<LiveInsertRoute> {
+        if (insert.sendDevice != "Output 3 + 4")
+            return std::nullopt;
+        return LiveInsertRoute{.sendChannels = {2, 3}};
+    });
+
+    auto track = trackWithInsert();
+    auto& device = std::get<DeviceInfo>(track.chain.fxChainElements.front());
+    device.insert.sendDevice = "Unplugged";
+
+    factory.setModel({track}, master());
+    const DeviceKey key{ChainSegment::Fx, 7};
+    CHECK(factory.createInsert(key) == nullptr);
+    CHECK(!factory.insertsMoved({track}, master()));
+
+    device.insert.sendDevice = "Output 3 + 4";
+    CHECK(factory.insertsMoved({track}, master()));
+
+    factory.setModel({track}, master());
+    CHECK(factory.devicesToRebuild().contains(key));
+    CHECK(factory.createInsert(key) != nullptr);
 }

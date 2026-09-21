@@ -14,7 +14,7 @@ LiveInsert::~LiveInsert() {
     for (auto channel = 0; channel < 16; ++channel)
         for (auto note = 0; note < 128; ++note)
             if (held_[static_cast<std::size_t>(channel)][static_cast<std::size_t>(note)])
-                route_.midi->sendNow(juce::MidiMessage::noteOff(channel + 1, note));
+                route_.midi->sendAfterQueued(juce::MidiMessage::noteOff(channel + 1, note));
 }
 
 void LiveInsert::send(const BlockInfo& block, juce::dsp::AudioBlock<const float> audio,

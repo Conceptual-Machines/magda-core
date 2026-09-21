@@ -84,12 +84,14 @@ std::unique_ptr<engine::EngineInsert> EngineRuntimeFactory::createInsert(engine:
         liveOutputs_ == nullptr || !routeInsert_)
         return nullptr;
 
+    // Remembered before it is tried: a port that did not resolve is one the user will
+    // correct, and a name moves no op, so only this can say the insert has to be retried.
     const auto& config = found->second.insert;
+    insertsBuilt_[key] = insertIdentityOf(config);
+
     auto route = routeInsert_(config);
     if (!route.has_value())
         return nullptr;
-
-    insertsBuilt_[key] = insertIdentityOf(config);
 
     std::unique_ptr<engine::EngineInsert> insert =
         std::make_unique<engine::LiveInsert>(*liveInputs_, *liveOutputs_, std::move(*route));

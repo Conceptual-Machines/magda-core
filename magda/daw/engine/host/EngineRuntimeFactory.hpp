@@ -178,7 +178,7 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
     InsertRouter routeInsert_;
     InsertWrapper wrapInsert_;
 
-    /// Which config each held insert was built from, like @ref built_ for devices.
+    /// Which config each insert was built or last tried from, like @ref built_ for devices.
     std::map<engine::DeviceKey, juce::String> insertsBuilt_;
 
     std::map<engine::DeviceKey, DeviceInfo> devices_;

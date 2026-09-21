@@ -8,6 +8,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <vector>
 
 #include "io/LiveOutput.hpp"
 
@@ -47,9 +48,10 @@ class HardwareMidiPort final : public engine::LiveMidiOutput {
                      std::function<void(const juce::MidiMessage&)> sink = {});
 
     void send(int sample, const std::uint8_t* data, int size) override;
-    void sendNow(const juce::MidiMessage& message) override;
+    void sendAfterQueued(const juce::MidiMessage& message) override;
 
-    /// Send everything due by @p nowMs, in the order it was queued. The dispatch thread's.
+    /// Send everything due by @p nowMs, queued messages before later releases. The
+    /// dispatch thread's.
     void dispatchDue(double nowMs);
 
     /// Messages dropped: longer than three bytes, or past the queue's room.
@@ -75,6 +77,16 @@ class HardwareMidiPort final : public engine::LiveMidiOutput {
     juce::AbstractFifo fifo_{kCapacity};
     std::array<Queued, kCapacity> queue_{};
     std::atomic<std::uint32_t> dropped_{0};
+
+    /// The latest due time the audio thread has queued, which a release waits for.
+    std::atomic<double> lastDueMs_{0.0};
+
+    struct Release {
+        double dueMs = 0.0;
+        juce::MidiMessage message;
+    };
+    std::mutex releasesLock_;
+    std::vector<Release> releases_;
 };
 
 /**

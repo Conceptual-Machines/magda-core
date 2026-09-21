@@ -518,3 +518,40 @@ TEST_CASE("An external instrument's return is added to the audio it was never se
     const auto fxPlan = magda::engine::compileRenderPlan(fxTracks, makeMaster());
     CHECK(opsWithRole(fxPlan, OpRole::DeviceInject).empty());
 }
+
+TEST_CASE("A silent insert return is still asked, and passes on silence",
+          "[engine][exec][insert]") {
+    // A capture pass records what comes back whatever is muted, or a muted chain's
+    // capture would never fill and the export would wait on it for ever (#2279).
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeDeviceElement(makeExternalFx(7)));
+
+    std::vector<TrackInfo> tracks{track};
+    auto master = makeMaster();
+    const auto plan = magda::engine::compileRenderPlan(tracks, master);
+
+    StubInsert insert(0, 0.25f);
+    PlanBindings bindings;
+    bindings.inserts[DeviceKey{ChainSegment::Fx, 7}] = &insert;
+
+    PlanValues values;
+    magda::engine::resolvePlanValues(plan, tracks, master, values);
+    const auto returns = opsWithRole(plan, OpRole::InsertReturn);
+    REQUIRE(returns.size() == 1);
+    values.ops[static_cast<std::size_t>(returns.front())].silent = true;
+
+    const RenderContext context{44100.0, kBlockSize, 2};
+    PlanExecutor executor;
+    executor.prepare(plan, bindings, context, nullptr, &values);
+    REQUIRE(executor.isPrepared());
+
+    juce::AudioBuffer<float> output(2, kBlockSize);
+    output.clear();
+    BlockInfo block;
+    block.numSamples = kBlockSize;
+    block.playing = true;
+    executor.process(values, block, output);
+
+    CHECK(insert.receives == 1);
+    CHECK(output.getMagnitude(0, kBlockSize) == 0.0f);
+}

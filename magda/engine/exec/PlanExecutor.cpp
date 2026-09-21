@@ -2081,19 +2081,23 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             static thread_local juce::MidiBuffer discardedMidi;
             discardedMidi.clear();
 
+            // Asked when silent too, so a capture of the return covers the whole pass
+            // whatever is muted (#2279); a silent chain still passes on silence.
             if (returnsAudio) {
                 auto out = audioOut(id, 0, numSamples);
+                if (insert != nullptr)
+                    insert->receive(block, out, discardedMidi);
                 if (insert == nullptr || value.silent)
                     out.clear();
-                else
-                    insert->receive(block, out, discardedMidi);
             } else {
                 auto& out = midiOut(id, 0);
                 out.clear();
                 auto& fractions = fractionsOut(id, 0);
                 fractions.clear();
-                if (insert != nullptr && !value.silent)
+                if (insert != nullptr)
                     insert->receive(block, {}, out);
+                if (value.silent)
+                    out.clear();
                 fractions.addWhole(out);
 
                 jassert(out.data.size() <= kMaxMidiBytesPerPort);
