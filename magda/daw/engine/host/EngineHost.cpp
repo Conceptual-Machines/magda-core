@@ -1912,6 +1912,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             preview.startBeat = reading->second.startBeat;
             preview.currentLengthBeats = reading->second.lengthBeats;
             preview.isAudioRecording = true;
+            preview.numChannels = std::clamp(static_cast<int>(route.channels.size()), 1, 2);
             preview.notes.clear();
             preview.audioPeaks.resize(reading->second.peaks.size());
             std::ranges::transform(
