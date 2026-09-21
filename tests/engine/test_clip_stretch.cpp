@@ -311,12 +311,18 @@ struct Rig {
             REQUIRE(event != nullptr);
 
             const auto at = std::max(blockTime(next_), event->span.seconds.start);
-            const auto position =
-                magda::engine::readingPositionAt(*clip, *event, at, beatAt(at), kSampleRate);
-            const auto ahead = entry.stretcher != nullptr ? entry.stretcher->readAheadSamples() : 0;
+            const auto positionAt = [&](double seconds) {
+                return magda::engine::readingPositionAt(*clip, *event, seconds, beatAt(seconds),
+                                                        kSampleRate);
+            };
 
-            entry.stream->seek(static_cast<std::int64_t>(std::llround(position)) + ahead -
-                               entry.preRollSamples);
+            if (entry.stretcher == nullptr) {
+                entry.stream->seek(static_cast<std::int64_t>(std::llround(positionAt(at))));
+                continue;
+            }
+            const auto read = magda::engine::stretchReadAt(*entry.stretcher, entry.preRollSamples,
+                                                           at, kSampleRate, positionAt);
+            entry.stream->seek(read.from - read.preRoll);
         }
 
         advance(lead + 1);
@@ -570,7 +576,7 @@ TEST_CASE("A clip asks for a stretcher only when it needs one", "[engine][clip][
 
         // The curve reaches past the sample it lands on, so the reading runs a
         // little ahead of the position wanted.
-        REQUIRE(stretcher->readAheadSamples() > 0);
+        REQUIRE(stretcher->readAheadSamples(setup.nominalRate) > 0);
         REQUIRE(stretcher->preRollSamples(setup.nominalRate) > 0);
     }
 
@@ -624,18 +630,18 @@ TEST_CASE("A clip asks for a stretcher only when it needs one", "[engine][clip][
 
             REQUIRE(stretcher != nullptr);
 
-            // Signalsmith primes from a window at the start, so its read-ahead
-            // is its priming length. SoundTouch primes from history and reads
-            // ahead to cover its output latency, so it primes more than it
-            // reads ahead.
+            // Signalsmith primes from a window at the start, so it reads ahead by
+            // the whole window. SoundTouch primes from history and reads ahead to
+            // cover its output latency, so it primes more than it reads ahead.
             REQUIRE(stretcher->preRollSamples(setup.nominalRate) > 0);
+            REQUIRE(stretcher->outputLatencySamples() > 0);
             if (which == mode::kSignalsmith) {
-                REQUIRE(stretcher->readAheadSamples() ==
+                REQUIRE(stretcher->readAheadSamples(setup.nominalRate) ==
                         stretcher->preRollSamples(setup.nominalRate));
             } else {
-                REQUIRE(stretcher->readAheadSamples() > 0);
+                REQUIRE(stretcher->readAheadSamples(setup.nominalRate) > 0);
                 REQUIRE(stretcher->preRollSamples(setup.nominalRate) >
-                        stretcher->readAheadSamples());
+                        stretcher->readAheadSamples(setup.nominalRate));
             }
         }
     }
@@ -675,7 +681,7 @@ TEST_CASE("A clip asks for a stretcher only when it needs one", "[engine][clip][
         const auto setup = magda::engine::stretchSetupFor(clip, event, context());
 
         CHECK(setup.mode == mode::kDisabled);
-        CHECK(magda::engine::makeStretcher(setup)->readAheadSamples() > 0);
+        CHECK(magda::engine::makeStretcher(setup)->readAheadSamples(setup.nominalRate) > 0);
     }
 }
 
@@ -1042,7 +1048,7 @@ TEST_CASE("SoundTouch holds the tempo when a cell consumes a fractional number o
         setup.nominalRate = rate;
         auto stretcher = magda::engine::makeStretcher(setup);
         REQUIRE(stretcher != nullptr);
-        const auto ahead = stretcher->readAheadSamples();
+        const auto ahead = stretcher->readAheadSamples(setup.nominalRate);
         const auto preRoll = stretcher->preRollSamples(rate);
         PrefetchStream stream(std::make_unique<ConstantReader>(), context(), {8192, 8});
         stream.startAt(ahead - preRoll);
@@ -1083,7 +1089,7 @@ TEST_CASE("SoundTouch stays continuous when tempo crosses unity",
         setup.followsTempo = true;
         auto stretcher = magda::engine::makeStretcher(setup);
         REQUIRE(stretcher != nullptr);
-        const auto ahead = stretcher->readAheadSamples();
+        const auto ahead = stretcher->readAheadSamples(setup.nominalRate);
         const auto preRoll = stretcher->preRollSamples(1.0);
         PrefetchStream stream(std::make_unique<ConstantReader>(), context(), {8192, 8});
         stream.startAt(ahead - preRoll);
@@ -1139,7 +1145,7 @@ TEST_CASE("SoundTouch primes its lookahead without allocating on the audio threa
                 setup.nominalRate = rate;
                 auto stretcher = magda::engine::makeStretcher(setup);
                 REQUIRE(stretcher != nullptr);
-                const auto ahead = stretcher->readAheadSamples();
+                const auto ahead = stretcher->readAheadSamples(setup.nominalRate);
                 const auto preRoll = stretcher->preRollSamples(rate);
                 PrefetchStream stream(std::make_unique<ConstantReader>(), context(), {8192, 32});
                 stream.startAt(ahead - preRoll);
@@ -1198,7 +1204,7 @@ TEST_CASE("A prime says what the reader owed it and did not give",
 
         {
             auto stretcher = build();
-            const auto ahead = stretcher->readAheadSamples();
+            const auto ahead = stretcher->readAheadSamples(setup.nominalRate);
             const auto preRoll = stretcher->preRollSamples(rate);
             PrefetchStream stream(std::make_unique<ConstantReader>(), context(), {8192, 8});
             stream.startAt(kFarIntoTheFile + ahead - preRoll);
@@ -1210,7 +1216,7 @@ TEST_CASE("A prime says what the reader owed it and did not give",
         {
             // Nothing filled, so the whole window is audio that was owed.
             auto stretcher = build();
-            const auto ahead = stretcher->readAheadSamples();
+            const auto ahead = stretcher->readAheadSamples(setup.nominalRate);
             const auto preRoll = stretcher->preRollSamples(rate);
             PrefetchStream stream(std::make_unique<ConstantReader>(), context(), {8192, 8});
             stream.startAt(kFarIntoTheFile + ahead - preRoll);
@@ -1224,7 +1230,7 @@ TEST_CASE("A prime says what the reader owed it and did not give",
             // The same empty queue at the front of the file. Everything before
             // sample zero is padding, so only what the file has is owed.
             auto stretcher = build();
-            const auto ahead = stretcher->readAheadSamples();
+            const auto ahead = stretcher->readAheadSamples(setup.nominalRate);
             const auto preRoll = stretcher->preRollSamples(rate);
             PrefetchStream stream(std::make_unique<ConstantReader>(), context(), {8192, 8});
             stream.startAt(ahead - preRoll);
@@ -1539,8 +1545,14 @@ TEST_CASE("Signalsmith places the opening transient on time after each restart",
             rig.event(1).interpBpm = kBpm / rate;
             auto& stream = rig.give(1, 1, std::make_unique<ImpulseReader>());
             const auto& entry = rig.table.entries.front();
-            const auto cue = entry.stretcher->readAheadSamples() - entry.preRollSamples;
-            stream.startAt(cue, entry.preRollSamples + 8192);
+            const auto& clip = rig.lane.audio.front();
+            const auto read = magda::engine::stretchReadAt(
+                *entry.stretcher, entry.preRollSamples, clip.span.seconds.start, kSampleRate,
+                [&](double seconds) {
+                    return magda::engine::readingPositionAt(clip, rig.event(1), seconds,
+                                                            beatAt(seconds), kSampleRate);
+                });
+            stream.startAt(read.from - read.preRoll, entry.preRollSamples + 8192);
             rig.publish();
 
             for (int pass = 0; pass < 3; ++pass) {

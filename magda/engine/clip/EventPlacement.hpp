@@ -65,6 +65,14 @@ bool startsInsideSourceMaterial(const AudioEventPlayback& event, double deviceSa
 double readingRateOf(const AudioEventPlayback& event);
 
 /**
+ * @brief The fastest @p event can be read anywhere, which is what buffers are sized for.
+ *
+ * Its usual rate, or for a warped event the steepest stretch a marker may be
+ * given. Fixed while markers move, so editing them keeps the running stretcher.
+ */
+double peakReadingRateOf(const AudioEventPlayback& event);
+
+/**
  * @brief Where in the reading @p event is at one instant of the timeline.
  *
  * In fractional device samples, and the whole of what this slice adds: speed
@@ -87,6 +95,15 @@ double readingRateOf(const AudioEventPlayback& event);
  */
 double readingPositionAt(const AudioClipPlayback& clip, const AudioEventPlayback& event,
                          double seconds, double beat, double deviceSampleRate);
+
+/**
+ * @brief The beat face of a moment inside @p event's span, without a tempo map.
+ *
+ * Linear between the span's two resolved faces, exact at its ends. What a cue
+ * works from, since the pool is handed seconds and a beat-face event's position
+ * is a question about beats.
+ */
+double beatAlongSpan(const AudioEventPlayback& event, double seconds);
 
 /// What @p event needs stretching with, or a setup no stretcher is made for
 /// when it plays at its file's own speed with nothing asked of its pitch.

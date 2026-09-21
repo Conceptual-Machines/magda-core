@@ -7,6 +7,7 @@
 #include "clip/ClipStretcher.hpp"
 #include "clip/EventPlacement.hpp"
 #include "clip/WarpMap.hpp"
+#include "core/TimeStretchModes.hpp"
 #include "exec/RenderContext.hpp"
 #include "io/SourceReaders.hpp"
 
@@ -272,11 +273,14 @@ TEST_CASE("A warped clip consumes its file at the rate its markers ask for",
     }
 }
 
-TEST_CASE("Warp sizes a stretcher against its steepest stretch, not its average",
+TEST_CASE("Warp sizes a stretcher for the steepest a marker may reach, not for its map",
           "[engine][clip][warp]") {
     const auto clip = warpedClip();
+    const auto& event = clip.events.front();
 
-    REQUIRE(magda::engine::readingRateOf(clip.events.front()) == approx(2.0));
+    // Aligned at the clip's own rate: the map's steepest stretch is 2.
+    REQUIRE(magda::engine::readingRateOf(event) == approx(1.0));
+    REQUIRE(magda::engine::peakReadingRateOf(event) == approx(magda::engine::kMaxStretchRate));
 }
 
 TEST_CASE("Trimming a clip's head leaves its markers pinned to the file", "[engine][clip][warp]") {
@@ -349,22 +353,28 @@ TEST_CASE("A warped loop bends the same way on every pass", "[engine][clip][warp
     event.loopLengthSamples = static_cast<std::int64_t>(atSourceSecond(2.0));
 
     // Source 0 to 2 is warp 0 to 1, so the loop is one warp second long.
-    SECTION("the second pass reads what the first did") {
-        REQUIRE(readingAt(clip, 1.5) == approx(readingAt(clip, 0.5)));
-        REQUIRE(readingAt(clip, 2.25) == approx(readingAt(clip, 0.25)));
-        REQUIRE(readingAt(clip, 5.75) == approx(readingAt(clip, 0.75)));
+    const auto loop = atSourceSecond(2.0);
+
+    SECTION("the second pass reads what the first did, a loop further on") {
+        REQUIRE(readingAt(clip, 1.5) == approx(readingAt(clip, 0.5) + loop));
+        REQUIRE(readingAt(clip, 2.25) == approx(readingAt(clip, 0.25) + 2.0 * loop));
+        REQUIRE(readingAt(clip, 5.75) == approx(readingAt(clip, 0.75) + 5.0 * loop));
     }
 
     SECTION("and it is still the warped reading, not a straight one") {
         REQUIRE(readingAt(clip, 0.25) == approx(atSourceSecond(0.5)));
-        REQUIRE(readingAt(clip, 1.25) == approx(atSourceSecond(0.5)));
+        REQUIRE(readingAt(clip, 1.25) == approx(atSourceSecond(0.5) + loop));
     }
 
-    SECTION("the reading chain does not tile it a second time") {
-        // Folding happens in warp time, above the map. Tiling below the stream
-        // as well would fold a position that had already been folded.
+    SECTION("it climbs across the wrap, so reading ahead reads the next pass") {
+        REQUIRE(readingAt(clip, 1.0) == approx(loop));
+        REQUIRE(readingAt(clip, 1.001) > readingAt(clip, 0.999));
+    }
+
+    SECTION("and the reading chain folds it back") {
         const auto how = magda::engine::sourceReadFor(event, kSampleRate);
-        REQUIRE(how.loopLengthSamples == 0);
+        REQUIRE(how.loopStartSamples == 0);
+        REQUIRE(how.loopLengthSamples == static_cast<std::int64_t>(loop));
     }
 }
 
@@ -413,9 +423,11 @@ TEST_CASE("A reversed warped loop composes both", "[engine][clip][warp]") {
     event.loopStartSamples = 0;
     event.loopLengthSamples = static_cast<std::int64_t>(atSourceSecond(2.0));
 
-    SECTION("it repeats on the loop's warped length") {
-        REQUIRE(readingAt(clip, 1.5) == approx(readingAt(clip, 0.5)));
-        REQUIRE(readingAt(clip, 3.25) == approx(readingAt(clip, 0.25)));
+    const auto loop = atSourceSecond(2.0);
+
+    SECTION("it repeats on the loop's warped length, a loop further on") {
+        REQUIRE(readingAt(clip, 1.5) == approx(readingAt(clip, 0.5) + loop));
+        REQUIRE(readingAt(clip, 3.25) == approx(readingAt(clip, 0.25) + 3.0 * loop));
     }
 
     SECTION("and every position is still in the mirrored file") {
@@ -424,12 +436,19 @@ TEST_CASE("A reversed warped loop composes both", "[engine][clip][warp]") {
         };
 
         // Warp folds into [0, 1); walking backwards from the far end lands at
-        // warp 0 exactly, which is source zero.
-        REQUIRE(readingAt(clip, 0.0) == approx(mirrored(0.0)));
+        // warp 0 exactly, which is source zero once the chain folds it back.
+        const auto how = magda::engine::sourceReadFor(event, kSampleRate);
+        const auto start = static_cast<double>(how.loopStartSamples);
+        const auto length = static_cast<double>(how.loopLengthSamples);
+        const auto folded =
+            start + std::fmod(std::fmod(readingAt(clip, 0.0) - start, length) + length, length);
+        REQUIRE(folded == approx(mirrored(0.0)));
     }
 
-    SECTION("the reading chain still does not tile it a second time") {
-        REQUIRE(magda::engine::sourceReadFor(event, kSampleRate).loopLengthSamples == 0);
+    SECTION("and the reading chain folds it back, in the mirrored file") {
+        const auto how = magda::engine::sourceReadFor(event, kSampleRate);
+        REQUIRE(how.loopLengthSamples == static_cast<std::int64_t>(loop));
+        REQUIRE(how.loopStartSamples == how.lengthInSamples - static_cast<std::int64_t>(loop));
     }
 }
 
@@ -450,4 +469,55 @@ TEST_CASE("An unwarped event is untouched by any of this", "[engine][clip][warp]
         const auto how = magda::engine::sourceReadFor(event, kSampleRate);
         REQUIRE(how.loopLengthSamples == static_cast<std::int64_t>(atSourceSecond(2.0)));
     }
+}
+
+TEST_CASE("A warped clip is read ahead at the rate it plays, not at its steepest",
+          "[engine][clip][warp]") {
+    // The read-ahead was sized once at the map's steepest stretch, so everything
+    // slower read that far ahead: the clip played early and ran out of file
+    // before its loop ended.
+    auto clip = warpedClip();
+    auto& event = clip.events.front();
+    event.timeStretchMode = magda::time_stretch_mode::kSignalsmith;
+
+    const auto setup = magda::engine::stretchSetupFor(
+        clip, event, magda::engine::RenderContext{kSampleRate, 512, 2});
+    const auto stretcher = magda::engine::makeStretcher(setup);
+    REQUIRE(stretcher != nullptr);
+    REQUIRE(stretcher->outputLatencySamples() > 0);
+
+    const auto positionAt = [&](double seconds) {
+        return magda::engine::readingPositionAt(clip, event, seconds, beatAt(seconds), kSampleRate);
+    };
+
+    // Warp 2, inside the half-speed stretch.
+    const auto at = clip.span.seconds.start + 2.0;
+    const auto read = magda::engine::stretchReadAt(
+        *stretcher, stretcher->preRollSamples(setup.nominalRate), at, kSampleRate, positionAt);
+
+    const auto latency = stretcher->outputLatencySamples() / kSampleRate;
+    // Within a sample: the window is rounded the stretcher's own way, as the fork's is.
+    REQUIRE(static_cast<double>(read.from) ==
+            approx(positionAt(at + latency) + stretcher->preRollSamples(0.0), 1.0));
+
+    // The window opens where the clip is, so priming infers the half rate.
+    REQUIRE(static_cast<double>(read.from - read.preRoll) == approx(positionAt(at), 2.0));
+    REQUIRE(read.preRoll < stretcher->preRollSamples(setup.nominalRate));
+}
+
+TEST_CASE("Moving a warp marker keeps the stretcher it is playing through",
+          "[engine][clip][warp]") {
+    // The setup is what the pool compares to decide whether to replace a
+    // stretcher, and one sized to the map was replaced on every marker drag:
+    // re-primed under a playing clip, heard as a gap.
+    const auto context = magda::engine::RenderContext{kSampleRate, 512, 2};
+    auto before = warpedClip();
+    auto after = warpedClip(0, {{0.0, 0.0}, {2.5, 1.0}, {3.0, 3.0}});
+    before.events.front().timeStretchMode = magda::time_stretch_mode::kSignalsmith;
+    after.events.front().timeStretchMode = magda::time_stretch_mode::kSignalsmith;
+
+    REQUIRE(after.events.front().warp.maxSourcePerWarp() !=
+            approx(before.events.front().warp.maxSourcePerWarp()));
+    REQUIRE(magda::engine::stretchSetupFor(before, before.events.front(), context) ==
+            magda::engine::stretchSetupFor(after, after.events.front(), context));
 }

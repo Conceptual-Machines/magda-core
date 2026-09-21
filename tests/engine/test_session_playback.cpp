@@ -396,7 +396,10 @@ void giveStretchedSlot(AudioRig& rig, int mode, double ratio, bool loop,
     REQUIRE(stretcher != nullptr);
     const auto preRoll = stretcher->preRollSamples(setup.nominalRate);
     // The same cue calculation as ClipVoicePool, with the file starting at zero.
-    stream->startAt(stretcher->readAheadSamples() - preRoll);
+    const auto read = magda::engine::stretchReadAt(
+        *stretcher, preRoll, 0.0, kSampleRate,
+        [ratio](double seconds) { return seconds * kSampleRate * ratio; });
+    stream->startAt(read.from - read.preRoll);
     rig.streamTable.entries.push_back(
         {kTrack, 1, event.eventId, stream, std::move(stretcher), preRoll});
     rig.lane.session.push_back(std::move(slot));

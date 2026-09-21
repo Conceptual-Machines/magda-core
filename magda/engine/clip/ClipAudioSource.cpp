@@ -244,18 +244,23 @@ void ClipAudioSource::prepareForPlay(const TrackClipPlayback& track, const Block
                         std::floor(static_cast<double>(sample - start) / kStretchCellSamples));
                     at = static_cast<double>(start + cell * kStretchCellSamples) / sampleRate_;
                 }
-                const auto beat = session ? event.span.beats.start : block.beatAtTime(at);
-                const auto position = readingPositionAt(clip, event, at, beat, sampleRate_);
-                const auto ahead =
-                    entry->stretcher != nullptr ? entry->stretcher->readAheadSamples() : 0;
+                const auto positionAt = [&](double moment) {
+                    const auto beat =
+                        session ? beatAlongSpan(event, moment) : block.beatAtTime(moment);
+                    return readingPositionAt(clip, event, moment, beat, sampleRate_);
+                };
+
+                if (entry->stretcher != nullptr) {
+                    const auto read = stretchReadAt(*entry->stretcher, entry->preRollSamples, at,
+                                                    sampleRate_, positionAt);
+                    entry->stream->prepareRead(read.from - read.preRoll);
+                    continue;
+                }
 
                 // Where the voice's plain path reads from: a trimmed start sits a
                 // fraction into the sample it begins on (ClipVoice::render).
-                const auto into = entry->stretcher == nullptr && !session
-                                      ? fractionAt(block.offsetForTime(at))
-                                      : 0.0;
-                entry->stream->prepareRead(firstSampleFrom(position - into) + ahead -
-                                           entry->preRollSamples);
+                const auto into = session ? 0.0 : fractionAt(block.offsetForTime(at));
+                entry->stream->prepareRead(firstSampleFrom(positionAt(at) - into));
             }
         }
     };

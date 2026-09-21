@@ -21,27 +21,6 @@ bool reachesInto(const SnapshotSpan& span, double windowStart, double windowEnd)
     return span.seconds.start < windowEnd && span.seconds.end > windowStart;
 }
 
-/**
- * @brief The beat face of a moment inside @p event's span.
- *
- * The pool works in seconds, because that is what the transport hands it, and an
- * auto tempo event's position is a question about beats (EventPlacement.hpp).
- * Both faces of the span are already resolved, so a moment inside it can be
- * placed on the beat axis without a tempo map: linear between the ends, which is
- * exact at the ends themselves and that is the case that has to be exact. A cue
- * for a clip that has not started is worked out at its own first sample, and a
- * cue for one the transport is already inside is corrected by the first read
- * either way.
- */
-double beatNear(const AudioEventPlayback& event, double seconds) {
-    const auto span = event.span.seconds.length();
-    if (!(span > 0.0))
-        return event.span.beats.start;
-
-    const auto through = (seconds - event.span.seconds.start) / span;
-    return event.span.beats.start + through * event.span.beats.length();
-}
-
 /// One entry that wants a stream, and what decides whether it gets one.
 struct Candidate {
     ClipId clipId = INVALID_CLIP_ID;
@@ -257,12 +236,16 @@ void ClipVoicePool::fillNow() {
 
 std::int64_t ClipVoicePool::cueFor(const AudioClipPlayback& clip, const AudioEventPlayback& event,
                                    double seconds, const Reader& reader) const {
-    const auto position =
-        readingPositionAt(clip, event, seconds, beatNear(event, seconds), context_.sampleRate);
+    const auto positionAt = [&](double at) {
+        return readingPositionAt(clip, event, at, beatAlongSpan(event, at), context_.sampleRate);
+    };
 
-    const auto ahead = reader.stretcher != nullptr ? reader.stretcher->readAheadSamples() : 0;
+    if (reader.stretcher == nullptr)
+        return firstSampleFrom(positionAt(seconds));
 
-    return firstSampleFrom(position) + ahead - reader.preRoll;
+    const auto read =
+        stretchReadAt(*reader.stretcher, reader.preRoll, seconds, context_.sampleRate, positionAt);
+    return read.from - read.preRoll;
 }
 
 ClipVoicePool::Reader ClipVoicePool::open(const AudioClipPlayback& clip,
@@ -285,7 +268,7 @@ ClipVoicePool::Reader ClipVoicePool::open(const AudioClipPlayback& clip,
     // none and pays for none, the same rule the reading chain follows.
     reader.stretcher = makeStretcher(reader.setup);
     if (reader.stretcher != nullptr)
-        reader.preRoll = reader.stretcher->preRollSamples(reader.setup.nominalRate);
+        reader.preRoll = reader.stretcher->preRollSamples(reader.setup.peakRate);
 
     // The event's own first sample, which is what this is compared against next
     // round: an identity rather than a position. Where the stream is actually
@@ -316,11 +299,12 @@ ClipVoicePool::Reader ClipVoicePool::open(const AudioClipPlayback& clip,
     // the transport is already standing inside is read from where the cursor is.
     // Keep the priming window and 100 ms of playback in memory. Each session
     // wrap can then restart immediately while the worker refills beyond it.
-    const auto cacheSamples = session ? reader.preRoll +
-                                            static_cast<int>(std::ceil(context_.sampleRate * 0.1 *
-                                                                       reader.setup.nominalRate)) +
-                                            maxReadingSamples(context_.maxBlockSize)
-                                      : 0;
+    const auto cacheSamples =
+        session
+            ? reader.preRoll +
+                  static_cast<int>(std::ceil(context_.sampleRate * 0.1 * reader.setup.peakRate)) +
+                  maxReadingSamples(context_.maxBlockSize)
+            : 0;
     reader.stream->startAt(cueFor(clip, event, cueSeconds, reader), cacheSamples);
 
     reader_.add(*reader.stream);
@@ -347,8 +331,12 @@ void ClipVoicePool::prepareLoopDestination(Reader& reader, const AudioClipPlayba
         return readingPositionAt(clip, event, seconds, tempo.timeToBeat(seconds),
                                  context_.sampleRate);
     };
-    const auto ahead = reader.stretcher != nullptr ? reader.stretcher->readAheadSamples() : 0;
-    const auto start = firstSampleFrom(readingAt(cueSeconds)) + ahead - reader.preRoll;
+    auto start = firstSampleFrom(readingAt(cueSeconds));
+    if (reader.stretcher != nullptr) {
+        const auto read = stretchReadAt(*reader.stretcher, reader.preRoll, cueSeconds,
+                                        context_.sampleRate, readingAt);
+        start = read.from - read.preRoll;
+    }
     const auto maxRetainedReading = maxReadingSamples(
         static_cast<int>(std::ceil(context_.sampleRate * kReadAheadBridgeSeconds)));
     const auto retainedReading = static_cast<int>(
@@ -556,7 +544,7 @@ void ClipVoicePool::service() {
                             reuse.setup = setup;
                             reuse.stretcher = makeStretcher(setup);
                             reuse.preRoll = reuse.stretcher != nullptr
-                                                ? reuse.stretcher->preRollSamples(setup.nominalRate)
+                                                ? reuse.stretcher->preRollSamples(setup.peakRate)
                                                 : 0;
                         }
 

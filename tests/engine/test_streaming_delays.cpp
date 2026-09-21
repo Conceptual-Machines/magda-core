@@ -505,15 +505,28 @@ std::int64_t roundUp(std::int64_t samples, int blockSize) {
     return (samples + blockSize - 1) / blockSize * blockSize;
 }
 
-/// Priming frames at or after sample zero for a voice starting at @p timeline.
-std::int64_t primingFramesAt(Rig& rig, std::int64_t timeline) {
-    const auto entry = rig.entry();
+/// How far past the position a stretcher reads at a constant @p rate (stretchReadAt).
+std::int64_t readAheadAt(const ClipStreamTable::Entry& entry, double rate) {
     if (entry.stretcher == nullptr)
         return 0;
+    return entry.stretcher->readAheadSamples(rate);
+}
+
+/// What a voice starting at @p timeline reads and primes from (stretchReadAt).
+magda::engine::StretchRead stretchReadFor(Rig& rig, std::int64_t timeline) {
+    const auto entry = rig.entry();
+    if (entry.stretcher == nullptr)
+        return {};
     const auto cell = timeline / kStretchCellSamples * kStretchCellSamples;
-    const auto readFrom = std::llround(static_cast<double>(cell) * rig.playback.speed) +
-                          entry.stretcher->readAheadSamples();
-    return std::clamp<std::int64_t>(readFrom, 0, entry.preRollSamples);
+    return magda::engine::stretchReadAt(
+        *entry.stretcher, entry.preRollSamples, static_cast<double>(cell) / kSampleRate,
+        kSampleRate, [&](double seconds) { return seconds * kSampleRate * rig.playback.speed; });
+}
+
+/// Priming frames at or after sample zero for a voice starting at @p timeline.
+std::int64_t primingFramesAt(Rig& rig, std::int64_t timeline) {
+    const auto read = stretchReadFor(rig, timeline);
+    return std::clamp<std::int64_t>(read.from, 0, read.preRoll);
 }
 
 std::string summary(Rig& rig, const Damage& damage) {
@@ -584,8 +597,8 @@ PrefetchSettings poolFor(const Playback& playback) {
     const auto stretcher = magda::engine::makeStretcher(magda::engine::stretchSetupFor(
         clip, clip.events.front(), RenderContext{kSampleRate, playback.blockSize, 2}));
     REQUIRE(stretcher != nullptr);
-    const auto needed = stretcher->preRollSamples(playback.speed) + stretcher->readAheadSamples() +
-                        mostReading(playback, 4096);
+    const auto needed = stretcher->preRollSamples(playback.speed) +
+                        stretcher->readAheadSamples(playback.speed) + mostReading(playback, 4096);
     return PrefetchSettings{2048, static_cast<int>(needed / 2048) + 3};
 }
 
@@ -868,7 +881,7 @@ TEST_CASE("A playing locate is lost until the reader reaches it, then recovers",
 std::int64_t residentLocate(Rig& rig, std::int64_t from, std::int64_t offset) {
     const auto& playback = rig.playback;
     const auto entry = rig.entry();
-    const auto ahead = entry.stretcher != nullptr ? entry.stretcher->readAheadSamples() : 0;
+    const auto ahead = readAheadAt(entry, playback.speed);
 
     // The most of the file playback can have consumed, and so the earliest frame
     // the pool can still be holding.
@@ -1182,7 +1195,7 @@ struct Retained {
 
 Retained retainedOutput(Rig& rig) {
     const auto entry = rig.entry();
-    const auto ahead = entry.stretcher != nullptr ? entry.stretcher->readAheadSamples() : 0;
+    const auto ahead = readAheadAt(entry, rig.playback.speed);
     const auto resident = rig.files.furthest.load() - ahead;
     const auto block = rig.playback.blockSize;
 
@@ -1423,7 +1436,7 @@ TEST_CASE("A prime the reader missed is not made good by priming again",
 
             // Held before it fills anything, so the prime aligns against silence.
             heard.stopped(kTarget, true);
-            const auto preRoll = heard.entry().preRollSamples;
+            const auto preRoll = stretchReadFor(heard, kTarget).preRoll;
             gate.closeAfter(0);
             {
                 // Rounds until one blocks, as the worker's own loop does: a
@@ -1478,7 +1491,7 @@ TEST_CASE("A prime the reader half supplied is counted apart from playback, and 
             }
 
             heard.stopped(kTarget, true);
-            const auto preRoll = heard.entry().preRollSamples;
+            const auto preRoll = stretchReadFor(heard, kTarget).preRoll;
             const auto chunks = std::max(1, preRoll / 2 / kSmallChunks.chunkSamples);
             gate.closeAfter(chunks);
             {
