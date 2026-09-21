@@ -4,6 +4,7 @@ declare license "GPL-3.0";
 declare version "1.0";
 
 import("stdfaust.lib");
+ms = library("magda_smoothing.lib");
 
 // ============================================================================
 // User controls - pinned to [idx:N] for stable host-slot ordering.
@@ -18,7 +19,7 @@ sync      = checkbox("Sync [idx:1]");
 // Free-rate (Hz). Greyed when Sync is on.
 rate_hz   = hslider("Rate [unit:Hz] [scale:log] [scaleAnchor:4] [idx:2] [gate:!1]",
                     4.0, 0.05, 20.0, 0.01)
-          : si.smooth(ba.tau2pole(0.05));
+          : ms.smooth(ba.tau2pole(0.05));
 
 // Note division when synced. Encoded as the duration of one note relative to
 // a quarter-note: 1/4 = 1, 1/8 = 0.5, etc. (same encoding the delay uses).
@@ -41,7 +42,7 @@ division  = nentry("Division [idx:3] [gate:1] [style:menu{
                   }]", 1.0, 0.125, 4.0, 0.001);
 
 depth     = hslider("Depth [idx:4]", 0.5, 0.0, 1.0, 0.01)
-          : si.smooth(ba.tau2pole(0.02));
+          : ms.smooth(ba.tau2pole(0.02));
 
 shape     = nentry("Shape [idx:5] [style:menu{'Sine':0;'Triangle':1;'Square':2;'S&H':3}]",
                    0, 0, 3, 1);
@@ -59,7 +60,7 @@ bpm       = nentry("BPM [role:projectTempo] [hidden:1] [idx:63]",
 syncedHz  = bpm / (60.0 * max(division, 0.001));
 
 freqHz    = ((1.0 - sync) * rate_hz + sync * syncedHz)
-          : si.smooth(ba.tau2pole(0.05));
+          : ms.smooth(ba.tau2pole(0.05));
 
 // Sample-and-hold: latch white noise on each high half-period of a square
 // wave at the LFO rate. Not a perfect impulse-edge S&H but read as a stepped

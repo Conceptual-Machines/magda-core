@@ -4,6 +4,7 @@ declare license "GPL-3.0";
 declare version "1.0";
 
 import("stdfaust.lib");
+ms = library("magda_smoothing.lib");
 
 // ============================================================================
 // User controls - pinned to [idx:N] for stable host-slot ordering.
@@ -15,7 +16,7 @@ sync = checkbox("Sync [idx:1]");
 
 rate_hz = hslider("Rate [unit:Hz] [scale:log] [scaleAnchor:0.5] [idx:2] [gate:!1]",
                   0.5, 0.05, 10.0, 0.01)
-        : si.smooth(ba.tau2pole(0.05));
+        : ms.smooth(ba.tau2pole(0.05));
 
 division = nentry("Division [idx:3] [gate:1] [style:menu{
                     '1/32':0.125;
@@ -35,13 +36,13 @@ division = nentry("Division [idx:3] [gate:1] [style:menu{
                   }]", 1.0, 0.125, 4.0, 0.001);
 
 depth    = hslider("Depth [idx:4]", 0.5, 0.0, 1.0, 0.01)
-         : si.smooth(ba.tau2pole(0.02));
+         : ms.smooth(ba.tau2pole(0.02));
 feedback = hslider("Feedback [idx:5]", 0.0, -0.9, 0.9, 0.01)
-         : si.smooth(ba.tau2pole(0.02));
+         : ms.smooth(ba.tau2pole(0.02));
 mix      = hslider("Mix [idx:6]", 0.5, 0.0, 1.0, 0.001)
-         : si.smooth(ba.tau2pole(0.02));
+         : ms.smooth(ba.tau2pole(0.02));
 width    = hslider("Width [idx:7]", 0.5, 0.0, 1.0, 0.01)
-         : si.smooth(ba.tau2pole(0.05));
+         : ms.smooth(ba.tau2pole(0.05));
 
 bpm = nentry("BPM [role:projectTempo] [hidden:1] [idx:63]",
              120.0, 20.0, 999.0, 0.001);
@@ -51,7 +52,7 @@ bpm = nentry("BPM [role:projectTempo] [hidden:1] [idx:63]",
 // ============================================================================
 syncedHz = bpm / (60.0 * max(division, 0.001));
 freqHz   = ((1.0 - sync) * rate_hz + sync * syncedHz)
-         : si.smooth(ba.tau2pole(0.05));
+         : ms.smooth(ba.tau2pole(0.05));
 
 // Phase-shifted sine. os.lf_sawpos returns 0..1; we offset then wrap into a sine.
 lfoAt(phaseOffset) = sin((os.lf_sawpos(freqHz) + phaseOffset) * 2.0 * ma.PI);

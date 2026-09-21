@@ -202,6 +202,8 @@ set(MAGDA_FAUST_VECTOR_SIZE 4 CACHE STRING
 function(magda_compile_faust_dsp DSP_FILE CLASS_NAME OUT_VAR)
     cmake_parse_arguments(ARG "VECTORIZE" "" "" ${ARGN})
 
+    set(_magda_smoothing_lib
+        "${CMAKE_SOURCE_DIR}/magda/daw/audio/faust_dsp/lib/magda_smoothing.lib")
     get_filename_component(DSP_NAME "${DSP_FILE}" NAME_WE)
     set(GENERATED_DIR "${CMAKE_BINARY_DIR}/compiled_dsps")
     set(GENERATED_CPP "${GENERATED_DIR}/${DSP_NAME}.generated.cpp")
@@ -218,10 +220,11 @@ function(magda_compile_faust_dsp DSP_FILE CLASS_NAME OUT_VAR)
                 -lang cpp
                 -cn ${CLASS_NAME}
                 -I "${CMAKE_SOURCE_DIR}/third_party/faust/libraries"
+                -I "${CMAKE_SOURCE_DIR}/magda/daw/audio/faust_dsp/lib"
                 ${_magda_faust_codegen_flags}
                 -o "${GENERATED_CPP}"
                 "${DSP_FILE}"
-        DEPENDS "${DSP_FILE}" $<TARGET_FILE:faust>
+        DEPENDS "${DSP_FILE}" "${_magda_smoothing_lib}" $<TARGET_FILE:faust>
         COMMENT "faust → cpp: ${DSP_NAME}.dsp → ${CLASS_NAME}"
         VERBATIM
     )
@@ -244,6 +247,9 @@ function(magda_stage_faust_libraries TARGET_NAME)
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${CMAKE_SOURCE_DIR}/third_party/faust/libraries"
             "${_magda_faust_libraries_destination}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/magda/daw/audio/faust_dsp/lib/magda_smoothing.lib"
+            "${_magda_faust_libraries_destination}/magda_smoothing.lib"
         COMMENT "Copying Faust standard libraries for ${TARGET_NAME}"
     )
 endfunction()

@@ -4,6 +4,7 @@ declare license "GPL-3.0";
 declare version "1.0";
 
 import("stdfaust.lib");
+ms = library("magda_smoothing.lib");
 
 // ============================================================================
 // User controls
@@ -13,16 +14,16 @@ import("stdfaust.lib");
 // modes and the oscillator pitch in sine mode.
 freq = hslider("Frequency [unit:Hz] [scale:log] [scaleAnchor:1000] [idx:0]",
                1000, 20, 16000, 1)
-       : si.smooth(ba.tau2pole(0.02));
+       : ms.smooth(ba.tau2pole(0.02));
 
 // Bandpass Q in the noise modes. Maps 0..1 to roughly Q = 0.5..20.
 // No audible effect in sine mode (the carrier is already monotone).
 width = hslider("Width [idx:1]", 0.5, 0.0, 1.0, 0.001)
-        : si.smooth(ba.tau2pole(0.02));
+        : ms.smooth(ba.tau2pole(0.02));
 
 // Modulation depth. 0 = bypass, 1 = full ring-modulated wet added to dry.
 amount = hslider("Amount [idx:2]", 0.0, 0.0, 1.0, 0.001)
-         : si.smooth(ba.tau2pole(0.02));
+         : ms.smooth(ba.tau2pole(0.02));
 
 // Carrier source.
 // - Noise: shared mono band-passed noise on both channels

@@ -4,6 +4,7 @@ declare license "GPL-3.0";
 declare version "1.0";
 
 import("stdfaust.lib");
+ms = library("magda_smoothing.lib");
 
 // ============================================================================
 // User controls
@@ -14,7 +15,7 @@ import("stdfaust.lib");
 // hook). All character-affecting knobs are user-exposed.
 //
 // NOTE on smoothing: the Brouns gain blocks already smooth via internal
-// onePoleSwitching(att, rel). Wrapping the slider in `si.smooth(...)` here
+// onePoleSwitching(att, rel). Wrapping the slider in `ms.smooth(...)` here
 // would blind Faust's interval analysis for the slidingRMS buffer inside
 // RMS_FBFFcompressor (the IIR's output isn't statically bounded, so
 // sec2samp(rel)*max(1) is inferred as INT_MAX, which the buffer allocator
@@ -28,9 +29,9 @@ releaseMs   = hslider("Release [unit:ms] [scale:log] [scaleAnchor:100] [idx:4]",
                       120.0, 5.0, 1000.0, 1.0);
 kneeDb      = hslider("Knee [unit:dB] [idx:5]", 6.0, 0.0, 24.0, 0.1);
 makeupDb    = hslider("Makeup [unit:dB] [idx:6]", 0.0, 0.0, 24.0, 0.1)
-              : si.smooth(ba.tau2pole(0.02));
+              : ms.smooth(ba.tau2pole(0.02));
 mix         = hslider("Mix [idx:7]", 1.0, 0.0, 1.0, 0.001)
-              : si.smooth(ba.tau2pole(0.02));
+              : ms.smooth(ba.tau2pole(0.02));
 // Smoothed as a linear gain rather than in dB, so pow() stays at control
 // rate. Makeup is left in dB here for the same reason as the Clean engine:
 // hoisting it there moved the settled output by 4% for one saved call.
@@ -61,7 +62,7 @@ prePost = int(style);
 meter = _;
 
 db2lin(db) = pow(10.0, db / 20.0);
-outputGain = db2lin(outputDbRaw) : si.smooth(ba.tau2pole(0.02));
+outputGain = db2lin(outputDbRaw) : ms.smooth(ba.tau2pole(0.02));
 softLimit(x) = ma.tanh(x * 0.75) / ma.tanh(0.75);
 
 // Both detector topologies run in parallel; the detector slot picks which

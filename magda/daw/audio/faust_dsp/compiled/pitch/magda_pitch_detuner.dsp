@@ -4,14 +4,15 @@ declare license "GPL-3.0";
 declare version "1.0";
 
 import("stdfaust.lib");
+ms = library("magda_smoothing.lib");
 
 // Shared 5-slot DSP surface (idx 1..5) plus the wrapper-only Engine at idx 0.
 
-pitchSemis = hslider("Pitch [unit:st] [idx:1]", 0.1, -24.0, 24.0, 0.01) : si.smooth(ba.tau2pole(0.05));
-fineCents  = hslider("Fine [unit:cents] [idx:2]", 12.0, -100.0, 100.0, 0.1) : si.smooth(ba.tau2pole(0.05));
+pitchSemis = hslider("Pitch [unit:st] [idx:1]", 0.1, -24.0, 24.0, 0.01) : ms.smooth(ba.tau2pole(0.05));
+fineCents  = hslider("Fine [unit:cents] [idx:2]", 12.0, -100.0, 100.0, 0.1) : ms.smooth(ba.tau2pole(0.05));
 textureMs  = hslider("Texture [unit:ms] [idx:3]", 50.0, 8.0, 200.0, 0.1);
-mix        = hslider("Mix [idx:4]", 1.0, 0.0, 1.0, 0.001) : si.smooth(ba.tau2pole(0.02));
-outDb      = hslider("Output [unit:dB] [idx:5]", 0.0, -24.0, 12.0, 0.1) : si.smooth(ba.tau2pole(0.02));
+mix        = hslider("Mix [idx:4]", 1.0, 0.0, 1.0, 0.001) : ms.smooth(ba.tau2pole(0.02));
+outDb      = hslider("Output [unit:dB] [idx:5]", 0.0, -24.0, 12.0, 0.1) : ms.smooth(ba.tau2pole(0.02));
 
 // L gets +shift, R gets -shift - anti-symmetric pair gives the classic
 // detune image: low setting = subtle thickening, high setting = wide and

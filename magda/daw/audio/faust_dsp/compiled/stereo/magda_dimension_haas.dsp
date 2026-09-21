@@ -4,16 +4,17 @@ declare license "GPL-3.0";
 declare version "1.0";
 
 import("stdfaust.lib");
+ms = library("magda_smoothing.lib");
 
-amount  = hslider("Amount [idx:1]", 0.5, 0.0, 1.0, 0.001) : si.smooth(ba.tau2pole(0.03));
+amount  = hslider("Amount [idx:1]", 0.5, 0.0, 1.0, 0.001) : ms.smooth(ba.tau2pole(0.03));
 // Rate is inert here but kept in the surface so the Dimension wrapper can
 // expose a uniform 6-slot panel across engines. Faust will optimise the
 // zone away if it has no effect - that's fine, the wrapper only writes
 // to zones that exist.
 rateHz  = hslider("Rate [unit:Hz] [idx:2]", 0.5, 0.05, 4.0, 0.01);
-width   = hslider("Width [idx:3]", 100.0, 0.0, 200.0, 0.1) / 100.0 : si.smooth(ba.tau2pole(0.05));
-mix     = hslider("Mix [idx:4]", 1.0, 0.0, 1.0, 0.001) : si.smooth(ba.tau2pole(0.02));
-outDb   = hslider("Output [unit:dB] [idx:5]", 0.0, -24.0, 12.0, 0.1) : si.smooth(ba.tau2pole(0.02));
+width   = hslider("Width [idx:3]", 100.0, 0.0, 200.0, 0.1) / 100.0 : ms.smooth(ba.tau2pole(0.05));
+mix     = hslider("Mix [idx:4]", 1.0, 0.0, 1.0, 0.001) : ms.smooth(ba.tau2pole(0.02));
+outDb   = hslider("Output [unit:dB] [idx:5]", 0.0, -24.0, 12.0, 0.1) : ms.smooth(ba.tau2pole(0.02));
 
 // Amount maps to delay time in ms, 0..30. The Haas zone (~5..30 ms) is
 // the upper end of "perceived as single source"; beyond that it starts

@@ -554,6 +554,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     # hosts it wants an Edit, and that target cannot have the Faust standard
     # library staged beside it while #2238 stands.
     list(APPEND TEST_SOURCES dsp/test_faust_default_synth_patch.cpp)
+    list(APPEND TEST_SOURCES dsp/test_faust_initial_smoothing.cpp)
 
     # The device layer under the engine (#2174): the app's own catalogs asked
     # for a Device op's device, and a shipped device rendered through the
@@ -665,6 +666,7 @@ target_compile_definitions(magda_tests
     # one.
     MAGDA_FAUST_RUNTIME_DSP_DIR="${CMAKE_SOURCE_DIR}/magda/daw/audio/faust_dsp/runtime"
     MAGDA_FAUST_LIBRARIES_DIR="${CMAKE_SOURCE_DIR}/third_party/faust/libraries"
+    MAGDA_FAUST_DSP_DIR="${CMAKE_SOURCE_DIR}/magda/daw/audio/faust_dsp"
 )
 
 # The Faust standard library, beside the binary, so a runtime-compiled device

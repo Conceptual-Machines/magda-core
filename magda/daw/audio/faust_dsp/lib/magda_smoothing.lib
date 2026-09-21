@@ -1,0 +1,8 @@
+// A control already has its intended value when a DSP instance starts. Take
+// that value on the first sample after init/instanceClear, then smooth changes.
+si = library("signals.lib");
+ma = library("maths.lib");
+
+// `1 : mem` is zero for exactly one sample after a clear, then remains one.
+smooth(pole) = si.smooth(pole * (1 : mem));
+smoo = smooth(1 - 44.1/ma.SR);
