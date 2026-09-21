@@ -12,9 +12,9 @@
 #include "../audio/plugins/SidechainTriggerBus.hpp"
 #include "../engine/AudioEngine.hpp"
 #include "../engine/PluginService.hpp"
+#include "../project/ProjectManager.hpp"
 #include "ChainWalk.hpp"
 #include "ClipManager.hpp"
-#include "Config.hpp"
 #include "DeviceState.hpp"
 #include "DrumGridPads.hpp"
 #include "LegacyDeviceAliases.hpp"
@@ -323,17 +323,18 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
     track.name = !name.isEmpty()            ? name
                  : type == TrackType::Chord ? juce::String("Chord Track")
                                             : generateTrackName();
-    track.colour = juce::Colour(Config::getDefaultColour(static_cast<int>(tracks_.size())));
+    const auto& projectDefaults = ProjectManager::getInstance().getCurrentProjectInfo().defaults;
+    track.colour = juce::Colour(projectDefaults.colourForIndex(static_cast<int>(tracks_.size())));
 
     // The chord-track audition (speaker) toggle is the track's mute state. Seed
-    // it from the preference so chord preview can be on by default if desired.
+    // it from the project default so it stays stable across machines.
     if (type == TrackType::Chord)
-        track.muted = !Config::getInstance().getChordPreviewOnByDefault();
+        track.muted = !projectDefaults.chordPreview;
 
     // Which side of the fader the post-FX stage starts on. Per track from then
     // on (the fader tag on the post-FX panel); the master track is pinned
     // pre-fader by the compilers whatever this says.
-    track.chain.postFxPostFader = Config::getInstance().getPostFxPostFaderByDefault();
+    track.chain.postFxPostFader = projectDefaults.postFxPostFader;
 
     // Set default routing
     track.audioOutputDevice = "master";  // Audio always routes to master

@@ -20,6 +20,7 @@
 #include "../../core/SelectionManager.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../core/ViewModeState.hpp"
+#include "../ProjectManager.hpp"
 #include "DawProjectArchive.hpp"
 #include "NativeProjectDocumentAdapter.hpp"
 
@@ -107,15 +108,27 @@ bool ProjectSerializer::exportToDawProject(const juce::File& file, const Project
 
 bool ProjectSerializer::loadDawProjectAndStage(const juce::File& file, StagedProjectData& outData,
                                                const juce::File& audioExtractionDir) {
+    return loadDawProjectAndStage(file, outData, audioExtractionDir,
+                                  ProjectManager::captureCreationSettingsFromConfig());
+}
+
+bool ProjectSerializer::loadDawProjectAndStage(const juce::File& file, StagedProjectData& outData,
+                                               const juce::File& audioExtractionDir,
+                                               const ProjectCreationSettings& creationSettings) {
     ProjectDocument document;
     juce::String error;
 
-    if (!DawProjectArchive::readFromFile(file, document, error, audioExtractionDir)) {
+    if (!DawProjectArchive::readFromFile(file, document, error, audioExtractionDir,
+                                         &creationSettings.defaults)) {
         lastError_ = std::move(error);
         return false;
     }
 
     outData = NativeProjectDocumentAdapter::toStagedProjectData(document);
+    // DAWproject has no MAGDA defaults block. An import is a new, unsaved
+    // project, so snapshot this installation's new-project preferences once.
+    outData.info.timelineLengthBars = creationSettings.timelineLengthBars;
+    outData.info.defaults = creationSettings.defaults;
     return true;
 }
 
@@ -195,9 +208,62 @@ ProjectMetadata readProjectMetadata(juce::DynamicObject& projectObj) {
     return metadata;
 }
 
+ProjectDefaults readProjectDefaults(juce::DynamicObject& projectObj, ProjectDefaults defaults) {
+    // An old project has no defaults object. Seed every value from the current
+    // new-project preferences first, then let whatever the file carries win.
+    auto* defaultsObj = projectObj.getProperty("defaults").getDynamicObject();
+    if (defaultsObj == nullptr)
+        return defaults;
+
+    if (defaultsObj->hasProperty("zoomViewBars"))
+        defaults.zoomViewBars = defaultsObj->getProperty("zoomViewBars");
+    if (defaultsObj->hasProperty("autoCrossfade"))
+        defaults.autoCrossfade = defaultsObj->getProperty("autoCrossfade");
+    if (defaultsObj->hasProperty("overlapPlaysBoth"))
+        defaults.overlapPlaysBoth = defaultsObj->getProperty("overlapPlaysBoth");
+    if (defaultsObj->hasProperty("chordPreview"))
+        defaults.chordPreview = defaultsObj->getProperty("chordPreview");
+    if (defaultsObj->hasProperty("postFxPostFader"))
+        defaults.postFxPostFader = defaultsObj->getProperty("postFxPostFader");
+    if (defaultsObj->hasProperty("clipColourMode"))
+        defaults.clipColourMode = defaultsObj->getProperty("clipColourMode");
+
+    if (defaultsObj->hasProperty("colourPalette")) {
+        const auto paletteVar = defaultsObj->getProperty("colourPalette");
+        const auto* palette = paletteVar.getArray();
+        if (palette == nullptr)
+            return defaults;
+        std::vector<ProjectColourEntry> parsed;
+        parsed.reserve(static_cast<std::size_t>(palette->size()));
+        for (int i = 0; i < palette->size(); ++i) {
+            const auto& item = (*palette)[i];
+            auto encoded = item.toString();
+            auto name = "Colour " + juce::String(i + 1);
+            if (auto* entryObj = item.getDynamicObject()) {
+                encoded = entryObj->getProperty("colour").toString();
+                const auto savedName = entryObj->getProperty("name").toString();
+                if (savedName.isNotEmpty())
+                    name = savedName;
+            }
+            const bool validColour =
+                encoded.length() == 8 && encoded.containsOnly("0123456789abcdefABCDEF");
+            parsed.push_back({validColour ? juce::Colour::fromString(encoded).getARGB()
+                                          : ProjectColourEntry{}.colour,
+                              name});
+        }
+        defaults.colourPalette = std::move(parsed);
+    }
+    return defaults;
+}
+
 }  // namespace
 
 bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& outData) {
+    return loadAndStage(file, outData, ProjectManager::captureCreationSettingsFromConfig());
+}
+
+bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& outData,
+                                     const ProjectCreationSettings& creationSettings) {
     try {
         // Check file exists
         if (!file.existsAsFile()) {
@@ -275,8 +341,10 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
 
         if (projectObj->hasProperty("sampleRate"))
             outData.info.sampleRate = projectObj->getProperty("sampleRate");
+        outData.info.timelineLengthBars = creationSettings.timelineLengthBars;
         if (projectObj->hasProperty("timelineLengthBars"))
             outData.info.timelineLengthBars = projectObj->getProperty("timelineLengthBars");
+        outData.info.defaults = readProjectDefaults(*projectObj, creationSettings.defaults);
         if (projectObj->hasProperty("savedWithEngine"))
             outData.info.savedWithEngine = projectObj->getProperty("savedWithEngine").toString();
         if (projectObj->hasProperty("renderBitDepth"))
@@ -497,6 +565,24 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
     projectObj->setProperty("projectLength", info.projectLength);
     projectObj->setProperty("sampleRate", info.sampleRate);
     projectObj->setProperty("timelineLengthBars", info.timelineLengthBars);
+
+    auto* defaultsObj = new juce::DynamicObject();
+    defaultsObj->setProperty("zoomViewBars", info.defaults.zoomViewBars);
+    defaultsObj->setProperty("autoCrossfade", info.defaults.autoCrossfade);
+    defaultsObj->setProperty("overlapPlaysBoth", info.defaults.overlapPlaysBoth);
+    defaultsObj->setProperty("chordPreview", info.defaults.chordPreview);
+    defaultsObj->setProperty("postFxPostFader", info.defaults.postFxPostFader);
+    defaultsObj->setProperty("clipColourMode", info.defaults.clipColourMode);
+    juce::Array<juce::var> colourPalette;
+    for (const auto& entry : info.defaults.colourPalette) {
+        auto* entryObj = new juce::DynamicObject();
+        entryObj->setProperty("colour", juce::Colour(entry.colour).toDisplayString(true));
+        entryObj->setProperty("name", entry.name);
+        colourPalette.add(juce::var(entryObj));
+    }
+    defaultsObj->setProperty("colourPalette", juce::var(colourPalette));
+    projectObj->setProperty("defaults", juce::var(defaultsObj));
+
     projectObj->setProperty("savedWithEngine", info.savedWithEngine);
     projectObj->setProperty("renderBitDepth", info.renderBitDepth);
     projectObj->setProperty("bounceBitDepth", info.bounceBitDepth);
@@ -641,8 +727,11 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
 
     if (projectObj->hasProperty("sampleRate"))
         outInfo.sampleRate = projectObj->getProperty("sampleRate");
+    auto creationSettings = ProjectManager::captureCreationSettingsFromConfig();
+    outInfo.timelineLengthBars = creationSettings.timelineLengthBars;
     if (projectObj->hasProperty("timelineLengthBars"))
         outInfo.timelineLengthBars = projectObj->getProperty("timelineLengthBars");
+    outInfo.defaults = readProjectDefaults(*projectObj, std::move(creationSettings.defaults));
     if (projectObj->hasProperty("savedWithEngine"))
         outInfo.savedWithEngine = projectObj->getProperty("savedWithEngine").toString();
     if (projectObj->hasProperty("renderBitDepth"))

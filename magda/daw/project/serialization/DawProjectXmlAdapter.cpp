@@ -12,7 +12,6 @@
 #include <set>
 #include <tuple>
 
-#include "../../core/Config.hpp"
 #include "../../core/ParameterUtils.hpp"
 #include "../../core/TempoUtils.hpp"
 #include "version.hpp"
@@ -1107,7 +1106,8 @@ juce::String DawProjectXmlAdapter::toProjectXml(const ProjectDocument& document)
 }
 
 bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocument& outDocument,
-                                          juce::String& error) {
+                                          juce::String& error,
+                                          const ProjectDefaults* creationDefaults) {
     auto root = juce::parseXML(xml);
     if (!root || !root->hasTagName("Project")) {
         error = "DAWproject XML does not contain a Project root";
@@ -1115,6 +1115,8 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
     }
 
     ProjectDocument document;
+    if (creationDefaults != nullptr)
+        document.info.defaults = *creationDefaults;
     document.info.version = MAGDA_VERSION;
     document.info.name = "Imported DAWproject";
 
@@ -1352,7 +1354,7 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
         for (const auto& track : document.tracks)
             if (track.id == trackId && !track.colour.isTransparent())
                 return track.colour;
-        return juce::Colour(Config::getDefaultColour(0));
+        return juce::Colour(document.info.defaults.colourForIndex(0));
     };
 
     ClipId nextClipId = 1;

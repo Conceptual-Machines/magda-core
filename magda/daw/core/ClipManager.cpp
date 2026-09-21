@@ -37,6 +37,10 @@ double currentProjectTempoOrDefault() {
     return isValidBpm(bpm) ? bpm : DEFAULT_BPM;
 }
 
+const ProjectDefaults& currentProjectDefaults() {
+    return ProjectManager::getInstance().getCurrentProjectInfo().defaults;
+}
+
 /// The file length is what ties a tempo to a beat count, so fill it from the
 /// thumbnail when the source probe left it unknown.
 void ensureSourceDurationKnown(const AudioEvent& event) {
@@ -324,12 +328,13 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
     } else {
         clip.name = generateClipName(ClipType::Audio);
     }
-    if (Config::getInstance().getClipColourMode() == 0) {
+    const auto& projectDefaults = currentProjectDefaults();
+    if (projectDefaults.clipColourMode == 0) {
         // Inherit from parent track
         const auto* track = TrackManager::getInstance().getTrack(trackId);
-        clip.colour = track ? track->colour : juce::Colour(Config::getDefaultColour(0));
+        clip.colour = track ? track->colour : juce::Colour(projectDefaults.colourForIndex(0));
     } else {
-        clip.colour = juce::Colour(Config::getDefaultColour(static_cast<int>(clips_.size())));
+        clip.colour = juce::Colour(projectDefaults.colourForIndex(static_cast<int>(clips_.size())));
     }
     // One event spanning the clip. The pooled Source carries the file facts;
     // the event carries how they are interpreted.
@@ -341,11 +346,11 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
 
     // New audio clips default to AUTO-XFADE (#1499): overlaps with other
     // auto-crossfade audio clips play as crossfades instead of trimming.
-    clip.autoCrossfade = Config::getInstance().getAutoCrossfadeByDefault();
+    clip.autoCrossfade = projectDefaults.autoCrossfade;
 
     // What a new clip starts with when something covers it (#2003). Per clip
-    // from here on: the preference seeds it and never speaks for it again.
-    clip.overlapPlaysBoth = Config::getInstance().getClipOverlapPlaysBoth();
+    // from here on: the project default seeds it and never speaks for it again.
+    clip.overlapPlaysBoth = projectDefaults.overlapPlaysBoth;
 
     const double bpm = isValidBpm(projectBPM) ? projectBPM : currentProjectTempoOrDefault();
 
@@ -457,15 +462,16 @@ ClipId ClipManager::createRecordedAudioClip(TrackId trackId, RecordedAudioClipDa
     clip.name = recording.filePath.isNotEmpty()
                     ? juce::File(recording.filePath).getFileNameWithoutExtension()
                     : generateClipName(ClipType::Audio);
-    if (Config::getInstance().getClipColourMode() == 0) {
+    const auto& projectDefaults = currentProjectDefaults();
+    if (projectDefaults.clipColourMode == 0) {
         const auto* track = TrackManager::getInstance().getTrack(trackId);
-        clip.colour = track ? track->colour : juce::Colour(Config::getDefaultColour(0));
+        clip.colour = track ? track->colour : juce::Colour(projectDefaults.colourForIndex(0));
     } else {
-        clip.colour = juce::Colour(Config::getDefaultColour(static_cast<int>(clips_.size())));
+        clip.colour = juce::Colour(projectDefaults.colourForIndex(static_cast<int>(clips_.size())));
     }
 
-    clip.autoCrossfade = Config::getInstance().getAutoCrossfadeByDefault();
-    clip.overlapPlaysBoth = Config::getInstance().getClipOverlapPlaysBoth();
+    clip.autoCrossfade = projectDefaults.autoCrossfade;
+    clip.overlapPlaysBoth = projectDefaults.overlapPlaysBoth;
     const auto projectBpm = currentProjectTempoOrDefault();
     clip.setPlacementBeats(recording.startBeat, recording.lengthBeats);
     clip.deriveTimesFromBeats(projectBpm);
@@ -508,9 +514,10 @@ ClipId ClipManager::createMidiClipBeats(TrackId trackId, double startBeats, doub
     clip.trackId = trackId;
     clip.setMidiContent();
     clip.view = view;
-    // Occlusion applies to audio and MIDI alike, so the preference seeds both
+    const auto& projectDefaults = currentProjectDefaults();
+    // Occlusion applies to audio and MIDI alike, so the project default seeds both
     // (#2003). Per clip from here on.
-    clip.overlapPlaysBoth = Config::getInstance().getClipOverlapPlaysBoth();
+    clip.overlapPlaysBoth = projectDefaults.overlapPlaysBoth;
     clip.name = generateClipName(ClipType::MIDI);
     // Chord-track clips are chord progressions, not generic MIDI clips.
     if (const auto* nameTrack = TrackManager::getInstance().getTrack(trackId);
@@ -523,11 +530,11 @@ ClipId ClipManager::createMidiClipBeats(TrackId trackId, double startBeats, doub
         }
         clip.name = "Progression " + juce::String(n);
     }
-    if (Config::getInstance().getClipColourMode() == 0) {
+    if (projectDefaults.clipColourMode == 0) {
         const auto* track = TrackManager::getInstance().getTrack(trackId);
-        clip.colour = track ? track->colour : juce::Colour(Config::getDefaultColour(0));
+        clip.colour = track ? track->colour : juce::Colour(projectDefaults.colourForIndex(0));
     } else {
-        clip.colour = juce::Colour(Config::getDefaultColour(static_cast<int>(clips_.size())));
+        clip.colour = juce::Colour(projectDefaults.colourForIndex(static_cast<int>(clips_.size())));
     }
 
     clip.setPlacementBeats(startBeats, lengthBeats);
@@ -569,13 +576,14 @@ ClipId ClipManager::createRecordedMidiClip(TrackId trackId, RecordedMidiClipData
     clip.setMidiContent();
     clip.view = view;
     clip.sceneIndex = sceneIndex;
-    clip.overlapPlaysBoth = Config::getInstance().getClipOverlapPlaysBoth();
+    const auto& projectDefaults = currentProjectDefaults();
+    clip.overlapPlaysBoth = projectDefaults.overlapPlaysBoth;
     clip.name = generateClipName(ClipType::MIDI);
-    if (Config::getInstance().getClipColourMode() == 0) {
+    if (projectDefaults.clipColourMode == 0) {
         const auto* track = TrackManager::getInstance().getTrack(trackId);
-        clip.colour = track ? track->colour : juce::Colour(Config::getDefaultColour(0));
+        clip.colour = track ? track->colour : juce::Colour(projectDefaults.colourForIndex(0));
     } else {
-        clip.colour = juce::Colour(Config::getDefaultColour(static_cast<int>(clips_.size())));
+        clip.colour = juce::Colour(projectDefaults.colourForIndex(static_cast<int>(clips_.size())));
     }
 
     clip.setPlacementBeats(recording.startBeat, recording.lengthBeats);

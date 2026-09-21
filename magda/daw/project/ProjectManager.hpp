@@ -86,6 +86,22 @@ class ProjectManager {
      */
     bool newProject();
 
+    /** Copy Config's new-project preferences into a ProjectInfo snapshot. */
+    static void seedProjectFromConfig(ProjectInfo& project);
+
+    /** Capture only the creation settings used by legacy loads and imports. Call on the UI thread.
+     */
+    static ProjectCreationSettings captureCreationSettingsFromConfig();
+
+    /** Explicitly replace the open project's palette with the current Preferences palette. */
+    void applyConfigPaletteToCurrentProject();
+
+    /**
+     * Seed the initial or closed-project placeholder after Config has been loaded.
+     * This does not notify listeners or mark the project dirty.
+     */
+    void seedCurrentProjectFromConfig();
+
     /**
      * @brief Save project to current file
      * @return true on success, false if no current file or save failed

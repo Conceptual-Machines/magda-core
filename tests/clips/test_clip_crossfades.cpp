@@ -5,9 +5,9 @@
 #include "magda/daw/core/ClipCommands.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/ClipOcclusion.hpp"
-#include "magda/daw/core/Config.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/core/UndoManager.hpp"
+#include "magda/daw/project/ProjectManager.hpp"
 
 namespace {
 /// Source duration is a pooled file fact, so a test that wants one seeds the
@@ -85,58 +85,63 @@ AudibleSpan audibleSpanFor(ClipId clipId) {
 
 }  // namespace
 
-TEST_CASE("new audio clips follow the auto-crossfade config default", "[crossfade]") {
-    resetState();
-    auto& cm = ClipManager::getInstance();
-    const auto trackId = createTrack();
+TEST_CASE("new audio clips follow the project's auto-crossfade default", "[crossfade]") {
+    auto& defaults = ProjectManager::getInstance().getMutableProjectInfo().defaults;
+    const bool original = defaults.autoCrossfade;
+    const juce::ScopeGuard restore{[&defaults, original] { defaults.autoCrossfade = original; }};
 
-    const ClipId id = createAudioBeats(trackId, 0.0, 4.0);
-    CHECK(cm.getClip(id)->autoCrossfade == Config::getInstance().getAutoCrossfadeByDefault());
+    for (const bool projectDefault : {true, false}) {
+        resetState();
+        defaults.autoCrossfade = projectDefault;
+        auto& cm = ClipManager::getInstance();
+        const auto trackId = createTrack();
+
+        const ClipId id = createAudioBeats(trackId, 0.0, 4.0);
+        CHECK(cm.getClip(id)->autoCrossfade == projectDefault);
+    }
 }
 
 // The sibling preference. It shipped unread: the dialog set its own toggle from
 // it and no creation path ever asked, so a new clip started false whatever it
 // said (#2160). Both clip types, because occlusion applies to both.
-TEST_CASE("new clips follow the overlap-plays-both config default", "[crossfade][occlusion]") {
-    auto& config = Config::getInstance();
-    const bool original = config.getClipOverlapPlaysBoth();
+TEST_CASE("new clips follow the project's overlap-plays-both default", "[crossfade][occlusion]") {
+    auto& defaults = ProjectManager::getInstance().getMutableProjectInfo().defaults;
+    const bool original = defaults.overlapPlaysBoth;
+    const juce::ScopeGuard restore{[&defaults, original] { defaults.overlapPlaysBoth = original; }};
 
-    for (const bool preference : {true, false}) {
+    for (const bool projectDefault : {true, false}) {
         resetState();
-        config.setClipOverlapPlaysBoth(preference);
+        defaults.overlapPlaysBoth = projectDefault;
         auto& cm = ClipManager::getInstance();
         const auto trackId = createTrack();
 
         const ClipId audio = createAudioBeats(trackId, 0.0, 4.0);
-        CHECK(cm.getClip(audio)->overlapPlaysBoth == preference);
+        CHECK(cm.getClip(audio)->overlapPlaysBoth == projectDefault);
 
         const ClipId midi = cm.createMidiClipBeats(trackId, 8.0, 4.0, ClipView::Arrangement);
-        CHECK(cm.getClip(midi)->overlapPlaysBoth == preference);
+        CHECK(cm.getClip(midi)->overlapPlaysBoth == projectDefault);
     }
-
-    config.setClipOverlapPlaysBoth(original);
 }
 
 // The preference seeds and then stops speaking for the clip, which is what
 // makes the per-clip Play Through Overlap switch meaningful.
 TEST_CASE("changing the overlap default leaves existing clips alone", "[crossfade][occlusion]") {
-    auto& config = Config::getInstance();
-    const bool original = config.getClipOverlapPlaysBoth();
+    auto& defaults = ProjectManager::getInstance().getMutableProjectInfo().defaults;
+    const bool original = defaults.overlapPlaysBoth;
+    const juce::ScopeGuard restore{[&defaults, original] { defaults.overlapPlaysBoth = original; }};
 
     resetState();
-    config.setClipOverlapPlaysBoth(false);
+    defaults.overlapPlaysBoth = false;
     auto& cm = ClipManager::getInstance();
     const auto trackId = createTrack();
     const ClipId existing = createAudioBeats(trackId, 0.0, 4.0);
     REQUIRE(cm.getClip(existing)->overlapPlaysBoth == false);
 
-    config.setClipOverlapPlaysBoth(true);
+    defaults.overlapPlaysBoth = true;
     CHECK(cm.getClip(existing)->overlapPlaysBoth == false);
 
     const ClipId fresh = createAudioBeats(trackId, 8.0, 4.0);
     CHECK(cm.getClip(fresh)->overlapPlaysBoth == true);
-
-    config.setClipOverlapPlaysBoth(original);
 }
 
 // ============================================================================

@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "../core/DefaultColourPalette.hpp"
 #include "../core/TempoUtils.hpp"
 #include "version.hpp"
 
@@ -99,6 +100,50 @@ inline bool ProjectMetadata::isEmpty() const {
     return true;
 }
 
+struct ProjectColourEntry {
+    std::uint32_t colour = kDefaultColourPalette.front().colour;
+    juce::String name = kDefaultColourPalette.front().name;
+
+    bool operator==(const ProjectColourEntry&) const = default;
+};
+
+/**
+ * Defaults used when new content is added to this project.
+ *
+ * Config seeds this block when the project is created. From then on the saved
+ * project owns the values, so opening it with a different user configuration
+ * does not change how new tracks and clips are initialized.
+ */
+struct ProjectDefaults {
+    int zoomViewBars = 32;
+    bool autoCrossfade = true;
+    bool overlapPlaysBoth = false;
+    bool chordPreview = false;
+    bool postFxPostFader = true;
+    int clipColourMode = 0;  // 0 = inherit track, 1 = cycle through colourPalette
+    std::vector<ProjectColourEntry> colourPalette = [] {
+        std::vector<ProjectColourEntry> palette;
+        palette.reserve(kDefaultColourPalette.size());
+        for (const auto& entry : kDefaultColourPalette)
+            palette.push_back({entry.colour, entry.name});
+        return palette;
+    }();
+
+    std::uint32_t colourForIndex(int index) const {
+        if (colourPalette.empty())
+            return kDefaultColourPalette.front().colour;
+        const auto positiveIndex = index < 0 ? 0U : static_cast<std::size_t>(index);
+        return colourPalette[positiveIndex % colourPalette.size()].colour;
+    }
+};
+
+inline constexpr int kDefaultTimelineLengthBars = 256;
+
+struct ProjectCreationSettings {
+    int timelineLengthBars = kDefaultTimelineLengthBars;
+    ProjectDefaults defaults;
+};
+
 /**
  * @brief Project-level settings and state
  *
@@ -119,7 +164,10 @@ struct ProjectInfo {
     double sampleRate = 44100.0;   // project working/render sample rate
 
     // Total timeline length (per-project; seeded from Config default for new projects)
-    int timelineLengthBars = 256;
+    int timelineLengthBars = kDefaultTimelineLengthBars;
+
+    // Creation and initial-view defaults, captured from Config for new projects.
+    ProjectDefaults defaults;
 
     // Render / bounce settings (per-project)
     /// The engine that last wrote this project, by its setting word

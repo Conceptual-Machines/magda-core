@@ -546,10 +546,27 @@ TEST_CASE("ProjectSerializer exports and stages dawproject archives",
     REQUIRE(projectXml.contains("color=\"#ff5a36\""));
     REQUIRE(projectXml.contains("color=\"#44c7ff\""));
 
+    auto& config = Config::getInstance();
+    const auto oldTimelineBars = config.getDefaultTimelineLengthBars();
+    const auto oldZoomBars = config.getDefaultZoomViewBars();
+    const auto oldPalette = config.getTrackColourPalette();
+    const juce::ScopeGuard restoreConfig{[&config, oldTimelineBars, oldZoomBars, oldPalette] {
+        config.setDefaultTimelineLengthBars(oldTimelineBars);
+        config.setDefaultZoomViewBars(oldZoomBars);
+        config.setTrackColourPalette(oldPalette);
+    }};
+    config.setDefaultTimelineLengthBars(607);
+    config.setDefaultZoomViewBars(11);
+    config.setTrackColourPalette({{0xFF246813, "Imported custom"}});
+
     StagedProjectData staged;
     REQUIRE(ProjectSerializer::loadDawProjectAndStage(file, staged));
     REQUIRE(staged.info.name == "Serializer DAWproject");
     REQUIRE(staged.info.tempo == 126.0);
+    REQUIRE(staged.info.timelineLengthBars == 607);
+    REQUIRE(staged.info.defaults.zoomViewBars == 11);
+    REQUIRE(staged.info.defaults.colourPalette.back().colour == 0xFF246813);
+    REQUIRE(staged.info.defaults.colourPalette.back().name == "Imported custom");
     REQUIRE(staged.tracks.size() == 1);
     REQUIRE(staged.tracks[0].name == "Arp");
     REQUIRE(staged.tracks[0].colour == juce::Colour(0xffff5a36));
@@ -1076,7 +1093,14 @@ TEST_CASE("DawProjectXmlAdapter gives a colourless clip on a colourless track a 
     REQUIRE(doc.clips.size() == 1);
 
     CHECK_FALSE(doc.clips[0].colour.isTransparent());
-    CHECK(doc.clips[0].colour == juce::Colour(Config::getDefaultColour(0)));
+    CHECK(doc.clips[0].colour == juce::Colour(ProjectInfo{}.defaults.colourForIndex(0)));
+
+    ProjectDefaults importedDefaults;
+    importedDefaults.colourPalette = {{0xFF123456, "Import colour"}};
+    ProjectDocument withSeed;
+    REQUIRE(DawProjectXmlAdapter::fromProjectXml(xml, withSeed, error, &importedDefaults));
+    REQUIRE(withSeed.clips.size() == 1);
+    CHECK(withSeed.clips[0].colour == juce::Colour(0xFF123456));
 }
 
 TEST_CASE("DawProjectXmlAdapter imports effect tracks as aux returns with send routing",

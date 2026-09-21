@@ -81,12 +81,20 @@ class ProjectSerializer {
     static bool loadFromFile(const juce::File& file, ProjectInfo& outInfo);
 
     /**
-     * @brief Decompress, parse, and stage project data (thread-safe, no UI interaction)
+     * @brief Decompress, parse, and stage project data.
+     *
+     * This convenience overload captures mutable Config on the calling thread.
+     * Background loaders must capture creation settings before starting and use
+     * the overload below instead.
      * @param file Source .mgd file
      * @param outData Output staged data ready for commitStaged()
      * @return true on success, false on error (check getLastError())
      */
     static bool loadAndStage(const juce::File& file, StagedProjectData& outData);
+
+    /** Worker-safe overload: creation settings were captured before the worker started. */
+    static bool loadAndStage(const juce::File& file, StagedProjectData& outData,
+                             const ProjectCreationSettings& creationSettings);
 
     /**
      * @brief Export current project state to a .dawproject archive
@@ -97,13 +105,20 @@ class ProjectSerializer {
     static bool exportToDawProject(const juce::File& file, const ProjectInfo& info);
 
     /**
-     * @brief Read, validate, and stage a .dawproject archive
+     * @brief Read, validate, and stage a .dawproject archive.
+     *
+     * Captures mutable Config on the calling thread; background loaders use
+     * the explicit-snapshot overload below.
      * @param file Source .dawproject file
      * @param outData Output staged data ready for commitStaged()
      * @return true on success, false on error (check getLastError())
      */
     static bool loadDawProjectAndStage(const juce::File& file, StagedProjectData& outData,
                                        const juce::File& audioExtractionDir = {});
+
+    static bool loadDawProjectAndStage(const juce::File& file, StagedProjectData& outData,
+                                       const juce::File& audioExtractionDir,
+                                       const ProjectCreationSettings& creationSettings);
 
     /**
      * @brief Commit previously staged data to singleton managers (message thread only)

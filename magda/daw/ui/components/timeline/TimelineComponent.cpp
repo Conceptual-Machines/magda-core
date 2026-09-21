@@ -10,6 +10,7 @@
 #include "LoopStripRenderer.hpp"
 #include "core/GestureRouter.hpp"
 #include "core/TempoUtils.hpp"
+#include "project/ProjectManager.hpp"
 
 namespace magda {
 
@@ -42,10 +43,10 @@ bool isXVisible(const juce::Graphics& g, int componentWidth, int x) {
 }  // namespace
 
 TimelineComponent::TimelineComponent() {
-    // Load configuration, converting bars → seconds at default tempo
-    auto& config = magda::Config::getInstance();
+    // Load the project value, converting bars → seconds at default tempo.
     TempoState defaultTempo;
-    timelineLength = defaultTempo.barsToTime(config.getDefaultTimelineLengthBars());
+    timelineLength = defaultTempo.barsToTime(
+        ProjectManager::getInstance().getCurrentProjectInfo().timelineLengthBars);
 
     setMouseCursor(juce::MouseCursor::NormalCursor);
     setWantsKeyboardFocus(false);

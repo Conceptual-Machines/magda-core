@@ -1,24 +1,25 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "magda/daw/core/Config.hpp"
 #include "magda/daw/core/TrackManager.hpp"
+#include "magda/daw/project/ProjectManager.hpp"
 
 using namespace magda;
 
 namespace {
-// Config is a singleton loaded from the user's file, so every test here puts
-// back whatever the preference was on the way out.
 struct PostFxDefaultFixture {
-    PostFxDefaultFixture() : previous_(Config::getInstance().getPostFxPostFaderByDefault()) {
+    PostFxDefaultFixture()
+        : previous_(
+              ProjectManager::getInstance().getCurrentProjectInfo().defaults.postFxPostFader) {
         TrackManager::getInstance().clearAllTracks();
     }
     ~PostFxDefaultFixture() {
-        Config::getInstance().setPostFxPostFaderByDefault(previous_);
+        ProjectManager::getInstance().getMutableProjectInfo().defaults.postFxPostFader = previous_;
         TrackManager::getInstance().clearAllTracks();
     }
 
     bool sideOfNewTrack(bool preferPostFader) {
-        Config::getInstance().setPostFxPostFaderByDefault(preferPostFader);
+        ProjectManager::getInstance().getMutableProjectInfo().defaults.postFxPostFader =
+            preferPostFader;
         const auto trackId = TrackManager::getInstance().createTrack("PostFx", TrackType::Media);
         return TrackManager::getInstance().isPostFxPostFader(trackId);
     }
@@ -28,7 +29,7 @@ struct PostFxDefaultFixture {
 };
 }  // namespace
 
-TEST_CASE("A new track takes its post-FX fader side from the preference", "[tracks][postfx]") {
+TEST_CASE("A new track takes its post-FX fader side from the project default", "[tracks][postfx]") {
     PostFxDefaultFixture fx;
 
     SECTION("post-fader preference") {

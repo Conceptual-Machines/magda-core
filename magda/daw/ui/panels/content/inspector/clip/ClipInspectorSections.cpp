@@ -21,7 +21,6 @@
 #include "core/ClipDisplayInfo.hpp"
 #include "core/ClipOperations.hpp"
 #include "core/ClipPropertyCommands.hpp"
-#include "core/Config.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/TempoUtils.hpp"
 #include "core/TimeStretchModes.hpp"
@@ -292,35 +291,21 @@ void ClipInspector::initClipPropertiesSection() {
         menu.addItem(2, "Inherit from Track");
         menu.addSeparator();
 
-        // Default colours
-        for (size_t i = 0; i < magda::Config::defaultColourPalette.size(); ++i) {
-            auto colour = juce::Colour(magda::Config::defaultColourPalette[i].colour);
-            menu.addItem(static_cast<int>(i + 3), magda::Config::defaultColourPalette[i].name, true,
-                         false, makeChip(colour));
-        }
-
-        // Custom colours from Config
-        const auto customPalette = magda::Config::getInstance().getTrackColourPalette();
-        const int customOffset = static_cast<int>(magda::Config::defaultColourPalette.size()) + 3;
-        if (!customPalette.empty()) {
-            menu.addSeparator();
-            for (size_t i = 0; i < customPalette.size(); ++i) {
-                auto colour = juce::Colour(customPalette[i].colour);
-                menu.addItem(customOffset + static_cast<int>(i),
-                             juce::String(customPalette[i].name), true, false, makeChip(colour));
-            }
+        const auto palette =
+            magda::ProjectManager::getInstance().getCurrentProjectInfo().defaults.colourPalette;
+        for (size_t i = 0; i < palette.size(); ++i) {
+            const auto colour = juce::Colour(palette[i].colour);
+            menu.addItem(static_cast<int>(i + 3), palette[i].name, true, false, makeChip(colour));
         }
 
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(swatch), [this, swatch,
-                                                                                    customPalette](
+                                                                                    palette](
                                                                                        int result) {
             if (result == 0)
                 return;
             auto pid = primaryClipId();
             if (pid == magda::INVALID_CLIP_ID)
                 return;
-            const int customOff = static_cast<int>(magda::Config::defaultColourPalette.size()) + 3;
-
             if (result == 1) {
                 // "None"
                 swatch->clearColour();
@@ -345,17 +330,10 @@ void ClipInspector::initClipPropertiesSection() {
                         }
                     }
                 }
-            } else if (result >= 3 && result < customOff) {
-                auto colour = juce::Colour(magda::Config::getDefaultColour(result - 3));
-                swatch->setColour(colour);
-                magda::ClipBatchEdit batch("Set Clip Colour", selectedClipIds_.size());
-                for (auto cid : selectedClipIds_) {
-                    batch.execute(std::make_unique<magda::SetClipColourCommand>(cid, colour));
-                }
             } else {
-                auto idx = static_cast<size_t>(result - customOff);
-                if (idx < customPalette.size()) {
-                    auto colour = juce::Colour(customPalette[idx].colour);
+                const auto idx = static_cast<size_t>(result - 3);
+                if (idx < palette.size()) {
+                    const auto colour = juce::Colour(palette[idx].colour);
                     swatch->setColour(colour);
                     magda::ClipBatchEdit batch("Set Clip Colour", selectedClipIds_.size());
                     for (auto cid : selectedClipIds_) {

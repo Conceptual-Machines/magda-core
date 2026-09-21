@@ -2,6 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "magda/daw/api/transport_api_live.hpp"
+#include "magda/daw/project/ProjectManager.hpp"
 #include "magda/daw/ui/layout/LayoutConfig.hpp"
 #include "magda/daw/ui/state/TimelineController.hpp"
 
@@ -328,6 +329,21 @@ TEST_CASE("Anchored beat zoom keeps bar one pinned to the gutter",
     const auto& state = controller.getState();
     REQUIRE(state.zoom.scrollX == 0);
     REQUIRE(state.zoom.horizontalZoom == Catch::Approx(20.0));
+}
+
+TEST_CASE("Project restore does not borrow an invalid timeline length from the outgoing project",
+          "[timeline][project][regression]") {
+    auto& outgoing = magda::ProjectManager::getInstance().getMutableProjectInfo();
+    const int previousLength = outgoing.timelineLengthBars;
+    const juce::ScopeGuard restoreOutgoing{
+        [&outgoing, previousLength] { outgoing.timelineLengthBars = previousLength; }};
+    outgoing.timelineLengthBars = 777;
+
+    magda::TimelineController controller;
+    controller.restoreProjectState(120.0, 4, 4, false, 0.0, 0.0, {}, 0);
+
+    const auto expectedBars = magda::kDefaultTimelineLengthBars;
+    REQUIRE(controller.getState().timelineLengthBeats == Catch::Approx(expectedBars * 4.0));
 }
 
 TEST_CASE("Anchored beat zoom preserves the selected beat's screen position",
