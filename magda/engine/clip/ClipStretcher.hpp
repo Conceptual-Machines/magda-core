@@ -72,10 +72,14 @@ struct StretchSetup {
     int maxBlockSamples = 512;
 
     /// Reading samples consumed per output sample, at the event's usual
-    /// rate. What the pre-roll is sized against; a block actually runs at
-    /// whatever its own two positions say, which is how a moving auto tempo
-    /// ratio costs nothing.
+    /// rate. What a stretcher aligns by when it has no output latency; a
+    /// block actually runs at whatever its own two positions say, which is
+    /// how a moving auto tempo ratio costs nothing.
     double nominalRate = 1.0;
+
+    /// The fastest the event is read anywhere, which buffers and priming room
+    /// are sized for (peakReadingRateOf).
+    double peakRate = 1.0;
 
     /// Whether either of the clip's edges ramps its speed rather than its
     /// gain. A clip at its file's own speed still needs something that can

@@ -268,7 +268,7 @@ ClipVoicePool::Reader ClipVoicePool::open(const AudioClipPlayback& clip,
     // none and pays for none, the same rule the reading chain follows.
     reader.stretcher = makeStretcher(reader.setup);
     if (reader.stretcher != nullptr)
-        reader.preRoll = reader.stretcher->preRollSamples(reader.setup.nominalRate);
+        reader.preRoll = reader.stretcher->preRollSamples(reader.setup.peakRate);
 
     // The event's own first sample, which is what this is compared against next
     // round: an identity rather than a position. Where the stream is actually
@@ -299,11 +299,12 @@ ClipVoicePool::Reader ClipVoicePool::open(const AudioClipPlayback& clip,
     // the transport is already standing inside is read from where the cursor is.
     // Keep the priming window and 100 ms of playback in memory. Each session
     // wrap can then restart immediately while the worker refills beyond it.
-    const auto cacheSamples = session ? reader.preRoll +
-                                            static_cast<int>(std::ceil(context_.sampleRate * 0.1 *
-                                                                       reader.setup.nominalRate)) +
-                                            maxReadingSamples(context_.maxBlockSize)
-                                      : 0;
+    const auto cacheSamples =
+        session
+            ? reader.preRoll +
+                  static_cast<int>(std::ceil(context_.sampleRate * 0.1 * reader.setup.peakRate)) +
+                  maxReadingSamples(context_.maxBlockSize)
+            : 0;
     reader.stream->startAt(cueFor(clip, event, cueSeconds, reader), cacheSamples);
 
     reader_.add(*reader.stream);
@@ -543,7 +544,7 @@ void ClipVoicePool::service() {
                             reuse.setup = setup;
                             reuse.stretcher = makeStretcher(setup);
                             reuse.preRoll = reuse.stretcher != nullptr
-                                                ? reuse.stretcher->preRollSamples(setup.nominalRate)
+                                                ? reuse.stretcher->preRollSamples(setup.peakRate)
                                                 : 0;
                         }
 

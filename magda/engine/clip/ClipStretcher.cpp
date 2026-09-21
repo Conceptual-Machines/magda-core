@@ -82,7 +82,7 @@ class SignalsmithClipStretcher final : public ClipStretcher {
         stretch_.setTransposeSemitones(setup.semitones);
         stretch_.setFormantFactor(1.0f, true);
 
-        allocatePreRoll(channels_, static_cast<int>(std::ceil(preRollSamples(setup.nominalRate) *
+        allocatePreRoll(channels_, static_cast<int>(std::ceil(preRollSamples(setup.peakRate) *
                                                               kPreRollHeadroom)));
     }
 
@@ -359,7 +359,7 @@ class SoundTouchClipStretcher final : public ClipStretcher {
         // figure has to be the same one write() cuts its pieces to.
         const auto handed = std::max(
             stretchPushSamples(),
-            static_cast<int>(std::ceil(preRollSamples(setup.nominalRate) * kPreRollHeadroom)));
+            static_cast<int>(std::ceil(preRollSamples(setup.peakRate) * kPreRollHeadroom)));
 
         return WorstCase{sequence + handed, atTempo};
     }

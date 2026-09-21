@@ -65,6 +65,14 @@ bool startsInsideSourceMaterial(const AudioEventPlayback& event, double deviceSa
 double readingRateOf(const AudioEventPlayback& event);
 
 /**
+ * @brief The fastest @p event can be read anywhere, which is what buffers are sized for.
+ *
+ * Its usual rate, or for a warped event the steepest stretch a marker may be
+ * given. Fixed while markers move, so editing them keeps the running stretcher.
+ */
+double peakReadingRateOf(const AudioEventPlayback& event);
+
+/**
  * @brief Where in the reading @p event is at one instant of the timeline.
  *
  * In fractional device samples, and the whole of what this slice adds: speed

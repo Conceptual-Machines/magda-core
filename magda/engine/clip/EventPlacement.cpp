@@ -284,15 +284,15 @@ double readingRateOf(const AudioEventPlayback& event) {
         rate = beats > 0.0 && seconds > 0.0 ? (beats * 60.0 / seconds) / event.interpBpm : 1.0;
     }
 
-    // The steepest the map runs anywhere, not its average. A warped event has
-    // no single rate -- that is what warp is -- and what a stretcher is sized
-    // and primed against has to cover the fastest stretch of it rather than the
-    // one it spends the most time at. The clamp below is what keeps that
-    // bounded.
-    if (!event.warp.empty())
-        rate *= event.warp.maxSourcePerWarp();
-
     return std::clamp(rate > 0.0 ? rate : 1.0, kMinStretchRate, kMaxStretchRate);
+}
+
+double peakReadingRateOf(const AudioEventPlayback& event) {
+    // Off the flag and the steepest a marker may ever be dragged to, never the
+    // map it has now: sized to the map, every marker edit replaced the stretcher
+    // under a playing clip and was heard as a gap.
+    const auto rate = readingRateOf(event);
+    return event.warpEnabled ? std::min(rate * kMaxStretchRate, kMaxStretchRate) : rate;
 }
 
 namespace {
@@ -373,6 +373,7 @@ StretchSetup stretchSetupFor(const AudioClipPlayback& clip, const AudioEventPlay
     setup.sampleRate = context.sampleRate;
     setup.maxBlockSamples = context.maxBlockSize;
     setup.nominalRate = readingRateOf(event);
+    setup.peakRate = peakReadingRateOf(event);
     // Warp counts as following as much as auto tempo does. The flag means the
     // rate moves inside the event, so the nominal above is an approximation and
     // a clip averaging unity is still stretching in both directions around it.

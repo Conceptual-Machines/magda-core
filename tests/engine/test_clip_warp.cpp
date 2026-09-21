@@ -273,11 +273,14 @@ TEST_CASE("A warped clip consumes its file at the rate its markers ask for",
     }
 }
 
-TEST_CASE("Warp sizes a stretcher against its steepest stretch, not its average",
+TEST_CASE("Warp sizes a stretcher for the steepest a marker may reach, not for its map",
           "[engine][clip][warp]") {
     const auto clip = warpedClip();
+    const auto& event = clip.events.front();
 
-    REQUIRE(magda::engine::readingRateOf(clip.events.front()) == approx(2.0));
+    // Aligned at the clip's own rate: the map's steepest stretch is 2.
+    REQUIRE(magda::engine::readingRateOf(event) == approx(1.0));
+    REQUIRE(magda::engine::peakReadingRateOf(event) == approx(magda::engine::kMaxStretchRate));
 }
 
 TEST_CASE("Trimming a clip's head leaves its markers pinned to the file", "[engine][clip][warp]") {
@@ -485,4 +488,21 @@ TEST_CASE("A warped clip is read ahead at the rate it plays, not at its steepest
     // The window opens where the clip is, so priming infers the half rate.
     REQUIRE(static_cast<double>(read.from - read.preRoll) == approx(positionAt(at), 2.0));
     REQUIRE(read.preRoll < stretcher->preRollSamples(setup.nominalRate));
+}
+
+TEST_CASE("Moving a warp marker keeps the stretcher it is playing through",
+          "[engine][clip][warp]") {
+    // The setup is what the pool compares to decide whether to replace a
+    // stretcher, and one sized to the map was replaced on every marker drag:
+    // re-primed under a playing clip, heard as a gap.
+    const auto context = magda::engine::RenderContext{kSampleRate, 512, 2};
+    auto before = warpedClip();
+    auto after = warpedClip(0, {{0.0, 0.0}, {2.5, 1.0}, {3.0, 3.0}});
+    before.events.front().timeStretchMode = magda::time_stretch_mode::kSignalsmith;
+    after.events.front().timeStretchMode = magda::time_stretch_mode::kSignalsmith;
+
+    REQUIRE(after.events.front().warp.maxSourcePerWarp() !=
+            approx(before.events.front().warp.maxSourcePerWarp()));
+    REQUIRE(magda::engine::stretchSetupFor(before, before.events.front(), context) ==
+            magda::engine::stretchSetupFor(after, after.events.front(), context));
 }
