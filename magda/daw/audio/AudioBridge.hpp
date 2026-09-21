@@ -782,7 +782,7 @@ class AudioBridge : public TrackManagerListener,
      * @brief Derive external-insert hardware port enablement (#1623) and
      *        reallocate the playback graph when it changed.
      */
-    void refreshInsertDeviceEnablement();
+    bool refreshInsertDeviceEnablement();
     void resyncAllInputMonitors();
 
     void applyPendingMidiRoutes();

@@ -24,6 +24,19 @@ struct ScopedLiveInput {
     LiveInputFeed& feed_;
 };
 
+struct ScopedLiveOutput {
+    explicit ScopedLiveOutput(LiveOutputFeed& feed) : feed_(feed) {}
+
+    ~ScopedLiveOutput() {
+        feed_.endCallback();
+    }
+
+    ScopedLiveOutput(const ScopedLiveOutput&) = delete;
+    ScopedLiveOutput& operator=(const ScopedLiveOutput&) = delete;
+
+    LiveOutputFeed& feed_;
+};
+
 }  // namespace
 
 EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> plan,
@@ -323,6 +336,8 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
     // makes that the caller's business rather than a silent loss of the take.
     liveInputs_.beginCallback(input, numSamples);
     const ScopedLiveInput scopedInput(liveInputs_);
+    const ScopedLiveOutput scopedOutput(liveOutputs_);
+    liveOutputs_.beginCallback(output);
 
     output.clear();
 
@@ -406,6 +421,7 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
                                segment.startSample, segment.block.numSamples);
 
         liveInputs_.beginSegment(segment.startSample, segment.block.numSamples);
+        liveOutputs_.beginSegment(segment.startSample, segment.block.numSamples);
 
         // Before the plan, and over every handle rather than the ones this plan
         // renders: a handle must see each block exactly once and a slot has two

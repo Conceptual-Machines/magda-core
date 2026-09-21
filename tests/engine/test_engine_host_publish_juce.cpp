@@ -145,8 +145,9 @@ class NoteCapture final : public engine::EngineDevice {
 class CapturingFactory final : public engine::RuntimeStateFactory {
   public:
     void attach(engine::ClipSnapshotFeed& clips, engine::ClipStreamFeed& streams,
-                engine::LaunchHandleFeed& handles, const engine::LiveInputFeed& liveInputs) {
-        inner_.attach(clips, streams, handles, liveInputs);
+                engine::LaunchHandleFeed& handles, const engine::LiveInputFeed& liveInputs,
+                engine::LiveOutputFeed& liveOutputs) {
+        inner_.attach(clips, streams, handles, liveInputs, liveOutputs);
     }
 
     void setModel(const std::vector<magda::TrackInfo>& tracks, const magda::TrackInfo& master) {
@@ -281,7 +282,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         magda::engine::ClipVoicePool voices(files, reader, context);
         magda::engine::EngineSession session(factory, nullptr, &voices);
         factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed(),
-                       session.liveInputs());
+                       session.liveInputs(), session.liveOutputs());
 
         const auto plan = std::make_shared<const magda::engine::RenderPlan>(
             magda::engine::compileRenderPlan(tracks, *master));
@@ -353,7 +354,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         engine::ClipVoicePool voices(files, reader, context);
         engine::EngineSession session(factory, nullptr, &voices);
         factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed(),
-                       session.liveInputs());
+                       session.liveInputs(), session.liveOutputs());
 
         const auto plan =
             std::make_shared<const engine::RenderPlan>(engine::compileRenderPlan(tracks, *master));
@@ -646,7 +647,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         magda::engine::ClipVoicePool voices(files, reader, context);
         magda::engine::EngineSession session(factory, nullptr, &voices);
         factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed(),
-                       session.liveInputs());
+                       session.liveInputs(), session.liveOutputs());
 
         const auto plan = std::make_shared<const magda::engine::RenderPlan>(
             magda::engine::compileRenderPlan(tracks, *master));
@@ -732,7 +733,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         engine::ClipVoicePool voices(files, reader, context);
         engine::EngineSession session(factory, nullptr, &voices);
         factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed(),
-                       session.liveInputs());
+                       session.liveInputs(), session.liveOutputs());
 
         const auto plan =
             std::make_shared<const engine::RenderPlan>(engine::compileRenderPlan(tracks, *master));
@@ -834,7 +835,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         magda::engine::ClipVoicePool voices(files, reader, context);
         magda::engine::EngineSession session(factory, nullptr, &voices);
         factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed(),
-                       session.liveInputs());
+                       session.liveInputs(), session.liveOutputs());
         session.liveInputs().prepare(0, context.maxBlockSize);
 
         // The routing carries the audition id as well (#2592).
@@ -915,7 +916,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         magda::engine::ClipVoicePool voices(files, reader, context);
         magda::engine::EngineSession session(factory, nullptr, &voices);
         factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed(),
-                       session.liveInputs());
+                       session.liveInputs(), session.liveOutputs());
         session.liveInputs().prepare(0, context.maxBlockSize);
 
         host::LiveMidiRouting routing(sources);
@@ -1003,7 +1004,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         magda::engine::ClipVoicePool voices(files, reader, context);
         magda::engine::EngineSession session(factory, nullptr, &voices);
         factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed(),
-                       session.liveInputs());
+                       session.liveInputs(), session.liveOutputs());
         session.liveInputs().prepare(0, context.maxBlockSize);
 
         host::LiveMidiRouting routing(sources);
@@ -1274,7 +1275,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         magda::engine::ClipVoicePool voices(files, reader, context);
         magda::engine::EngineSession session(factory, nullptr, &voices);
         factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed(),
-                       session.liveInputs());
+                       session.liveInputs(), session.liveOutputs());
 
         const auto plan = std::make_shared<const magda::engine::RenderPlan>(
             magda::engine::compileRenderPlan(tracks, *master));
@@ -1392,7 +1393,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         magda::engine::ClipVoicePool voices(files, reader, context);
         magda::engine::EngineSession session(factory, nullptr, &voices);
         factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed(),
-                       session.liveInputs());
+                       session.liveInputs(), session.liveOutputs());
 
         const auto plan = std::make_shared<const magda::engine::RenderPlan>(
             magda::engine::compileRenderPlan(tracks, *master));

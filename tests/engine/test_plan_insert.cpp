@@ -144,8 +144,13 @@ class StubInsert final : public EngineInsert {
             midi.addEvent(juce::MidiMessage::noteOn(1, 64, 1.0f), 0);
     }
 
+    void releaseNotes(const BlockInfo&) override {
+        ++releases;
+    }
+
     int sends = 0;
     int receives = 0;
+    int releases = 0;
     float sentAudio = 0.0f;
     int sentAudioChannels = 0;
     int sentMidiEvents = 0;
@@ -434,4 +439,47 @@ TEST_CASE("What the chain carries goes out, and what comes back is what it carri
     // And what came back is what reached the output, rather than the silence
     // the track was carrying into the insert.
     CHECK(output.getSample(0, 0) == Catch::Approx(0.25f).margin(1e-5));
+}
+
+TEST_CASE("A MIDI send is told to release its notes where a device would be",
+          "[engine][exec][insert]") {
+    // A hardware synth holds a note until it hears the off, so the send hears the
+    // same all-notes-off a device gets: a jump, and the chain falling silent (#2279).
+    auto track = makeTrack(1);
+    track.midiInputDevice = "all";
+    track.chain.fxChainElements.push_back(makeDeviceElement(makeExternalInstrument(7)));
+
+    std::vector<TrackInfo> tracks{track};
+    auto master = makeMaster();
+    const auto plan = magda::engine::compileRenderPlan(tracks, master);
+    INFO(magda::engine::dumpPlan(plan));
+
+    StubInsert insert;
+    PlanBindings bindings;
+    bindings.inserts[DeviceKey{ChainSegment::Fx, 7}] = &insert;
+
+    PlanValues values;
+    magda::engine::resolvePlanValues(plan, tracks, master, values);
+
+    const RenderContext context{44100.0, kBlockSize, 2};
+    PlanExecutor executor;
+    const auto messages = executor.prepare(plan, bindings, context);
+    for (const auto& message : messages)
+        UNSCOPED_INFO(message);
+    REQUIRE(executor.isPrepared());
+
+    juce::AudioBuffer<float> output(2, kBlockSize);
+    BlockInfo block;
+    block.numSamples = kBlockSize;
+    block.playing = true;
+
+    block.continuous = false;
+    executor.process(values, block, output);
+    CHECK(insert.releases == 1);
+    CHECK(insert.sends == 1);
+
+    block.continuous = true;
+    executor.process(values, block, output);
+    CHECK(insert.releases == 1);
+    CHECK(insert.sends == 2);
 }

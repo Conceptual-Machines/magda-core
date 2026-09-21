@@ -82,7 +82,18 @@ class RuntimeStateFactory {
     }
 
     /**
-     * @brief Keys whose device is no longer the one the store holds (#2572).
+     * @brief The outside world behind a hardware insert (#2279), or null.
+     *
+     * Asked once for both halves of the pair. Null is an insert with nothing
+     * behind it, which the executor reports; a render with no device declines
+     * unless it holds a capture of the insert.
+     */
+    virtual std::unique_ptr<EngineInsert> createInsert(DeviceKey) {
+        return nullptr;
+    }
+
+    /**
+     * @brief Keys whose device or insert is no longer the one the store holds (#2572).
      *
      * Asked once per publish, before anything is realised. The instance being
      * replaced stays alive until the swap, since the live plan still names it.
@@ -458,6 +469,10 @@ class RuntimeStateStore {
     /// Instances a rebuild took out of devices_, held until releaseDeleted()
     /// (#2572).
     std::vector<std::shared_ptr<EngineDevice>> retired_;
+
+    /// Hardware inserts by their device's key, kept and rebuilt like devices_ (#2279).
+    std::unordered_map<DeviceKey, std::unique_ptr<EngineInsert>, DeviceKeyHash> inserts_;
+    std::vector<std::unique_ptr<EngineInsert>> retiredInserts_;
     std::unordered_map<TrackId, std::unique_ptr<EngineAudioSource>> clipAudio_;
     std::unordered_map<TrackId, std::unique_ptr<EngineMidiSource>> clipMidi_;
     std::unordered_map<TrackId, std::unique_ptr<EngineAudioSource>> sessionAudio_;

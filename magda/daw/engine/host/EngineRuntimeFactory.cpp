@@ -26,6 +26,14 @@ juce::String deviceIdentityOf(const DeviceInfo& device) {
     return identity;
 }
 
+/// What an insert's live instance is built from. The types are part of it: the same
+/// name can be an audio port or nothing, depending on what this machine has.
+juce::String insertIdentityOf(const InsertConfig& insert) {
+    return juce::String(static_cast<int>(insert.sendType)) + "|" + insert.sendDevice + "|" +
+           juce::String(static_cast<int>(insert.returnType)) + "|" + insert.returnDevice + "|" +
+           juce::String(insert.manualAdjustMs);
+}
+
 }  // namespace
 
 EngineFileReaders::EngineFileReaders() {
@@ -43,11 +51,49 @@ std::unique_ptr<engine::AudioFileReader> EngineFileReaders::open(const std::stri
 
 void EngineRuntimeFactory::attach(engine::ClipSnapshotFeed& clips, engine::ClipStreamFeed& streams,
                                   engine::LaunchHandleFeed& handles,
-                                  const engine::LiveInputFeed& liveInputs) {
+                                  const engine::LiveInputFeed& liveInputs,
+                                  engine::LiveOutputFeed& liveOutputs) {
     clips_ = &clips;
     streams_ = &streams;
     handles_ = &handles;
     liveInputs_ = &liveInputs;
+    liveOutputs_ = &liveOutputs;
+}
+
+void EngineRuntimeFactory::rerouteInserts() {
+    for (const auto& [key, identity] : insertsBuilt_)
+        rebuild_.insert(key);
+}
+
+bool EngineRuntimeFactory::insertsMoved(const std::vector<TrackInfo>& tracks,
+                                        const TrackInfo& master) const {
+    if (insertsBuilt_.empty())
+        return false;
+
+    for (const auto& [key, device] : adapter::devicesIn(tracks, master))
+        if (const auto built = insertsBuilt_.find(key);
+            built != insertsBuilt_.end() && built->second != insertIdentityOf(device->insert))
+            return true;
+
+    return false;
+}
+
+std::unique_ptr<engine::EngineInsert> EngineRuntimeFactory::createInsert(engine::DeviceKey key) {
+    const auto found = devices_.find(key);
+    if (found == devices_.end() || !found->second.insert.isActive() || liveInputs_ == nullptr ||
+        liveOutputs_ == nullptr || !routeInsert_)
+        return nullptr;
+
+    const auto& config = found->second.insert;
+    auto route = routeInsert_(config);
+    if (!route.has_value())
+        return nullptr;
+
+    insertsBuilt_[key] = insertIdentityOf(config);
+
+    std::unique_ptr<engine::EngineInsert> insert =
+        std::make_unique<engine::LiveInsert>(*liveInputs_, *liveOutputs_, std::move(*route));
+    return wrapInsert_ ? wrapInsert_(key, std::move(insert)) : std::move(insert);
 }
 
 void EngineRuntimeFactory::setModel(const std::vector<TrackInfo>& tracks, const TrackInfo& master) {
@@ -64,6 +110,11 @@ void EngineRuntimeFactory::setModel(const std::vector<TrackInfo>& tracks, const 
     for (const auto& [key, identity] : built_) {
         const auto found = devices_.find(key);
         if (found != devices_.end() && deviceIdentityOf(found->second) != identity)
+            rebuild_.insert(key);
+    }
+    for (const auto& [key, identity] : insertsBuilt_) {
+        const auto found = devices_.find(key);
+        if (found != devices_.end() && insertIdentityOf(found->second.insert) != identity)
             rebuild_.insert(key);
     }
 
@@ -92,8 +143,10 @@ bool EngineRuntimeFactory::isExternalKey(engine::DeviceKey key) const {
 void EngineRuntimeFactory::forgetBuiltDevices() {
     for (const auto& [key, identity] : built_)
         rebuild_.insert(key);
+    rerouteInserts();
 
     built_.clear();
+    insertsBuilt_.clear();
 
     if (externals_ != nullptr)
         externals_->forgetSlots();
@@ -102,8 +155,10 @@ void EngineRuntimeFactory::forgetBuiltDevices() {
 std::set<engine::DeviceKey> EngineRuntimeFactory::devicesToRebuild() {
     // So a key the store could not realise this publish -- an external still
     // opening -- is not asked for again against an instance that has gone.
-    for (const auto& key : rebuild_)
+    for (const auto& key : rebuild_) {
         built_.erase(key);
+        insertsBuilt_.erase(key);
+    }
 
     return std::exchange(rebuild_, {});
 }

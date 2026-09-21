@@ -35,6 +35,7 @@
 #include "../../core/TrackManager.hpp"
 #include "../../core/controllers/BindingRegistry.hpp"
 #include "../../project/ProjectManager.hpp"
+#include "EngineInsertCapture.hpp"
 #include "EngineOfflineRender.hpp"
 #include "EngineProject.hpp"
 #include "EngineRuntimeFactory.hpp"
@@ -42,6 +43,7 @@
 #include "ExternalPluginLoader.hpp"
 #include "GrooveEntries.hpp"
 #include "HardwareInputMap.hpp"
+#include "HardwareMidiOutput.hpp"
 #include "LiveMidiCollector.hpp"
 #include "LiveMidiQueue.hpp"
 #include "LiveMidiRouting.hpp"
@@ -299,7 +301,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                 private ProjectManagerListener,
                                 private BindingRegistryListener,
                                 public OfflineRenderHost,
-                                public LaunchHost {
+                                public LaunchHost,
+                                public InsertCaptureHost {
     Impl()
         : loader_([this](engine::DeviceKey key) { return modelDevice(key); },
                   [this](engine::DeviceKey key, const DeviceInfo& resolved,
@@ -307,6 +310,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                       applyLoadedDevice(key, resolved, restored);
                   }) {
         factory_.loadExternalsWith(loader_);
+        factory_.routeInsertsWith(
+            [this](const InsertConfig& insert) { return routeInsert(insert); });
 
         // Captures nothing: the model is a singleton and the request guards
         // the key, so a project that closed first is a no-op.
@@ -685,7 +690,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // to keep in step with the compiler (#2592).
         if (shape_.exchange(false, std::memory_order_relaxed)) {
             auto compiled = compilePlan(tracks, *master);
-            if (engine::planFingerprint(*compiled) != engine::planFingerprint(*livePlan_)) {
+            if (engine::planFingerprint(*compiled) != engine::planFingerprint(*livePlan_) ||
+                factory_.insertsMoved(TrackManager::getInstance().getTracks(), *master)) {
                 publishPlan(std::move(compiled));
                 return;
             }
@@ -759,6 +765,61 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         unresolvedInputs_ = std::move(unresolved);
         std::ranges::sort(audio, {}, &engine::TrackLiveAudio::trackId);
         return audio;
+    }
+
+    /**
+     * @brief Where @p insert's two ends are on the open interface, or nothing (#2279).
+     *
+     * Nothing leaves the insert unbound, which the executor reports: an end naming a
+     * port this interface does not have is an insert that cannot run here.
+     */
+    std::optional<engine::LiveInsertRoute> routeInsert(const InsertConfig& insert) {
+        const auto unresolved = [this](const juce::String& end, const juce::String& name) {
+            const auto key = end + ":" + name;
+            if (unresolvedInsertEnds_.insert(key).second)
+                juce::Logger::writeToLog("[engine] insert " + end + " \"" + name +
+                                         "\" is not on this interface, the insert is not run");
+            return std::nullopt;
+        };
+
+        const auto rate = rate_.load(std::memory_order_relaxed);
+        const auto output = deviceOutputAdjustmentSamples_.load(std::memory_order_relaxed);
+        const auto input =
+            deviceRecordingAdjustmentSamples_.load(std::memory_order_relaxed) - output;
+
+        engine::LiveInsertRoute route;
+        auto latency = rate > 0.0 ? std::llround(insert.manualAdjustMs * rate / 1000.0) : 0LL;
+
+        using Endpoint = InsertConfig::Endpoint;
+        if (insert.sendType == Endpoint::Audio) {
+            const auto found = hardwareOutputs_.find(insert.sendDevice.toStdString());
+            if (found == hardwareOutputs_.end() || !found->second.valid())
+                return unresolved("send", insert.sendDevice);
+            route.sendChannels.push_back(found->second.leftChannel);
+            if (found->second.rightChannel >= 0)
+                route.sendChannels.push_back(found->second.rightChannel);
+            latency += output;
+        } else if (insert.sendType == Endpoint::MIDI) {
+            route.midi = midiOutputs_.open(insert.sendDevice);
+            if (route.midi == nullptr)
+                return unresolved("send", insert.sendDevice);
+            latency += output;
+        }
+
+        if (insert.returnType == Endpoint::Audio) {
+            const auto found = hardwareInputs_.find(insert.returnDevice);
+            if (found == hardwareInputs_.end() || found->second.empty())
+                return unresolved("return", insert.returnDevice);
+            route.returnChannels = found->second;
+            latency += input;
+        } else if (insert.returnType == Endpoint::MIDI) {
+            return unresolved("MIDI return", insert.returnDevice);
+        }
+
+        unresolvedInsertEnds_.erase("send:" + insert.sendDevice);
+        unresolvedInsertEnds_.erase("return:" + insert.returnDevice);
+        route.latencySamples = static_cast<int>(std::max(0LL, latency));
+        return route;
     }
 
     /// A device plugged in or unplugged since the last structural publish.
@@ -2106,12 +2167,21 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             return;
 
         const auto outputGeneration = hardwareOutputGeneration_.load(std::memory_order_acquire);
-        if (hardwareOutputsStale_.exchange(false, std::memory_order_acq_rel) &&
-            refreshHardwareOutputMap())
+        const auto outputsMoved =
+            hardwareOutputsStale_.exchange(false, std::memory_order_acq_rel) &&
+            refreshHardwareOutputMap();
+        if (outputsMoved)
             plan_.store(true, std::memory_order_relaxed);
         const auto inputsRefreshed =
             hardwareInputsStale_.exchange(false, std::memory_order_acq_rel);
         const auto inputsMoved = inputsRefreshed && refreshHardwareInputMap();
+
+        // An insert holds channels and a latency read off the interface, so a device
+        // that started again is a set of inserts to build again (#2279).
+        if ((outputsMoved || inputsRefreshed) && factory_.holdsInserts()) {
+            factory_.rerouteInserts();
+            plan_.store(true, std::memory_order_relaxed);
+        }
 
         // A physical device stop has no block in which a take can close. An
         // intentional remove/add during rebuild reaches this handler only
@@ -2329,7 +2399,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         session_ = std::make_unique<engine::EngineSession>(factory_, nullptr, voices_.get());
         sessionCapture_.attach(*session_);
         factory_.attach(session_->clipFeed(), voices_->feed(), session_->launchHandleFeed(),
-                        session_->liveInputs());
+                        session_->liveInputs(), session_->liveOutputs());
 
         // The publish below fills the new feed with a full snapshot.
         routing_.reset();
@@ -2392,6 +2462,81 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     std::shared_ptr<engine::EngineDevice> liveDevice(engine::DeviceKey key) const override {
         return session_ != nullptr ? session_->device(key) : nullptr;
+    }
+
+    std::unique_ptr<engine::EngineInsert> insertPlayback(
+        engine::DeviceKey key, const engine::CaptureWindow& window,
+        const engine::RenderContext& context) const override {
+        return capture_.playbackFor(key, window, context);
+    }
+
+    // ===== Insert capture (#2279) =====
+
+    std::vector<engine::DeviceKey> capturableInserts() const override {
+        std::vector<engine::DeviceKey> keys;
+        if (livePlan_ != nullptr)
+            for (const auto& op : livePlan_->ops)
+                if (op.kind == engine::OpKind::InsertReturn && !op.outputs.empty() &&
+                    op.outputs[0].kind == engine::SignalKind::Audio)
+                    keys.push_back(op.key.deviceKey());
+        return keys;
+    }
+
+    bool rewrapInserts(EngineRuntimeFactory::InsertWrapper wrapper) override {
+        factory_.wrapInsertsWith(std::move(wrapper));
+        factory_.rerouteInserts();
+        return publishPlan(livePlan_);
+    }
+
+    double liveSampleRate() const override {
+        return session_ != nullptr && audioRunning_.load(std::memory_order_acquire)
+                   ? context_.sampleRate
+                   : 0.0;
+    }
+
+    double livePlanLatencySeconds() const override {
+        return session_ != nullptr && context_.sampleRate > 0.0
+                   ? session_->latencySamples() / context_.sampleRate
+                   : 0.0;
+    }
+
+    bool transportPlaying() const override {
+        return request_.playing;
+    }
+
+    double transportSeconds() const override {
+        return tempoMap().beatToTime(positionBeats());
+    }
+
+    bool transportLooping() const override {
+        return loop_.enabled;
+    }
+
+    void playFrom(double seconds) override {
+        stopRecording();
+        if (loop_.enabled) {
+            loop_.enabled = false;
+            publishTransport();
+        }
+
+        const auto starting = !request_.playing;
+        publishRequest(
+            {.playing = true, .locate = true, .positionBeat = tempoMap().timeToBeat(seconds)});
+        if (starting)
+            launcher_.transportStarted();
+    }
+
+    void stopAt(double seconds, bool looping) override {
+        const auto stopping = request_.playing;
+        publishRequest(
+            {.playing = false, .locate = true, .positionBeat = tempoMap().timeToBeat(seconds)});
+        if (stopping)
+            launcher_.transportStopped();
+
+        if (loop_.enabled != looping) {
+            loop_.enabled = looping;
+            publishTransport();
+        }
     }
 
     std::optional<engine::RenderContext> liveContext() const override {
@@ -2589,6 +2734,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         const auto outputs = std::min(numOutputChannels, scratch_.getNumChannels());
         const auto streams = collectLiveMidi();
         const auto audioIn = liveAudioIn(input, numInputChannels, numSamples);
+        const auto startedMs = juce::Time::getMillisecondCounterHiRes();
+        const auto rate = rate_.load(std::memory_order_relaxed);
+        const auto outputLatency = deviceOutputAdjustmentSamples_.load(std::memory_order_relaxed);
 
         // In pieces no longer than the plan was prepared for. A driver handing
         // over more than the block size it declared is rare and legal, and
@@ -2603,6 +2751,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                      ? audioIn.getSubBlock(static_cast<std::size_t>(done),
                                                            static_cast<std::size_t>(piece))
                                      : juce::dsp::AudioBlock<const float>{};
+            midiOutputs_.beginBlock(rate > 0.0 ? startedMs + 1000.0 * done / rate : startedMs, rate,
+                                    outputLatency);
             session_->process(piece, scratch_,
                               done == 0 ? engine::LiveInputBlock{pieceIn, streams}
                                         : engine::LiveInputBlock{pieceIn, {}});
@@ -3046,6 +3196,13 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     std::uint32_t tracedDrops_ = 0;
 
+    /// Before the factory and the session, so it outlives every insert holding a port.
+    HardwareMidiOutputs midiOutputs_;
+
+    /// Before the factory and the session for the same reason: a capturing insert the
+    /// store destroys tells this it has gone.
+    EngineInsertCapture capture_{*this};
+
     EngineRuntimeFactory factory_;
 
     /// After the factory, so it is destroyed first: a load still in flight is
@@ -3099,6 +3256,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     EngineHost::HardwareChannelProvider hardwareInputProvider_;
     HardwareInputMap hardwareInputs_;
     std::set<juce::String> unresolvedInputs_;
+
+    /// Insert ends reported as not on this interface, until they resolve again.
+    std::set<juce::String> unresolvedInsertEnds_;
     std::atomic<bool> hardwareInputsStale_{true};
     /// Automatic take correction owned by the active interface: its input and
     /// output latency, positive because TakeRecorder removes it from the head.
@@ -3579,6 +3739,10 @@ void EngineHost::adoptFreeze(const OfflineRenderRequest& request) {
 std::unique_ptr<OfflineRenderSession> EngineHost::createOfflineRenderSession(
     bool resumePlaybackWhenFinished) {
     return createEngineOfflineRenderSession(*impl_, resumePlaybackWhenFinished);
+}
+
+InsertRenderCapture& EngineHost::insertCapture() {
+    return impl_->capture_;
 }
 
 EngineHost::LoopState EngineHost::loop() const {

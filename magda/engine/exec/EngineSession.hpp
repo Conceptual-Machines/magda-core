@@ -14,6 +14,7 @@
 #include "exec/RenderThreadPool.hpp"
 #include "exec/RuntimeStateStore.hpp"
 #include "io/LiveInput.hpp"
+#include "io/LiveOutput.hpp"
 #include "io/RecordingFeed.hpp"
 #include "launch/SessionLauncher.hpp"
 #include "transport/ClickGenerator.hpp"
@@ -263,6 +264,12 @@ class EngineSession {
      */
     LiveInputFeed& liveInputs() {
         return liveInputs_;
+    }
+
+    /// The feed a live hardware insert adds its send to, narrowed per block like
+    /// @ref liveInputs (#2279).
+    LiveOutputFeed& liveOutputs() {
+        return liveOutputs_;
     }
 
     /**
@@ -587,6 +594,7 @@ class EngineSession {
     /// the same reason the clock is: what the device captured is a property of
     /// the callback, not of the plan rendering it.
     LiveInputFeed liveInputs_;
+    LiveOutputFeed liveOutputs_;
 
     /// The takes that input is written to. Outside every epoch beside it, and
     /// for the same reason.

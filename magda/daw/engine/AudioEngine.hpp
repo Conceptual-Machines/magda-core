@@ -34,7 +34,7 @@ namespace magda {
 
 class DeviceMeters;
 class AudioIOControl;
-class InsertRenderCaptureService;
+class InsertRenderCapture;
 
 class MagdaApi;
 struct TrackMeters;
@@ -375,7 +375,7 @@ class AudioEngine : public AudioEngineListener {
 
     // ===== Application Services =====
     virtual MagdaApi& getMagdaApi() = 0;
-    virtual InsertRenderCaptureService* getInsertRenderCaptureService() = 0;
+    virtual InsertRenderCapture* getInsertRenderCapture() = 0;
 
     // ===== Offline Rendering =====
     virtual std::unique_ptr<OfflineRenderSession> createOfflineRenderSession(

@@ -2,8 +2,10 @@
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
+#include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <vector>
 
@@ -16,6 +18,7 @@
 #include "exec/RuntimeStateStore.hpp"
 #include "io/AudioFileReader.hpp"
 #include "io/LiveInput.hpp"
+#include "io/LiveInsert.hpp"
 #include "launch/SessionLauncher.hpp"
 
 /**
@@ -61,7 +64,37 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
      * bound into a plan.
      */
     void attach(engine::ClipSnapshotFeed& clips, engine::ClipStreamFeed& streams,
-                engine::LaunchHandleFeed& handles, const engine::LiveInputFeed& liveInputs);
+                engine::LaunchHandleFeed& handles, const engine::LiveInputFeed& liveInputs,
+                engine::LiveOutputFeed& liveOutputs);
+
+    /// Where a hardware insert's device names are on the open interface, or nothing
+    /// for an end this machine cannot resolve (#2279).
+    using InsertRouter = std::function<std::optional<engine::LiveInsertRoute>(const InsertConfig&)>;
+
+    /// What stands in for the live insert while something needs another in its place,
+    /// such as a capture pass. Handed the live one, which it may keep.
+    using InsertWrapper = std::function<std::unique_ptr<engine::EngineInsert>(
+        engine::DeviceKey, std::unique_ptr<engine::EngineInsert>)>;
+
+    void routeInsertsWith(InsertRouter router) {
+        routeInsert_ = std::move(router);
+    }
+
+    void wrapInsertsWith(InsertWrapper wrapper) {
+        wrapInsert_ = std::move(wrapper);
+    }
+
+    /// Build every insert again at the next publish: the interface, its latency, or
+    /// what wraps an insert has changed.
+    void rerouteInserts();
+
+    bool holdsInserts() const {
+        return !insertsBuilt_.empty();
+    }
+
+    /// Whether an insert the store holds was built from a config the model has since
+    /// changed. A name or a latency moves no op, so the plan alone cannot say.
+    bool insertsMoved(const std::vector<TrackInfo>& tracks, const TrackInfo& master) const;
 
     /**
      * @brief What the model holds now, for the publish about to happen.
@@ -128,6 +161,8 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
     std::unique_ptr<engine::EngineAudioSource> createAudioInput(TrackId trackId) override;
     std::unique_ptr<engine::EngineMidiSource> createMidiInput(TrackId trackId) override;
 
+    std::unique_ptr<engine::EngineInsert> createInsert(engine::DeviceKey key) override;
+
   private:
     std::unique_ptr<engine::EngineDevice> handOver(engine::DeviceKey key, const DeviceInfo& model,
                                                    std::unique_ptr<engine::EngineDevice> device);
@@ -139,6 +174,12 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
     engine::ClipStreamFeed* streams_ = nullptr;
     engine::LaunchHandleFeed* handles_ = nullptr;
     const engine::LiveInputFeed* liveInputs_ = nullptr;
+    engine::LiveOutputFeed* liveOutputs_ = nullptr;
+    InsertRouter routeInsert_;
+    InsertWrapper wrapInsert_;
+
+    /// Which config each held insert was built from, like @ref built_ for devices.
+    std::map<engine::DeviceKey, juce::String> insertsBuilt_;
 
     std::map<engine::DeviceKey, DeviceInfo> devices_;
 

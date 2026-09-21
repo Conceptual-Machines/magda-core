@@ -1,61 +1,36 @@
 #include "ExternalInsertUI.hpp"
 
-#include <tracktion_engine/tracktion_engine.h>
+#include <juce_audio_devices/juce_audio_devices.h>
 
 #include <vector>
 
-#include "audio/plugins/InsertConfigBridge.hpp"
+#include "audio/io/AudioIOControl.hpp"
 #include "audio/plugins/InternalPluginRegistry.hpp"
 #include "core/TrackManager.hpp"
-#include "engine/TracktionFork.hpp"
+#include "engine/AudioEngine.hpp"
 #include "themes/ActiveTheme.hpp"
 #include "themes/FontManager.hpp"
 
 namespace magda::daw::ui {
 
-namespace te = tracktion::engine;
-
 namespace {
 
-// Resolve the live te::InsertPlugin for a device path, or nullptr if the slot is
-// not yet bound to a running plugin.
-te::InsertPlugin* liveInsert(const magda::ChainNodePath& path) {
-    return dynamic_cast<te::InsertPlugin*>(magda::tracktion_fork::pluginAt(path).get());
+using Endpoint = magda::InsertConfig::Endpoint;
+
+magda::DeviceInfo* modelDevice(const magda::ChainNodePath& path) {
+    return magda::TrackManager::getInstance().getDeviceInChainByPath(path);
 }
 
-// After a send/return device change: the insert's send/return is wired straight
-// into TE's playback graph at build time (applyToBuffer is a dead stub), so the
-// new routing only takes effect once the graph is rebuilt. Then broadcast a
-// device-property change so the track-level read-only routing mirror
-// (TrackInspector / TrackHeadersPanel) refreshes in real time.
-void rebuildPlaybackGraph(te::InsertPlugin& insert, const magda::ChainNodePath& path) {
-    if (auto* ctx = insert.edit.getCurrentPlaybackContext();
-        ctx != nullptr && ctx->isPlaybackGraphAllocated())
-        ctx->reallocate();
-    magda::TrackManager::getInstance().notifyDevicePropertyChanged(path);
-}
-
-/// Write what the live insert now is back into the model (#2245).
-///
-/// The model is the authority on what an insert sends to and gets back from:
-/// the native engine compiles a send op and a return op from it, and the
-/// project saves it. This panel edits the fork's plugin because that is what is
-/// making sound right now, so every edit ends here.
-///
-/// After updateDeviceTypes() rather than before it. The types are the fork's
-/// own derivation from the names -- a send pointing at a device that is not
-/// enabled resolves to nothing -- so a mirror taken first would record an insert
-/// this machine cannot make.
-void mirrorInsertIntoModel(te::InsertPlugin& insert, const magda::ChainNodePath& path) {
+/// Write @p edit into the insert at @p path and tell the engines, which rebuild it (#2279).
+template <typename Edit> void editInsert(const magda::ChainNodePath& path, Edit&& edit) {
     auto& manager = magda::TrackManager::getInstance();
     if (auto* device = manager.getDeviceInChainByPath(path)) {
-        device->insert = magda::daw::audio::insertConfigOf(insert);
+        edit(device->insert);
         manager.notifyDevicePropertyChanged(path);
     }
 }
 
-// The picker id whose mapped name matches the plugin's current device, else 0
-// ("None").
+// The picker id whose mapped name matches the device's current port, else 0 ("None").
 int idForName(const std::map<int, juce::String>& names, const juce::String& current) {
     for (const auto& [id, name] : names)
         if (name == current)
@@ -63,50 +38,36 @@ int idForName(const std::map<int, juce::String>& names, const juce::String& curr
     return 0;
 }
 
-// Build picker options from the device manager, keeping only audio (or MIDI)
-// endpoints. Unlike te::InsertPlugin::getPossibleDeviceNames this lists
-// DISABLED ports too — picking one auto-enables it (#1623 Phase 3,
-// ExternalInsertDeviceEnablement). The names round-trip into the plugin's
-// input/output device CachedValues verbatim.
-std::vector<magda::RoutingSelector::RoutingOption> buildOptions(
-    te::Engine& engine, bool forInput, bool wantMidi, std::map<int, juce::String>& names) {
-    juce::StringArray devices;
-    auto& dm = engine.getDeviceManager();
-    if (forInput) {
-        for (int i = 0; i < dm.getNumInputDevices(); ++i) {
-            auto* in = dm.getInputDevice(i);
-            if (in == nullptr)
-                continue;
-            const bool isMidi = dynamic_cast<te::MidiInputDevice*>(in) != nullptr;
-            if (isMidi != wantMidi)
-                continue;
-            devices.add(in->getName());
-        }
-    } else {
-        for (int i = 0; i < dm.getNumOutputDevices(); ++i) {
-            auto* out = dm.getOutputDeviceAt(i);
-            if (out == nullptr)
-                continue;
-            auto* midiOut = dynamic_cast<te::MidiOutputDevice*>(out);
-            if ((midiOut != nullptr) != wantMidi)
-                continue;
-            // Same exclusion TE's own enumeration applies.
-            if (midiOut != nullptr && midiOut->isConnectedToExternalController())
-                continue;
-            devices.add(out->getName());
-        }
-    }
+/// The hardware channels an engine has open, by the names saved routes use, in channel order.
+juce::StringArray routeNames(bool inputs) {
+    juce::StringArray names;
+    auto* engine = magda::TrackManager::getInstance().getAudioEngine();
+    auto* io = engine != nullptr ? engine->getAudioIO() : nullptr;
+    if (io == nullptr)
+        return names;
 
+    for (const auto& [channel, name] : inputs ? io->inputs().routeNames : io->outputs().routeNames)
+        names.addIfNotAlreadyThere(name);
+    return names;
+}
+
+juce::StringArray midiOutputNames() {
+    juce::StringArray names;
+    for (const auto& device : juce::MidiOutput::getAvailableDevices())
+        names.addIfNotAlreadyThere(device.name);
+    return names;
+}
+
+std::vector<magda::RoutingSelector::RoutingOption> buildOptions(
+    const juce::StringArray& devices, std::map<int, juce::String>& names) {
     std::vector<magda::RoutingSelector::RoutingOption> options;
     options.push_back({0, "None", false});
     names.clear();
 
-    bool addedSeparator = false;
+    if (!devices.isEmpty())
+        options.push_back({-1, "", true});
+
     for (int i = 0; i < devices.size(); ++i) {
-        if (!addedSeparator) {
-            options.push_back({-1, "", true});
-            addedSeparator = true;
-        }
         const int id = i + 1;
         options.push_back({id, devices[i], false});
         names[id] = devices[i];
@@ -118,15 +79,14 @@ std::vector<magda::RoutingSelector::RoutingOption> buildOptions(
 // pulling the same return, silently double signals / cross-feed. Returns a
 // warning string when another enabled external insert shares one of this
 // insert's ports, empty otherwise.
-juce::String findPortConflict(const magda::ChainNodePath& myPath, te::InsertPlugin& mine) {
-    const auto mySend = mine.outputDevice.get();
-    const auto myReturn = mine.inputDevice.get();
+juce::String findPortConflict(const magda::ChainNodePath& myPath, const magda::InsertConfig& mine) {
+    const auto& mySend = mine.sendDevice;
+    const auto& myReturn = mine.returnDevice;
     if (mySend.isEmpty() && myReturn.isEmpty())
         return {};
     if (mySend.isNotEmpty() && mySend == myReturn)
         return "Return uses the same port as the send";
 
-    // The others by what the model says they are: every edit here mirrors into it.
     for (const auto& track : magda::TrackManager::getInstance().getTracks()) {
         for (const auto& element : track.chain.fxChainElements) {
             if (!magda::isDevice(element))
@@ -179,10 +139,8 @@ ExternalInsertUI::ExternalInsertUI(bool isInstrument) : isInstrument_(isInstrume
     latencyValue_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(latencyValue_);
     latencyValue_.onTextChange = [this] {
-        if (auto* insert = liveInsert(devicePath_)) {
-            insert->manualAdjustMs = latencyValue_.getText().getDoubleValue();
-            mirrorInsertIntoModel(*insert, devicePath_);
-        }
+        const auto ms = latencyValue_.getText().getDoubleValue();
+        editInsert(devicePath_, [ms](magda::InsertConfig& insert) { insert.manualAdjustMs = ms; });
     };
 
     warningLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
@@ -194,44 +152,40 @@ ExternalInsertUI::ExternalInsertUI(bool isInstrument) : isInstrument_(isInstrume
 
 void ExternalInsertUI::setDevicePath(const magda::ChainNodePath& path) {
     devicePath_ = path;
-    rebuildFromPlugin();
+    rebuildFromModel();
 }
 
-void ExternalInsertUI::rebuildFromPlugin() {
-    auto* insert = liveInsert(devicePath_);
-    if (insert == nullptr)
+void ExternalInsertUI::rebuildFromModel() {
+    const auto* device = modelDevice(devicePath_);
+    if (device == nullptr)
         return;
 
-    auto& engine = insert->edit.engine;
+    const auto sendType = isInstrument_ ? Endpoint::MIDI : Endpoint::Audio;
 
-    auto sendOptions =
-        buildOptions(engine, /*forInput*/ false, /*wantMidi*/ isInstrument_, sendNames_);
-    sendSelector_->setOptions(sendOptions);
-    sendSelector_->setSelectedId(idForName(sendNames_, insert->outputDevice.get()));
-    sendSelector_->onSelectionChanged = [this](int id) {
-        if (auto* ins = liveInsert(devicePath_)) {
-            ins->outputDevice = (id <= 0) ? juce::String() : sendNames_[id];
-            ins->updateDeviceTypes();
-            mirrorInsertIntoModel(*ins, devicePath_);
-            rebuildPlaybackGraph(*ins, devicePath_);
-            refreshConflictWarning();
-        }
+    sendSelector_->setOptions(
+        buildOptions(isInstrument_ ? midiOutputNames() : routeNames(false), sendNames_));
+    sendSelector_->setSelectedId(idForName(sendNames_, device->insert.sendDevice));
+    sendSelector_->onSelectionChanged = [this, sendType](int id) {
+        const auto name = id <= 0 ? juce::String() : sendNames_[id];
+        editInsert(devicePath_, [&](magda::InsertConfig& insert) {
+            insert.sendDevice = name;
+            insert.sendType = name.isEmpty() ? Endpoint::None : sendType;
+        });
+        refreshConflictWarning();
     };
 
-    auto returnOptions = buildOptions(engine, /*forInput*/ true, /*wantMidi*/ false, returnNames_);
-    returnSelector_->setOptions(returnOptions);
-    returnSelector_->setSelectedId(idForName(returnNames_, insert->inputDevice.get()));
+    returnSelector_->setOptions(buildOptions(routeNames(true), returnNames_));
+    returnSelector_->setSelectedId(idForName(returnNames_, device->insert.returnDevice));
     returnSelector_->onSelectionChanged = [this](int id) {
-        if (auto* ins = liveInsert(devicePath_)) {
-            ins->inputDevice = (id <= 0) ? juce::String() : returnNames_[id];
-            ins->updateDeviceTypes();
-            mirrorInsertIntoModel(*ins, devicePath_);
-            rebuildPlaybackGraph(*ins, devicePath_);
-            refreshConflictWarning();
-        }
+        const auto name = id <= 0 ? juce::String() : returnNames_[id];
+        editInsert(devicePath_, [&](magda::InsertConfig& insert) {
+            insert.returnDevice = name;
+            insert.returnType = name.isEmpty() ? Endpoint::None : Endpoint::Audio;
+        });
+        refreshConflictWarning();
     };
 
-    latencyValue_.setText(juce::String(insert->manualAdjustMs.get(), 1),
+    latencyValue_.setText(juce::String(device->insert.manualAdjustMs, 1),
                           juce::dontSendNotification);
 
     refreshConflictWarning();
@@ -239,8 +193,8 @@ void ExternalInsertUI::rebuildFromPlugin() {
 
 void ExternalInsertUI::refreshConflictWarning() {
     juce::String conflict;
-    if (auto* insert = liveInsert(devicePath_))
-        conflict = findPortConflict(devicePath_, *insert);
+    if (const auto* device = modelDevice(devicePath_))
+        conflict = findPortConflict(devicePath_, device->insert);
     warningLabel_.setText(conflict, juce::dontSendNotification);
 }
 
@@ -261,7 +215,6 @@ void ExternalInsertUI::resized() {
     layoutRow(returnLabel_, *returnSelector_);
     layoutRow(latencyLabel_, latencyValue_);
 
-    juce::ignoreUnused(gap);
     warningLabel_.setBounds(bounds.removeFromTop(rowHeight));
 }
 

@@ -170,6 +170,17 @@ class OfflineRuntimeFactory final : public engine::RuntimeStateFactory {
         return std::make_unique<engine::ClipMidiSource>(trackId, *clips_);
     }
 
+    /// The range a hardware insert's recording has to cover, and what it plays at.
+    void setInsertWindow(const engine::CaptureWindow& window,
+                         const engine::RenderContext& context) {
+        insertWindow_ = window;
+        context_ = context;
+    }
+
+    std::unique_ptr<engine::EngineInsert> createInsert(engine::DeviceKey key) override {
+        return host_.insertPlayback(key, insertWindow_, context_);
+    }
+
   private:
     /// A hosted plugin's parameter edits wait for the render's blocks while it has one.
     std::unique_ptr<engine::EngineDevice> lend(engine::DeviceKey key,
@@ -186,6 +197,8 @@ class OfflineRuntimeFactory final : public engine::RuntimeStateFactory {
     BorrowedDevices& borrowed_;
     std::map<engine::DeviceKey, DeviceInfo> devices_;
     std::map<engine::DeviceKey, std::unique_ptr<engine::EngineDevice>> loaded_;
+    engine::CaptureWindow insertWindow_;
+    engine::RenderContext context_;
     engine::ClipSnapshotFeed* clips_ = nullptr;
     engine::ClipStreamFeed* streams_ = nullptr;
 };
@@ -386,6 +399,9 @@ struct OfflineRuntime {
     juce::String bind(const OfflineRenderModel& model) {
         factory.setModel(model);
         factory.attach(clips, voices->feed());
+        factory.setInsertWindow({.startSeconds = tempo.beatToTime(request.range.start.value),
+                                 .endSeconds = tempo.beatToTime(request.range.end.value)},
+                                context);
 
         report("values", engine::resolvePlanValues(*plan, model.tracks, model.master, values,
                                                    model.automation,
@@ -395,6 +411,13 @@ struct OfflineRuntime {
         // render's correct answer rather than something to report (#2628).
         auto bindings = store.realise(*plan, context);
         bindings.liveSession = false;
+
+        // A return with nothing to play would render the hardware as silence, which the
+        // file cannot tell from a quiet insert: refused instead (#2279).
+        for (const auto& op : plan->ops)
+            if (op.kind == engine::OpKind::InsertReturn &&
+                !bindings.inserts.contains(op.key.deviceKey()))
+                return "A hardware insert has no recording of its return to render from";
 
         const auto messages = executor.prepare(*plan, bindings, context, nullptr, &values);
         report("prepare", messages);

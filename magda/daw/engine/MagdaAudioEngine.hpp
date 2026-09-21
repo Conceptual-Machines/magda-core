@@ -146,7 +146,7 @@ class MagdaAudioEngine final : public AudioEngine,
                                     float normalised, EditOrigin origin,
                                     std::function<void(EditCompletion)> completed = {}) override;
     MagdaApi& getMagdaApi() override;
-    InsertRenderCaptureService* getInsertRenderCaptureService() override;
+    InsertRenderCapture* getInsertRenderCapture() override;
     std::unique_ptr<OfflineRenderSession> createOfflineRenderSession(
         bool resumePlaybackWhenFinished) override;
     void setTrackFrozen(TrackId trackId, bool frozen) override;

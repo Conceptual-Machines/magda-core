@@ -59,12 +59,14 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
 
     add_library(magda_engine_host STATIC
         host/EngineHost.cpp
+        host/EngineInsertCapture.cpp
         host/EngineOfflineRender.cpp
         host/EngineProject.cpp
         host/EngineRuntimeFactory.cpp
         host/EngineTrace.cpp
         host/ExternalPluginLoader.cpp
         host/HardwareInputMap.cpp
+        host/HardwareMidiOutput.cpp
         host/LiveMidiCollector.cpp
         host/LiveMidiQueue.cpp
         host/LiveMidiRouting.cpp
@@ -74,12 +76,14 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         host/SessionArrangementCapture.cpp
         host/TrackFreeze.cpp
         host/EngineHost.hpp
+        host/EngineInsertCapture.hpp
         host/EngineOfflineRender.hpp
         host/EngineProject.hpp
         host/EngineRuntimeFactory.hpp
         host/EngineTrace.hpp
         host/ExternalPluginLoader.hpp
         host/HardwareInputMap.hpp
+        host/HardwareMidiOutput.hpp
         host/LiveMidiCollector.hpp
         host/LiveMidiQueue.hpp
         host/LiveMidiRouting.hpp

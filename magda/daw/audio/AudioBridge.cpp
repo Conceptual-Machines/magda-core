@@ -17,6 +17,7 @@
 #include "modifiers/ADSRDebugLog.hpp"
 #include "plugin_manager/ExternalPluginState.hpp"
 #include "plugins/DeviceServices.hpp"
+#include "plugins/InsertConfigBridge.hpp"
 #include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/MidiChordEnginePlugin.hpp"
 #include "plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
@@ -545,11 +546,14 @@ void AudioBridge::updateMidiInputRouting() {
     midiInputRouter_.updateMidiInputRouting();
 }
 
-void AudioBridge::refreshInsertDeviceEnablement() {
-    if (insertDeviceEnablement_.refresh())
-        if (auto* ctx = edit_.getCurrentPlaybackContext();
-            ctx != nullptr && ctx->isPlaybackGraphAllocated())
-            ctx->reallocate();
+bool AudioBridge::refreshInsertDeviceEnablement() {
+    if (!insertDeviceEnablement_.refresh())
+        return false;
+
+    if (auto* ctx = edit_.getCurrentPlaybackContext();
+        ctx != nullptr && ctx->isPlaybackGraphAllocated())
+        ctx->reallocate();
+    return true;
 }
 
 void AudioBridge::resyncAllInputMonitors() {
@@ -749,11 +753,25 @@ void AudioBridge::devicePropertyChanged(const ChainNodePath& devicePath) {
 
     sidechainRouting_.handleDeviceSidechainChanged(devicePath.trackId, *device);
 
-    // External-insert routing changed (#1623): auto-enable any hardware port
-    // the insert now references, and re-apply the MIDI feedback guard so the
-    // send target's own input port is dropped from this track's routing.
+    // External-insert routing changed (#1623): the plugin follows the model the insert
+    // panel edits (#2279), any hardware port it now references is auto-enabled, and the
+    // MIDI feedback guard drops the send target's own input port from this track.
     if (daw::audio::internalPluginHasTag(device->pluginId, "external-insert")) {
-        refreshInsertDeviceEnablement();
+        if (auto* insert =
+                dynamic_cast<te::InsertPlugin*>(pluginManager_.getPlugin(devicePath).get())) {
+            const auto before = daw::audio::insertConfigOf(*insert);
+            daw::audio::applyInsertConfig(*insert, device->insert);
+            const auto after = daw::audio::insertConfigOf(*insert);
+
+            // The send and return are wired into the graph when it is built.
+            if (!refreshInsertDeviceEnablement() && (before.sendDevice != after.sendDevice ||
+                                                     before.returnDevice != after.returnDevice))
+                if (auto* ctx = edit_.getCurrentPlaybackContext();
+                    ctx != nullptr && ctx->isPlaybackGraphAllocated())
+                    ctx->reallocate();
+        } else {
+            refreshInsertDeviceEnablement();
+        }
         midiInputRouter_.reapplyExternalInstrumentSendbackGuard(devicePath.trackId);
     }
 }

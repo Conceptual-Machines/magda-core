@@ -2042,7 +2042,17 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             // track sends nothing: the hardware hears what the track is doing,
             // which for a muted track is nothing (#2245).
             auto* insert = insertForOp_[i];
-            if (insert == nullptr || value.silent)
+            if (insert == nullptr)
+                break;
+
+            // Where a device would be handed an all-notes-off, and also when the
+            // chain falls silent: a muted track sends nothing more, including the
+            // note-offs for what it started.
+            if (op.inputs[1].valid() &&
+                (value.silent || !block.continuous || midiInPanic(op.inputs[1])))
+                insert->releaseNotes(block);
+
+            if (value.silent)
                 break;
 
             static const juce::MidiBuffer kNoMidi;

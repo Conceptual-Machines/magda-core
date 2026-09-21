@@ -27,6 +27,7 @@ namespace magda {
 
 // Forward declarations
 class AudioBridge;
+class InsertRenderCapture;
 class InsertRenderCaptureService;
 class MagdaApi;
 class PluginWindowManager;
@@ -331,9 +332,7 @@ class TracktionEngineWrapper : public AudioEngine,
      * @brief Export capture pass for External FX / Instrument devices (#1623)
      * @return Pointer to the service, or nullptr when unavailable (headless)
      */
-    InsertRenderCaptureService* getInsertRenderCaptureService() override {
-        return insertRenderCapture_.get();
-    }
+    InsertRenderCapture* getInsertRenderCapture() override;
 
     /**
      * @brief Get active recording previews for real-time MIDI display

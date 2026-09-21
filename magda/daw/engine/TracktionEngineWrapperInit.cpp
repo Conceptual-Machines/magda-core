@@ -287,6 +287,10 @@ void TracktionEngineWrapper::setupMidiDevices() {
     }
 }
 
+InsertRenderCapture* TracktionEngineWrapper::getInsertRenderCapture() {
+    return insertRenderCapture_.get();
+}
+
 bool TracktionEngineWrapper::initialiseServices() {
     // Initialize Tracktion Engine with custom UIBehaviour for plugin windows
     juce::Logger::writeToLog("[Init] Creating Tracktion Engine...");
