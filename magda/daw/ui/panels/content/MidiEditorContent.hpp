@@ -301,7 +301,6 @@ class MidiEditorContent : public PanelContent,
     // out to the highlight hooks. Invoked from the chained MidiBridge callback.
     void handleMidiNoteEvent(magda::TrackId trackId, const magda::MidiNoteEvent& event);
 
-    magda::MidiBridge* monitoredMidiBridge_ = nullptr;
     std::function<void(magda::TrackId, const magda::MidiNoteEvent&)> previousMidiNoteCallback_;
     bool midiNoteMonitorInstalled_ = false;
 

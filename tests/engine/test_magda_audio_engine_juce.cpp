@@ -25,6 +25,14 @@ namespace {
 /// double equality on a value that travelled through a tempo map.
 constexpr double kTolerance = 1.0e-9;
 
+/// Whether the MIDI service offers the keyboard, which only an attached engine lends it.
+bool listsQwerty() {
+    for (const auto& device : magda::MidiBridge::getInstance().getAvailableMidiInputs())
+        if (device.id == magda::qwertyMidiDeviceId())
+            return true;
+    return false;
+}
+
 class MagdaAudioEngineTest final : public juce::UnitTest {
   public:
     MagdaAudioEngineTest() : juce::UnitTest("Magda Audio Engine Tests", "magda") {}
@@ -46,8 +54,12 @@ class MagdaAudioEngineTest final : public juce::UnitTest {
         expect(engine.fork().getAudioBridge() == nullptr, "and so nothing mirrors the model into");
 
         expect(engine.getAudioBridge() == nullptr, "There is no bridge to hand out");
-        expect(engine.getMidiBridge() != nullptr, "The MidiBridge is a service and survives");
         expect(engine.hasActiveEdit(), "An initialised engine has a project to play");
+
+        // MIDI is the app's service; what the engine lends it is the QWERTY keyboard,
+        // which the system's device list never holds (#2759).
+        magda::MidiBridge::getInstance().setQwertyEnabled(true);
+        expect(listsQwerty(), "The engine lent the service its virtual inputs");
 
         const auto* map = engine.tempoMap();
         expect(map != nullptr, "The app converts beats and seconds through the host's map");
@@ -68,7 +80,8 @@ class MagdaAudioEngineTest final : public juce::UnitTest {
 
         engine.shutdown();
 
-        expect(engine.getMidiBridge() == nullptr, "Shut down, the fork's services are gone");
+        expect(!listsQwerty(), "Shut down, the service has no engine's devices to offer");
+        magda::MidiBridge::getInstance().setQwertyEnabled(false);
         engine.shutdown();
     }
 
@@ -142,15 +155,15 @@ class MagdaAudioEngineTest final : public juce::UnitTest {
         {
             magda::MagdaAudioEngine engine{magda::AudioEngineOptions{.headless = true}};
             expect(engine.initialize(), "The engine comes up headless");
-            expect(engine.getMidiBridge() != nullptr, "with the fork's MidiBridge under it");
 
             // Destroyed with no shutdown() call, which is what the app does
             // (magda_daw_main.cpp: a plain daw_engine_.reset()).
         }
 
-        // ~MidiBridge asserts that its live sink was cleared first, and the
-        // sink is the engine: still installed, it is a destroyed object the
-        // MIDI callback thread can still push a note through.
+        // forgetEngine() asserts that the live sink was cleared first, and the sink is
+        // the engine: still installed, it is a destroyed object the MIDI callback thread
+        // can still push a note through. The service outlives the engine, so that assert
+        // is the only thing watching for it (#2759).
         for (const auto& fired : watch.take())
             expect(!fired.contains("MidiBridge.cpp"), fired);
     }

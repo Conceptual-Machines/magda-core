@@ -152,7 +152,6 @@ class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
 
         // All bridge getters should be accessible
         wrapper.getAudioBridge();
-        wrapper.getMidiBridge();
         wrapper.getPluginWindowManager();
         wrapper.getEngine();
         wrapper.getEdit();
@@ -255,7 +254,6 @@ class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
         expect(wrapper.initialiseServices(), "Services should come up");
         expect(wrapper.getEdit() == nullptr, "No Edit until playback is initialised");
         expect(wrapper.getAudioBridge() == nullptr, "No AudioBridge until playback is initialised");
-        expect(wrapper.getMidiBridge() != nullptr, "MidiBridge is a service");
 
         expect(wrapper.initialisePlayback(), "Playback should come up");
         expect(wrapper.getEdit() != nullptr, "Edit exists once playback is initialised");

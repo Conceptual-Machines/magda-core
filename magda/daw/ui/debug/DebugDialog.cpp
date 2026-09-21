@@ -8,7 +8,6 @@
 namespace magda::daw::ui {
 
 std::unique_ptr<DebugDialog> DebugDialog::instance_;
-magda::MidiBridge* DebugDialog::midiBridge_ = nullptr;
 
 //==============================================================================
 // Helper: format MIDI note name
@@ -197,10 +196,7 @@ class DebugDialog::Content : public juce::Component, private juce::Timer {
 
   private:
     void timerCallback() override {
-        if (!DebugDialog::midiBridge_)
-            return;
-
-        auto& queue = DebugDialog::midiBridge_->getGlobalEventQueue();
+        auto& queue = magda::MidiBridge::getInstance().getGlobalEventQueue();
         magda::MidiEventEntry entry;
         bool appended = false;
 
@@ -320,10 +316,6 @@ void DebugDialog::hide() {
     if (instance_) {
         instance_->setVisible(false);
     }
-}
-
-void DebugDialog::setMidiBridge(magda::MidiBridge* bridge) {
-    midiBridge_ = bridge;
 }
 
 }  // namespace magda::daw::ui

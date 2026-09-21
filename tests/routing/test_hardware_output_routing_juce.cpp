@@ -158,7 +158,7 @@ class HardwareOutputRoutingTest final : public juce::UnitTest {
         track.audioOutputDevice = "stereo:Out 3 + 4";
 
         RoutingSyncHelper::syncSelectorsFromTrack(
-            track, nullptr, nullptr, &selector, nullptr, nullptr, &hardware, INVALID_TRACK_ID,
+            track, nullptr, nullptr, &selector, nullptr, &hardware, INVALID_TRACK_ID,
             outputTrackMapping, midiOutputTrackMapping, nullptr, nullptr, nullptr, &channelMapping);
 
         // The dropdown must land on the second stereo pair, not snap back to Master
@@ -167,21 +167,21 @@ class HardwareOutputRoutingTest final : public juce::UnitTest {
         track.audioOutputDevice = "Out 3 + 4";  // legacy bare pair name
         selector.setSelectedId(1);
         RoutingSyncHelper::syncSelectorsFromTrack(
-            track, nullptr, nullptr, &selector, nullptr, nullptr, &hardware, INVALID_TRACK_ID,
+            track, nullptr, nullptr, &selector, nullptr, &hardware, INVALID_TRACK_ID,
             outputTrackMapping, midiOutputTrackMapping, nullptr, nullptr, nullptr, &channelMapping);
         expectEquals(selector.getSelectedId(), 11);
 
         track.audioOutputDevice = "stereo:Out 3";  // old native physical alias
         selector.setSelectedId(1);
         RoutingSyncHelper::syncSelectorsFromTrack(
-            track, nullptr, nullptr, &selector, nullptr, nullptr, &hardware, INVALID_TRACK_ID,
+            track, nullptr, nullptr, &selector, nullptr, &hardware, INVALID_TRACK_ID,
             outputTrackMapping, midiOutputTrackMapping, nullptr, nullptr, nullptr, &channelMapping);
         expectEquals(selector.getSelectedId(), 11);
 
         track.audioOutputDevice = "Out 5";  // mono device selection
         selector.setSelectedId(1);
         RoutingSyncHelper::syncSelectorsFromTrack(
-            track, nullptr, nullptr, &selector, nullptr, nullptr, &hardware, INVALID_TRACK_ID,
+            track, nullptr, nullptr, &selector, nullptr, &hardware, INVALID_TRACK_ID,
             outputTrackMapping, midiOutputTrackMapping, nullptr, nullptr, nullptr, &channelMapping);
         expectEquals(selector.getSelectedId(), 100);
     }
@@ -202,10 +202,9 @@ class HardwareOutputRoutingTest final : public juce::UnitTest {
         std::map<int, TrackId> outputTracks, midiOutputTracks, inputTracks;
         std::map<int, juce::String> outputChannels, inputChannels;
         const auto sync = [&](const TrackInfo& track) {
-            RoutingSyncHelper::syncSelectorsFromTrack(track, &input, nullptr, &output, nullptr,
-                                                      nullptr, &hardware, INVALID_TRACK_ID,
-                                                      outputTracks, midiOutputTracks, &inputTracks,
-                                                      &inputChannels, nullptr, &outputChannels);
+            RoutingSyncHelper::syncSelectorsFromTrack(
+                track, &input, nullptr, &output, nullptr, &hardware, INVALID_TRACK_ID, outputTracks,
+                midiOutputTracks, &inputTracks, &inputChannels, nullptr, &outputChannels);
         };
 
         TrackInfo track;

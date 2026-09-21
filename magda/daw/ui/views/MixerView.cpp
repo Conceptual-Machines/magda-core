@@ -422,9 +422,9 @@ void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track, bool syncM
             midiOutSelector) {
             RoutingSyncHelper::syncSelectorsFromTrack(
                 track, audioInSelector.get(), midiInSelector.get(), audioOutSelector.get(),
-                midiOutSelector.get(), audioEngine_->getMidiBridge(), audioEngine_->getAudioIO(),
-                trackId_, outputTrackMapping_, midiOutputTrackMapping_, &inputTrackMapping_,
-                &inputChannelMapping_, &midiInputTrackMapping_, &outputChannelMapping_);
+                midiOutSelector.get(), audioEngine_->getAudioIO(), trackId_, outputTrackMapping_,
+                midiOutputTrackMapping_, &inputTrackMapping_, &inputChannelMapping_,
+                &midiInputTrackMapping_, &outputChannelMapping_);
         }
     }
 
@@ -797,7 +797,6 @@ void MixerView::ChannelStrip::setupControls() {
 
         // Populate routing options from real data and wire callbacks
         if (audioEngine_) {
-            auto* midiBridge = audioEngine_->getMidiBridge();
             const auto* hardware = audioEngine_->getAudioIO();
 
             audioInSelector->meterInputsFrom(audioEngine_->getAudioIO());
@@ -807,9 +806,9 @@ void MixerView::ChannelStrip::setupControls() {
             RoutingSyncHelper::populateAudioOutputOptions(
                 audioOutSelector.get(), trackId_, RoutingSyncHelper::openDirection(hardware, false),
                 outputTrackMapping_, &outputChannelMapping_);
-            RoutingSyncHelper::populateMidiInputOptions(midiInSelector.get(), midiBridge, trackId_,
+            RoutingSyncHelper::populateMidiInputOptions(midiInSelector.get(), trackId_,
                                                         &midiInputTrackMapping_);
-            RoutingSyncHelper::populateMidiOutputOptions(midiOutSelector.get(), midiBridge,
+            RoutingSyncHelper::populateMidiOutputOptions(midiOutSelector.get(),
                                                          midiOutputTrackMapping_, trackId_);
         }
 
@@ -828,8 +827,6 @@ void MixerView::ChannelStrip::setupControls() {
 void MixerView::ChannelStrip::setupRoutingCallbacks() {
     if (!audioInSelector || !audioOutSelector || !midiInSelector || !midiOutSelector)
         return;
-
-    auto* midiBridge = audioEngine_ ? audioEngine_->getMidiBridge() : nullptr;
 
     // Audio input selector callbacks (mutually exclusive with MIDI input)
     audioInSelector->onEnabledChanged = [this](bool enabled) {
@@ -864,7 +861,7 @@ void MixerView::ChannelStrip::setupRoutingCallbacks() {
     };
 
     // MIDI input selector callbacks (mutually exclusive with audio input)
-    midiInSelector->onEnabledChanged = [this, midiBridge](bool enabled) {
+    midiInSelector->onEnabledChanged = [this](bool enabled) {
         if (enabled) {
             audioInSelector->setEnabled(false);
             TrackManager::getInstance().setTrackAudioInput(trackId_, "");
@@ -880,8 +877,8 @@ void MixerView::ChannelStrip::setupRoutingCallbacks() {
                 } else {
                     TrackManager::getInstance().setTrackMidiInput(trackId_, "all");
                 }
-            } else if (selectedId >= 10 && midiBridge) {
-                auto midiInputs = midiBridge->getAvailableMidiInputs();
+            } else if (selectedId >= 10) {
+                auto midiInputs = MidiBridge::getInstance().getAvailableMidiInputs();
                 int deviceIndex = selectedId - 10;
                 if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiInputs.size())) {
                     TrackManager::getInstance().setTrackMidiInput(trackId_,
@@ -897,7 +894,7 @@ void MixerView::ChannelStrip::setupRoutingCallbacks() {
         }
     };
 
-    midiInSelector->onSelectionChanged = [this, midiBridge](int selectedId) {
+    midiInSelector->onSelectionChanged = [this](int selectedId) {
         if (selectedId == 2) {
             TrackManager::getInstance().setTrackMidiInput(trackId_, "");
         } else if (selectedId == 1) {
@@ -909,8 +906,8 @@ void MixerView::ChannelStrip::setupRoutingCallbacks() {
                 TrackManager::getInstance().setTrackMidiInput(trackId_,
                                                               "track:" + juce::String(it->second));
             }
-        } else if (selectedId >= 10 && midiBridge) {
-            auto midiInputs = midiBridge->getAvailableMidiInputs();
+        } else if (selectedId >= 10) {
+            auto midiInputs = MidiBridge::getInstance().getAvailableMidiInputs();
             int deviceIndex = selectedId - 10;
             if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiInputs.size())) {
                 TrackManager::getInstance().setTrackMidiInput(trackId_, midiInputs[deviceIndex].id);
@@ -955,7 +952,7 @@ void MixerView::ChannelStrip::setupRoutingCallbacks() {
         }
     };
 
-    midiOutSelector->onSelectionChanged = [this, midiBridge](int selectedId) {
+    midiOutSelector->onSelectionChanged = [this](int selectedId) {
         if (selectedId == 1) {
             TrackManager::getInstance().setTrackMidiOutput(trackId_, "");
         } else if (selectedId >= 200) {
@@ -964,8 +961,8 @@ void MixerView::ChannelStrip::setupRoutingCallbacks() {
             if (it != midiOutputTrackMapping_.end()) {
                 TrackManager::getInstance().routeMidiOutputToTrack(trackId_, it->second);
             }
-        } else if (selectedId >= 10 && midiBridge) {
-            auto midiOutputs = midiBridge->getAvailableMidiOutputs();
+        } else if (selectedId >= 10) {
+            auto midiOutputs = MidiBridge::getAvailableMidiOutputs();
             int deviceIndex = selectedId - 10;
             if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiOutputs.size())) {
                 TrackManager::getInstance().setTrackMidiOutput(trackId_,
@@ -1923,9 +1920,8 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
     // addAndMakeVisible(*debugPanel_);
 
     // Listen for MIDI device list changes, and for hardware channels opening or closing
+    MidiBridge::getInstance().addMidiDeviceListListener(this);
     if (audioEngine_) {
-        if (auto* mb = audioEngine_->getMidiBridge())
-            mb->addMidiDeviceListListener(this);
         if (auto* hardware = audioEngine_->getAudioIO())
             hardware->addListener(this);
     }
@@ -1943,9 +1939,8 @@ void MixerView::hardwareChannelsChanged() {
 }
 
 MixerView::~MixerView() {
+    MidiBridge::getInstance().removeMidiDeviceListListener(this);
     if (audioEngine_) {
-        if (auto* mb = audioEngine_->getMidiBridge())
-            mb->removeMidiDeviceListListener(this);
         if (auto* hardware = audioEngine_->getAudioIO())
             hardware->removeListener(this);
     }

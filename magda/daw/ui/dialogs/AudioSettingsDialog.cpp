@@ -382,9 +382,7 @@ void MidiInputList::toggle(int index) {
 
     audio_.setMidiInputEnabled(device.identifier, active);
 
-    if (auto* engine = TrackManager::getInstance().getAudioEngine())
-        if (auto* midi = engine->getMidiBridge())
-            midi->activeInputsChanged();
+    MidiBridge::getInstance().activeInputsChanged();
 }
 
 AudioSettingsDialog::AudioSettingsDialog(AudioEngine* audioEngine)

@@ -29,7 +29,6 @@ namespace magda {
 class AudioBridge;
 class InsertRenderCaptureService;
 class MagdaApi;
-class MidiBridge;
 class PluginWindowManager;
 class SessionClipScheduler;
 class SessionRecorder;
@@ -96,7 +95,7 @@ class TracktionEngineWrapper : public AudioEngine,
 
     /**
      * @brief Bring up the half that is not playback: the engine, plugin formats,
-     *        devices, the MidiBridge and the project save hooks (#2579).
+     *        devices, the MIDI service and the project save hooks (#2579).
      * @return Whether the Tracktion engine was created.
      */
     bool initialiseServices();
@@ -338,17 +337,6 @@ class TracktionEngineWrapper : public AudioEngine,
     }
 
     /**
-     * @brief Get the MidiBridge for MIDI device management and routing
-     * @return Pointer to MidiBridge, or nullptr if not initialized
-     */
-    MidiBridge* getMidiBridge() override {
-        return midiBridge_.get();
-    }
-    const MidiBridge* getMidiBridge() const override {
-        return midiBridge_.get();
-    }
-
-    /**
      * @brief Get active recording previews for real-time MIDI display
      * @return Map of trackId to preview data (empty if not recording)
      */
@@ -525,9 +513,6 @@ class TracktionEngineWrapper : public AudioEngine,
 
     // Export capture pass for External FX / Instrument devices (#1623)
     std::unique_ptr<InsertRenderCaptureService> insertRenderCapture_;
-
-    // MIDI bridge for MIDI device management and routing
-    std::unique_ptr<MidiBridge> midiBridge_;
 
     // Programmatic facade onto MAGDA's DAW state. Owned here and shared
     // with consumers (AI Chat, Lua controller, future CLI) via getMagdaApi().

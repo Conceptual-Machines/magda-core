@@ -14,12 +14,67 @@
 
 namespace magda {
 
-MidiBridge::MidiBridge(te::Engine& engine) : engine_(engine) {
+MidiBridge& MidiBridge::getInstance() {
+    // Deliberately never destroyed. A static's destructor runs after the message manager,
+    // and this holds things JUCE only lets go of on that thread -- the device-list
+    // connection asserts it outright. Teardown is forgetEngine(), which the engine calls
+    // while the app is still up; what is left at exit is the OS's to reclaim (#2759).
+    static auto* instance = new MidiBridge();
+    return *instance;
+}
+
+MidiBridge::MidiBridge() {
     DBG("MidiBridge initialized");
 }
 
+void MidiBridge::useEngine(const void* owner,
+                           std::function<std::vector<MidiDeviceInfo>()> virtualInputs) {
+    owner_ = owner;
+    virtualInputs_ = std::move(virtualInputs);
+    isShuttingDown_.store(false, std::memory_order_release);
+    deviceList_ = juce::MidiDeviceListConnection::make([this] { refreshMidiInputs(); });
+}
+
+void MidiBridge::forgetEngine(const void* owner) {
+    if (!isAttachedTo(owner))
+        return;
+
+    // The sink is the engine handing the service back. Still installed, it is about to be
+    // a destroyed object that the MIDI callback thread can still push a note through
+    // (#2579) -- and this outlives it, so nothing else would catch that.
+    jassert(liveSink_.load(std::memory_order_acquire) == nullptr);
+
+    // The device list first so nothing reopens an input, then the inputs themselves:
+    // stopAllInputs() does not return until every callback in flight has left. Only
+    // after that is it safe to drop what those callbacks read.
+    deviceList_.reset();
+    stopAllInputs();
+
+    owner_ = nullptr;
+    clearAudioBridge();
+    onActiveInputsChanged = nullptr;
+    virtualInputs_ = nullptr;
+    meters_.store(nullptr, std::memory_order_release);
+    setRecordingQueue(nullptr, nullptr);
+
+    // Outputs after inputs, so any in-flight controller-feedback sends from listener
+    // callbacks have already drained.
+    juce::ScopedLock lock(routingLock_);
+    activeMidiOutputs_.clear();
+}
+
 void MidiBridge::setAudioBridge(AudioBridge* audioBridge) {
-    audioBridge_ = audioBridge;
+    audioBridge_.store(audioBridge, std::memory_order_release);
+}
+
+void MidiBridge::clearLiveSink(LiveMidiSink* sink) {
+    auto* installed = sink;
+    if (!liveSink_.compare_exchange_strong(installed, nullptr, std::memory_order_acq_rel,
+                                           std::memory_order_acquire))
+        return;
+
+    while (activeCallbacks_.load(std::memory_order_acquire) > 0)
+        juce::Thread::sleep(1);
 }
 
 void MidiBridge::setLiveSink(LiveMidiSink* sink) {
@@ -27,19 +82,6 @@ void MidiBridge::setLiveSink(LiveMidiSink* sink) {
     if (sink == nullptr)
         while (activeCallbacks_.load(std::memory_order_acquire) > 0)
             juce::Thread::sleep(1);
-}
-
-MidiBridge::~MidiBridge() {
-    // A sink still installed here is an owner that went first, leaving the
-    // MIDI callback thread a dangling pushMidi (#2579).
-    jassert(liveSink_.load(std::memory_order_acquire) == nullptr);
-
-    stopAllInputs();
-
-    // Tear down outputs after inputs so any in-flight controller-feedback
-    // sends from listener callbacks have already drained.
-    juce::ScopedLock lock(routingLock_);
-    activeMidiOutputs_.clear();
 }
 
 void MidiBridge::stopAllInputs() {
@@ -103,33 +145,13 @@ std::vector<MidiDeviceInfo> MidiBridge::getAvailableMidiInputs() const {
     auto devices = midiInputs | std::views::filter(isActive) |
                    std::views::transform(asPhysicalDevice) | toStd<std::vector<MidiDeviceInfo>>();
 
-    // Under the native engine, messages arrive under a physical device's
-    // identifier or under qwertyMidiDeviceId(). Those are the ids to offer.
-    if (liveSink_.load(std::memory_order_acquire) != nullptr) {
-        if (qwertyEnabled_)
-            devices.emplace_back(qwertyMidiDeviceId(), kQwertyMidiDeviceName, /*enabled=*/true);
-        return devices;
+    // The attached engine's own inputs, which the system's list never holds. The routing
+    // selectors refresh on midiDeviceListChanged, so a device switched off between calls
+    // is gone from the next one.
+    if (virtualInputs_) {
+        const auto engineDevices = virtualInputs_();
+        devices.insert(devices.end(), engineDevices.begin(), engineDevices.end());
     }
-
-    // Include TE virtual MIDI devices only when enabled. The routing
-    // selectors refresh via onMidiDeviceListChanged when the device
-    // state changes, so the filter is effective.
-    const auto isEnabledVirtualInput = [](const std::shared_ptr<te::MidiInputDevice>& dev) {
-        return dynamic_cast<te::VirtualMidiInputDevice*>(dev.get()) != nullptr && dev->isEnabled();
-    };
-    const auto asVirtualDevice = [](const std::shared_ptr<te::MidiInputDevice>& dev) {
-        MidiDeviceInfo info;
-        info.id = dev->getDeviceID();
-        info.name = dev->getName();
-        info.isEnabled = dev->isEnabled();
-        info.isAvailable = true;
-        return info;
-    };
-
-    const auto teDevices = engine_.getDeviceManager().getMidiInDevices();
-    std::ranges::copy(teDevices | std::views::filter(isEnabledVirtualInput) |
-                          std::views::transform(asVirtualDevice),
-                      std::back_inserter(devices));
 
     return devices;
 }
@@ -189,8 +211,9 @@ bool MidiBridge::injectMidiToTrack(TrackId trackId, const juce::MidiMessage& msg
         handled = true;
     }
 
-    if (audioBridge_) {
-        if (auto* audioTrack = audioBridge_->getAudioTrack(trackId)) {
+    auto* bridge = audioBridge_.load(std::memory_order_acquire);
+    if (bridge != nullptr) {
+        if (auto* audioTrack = bridge->getAudioTrack(trackId)) {
             audioTrack->injectLiveMidiMessage(msg, {});
             handled = true;
         }
@@ -200,10 +223,10 @@ bool MidiBridge::injectMidiToTrack(TrackId trackId, const juce::MidiMessage& msg
         return false;
 
     if (msg.isNoteOn()) {
-        if (meters_)
-            meters_->midiActivity.triggerActivity(trackId);
-        if (audioBridge_)
-            audioBridge_->triggerMidiActivity(trackId);
+        if (auto* meters = meters_.load(std::memory_order_acquire))
+            meters->midiActivity.triggerActivity(trackId);
+        if (bridge != nullptr)
+            bridge->triggerMidiActivity(trackId);
         TrackManager::getInstance().triggerMidiNoteOn(trackId);
     } else if (msg.isNoteOff()) {
         TrackManager::getInstance().triggerMidiNoteOff(trackId);
@@ -305,11 +328,6 @@ void MidiBridge::refreshMidiInputs() {
         enableMidiInput(deviceId);
 }
 
-bool MidiBridge::isMidiInputEnabled(const juce::String& deviceId) const {
-    auto device = engine_.getDeviceManager().findMidiInputDeviceForID(deviceId);
-    return device ? device->isEnabled() : false;
-}
-
 void MidiBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDeviceId) {
     juce::ScopedLock lock(routingLock_);
 
@@ -353,12 +371,17 @@ void MidiBridge::clearTrackMidiInput(TrackId trackId) {
 }
 
 void MidiBridge::resetTestState() {
+    // The service outlives every case in a binary, so a teardown in one must not leave
+    // the next one's MIDI switched off. The ports themselves are left alone: clearing the
+    // routes below is what stops a message reaching anything.
+    isShuttingDown_.store(false, std::memory_order_release);
+
     juce::ScopedLock lock(routingLock_);
     trackMidiInputs_.clear();
     monitoredTracks_.clear();
     globalEventQueue_.clear();
-    recordingQueue_ = nullptr;
-    transportPosition_ = nullptr;
+    recordingQueue_.store(nullptr, std::memory_order_release);
+    transportPosition_.store(nullptr, std::memory_order_release);
     onNoteEvent = nullptr;
     onCCEvent = nullptr;
 }
@@ -445,10 +468,10 @@ void MidiBridge::handleIncomingMidiMessage(juce::MidiInput* source,
             // MidiBridge only monitors MIDI activity for UI visualization.
 
             if (message.isNoteOn()) {
-                if (meters_)
-                    meters_->midiActivity.triggerActivity(trackId);
-                if (audioBridge_)
-                    audioBridge_->triggerMidiActivity(trackId);
+                if (auto* meters = meters_.load(std::memory_order_acquire))
+                    meters->midiActivity.triggerActivity(trackId);
+                if (auto* bridge = audioBridge_.load(std::memory_order_acquire))
+                    bridge->triggerMidiActivity(trackId);
                 TrackManager::getInstance().triggerMidiNoteOn(trackId);
             } else if (message.isNoteOff()) {
                 TrackManager::getInstance().triggerMidiNoteOff(trackId);
@@ -471,14 +494,16 @@ void MidiBridge::handleIncomingMidiMessage(juce::MidiInput* source,
             // Push note events to recording queue for real-time preview
             if (message.isNoteOn() || message.isNoteOff()) {
                 auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
-                if (recordingQueue_ && transportPosition_ && trackInfo && trackInfo->recordArmed) {
+                auto* queue = recordingQueue_.load(std::memory_order_acquire);
+                auto* position = transportPosition_.load(std::memory_order_acquire);
+                if (queue && position && trackInfo && trackInfo->recordArmed) {
                     RecordingNoteEvent evt;
                     evt.trackId = trackId;
                     evt.noteNumber = message.getNoteNumber();
                     evt.velocity = message.getVelocity();
                     evt.isNoteOn = message.isNoteOn();
-                    evt.transportSeconds = transportPosition_->load(std::memory_order_relaxed);
-                    recordingQueue_->push(evt);
+                    evt.transportSeconds = position->load(std::memory_order_relaxed);
+                    queue->push(evt);
                     DBG("RecPreview::push: note=" << evt.noteNumber << " on=" << (int)evt.isNoteOn
                                                   << " t=" << evt.transportSeconds);
                 }
@@ -490,8 +515,8 @@ void MidiBridge::handleIncomingMidiMessage(juce::MidiInput* source,
 }
 
 void MidiBridge::setRecordingQueue(RecordingNoteQueue* queue, std::atomic<double>* transportPos) {
-    recordingQueue_ = queue;
-    transportPosition_ = transportPos;
+    recordingQueue_.store(queue, std::memory_order_release);
+    transportPosition_.store(transportPos, std::memory_order_release);
 }
 
 void MidiBridge::addRawMidiListener(RawMidiListener* listener) {
@@ -527,10 +552,10 @@ void MidiBridge::broadcastSynthesizedNote(const juce::String& sourceDeviceId, in
 
         // UI activity fires regardless of arm — same as physical MIDI.
         if (isNoteOn) {
-            if (meters_)
-                meters_->midiActivity.triggerActivity(trackId);
-            if (audioBridge_)
-                audioBridge_->triggerMidiActivity(trackId);
+            if (auto* meters = meters_.load(std::memory_order_acquire))
+                meters->midiActivity.triggerActivity(trackId);
+            if (auto* bridge = audioBridge_.load(std::memory_order_acquire))
+                bridge->triggerMidiActivity(trackId);
             TrackManager::getInstance().triggerMidiNoteOn(trackId);
         } else {
             TrackManager::getInstance().triggerMidiNoteOff(trackId);
@@ -541,7 +566,9 @@ void MidiBridge::broadcastSynthesizedNote(const juce::String& sourceDeviceId, in
         notifyNoteEventIfMonitored(trackId, noteNumber, velocity, isNoteOn);
 
         // Preview queue push is armed-only.
-        if (!recordingQueue_ || !transportPosition_)
+        auto* queue = recordingQueue_.load(std::memory_order_acquire);
+        auto* position = transportPosition_.load(std::memory_order_acquire);
+        if (queue == nullptr || position == nullptr)
             continue;
         auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
         if (!trackInfo || !trackInfo->recordArmed)
@@ -552,8 +579,8 @@ void MidiBridge::broadcastSynthesizedNote(const juce::String& sourceDeviceId, in
         evt.noteNumber = noteNumber;
         evt.velocity = velocity;
         evt.isNoteOn = isNoteOn;
-        evt.transportSeconds = transportPosition_->load(std::memory_order_relaxed);
-        recordingQueue_->push(evt);
+        evt.transportSeconds = position->load(std::memory_order_relaxed);
+        queue->push(evt);
     }
 }
 
@@ -562,8 +589,8 @@ void MidiBridge::playQwertyNote(int note, int velocity, bool isNoteOn) {
         isNoteOn ? juce::MidiMessage::noteOn(1, note, static_cast<juce::uint8>(velocity))
                  : juce::MidiMessage::noteOff(1, note, static_cast<juce::uint8>(velocity));
 
-    if (audioBridge_) {
-        if (auto* vmd = audioBridge_->getQwertyMidiDevice()) {
+    if (auto* bridge = audioBridge_.load(std::memory_order_acquire)) {
+        if (auto* vmd = bridge->getQwertyMidiDevice()) {
             if (isNoteOn)
                 vmd->keyboardState.noteOn(1, note, static_cast<float>(velocity) / 127.0f);
             else
@@ -579,8 +606,8 @@ void MidiBridge::playQwertyNote(int note, int velocity, bool isNoteOn) {
 
 void MidiBridge::setQwertyEnabled(bool enabled) {
     qwertyEnabled_ = enabled;
-    if (audioBridge_) {
-        if (auto* vmd = audioBridge_->getQwertyMidiDevice())
+    if (auto* bridge = audioBridge_.load(std::memory_order_acquire)) {
+        if (auto* vmd = bridge->getQwertyMidiDevice())
             vmd->setEnabled(enabled);
     }
 }

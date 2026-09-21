@@ -260,14 +260,6 @@ class ProjectBoundaryResetEngine : public AudioEngine {
         return false;
     }
 
-    MidiBridge* getMidiBridge() override {
-        return nullptr;
-    }
-
-    const MidiBridge* getMidiBridge() const override {
-        return nullptr;
-    }
-
     MagdaApi& getMagdaApi() override {
         std::abort();
     }

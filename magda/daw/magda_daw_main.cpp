@@ -331,52 +331,44 @@ class MagdaDAWApplication : public JUCEApplication {
         juce::Logger::writeToLog("Audio engine initialized");
 
         // 3a. Wire the Lua controller scripts (issue #592). Owned here so
-        // magda_daw stays free of magda_scripting symbols. attach() is
-        // skipped if the engine has no MidiBridge yet (headless / failure).
-        if (auto* bridge = daw_engine_->getMidiBridge()) {
-            juce::Logger::writeToLog("[lua-debug] startup: MidiBridge available, "
-                                     "constructing LuaController + attaching");
-            luaController_ =
-                std::make_unique<magda::scripting::LuaController>(daw_engine_->getMagdaApi());
-            luaController_->attach(*bridge);
-            // Defer the script load until JUCE has opened the MIDI output ports.
-            // Loading on_load before that means SysEx sends (DAW-mode handshake,
-            // LED priming) get dropped silently and the device behaves as if no
-            // script were loaded. Hook fires on first MIDI device-list change
-            // after engine init, then on every subsequent change. We only want
-            // the auto-load to fire once.
-            daw_engine_->setMidiDevicesReadyCallback([this]() {
-                if (scriptAutoLoaded_)
-                    return;
-                scriptAutoLoaded_ = true;
-                juce::Logger::writeToLog("[lua-debug] onMidiDevicesReady fired - "
-                                         "running deferred reloadActiveLuaScript");
-                const bool ok = reloadActiveLuaScript();
-                juce::Logger::writeToLog(
-                    "[lua-debug] deferred reloadActiveLuaScript -> " +
-                    juce::String(ok ? "true" : "false") + " active='" +
-                    (luaController_ ? luaController_->currentScriptName() : juce::String{}) + "'");
-                if (!ok)
-                    juce::Logger::writeToLog("[lua] No controller script loaded");
-            });
-            juce::MessageManager::callAsync([this]() {
-                if (scriptAutoLoaded_ || luaController_ == nullptr)
-                    return;
-                scriptAutoLoaded_ = true;
-                juce::Logger::writeToLog("[lua-debug] startup fallback - "
-                                         "running reloadActiveLuaScript");
-                const bool ok = reloadActiveLuaScript();
-                juce::Logger::writeToLog(
-                    "[lua-debug] startup fallback reloadActiveLuaScript -> " +
-                    juce::String(ok ? "true" : "false") + " active='" +
-                    (luaController_ ? luaController_->currentScriptName() : juce::String{}) + "'");
-                if (!ok)
-                    juce::Logger::writeToLog("[lua] No controller script loaded");
-            });
-        } else {
-            juce::Logger::writeToLog("[lua-debug] startup: MidiBridge null, "
-                                     "LuaController NOT created");
-        }
+        // magda_daw stays free of magda_scripting symbols.
+        luaController_ =
+            std::make_unique<magda::scripting::LuaController>(daw_engine_->getMagdaApi());
+        luaController_->attach(magda::MidiBridge::getInstance());
+        // Defer the script load until JUCE has opened the MIDI output ports.
+        // Loading on_load before that means SysEx sends (DAW-mode handshake,
+        // LED priming) get dropped silently and the device behaves as if no
+        // script were loaded. Hook fires on first MIDI device-list change
+        // after engine init, then on every subsequent change. We only want
+        // the auto-load to fire once.
+        daw_engine_->setMidiDevicesReadyCallback([this]() {
+            if (scriptAutoLoaded_)
+                return;
+            scriptAutoLoaded_ = true;
+            juce::Logger::writeToLog("[lua-debug] onMidiDevicesReady fired - "
+                                     "running deferred reloadActiveLuaScript");
+            const bool ok = reloadActiveLuaScript();
+            juce::Logger::writeToLog(
+                "[lua-debug] deferred reloadActiveLuaScript -> " +
+                juce::String(ok ? "true" : "false") + " active='" +
+                (luaController_ ? luaController_->currentScriptName() : juce::String{}) + "'");
+            if (!ok)
+                juce::Logger::writeToLog("[lua] No controller script loaded");
+        });
+        juce::MessageManager::callAsync([this]() {
+            if (scriptAutoLoaded_ || luaController_ == nullptr)
+                return;
+            scriptAutoLoaded_ = true;
+            juce::Logger::writeToLog("[lua-debug] startup fallback - "
+                                     "running reloadActiveLuaScript");
+            const bool ok = reloadActiveLuaScript();
+            juce::Logger::writeToLog(
+                "[lua-debug] startup fallback reloadActiveLuaScript -> " +
+                juce::String(ok ? "true" : "false") + " active='" +
+                (luaController_ ? luaController_->currentScriptName() : juce::String{}) + "'");
+            if (!ok)
+                juce::Logger::writeToLog("[lua] No controller script loaded");
+        });
 
         // 4. Create main window with full UI (pass the audio engine)
         juce::Logger::writeToLog("Creating MainWindow...");

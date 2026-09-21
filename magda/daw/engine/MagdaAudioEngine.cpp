@@ -7,8 +7,10 @@
 
 #include "../api/magda_api_live.hpp"
 #include "../audio/DeviceParameterDisplayTextProvider.hpp"
+#include "../audio/controllers/ControllerRouter.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/UndoManager.hpp"  // complete type for the unique_ptr this forwards
+#include "../core/controllers/MidiLearnCoordinator.hpp"
 #include "../music/GrooveLibrary.hpp"
 #include "PluginService.hpp"
 #include "RenderProgressWindow.hpp"
@@ -57,7 +59,6 @@ MagdaAudioEngine::MagdaAudioEngine(AudioEngineOptions options) {
     host_ = std::make_unique<daw::engine_host::EngineHost>();
 
     // No edit accessor: the half of the API that reads a te::Edit is #2554's.
-    // The MidiBridge arrives in initialize(), once the fork has built it.
     api_ = std::make_unique<MagdaApiLive>();
     api_->setProjectTempoWriter([this](double bpm) { setTempo(bpm); });
     api_->setProjectTimeSignatureWriter(
@@ -112,7 +113,7 @@ juce::StringArray MagdaAudioEngine::unwiredMethods() {
 
 MagdaAudioEngine::~MagdaAudioEngine() {
     // The app destroys the engine with a plain reset() and no shutdown() call
-    // (magda_daw_main.cpp), which would leave the MidiBridge pushing live
+    // (magda_daw_main.cpp), which would leave the MIDI service pushing live
     // notes through a destroyed sink and the host rendering from a device it
     // never came off. Safe twice: every step below is.
     shutdown();
@@ -178,17 +179,20 @@ bool MagdaAudioEngine::initialize() {
         audioIO_->open();
     host_->start(audioIO_->getDeviceManager());
 
-    // The MidiBridge is a service both engines share, so the activity light and
-    // every live note are pointed at this engine's meters and this engine's
-    // queue rather than at the fork's.
-    auto* midi = fork_->getMidiBridge();
-    api_->setMidiBridge(midi);
-
-    if (midi != nullptr) {
-        midi->setMeters(&meters_);
-        midi->setLiveSink(this);
-        midi->onActiveInputsChanged = [this] { host_->refreshMidiInputs(); };
-    }
+    // The activity light and every live note are pointed at this engine's meters and
+    // this engine's queue rather than at the fork's, and the only virtual input is the
+    // QWERTY keyboard: nothing here holds Tracktion's (#2759).
+    auto& midi = MidiBridge::getInstance();
+    midi.useEngine(this, [] {
+        std::vector<MidiDeviceInfo> devices;
+        if (MidiBridge::getInstance().isQwertyEnabled())
+            devices.emplace_back(qwertyMidiDeviceId(), kQwertyMidiDeviceName, /*enabled=*/true);
+        return devices;
+    });
+    api_->setMidiBridge(&midi);
+    midi.setMeters(&meters_);
+    midi.setLiveSink(this);
+    midi.onActiveInputsChanged = [this] { host_->refreshMidiInputs(); };
 
     initialised_ = true;
     return true;
@@ -197,16 +201,28 @@ void MagdaAudioEngine::shutdown() {
     // Stop the service reaching the host before it is stopped or destroyed.
     PluginService::getInstance().forgetStateProvider(*this);
 
-    // The host is destroyed before the fork (member order), so the sink has to
-    // be gone before the queue behind it is. setLiveSink(nullptr) returns only
-    // once any in-flight MIDI callback has left.
-    if (auto* midi = fork_->getMidiBridge()) {
-        midi->onActiveInputsChanged = nullptr;
-        midi->setLiveSink(nullptr);
-        midi->setMeters(nullptr);
+    // The host is destroyed before the fork (member order), so the sink has to be gone
+    // before the queue behind it is. clearLiveSink returns only once any in-flight MIDI
+    // callback has left, which is what forgetEngine() then asserts. Unconditional, and
+    // conditional on being this engine's sink rather than on owning MIDI: the sink is
+    // this object, so it is owed the service whether or not another engine has since
+    // attached over it.
+    //
+    // The rest is the MIDI layer's, so it only runs while this engine is the one
+    // attached. shutdown() runs again from the destructor, and by then another engine may
+    // hold MIDI; unbinding its router or stopping its inputs is not this one's to do.
+    // Where this engine does still own it, it hands the service back here rather than
+    // leaving it to the fork below, having attached after the fork did. The router goes
+    // first so it unsubscribes before the inputs stop.
+    auto& midi = MidiBridge::getInstance();
+    midi.clearLiveSink(this);
+    if (midi.isAttachedTo(this)) {
+        MidiLearnCoordinator::getInstance().cancelLearn();
+        ControllerRouter::getInstance().shutdown();
+        midi.forgetEngine(this);
     }
 
-    // The bridge goes with the fork below, and the API outlives this call.
+    // The API outlives this call.
     api_->setMidiBridge(nullptr);
     audioIO_->removeListener(this);
 
@@ -446,12 +462,6 @@ EditReceipt MagdaAudioEngine::editHostedParameter(const ChainNodePath& devicePat
                                       std::move(completed));
 }
 
-MidiBridge* MagdaAudioEngine::getMidiBridge() {
-    return tracktion_->getMidiBridge();
-}
-const MidiBridge* MagdaAudioEngine::getMidiBridge() const {
-    return tracktion_->getMidiBridge();
-}
 MagdaApi& MagdaAudioEngine::getMagdaApi() {
     return *api_;
 }

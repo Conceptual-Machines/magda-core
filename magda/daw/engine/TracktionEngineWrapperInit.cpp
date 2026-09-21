@@ -361,10 +361,21 @@ bool TracktionEngineWrapper::initialiseServices() {
         juce::Logger::writeToLog("[Init] Headless mode: skipping audio/MIDI device startup");
     }
 
-    // MIDI device management and routing serve both engines, so the bridge is
-    // built here and not with the Edit (#2579).
-    midiBridge_ = std::make_unique<MidiBridge>(*engine_);
-    midiBridge_->setMeters(&meters_);
+    // MIDI is the app's service; this engine lends it the virtual devices Tracktion
+    // holds, which the system's MIDI list never carries (#2759). Enabled ones only: the
+    // routing selectors relist on midiDeviceListChanged, so the filter is effective.
+    auto& midiBridge = MidiBridge::getInstance();
+    midiBridge.useEngine(this, [this] {
+        std::vector<MidiDeviceInfo> devices;
+        for (const auto& device : engine_->getDeviceManager().getMidiInDevices()) {
+            if (dynamic_cast<te::VirtualMidiInputDevice*>(device.get()) == nullptr ||
+                !device->isEnabled())
+                continue;
+            devices.emplace_back(device->getDeviceID(), device->getName(), /*enabled=*/true);
+        }
+        return devices;
+    });
+    midiBridge.setMeters(&meters_);
 
     installProjectStateHooks();
 
@@ -508,8 +519,9 @@ bool TracktionEngineWrapper::initialisePlayback() {
     // Create AudioBridge for TrackManager synchronization
     audioBridge_ = std::make_unique<AudioBridge>(*engine_, *currentEdit_, meters_, deviceMeters_);
     audioBridge_->syncAll();
-    if (midiBridge_)
-        midiBridge_->onActiveInputsChanged = [this] { audioBridge_->refreshActiveMidiInputs(); };
+    MidiBridge::getInstance().onActiveInputsChanged = [this] {
+        audioBridge_->refreshActiveMidiInputs();
+    };
 
 #ifndef MAGDA_NO_AUTO_TEMPO_LANE_SYNC
     // Keep the edit-scoped Tempo automation lane and tempoSequence in sync.
@@ -547,8 +559,8 @@ bool TracktionEngineWrapper::initialisePlayback() {
     // Configure AudioBridge
     audioBridge_->enableAllMidiInputDevices();
 
-    midiBridge_->setAudioBridge(audioBridge_.get());
-    midiBridge_->setRecordingQueue(&recordingNoteQueue_, &transportPositionForMidi_);
+    MidiBridge::getInstance().setAudioBridge(audioBridge_.get());
+    MidiBridge::getInstance().setRecordingQueue(&recordingNoteQueue_, &transportPositionForMidi_);
 
     // Track-routed MIDI ("track:N" inputs) bypasses MidiBridge entirely, so the
     // recording preview for those tracks is fed by MidiInputRouter via TE input
@@ -562,7 +574,7 @@ bool TracktionEngineWrapper::initialisePlayback() {
     // Programmatic facade onto DAW state — shared with AI Chat panel and
     // app-level Lua controller wiring.
     auto live = std::make_unique<MagdaApiLive>();
-    live->setMidiBridge(midiBridge_.get());
+    live->setMidiBridge(&MidiBridge::getInstance());
     live->setProjectTempoWriter([this](double bpm) { setTempo(bpm); });
     live->setProjectTimeSignatureWriter(
         [this](int numerator, int denominator) { setTimeSignature(numerator, denominator); });
@@ -652,10 +664,25 @@ void TracktionEngineWrapper::shutdown() {
     ProjectManager::getInstance().onBeforeSave = std::move(previousBeforeSave_);
     ProjectManager::getInstance().onAfterLoad = std::move(previousAfterLoad_);
 
-    // Clear MidiBridge's reference to AudioBridge before destroying it
-    if (midiBridge_) {
-        midiBridge_->clearAudioBridge();
-        midiBridge_->onActiveInputsChanged = nullptr;
+    // Hand the MIDI service back BEFORE destroying the AudioBridge it was lent, and only
+    // when this wrapper is the one attached: a wrapper that never came up, or one the
+    // native engine has since layered over, would otherwise unwind the live engine's MIDI.
+    //
+    // Clearing the pointer is not enough on its own. A MIDI callback that already loaded
+    // it goes on holding it, so the AudioBridge has to outlive the drain rather than the
+    // store: forgetEngine() stops the inputs and does not return until every callback in
+    // flight has left. That also unregisters the CoreMIDI callbacks, which must happen
+    // while the MIDI devices still exist -- they are closed further down.
+    auto& midiBridge = MidiBridge::getInstance();
+    const bool ownsMidi = midiBridge.isAttachedTo(this);
+    if (ownsMidi) {
+        // Cancel any active MIDI Learn session before shutting down the router.
+        MidiLearnCoordinator::getInstance().cancelLearn();
+        // Shut down ControllerRouter before stopping MIDI inputs so it can unsubscribe
+        // cleanly.
+        ControllerRouter::getInstance().shutdown();
+        DBG("Stopping MIDI inputs...");
+        midiBridge.forgetEngine(this);
     }
 
     // Destroy AudioBridge first (it references Edit and Engine)
@@ -679,24 +706,6 @@ void TracktionEngineWrapper::shutdown() {
 
         DBG("Destroying Edit...");
         currentEdit_.reset();
-    }
-
-    // CRITICAL: Destroy MidiBridge AFTER freeing playback context but BEFORE
-    // closing devices. MidiBridge::~MidiBridge() stops all MIDI inputs first,
-    // which unregisters CoreMIDI callbacks. This must happen while the MIDI
-    // devices still exist, but after playback is stopped.
-    if (midiBridge_) {
-        // Cancel any active MIDI Learn session before shutting down the router.
-        MidiLearnCoordinator::getInstance().cancelLearn();
-        // Shut down ControllerRouter before stopping MIDI inputs so it can
-        // unsubscribe from MidiBridge cleanly. Only when it listens to this
-        // bridge: a second wrapper in a process must not unbind the first's.
-        if (ControllerRouter::getInstance().isBoundTo(midiBridge_.get()))
-            ControllerRouter::getInstance().shutdown();
-        DBG("Stopping MIDI inputs...");
-        midiBridge_->stopAllInputs();
-        DBG("Destroying MidiBridge...");
-        midiBridge_.reset();
     }
 
     // MagdaApi is a thin facade over singletons — safe to reset anytime,

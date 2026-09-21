@@ -37,7 +37,6 @@ class AudioIOControl;
 class InsertRenderCaptureService;
 
 class MagdaApi;
-class MidiBridge;
 struct TrackMeters;
 class UndoableCommand;
 
@@ -360,10 +359,6 @@ class AudioEngine : public AudioEngineListener {
     virtual bool hideDeviceEditor(const ChainNodePath& devicePath) = 0;
     virtual bool toggleDeviceEditor(const ChainNodePath& devicePath) = 0;
     virtual bool isDeviceEditorOpen(const ChainNodePath& devicePath) const = 0;
-
-    // ===== MIDI Management =====
-    virtual MidiBridge* getMidiBridge() = 0;
-    virtual const MidiBridge* getMidiBridge() const = 0;
 
     // ===== Application Services =====
     virtual MagdaApi& getMagdaApi() = 0;

@@ -412,23 +412,16 @@ MidiEditorContent::~MidiEditorContent() {
 // ============================================================================
 
 void MidiEditorContent::installMidiNoteMonitor() {
-    auto* engine = magda::TrackManager::getInstance().getAudioEngine();
-    auto* midiBridge = engine != nullptr ? engine->getMidiBridge() : nullptr;
-    if (midiBridge == nullptr)
+    if (midiNoteMonitorInstalled_)
         return;
 
-    if (midiNoteMonitorInstalled_ && monitoredMidiBridge_ == midiBridge)
-        return;
-
-    uninstallMidiNoteMonitor();
-
-    monitoredMidiBridge_ = midiBridge;
-    previousMidiNoteCallback_ = midiBridge->onNoteEvent;
+    auto& midiBridge = magda::MidiBridge::getInstance();
+    previousMidiNoteCallback_ = midiBridge.onNoteEvent;
     juce::Component::SafePointer<MidiEditorContent> safeThis(this);
     auto previousCallback = previousMidiNoteCallback_;
 
-    midiBridge->onNoteEvent = [safeThis, previousCallback](magda::TrackId trackId,
-                                                           const magda::MidiNoteEvent& event) {
+    midiBridge.onNoteEvent = [safeThis, previousCallback](magda::TrackId trackId,
+                                                          const magda::MidiNoteEvent& event) {
         if (previousCallback)
             previousCallback(trackId, event);
 
@@ -441,11 +434,10 @@ void MidiEditorContent::installMidiNoteMonitor() {
 }
 
 void MidiEditorContent::uninstallMidiNoteMonitor() {
-    if (midiNoteMonitorInstalled_ && monitoredMidiBridge_ != nullptr)
-        monitoredMidiBridge_->onNoteEvent = previousMidiNoteCallback_;
+    if (midiNoteMonitorInstalled_)
+        magda::MidiBridge::getInstance().onNoteEvent = previousMidiNoteCallback_;
 
     midiNoteMonitorInstalled_ = false;
-    monitoredMidiBridge_ = nullptr;
     previousMidiNoteCallback_ = nullptr;
 }
 

@@ -250,12 +250,8 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
 
             // Enable/disable the QWERTY device and notify the routing
             // selectors to refresh their cached device lists.
-            if (auto* engine = mainComponent->getAudioEngine()) {
-                if (auto* mb = engine->getMidiBridge()) {
-                    mb->setQwertyEnabled(enabled);
-                    mb->notifyMidiDeviceListChanged();
-                }
-            }
+            MidiBridge::getInstance().setQwertyEnabled(enabled);
+            MidiBridge::getInstance().notifyMidiDeviceListChanged();
             DBG("QWERTY keyboard " << (enabled ? "ON" : "OFF"));
         };
     }
@@ -611,11 +607,6 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
 
     // Initialize TrackManager with audio engine for routing operations
     TrackManager::getInstance().setAudioEngine(externalEngine);
-
-    // Wire MidiBridge to DebugDialog for MIDI monitor
-    if (externalEngine) {
-        daw::ui::DebugDialog::setMidiBridge(externalEngine->getMidiBridge());
-    }
 
     // Initialize panel sizes from LayoutConfig, scaled to display size
     auto& layout = LayoutConfig::getInstance();
@@ -1199,9 +1190,7 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
     // onQwertyKeyboardToggled callback set in the MainWindow constructor
     // (after setContentOwned) so the key listener registers on the
     // DocumentWindow, not on MainComponent.
-    if (auto* midiBridge = engine->getMidiBridge()) {
-        qwertyKeyboard_ = std::make_unique<QwertyMidiKeyboard>(*midiBridge);
-    }
+    qwertyKeyboard_ = std::make_unique<QwertyMidiKeyboard>();
 
     transportPanel->onTempoChange = [this](double bpm) {
         mainView->getTimelineController().dispatch(SetTempoEvent{bpm});

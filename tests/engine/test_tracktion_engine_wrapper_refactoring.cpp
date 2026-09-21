@@ -131,10 +131,6 @@ TEST_CASE("TracktionEngineWrapper - Bridge access after refactoring",
         REQUIRE_NOTHROW(wrapper.getAudioBridge());
     }
 
-    SECTION("MidiBridge is accessible after initialization") {
-        REQUIRE_NOTHROW(wrapper.getMidiBridge());
-    }
-
     SECTION("PluginWindowManager is accessible after initialization") {
         REQUIRE_NOTHROW(wrapper.getPluginWindowManager());
     }

@@ -358,13 +358,13 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
     selector->setOptions(options);
 }
 
-inline void populateMidiInputOptions(RoutingSelector* selector, MidiBridge* midiBridge,
+inline void populateMidiInputOptions(RoutingSelector* selector,
                                      TrackId currentTrackId = INVALID_TRACK_ID,
                                      std::map<int, TrackId>* outMidiInputTrackMapping = nullptr) {
-    if (!selector || !midiBridge)
+    if (!selector)
         return;
 
-    auto midiInputs = midiBridge->getAvailableMidiInputs();
+    auto midiInputs = MidiBridge::getInstance().getAvailableMidiInputs();
 
     std::vector<RoutingSelector::RoutingOption> options;
     options.push_back({1, "All Inputs"});
@@ -411,13 +411,13 @@ inline void populateMidiInputOptions(RoutingSelector* selector, MidiBridge* midi
     selector->setOptions(options);
 }
 
-inline void populateMidiOutputOptions(RoutingSelector* selector, MidiBridge* midiBridge,
+inline void populateMidiOutputOptions(RoutingSelector* selector,
                                       std::map<int, TrackId>& outTrackMapping,
                                       TrackId currentTrackId = INVALID_TRACK_ID) {
-    if (!selector || !midiBridge)
+    if (!selector)
         return;
 
-    auto midiOutputs = midiBridge->getAvailableMidiOutputs();
+    auto midiOutputs = MidiBridge::getAvailableMidiOutputs();
 
     std::vector<RoutingSelector::RoutingOption> options;
     options.push_back({1, "None"});
@@ -466,7 +466,7 @@ inline void populateMidiOutputOptions(RoutingSelector* selector, MidiBridge* mid
 inline void syncSelectorsFromTrack(const TrackInfo& track, RoutingSelector* audioInSelector,
                                    RoutingSelector* midiInSelector,
                                    RoutingSelector* audioOutSelector,
-                                   RoutingSelector* midiOutSelector, MidiBridge* midiBridge,
+                                   RoutingSelector* midiOutSelector,
                                    const HardwareChannels* hardware, TrackId currentTrackId,
                                    std::map<int, TrackId>& outputTrackMapping,
                                    std::map<int, TrackId>& midiOutputTrackMapping,
@@ -533,7 +533,7 @@ inline void syncSelectorsFromTrack(const TrackInfo& track, RoutingSelector* audi
     // Update MIDI Input selector
     if (midiInSelector) {
         // Always re-populate with the current track context (see audio note above).
-        populateMidiInputOptions(midiInSelector, midiBridge, currentTrackId, midiInputTrackMapping);
+        populateMidiInputOptions(midiInSelector, currentTrackId, midiInputTrackMapping);
         if (!hasMidiInput) {
             midiInSelector->setSelectedId(2);  // "None"
             midiInSelector->setEnabled(false);
@@ -552,8 +552,8 @@ inline void syncSelectorsFromTrack(const TrackInfo& track, RoutingSelector* audi
             }
             midiInSelector->setSelectedId(selectedId);
             midiInSelector->setEnabled(selectedId != 2);
-        } else if (midiBridge) {
-            auto midiInputs = midiBridge->getAvailableMidiInputs();
+        } else {
+            auto midiInputs = MidiBridge::getInstance().getAvailableMidiInputs();
             int selectedId = 2;
             for (size_t i = 0; i < midiInputs.size(); ++i) {
                 if (midiInputs[i].id == track.midiInputDevice) {
@@ -661,8 +661,7 @@ inline void syncSelectorsFromTrack(const TrackInfo& track, RoutingSelector* audi
     // Update MIDI Output selector
     if (midiOutSelector) {
         // Always re-populate with the current track context (see audio note above).
-        populateMidiOutputOptions(midiOutSelector, midiBridge, midiOutputTrackMapping,
-                                  currentTrackId);
+        populateMidiOutputOptions(midiOutSelector, midiOutputTrackMapping, currentTrackId);
 
         // Mirror view of internal MIDI routing: if another track listens to
         // this track ("track:<id>" MIDI input), show that destination on the
@@ -692,8 +691,8 @@ inline void syncSelectorsFromTrack(const TrackInfo& track, RoutingSelector* audi
             midiOutSelector->setEnabled(selectedId != 1);
         } else if (currentMidiOutput.isEmpty()) {
             midiOutSelector->setSelectedId(1);  // "None"
-        } else if (midiBridge) {
-            auto midiOutputs = midiBridge->getAvailableMidiOutputs();
+        } else {
+            auto midiOutputs = MidiBridge::getAvailableMidiOutputs();
             int selectedId = 1;
             for (size_t i = 0; i < midiOutputs.size(); ++i) {
                 if (midiOutputs[i].id == currentMidiOutput) {

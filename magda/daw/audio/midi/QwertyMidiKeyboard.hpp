@@ -7,8 +7,6 @@
 
 namespace magda {
 
-class MidiBridge;
-
 /**
  * @brief Maps QWERTY keyboard keys to MIDI notes and plays them via MidiBridge.
  *
@@ -23,7 +21,7 @@ class MidiBridge;
  */
 class QwertyMidiKeyboard : public juce::KeyListener {
   public:
-    explicit QwertyMidiKeyboard(MidiBridge& midiBridge);
+    QwertyMidiKeyboard() = default;
     ~QwertyMidiKeyboard() override;
 
     void setEnabled(bool enabled);
@@ -60,7 +58,6 @@ class QwertyMidiKeyboard : public juce::KeyListener {
     void sendNoteOff(int note);
     void allNotesOff();
 
-    MidiBridge& midiBridge_;
     bool enabled_ = false;
     int baseOctave_ = 3;
     int velocity_ = 100;
