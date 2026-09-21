@@ -13,6 +13,7 @@
 #include "../core/UndoManager.hpp"  // complete type for the unique_ptr this forwards
 #include "../core/controllers/MidiLearnCoordinator.hpp"
 #include "../music/GrooveLibrary.hpp"
+#include "AppServices.hpp"
 #include "PluginService.hpp"
 #include "RenderProgressWindow.hpp"
 #include "TracktionEngineWrapper.hpp"
@@ -43,7 +44,7 @@ magda::daw::engine_host::EngineHost::HardwareChannelCatalog hardwareCatalog(
 
 namespace magda {
 
-MagdaAudioEngine::MagdaAudioEngine(AudioEngineOptions options) {
+MagdaAudioEngine::MagdaAudioEngine(AudioEngineOptions options) : headless_(options.headless) {
     // The option has to reach the wrapper before initialize(), or a headless
     // caller that picked this engine opens devices, builds GUI services and
     // starts a plugin scan. The CLI is such a caller.
@@ -126,6 +127,8 @@ MagdaAudioEngine::~MagdaAudioEngine() {
 // remaining services and what nothing answers yet, each named with its issue.
 
 bool MagdaAudioEngine::initialize() {
+    app_services::bringUp();
+
     // Services alone: an Edit would come with a playback context, an
     // AudioBridge mirroring every device into it and a second copy of every
     // external plugin (#2579).
@@ -176,7 +179,7 @@ bool MagdaAudioEngine::initialize() {
     host_->setHardwareOutputProvider([this] { return hardwareCatalog(*audioIO_, false); });
     host_->setHardwareInputProvider([this] { return hardwareCatalog(*audioIO_, true); });
     audioIO_->addListener(this);
-    if (!fork_->isHeadlessRuntime())
+    if (!app_services::isHeadless(headless_))
         audioIO_->open();
     host_->start(audioIO_->getDeviceManager());
 

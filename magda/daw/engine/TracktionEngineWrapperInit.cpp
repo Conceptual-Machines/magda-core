@@ -10,13 +10,8 @@
 #include "../audio/session/SessionClipScheduler.hpp"
 #include "../audio/session/SessionRecorder.hpp"
 #include "../core/Config.hpp"
-#include "../core/ViewModeController.hpp"
-#include "../core/controllers/BindingRegistry.hpp"
-#include "../core/controllers/ControllerProfileRegistry.hpp"
 #include "../core/controllers/MidiLearnCoordinator.hpp"
-#include "../project/ProjectManager.hpp"
-#include "../ui/state/TimelineController.hpp"
-#include "../ui/state/TimelineEvents.hpp"
+#include "AppServices.hpp"
 #include "AudioEngineChoice.hpp"
 #if MAGDA_HAS_NATIVE_ENGINE
     #include "MagdaAudioEngine.hpp"
@@ -73,18 +68,7 @@ std::unique_ptr<AudioEngine> createDefaultAudioEngine(AudioEngineOptions options
 }
 
 bool TracktionEngineWrapper::isHeadlessRuntime() const {
-    if (forceHeadless_)
-        return true;
-
-    if (auto* value = std::getenv("MAGDA_HEADLESS")) {
-        juce::String flag(value);
-        flag = flag.trim().toLowerCase();
-        if (flag.isNotEmpty() && flag != "0" && flag != "false" && flag != "off" && flag != "no") {
-            return true;
-        }
-    }
-
-    return false;
+    return app_services::isHeadless(forceHeadless_);
 }
 
 void TracktionEngineWrapper::initializePluginFormats() {
@@ -316,19 +300,8 @@ bool TracktionEngineWrapper::initialiseServices() {
         std::make_unique<MagdaEngineBehaviour>(opensAudioInterface_));
     audioIO_ = std::make_unique<TracktionAudioIO>(engine_->getDeviceManager());
 
-    // Here rather than in the AudioBridge's constructor, which is the fork's
-    // and is never built under the native engine (#2600). The provider asks
-    // whichever engine renders a device, so the registration belongs with the
-    // services both of them start.
-    installDeviceParameterDisplayTextProviderFactory();
-
-    // Load config early so preferred device settings are available
-    juce::Logger::writeToLog("[Init] Loading config...");
-    magda::Config::getInstance().load();
-
-    // Load hardware controller profiles (bundled + user)
-    juce::Logger::writeToLog("[Init] Loading controller profiles...");
-    magda::ControllerProfileRegistry::getInstance().load();
+    // Config before the devices, whose preferred settings it holds.
+    app_services::bringUp();
 
     // Initialize plugin formats and load plugin list
     juce::Logger::writeToLog("[Init] initializePluginFormats()...");
@@ -377,12 +350,12 @@ bool TracktionEngineWrapper::initialiseServices() {
     });
     midiBridge.setMeters(&meters_);
 
-    installProjectStateHooks();
+    lendEngineServices();
 
     return engine_ != nullptr;
 }
 
-void TracktionEngineWrapper::installProjectStateHooks() {
+void TracktionEngineWrapper::lendEngineServices() {
     // What this engine answers for, off the services that own each concern (#2757). The
     // native engine registers its own formatter over this one when it comes up.
     GrooveLibrary::getInstance().setStore(
@@ -397,76 +370,6 @@ void TracktionEngineWrapper::installProjectStateHooks() {
         [this](const ChainNodePath& devicePath, int paramIndex, float normalised) {
             return formatDeviceParameter(devicePath, paramIndex, normalised);
         });
-
-    previousBeforeSave_ = std::move(ProjectManager::getInstance().onBeforeSave);
-    previousAfterLoad_ = std::move(ProjectManager::getInstance().onAfterLoad);
-
-    // Wire up state capture before project save
-    ProjectManager::getInstance().onBeforeSave = []() {
-        // The service is fed by whichever engine renders: only that instance
-        // holds the chunk a project saves (#2758).
-        PluginService::getInstance().captureAllPluginStates();
-
-        // Capture zoom/scroll state
-        if (auto* tc = TimelineController::getCurrent()) {
-            const auto& timelineState = tc->getState();
-            const auto& zoom = timelineState.zoom;
-            auto& proj = ProjectManager::getInstance().getMutableProjectInfo();
-            proj.horizontalZoom = zoom.horizontalZoom;
-            proj.verticalZoom = zoom.verticalZoom;
-            proj.scrollX = zoom.scrollX;
-            proj.scrollY = zoom.scrollY;
-
-            proj.markers.clear();
-            proj.markers.reserve(timelineState.markers.size());
-            for (const auto& marker : timelineState.markers) {
-                ProjectTimelineMarker projectMarker;
-                projectMarker.id = marker.id;
-                projectMarker.positionBeats = marker.positionBeats;
-                projectMarker.name = marker.name;
-                projectMarker.colourArgb = marker.colour.getARGB();
-                proj.markers.push_back(projectMarker);
-            }
-        }
-
-        // Capture active view mode
-        auto viewMode = ViewModeController::getInstance().getViewMode();
-        ProjectManager::getInstance().getMutableProjectInfo().activeView =
-            static_cast<int>(viewMode);
-
-        // Capture project-scoped bindings
-        ProjectManager::getInstance().getMutableProjectInfo().projectBindings =
-            BindingRegistry::getInstance().saveProject();
-    };
-
-    // Wire up state restore after project load
-    ProjectManager::getInstance().onAfterLoad = [](const ProjectInfo& info) {
-        // Restore active view mode
-        auto viewMode = static_cast<ViewMode>(info.activeView);
-        ViewModeController::getInstance().setViewMode(viewMode);
-
-        // Restore project-scoped bindings
-        BindingRegistry::getInstance().loadProject(info.projectBindings);
-
-        // Restore zoom/scroll state
-        if (info.horizontalZoom > 0.0) {
-            double hz = info.horizontalZoom;
-            int sx = info.scrollX;
-            int sy = info.scrollY;
-            // Try immediate dispatch first
-            if (auto* tc = TimelineController::getCurrent()) {
-                tc->dispatch(SetZoomEvent{hz});
-                tc->dispatch(SetScrollPositionEvent{sx, sy});
-            }
-            // Also defer to catch cases where UI isn't ready yet
-            juce::MessageManager::callAsync([hz, sx, sy]() {
-                if (auto* tc = TimelineController::getCurrent()) {
-                    tc->dispatch(SetZoomEvent{hz});
-                    tc->dispatch(SetScrollPositionEvent{sx, sy});
-                }
-            });
-        }
-    };
 }
 
 bool TracktionEngineWrapper::initialisePlayback() {
@@ -644,11 +547,6 @@ void TracktionEngineWrapper::shutdown() {
     if (sessionScheduler_) {
         sessionScheduler_.reset();
     }
-
-    // Put back whatever save/load hooks were there before this installed its
-    // own, before destroying the AudioBridge they capture.
-    ProjectManager::getInstance().onBeforeSave = std::move(previousBeforeSave_);
-    ProjectManager::getInstance().onAfterLoad = std::move(previousAfterLoad_);
 
     // Hand the MIDI service back BEFORE destroying the AudioBridge it was lent, and only
     // when this wrapper is the one attached: a wrapper that never came up, or one the

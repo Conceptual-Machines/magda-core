@@ -234,6 +234,9 @@ class MagdaAudioEngine final : public AudioEngine,
     /// means with no Edit to ask.
     bool initialised_ = false;
 
+    /// Asked to run without devices or a UI (app_services::isHeadless).
+    bool headless_ = false;
+
     /// Last frame's transport, for the play-start and loop edges modulators
     /// retrigger on.
     bool wasPlaying_ = false;

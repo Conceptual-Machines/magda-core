@@ -485,8 +485,8 @@ class TracktionEngineWrapper : public AudioEngine,
     void configureAudioDevices();
     void setupMidiDevices();
 
-    /** @brief Install ProjectManager's save and load hooks. */
-    void installProjectStateHooks();
+    /** @brief Lend the services what this engine answers for (#2757). */
+    void lendEngineServices();
 
     // Change listener helper methods
     void handleMidiDeviceChanges(tracktion::DeviceManager& dm);
@@ -603,11 +603,6 @@ class TracktionEngineWrapper : public AudioEngine,
     void createSessionSlotPreview(TrackId trackId, int sceneIndex);
 
     std::atomic<bool> offlineRenderActive_{false};  // an offline render owns the edit
-
-    /// The save and load hooks as they were before this installed its own, put
-    /// back at shutdown so a second wrapper in a process does not strip the first's.
-    std::function<void()> previousBeforeSave_;
-    std::function<void(const ProjectInfo&)> previousAfterLoad_;
 
     JUCE_DECLARE_WEAK_REFERENCEABLE(TracktionEngineWrapper)
 };
