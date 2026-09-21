@@ -622,6 +622,9 @@ target_include_directories(magda_tracktion_compat_devices PRIVATE
 )
 target_compile_definitions(magda_tracktion_compat_devices PRIVATE
     $<TARGET_PROPERTY:tracktion::tracktion_engine,INTERFACE_COMPILE_DEFINITIONS>
+    # JUCE_LOG_ASSERTIONS changes Tracktion Plugin's layout. Keep this pack's
+    # derived Plugin classes ABI-compatible with the Plugin compiled in magda_daw.
+    $<$<BOOL:${MAGDA_BUILD_TESTS}>:JUCE_LOG_ASSERTIONS=1>
 )
 target_link_libraries(magda_tracktion_compat_devices
     PRIVATE
