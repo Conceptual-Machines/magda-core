@@ -724,6 +724,8 @@ bool renderProjectAudio(magda::AudioEngine& engine, const RenderOptions& options
     request.dither = options.dither;
     request.sampleRate = options.sampleRate.value_or(projectInfo.sampleRate);
     request.range = {{startBeat}, {endBeat}};
+    if (!options.fromBeat && !options.toBeat)
+        request.oneShot = true;
 
     auto session = engine.createOfflineRenderSession(false);
     auto task = session ? session->createTask(request) : nullptr;

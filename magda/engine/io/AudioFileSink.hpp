@@ -10,6 +10,7 @@
 
 #include "exec/OfflineRender.hpp"
 #include "exec/RenderContext.hpp"
+#include "io/AudioFileMetadata.hpp"
 #include "io/PcmQuantiser.hpp"
 
 /**
@@ -54,6 +55,9 @@ struct AudioFileSpec {
     /// Unset lets the depth decide, which is what a caller with no opinion
     /// wants: TPDF wherever the target quantises, nothing at 32-bit float.
     std::optional<DitherMode> dither;
+
+    /// Used by WAV. JUCE's FLAC writer does not store caller metadata.
+    AudioFileMetadata metadata;
 };
 
 /// What a depth is dithered with when the spec does not say.

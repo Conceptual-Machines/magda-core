@@ -15,6 +15,7 @@
 #include "exec/RenderContext.hpp"
 #include "io/AudioFileSink.hpp"
 #include "io/PcmQuantiser.hpp"
+#include "io/SourceLoopInfo.hpp"
 
 /**
  * @file test_audio_file_sink.cpp
@@ -164,6 +165,89 @@ TEST_CASE("A float file holds the render's own samples", "[engine][io][render][2
         source);
 
     requireSame(readBack(file), source);
+}
+
+TEST_CASE("A rendered WAV reports its musical facts on re-import", "[engine][io][2771]") {
+    AudioFileSpec spec;
+    spec.bitDepth = 32;
+    spec.metadata.tempo = 120.0;
+    spec.metadata.beats = 4.0;
+    spec.metadata.numerator = 6;
+    spec.metadata.denominator = 8;
+    spec.metadata.keyRoot = 9;
+    spec.metadata.keyQuality = 1;
+    spec.metadata.oneShot = true;
+    spec.metadata.description = "MAGDA test render";
+    spec.metadata.originator = "MAGDA test";
+
+    auto file = writeThrough("musical.wav", spec, material(2, 88200));
+    juce::WavAudioFormat wav;
+    std::unique_ptr<juce::AudioFormatReader> reader(
+        wav.createReaderFor(file.createInputStream().release(), true));
+    REQUIRE(reader != nullptr);
+    const auto& values = reader->metadataValues;
+    CHECK(values[juce::WavAudioFormat::bwavDescription] == "MAGDA test render");
+    CHECK(values[juce::WavAudioFormat::bwavOriginator] == "MAGDA test");
+    CHECK(values[juce::WavAudioFormat::bwavOriginationDate].isNotEmpty());
+    CHECK(values[juce::WavAudioFormat::bwavOriginationTime].isNotEmpty());
+    CHECK(values[juce::WavAudioFormat::riffInfoKeywords] == "A minor");
+    CHECK(values[juce::WavAudioFormat::acidizerFlag] == "1");
+
+    const auto info =
+        magda::engine::loopInfoFrom(values, reader->sampleRate, reader->lengthInSamples);
+    REQUIRE(info.bpm);
+    CHECK(*info.bpm == 120.0);
+    REQUIRE(info.numBeats);
+    CHECK(*info.numBeats == 4.0);
+    CHECK(info.numerator == 6);
+    CHECK(info.denominator == 8);
+    CHECK(info.rootNote == 69);
+    CHECK(info.oneShot == true);
+
+    spec.metadata.tempo = 75.0;
+    spec.metadata.beats = 2.5;
+    file = writeThrough("partial-beats.wav", spec, material(2, 88200));
+    reader.reset(wav.createReaderFor(file.createInputStream().release(), true));
+    REQUIRE(reader != nullptr);
+    const auto partial = magda::engine::loopInfoFrom(reader->metadataValues, reader->sampleRate,
+                                                     reader->lengthInSamples);
+    REQUIRE(partial.numBeats);
+    CHECK(*partial.numBeats == 2.5);
+}
+
+TEST_CASE("A WAV without render metadata has no BWF chunk", "[engine][io][2771]") {
+    const auto file = writeThrough("plain-take.wav", {}, material(1, 128));
+    juce::WavAudioFormat wav;
+    std::unique_ptr<juce::AudioFormatReader> reader(
+        wav.createReaderFor(file.createInputStream().release(), true));
+    REQUIRE(reader != nullptr);
+    CHECK_FALSE(reader->metadataValues.containsKey(juce::WavAudioFormat::bwavDescription));
+}
+
+TEST_CASE("BWF text is cut to what the chunk can hold", "[engine][io][2771]") {
+    // The originator is "MAGDA " plus a git-describe version, which grows with
+    // the commit count: over 32 bytes JUCE cuts it, and a caller comparing what
+    // it asked for against what came back would call a good render a failure.
+    magda::engine::AudioFileMetadata facts;
+    facts.originator = "MAGDA 1.234.567-8901-gabcdef012-dirty";
+    facts.description = juce::String::repeatedString("x", 300);
+
+    const auto values = magda::engine::wavMetadataFor(facts);
+    CHECK(values.at(juce::WavAudioFormat::bwavOriginator).getNumBytesAsUTF8() == 32);
+    CHECK(values.at(juce::WavAudioFormat::bwavDescription).getNumBytesAsUTF8() == 256);
+
+    AudioFileSpec spec;
+    spec.bitDepth = 32;
+    spec.metadata = facts;
+    const auto file = writeThrough("long-bwf-text.wav", spec, material(1, 128));
+    juce::WavAudioFormat wav;
+    std::unique_ptr<juce::AudioFormatReader> reader(
+        wav.createReaderFor(file.createInputStream().release(), true));
+    REQUIRE(reader != nullptr);
+    CHECK(reader->metadataValues[juce::WavAudioFormat::bwavOriginator] ==
+          values.at(juce::WavAudioFormat::bwavOriginator));
+    CHECK(reader->metadataValues[juce::WavAudioFormat::bwavDescription] ==
+          values.at(juce::WavAudioFormat::bwavDescription));
 }
 
 TEST_CASE("A fixed-point file is dithered unless the caller says otherwise",

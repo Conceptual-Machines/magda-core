@@ -114,13 +114,15 @@ std::unique_ptr<AudioFileSink> AudioFileSink::create(const juce::File& destinati
     std::unique_ptr<juce::OutputStream> stream =
         std::make_unique<ReportingStream>(std::move(file), report);
 
-    const auto options =
+    auto options =
         juce::AudioFormatWriterOptions()
             .withSampleRate(context.sampleRate)
             .withNumChannels(channels)
             .withBitsPerSample(spec.bitDepth)
             .withSampleFormat(floating ? juce::AudioFormatWriterOptions::SampleFormat::floatingPoint
                                        : juce::AudioFormatWriterOptions::SampleFormat::integral);
+    if (spec.format == AudioFileFormat::wav)
+        options = options.withMetadataValues(wavMetadataFor(spec.metadata));
 
     auto* handedOver = stream.get();
     auto writer = format->createWriterFor(stream, options);

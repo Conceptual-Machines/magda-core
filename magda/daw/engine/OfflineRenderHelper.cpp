@@ -1,11 +1,15 @@
 #include "OfflineRenderHelper.hpp"
 
 #include <algorithm>
+#include <cmath>
+#include <unordered_map>
 #include <utility>
 
 #include "../audio/AudioBridge.hpp"
+#include "../audio/RenderFileMetadata.hpp"
 #include "../audio/plugins/InsertCapturePlugin.hpp"
 #include "../audio/racks/InstrumentRackManager.hpp"
+#include "../project/ProjectManager.hpp"
 #include "TracktionEngineWrapper.hpp"
 
 namespace magda {
@@ -73,15 +77,21 @@ void restorePluginsAfterOfflineRender(TracktionEngineWrapper& engine) {
 constexpr double kPrerollSeconds = 2.0;
 
 /**
- * @brief Cut the first @p seconds off @p file, rewriting it at its own format.
+ * @brief Cut the first @p seconds from @p file after Tracktion's render.
  *
  * Tracktion's renderer starts where it is told, so the preroll lands in the file.
  */
-bool trimLeadingSeconds(const juce::File& file, double seconds) {
-    juce::AudioFormatManager formatManager;
-    formatManager.registerBasicFormats();
+bool trimLeadingSeconds(const juce::File& file, double seconds, OfflineRenderFormat outputFormat) {
+    std::unique_ptr<juce::AudioFormat> format;
+    if (outputFormat == OfflineRenderFormat::Flac)
+        format = std::make_unique<juce::FlacAudioFormat>();
+    else
+        format = std::make_unique<juce::WavAudioFormat>();
 
-    std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(file));
+    auto input = file.createInputStream();
+    if (input == nullptr)
+        return false;
+    std::unique_ptr<juce::AudioFormatReader> reader(format->createReaderFor(input.release(), true));
     if (!reader)
         return false;
 
@@ -90,32 +100,89 @@ bool trimLeadingSeconds(const juce::File& file, double seconds) {
     if (samplesToKeep <= 0)
         return false;
 
-    const auto tempFile =
-        file.getSiblingFile(file.getFileNameWithoutExtension() + "_tmp" + file.getFileExtension());
+    const juce::TemporaryFile temporary(file);
+    const auto tempFile = temporary.getFile();
 
-    std::unique_ptr<juce::AudioFormat> format;
-    if (file.hasFileExtension(".flac"))
-        format = std::make_unique<juce::FlacAudioFormat>();
-    else
-        format = std::make_unique<juce::WavAudioFormat>();
-
-    std::unique_ptr<juce::OutputStream> outputStream =
-        std::make_unique<juce::FileOutputStream>(tempFile);
-    auto writerOptions = juce::AudioFormatWriterOptions()
-                             .withSampleRate(reader->sampleRate)
-                             .withNumChannels(static_cast<int>(reader->numChannels))
-                             .withBitsPerSample(static_cast<int>(reader->bitsPerSample));
+    auto opened = std::make_unique<juce::FileOutputStream>(tempFile);
+    if (!opened->openedOk())
+        return false;
+    std::unique_ptr<juce::OutputStream> outputStream = std::move(opened);
+    auto writerOptions =
+        juce::AudioFormatWriterOptions()
+            .withSampleRate(reader->sampleRate)
+            .withNumChannels(static_cast<int>(reader->numChannels))
+            .withBitsPerSample(static_cast<int>(reader->bitsPerSample))
+            .withSampleFormat(reader->usesFloatingPointData
+                                  ? juce::AudioFormatWriterOptions::SampleFormat::floatingPoint
+                                  : juce::AudioFormatWriterOptions::SampleFormat::integral);
+    if (outputFormat == OfflineRenderFormat::Wav) {
+        std::unordered_map<juce::String, juce::String> values;
+        for (int i = 0; i < reader->metadataValues.size(); ++i)
+            values.emplace(reader->metadataValues.getAllKeys()[i],
+                           reader->metadataValues.getAllValues()[i]);
+        writerOptions = writerOptions.withMetadataValues(values);
+    }
     auto writer = format->createWriterFor(outputStream, writerOptions);
     if (!writer)
         return false;
 
-    writer->writeFromAudioReader(*reader, samplesToSkip, samplesToKeep);
+    const bool written = writer->writeFromAudioReader(*reader, samplesToSkip, samplesToKeep);
     writer.reset();
     reader.reset();
+    if (!written)
+        return false;
 
-    file.deleteFile();
-    return tempFile.moveFileTo(file);
+    auto checkInput = tempFile.createInputStream();
+    if (checkInput == nullptr)
+        return false;
+    std::unique_ptr<juce::AudioFormatReader> check(
+        format->createReaderFor(checkInput.release(), true));
+    if (check == nullptr || check->lengthInSamples != samplesToKeep)
+        return false;
+    check.reset();
+
+    return temporary.overwriteTargetFileWithTemporary();
 }
+
+}  // namespace
+
+// Tracktion adds its own BWF block just before opening the writer, replacing
+// the description, originator, and time reference supplied in Parameters.
+// Its block and ours have the same fixed size, so JUCE replaces only that
+// header region without decoding and rewriting the audio.
+bool restoreTracktionWavMetadata(const juce::File& file, const juce::StringPairArray& intended) {
+    juce::WavAudioFormat wav;
+    auto input = file.createInputStream();
+    if (input == nullptr)
+        return false;
+    std::unique_ptr<juce::AudioFormatReader> reader(wav.createReaderFor(input.release(), true));
+    if (reader == nullptr)
+        return false;
+    // No block to put back: Tracktion overwrote nothing, so there is nothing
+    // here to call a failure.
+    if (!reader->metadataValues.containsKey(juce::WavAudioFormat::bwavDescription))
+        return true;
+    reader.reset();
+
+    if (!wav.replaceMetadataInFile(file, intended))
+        return false;
+
+    input = file.createInputStream();
+    if (input == nullptr)
+        return false;
+    reader.reset(wav.createReaderFor(input.release(), true));
+    if (reader == nullptr)
+        return false;
+    const auto& stored = reader->metadataValues;
+    return stored[juce::WavAudioFormat::bwavDescription] ==
+               intended[juce::WavAudioFormat::bwavDescription] &&
+           stored[juce::WavAudioFormat::bwavOriginator] ==
+               intended[juce::WavAudioFormat::bwavOriginator] &&
+           stored[juce::WavAudioFormat::bwavTimeReference].getLargeIntValue() ==
+               intended[juce::WavAudioFormat::bwavTimeReference].getLargeIntValue();
+}
+
+namespace {
 
 /** @brief The longest tail a plugin on the tracks in @p tracksToDo declares. */
 tracktion::TimeDuration declaredTail(tracktion::Edit& edit, const juce::BigInteger& tracksToDo) {
@@ -158,6 +225,28 @@ class TracktionOfflineRenderTask final : public OfflineRenderTask {
         const auto start =
             tempo.toTime(tracktion::BeatPosition::fromBeats(request_.range.start.value));
         const auto end = tempo.toTime(tracktion::BeatPosition::fromBeats(request_.range.end.value));
+        if (request_.format == OfflineRenderFormat::Wav) {
+            auto facts = renderFileMetadata(ProjectManager::getInstance().getCurrentProjectInfo(),
+                                            0.0, "MAGDA offline render");
+            facts.tempo = tempo.getTempoAt(start).getBpm();
+            facts.beats = request_.range.end.value - request_.range.start.value;
+            const auto& signature = tempo.getTimeSigAt(start);
+            facts.numerator = signature.numerator.get();
+            facts.denominator = signature.denominator.get();
+            facts.oneShot = request_.oneShot;
+            if (request_.leadInSeconds > 0.0) {
+                // ACID has no offset for the silence before the musical range.
+                // Leave tempo and beat count to inference rather than claiming
+                // that its first sample is the downbeat.
+                facts.tempo.reset();
+                facts.beats.reset();
+            }
+            for (const auto& [key, value] : engine::wavMetadataFor(facts))
+                params_.metadata.set(key, value);
+            params_.metadata.set(juce::WavAudioFormat::bwavTimeReference,
+                                 juce::String(static_cast<juce::int64>(
+                                     std::llround(start.inSeconds() * request_.sampleRate))));
+        }
         params_.time =
             tracktion::TimeRange(start - tracktion::TimeDuration::fromSeconds(
                                              request_.realTimeRender ? 0.0 : kPrerollSeconds),
@@ -198,8 +287,12 @@ class TracktionOfflineRenderTask final : public OfflineRenderTask {
             return {false, task.errorMessage};
         if (!request_.destination.existsAsFile() || request_.destination.getSize() <= 0)
             return {false, "Render did not create an output file"};
-        if (trimSeconds_ > 0.0 && !trimLeadingSeconds(request_.destination, trimSeconds_))
-            return {false, "Render could not trim its preroll"};
+        if (trimSeconds_ > 0.0 &&
+            !trimLeadingSeconds(request_.destination, trimSeconds_, request_.format))
+            return {false, "Could not finalise the rendered file"};
+        if (request_.format == OfflineRenderFormat::Wav &&
+            !restoreTracktionWavMetadata(request_.destination, params_.metadata))
+            return {false, "Could not write the rendered file metadata"};
         if (onProgress)
             onProgress(1.0f);
         return {true, {}};
