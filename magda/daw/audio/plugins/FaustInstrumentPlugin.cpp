@@ -245,7 +245,10 @@ std::shared_ptr<FaustInstrumentPlugin::FaustState> FaustInstrumentPlugin::compil
     // Passthrough by contract, without entering libfaust. See FaustResources.hpp.
     // The stdfaust injection below is skipped in that mode for the same
     // reason: it would turn a self-contained source into an importing one.
-    if (faustLibraryImportsDisallowed() && source.contains("import(")) {
+    // `library("...")` reaches the same -I search path as `import(`, so both
+    // forms have to be refused here.
+    if (faustLibraryImportsDisallowed() &&
+        (source.contains("import(") || source.contains("library("))) {
         errorOut = "Faust library imports are disallowed in this process";
         return nullptr;
     }

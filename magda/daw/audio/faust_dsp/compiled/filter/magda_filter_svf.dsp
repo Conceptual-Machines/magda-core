@@ -4,9 +4,9 @@ declare license "GPL-3.0";
 declare version "1.0";
 
 import("stdfaust.lib");
-ms = library("magda_smoothing.lib");
+msm = library("magda_smoothing.lib");
 
-smoo = ms.smooth(ba.tau2pole(0.02));
+smoo = msm.smooth(ba.tau2pole(0.02));
 
 // Cutoff and resonance are deliberately NOT smoothed here. A smoothed
 // frequency is a per-sample signal, which forces tan() into the sample loop:

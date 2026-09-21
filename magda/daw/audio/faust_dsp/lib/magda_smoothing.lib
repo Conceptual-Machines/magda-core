@@ -3,6 +3,17 @@
 si = library("signals.lib");
 ma = library("maths.lib");
 
-// `1 : mem` is zero for exactly one sample after a clear, then remains one.
-smooth(pole) = si.smooth(pole * (1 : mem));
+// `1.0 : mem` is zero for exactly one sample after a clear, then remains one.
+// Float rather than int: an int delay costs a cast per sample at every use.
+smooth(pole) = si.smooth(pole * (1.0 : mem));
+
+// Sample-rate compensated, unlike the stdlib's fixed 0.999 pole: the same
+// smoothing time at 44.1 and 96 kHz.
 smoo = smooth(1 - 44.1/ma.SR);
+
+// Voices are recycled without instanceClear (poly-dsp.h keyOn), so the gate
+// above opens only on a voice's first note. Keyed on the note gate instead,
+// the window re-opens at every edge. 32 samples: the host writes every zone
+// before the block in which the gate rises.
+polySmooth(g, pole) = si.polySmooth(g, pole, 32);
+polySmoo(g) = polySmooth(g, 1 - 44.1/ma.SR);

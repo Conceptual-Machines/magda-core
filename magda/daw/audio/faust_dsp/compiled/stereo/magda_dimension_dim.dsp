@@ -4,17 +4,17 @@ declare license "GPL-3.0";
 declare version "1.0";
 
 import("stdfaust.lib");
-ms = library("magda_smoothing.lib");
+msm = library("magda_smoothing.lib");
 
 // idx 0 is the wrapper-only Engine slot. DSP zones live at idx 1..5 and
 // are the same across all three Dimension engines so swapping between them
 // preserves the user's settings.
 
-amount  = hslider("Amount [idx:1]", 0.5, 0.0, 1.0, 0.001) : ms.smooth(ba.tau2pole(0.03));
-rateHz  = hslider("Rate [unit:Hz] [idx:2]", 0.5, 0.05, 4.0, 0.01) : ms.smooth(ba.tau2pole(0.05));
-width   = hslider("Width [idx:3]", 100.0, 0.0, 200.0, 0.1) / 100.0 : ms.smooth(ba.tau2pole(0.05));
-mix     = hslider("Mix [idx:4]", 1.0, 0.0, 1.0, 0.001) : ms.smooth(ba.tau2pole(0.02));
-outDb   = hslider("Output [unit:dB] [idx:5]", 0.0, -24.0, 12.0, 0.1) : ms.smooth(ba.tau2pole(0.02));
+amount  = hslider("Amount [idx:1]", 0.5, 0.0, 1.0, 0.001) : msm.smooth(ba.tau2pole(0.03));
+rateHz  = hslider("Rate [unit:Hz] [idx:2]", 0.5, 0.05, 4.0, 0.01) : msm.smooth(ba.tau2pole(0.05));
+width   = hslider("Width [idx:3]", 100.0, 0.0, 200.0, 0.1) / 100.0 : msm.smooth(ba.tau2pole(0.05));
+mix     = hslider("Mix [idx:4]", 1.0, 0.0, 1.0, 0.001) : msm.smooth(ba.tau2pole(0.02));
+outDb   = hslider("Output [unit:dB] [idx:5]", 0.0, -24.0, 12.0, 0.1) : msm.smooth(ba.tau2pole(0.02));
 
 // Base delay sits in the Haas zone (~5..15 ms) - long enough for a stereo
 // image cue, short enough that the modulation reads as a gentle chorus

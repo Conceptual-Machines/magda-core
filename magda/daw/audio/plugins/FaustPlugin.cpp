@@ -178,7 +178,10 @@ std::shared_ptr<FaustPlugin::FaustState> FaustPlugin::compile(const juce::String
                                                               int sampleRate,
                                                               juce::String& errorOut) {
     // Passthrough by contract, without entering libfaust. See FaustResources.hpp.
-    if (faustLibraryImportsDisallowed() && source.contains("import(")) {
+    // `library("...")` reaches the same -I search path as `import(`, so both
+    // forms have to be refused here.
+    if (faustLibraryImportsDisallowed() &&
+        (source.contains("import(") || source.contains("library("))) {
         errorOut = "Faust library imports are disallowed in this process";
         return nullptr;
     }

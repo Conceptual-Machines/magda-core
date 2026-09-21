@@ -1,5 +1,5 @@
 import("stdfaust.lib");
-ms = library("magda_smoothing.lib");
+msm = library("magda_smoothing.lib");
 declare name "Neuro Logical";
 declare description "Two or three detuned saws driven through two notch-and-clip chains, over a clean sine sub. The beating between the outer saws is the Reese it starts from; the notches carve it hollow and the clippers give it teeth.";
 declare author "MAGDA";
@@ -22,7 +22,8 @@ gate = button("gate");
 // Every continuous control is a per-voice zone the host writes from the message
 // thread, so each one is smoothed before it reaches a filter coefficient or a
 // gain. Without this a knob drag steps the notch frequency once per block.
-smoothed = ms.smooth(ba.tau2pole(0.02));
+// Gate-keyed so a recycled voice starts on the current values (#2661).
+smoothed = msm.polySmooth(gate, ba.tau2pole(0.02));
 
 // ============================================================================
 // Layout

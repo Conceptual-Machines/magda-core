@@ -4,7 +4,7 @@ declare license "GPL-3.0";
 declare version "1.0";
 
 import("stdfaust.lib");
-ms = library("magda_smoothing.lib");
+msm = library("magda_smoothing.lib");
 
 // ============================================================================
 // Reserved per-voice MIDI controls
@@ -31,7 +31,9 @@ bend = hslider("bend", 0, -1, 1, 0.001);
 // oscillator (wave / level / coarse / fine) so the C++ slot constants map as
 // osc n -> base 4*(n-1); the filter section follows at idx 16+ and the amp
 // envelope at idx 24+.
-smoo = ms.smooth(ba.tau2pole(0.01));
+// Keyed on the gate: a recycled voice takes the current control values on
+// the note, instead of gliding from the note it last played (#2661).
+smoo = msm.polySmooth(gate, ba.tau2pole(0.01));
 
 // Pitch-bend offset in semitones: the normalised wheel scaled by the user's
 // Bend Range, smoothed to avoid zipper noise from the 14-bit wheel steps.
@@ -42,7 +44,7 @@ bendSemis = (bend * bendRange) : smoo;
 // 0 = instant. The wrapper forces this zone to 0 on the poly voices, so only the
 // Mono/Legato voice glides; poly patches are unaffected.
 glide = hslider("Glide [unit:ms] [idx:32]", 0, 0, 2000, 1) / 1000.0;
-freqG = freq : ms.smooth(ba.tau2pole(glide));
+freqG = freq : msm.smooth(ba.tau2pole(glide));
 
 // Per-oscillator phase reset: each oscillator can independently restart at phase
 // 0 on note-on, for consistent/punchy attacks. The reset fires for one sample on

@@ -4,17 +4,17 @@ declare license "GPL-3.0";
 declare version "1.0";
 
 import("stdfaust.lib");
-ms = library("magda_smoothing.lib");
+msm = library("magda_smoothing.lib");
 
 cutoff = hslider("Cutoff [unit:Hz] [scale:log] [scaleAnchor:1000] [idx:0]",
                  1000, 5, 20000, 1)
-       : ms.smooth(ba.tau2pole(0.02));
+       : msm.smooth(ba.tau2pole(0.02));
 
 res    = hslider("Resonance [idx:1]", 0.0, 0.0, 1.0, 0.001)
-       : ms.smooth(ba.tau2pole(0.02));
+       : msm.smooth(ba.tau2pole(0.02));
 
 drive  = hslider("Drive [idx:2]", 0.0, 0.0, 1.0, 0.001)
-       : ms.smooth(ba.tau2pole(0.02));
+       : msm.smooth(ba.tau2pole(0.02));
 
 mode   = nentry("Mode [idx:3] [style:menu{'LP':0;'BP':1;'HP':2;'Notch':3}]",
                 0, 0, 3, 1);

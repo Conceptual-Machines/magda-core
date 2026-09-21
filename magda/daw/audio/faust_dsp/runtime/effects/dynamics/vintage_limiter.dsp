@@ -4,7 +4,7 @@ declare license "GPL-3.0";
 declare version "1.0";
 
 import("stdfaust.lib");
-ms = library("magda_smoothing.lib");
+msm = library("magda_smoothing.lib");
 
 // ============================================================================
 // User controls
@@ -18,9 +18,9 @@ holdMs      = hslider("Hold [unit:ms] [scale:log] [scaleAnchor:50] [idx:2]",
 releaseMs   = hslider("Release [unit:ms] [scale:log] [scaleAnchor:200] [idx:3]",
                       200.0, 10.0, 2000.0, 1.0);
 mix         = hslider("Mix [idx:4]", 1.0, 0.0, 1.0, 0.001)
-              : ms.smooth(ba.tau2pole(0.02));
+              : msm.smooth(ba.tau2pole(0.02));
 outputDb    = hslider("Output [unit:dB] [idx:5]", 0.0, -24.0, 12.0, 0.1)
-              : ms.smooth(ba.tau2pole(0.02));
+              : msm.smooth(ba.tau2pole(0.02));
 autogain    = nentry("Autogain [idx:6] [style:menu{'Off':0;'On':1}]",
                      0, 0, 1, 1);
 

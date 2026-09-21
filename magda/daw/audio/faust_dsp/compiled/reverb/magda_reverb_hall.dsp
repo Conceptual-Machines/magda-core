@@ -4,7 +4,7 @@ declare license "GPL-3.0";
 declare version "1.0";
 
 import("stdfaust.lib");
-ms = library("magda_smoothing.lib");
+msm = library("magda_smoothing.lib");
 
 re = library("reverbs.lib");
 
@@ -17,7 +17,7 @@ re = library("reverbs.lib");
 // that must not step, and it still does not.
 mix         = hslider("Mix [idx:1]", 0.3, 0.0, 1.0, 0.001);
 predelayMs  = hslider("Predelay [unit:ms] [idx:2]", 20.0, 0.0, 250.0, 0.1)
-            : ms.smooth(ba.tau2pole(0.05));
+            : msm.smooth(ba.tau2pole(0.05));
 // Decay and damping are deliberately NOT smoothed. Both feed zita's
 // coefficient maths: decay sets the per-tap feedback gains
 // exp(-3*log(10)*tdelay/(t60*SR)), two bands across eight taps, and damping
@@ -42,7 +42,7 @@ lowCutHz    = hslider("Low Cut [unit:Hz] [scale:log] [scaleAnchor:80] [idx:5]",
 highCutHz   = hslider("High Cut [unit:Hz] [scale:log] [scaleAnchor:8000] [idx:6]",
                       12000.0, 1000.0, 18000.0, 1.0);
 width       = hslider("Width [idx:7]", 100.0, 0.0, 200.0, 0.1) / 100.0
-            : ms.smooth(ba.tau2pole(0.05));
+            : msm.smooth(ba.tau2pole(0.05));
 // Smoothed as a linear gain rather than in dB, so pow() stays at control
 // rate. The audible result is the same ramp; only where the conversion
 // happens moves.
@@ -87,7 +87,7 @@ with {
 sendChain = par(i, 2, preFilter : preDelay) : reverbCore : applyWidth;
 
 db2lin(db) = pow(10.0, db / 20.0);
-outputGain = db2lin(outputDb) : ms.smooth(ba.tau2pole(0.02));
+outputGain = db2lin(outputDb) : msm.smooth(ba.tau2pole(0.02));
 
 // ef.dryWetMixerConstantPower's crossfade, with the cos() pair evaluated once
 // per block and the resulting gains smoothed instead.
@@ -98,8 +98,8 @@ outputGain = db2lin(outputDb) : ms.smooth(ba.tau2pole(0.02));
 // by probing its gains directly at nine mix values; dropping the factor would
 // quietly add 3 dB to every existing project's dry path.
 dryWetScale = 0.70710678;
-dryGain = cos(mix * ma.PI * 0.5) * dryWetScale : ms.smooth(ba.tau2pole(0.02));
-wetGain = sin(mix * ma.PI * 0.5) * dryWetScale : ms.smooth(ba.tau2pole(0.02));
+dryGain = cos(mix * ma.PI * 0.5) * dryWetScale : msm.smooth(ba.tau2pole(0.02));
+wetGain = sin(mix * ma.PI * 0.5) * dryWetScale : msm.smooth(ba.tau2pole(0.02));
 
 process = _, _ <: (si.bus(2), sendChain)
         : (par(i, 2, *(dryGain)), par(i, 2, *(wetGain)))

@@ -58,7 +58,8 @@ if(_bench_standalone)
 endif()
 
 set(_bench_dsp_root "${MAGDA_ROOT}/magda/daw/audio/faust_dsp/compiled")
-set(_bench_smoothing_lib "${MAGDA_ROOT}/magda/daw/audio/faust_dsp/lib/magda_smoothing.lib")
+set(_bench_lib_dir "${MAGDA_ROOT}/magda/daw/audio/faust_dsp/lib")
+file(GLOB _bench_faust_libs CONFIGURE_DEPENDS "${_bench_lib_dir}/*.lib")
 set(_bench_generated_dir "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${_bench_generated_dir}")
 
@@ -114,12 +115,12 @@ foreach(_entry IN LISTS _bench_devices)
                     -lang cpp
                     -cn ${_class}
                     -I "${MAGDA_ROOT}/third_party/faust/libraries"
-                    -I "${MAGDA_ROOT}/magda/daw/audio/faust_dsp/lib"
+                    -I "${_bench_lib_dir}"
                     -single
                     ${_flags}
                     -o "${_out}"
                     "${_dsp}"
-            DEPENDS "${_dsp}" "${_bench_smoothing_lib}" $<TARGET_FILE:faust>
+            DEPENDS "${_dsp}" ${_bench_faust_libs} $<TARGET_FILE:faust>
             COMMENT "faust vec-bench: ${_name} (${_variant})"
             VERBATIM
         )

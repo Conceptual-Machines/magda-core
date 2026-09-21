@@ -4,22 +4,22 @@ declare license "GPL-3.0";
 declare version "1.0";
 
 import("stdfaust.lib");
-ms = library("magda_smoothing.lib");
+msm = library("magda_smoothing.lib");
 
 // ============================================================================
 // User controls - pinned to [idx:N] for stable host-slot ordering.
 // ============================================================================
 shiftHz = hslider("Shift [unit:Hz] [idx:0]", 0.0, -1000.0, 1000.0, 0.1)
-        : ms.smooth(ba.tau2pole(0.05));
+        : msm.smooth(ba.tau2pole(0.05));
 
 feedback = hslider("Feedback [idx:1]", 0.0, -0.9, 0.9, 0.01)
-         : ms.smooth(ba.tau2pole(0.02));
+         : msm.smooth(ba.tau2pole(0.02));
 
 mix = hslider("Mix [idx:2]", 0.5, 0.0, 1.0, 0.001)
-    : ms.smooth(ba.tau2pole(0.02));
+    : msm.smooth(ba.tau2pole(0.02));
 
 spread = hslider("Spread [idx:3]", 0.0, 0.0, 1.0, 0.01)
-       : ms.smooth(ba.tau2pole(0.05));
+       : msm.smooth(ba.tau2pole(0.05));
 
 // ============================================================================
 // Hilbert transformer - two parallel allpass cascades whose outputs differ

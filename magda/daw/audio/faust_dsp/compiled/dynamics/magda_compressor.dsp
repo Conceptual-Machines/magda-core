@@ -4,7 +4,7 @@ declare license "GPL-3.0";
 declare version "1.0";
 
 import("stdfaust.lib");
-ms = library("magda_smoothing.lib");
+msm = library("magda_smoothing.lib");
 
 // ============================================================================
 // User controls
@@ -13,9 +13,9 @@ ms = library("magda_smoothing.lib");
 // idx values are 1-based: idx 0 is reserved for the host-side Engine slot
 // (Clean / Glue), which lives in the wrapper, not in any DSP.
 thresholdDb = hslider("Threshold [unit:dB] [idx:1]", -18.0, -60.0, 0.0, 0.1)
-              : ms.smooth(ba.tau2pole(0.02));
+              : msm.smooth(ba.tau2pole(0.02));
 ratio = hslider("Ratio [scale:log] [scaleAnchor:4] [idx:2]", 4.0, 1.0, 50.0, 0.01)
-        : ms.smooth(ba.tau2pole(0.02));
+        : msm.smooth(ba.tau2pole(0.02));
 // Unsmoothed: both feed ba.tau2pole, i.e. exp(-1/(tau*SR)), inside the
 // detector's one-pole. Those are time constants rather than gains - a
 // block-rate step changes how fast the detector moves, not the level it
@@ -25,17 +25,17 @@ attackMs = hslider("Attack [unit:ms] [scale:log] [scaleAnchor:10] [idx:3]",
 releaseMs = hslider("Release [unit:ms] [scale:log] [scaleAnchor:100] [idx:4]",
                     120.0, 5.0, 1000.0, 1.0);
 kneeDb = hslider("Knee [unit:dB] [idx:5]", 6.0, 0.0, 24.0, 0.1)
-         : ms.smooth(ba.tau2pole(0.02));
+         : msm.smooth(ba.tau2pole(0.02));
 makeupDb = hslider("Makeup [unit:dB] [idx:6]", 0.0, 0.0, 24.0, 0.1)
-           : ms.smooth(ba.tau2pole(0.02));
+           : msm.smooth(ba.tau2pole(0.02));
 mix = hslider("Mix [idx:7]", 1.0, 0.0, 1.0, 0.001)
-      : ms.smooth(ba.tau2pole(0.02));
+      : msm.smooth(ba.tau2pole(0.02));
 // Smoothed as a linear gain rather than in dB, so pow() stays at control rate.
 outputDbRaw = hslider("Output [unit:dB] [idx:8]", 0.0, -24.0, 12.0, 0.1);
 detector = nentry("Detector [idx:9] [style:menu{'Peak':0;'RMS':1}]",
                   0, 0, 1, 1);
 link = hslider("Link [idx:10]", 1.0, 0.0, 1.0, 0.001)
-       : ms.smooth(ba.tau2pole(0.02));
+       : msm.smooth(ba.tau2pole(0.02));
 // Unsmoothed: drives the bilinear tan() in the detector high-pass.
 sidechainHpfHz = hslider("SC HPF [unit:Hz] [scale:log] [scaleAnchor:120] [idx:11]",
                          20.0, 20.0, 500.0, 1.0);
@@ -110,7 +110,7 @@ autogainDb = autogain * (-(thresholdDb * (1.0 - (1.0 / max(1.0, ratio)))));
 // Makeup is deliberately left alone: the same treatment there moved the
 // settled output by 4%, which is far past rounding and was not explained, so
 // it is not worth the one call it would save.
-outputGain = db2lin(outputDbRaw) : ms.smooth(ba.tau2pole(0.02));
+outputGain = db2lin(outputDbRaw) : msm.smooth(ba.tau2pole(0.02));
 
 // Soft-limit acts as a safety ceiling on the compressed + makeup signal;
 // Output gain is applied AFTER so the user-facing Output knob isn't
