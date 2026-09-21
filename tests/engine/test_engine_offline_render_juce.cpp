@@ -193,8 +193,9 @@ class RingingDevice final : public magda::engine::EngineDevice {
 /** @brief A host whose live session holds one device, at @p key. */
 class LendingHost final : public host::OfflineRenderHost {
   public:
-    LendingHost(magda::engine::DeviceKey key, std::shared_ptr<RingingDevice> device)
-        : key_(key), device_(std::move(device)) {}
+    LendingHost(magda::engine::DeviceKey key, std::shared_ptr<RingingDevice> device,
+                magda::engine::TempoMap tempo = host::tempoMapAt(120.0, 4, 4))
+        : key_(key), device_(std::move(device)), tempo_(std::move(tempo)) {}
 
     void beginOfflineRender() override {}
     void endOfflineRender(bool) override {}
@@ -209,7 +210,7 @@ class LendingHost final : public host::OfflineRenderHost {
     }
 
     magda::engine::TempoMap renderTempo() const override {
-        return host::tempoMapAt(120.0, 4, 4);
+        return tempo_;
     }
 
     magda::daw::audio::engine_adapter::ExternalPluginServices pluginServices() const override {
@@ -219,6 +220,7 @@ class LendingHost final : public host::OfflineRenderHost {
   private:
     magda::engine::DeviceKey key_;
     std::shared_ptr<RingingDevice> device_;
+    magda::engine::TempoMap tempo_;
 };
 
 /// A compiled effect for the chain slot the host lends its device at.
@@ -240,6 +242,7 @@ class EngineOfflineRenderTest final : public juce::UnitTest {
 
     void runTest() override {
         magda::test::runWithCleanJuceState([this] { testKnownSignalAtEachDepth(); });
+        magda::test::runWithCleanJuceState([this] { testMetadataUsesRenderTempoAndRange(); });
         magda::test::runWithCleanJuceState([this] { testHardwareOutputJoinsFile(); });
         magda::test::runWithCleanJuceState([this] { testDitherOnTheFile(); });
         magda::test::runWithCleanJuceState([this] { testNormaliseAndLeadIn(); });
@@ -249,6 +252,60 @@ class EngineOfflineRenderTest final : public juce::UnitTest {
     }
 
   private:
+    void testMetadataUsesRenderTempoAndRange() {
+        beginTest("Metadata follows the render tempo and excludes lead-in and tail");
+
+        auto& tracks = magda::TrackManager::getInstance();
+        auto* track = tracks.getTrack(tracks.createTrack("Tempo change"));
+        expect(track != nullptr);
+        if (track == nullptr)
+            return;
+        track->chain.fxChainElements.emplace_back(chorus(1));
+
+        LendingHost lender({magda::ChainSegment::Fx, magda::DeviceId{1}},
+                           std::make_shared<RingingDevice>(),
+                           magda::engine::TempoMap({{0.0, 100.0}, {4.0, 90.0}}, {{0.0, 3, 4}}));
+        auto session = host::createEngineOfflineRenderSession(lender, false);
+        const auto file = scratchDirectory().getChildFile("tempo_change.wav");
+        auto request = requestFor(file, 32, magda::OfflineRenderDither::None);
+        request.range = {{0.0}, {8.0}};
+        request.tailSeconds = 1.0;
+        request.oneShot = true;
+        auto task = session->createTask(request);
+        expect(task != nullptr);
+        if (task == nullptr)
+            return;
+        expect(task->run().success);
+
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::AudioFormatReader> reader(
+            wav.createReaderFor(file.createInputStream().release(), true));
+        expect(reader != nullptr);
+        if (reader == nullptr)
+            return;
+        const auto& values = reader->metadataValues;
+        expectEquals(values[juce::WavAudioFormat::acidTempo].getDoubleValue(), 100.0);
+        expectEquals(values[juce::WavAudioFormat::acidBeats].getIntValue(), 8);
+        expectEquals(values[juce::WavAudioFormat::acidNumerator].getIntValue(), 3);
+        expectEquals(values[juce::WavAudioFormat::acidDenominator].getIntValue(), 4);
+        expectEquals(values[juce::WavAudioFormat::acidOneShot].getIntValue(), 1);
+
+        request.destination = scratchDirectory().getChildFile("tempo_change_lead_in.wav");
+        request.leadInSeconds = 0.5;
+        task = session->createTask(request);
+        expect(task != nullptr);
+        if (task == nullptr)
+            return;
+        expect(task->run().success);
+        reader.reset(wav.createReaderFor(request.destination.createInputStream().release(), true));
+        expect(reader != nullptr);
+        if (reader != nullptr) {
+            expectEquals(reader->metadataValues[juce::WavAudioFormat::acidTempo].getDoubleValue(),
+                         0.0);
+            expectEquals(reader->metadataValues[juce::WavAudioFormat::acidBeats].getIntValue(), 0);
+        }
+    }
+
     void testKnownSignalAtEachDepth() {
         beginTest("A render of a known signal comes back off disk as the samples that went in");
 
@@ -262,6 +319,21 @@ class EngineOfflineRenderTest final : public juce::UnitTest {
                 render(requestFor(file, bitDepth, magda::OfflineRenderDither::None));
             expect(result.success,
                    "The render at " + juce::String(bitDepth) + " bit succeeds: " + result.error);
+
+            if (bitDepth == 32 && result.success) {
+                juce::WavAudioFormat wav;
+                std::unique_ptr<juce::AudioFormatReader> reader(
+                    wav.createReaderFor(file.createInputStream().release(), true));
+                expect(reader != nullptr, "The rendered WAV opens for metadata inspection");
+                if (reader != nullptr) {
+                    const auto& metadata = reader->metadataValues;
+                    expectEquals(metadata[juce::WavAudioFormat::acidTempo].getDoubleValue(), 120.0);
+                    expectEquals(metadata[juce::WavAudioFormat::acidBeats].getIntValue(), 4);
+                    expectEquals(metadata[juce::WavAudioFormat::acidNumerator].getIntValue(), 4);
+                    expectEquals(metadata[juce::WavAudioFormat::acidDenominator].getIntValue(), 4);
+                    expect(metadata[juce::WavAudioFormat::bwavOriginator].startsWith("MAGDA "));
+                }
+            }
 
             const auto stored = readBack(file);
             expectEquals(stored.getNumSamples(), kRangeSamples, "The file is the range");

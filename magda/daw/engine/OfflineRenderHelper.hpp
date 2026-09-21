@@ -25,4 +25,7 @@ std::optional<juce::BigInteger> resolveOfflineRenderTrackFilter(
     const OfflineRenderRequest& request, int numTracks,
     const std::function<int(TrackId)>& indexForTrack);
 
+/** Restore BWF fields after Tracktion replaces them when opening a WAV writer. */
+bool restoreTracktionWavMetadata(const juce::File& file, const juce::StringPairArray& intended);
+
 }  // namespace magda

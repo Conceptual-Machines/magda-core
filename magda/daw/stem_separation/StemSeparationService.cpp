@@ -4,11 +4,15 @@
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
+#include <cmath>
 #include <limits>
 #include <memory>
+#include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
+#include "../audio/RenderFileMetadata.hpp"
 #include "ClipCommands.hpp"
 #include "ClipInfo.hpp"
 #include "ClipManager.hpp"
@@ -83,21 +87,29 @@ bool decodeFile(const juce::String& filePath, juce::AudioBuffer<float>& out, dou
 
 // Write one stem as 32-bit float WAV. Returns the file, or {} on failure.
 juce::File writeStemWav(const juce::File& dir, const juce::String& baseName, const Stem& stem,
-                        double sampleRate) {
+                        double sampleRate, engine::AudioFileMetadata metadata) {
     auto file = dir.getChildFile(baseName + " - " + stem.name + ".wav");
     file.deleteFile();
 
-    auto stream = file.createOutputStream();
+    std::unique_ptr<juce::OutputStream> stream = file.createOutputStream();
     if (stream == nullptr)
         return {};
 
     juce::WavAudioFormat wav;
-    std::unique_ptr<juce::AudioFormatWriter> writer(
-        wav.createWriterFor(stream.get(), sampleRate,
-                            static_cast<unsigned int>(stem.audio.getNumChannels()), 32, {}, 0));
+    metadata.description = "MAGDA stem: " + stem.name;
+    if (metadata.tempo)
+        metadata.beats =
+            static_cast<double>(stem.audio.getNumSamples()) / sampleRate * *metadata.tempo / 60.0;
+    auto options =
+        juce::AudioFormatWriterOptions()
+            .withSampleRate(sampleRate)
+            .withNumChannels(stem.audio.getNumChannels())
+            .withBitsPerSample(32)
+            .withSampleFormat(juce::AudioFormatWriterOptions::SampleFormat::floatingPoint)
+            .withMetadataValues(engine::wavMetadataFor(metadata));
+    auto writer = wav.createWriterFor(stream, options);
     if (writer == nullptr)
         return {};
-    static_cast<void>(stream.release());  // writer owns it now
 
     if (!writer->writeFromAudioSampleBuffer(stem.audio, 0, stem.audio.getNumSamples()))
         return {};
@@ -116,6 +128,16 @@ std::vector<juce::String> stemNamesFor(StemSeparationService::Engine engine) {
             return {"Vocals", "Accompaniment"};
     }
     return {};
+}
+
+std::optional<int> pitchClassOf(const std::string& name) {
+    static constexpr const char* names[] = {"C",  "C#", "D",  "D#", "E",  "F",
+                                            "F#", "G",  "G#", "A",  "A#", "B"};
+    const auto value = juce::String(name).trim().toUpperCase();
+    for (int i = 0; i < 12; ++i)
+        if (value == names[i])
+            return i;
+    return std::nullopt;
 }
 
 std::unique_ptr<StemSeparator> makeSeparator(StemSeparationService::Engine engine) {
@@ -222,7 +244,8 @@ void StemSeparationService::splitClipIntoStems(ClipId sourceClipId, Engine engin
 
     // Snapshot everything we need off the clip now (message thread); the clip
     // pointer must not be touched on the worker.
-    const juce::String filePath = audioEventRef(*clip).sourceFilePath();
+    const auto& event = audioEventRef(*clip);
+    const juce::String filePath = event.sourceFilePath();
     if (!juce::File(filePath).existsAsFile()) {
         report(INVALID_TRACK_ID, "Audio file not found");
         return;
@@ -232,6 +255,20 @@ void StemSeparationService::splitClipIntoStems(ClipId sourceClipId, Engine engin
     const double startBeat = clip->placement.startBeat;
     const int sceneIndex = clip->sceneIndex;
     const double bpm = projectBpm();
+    auto metadata = renderFileMetadata(ProjectManager::getInstance().getCurrentProjectInfo(), 0.0,
+                                       "MAGDA stem");
+    metadata.tempo = event.hasInterpretedBpm() && std::isfinite(event.interpBpm)
+                         ? std::optional<double>(event.interpBpm)
+                         : std::nullopt;
+    metadata.keyRoot = pitchClassOf(event.keyRoot);
+    metadata.keyQuality.reset();
+    if (metadata.keyRoot) {
+        const auto scale = juce::String(event.keyScale).trim().toLowerCase();
+        if (scale == "major")
+            metadata.keyQuality = 0;
+        else if (scale == "minor")
+            metadata.keyQuality = 1;
+    }
 
     const juce::File rendersRoot = ProjectManager::getInstance().getRendersDirectory();
 
@@ -284,8 +321,8 @@ void StemSeparationService::splitClipIntoStems(ClipId sourceClipId, Engine engin
     };
 
     pool_->addJob([this, sourceClipId, engine, filePath, baseName, sourceTrackId, startBeat,
-                   sceneIndex, bpm, rendersRoot, stemTrackIds, groupId, report = std::move(report),
-                   failAndCleanup = std::move(failAndCleanup),
+                   sceneIndex, bpm, metadata, rendersRoot, stemTrackIds, groupId,
+                   report = std::move(report), failAndCleanup = std::move(failAndCleanup),
                    enqueueGeneration = cancelGeneration_.load()]() {
         // Cancelled iff cancelAll() ran after this job was enqueued.
         auto cancelled = [this, enqueueGeneration]() {
@@ -345,7 +382,7 @@ void StemSeparationService::splitClipIntoStems(ClipId sourceClipId, Engine engin
 
             std::vector<std::pair<juce::String, juce::File>> stemFiles;  // name -> wav
             for (const auto& stem : stems) {
-                auto file = writeStemWav(dir, baseName, stem, sampleRate);
+                auto file = writeStemWav(dir, baseName, stem, sampleRate, metadata);
                 if (file == juce::File()) {
                     failAndCleanup("Could not write stem file");
                     return;

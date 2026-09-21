@@ -8,10 +8,12 @@
 #include <set>
 #include <utility>
 
+#include "../../audio/RenderFileMetadata.hpp"
 #include "../../audio/plugin_manager/ExternalPluginState.hpp"
 #include "../../audio/plugins/engine/EngineExternalDevice.hpp"
 #include "../../core/AutomationManager.hpp"
 #include "../../core/TrackManager.hpp"
+#include "../../project/ProjectManager.hpp"
 #include "EngineProject.hpp"
 #include "EngineRuntimeFactory.hpp"
 #include "EngineTrace.hpp"
@@ -69,11 +71,13 @@ std::optional<engine::DitherMode> ditherModeFor(std::optional<OfflineRenderDithe
     return std::nullopt;
 }
 
-engine::AudioFileSpec fileSpecFor(const OfflineRenderRequest& request) {
+engine::AudioFileSpec fileSpecFor(const OfflineRenderRequest& request,
+                                  engine::AudioFileMetadata metadata) {
     return {.format = request.format == OfflineRenderFormat::Flac ? engine::AudioFileFormat::flac
                                                                   : engine::AudioFileFormat::wav,
             .bitDepth = request.bitDepth,
-            .dither = ditherModeFor(request.dither)};
+            .dither = ditherModeFor(request.dither),
+            .metadata = std::move(metadata)};
 }
 
 /** @brief A live session's instance, lent to one render's store without being owned by it. */
@@ -284,6 +288,8 @@ struct OfflineRuntime {
                   .maxBlockSize = request.blockSize,
                   .numChannels = kChannels},
           tempo(host.renderTempo()),
+          metadata(renderFileMetadata(ProjectManager::getInstance().getCurrentProjectInfo(), 0.0,
+                                      "MAGDA offline render")),
           services(host.pluginServices()),
           factory(host, borrowed) {
         services.context = context;
@@ -307,6 +313,7 @@ struct OfflineRuntime {
     engine::RenderContext context;
     double tailSeconds = 0.0;
     engine::TempoMap tempo;
+    engine::AudioFileMetadata metadata;
     adapter::ExternalPluginServices services;
 
     EngineFileReaders files;
@@ -479,8 +486,21 @@ class EngineOfflineRenderTask final : public OfflineRenderTask {
     }
 
     std::unique_ptr<engine::AudioFileSink> openDestination() const {
+        const auto& request = runtime_->request;
+        auto metadata = runtime_->metadata;
+        metadata.tempo = runtime_->tempo.bpmAt(request.range.start.value);
+        metadata.beats = request.range.end.value - request.range.start.value;
+        const auto signature = runtime_->tempo.barsAndBeatsAt(request.range.start.value);
+        metadata.numerator = signature.numerator;
+        metadata.denominator = signature.denominator;
+        metadata.oneShot = request.oneShot;
+        if (request.leadInSeconds > 0.0) {
+            metadata.tempo.reset();
+            metadata.beats.reset();
+        }
         return engine::AudioFileSink::create(runtime_->request.destination,
-                                             fileSpecFor(runtime_->request), runtime_->context);
+                                             fileSpecFor(request, std::move(metadata)),
+                                             runtime_->context);
     }
 
     void writeLeadIn(engine::AudioFileSink& sink) const {

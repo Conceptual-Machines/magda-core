@@ -295,6 +295,10 @@ void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings,
                 request.usePlugins = true;
                 request.realTimeRender = settings.realTimeRender;
                 request.range = requestedRange;
+                if (settings.exportRange == ExportAudioDialog::ExportRange::EntireSong)
+                    request.oneShot = true;
+                else if (settings.exportRange == ExportAudioDialog::ExportRange::LoopRegion)
+                    request.oneShot = false;
                 request.leadInSeconds = settings.leadInSilence;
 
                 // The chord track is monitor-only: exclude it from the bounce so its

@@ -6,6 +6,7 @@
 #include <set>
 #include <vector>
 
+#include "RenderFileMetadata.hpp"
 #include "core/ClipManager.hpp"
 #include "core/CompSectionMath.hpp"
 #include "core/RangesHelpers.hpp"
@@ -54,6 +55,7 @@ struct CompSnapshot {
     std::vector<CompSection> sections;
     juce::File outputFile;
     ClipId clipId = INVALID_CLIP_ID;
+    engine::AudioFileMetadata metadata;
 };
 
 // Read [startSample, startSample + numSamples) of a take into dest at destOffset,
@@ -152,15 +154,21 @@ double stitchComp(const CompSnapshot& snap) {
             out.addFrom(ch, regionStart, temp, ch, 0, regionLen);
     }
 
-    auto stream = snap.outputFile.createOutputStream();
+    std::unique_ptr<juce::OutputStream> stream = snap.outputFile.createOutputStream();
     if (!stream)
         return 0.0;
     juce::WavAudioFormat wav;
-    std::unique_ptr<juce::AudioFormatWriter> writer(wav.createWriterFor(
-        stream.get(), sampleRate, static_cast<unsigned>(numChannels), 24, {}, 0));
+    auto metadata = snap.metadata;
+    if (metadata.tempo)
+        metadata.beats = static_cast<double>(total) / sampleRate * *metadata.tempo / 60.0;
+    auto options = juce::AudioFormatWriterOptions()
+                       .withSampleRate(sampleRate)
+                       .withNumChannels(numChannels)
+                       .withBitsPerSample(24)
+                       .withMetadataValues(engine::wavMetadataFor(metadata));
+    auto writer = wav.createWriterFor(stream, options);
     if (!writer)
         return 0.0;
-    static_cast<void>(stream.release());  // writer owns it now
     writer->writeFromAudioSampleBuffer(out, 0, total);
     writer.reset();
     return total / sampleRate;
@@ -240,6 +248,8 @@ void CompService::renderComp(ClipId clipId) {
 
     CompSnapshot snap;
     snap.clipId = clipId;
+    snap.metadata = renderFileMetadata(ProjectManager::getInstance().getCurrentProjectInfo(), 0.0,
+                                       "MAGDA comp render");
     snap.sections = clip->audio().comp;
     for (const auto& t : clip->audio().takes)
         snap.takePaths.push_back(t.filePath);

@@ -136,6 +136,7 @@ add_library(magda_engine STATIC
     insert/InsertCaptureSession.hpp
     insert/InsertCapturePlayback.hpp
     io/AudioFileReader.cpp
+    io/AudioFileMetadata.hpp
     io/AudioFileSink.cpp
     io/AudioFileSink.hpp
     io/LiveInput.cpp

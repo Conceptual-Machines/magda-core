@@ -57,8 +57,9 @@ void InsertCapturePlugin::initialise(const te::PluginInitialisationInfo& info) {
     zeroBuf_.assign(static_cast<size_t>(juce::jmax(4096, info.blockSizeSamples)), 0.0f);
 }
 
-bool InsertCapturePlugin::startCapture(const juce::File& wavFile, double windowStartSec,
-                                       double windowEndSec, double sampleRate) {
+bool InsertCapturePlugin::startCapture(
+    const juce::File& wavFile, double windowStartSec, double windowEndSec, double sampleRate,
+    const std::unordered_map<juce::String, juce::String>& metadata) {
     jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
     stopCapture(false);
     if (sampleRate > 0.0)
@@ -78,7 +79,8 @@ bool InsertCapturePlugin::startCapture(const juce::File& wavFile, double windowS
             .withSampleRate(sampleRate_)
             .withNumChannels(kNumChannels)
             .withBitsPerSample(32)
-            .withSampleFormat(juce::AudioFormatWriterOptions::SampleFormat::floatingPoint);
+            .withSampleFormat(juce::AudioFormatWriterOptions::SampleFormat::floatingPoint)
+            .withMetadataValues(metadata);
     auto writer = format.createWriterFor(stream, writerOptions);
     if (writer == nullptr)
         return false;
