@@ -9,10 +9,11 @@ make parity-bench PARITY_ARGS="--projects project.demo --block-sizes 256"
 python3 scripts/parity_bench.py --report            # re-judge this machine's last run
 ```
 
-`make parity-bench` builds `magda_parity_bench` in `cmake-build-release` and runs
-`scripts/parity_bench.py`, which runs the bench once per engine, project and block size. Each
-measurement is its own process. The script exits non-zero when a native figure misses its
-threshold.
+`make parity-bench` builds `magda_parity_bench` in `cmake-build-parity`, a Release tree with
+tests off (`MAGDA_BUILD_PARITY_BENCH=ON`), so both engines are compiled as they ship: no test
+hooks and no assertions. It then runs `scripts/parity_bench.py`, which runs the bench once per
+engine, project and block size. Each measurement is its own process. The script exits non-zero
+when a native figure misses its threshold.
 
 ## What is measured
 

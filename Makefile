@@ -311,23 +311,22 @@ test: test-build
 	@mkdir -p $(CACHE_ROOT)/home $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	cd $(BUILD_DIR) && $(TEST_ENV) ./tests/magda_tests
 
-# The parity envelope bench (#2082): native against Tracktion on the real-project corpus, on
-# the Release tree. PARITY_ARGS go to scripts/parity_bench.py, e.g. PARITY_ARGS="--block-sizes 256".
-PARITY_BUILD_DIR ?= $(BUILD_DIR_RELEASE)
-PARITY_BUILD_TYPE ?= Release
+# The parity envelope bench (#2082): native against Tracktion on the real-project corpus. Its own
+# Release tree with tests off, so both engines are compiled as they ship. PARITY_ARGS go to
+# scripts/parity_bench.py, e.g. PARITY_ARGS="--block-sizes 256".
+BUILD_DIR_PARITY = cmake-build-parity
 
 .PHONY: parity-bench-build
 parity-bench-build:
-	@echo "Building the parity bench ($(PARITY_BUILD_TYPE))..."
-	@mkdir -p $(PARITY_BUILD_DIR) $(CACHE_ROOT)/ccache $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
-	@if [ ! -f $(PARITY_BUILD_DIR)/CMakeCache.txt ]; then \
-		cd $(PARITY_BUILD_DIR) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=$(PARITY_BUILD_TYPE) -DMAGDA_BUILD_TESTS=ON ..; \
-	fi
-	cd $(PARITY_BUILD_DIR) && $(BUILD_ENV) ninja magda_parity_bench
+	@echo "Building the parity bench (Release, tests off)..."
+	@mkdir -p $(BUILD_DIR_PARITY) $(CACHE_ROOT)/ccache $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	cd $(BUILD_DIR_PARITY) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Release \
+		-DMAGDA_BUILD_TESTS=OFF -DMAGDA_BUILD_PARITY_BENCH=ON $(FETCHCONTENT_SOURCE_ARGS) ..
+	cd $(BUILD_DIR_PARITY) && $(BUILD_ENV) ninja magda_parity_bench
 
 .PHONY: parity-bench
 parity-bench: parity-bench-build
-	python3 scripts/parity_bench.py --bench-dir $(PARITY_BUILD_DIR) $(PARITY_ARGS)
+	python3 scripts/parity_bench.py --bench-dir $(BUILD_DIR_PARITY) $(PARITY_ARGS)
 
 # Build and run the Catch2 tests under ThreadSanitizer. The native engine's
 # parallel executor is lock-free, so "it passed" from an ordinary build says

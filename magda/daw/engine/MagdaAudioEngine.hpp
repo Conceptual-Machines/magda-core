@@ -172,12 +172,12 @@ class MagdaAudioEngine final : public AudioEngine,
 #ifdef MAGDA_ENABLE_TEST_HOOKS
     /** @brief Every method that has named itself unwired, in the order it did. */
     static juce::StringArray unwiredMethods();
+#endif
 
-    /** @brief What the parity bench waits on after a load and reads latency from (#2082). */
-    daw::engine_host::EngineHost& hostForTesting() {
+    /** @brief The host, for a tool waiting on it to settle, such as the parity bench (#2082). */
+    daw::engine_host::EngineHost& host() {
         return *host_;
     }
-#endif
 
     // Overridden because AudioEngine and AudioEngineListener give these default
     // bodies rather than leaving them pure. Not forwarding them compiles

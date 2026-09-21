@@ -103,6 +103,10 @@ std::unique_ptr<EngineRig> EngineRig::create(const std::string& engine, double s
         devices.deviceManager.addAudioDeviceType(std::move(backend));
         devices.deviceManager.setCurrentAudioDeviceType(kPumpBackend, true);
         devices.initialise(0, kPumpOutputChannels);
+
+        // Its periodic MIDI rescan reallocates every playback context when it applies a list,
+        // which stops the transport; after a load it applies one mid-measurement.
+        devices.setMidiDeviceScanIntervalSeconds(0);
     }
 
     std::vector<int> outputs(kPumpOutputChannels);
@@ -135,7 +139,7 @@ void EngineRig::loadStarting() {
     graphBuiltForLoad_ = false;
     if (native_)
         publishRequestsAtLoad_ =
-            static_cast<MagdaAudioEngine*>(engine_.get())->hostForTesting().publishRequests();
+            static_cast<MagdaAudioEngine*>(engine_.get())->host().publishRequests();
 }
 
 bool EngineRig::isReady() {
@@ -143,7 +147,7 @@ bool EngineRig::isReady() {
         return false;
 
     if (native_) {
-        auto& host = static_cast<MagdaAudioEngine*>(engine_.get())->hostForTesting();
+        auto& host = static_cast<MagdaAudioEngine*>(engine_.get())->host();
         const auto heard =
             !publishRequestsAtLoad_ || host.publishRequests() > *publishRequestsAtLoad_;
         return heard && host.isSettled() && host.pluginsLoading() == 0;
@@ -168,7 +172,7 @@ bool EngineRig::isReady() {
 
 int EngineRig::reportedLatencySamples() const {
     if (native_)
-        return static_cast<MagdaAudioEngine*>(engine_.get())->hostForTesting().latencySamples();
+        return static_cast<MagdaAudioEngine*>(engine_.get())->host().latencySamples();
 
     auto* edit = static_cast<TracktionEngineWrapper*>(engine_.get())->getEdit();
     auto* context = edit != nullptr ? edit->getCurrentPlaybackContext() : nullptr;

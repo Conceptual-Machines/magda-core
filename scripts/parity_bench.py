@@ -41,8 +41,8 @@ def find_bench(explicit, build_dir):
 
 
 def bench_environment():
-    """The test binaries' sandbox: the engines read and write settings under HOME."""
-    home = ROOT / ".cache" / "home"
+    """A sandbox of its own: the engines read and write settings under HOME."""
+    home = ROOT / ".cache" / "parity-home"
     home.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ)
     env["HOME"] = str(home)
@@ -360,8 +360,8 @@ def measure(args, bench):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
     parser.add_argument("--bench", help="path to magda_parity_bench")
-    parser.add_argument("--bench-dir", default="cmake-build-release",
-                        help="build tree to find it in (default: cmake-build-release)")
+    parser.add_argument("--bench-dir", default="cmake-build-parity",
+                        help="build tree to find it in (default: cmake-build-parity)")
     parser.add_argument("--projects", nargs="+", help="corpus projects to run (default: all)")
     parser.add_argument("--block-sizes", type=lambda s: [int(v) for v in s.split(",")],
                         default=[128, 512], help="comma separated (default: 128,512)")
