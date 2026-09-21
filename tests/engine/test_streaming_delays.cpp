@@ -509,8 +509,7 @@ std::int64_t roundUp(std::int64_t samples, int blockSize) {
 std::int64_t readAheadAt(const ClipStreamTable::Entry& entry, double rate) {
     if (entry.stretcher == nullptr)
         return 0;
-    return entry.stretcher->readAheadSamples() +
-           static_cast<std::int64_t>(std::ceil(entry.stretcher->outputLatencySamples() * rate));
+    return entry.stretcher->readAheadSamples(rate);
 }
 
 /// What a voice starting at @p timeline reads and primes from (stretchReadAt).
@@ -598,10 +597,8 @@ PrefetchSettings poolFor(const Playback& playback) {
     const auto stretcher = magda::engine::makeStretcher(magda::engine::stretchSetupFor(
         clip, clip.events.front(), RenderContext{kSampleRate, playback.blockSize, 2}));
     REQUIRE(stretcher != nullptr);
-    const auto needed =
-        stretcher->preRollSamples(playback.speed) + stretcher->readAheadSamples() +
-        static_cast<int>(std::ceil(stretcher->outputLatencySamples() * playback.speed)) +
-        mostReading(playback, 4096);
+    const auto needed = stretcher->preRollSamples(playback.speed) +
+                        stretcher->readAheadSamples(playback.speed) + mostReading(playback, 4096);
     return PrefetchSettings{2048, static_cast<int>(needed / 2048) + 3};
 }
 

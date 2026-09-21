@@ -111,7 +111,8 @@ class ClipStretcher {
      * into what it kept. A constant offset rather than a cursor, so
      * position is still derived from the timeline and nothing drifts.
      */
-    virtual int readAheadSamples() const {
+    virtual int readAheadSamples(double rate) const {
+        juce::ignoreUnused(rate);
         return 0;
     }
 
@@ -119,8 +120,8 @@ class ClipStretcher {
      * @brief Output samples between material going in and coming out.
      *
      * Zero for a stretcher whose latency is all in its reading. Otherwise the
-     * material a cell reads is what is heard this much later, at that moment's
-     * rate (@ref stretchReadAt).
+     * material a cell reads is what is heard this much later, and @p rate in
+     * the read-ahead is the rate across that window (@ref stretchReadAt).
      */
     virtual int outputLatencySamples() const {
         return 0;
@@ -130,7 +131,7 @@ class ClipStretcher {
      * @brief Material consumed during priming, ending at the read-ahead position.
      *
      * At @p rate, since what a stretcher holds back depends on how fast
-     * it's being asked to run. Subtracted from readAheadSamples() when cueing,
+     * it's being asked to run. Subtracted from readAheadSamples(rate) when cueing,
      * so Signalsmith's window starts at the event while SoundTouch and the
      * resampler consume history preceding it.
      */
@@ -241,6 +242,8 @@ constexpr double kMaxStretchRate = 10.0;
 struct StretchRead {
     std::int64_t from = 0;
     int preRoll = 0;
+    /// The reading that material is heard at, continuous; its steps are the rate it is fed at.
+    double heard = 0.0;
 };
 
 /**
@@ -260,15 +263,14 @@ StretchRead stretchReadAt(const ClipStretcher& stretcher, int fixedPreRoll, doub
     const auto latency = stretcher.outputLatencySamples();
     const auto opens = positionAt(seconds);
     if (latency <= 0 || !(sampleRate > 0.0))
-        return {firstSampleFrom(opens) + stretcher.readAheadSamples(), fixedPreRoll};
+        return {firstSampleFrom(opens) + stretcher.readAheadSamples(1.0), fixedPreRoll, opens};
 
-    // The rate across the output latency, and the window measured from the
-    // audible sample with the stretcher's own rounding: at a constant rate this
-    // is exactly the read-ahead the fork aligns with.
+    // The rate across the output latency, with the stretcher's own rounding: at
+    // a constant rate this is exactly the read-ahead the fork aligns with.
     const auto heard = positionAt(seconds + latency / sampleRate);
     const auto rate = std::clamp((heard - opens) / latency, kMinStretchRate, kMaxStretchRate);
-    const auto preRoll = stretcher.preRollSamples(rate);
-    return {firstSampleFrom(opens) + preRoll, preRoll};
+    return {firstSampleFrom(opens) + stretcher.readAheadSamples(rate),
+            stretcher.preRollSamples(rate), heard};
 }
 
 /**

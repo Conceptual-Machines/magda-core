@@ -353,22 +353,28 @@ TEST_CASE("A warped loop bends the same way on every pass", "[engine][clip][warp
     event.loopLengthSamples = static_cast<std::int64_t>(atSourceSecond(2.0));
 
     // Source 0 to 2 is warp 0 to 1, so the loop is one warp second long.
-    SECTION("the second pass reads what the first did") {
-        REQUIRE(readingAt(clip, 1.5) == approx(readingAt(clip, 0.5)));
-        REQUIRE(readingAt(clip, 2.25) == approx(readingAt(clip, 0.25)));
-        REQUIRE(readingAt(clip, 5.75) == approx(readingAt(clip, 0.75)));
+    const auto loop = atSourceSecond(2.0);
+
+    SECTION("the second pass reads what the first did, a loop further on") {
+        REQUIRE(readingAt(clip, 1.5) == approx(readingAt(clip, 0.5) + loop));
+        REQUIRE(readingAt(clip, 2.25) == approx(readingAt(clip, 0.25) + 2.0 * loop));
+        REQUIRE(readingAt(clip, 5.75) == approx(readingAt(clip, 0.75) + 5.0 * loop));
     }
 
     SECTION("and it is still the warped reading, not a straight one") {
         REQUIRE(readingAt(clip, 0.25) == approx(atSourceSecond(0.5)));
-        REQUIRE(readingAt(clip, 1.25) == approx(atSourceSecond(0.5)));
+        REQUIRE(readingAt(clip, 1.25) == approx(atSourceSecond(0.5) + loop));
     }
 
-    SECTION("the reading chain does not tile it a second time") {
-        // Folding happens in warp time, above the map. Tiling below the stream
-        // as well would fold a position that had already been folded.
+    SECTION("it climbs across the wrap, so reading ahead reads the next pass") {
+        REQUIRE(readingAt(clip, 1.0) == approx(loop));
+        REQUIRE(readingAt(clip, 1.001) > readingAt(clip, 0.999));
+    }
+
+    SECTION("and the reading chain folds it back") {
         const auto how = magda::engine::sourceReadFor(event, kSampleRate);
-        REQUIRE(how.loopLengthSamples == 0);
+        REQUIRE(how.loopStartSamples == 0);
+        REQUIRE(how.loopLengthSamples == static_cast<std::int64_t>(loop));
     }
 }
 
@@ -417,9 +423,11 @@ TEST_CASE("A reversed warped loop composes both", "[engine][clip][warp]") {
     event.loopStartSamples = 0;
     event.loopLengthSamples = static_cast<std::int64_t>(atSourceSecond(2.0));
 
-    SECTION("it repeats on the loop's warped length") {
-        REQUIRE(readingAt(clip, 1.5) == approx(readingAt(clip, 0.5)));
-        REQUIRE(readingAt(clip, 3.25) == approx(readingAt(clip, 0.25)));
+    const auto loop = atSourceSecond(2.0);
+
+    SECTION("it repeats on the loop's warped length, a loop further on") {
+        REQUIRE(readingAt(clip, 1.5) == approx(readingAt(clip, 0.5) + loop));
+        REQUIRE(readingAt(clip, 3.25) == approx(readingAt(clip, 0.25) + 3.0 * loop));
     }
 
     SECTION("and every position is still in the mirrored file") {
@@ -428,12 +436,19 @@ TEST_CASE("A reversed warped loop composes both", "[engine][clip][warp]") {
         };
 
         // Warp folds into [0, 1); walking backwards from the far end lands at
-        // warp 0 exactly, which is source zero.
-        REQUIRE(readingAt(clip, 0.0) == approx(mirrored(0.0)));
+        // warp 0 exactly, which is source zero once the chain folds it back.
+        const auto how = magda::engine::sourceReadFor(event, kSampleRate);
+        const auto start = static_cast<double>(how.loopStartSamples);
+        const auto length = static_cast<double>(how.loopLengthSamples);
+        const auto folded =
+            start + std::fmod(std::fmod(readingAt(clip, 0.0) - start, length) + length, length);
+        REQUIRE(folded == approx(mirrored(0.0)));
     }
 
-    SECTION("the reading chain still does not tile it a second time") {
-        REQUIRE(magda::engine::sourceReadFor(event, kSampleRate).loopLengthSamples == 0);
+    SECTION("and the reading chain folds it back, in the mirrored file") {
+        const auto how = magda::engine::sourceReadFor(event, kSampleRate);
+        REQUIRE(how.loopLengthSamples == static_cast<std::int64_t>(loop));
+        REQUIRE(how.loopStartSamples == how.lengthInSamples - static_cast<std::int64_t>(loop));
     }
 }
 
@@ -483,7 +498,7 @@ TEST_CASE("A warped clip is read ahead at the rate it plays, not at its steepest
     const auto latency = stretcher->outputLatencySamples() / kSampleRate;
     // Within a sample: the window is rounded the stretcher's own way, as the fork's is.
     REQUIRE(static_cast<double>(read.from) ==
-            approx(positionAt(at + latency) + stretcher->readAheadSamples(), 1.0));
+            approx(positionAt(at + latency) + stretcher->preRollSamples(0.0), 1.0));
 
     // The window opens where the clip is, so priming infers the half rate.
     REQUIRE(static_cast<double>(read.from - read.preRoll) == approx(positionAt(at), 2.0));

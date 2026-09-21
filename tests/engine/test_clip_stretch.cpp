@@ -576,7 +576,7 @@ TEST_CASE("A clip asks for a stretcher only when it needs one", "[engine][clip][
 
         // The curve reaches past the sample it lands on, so the reading runs a
         // little ahead of the position wanted.
-        REQUIRE(stretcher->readAheadSamples() > 0);
+        REQUIRE(stretcher->readAheadSamples(setup.nominalRate) > 0);
         REQUIRE(stretcher->preRollSamples(setup.nominalRate) > 0);
     }
 
@@ -630,22 +630,18 @@ TEST_CASE("A clip asks for a stretcher only when it needs one", "[engine][clip][
 
             REQUIRE(stretcher != nullptr);
 
-            // Signalsmith primes from a window at the start and reads what is
-            // heard its output latency later, so it primes its input latency
-            // plus that latency's worth of reading. SoundTouch primes from
-            // history and reads ahead to cover its output latency, so it primes
-            // more than it reads ahead.
+            // Signalsmith primes from a window at the start, so it reads ahead by
+            // the whole window. SoundTouch primes from history and reads ahead to
+            // cover its output latency, so it primes more than it reads ahead.
             REQUIRE(stretcher->preRollSamples(setup.nominalRate) > 0);
+            REQUIRE(stretcher->outputLatencySamples() > 0);
             if (which == mode::kSignalsmith) {
-                REQUIRE(stretcher->outputLatencySamples() > 0);
-                REQUIRE(stretcher->preRollSamples(setup.nominalRate) ==
-                        Catch::Approx(stretcher->readAheadSamples() +
-                                      setup.nominalRate * stretcher->outputLatencySamples())
-                            .margin(1.0));
+                REQUIRE(stretcher->readAheadSamples(setup.nominalRate) ==
+                        stretcher->preRollSamples(setup.nominalRate));
             } else {
-                REQUIRE(stretcher->readAheadSamples() > 0);
+                REQUIRE(stretcher->readAheadSamples(setup.nominalRate) > 0);
                 REQUIRE(stretcher->preRollSamples(setup.nominalRate) >
-                        stretcher->readAheadSamples());
+                        stretcher->readAheadSamples(setup.nominalRate));
             }
         }
     }
@@ -685,7 +681,7 @@ TEST_CASE("A clip asks for a stretcher only when it needs one", "[engine][clip][
         const auto setup = magda::engine::stretchSetupFor(clip, event, context());
 
         CHECK(setup.mode == mode::kDisabled);
-        CHECK(magda::engine::makeStretcher(setup)->readAheadSamples() > 0);
+        CHECK(magda::engine::makeStretcher(setup)->readAheadSamples(setup.nominalRate) > 0);
     }
 }
 
@@ -1052,7 +1048,7 @@ TEST_CASE("SoundTouch holds the tempo when a cell consumes a fractional number o
         setup.nominalRate = rate;
         auto stretcher = magda::engine::makeStretcher(setup);
         REQUIRE(stretcher != nullptr);
-        const auto ahead = stretcher->readAheadSamples();
+        const auto ahead = stretcher->readAheadSamples(setup.nominalRate);
         const auto preRoll = stretcher->preRollSamples(rate);
         PrefetchStream stream(std::make_unique<ConstantReader>(), context(), {8192, 8});
         stream.startAt(ahead - preRoll);
@@ -1093,7 +1089,7 @@ TEST_CASE("SoundTouch stays continuous when tempo crosses unity",
         setup.followsTempo = true;
         auto stretcher = magda::engine::makeStretcher(setup);
         REQUIRE(stretcher != nullptr);
-        const auto ahead = stretcher->readAheadSamples();
+        const auto ahead = stretcher->readAheadSamples(setup.nominalRate);
         const auto preRoll = stretcher->preRollSamples(1.0);
         PrefetchStream stream(std::make_unique<ConstantReader>(), context(), {8192, 8});
         stream.startAt(ahead - preRoll);
@@ -1149,7 +1145,7 @@ TEST_CASE("SoundTouch primes its lookahead without allocating on the audio threa
                 setup.nominalRate = rate;
                 auto stretcher = magda::engine::makeStretcher(setup);
                 REQUIRE(stretcher != nullptr);
-                const auto ahead = stretcher->readAheadSamples();
+                const auto ahead = stretcher->readAheadSamples(setup.nominalRate);
                 const auto preRoll = stretcher->preRollSamples(rate);
                 PrefetchStream stream(std::make_unique<ConstantReader>(), context(), {8192, 32});
                 stream.startAt(ahead - preRoll);
@@ -1208,7 +1204,7 @@ TEST_CASE("A prime says what the reader owed it and did not give",
 
         {
             auto stretcher = build();
-            const auto ahead = stretcher->readAheadSamples();
+            const auto ahead = stretcher->readAheadSamples(setup.nominalRate);
             const auto preRoll = stretcher->preRollSamples(rate);
             PrefetchStream stream(std::make_unique<ConstantReader>(), context(), {8192, 8});
             stream.startAt(kFarIntoTheFile + ahead - preRoll);
@@ -1220,7 +1216,7 @@ TEST_CASE("A prime says what the reader owed it and did not give",
         {
             // Nothing filled, so the whole window is audio that was owed.
             auto stretcher = build();
-            const auto ahead = stretcher->readAheadSamples();
+            const auto ahead = stretcher->readAheadSamples(setup.nominalRate);
             const auto preRoll = stretcher->preRollSamples(rate);
             PrefetchStream stream(std::make_unique<ConstantReader>(), context(), {8192, 8});
             stream.startAt(kFarIntoTheFile + ahead - preRoll);
@@ -1234,7 +1230,7 @@ TEST_CASE("A prime says what the reader owed it and did not give",
             // The same empty queue at the front of the file. Everything before
             // sample zero is padding, so only what the file has is owed.
             auto stretcher = build();
-            const auto ahead = stretcher->readAheadSamples();
+            const auto ahead = stretcher->readAheadSamples(setup.nominalRate);
             const auto preRoll = stretcher->preRollSamples(rate);
             PrefetchStream stream(std::make_unique<ConstantReader>(), context(), {8192, 8});
             stream.startAt(ahead - preRoll);

@@ -121,14 +121,16 @@ bool ClipVoice::renderThroughCells(const AudioClipPlayback& clip, const AudioEve
             return readingPositionAt(clip, event, seconds, block.beatAtTime(seconds), sampleRate_);
         };
         const auto opens = positionAt(cellStartSeconds);
-        const auto closes = positionAt(cellEndSeconds);
-        const auto step = (closes - opens) / kCellSamples;
 
         const auto read =
             stretchReadAt(stretcher, preRoll, cellStartSeconds, sampleRate_, positionAt);
+        const auto readEnd =
+            stretchReadAt(stretcher, preRoll, cellEndSeconds, sampleRate_, positionAt);
         const auto readFrom = read.from;
-        const auto readTo =
-            stretchReadAt(stretcher, preRoll, cellEndSeconds, sampleRate_, positionAt).from;
+        const auto readTo = readEnd.from;
+
+        // The rate of what is fed, which is heard a latency later than this cell.
+        const auto step = (readEnd.heard - read.heard) / kCellSamples;
 
         // The ceiling every buffer downstream was sized against. Auto tempo alone
         // can ask past it, and such a cell reads short and seeks after.

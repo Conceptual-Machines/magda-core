@@ -4,6 +4,7 @@
 #include <signalsmith-stretch.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <vector>
 
@@ -54,6 +55,11 @@ int samplesOf(juce::dsp::AudioBlock<const float> block) {
 /// wrong.
 constexpr double kPreRollHeadroom = 1.25;
 
+/// The rate buffers are sized for: the peak, and never below the usual rate.
+double sizingRate(const StretchSetup& setup) {
+    return std::max(setup.peakRate, setup.nominalRate);
+}
+
 /**
  * @brief Signalsmith Stretch, the default engine.
  *
@@ -82,7 +88,7 @@ class SignalsmithClipStretcher final : public ClipStretcher {
         stretch_.setTransposeSemitones(setup.semitones);
         stretch_.setFormantFactor(1.0f, true);
 
-        allocatePreRoll(channels_, static_cast<int>(std::ceil(preRollSamples(setup.peakRate) *
+        allocatePreRoll(channels_, static_cast<int>(std::ceil(preRollSamples(sizingRate(setup)) *
                                                               kPreRollHeadroom)));
     }
 
@@ -90,8 +96,9 @@ class SignalsmithClipStretcher final : public ClipStretcher {
         return static_cast<int>(std::ceil(stretch_.outputSeekLength(static_cast<float>(rate))));
     }
 
-    int readAheadSamples() const override {
-        return stretch_.inputLatency();
+    // Its priming window opens at the audible sample, so it reads ahead by the whole window.
+    int readAheadSamples(double rate) const override {
+        return preRollSamples(rate);
     }
 
     int outputLatencySamples() const override {
@@ -196,11 +203,32 @@ class SoundTouchClipStretcher final : public ClipStretcher {
         // Cover the initial latency and a batch so output remains available
         // between SoundTouch's processing bursts. Use the cell, never the host
         // block size: priming must not change with callback partitioning.
-        const auto batch =
-            std::max(kStretchCellSamples, touch_.getSetting(SETTING_NOMINAL_OUTPUT_SEQUENCE));
-        readAhead_ = touch_.getSetting(SETTING_INITIAL_LATENCY) +
-                     static_cast<int>(std::ceil(
-                         batch * std::clamp(setup.nominalRate, kMinStretchRate, kMaxStretchRate)));
+        batch_ = std::max(kStretchCellSamples, touch_.getSetting(SETTING_NOMINAL_OUTPUT_SEQUENCE));
+        initialLatency_ = touch_.getSetting(SETTING_INITIAL_LATENCY);
+        nominal_ = std::clamp(setup.nominalRate, kMinStretchRate, kMaxStretchRate);
+
+        // What the pipe holds back moves with the tempo, so the read-ahead follows
+        // the tempo it will be fed at; tabled here because asking means setting.
+        for (auto node = 0; node < kLatencyNodes; ++node) {
+            touch_.setTempo(latencyNodeRate(node));
+            latencyAt_[static_cast<std::size_t>(node)] =
+                static_cast<float>(touch_.getSetting(SETTING_INITIAL_LATENCY));
+        }
+        touch_.setTempo(nominal_);
+
+        // A rise in tempo makes the pipe hold back a longer input sequence
+        // before it gives anything out, and it gives nothing while it waits. A
+        // warped clip can rise to its peak within a cell, so the output it keeps
+        // in hand covers that wait at every tempo up to the peak, and a batch.
+        const auto peak = std::clamp(sizingRate(setup), nominal_, kMaxStretchRate);
+        for (auto step = 0; peak > nominal_ && step <= kWarmUpSteps; ++step) {
+            const auto rate = nominal_ + (peak - nominal_) * step / kWarmUpSteps;
+            touch_.setTempo(rate);
+            const auto heldBack = touch_.getSetting(SETTING_NOMINAL_INPUT_SEQUENCE) / rate;
+            batch_ = std::max(batch_, static_cast<int>(std::ceil(heldBack)) +
+                                          touch_.getSetting(SETTING_NOMINAL_OUTPUT_SEQUENCE));
+        }
+        touch_.setTempo(nominal_);
 
         // Sized for the largest single push rather than for the largest block,
         // and that is what makes it the stride below rather than merely the
@@ -217,7 +245,7 @@ class SoundTouchClipStretcher final : public ClipStretcher {
         deinterleaved_.resize(static_cast<std::size_t>(stretchWorkSamples(setup.maxBlockSamples)) *
                               channels_);
 
-        allocatePreRoll(channels_, readAhead_ + history_);
+        allocatePreRoll(channels_, preRollSamples(sizingRate(setup)));
 
         // Grow SoundTouch's FIFOs off the audio thread. The front buffer must
         // hold its longest sequence plus the largest input push. clear() keeps
@@ -238,7 +266,7 @@ class SoundTouchClipStretcher final : public ClipStretcher {
             touch_.setTempo(rate);
             // Priming retains its output now, so reserve room for the entire
             // lookahead at each rate as well as for one processing batch.
-            pushSilence(std::max(readAhead_ + history_,
+            pushSilence(std::max(preRollSamples(sizingRate(setup)),
                                  touch_.getSetting(SETTING_NOMINAL_INPUT_SEQUENCE) + 1));
             drainAll();
         }
@@ -247,12 +275,19 @@ class SoundTouchClipStretcher final : public ClipStretcher {
         touch_.clear();
     }
 
-    int readAheadSamples() const override {
-        return readAhead_;
+    // Its output comes a batch at a time, so a batch of reading at the rate
+    // it will be heard at, on top of its input latency.
+    int readAheadSamples(double rate) const override {
+        const auto clamped = std::clamp(rate, kMinStretchRate, kMaxStretchRate);
+        return latencyFor(clamped) + static_cast<int>(std::ceil(batch_ * clamped - 1.0e-6));
     }
 
-    int preRollSamples(double) const override {
-        return readAhead_ + history_;
+    int outputLatencySamples() const override {
+        return batch_;
+    }
+
+    int preRollSamples(double rate) const override {
+        return readAheadSamples(rate) + history_;
     }
 
     void reset() override {
@@ -269,7 +304,7 @@ class SoundTouchClipStretcher final : public ClipStretcher {
         if (count <= 0)
             return before.missing;
 
-        // until includes readAhead_; samples also includes the filter history.
+        // until includes the read-ahead; samples also includes the filter history.
         // Retain the output from the audible start, and leave the stream where
         // the next cell will continue reading.
         writeAll(before.audio, count);
@@ -310,6 +345,27 @@ class SoundTouchClipStretcher final : public ClipStretcher {
     }
 
   private:
+    static constexpr int kLatencyNodes = 129;
+
+    static double latencyNodeRate(int node) {
+        return kMinStretchRate + (kMaxStretchRate - kMinStretchRate) * node / (kLatencyNodes - 1);
+    }
+
+    /// The pipe's input latency at @p rate: exact at the clip's own rate, so a
+    /// clip that holds it reads ahead as it always did, and tabled elsewhere.
+    int latencyFor(double rate) const {
+        if (std::abs(rate - nominal_) < 1.0e-6)
+            return initialLatency_;
+
+        const auto at =
+            (rate - kMinStretchRate) / (kMaxStretchRate - kMinStretchRate) * (kLatencyNodes - 1);
+        const auto below = std::clamp(static_cast<int>(at), 0, kLatencyNodes - 2);
+        const auto through = static_cast<float>(at - below);
+        const auto low = latencyAt_[static_cast<std::size_t>(below)];
+        const auto high = latencyAt_[static_cast<std::size_t>(below + 1)];
+        return static_cast<int>(std::ceil(low + (high - low) * through));
+    }
+
     /// The most the front of the pipe can ever be holding, and the tempo where
     /// that is true.
     struct WorstCase {
@@ -359,7 +415,7 @@ class SoundTouchClipStretcher final : public ClipStretcher {
         // figure has to be the same one write() cuts its pieces to.
         const auto handed = std::max(
             stretchPushSamples(),
-            static_cast<int>(std::ceil(preRollSamples(setup.peakRate) * kPreRollHeadroom)));
+            static_cast<int>(std::ceil(preRollSamples(sizingRate(setup)) * kPreRollHeadroom)));
 
         return WorstCase{sequence + handed, atTempo};
     }
@@ -427,7 +483,10 @@ class SoundTouchClipStretcher final : public ClipStretcher {
     int channels_ = 2;
     int maxBlockSamples_ = 512;
 
-    int readAhead_ = 0;
+    int initialLatency_ = 0;
+    double nominal_ = 1.0;
+    std::array<float, kLatencyNodes> latencyAt_{};
+    int batch_ = kStretchCellSamples;
     int history_ = 0;
 
     std::vector<float> interleaved_;
@@ -463,7 +522,7 @@ class ResamplingClipStretcher final : public ClipStretcher {
         allocatePreRoll(channels_, kHistory);
     }
 
-    int readAheadSamples() const override {
+    int readAheadSamples(double) const override {
         return kReadAhead;
     }
 

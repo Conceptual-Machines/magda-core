@@ -359,7 +359,7 @@ TEST_CASE("Every project renders the same audio at 64, 512 and 4096", "[nulldiff
     // Empty of code-built cases, and it took four fixes to get there; the file
     // comment says which.
     //
-    // Four real projects are on it, and they arrived together with the projects
+    // Real projects are on it, and they arrived together with the projects
     // themselves (#2081). What they have in common is the one thing no case
     // above them has: a device MAGDA ships. The code-built corpus contains four
     // devices written for it -- a gain, a mono gain, an impulse synth and a
@@ -378,7 +378,10 @@ TEST_CASE("Every project renders the same audio at 64, 512 and 4096", "[nulldiff
     //    multiple of that size before 22050 -- by 7 to 9 dB.
     //  - project.demo diverges by 2 to 4 dB, and it is the only one whose peak
     //    residual is above the render itself.
-    //  - project.faust diverges at 64 and 96 and holds at 4096.
+    //
+    // project.faust, a warped break, diverged at 64 and 96 while its stretcher
+    // read ahead at the map's steepest rate, and holds at every rung since it
+    // reads at the rate it plays.
     //
     // No mechanism is claimed for any of them. Each is a number this gate
     // measured and nothing more, which is the same standing the corpus's own
@@ -399,7 +402,6 @@ TEST_CASE("Every project renders the same audio at 64, 512 and 4096", "[nulldiff
     // these, which is why it is worth a case of its own.
     const std::set<std::string> knownDependent{
         "project.demo",
-        "project.faust",
         "project.fmchain",
         "project.sidechain",
     };
