@@ -106,11 +106,16 @@ template <typename Map, typename Ids> std::size_t eraseUnnamed(Map& map, const I
 PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderContext& context) {
     // Out before anything is realised, so realiseOne() asks the factory again;
     // kept, because the plan still rendering names them (#2572).
-    for (const auto& key : factory_.devicesToRebuild())
+    for (const auto& key : factory_.devicesToRebuild()) {
         if (const auto found = devices_.find(key); found != devices_.end()) {
             retired_.push_back(std::move(found->second));
             devices_.erase(found);
         }
+        if (const auto found = inserts_.find(key); found != inserts_.end()) {
+            retiredInserts_.push_back(std::move(found->second));
+            inserts_.erase(found);
+        }
+    }
 
     // A context that has changed is the one case where something already
     // playing is touched, and it is only reachable with the audio device
@@ -123,6 +128,7 @@ PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderCont
         prepareAll(sessionMidi_, context);
         prepareAll(audioInputs_, context);
         prepareAll(midiInputs_, context);
+        prepareAll(inserts_, context);
     }
     context_ = context;
     hasContext_ = true;
@@ -186,6 +192,14 @@ PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderCont
                         return factory_.createMidiInput(id);
                     }))
                     bindings.midiInputs[trackId] = source;
+                break;
+
+            case OpKind::InsertSend:
+            case OpKind::InsertReturn:
+                if (auto* insert =
+                        realiseOne(inserts_, op.key.deviceKey(), context,
+                                   [this](DeviceKey key) { return factory_.createInsert(key); }))
+                    bindings.inserts[op.key.deviceKey()] = insert;
                 break;
 
             case OpKind::Meter:
@@ -261,6 +275,8 @@ std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
     for (const auto& op : livePlan.ops) {
         switch (op.kind) {
             case OpKind::Device:
+            case OpKind::InsertSend:
+            case OpKind::InsertReturn:
                 keep.devices.insert(op.key.deviceKey());
                 break;
             case OpKind::ClipAudio:
@@ -289,7 +305,7 @@ std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
         eraseUnnamed(devices_, keep.devices) + eraseUnnamed(clipAudio_, keep.tracks) +
         eraseUnnamed(clipMidi_, keep.tracks) + eraseUnnamed(sessionAudio_, keep.tracks) +
         eraseUnnamed(sessionMidi_, keep.tracks) + eraseUnnamed(audioInputs_, keep.tracks) +
-        eraseUnnamed(midiInputs_, keep.tracks);
+        eraseUnnamed(midiInputs_, keep.tracks) + eraseUnnamed(inserts_, keep.devices);
 
     // A meter is retained by the live plan naming its op, not by the track or
     // device the op reads: the key carries where the meter stands, so a rack or
@@ -343,8 +359,9 @@ std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
     });
 
     // Not earlier: until the swap they were what the live plan named.
-    removed += retired_.size();
+    removed += retired_.size() + retiredInserts_.size();
     retired_.clear();
+    retiredInserts_.clear();
 
     return removed;
 }
@@ -554,7 +571,7 @@ std::size_t RuntimeStateStore::size() const {
     return devices_.size() + retired_.size() + clipAudio_.size() + clipMidi_.size() +
            sessionAudio_.size() + sessionMidi_.size() + handles_.size() + audioInputs_.size() +
            midiInputs_.size() + meters_.size() + noteOnTaps_.size() + valueTaps_.size() +
-           takes_.size() + takeTaps_.size();
+           takes_.size() + takeTaps_.size() + inserts_.size() + retiredInserts_.size();
 }
 
 }  // namespace magda::engine

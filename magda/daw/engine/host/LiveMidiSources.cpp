@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "../../audio/midi/MidiDeviceMatch.hpp"
 #include "core/Config.hpp"
 
 namespace magda::daw::engine_host {
@@ -150,6 +151,19 @@ void LiveMidiSources::retainAuditions(const std::set<TrackId>& live) {
     }
 
     bindWaiting();
+}
+
+std::vector<int> LiveMidiSources::deviceSourcesExcept(const juce::String& excluded) const {
+    const juce::ScopedLock held(lock_);
+
+    std::vector<int> sources;
+    for (const auto& device : available_)
+        if (!midi::sameMidiHardware(device.name, excluded))
+            if (const auto found = devices_.find(device.identifier); found != devices_.end())
+                sources.push_back(found->second);
+
+    sources.insert(sources.end(), virtual_.begin(), virtual_.end());
+    return sources;
 }
 
 std::vector<int> LiveMidiSources::deviceSources() const {

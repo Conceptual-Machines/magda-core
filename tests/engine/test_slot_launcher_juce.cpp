@@ -239,7 +239,8 @@ struct Rig {
     struct Attach {
         explicit Attach(Rig& rig) {
             rig.factory.attach(rig.session.clipFeed(), rig.voices.feed(),
-                               rig.session.launchHandleFeed(), rig.session.liveInputs());
+                               rig.session.launchHandleFeed(), rig.session.liveInputs(),
+                               rig.session.liveOutputs());
         }
     } attach{*this};
 };

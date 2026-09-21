@@ -838,26 +838,29 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
         auto noteArea = bounds.reduced(2, HEADER_HEIGHT + 2);
 
         if (preview.isAudioRecording && !preview.audioPeaks.empty() && noteArea.getHeight() > 5) {
-            // Draw audio waveform (symmetric around vertical center)
+            // One lane per channel, each symmetric around its centre, as the clip the
+            // take becomes draws them.
             g.setColour(baseColour.brighter(0.3f));
 
-            auto centerY = static_cast<float>(noteArea.getCentreY());
-            float halfHeight = noteArea.getHeight() * 0.5f;
+            const int lanes = juce::jlimit(1, 2, preview.numChannels);
+            const float laneHeight = static_cast<float>(noteArea.getHeight()) / lanes;
             int numPeaks = static_cast<int>(preview.audioPeaks.size());
 
             for (int px = noteArea.getX(); px < noteArea.getRight(); ++px) {
                 float frac = static_cast<float>(px - noteArea.getX()) /
                              static_cast<float>(noteArea.getWidth());
                 int peakIdx = juce::jlimit(0, numPeaks - 1, static_cast<int>(frac * numPeaks));
+                const auto& sample = preview.audioPeaks[static_cast<size_t>(peakIdx)];
 
-                float peak = juce::jmax(preview.audioPeaks[peakIdx].peakL,
-                                        preview.audioPeaks[peakIdx].peakR);
-                peak = juce::jmin(peak, 1.0f);
+                for (int lane = 0; lane < lanes; ++lane) {
+                    float peak = lanes == 1 ? juce::jmax(sample.peakL, sample.peakR)
+                                            : (lane == 0 ? sample.peakL : sample.peakR);
+                    peak = juce::jmin(peak, 1.0f);
 
-                float lineHalf = peak * halfHeight;
-                lineHalf = std::max(lineHalf, 0.5f);
-
-                g.drawVerticalLine(px, centerY - lineHalf, centerY + lineHalf);
+                    const float centreY = noteArea.getY() + laneHeight * (lane + 0.5f);
+                    const float lineHalf = std::max(peak * laneHeight * 0.5f, 0.5f);
+                    g.drawVerticalLine(px, centreY - lineHalf, centreY + lineHalf);
+                }
             }
         } else if (!preview.notes.empty() && preview.currentLengthBeats > 0.0 &&
                    noteArea.getHeight() > 5) {

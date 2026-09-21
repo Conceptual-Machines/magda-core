@@ -482,6 +482,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES engine/test_offline_render_model.cpp)
     list(APPEND TEST_SOURCES engine/test_track_freeze.cpp)
     list(APPEND TEST_SOURCES engine/test_insert_capture_session.cpp)
+    list(APPEND TEST_SOURCES engine/test_live_insert.cpp)
     # What an armed or monitoring track hears (#2459): the callback's own
     # samples, its own piece of a split callback, and nothing between callbacks.
     list(APPEND TEST_SOURCES engine/test_live_input.cpp)
@@ -894,6 +895,8 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         engine/test_engine_host_publish_juce.cpp
         engine/test_engine_host_audio_input_juce.cpp
         engine/test_engine_host_hardware_outputs_juce.cpp
+        # The native pass that records hardware inserts for a render (#2279)
+        engine/test_engine_insert_capture_juce.cpp
         engine/test_groove_entries_juce.cpp
         engine/test_engine_host_midi_recording_juce.cpp
         engine/test_engine_host_session_capture_juce.cpp

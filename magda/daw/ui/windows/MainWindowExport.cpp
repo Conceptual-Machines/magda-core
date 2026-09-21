@@ -6,7 +6,7 @@
 #include "../dialogs/ExportAudioDialog.hpp"
 #include "../dialogs/ExportMidiDialog.hpp"
 #include "MainWindow.hpp"
-#include "audio/insert_capture/InsertRenderCaptureService.hpp"
+#include "audio/insert_capture/InsertRenderCapture.hpp"
 #include "core/ClipManager.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
@@ -154,7 +154,7 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
  */
 class InsertCaptureProgressBox : private juce::Timer {
   public:
-    explicit InsertCaptureProgressBox(magda::InsertRenderCaptureService& service)
+    explicit InsertCaptureProgressBox(magda::InsertRenderCapture& service)
         : service_(service),
           window_(tr("export.capture.title"), tr("export.capture.body"),
                   juce::MessageBoxIconType::InfoIcon) {
@@ -176,7 +176,7 @@ class InsertCaptureProgressBox : private juce::Timer {
         progress_ = service_.getProgress();
     }
 
-    magda::InsertRenderCaptureService& service_;
+    magda::InsertRenderCapture& service_;
     double progress_ = 0.0;
     juce::AlertWindow window_;
 };
@@ -309,7 +309,7 @@ void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings,
 
                 // Launch progress window with background rendering (non-blocking)
                 // The window will delete itself via threadComplete() callback.
-                auto* captureService = engine->getInsertRenderCaptureService();
+                auto* captureService = engine->getInsertRenderCapture();
                 auto renderSession = engine->createOfflineRenderSession(resumePlaybackAfterRender);
                 if (!renderSession) {
                     juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
@@ -333,9 +333,9 @@ void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings,
             // the export range once through the live engine while hidden taps
             // record each insert's return; during the render the same taps
             // substitute the recordings at the insert position.
-            auto* captureService = engine->getInsertRenderCaptureService();
+            auto* captureService = engine->getInsertRenderCapture();
             if (captureService != nullptr && captureService->exportNeedsCapturePass()) {
-                using PassError = InsertRenderCaptureService::PassError;
+                using PassError = InsertRenderCapture::PassError;
                 auto* progressBox = new InsertCaptureProgressBox(*captureService);
                 const bool started = captureService->startCapturePass(
                     requestedStart, requestedEnd, settings.sampleRate,

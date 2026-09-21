@@ -26,6 +26,7 @@ class String;
 }  // namespace juce
 
 namespace magda {
+class InsertRenderCapture;
 class OfflineRenderSession;
 class TempoMap;
 struct RecordingPreview;
@@ -377,6 +378,9 @@ class EngineHost {
      */
     std::unique_ptr<OfflineRenderSession> createOfflineRenderSession(
         bool resumePlaybackWhenFinished);
+
+    /** @brief The live pass that records hardware inserts for a render (#2279). */
+    InsertRenderCapture& insertCapture();
 
     /** @brief The render that freezes a track, or why there is none. */
     struct FreezePlan {

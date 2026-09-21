@@ -2096,7 +2096,7 @@ void DeviceCustomUIManager::createExternalInsertUI(const magda::DeviceInfo& devi
     externalInsertUI_ = std::make_unique<ExternalInsertUI>(device.isInstrument);
     parent.addAndMakeVisible(*externalInsertUI_);
     // create() may run before the slot's path is valid; setDevicePath() rebinds
-    // the pickers from the live plugin once refreshLivePluginBindings() fires.
+    // the pickers once it is.
     if (devicePath_.isValid())
         externalInsertUI_->setDevicePath(devicePath_);
 }

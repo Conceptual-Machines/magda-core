@@ -51,6 +51,10 @@ void InsertCaptureSession::send(const BlockInfo& block, juce::dsp::AudioBlock<co
     live_.send(block, audio, midi);
 }
 
+void InsertCaptureSession::releaseNotes(const BlockInfo& block) {
+    live_.releaseNotes(block);
+}
+
 void InsertCaptureSession::receive(const BlockInfo& block, juce::dsp::AudioBlock<float> audio,
                                    juce::MidiBuffer& midi) {
     live_.receive(block, audio, midi);

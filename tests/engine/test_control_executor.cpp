@@ -148,7 +148,13 @@ TEST_CASE("Work that never ran is cancelled rather than dropped", "[engine][cont
     std::promise<ExecutionState> abandoned;
     auto answered = abandoned.get_future();
 
-    REQUIRE(executor->run([executor, &abandoned](ExecutionState) mutable {
+    // The test's reference goes first, so the work's is the last. Without this
+    // the worker could run the work and the item it queues before the test let
+    // go, and the item would be run rather than cancelled.
+    std::promise<void> testLetGo;
+    auto letGo = testLetGo.get_future();
+
+    REQUIRE(executor->run([executor, &abandoned, &letGo](ExecutionState) mutable {
         // Queued while the executor is still taking work, and never reached:
         // what follows stops it.
         CHECK(executor->run([&abandoned](ExecutionState state) { abandoned.set_value(state); }));
@@ -156,10 +162,12 @@ TEST_CASE("Work that never ran is cancelled rather than dropped", "[engine][cont
         // The last reference, dropped here. The destructor runs on this thread,
         // marks the executor stopping, and leaves the worker to answer what is
         // left once this returns.
+        letGo.wait();
         executor.reset();
     }));
 
     executor.reset();
+    testLetGo.set_value();
 
     REQUIRE(answered.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
     CHECK(answered.get() == ExecutionState::Cancelled);

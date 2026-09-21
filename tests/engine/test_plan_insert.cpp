@@ -144,8 +144,13 @@ class StubInsert final : public EngineInsert {
             midi.addEvent(juce::MidiMessage::noteOn(1, 64, 1.0f), 0);
     }
 
+    void releaseNotes(const BlockInfo&) override {
+        ++releases;
+    }
+
     int sends = 0;
     int receives = 0;
+    int releases = 0;
     float sentAudio = 0.0f;
     int sentAudioChannels = 0;
     int sentMidiEvents = 0;
@@ -434,4 +439,119 @@ TEST_CASE("What the chain carries goes out, and what comes back is what it carri
     // And what came back is what reached the output, rather than the silence
     // the track was carrying into the insert.
     CHECK(output.getSample(0, 0) == Catch::Approx(0.25f).margin(1e-5));
+}
+
+TEST_CASE("A MIDI send is told to release its notes where a device would be",
+          "[engine][exec][insert]") {
+    // A hardware synth holds a note until it hears the off, so the send hears the
+    // same all-notes-off a device gets: a jump, and the chain falling silent (#2279).
+    auto track = makeTrack(1);
+    track.midiInputDevice = "all";
+    track.chain.fxChainElements.push_back(makeDeviceElement(makeExternalInstrument(7)));
+
+    std::vector<TrackInfo> tracks{track};
+    auto master = makeMaster();
+    const auto plan = magda::engine::compileRenderPlan(tracks, master);
+    INFO(magda::engine::dumpPlan(plan));
+
+    StubInsert insert;
+    PlanBindings bindings;
+    bindings.inserts[DeviceKey{ChainSegment::Fx, 7}] = &insert;
+
+    PlanValues values;
+    magda::engine::resolvePlanValues(plan, tracks, master, values);
+
+    const RenderContext context{44100.0, kBlockSize, 2};
+    PlanExecutor executor;
+    const auto messages = executor.prepare(plan, bindings, context);
+    for (const auto& message : messages)
+        UNSCOPED_INFO(message);
+    REQUIRE(executor.isPrepared());
+
+    juce::AudioBuffer<float> output(2, kBlockSize);
+    BlockInfo block;
+    block.numSamples = kBlockSize;
+    block.playing = true;
+
+    block.continuous = false;
+    executor.process(values, block, output);
+    CHECK(insert.releases == 1);
+    CHECK(insert.sends == 1);
+
+    block.continuous = true;
+    executor.process(values, block, output);
+    CHECK(insert.releases == 1);
+    CHECK(insert.sends == 2);
+}
+
+TEST_CASE("An external instrument's return is added to the audio it was never sent",
+          "[engine][plan][insert]") {
+    // Audio on the track did not leave the machine, so it carries on beside what the
+    // synth sends back, as past any instrument: a clip bounced in place is heard (#2279).
+    auto track = makeTrack(1);
+    track.midiInputDevice = "all";
+    track.chain.fxChainElements.push_back(makeDeviceElement(makeExternalInstrument(7)));
+
+    std::vector<TrackInfo> tracks{track};
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    INFO(magda::engine::dumpPlan(plan));
+
+    const auto returns = opsWithRole(plan, OpRole::InsertReturn);
+    const auto mixes = opsWithRole(plan, OpRole::DeviceInject);
+    REQUIRE(returns.size() == 1);
+    REQUIRE(mixes.size() == 1);
+
+    const auto& mix = plan.ops[static_cast<std::size_t>(mixes.front())];
+    CHECK(mix.kind == OpKind::MixAudio);
+    REQUIRE(mix.inputs.size() == 2);
+    CHECK(mix.inputs[0].valid());
+
+    // Through the alignment delay the mix puts on each of its inputs.
+    const auto& aligned = plan.ops[static_cast<std::size_t>(mix.inputs[1].op)];
+    CHECK(aligned.kind == OpKind::Delay);
+    CHECK(aligned.inputs[0].op == returns.front());
+
+    // An external effect sends the audio out, so what comes back replaces it.
+    auto fxTrack = makeTrack(2);
+    fxTrack.chain.fxChainElements.push_back(makeDeviceElement(makeExternalFx(8)));
+    std::vector<TrackInfo> fxTracks{fxTrack};
+    const auto fxPlan = magda::engine::compileRenderPlan(fxTracks, makeMaster());
+    CHECK(opsWithRole(fxPlan, OpRole::DeviceInject).empty());
+}
+
+TEST_CASE("A silent insert return is still asked, and passes on silence",
+          "[engine][exec][insert]") {
+    // A capture pass records what comes back whatever is muted, or a muted chain's
+    // capture would never fill and the export would wait on it for ever (#2279).
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeDeviceElement(makeExternalFx(7)));
+
+    std::vector<TrackInfo> tracks{track};
+    auto master = makeMaster();
+    const auto plan = magda::engine::compileRenderPlan(tracks, master);
+
+    StubInsert insert(0, 0.25f);
+    PlanBindings bindings;
+    bindings.inserts[DeviceKey{ChainSegment::Fx, 7}] = &insert;
+
+    PlanValues values;
+    magda::engine::resolvePlanValues(plan, tracks, master, values);
+    const auto returns = opsWithRole(plan, OpRole::InsertReturn);
+    REQUIRE(returns.size() == 1);
+    values.ops[static_cast<std::size_t>(returns.front())].silent = true;
+
+    const RenderContext context{44100.0, kBlockSize, 2};
+    PlanExecutor executor;
+    executor.prepare(plan, bindings, context, nullptr, &values);
+    REQUIRE(executor.isPrepared());
+
+    juce::AudioBuffer<float> output(2, kBlockSize);
+    output.clear();
+    BlockInfo block;
+    block.numSamples = kBlockSize;
+    block.playing = true;
+    executor.process(values, block, output);
+
+    CHECK(insert.receives == 1);
+    CHECK(output.getMagnitude(0, kBlockSize) == 0.0f);
 }

@@ -256,7 +256,7 @@ class ProjectBoundaryResetEngine : public AudioEngine {
         std::abort();
     }
 
-    InsertRenderCaptureService* getInsertRenderCaptureService() override {
+    InsertRenderCapture* getInsertRenderCapture() override {
         return nullptr;
     }
 

@@ -7,6 +7,7 @@
 #include "../AudioEngine.hpp"
 #include "exec/EngineDevice.hpp"
 #include "exec/RenderContext.hpp"
+#include "insert/InsertCapture.hpp"
 #include "transport/TempoMap.hpp"
 
 /**
@@ -45,6 +46,14 @@ class OfflineRenderHost {
 
     /// Where a hosted plugin the live session does not hold is loaded from.
     virtual audio::engine_adapter::ExternalPluginServices pluginServices() const = 0;
+
+    /// What plays the hardware insert at @p key over @p window, from a live pass's
+    /// recording, or null with none that can (#2279).
+    virtual std::unique_ptr<engine::EngineInsert> insertPlayback(
+        engine::DeviceKey /*key*/, const engine::CaptureWindow& /*window*/,
+        const engine::RenderContext& /*context*/) const {
+        return nullptr;
+    }
 };
 
 /** @brief A render session over @p host's devices, open until destroyed. Message thread. */

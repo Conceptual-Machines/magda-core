@@ -6,6 +6,7 @@
 #include "JuceTestStateGuard.hpp"
 #include "magda/daw/api/magda_api.hpp"
 #include "magda/daw/api/project_api.hpp"
+#include "magda/daw/audio/insert_capture/InsertRenderCapture.hpp"
 #include "magda/daw/core/TempoMap.hpp"
 #include "magda/daw/engine/MagdaAudioEngine.hpp"
 #include "magda/daw/engine/PluginService.hpp"
@@ -131,7 +132,11 @@ class MagdaAudioEngineTest final : public juce::UnitTest {
 
         // The rest of the surface, each already named. The window manager, the media list
         // and the ripple left the interface with #2757, so nothing here asks for them.
-        expect(engine.getInsertRenderCaptureService() == nullptr, "and no insert capture pass");
+        // The capture pass is the host's (#2279), and a project with no hardware insert
+        // has nothing to capture.
+        const auto* capture = engine.getInsertRenderCapture();
+        expect(capture != nullptr && !capture->exportNeedsCapturePass(),
+               "The insert capture pass answers, with nothing to capture");
 
         const auto named = magda::MagdaAudioEngine::unwiredMethods();
         for (const auto* wired :
@@ -141,8 +146,7 @@ class MagdaAudioEngineTest final : public juce::UnitTest {
             expect(!named.contains(wired), juce::String(wired) + " is wired through the host");
         for (const auto* wired : {"onPunchRegionChanged", "onPunchEnabledChanged"})
             expect(!named.contains(wired), juce::String(wired) + " is wired through the host");
-        for (const auto* method : {"getInsertRenderCaptureService"})
-            expect(named.contains(method), juce::String(method) + " says it is not wired");
+        expect(!named.contains("getInsertRenderCapture"), "getInsertRenderCapture is wired");
 
         // #2757 took these off the interface, so the engine no longer answers for them at all.
         for (const auto* gone : {"getPluginWindowManager", "getSamplerMediaReferences",

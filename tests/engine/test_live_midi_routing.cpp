@@ -318,3 +318,31 @@ TEST_CASE("A project past the room gets ids with nowhere to put them", "[live-ro
     CHECK(crowded != host::LiveMidiSources::kNoSource);
     CHECK(sources.slotFor(crowded) == host::LiveMidiSources::kNoSlot);
 }
+
+TEST_CASE("An external instrument's own port is not in its track's all route",
+          "[live-routing][2279]") {
+    host::LiveMidiSources sources;
+    sources.registerAvailableDevices({kKeystep, kPush});
+    host::LiveMidiRouting routing(sources);
+
+    magda::DeviceInfo synth;
+    synth.id = 3;
+    synth.isInstrument = true;
+    synth.insert.sendType = magda::InsertConfig::Endpoint::MIDI;
+    synth.insert.sendDevice = kPush.name;
+
+    auto track = monitoring(1, "all");
+    track.chain.fxChainElements.emplace_back(synth);
+
+    // What the insert sends the synth would come back in and be sent again.
+    auto snapshot = routing.resolve({track});
+    REQUIRE(snapshot != nullptr);
+    CHECK(entryFor(*snapshot, 1).sources ==
+          std::vector<int>{sources.sourceFor(kKeystep.identifier)});
+
+    // Armed, the synth's keyboard is what is being recorded.
+    track.recordArmed = true;
+    snapshot = routing.resolve({track});
+    REQUIRE(snapshot != nullptr);
+    CHECK(entryFor(*snapshot, 1).sources.size() == 2);
+}

@@ -466,14 +466,8 @@ EditReceipt MagdaAudioEngine::editHostedParameter(const ChainNodePath& devicePat
 MagdaApi& MagdaAudioEngine::getMagdaApi() {
     return *api_;
 }
-// Null for good: it drives te::ExternalPlugin::windowState, and the instance a
-// window would open onto is not the one rendering. Editors are the host's
-// (#2580); what null costs is the mixer's icon, which is #2668.
-InsertRenderCaptureService* MagdaAudioEngine::getInsertRenderCaptureService() {
-    // Null makes a bounce skip the capture pass, so an external insert's return
-    // renders as silence. It needs this engine's own hardware input (#2588).
-    reportUnwired("getInsertRenderCaptureService", "#2588");
-    return nullptr;
+InsertRenderCapture* MagdaAudioEngine::getInsertRenderCapture() {
+    return &host_->insertCapture();
 }
 std::unique_ptr<OfflineRenderSession> MagdaAudioEngine::createOfflineRenderSession(
     bool resumePlaybackWhenFinished) {

@@ -452,6 +452,8 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
                    "the default all-MIDI take cannot replace the waveform");
             expect(preview->second.currentLengthBeats > 0.0);
             expect(!preview->second.audioPeaks.empty());
+            expectEquals(preview->second.numChannels, 2,
+                         "a stereo take previews in two lanes, as its clip draws");
             if (!preview->second.audioPeaks.empty()) {
                 expectWithinAbsoluteError(preview->second.audioPeaks.front().peakL, levelOf(2),
                                           0.0001f);

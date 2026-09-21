@@ -98,6 +98,9 @@ struct RecordingPreview {
     // Presentation data only — never drives clip placement/timing.
     std::vector<AudioPeakSample> audioPeaks;
     bool isAudioRecording = false;  // True if this track records audio (not MIDI).
+
+    /// Channels the take writes: the waveform gets a lane each, as the clip it becomes does.
+    int numChannels = 1;
 };
 
 }  // namespace magda

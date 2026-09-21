@@ -49,6 +49,21 @@ std::shared_ptr<const engine::LiveRouting> LiveMidiRouting::resolve(
     return routing;
 }
 
+namespace {
+
+/// Where @p track's external instrument sends its MIDI, or empty.
+juce::String externalInstrumentPort(const TrackInfo& track) {
+    for (const auto& element : track.chain.fxChainElements)
+        if (isDevice(element))
+            if (const auto& device = getDevice(element);
+                device.isInstrument && !device.bypassed &&
+                device.insert.sendType == InsertConfig::Endpoint::MIDI)
+                return device.insert.sendDevice;
+    return {};
+}
+
+}  // namespace
+
 std::vector<engine::LiveMidiSourceId> LiveMidiRouting::devicesFor(const TrackInfo& track) {
     if (!track.monitorsInput() || track.midiInputDevice.startsWith("track:"))
         return {};
@@ -56,8 +71,14 @@ std::vector<engine::LiveMidiSourceId> LiveMidiRouting::devicesFor(const TrackInf
     if (track.midiInputDevice.isEmpty())
         return {};
 
-    if (track.midiInputDevice == "all")
+    if (track.midiInputDevice == "all") {
+        // An unarmed track does not hear its external instrument's own port, which would
+        // double or loop what the insert sends it. Armed, the synth's keyboard is recorded.
+        if (!track.recordArmed)
+            if (const auto sendback = externalInstrumentPort(track); sendback.isNotEmpty())
+                return sources_.deviceSourcesExcept(sendback);
         return sources_.deviceSources();
+    }
 
     const auto source = sources_.resolveRoute(track.midiInputDevice);
     if (source == LiveMidiSources::kNoSource)

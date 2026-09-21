@@ -5,6 +5,8 @@
 #include <functional>
 #include <memory>
 
+#include "insert_capture/InsertRenderCapture.hpp"
+
 namespace tracktion::inline engine {
 class Edit;
 }  // namespace tracktion::inline engine
@@ -27,25 +29,16 @@ namespace magda {
  * Nothing user-visible changes: no clips, no bypassing, no persisted state.
  * One pass at a time; all methods are message-thread only.
  */
-class InsertRenderCaptureService : private juce::Timer {
+class InsertRenderCaptureService final : public InsertRenderCapture, private juce::Timer {
   public:
     explicit InsertRenderCaptureService(tracktion::engine::Edit& edit);
     ~InsertRenderCaptureService() override;
 
     /** True when the edit has an enabled external insert with both a send and
-        a return configured — i.e. export needs the capture pass. */
-    bool exportNeedsCapturePass() const;
+        a return configured -- i.e. export needs the capture pass. */
+    bool exportNeedsCapturePass() const override;
 
-    /** Why the last pass could not deliver captures. Distinguishes a user
-        cancel / nothing-to-capture (None) from real failures the caller must
-        surface instead of rendering with missing hardware audio. */
-    enum class PassError {
-        None,           // no error: pass succeeded, was cancelled, or no insert qualifies
-        SetupFailed,    // a qualifying insert could not be armed (or a pass was running)
-        CaptureFailed,  // a tap's recording failed or could not be prepared for the render
-    };
-
-    PassError getLastPassError() const {
+    PassError getLastPassError() const override {
         return lastError_;
     }
 
@@ -57,22 +50,22 @@ class InsertRenderCaptureService : private juce::Timer {
         render. Returns false when a pass is already running, no insert
         qualifies, or arming failed (see getLastPassError()). */
     bool startCapturePass(double startSec, double endSec, double renderSampleRate,
-                          std::function<void(bool)> onFinished);
+                          std::function<void(bool)> onFinished) override;
 
     /** Abort the running pass; taps and partial files are removed, then
         onFinished(false) fires. */
-    void cancelCapturePass();
+    void cancelCapturePass() override;
 
-    bool isCapturing() const {
+    bool isCapturing() const override {
         return pass_ != nullptr;
     }
 
     /** Fraction 0..1 of the capture window written so far (UI polls). */
-    double getProgress() const;
+    double getProgress() const override;
 
     /** Remove the playback taps and temp files after the offline render (also
         safe to call when nothing is armed). */
-    void cleanupAfterRender();
+    void cleanupAfterRender() override;
 
   private:
     // Taps + their temp files, alive from pass start until cleanupAfterRender.

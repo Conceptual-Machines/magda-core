@@ -2042,7 +2042,17 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             // track sends nothing: the hardware hears what the track is doing,
             // which for a muted track is nothing (#2245).
             auto* insert = insertForOp_[i];
-            if (insert == nullptr || value.silent)
+            if (insert == nullptr)
+                break;
+
+            // Where a device would be handed an all-notes-off, and also when the
+            // chain falls silent: a muted track sends nothing more, including the
+            // note-offs for what it started.
+            if (op.inputs[1].valid() &&
+                (value.silent || !block.continuous || midiInPanic(op.inputs[1])))
+                insert->releaseNotes(block);
+
+            if (value.silent)
                 break;
 
             static const juce::MidiBuffer kNoMidi;
@@ -2071,19 +2081,23 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             static thread_local juce::MidiBuffer discardedMidi;
             discardedMidi.clear();
 
+            // Asked when silent too, so a capture of the return covers the whole pass
+            // whatever is muted (#2279); a silent chain still passes on silence.
             if (returnsAudio) {
                 auto out = audioOut(id, 0, numSamples);
+                if (insert != nullptr)
+                    insert->receive(block, out, discardedMidi);
                 if (insert == nullptr || value.silent)
                     out.clear();
-                else
-                    insert->receive(block, out, discardedMidi);
             } else {
                 auto& out = midiOut(id, 0);
                 out.clear();
                 auto& fractions = fractionsOut(id, 0);
                 fractions.clear();
-                if (insert != nullptr && !value.silent)
+                if (insert != nullptr)
                     insert->receive(block, {}, out);
+                if (value.silent)
+                    out.clear();
                 fractions.addWhole(out);
 
                 jassert(out.data.size() <= kMaxMidiBytesPerPort);

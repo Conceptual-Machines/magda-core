@@ -206,6 +206,7 @@ class EngineHostHardwareOutputTest final : public juce::UnitTest {
     void runTest() override {
         magda::test::runWithCleanJuceState([this] { routesToPackedHardwareChannels(); });
         magda::test::runWithCleanJuceState([this] { followsTheAudioInterface(); });
+        magda::test::runWithCleanJuceState([this] { insertSendsToItsChannels(); });
     }
 
   private:
@@ -317,6 +318,49 @@ class EngineHostHardwareOutputTest final : public juce::UnitTest {
         expectOnly(devices.device->pump(), {});
         settle(host);
         expectOnly(sound(host, *devices.device, track, 71), {62, 63});
+
+        host.stop();
+        devices.closeAudioDevice();
+    }
+
+    void insertSendsToItsChannels() {
+        beginTest("A hardware insert's send leaves on the channels it names, and follows edits");
+
+        OutputPumpManager devices;
+        expect(devices.initialise(0, kPhysicalOutputs, nullptr, true).isEmpty());
+        if (devices.device == nullptr)
+            return;
+
+        const auto catalog = magda::daw::engine_host::EngineHost::HardwareChannelCatalog{
+            .enabledChannels = channels({0, 1, 2, 3}),
+            .namesByChannel = {{0, "Main"}, {1, "Main"}, {2, "Cue"}, {3, "Cue"}}};
+
+        // A send with no return: the chain carries on to the master past it (#2279).
+        magda::DeviceInfo insert;
+        insert.id = 2;
+        insert.name = "External FX";
+        insert.deviceType = magda::DeviceType::Effect;
+        insert.insert.sendType = magda::InsertConfig::Endpoint::Audio;
+        insert.insert.sendDevice = "Cue";
+
+        auto& tracks = magda::TrackManager::getInstance();
+        const auto track = tracks.createTrack("Through outboard");
+        tracks.getTrack(track)->chain.fxChainElements.emplace_back(polySynth(1));
+        tracks.getTrack(track)->chain.fxChainElements.emplace_back(insert);
+
+        magda::daw::engine_host::EngineHost host;
+        host.setHardwareOutputProvider([&catalog] { return catalog; });
+        host.start(devices);
+        settle(host);
+
+        expectOnly(sound(host, *devices.device, track), {0, 1, 2, 3});
+
+        // A name moves no op, so the host has to see the edit itself.
+        const auto path = magda::ChainNodePath::topLevelDevice(track, 2);
+        tracks.getDeviceInChainByPath(path)->insert.sendDevice = "Missing";
+        tracks.notifyDevicePropertyChanged(path);
+        settle(host);
+        expectOnly(sound(host, *devices.device, track, 62), {0, 1});
 
         host.stop();
         devices.closeAudioDevice();

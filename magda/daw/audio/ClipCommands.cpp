@@ -15,7 +15,7 @@
 #include "../engine/TracktionFork.hpp"
 #include "../project/ProjectManager.hpp"
 #include "../ui/state/TimelineController.hpp"
-#include "audio/insert_capture/InsertRenderCaptureService.hpp"
+#include "audio/insert_capture/InsertRenderCapture.hpp"
 #include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
@@ -129,7 +129,7 @@ bool trackNeedsInsertCapture(TrackId trackId) {
 // does it on scope exit.
 bool runInsertCapturePass(AudioEngine& engine, double startSec, double endSec,
                           double renderSampleRate) {
-    auto* service = engine.getInsertRenderCaptureService();
+    auto* service = engine.getInsertRenderCapture();
     if (service == nullptr)
         return true;
 
@@ -142,9 +142,9 @@ bool runInsertCapturePass(AudioEngine& engine, double startSec, double endSec,
     window.addButton("Cancel", 0);
 
     struct ProgressTimer : juce::Timer {
-        InsertRenderCaptureService& service;
+        InsertRenderCapture& service;
         double& value;
-        ProgressTimer(InsertRenderCaptureService& s, double& v) : service(s), value(v) {
+        ProgressTimer(InsertRenderCapture& s, double& v) : service(s), value(v) {
             startTimerHz(10);
         }
         void timerCallback() override {
@@ -163,7 +163,7 @@ bool runInsertCapturePass(AudioEngine& engine, double startSec, double endSec,
     if (!started) {
         // Arming failure must abort the bounce; "no insert qualifies" (no
         // error recorded) just means there is nothing to capture after all.
-        return service->getLastPassError() == InsertRenderCaptureService::PassError::None;
+        return service->getLastPassError() == InsertRenderCapture::PassError::None;
     }
 
     window.setVisible(true);
@@ -180,7 +180,7 @@ bool runInsertCapturePass(AudioEngine& engine, double startSec, double endSec,
 // Removes the hidden capture taps + temp files when the bounce is done, on
 // every exit path.
 struct InsertCaptureScope {
-    InsertRenderCaptureService* service = nullptr;
+    InsertRenderCapture* service = nullptr;
     ~InsertCaptureScope() {
         if (service != nullptr)
             service->cleanupAfterRender();
@@ -2078,15 +2078,15 @@ void BounceInPlaceCommand::execute() {
                                   bounceRange.endSeconds + kBounceTailSeconds, renderRate)) {
             // A user cancel (no recorded error) stays quiet; a real capture
             // failure gets the toast.
-            auto* service = engine_->getInsertRenderCaptureService();
+            auto* service = engine_->getInsertRenderCapture();
             if (service != nullptr &&
-                service->getLastPassError() != InsertRenderCaptureService::PassError::None) {
+                service->getLastPassError() != InsertRenderCapture::PassError::None) {
                 errorMessage_ = "Bounce failed: couldn't capture the external insert return.";
                 juce::Logger::writeToLog(errorMessage_);
             }
             return;
         }
-        captureScope.service = engine_->getInsertRenderCaptureService();
+        captureScope.service = engine_->getInsertRenderCapture();
 
         // The pass ran the live transport; listener callbacks may have
         // invalidated the model clip pointer — re-resolve.
@@ -2251,15 +2251,15 @@ void BounceToNewTrackCommand::execute() {
         if (!runInsertCapturePass(*engine_, bounceRange.startSeconds,
                                   bounceRange.endSeconds + kBounceTailSeconds,
                                   project.sampleRate)) {
-            auto* service = engine_->getInsertRenderCaptureService();
+            auto* service = engine_->getInsertRenderCapture();
             if (service != nullptr &&
-                service->getLastPassError() != InsertRenderCaptureService::PassError::None) {
+                service->getLastPassError() != InsertRenderCapture::PassError::None) {
                 errorMessage_ = "Bounce failed: couldn't capture the external insert return.";
                 juce::Logger::writeToLog(errorMessage_);
             }
             return;
         }
-        captureScope.service = engine_->getInsertRenderCaptureService();
+        captureScope.service = engine_->getInsertRenderCapture();
     }
 
     OfflineRenderRequest request;

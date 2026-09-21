@@ -103,6 +103,10 @@ class LiveMidiSources {
     /// has been unplugged since.
     std::vector<int> deviceSources() const;
 
+    /// As @ref deviceSources, less the ports of the hardware named @p excluded: where an
+    /// external instrument's own MIDI would come back from (#2279).
+    std::vector<int> deviceSourcesExcept(const juce::String& excluded) const;
+
     /**
      * @brief The id a track's `midiInputDevice` names, or @ref kNoSource.
      *

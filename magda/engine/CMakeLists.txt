@@ -141,6 +141,9 @@ add_library(magda_engine STATIC
     io/AudioFileSink.hpp
     io/LiveInput.cpp
     io/LiveInput.hpp
+    io/LiveInsert.cpp
+    io/LiveInsert.hpp
+    io/LiveOutput.hpp
     io/LiveRouting.hpp
     io/PcmQuantiser.cpp
     io/PcmQuantiser.hpp

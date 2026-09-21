@@ -1030,10 +1030,19 @@ ChainSignal Compiler::emitInsert(const DeviceInfo& device, const ChainSite& site
     // other end of the chain is untouched: an external instrument is handed the
     // chain's MIDI and answers with audio, and the MIDI carries on past it the
     // way it carries on past any instrument.
-    if (returnsAudio)
-        out.audio = PortRef{returnOp, 0};
-    else
-        out.midi = PortRef{returnOp, 0};
+    //
+    // Audio that never left carries on too, beside the return, the way an
+    // instrument's output is added to the bus: a clip bounced in place on an
+    // external instrument's track is heard (#2279).
+    const PortRef returned{returnOp, 0};
+    if (returnsAudio && config.sendType != InsertConfig::Endpoint::Audio && signal.audio.valid()) {
+        key.role = OpRole::DeviceInject;
+        out.audio = emitMix(key, {signal.audio, returned});
+    } else if (returnsAudio) {
+        out.audio = returned;
+    } else {
+        out.midi = returned;
+    }
 
     return out;
 }

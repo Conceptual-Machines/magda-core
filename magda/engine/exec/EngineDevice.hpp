@@ -342,6 +342,14 @@ class EngineInsert {
      */
     virtual void receive(const BlockInfo&, juce::dsp::AudioBlock<float> audio,
                          juce::MidiBuffer& midi) = 0;
+
+    /**
+     * @brief End every note a MIDI send has started, ahead of this block's send.
+     *
+     * Asked where a device would be handed an all-notes-off: a jump, a panic on
+     * the port feeding the send, or the chain falling silent. Audio thread.
+     */
+    virtual void releaseNotes(const BlockInfo&) {}
 };
 
 }  // namespace magda::engine
