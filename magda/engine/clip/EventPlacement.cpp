@@ -260,6 +260,15 @@ bool startsInsideSourceMaterial(const AudioEventPlayback& event, double deviceSa
     return start > 0 && start < length;
 }
 
+double beatAlongSpan(const AudioEventPlayback& event, double seconds) {
+    const auto span = event.span.seconds.length();
+    if (!(span > 0.0))
+        return event.span.beats.start;
+
+    const auto through = (seconds - event.span.seconds.start) / span;
+    return event.span.beats.start + through * event.span.beats.length();
+}
+
 double readingRateOf(const AudioEventPlayback& event) {
     auto rate = event.speedRatio;
 

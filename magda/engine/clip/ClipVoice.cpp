@@ -117,15 +117,18 @@ bool ClipVoice::renderThroughCells(const AudioClipPlayback& clip, const AudioEve
         const auto cellStartSeconds = static_cast<double>(nextCell_) / sampleRate_;
         const auto cellEndSeconds = static_cast<double>(nextCell_ + kCellSamples) / sampleRate_;
 
-        const auto opens = readingPositionAt(clip, event, cellStartSeconds,
-                                             block.beatAtTime(cellStartSeconds), sampleRate_);
-        const auto closes = readingPositionAt(clip, event, cellEndSeconds,
-                                              block.beatAtTime(cellEndSeconds), sampleRate_);
+        const auto positionAt = [&](double seconds) {
+            return readingPositionAt(clip, event, seconds, block.beatAtTime(seconds), sampleRate_);
+        };
+        const auto opens = positionAt(cellStartSeconds);
+        const auto closes = positionAt(cellEndSeconds);
         const auto step = (closes - opens) / kCellSamples;
 
-        const auto ahead = stretcher.readAheadSamples();
-        const auto readFrom = firstSampleFrom(opens) + ahead;
-        const auto readTo = firstSampleFrom(closes) + ahead;
+        const auto read =
+            stretchReadAt(stretcher, preRoll, cellStartSeconds, sampleRate_, positionAt);
+        const auto readFrom = read.from;
+        const auto readTo =
+            stretchReadAt(stretcher, preRoll, cellEndSeconds, sampleRate_, positionAt).from;
 
         // The ceiling every buffer downstream was sized against. Auto tempo alone
         // can ask past it, and such a cell reads short and seeks after.
@@ -145,7 +148,7 @@ bool ClipVoice::renderThroughCells(const AudioClipPlayback& clip, const AudioEve
             // would send a reader that is already late further back still, and
             // the material it recovered would then play after the moment it
             // belonged to.
-            if (stretcher.prime(stream, readFrom, preRoll, step) > 0)
+            if (stretcher.prime(stream, readFrom, read.preRoll, step) > 0)
                 full = false;
 
             needsPrime = false;

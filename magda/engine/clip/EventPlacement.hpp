@@ -88,6 +88,15 @@ double readingRateOf(const AudioEventPlayback& event);
 double readingPositionAt(const AudioClipPlayback& clip, const AudioEventPlayback& event,
                          double seconds, double beat, double deviceSampleRate);
 
+/**
+ * @brief The beat face of a moment inside @p event's span, without a tempo map.
+ *
+ * Linear between the span's two resolved faces, exact at its ends. What a cue
+ * works from, since the pool is handed seconds and a beat-face event's position
+ * is a question about beats.
+ */
+double beatAlongSpan(const AudioEventPlayback& event, double seconds);
+
 /// What @p event needs stretching with, or a setup no stretcher is made for
 /// when it plays at its file's own speed with nothing asked of its pitch.
 /// @p clip is taken for its fades, which decide the same question at its edges.

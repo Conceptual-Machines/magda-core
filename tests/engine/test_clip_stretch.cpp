@@ -311,12 +311,18 @@ struct Rig {
             REQUIRE(event != nullptr);
 
             const auto at = std::max(blockTime(next_), event->span.seconds.start);
-            const auto position =
-                magda::engine::readingPositionAt(*clip, *event, at, beatAt(at), kSampleRate);
-            const auto ahead = entry.stretcher != nullptr ? entry.stretcher->readAheadSamples() : 0;
+            const auto positionAt = [&](double seconds) {
+                return magda::engine::readingPositionAt(*clip, *event, seconds, beatAt(seconds),
+                                                        kSampleRate);
+            };
 
-            entry.stream->seek(static_cast<std::int64_t>(std::llround(position)) + ahead -
-                               entry.preRollSamples);
+            if (entry.stretcher == nullptr) {
+                entry.stream->seek(static_cast<std::int64_t>(std::llround(positionAt(at))));
+                continue;
+            }
+            const auto read = magda::engine::stretchReadAt(*entry.stretcher, entry.preRollSamples,
+                                                           at, kSampleRate, positionAt);
+            entry.stream->seek(read.from - read.preRoll);
         }
 
         advance(lead + 1);
@@ -624,14 +630,18 @@ TEST_CASE("A clip asks for a stretcher only when it needs one", "[engine][clip][
 
             REQUIRE(stretcher != nullptr);
 
-            // Signalsmith primes from a window at the start, so its read-ahead
-            // is its priming length. SoundTouch primes from history and reads
-            // ahead to cover its output latency, so it primes more than it
-            // reads ahead.
+            // Signalsmith primes from a window at the start and reads what is
+            // heard its output latency later, so it primes its input latency
+            // plus that latency's worth of reading. SoundTouch primes from
+            // history and reads ahead to cover its output latency, so it primes
+            // more than it reads ahead.
             REQUIRE(stretcher->preRollSamples(setup.nominalRate) > 0);
             if (which == mode::kSignalsmith) {
-                REQUIRE(stretcher->readAheadSamples() ==
-                        stretcher->preRollSamples(setup.nominalRate));
+                REQUIRE(stretcher->outputLatencySamples() > 0);
+                REQUIRE(stretcher->preRollSamples(setup.nominalRate) ==
+                        Catch::Approx(stretcher->readAheadSamples() +
+                                      setup.nominalRate * stretcher->outputLatencySamples())
+                            .margin(1.0));
             } else {
                 REQUIRE(stretcher->readAheadSamples() > 0);
                 REQUIRE(stretcher->preRollSamples(setup.nominalRate) >
@@ -1539,8 +1549,14 @@ TEST_CASE("Signalsmith places the opening transient on time after each restart",
             rig.event(1).interpBpm = kBpm / rate;
             auto& stream = rig.give(1, 1, std::make_unique<ImpulseReader>());
             const auto& entry = rig.table.entries.front();
-            const auto cue = entry.stretcher->readAheadSamples() - entry.preRollSamples;
-            stream.startAt(cue, entry.preRollSamples + 8192);
+            const auto& clip = rig.lane.audio.front();
+            const auto read = magda::engine::stretchReadAt(
+                *entry.stretcher, entry.preRollSamples, clip.span.seconds.start, kSampleRate,
+                [&](double seconds) {
+                    return magda::engine::readingPositionAt(clip, rig.event(1), seconds,
+                                                            beatAt(seconds), kSampleRate);
+                });
+            stream.startAt(read.from - read.preRoll, entry.preRollSamples + 8192);
             rig.publish();
 
             for (int pass = 0; pass < 3; ++pass) {

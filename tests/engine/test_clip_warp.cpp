@@ -7,6 +7,7 @@
 #include "clip/ClipStretcher.hpp"
 #include "clip/EventPlacement.hpp"
 #include "clip/WarpMap.hpp"
+#include "core/TimeStretchModes.hpp"
 #include "exec/RenderContext.hpp"
 #include "io/SourceReaders.hpp"
 
@@ -450,4 +451,38 @@ TEST_CASE("An unwarped event is untouched by any of this", "[engine][clip][warp]
         const auto how = magda::engine::sourceReadFor(event, kSampleRate);
         REQUIRE(how.loopLengthSamples == static_cast<std::int64_t>(atSourceSecond(2.0)));
     }
+}
+
+TEST_CASE("A warped clip is read ahead at the rate it plays, not at its steepest",
+          "[engine][clip][warp]") {
+    // The read-ahead was sized once at the map's steepest stretch, so everything
+    // slower read that far ahead: the clip played early and ran out of file
+    // before its loop ended.
+    auto clip = warpedClip();
+    auto& event = clip.events.front();
+    event.timeStretchMode = magda::time_stretch_mode::kSignalsmith;
+
+    const auto setup = magda::engine::stretchSetupFor(
+        clip, event, magda::engine::RenderContext{kSampleRate, 512, 2});
+    const auto stretcher = magda::engine::makeStretcher(setup);
+    REQUIRE(stretcher != nullptr);
+    REQUIRE(stretcher->outputLatencySamples() > 0);
+
+    const auto positionAt = [&](double seconds) {
+        return magda::engine::readingPositionAt(clip, event, seconds, beatAt(seconds), kSampleRate);
+    };
+
+    // Warp 2, inside the half-speed stretch.
+    const auto at = clip.span.seconds.start + 2.0;
+    const auto read = magda::engine::stretchReadAt(
+        *stretcher, stretcher->preRollSamples(setup.nominalRate), at, kSampleRate, positionAt);
+
+    const auto latency = stretcher->outputLatencySamples() / kSampleRate;
+    // Within a sample: the window is rounded the stretcher's own way, as the fork's is.
+    REQUIRE(static_cast<double>(read.from) ==
+            approx(positionAt(at + latency) + stretcher->readAheadSamples(), 1.0));
+
+    // The window opens where the clip is, so priming infers the half rate.
+    REQUIRE(static_cast<double>(read.from - read.preRoll) == approx(positionAt(at), 2.0));
+    REQUIRE(read.preRoll < stretcher->preRollSamples(setup.nominalRate));
 }

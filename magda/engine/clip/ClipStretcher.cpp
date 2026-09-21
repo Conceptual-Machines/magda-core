@@ -81,7 +81,6 @@ class SignalsmithClipStretcher final : public ClipStretcher {
         stretch_.setFormantBase(static_cast<float>(200.0 / setup.sampleRate));
         stretch_.setTransposeSemitones(setup.semitones);
         stretch_.setFormantFactor(1.0f, true);
-        readAhead_ = preRollSamples(setup.nominalRate);
 
         allocatePreRoll(channels_, static_cast<int>(std::ceil(preRollSamples(setup.nominalRate) *
                                                               kPreRollHeadroom)));
@@ -92,7 +91,11 @@ class SignalsmithClipStretcher final : public ClipStretcher {
     }
 
     int readAheadSamples() const override {
-        return readAhead_;
+        return stretch_.inputLatency();
+    }
+
+    int outputLatencySamples() const override {
+        return stretch_.outputLatency();
     }
 
     void reset() override {
@@ -135,7 +138,6 @@ class SignalsmithClipStretcher final : public ClipStretcher {
     }
 
   private:
-    int readAhead_ = 0;
     int channels_ = 2;
     ChannelPointers pointers_;
     // Keep the upstream generator lifecycle. The thread-local seeded replacement

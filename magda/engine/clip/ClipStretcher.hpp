@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "io/PrefetchStream.hpp"
+#include "transport/TimeDomains.hpp"
 
 /**
  * @file ClipStretcher.hpp
@@ -38,10 +39,10 @@
  *
  * Latency is answered here rather than reported upwards: every
  * implementation names its read-ahead and priming lengths. Signalsmith
- * primes from a window beginning at the audible start, so its read-ahead is
- * its priming length; SoundTouch primes from history and reads ahead from
- * the start to fill its output pipe. The pool cues the stream at audible
- * position + readAheadSamples - preRollSamples, and a
+ * primes from a window beginning at the audible start and reads the material
+ * heard its output latency later (@ref stretchReadAt); SoundTouch primes from
+ * history and reads ahead from the start to fill its output pipe. The pool
+ * cues the stream where @ref stretchReadAt opens the priming window, and a
  * voice's first read is one contiguous read starting with the priming
  * samples -- so @ref process comes out aligned with an unstretched voice
  * on the same track, and a ClipAudio op keeps reporting no latency at all.
@@ -107,6 +108,17 @@ class ClipStretcher {
      * position is still derived from the timeline and nothing drifts.
      */
     virtual int readAheadSamples() const {
+        return 0;
+    }
+
+    /**
+     * @brief Output samples between material going in and coming out.
+     *
+     * Zero for a stretcher whose latency is all in its reading. Otherwise the
+     * material a cell reads is what is heard this much later, at that moment's
+     * rate (@ref stretchReadAt).
+     */
+    virtual int outputLatencySamples() const {
         return 0;
     }
 
@@ -220,6 +232,40 @@ std::unique_ptr<ClipStretcher> makeStretcher(const StretchSetup& setup);
  */
 constexpr double kMinStretchRate = 0.1;
 constexpr double kMaxStretchRate = 10.0;
+
+/// Where a stretcher is fed for one instant of output, and the priming window that ends there.
+struct StretchRead {
+    std::int64_t from = 0;
+    int preRoll = 0;
+};
+
+/**
+ * @brief The reading fed for the output due at @p seconds.
+ *
+ * The material heard one output latency later, plus the input latency, and a
+ * priming window opening at @p seconds itself. A read-ahead fixed at one rate
+ * lines up only while the rate holds: sized at a warp's steepest stretch, it
+ * played the whole clip early and ran out of file before its loop ended.
+ *
+ * @p positionAt maps timeline seconds to a reading position. @p fixedPreRoll
+ * is the window for a stretcher with no output latency.
+ */
+template <typename PositionAt>
+StretchRead stretchReadAt(const ClipStretcher& stretcher, int fixedPreRoll, double seconds,
+                          double sampleRate, PositionAt&& positionAt) {
+    const auto latency = stretcher.outputLatencySamples();
+    const auto opens = positionAt(seconds);
+    if (latency <= 0 || !(sampleRate > 0.0))
+        return {firstSampleFrom(opens) + stretcher.readAheadSamples(), fixedPreRoll};
+
+    // The rate across the output latency, and the window measured from the
+    // audible sample with the stretcher's own rounding: at a constant rate this
+    // is exactly the read-ahead the fork aligns with.
+    const auto heard = positionAt(seconds + latency / sampleRate);
+    const auto rate = std::clamp((heard - opens) / latency, kMinStretchRate, kMaxStretchRate);
+    const auto preRoll = stretcher.preRollSamples(rate);
+    return {firstSampleFrom(opens) + preRoll, preRoll};
+}
 
 /**
  * @brief How much output a stretcher is driven in at a time.
