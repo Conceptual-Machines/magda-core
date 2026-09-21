@@ -1,0 +1,1546 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Tracktion Engine's default grooves (GPLv3), seeded when Settings.xml holds none. -->
+
+    <GROOVETEMPLATES>
+      <GROOVETEMPLATE name="slightly random" numberOfNotes="16" notesPerBeat="2">
+        <SHIFT delta="0.046"/>
+        <SHIFT delta="-0.033"/>
+        <SHIFT delta="-0.026"/>
+        <SHIFT delta="0.039"/>
+        <SHIFT delta="-0.039"/>
+        <SHIFT delta="0"/>
+        <SHIFT delta="0.026"/>
+        <SHIFT delta="-0.046"/>
+        <SHIFT delta="0.033"/>
+        <SHIFT delta="-0.053"/>
+        <SHIFT delta="0.039"/>
+        <SHIFT delta="-0.046"/>
+        <SHIFT delta="-0.033"/>
+        <SHIFT delta="0.039"/>
+        <SHIFT delta="0.053"/>
+        <SHIFT delta="-0.046"/>
+      </GROOVETEMPLATE>
+      <GROOVETEMPLATE name="more random" numberOfNotes="16" notesPerBeat="2">
+        <SHIFT delta="0.145"/>
+        <SHIFT delta="0.026"/>
+        <SHIFT delta="-0.112"/>
+        <SHIFT delta="0.046"/>
+        <SHIFT delta="-0.092"/>
+        <SHIFT delta="0.151"/>
+        <SHIFT delta="0.079"/>
+        <SHIFT delta="-0.086"/>
+        <SHIFT delta="0.046"/>
+        <SHIFT delta="-0.138"/>
+        <SHIFT delta="-0.092"/>
+        <SHIFT delta="0.026"/>
+        <SHIFT delta="-0.053"/>
+        <SHIFT delta="0.105"/>
+        <SHIFT delta="0.026"/>
+        <SHIFT delta="-0.105"/>
+      </GROOVETEMPLATE>
+  <GROOVETEMPLATE name="Swing 1/4 05%" numberOfNotes="2" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.052"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/4 10%" numberOfNotes="2" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.104"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/4 15%" numberOfNotes="2" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.156"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/4 20%" numberOfNotes="2" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.208"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/4 25%" numberOfNotes="2" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.26"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/4 30%" numberOfNotes="2" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.305"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/4 35%" numberOfNotes="2" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.351"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/4 40%" numberOfNotes="2" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.409"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/4 45%" numberOfNotes="2" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.455"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/4 50%" numberOfNotes="2" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.506"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/4 55%" numberOfNotes="2" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.556"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/4 60%" numberOfNotes="2" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.604"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/4 65%" numberOfNotes="2" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.654"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/4 70%" numberOfNotes="2" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.708"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/4 75%" numberOfNotes="2" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.758"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/4 80%" numberOfNotes="2" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.805"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/4 85%" numberOfNotes="2" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.855"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/4 90%" numberOfNotes="2" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.909"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/4 95%" numberOfNotes="2" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.959"/>
+  </GROOVETEMPLATE>
+
+ <GROOVETEMPLATE name="PushSwing 1/4 05%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.058"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.052"/>
+    <SHIFT delta="-0.032"/>
+    <SHIFT delta="0.052"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.052"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/4 10%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.100"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.100"/>
+    <SHIFT delta="-0.052"/>
+    <SHIFT delta="0.100"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.100"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/4 15%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.158"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.152"/>
+    <SHIFT delta="-0.062"/>
+    <SHIFT delta="0.152"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.152"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/4 20%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.200"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.200"/>
+    <SHIFT delta="-0.082"/>
+    <SHIFT delta="0.200"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.200"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/4 25%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.258"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.252"/>
+    <SHIFT delta="-0.100"/>
+    <SHIFT delta="0.252"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.252"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/4 30%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.300"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.300"/>
+    <SHIFT delta="-0.132"/>
+    <SHIFT delta="0.300"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.300"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/4 35%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.350"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.350"/>
+    <SHIFT delta="-0.152"/>
+    <SHIFT delta="0.350"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.350"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/4 40%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.400"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.400"/>
+    <SHIFT delta="-0.162"/>
+    <SHIFT delta="0.400"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.400"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/4 45%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.450"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.450"/>
+    <SHIFT delta="-0.172"/>
+    <SHIFT delta="0.450"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.450"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/4 50%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.500"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.500"/>
+    <SHIFT delta="-0.182"/>
+    <SHIFT delta="0.500"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.500"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/4 55%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.550"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.550"/>
+    <SHIFT delta="-0.192"/>
+    <SHIFT delta="0.550"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.550"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/4 60%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.600"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.600"/>
+    <SHIFT delta="-0.202"/>
+    <SHIFT delta="0.600"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.600"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/4 65%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.650"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.650"/>
+    <SHIFT delta="-0.212"/>
+    <SHIFT delta="0.650"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.650"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/4 70%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.700"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.700"/>
+    <SHIFT delta="-0.222"/>
+    <SHIFT delta="0.700"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.700"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/4 75%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.750"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.750"/>
+    <SHIFT delta="-0.232"/>
+    <SHIFT delta="0.750"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.750"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/4 80%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.800"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.800"/>
+    <SHIFT delta="-0.242"/>
+    <SHIFT delta="0.800"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.800"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/4 85%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.850"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.850"/>
+    <SHIFT delta="-0.252"/>
+    <SHIFT delta="0.850"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.850"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/4 90%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.900"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.900"/>
+    <SHIFT delta="-0.262"/>
+    <SHIFT delta="0.900"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.900"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/4 95%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.950"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.950"/>
+    <SHIFT delta="-0.272"/>
+    <SHIFT delta="0.950"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.950"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PullSwing 1/4 05%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.058"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.052"/>
+    <SHIFT delta="0.032"/>
+    <SHIFT delta="0.052"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.052"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/4 10%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.100"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.100"/>
+    <SHIFT delta="0.052"/>
+    <SHIFT delta="0.100"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.100"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/4 15%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.158"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.152"/>
+    <SHIFT delta="0.062"/>
+    <SHIFT delta="0.152"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.152"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/4 20%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.200"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.200"/>
+    <SHIFT delta="0.082"/>
+    <SHIFT delta="0.200"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.200"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/4 25%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.258"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.252"/>
+    <SHIFT delta="0.100"/>
+    <SHIFT delta="0.252"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.252"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/4 30%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.300"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.300"/>
+    <SHIFT delta="0.132"/>
+    <SHIFT delta="0.300"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.300"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/4 35%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.350"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.350"/>
+    <SHIFT delta="0.152"/>
+    <SHIFT delta="0.350"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.350"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/4 40%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.400"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.400"/>
+    <SHIFT delta="0.162"/>
+    <SHIFT delta="0.400"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.400"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/4 45%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.450"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.450"/>
+    <SHIFT delta="0.172"/>
+    <SHIFT delta="0.450"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.450"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/4 50%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.500"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.500"/>
+    <SHIFT delta="0.182"/>
+    <SHIFT delta="0.500"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.500"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/4 55%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.550"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.550"/>
+    <SHIFT delta="0.192"/>
+    <SHIFT delta="0.550"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.550"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/4 60%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.600"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.600"/>
+    <SHIFT delta="0.202"/>
+    <SHIFT delta="0.600"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.600"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/4 65%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.650"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.650"/>
+    <SHIFT delta="0.212"/>
+    <SHIFT delta="0.650"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.650"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/4 70%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.700"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.700"/>
+    <SHIFT delta="0.222"/>
+    <SHIFT delta="0.700"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.700"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/4 75%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.750"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.750"/>
+    <SHIFT delta="0.232"/>
+    <SHIFT delta="0.750"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.750"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/4 80%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.800"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.800"/>
+    <SHIFT delta="0.242"/>
+    <SHIFT delta="0.800"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.800"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/4 85%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.850"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.850"/>
+    <SHIFT delta="0.252"/>
+    <SHIFT delta="0.850"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.850"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/4 90%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.900"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.900"/>
+    <SHIFT delta="0.262"/>
+    <SHIFT delta="0.900"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.900"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/4 95%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.950"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.950"/>
+    <SHIFT delta="0.272"/>
+    <SHIFT delta="0.950"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.950"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PushSnare 1/4 05%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.052"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PushSnare 1/4 10%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.100"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PushSnare 1/4 15%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.152"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PushSnare 1/4 20%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.200"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PushSnare 1/4 25%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.252"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PushSnare 1/4 30%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.300"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PushSnare 1/4 35%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.352"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PushSnare 1/4 40%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.400"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PushSnare 1/4 45%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.452"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PushSnare 1/4 50%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.500"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PullSnare 1/4 05%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.052"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PullSnare 1/4 10%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.100"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PullSnare 1/4 15%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.152"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PullSnare 1/4 20%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.200"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PullSnare 1/4 25%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.252"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PullSnare 1/4 30%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.300"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PullSnare 1/4 35%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.352"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PullSnare 1/4 40%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.400"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PullSnare 1/4 45%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.452"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PullSnare 1/4 50%" numberOfNotes="8" notesPerBeat="4">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.500"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/2 05%" numberOfNotes="2" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.052"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/2 10%" numberOfNotes="2" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.104"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/2 15%" numberOfNotes="2" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.156"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/2 20%" numberOfNotes="2" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.208"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/2 25%" numberOfNotes="2" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.26"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/2 30%" numberOfNotes="2" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.305"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/2 35%" numberOfNotes="2" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.351"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/2 40%" numberOfNotes="2" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.409"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/2 45%" numberOfNotes="2" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.455"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/2 50%" numberOfNotes="2" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.506"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/2 55%" numberOfNotes="2" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.556"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/2 60%" numberOfNotes="2" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.604"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/2 65%" numberOfNotes="2" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.654"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/2 70%" numberOfNotes="2" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.708"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/2 75%" numberOfNotes="2" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.758"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/2 80%" numberOfNotes="2" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.805"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/2 85%" numberOfNotes="2" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.855"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/2 90%" numberOfNotes="2" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.909"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="Swing 1/2 95%" numberOfNotes="2" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.959"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PushSwing 1/2 05%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.058"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.052"/>
+    <SHIFT delta="-0.032"/>
+    <SHIFT delta="0.052"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.052"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/2 10%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.100"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.100"/>
+    <SHIFT delta="-0.052"/>
+    <SHIFT delta="0.100"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.100"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/2 15%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.158"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.152"/>
+    <SHIFT delta="-0.062"/>
+    <SHIFT delta="0.152"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.152"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/2 20%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.200"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.200"/>
+    <SHIFT delta="-0.082"/>
+    <SHIFT delta="0.200"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.200"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/2 25%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.258"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.252"/>
+    <SHIFT delta="-0.100"/>
+    <SHIFT delta="0.252"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.252"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/2 30%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.300"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.300"/>
+    <SHIFT delta="-0.132"/>
+    <SHIFT delta="0.300"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.300"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/2 35%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.350"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.350"/>
+    <SHIFT delta="-0.152"/>
+    <SHIFT delta="0.350"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.350"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/2 40%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.400"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.400"/>
+    <SHIFT delta="-0.162"/>
+    <SHIFT delta="0.400"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.400"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/2 45%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.450"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.450"/>
+    <SHIFT delta="-0.172"/>
+    <SHIFT delta="0.450"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.450"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/2 50%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.500"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.500"/>
+    <SHIFT delta="-0.182"/>
+    <SHIFT delta="0.500"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.500"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/2 55%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.550"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.550"/>
+    <SHIFT delta="-0.192"/>
+    <SHIFT delta="0.550"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.550"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/2 60%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.600"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.600"/>
+    <SHIFT delta="-0.202"/>
+    <SHIFT delta="0.600"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.600"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/2 65%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.650"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.650"/>
+    <SHIFT delta="-0.212"/>
+    <SHIFT delta="0.650"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.650"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/2 70%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.700"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.700"/>
+    <SHIFT delta="-0.222"/>
+    <SHIFT delta="0.700"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.700"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/2 75%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.750"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.750"/>
+    <SHIFT delta="-0.232"/>
+    <SHIFT delta="0.750"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.750"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/2 80%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.800"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.800"/>
+    <SHIFT delta="-0.242"/>
+    <SHIFT delta="0.800"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.800"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/2 85%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.850"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.850"/>
+    <SHIFT delta="-0.252"/>
+    <SHIFT delta="0.850"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.850"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/2 90%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.900"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.900"/>
+    <SHIFT delta="-0.262"/>
+    <SHIFT delta="0.900"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.900"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PushSwing 1/2 95%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.950"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.950"/>
+    <SHIFT delta="-0.272"/>
+    <SHIFT delta="0.950"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.950"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PullSwing 1/2 05%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.058"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.052"/>
+    <SHIFT delta="0.032"/>
+    <SHIFT delta="0.052"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.052"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/2 10%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.100"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.100"/>
+    <SHIFT delta="0.052"/>
+    <SHIFT delta="0.100"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.100"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/2 15%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.158"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.152"/>
+    <SHIFT delta="0.062"/>
+    <SHIFT delta="0.152"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.152"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/2 20%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.200"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.200"/>
+    <SHIFT delta="0.082"/>
+    <SHIFT delta="0.200"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.200"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/2 25%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.258"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.252"/>
+    <SHIFT delta="0.100"/>
+    <SHIFT delta="0.252"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.252"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/2 30%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.300"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.300"/>
+    <SHIFT delta="0.132"/>
+    <SHIFT delta="0.300"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.300"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/2 35%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.350"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.350"/>
+    <SHIFT delta="0.152"/>
+    <SHIFT delta="0.350"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.350"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/2 40%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.400"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.400"/>
+    <SHIFT delta="0.162"/>
+    <SHIFT delta="0.400"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.400"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/2 45%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.450"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.450"/>
+    <SHIFT delta="0.172"/>
+    <SHIFT delta="0.450"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.450"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/2 50%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.500"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.500"/>
+    <SHIFT delta="0.182"/>
+    <SHIFT delta="0.500"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.500"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/2 55%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.550"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.550"/>
+    <SHIFT delta="0.192"/>
+    <SHIFT delta="0.550"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.550"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/2 60%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.600"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.600"/>
+    <SHIFT delta="0.202"/>
+    <SHIFT delta="0.600"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.600"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/2 65%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.650"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.650"/>
+    <SHIFT delta="0.212"/>
+    <SHIFT delta="0.650"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.650"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/2 70%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.700"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.700"/>
+    <SHIFT delta="0.222"/>
+    <SHIFT delta="0.700"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.700"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/2 75%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.750"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.750"/>
+    <SHIFT delta="0.232"/>
+    <SHIFT delta="0.750"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.750"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/2 80%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.800"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.800"/>
+    <SHIFT delta="0.242"/>
+    <SHIFT delta="0.800"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.800"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/2 85%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.850"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.850"/>
+    <SHIFT delta="0.252"/>
+    <SHIFT delta="0.850"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.850"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/2 90%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.900"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.900"/>
+    <SHIFT delta="0.262"/>
+    <SHIFT delta="0.900"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.900"/>
+  </GROOVETEMPLATE>
+
+<GROOVETEMPLATE name="PullSwing 1/2 95%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.950"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.950"/>
+    <SHIFT delta="0.272"/>
+    <SHIFT delta="0.950"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.950"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PushSnare 1/2 05%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.052"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PushSnare 1/2 10%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.100"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PushSnare 1/2 15%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.152"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PushSnare 1/2 20%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.200"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PushSnare 1/2 25%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.252"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PushSnare 1/2 30%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.300"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PushSnare 1/2 35%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.352"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PushSnare 1/2 40%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.400"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PushSnare 1/2 45%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.452"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PushSnare 1/2 50%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.500"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PullSnare 1/2 05%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.052"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PullSnare 1/2 10%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.100"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PullSnare 1/2 15%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.152"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PullSnare 1/2 20%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.200"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PullSnare 1/2 25%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.252"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PullSnare 1/2 30%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.300"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PullSnare 1/2 35%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.352"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PullSnare 1/2 40%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.400"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PullSnare 1/2 45%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.452"/>
+  </GROOVETEMPLATE>
+
+  <GROOVETEMPLATE name="PullSnare 1/2 50%" numberOfNotes="8" notesPerBeat="2">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.500"/>
+  </GROOVETEMPLATE>
+  <GROOVETEMPLATE name="SlowFast 05%" numberOfNotes="4" notesPerBeat="1">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.025"/>
+    <SHIFT delta="0.05"/>
+    <SHIFT delta="0.025"/>
+  </GROOVETEMPLATE>
+  <GROOVETEMPLATE name="SlowFast 10%" numberOfNotes="4" notesPerBeat="1">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.050"/>
+    <SHIFT delta="0.100"/>
+    <SHIFT delta="0.050"/>
+  </GROOVETEMPLATE>
+  <GROOVETEMPLATE name="SlowFast 15%" numberOfNotes="4" notesPerBeat="1">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.075"/>
+    <SHIFT delta="0.150"/>
+    <SHIFT delta="0.075"/>
+  </GROOVETEMPLATE>
+  <GROOVETEMPLATE name="SlowFast 20%" numberOfNotes="4" notesPerBeat="1">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.100"/>
+    <SHIFT delta="0.200"/>
+    <SHIFT delta="0.100"/>
+  </GROOVETEMPLATE>
+  <GROOVETEMPLATE name="SlowFast 25%" numberOfNotes="4" notesPerBeat="1">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.125"/>
+    <SHIFT delta="0.250"/>
+    <SHIFT delta="0.125"/>
+  </GROOVETEMPLATE>
+  <GROOVETEMPLATE name="FastSlow 05%" numberOfNotes="4" notesPerBeat="1">
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.025"/>
+    <SHIFT delta="-0.050"/>
+    <SHIFT delta="-0.025"/>
+  </GROOVETEMPLATE>
+  <GROOVETEMPLATE name="FastSlow 10%" numberOfNotes="4" notesPerBeat="1">
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.050"/>
+    <SHIFT delta="-0.100"/>
+    <SHIFT delta="-0.050"/>
+  </GROOVETEMPLATE>
+  <GROOVETEMPLATE name="FastSlow 15%" numberOfNotes="4" notesPerBeat="1">
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.075"/>
+    <SHIFT delta="-0.150"/>
+    <SHIFT delta="-0.075"/>
+  </GROOVETEMPLATE>
+  <GROOVETEMPLATE name="FastSlow 20%" numberOfNotes="4" notesPerBeat="1">
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.100"/>
+    <SHIFT delta="-0.200"/>
+    <SHIFT delta="-0.100"/>
+  </GROOVETEMPLATE>
+  <GROOVETEMPLATE name="FastSlow 25%" numberOfNotes="4" notesPerBeat="1">
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.125"/>
+    <SHIFT delta="-0.250"/>
+    <SHIFT delta="-0.125"/>
+  </GROOVETEMPLATE>
+  <GROOVETEMPLATE name="SlowFast2 05%" numberOfNotes="8" notesPerBeat="1">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.012"/>
+    <SHIFT delta="0.025"/>
+    <SHIFT delta="0.038"/>
+    <SHIFT delta="0.050"/>
+    <SHIFT delta="0.038"/>
+    <SHIFT delta="0.025"/>
+    <SHIFT delta="0.012"/>
+  </GROOVETEMPLATE>
+  <GROOVETEMPLATE name="SlowFast2 10%" numberOfNotes="8" notesPerBeat="1">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.025"/>
+    <SHIFT delta="0.050"/>
+    <SHIFT delta="0.075"/>
+    <SHIFT delta="0.100"/>
+    <SHIFT delta="0.075"/>
+    <SHIFT delta="0.050"/>
+    <SHIFT delta="0.025"/>
+  </GROOVETEMPLATE>
+  <GROOVETEMPLATE name="SlowFast2 15%" numberOfNotes="8" notesPerBeat="1">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.037"/>
+    <SHIFT delta="0.075"/>
+    <SHIFT delta="0.113"/>
+    <SHIFT delta="0.150"/>
+    <SHIFT delta="0.113"/>
+    <SHIFT delta="0.075"/>
+    <SHIFT delta="0.037"/>
+  </GROOVETEMPLATE>
+  <GROOVETEMPLATE name="SlowFast2 20%" numberOfNotes="8" notesPerBeat="1">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.050"/>
+    <SHIFT delta="0.100"/>
+    <SHIFT delta="0.150"/>
+    <SHIFT delta="0.200"/>
+    <SHIFT delta="0.150"/>
+    <SHIFT delta="0.100"/>
+    <SHIFT delta="0.050"/>
+  </GROOVETEMPLATE>
+  <GROOVETEMPLATE name="SlowFast2 25%" numberOfNotes="8" notesPerBeat="1">
+    <SHIFT delta="0"/>
+    <SHIFT delta="0.062"/>
+    <SHIFT delta="0.125"/>
+    <SHIFT delta="0.186"/>
+    <SHIFT delta="0.250"/>
+    <SHIFT delta="0.186"/>
+    <SHIFT delta="0.125"/>
+    <SHIFT delta="0.062"/>
+  </GROOVETEMPLATE>
+  <GROOVETEMPLATE name="FastSlow2 05%" numberOfNotes="8" notesPerBeat="1">
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.012"/>
+    <SHIFT delta="-0.025"/>
+    <SHIFT delta="-0.038"/>
+    <SHIFT delta="-0.050"/>
+    <SHIFT delta="-0.038"/>
+    <SHIFT delta="-0.025"/>
+    <SHIFT delta="-0.012"/>
+  </GROOVETEMPLATE>
+  <GROOVETEMPLATE name="FastSlow2 10%" numberOfNotes="8" notesPerBeat="1">
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.025"/>
+    <SHIFT delta="-0.050"/>
+    <SHIFT delta="-0.075"/>
+    <SHIFT delta="-0.100"/>
+    <SHIFT delta="-0.075"/>
+    <SHIFT delta="-0.050"/>
+    <SHIFT delta="-0.025"/>
+  </GROOVETEMPLATE>
+  <GROOVETEMPLATE name="FastSlow2 15%" numberOfNotes="8" notesPerBeat="1">
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.037"/>
+    <SHIFT delta="-0.075"/>
+    <SHIFT delta="-0.113"/>
+    <SHIFT delta="-0.150"/>
+    <SHIFT delta="-0.113"/>
+    <SHIFT delta="-0.075"/>
+    <SHIFT delta="-0.037"/>
+  </GROOVETEMPLATE>
+  <GROOVETEMPLATE name="FastSlow2 20%" numberOfNotes="8" notesPerBeat="1">
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.050"/>
+    <SHIFT delta="-0.100"/>
+    <SHIFT delta="-0.150"/>
+    <SHIFT delta="-0.200"/>
+    <SHIFT delta="-0.150"/>
+    <SHIFT delta="-0.100"/>
+    <SHIFT delta="-0.050"/>
+  </GROOVETEMPLATE>
+  <GROOVETEMPLATE name="FastSlow2 25%" numberOfNotes="8" notesPerBeat="1">
+    <SHIFT delta="0"/>
+    <SHIFT delta="-0.062"/>
+    <SHIFT delta="-0.125"/>
+    <SHIFT delta="-0.186"/>
+    <SHIFT delta="-0.250"/>
+    <SHIFT delta="-0.186"/>
+    <SHIFT delta="-0.125"/>
+    <SHIFT delta="-0.062"/>
+  </GROOVETEMPLATE>
+    </GROOVETEMPLATES>

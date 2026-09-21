@@ -2,7 +2,6 @@
 
 #include "magda/daw/audio/io/HardwareRouteNames.hpp"
 #include "magda/daw/engine/MagdaEngineBehaviour.hpp"
-#include "magda/daw/engine/MagdaPropertyStorage.hpp"
 #include "magda/daw/engine/TracktionAudioIO.hpp"
 
 /// @file Audio Settings driving the Tracktion engine's interface through its wave devices (#2749).
@@ -150,8 +149,8 @@ struct Rig {
     }
 
     ScratchFolder scratch;
-    tracktion::Engine engine{std::make_unique<magda::MagdaPropertyStorage>(scratch.appName, true),
-                             nullptr, std::make_unique<magda::MagdaEngineBehaviour>(true)};
+    tracktion::Engine engine{std::make_unique<tracktion::PropertyStorage>(scratch.appName), nullptr,
+                             std::make_unique<magda::MagdaEngineBehaviour>()};
     std::unique_ptr<magda::TracktionAudioIO> audioIO =
         std::make_unique<magda::TracktionAudioIO>(engine.getDeviceManager());
 };

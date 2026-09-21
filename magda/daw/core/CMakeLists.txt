@@ -55,6 +55,7 @@ target_sources(magda_daw PRIVATE
     ParameterDetector.cpp
     PresetManager.cpp
     DrumkitManager.cpp
+    GrooveStore.cpp
     DeviceCatalogMetadata.cpp
     LegacyDeviceAliases.cpp
     DeviceParamMigrations.cpp
@@ -133,6 +134,7 @@ target_sources(magda_daw PRIVATE
     AutomationManager.hpp
     PresetManager.hpp
     DrumkitManager.hpp
+    GrooveStore.hpp
     DeviceCatalogMetadata.hpp
     LegacyDeviceAliases.hpp
     PluginPreferences.hpp

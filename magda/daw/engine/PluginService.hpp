@@ -81,6 +81,9 @@ class PluginService {
     /// The engine is going away: end any scan, then forget its pair and its scanner.
     void forgetEngineList();
 
+    /// No engine lends a pair: answer off the default formats and a list of the service's own.
+    void useOwnList();
+
     /**
      * @brief Load the saved list, drop what is gone, and look for what is new.
      *
@@ -239,6 +242,10 @@ class PluginService {
 
     juce::AudioPluginFormatManager* formats_ = nullptr;
     juce::KnownPluginList* list_ = nullptr;
+
+    /// What useOwnList() attaches, until the engine that asked for it goes.
+    std::unique_ptr<juce::AudioPluginFormatManager> ownFormats_;
+    std::unique_ptr<juce::KnownPluginList> ownList_;
 
     /// Which attachment the pair above belongs to. Work queued under an earlier one is
     /// dropped rather than applied to whatever is attached when it runs.

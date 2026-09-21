@@ -158,6 +158,15 @@ void PluginService::useEngineList(juce::AudioPluginFormatManager& formats,
     list_ = &list;
 }
 
+void PluginService::useOwnList() {
+    if (ownFormats_ == nullptr) {
+        ownFormats_ = std::make_unique<juce::AudioPluginFormatManager>();
+        juce::addDefaultFormatsToManager(*ownFormats_);
+        ownList_ = std::make_unique<juce::KnownPluginList>();
+    }
+    useEngineList(*ownFormats_, *ownList_);
+}
+
 void PluginService::forgetEngineList() {
     // Both write through the borrowed pair on a later turn: the coordinator's completion
     // callback off its timer, the discovery thread off its message-thread hop. The
@@ -171,6 +180,11 @@ void PluginService::forgetEngineList() {
     formats_ = nullptr;
     list_ = nullptr;
     internalScanner_ = nullptr;
+
+    // Released with the engine rather than at static destruction, which runs after the
+    // message manager a list's change broadcaster needs; the next attach reloads it.
+    ownList_.reset();
+    ownFormats_.reset();
 }
 
 PluginStateProvider* PluginService::useStateProvider(PluginStateProvider& provider) {

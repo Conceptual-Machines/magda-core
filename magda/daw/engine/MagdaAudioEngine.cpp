@@ -3,19 +3,23 @@
 #include <algorithm>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "../api/magda_api_live.hpp"
 #include "../audio/DeviceParameterDisplayTextProvider.hpp"
 #include "../audio/controllers/ControllerRouter.hpp"
+#include "../audio/io/TracktionAudioSettings.hpp"
+#include "../core/Config.hpp"
 #include "../core/DeviceStateCommands.hpp"
+#include "../core/GrooveStore.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/UndoManager.hpp"  // complete type for the unique_ptr this forwards
 #include "../core/controllers/MidiLearnCoordinator.hpp"
 #include "../music/GrooveLibrary.hpp"
+#include "AppServices.hpp"
 #include "PluginService.hpp"
 #include "RenderProgressWindow.hpp"
-#include "TracktionEngineWrapper.hpp"
 #include "host/EngineHost.hpp"
 
 namespace magda::daw::engine_host {
@@ -43,16 +47,7 @@ magda::daw::engine_host::EngineHost::HardwareChannelCatalog hardwareCatalog(
 
 namespace magda {
 
-MagdaAudioEngine::MagdaAudioEngine(AudioEngineOptions options) {
-    // The option has to reach the wrapper before initialize(), or a headless
-    // caller that picked this engine opens devices, builds GUI services and
-    // starts a plugin scan. The CLI is such a caller.
-    auto wrapper = std::make_unique<TracktionEngineWrapper>();
-    wrapper->setForceHeadless(options.headless);
-    wrapper->setOpensAudioInterface(false);
-    fork_ = wrapper.get();
-    tracktion_ = std::move(wrapper);
-
+MagdaAudioEngine::MagdaAudioEngine(AudioEngineOptions options) : headless_(options.headless) {
     // Here rather than in initialize(), so that everything below can ask it
     // things without first asking whether it exists. It renders nothing until
     // start() puts it on a device.
@@ -122,33 +117,33 @@ MagdaAudioEngine::~MagdaAudioEngine() {
 
 // --- what magda::engine answers ----------------------------------------------
 //
-// Transport and what is published with it. Below this section are the fork's
-// remaining services and what nothing answers yet, each named with its issue.
+// Transport and what is published with it. Below this section is what nothing
+// answers yet, each named with its issue.
 
 bool MagdaAudioEngine::initialize() {
-    // Services alone: an Edit would come with a playback context, an
-    // AudioBridge mirroring every device into it and a second copy of every
-    // external plugin (#2579).
-    if (!fork_->initialiseServices())
-        return false;
+    app_services::bringUp();
+
+    // No engine lends the service a list, so it keeps its own; a headless run never scans.
+    auto& plugins = PluginService::getInstance();
+    plugins.useOwnList();
+    plugins.openList(!app_services::isHeadless(headless_) &&
+                     Config::getInstance().getScanPluginsOnStartup());
+
+    // Where Tracktion kept them, so switching engines keeps the list (#2761).
+    grooveStore_ = std::make_unique<GrooveStore>(tracktionSettingsFile());
+    GrooveLibrary::getInstance().setStore(
+        [this] { return grooveStore_->grooves(); },
+        [this](const GrooveTemplateData& groove) { return grooveStore_->upsert(groove); });
 
     // Before the device, so the first publish can already load the plugins a
     // project names rather than going without them until the second (#2566).
-    host_->setPluginServices(*PluginService::getInstance().formats(),
-                             *PluginService::getInstance().knownList());
+    host_->setPluginServices(*plugins.formats(), *plugins.knownList());
 
-    // The host first, because an external plugin under this engine has no copy in the fork
-    // at all (#2579); the fork answers for the internal devices it still syncs, which is
-    // the only reason this does not simply go to the host (#2757).
-    setDeviceParameterFormatter(
-        [this](const ChainNodePath& devicePath, int paramIndex, float normalised) {
-            if (host_ != nullptr) {
-                auto text = host_->formatDeviceParameter(devicePath, paramIndex, normalised);
-                if (text.isNotEmpty())
-                    return text;
-            }
-            return fork_->formatDeviceParameter(devicePath, paramIndex, normalised);
-        });
+    setDeviceParameterFormatter([this](const ChainNodePath& devicePath, int paramIndex,
+                                       float normalised) {
+        return host_ != nullptr ? host_->formatDeviceParameter(devicePath, paramIndex, normalised)
+                                : juce::String{};
+    });
 
     // Read at each publish, and republished when the library changes: a groove already
     // on a playing clip keeps the one it was compiled with otherwise (#2757).
@@ -171,18 +166,16 @@ bool MagdaAudioEngine::initialize() {
     // device scan would take it back out of every "all" route.
     host_->registerVirtualMidiSource(qwertyMidiDeviceId());
 
-    // The fork opened no interface (#2747); this one is the only one, and the
-    // headless CLI renders offline without it.
+    // The only interface, and the headless CLI renders offline without it.
     host_->setHardwareOutputProvider([this] { return hardwareCatalog(*audioIO_, false); });
     host_->setHardwareInputProvider([this] { return hardwareCatalog(*audioIO_, true); });
     audioIO_->addListener(this);
-    if (!fork_->isHeadlessRuntime())
+    if (!app_services::isHeadless(headless_))
         audioIO_->open();
     host_->start(audioIO_->getDeviceManager());
 
-    // The activity light and every live note are pointed at this engine's meters and
-    // this engine's queue rather than at the fork's, and the only virtual input is the
-    // QWERTY keyboard: nothing here holds Tracktion's (#2759).
+    // The activity light and every live note go to this engine's meters and queue, and
+    // the only virtual input is the QWERTY keyboard (#2759).
     auto& midi = MidiBridge::getInstance();
     midi.useEngine(this, [] {
         std::vector<MidiDeviceInfo> devices;
@@ -194,6 +187,7 @@ bool MagdaAudioEngine::initialize() {
     midi.setMeters(&meters_);
     midi.setLiveSink(this);
     midi.onActiveInputsChanged = [this] { host_->refreshMidiInputs(); };
+    midi.addMidiDeviceListListener(this);
 
     initialised_ = true;
     return true;
@@ -202,20 +196,18 @@ void MagdaAudioEngine::shutdown() {
     // Stop the service reaching the host before it is stopped or destroyed.
     PluginService::getInstance().forgetStateProvider(*this);
 
-    // The host is destroyed before the fork (member order), so the sink has to be gone
-    // before the queue behind it is. clearLiveSink returns only once any in-flight MIDI
-    // callback has left, which is what forgetEngine() then asserts. Unconditional, and
-    // conditional on being this engine's sink rather than on owning MIDI: the sink is
-    // this object, so it is owed the service whether or not another engine has since
-    // attached over it.
+    // The sink has to be gone before the host's queue behind it is. clearLiveSink returns
+    // only once any in-flight MIDI callback has left, which is what forgetEngine() then
+    // asserts. Unconditional, and conditional on being this engine's sink rather than on
+    // owning MIDI: the sink is this object, so it is owed the service whether or not
+    // another engine has since attached over it.
     //
     // The rest is the MIDI layer's, so it only runs while this engine is the one
     // attached. shutdown() runs again from the destructor, and by then another engine may
     // hold MIDI; unbinding its router or stopping its inputs is not this one's to do.
-    // Where this engine does still own it, it hands the service back here rather than
-    // leaving it to the fork below, having attached after the fork did. The router goes
-    // first so it unsubscribes before the inputs stop.
+    // The router goes first so it unsubscribes before the inputs stop.
     auto& midi = MidiBridge::getInstance();
+    midi.removeMidiDeviceListListener(this);
     midi.clearLiveSink(this);
     if (midi.isAttachedTo(this)) {
         MidiLearnCoordinator::getInstance().cancelLearn();
@@ -227,13 +219,21 @@ void MagdaAudioEngine::shutdown() {
     api_->setMidiBridge(nullptr);
     audioIO_->removeListener(this);
 
-    forgetDeviceParameterFormatter();
-    GrooveLibrary::getInstance().forgetOnChanged();
+    // What initialize() lent the app's services, handed back once: by the destructor's
+    // call another engine may have lent its own.
+    const bool lent = std::exchange(initialised_, false);
+    if (lent) {
+        forgetDeviceParameterFormatter();
+        GrooveLibrary::getInstance().forgetOnChanged();
+        GrooveLibrary::getInstance().forgetStore();
+    }
 
     host_->stop();
     audioIO_->getDeviceManager().closeAudioDevice();
-    tracktion_->shutdown();
-    initialised_ = false;
+
+    // After the host, which opens plugins off the list.
+    if (lent)
+        PluginService::getInstance().forgetEngineList();
 }
 bool MagdaAudioEngine::hasActiveEdit() const {
     return initialised_;
@@ -377,7 +377,12 @@ void MagdaAudioEngine::hardwareChannelsChanged() {
     host_->refreshHardwareInputs();
 }
 void MagdaAudioEngine::setMidiDevicesReadyCallback(std::function<void()> callback) {
-    tracktion_->setMidiDevicesReadyCallback(std::move(callback));
+    midiDevicesReady_ = std::move(callback);
+}
+void MagdaAudioEngine::midiDeviceListChanged() {
+    // JUCE opens a port when it is first sent to, so a device listed is a device ready.
+    if (midiDevicesReady_ && !juce::MidiInput::getAvailableDevices().isEmpty())
+        midiDevicesReady_();
 }
 
 /** @brief Read hosted external-plugin state through EngineHost (#2758). */
@@ -400,8 +405,7 @@ void MagdaAudioEngine::projectAuthoredStateAt(const ChainNodePath& devicePath) {
     projectAuthoredStateToRenderedDevice(*this, devicePath);
 }
 
-// The window opens onto the instance this renders through, and the fork holds
-// no copy of it any more (#2580).
+// The window opens onto the instance this renders through (#2580).
 std::optional<PluginPrograms> MagdaAudioEngine::getPluginPrograms(const ChainNodePath& path) {
     return host_->getPluginPrograms(path);
 }
@@ -632,3 +636,8 @@ void MagdaAudioEngine::onPunchEnabledChanged(bool punchInEnabled, bool punchOutE
 }
 
 }  // namespace magda
+
+// No Tracktion header may reach this engine (#2761): an include that brings one in fails here.
+#ifdef TRACKTION_ENGINE_H_INCLUDED
+    #error "MagdaAudioEngine.cpp reaches tracktion_engine.h"
+#endif
