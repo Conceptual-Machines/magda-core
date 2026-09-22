@@ -22,6 +22,7 @@ import platform
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -321,13 +322,20 @@ def other_load():
     """What else is using this machine, as a note, or empty when it is quiet enough to measure."""
     if platform.system() == "Windows":
         return ""
-    lines = command_output(["ps", "-Ao", "pcpu,pid,comm", "-r"]).splitlines()[1:]
-    heavy = []
-    for line in lines[:8]:
-        parts = line.strip().split(None, 2)
-        if len(parts) == 3 and float(parts[0]) >= 10.0 and int(parts[1]) != os.getpid():
-            heavy.append("%s at %s%%" % (parts[2].rsplit("/", 1)[-1], parts[0]))
-    return ", ".join(heavy)
+
+    def sample():
+        heavy = {}
+        for line in command_output(["ps", "-Ao", "pcpu,pid,comm", "-r"]).splitlines()[1:9]:
+            parts = line.strip().split(None, 2)
+            if len(parts) == 3 and float(parts[0]) >= 25.0 and int(parts[1]) != os.getpid():
+                heavy[int(parts[1])] = "%s at %s%%" % (parts[2].rsplit("/", 1)[-1], parts[0])
+        return heavy
+
+    # Twice, a second apart: a daemon's momentary burst is not a build.
+    first = sample()
+    time.sleep(1.0)
+    second = sample()
+    return ", ".join(second[pid] for pid in second if pid in first)
 
 
 def median_run(runs):
