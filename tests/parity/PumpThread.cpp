@@ -26,6 +26,7 @@ void PumpThread::measure(std::int64_t warmupSamples, std::int64_t measuredSample
     const auto blocks = static_cast<std::size_t>(measuredSamples / blockSize_ + 2);
     times_ = std::make_unique<BlockTimes>(blocks);
     span_ = {};
+    span_.envelope.reserve(blocks / 100 + 2);
     warmupRemaining_ = warmupSamples;
     measuredRemaining_ = measuredSamples;
     phase_.store(Phase::Warmup, std::memory_order_release);
@@ -67,8 +68,16 @@ void PumpThread::run() {
                     times_->record(elapsed);
                     if (elapsed > blockLength)
                         ++span_.overruns;
-                    span_.outputPeak =
-                        std::max(span_.outputPeak, buffer.getMagnitude(0, blockSize_));
+                    {
+                        const auto peak = buffer.getMagnitude(0, blockSize_);
+                        span_.outputPeak = std::max(span_.outputPeak, peak);
+                        const auto bucket = static_cast<std::size_t>(span_.blocks.blocks++ / 100);
+                        if (bucket >= span_.envelope.size() &&
+                            span_.envelope.size() < span_.envelope.capacity())
+                            span_.envelope.push_back(0.0f);
+                        if (bucket < span_.envelope.size())
+                            span_.envelope[bucket] = std::max(span_.envelope[bucket], peak);
+                    }
 
                     measuredRemaining_ -= blockSize_;
                     if (measuredRemaining_ <= 0) {

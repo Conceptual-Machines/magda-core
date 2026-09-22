@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cstdint>
 #include <optional>
+#include <vector>
 
 #include "ParityMeasure.hpp"
 #include "PumpDevice.hpp"
@@ -32,6 +33,9 @@ struct SpanResult {
 
     /// The loudest sample the span produced, so a silent engine is not measured as a cheap one.
     float outputPeak = 0.0f;
+
+    /// The output's peak per hundred blocks, in order: whether the project kept sounding.
+    std::vector<float> envelope;
 };
 
 class PumpThread final : public juce::Thread {

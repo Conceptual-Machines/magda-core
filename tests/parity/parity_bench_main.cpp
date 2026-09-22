@@ -288,6 +288,10 @@ juce::var measure(const Options& options, Running& running) {
     result->setProperty("memory", memory.get());
     result->setProperty("cpu", cpu.get());
     result->setProperty("output_peak", span->outputPeak);
+    juce::Array<juce::var> envelope;
+    for (const auto peak : span->envelope)
+        envelope.add(peak);
+    result->setProperty("envelope", envelope);
 
     // A silent engine is a cheap one, and a cheap number is not a measurement.
     if (span->outputPeak <= 0.0f)

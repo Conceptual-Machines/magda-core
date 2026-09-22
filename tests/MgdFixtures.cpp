@@ -480,11 +480,13 @@ std::vector<MgdFixture> build() {
             {.fileName = "DS_OT_fx_riser_dark_20260701_153831.wav",
              .material = toneFor(6.0, 550.0),
              .covers = "its bounce on the fourth track, muted with it"},
+            // Long enough for the slots' whole cycles (28 s and 39 s of source), so the parity
+            // bench plays the loop rather than a tone and then a cycle of silence (#2082).
             {.fileName = "TAMUZ_TD_90_drum_best_simple_trashy.wav",
-             .material = toneFor(2.0, 660.0),
+             .material = toneFor(30.0, 660.0),
              .covers = "the session clip the first track launches on play (#2485)"},
             {.fileName = "SLS_O_65_guitar_soul_serenade_Cmin.wav",
-             .material = toneFor(2.0, 770.0),
+             .material = toneFor(40.0, 770.0),
              .covers = "the session clip the second track launches on play (#2485)"},
             {.fileName = "BS_NCS3_140_bass_growl_leap_Dbmin.wav",
              .material = toneFor(2.0, 880.0),
