@@ -15,6 +15,11 @@ namespace {
 /// thread with nothing to do leans on the ready set while it waits.
 constexpr int kSpinsBeforeYield = 200;
 
+/// How long a worker finds nothing to take before it leaves the block. A worker behind a long
+/// op spun until the block ended: on a project whose instrument is most of the block that was
+/// most of a core per worker (#2786).
+constexpr std::chrono::microseconds kWorkerIdleBeforeLeaving{25};
+
 /// Serial work a worker has to be able to take before waking it pays for the wake. Measured on
 /// the parity bench (#2786): a 43-pad kit at 60 to 130 us of serial work renders slower with
 /// every worker added, and a 340 us block is fastest with two.
@@ -82,7 +87,8 @@ int widthOf(const RenderPlan& plan) {
 
 }  // namespace
 
-ParallelPlanExecutor::ParallelPlanExecutor(RenderThreadPool* pool) : pool_(pool) {
+ParallelPlanExecutor::ParallelPlanExecutor(RenderThreadPool* pool)
+    : pool_(pool), idleBeforeLeavingTicks_(ticksIn(kWorkerIdleBeforeLeaving)) {
     setWorkPerWorker(kWorkPerWorker);
 }
 
@@ -349,6 +355,7 @@ void ParallelPlanExecutor::takeWork() {
     const bool onCaller =
         juce::Thread::getCurrentThreadId() == callerThread_.load(std::memory_order_relaxed);
     int emptyPops = 0;
+    std::int64_t idleSince = 0;
 
     while (remaining_.load(std::memory_order_acquire) > 0) {
         auto op = INVALID_OP_ID;
@@ -357,6 +364,16 @@ void ParallelPlanExecutor::takeWork() {
         if (op == INVALID_OP_ID)
             op = pop();
         if (op == INVALID_OP_ID) {
+            // A worker leaves once it has found nothing for a while. The callback thread never
+            // does, so whatever is released after it goes is still taken.
+            if (!onCaller) {
+                const auto now = juce::Time::getHighResolutionTicks();
+                if (idleSince == 0)
+                    idleSince = now;
+                else if (now - idleSince > idleBeforeLeavingTicks_)
+                    return;
+            }
+
             // Nothing ready, and the block is not over: something is running
             // that will release more. Spin for a while, because the wait is
             // usually shorter than the system call that avoids it, then stand
@@ -369,6 +386,7 @@ void ParallelPlanExecutor::takeWork() {
         }
 
         emptyPops = 0;
+        idleSince = 0;
         const auto started = juce::Time::getHighResolutionTicks();
         int ran = 0;
         for (; op != INVALID_OP_ID; ++ran)

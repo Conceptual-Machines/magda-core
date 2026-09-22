@@ -301,6 +301,7 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     /// executor may still be rendering when this one is prepared.
     std::atomic<std::int64_t> workEstimateTicks_{-1};
     std::int64_t workPerWorkerTicks_ = 0;
+    std::int64_t idleBeforeLeavingTicks_ = 0;
     int lastWorkers_ = 0;
 
     /// The op only the callback thread runs, so the block's dominant device stays on one thread,
