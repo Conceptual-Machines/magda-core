@@ -337,6 +337,21 @@ void MagdaCompiledPolyInstrument::releaseAllVoices() {
         *monoGateZone_ = 0.0f;
 }
 
+bool MagdaCompiledPolyInstrument::isIdle(const DeviceProcessContext& context) const {
+    if (context.midiIn != nullptr &&
+        (context.midiIn->size() > 0 || context.midiIn->isAllNotesOff()))
+        return false;
+
+    // Decays on silence too, so it only stops moving once it has reached zero.
+    if (gainSlot() >= 0 && limEnv_ != 0.0f)
+        return false;
+
+    const auto* impl = static_cast<const mydsp_poly*>(poly_.get());
+    return impl != nullptr && std::ranges::all_of(impl->fVoiceTable, [](const auto* voice) {
+               return voice->fCurNote == kFreeVoice;
+           });
+}
+
 void MagdaCompiledPolyInstrument::snapshotVoiceStates() {
     auto* impl = static_cast<mydsp_poly*>(poly_.get());
     if (impl == nullptr)
@@ -468,6 +483,27 @@ void MagdaCompiledPolyInstrument::process(DeviceProcessContext& context) {
         resetAllVoices();
     wasPlaying_ = context.isPlaying;
 
+    const int n = context.numSamples;
+    const int start = context.startSample;
+    const int hostChannels = context.audio->getNumChannels();
+    if (hostChannels <= 0 || numOutputs_ <= 0 || scratchOut_.getNumSamples() <= 0)
+        return;
+
+    const int mode = (hasVoiceModes() && monoVoice_) ? readVoiceModeIndex() : Poly;
+    if (mode != lastVoiceMode_) {
+        resetAllVoices();  // flush hung notes when switching Poly <-> Mono/Legato
+        lastVoiceMode_ = mode;
+    }
+
+    // compute() would mix silence and move nothing but the window grid, and the fan-out below
+    // lands on voices that are not computed.
+    if (mode == Poly && isIdle(context)) {
+        renderPosition_ += n;
+        for (auto& level : voiceLevels_)
+            level = {};
+        return;
+    }
+
     // Fan each voice macro out to every poly voice (Glide forced to 0 so reused
     // voices never portamento) and to the mono voice (real value, incl. Glide).
     for (int slot = 0; slot < hostSlotCountValue(); ++slot) {
@@ -489,17 +525,6 @@ void MagdaCompiledPolyInstrument::process(DeviceProcessContext& context) {
     if (monoBendZone_)
         *monoBendZone_ = currentBend_;
 
-    const int n = context.numSamples;
-    const int start = context.startSample;
-    const int hostChannels = context.audio->getNumChannels();
-    if (hostChannels <= 0 || numOutputs_ <= 0 || scratchOut_.getNumSamples() <= 0)
-        return;
-
-    const int mode = (hasVoiceModes() && monoVoice_) ? readVoiceModeIndex() : Poly;
-    if (mode != lastVoiceMode_) {
-        resetAllVoices();  // flush hung notes when switching Poly <-> Mono/Legato
-        lastVoiceMode_ = mode;
-    }
     ::dsp* active =
         (mode == Poly) ? static_cast<::dsp*>(poly_.get()) : static_cast<::dsp*>(monoVoice_.get());
 

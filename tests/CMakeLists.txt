@@ -69,6 +69,8 @@ set(TEST_SOURCES
     devices/test_chord_engine_device.cpp
     # All-notes-off beside the events, which the instrument used to drop (#2418)
     devices/test_instrument_panic.cpp
+    # An idle instrument skips its render, exactly (#2786)
+    devices/test_instrument_idle.cpp
     devices/test_device_sdk_handles.cpp
     devices/test_external_insert_registry.cpp
     devices/test_external_insert_enablement.cpp
