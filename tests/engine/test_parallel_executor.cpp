@@ -887,6 +887,36 @@ TEST_CASE("A block heavier than its estimate hands the rest to the pool",
     CHECK(meeting.mostAtOnce == 3);
 }
 
+TEST_CASE("A hand-over straight after a shared block runs every op once",
+          "[engine][exec][parallel][2786]") {
+    // Workers from the shared block may still be leaving takeWork() when the next block hands
+    // over, and they take whatever is published. A ready set gathered while it is being
+    // published lets one of them release an op the gathering then publishes a second time.
+    Rig rig(wideScene());
+    RenderThreadPool pool(7, false);
+    ParallelPlanExecutor executor(&pool);
+    REQUIRE(executor.prepare(rig.plan, rig.scene.bindings, rig.context).empty());
+
+    constexpr int kRounds = 400;
+    for (int round = 0; round < kRounds; ++round) {
+        executor.setWorkPerWorker({});
+        executor.process(rig.values, blockAt(2 * round * kBlockSize, kBlockSize), rig.output);
+
+        // One thread by the estimate, and handed over at the first look at the clock.
+        executor.setWorkPerWorker(std::chrono::nanoseconds{50});
+        executor.assumeWork({});
+        executor.process(rig.values, blockAt((2 * round + 1) * kBlockSize, kBlockSize), rig.output);
+        REQUIRE(executor.lastWorkers() > 0);
+    }
+
+    for (auto& [id, device] : rig.scene.bindings.devices) {
+        INFO("device " << id);
+        auto* gain = dynamic_cast<GainDevice*>(device);
+        REQUIRE(gain != nullptr);
+        CHECK(gain->processedBlocks == 2 * kRounds);
+    }
+}
+
 TEST_CASE("The two executors prepare to the same layout", "[engine][exec][parallel]") {
     // Everything below the schedule is shared rather than mirrored, and this is
     // what says so: a second answer to any of these would be a second

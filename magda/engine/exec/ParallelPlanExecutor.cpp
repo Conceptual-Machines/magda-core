@@ -167,6 +167,8 @@ std::vector<std::string> ParallelPlanExecutor::prepare(const RenderPlan& plan,
     const auto numOps = plan.ops.size();
     pending_ = std::vector<std::atomic<std::uint16_t>>(numOps);
     nextReady_ = std::vector<std::atomic<OpId>>(numOps);
+    handOverReady_.clear();
+    handOverReady_.reserve(numOps);
 
     for (std::size_t i = 0; i < numOps; ++i) {
         if (plan.ops[i].kind == OpKind::Output)
@@ -351,9 +353,15 @@ void ParallelPlanExecutor::startSchedule(std::size_t done) {
         return;
     }
 
+    // Gathered whole before any is published: a worker still leaving the last block takes what
+    // is pushed, and the consumer it releases would otherwise be found ready and pushed again.
+    handOverReady_.clear();
     for (auto op = done; op < numOps; ++op)
         if (pending_[op].load(std::memory_order_relaxed) == 0)
-            push(static_cast<OpId>(op));
+            handOverReady_.push_back(static_cast<OpId>(op));
+
+    for (const auto op : handOverReady_)
+        push(op);
 }
 
 int ParallelPlanExecutor::everyUsefulWorker() const {

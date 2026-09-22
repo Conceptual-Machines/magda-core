@@ -265,6 +265,10 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     /// another thread is looking at it.
     std::vector<std::atomic<OpId>> nextReady_;
 
+    /// The ready set of a block handed over mid-drain, gathered before it is published. Sized
+    /// to the plan at prepare, so gathering never allocates.
+    std::vector<OpId> handOverReady_;
+
     /// Top of the ready stack: an op and a tag, packed. The tag moves on every
     /// push and every pop and never resets, so a thread that read the top,
     /// stalled, and came back to find the same op there cannot mistake it for
