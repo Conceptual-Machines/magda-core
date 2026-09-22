@@ -178,7 +178,19 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     /// touches the ready set at all: the thread that ran an op runs its
     /// consumer, which is both the cheapest schedule and the warmest cache.
     /// The op is counted off remaining_ by the caller, once per chain.
-    OpId runOp(OpId op);
+    OpId runOp(OpId op, bool onCaller);
+
+    /// Render @p op, timing it on a timed block. @p onCaller says which thread is running it.
+    void renderTimed(OpId op, bool onCaller);
+
+    /// Hand @p op to the callback thread's slot if it is the owned op. True when it did.
+    bool releaseToCaller(OpId op);
+
+    /// Whether this block times its ops, and when the next one does.
+    void beginTimedBlock();
+
+    /// After a timed block: the heaviest op becomes the one the callback thread owns.
+    void chooseOwnedOp();
 
     /// Whether @p op renders in the drain rather than in the prefix or the serial tail.
     bool rendersInDrain(OpId op) const;
@@ -290,6 +302,18 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     std::atomic<std::int64_t> workEstimateTicks_{-1};
     std::int64_t workPerWorkerTicks_ = 0;
     int lastWorkers_ = 0;
+
+    /// The op only the callback thread runs, so the block's dominant device stays on one thread,
+    /// and the slot it waits in once ready. Workers never take it from the shared stack.
+    std::atomic<OpId> ownedOp_{INVALID_OP_ID};
+    alignas(64) std::atomic<OpId> ownedReady_{INVALID_OP_ID};
+    std::atomic<juce::Thread::ThreadID> callerThread_{nullptr};
+
+    /// Each op's time on the last timed block, written by whichever thread ran it.
+    std::vector<std::int64_t> opTicks_;
+    std::atomic<bool> timingBlock_{false};
+    int blocksUntilTimed_ = 0;
+    std::uint32_t jitter_ = 0x9e3779b9U;
 };
 
 }  // namespace magda::engine

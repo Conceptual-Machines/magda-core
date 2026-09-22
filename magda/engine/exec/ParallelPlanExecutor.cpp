@@ -20,6 +20,11 @@ constexpr int kSpinsBeforeYield = 200;
 /// every worker added, and a 340 us block is fastest with two.
 constexpr std::chrono::microseconds kWorkPerWorker{150};
 
+/// Blocks between the ones whose ops are timed, varied inside this range so the timing does not
+/// land on the same musical phase every time.
+constexpr int kTimedBlockEvery = 48;
+constexpr int kTimedBlockJitter = 32;
+
 /// Ops the calling thread renders between looks at the clock while it drains alone. It also
 /// looks before every device, which is where the time goes.
 constexpr std::size_t kOpsPerClockCheck = 4;
@@ -169,6 +174,9 @@ std::vector<std::string> ParallelPlanExecutor::prepare(const RenderPlan& plan,
     nextReady_ = std::vector<std::atomic<OpId>>(numOps);
     handOverReady_.clear();
     handOverReady_.reserve(numOps);
+    opTicks_.assign(numOps, 0);
+    ownedOp_.store(INVALID_OP_ID, std::memory_order_relaxed);
+    blocksUntilTimed_ = 0;
 
     for (std::size_t i = 0; i < numOps; ++i) {
         if (plan.ops[i].kind == OpKind::Output)
@@ -249,18 +257,65 @@ std::size_t ParallelPlanExecutor::renderInPlanOrder(std::int64_t started) {
         if (!rendersInDrain(op))
             continue;
 
-        const ProfileScope timed([kind](auto elapsed) { BlockProfile::addOp(kind, elapsed); });
-        core_.renderOp(op, valueOf(op), block_, *output_);
+        renderTimed(op, true);
     }
     return plan_->ops.size();
 }
 
-OpId ParallelPlanExecutor::runOp(OpId op) {
-    if (rendersInDrain(op)) {
-        const auto kind = plan_->ops[static_cast<std::size_t>(op)].kind;
-        const ProfileScope timed([kind](auto elapsed) { BlockProfile::addOp(kind, elapsed); });
+void ParallelPlanExecutor::renderTimed(OpId op, bool onCaller) {
+    const auto kind = plan_->ops[static_cast<std::size_t>(op)].kind;
+    const ProfileScope timed([this, op, onCaller, kind](auto elapsed) {
+        BlockProfile::addOp(kind, elapsed);
+        if (op == ownedOp_.load(std::memory_order_relaxed))
+            BlockProfile::addDevice(onCaller ? "owned op on the callback" : "owned op on a worker",
+                                    elapsed);
+    });
+
+    if (!timingBlock_.load(std::memory_order_relaxed)) {
         core_.renderOp(op, valueOf(op), block_, *output_);
+        return;
     }
+
+    // One op, one thread, one entry: whichever thread runs an op writes its time, and the
+    // block's completion is what hands it to the callback.
+    const auto started = juce::Time::getHighResolutionTicks();
+    core_.renderOp(op, valueOf(op), block_, *output_);
+    opTicks_[static_cast<std::size_t>(op)] = juce::Time::getHighResolutionTicks() - started;
+}
+
+void ParallelPlanExecutor::chooseOwnedOp() {
+    // The heaviest op of the timed block, kept on the callback thread until the next one says
+    // otherwise, so a device that dominates the block renders on one thread every block.
+    auto heaviest = INVALID_OP_ID;
+    std::int64_t most = 0;
+    for (std::size_t index = 0; index < opTicks_.size(); ++index)
+        if (opTicks_[index] > most && rendersInDrain(static_cast<OpId>(index))) {
+            most = opTicks_[index];
+            heaviest = static_cast<OpId>(index);
+        }
+    ownedOp_.store(heaviest, std::memory_order_relaxed);
+}
+
+void ParallelPlanExecutor::beginTimedBlock() {
+    const bool timing = --blocksUntilTimed_ <= 0;
+    if (timing) {
+        jitter_ = jitter_ * 1664525U + 1013904223U;
+        blocksUntilTimed_ =
+            kTimedBlockEvery + static_cast<int>((jitter_ >> 16) % kTimedBlockJitter);
+    }
+    timingBlock_.store(timing, std::memory_order_relaxed);
+}
+
+bool ParallelPlanExecutor::releaseToCaller(OpId op) {
+    if (op != ownedOp_.load(std::memory_order_relaxed))
+        return false;
+    ownedReady_.store(op, std::memory_order_release);
+    return true;
+}
+
+OpId ParallelPlanExecutor::runOp(OpId op, bool onCaller) {
+    if (rendersInDrain(op))
+        renderTimed(op, onCaller);
 
     OpId carryOn = INVALID_OP_ID;
 
@@ -277,6 +332,10 @@ OpId ParallelPlanExecutor::runOp(OpId op) {
             1)
             continue;
 
+        // The owned op waits for the callback thread whoever released it, a join included.
+        if (releaseToCaller(consumer))
+            continue;
+
         if (carryOn == INVALID_OP_ID)
             carryOn = consumer;
         else
@@ -287,10 +346,16 @@ OpId ParallelPlanExecutor::runOp(OpId op) {
 }
 
 void ParallelPlanExecutor::takeWork() {
+    const bool onCaller =
+        juce::Thread::getCurrentThreadId() == callerThread_.load(std::memory_order_relaxed);
     int emptyPops = 0;
 
     while (remaining_.load(std::memory_order_acquire) > 0) {
-        auto op = pop();
+        auto op = INVALID_OP_ID;
+        if (onCaller && ownedReady_.load(std::memory_order_relaxed) != INVALID_OP_ID)
+            op = ownedReady_.exchange(INVALID_OP_ID, std::memory_order_acquire);
+        if (op == INVALID_OP_ID)
+            op = pop();
         if (op == INVALID_OP_ID) {
             // Nothing ready, and the block is not over: something is running
             // that will release more. Spin for a while, because the wait is
@@ -307,7 +372,7 @@ void ParallelPlanExecutor::takeWork() {
         const auto started = juce::Time::getHighResolutionTicks();
         int ran = 0;
         for (; op != INVALID_OP_ID; ++ran)
-            op = runOp(op);
+            op = runOp(op, onCaller);
         busyTicks_.fetch_add(juce::Time::getHighResolutionTicks() - started,
                              std::memory_order_relaxed);
 
@@ -346,10 +411,12 @@ void ParallelPlanExecutor::startSchedule(std::size_t done) {
     // against a total that has not been set yet.
     remaining_.store(static_cast<int>(numOps - done), std::memory_order_relaxed);
     busyTicks_.store(0, std::memory_order_relaxed);
+    ownedReady_.store(INVALID_OP_ID, std::memory_order_relaxed);
 
     if (done == 0) {
         for (const auto op : plan_->initialReadyOps)
-            push(op);
+            if (!releaseToCaller(op))
+                push(op);
         return;
     }
 
@@ -361,7 +428,8 @@ void ParallelPlanExecutor::startSchedule(std::size_t done) {
             handOverReady_.push_back(static_cast<OpId>(op));
 
     for (const auto op : handOverReady_)
-        push(op);
+        if (!releaseToCaller(op))
+            push(op);
 }
 
 int ParallelPlanExecutor::everyUsefulWorker() const {
@@ -415,6 +483,8 @@ void ParallelPlanExecutor::process(const PlanValues& values, const BlockInfo& re
     // every worker woken spins on the ready stack until the block drains.
     const auto workers = std::min(everyUsefulWorker(), workersWorthWaking());
     lastWorkers_ = pool_ != nullptr ? workers : 0;
+    callerThread_.store(juce::Thread::getCurrentThreadId(), std::memory_order_relaxed);
+    beginTimedBlock();
     {
         const ProfileScope timed(
             [](auto elapsed) { BlockProfile::addPhase(BlockProfile::Drain, elapsed); });
@@ -439,6 +509,8 @@ void ParallelPlanExecutor::process(const PlanValues& values, const BlockInfo& re
             }
         }
     }
+    if (timingBlock_.load(std::memory_order_relaxed))
+        chooseOwnedOp();
     const ProfileScope tail(
         [](auto elapsed) { BlockProfile::addPhase(BlockProfile::SerialTail, elapsed); });
 

@@ -785,17 +785,21 @@ TEST_CASE("Ops on independent branches really do run at the same time",
 
 namespace {
 
-/// Holds its thread for a fixed time, so the work a block measures has a floor.
+/// Holds its thread for a fixed time, so the work a block measures has a floor, and records
+/// which threads it ran on.
 class BusyDevice final : public EngineDevice {
   public:
     explicit BusyDevice(std::chrono::microseconds work) : work_(work) {}
 
     void process(DeviceBlock& block) override {
+        threads.push_back(std::this_thread::get_id());
         const auto until = std::chrono::steady_clock::now() + work_;
         while (std::chrono::steady_clock::now() < until) {
         }
         block.audio.multiplyBy(0.5f);
     }
+
+    std::vector<std::thread::id> threads;
 
   private:
     std::chrono::microseconds work_;
@@ -914,6 +918,46 @@ TEST_CASE("A hand-over straight after a shared block runs every op once",
         auto* gain = dynamic_cast<GainDevice*>(device);
         REQUIRE(gain != nullptr);
         CHECK(gain->processedBlocks == 2 * kRounds);
+    }
+}
+
+TEST_CASE("The block's heaviest op renders on the calling thread every block",
+          "[engine][exec][parallel][2786]") {
+    // A dominant device that moves between threads from block to block is what the native
+    // engine did with a hosted instrument while the fork kept it on the callback (#2786).
+    Scene scene;
+    BusyDevice* heavy = nullptr;
+    for (TrackId id = 1; id <= 4; ++id) {
+        auto track = makeTrack(id);
+        track.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(600 + id)));
+        scene.tracks.push_back(track);
+        scene.bindings.clipAudio[id] = scene.own(std::make_unique<RampSource>(id));
+        if (id == 1) {
+            auto device = std::make_unique<BusyDevice>(std::chrono::microseconds{300});
+            heavy = device.get();
+            scene.bindings.devices[DeviceKey{600 + id}] = scene.own(std::move(device));
+        } else {
+            scene.bindings.devices[DeviceKey{600 + id}] =
+                scene.own(std::make_unique<GainDevice>(0.5f));
+        }
+    }
+
+    Rig rig(std::move(scene));
+    RenderThreadPool pool(3, false);
+    ParallelPlanExecutor executor(&pool);
+    executor.setWorkPerWorker({});
+    REQUIRE(executor.prepare(rig.plan, rig.scene.bindings, rig.context).empty());
+
+    // The first block is timed, and what it measured decides the owner from the next one on.
+    constexpr int kBlocks = 40;
+    for (int block = 0; block < kBlocks; ++block)
+        executor.process(rig.values, blockAt(block * kBlockSize, kBlockSize), rig.output);
+
+    REQUIRE(heavy->threads.size() == kBlocks);
+    const auto caller = std::this_thread::get_id();
+    for (std::size_t block = 1; block < heavy->threads.size(); ++block) {
+        INFO("block " << block);
+        CHECK(heavy->threads[block] == caller);
     }
 }
 
