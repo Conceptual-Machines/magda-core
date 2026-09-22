@@ -392,13 +392,19 @@ void resolveParams(const ParamTable& table, ResolvedParams& out, std::span<ModCo
     // reason to keep rendering last block's values: those were resolved for a
     // parameter set this one no longer has, and a device reading them would be
     // holding a frozen project rather than an unresolved one.
-    out.beginBlock(block.numSamples);
+    //
+    // Kept instead for the table they were resolved from, whose undriven
+    // parameters resolve to the same stored value every block.
+    const bool kept =
+        table.size() == out.size() && out.beginBlockKeeping(block.numSamples, table.serial);
 
     // Indexed by the same ParamId, so a size that disagrees is two things
     // prepared against different tables. Refused whole: half a table of
     // parameters is a project with some of its values from somewhere else.
-    if (table.size() != out.size())
+    if (table.size() != out.size()) {
+        out.beginBlock(block.numSamples);
         return;
+    }
 
     // The modifier list is indexed the same way, and a runtime sized for a
     // different one holds another modifier's phase at every index. Rather than
@@ -413,7 +419,7 @@ void resolveParams(const ParamTable& table, ResolvedParams& out, std::span<ModCo
     // value rather than an index into a runtime sized for another list.
     const ModRuntime* reading = runnable ? mods : nullptr;
 
-    for (const auto& step : table.order) {
+    for (const auto& step : kept ? table.movingOrder : table.order) {
         switch (step.kind) {
             case ParamStep::Kind::Parameter:
                 if (step.index >= 0 && step.index < table.size())
@@ -429,6 +435,8 @@ void resolveParams(const ParamTable& table, ResolvedParams& out, std::span<ModCo
                 break;
         }
     }
+
+    out.markResolved(table.serial);
 }
 
 }  // namespace magda::engine

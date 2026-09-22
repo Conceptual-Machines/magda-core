@@ -236,6 +236,14 @@ struct ParamTable {
      */
     std::vector<ParamStep> order;
 
+    /// @ref order without the parameters nothing drives: what a block re-resolves while its
+    /// table is unchanged, since an undriven parameter resolves to its stored value every time.
+    std::vector<ParamStep> movingOrder;
+
+    /// Distinct per compiled table, so a resolver can tell the table it resolved last from a
+    /// new one at the same address. Zero for a table built by hand, which is resolved whole.
+    std::uint64_t serial = 0;
+
     /// The most links any one parameter has, i.e. how much room the block
     /// resolver needs to gather one parameter's contributions.
     int maxLinksPerParam = 0;

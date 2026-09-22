@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <limits>
@@ -297,6 +298,72 @@ TEST_CASE("A device's entries say which of them the host drives", "[engine][para
 
     // Slot 3, which only ever reads its stored value.
     CHECK_FALSE(params.drivenAt(3));
+}
+
+TEST_CASE("A table resolved again re-resolves only what moves", "[engine][param][table][2786]") {
+    const auto tableWith = [](float storedValue) {
+        auto track = makeTrack(1);
+        auto device = makeDevice(7, 2);
+        device.parameters[1].currentValue = storedValue;
+        track.chain.fxChainElements.push_back(makeDeviceElement(device));
+
+        AutomationPoint from;
+        from.id = 1;
+        from.beatPosition = 0.0;
+        from.value = 0.2f;
+        auto to = from;
+        to.id = 2;
+        to.beatPosition = 4.0;
+        to.value = 0.8f;
+
+        AutomationLaneInfo lane;
+        lane.id = 1;
+        lane.target = ControlTarget::pluginParam(ChainNodePath::topLevelDevice(1, 7), 0);
+        lane.type = AutomationLaneType::Absolute;
+        lane.authorityState = AutomationAuthorityState::Reading;
+        lane.absolutePoints = {from, to};
+
+        const std::vector<TrackInfo> tracks{track};
+        const auto master = makeMaster();
+        const std::vector<AutomationLaneInfo> lanes{lane};
+        return compileParamTable(compileRenderPlan(tracks, master), tracks, master, lanes);
+    };
+
+    const auto table = tableWith(30.0f);
+    const auto automated = table.find(deviceParam(1, 7, 0));
+    const auto stored = table.find(deviceParam(1, 7, 1));
+    REQUIRE(automated != INVALID_PARAM_ID);
+    REQUIRE(stored != INVALID_PARAM_ID);
+
+    const auto moves = [&table](magda::engine::ParamId param) {
+        return std::ranges::any_of(table.movingOrder, [param](const ParamStep& step) {
+            return step.kind == ParamStep::Kind::Parameter && step.index == param;
+        });
+    };
+    CHECK(moves(automated));
+    CHECK_FALSE(moves(stored));
+
+    ResolvedParams values;
+    values.prepare(table.size());
+    std::vector<ModContribution> links(
+        static_cast<std::size_t>(std::max(table.maxLinksPerParam, 1)));
+    std::vector<magda::engine::ParamSegment> segments(
+        static_cast<std::size_t>(values.segmentCapacity()));
+
+    resolveParams(table, values, links, segments, blockAt(0.0));
+    CHECK(values[automated].value() == approx(20.0f));
+    CHECK(values[stored].value() == approx(30.0f));
+
+    // The same table a block later: the lane has moved, the stored value is kept.
+    resolveParams(table, values, links, segments, blockAt(2.0));
+    CHECK(values[automated].value() == approx(50.0f));
+    CHECK(values[stored].value() == approx(30.0f));
+
+    // A knob move is a new table, and nothing resolved from the old one is kept.
+    const auto moved = tableWith(60.0f);
+    REQUIRE(moved.serial != table.serial);
+    resolveParams(moved, values, links, segments, blockAt(2.0));
+    CHECK(values[stored].value() == approx(60.0f));
 }
 
 TEST_CASE("One device id in two sections is two parameters", "[engine][param][table]") {
