@@ -1,9 +1,7 @@
 #pragma once
 
-#include <array>
-#include <atomic>
 #include <chrono>
-#include <cstdint>
+#include <cstddef>
 
 #include "plan/RenderPlan.hpp"
 
@@ -11,8 +9,9 @@
  * @file BlockProfile.hpp
  * @brief Where a block's time goes, by op kind and phase, when MAGDA_ENGINE_PROFILE is set.
  *
- * Off, it costs one predictable branch per op. On, it tallies nanoseconds into atomics and
- * prints the table to stderr at exit. A measuring aid, never a feature.
+ * Off, it costs one predictable branch per op. On, each thread tallies into its own table, so
+ * the profile adds no lock and no shared cache line to the drain it measures, and the tables
+ * are summed and printed to stderr at exit. A measuring aid, never a feature.
  */
 
 namespace magda::engine {
@@ -33,38 +32,19 @@ class BlockProfile {
         return enabled_;
     }
 
-    static void addOp(OpKind kind, std::chrono::steady_clock::duration elapsed) {
-        add(opNanos_[static_cast<std::size_t>(kind)], opCounts_[static_cast<std::size_t>(kind)],
-            elapsed);
-    }
+    static void addOp(OpKind kind, std::chrono::steady_clock::duration elapsed);
+    static void addPhase(Phase phase, std::chrono::steady_clock::duration elapsed);
 
-    static void addPhase(Phase phase, std::chrono::steady_clock::duration elapsed) {
-        add(phaseNanos_[static_cast<std::size_t>(phase)],
-            phaseCounts_[static_cast<std::size_t>(phase)], elapsed);
-    }
-
-    /// A device's own share, by the name it gives. Takes a lock, so only when the profile is on.
+    /// A device's own share, by the name it gives.
     static void addDevice(const char* name, std::chrono::steady_clock::duration elapsed);
 
     /// Print the tallies to stderr. Registered with atexit when the profile is on.
     static void report();
 
-  private:
-    static void add(std::atomic<std::uint64_t>& nanos, std::atomic<std::uint64_t>& count,
-                    std::chrono::steady_clock::duration elapsed) {
-        nanos.fetch_add(static_cast<std::uint64_t>(
-                            std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count()),
-                        std::memory_order_relaxed);
-        count.fetch_add(1, std::memory_order_relaxed);
-    }
-
     static constexpr std::size_t kKinds = 64;
 
+  private:
     static const bool enabled_;
-    static std::array<std::atomic<std::uint64_t>, kKinds> opNanos_;
-    static std::array<std::atomic<std::uint64_t>, kKinds> opCounts_;
-    static std::array<std::atomic<std::uint64_t>, PhaseCount> phaseNanos_;
-    static std::array<std::atomic<std::uint64_t>, PhaseCount> phaseCounts_;
 };
 
 /// Times a scope into @p sink when the profile is on.
