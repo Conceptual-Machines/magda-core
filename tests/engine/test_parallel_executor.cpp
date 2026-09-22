@@ -415,9 +415,14 @@ Render renderReference(Scene scene, const std::vector<int>& lengths) {
     return renderThrough(rig, executor, lengths);
 }
 
-Render renderParallel(Scene scene, RenderThreadPool& pool, const std::vector<int>& lengths) {
+/// Through @p pool, waking every worker the plan can use unless @p measured, in which case the
+/// executor wakes only what the work it measures pays for.
+Render renderParallel(Scene scene, RenderThreadPool& pool, const std::vector<int>& lengths,
+                      bool measured = false) {
     Rig rig(std::move(scene));
     ParallelPlanExecutor executor(&pool);
+    if (!measured)
+        executor.setWorkPerWorker({});
     return renderThrough(rig, executor, lengths);
 }
 
@@ -692,11 +697,13 @@ TEST_CASE("The parallel executor renders what the reference executor renders, sa
         REQUIRE_FALSE(expected.samples.empty());
 
         for (std::size_t index = 0; index < pools.size(); ++index) {
-            INFO("threads: " << pools[index]->numThreads());
-            const auto actual = renderParallel(scene.build(), *pools[index], lengths);
-            CHECK(firstDifference(expected.samples, actual.samples) == -1);
-            CHECK(actual.samples.size() == expected.samples.size());
-            CHECK(actual.meters == expected.meters);
+            for (const bool measured : {false, true}) {
+                INFO("threads: " << pools[index]->numThreads() << " measured: " << measured);
+                const auto actual = renderParallel(scene.build(), *pools[index], lengths, measured);
+                CHECK(firstDifference(expected.samples, actual.samples) == -1);
+                CHECK(actual.samples.size() == expected.samples.size());
+                CHECK(actual.meters == expected.meters);
+            }
         }
     }
 }
@@ -735,6 +742,7 @@ TEST_CASE("Every op runs exactly once a block", "[engine][exec][parallel]") {
     Rig rig(wideScene());
     RenderThreadPool pool(7, false);
     ParallelPlanExecutor executor(&pool);
+    executor.setWorkPerWorker({});
 
     REQUIRE(executor.prepare(rig.plan, rig.scene.bindings, rig.context).empty());
 
@@ -773,6 +781,110 @@ TEST_CASE("Ops on independent branches really do run at the same time",
 
     CHECK(meeting.mostAtOnce == 2);
     CHECK(meeting.met);
+}
+
+namespace {
+
+/// Holds its thread for a fixed time, so the work a block measures has a floor.
+class BusyDevice final : public EngineDevice {
+  public:
+    explicit BusyDevice(std::chrono::microseconds work) : work_(work) {}
+
+    void process(DeviceBlock& block) override {
+        const auto until = std::chrono::steady_clock::now() + work_;
+        while (std::chrono::steady_clock::now() < until) {
+        }
+        block.audio.multiplyBy(0.5f);
+    }
+
+  private:
+    std::chrono::microseconds work_;
+};
+
+}  // namespace
+
+TEST_CASE("A plan too light to pay for a wake-up renders on the calling thread",
+          "[engine][exec][parallel][2786]") {
+    Rig rig(wideScene());
+    RenderThreadPool pool(7, false);
+    ParallelPlanExecutor executor(&pool);
+    REQUIRE(executor.prepare(rig.plan, rig.scene.bindings, rig.context).empty());
+
+    // No block of this scene is worth a worker at this rate, however slow the machine running it.
+    executor.setWorkPerWorker(std::chrono::hours{1});
+
+    // Every worker the plan can use until a block has been measured.
+    executor.process(rig.values, blockAt(0, kBlockSize), rig.output);
+    CHECK(executor.lastWorkers() == std::min(executor.parallelism() - 1, pool.numThreads() - 1));
+
+    executor.process(rig.values, blockAt(kBlockSize, kBlockSize), rig.output);
+    CHECK(executor.lastWorkers() == 0);
+}
+
+TEST_CASE("Work that pays for its workers wakes them", "[engine][exec][parallel][2786]") {
+    const auto busyScene = [] {
+        Scene scene;
+        for (TrackId id = 1; id <= 4; ++id) {
+            auto track = makeTrack(id);
+            track.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(700 + id)));
+            scene.tracks.push_back(track);
+            scene.bindings.clipAudio[id] = scene.own(std::make_unique<RampSource>(id));
+            scene.bindings.devices[DeviceKey{700 + id}] =
+                scene.own(std::make_unique<BusyDevice>(std::chrono::microseconds{300}));
+        }
+        return scene;
+    };
+
+    Rig rig(busyScene());
+    RenderThreadPool pool(3, false);
+    ParallelPlanExecutor executor(&pool);
+    REQUIRE(executor.prepare(rig.plan, rig.scene.bindings, rig.context).empty());
+
+    // 1.2 ms of work is twelve workers' worth, so the plan and the pool are what limit it.
+    for (int block = 0; block < 4; ++block) {
+        executor.process(rig.values, blockAt(block * kBlockSize, kBlockSize), rig.output);
+        CHECK(executor.lastWorkers() == 3);
+    }
+
+    // A plan swap keeps the estimate, so the new epoch's first block is not a serial one.
+    Rig next(busyScene());
+    ParallelPlanExecutor replacement(&pool);
+    REQUIRE(replacement.prepare(next.plan, next.scene.bindings, next.context, &executor).empty());
+    replacement.process(next.values, blockAt(4 * kBlockSize, kBlockSize), next.output);
+    CHECK(replacement.lastWorkers() == 3);
+}
+
+TEST_CASE("A block heavier than its estimate hands the rest to the pool",
+          "[engine][exec][parallel][2786]") {
+    // The first block after the transport starts, or after a publish that added the heavy
+    // devices: the blocks before it said one thread was enough. Track 1 holds the calling
+    // thread past a worker's worth, and the other three only finish if they meet on three.
+    Meeting meeting;
+    Scene scene;
+    for (TrackId id = 1; id <= 4; ++id) {
+        auto track = makeTrack(id);
+        track.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(800 + id)));
+        scene.tracks.push_back(track);
+        scene.bindings.clipAudio[id] = scene.own(std::make_unique<RampSource>(id));
+        if (id == 1)
+            scene.bindings.devices[DeviceKey{800 + id}] =
+                scene.own(std::make_unique<BusyDevice>(std::chrono::microseconds{300}));
+        else
+            scene.bindings.devices[DeviceKey{800 + id}] =
+                scene.own(std::make_unique<RendezvousDevice>(meeting, 3));
+    }
+
+    Rig rig(std::move(scene));
+    RenderThreadPool pool(3, false);
+    ParallelPlanExecutor executor(&pool);
+    REQUIRE(executor.prepare(rig.plan, rig.scene.bindings, rig.context).empty());
+
+    executor.assumeWork({});
+    executor.process(rig.values, blockAt(0, kBlockSize), rig.output);
+
+    CHECK(executor.lastWorkers() == 3);
+    CHECK(meeting.met);
+    CHECK(meeting.mostAtOnce == 3);
 }
 
 TEST_CASE("The two executors prepare to the same layout", "[engine][exec][parallel]") {
@@ -893,7 +1005,9 @@ TEST_CASE("Retiring an epoch waits for its own workers and not for the ones afte
     // are in the pool rather than on how many are in this job would be pushed
     // back up by every block the render thread starts next.
     struct Epoch {
-        Epoch(Scene scene, RenderThreadPool& pool) : rig(std::move(scene)), executor(&pool) {}
+        Epoch(Scene scene, RenderThreadPool& pool) : rig(std::move(scene)), executor(&pool) {
+            executor.setWorkPerWorker({});
+        }
 
         Rig rig;
         ParallelPlanExecutor executor;

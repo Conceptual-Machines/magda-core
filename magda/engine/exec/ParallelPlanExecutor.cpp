@@ -1,6 +1,7 @@
 #include "exec/ParallelPlanExecutor.hpp"
 
 #include <algorithm>
+#include <limits>
 #include <vector>
 
 #include "exec/BlockProfile.hpp"
@@ -13,6 +14,21 @@ namespace {
 /// waiting), so leaving is not an option; what this decides is only how hard a
 /// thread with nothing to do leans on the ready set while it waits.
 constexpr int kSpinsBeforeYield = 200;
+
+/// Serial work a worker has to be able to take before waking it pays for the wake. Measured on
+/// the parity bench (#2786): a 43-pad kit at 60 to 130 us of serial work renders slower with
+/// every worker added, and a 340 us block is fastest with two.
+constexpr std::chrono::microseconds kWorkPerWorker{150};
+
+/// Ops the calling thread renders between looks at the clock while it drains alone. It also
+/// looks before every device, which is where the time goes.
+constexpr std::size_t kOpsPerClockCheck = 4;
+
+std::int64_t ticksIn(std::chrono::nanoseconds duration) {
+    return static_cast<std::int64_t>(
+        static_cast<double>(duration.count()) *
+        static_cast<double>(juce::Time::getHighResolutionTicksPerSecond()) / 1.0e9);
+}
 
 constexpr std::uint64_t packReady(OpId op, std::uint32_t tag) {
     return (static_cast<std::uint64_t>(tag) << 32) | static_cast<std::uint32_t>(op);
@@ -60,6 +76,36 @@ int widthOf(const RenderPlan& plan) {
 }
 
 }  // namespace
+
+ParallelPlanExecutor::ParallelPlanExecutor(RenderThreadPool* pool) : pool_(pool) {
+    setWorkPerWorker(kWorkPerWorker);
+}
+
+void ParallelPlanExecutor::setWorkPerWorker(std::chrono::nanoseconds work) {
+    workPerWorkerTicks_ = ticksIn(work);
+}
+
+void ParallelPlanExecutor::assumeWork(std::chrono::nanoseconds work) {
+    workEstimateTicks_.store(ticksIn(work), std::memory_order_relaxed);
+}
+
+int ParallelPlanExecutor::workersWorthWaking() const {
+    // Every worker the plan can use until a block says otherwise, so the first block of a heavy
+    // session is not the one that finds out it needed them.
+    const auto estimate = workEstimateTicks_.load(std::memory_order_relaxed);
+    if (estimate < 0 || workPerWorkerTicks_ <= 0)
+        return std::numeric_limits<int>::max();
+    return static_cast<int>(
+        std::min<std::int64_t>(estimate / workPerWorkerTicks_, std::numeric_limits<int>::max()));
+}
+
+void ParallelPlanExecutor::noteWork(std::int64_t ticks) {
+    // Up at once, down slowly: a block that needed more workers than it got is a deadline at
+    // risk, and one that got more than it needed costs a few wake-ups.
+    const auto estimate = workEstimateTicks_.load(std::memory_order_relaxed);
+    const auto next = ticks >= estimate ? ticks : estimate - (estimate - ticks) / 16;
+    workEstimateTicks_.store(next, std::memory_order_relaxed);
+}
 
 void ParallelPlanExecutor::letGoOfPool() {
     // A worker can still be inside the last block's takeWork(): render() returns
@@ -133,6 +179,11 @@ std::vector<std::string> ParallelPlanExecutor::prepare(const RenderPlan& plan,
 
     parallelism_ = widthOf(plan);
     plan_ = &plan;
+
+    // The session it replaces is the best guess at this one's weight: most publishes are edits.
+    if (previous != nullptr)
+        workEstimateTicks_.store(previous->workEstimateTicks_.load(std::memory_order_relaxed),
+                                 std::memory_order_relaxed);
     return messages;
 }
 
@@ -166,19 +217,45 @@ OpId ParallelPlanExecutor::pop() {
     }
 }
 
-OpId ParallelPlanExecutor::runOp(OpId op) {
+bool ParallelPlanExecutor::rendersInDrain(OpId op) const {
     // Two kinds are left for the thread that drove the block, and both for the
     // same reason: each shares a buffer with the others of its kind rather than
     // owning one. Output ops add into the one buffer reaching the hardware, and
     // modulation taps detect through one scratch buffer apiece on the executor
     // and on the runtime, so two taps running at once, which two listened-to
     // tracks with disjoint subgraphs make schedulable, would corrupt each
-    // other's detection. Counted here anyway, because what waits on what is the
+    // other's detection. Counted anyway, because what waits on what is the
     // plan's business and not this decision's; neither can stall the block,
     // because nothing consumes either.
     const auto kind = plan_->ops[static_cast<std::size_t>(op)].kind;
-    if (kind != OpKind::Output && kind != OpKind::ModSource && kind != OpKind::InsertSend &&
-        !core_.inMidiPrefix(op)) {
+    return kind != OpKind::Output && kind != OpKind::ModSource && kind != OpKind::InsertSend &&
+           !core_.inMidiPrefix(op);
+}
+
+std::size_t ParallelPlanExecutor::renderInPlanOrder(std::int64_t started) {
+    // An estimate is only the blocks before this one. The block the transport starts on, or
+    // the one that strikes a dozen idle instruments, finds out here and hands the rest over.
+    const bool canHandOver = pool_ != nullptr && everyUsefulWorker() > 0 && workPerWorkerTicks_ > 0;
+
+    for (std::size_t index = 0; index < plan_->ops.size(); ++index) {
+        const auto kind = plan_->ops[index].kind;
+        if (canHandOver && (kind == OpKind::Device || index % kOpsPerClockCheck == 0) &&
+            juce::Time::getHighResolutionTicks() - started > workPerWorkerTicks_)
+            return index;
+
+        const auto op = static_cast<OpId>(index);
+        if (!rendersInDrain(op))
+            continue;
+
+        const ProfileScope timed([kind](auto elapsed) { BlockProfile::addOp(kind, elapsed); });
+        core_.renderOp(op, valueOf(op), block_, *output_);
+    }
+    return plan_->ops.size();
+}
+
+OpId ParallelPlanExecutor::runOp(OpId op) {
+    if (rendersInDrain(op)) {
+        const auto kind = plan_->ops[static_cast<std::size_t>(op)].kind;
         const ProfileScope timed([kind](auto elapsed) { BlockProfile::addOp(kind, elapsed); });
         core_.renderOp(op, valueOf(op), block_, *output_);
     }
@@ -204,11 +281,6 @@ OpId ParallelPlanExecutor::runOp(OpId op) {
             push(consumer);
     }
 
-    // Last, and after the pushes: a block is finished when this reaches zero,
-    // and it must not reach zero while work this op released is still on its
-    // way into the ready set. An op carried on with is still counted, so a
-    // thread holding one cannot be the thread that says the block is over.
-    remaining_.fetch_sub(1, std::memory_order_acq_rel);
     return carryOn;
 }
 
@@ -230,9 +302,62 @@ void ParallelPlanExecutor::takeWork() {
         }
 
         emptyPops = 0;
-        while (op != INVALID_OP_ID)
+        const auto started = juce::Time::getHighResolutionTicks();
+        int ran = 0;
+        for (; op != INVALID_OP_ID; ++ran)
             op = runOp(op);
+        busyTicks_.fetch_add(juce::Time::getHighResolutionTicks() - started,
+                             std::memory_order_relaxed);
+
+        // Last, and after the pushes: a block is finished when this reaches zero,
+        // and it must not reach zero while work a chain released is still on its
+        // way into the ready set. The busy time goes first, so it is whole when
+        // the block is.
+        remaining_.fetch_sub(ran, std::memory_order_acq_rel);
     }
+}
+
+void ParallelPlanExecutor::startSchedule(std::size_t done) {
+    const auto numOps = plan_->ops.size();
+    for (std::size_t i = 0; i < numOps; ++i)
+        pending_[i].store(plan_->dependencyCounts[i], std::memory_order_relaxed);
+
+    // What this thread already rendered, in plan order and so a prefix closed under its own
+    // producers, releases its consumers here, before any other thread can look.
+    for (std::size_t op = 0; op < done; ++op)
+        for (auto edge = plan_->consumerOffsets[op]; edge < plan_->consumerOffsets[op + 1];
+             ++edge) {
+            auto& count = pending_[static_cast<std::size_t>(
+                plan_->consumerEdges[static_cast<std::size_t>(edge)])];
+            count.store(static_cast<std::uint16_t>(count.load(std::memory_order_relaxed) - 1),
+                        std::memory_order_relaxed);
+        }
+
+    // Emptied, but the tag carries on from wherever the last block left it: a
+    // thread that read the top of the previous block's stack and has not looked
+    // since must not find a word it recognises.
+    readyTop_.store(
+        packReady(INVALID_OP_ID, readyTag(readyTop_.load(std::memory_order_relaxed)) + 1),
+        std::memory_order_relaxed);
+
+    // Before the ready set is seeded, so nothing can finish an op and count it
+    // against a total that has not been set yet.
+    remaining_.store(static_cast<int>(numOps - done), std::memory_order_relaxed);
+    busyTicks_.store(0, std::memory_order_relaxed);
+
+    if (done == 0) {
+        for (const auto op : plan_->initialReadyOps)
+            push(op);
+        return;
+    }
+
+    for (auto op = done; op < numOps; ++op)
+        if (pending_[op].load(std::memory_order_relaxed) == 0)
+            push(static_cast<OpId>(op));
+}
+
+int ParallelPlanExecutor::everyUsefulWorker() const {
+    return std::max(0, std::min(parallelism_ - 1, numThreads() - 1));
 }
 
 void ParallelPlanExecutor::process(const PlanValues& values, const BlockInfo& requestedBlock,
@@ -277,36 +402,33 @@ void ParallelPlanExecutor::process(const PlanValues& values, const BlockInfo& re
     applyValues_ = start.applyValues;
     output_ = &output;
 
-    const auto numOps = plan_->ops.size();
-    for (std::size_t i = 0; i < numOps; ++i)
-        pending_[i].store(plan_->dependencyCounts[i], std::memory_order_relaxed);
-
-    // Emptied, but the tag carries on from wherever the last block left it: a
-    // thread that read the top of the previous block's stack and has not looked
-    // since must not find a word it recognises.
-    readyTop_.store(
-        packReady(INVALID_OP_ID, readyTag(readyTop_.load(std::memory_order_relaxed)) + 1),
-        std::memory_order_relaxed);
-
-    // Before the ready set is seeded, so nothing can finish an op and count it
-    // against a total that has not been set yet.
-    remaining_.store(static_cast<int>(numOps), std::memory_order_relaxed);
-
-    for (const auto op : plan_->initialReadyOps)
-        push(op);
-
-    // One worker per op that can run beside this thread's, and none for a plan nothing in
-    // can run beside: a wake-up costs more than a small op, and every worker woken spins on
-    // the ready stack until the block drains.
-    const auto workers = std::min(parallelism_ - 1, numThreads() - 1);
+    // One worker per op that can run beside this thread's, none for a plan nothing in can run
+    // beside, and no more than the work pays for: a wake-up costs more than a small op, and
+    // every worker woken spins on the ready stack until the block drains.
+    const auto workers = std::min(everyUsefulWorker(), workersWorthWaking());
+    lastWorkers_ = pool_ != nullptr ? workers : 0;
     {
         const ProfileScope timed(
             [](auto elapsed) { BlockProfile::addPhase(BlockProfile::Drain, elapsed); });
         if (pool_ != nullptr && workers > 0) {
+            startSchedule(0);
             handedToPool_.store(true, std::memory_order_relaxed);
             pool_->render(*this, workers);
+            noteWork(busyTicks_.load(std::memory_order_relaxed));
         } else {
-            takeWork();
+            const auto started = juce::Time::getHighResolutionTicks();
+            const auto done = renderInPlanOrder(started);
+            const auto alone = juce::Time::getHighResolutionTicks() - started;
+
+            if (done < plan_->ops.size()) {
+                lastWorkers_ = everyUsefulWorker();
+                startSchedule(done);
+                handedToPool_.store(true, std::memory_order_relaxed);
+                pool_->render(*this, lastWorkers_);
+                noteWork(alone + busyTicks_.load(std::memory_order_relaxed));
+            } else {
+                noteWork(alone);
+            }
         }
     }
     const ProfileScope tail(
