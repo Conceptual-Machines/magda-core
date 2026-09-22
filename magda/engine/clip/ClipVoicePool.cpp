@@ -436,6 +436,15 @@ void ClipVoicePool::prepareStandby(Reader& reader, const AudioClipPlayback& clip
         return;
     }
 
+    // Kept while the start it was primed for may be the one playing now, whatever comes next:
+    // play can begin in the callback that takes it, and withdrawing it first leaves that start
+    // to prime.
+    if (const auto* standby = reader.standby.get(); playing && standby != nullptr) {
+        const auto cell = static_cast<double>(standby->key.cell) / context_.sampleRate;
+        if (cell <= windowStart && windowStart < cell + kReadAheadBridgeSeconds)
+            return;
+    }
+
     // Where the voice's first block of the next start opens. Stopped, that is wherever play lands:
     // the cursor, inside the clip or at its start. Rolling, it is the event's own start while
     // that is still ahead, and otherwise the loop's return into it.
@@ -447,12 +456,6 @@ void ClipVoicePool::prepareStandby(Reader& reader, const AudioClipPlayback& clip
                        : loopDestination      ? std::optional<double>{std::max(loopSeconds, starts)}
                                               : std::nullopt;
     if (!opens) {
-        // Kept while the start it was primed for may be the one playing now: play can begin in
-        // the callback that takes it, and withdrawing it first would leave that start to prime.
-        if (reader.standby != nullptr &&
-            windowStart < static_cast<double>(reader.standby->key.cell) / context_.sampleRate +
-                              kReadAheadBridgeSeconds)
-            return;
         settleStandby(reader);
         return;
     }

@@ -195,6 +195,7 @@ class SineFiles final : public magda::engine::AudioFileReaderFactory {
 struct LoopedRun {
     std::vector<float> rendered;
     int taken = 0;
+    int wraps = 0;
 };
 
 /// How a looped run is set up. Lengths are in samples, so a loop is whole blocks at any size.
@@ -207,7 +208,8 @@ struct LoopedPlay {
     int loops = 5;
     /// The block at which the clip's pitch is edited, or -1.
     int pitchEditAt = -1;
-    /// Where a stopped transport stands before playing on without a loop, or -1 to loop.
+    bool loop = true;
+    /// Where a stopped transport stands before it plays, or -1 to play from the loop's start.
     int cursorSamples = -1;
 };
 
@@ -249,17 +251,16 @@ LoopedRun playLooped(const LoopedPlay& play) {
     clips.publish(snapshot);
 
     const auto secondsAt = [](int sample) { return kEventStart + sample / kSampleRate; };
-    const auto looping = play.cursorSamples < 0;
     pool.setTransport(
         magda::engine::LoopRange{
-            looping, tempo.timeToBeat(secondsAt(play.loopOffsetSamples)),
+            play.loop, tempo.timeToBeat(secondsAt(play.loopOffsetSamples)),
             tempo.timeToBeat(secondsAt(play.loopOffsetSamples + play.loopSamples))},
         tempo);
 
     magda::engine::ClipAudioSource source{kTrack, clips, pool.feed()};
     source.prepare(rate);
 
-    if (!looping)
+    if (play.cursorSamples >= 0)
         for (auto round = 0; round < 3; ++round) {
             pool.setPosition(secondsAt(play.cursorSamples), false);
             pool.service();
@@ -268,36 +269,49 @@ LoopedRun playLooped(const LoopedPlay& play) {
 
     LoopedRun run;
     juce::AudioBuffer<float> out(2, play.blockSize);
-    const auto loopBlocks = play.loopSamples / play.blockSize;
-    for (auto index = 0; index < play.loops * loopBlocks; ++index) {
+    const auto loopEnd = play.loopOffsetSamples + play.loopSamples;
+    auto position = play.cursorSamples >= 0 ? play.cursorSamples : play.loopOffsetSamples;
+    auto continuous = play.cursorSamples < 0;
+    for (auto index = 0; index < play.loops * (play.loopSamples / play.blockSize); ++index) {
         if (index == play.pitchEditAt) {
             snapshot = snapshotOf(3.0f, kSnapshot + 1);
             pool.setSnapshot(snapshot);
             clips.publish(snapshot);
         }
 
-        const auto into = looping ? index % loopBlocks : index;
-        const auto at = secondsAt((looping ? play.loopOffsetSamples : play.cursorSamples) +
-                                  into * play.blockSize);
+        // Cut at the loop's end, where the transport splits a block.
+        const auto samples = play.loop && position < loopEnd
+                                 ? std::min(play.blockSize, loopEnd - position)
+                                 : play.blockSize;
+        const auto at = secondsAt(position);
 
         pool.setPosition(at);
         pool.service();
         pool.fillNow();
 
         BlockInfo block;
-        block.numSamples = play.blockSize;
+        block.numSamples = samples;
         block.playing = true;
-        block.continuous = looping ? into != 0 || index == 0 : index != 0;
-        block.seconds = {at, at + play.blockSize / kSampleRate};
+        block.continuous = continuous;
+        block.seconds = {at, at + samples / kSampleRate};
         block.beats = {tempo.timeToBeat(block.seconds.start), tempo.timeToBeat(block.seconds.end)};
         block.tempo = &tempo;
 
         out.clear();
-        magda::test::renderBlock(source, clips, block, juce::dsp::AudioBlock<float>(out), nullptr,
-                                 &pool.feed());
+        const auto lane =
+            juce::dsp::AudioBlock<float>(out).getSubBlock(0, static_cast<std::size_t>(samples));
+        magda::test::renderBlock(source, clips, block, lane, nullptr, &pool.feed());
         for (auto channel = 0; channel < 2; ++channel)
             run.rendered.insert(run.rendered.end(), out.getReadPointer(channel),
-                                out.getReadPointer(channel) + play.blockSize);
+                                out.getReadPointer(channel) + samples);
+
+        position += samples;
+        continuous = true;
+        if (play.loop && position == loopEnd) {
+            position = play.loopOffsetSamples;
+            continuous = false;
+            ++run.wraps;
+        }
     }
 
     run.taken = pool.standbysTaken();
@@ -548,6 +562,7 @@ TEST_CASE("Starting from a stopped cursor takes the standby primed for where pla
     for (const auto cursor : {0, 40 * kBlockSize + 77}) {
         INFO("cursor " << cursor);
         LoopedPlay play;
+        play.loop = false;
         play.cursorSamples = cursor;
         play.loops = 1;
         const auto [primed, standbys] = bothWays(play);
@@ -559,6 +574,21 @@ TEST_CASE("Starting from a stopped cursor takes the standby primed for where pla
         REQUIRE(loudest(opening) > 0.01f);
         CHECK(standbys.rendered == primed.rendered);
     }
+}
+
+TEST_CASE("Play from a stopped cursor inside a loop takes the cursor's standby, then the returns",
+          "[engine][clip][stretch][2786]") {
+    // The pool's next start once play begins is the loop's return, and the cursor's standby is
+    // still the one the first block needs.
+    LoopedPlay play;
+    play.cursorSamples = play.loopOffsetSamples + 20 * kBlockSize + 77;
+    play.loops = 3;
+    const auto [primed, standbys] = bothWays(play);
+
+    REQUIRE(standbys.wraps >= 2);
+    CHECK(standbys.taken == standbys.wraps + 1);
+    REQUIRE(loudest(primed.rendered) > 0.01f);
+    CHECK(standbys.rendered == primed.rendered);
 }
 
 TEST_CASE("A standby goes to whichever of the voice and the pool claims it first",
