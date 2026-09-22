@@ -2678,6 +2678,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         const auto sampleRate = device->getCurrentSampleRate();
         rate_.store(sampleRate);
         blockSize_.store(device->getCurrentBufferSizeSamples());
+        renderPool_.configure(device->getCurrentBufferSizeSamples() / std::max(1.0, sampleRate),
+                              device->getWorkgroup());
         inputChannels_.store(device->getActiveInputChannels().countNumberOfSetBits());
         const auto reportedAdjustment =
             static_cast<std::int64_t>(device->getInputLatencyInSamples()) +

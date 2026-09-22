@@ -1,9 +1,11 @@
 #pragma once
 
+#include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_core/juce_core.h>
 
 #include <algorithm>
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -124,8 +126,29 @@ class RenderThreadPool {
      */
     void release(Job& job);
 
+    /**
+     * @brief What the device delivers, so a worker can stay hot between blocks.
+     *
+     * A worker finishing a block spins for a fraction of @p blockSeconds before it sleeps, so
+     * at short periods the next block finds it awake rather than paying a wake-up. Joined to
+     * @p workgroup on macOS, which is what gives it the device thread's scheduling.
+     * Off the audio thread; the workers pick both up on their next round.
+     */
+    void configure(double blockSeconds, juce::AudioWorkgroup workgroup);
+
   private:
     class Worker;
+
+    /// Bumped by every render(); a woken worker's own mark is set to it.
+    std::atomic<std::uint64_t> generation_{0};
+
+    /// How long a worker spins before sleeping. Zero until configured: an offline pool has no
+    /// period to stay hot for.
+    std::atomic<std::int64_t> spinNanos_{0};
+
+    juce::SpinLock workgroupLock_;
+    juce::AudioWorkgroup workgroup_;
+    std::atomic<std::uint64_t> workgroupGeneration_{0};
 
     /// What a worker runs when it wakes. Separate from render() because a
     /// worker has to announce itself before it reads the job pointer, so that
