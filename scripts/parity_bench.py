@@ -188,23 +188,32 @@ def figures(result):
     return values
 
 
+# An RMS below this in both engines is silence they share, which says nothing about agreement.
+SILENT_RMS = 1.0e-3
+
+
 def key_of(result):
     return (result["project"], result["block_size"])
 
 
 def envelope_gap_db(fork, native):
-    """Median distance between the two runs' output loudness, in dB, or None without it.
+    """How far apart the two runs' output levels are, in dB, or None without them.
+
+    The 90th percentile of the per-bucket gap, over buckets either engine sounded in. A median
+    over every bucket let a passage that differs hide behind shared silence or a stretch that
+    matches; this lets through only a gap confined to the loudest tenth of the render.
 
     Two engines timed on different audio are not a comparison: a transport that started in the
     wrong place once made native look fast on material the fork never had to render (#2786).
     """
     a, b = fork.get("loudness") or [], native.get("loudness") or []
     count = min(len(a), len(b))
-    if count == 0:
+    audible = [i for i in range(count) if max(a[i], b[i]) > SILENT_RMS]
+    if not audible:
         return None
-    level = lambda peak: 20.0 * math.log10(max(peak, 1.0e-4))
-    gaps = sorted(abs(level(a[i]) - level(b[i])) for i in range(count))
-    return gaps[count // 2]
+    level = lambda rms: 20.0 * math.log10(max(rms, SILENT_RMS))
+    gaps = sorted(abs(level(a[i]) - level(b[i])) for i in audible)
+    return gaps[min(len(gaps) - 1, int(0.9 * len(gaps)))]
 
 
 def judge(run, thresholds):
