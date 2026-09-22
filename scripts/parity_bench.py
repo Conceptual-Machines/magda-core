@@ -398,7 +398,8 @@ def median_run(runs):
 
 def measure(args, bench):
     listing = list_projects(bench, args.timeout)
-    projects = [p["name"] for p in listing["projects"]]
+    projects = [p["name"] for p in listing["projects"]
+                if not p.get("scaling") or (args.projects and p["name"] in args.projects)]
     if args.projects:
         unknown = sorted(set(args.projects) - set(projects))
         if unknown:

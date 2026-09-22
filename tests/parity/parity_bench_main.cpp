@@ -102,9 +102,10 @@ bool dispatchUntil(const std::function<bool()>& done, double timeoutSeconds) {
 }
 
 const nulldiff::MgdFixture* findFixture(const std::string& name) {
-    for (const auto& fixture : nulldiff::mgdFixtures())
-        if (fixture.declaration.name == name)
-            return &fixture;
+    for (const auto* list : {&nulldiff::mgdFixtures(), &nulldiff::retrospectScaleFixtures()})
+        for (const auto& fixture : *list)
+            if (fixture.declaration.name == name)
+                return &fixture;
     return nullptr;
 }
 
@@ -329,16 +330,21 @@ juce::var measure(const Options& options, Running& running) {
 
 juce::var listProjects(const Options& options) {
     juce::Array<juce::var> projects;
-    for (const auto& fixture : nulldiff::mgdFixtures()) {
-        juce::DynamicObject::Ptr project = new juce::DynamicObject();
-        project->setProperty("name", juce::String(fixture.declaration.name));
+    const auto list = [&projects](const std::vector<nulldiff::MgdFixture>& fixtures, bool scaling) {
+        for (const auto& fixture : fixtures) {
+            juce::DynamicObject::Ptr project = new juce::DynamicObject();
+            project->setProperty("name", juce::String(fixture.declaration.name));
+            project->setProperty("scaling", scaling);
 
-        juce::Array<juce::var> plugins;
-        for (const auto* plugin : fixture.hostedPlugins)
-            plugins.add(juce::String(plugin));
-        project->setProperty("hosted_plugins", plugins);
-        projects.add(project.get());
-    }
+            juce::Array<juce::var> plugins;
+            for (const auto* plugin : fixture.hostedPlugins)
+                plugins.add(juce::String(plugin));
+            project->setProperty("hosted_plugins", plugins);
+            projects.add(project.get());
+        }
+    };
+    list(nulldiff::mgdFixtures(), false);
+    list(nulldiff::retrospectScaleFixtures(), true);
 
     juce::DynamicObject::Ptr result = new juce::DynamicObject();
     result->setProperty("status", "ok");
