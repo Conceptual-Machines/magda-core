@@ -35,6 +35,47 @@
 namespace magda::engine {
 
 /**
+ * @brief What a stretcher was primed for, which a voice's start must match exactly to use it.
+ *
+ * The cell and its priming inputs, and the tempo and clip snapshot they were derived under: a
+ * pitch or source edit leaves the inputs alone and changes the snapshot.
+ */
+struct StretchPrimeKey {
+    std::int64_t cell = 0;
+    std::int64_t readFrom = 0;
+    int preRoll = 0;
+    double step = 0.0;
+    std::uint64_t tempo = 0;
+    std::uint64_t snapshot = 0;
+
+    bool operator==(const StretchPrimeKey&) const = default;
+};
+
+/**
+ * @brief A second stretcher, primed off the audio thread for one predicted start (#2786).
+ *
+ * Taken by at most one start: a voice claims it with the one transition @ref claimed allows,
+ * renders from it while a published table still names it, and the pool then makes it the
+ * entry's stretcher. Nothing changes it after it is published.
+ */
+struct StandbyStretcher {
+    std::shared_ptr<ClipStretcher> stretcher;
+    StretchPrimeKey key;
+
+    /// What it was built for: a claimed standby becomes the entry's stretcher only while the
+    /// reader still asks for this.
+    StretchSetup setup;
+
+    /// Set by whichever takes it first: a voice adopting it, or the pool withdrawing it.
+    std::atomic<bool> claimed{false};
+
+    bool claim() {
+        auto unclaimed = false;
+        return claimed.compare_exchange_strong(unclaimed, true, std::memory_order_acq_rel);
+    }
+};
+
+/**
  * @brief The streams provisioned for every track, at one moment.
  *
  * Sorted by track, then clip, then event, so the audio thread can find a
@@ -68,6 +109,9 @@ struct ClipStreamTable {
         /// stretcher, and the reason a voice's first read is the one the pool
         /// cued rather than one that seeks.
         int preRollSamples = 0;
+
+        /// Primed for the next start the pool could see coming, or null.
+        std::shared_ptr<StandbyStretcher> standby;
     };
 
     std::vector<Entry> entries;

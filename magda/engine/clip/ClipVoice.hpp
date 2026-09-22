@@ -47,6 +47,8 @@
 
 namespace magda::engine {
 
+struct StandbyStretcher;
+
 class ClipVoice {
   public:
     void prepare(const RenderContext& context);
@@ -112,7 +114,13 @@ class ClipVoice {
     bool render(const AudioClipPlayback& clip, const AudioEventPlayback& event,
                 const BlockInfo& block, PrefetchStream& stream, ClipStretcher* stretcher,
                 int preRoll, juce::dsp::AudioBlock<float> scratch, juce::dsp::AudioBlock<float> out,
-                bool correctTrimmedStart = false);
+                bool correctTrimmedStart = false, StandbyStretcher* standby = nullptr,
+                std::uint64_t snapshot = 0);
+
+    /// Starts that took a standby rather than priming here, for tests and diagnostics.
+    int adoptions() const {
+        return adoptions_;
+    }
 
   private:
     /**
@@ -140,7 +148,14 @@ class ClipVoice {
                             const BlockInfo& block, PrefetchStream& stream,
                             ClipStretcher& stretcher, int preRoll,
                             juce::dsp::AudioBlock<float> scratch,
-                            juce::dsp::AudioBlock<float> region, double windowStart, int count);
+                            juce::dsp::AudioBlock<float> region, double windowStart, int count,
+                            StandbyStretcher* standby, std::uint64_t snapshot);
+
+    /// The standby's stretcher when it was primed for exactly the cell this start opens on and
+    /// this voice is the one to claim it; null otherwise, and the voice primes as it always has.
+    ClipStretcher* adoptStandby(StandbyStretcher* standby, const AudioClipPlayback& clip,
+                                const AudioEventPlayback& event, const BlockInfo& block,
+                                const ClipStretcher& handed, int preRoll, std::uint64_t snapshot);
 
     /// Multiply the part of @p region inside [@p startSeconds, @p endSeconds)
     /// by a curve running across it, rising or falling.
@@ -207,6 +222,11 @@ class ClipVoice {
     /// reason to prime again, since priming reads backwards and the reader
     /// is already behind -- doing it would seek and keep it behind for good.
     const ClipStretcher* primed_ = nullptr;
+
+    /// The standby this voice claimed, while a published table still names it: until the pool
+    /// makes it the entry's stretcher it is reachable only from there (#2786).
+    const StandbyStretcher* adopted_ = nullptr;
+    int adoptions_ = 0;
 };
 
 }  // namespace magda::engine

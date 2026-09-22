@@ -159,6 +159,9 @@ class ClipAudioSource final : public EngineAudioSource {
         ClipStretcher* stretcher = nullptr;
         int preRoll = 0;
 
+        /// Primed off the audio thread for a start the pool saw coming, or null.
+        StandbyStretcher* standby = nullptr;
+
         /// What it is played over and where in the output it lands: the block
         /// itself for the arrangement, a material sub-block for a slot.
         BlockInfo block;

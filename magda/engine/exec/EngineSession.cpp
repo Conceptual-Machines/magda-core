@@ -508,7 +508,7 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
         // pool's window starts here, and a clip inside it has until the next
         // round to be given a reader.
         if (voices_ != nullptr)
-            voices_->setPosition(segment.block.seconds.start);
+            voices_->setPosition(segment.block.seconds.start, segment.block.playing);
 
         // Beside the handles and for the same reason: what gates a track's
         // arrangement is resolved once, before either of its sources renders.

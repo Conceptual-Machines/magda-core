@@ -109,13 +109,22 @@ class SignalsmithClipStretcher final : public ClipStretcher {
         stretch_.reset();
     }
 
-    std::int64_t prime(PrefetchStream& stream, std::int64_t until, int samples, double) override {
+    std::int64_t prime(PrefetchStream& stream, std::int64_t until, int samples,
+                       double rate) override {
         const auto before = readPreRoll(stream, until, samples);
-        const auto count = samplesOf(before.audio);
+        primeFromWindow(before.audio, rate);
+        return before.missing;
+    }
 
+    bool canPrimeFromWindow() const override {
+        return true;
+    }
+
+    bool primeFromWindow(juce::dsp::AudioBlock<const float> window, double) override {
+        const auto count = samplesOf(window);
         if (count <= 0) {
             stretch_.reset();
-            return before.missing;
+            return true;
         }
 
         // outputSeek resets on its way in, and infers the rate from how much it
@@ -123,8 +132,11 @@ class SignalsmithClipStretcher final : public ClipStretcher {
         // The window's length, not the material in it: a read the reader was
         // behind on comes back with silence at the end of the window and the
         // same length, so the rate it infers is still the rate it is playing.
-        stretch_.outputSeek(pointers_.gather(before.audio), count);
-        return before.missing;
+        //
+        // Resetting first is also what makes a fresh instance stand in for one
+        // that has played: nothing it rendered before survives the seek.
+        stretch_.outputSeek(pointers_.gather(window), count);
+        return true;
     }
 
     void process(juce::dsp::AudioBlock<const float> input, double, double,

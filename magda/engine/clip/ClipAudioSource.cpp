@@ -92,9 +92,14 @@ void ClipAudioSource::gather(const std::vector<AudioClipPlayback>& clips, const 
                 continue;
             }
 
-            sounding[static_cast<std::size_t>(soundingCount++)] = Sounding{
-                &clip, &event,   found->stream.get(), found->stretcher.get(), found->preRollSamples,
-                block, outOffset};
+            sounding[static_cast<std::size_t>(soundingCount++)] = Sounding{&clip,
+                                                                           &event,
+                                                                           found->stream.get(),
+                                                                           found->stretcher.get(),
+                                                                           found->preRollSamples,
+                                                                           found->standby.get(),
+                                                                           block,
+                                                                           outOffset};
         }
     }
 }
@@ -398,7 +403,8 @@ void ClipAudioSource::renderMaterial(const BlockInfo& block, juce::dsp::AudioBlo
                       entry.preRoll, scratch,
                       out.getSubBlock(static_cast<std::size_t>(entry.outOffset),
                                       static_cast<std::size_t>(entry.block.numSamples)),
-                      section_ == Section::Session);
+                      section_ == Section::Session, entry.standby,
+                      snapshot != nullptr ? snapshot->serial : 0);
     }
 
     // After rendering: a slot that stops half way through a block still sounds

@@ -1,6 +1,7 @@
 #include "clip/ClipSnapshotCompiler.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <tuple>
 #include <unordered_map>
 
@@ -73,6 +74,9 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
                                  const TempoMap& tempoMap, const GrooveTemplateSet& grooves) {
     ClipSnapshot snapshot;
     snapshot.tempoFingerprint = tempoMap.fingerprint();
+
+    static std::atomic<std::uint64_t> serials{0};
+    snapshot.serial = serials.fetch_add(1, std::memory_order_relaxed) + 1;
 
     std::unordered_map<SourceId, const ClipSourceInfo*> sourceById;
     sourceById.reserve(sources.size());
