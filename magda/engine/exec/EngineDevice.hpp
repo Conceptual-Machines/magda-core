@@ -224,6 +224,11 @@ class EngineDevice {
     }
 
     virtual void process(DeviceBlock&) = 0;
+
+    /// What this device is, for the block profile (BlockProfile.hpp). Never on the audio path.
+    virtual const char* profileName() const {
+        return "device";
+    }
 };
 
 /** An audio source behind a ClipAudio or AudioInput op. */

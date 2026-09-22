@@ -137,6 +137,14 @@ option(MAGDA_BUILD_FAUST_VEC_BENCH "Build the Faust scalar-vs-vector codegen ben
 # The native engine (epic #1882) is dark: built and tested, never linked into
 # the app. On by default so it cannot drift away from the model it compiles.
 option(MAGDA_BUILD_NATIVE_ENGINE "Build the native audio engine target" ON)
+# The parity envelope bench (#2082), in a tree of its own with tests off (make parity-bench).
+option(MAGDA_BUILD_PARITY_BENCH "Build the native-against-Tracktion parity bench" OFF)
+
+# JUCE_LOG_ASSERTIONS changes juce::ListenerList's layout, and so juce::ValueTree's. magda_daw
+# sets it for tests; outside Debug, where JUCE does not, every target in the tree has to agree.
+if(MAGDA_BUILD_TESTS)
+    add_compile_definitions($<$<NOT:$<CONFIG:Debug>>:JUCE_LOG_ASSERTIONS=1>)
+endif()
 
 # CLAP semantic-search backend (ONNX Runtime). Forced off on Intel macOS because
 # upstream ORT dropped osx-x86_64 prebuilts in 1.26. The rest of the media DB
@@ -388,6 +396,10 @@ endif()
 if(MAGDA_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+endif()
+
+if(MAGDA_BUILD_PARITY_BENCH AND MAGDA_BUILD_NATIVE_ENGINE)
+    add_subdirectory(tests/parity)
 endif()
 
 # Faust scalar-vs-vector codegen benchmark (#1397). Dispatch-only; it doubles

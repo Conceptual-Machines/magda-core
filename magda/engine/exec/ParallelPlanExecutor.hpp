@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -48,7 +49,7 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
      * degraded mode but the same executor with one thread, which is what makes
      * "identical at every thread count" a claim about one code path.
      */
-    explicit ParallelPlanExecutor(RenderThreadPool* pool = nullptr) : pool_(pool) {}
+    explicit ParallelPlanExecutor(RenderThreadPool* pool = nullptr);
     ~ParallelPlanExecutor() override;
 
     ParallelPlanExecutor(const ParallelPlanExecutor&) = delete;
@@ -87,6 +88,24 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     /// Threads a block is spread across.
     int numThreads() const {
         return pool_ != nullptr ? pool_->numThreads() : 1;
+    }
+
+    /// The most ops the prepared plan can have ready at once: the widest level of its DAG.
+    /// What decides how many workers a block wakes.
+    int parallelism() const {
+        return parallelism_;
+    }
+
+    /// Serial work each woken worker needs for its wake-up to pay. Zero wakes every worker the
+    /// plan can use, which is what a test of the schedule itself wants.
+    void setWorkPerWorker(std::chrono::nanoseconds work);
+
+    /// What the next block's worker count starts from, as if a block had measured it.
+    void assumeWork(std::chrono::nanoseconds work);
+
+    /// Workers the last block woke.
+    int lastWorkers() const {
+        return lastWorkers_;
     }
 
     /// The prepared plan, as the reference executor sees it: what it bound,
@@ -158,7 +177,44 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     /// for this thread to carry straight on with. A chain therefore never
     /// touches the ready set at all: the thread that ran an op runs its
     /// consumer, which is both the cheapest schedule and the warmest cache.
-    OpId runOp(OpId op);
+    /// The op is counted off remaining_ by the caller, once per chain.
+    OpId runOp(OpId op, bool onCaller);
+
+    /// Render @p op, timing it on a timed block. @p onCaller says which thread is running it.
+    void renderTimed(OpId op, bool onCaller);
+
+    /// Hand @p op to the callback thread's slot if it is the owned op. True when it did.
+    bool releaseToCaller(OpId op);
+
+    /// Ask back up to @p ops of the workers that left this block.
+    void recallFor(int ops);
+
+    /// Whether this block times its ops, and when the next one does.
+    void beginTimedBlock();
+
+    /// After a timed block: the heaviest op becomes the one the callback thread owns.
+    void chooseOwnedOp();
+
+    /// Whether @p op renders in the drain rather than in the prefix or the serial tail.
+    bool rendersInDrain(OpId op) const;
+
+    /// The drain on this thread alone: plan order is dependency order, so no counts are kept.
+    /// Stops early, answering how many ops it got through, once the block has taken more than
+    /// a worker's worth of work since @p started; otherwise answers every op.
+    std::size_t renderInPlanOrder(std::int64_t started);
+
+    /// Seed the counts and the ready set for a block the pool will share, the first @p done ops
+    /// in plan order already rendered.
+    void startSchedule(std::size_t done);
+
+    /// Workers the plan's width and the pool's size allow.
+    int everyUsefulWorker() const;
+
+    /// How many workers the measured work pays for, before the plan's width and the pool's size.
+    int workersWorthWaking() const;
+
+    /// Fold one block's measured serial work into the estimate.
+    void noteWork(std::int64_t ticks);
 
     void push(OpId op);
     OpId pop();
@@ -173,6 +229,7 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
 
     PlanExecutor core_;
     RenderThreadPool* pool_ = nullptr;
+    int parallelism_ = 1;
 
     /// Whether the pool has ever been handed this job. Until it has, no worker
     /// can be inside it and there is nothing to wait out.
@@ -209,6 +266,10 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     /// have disjoint subgraphs.
     std::vector<OpId> modSourceOps_;
 
+    /// Hardware insert sends, rendered after the drain for the same reason: two sends add into
+    /// the same callback channels and push into the same MIDI port.
+    std::vector<OpId> insertSendOps_;
+
     /// Producers each op is still waiting for. The plan's dependencyCounts,
     /// copied in at the top of every block.
     std::vector<std::atomic<std::uint16_t>> pending_;
@@ -218,6 +279,10 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     /// so a link is written once and read once and no op can come back while
     /// another thread is looking at it.
     std::vector<std::atomic<OpId>> nextReady_;
+
+    /// The ready set of a block handed over mid-drain, gathered before it is published. Sized
+    /// to the plan at prepare, so gathering never allocates.
+    std::vector<OpId> handOverReady_;
 
     /// Top of the ready stack: an op and a tag, packed. The tag moves on every
     /// push and every pop and never resets, so a thread that read the top,
@@ -229,6 +294,33 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     /// Ops still to finish this block. Zero is what "the block is done" means,
     /// and it is the only thing every thread agrees to wait for.
     alignas(64) std::atomic<int> remaining_{0};
+
+    /// Time the threads spent running ops this block, in high-resolution ticks. Added before a
+    /// chain's ops are counted off, so it is whole once remaining_ reaches zero.
+    alignas(64) std::atomic<std::int64_t> busyTicks_{0};
+
+    /// The drain's serial work, raised at once and lowered slowly. Negative until a block has
+    /// been measured, and carried from the executor this one replaces. Atomic because that
+    /// executor may still be rendering when this one is prepared.
+    std::atomic<std::int64_t> workEstimateTicks_{-1};
+    std::int64_t workPerWorkerTicks_ = 0;
+    std::int64_t idleBeforeLeavingTicks_ = 0;
+    int lastWorkers_ = 0;
+
+    /// The op only the callback thread runs, so the block's dominant device stays on one thread,
+    /// and the slot it waits in once ready. Workers never take it from the shared stack.
+    /// Workers that left this block for want of work, which pushed work asks back.
+    alignas(64) std::atomic<int> departed_{0};
+
+    std::atomic<OpId> ownedOp_{INVALID_OP_ID};
+    alignas(64) std::atomic<OpId> ownedReady_{INVALID_OP_ID};
+    std::atomic<juce::Thread::ThreadID> callerThread_{nullptr};
+
+    /// Each op's time on the last timed block, written by whichever thread ran it.
+    std::vector<std::int64_t> opTicks_;
+    std::atomic<bool> timingBlock_{false};
+    int blocksUntilTimed_ = 0;
+    std::uint32_t jitter_ = 0x9e3779b9U;
 };
 
 }  // namespace magda::engine

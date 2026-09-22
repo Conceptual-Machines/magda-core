@@ -197,6 +197,10 @@ class MagdaCompiledPolyInstrument : public CompiledFaustDevice {
     /// to do: the note-offs for what is sounding are not coming.
     void releaseAllVoices();
 
+    /// Whether this block would render silence and change nothing: every poly voice free, no
+    /// MIDI arriving, and the output stage's limiter settled.
+    bool isIdle(const DeviceProcessContext& context) const;
+
     /// Records what each voice was before a compute() call, so a voice the
     /// engine frees inside the window can be put back until the window closes.
     void snapshotVoiceStates();

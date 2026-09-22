@@ -115,6 +115,34 @@ constexpr int kMaxReadersPerTrack = 2 * kMaxVoicesPerTrack;
  */
 constexpr int kMaxSessionReadersPerTrack = kMaxReadersPerTrack;
 
+/**
+ * @brief The cell a stretched voice opens on when it starts at @p seconds: the one at or before
+ *        it on the grid anchored to where @p event begins (ClipVoice::renderThroughCells).
+ */
+std::int64_t stretchCellOpening(const AudioEventPlayback& event, double seconds, double sampleRate);
+
+/**
+ * @brief What a stretcher primed for @p cell of @p event is primed with, and under what.
+ *
+ * Derived through @p active, the entry's own stretcher, exactly as its voice derives it, so the
+ * voice can tell a standby primed for its start from one primed for somewhere else (#2786).
+ */
+StretchPrimeKey standbyKeyFor(const ClipStretcher& active, int preRoll,
+                              const AudioClipPlayback& clip, const AudioEventPlayback& event,
+                              std::int64_t cell, const TempoMap& tempo, std::uint64_t snapshot,
+                              double sampleRate);
+
+/**
+ * @brief A stretcher for @p setup primed as @p key says, from material read out of @p source,
+ *        or null where one cannot be. Off the audio thread.
+ *
+ * @p source is the same chain the event's stream is filled through, so what is primed here is
+ * what the voice's own priming read would have taken.
+ */
+std::shared_ptr<StandbyStretcher> primeStandby(const StretchPrimeKey& key,
+                                               const StretchSetup& setup, AudioFileReader& source,
+                                               const RenderContext& context);
+
 class ClipVoicePool {
   public:
     /**
@@ -175,8 +203,9 @@ class ClipVoicePool {
      * A pool nobody tells provisions around zero, where a session that
      * hasn't played yet is.
      */
-    void setPosition(double seconds) {
+    void setPosition(double seconds, bool playing = true) {
         position_.store(seconds, std::memory_order_relaxed);
+        playing_.store(playing, std::memory_order_relaxed);
     }
 
     /**
@@ -289,6 +318,17 @@ class ClipVoicePool {
         return tablesPublished_.load(std::memory_order_relaxed);
     }
 
+    /// Whether starts the pool sees coming get a standby stretcher primed here. On unless a
+    /// caller comparing against priming in the callback turns it off.
+    void setPrimesStandbys(bool primes) {
+        primesStandbys_.store(primes, std::memory_order_relaxed);
+    }
+
+    /// Standbys a voice took and this pool then made its entry's stretcher, since it was made.
+    int standbysTaken() const {
+        return standbysTaken_.load(std::memory_order_relaxed);
+    }
+
   private:
     /// One provisioned entry. Ordered so a table built by walking this map is
     /// already in the order ClipStreamTable::rangeFor searches.
@@ -353,11 +393,18 @@ class ClipVoicePool {
         std::int64_t retainedStart = std::numeric_limits<std::int64_t>::min();
         int retainedCount = 0;
 
+        /// A second stretcher primed here for the start this reader is due to make next, which
+        /// its voice takes instead of priming on the audio thread (#2786). Promoted to @ref
+        /// stretcher once a voice has claimed it, and nothing else ever replaces the one a voice
+        /// renders from.
+        std::shared_ptr<StandbyStretcher> standby;
+
         bool operator==(const Reader& other) const {
             return stream == other.stream && path == other.path && read == other.read &&
                    cueSamples == other.cueSamples && stretcher == other.stretcher &&
                    setup == other.setup && preRoll == other.preRoll && session == other.session &&
-                   retainedStart == other.retainedStart && retainedCount == other.retainedCount;
+                   retainedStart == other.retainedStart && retainedCount == other.retainedCount &&
+                   standby == other.standby;
         }
     };
 
@@ -368,6 +415,19 @@ class ClipVoicePool {
     void prepareLoopDestination(Reader& reader, const AudioClipPlayback& clip,
                                 const AudioEventPlayback& event, double loopSeconds,
                                 const TempoMap& tempo);
+
+    /// Promote a claimed standby, and prime one for the start @p reader is due to make next: where
+    /// a stopped transport lands, its event's own, or the loop's return at @p loopSeconds.
+    /// Arrangement only.
+    void prepareStandby(Reader& reader, const AudioClipPlayback& clip,
+                        const AudioEventPlayback& event, bool loopDestination, double windowStart,
+                        bool playing, double loopSeconds, const TempoMap& tempo,
+                        std::uint64_t snapshot);
+
+    /// Let go of @p reader's standby. Withdrawn under the transition a claim uses, so no voice
+    /// takes it after this; one a voice took first is its stretcher now and becomes the entry's,
+    /// unless the reader has since been given another setup, which the voice primes for.
+    void settleStandby(Reader& reader);
 
     /// Where a stream playing @p event is pointed to pick it up at @p seconds:
     /// the reading position of that moment, forward by whatever its stretcher
@@ -391,6 +451,9 @@ class ClipVoicePool {
 
     std::atomic<double> position_{0.0};
 
+    /// Whether the transport is rolling: stopped, the next start is wherever play lands.
+    std::atomic<bool> playing_{false};
+
     /// Provisioning thread only, apart from streamCount().
     mutable std::mutex streamsLock_;
     Streams streams_;
@@ -400,6 +463,8 @@ class ClipVoicePool {
     std::atomic<int> unprovisionedSlots_{0};
     std::atomic<int> unreadableFiles_{0};
     std::atomic<int> tablesPublished_{0};
+    std::atomic<bool> primesStandbys_{true};
+    std::atomic<int> standbysTaken_{0};
 };
 
 /**

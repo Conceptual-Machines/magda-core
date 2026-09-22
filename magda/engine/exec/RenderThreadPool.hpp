@@ -1,8 +1,13 @@
 #pragma once
 
+#include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_core/juce_core.h>
 
+#include <algorithm>
 #include <atomic>
+#include <cstdint>
+#include <cstdlib>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -70,16 +75,26 @@ class RenderThreadPool {
      * that spins up realtime threads competes with whatever else is on the
      * machine for no benefit.
      */
+    /// Workers a session on this machine renders with: the audio thread plus one per other core.
+    /// MAGDA_RENDER_WORKERS overrides it, for measuring what a count costs.
+    static int workersForThisMachine() {
+        if (const auto* value = std::getenv("MAGDA_RENDER_WORKERS"))
+            return std::max(0, juce::String(value).getIntValue());
+        return std::max(0, juce::SystemStats::getNumCpus() - 1);
+    }
+
     explicit RenderThreadPool(int numWorkers, bool realtime = true);
     ~RenderThreadPool();
 
     RenderThreadPool(const RenderThreadPool&) = delete;
     RenderThreadPool& operator=(const RenderThreadPool&) = delete;
 
-    /// Threads a block is spread across: the workers, plus whoever calls
-    /// render().
+    /// Threads a block is spread across: the workers the device's workgroup
+    /// allows, plus whoever calls render().
     int numThreads() const {
-        return static_cast<int>(workers_.size()) + 1;
+        return std::min(static_cast<int>(workers_.size()),
+                        workerCap_.load(std::memory_order_relaxed)) +
+               1;
     }
 
     /**
@@ -93,8 +108,20 @@ class RenderThreadPool {
      * A worker may still be inside takeWork() when this returns. It has no ops
      * left to run, because the job would not have finished otherwise, but it
      * has not necessarily noticed yet.
+     *
+     * @p workers is how many to wake, at most all of them: a plan three ops wide has no use
+     * for nine, and every wake-up costs more than a small op does.
      */
-    void render(Job& job);
+    void render(Job& job, int workers);
+
+    /**
+     * @brief Ask up to @p count idle workers back into the job being rendered. On the audio
+     *        thread.
+     *
+     * For a block whose workers left while a long op ran and whose op then released work they
+     * could share. Answers how many were asked; each notify is the same system call a wake is.
+     */
+    int recall(int count);
 
     /**
      * @brief Let go of @p job, so it can be destroyed. Off the audio thread.
@@ -115,8 +142,33 @@ class RenderThreadPool {
      */
     void release(Job& job);
 
+    /**
+     * @brief What the device delivers, so a worker can stay hot between blocks.
+     *
+     * A worker finishing a block spins for a fraction of @p blockSeconds before it sleeps, so
+     * at short periods the next block finds it awake rather than paying a wake-up. Joined to
+     * @p workgroup on macOS, which is what gives it the device thread's scheduling, and no
+     * more workers are woken than its recommended thread count minus the device's own.
+     * Off the audio thread; the workers pick both up on their next round.
+     */
+    void configure(double blockSeconds, juce::AudioWorkgroup workgroup);
+
   private:
     class Worker;
+
+    /// Bumped by every render(); a woken worker's own mark is set to it.
+    std::atomic<std::uint64_t> generation_{0};
+
+    /// How long a worker spins before sleeping. Zero until configured: an offline pool has no
+    /// period to stay hot for.
+    std::atomic<std::int64_t> spinNanos_{0};
+
+    juce::SpinLock workgroupLock_;
+    juce::AudioWorkgroup workgroup_;
+    std::atomic<std::uint64_t> workgroupGeneration_{0};
+
+    /// Most workers a block may wake. Unbounded without a workgroup that recommends a count.
+    std::atomic<int> workerCap_{std::numeric_limits<int>::max()};
 
     /// What a worker runs when it wakes. Separate from render() because a
     /// worker has to announce itself before it reads the job pointer, so that

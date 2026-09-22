@@ -386,6 +386,26 @@ class MagdaSamplerPlugin : public MagdaDevice {
     /// (#2741). Reserved once, never grown on the audio thread.
     std::vector<float> eventFractions_;
 
+    /// A note edge already handed over this block, for the dedup in process().
+    struct SeenEvent {
+        int note;
+        int samplePos;
+        float fraction;
+        bool isNoteOn;
+        bool operator==(const SeenEvent&) const = default;
+    };
+
+    static constexpr int kMaxBlockEvents = 1024;
+    /// Past this many note edges in one block, later duplicates are no longer caught.
+    static constexpr int kMaxSeenEdges = 256;
+
+    /// The block's events, reserved once like the fractions beside them.
+    std::vector<SeenEvent> seenEvents_;
+    juce::MidiBuffer blockMidi_;
+
+    /// Whether a voice was still sounding when the last block ended. Audio thread only.
+    bool sounding_ = false;
+
     /// Owned by the synthesiser, and only ever read on the message thread. The
     /// audio thread reads @ref soundSourceRate_ and @ref soundLengthSeconds_
     /// instead: a load frees this one while a block may still be inside

@@ -55,6 +55,7 @@
 #include "clip/ClipVoicePool.hpp"
 #include "exec/EngineSession.hpp"
 #include "exec/PlanValues.hpp"
+#include "exec/RenderThreadPool.hpp"
 #include "io/LiveInput.hpp"
 #include "io/MidiTakeRecorder.hpp"
 #include "io/PrefetchThread.hpp"
@@ -1971,7 +1972,25 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// A play, a stop or a locate. The generation is what makes a snapshot a
     /// request rather than a description, so it is bumped here and nowhere
     /// else.
-    void publishRequest(const engine::TransportRequest& request) {
+    std::uint64_t locateIds_ = 0;
+
+    void publishRequest(engine::TransportRequest request) {
+        // A snapshot replaces the last rather than queueing behind it, so a locate the callback
+        // has not taken yet is carried into the next request. Otherwise play straight after a
+        // locate, which is what play-from-here is, starts wherever the cursor already was.
+        const bool locatePending =
+            request_.locate &&
+            (session_ == nullptr || session_->appliedTransportGeneration() < request_.generation);
+        if (request.locate) {
+            request.locateId = ++locateIds_;
+        } else if (locatePending) {
+            // Under its own id: the callback may take the original between the check above and
+            // this publish, and the clock applies an id once.
+            request.locate = true;
+            request.positionBeat = request_.positionBeat;
+            request.locateId = request_.locateId;
+        }
+
         request_ = request;
         request_.generation = ++generation_;
         publishTransport();
@@ -2401,11 +2420,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         voices_ = std::make_unique<engine::ClipVoicePool>(files_, reader_, context);
         voiceThread_ = std::make_unique<engine::ClipVoiceThread>(*voices_);
 
-        // No render pool: every block renders on the audio thread alone, which
-        // is the same executor with one thread instead of many. Spreading a
-        // block across realtime workers is the next question this can be asked,
-        // and not one to answer in the same change that first made a sound.
-        session_ = std::make_unique<engine::EngineSession>(factory_, nullptr, voices_.get());
+        session_ = std::make_unique<engine::EngineSession>(factory_, &renderPool_, voices_.get());
         sessionCapture_.attach(*session_);
         factory_.attach(session_->clipFeed(), voices_->feed(), session_->launchHandleFeed(),
                         session_->liveInputs(), session_->liveOutputs());
@@ -2681,6 +2696,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         const auto sampleRate = device->getCurrentSampleRate();
         rate_.store(sampleRate);
         blockSize_.store(device->getCurrentBufferSizeSamples());
+        renderPool_.configure(device->getCurrentBufferSizeSamples() / std::max(1.0, sampleRate),
+                              device->getWorkgroup());
         inputChannels_.store(device->getActiveInputChannels().countNumberOfSetBits());
         const auto reportedAdjustment =
             static_cast<std::int64_t>(device->getInputLatencyInSamples()) +
@@ -3280,6 +3297,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     // Declared so that destruction unwinds inwards: the session lets go of the
     // pool before the thread servicing it stops, and the thread stops before
     // the pool it is inside goes away.
+    //
+    // The render workers outlive every session: a retired epoch releases them.
+    engine::RenderThreadPool renderPool_{engine::RenderThreadPool::workersForThisMachine()};
     std::unique_ptr<engine::ClipVoicePool> voices_;
     std::unique_ptr<engine::ClipVoiceThread> voiceThread_;
     std::unique_ptr<engine::EngineSession> session_;
@@ -3447,6 +3467,14 @@ std::uint64_t EngineHost::publishRequests() const {
 
 bool EngineHost::isSettled() const {
     return impl_->isSettled();
+}
+
+std::size_t EngineHost::pluginsLoading() const {
+    return impl_->loader_.loading();
+}
+
+int EngineHost::latencySamples() const {
+    return impl_->planRecordingAdjustmentSamples();
 }
 
 void EngineHost::stop() {

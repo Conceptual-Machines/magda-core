@@ -12,6 +12,7 @@
 
 #include "NullDiffGain.hpp"
 #include "SharedTestEngine.hpp"
+#include "TracktionProxies.hpp"
 #include "magda/daw/audio/PluginWindowBridge.hpp"
 #include "magda/daw/audio/TrackController.hpp"
 #include "magda/daw/audio/WarpMarkerManager.hpp"
@@ -663,44 +664,6 @@ void installGrooves(te::Engine& engine, const Case& value) {
     }
 }
 
-/// Every wave clip's playback file exists and nothing is still rendering it.
-///
-/// The check is on the render manager rather than on the file, because
-/// AudioFile::isValid can go true before the job has released it, which the
-/// app's own reverse path already had to learn.
-bool proxiesReady(te::Engine& engine, te::Edit& edit, int& waitedFor) {
-    waitedFor = 0;
-
-    const auto ready = [&](te::Clip* clip) {
-        auto* audio = dynamic_cast<te::AudioClipBase*>(clip);
-        if (audio == nullptr)
-            return true;
-
-        const auto playbackFile = audio->getPlaybackFile();
-        if (!playbackFile.isValid())
-            return false;
-
-        if (engine.getRenderManager().isProxyBeingGenerated(playbackFile)) {
-            ++waitedFor;
-            return false;
-        }
-
-        return true;
-    };
-
-    for (auto* track : te::getAudioTracks(edit)) {
-        for (auto* clip : track->getClips())
-            if (!ready(clip))
-                return false;
-
-        for (auto* slot : track->getClipSlotList().getClipSlots())
-            if (!ready(slot->getClip()))
-                return false;
-    }
-
-    return true;
-}
-
 }  // namespace
 
 IncumbentRender renderIncumbent(const Case& value) {
@@ -1090,7 +1053,7 @@ IncumbentRender renderIncumbent(const Case& value) {
 
     const auto started = juce::Time::getMillisecondCounter();
     auto waited = 0;
-    while (!proxiesReady(*engine, *edit, waited)) {
+    while (!magda::test::proxiesReady(*engine, *edit, waited)) {
         result.proxiesWaitedFor = std::max(result.proxiesWaitedFor, waited);
         pumpMessageThread(10);
 

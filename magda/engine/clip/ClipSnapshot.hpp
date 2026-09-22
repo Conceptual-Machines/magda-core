@@ -351,6 +351,10 @@ struct ClipSnapshot {
     /// the map moved.
     std::uint64_t tempoFingerprint = 0;
 
+    /// Distinct per compile, and so not part of what makes two compiles the same snapshot: an
+    /// identity, which a stretcher primed against one snapshot is checked against (#2786).
+    std::uint64_t serial = 0;
+
     std::vector<TrackClipPlayback> tracks;
 
     /// Clips the compile could not express, in compile order. Never a

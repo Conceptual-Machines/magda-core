@@ -1,6 +1,9 @@
 #pragma once
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <algorithm>
+#include <cstdlib>
+
 #include "../audio/plugins/InternalPluginRegistry.hpp"
 #include "../audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "../audio/plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
@@ -31,6 +34,14 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
     // stay active. Track output is still silenced by TrackMutingNode.
     bool shouldProcessMutedTracks() override {
         return true;
+    }
+
+    // MAGDA_RENDER_WORKERS sets the threads beside the audio thread, as it does for the native
+    // engine's pool, so the two can be measured at one thread count (#2786).
+    int getNumberOfCPUsToUseForAudio() override {
+        if (const auto* value = std::getenv("MAGDA_RENDER_WORKERS"))
+            return std::max(0, juce::String(value).getIntValue()) + 1;
+        return tracktion::EngineBehaviour::getNumberOfCPUsToUseForAudio();
     }
 
     tracktion::EditLimits getEditLimits() override {

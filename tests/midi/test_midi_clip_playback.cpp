@@ -1528,3 +1528,29 @@ TEST_CASE("Adjacent notes release before retriggering at fractional sample posit
     CHECK(offs == 8);
     CHECK_FALSE(held);
 }
+
+TEST_CASE("The active note list walks what sounds by channel, then pitch", "[midi][clip][2786]") {
+    // The order note-offs go out in when a clip ends, which decides which voice a synth frees
+    // first; walking the sounding bits instead of every entry must not change it.
+    magda::engine::ActiveNoteList notes;
+    CHECK_FALSE(notes.any());
+
+    notes.start(16, 127, 3, 0.0);
+    notes.start(2, 64, 3, 0.0);
+    notes.start(1, 100, 4, 0.0);
+    notes.start(2, 0, 3, 0.0);
+    notes.start(1, 63, 3, 0.0);
+    notes.start(1, 64, 3, 0.0);
+    notes.clear(1, 64);
+
+    std::vector<std::pair<int, int>> walked;
+    notes.forEach([&walked](int channel, int note) { walked.emplace_back(channel, note); });
+
+    CHECK(walked ==
+          std::vector<std::pair<int, int>>{{1, 63}, {1, 100}, {2, 0}, {2, 64}, {16, 127}});
+    CHECK(notes.any());
+
+    for (const auto& [channel, note] : walked)
+        notes.clear(channel, note);
+    CHECK_FALSE(notes.any());
+}

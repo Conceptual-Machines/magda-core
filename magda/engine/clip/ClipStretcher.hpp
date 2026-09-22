@@ -178,6 +178,30 @@ class ClipStretcher {
                                              int samples, double rate) = 0;
 
     /**
+     * @brief Prime from @p window, the material a priming read of @ref preRollCapacity samples
+     *        at most would have taken, already read.
+     *
+     * The half of @ref prime that does not touch a stream, for a thread that read the window
+     * itself: the voice pool primes a standby this way off the audio thread (#2786). False from
+     * an implementation whose state after priming depends on what it rendered before, which a
+     * fresh instance could not stand in for; that one is only ever primed by its voice.
+     */
+    virtual bool primeFromWindow(juce::dsp::AudioBlock<const float> window, double rate) {
+        juce::ignoreUnused(window, rate);
+        return false;
+    }
+
+    /// Whether @ref primeFromWindow does anything, asked before a standby is built at all.
+    virtual bool canPrimeFromWindow() const {
+        return false;
+    }
+
+    /// The most material a priming read takes: what @ref prime reads is this much at most.
+    int preRollCapacity() const {
+        return preRoll_.getNumSamples();
+    }
+
+    /**
      * @brief Turn @p input into exactly @p output.
      *
      * On the audio thread. Input lengths follow the rounded source positions;
@@ -273,6 +297,14 @@ StretchRead stretchReadAt(const ClipStretcher& stretcher, int fixedPreRoll, doub
             stretcher.preRollSamples(rate), heard};
 }
 
+/// What priming a stretcher for one cell asks: where the cell's reading opens, the window
+/// before it, and the rate across the cell.
+struct CellPrime {
+    std::int64_t readFrom = 0;
+    int preRoll = 0;
+    double step = 0.0;
+};
+
 /**
  * @brief How much output a stretcher is driven in at a time.
  *
@@ -294,6 +326,24 @@ constexpr int kStretchCellSamples = 128;
  * would leave a stretcher writing half a cell and zero-filling the rest --
  * audible as alternating material and silence rather than a visible error.
  */
+/**
+ * @brief The priming the cell starting on timeline sample @p cellStart asks for.
+ *
+ * The voice and the voice pool both derive it here, so a stretcher the pool primed off the
+ * audio thread is primed with exactly what the voice would have given it (#2786).
+ */
+template <typename PositionAt>
+CellPrime cellPrimeAt(const ClipStretcher& stretcher, int fixedPreRoll, std::int64_t cellStart,
+                      double sampleRate, PositionAt&& positionAt) {
+    const auto cellStartSeconds = static_cast<double>(cellStart) / sampleRate;
+    const auto cellEndSeconds = static_cast<double>(cellStart + kStretchCellSamples) / sampleRate;
+    const auto read =
+        stretchReadAt(stretcher, fixedPreRoll, cellStartSeconds, sampleRate, positionAt);
+    const auto readEnd =
+        stretchReadAt(stretcher, fixedPreRoll, cellEndSeconds, sampleRate, positionAt);
+    return {read.from, read.preRoll, (readEnd.heard - read.heard) / kStretchCellSamples};
+}
+
 inline int stretchWorkSamples(int maxBlockSamples) {
     return std::max(maxBlockSamples, kStretchCellSamples);
 }

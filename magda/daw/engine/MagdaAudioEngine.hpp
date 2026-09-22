@@ -174,6 +174,11 @@ class MagdaAudioEngine final : public AudioEngine,
     static juce::StringArray unwiredMethods();
 #endif
 
+    /** @brief The host, for a tool waiting on it to settle, such as the parity bench (#2082). */
+    daw::engine_host::EngineHost& host() {
+        return *host_;
+    }
+
     // Overridden because AudioEngine and AudioEngineListener give these default
     // bodies rather than leaving them pure. Not forwarding them compiles
     // perfectly and then answers no-op, false and empty for the rest of the

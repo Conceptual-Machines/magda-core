@@ -80,6 +80,11 @@ class ParamValues {
         return segments_;
     }
 
+    /// The scale the positions are read through.
+    const magda::ParameterUtils::ParameterDomain& domain() const {
+        return domain_;
+    }
+
     int numSegments() const {
         return static_cast<int>(segments_.size());
     }
@@ -180,6 +185,16 @@ class ResolvedParams {
     /// the block length, so an unresolved parameter reads as empty, not stale.
     void beginBlock(int numSamples);
 
+    /// Audio thread: as beginBlock(), but keeps every parameter when the last table resolved
+    /// whole was the one stamped @p tableSerial, whose undriven values have not moved since.
+    /// True when it kept them; a driven parameter is then the caller's to resolve again.
+    bool beginBlockKeeping(int numSamples, std::uint64_t tableSerial);
+
+    /// Records that every parameter of the table stamped @p tableSerial has resolved.
+    void markResolved(std::uint64_t tableSerial) {
+        resolvedSerial_ = tableSerial;
+    }
+
     /// Audio thread: the values @p param resolved to; empty for an unknown param.
     ParamValues operator[](int param) const;
 
@@ -209,6 +224,8 @@ class ResolvedParams {
     std::vector<magda::ParameterUtils::ParameterDomain> domains_;
     int stride_ = 0;
     int numSamples_ = 0;
+    /// The table every parameter here was last resolved from, or zero.
+    std::uint64_t resolvedSerial_ = 0;
 };
 
 }  // namespace magda::engine

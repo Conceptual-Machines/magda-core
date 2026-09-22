@@ -1,6 +1,7 @@
 #include "param/ParamTableCompiler.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <map>
 #include <queue>
 #include <set>
@@ -285,6 +286,7 @@ class Builder {
     void orderAndBreakCycles();
     void flattenLinks();
     void markDriven();
+    void orderMoving();
 
     void diagnose(const std::string& what) {
         table_.diagnostics.push_back(what);
@@ -1023,6 +1025,14 @@ void Builder::markDriven() {
             !table_.curveFor(param).empty() || !table_.linksFor(param).empty());
 }
 
+/// After markDriven(), whose flags it filters by.
+void Builder::orderMoving() {
+    for (const auto& step : table_.order)
+        if (step.kind == ParamStep::Kind::Modifier ||
+            table_.driven[static_cast<std::size_t>(step.index)] != 0)
+            table_.movingOrder.push_back(step);
+}
+
 ParamTable Builder::run(const RenderPlan& plan, const std::vector<magda::TrackInfo>& tracks,
                         const magda::TrackInfo& master,
                         std::span<const magda::AutomationLaneInfo> lanes,
@@ -1044,7 +1054,10 @@ ParamTable Builder::run(const RenderPlan& plan, const std::vector<magda::TrackIn
     flattenLinks();
     flattenCurves();
     markDriven();
+    orderMoving();
 
+    static std::atomic<std::uint64_t> serials{0};
+    table_.serial = serials.fetch_add(1, std::memory_order_relaxed) + 1;
     table_.layoutFingerprint = paramLayoutFingerprint(table_.keys);
     table_.modifierFingerprint = paramModifierFingerprint(table_.modifiers);
 

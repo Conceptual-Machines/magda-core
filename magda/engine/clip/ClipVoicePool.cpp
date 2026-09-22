@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <optional>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -168,6 +169,49 @@ int unbridgedAmong(const std::vector<Candidate>& candidates, int kept, double wi
 
 }  // namespace
 
+std::int64_t stretchCellOpening(const AudioEventPlayback& event, double seconds,
+                                double sampleRate) {
+    const auto eventStart = sampleAt(event.span.seconds.start * sampleRate);
+    const auto index = static_cast<std::int64_t>(
+        std::floor(static_cast<double>(sampleAt(seconds * sampleRate) - eventStart) /
+                   static_cast<double>(kStretchCellSamples)));
+    return eventStart + index * kStretchCellSamples;
+}
+
+StretchPrimeKey standbyKeyFor(const ClipStretcher& active, int preRoll,
+                              const AudioClipPlayback& clip, const AudioEventPlayback& event,
+                              std::int64_t cell, const TempoMap& tempo, std::uint64_t snapshot,
+                              double sampleRate) {
+    const auto prime = cellPrimeAt(active, preRoll, cell, sampleRate, [&](double seconds) {
+        return readingPositionAt(clip, event, seconds, tempo.timeToBeat(seconds), sampleRate);
+    });
+    return {cell, prime.readFrom, prime.preRoll, prime.step, tempo.fingerprint(), snapshot};
+}
+
+std::shared_ptr<StandbyStretcher> primeStandby(const StretchPrimeKey& key,
+                                               const StretchSetup& setup, AudioFileReader& source,
+                                               const RenderContext& context) {
+    std::shared_ptr<ClipStretcher> stretcher = makeStretcher(setup);
+    if (stretcher == nullptr || !stretcher->canPrimeFromWindow())
+        return nullptr;
+
+    // What the voice's priming read takes: as much of the window as fits, from its far end.
+    const auto count = std::min(key.preRoll, stretcher->preRollCapacity());
+    juce::AudioBuffer<float> window(std::max(1, context.numChannels), std::max(0, count));
+    window.clear();
+    if (count > 0)
+        source.read(window, 0, key.readFrom - count, count);
+
+    if (!stretcher->primeFromWindow(juce::dsp::AudioBlock<const float>(window), key.step))
+        return nullptr;
+
+    auto standby = std::make_shared<StandbyStretcher>();
+    standby->stretcher = std::move(stretcher);
+    standby->key = key;
+    standby->setup = setup;
+    return standby;
+}
+
 ClipVoicePool::ClipVoicePool(AudioFileReaderFactory& files, PrefetchThread& reader,
                              const RenderContext& context, const PrefetchSettings& settings)
     : files_(files), reader_(reader), context_(context), settings_(settings) {}
@@ -243,8 +287,12 @@ std::int64_t ClipVoicePool::cueFor(const AudioClipPlayback& clip, const AudioEve
     if (reader.stretcher == nullptr)
         return firstSampleFrom(positionAt(seconds));
 
+    // From the cell the voice opens on, which is where its prime reads back from.
+    const auto opens =
+        static_cast<double>(stretchCellOpening(event, seconds, context_.sampleRate)) /
+        context_.sampleRate;
     const auto read =
-        stretchReadAt(*reader.stretcher, reader.preRoll, seconds, context_.sampleRate, positionAt);
+        stretchReadAt(*reader.stretcher, reader.preRoll, opens, context_.sampleRate, positionAt);
     return read.from - read.preRoll;
 }
 
@@ -317,14 +365,9 @@ void ClipVoicePool::prepareLoopDestination(Reader& reader, const AudioClipPlayba
     if (reader.stream == nullptr)
         return;
 
-    const auto eventStart = sampleAt(event.span.seconds.start * context_.sampleRate);
-    const auto loopSample = sampleAt(loopSeconds * context_.sampleRate);
     const auto cueSeconds =
         reader.stretcher != nullptr
-            ? static_cast<double>(eventStart + static_cast<std::int64_t>(std::floor(
-                                                   static_cast<double>(loopSample - eventStart) /
-                                                   kStretchCellSamples)) *
-                                                   kStretchCellSamples) /
+            ? static_cast<double>(stretchCellOpening(event, loopSeconds, context_.sampleRate)) /
                   context_.sampleRate
             : loopSeconds;
     const auto readingAt = [&](double seconds) {
@@ -366,6 +409,72 @@ void ClipVoicePool::prepareLoopDestination(Reader& reader, const AudioClipPlayba
     }
 }
 
+void ClipVoicePool::settleStandby(Reader& reader) {
+    if (reader.standby == nullptr)
+        return;
+
+    if (!reader.standby->claim() && reader.standby->setup == reader.setup) {
+        reader.stretcher = reader.standby->stretcher;
+        standbysTaken_.fetch_add(1, std::memory_order_relaxed);
+    }
+    reader.standby.reset();
+}
+
+void ClipVoicePool::prepareStandby(Reader& reader, const AudioClipPlayback& clip,
+                                   const AudioEventPlayback& event, bool loopDestination,
+                                   double windowStart, bool playing, double loopSeconds,
+                                   const TempoMap& tempo, std::uint64_t snapshot) {
+    // Taken, so a voice renders from it now: it becomes the entry's own stretcher, and the one it
+    // replaces dies with the last table that named it, which no block reaches once published.
+    if (reader.standby != nullptr && reader.standby->claimed.load(std::memory_order_acquire))
+        settleStandby(reader);
+
+    if (reader.session || reader.stream == nullptr || reader.stretcher == nullptr ||
+        !reader.stretcher->canPrimeFromWindow() ||
+        !primesStandbys_.load(std::memory_order_relaxed)) {
+        settleStandby(reader);
+        return;
+    }
+
+    // Kept while the start it was primed for may be the one playing now, whatever comes next:
+    // play can begin in the callback that takes it, and withdrawing it first leaves that start
+    // to prime.
+    if (const auto* standby = reader.standby.get(); playing && standby != nullptr) {
+        const auto cell = static_cast<double>(standby->key.cell) / context_.sampleRate;
+        if (cell <= windowStart && windowStart < cell + kReadAheadBridgeSeconds)
+            return;
+    }
+
+    // Where the voice's first block of the next start opens. Stopped, that is wherever play lands:
+    // the cursor, inside the clip or at its start. Rolling, it is the event's own start while
+    // that is still ahead, and otherwise the loop's return into it.
+    const auto starts = std::max(clip.span.seconds.start, event.span.seconds.start);
+    const auto ends = std::min(clip.span.seconds.end, event.span.seconds.end);
+    const auto opens = !playing && starts <= windowStart && windowStart < ends
+                           ? std::optional<double>{windowStart}
+                       : starts > windowStart ? std::optional<double>{starts}
+                       : loopDestination      ? std::optional<double>{std::max(loopSeconds, starts)}
+                                              : std::nullopt;
+    if (!opens) {
+        settleStandby(reader);
+        return;
+    }
+
+    const auto key = standbyKeyFor(*reader.stretcher, reader.preRoll, clip, event,
+                                   stretchCellOpening(event, *opens, context_.sampleRate), tempo,
+                                   snapshot, context_.sampleRate);
+    if (reader.standby != nullptr && reader.standby->key == key &&
+        reader.standby->setup == reader.setup)
+        return;
+
+    // Read here through the chain the stream is filled through, and never through the stream:
+    // its cursor is the voice's.
+    settleStandby(reader);
+    if (auto file = files_.open(event.filePath); file != nullptr)
+        reader.standby =
+            primeStandby(key, reader.setup, *readThrough(std::move(file), reader.read), context_);
+}
+
 void ClipVoicePool::service() {
     std::shared_ptr<const ClipSnapshot> snapshot;
     LoopRange loop;
@@ -377,7 +486,9 @@ void ClipVoicePool::service() {
         tempo = tempo_;
     }
 
+    const auto snapshotSerial = snapshot != nullptr ? snapshot->serial : 0;
     const auto windowStart = position_.load(std::memory_order_relaxed);
+    const auto playing = playing_.load(std::memory_order_relaxed);
     const auto windowEnd = windowStart + kCueAheadSeconds;
     const auto loopSeconds = loop.valid() ? tempo.beatToTime(loop.startBeat) : -1.0;
 
@@ -582,6 +693,8 @@ void ClipVoicePool::service() {
                             }
                         }
 
+                        prepareStandby(reuse, *candidate.clip, event, candidate.loopDestination,
+                                       windowStart, playing, loopSeconds, tempo, snapshotSerial);
                         wanted.emplace(key, std::move(reuse));
                         continue;
                     }
@@ -595,9 +708,21 @@ void ClipVoicePool::service() {
                     if (reader.stream == nullptr)
                         ++unreadable;
 
+                    prepareStandby(reader, *candidate.clip, event, candidate.loopDestination,
+                                   windowStart, playing, loopSeconds, tempo, snapshotSerial);
                     wanted.emplace(key, std::move(reader));
                 }
             }
+        }
+
+        // An edit that landed while this round primed makes what it primed stale: a voice would
+        // refuse it by its key, and it is dropped here rather than published to be refused.
+        {
+            const std::scoped_lock guard(snapshotLock_);
+            const auto latest = snapshot_ != nullptr ? snapshot_->serial : 0;
+            if (latest != snapshotSerial)
+                for (auto& [key, reader] : wanted)
+                    settleStandby(reader);
         }
 
         // Nothing opened, nothing retired, nothing moved. Publishing anyway
@@ -610,7 +735,7 @@ void ClipVoicePool::service() {
                 if (reader.stream != nullptr)
                     table->entries.push_back(
                         ClipStreamTable::Entry{key.trackId, key.clipId, key.eventId, reader.stream,
-                                               reader.stretcher, reader.preRoll});
+                                               reader.stretcher, reader.preRoll, reader.standby});
 
             // Published before anything is retired, and it waits for the block
             // the callback is in: after this returns, nothing the audio thread

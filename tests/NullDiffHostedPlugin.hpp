@@ -2,6 +2,9 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include <string>
+#include <vector>
+
 #include "core/DeviceInfo.hpp"
 #include "core/TypeIds.hpp"
 
@@ -211,6 +214,14 @@ void setHostedMix(magda::DeviceInfo& device, float dry, float wet);
  */
 void installHostedPlugins(juce::AudioPluginFormatManager& formats,
                           juce::KnownPluginList& knownPlugins);
+
+/**
+ * @brief Add to @p known every plugin in this machine's default folders named like one in
+ *        @p names, loading only the bundles whose file name matches.
+ */
+void addInstalledPluginsNamed(const std::vector<std::string>& names,
+                              juce::AudioPluginFormatManager& formats,
+                              juce::KnownPluginList& known);
 
 /**
  * @brief A scan holding the corpus's own plugins and nothing else.

@@ -1,7 +1,9 @@
 #pragma once
 
+#include <atomic>
 #include <farbot/RealtimeObject.hpp>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -31,6 +33,47 @@
  */
 
 namespace magda::engine {
+
+/**
+ * @brief What a stretcher was primed for, which a voice's start must match exactly to use it.
+ *
+ * The cell and its priming inputs, and the tempo and clip snapshot they were derived under: a
+ * pitch or source edit leaves the inputs alone and changes the snapshot.
+ */
+struct StretchPrimeKey {
+    std::int64_t cell = 0;
+    std::int64_t readFrom = 0;
+    int preRoll = 0;
+    double step = 0.0;
+    std::uint64_t tempo = 0;
+    std::uint64_t snapshot = 0;
+
+    bool operator==(const StretchPrimeKey&) const = default;
+};
+
+/**
+ * @brief A second stretcher, primed off the audio thread for one predicted start (#2786).
+ *
+ * Taken by at most one start: a voice claims it with the one transition @ref claimed allows,
+ * renders from it while a published table still names it, and the pool then makes it the
+ * entry's stretcher. Nothing changes it after it is published.
+ */
+struct StandbyStretcher {
+    std::shared_ptr<ClipStretcher> stretcher;
+    StretchPrimeKey key;
+
+    /// What it was built for: a claimed standby becomes the entry's stretcher only while the
+    /// reader still asks for this.
+    StretchSetup setup;
+
+    /// Set by whichever takes it first: a voice adopting it, or the pool withdrawing it.
+    std::atomic<bool> claimed{false};
+
+    bool claim() {
+        auto unclaimed = false;
+        return claimed.compare_exchange_strong(unclaimed, true, std::memory_order_acq_rel);
+    }
+};
 
 /**
  * @brief The streams provisioned for every track, at one moment.
@@ -66,6 +109,9 @@ struct ClipStreamTable {
         /// stretcher, and the reason a voice's first read is the one the pool
         /// cued rather than one that seeks.
         int preRollSamples = 0;
+
+        /// Primed for the next start the pool could see coming, or null.
+        std::shared_ptr<StandbyStretcher> standby;
     };
 
     std::vector<Entry> entries;
@@ -98,10 +144,18 @@ class ClipStreamFeed {
     /// no readers yet rather than an error.
     class Reader {
       public:
-        explicit Reader(ClipStreamFeed& feed) : access_(feed.published_) {}
+        /// Inside a BlockScope, what it pinned; outside one, the table acquired for itself.
+        explicit Reader(ClipStreamFeed& feed) {
+            if (feed.pinned_.load(std::memory_order_acquire)) {
+                table_ = feed.live_.load(std::memory_order_relaxed);
+                return;
+            }
+            access_.emplace(feed.published_);
+            table_ = (*access_)->get();
+        }
 
         const ClipStreamTable* get() const noexcept {
-            return (*access_).get();
+            return table_;
         }
         const ClipStreamTable* operator->() const noexcept {
             return get();
@@ -111,11 +165,46 @@ class ClipStreamFeed {
         }
 
       private:
-        Published::ScopedAccess<farbot::ThreadType::realtime> access_;
+        std::optional<Published::ScopedAccess<farbot::ThreadType::realtime>> access_;
+        const ClipStreamTable* table_ = nullptr;
+    };
+
+    /// The block's one acquisition, opened by the callback before any op renders. The table
+    /// may be read by only one thread at a time, and a block spread across workers reads it
+    /// from every one of them.
+    ///
+    /// Every stream takes its pending cue up here, once per block. A stream a clip has not
+    /// started is the one a cue matters most to (#2016), and a track's arrangement and
+    /// session sources render on different workers, so neither may cue for the other.
+    class BlockScope {
+      public:
+        explicit BlockScope(ClipStreamFeed& feed) : feed_(feed) {
+            const auto* table = feed_.published_.realtimeAcquire().get();
+            if (table != nullptr)
+                for (const auto& entry : table->entries)
+                    entry.stream->applyPendingCue();
+
+            feed_.live_.store(table, std::memory_order_relaxed);
+            feed_.pinned_.store(true, std::memory_order_release);
+        }
+
+        ~BlockScope() {
+            feed_.pinned_.store(false, std::memory_order_release);
+            feed_.live_.store(nullptr, std::memory_order_relaxed);
+            feed_.published_.realtimeRelease();
+        }
+
+        BlockScope(const BlockScope&) = delete;
+        BlockScope& operator=(const BlockScope&) = delete;
+
+      private:
+        ClipStreamFeed& feed_;
     };
 
   private:
     Published published_;
+    std::atomic<bool> pinned_{false};
+    std::atomic<const ClipStreamTable*> live_{nullptr};
 };
 
 }  // namespace magda::engine

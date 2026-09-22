@@ -34,6 +34,8 @@ struct ParameterDomain {
     /// everywhere else, and Discrete with zero choices converts to 0 the way
     /// an empty `choices` does.
     int choiceCount = 0;
+
+    bool operator==(const ParameterDomain&) const = default;
 };
 
 /** @brief The conversion domain of @p info. */

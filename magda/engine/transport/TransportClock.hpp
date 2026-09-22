@@ -79,6 +79,12 @@ class TransportClock {
         return playingPublic_.load(std::memory_order_relaxed);
     }
 
+    /// The generation of the last request the clock applied. Any thread: a publisher reads it to
+    /// tell a request still waiting from one already taken.
+    std::uint64_t appliedGeneration() const {
+        return appliedGeneration_.load(std::memory_order_acquire);
+    }
+
     /**
      * @brief The cursor and the monotonic count as one block left them. Any
      *        thread.
@@ -164,6 +170,7 @@ class TransportClock {
     /// The request that put the cursor where it is. A snapshot carrying this
     /// same generation is a republication, not a new instruction.
     std::uint64_t generation_ = 0;
+    std::uint64_t appliedLocateId_ = 0;
 
     bool playing_ = false;
     double anchorSeconds_ = 0.0;
@@ -202,6 +209,7 @@ class TransportClock {
 
     std::atomic<double> positionBeats_{0.0};
     std::atomic<bool> playingPublic_{false};
+    std::atomic<std::uint64_t> appliedGeneration_{0};
     std::atomic<int> loopWrapOverflows_{0};
 
     /// The pair @ref syncPoint answers, published under @ref syncSequence_.

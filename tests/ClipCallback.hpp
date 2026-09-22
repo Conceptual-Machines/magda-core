@@ -3,9 +3,12 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_dsp/juce_dsp.h>
 
+#include <optional>
+
 #include "clip/ClipAudioSource.hpp"
 #include "clip/ClipMidiSource.hpp"
 #include "clip/ClipSnapshotFeed.hpp"
+#include "clip/ClipStreamFeed.hpp"
 #include "clip/SessionPlayback.hpp"
 
 /**
@@ -25,20 +28,26 @@ namespace magda::test {
 class ClipBlock {
   public:
     ClipBlock(engine::ClipSnapshotFeed& clips, const engine::BlockInfo& block,
-              engine::LaunchHandleFeed* handles = nullptr)
+              engine::LaunchHandleFeed* handles = nullptr,
+              engine::ClipStreamFeed* streams = nullptr)
         : pinned_(clips) {
+        if (streams != nullptr)
+            streams_.emplace(*streams);
         engine::advanceTrackSections(clips.sections(), clips.live(), handles, block);
     }
 
   private:
     engine::ClipSnapshotFeed::BlockScope pinned_;
+    std::optional<engine::ClipStreamFeed::BlockScope> streams_;
 };
 
 /// One audio block, for a test with nothing else to do inside the callback.
+/// @p streams is the source's feed, pinned so every stream takes its cue up as it would live.
 inline void renderBlock(engine::ClipAudioSource& source, engine::ClipSnapshotFeed& clips,
                         const engine::BlockInfo& block, juce::dsp::AudioBlock<float> out,
-                        engine::LaunchHandleFeed* handles = nullptr) {
-    const ClipBlock pinned(clips, block, handles);
+                        engine::LaunchHandleFeed* handles = nullptr,
+                        engine::ClipStreamFeed* streams = nullptr) {
+    const ClipBlock pinned(clips, block, handles, streams);
     source.render(block, out);
 }
 

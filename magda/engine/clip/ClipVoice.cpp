@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 
+#include "clip/ClipStreamFeed.hpp"
 #include "clip/EventPlacement.hpp"
 #include "clip/FadeCurves.hpp"
 #include "trace/PlaybackTrace.hpp"
@@ -41,6 +42,7 @@ void ClipVoice::release() {
     eventId_ = INVALID_EVENT_ID;
     sounded_ = false;
     primed_ = nullptr;
+    adopted_ = nullptr;
     deClick_.reset();
 
     // stop_ is deliberately left alone: releasing is what starts its ramp, and
@@ -51,12 +53,38 @@ void ClipVoice::release() {
     skip_ = 0;
 }
 
+ClipStretcher* ClipVoice::adoptStandby(StandbyStretcher* standby, const AudioClipPlayback& clip,
+                                       const AudioEventPlayback& event, const BlockInfo& block,
+                                       const ClipStretcher& handed, int preRoll,
+                                       std::uint64_t snapshot) {
+    if (standby == nullptr || standby->stretcher == nullptr)
+        return nullptr;
+
+    const auto prime = cellPrimeAt(handed, preRoll, nextCell_, sampleRate_, [&](double seconds) {
+        return readingPositionAt(clip, event, seconds, block.beatAtTime(seconds), sampleRate_);
+    });
+    const StretchPrimeKey key{nextCell_,
+                              prime.readFrom,
+                              prime.preRoll,
+                              prime.step,
+                              block.tempo != nullptr ? block.tempo->fingerprint() : 0,
+                              snapshot};
+
+    // Checked before claiming, so a standby for somewhere else is left for its own start.
+    if (standby->key != key || !standby->claim())
+        return nullptr;
+
+    adopted_ = standby;
+    ++adoptions_;
+    return standby->stretcher.get();
+}
+
 bool ClipVoice::renderThroughCells(const AudioClipPlayback& clip, const AudioEventPlayback& event,
                                    const BlockInfo& block, PrefetchStream& stream,
-                                   ClipStretcher& stretcher, int preRoll,
+                                   ClipStretcher& handed, int preRoll,
                                    juce::dsp::AudioBlock<float> scratch,
                                    juce::dsp::AudioBlock<float> region, double windowStart,
-                                   int count) {
+                                   int count, StandbyStretcher* standby, std::uint64_t snapshot) {
     // The grid, in samples of the timeline, anchored to where the event begins
     // rather than to where this block does. That anchor is the whole point: two
     // renders that cut the timeline into different blocks still divide it into
@@ -71,7 +99,8 @@ bool ClipVoice::renderThroughCells(const AudioClipPlayback& clip, const AudioEve
     // reader catching up and one that never does: priming reads behind the
     // position wanted, so a stream that came back short and was primed again
     // would be sent backwards every block.
-    auto needsPrime = primed_ != &stretcher || !block.continuous || !pending_;
+    auto* stretcher = &handed;
+    auto needsPrime = primed_ != stretcher || !block.continuous || !pending_;
 
     if (needsPrime) {
         // Back to the cell boundary at or before where playback resumes, and
@@ -87,8 +116,14 @@ bool ClipVoice::renderThroughCells(const AudioClipPlayback& clip, const AudioEve
         pendingRead_ = 0;
         skip_ = static_cast<int>(windowStartSample - nextCell_);
 
-        stretcher.reset();
-        primed_ = &stretcher;
+        // Primed off the audio thread for exactly this cell, which leaves nothing to do here.
+        if (auto* adopted = adoptStandby(standby, clip, event, block, handed, preRoll, snapshot)) {
+            stretcher = adopted;
+            needsPrime = false;
+        } else {
+            stretcher->reset();
+        }
+        primed_ = stretcher;
         pending_ = true;
     }
 
@@ -123,9 +158,9 @@ bool ClipVoice::renderThroughCells(const AudioClipPlayback& clip, const AudioEve
         const auto opens = positionAt(cellStartSeconds);
 
         const auto read =
-            stretchReadAt(stretcher, preRoll, cellStartSeconds, sampleRate_, positionAt);
+            stretchReadAt(*stretcher, preRoll, cellStartSeconds, sampleRate_, positionAt);
         const auto readEnd =
-            stretchReadAt(stretcher, preRoll, cellEndSeconds, sampleRate_, positionAt);
+            stretchReadAt(*stretcher, preRoll, cellEndSeconds, sampleRate_, positionAt);
         const auto readFrom = read.from;
         const auto readTo = readEnd.from;
 
@@ -150,7 +185,7 @@ bool ClipVoice::renderThroughCells(const AudioClipPlayback& clip, const AudioEve
             // would send a reader that is already late further back still, and
             // the material it recovered would then play after the moment it
             // belonged to.
-            if (stretcher.prime(stream, readFrom, read.preRoll, step) > 0)
+            if (stretcher->prime(stream, readFrom, read.preRoll, step) > 0)
                 full = false;
 
             needsPrime = false;
@@ -162,7 +197,7 @@ bool ClipVoice::renderThroughCells(const AudioClipPlayback& clip, const AudioEve
 
         juce::dsp::AudioBlock<float> cell(held_);
         auto cellOut = cell.getSubBlock(0, static_cast<std::size_t>(kCellSamples));
-        stretcher.process(reading, opens - static_cast<double>(readFrom), step, cellOut);
+        stretcher->process(reading, opens - static_cast<double>(readFrom), step, cellOut);
 
         nextCell_ += kCellSamples;
         pendingCount_ = kCellSamples;
@@ -232,7 +267,8 @@ void ClipVoice::applyFade(juce::dsp::AudioBlock<float> region, EdgeSample region
 bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& event,
                        const BlockInfo& block, PrefetchStream& stream, ClipStretcher* stretcher,
                        int preRoll, juce::dsp::AudioBlock<float> scratch,
-                       juce::dsp::AudioBlock<float> out, bool correctTrimmedStart) {
+                       juce::dsp::AudioBlock<float> out, bool correctTrimmedStart,
+                       StandbyStretcher* standby, std::uint64_t snapshot) {
     // A voice handed a different entry is a new voice: whatever it played
     // before has nothing to do with where this one begins.
     if (!playing(clip.clipId, event.eventId)) {
@@ -240,8 +276,17 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
         eventId_ = event.eventId;
         sounded_ = false;
         primed_ = nullptr;
+        adopted_ = nullptr;
         deClick_.reset();
     }
+
+    // A claimed standby is this voice's stretcher while the table still names it. Once the
+    // pool has made it the entry's own, the entry's is that same object; if it dropped it
+    // instead, the entry's is another and this start primes it.
+    if (adopted_ != nullptr && adopted_ != standby)
+        adopted_ = nullptr;
+    if (adopted_ != nullptr)
+        stretcher = adopted_->stretcher.get();
 
     const auto nothing = [this] {
         sounded_ = false;
@@ -306,7 +351,7 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
     const auto full =
         stretcher != nullptr
             ? renderThroughCells(clip, event, block, stream, *stretcher, preRoll, scratch, region,
-                                 windowStart, count)
+                                 windowStart, count, standby, snapshot)
             : stream.read(firstSampleFrom(opens - fractionAt(block.offsetForTime(windowStart))),
                           region, count) == count;
 

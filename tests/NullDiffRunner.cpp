@@ -105,54 +105,7 @@ void findPluginsFor(const std::vector<std::string>& wanted) {
         return;
 
     auto& plugins = engine->getPluginManager();
-    auto& formats = plugins.pluginFormatManager;
-    auto& known = plugins.knownPluginList;
-
-    // A project names a plugin what its author's host called it, and a bundle is
-    // named what its vendor called the file. Those agree often and not always:
-    // FabFilter ships "Pro-L 2" inside "FabFilter Pro-L 2.vst3". So the match is
-    // containment in either direction, folded for case.
-    //
-    // Loose on purpose, and it can only be loose in one direction that matters.
-    // A false match costs one bundle loaded that resolution then declines,
-    // because matchInstalledPlugin has the project's own identifier to check
-    // against and this does not; a missed match costs a case that never runs on
-    // a machine that could have measured it.
-    const auto matches = [&unsearched](const juce::String& identifier) {
-        const auto file = juce::File::createFileWithoutCheckingPath(identifier);
-        const auto base =
-            (file.exists() ? file.getFileNameWithoutExtension() : identifier).toLowerCase();
-
-        return std::any_of(unsearched.begin(), unsearched.end(), [&base](const std::string& name) {
-            const auto folded = juce::String(name).toLowerCase();
-            return folded.isNotEmpty() && (base.contains(folded) || folded.contains(base));
-        });
-    };
-
-    for (int index = 0; index < formats.getNumFormats(); ++index) {
-        auto* format = formats.getFormat(index);
-        if (format == nullptr)
-            continue;
-
-        // The walk, which reads directory entries and loads nothing.
-        const auto found =
-            format->searchPathsForPlugins(format->getDefaultLocationsToSearch(), true);
-
-        for (const auto& identifier : found) {
-            if (!matches(identifier))
-                continue;
-
-            // And the load, for the handful that matched. This is the step the
-            // app runs out of process; in here it is a named bundle rather than
-            // a library, and a plugin that cannot survive being asked what it is
-            // would not have survived the render either.
-            juce::OwnedArray<juce::PluginDescription> descriptions;
-            format->findAllTypesForFile(descriptions, identifier);
-
-            for (const auto* description : descriptions)
-                known.addType(*description);
-        }
-    }
+    addInstalledPluginsNamed(unsearched, plugins.pluginFormatManager, plugins.knownPluginList);
 }
 
 /// The largest magnitude anywhere in @p buffer, which is all the silence guard

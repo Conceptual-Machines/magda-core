@@ -2,11 +2,15 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include <limits>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "core/ParameterInfo.hpp"
+#include "core/ParameterUtils.hpp"
 #include "exec/EngineDevice.hpp"
+#include "plugins/DeviceTiming.hpp"
 #include "plugins/MagdaDevice.hpp"
 
 /**
@@ -97,6 +101,10 @@ class EngineMagdaDevice final : public magda::engine::EngineDevice {
         return *device_;
     }
 
+    const char* profileName() const override {
+        return properties_.pluginId.toRawUTF8();
+    }
+
     const DeviceProperties& properties() const {
         return properties_;
     }
@@ -107,6 +115,8 @@ class EngineMagdaDevice final : public magda::engine::EngineDevice {
 
     std::unique_ptr<MagdaDevice> device_;
     DeviceProperties properties_;
+    /// What the device's own process() is timed under, beside the adapter's (DeviceTiming.hpp).
+    std::string dspTimingName_;
 
     /// One entry per parameter the device declared, in its own slot order.
     /// `plan` is the index the plan addresses that slot by, which is what
@@ -116,6 +126,12 @@ class EngineMagdaDevice final : public magda::engine::EngineDevice {
     struct ParameterMapping {
         int plan = 0;
         magda::ParameterInfo info;
+
+        /// The last position and domain the table gave, and the value they converted to. Most
+        /// parameters hold still, and the round trip through their units is the dear part.
+        float position = std::numeric_limits<float>::quiet_NaN();
+        magda::ParameterUtils::ParameterDomain domain;
+        float normalized = 0.0f;
     };
 
     std::vector<ParameterMapping> parameters_;

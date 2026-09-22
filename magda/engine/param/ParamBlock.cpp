@@ -72,11 +72,23 @@ void ResolvedParams::prepare(int numParams, int segmentCapacity) {
     counts_.assign(count, 0);
     domains_.assign(count, magda::ParameterUtils::ParameterDomain{});
     numSamples_ = 0;
+    resolvedSerial_ = 0;
 }
 
 void ResolvedParams::beginBlock(int numSamples) {
     numSamples_ = numSamples;
+    resolvedSerial_ = 0;
     std::fill(counts_.begin(), counts_.end(), 0);
+}
+
+bool ResolvedParams::beginBlockKeeping(int numSamples, std::uint64_t tableSerial) {
+    if (tableSerial == 0 || tableSerial != resolvedSerial_) {
+        beginBlock(numSamples);
+        return false;
+    }
+
+    numSamples_ = numSamples;
+    return true;
 }
 
 ParamValues ResolvedParams::operator[](int param) const {

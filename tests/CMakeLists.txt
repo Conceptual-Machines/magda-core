@@ -69,6 +69,8 @@ set(TEST_SOURCES
     devices/test_chord_engine_device.cpp
     # All-notes-off beside the events, which the instrument used to drop (#2418)
     devices/test_instrument_panic.cpp
+    # An idle instrument skips its render, exactly (#2786)
+    devices/test_instrument_idle.cpp
     devices/test_device_sdk_handles.cpp
     devices/test_external_insert_registry.cpp
     devices/test_external_insert_enablement.cpp
@@ -399,6 +401,8 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES engine/test_plan_note_gate.cpp)
     # The panic flag beside a MIDI port (#2418).
     list(APPEND TEST_SOURCES engine/test_plan_midi_panic.cpp)
+    # A stretcher primed off the audio thread for a start the pool saw coming (#2786)
+    list(APPEND TEST_SOURCES engine/test_stretch_standby.cpp)
     # The one-block carry a cut routing loop is rejoined through (#2612).
     list(APPEND TEST_SOURCES engine/test_plan_feedback_carry.cpp)
     list(APPEND TEST_SOURCES engine/test_plan_pad_rack.cpp)

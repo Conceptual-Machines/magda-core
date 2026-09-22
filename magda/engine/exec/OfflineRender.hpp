@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <functional>
 
+#include "exec/ParallelPlanExecutor.hpp"
 #include "exec/PlanExecutor.hpp"
 #include "exec/PlanValues.hpp"
 #include "exec/RenderContext.hpp"
@@ -174,6 +175,15 @@ class OfflineRenderSink {
  * and a click printed into a bounce is the oldest bug in audio software.
  */
 OfflineRenderResult renderOffline(PlanExecutor& executor, const PlanValues& values,
+                                  const RenderContext& context, const TempoMap& tempo,
+                                  const OfflineRenderRequest& request, OfflineRenderSink& sink,
+                                  ClipVoicePool* voices = nullptr,
+                                  ClipSnapshotFeed* clips = nullptr,
+                                  const OfflineLauncher& launcher = {},
+                                  const std::function<bool()>& shouldContinue = {});
+
+/// The same render, spread across the executor's pool. What a bounce in the app runs on.
+OfflineRenderResult renderOffline(ParallelPlanExecutor& executor, const PlanValues& values,
                                   const RenderContext& context, const TempoMap& tempo,
                                   const OfflineRenderRequest& request, OfflineRenderSink& sink,
                                   ClipVoicePool* voices = nullptr,

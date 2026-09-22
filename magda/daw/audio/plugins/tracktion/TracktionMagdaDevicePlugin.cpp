@@ -131,7 +131,8 @@ TracktionMagdaDevicePlugin::TracktionMagdaDevicePlugin(const te::PluginCreationI
     : te::Plugin(info),
       device_(std::move(device)),
       deviceHandle_(std::make_shared<MagdaDevice*>(device_.get())),
-      properties_(propertiesForRequiredDevice(device_)) {
+      properties_(propertiesForRequiredDevice(device_)),
+      dspTimingName_(properties_.pluginId.toStdString() + " dsp") {
     refreshChannelLayout();
     buildParameters();
     device_->restoreState(state);
@@ -225,6 +226,7 @@ void TracktionMagdaDevicePlugin::reset() {
 }
 
 void TracktionMagdaDevicePlugin::applyToBuffer(const te::PluginRenderContext& context) {
+    const DeviceTimingScope adapter(properties_.pluginId.toRawUTF8());
     syncParametersToDevice();
 
     std::optional<TracktionMidiInputView> midiIn;
@@ -283,7 +285,10 @@ void TracktionMagdaDevicePlugin::applyToBuffer(const te::PluginRenderContext& co
         .liveSourceIds = liveSources != nullptr ? liveSources + 1 : nullptr,
         .numLiveSourceIds = liveSources != nullptr ? static_cast<int>(liveSources[0]) : 0,
     };
-    device_->process(deviceContext);
+    {
+        const DeviceTimingScope dsp(dspTimingName_.c_str());
+        device_->process(deviceContext);
+    }
 
     if (context.bufferForMidiMessages == nullptr)
         return;

@@ -23,8 +23,9 @@
 #include "clip/ClipSnapshotFeed.hpp"
 #include "clip/ClipVoicePool.hpp"
 #include "exec/OfflineRender.hpp"
-#include "exec/PlanExecutor.hpp"
+#include "exec/ParallelPlanExecutor.hpp"
 #include "exec/PlanValues.hpp"
+#include "exec/RenderThreadPool.hpp"
 #include "exec/RuntimeStateStore.hpp"
 #include "io/AudioFileSink.hpp"
 #include "io/PrefetchThread.hpp"
@@ -339,7 +340,11 @@ struct OfflineRuntime {
 
     std::shared_ptr<const engine::RenderPlan> plan;
     engine::PlanValues values;
-    engine::PlanExecutor executor;
+
+    // Not realtime: a bounce runs beside playback and must not take its cores from it.
+    engine::RenderThreadPool renderPool{engine::RenderThreadPool::workersForThisMachine(),
+                                        /*realtime=*/false};
+    engine::ParallelPlanExecutor executor{&renderPool};
 
   private:
     static engine::RenderPlan compile(const OfflineRenderModel& model) {

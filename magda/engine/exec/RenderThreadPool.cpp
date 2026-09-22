@@ -3,6 +3,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 
 #include <algorithm>
+#include <chrono>
 
 namespace magda::engine {
 
@@ -25,13 +26,31 @@ class RenderThreadPool::Worker final : public juce::Thread {
         // thread carries, and a worker does nothing but render (#2240).
         const juce::ScopedNoDenormals noDenormals;
 
+        // On this thread for as long as it runs: a token has to die on the thread it joined.
+        juce::WorkgroupToken token;
+
         while (!threadShouldExit()) {
-            wait(-1);
-            if (threadShouldExit())
+            joinWorkgroupIfChanged(token);
+
+            if (!awaitBlock())
                 return;
+
+            seen_ = wanted.load(std::memory_order_seq_cst);
+            inside.store(true, std::memory_order_seq_cst);
             pool_.takeWork(*this);
+            inside.store(false, std::memory_order_seq_cst);
         }
     }
+
+    /// Whether this worker is on its wait, which render() reads before paying a notify.
+    std::atomic<bool> sleeping{false};
+
+    /// Whether this worker is inside a job, so recall() asks only for one that is not.
+    std::atomic<bool> inside{false};
+
+    /// The block this worker is wanted for. Only render() moves it, and only for the workers
+    /// the plan has work for, so an idle worker spins for nobody.
+    std::atomic<std::uint64_t> wanted{0};
 
     /**
      * @brief Where this worker is between waking and reaching a job's count.
@@ -47,7 +66,49 @@ class RenderThreadPool::Worker final : public juce::Thread {
     std::atomic<std::uint64_t> arrival{0};
 
   private:
+    /// Spin until a block arrives or the spin budget runs out, then sleep for one. False when
+    /// the thread should exit instead.
+    bool awaitBlock() {
+        const auto spin =
+            std::chrono::nanoseconds(pool_.spinNanos_.load(std::memory_order_relaxed));
+        const auto deadline = std::chrono::steady_clock::now() + spin;
+
+        for (;;) {
+            if (threadShouldExit())
+                return false;
+            if (wanted.load(std::memory_order_seq_cst) != seen_)
+                return true;
+            if (std::chrono::steady_clock::now() >= deadline)
+                break;
+            juce::Thread::yield();
+        }
+
+        // Sleeping is announced before the mark is read again, and render() moves the mark
+        // before it reads the announcement, so one of the two always sees the other.
+        sleeping.store(true, std::memory_order_seq_cst);
+        if (wanted.load(std::memory_order_seq_cst) == seen_)
+            wait(-1);
+        sleeping.store(false, std::memory_order_seq_cst);
+        return !threadShouldExit();
+    }
+
+    void joinWorkgroupIfChanged(juce::WorkgroupToken& token) {
+        const auto generation = pool_.workgroupGeneration_.load(std::memory_order_acquire);
+        if (generation == workgroupSeen_)
+            return;
+
+        juce::AudioWorkgroup workgroup;
+        {
+            const juce::SpinLock::ScopedLockType lock(pool_.workgroupLock_);
+            workgroup = pool_.workgroup_;
+        }
+        workgroup.join(token);
+        workgroupSeen_ = generation;
+    }
+
     RenderThreadPool& pool_;
+    std::uint64_t seen_ = 0;
+    std::uint64_t workgroupSeen_ = 0;
 };
 
 RenderThreadPool::RenderThreadPool(int numWorkers, bool realtime) {
@@ -84,17 +145,42 @@ RenderThreadPool::~RenderThreadPool() {
         worker->stopThread(2000);
 }
 
-void RenderThreadPool::render(Job& job) {
+void RenderThreadPool::render(Job& job, int workers) {
     job_.store(&job, std::memory_order_seq_cst);
+    const auto generation = generation_.fetch_add(1, std::memory_order_seq_cst) + 1;
 
-    for (auto& worker : workers_)
-        worker->notify();
+    // A spinning worker sees its mark move for itself; only a sleeping one costs a notify.
+    const auto woken = static_cast<std::size_t>(std::clamp(workers, 0, numThreads() - 1));
+    for (std::size_t index = 0; index < woken; ++index) {
+        auto& worker = *workers_[index];
+        worker.wanted.store(generation, std::memory_order_seq_cst);
+        if (worker.sleeping.load(std::memory_order_seq_cst))
+            worker.notify();
+    }
 
     // The caller is a worker too, and on a pool with none it is the only one.
     // Its return is what says the block is finished, which is why this is not
     // a barrier: the workers are still leaving, and there is nothing left for
     // them to do.
     job.takeWork();
+}
+
+int RenderThreadPool::recall(int count) {
+    // Any worker not inside a job and not already asked for one. It arrives the way a woken
+    // worker does, so a block that has finished by then, or a job since let go of, is left alone.
+    auto recalled = 0;
+    for (std::size_t index = 0; recalled < count && index < workers_.size(); ++index) {
+        auto& worker = *workers_[index];
+        if (worker.inside.load(std::memory_order_seq_cst))
+            continue;
+
+        const auto generation = generation_.fetch_add(1, std::memory_order_seq_cst) + 1;
+        worker.wanted.store(generation, std::memory_order_seq_cst);
+        if (worker.sleeping.load(std::memory_order_seq_cst))
+            worker.notify();
+        ++recalled;
+    }
+    return recalled;
 }
 
 void RenderThreadPool::takeWork(Worker& worker) {
@@ -116,6 +202,24 @@ void RenderThreadPool::takeWork(Worker& worker) {
 
     job->takeWork();
     job->workersInside.fetch_sub(1, std::memory_order_seq_cst);
+}
+
+void RenderThreadPool::configure(double blockSeconds, juce::AudioWorkgroup workgroup) {
+    // Long enough to catch a block that is already on its way, short against any period: a
+    // worker spinning between blocks is a core burnt for the whole gap.
+    juce::ignoreUnused(blockSeconds);
+    spinNanos_.store(50'000, std::memory_order_relaxed);
+
+    // The recommendation counts the device's own thread, which renders too.
+    const auto recommended = static_cast<int>(workgroup.getMaxParallelThreadCount());
+    workerCap_.store(recommended > 0 ? recommended - 1 : std::numeric_limits<int>::max(),
+                     std::memory_order_relaxed);
+
+    {
+        const juce::SpinLock::ScopedLockType lock(workgroupLock_);
+        workgroup_ = std::move(workgroup);
+    }
+    workgroupGeneration_.fetch_add(1, std::memory_order_release);
 }
 
 void RenderThreadPool::release(Job& job) {

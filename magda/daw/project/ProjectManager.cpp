@@ -601,6 +601,14 @@ bool ProjectManager::loadProject(const juce::File& file,
         return false;
     }
 
+    commitStagedProject(staged, file, fileToLoad != file, onBeforeCommit);
+
+    return true;
+}
+
+void ProjectManager::commitStagedProject(
+    StagedProjectData& staged, const juce::File& file, bool recoveredFromAutosave,
+    const std::function<void(const ProjectInfo&)>& onBeforeCommit) {
     beginProjectTeardown();
     deleteAutosaveFile();
 
@@ -609,22 +617,19 @@ bool ProjectManager::loadProject(const juce::File& file,
     if (onBeforeCommit)
         onBeforeCommit(staged.info);
 
-    // Commit staged data to singleton managers
     ProjectSerializer::commitStaged(staged);
 
-    // Update state — always use the original file as the canonical project file
+    // Always the original file as the canonical project file, even when recovered from autosave.
     currentProject_ = staged.info;
     currentProject_.filePath = file.getFullPathName();
     currentFile_ = file;
     isProjectOpen_ = true;
 
-    // Set media directory beside project file
     juce::String mediaDirName = file.getFileNameWithoutExtension() + "_Media";
     mediaDirectory_ = file.getParentDirectory().getChildFile(mediaDirName);
     ensureMediaSubdirectories(mediaDirectory_);
 
-    // The previous project's undo stack cannot be applied to this one — its
-    // commands reference track/clip ids that are gone.
+    // The previous project's undo stack references track and clip ids that are gone.
     UndoManager::getInstance().clearHistory();
     clearDirty();
 
@@ -632,19 +637,14 @@ bool ProjectManager::loadProject(const juce::File& file,
     // Runs after clearDirty() so the dirty flag it raises survives.
     foldLegacyMediaDirectories(mediaDirectory_);
 
-    // If we recovered from autosave, mark dirty so the user can save properly
-    if (fileToLoad != file) {
+    if (recoveredFromAutosave)
         markDirty();
-        autosaveFile.deleteFile();
-    }
 
     deleteAutosaveFile();
     notifyProjectOpened();
 
     if (onAfterLoad)
         onAfterLoad(currentProject_);
-
-    return true;
 }
 
 bool ProjectManager::exportDawProject(const juce::File& file) {
@@ -815,44 +815,7 @@ void ProjectManager::loadProjectAsync(
                     return;
                 }
 
-                beginProjectTeardown();
-                deleteAutosaveFile();
-
-                // Set tempo/time sig/loop BEFORE committing tracks & clips,
-                // so that audio engine clip sync uses the correct BPM.
-                if (onBeforeCommit)
-                    onBeforeCommit(staged->info);
-
-                ProjectSerializer::commitStaged(*staged);
-                currentProject_ = staged->info;
-                currentProject_.filePath = originalFile.getFullPathName();
-                currentFile_ = originalFile;
-                isProjectOpen_ = true;
-
-                // Set media directory beside project file
-                juce::String mediaDirName = originalFile.getFileNameWithoutExtension() + "_Media";
-                mediaDirectory_ = originalFile.getParentDirectory().getChildFile(mediaDirName);
-                ensureMediaSubdirectories(mediaDirectory_);
-
-                // The previous project's undo stack cannot be applied to this
-                // one — its commands reference ids that are gone.
-                UndoManager::getInstance().clearHistory();
-                clearDirty();
-
-                // Projects saved before #2170 still have the retired media
-                // roots on disk. Runs after clearDirty() so the dirty flag it
-                // raises survives.
-                foldLegacyMediaDirectories(mediaDirectory_);
-
-                if (recoveredFromAutosave) {
-                    markDirty();
-                    deleteAutosaveFile();
-                }
-
-                notifyProjectOpened();
-
-                if (onAfterLoad)
-                    onAfterLoad(currentProject_);
+                commitStagedProject(*staged, originalFile, recoveredFromAutosave, onBeforeCommit);
             }
 
             if (onComplete)

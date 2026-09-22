@@ -417,6 +417,9 @@ SamplerSynth::SamplerSynth() {
     // note can then release an envelope that has never rendered, making the
     // whole note silent depending on its position within the block.
     setMinimumRenderingSubdivisionSize(1, true);
+
+    // One entry per pitch at most: noteOn() removes a pitch before pushing it.
+    heldNotes.reserve(128);
 }
 
 void SamplerSynth::noteOn(int midiChannel, int midiNoteNumber, float velocity) {
@@ -481,7 +484,10 @@ void SamplerSynth::allNotesOff(int midiChannel, bool allowTailOff) {
 //==============================================================================
 
 MagdaSamplerPlugin::MagdaSamplerPlugin() {
-    eventFractions_.reserve(1024);
+    eventFractions_.reserve(kMaxBlockEvents);
+    seenEvents_.reserve(kMaxSeenEdges);
+    // A short message costs JUCE its three bytes, a sample position and a length.
+    blockMidi_.ensureSize(kMaxBlockEvents * (3 + sizeof(juce::int32) + sizeof(juce::uint16)));
 
     for (int index = 0; index < kNumParams; ++index) {
         const auto info = slotInfo(index);
@@ -605,9 +611,18 @@ void MagdaSamplerPlugin::process(DeviceProcessContext& context) {
     if (context.audio == nullptr)
         return;
 
-    updateVoiceParameters();
-
     const float levelLinear = juce::Decibels::decibelsToGain(displayValue(kLevel));
+
+    // No voice sounding and nothing arriving: rendering would leave every voice where it is and
+    // add nothing, and a Drum Grid holds dozens of pads that are silent most blocks.
+    const bool eventsArrive = context.midiIn != nullptr &&
+                              (context.midiIn->size() > 0 || context.midiIn->isAllNotesOff());
+    if (!sounding_ && !eventsArrive) {
+        context.audio->applyGain(context.startSample, context.numSamples, levelLinear);
+        return;
+    }
+
+    updateVoiceParameters();
 
     // Device MIDI timestamps are block-relative seconds — convert to a sample
     // offset within the block. Deduplicate on note AND instant, fraction included,
@@ -618,35 +633,25 @@ void MagdaSamplerPlugin::process(DeviceProcessContext& context) {
     if (context.midiIn != nullptr && context.midiIn->isAllNotesOff())
         synthesiser.allNotesOff(0, true);
 
-    juce::MidiBuffer midiBuffer;
+    blockMidi_.clear();
     eventFractions_.clear();
+    seenEvents_.clear();
     if (context.midiIn != nullptr) {
-        struct SeenKey {
-            int note;
-            int samplePos;
-            float fraction;
-            bool isNoteOn;
-            bool operator==(const SeenKey& o) const {
-                return note == o.note && samplePos == o.samplePos && fraction == o.fraction &&
-                       isNoteOn == o.isNoteOn;
-            }
-        };
-        juce::Array<SeenKey> seen;
-
         for (int i = 0; i < context.midiIn->size(); ++i) {
             const auto& m = context.midiIn->message(i);
             const auto at = midiEventPosition(m.getTimeStamp(), sampleRate);
             const int midiPos = juce::jlimit(0, juce::jmax(0, context.numSamples - 1), at.sample);
 
             if (m.isNoteOn() || m.isNoteOff()) {
-                const SeenKey key{m.getNoteNumber(), midiPos,
-                                  midiPos == at.sample ? at.fraction : 0.0f, m.isNoteOn()};
-                if (seen.contains(key))
+                const SeenEvent key{m.getNoteNumber(), midiPos,
+                                    midiPos == at.sample ? at.fraction : 0.0f, m.isNoteOn()};
+                if (std::ranges::find(seenEvents_, key) != seenEvents_.end())
                     continue;
-                seen.add(key);
+                if (seenEvents_.size() < seenEvents_.capacity())
+                    seenEvents_.push_back(key);
             }
 
-            midiBuffer.addEvent(m, midiPos + context.startSample);
+            blockMidi_.addEvent(m, midiPos + context.startSample);
 
             // One per event, in the order added, which is the order the
             // synthesiser handles them in. Past the reservation the rest fall
@@ -657,7 +662,7 @@ void MagdaSamplerPlugin::process(DeviceProcessContext& context) {
     }
 
     synthesiser.beginBlock(eventFractions_);
-    synthesiser.renderNextBlock(*context.audio, midiBuffer, context.startSample,
+    synthesiser.renderNextBlock(*context.audio, blockMidi_, context.startSample,
                                 context.numSamples);
 
     context.audio->applyGain(context.startSample, context.numSamples, levelLinear);
@@ -677,6 +682,7 @@ void MagdaSamplerPlugin::process(DeviceProcessContext& context) {
     }
     if (!foundActive)
         currentPlaybackPosition_.store(0.0, std::memory_order_relaxed);
+    sounding_ = foundActive;
 }
 
 //==============================================================================
