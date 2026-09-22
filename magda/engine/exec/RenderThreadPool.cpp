@@ -145,7 +145,7 @@ void RenderThreadPool::render(Job& job, int workers) {
     const auto generation = generation_.fetch_add(1, std::memory_order_seq_cst) + 1;
 
     // A spinning worker sees its mark move for itself; only a sleeping one costs a notify.
-    const auto woken = std::min(static_cast<std::size_t>(std::max(0, workers)), workers_.size());
+    const auto woken = static_cast<std::size_t>(std::clamp(workers, 0, numThreads() - 1));
     for (std::size_t index = 0; index < woken; ++index) {
         auto& worker = *workers_[index];
         worker.wanted.store(generation, std::memory_order_seq_cst);
@@ -186,6 +186,11 @@ void RenderThreadPool::configure(double blockSeconds, juce::AudioWorkgroup workg
     // worker spinning between blocks is a core burnt for the whole gap.
     juce::ignoreUnused(blockSeconds);
     spinNanos_.store(50'000, std::memory_order_relaxed);
+
+    // The recommendation counts the device's own thread, which renders too.
+    const auto recommended = static_cast<int>(workgroup.getMaxParallelThreadCount());
+    workerCap_.store(recommended > 0 ? recommended - 1 : std::numeric_limits<int>::max(),
+                     std::memory_order_relaxed);
 
     {
         const juce::SpinLock::ScopedLockType lock(workgroupLock_);

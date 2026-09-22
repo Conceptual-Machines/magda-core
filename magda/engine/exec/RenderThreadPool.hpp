@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstdlib>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -88,10 +89,12 @@ class RenderThreadPool {
     RenderThreadPool(const RenderThreadPool&) = delete;
     RenderThreadPool& operator=(const RenderThreadPool&) = delete;
 
-    /// Threads a block is spread across: the workers, plus whoever calls
-    /// render().
+    /// Threads a block is spread across: the workers the device's workgroup
+    /// allows, plus whoever calls render().
     int numThreads() const {
-        return static_cast<int>(workers_.size()) + 1;
+        return std::min(static_cast<int>(workers_.size()),
+                        workerCap_.load(std::memory_order_relaxed)) +
+               1;
     }
 
     /**
@@ -135,7 +138,8 @@ class RenderThreadPool {
      *
      * A worker finishing a block spins for a fraction of @p blockSeconds before it sleeps, so
      * at short periods the next block finds it awake rather than paying a wake-up. Joined to
-     * @p workgroup on macOS, which is what gives it the device thread's scheduling.
+     * @p workgroup on macOS, which is what gives it the device thread's scheduling, and no
+     * more workers are woken than its recommended thread count minus the device's own.
      * Off the audio thread; the workers pick both up on their next round.
      */
     void configure(double blockSeconds, juce::AudioWorkgroup workgroup);
@@ -153,6 +157,9 @@ class RenderThreadPool {
     juce::SpinLock workgroupLock_;
     juce::AudioWorkgroup workgroup_;
     std::atomic<std::uint64_t> workgroupGeneration_{0};
+
+    /// Most workers a block may wake. Unbounded without a workgroup that recommends a count.
+    std::atomic<int> workerCap_{std::numeric_limits<int>::max()};
 
     /// What a worker runs when it wakes. Separate from render() because a
     /// worker has to announce itself before it reads the job pointer, so that
