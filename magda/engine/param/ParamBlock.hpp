@@ -80,6 +80,11 @@ class ParamValues {
         return segments_;
     }
 
+    /// The scale the positions are read through.
+    const magda::ParameterUtils::ParameterDomain& domain() const {
+        return domain_;
+    }
+
     int numSegments() const {
         return static_cast<int>(segments_.size());
     }

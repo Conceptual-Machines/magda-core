@@ -249,7 +249,7 @@ double EngineMagdaDevice::tailSeconds() const {
 
 void EngineMagdaDevice::writeParameters(const magda::engine::DeviceParams& params) {
     for (int slot = 0; slot < static_cast<int>(parameters_.size()); ++slot) {
-        const auto& mapping = parameters_[static_cast<std::size_t>(slot)];
+        auto& mapping = parameters_[static_cast<std::size_t>(slot)];
         const auto values = params[mapping.plan];
 
         // A parameter the table does not have is a parameter nothing resolved,
@@ -258,8 +258,17 @@ void EngineMagdaDevice::writeParameters(const magda::engine::DeviceParams& param
         if (values.empty())
             continue;
 
-        device_->setParameterValue(
-            slot, magda::ParameterUtils::realToNormalized(values.value(), mapping.info));
+        const auto position = values.segments().front().startValue;
+        if (position != mapping.position || values.domain() != mapping.domain) {
+            mapping.position = position;
+            mapping.domain = values.domain();
+            mapping.normalized =
+                magda::ParameterUtils::realToNormalized(values.value(), mapping.info);
+        }
+
+        // Written every block, as the fork's adapter does, so nothing the device sets on
+        // itself outlasts what the model says.
+        device_->setParameterValue(slot, mapping.normalized);
     }
 }
 

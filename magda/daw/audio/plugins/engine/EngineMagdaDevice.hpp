@@ -2,10 +2,12 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include <limits>
 #include <memory>
 #include <vector>
 
 #include "core/ParameterInfo.hpp"
+#include "core/ParameterUtils.hpp"
 #include "exec/EngineDevice.hpp"
 #include "plugins/MagdaDevice.hpp"
 
@@ -120,6 +122,12 @@ class EngineMagdaDevice final : public magda::engine::EngineDevice {
     struct ParameterMapping {
         int plan = 0;
         magda::ParameterInfo info;
+
+        /// The last position and domain the table gave, and the value they converted to. Most
+        /// parameters hold still, and the round trip through their units is the dear part.
+        float position = std::numeric_limits<float>::quiet_NaN();
+        magda::ParameterUtils::ParameterDomain domain;
+        float normalized = 0.0f;
     };
 
     std::vector<ParameterMapping> parameters_;
