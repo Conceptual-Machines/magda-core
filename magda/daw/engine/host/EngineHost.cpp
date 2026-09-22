@@ -1972,6 +1972,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// A play, a stop or a locate. The generation is what makes a snapshot a
     /// request rather than a description, so it is bumped here and nowhere
     /// else.
+    std::uint64_t locateIds_ = 0;
+
     void publishRequest(engine::TransportRequest request) {
         // A snapshot replaces the last rather than queueing behind it, so a locate the callback
         // has not taken yet is carried into the next request. Otherwise play straight after a
@@ -1979,9 +1981,14 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         const bool locatePending =
             request_.locate &&
             (session_ == nullptr || session_->appliedTransportGeneration() < request_.generation);
-        if (!request.locate && locatePending) {
+        if (request.locate) {
+            request.locateId = ++locateIds_;
+        } else if (locatePending) {
+            // Under its own id: the callback may take the original between the check above and
+            // this publish, and the clock applies an id once.
             request.locate = true;
             request.positionBeat = request_.positionBeat;
+            request.locateId = request_.locateId;
         }
 
         request_ = request;

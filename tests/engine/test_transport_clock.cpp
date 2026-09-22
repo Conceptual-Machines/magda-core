@@ -868,3 +868,28 @@ TEST_CASE("A loop whose end is not a whole sample away still wraps",
     CHECK(wraps == 3);
     CHECK(clock.loopWrapOverflows() == 0);
 }
+
+TEST_CASE("A carried locate the clock already took is not taken again",
+          "[engine][transport][2786]") {
+    // The host carries a locate the callback has not acknowledged into the next request, and the
+    // callback can take the original in between. Taking the carried copy too would step the
+    // cursor back to where it started and play that stretch twice.
+    TransportClock clock;
+
+    auto located = playing(8.0, 1);
+    located.request.locateId = 7;
+    advance(clock, located, 512);
+    const auto after = clock.positionBeats();
+    REQUIRE(after == approx(8.0 + 512.0 / kSamplesPerBeat));
+
+    auto carried = playing(8.0, 2);
+    carried.request.locateId = 7;
+    advance(clock, carried, 512);
+    CHECK(clock.positionBeats() == approx(after + 512.0 / kSamplesPerBeat));
+
+    // A new locate to the same place is a new id, and is taken.
+    auto again = playing(8.0, 3);
+    again.request.locateId = 8;
+    advance(clock, again, 512);
+    CHECK(clock.positionBeats() == approx(8.0 + 512.0 / kSamplesPerBeat));
+}

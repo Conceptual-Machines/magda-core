@@ -89,15 +89,21 @@ void TransportClock::applyRequest(const TransportSnapshot& snapshot) {
 
     countingIn_ = request.playing && request.countInBeats > 0.0;
 
+    // A carried locate this clock already took is not taken again.
+    const bool locates =
+        request.locate && (request.locateId == 0 || request.locateId != appliedLocateId_);
+    if (locates && request.locateId != 0)
+        appliedLocateId_ = request.locateId;
+
     // A request that moves the cursor at all: a locate, or a roll-in, which
     // moves it back to where the count begins. Everything else leaves the
     // anchor alone rather than re-deriving the position it already has.
-    if (request.locate || countingIn_) {
+    if (locates || countingIn_) {
         // A locate is honoured as it was asked for, loop or no loop. The loop
         // is somewhere the timeline returns to when it gets there, not a pen: a
         // playhead put down at bar 40 with a two-bar loop enabled plays bar 40,
         // which is what the user pointed at.
-        const auto target = request.locate ? request.positionBeat : wasAt;
+        const auto target = locates ? request.positionBeat : wasAt;
         const auto position = countingIn_ ? target - request.countInBeats : target;
 
         countInUntilBeat_ = target;

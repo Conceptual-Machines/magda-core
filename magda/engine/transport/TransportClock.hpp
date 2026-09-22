@@ -170,6 +170,7 @@ class TransportClock {
     /// The request that put the cursor where it is. A snapshot carrying this
     /// same generation is a republication, not a new instruction.
     std::uint64_t generation_ = 0;
+    std::uint64_t appliedLocateId_ = 0;
 
     bool playing_ = false;
     double anchorSeconds_ = 0.0;

@@ -98,6 +98,11 @@ struct TransportRequest {
     bool locate = true;
     double positionBeat = 0.0;
 
+    /// Which locate this is. A later request that carries a locate forward keeps its id, and the
+    /// clock moves the cursor once per id, so a locate taken just before the carry is not taken
+    /// again. Zero has no identity and is applied whenever it arrives.
+    std::uint64_t locateId = 0;
+
     /**
      * @brief Beats of count-in before @ref positionBeat.
      *
