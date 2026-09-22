@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <bit>
 #include <cstdint>
 
 #include "core/ClipTypes.hpp"
@@ -37,10 +38,12 @@ class ActiveNoteList {
         auto& entry = at(channel, note);
         entry.clipId = clipId;
         entry.startBeat = timelineBeat;
+        mark(channel, note, clipId != INVALID_CLIP_ID);
     }
 
     void clear(int channel, int note) {
         at(channel, note).clipId = INVALID_CLIP_ID;
+        mark(channel, note, false);
     }
 
     bool active(int channel, int note) const {
@@ -58,18 +61,21 @@ class ActiveNoteList {
     }
 
     bool any() const {
-        for (const auto& entry : entries_)
-            if (entry.clipId != INVALID_CLIP_ID)
+        for (const auto word : sounding_)
+            if (word != 0)
                 return true;
         return false;
     }
 
-    /// Every sounding note, as `f(channel, note)`. Channels are 1 to 16.
+    /// Every sounding note, as `f(channel, note)`, by channel then pitch. Channels are 1 to 16.
+    /// Walks the sounding bits rather than every entry: a stopped slot asks every block.
     template <typename Fn> void forEach(Fn&& fn) const {
-        for (auto channel = 1; channel <= kChannels; ++channel)
-            for (auto note = 0; note < kNotes; ++note)
-                if (active(channel, note))
-                    fn(channel, note);
+        for (auto word = 0; word < kWords; ++word)
+            for (auto bits = sounding_[static_cast<std::size_t>(word)]; bits != 0;
+                 bits &= bits - 1) {
+                const auto bit = word * 64 + std::countr_zero(bits);
+                fn(bit / kNotes + 1, bit % kNotes);
+            }
     }
 
   private:
@@ -89,7 +95,18 @@ class ActiveNoteList {
         return entries_[index(channel, note)];
     }
 
+    void mark(int channel, int note, bool sounding) {
+        const auto bit = index(channel, note);
+        const auto mask = std::uint64_t{1} << (bit % 64);
+        auto& word = sounding_[bit / 64];
+        word = sounding ? (word | mask) : (word & ~mask);
+    }
+
+    static constexpr int kWords = kChannels * kNotes / 64;
+
     std::array<Entry, static_cast<std::size_t>(kChannels* kNotes)> entries_{};
+    /// One bit per entry, set while its note sounds.
+    std::array<std::uint64_t, static_cast<std::size_t>(kWords)> sounding_{};
 };
 
 }  // namespace magda::engine
