@@ -317,6 +317,30 @@ def list_projects(bench, timeout):
     return listing
 
 
+def other_load():
+    """What else is using this machine, as a note, or empty when it is quiet enough to measure."""
+    if platform.system() == "Windows":
+        return ""
+    lines = command_output(["ps", "-Ao", "pcpu,pid,comm", "-r"]).splitlines()[1:]
+    heavy = []
+    for line in lines[:8]:
+        parts = line.strip().split(None, 2)
+        if len(parts) == 3 and float(parts[0]) >= 10.0 and int(parts[1]) != os.getpid():
+            heavy.append("%s at %s%%" % (parts[2].rsplit("/", 1)[-1], parts[0]))
+    return ", ".join(heavy)
+
+
+def median_run(runs):
+    """The run in the middle by mean callback time; a failed run wins only when all failed."""
+    good = sorted((r for r in runs if r.get("status") == "ok"),
+                  key=lambda r: r["cpu"]["mean_us"])
+    if not good:
+        return runs[0]
+    chosen = good[len(good) // 2]
+    chosen["repeats"] = [r["cpu"]["mean_us"] for r in good]
+    return chosen
+
+
 def measure(args, bench):
     listing = list_projects(bench, args.timeout)
     projects = [p["name"] for p in listing["projects"]]
@@ -326,15 +350,32 @@ def measure(args, bench):
             sys.exit("not in the corpus: " + ", ".join(unknown))
         projects = [p for p in projects if p in args.projects]
 
+    busy = other_load()
+    if busy:
+        print("machine is busy: " + busy)
+        if not args.allow_busy:
+            sys.exit("a figure taken beside that is noise; close it or pass --allow-busy")
+
     results = []
     for project in projects:
         for block in args.block_sizes:
+            # The engines alternate, so a drift in the machine lands on both alike, and each
+            # cell keeps the median of its repeats by mean callback time.
+            runs = {engine: [] for engine in ENGINES}
+            for repeat in range(args.repeats):
+                for engine in ENGINES:
+                    common = ["--engine", engine, "--project", project,
+                              "--block-size", str(block)]
+                    runs[engine].append(run_bench(bench, common + [
+                        "--passes", str(args.passes), "--speed", str(args.speed)],
+                        args.timeout))
+
             for engine in ENGINES:
                 print("  %-22s %5d  %-9s ..." % (project, block, engine), end="", flush=True)
-                common = ["--engine", engine, "--project", project, "--block-size", str(block)]
-                result = run_bench(bench, common + ["--passes", str(args.passes),
-                                                    "--speed", str(args.speed)], args.timeout)
+                result = median_run(runs[engine])
                 if result["status"] == "ok":
+                    common = ["--engine", engine, "--project", project,
+                              "--block-size", str(block)]
                     probe = run_bench(bench, common + ["--latency"], args.timeout)
                     result["latency"] = probe.get("latency") or {
                         "status": "unmeasured", "reason": probe.get("reason", "")}
@@ -352,7 +393,8 @@ def measure(args, bench):
         "commit": commit,
         "dirty": dirty,
         "settings": {"build": listing["build"], "sample_rate": listing["sample_rate"],
-                     "passes": args.passes, "speed": args.speed},
+                     "passes": args.passes, "speed": args.speed, "repeats": args.repeats},
+        "busy": busy,
         "results": results,
     }
 
@@ -367,6 +409,10 @@ def main():
                         default=[128, 512], help="comma separated (default: 128,512)")
     parser.add_argument("--passes", type=int, default=2,
                         help="timed passes over each project's window, after one warm-up")
+    parser.add_argument("--repeats", type=int, default=3,
+                        help="processes per cell, engines alternating; the median is kept")
+    parser.add_argument("--allow-busy", action="store_true",
+                        help="measure even while another process is using the CPU")
     parser.add_argument("--speed", type=float, default=1.0,
                         help="callback pace as a multiple of real time (default: 1)")
     parser.add_argument("--history-dir", help="default: $MAGDA_PARITY_HISTORY or ~/.magda-parity")

@@ -15,6 +15,11 @@ hooks and no assertions. It then runs `scripts/parity_bench.py`, which runs the 
 engine, project and block size. Each measurement is its own process. The script exits non-zero
 when a native figure misses its threshold.
 
+Each cell is measured `--repeats` times (default 3), the engines alternating so a drift in the
+machine lands on both alike, and the run in the middle by mean callback time is kept. The
+driver refuses to start while another process is using the CPU (a running MAGDA, a build);
+`--allow-busy` overrides that and the run records what was running.
+
 ## What is measured
 
 Both engines are the app's own. `createDefaultAudioEngine` builds them headless. A device with
