@@ -115,6 +115,15 @@ class RenderThreadPool {
     void render(Job& job, int workers);
 
     /**
+     * @brief Ask up to @p count idle workers back into the job being rendered. On the audio
+     *        thread.
+     *
+     * For a block whose workers left while a long op ran and whose op then released work they
+     * could share. Answers how many were asked; each notify is the same system call a wake is.
+     */
+    int recall(int count);
+
+    /**
      * @brief Let go of @p job, so it can be destroyed. Off the audio thread.
      *
      * Returns once no worker can enter it again, waiting out any that is inside

@@ -36,12 +36,17 @@ class RenderThreadPool::Worker final : public juce::Thread {
                 return;
 
             seen_ = wanted.load(std::memory_order_seq_cst);
+            inside.store(true, std::memory_order_seq_cst);
             pool_.takeWork(*this);
+            inside.store(false, std::memory_order_seq_cst);
         }
     }
 
     /// Whether this worker is on its wait, which render() reads before paying a notify.
     std::atomic<bool> sleeping{false};
+
+    /// Whether this worker is inside a job, so recall() asks only for one that is not.
+    std::atomic<bool> inside{false};
 
     /// The block this worker is wanted for. Only render() moves it, and only for the workers
     /// the plan has work for, so an idle worker spins for nobody.
@@ -158,6 +163,24 @@ void RenderThreadPool::render(Job& job, int workers) {
     // a barrier: the workers are still leaving, and there is nothing left for
     // them to do.
     job.takeWork();
+}
+
+int RenderThreadPool::recall(int count) {
+    // Any worker not inside a job and not already asked for one. It arrives the way a woken
+    // worker does, so a block that has finished by then, or a job since let go of, is left alone.
+    auto recalled = 0;
+    for (std::size_t index = 0; recalled < count && index < workers_.size(); ++index) {
+        auto& worker = *workers_[index];
+        if (worker.inside.load(std::memory_order_seq_cst))
+            continue;
+
+        const auto generation = generation_.fetch_add(1, std::memory_order_seq_cst) + 1;
+        worker.wanted.store(generation, std::memory_order_seq_cst);
+        if (worker.sleeping.load(std::memory_order_seq_cst))
+            worker.notify();
+        ++recalled;
+    }
+    return recalled;
 }
 
 void RenderThreadPool::takeWork(Worker& worker) {

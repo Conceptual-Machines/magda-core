@@ -961,6 +961,45 @@ TEST_CASE("The block's heaviest op renders on the calling thread every block",
     }
 }
 
+TEST_CASE("Workers that left during a long op come back for the branches it releases",
+          "[engine][exec][parallel][2786]") {
+    // A slow instrument into independent effect branches: the workers find nothing while it
+    // renders and leave, and the branches it then releases would otherwise run on one thread.
+    // Each chain here only finishes once all three are running at the same time.
+    Meeting meeting;
+    Scene scene;
+
+    auto rack = std::make_unique<RackInfo>();
+    rack->id = 5;
+    for (int index = 0; index < 3; ++index) {
+        ChainInfo chain;
+        chain.id = 10 + index;
+        chain.elements.push_back(makeDeviceElement(makeEffect(310 + index)));
+        rack->chains.push_back(std::move(chain));
+        scene.bindings.devices[DeviceKey{310 + index}] =
+            scene.own(std::make_unique<RendezvousDevice>(meeting, 3));
+    }
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(309)));
+    track.chain.fxChainElements.push_back(ChainElement{std::move(rack)});
+    scene.tracks.push_back(track);
+    scene.bindings.clipAudio[1] = scene.own(std::make_unique<RampSource>(5));
+    scene.bindings.devices[DeviceKey{309}] =
+        scene.own(std::make_unique<BusyDevice>(std::chrono::microseconds{400}));
+
+    Rig rig(std::move(scene));
+    RenderThreadPool pool(3, false);
+    ParallelPlanExecutor executor(&pool);
+    executor.setWorkPerWorker({});
+    REQUIRE(executor.prepare(rig.plan, rig.scene.bindings, rig.context).empty());
+
+    executor.process(rig.values, blockAt(0, kBlockSize), rig.output);
+
+    CHECK(meeting.met);
+    CHECK(meeting.mostAtOnce == 3);
+}
+
 TEST_CASE("The two executors prepare to the same layout", "[engine][exec][parallel]") {
     // Everything below the schedule is shared rather than mirrored, and this is
     // what says so: a second answer to any of these would be a second

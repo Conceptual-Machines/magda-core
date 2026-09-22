@@ -324,6 +324,7 @@ OpId ParallelPlanExecutor::runOp(OpId op, bool onCaller) {
         renderTimed(op, onCaller);
 
     OpId carryOn = INVALID_OP_ID;
+    int pushed = 0;
 
     const auto first = plan_->consumerOffsets[static_cast<std::size_t>(op)];
     const auto last = plan_->consumerOffsets[static_cast<std::size_t>(op) + 1];
@@ -342,13 +343,32 @@ OpId ParallelPlanExecutor::runOp(OpId op, bool onCaller) {
         if (releaseToCaller(consumer))
             continue;
 
-        if (carryOn == INVALID_OP_ID)
+        if (carryOn == INVALID_OP_ID) {
             carryOn = consumer;
-        else
+        } else {
             push(consumer);
+            ++pushed;
+        }
     }
 
+    // Work for others, released after they may have left: a long op followed by independent
+    // branches would otherwise have the branches run on this thread alone.
+    if (pushed > 0 && departed_.load(std::memory_order_relaxed) > 0)
+        recallFor(pushed);
+
     return carryOn;
+}
+
+void ParallelPlanExecutor::recallFor(int ops) {
+    auto departed = departed_.load(std::memory_order_relaxed);
+    while (departed > 0) {
+        const auto asking = std::min(departed, ops);
+        if (departed_.compare_exchange_weak(departed, departed - asking,
+                                            std::memory_order_relaxed)) {
+            pool_->recall(asking);
+            return;
+        }
+    }
 }
 
 void ParallelPlanExecutor::takeWork() {
@@ -368,10 +388,12 @@ void ParallelPlanExecutor::takeWork() {
             // does, so whatever is released after it goes is still taken.
             if (!onCaller) {
                 const auto now = juce::Time::getHighResolutionTicks();
-                if (idleSince == 0)
+                if (idleSince == 0) {
                     idleSince = now;
-                else if (now - idleSince > idleBeforeLeavingTicks_)
+                } else if (now - idleSince > idleBeforeLeavingTicks_) {
+                    departed_.fetch_add(1, std::memory_order_relaxed);
                     return;
+                }
             }
 
             // Nothing ready, and the block is not over: something is running
@@ -430,6 +452,7 @@ void ParallelPlanExecutor::startSchedule(std::size_t done) {
     remaining_.store(static_cast<int>(numOps - done), std::memory_order_relaxed);
     busyTicks_.store(0, std::memory_order_relaxed);
     ownedReady_.store(INVALID_OP_ID, std::memory_order_relaxed);
+    departed_.store(0, std::memory_order_relaxed);
 
     if (done == 0) {
         for (const auto op : plan_->initialReadyOps)

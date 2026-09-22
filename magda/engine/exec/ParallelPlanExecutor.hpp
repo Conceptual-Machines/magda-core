@@ -186,6 +186,9 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     /// Hand @p op to the callback thread's slot if it is the owned op. True when it did.
     bool releaseToCaller(OpId op);
 
+    /// Ask back up to @p ops of the workers that left this block.
+    void recallFor(int ops);
+
     /// Whether this block times its ops, and when the next one does.
     void beginTimedBlock();
 
@@ -306,6 +309,9 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
 
     /// The op only the callback thread runs, so the block's dominant device stays on one thread,
     /// and the slot it waits in once ready. Workers never take it from the shared stack.
+    /// Workers that left this block for want of work, which pushed work asks back.
+    alignas(64) std::atomic<int> departed_{0};
+
     std::atomic<OpId> ownedOp_{INVALID_OP_ID};
     alignas(64) std::atomic<OpId> ownedReady_{INVALID_OP_ID};
     std::atomic<juce::Thread::ThreadID> callerThread_{nullptr};
