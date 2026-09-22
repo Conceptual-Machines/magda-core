@@ -89,6 +89,12 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
         return pool_ != nullptr ? pool_->numThreads() : 1;
     }
 
+    /// The most ops the prepared plan can have ready at once: the widest level of its DAG.
+    /// What decides how many workers a block wakes.
+    int parallelism() const {
+        return parallelism_;
+    }
+
     /// The prepared plan, as the reference executor sees it: what it bound,
     /// what it allocated, and what it resolved. Both executors share all of it,
     /// so there is one answer to those questions rather than two.
@@ -173,6 +179,7 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
 
     PlanExecutor core_;
     RenderThreadPool* pool_ = nullptr;
+    int parallelism_ = 1;
 
     /// Whether the pool has ever been handed this job. Until it has, no worker
     /// can be inside it and there is nothing to wait out.

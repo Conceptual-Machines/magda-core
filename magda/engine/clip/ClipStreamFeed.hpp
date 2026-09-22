@@ -1,7 +1,9 @@
 #pragma once
 
+#include <atomic>
 #include <farbot/RealtimeObject.hpp>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -98,10 +100,18 @@ class ClipStreamFeed {
     /// no readers yet rather than an error.
     class Reader {
       public:
-        explicit Reader(ClipStreamFeed& feed) : access_(feed.published_) {}
+        /// Inside a BlockScope, what it pinned; outside one, the table acquired for itself.
+        explicit Reader(ClipStreamFeed& feed) {
+            if (feed.pinned_.load(std::memory_order_acquire)) {
+                table_ = feed.live_.load(std::memory_order_relaxed);
+                return;
+            }
+            access_.emplace(feed.published_);
+            table_ = (*access_)->get();
+        }
 
         const ClipStreamTable* get() const noexcept {
-            return (*access_).get();
+            return table_;
         }
         const ClipStreamTable* operator->() const noexcept {
             return get();
@@ -111,11 +121,46 @@ class ClipStreamFeed {
         }
 
       private:
-        Published::ScopedAccess<farbot::ThreadType::realtime> access_;
+        std::optional<Published::ScopedAccess<farbot::ThreadType::realtime>> access_;
+        const ClipStreamTable* table_ = nullptr;
+    };
+
+    /// The block's one acquisition, opened by the callback before any op renders. The table
+    /// may be read by only one thread at a time, and a block spread across workers reads it
+    /// from every one of them.
+    ///
+    /// Every stream takes its pending cue up here, once per block. A stream a clip has not
+    /// started is the one a cue matters most to (#2016), and a track's arrangement and
+    /// session sources render on different workers, so neither may cue for the other.
+    class BlockScope {
+      public:
+        explicit BlockScope(ClipStreamFeed& feed) : feed_(feed) {
+            const auto* table = feed_.published_.realtimeAcquire().get();
+            if (table != nullptr)
+                for (const auto& entry : table->entries)
+                    entry.stream->applyPendingCue();
+
+            feed_.live_.store(table, std::memory_order_relaxed);
+            feed_.pinned_.store(true, std::memory_order_release);
+        }
+
+        ~BlockScope() {
+            feed_.pinned_.store(false, std::memory_order_release);
+            feed_.live_.store(nullptr, std::memory_order_relaxed);
+            feed_.published_.realtimeRelease();
+        }
+
+        BlockScope(const BlockScope&) = delete;
+        BlockScope& operator=(const BlockScope&) = delete;
+
+      private:
+        ClipStreamFeed& feed_;
     };
 
   private:
     Published published_;
+    std::atomic<bool> pinned_{false};
+    std::atomic<const ClipStreamTable*> live_{nullptr};
 };
 
 }  // namespace magda::engine

@@ -55,6 +55,7 @@
 #include "clip/ClipVoicePool.hpp"
 #include "exec/EngineSession.hpp"
 #include "exec/PlanValues.hpp"
+#include "exec/RenderThreadPool.hpp"
 #include "io/LiveInput.hpp"
 #include "io/MidiTakeRecorder.hpp"
 #include "io/PrefetchThread.hpp"
@@ -2401,11 +2402,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         voices_ = std::make_unique<engine::ClipVoicePool>(files_, reader_, context);
         voiceThread_ = std::make_unique<engine::ClipVoiceThread>(*voices_);
 
-        // No render pool: every block renders on the audio thread alone, which
-        // is the same executor with one thread instead of many. Spreading a
-        // block across realtime workers is the next question this can be asked,
-        // and not one to answer in the same change that first made a sound.
-        session_ = std::make_unique<engine::EngineSession>(factory_, nullptr, voices_.get());
+        session_ = std::make_unique<engine::EngineSession>(factory_, &renderPool_, voices_.get());
         sessionCapture_.attach(*session_);
         factory_.attach(session_->clipFeed(), voices_->feed(), session_->launchHandleFeed(),
                         session_->liveInputs(), session_->liveOutputs());
@@ -3280,6 +3277,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     // Declared so that destruction unwinds inwards: the session lets go of the
     // pool before the thread servicing it stops, and the thread stops before
     // the pool it is inside goes away.
+    //
+    // The render workers outlive every session: a retired epoch releases them.
+    engine::RenderThreadPool renderPool_{engine::RenderThreadPool::workersForThisMachine()};
     std::unique_ptr<engine::ClipVoicePool> voices_;
     std::unique_ptr<engine::ClipVoiceThread> voiceThread_;
     std::unique_ptr<engine::EngineSession> session_;

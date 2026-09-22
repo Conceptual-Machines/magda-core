@@ -281,13 +281,6 @@ void ClipAudioSource::renderMaterial(const BlockInfo& block, juce::dsp::AudioBlo
     if (streams)
         std::tie(table.first, table.last) = streams->rangeFor(trackId_);
 
-    // Every stream this track has, sounding or not, once per block. The stream
-    // a cue is most useful to is one nobody is reading from: a clip that has
-    // not started would otherwise not hear about the position it was pointed at
-    // until the material was already due (#2016).
-    for (const auto* entry = table.first; entry != table.last; ++entry)
-        entry->stream->applyPendingCue();
-
     const auto silence = [this] {
         for (auto& voice : voices_)
             voice.release();

@@ -286,7 +286,8 @@ struct Rig {
     void render(const BlockInfo& block) {
         if (autoFill)
             fill();
-        magda::test::renderBlock(source, clips, block, juce::dsp::AudioBlock<float>(output));
+        magda::test::renderBlock(source, clips, block, juce::dsp::AudioBlock<float>(output),
+                                 nullptr, &streams);
     }
 
     void fill() {

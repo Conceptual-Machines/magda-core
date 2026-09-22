@@ -1,6 +1,7 @@
 #include "exec/EngineSession.hpp"
 
 #include <algorithm>
+#include <optional>
 
 #include "clip/ClipVoicePool.hpp"
 #include "clip/SessionPlayback.hpp"
@@ -436,6 +437,10 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
         // the handles advance so a live edit changes a slot's cycle and its
         // material together for this block.
         const ClipSnapshotFeed::BlockScope clips(clips_);
+        const LaunchHandleFeed::BlockScope handles(handles_);
+        std::optional<ClipStreamFeed::BlockScope> streams;
+        if (voices_ != nullptr)
+            streams.emplace(voices_->feed());
         const auto boundary =
             index + 1 < segments.size()
                 ? SlotRunBoundary{.at = segment.block.monotonicSamples.end,

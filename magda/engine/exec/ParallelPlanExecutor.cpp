@@ -1,5 +1,8 @@
 #include "exec/ParallelPlanExecutor.hpp"
 
+#include <algorithm>
+#include <vector>
+
 namespace magda::engine {
 namespace {
 
@@ -23,6 +26,36 @@ constexpr std::uint32_t readyTag(std::uint64_t packed) {
 
 static_assert(packReady(INVALID_OP_ID, 0) == kEmptyReadyStack,
               "an executor that has not started a block must not look like one with op 0 ready");
+
+/// The widest level of the plan's DAG, levelled from its baked schedule.
+int widthOf(const RenderPlan& plan) {
+    const auto numOps = plan.ops.size();
+    std::vector<int> level(numOps, 0);
+    std::vector<std::uint16_t> pending(plan.dependencyCounts.begin(), plan.dependencyCounts.end());
+    std::vector<int> perLevel;
+    std::vector<OpId> ready(plan.initialReadyOps.begin(), plan.initialReadyOps.end());
+
+    while (!ready.empty()) {
+        const auto index = static_cast<std::size_t>(ready.back());
+        ready.pop_back();
+
+        const auto depth = static_cast<std::size_t>(level[index]);
+        if (depth >= perLevel.size())
+            perLevel.resize(depth + 1, 0);
+        ++perLevel[depth];
+
+        for (auto edge = plan.consumerOffsets[index]; edge < plan.consumerOffsets[index + 1];
+             ++edge) {
+            const auto consumer = plan.consumerEdges[static_cast<std::size_t>(edge)];
+            const auto at = static_cast<std::size_t>(consumer);
+            level[at] = std::max(level[at], level[index] + 1);
+            if (--pending[at] == 0)
+                ready.push_back(consumer);
+        }
+    }
+
+    return perLevel.empty() ? 1 : *std::max_element(perLevel.begin(), perLevel.end());
+}
 
 }  // namespace
 
@@ -93,6 +126,7 @@ std::vector<std::string> ParallelPlanExecutor::prepare(const RenderPlan& plan,
             modSourceOps_.push_back(static_cast<OpId>(i));
     }
 
+    parallelism_ = widthOf(plan);
     plan_ = &plan;
     return messages;
 }
@@ -239,9 +273,13 @@ void ParallelPlanExecutor::process(const PlanValues& values, const BlockInfo& re
     for (const auto op : plan_->initialReadyOps)
         push(op);
 
-    if (pool_ != nullptr) {
+    // One worker per op that can run beside this thread's, and none for a plan nothing in
+    // can run beside: a wake-up costs more than a small op, and every worker woken spins on
+    // the ready stack until the block drains.
+    const auto workers = std::min(parallelism_ - 1, numThreads() - 1);
+    if (pool_ != nullptr && workers > 0) {
         handedToPool_.store(true, std::memory_order_relaxed);
-        pool_->render(*this);
+        pool_->render(*this, workers);
     } else {
         takeWork();
     }

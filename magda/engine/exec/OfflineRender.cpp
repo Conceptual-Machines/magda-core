@@ -94,12 +94,13 @@ class LatencyTrimmedSink final : public OfflineRenderSink {
 
 }  // namespace
 
-OfflineRenderResult renderOffline(PlanExecutor& executor, const PlanValues& values,
-                                  const RenderContext& context, const TempoMap& tempo,
-                                  const OfflineRenderRequest& request, OfflineRenderSink& sink,
-                                  ClipVoicePool* voices, ClipSnapshotFeed* clips,
-                                  const OfflineLauncher& launcher,
-                                  const std::function<bool()>& shouldContinue) {
+template <typename Executor>
+OfflineRenderResult renderOfflineOn(Executor& executor, const PlanValues& values,
+                                    const RenderContext& context, const TempoMap& tempo,
+                                    const OfflineRenderRequest& request, OfflineRenderSink& sink,
+                                    ClipVoicePool* voices, ClipSnapshotFeed* clips,
+                                    const OfflineLauncher& launcher,
+                                    const std::function<bool()>& shouldContinue) {
     OfflineRenderResult result;
 
     // The context is refused on the same grounds the values are, and for the
@@ -209,6 +210,12 @@ OfflineRenderResult renderOffline(PlanExecutor& executor, const PlanValues& valu
                 if (clips != nullptr) {
                     pinned.emplace(*clips);
                 }
+                std::optional<ClipStreamFeed::BlockScope> streams;
+                if (voices != nullptr)
+                    streams.emplace(voices->feed());
+                std::optional<LaunchHandleFeed::BlockScope> handles;
+                if (launcher.present())
+                    handles.emplace(*launcher.handles);
 
                 // Before the plan and over every handle, against the same
                 // pinned material the sources render below.
@@ -277,6 +284,26 @@ OfflineRenderResult renderOffline(PlanExecutor& executor, const PlanValues& valu
     renderSpan(tailSamples + flushSamples);
 
     return result;
+}
+
+OfflineRenderResult renderOffline(PlanExecutor& executor, const PlanValues& values,
+                                  const RenderContext& context, const TempoMap& tempo,
+                                  const OfflineRenderRequest& request, OfflineRenderSink& sink,
+                                  ClipVoicePool* voices, ClipSnapshotFeed* clips,
+                                  const OfflineLauncher& launcher,
+                                  const std::function<bool()>& shouldContinue) {
+    return renderOfflineOn(executor, values, context, tempo, request, sink, voices, clips, launcher,
+                           shouldContinue);
+}
+
+OfflineRenderResult renderOffline(ParallelPlanExecutor& executor, const PlanValues& values,
+                                  const RenderContext& context, const TempoMap& tempo,
+                                  const OfflineRenderRequest& request, OfflineRenderSink& sink,
+                                  ClipVoicePool* voices, ClipSnapshotFeed* clips,
+                                  const OfflineLauncher& launcher,
+                                  const std::function<bool()>& shouldContinue) {
+    return renderOfflineOn(executor, values, context, tempo, request, sink, voices, clips, launcher,
+                           shouldContinue);
 }
 
 }  // namespace magda::engine

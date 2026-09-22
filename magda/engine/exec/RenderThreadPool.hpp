@@ -2,6 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <algorithm>
 #include <atomic>
 #include <memory>
 #include <vector>
@@ -70,6 +71,11 @@ class RenderThreadPool {
      * that spins up realtime threads competes with whatever else is on the
      * machine for no benefit.
      */
+    /// Workers a session on this machine renders with: the audio thread plus one per other core.
+    static int workersForThisMachine() {
+        return std::max(0, juce::SystemStats::getNumCpus() - 1);
+    }
+
     explicit RenderThreadPool(int numWorkers, bool realtime = true);
     ~RenderThreadPool();
 
@@ -93,8 +99,11 @@ class RenderThreadPool {
      * A worker may still be inside takeWork() when this returns. It has no ops
      * left to run, because the job would not have finished otherwise, but it
      * has not necessarily noticed yet.
+     *
+     * @p workers is how many to wake, at most all of them: a plan three ops wide has no use
+     * for nine, and every wake-up costs more than a small op does.
      */
-    void render(Job& job);
+    void render(Job& job, int workers);
 
     /**
      * @brief Let go of @p job, so it can be destroyed. Off the audio thread.

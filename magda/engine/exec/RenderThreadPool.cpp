@@ -84,11 +84,12 @@ RenderThreadPool::~RenderThreadPool() {
         worker->stopThread(2000);
 }
 
-void RenderThreadPool::render(Job& job) {
+void RenderThreadPool::render(Job& job, int workers) {
     job_.store(&job, std::memory_order_seq_cst);
 
-    for (auto& worker : workers_)
-        worker->notify();
+    const auto woken = std::min(static_cast<std::size_t>(std::max(0, workers)), workers_.size());
+    for (std::size_t index = 0; index < woken; ++index)
+        workers_[index]->notify();
 
     // The caller is a worker too, and on a pool with none it is the only one.
     // Its return is what says the block is finished, which is why this is not

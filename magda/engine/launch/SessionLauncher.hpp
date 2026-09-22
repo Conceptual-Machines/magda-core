@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <farbot/RealtimeObject.hpp>
 #include <memory>
@@ -113,10 +114,18 @@ class LaunchHandleFeed {
     /// no handles yet rather than an error.
     class Reader {
       public:
-        explicit Reader(LaunchHandleFeed& feed) : access_(feed.published_) {}
+        /// Inside a BlockScope, what it pinned; outside one, the table acquired for itself.
+        explicit Reader(LaunchHandleFeed& feed) {
+            if (feed.pinned_.load(std::memory_order_acquire)) {
+                table_ = feed.live_.load(std::memory_order_relaxed);
+                return;
+            }
+            access_.emplace(feed.published_);
+            table_ = (*access_)->get();
+        }
 
         const LaunchHandleTable* get() const noexcept {
-            return (*access_).get();
+            return table_;
         }
         const LaunchHandleTable* operator->() const noexcept {
             return get();
@@ -126,11 +135,37 @@ class LaunchHandleFeed {
         }
 
       private:
-        Published::ScopedAccess<farbot::ThreadType::realtime> access_;
+        std::optional<Published::ScopedAccess<farbot::ThreadType::realtime>> access_;
+        const LaunchHandleTable* table_ = nullptr;
+    };
+
+    /// The block's one acquisition, opened by the callback before any op renders. The table
+    /// may be read by only one thread at a time, and a block spread across workers reads it
+    /// from every one of them.
+    class BlockScope {
+      public:
+        explicit BlockScope(LaunchHandleFeed& feed) : feed_(feed) {
+            feed_.live_.store(feed_.published_.realtimeAcquire().get(), std::memory_order_relaxed);
+            feed_.pinned_.store(true, std::memory_order_release);
+        }
+
+        ~BlockScope() {
+            feed_.pinned_.store(false, std::memory_order_release);
+            feed_.live_.store(nullptr, std::memory_order_relaxed);
+            feed_.published_.realtimeRelease();
+        }
+
+        BlockScope(const BlockScope&) = delete;
+        BlockScope& operator=(const BlockScope&) = delete;
+
+      private:
+        LaunchHandleFeed& feed_;
     };
 
   private:
     Published published_;
+    std::atomic<bool> pinned_{false};
+    std::atomic<const LaunchHandleTable*> live_{nullptr};
 };
 
 /// Which slot's run a take follows, instead of the transport (#2464).
