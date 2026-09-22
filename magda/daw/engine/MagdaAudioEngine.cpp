@@ -403,6 +403,10 @@ void MagdaAudioEngine::applyPluginStateAt(const ChainNodePath& devicePath) {
 
 void MagdaAudioEngine::projectAuthoredStateAt(const ChainNodePath& devicePath) {
     projectAuthoredStateToRenderedDevice(*this, devicePath);
+
+    // The restore reset the device's parameters behind the adapter's write cache.
+    if (host_ != nullptr)
+        host_->invalidateParameterWritesAt(devicePath);
 }
 
 // The window opens onto the instance this renders through (#2580).
