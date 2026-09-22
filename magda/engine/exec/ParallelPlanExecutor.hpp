@@ -216,6 +216,10 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     /// have disjoint subgraphs.
     std::vector<OpId> modSourceOps_;
 
+    /// Hardware insert sends, rendered after the drain for the same reason: two sends add into
+    /// the same callback channels and push into the same MIDI port.
+    std::vector<OpId> insertSendOps_;
+
     /// Producers each op is still waiting for. The plan's dependencyCounts,
     /// copied in at the top of every block.
     std::vector<std::atomic<std::uint16_t>> pending_;

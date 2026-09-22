@@ -90,6 +90,7 @@ std::vector<std::string> ParallelPlanExecutor::prepare(const RenderPlan& plan,
     plan_ = nullptr;
     outputOps_.clear();
     modSourceOps_.clear();
+    insertSendOps_.clear();
 
     auto messages = core_.prepare(plan, bindings, context,
                                   previous != nullptr ? &previous->core_ : nullptr, values);
@@ -124,6 +125,8 @@ std::vector<std::string> ParallelPlanExecutor::prepare(const RenderPlan& plan,
             outputOps_.push_back(static_cast<OpId>(i));
         else if (plan.ops[i].kind == OpKind::ModSource)
             modSourceOps_.push_back(static_cast<OpId>(i));
+        else if (plan.ops[i].kind == OpKind::InsertSend)
+            insertSendOps_.push_back(static_cast<OpId>(i));
     }
 
     parallelism_ = widthOf(plan);
@@ -172,7 +175,8 @@ OpId ParallelPlanExecutor::runOp(OpId op) {
     // plan's business and not this decision's; neither can stall the block,
     // because nothing consumes either.
     const auto kind = plan_->ops[static_cast<std::size_t>(op)].kind;
-    if (kind != OpKind::Output && kind != OpKind::ModSource && !core_.inMidiPrefix(op))
+    if (kind != OpKind::Output && kind != OpKind::ModSource && kind != OpKind::InsertSend &&
+        !core_.inMidiPrefix(op))
         core_.renderOp(op, valueOf(op), block_, *output_);
 
     OpId carryOn = INVALID_OP_ID;
@@ -288,6 +292,9 @@ void ParallelPlanExecutor::process(const PlanValues& values, const BlockInfo& re
     // do. In plan order: the taps detect one at a time, and the sum reaching
     // the hardware is compiled like every other sum in the plan.
     for (const auto op : modSourceOps_)
+        core_.renderOp(op, valueOf(op), block_, output);
+
+    for (const auto op : insertSendOps_)
         core_.renderOp(op, valueOf(op), block_, output);
 
     for (const auto op : outputOps_)

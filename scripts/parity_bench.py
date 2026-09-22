@@ -339,13 +339,27 @@ def other_load():
 
 
 def median_run(runs):
-    """The run in the middle by mean callback time; a failed run wins only when all failed."""
-    good = sorted((r for r in runs if r.get("status") == "ok"),
-                  key=lambda r: r["cpu"]["mean_us"])
-    if not good:
-        return runs[0]
-    chosen = good[len(good) // 2]
-    chosen["repeats"] = [r["cpu"]["mean_us"] for r in good]
+    """The run in the middle by mean callback time, with every repeat's figure kept.
+
+    A repeat that failed fails the cell: a crash in one run of three is a finding, not noise.
+    """
+    def summary(r):
+        kept = {k: r.get(k) for k in ("status", "reason", "output_peak")}
+        kept["cpu"] = r.get("cpu")
+        return kept
+
+    # A failure outranks a project this machine cannot run, which outranks a measurement.
+    failed = [r for r in runs if r.get("status") not in ("ok", "not_run")]
+    not_run = [r for r in runs if r.get("status") == "not_run"]
+    if failed or not_run:
+        chosen = dict((failed or not_run)[0])
+        chosen["reason"] = "%d of %d repeats: %s" % (len(failed or not_run), len(runs),
+                                                    chosen.get("reason", ""))
+        chosen["repeats"] = [summary(r) for r in runs]
+        return chosen
+    good = sorted(runs, key=lambda r: r["cpu"]["mean_us"])
+    chosen = dict(good[len(good) // 2])
+    chosen["repeats"] = [summary(r) for r in runs]
     return chosen
 
 

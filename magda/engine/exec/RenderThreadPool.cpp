@@ -26,8 +26,11 @@ class RenderThreadPool::Worker final : public juce::Thread {
         // thread carries, and a worker does nothing but render (#2240).
         const juce::ScopedNoDenormals noDenormals;
 
+        // On this thread for as long as it runs: a token has to die on the thread it joined.
+        juce::WorkgroupToken token;
+
         while (!threadShouldExit()) {
-            joinWorkgroupIfChanged();
+            joinWorkgroupIfChanged(token);
 
             if (!awaitBlock())
                 return;
@@ -84,7 +87,7 @@ class RenderThreadPool::Worker final : public juce::Thread {
         return !threadShouldExit();
     }
 
-    void joinWorkgroupIfChanged() {
+    void joinWorkgroupIfChanged(juce::WorkgroupToken& token) {
         const auto generation = pool_.workgroupGeneration_.load(std::memory_order_acquire);
         if (generation == workgroupSeen_)
             return;
@@ -94,14 +97,13 @@ class RenderThreadPool::Worker final : public juce::Thread {
             const juce::SpinLock::ScopedLockType lock(pool_.workgroupLock_);
             workgroup = pool_.workgroup_;
         }
-        workgroup.join(token_);
+        workgroup.join(token);
         workgroupSeen_ = generation;
     }
 
     RenderThreadPool& pool_;
     std::uint64_t seen_ = 0;
     std::uint64_t workgroupSeen_ = 0;
-    juce::WorkgroupToken token_;
 };
 
 RenderThreadPool::RenderThreadPool(int numWorkers, bool realtime) {
