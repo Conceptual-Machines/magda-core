@@ -245,6 +245,13 @@ struct TrackSectionState {
     /// Whether Session owned the end of the block before. Here rather than in a
     /// source so a retired handle and a mode flip share one remembered edge.
     bool heldBefore = false;
+
+    /// The monotonic beat a queued release hands the track back on, while one
+    /// is queued: what the voice pool primes the hand-back for (#2787).
+    std::optional<double> handBackBeat;
+
+    /// What ClipVoicePool::announceHandBacks last told the pool. Audio thread.
+    std::optional<double> announcedHandBack;
 };
 
 /// Every track's state at one moment, sorted by track id. Published with the
@@ -266,6 +273,24 @@ struct TrackSectionTable {
         return found != entries.end() && found->trackId == trackId ? found->state : nullptr;
     }
 };
+
+/// The soonest queued release among @p trackId's holding handles, if one names a beat.
+inline std::optional<double> queuedHandBack(const LaunchHandleTable* handles, TrackId trackId) {
+    if (handles == nullptr)
+        return std::nullopt;
+
+    std::optional<double> soonest;
+    const auto [first, last] = handles->rangeFor(trackId);
+    for (const auto* entry = first; entry != last; ++entry) {
+        if (entry->handle == nullptr || !entry->handle->holdsSection())
+            continue;
+
+        if (const auto beat = entry->handle->queuedReleaseBeat())
+            soonest = soonest ? std::min(*soonest, *beat) : *beat;
+    }
+
+    return soonest;
+}
 
 /**
  * @brief Resolve every track's hold for @p block, from @p clips and the handles.
@@ -301,6 +326,9 @@ inline void advanceTrackSections(const TrackSectionTable* sections, const ClipSn
         entry.state->hold = sectionHold(table, entry.trackId, block.numSamples,
                                         SectionMode{session, entry.state->heldBefore});
         entry.state->heldBefore = entry.state->hold.heldAtEnd;
+        entry.state->handBackBeat = session || !entry.state->hold.heldAtEnd
+                                        ? std::nullopt
+                                        : queuedHandBack(table, entry.trackId);
     }
 }
 

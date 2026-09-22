@@ -200,8 +200,8 @@ class ClipAudioSource final : public EngineAudioSource {
     void prepareForPlay(const TrackClipPlayback& track, const BlockInfo& block,
                         const Streams& streams);
 
-    /// Drop what the arrangement rendered for as long as the session holds the
-    /// track, and de-click both edges of the hand-over (#2302). @p resolved is
+    /// Drop what the arrangement rendered while the session holds the track,
+    /// and de-click both edges of the hand-over (#2302). @p resolved is
     /// the block's own answer, worked out before anything rendered
     /// (SessionPlayback.hpp), and null for a track the snapshot does not carry.
     void applySectionHold(juce::dsp::AudioBlock<float> out, const SectionHold* resolved);

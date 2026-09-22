@@ -33,6 +33,11 @@ void ClipVoice::releaseInto(juce::dsp::AudioBlock<float> out, int offset, int fa
     release();
 }
 
+void ClipVoice::cut() {
+    release();
+    stop_.reset();
+}
+
 void ClipVoice::carryTail(juce::dsp::AudioBlock<float> out) {
     stop_.advance(out);
 }

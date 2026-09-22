@@ -1,3 +1,4 @@
+#include <atomic>
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
 #include <memory>
@@ -14,6 +15,8 @@
 #include "core/TimeStretchModes.hpp"
 #include "io/PrefetchThread.hpp"
 #include "io/SourceReaders.hpp"
+#include "launch/LaunchRequests.hpp"
+#include "launch/SessionLauncher.hpp"
 #include "transport/TempoMap.hpp"
 
 // A stretcher primed off the audio thread for a start the voice pool saw coming, which the voice
@@ -326,6 +329,145 @@ std::pair<LoopedRun, LoopedRun> bothWays(LoopedPlay play) {
     return {primed, playLooped(play)};
 }
 
+/// SineFiles, counting every sample read out of the files it opened.
+class CountingSineFiles final : public magda::engine::AudioFileReaderFactory {
+  public:
+    std::unique_ptr<magda::engine::AudioFileReader> open(const std::string&) override {
+        return std::make_unique<Counting>(read);
+    }
+
+    std::atomic<std::int64_t> read{0};
+
+  private:
+    class Counting final : public magda::engine::AudioFileReader {
+      public:
+        explicit Counting(std::atomic<std::int64_t>& read) : read_(read) {}
+
+        std::int64_t lengthInSamples() const override {
+            return sine_.lengthInSamples();
+        }
+        double sampleRate() const override {
+            return sine_.sampleRate();
+        }
+        int numChannels() const override {
+            return sine_.numChannels();
+        }
+        int read(juce::AudioBuffer<float>& destination, int destinationOffset,
+                 std::int64_t startSample, int numSamples) override {
+            read_.fetch_add(numSamples, std::memory_order_relaxed);
+            return sine_.read(destination, destinationOffset, startSample, numSamples);
+        }
+
+      private:
+        SineReader sine_;
+        std::atomic<std::int64_t>& read_;
+    };
+};
+
+struct HandBackRun {
+    std::vector<float> rendered;
+    int taken = 0;
+    std::int64_t readWhileHeld = 0;
+    float heldPeak = 0.0f;
+    float resumedPeak = 0.0f;
+};
+
+/// A stretched arrangement clip a slot takes over, with a release queued twenty blocks before
+/// it lands mid-block, through the real voice pool (#2787).
+HandBackRun playHandBack(bool standbys) {
+    constexpr magda::TrackId kTrack = 3;
+    constexpr int kHoldAt = 10;
+    constexpr int kHeldQuietFrom = 12;
+    constexpr int kReleaseAskedAt = 20;
+    constexpr int kBlocks = 60;
+    constexpr int kReleaseSample = 40 * kBlockSize + 100;
+    const TempoMap tempo;
+
+    Rig shape;
+    auto snapshot = std::make_shared<magda::engine::ClipSnapshot>();
+    snapshot->serial = kSnapshot;
+    snapshot->tempoFingerprint = tempo.fingerprint();
+    magda::engine::TrackClipPlayback track;
+    track.trackId = kTrack;
+    track.audio.push_back(shape.clip);
+    snapshot->tracks.push_back(std::move(track));
+
+    CountingSineFiles files;
+    magda::engine::PrefetchThread reader(false);
+    magda::engine::ClipVoicePool pool(files, reader, context());
+    pool.setPrimesStandbys(standbys);
+    pool.setSnapshot(snapshot);
+    pool.setTransport(magda::engine::LoopRange{}, tempo);
+    magda::engine::ClipSnapshotFeed clips;
+    clips.publish(snapshot);
+
+    magda::engine::LaunchHandle handle;
+    magda::engine::LaunchHandleTable table;
+    table.entries.push_back({.key = magda::engine::SlotKey{kTrack, 0}, .handle = &handle});
+    magda::engine::LaunchHandleFeed handles;
+    handles.publish(std::make_shared<const magda::engine::LaunchHandleTable>(table));
+    magda::engine::LaunchRequestQueue requests;
+
+    magda::engine::ClipAudioSource source{kTrack, clips, pool.feed(), handles,
+                                          magda::engine::Section::Arrangement};
+    source.prepare(context());
+
+    const auto secondsAt = [](int sample) { return kEventStart + sample / kSampleRate; };
+
+    HandBackRun run;
+    juce::AudioBuffer<float> out(2, kBlockSize);
+    for (auto index = 0; index < kBlocks; ++index) {
+        if (index == kHoldAt)
+            handle.play(std::nullopt);
+        if (index == kReleaseAskedAt)
+            handle.releaseSection(tempo.timeToBeat(secondsAt(kReleaseSample)));
+        if (index == kHeldQuietFrom)
+            run.readWhileHeld = -files.read.load();
+        if (index == kReleaseAskedAt)
+            run.readWhileHeld += files.read.load();
+
+        const auto at = secondsAt(index * kBlockSize);
+        pool.setPosition(at);
+        pool.service();
+        pool.fillNow();
+
+        BlockInfo block;
+        block.numSamples = kBlockSize;
+        block.sampleRate = kSampleRate;
+        block.playing = true;
+        block.continuous = index > 0;
+        block.seconds = {at, at + kBlockSize / kSampleRate};
+        block.beats = {tempo.timeToBeat(block.seconds.start), tempo.timeToBeat(block.seconds.end)};
+        block.monotonicBeats = block.beats;
+        block.monotonicSeconds = block.seconds;
+        block.monotonicSamples = {magda::engine::SamplePosition{index * kBlockSize},
+                                  magda::engine::SamplePosition{(index + 1) * kBlockSize}};
+        block.tempo = &tempo;
+
+        out.clear();
+        {
+            const magda::engine::ClipSnapshotFeed::BlockScope pinned(clips);
+            const magda::engine::ClipStreamFeed::BlockScope streams(pool.feed());
+            magda::engine::advanceLaunchHandles(handles, requests, block);
+            magda::engine::advanceTrackSections(clips.sections(), clips.live(), &handles, block);
+            pool.announceHandBacks(clips.sections(), block);
+            source.render(block, juce::dsp::AudioBlock<float>(out));
+        }
+
+        const auto peak = out.getMagnitude(0, kBlockSize);
+        if (index > kHoldAt && index < kReleaseSample / kBlockSize)
+            run.heldPeak = std::max(run.heldPeak, peak);
+        if (index > kReleaseSample / kBlockSize)
+            run.resumedPeak = std::max(run.resumedPeak, peak);
+        for (auto channel = 0; channel < 2; ++channel)
+            run.rendered.insert(run.rendered.end(), out.getReadPointer(channel),
+                                out.getReadPointer(channel) + kBlockSize);
+    }
+
+    run.taken = pool.standbysTaken();
+    return run;
+}
+
 float loudest(const std::vector<float>& samples) {
     auto peak = 0.0f;
     for (const auto sample : samples)
@@ -624,4 +766,17 @@ TEST_CASE("A standby goes to whichever of the voice and the pool claims it first
         CHECK(taken.voice.adoptions() == 1);
         CHECK(taken.rendered == primed.rendered);
     }
+}
+
+TEST_CASE("A held track reads nothing, and a quantized hand-back takes a standby",
+          "[engine][clip][stretch][session][2787]") {
+    const auto primed = playHandBack(false);
+    const auto standbys = playHandBack(true);
+
+    CHECK(standbys.readWhileHeld == 0);
+    CHECK(standbys.heldPeak == 0.0f);
+    CHECK(standbys.taken == 1);
+    CHECK(primed.taken == 0);
+    REQUIRE(standbys.resumedPeak > 0.01f);
+    CHECK(standbys.rendered == primed.rendered);
 }

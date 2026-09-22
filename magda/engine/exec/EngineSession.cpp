@@ -513,6 +513,8 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
         // Beside the handles and for the same reason: what gates a track's
         // arrangement is resolved once, before either of its sources renders.
         advanceTrackSections(clips_.sections(), clips_.live(), &handles_, segment.block);
+        if (voices_ != nullptr)
+            voices_->announceHandBacks(clips_.sections(), segment.block);
 
         (*render)->executor.process(table, segment.block, piece);
 
