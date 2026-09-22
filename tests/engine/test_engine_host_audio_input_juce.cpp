@@ -209,6 +209,7 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { recordsIntoAnArmedSessionSlot(); });
         magda::test::runWithCleanJuceState([this] { globalStopKeepsSessionClipPlaying(); });
         magda::test::runWithCleanJuceState([this] { filledSessionSlotPreservesTake(); });
+        magda::test::runWithCleanJuceState([this] { playStraightAfterLocateStartsThere(); });
     }
 
   private:
@@ -501,6 +502,34 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
                                   "the recorded clip plays through the track");
         expectWithinAbsoluteError(playback.right, levelOf(3), 0.0001f,
                                   "recorded stereo reaches both outputs");
+
+        host.stop();
+        devices.closeAudioDevice();
+    }
+
+    void playStraightAfterLocateStartsThere() {
+        beginTest("A play straight after a locate starts where the locate put the cursor");
+
+        InputPumpManager devices;
+        expect(devices.initialise(kInputs, 2, nullptr, true).isEmpty());
+        if (devices.device == nullptr)
+            return;
+
+        Host host;
+        host.setHardwareInputProvider([] { return loopbackCatalog(); });
+        host.start(devices);
+        settle(host);
+        devices.device->pump();
+
+        // Both before the callback runs again, which is how play-from-here sends them: each
+        // request replaces the last rather than queueing behind it (#2786).
+        host.locateSeconds(2.0);
+        host.play();
+        devices.device->pump();
+
+        const auto blockSeconds = kBlockSize / devices.device->getCurrentSampleRate();
+        expectWithinAbsoluteError(host.positionSeconds(), 2.0 + blockSeconds, blockSeconds,
+                                  "the first block plays from the located position");
 
         host.stop();
         devices.closeAudioDevice();

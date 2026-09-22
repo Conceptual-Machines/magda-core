@@ -113,6 +113,8 @@ void TransportClock::applyRequest(const TransportSnapshot& snapshot) {
     // doing.
     if (playing_ && !wasPlaying)
         continuous_ = false;
+
+    appliedGeneration_.store(generation_, std::memory_order_release);
 }
 
 void TransportClock::followTempo(const TempoMap& tempo) {

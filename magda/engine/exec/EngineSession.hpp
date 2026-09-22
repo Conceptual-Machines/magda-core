@@ -351,6 +351,11 @@ class EngineSession {
         return clock_.positionBeats();
     }
 
+    /// The generation of the last transport request the callback applied. Any thread.
+    std::uint64_t appliedTransportGeneration() const {
+        return clock_.appliedGeneration();
+    }
+
     std::uint64_t punchOutGeneration() const {
         return punchOutGeneration_.load(std::memory_order_acquire);
     }

@@ -1972,7 +1972,18 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// A play, a stop or a locate. The generation is what makes a snapshot a
     /// request rather than a description, so it is bumped here and nowhere
     /// else.
-    void publishRequest(const engine::TransportRequest& request) {
+    void publishRequest(engine::TransportRequest request) {
+        // A snapshot replaces the last rather than queueing behind it, so a locate the callback
+        // has not taken yet is carried into the next request. Otherwise play straight after a
+        // locate, which is what play-from-here is, starts wherever the cursor already was.
+        const bool locatePending =
+            request_.locate &&
+            (session_ == nullptr || session_->appliedTransportGeneration() < request_.generation);
+        if (!request.locate && locatePending) {
+            request.locate = true;
+            request.positionBeat = request_.positionBeat;
+        }
+
         request_ = request;
         request_.generation = ++generation_;
         publishTransport();
