@@ -59,6 +59,7 @@ add_library(magda_engine STATIC
     plan/TrackRouting.hpp
     exec/PlanExecutor.cpp
     exec/ParallelPlanExecutor.cpp
+    exec/BlockProfile.cpp
     exec/RenderThreadPool.cpp
     exec/PlanLayout.cpp
     exec/PlanLayoutDump.cpp

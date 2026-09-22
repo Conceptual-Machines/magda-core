@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "core/BlockMath.hpp"
+#include "exec/BlockProfile.hpp"
 
 namespace magda::engine {
 namespace {
@@ -1908,6 +1909,9 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             // likes, and anything shared here would be two devices writing one
             // array. Built only where there are pairs, so the devices that have
             // none, which is nearly all of them, pay nothing for it.
+            const ProfileScope timed([device](auto elapsed) {
+                BlockProfile::addDevice(device->profileName(), elapsed);
+            });
             if (multiOutPairs <= 0) {
                 device->process(deviceBlock);
             } else {

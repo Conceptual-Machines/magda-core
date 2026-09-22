@@ -97,6 +97,10 @@ class EngineMagdaDevice final : public magda::engine::EngineDevice {
         return *device_;
     }
 
+    const char* profileName() const override {
+        return properties_.pluginId.toRawUTF8();
+    }
+
     const DeviceProperties& properties() const {
         return properties_;
     }

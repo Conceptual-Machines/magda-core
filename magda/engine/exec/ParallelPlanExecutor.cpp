@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <vector>
 
+#include "exec/BlockProfile.hpp"
+
 namespace magda::engine {
 namespace {
 
@@ -176,8 +178,10 @@ OpId ParallelPlanExecutor::runOp(OpId op) {
     // because nothing consumes either.
     const auto kind = plan_->ops[static_cast<std::size_t>(op)].kind;
     if (kind != OpKind::Output && kind != OpKind::ModSource && kind != OpKind::InsertSend &&
-        !core_.inMidiPrefix(op))
+        !core_.inMidiPrefix(op)) {
+        const ProfileScope timed([kind](auto elapsed) { BlockProfile::addOp(kind, elapsed); });
         core_.renderOp(op, valueOf(op), block_, *output_);
+    }
 
     OpId carryOn = INVALID_OP_ID;
 
@@ -237,8 +241,14 @@ void ParallelPlanExecutor::process(const PlanValues& values, const BlockInfo& re
     // RenderThreadPool::Worker, since the mode is per thread and a worker only
     // ever renders.
     const juce::ScopedNoDenormals noDenormals;
+    const ProfileScope whole(
+        [](auto elapsed) { BlockProfile::addPhase(BlockProfile::WholeBlock, elapsed); });
 
-    const auto start = core_.beginBlock(values, requestedBlock, output);
+    const auto start = [&] {
+        const ProfileScope timed(
+            [](auto elapsed) { BlockProfile::addPhase(BlockProfile::BeginBlock, elapsed); });
+        return core_.beginBlock(values, requestedBlock, output);
+    }();
     if (!start.render || plan_ == nullptr)
         return;
 
@@ -251,8 +261,16 @@ void ParallelPlanExecutor::process(const PlanValues& values, const BlockInfo& re
     // exactly as they would be otherwise; what the schedule skips is running
     // them a second time, the same way it skips the outputs it renders at the
     // end. Anything else would consume a live input queue twice.
-    core_.renderMidiPrefix(values, start.block);
-    core_.resolveParameters(values, start.block);
+    {
+        const ProfileScope timed(
+            [](auto elapsed) { BlockProfile::addPhase(BlockProfile::MidiPrefix, elapsed); });
+        core_.renderMidiPrefix(values, start.block);
+    }
+    {
+        const ProfileScope timed(
+            [](auto elapsed) { BlockProfile::addPhase(BlockProfile::ResolveParameters, elapsed); });
+        core_.resolveParameters(values, start.block);
+    }
 
     block_ = start.block;
     values_ = &values;
@@ -281,12 +299,18 @@ void ParallelPlanExecutor::process(const PlanValues& values, const BlockInfo& re
     // can run beside: a wake-up costs more than a small op, and every worker woken spins on
     // the ready stack until the block drains.
     const auto workers = std::min(parallelism_ - 1, numThreads() - 1);
-    if (pool_ != nullptr && workers > 0) {
-        handedToPool_.store(true, std::memory_order_relaxed);
-        pool_->render(*this, workers);
-    } else {
-        takeWork();
+    {
+        const ProfileScope timed(
+            [](auto elapsed) { BlockProfile::addPhase(BlockProfile::Drain, elapsed); });
+        if (pool_ != nullptr && workers > 0) {
+            handedToPool_.store(true, std::memory_order_relaxed);
+            pool_->render(*this, workers);
+        } else {
+            takeWork();
+        }
     }
+    const ProfileScope tail(
+        [](auto elapsed) { BlockProfile::addPhase(BlockProfile::SerialTail, elapsed); });
 
     // The graph has drained, so this thread is the only one with anything to
     // do. In plan order: the taps detect one at a time, and the sum reaching

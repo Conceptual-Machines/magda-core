@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
 #include <vector>
 
@@ -74,7 +75,10 @@ class RenderThreadPool {
      * machine for no benefit.
      */
     /// Workers a session on this machine renders with: the audio thread plus one per other core.
+    /// MAGDA_RENDER_WORKERS overrides it, for measuring what a count costs.
     static int workersForThisMachine() {
+        if (const auto* value = std::getenv("MAGDA_RENDER_WORKERS"))
+            return std::max(0, juce::String(value).getIntValue());
         return std::max(0, juce::SystemStats::getNumCpus() - 1);
     }
 

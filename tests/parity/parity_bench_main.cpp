@@ -13,6 +13,7 @@
 #include "NullDiffHostedPlugin.hpp"
 #include "ParityMeasure.hpp"
 #include "PumpThread.hpp"
+#include "exec/BlockProfile.hpp"
 #include "magda/daw/core/TempoMap.hpp"
 #include "magda/daw/engine/AudioEngine.hpp"
 #include "magda/daw/engine/PluginService.hpp"
@@ -379,6 +380,8 @@ int main(int argc, char* argv[]) {
 
     // Engine and singleton teardown is not what this measures, and it is where a crash would
     // cost the result that was already printed.
+    if (engine::BlockProfile::enabled())
+        engine::BlockProfile::report();
     std::cout.flush();
     std::_Exit(0);
 }
