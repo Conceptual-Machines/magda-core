@@ -14,6 +14,7 @@
 #include "ParityMeasure.hpp"
 #include "PumpThread.hpp"
 #include "exec/BlockProfile.hpp"
+#include "magda/daw/audio/plugins/DeviceTiming.hpp"
 #include "magda/daw/core/TempoMap.hpp"
 #include "magda/daw/engine/AudioEngine.hpp"
 #include "magda/daw/engine/PluginService.hpp"
@@ -374,6 +375,10 @@ int main(int argc, char* argv[]) {
         emit(failed(result, "failed", error));
         std::_Exit(2);
     }
+
+    // Both engines' device adapters report through the SDK's sink, so one table compares them.
+    if (engine::BlockProfile::enabled())
+        daw::audio::setDeviceTimingSink(&engine::BlockProfile::addDevice);
 
     Running running;
     emit(options->list ? listProjects(*options) : measure(*options, running));

@@ -4,11 +4,13 @@
 
 #include <limits>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "core/ParameterInfo.hpp"
 #include "core/ParameterUtils.hpp"
 #include "exec/EngineDevice.hpp"
+#include "plugins/DeviceTiming.hpp"
 #include "plugins/MagdaDevice.hpp"
 
 /**
@@ -113,6 +115,8 @@ class EngineMagdaDevice final : public magda::engine::EngineDevice {
 
     std::unique_ptr<MagdaDevice> device_;
     DeviceProperties properties_;
+    /// What the device's own process() is timed under, beside the adapter's (DeviceTiming.hpp).
+    std::string dspTimingName_;
 
     /// One entry per parameter the device declared, in its own slot order.
     /// `plan` is the index the plan addresses that slot by, which is what

@@ -5,8 +5,10 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
+#include "plugins/DeviceTiming.hpp"
 #include "plugins/MagdaDevice.hpp"
 
 namespace magda::daw::audio::tracktion_adapter {
@@ -76,6 +78,8 @@ class TracktionMagdaDevicePlugin final : public te::Plugin {
     /// calling into a device that is gone.
     std::shared_ptr<MagdaDevice*> deviceHandle_;
     const DeviceProperties properties_;
+    /// What the device's own process() is timed under, beside the adapter's (DeviceTiming.hpp).
+    const std::string dspTimingName_;
     /// The live channel split, published for the audio thread: the device's own
     /// input width, and the key channels the fork appends after them.
     std::atomic<int> ownInputChannels_{0};

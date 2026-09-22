@@ -145,6 +145,7 @@ class EngineTempoMapView final : public DeviceTempoMap {
 EngineMagdaDevice::EngineMagdaDevice(std::unique_ptr<MagdaDevice> device, bool offlineRender)
     : device_(std::move(device)),
       properties_(propertiesForRequiredDevice(device_)),
+      dspTimingName_(properties_.pluginId.toStdString() + " dsp"),
       offlineRender_(offlineRender) {
     parameters_.reserve(static_cast<std::size_t>(std::max(0, device_->parameterCount())));
 
@@ -356,7 +357,10 @@ void EngineMagdaDevice::process(magda::engine::DeviceBlock& block) {
         .isRendering = offlineRender_,
     };
 
-    device_->process(context);
+    {
+        const DeviceTimingScope dsp(dspTimingName_.c_str());
+        device_->process(context);
+    }
 
     // Back onto the port, ahead of the two returns below: the flag is the
     // device's answer whether or not it wrote an event, and dropping it on an

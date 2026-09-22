@@ -114,7 +114,8 @@ void BlockProfile::addDevice(const char* name, std::chrono::steady_clock::durati
 
 void BlockProfile::report() {
     static const char* const kPhaseNames[PhaseCount] = {
-        "beginBlock", "midiPrefix", "resolveParams", "drain (ops)", "serialTail", "wholeBlock"};
+        "beginBlock", "midiPrefix", "resolveParams", "drain (ops)",
+        "serialTail", "wholeBlock", "callback"};
 
     std::array<std::uint64_t, kKinds> opNanos{}, opCounts{};
     std::array<std::uint64_t, PhaseCount> phaseNanos{}, phaseCounts{};
@@ -141,9 +142,12 @@ void BlockProfile::report() {
         }
     }
 
-    const auto blocks = static_cast<double>(phaseCounts[WholeBlock]);
+    // Per callback where the bench counted them, which covers an engine with no phases of its own.
+    const auto counted =
+        phaseCounts[Callback] != 0 ? phaseCounts[Callback] : phaseCounts[WholeBlock];
+    const auto blocks = static_cast<double>(counted);
     std::fprintf(stderr, "\nengine-profile  %llu blocks\n",
-                 static_cast<unsigned long long>(phaseCounts[WholeBlock]));
+                 static_cast<unsigned long long>(counted));
     if (blocks == 0)
         return;
 

@@ -25,6 +25,8 @@ class BlockProfile {
         Drain,
         SerialTail,
         WholeBlock,
+        /// The whole device callback, as the parity bench's pump times it, whichever engine.
+        Callback,
         PhaseCount
     };
 

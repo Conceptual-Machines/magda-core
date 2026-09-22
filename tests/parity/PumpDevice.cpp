@@ -1,5 +1,7 @@
 #include "PumpDevice.hpp"
 
+#include "exec/BlockProfile.hpp"
+
 namespace magda::parity {
 
 PumpDevice::PumpDevice(double sampleRate, int blockSize, std::atomic<PumpDevice*>& registry)
@@ -24,7 +26,10 @@ std::chrono::steady_clock::duration PumpDevice::pull(juce::AudioBuffer<float>& o
     callback_->audioDeviceIOCallbackWithContext(nullptr, 0, output.getArrayOfWritePointers(),
                                                 output.getNumChannels(), output.getNumSamples(),
                                                 context);
-    return std::chrono::steady_clock::now() - started;
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+    if (engine::BlockProfile::enabled())
+        engine::BlockProfile::addPhase(engine::BlockProfile::Callback, elapsed);
+    return elapsed;
 }
 
 bool PumpDevice::isStarted() const {

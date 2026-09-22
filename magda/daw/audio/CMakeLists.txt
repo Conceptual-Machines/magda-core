@@ -281,6 +281,8 @@ set(_magda_device_sdk_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceCatalogParameters.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceStateHydration.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceStateHydration.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceTiming.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceTiming.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/InternalPluginRegistry.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/InternalPluginRegistry.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/MagdaDevice.hpp"
