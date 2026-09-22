@@ -17,6 +17,7 @@ import argparse
 import datetime
 import hashlib
 import json
+import math
 import os
 import platform
 import re
@@ -191,6 +192,21 @@ def key_of(result):
     return (result["project"], result["block_size"])
 
 
+def envelope_gap_db(fork, native):
+    """Median distance between the two runs' output loudness, in dB, or None without it.
+
+    Two engines timed on different audio are not a comparison: a transport that started in the
+    wrong place once made native look fast on material the fork never had to render (#2786).
+    """
+    a, b = fork.get("loudness") or [], native.get("loudness") or []
+    count = min(len(a), len(b))
+    if count == 0:
+        return None
+    level = lambda peak: 20.0 * math.log10(max(peak, 1.0e-4))
+    gaps = sorted(abs(level(a[i]) - level(b[i])) for i in range(count))
+    return gaps[count // 2]
+
+
 def judge(run, thresholds):
     """Every native figure against the fork's from the same run; returns (rows, failures)."""
     metrics = thresholds["metrics"]
@@ -218,6 +234,14 @@ def judge(run, thresholds):
             status = unmeasured[0].get("status")
             rows.append((project, block, "-", None, None, None,
                          "%s: %s" % (status.replace("_", " "), unmeasured[0].get("reason", ""))))
+            continue
+
+        gap = envelope_gap_db(fork, native)
+        agreement = thresholds.get("render_agreement_db")
+        if gap is not None and agreement is not None and gap > agreement:
+            reason = "the engines rendered different audio, %.1f dB apart" % gap
+            failures.append("%s @%d: %s, so nothing was compared" % (project, block, reason))
+            rows.append((project, block, "-", None, None, None, reason))
             continue
 
         fork_values, native_values = figures(fork), figures(native)

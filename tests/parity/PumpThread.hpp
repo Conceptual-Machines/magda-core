@@ -36,6 +36,10 @@ struct SpanResult {
 
     /// The output's peak per hundred blocks, in order: whether the project kept sounding.
     std::vector<float> envelope;
+
+    /// The output's RMS over the same stretches. What tells one passage from another where a
+    /// master limiter holds every peak at its ceiling.
+    std::vector<float> loudness;
 };
 
 class PumpThread final : public juce::Thread {

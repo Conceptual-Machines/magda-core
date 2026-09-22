@@ -1,6 +1,7 @@
 #include <juce_events/juce_events.h>
 
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <functional>
 #include <iostream>
@@ -266,6 +267,17 @@ juce::var measure(const Options& options, Running& running) {
     if (!dispatchUntil([&] { return (span = pump.result()).has_value(); }, playSeconds + 60.0))
         return failed(result, "failed", "the measured passes did not finish");
 
+    // Where each engine was when the passes ended, which a loop over the window keeps inside
+    // it. An engine timed anywhere else rendered different material from the other (#2786).
+    const auto endedAt = engine.getCurrentPosition();
+    const auto blockSeconds = static_cast<double>(options.blockSize) / options.sampleRate;
+    if (endedAt < startSeconds - blockSeconds || endedAt > endSeconds + blockSeconds)
+        return failed(result, "failed",
+                      ("the transport ended the passes at " + juce::String(endedAt, 3) +
+                       " s, outside the window " + juce::String(startSeconds, 3) + " to " +
+                       juce::String(endSeconds, 3) + " s")
+                          .toStdString());
+
     const auto peak = sampler.stop();
 
     juce::DynamicObject::Ptr memory = new juce::DynamicObject();
@@ -294,6 +306,18 @@ juce::var measure(const Options& options, Running& running) {
     for (const auto peak : span->envelope)
         envelope.add(peak);
     result->setProperty("envelope", envelope);
+
+    // Every bucket is a hundred blocks but the last, which is what is left of the span.
+    juce::Array<juce::var> loudness;
+    const auto channels = static_cast<double>(kPumpOutputChannels);
+    for (std::size_t bucket = 0; bucket < span->loudness.size(); ++bucket) {
+        const auto blocks = std::min<std::int64_t>(
+            100, span->blocks.blocks - static_cast<std::int64_t>(bucket) * 100);
+        const auto samples =
+            static_cast<double>(std::max<std::int64_t>(blocks, 1)) * options.blockSize * channels;
+        loudness.add(std::sqrt(static_cast<double>(span->loudness[bucket]) / samples));
+    }
+    result->setProperty("loudness", loudness);
 
     // A silent engine is a cheap one, and a cheap number is not a measurement.
     if (span->outputPeak <= 0.0f)

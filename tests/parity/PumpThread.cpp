@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <span>
 #include <thread>
 
 namespace magda::parity {
@@ -27,6 +28,7 @@ void PumpThread::measure(std::int64_t warmupSamples, std::int64_t measuredSample
     times_ = std::make_unique<BlockTimes>(blocks);
     span_ = {};
     span_.envelope.reserve(blocks / 100 + 2);
+    span_.loudness.reserve(blocks / 100 + 2);
     warmupRemaining_ = warmupSamples;
     measuredRemaining_ = measuredSamples;
     phase_.store(Phase::Warmup, std::memory_order_release);
@@ -77,6 +79,16 @@ void PumpThread::run() {
                             span_.envelope.push_back(0.0f);
                         if (bucket < span_.envelope.size())
                             span_.envelope[bucket] = std::max(span_.envelope[bucket], peak);
+
+                        // Summed squares until the bucket is emitted; the mean root is taken there.
+                        if (bucket >= span_.loudness.size() &&
+                            span_.loudness.size() < span_.loudness.capacity())
+                            span_.loudness.push_back(0.0f);
+                        if (bucket < span_.loudness.size())
+                            for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+                                for (const auto sample :
+                                     std::span(buffer.getReadPointer(channel), blockSize_))
+                                    span_.loudness[bucket] += sample * sample;
                     }
 
                     measuredRemaining_ -= blockSize_;
