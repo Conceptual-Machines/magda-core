@@ -280,6 +280,10 @@ class MagdaCompiledPolyInstrument : public CompiledFaustDevice {
     // Voice macros only (0 .. voiceSlotCount-1): that control's zone in EVERY
     // voice (group=false), so a single host value fans out to all voices.
     std::vector<std::vector<float*>> voiceZonesBySlot_;
+    /// The normalised value each slot's zones were last handed, and the bend the
+    /// bend zones were; NaN until the next fan-out writes them.
+    std::vector<float> fannedNormalized_;
+    float fannedBend_ = 0.0f;
 
     std::vector<HostSlotInfo> voiceSlotInfos_;  // cached from the hook
     std::vector<HostSlotInfo> hostSlotInfo_;    // voice macros + Gain

@@ -132,6 +132,8 @@ class EngineMagdaDevice final : public magda::engine::EngineDevice {
         float position = std::numeric_limits<float>::quiet_NaN();
         magda::ParameterUtils::ParameterDomain domain;
         float normalized = 0.0f;
+        /// What the device was last handed; NaN until the first write after a prepare().
+        float written = std::numeric_limits<float>::quiet_NaN();
     };
 
     std::vector<ParameterMapping> parameters_;
