@@ -102,7 +102,8 @@ bool dispatchUntil(const std::function<bool()>& done, double timeoutSeconds) {
 }
 
 const nulldiff::MgdFixture* findFixture(const std::string& name) {
-    for (const auto* list : {&nulldiff::mgdFixtures(), &nulldiff::retrospectScaleFixtures()})
+    for (const auto* list : {&nulldiff::mgdFixtures(), &nulldiff::parityOnlyFixtures(),
+                             &nulldiff::retrospectScaleFixtures()})
         for (const auto& fixture : *list)
             if (fixture.declaration.name == name)
                 return &fixture;
@@ -124,8 +125,38 @@ std::vector<std::string> absentPlugins(const nulldiff::MgdFixture& fixture,
     if (plugins.formats() == nullptr || plugins.knownList() == nullptr)
         return {"the plugin service has no list"};
 
+    // The folders the project's own plugins were saved from, so a plugin kept on another
+    // drive is found as the app finds it.
+    juce::FileSearchPath savedFolders;
+    const auto addFolder = [&savedFolders](const DeviceInfo& device) {
+        const auto folder =
+            juce::File::createFileWithoutCheckingPath(device.fileOrIdentifier).getParentDirectory();
+        if (device.format != PluginFormat::Internal && folder.isDirectory())
+            savedFolders.addIfNotAlreadyThere(folder);
+    };
+    const std::function<void(const std::vector<ChainElement>&)> walk =
+        [&walk, &addFolder](const std::vector<ChainElement>& elements) {
+            for (const auto& element : elements) {
+                if (isDevice(element))
+                    addFolder(getDevice(element));
+                else if (isRack(element))
+                    for (const auto& chain : getRack(element).chains)
+                        walk(chain.elements);
+            }
+        };
+    const auto walkTrack = [&walk, &addFolder](const TrackInfo& track) {
+        walk(track.chain.fxChainElements);
+        for (const auto& element : track.chain.postFxChainElements)
+            addFolder(element.device);
+    };
+    for (const auto& track : staged.tracks)
+        walkTrack(track);
+    if (staged.masterTrack != nullptr)
+        walkTrack(*staged.masterTrack);
+
     std::vector<std::string> names(fixture.hostedPlugins.begin(), fixture.hostedPlugins.end());
-    nulldiff::addInstalledPluginsNamed(names, *plugins.formats(), *plugins.knownList());
+    nulldiff::addInstalledPluginsNamed(names, *plugins.formats(), *plugins.knownList(),
+                                       savedFolders);
 
     nulldiff::Case project;
     project.tracks = staged.tracks;
@@ -344,6 +375,7 @@ juce::var listProjects(const Options& options) {
         }
     };
     list(nulldiff::mgdFixtures(), false);
+    list(nulldiff::parityOnlyFixtures(), false);
     list(nulldiff::retrospectScaleFixtures(), true);
 
     juce::DynamicObject::Ptr result = new juce::DynamicObject();

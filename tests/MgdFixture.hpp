@@ -293,4 +293,7 @@ const std::vector<MgdFixture>& mgdFixtures();
 /// engine's cost grows per hosted instance. Written by scripts/make_retrospect_scale.py.
 const std::vector<MgdFixture>& retrospectScaleFixtures();
 
+/// Real-session-sized projects hosting many third-party plugins, for the parity bench only.
+const std::vector<MgdFixture>& parityOnlyFixtures();
+
 }  // namespace magda::nulldiff

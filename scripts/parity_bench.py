@@ -42,10 +42,35 @@ def find_bench(explicit, build_dir):
     sys.exit("magda_parity_bench not found; build it with `make parity-bench-build`")
 
 
+def link_real_user_data(home):
+    """Hosted plugins find their licences, content and logs under HOME, so they see the real ones.
+
+    Only the engines' own settings stay in the sandbox.
+    """
+    real = Path.home()
+    (home / "Library" / "Logs").mkdir(parents=True, exist_ok=True)
+    for folder, private in (("Library/Application Support", {"Tracktion"}),
+                            ("Library/Preferences", {"com.MAGDA.MAGDA.plist",
+                                                     "com.MAGDA.magda_daw_app.plist"}),
+                            ("Library/Audio", set()),
+                            ("Documents", set()),
+                            ("Music", set())):
+        source = real / folder
+        if not source.is_dir():
+            continue
+        target = home / folder
+        target.mkdir(parents=True, exist_ok=True)
+        for entry in source.iterdir():
+            link = target / entry.name
+            if entry.name not in private and not link.exists() and not link.is_symlink():
+                link.symlink_to(entry)
+
+
 def bench_environment():
     """A sandbox of its own: the engines read and write settings under HOME."""
     home = ROOT / ".cache" / "parity-home"
     home.mkdir(parents=True, exist_ok=True)
+    link_real_user_data(home)
     env = dict(os.environ)
     env["HOME"] = str(home)
     env["CFFIXED_USER_HOME"] = str(home)
