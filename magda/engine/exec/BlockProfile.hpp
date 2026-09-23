@@ -30,6 +30,17 @@ class BlockProfile {
         PhaseCount
     };
 
+    /// Scheduling events, counted rather than timed.
+    enum Counter : int {
+        InitialReady = 0,
+        InitialReadyCallerOnly,
+        WorkersSignalled,
+        WorkerSleeps,
+        WakesWithoutWork,
+        ChainsOnWorkers,
+        CounterCount
+    };
+
     static bool enabled() {
         return enabled_;
     }
@@ -39,6 +50,8 @@ class BlockProfile {
 
     /// A device's own share, by the name it gives.
     static void addDevice(const char* name, std::chrono::steady_clock::duration elapsed);
+
+    static void count(Counter counter, int amount = 1);
 
     /// Print the tallies to stderr. Registered with atexit when the profile is on.
     static void report();

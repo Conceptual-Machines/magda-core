@@ -191,9 +191,22 @@ int ParallelPlanExecutor::startSchedule() {
     // Before anything is queued, so no op can finish and count against a total not yet set.
     remaining_.store(static_cast<int>(numOps), std::memory_order_relaxed);
 
-    for (const auto op : plan_->initialReadyOps)
+    // A worker is woken only for an op it would render: one this thread renders itself
+    // (the MIDI prefix, outputs, taps) only releases its consumers, and a worker woken for it
+    // spins through its wait for nothing.
+    int renderable = 0;
+    for (const auto op : plan_->initialReadyOps) {
         enqueue(op);
-    return static_cast<int>(plan_->initialReadyOps.size());
+        if (rendersInDrain(op))
+            ++renderable;
+    }
+
+    if (BlockProfile::enabled()) {
+        const auto ready = static_cast<int>(plan_->initialReadyOps.size());
+        BlockProfile::count(BlockProfile::InitialReady, ready);
+        BlockProfile::count(BlockProfile::InitialReadyCallerOnly, ready - renderable);
+    }
+    return renderable;
 }
 
 bool ParallelPlanExecutor::rendersInDrain(OpId op) const {

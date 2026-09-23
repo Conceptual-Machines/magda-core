@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <thread>
 
+#include "exec/BlockProfile.hpp"
+
 #if !JUCE_ARM
     #include <immintrin.h>
 #endif
@@ -53,8 +55,15 @@ class RenderThreadPool::Worker final : public juce::Thread {
         while (!threadShouldExit()) {
             joinWorkgroupIfChanged(token);
 
-            if (!pool_.takeWork(*this))
-                pool_.wait(pauses);
+            if (pool_.takeWork(*this)) {
+                if (BlockProfile::enabled())
+                    BlockProfile::count(BlockProfile::ChainsOnWorkers);
+                wokenEmpty_ = false;
+            } else {
+                if (wokenEmpty_ && BlockProfile::enabled())
+                    BlockProfile::count(BlockProfile::WakesWithoutWork);
+                wokenEmpty_ = pool_.wait(pauses);
+            }
         }
     }
 
@@ -85,6 +94,8 @@ class RenderThreadPool::Worker final : public juce::Thread {
     RenderThreadPool& pool_;
     bool realtime_ = true;
     std::uint64_t workgroupSeen_ = 0;
+    /// Just back from the semaphore, for the profile's count of wakes that found nothing.
+    bool wokenEmpty_ = false;
 };
 
 RenderThreadPool::RenderThreadPool(int numWorkers, bool realtime) {
@@ -109,6 +120,8 @@ void RenderThreadPool::render(Job& job, int ready) {
     job_.store(&job, std::memory_order_seq_cst);
 
     const auto signalled = std::clamp(ready, 0, numThreads() - 1);
+    if (BlockProfile::enabled())
+        BlockProfile::count(BlockProfile::WorkersSignalled, signalled);
     if (signalled > 0)
         semaphore_.signal(signalled);
 
@@ -127,10 +140,10 @@ void RenderThreadPool::pause() {
     }
 }
 
-void RenderThreadPool::wait(int& pauses) {
+bool RenderThreadPool::wait(int& pauses) {
     if (queued_.load(std::memory_order_acquire) > 0) {
         pauses = 0;
-        return;
+        return false;
     }
 
     ++pauses;
@@ -140,8 +153,12 @@ void RenderThreadPool::wait(int& pauses) {
         std::this_thread::yield();
     } else {
         pauses = 0;
+        if (BlockProfile::enabled())
+            BlockProfile::count(BlockProfile::WorkerSleeps);
         semaphore_.wait();
+        return true;
     }
+    return false;
 }
 
 bool RenderThreadPool::takeWork(Worker& worker) {
