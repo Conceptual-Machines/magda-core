@@ -1,10 +1,16 @@
 #pragma once
 
 #include <atomic>
-#include <chrono>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
+
+// clang-format off
+// rigtorp's queue uses std::aligned_storage without including <type_traits>.
+#include <type_traits>
+#include <rigtorp/MPMCQueue.h>
+// clang-format on
 
 #include "exec/PlanExecutor.hpp"
 #include "exec/RenderThreadPool.hpp"
@@ -33,11 +39,6 @@
  */
 
 namespace magda::engine {
-
-/// An empty ready stack: no op on top, and a tag that has not moved yet. The
-/// packing is in ParallelPlanExecutor.cpp, which asserts that this is what it
-/// produces for an empty one.
-inline constexpr std::uint64_t kEmptyReadyStack = 0xffffffffULL;
 
 class ParallelPlanExecutor final : private RenderThreadPool::Job {
   public:
@@ -94,18 +95,6 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     /// What decides how many workers a block wakes.
     int parallelism() const {
         return parallelism_;
-    }
-
-    /// Serial work each woken worker needs for its wake-up to pay. Zero wakes every worker the
-    /// plan can use, which is what a test of the schedule itself wants.
-    void setWorkPerWorker(std::chrono::nanoseconds work);
-
-    /// What the next block's worker count starts from, as if a block had measured it.
-    void assumeWork(std::chrono::nanoseconds work);
-
-    /// Workers the last block woke.
-    int lastWorkers() const {
-        return lastWorkers_;
     }
 
     /// The prepared plan, as the reference executor sees it: what it bound,
@@ -169,55 +158,31 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     }
 
   private:
-    /// Take ready ops until the block is finished. Runs on every thread of the
-    /// pool at once, and on the audio thread.
-    void takeWork() override;
+    /// One ready op and the chain it releases, on a worker (RenderThreadPool::Job).
+    bool takeOne() override;
 
-    /// Render @p op, release the ops waiting on it, and hand back one of them
-    /// for this thread to carry straight on with. A chain therefore never
-    /// touches the ready set at all: the thread that ran an op runs its
-    /// consumer, which is both the cheapest schedule and the warmest cache.
-    /// The op is counted off remaining_ by the caller, once per chain.
-    OpId runOp(OpId op, bool onCaller);
+    /// Ready ops until the block is finished, on the thread that called render(), pausing
+    /// while none is ready as Tracktion's player waits for its final node.
+    void finishOnCaller() override;
 
-    /// Render @p op, timing it on a timed block. @p onCaller says which thread is running it.
-    void renderTimed(OpId op, bool onCaller);
+    /// Render @p op and everything it releases that this thread carries straight on with.
+    /// Tracktion's rule: a released consumer is carried when it is the op's only consumer or
+    /// its last one, and queued for another thread otherwise.
+    void runChain(OpId op);
 
-    /// Hand @p op to the callback thread's slot if it is the owned op. True when it did.
-    bool releaseToCaller(OpId op);
-
-    /// Ask back up to @p ops of the workers that left this block.
-    void recallFor(int ops);
-
-    /// Whether this block times its ops, and when the next one does.
-    void beginTimedBlock();
-
-    /// After a timed block: the heaviest op becomes the one the callback thread owns.
-    void chooseOwnedOp();
+    /// Render @p op, counted into the profile.
+    void renderProfiled(OpId op);
 
     /// Whether @p op renders in the drain rather than in the prefix or the serial tail.
     bool rendersInDrain(OpId op) const;
 
-    /// The drain on this thread alone: plan order is dependency order, so no counts are kept.
-    /// Stops early, answering how many ops it got through, once the block has taken more than
-    /// a worker's worth of work since @p started; otherwise answers every op.
-    std::size_t renderInPlanOrder(std::int64_t started);
+    /// The drain on this thread alone, in plan order, which is dependency order.
+    void renderInPlanOrder();
 
-    /// Seed the counts and the ready set for a block the pool will share, the first @p done ops
-    /// in plan order already rendered.
-    void startSchedule(std::size_t done);
+    /// Seed the counts and queue the ops ready at the top of a block. Answers how many.
+    int startSchedule();
 
-    /// Workers the plan's width and the pool's size allow.
-    int everyUsefulWorker() const;
-
-    /// How many workers the measured work pays for, before the plan's width and the pool's size.
-    int workersWorthWaking() const;
-
-    /// Fold one block's measured serial work into the estimate.
-    void noteWork(std::int64_t ticks);
-
-    void push(OpId op);
-    OpId pop();
+    void enqueue(OpId op);
 
     /// Wait until no worker can be inside this job, so what it owns may be
     /// resized or destroyed. Off the audio thread.
@@ -274,53 +239,12 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     /// copied in at the top of every block.
     std::vector<std::atomic<std::uint16_t>> pending_;
 
-    /// The ready set: a stack threaded through this array, one link per op.
-    /// An op is pushed at most once a block, when its last producer finishes,
-    /// so a link is written once and read once and no op can come back while
-    /// another thread is looking at it.
-    std::vector<std::atomic<OpId>> nextReady_;
+    /// The ready set, first in first out, as Tracktion's player keeps it. Sized to the plan at
+    /// prepare: an op is queued at most once a block.
+    std::unique_ptr<rigtorp::MPMCQueue<OpId>> ready_;
 
-    /// The ready set of a block handed over mid-drain, gathered before it is published. Sized
-    /// to the plan at prepare, so gathering never allocates.
-    std::vector<OpId> handOverReady_;
-
-    /// Top of the ready stack: an op and a tag, packed. The tag moves on every
-    /// push and every pop and never resets, so a thread that read the top,
-    /// stalled, and came back to find the same op there cannot mistake it for
-    /// the one it was looking at. That is the whole of the ABA argument, and it
-    /// is why the tag survives across blocks rather than starting again.
-    alignas(64) std::atomic<std::uint64_t> readyTop_{kEmptyReadyStack};
-
-    /// Ops still to finish this block. Zero is what "the block is done" means,
-    /// and it is the only thing every thread agrees to wait for.
+    /// Ops still to finish this block. Zero is what "the block is done" means.
     alignas(64) std::atomic<int> remaining_{0};
-
-    /// Time the threads spent running ops this block, in high-resolution ticks. Added before a
-    /// chain's ops are counted off, so it is whole once remaining_ reaches zero.
-    alignas(64) std::atomic<std::int64_t> busyTicks_{0};
-
-    /// The drain's serial work, raised at once and lowered slowly. Negative until a block has
-    /// been measured, and carried from the executor this one replaces. Atomic because that
-    /// executor may still be rendering when this one is prepared.
-    std::atomic<std::int64_t> workEstimateTicks_{-1};
-    std::int64_t workPerWorkerTicks_ = 0;
-    std::int64_t idleBeforeLeavingTicks_ = 0;
-    int lastWorkers_ = 0;
-
-    /// The op only the callback thread runs, so the block's dominant device stays on one thread,
-    /// and the slot it waits in once ready. Workers never take it from the shared stack.
-    /// Workers that left this block for want of work, which pushed work asks back.
-    alignas(64) std::atomic<int> departed_{0};
-
-    std::atomic<OpId> ownedOp_{INVALID_OP_ID};
-    alignas(64) std::atomic<OpId> ownedReady_{INVALID_OP_ID};
-    std::atomic<juce::Thread::ThreadID> callerThread_{nullptr};
-
-    /// Each op's time on the last timed block, written by whichever thread ran it.
-    std::vector<std::int64_t> opTicks_;
-    std::atomic<bool> timingBlock_{false};
-    int blocksUntilTimed_ = 0;
-    std::uint32_t jitter_ = 0x9e3779b9U;
 };
 
 }  // namespace magda::engine
