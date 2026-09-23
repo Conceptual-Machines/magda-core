@@ -1598,7 +1598,8 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
                 audioSourceForOp_[i]->render(block, out);
 
             // Added after the arrangement, the order the track's mix summed the two in.
-            if (auto* session = sessionSourceForOp_[i]; session != nullptr && !value.silent) {
+            if (auto* session = sessionSourceForOp_[i];
+                session != nullptr && !value.silent && !session->silentFor(block)) {
                 auto scratch = juce::dsp::AudioBlock<float>(sessionScratch_[i])
                                    .getSubBlock(0, static_cast<std::size_t>(numSamples));
                 session->render(block, scratch);

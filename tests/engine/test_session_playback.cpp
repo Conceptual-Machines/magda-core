@@ -344,6 +344,18 @@ struct AudioRig {
             render(index, index != first);
     }
 
+    /// Render block @p index as render() does, returning what the source said
+    /// of it beforehand.
+    bool renderAsking(int index) {
+        const auto block = blockAt(index);
+        fill();
+        magda::engine::advanceLaunchHandles(handles, requests, block);
+        const magda::test::ClipBlock pinned(clips, block, &handles);
+        const auto silent = source.silentFor(block);
+        source.render(block, juce::dsp::AudioBlock<float>(output));
+        return silent;
+    }
+
     void fill() {
         auto worked = true;
         while (worked) {
@@ -767,6 +779,60 @@ TEST_CASE("A slot nobody launched renders silence", "[engine][clip][session]") {
     CHECK(rig.peak() == 0.0f);
     CHECK(rig.handle.playState() == LaunchHandle::PlayState::stopped);
     CHECK(rig.source.starvedVoices() == 0);
+}
+
+TEST_CASE("A session source is silent exactly while nothing it plays sounds",
+          "[engine][clip][session]") {
+    AudioRig rig;
+    rig.give(1, 4.0, std::make_unique<ConstantReader>());
+    rig.publish();
+
+    // Stopped blocks cue the next Play, so they are never skipped.
+    auto stopped = blockAt(0);
+    stopped.playing = false;
+    CHECK_FALSE(rig.source.silentFor(stopped));
+
+    CHECK(rig.renderAsking(0));
+    CHECK(rig.peak() == 0.0f);
+
+    rig.handle.play(std::nullopt);
+    CHECK_FALSE(rig.renderAsking(1));
+    REQUIRE(rig.peak() > 0.0f);
+
+    rig.handle.stop(kBeatsPerBlock * 2.5);
+    CHECK_FALSE(rig.renderAsking(2));
+
+    // Silent again once the stop's ramp is spent, and a skip loses nothing.
+    auto index = 3;
+    while (!rig.renderAsking(index) && index < 8)
+        ++index;
+    CHECK(index < 8);
+    CHECK(rig.peak() == 0.0f);
+
+    // The rig has no pool to re-cue the reader, so the relaunch sounds a block later.
+    rig.handle.play(std::nullopt);
+    CHECK_FALSE(rig.renderAsking(index + 1));
+    CHECK_FALSE(rig.renderAsking(index + 2));
+    CHECK(rig.peak() > 0.0f);
+}
+
+TEST_CASE("A session stop on a block boundary is not silent while its ramp sounds",
+          "[engine][clip][session]") {
+    AudioRig rig;
+    rig.give(1, 4.0, std::make_unique<ConstantReader>());
+    rig.publish();
+
+    rig.handle.play(std::nullopt);
+    rig.roll(0, 2);
+    REQUIRE(rig.peak() > 0.0f);
+
+    rig.handle.stop(kBeatsPerBlock * 3);
+    const auto silent = rig.renderAsking(3);
+    CHECK(rig.peak() > 0.0f);
+    CHECK_FALSE(silent);
+
+    CHECK(rig.renderAsking(4));
+    CHECK(rig.peak() == 0.0f);
 }
 
 TEST_CASE("SoundTouch has output ready from the first sample of a session loop",

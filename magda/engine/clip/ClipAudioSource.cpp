@@ -169,6 +169,28 @@ void ClipAudioSource::gatherSession(const TrackClipPlayback& track, const BlockI
     forEachSlot(*handles.get(), track, renderSlot);
 }
 
+bool ClipAudioSource::silentFor(const BlockInfo& block) const {
+    // A stopped block still cues the next Play (renderMaterial).
+    if (section_ != Section::Session || handles_ == nullptr || !block.playing)
+        return false;
+
+    for (const auto& voice : voices_)
+        if (voice.clipId() != INVALID_CLIP_ID || voice.fading())
+            return false;
+
+    const LaunchHandleFeed::Reader handles(*handles_);
+    if (!handles)
+        return true;
+
+    const auto [first, last] = handles->rangeFor(trackId_);
+    return std::none_of(first, last, [](const LaunchHandleTable::Entry& entry) {
+        if (entry.handle == nullptr)
+            return false;
+        const auto& status = entry.handle->blockStatus();
+        return status.soundingAtStart || status.playingAtEnd() || status.beforeEvent.playing();
+    });
+}
+
 void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float> out) {
     // Here rather than in the gather, which every path through the render can
     // return before reaching: a stale edge would release a voice twice.
