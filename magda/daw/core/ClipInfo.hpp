@@ -1351,36 +1351,27 @@ struct ClipInfo {
     /// placement.lengthBeats; use this (not getTimelineLength) for the slot
     /// progress overlay so the bar and the playhead stay consistent.
     double getTimelineLoopLength(double projectBPM) const {
-        if (loopEnabled && isValidBpm(projectBPM)) {
-            // MIDI keeps its loop length in clip beats; an audio clip's is the
-            // beat view of its event's source region.
-            const auto* event = primaryEvent();
-            const double beats = event != nullptr ? event->loopLengthBeats() : loopLengthBeats;
-            if (beats > 0.0)
-                return beats * 60.0 / projectBPM;
-        }
+        if (loopEnabled && isValidBpm(projectBPM))
+            return sessionCycleBeats(projectBPM) * 60.0 / projectBPM;
         return getTimelineLength(projectBPM);
     }
 
     /// What one pass of a session slot is worth, in project beats: the loop
     /// region when the clip loops, else the placement. The launcher retriggers
-    /// on it and the playhead wraps on it (#2674). In beat mode the region's
-    /// source beats are project beats; a free-playing clip plays the region
-    /// at its own rate, so its pass is those seconds at the project tempo.
+    /// on it and the playhead wraps on it (#2674). An audio region is its two
+    /// boundaries mapped through the warp (loopLengthInBeats); a free-playing
+    /// clip with no region set loops the whole file at its own rate.
     double sessionCycleBeats(double projectBpm) const {
         if (loopEnabled) {
             const auto* event = primaryEvent();
             if (event == nullptr) {
                 if (loopLengthBeats > 0.0)
                     return loopLengthBeats;
-            } else if (event->autoTempo) {
-                if (const double beats = event->loopLengthBeats(); beats > 0.0)
-                    return beats;
-            } else if (isValidBpm(projectBpm)) {
-                const double seconds = event->loopLengthSamples > 0
-                                           ? event->loopLengthSeconds()
-                                           : event->sourceDurationSeconds();
-                if (seconds > 0.0)
+            } else if (const double beats = loopLengthInBeats(projectBpm); beats > 0.0) {
+                return beats;
+            } else if (!event->autoTempo && isValidBpm(projectBpm) &&
+                       event->loopLengthSamples <= 0) {
+                if (const double seconds = event->sourceDurationSeconds(); seconds > 0.0)
                     return event->sourceToTimeline(seconds) * projectBpm / 60.0;
             }
         }

@@ -192,6 +192,12 @@ target_include_directories(magda_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # Standing rule for the engine: nothing real-time-concurrent is hand-rolled.
 target_include_directories(magda_engine PUBLIC ${CMAKE_SOURCE_DIR}/third_party/farbot/include)
 
+# The render pool's ready queue and worker semaphore, the ones Tracktion's
+# lock-free player schedules with (#2786): rigtorp MPMCQueue (MIT) and
+# moodycamel LightweightSemaphore (Simplified BSD / zlib). Header-only.
+target_include_directories(magda_engine PUBLIC ${CMAKE_SOURCE_DIR}/third_party/rigtorp/include
+                                               ${CMAKE_SOURCE_DIR}/third_party/moodycamel/include)
+
 # The two stretch engines (#2037). Signalsmith Stretch is header-only and MIT;
 # SoundTouch is LGPL-2.1 and its own static target, which is what keeps it
 # replaceable (third_party/soundtouch/SOURCES.md). Both are vendored under

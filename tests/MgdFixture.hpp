@@ -289,4 +289,8 @@ juce::File fixtureCorpusDir();
 /// Every fixture the corpus declares.
 const std::vector<MgdFixture>& mgdFixtures();
 
+/// N tracks of a tone into one hosted Retrospect each, for the parity bench only: how each
+/// engine's cost grows per hosted instance. Written by scripts/make_retrospect_scale.py.
+const std::vector<MgdFixture>& retrospectScaleFixtures();
+
 }  // namespace magda::nulldiff

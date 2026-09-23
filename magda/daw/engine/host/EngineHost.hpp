@@ -263,6 +263,10 @@ class EngineHost {
      */
     std::shared_ptr<audio::MagdaDevice> renderedDevice(const ChainNodePath& devicePath) const;
 
+    /// @brief Rewrites every parameter of the MAGDA device at @p devicePath on its next block.
+    /// For a state restored onto the rendered instance, which resets its parameters.
+    void invalidateParameterWritesAt(const ChainNodePath& devicePath) const;
+
     /**
      * @brief What the plugin last reported for @p paramIndex, if anything.
      *

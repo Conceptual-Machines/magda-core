@@ -179,6 +179,11 @@ void EngineMagdaDevice::prepare(const magda::engine::RenderContext& context) {
     prepared_ = true;
     sampleRate_ = context.sampleRate;
 
+    // The first block after a prepare writes every slot: what the device holds
+    // is whatever it was constructed or restored with.
+    for (auto& mapping : parameters_)
+        mapping.written = std::numeric_limits<float>::quiet_NaN();
+
     device_->prepare({
         .sampleRate = context.sampleRate,
         .maximumBlockSize = context.maxBlockSize,
@@ -249,6 +254,10 @@ double EngineMagdaDevice::tailSeconds() const {
 }
 
 void EngineMagdaDevice::writeParameters(const magda::engine::DeviceParams& params) {
+    if (parametersStale_.exchange(false, std::memory_order_acq_rel))
+        for (auto& mapping : parameters_)
+            mapping.written = std::numeric_limits<float>::quiet_NaN();
+
     for (int slot = 0; slot < static_cast<int>(parameters_.size()); ++slot) {
         auto& mapping = parameters_[static_cast<std::size_t>(slot)];
         const auto values = params[mapping.plan];
@@ -267,9 +276,13 @@ void EngineMagdaDevice::writeParameters(const magda::engine::DeviceParams& param
                 magda::ParameterUtils::realToNormalized(values.value(), mapping.info);
         }
 
-        // Written every block, as the fork's adapter does, so nothing the device sets on
-        // itself outlasts what the model says.
-        device_->setParameterValue(slot, mapping.normalized);
+        // Only when the model moved it. A device sets its own parameters at
+        // most while it restores state, which prepare() or a live restore's
+        // invalidateParameterWrites() follows.
+        if (mapping.normalized != mapping.written) {
+            mapping.written = mapping.normalized;
+            device_->setParameterValue(slot, mapping.normalized);
+        }
     }
 }
 

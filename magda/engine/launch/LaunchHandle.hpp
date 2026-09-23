@@ -442,6 +442,12 @@ class LaunchHandle {
     /// as possible.
     void releaseSection(std::optional<double> monotonicBeat = {});
 
+    /// The monotonic beat a queued @ref releaseSection waits for. Absent when
+    /// none is queued, or one is queued for the next block.
+    std::optional<double> queuedReleaseBeat() const {
+        return pending_ && pending_->releasesSection ? pending_->position : std::nullopt;
+    }
+
     /**
      * @brief Blocks in which a loop was too short to be re-triggered fully.
      *

@@ -84,6 +84,10 @@ class ClipVoice {
      */
     void releaseInto(juce::dsp::AudioBlock<float> out, int offset, int fadeSamples);
 
+    /// Stop with no ramp, dropping any tail still sounding: for a track whose output
+    /// is being discarded, so the next entry starts clean (#2787).
+    void cut();
+
     /// Carry an unfinished release ramp into @p out. Called every block for a
     /// voice that is @ref fading, and does nothing for one that is not.
     void carryTail(juce::dsp::AudioBlock<float> out);

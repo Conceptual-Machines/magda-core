@@ -204,11 +204,15 @@ adapter::EngineExternalDevice* externalIn(engine::EngineDevice& device) {
 
 /// @brief The MAGDA device inside @p device, or null if it is not one (#2585).
 /// Unwraps the trace the same way externalIn does, and for the same reason.
-audio::MagdaDevice* magdaIn(engine::EngineDevice& device) {
+adapter::EngineMagdaDevice* hostedMagdaIn(engine::EngineDevice& device) {
     if (auto* tracing = dynamic_cast<TracingDevice*>(&device))
-        return magdaIn(tracing->wrapped());
+        return hostedMagdaIn(tracing->wrapped());
 
-    auto* hosted = dynamic_cast<adapter::EngineMagdaDevice*>(&device);
+    return dynamic_cast<adapter::EngineMagdaDevice*>(&device);
+}
+
+audio::MagdaDevice* magdaIn(engine::EngineDevice& device) {
+    auto* hosted = hostedMagdaIn(device);
     return hosted != nullptr ? &hosted->device() : nullptr;
 }
 
@@ -3019,7 +3023,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
      * instance open for the duration of the read, whatever a publish does to
      * the plan in between.
      */
-    std::shared_ptr<audio::MagdaDevice> renderedDevice(const ChainNodePath& devicePath) const {
+    std::shared_ptr<engine::EngineDevice> heldDeviceAt(const ChainNodePath& devicePath) const {
         if (session_ == nullptr || !devicePath.isValid())
             return {};
 
@@ -3028,7 +3032,17 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (slot == devicePaths_.end())
             return {};
 
-        auto held = session_->device(slot->first);
+        return session_->device(slot->first);
+    }
+
+    void invalidateParameterWritesAt(const ChainNodePath& devicePath) const {
+        if (auto held = heldDeviceAt(devicePath))
+            if (auto* hosted = hostedMagdaIn(*held))
+                hosted->invalidateParameterWrites();
+    }
+
+    std::shared_ptr<audio::MagdaDevice> renderedDevice(const ChainNodePath& devicePath) const {
+        auto held = heldDeviceAt(devicePath);
         if (held == nullptr)
             return {};
 
@@ -3560,6 +3574,10 @@ HostParameters EngineHost::describeDeviceParameters(const ChainNodePath& deviceP
 std::shared_ptr<audio::MagdaDevice> EngineHost::renderedDevice(
     const ChainNodePath& devicePath) const {
     return impl_->renderedDevice(devicePath);
+}
+
+void EngineHost::invalidateParameterWritesAt(const ChainNodePath& devicePath) const {
+    impl_->invalidateParameterWritesAt(devicePath);
 }
 
 std::optional<float> EngineHost::observedParameter(const ChainNodePath& devicePath,

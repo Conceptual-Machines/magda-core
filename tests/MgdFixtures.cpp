@@ -677,4 +677,40 @@ const std::vector<MgdFixture>& mgdFixtures() {
     return fixtures;
 }
 
+const std::vector<MgdFixture>& retrospectScaleFixtures() {
+    struct Scale {
+        const char* file;
+        const char* name;
+    };
+    static constexpr Scale kScales[] = {
+        {"parity/retrospect-scale-1.mgd", "scale.retrospect.1"},
+        {"parity/retrospect-scale-2.mgd", "scale.retrospect.2"},
+        {"parity/retrospect-scale-4.mgd", "scale.retrospect.4"},
+        {"parity/retrospect-scale-8.mgd", "scale.retrospect.8"},
+        {"parity/retrospect-scale-16.mgd", "scale.retrospect.16"},
+        {"parity/retrospect-scale-32.mgd", "scale.retrospect.32"},
+    };
+
+    static const std::vector<MgdFixture> fixtures = [] {
+        std::vector<MgdFixture> built;
+        for (const auto& scale : kScales) {
+            MgdFixture fixture;
+            fixture.file = scale.file;
+            fixture.savedBy = "scripts/make_retrospect_scale.py";
+            fixture.isMigrationFixture = false;
+            fixture.declaration = declarationFor(
+                scale.name, "tracks of one tone each into their own hosted Retrospect", 0.0, 32.0);
+            fixture.declaration.tier = AudioTier::Invariants;
+            fixture.declaration.expectedHostedAssertions = {"juce_File.cpp:219"};
+            fixture.hostedPlugins = {"Retrospect"};
+            fixture.sources = {{.fileName = "mdh_drm120_touch_stp_(copy)_20260701_145457.wav",
+                                .material = toneFor(20.0, 330.0),
+                                .covers = "every track's clip"}};
+            built.push_back(std::move(fixture));
+        }
+        return built;
+    }();
+    return fixtures;
+}
+
 }  // namespace magda::nulldiff

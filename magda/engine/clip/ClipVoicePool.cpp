@@ -41,6 +41,9 @@ struct Candidate {
     double cueSeconds = 0.0;
     bool session = false;
     bool loopDestination = false;
+
+    /// Where a queued hand-back picks it up mid-material, for a held track (#2787).
+    std::optional<double> resumesAt;
 };
 
 /**
@@ -278,6 +281,60 @@ void ClipVoicePool::fillNow() {
             return;
 }
 
+void ClipVoicePool::announceHandBacks(const TrackSectionTable* sections, const BlockInfo& block) {
+    if (sections == nullptr)
+        return;
+
+    for (const auto& entry : sections->entries) {
+        auto& state = *entry.state;
+        if (state.handBackBeat == state.announcedHandBack)
+            continue;
+
+        const auto written = noticesWritten_.load(std::memory_order_relaxed);
+        if (written - noticesRead_.load(std::memory_order_acquire) >= kHandBackNotices)
+            return;
+
+        // Monotonic and timeline beats advance together between wraps, so the release's
+        // timeline beat is this block's plus the distance to it; the pool wraps it into the loop.
+        notices_[written % kHandBackNotices] = HandBackNotice{
+            entry.trackId, state.handBackBeat ? block.beats.start + (*state.handBackBeat -
+                                                                     block.monotonicBeats.start)
+                                              : std::numeric_limits<double>::quiet_NaN()};
+        noticesWritten_.store(written + 1, std::memory_order_release);
+        state.announcedHandBack = state.handBackBeat;
+    }
+}
+
+void ClipVoicePool::drainHandBacks() {
+    const auto written = noticesWritten_.load(std::memory_order_acquire);
+    auto read = noticesRead_.load(std::memory_order_relaxed);
+
+    for (; read != written; ++read) {
+        const auto& notice = notices_[read % kHandBackNotices];
+        if (std::isnan(notice.timelineBeat))
+            handBacks_.erase(notice.trackId);
+        else
+            handBacks_[notice.trackId] = notice.timelineBeat;
+    }
+
+    noticesRead_.store(read, std::memory_order_release);
+}
+
+std::optional<double> ClipVoicePool::handBackFor(TrackId trackId, double windowStart,
+                                                 const LoopRange& loop,
+                                                 const TempoMap& tempo) const {
+    const auto found = handBacks_.find(trackId);
+    if (found == handBacks_.end())
+        return std::nullopt;
+
+    auto beat = found->second;
+    if (loop.valid() && beat >= loop.endBeat)
+        beat = loop.startBeat + std::fmod(beat - loop.startBeat, loop.endBeat - loop.startBeat);
+
+    const auto seconds = tempo.beatToTime(beat);
+    return seconds >= windowStart ? std::optional{seconds} : std::nullopt;
+}
+
 std::int64_t ClipVoicePool::cueFor(const AudioClipPlayback& clip, const AudioEventPlayback& event,
                                    double seconds, const Reader& reader) const {
     const auto positionAt = [&](double at) {
@@ -423,7 +480,8 @@ void ClipVoicePool::settleStandby(Reader& reader) {
 void ClipVoicePool::prepareStandby(Reader& reader, const AudioClipPlayback& clip,
                                    const AudioEventPlayback& event, bool loopDestination,
                                    double windowStart, bool playing, double loopSeconds,
-                                   const TempoMap& tempo, std::uint64_t snapshot) {
+                                   const TempoMap& tempo, std::uint64_t snapshot,
+                                   std::optional<double> resumesAt) {
     // Taken, so a voice renders from it now: it becomes the entry's own stretcher, and the one it
     // replaces dies with the last table that named it, which no block reaches once published.
     if (reader.standby != nullptr && reader.standby->claimed.load(std::memory_order_acquire))
@@ -439,18 +497,20 @@ void ClipVoicePool::prepareStandby(Reader& reader, const AudioClipPlayback& clip
     // Kept while the start it was primed for may be the one playing now, whatever comes next:
     // play can begin in the callback that takes it, and withdrawing it first leaves that start
     // to prime.
-    if (const auto* standby = reader.standby.get(); playing && standby != nullptr) {
+    if (const auto* standby = reader.standby.get(); playing && standby != nullptr && !resumesAt) {
         const auto cell = static_cast<double>(standby->key.cell) / context_.sampleRate;
         if (cell <= windowStart && windowStart < cell + kReadAheadBridgeSeconds)
             return;
     }
 
-    // Where the voice's first block of the next start opens. Stopped, that is wherever play lands:
+    // Where the voice's first block of the next start opens. A queued hand-back is that start
+    // for a held track. Otherwise, stopped, that is wherever play lands:
     // the cursor, inside the clip or at its start. Rolling, it is the event's own start while
     // that is still ahead, and otherwise the loop's return into it.
     const auto starts = std::max(clip.span.seconds.start, event.span.seconds.start);
     const auto ends = std::min(clip.span.seconds.end, event.span.seconds.end);
-    const auto opens = !playing && starts <= windowStart && windowStart < ends
+    const auto opens = resumesAt ? resumesAt
+                       : !playing && starts <= windowStart && windowStart < ends
                            ? std::optional<double>{windowStart}
                        : starts > windowStart ? std::optional<double>{starts}
                        : loopDestination      ? std::optional<double>{std::max(loopSeconds, starts)}
@@ -486,6 +546,8 @@ void ClipVoicePool::service() {
         tempo = tempo_;
     }
 
+    drainHandBacks();
+
     const auto snapshotSerial = snapshot != nullptr ? snapshot->serial : 0;
     const auto windowStart = position_.load(std::memory_order_relaxed);
     const auto playing = playing_.load(std::memory_order_relaxed);
@@ -511,6 +573,7 @@ void ClipVoicePool::service() {
         if (snapshot != nullptr) {
             for (const auto& track : snapshot->tracks) {
                 candidates.clear();
+                const auto handBack = handBackFor(track.trackId, windowStart, loop, tempo);
 
                 for (const auto& clip : track.audio) {
                     if (!reachesInto(clip.span, windowStart, windowEnd))
@@ -520,10 +583,19 @@ void ClipVoicePool::service() {
                         if (!reachesInto(event.span, windowStart, windowEnd))
                             continue;
 
-                        candidates.push_back(
-                            Candidate{clip.clipId, event.eventId, &clip, &event, event.span.seconds,
-                                      event.span.seconds.start <= windowStart,
-                                      std::max(windowStart, event.span.seconds.start)});
+                        // A held track renders nothing, so a hand-back inside the event is
+                        // a start mid-material rather than the stream carrying on.
+                        const auto resumes =
+                            handBack &&
+                            std::max(clip.span.seconds.start, event.span.seconds.start) <
+                                *handBack &&
+                            *handBack < std::min(clip.span.seconds.end, event.span.seconds.end);
+
+                        candidates.push_back(Candidate{
+                            clip.clipId, event.eventId, &clip, &event, event.span.seconds,
+                            event.span.seconds.start <= windowStart,
+                            resumes ? *handBack : std::max(windowStart, event.span.seconds.start),
+                            false, false, resumes ? handBack : std::nullopt});
                     }
                 }
 
@@ -693,8 +765,20 @@ void ClipVoicePool::service() {
                             }
                         }
 
+                        // Sought once per hand-back. Safe on a held track: nothing reads it
+                        // until the hand-back, and the cue is taken up at a block's top.
+                        const auto resumeCue =
+                            candidate.resumesAt
+                                ? cueFor(*candidate.clip, event, *candidate.resumesAt, reuse)
+                                : std::numeric_limits<std::int64_t>::min();
+                        if (reuse.stream != nullptr && candidate.resumesAt &&
+                            reuse.resumeCue != resumeCue)
+                            reuse.stream->seek(resumeCue);
+                        reuse.resumeCue = resumeCue;
+
                         prepareStandby(reuse, *candidate.clip, event, candidate.loopDestination,
-                                       windowStart, playing, loopSeconds, tempo, snapshotSerial);
+                                       windowStart, playing, loopSeconds, tempo, snapshotSerial,
+                                       candidate.resumesAt);
                         wanted.emplace(key, std::move(reuse));
                         continue;
                     }
@@ -708,8 +792,13 @@ void ClipVoicePool::service() {
                     if (reader.stream == nullptr)
                         ++unreadable;
 
+                    if (candidate.resumesAt)
+                        reader.resumeCue =
+                            cueFor(*candidate.clip, event, *candidate.resumesAt, reader);
+
                     prepareStandby(reader, *candidate.clip, event, candidate.loopDestination,
-                                   windowStart, playing, loopSeconds, tempo, snapshotSerial);
+                                   windowStart, playing, loopSeconds, tempo, snapshotSerial,
+                                   candidate.resumesAt);
                     wanted.emplace(key, std::move(reader));
                 }
             }

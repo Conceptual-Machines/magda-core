@@ -424,6 +424,55 @@ TEST_CASE("the plan's resolved values reach the device's parameters", "[engine][
     CHECK(hosted->device().parameterValue(0) == Catch::Approx(position).margin(1.0e-5));
 }
 
+TEST_CASE("a live state restore has the adapter write every parameter again",
+          "[engine][devices][2786]") {
+    magda::DeviceInfo model;
+    model.pluginId = kInstrumentId;
+
+    auto device = adapter::createEngineDevice(model);
+    REQUIRE(device != nullptr);
+
+    auto* hosted = dynamic_cast<adapter::EngineMagdaDevice*>(device.get());
+    REQUIRE(hosted != nullptr);
+    REQUIRE(hosted->device().parameterCount() > 0);
+
+    const auto info = hosted->device().parameterInfo(0);
+    const auto context = contextFor();
+    device->prepare(context);
+
+    magda::engine::ResolvedParams table;
+    table.prepare(1);
+    table.beginBlock(context.maxBlockSize);
+    table.setDomain(0, magda::ParameterUtils::domainOf(info));
+
+    const auto position = magda::ParameterUtils::realToNormalized(
+        info.minValue + 0.75f * (info.maxValue - info.minValue), info);
+    auto* slot = table.slotFor(0);
+    REQUIRE(slot != nullptr);
+    slot[0] = {.startSample = 0, .startValue = position, .endValue = position};
+    table.setSegmentCount(0, 1);
+
+    Block block(context);
+    const std::vector<int> slots{0};
+    const std::vector<std::uint8_t> driven{0};
+    const auto run = [&] {
+        auto deviceBlock = block.deviceBlock();
+        deviceBlock.params = table.device(0, 1, slots, driven);
+        device->process(deviceBlock);
+    };
+
+    run();
+    REQUIRE(hosted->device().parameterValue(0) == Catch::Approx(position).margin(1.0e-5));
+
+    // What a restore on the running instance does, with no prepare() after it.
+    const auto reset = position > 0.5f ? 0.0f : 1.0f;
+    hosted->device().setParameterValue(0, reset);
+    hosted->invalidateParameterWrites();
+
+    run();
+    CHECK(hosted->device().parameterValue(0) == Catch::Approx(position).margin(1.0e-5));
+}
+
 TEST_CASE("the MIDI scratch holds every stream the port's budget admits",
           "[engine][devices][2174]") {
     // The budget is bytes and the cheapest event is one byte of data, so the

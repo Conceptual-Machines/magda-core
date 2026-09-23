@@ -2,12 +2,14 @@
 
 #include <juce_core/juce_core.h>
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 
 #include "clip/ClipAudioSource.hpp"
@@ -318,6 +320,15 @@ class ClipVoicePool {
         return tablesPublished_.load(std::memory_order_relaxed);
     }
 
+    /**
+     * @brief Tell the pool which held tracks have a release queued, and for when (#2787).
+     *
+     * From the audio thread, after advanceTrackSections. Only changes are sent; one the lane
+     * has no room for is sent again next block. A held track's arrangement renders nothing, so
+     * its streams are cued and a standby primed for the hand-back.
+     */
+    void announceHandBacks(const TrackSectionTable* sections, const BlockInfo& block);
+
     /// Whether starts the pool sees coming get a standby stretcher primed here. On unless a
     /// caller comparing against priming in the callback turns it off.
     void setPrimesStandbys(bool primes) {
@@ -399,14 +410,27 @@ class ClipVoicePool {
         /// renders from.
         std::shared_ptr<StandbyStretcher> standby;
 
+        /// Where the stream was sought to for a pending hand-back, so it is sought once.
+        std::int64_t resumeCue = std::numeric_limits<std::int64_t>::min();
+
         bool operator==(const Reader& other) const {
             return stream == other.stream && path == other.path && read == other.read &&
                    cueSamples == other.cueSamples && stretcher == other.stretcher &&
                    setup == other.setup && preRoll == other.preRoll && session == other.session &&
                    retainedStart == other.retainedStart && retainedCount == other.retainedCount &&
-                   standby == other.standby;
+                   standby == other.standby && resumeCue == other.resumeCue;
         }
     };
+
+    /// A held track's queued release, as the audio thread saw it: the timeline beat it lands
+    /// on, unwrapped, or NaN once none is queued.
+    struct HandBackNotice {
+        TrackId trackId = INVALID_TRACK_ID;
+        double timelineBeat = 0.0;
+    };
+
+    /// Room for one scene's worth of tracks changing at once, and then some.
+    static constexpr std::size_t kHandBackNotices = 256;
 
     using Streams = std::map<Key, Reader>;
 
@@ -416,13 +440,20 @@ class ClipVoicePool {
                                 const AudioEventPlayback& event, double loopSeconds,
                                 const TempoMap& tempo);
 
-    /// Promote a claimed standby, and prime one for the start @p reader is due to make next: where
-    /// a stopped transport lands, its event's own, or the loop's return at @p loopSeconds.
-    /// Arrangement only.
+    /// Promote a claimed standby, and prime one for the start @p reader is due to make next: a
+    /// hand-back at @p resumesAt, where a stopped transport lands, its event's own, or the loop's
+    /// return at @p loopSeconds. Arrangement only.
     void prepareStandby(Reader& reader, const AudioClipPlayback& clip,
                         const AudioEventPlayback& event, bool loopDestination, double windowStart,
                         bool playing, double loopSeconds, const TempoMap& tempo,
-                        std::uint64_t snapshot);
+                        std::uint64_t snapshot, std::optional<double> resumesAt);
+
+    /// Take up what the audio thread announced. Provisioning thread.
+    void drainHandBacks();
+
+    /// Where @p trackId is handed back, in seconds, if that is still ahead of @p windowStart.
+    std::optional<double> handBackFor(TrackId trackId, double windowStart, const LoopRange& loop,
+                                      const TempoMap& tempo) const;
 
     /// Let go of @p reader's standby. Withdrawn under the transition a claim uses, so no voice
     /// takes it after this; one a voice took first is its stretcher now and becomes the entry's,
@@ -465,6 +496,14 @@ class ClipVoicePool {
     std::atomic<int> tablesPublished_{0};
     std::atomic<bool> primesStandbys_{true};
     std::atomic<int> standbysTaken_{0};
+
+    /// The audio thread's lane to this pool: one writer, one reader, no locks.
+    std::array<HandBackNotice, kHandBackNotices> notices_{};
+    std::atomic<std::uint64_t> noticesWritten_{0};
+    std::atomic<std::uint64_t> noticesRead_{0};
+
+    /// Every queued hand-back announced, by track. Provisioning thread only.
+    std::map<TrackId, double> handBacks_;
 };
 
 /**

@@ -2,6 +2,7 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include <atomic>
 #include <limits>
 #include <memory>
 #include <string>
@@ -109,6 +110,12 @@ class EngineMagdaDevice final : public magda::engine::EngineDevice {
         return properties_;
     }
 
+    /// Makes the next block write every slot again. Any thread; for a host that
+    /// restored the device's state live, which resets its parameters without a prepare().
+    void invalidateParameterWrites() {
+        parametersStale_.store(true, std::memory_order_release);
+    }
+
   private:
     void writeParameters(const magda::engine::DeviceParams& params);
     void sizeMidiScratch();
@@ -132,9 +139,12 @@ class EngineMagdaDevice final : public magda::engine::EngineDevice {
         float position = std::numeric_limits<float>::quiet_NaN();
         magda::ParameterUtils::ParameterDomain domain;
         float normalized = 0.0f;
+        /// What the device was last handed; NaN until the first write after a prepare().
+        float written = std::numeric_limits<float>::quiet_NaN();
     };
 
     std::vector<ParameterMapping> parameters_;
+    std::atomic<bool> parametersStale_{false};
     std::vector<float*> channels_;
     /// The key's channel pointers, sized in prepare() to what the device
     /// declared. Read-only: a device reads its key and never writes it.

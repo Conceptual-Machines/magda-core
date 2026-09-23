@@ -20,6 +20,23 @@ bool reachesInto(const SnapshotSpan& span, const BlockInfo& block) {
     return span.seconds.start < block.seconds.end && span.seconds.end > block.seconds.start;
 }
 
+/// @p block from sample @p offset on, where a hand-back lands. Cut by samples, as
+/// materialSubBlock is, and not continuous: nothing played the part before it.
+BlockInfo tailFrom(const BlockInfo& block, int offset) {
+    const auto rate = block.rate();
+    const auto skipped = rate > 0.0 ? static_cast<double>(offset) / rate : 0.0;
+
+    auto tail = block;
+    tail.numSamples = block.numSamples - offset;
+    tail.seconds.start = block.seconds.start + skipped;
+    tail.beats.start = block.beatAtTime(tail.seconds.start);
+    tail.monotonicSeconds.start = block.monotonicSeconds.start + skipped;
+    tail.monotonicBeats.start = block.monotonicBeats.start + (tail.beats.start - block.beats.start);
+    tail.monotonicSamples.start = block.monotonicSamples.start + SampleDuration{offset};
+    tail.continuous = false;
+    return tail;
+}
+
 }  // namespace
 
 ClipAudioSource::ClipAudioSource(TrackId trackId, ClipSnapshotFeed& clips, ClipStreamFeed& streams)
@@ -163,11 +180,32 @@ void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float
     const auto* snapshot = clips_.live();
     const auto* track = snapshot != nullptr ? snapshot->find(trackId_) : nullptr;
 
-    renderMaterial(block, out, snapshot, track);
+    if (section_ == Section::Session) {
+        renderMaterial(block, out, snapshot, track);
+        return;
+    }
 
     // Every Arrangement source has a hold to apply (#2485), handles or not.
-    if (section_ == Section::Arrangement)
-        applySectionHold(out, clips_.holdFor(trackId_));
+    const auto* hold = clips_.holdFor(trackId_);
+    const auto numSamples = static_cast<int>(out.getNumSamples());
+    const auto from = hold != nullptr ? std::clamp(hold->from.value, 0, numSamples) : 0;
+
+    if (block.playing && hold != nullptr && !hold->sounds()) {
+        // Held for the whole block, so nothing is rendered to be thrown away. The
+        // hand-back starts its voices afresh, primed by the pool (#2787).
+        for (auto& voice : voices_)
+            voice.cut();
+        out.clear();
+    } else if (block.playing && from > 0) {
+        // Handed back inside the block: the voices start where the hand-back lands.
+        out.getSubBlock(0, static_cast<std::size_t>(from)).clear();
+        renderMaterial(tailFrom(block, from), out.getSubBlock(static_cast<std::size_t>(from)),
+                       snapshot, track);
+    } else {
+        renderMaterial(block, out, snapshot, track);
+    }
+
+    applySectionHold(out, hold);
 }
 
 void ClipAudioSource::applySectionHold(juce::dsp::AudioBlock<float> out,
@@ -190,9 +228,8 @@ void ClipAudioSource::applySectionHold(juce::dsp::AudioBlock<float> out,
         handOver_.push(
             out.getSubBlock(static_cast<std::size_t>(from), static_cast<std::size_t>(count)));
 
-    // The session's share is dropped, but rendering it advanced every voice,
-    // stream and stretcher: that is what makes taking the track back land where
-    // the timeline says rather than where the arrangement lost it.
+    // The session's share is dropped. A block it owned whole was never rendered,
+    // and taking the track back starts at the timeline's position (#2787).
     if (from > 0)
         out.getSubBlock(0, static_cast<std::size_t>(from)).clear();
     if (until < numSamples)

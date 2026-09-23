@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <map>
 #include <ranges>
 
@@ -190,6 +191,9 @@ void MagdaCompiledPolyInstrument::rebuildEngineState(int sampleRate) {
     // Every slot the dsp pins an [idx:N] for; the rest stay empty and are
     // wrapper-only controls (Gain, Voice Mode).
     voiceZonesBySlot_.assign(static_cast<size_t>(hostSlotCountValue()), {});
+    fannedNormalized_.assign(static_cast<size_t>(hostSlotCountValue()),
+                             std::numeric_limits<float>::quiet_NaN());
+    fannedBend_ = std::numeric_limits<float>::quiet_NaN();
     for (int i = 0; i < hostSlotCountValue(); ++i)
         if (auto it = harvester.zonesByIdx.find(i); it != harvester.zonesByIdx.end())
             voiceZonesBySlot_[static_cast<size_t>(i)] = it->second;
@@ -493,6 +497,8 @@ void MagdaCompiledPolyInstrument::process(DeviceProcessContext& context) {
     if (mode != lastVoiceMode_) {
         resetAllVoices();  // flush hung notes when switching Poly <-> Mono/Legato
         lastVoiceMode_ = mode;
+        std::ranges::fill(fannedNormalized_, std::numeric_limits<float>::quiet_NaN());
+        fannedBend_ = std::numeric_limits<float>::quiet_NaN();
     }
 
     // compute() would mix silence and move nothing but the window grid, and the fan-out below
@@ -504,10 +510,18 @@ void MagdaCompiledPolyInstrument::process(DeviceProcessContext& context) {
         return;
     }
 
-    // Fan each voice macro out to every poly voice (Glide forced to 0 so reused
-    // voices never portamento) and to the mono voice (real value, incl. Glide).
+    // Fan each voice macro that moved out to every poly voice (Glide forced to 0 so reused
+    // voices never portamento) and to the mono voice (real value, incl. Glide). The zones
+    // hold what they were last handed; a rebuilt engine forgets, and clears the cache.
     for (int slot = 0; slot < hostSlotCountValue(); ++slot) {
-        const auto real = static_cast<FAUSTFLOAT>(slotRealValue(slot));
+        const float norm = hostParams_[static_cast<size_t>(slot)]->getCurrentValue();
+        auto& fanned = fannedNormalized_[static_cast<size_t>(slot)];
+        if (norm == fanned)
+            continue;
+        fanned = norm;
+
+        const auto real = static_cast<FAUSTFLOAT>(
+            magda::ParameterUtils::normalizedToReal(norm, domainForSlot(slot)));
         const FAUSTFLOAT polyReal = (slot == glideVoiceSlot()) ? FAUSTFLOAT(0) : real;
         for (FAUSTFLOAT* zone : voiceZonesBySlot_[static_cast<size_t>(slot)])
             if (zone)
@@ -516,14 +530,16 @@ void MagdaCompiledPolyInstrument::process(DeviceProcessContext& context) {
             *monoZonesBySlot_[static_cast<size_t>(slot)] = real;
     }
 
-    // The wheel's last position, refreshed every block: a rebuilt engine state
-    // or a mode switch has to pick up where the player left it rather than
-    // snapping back to centre.
-    for (FAUSTFLOAT* zone : voiceBendZones_)
-        if (zone)
-            *zone = currentBend_;
-    if (monoBendZone_)
-        *monoBendZone_ = currentBend_;
+    // The wheel's last position, so a rebuilt engine state picks up where the
+    // player left it rather than snapping back to centre.
+    if (currentBend_ != fannedBend_) {
+        fannedBend_ = currentBend_;
+        for (FAUSTFLOAT* zone : voiceBendZones_)
+            if (zone)
+                *zone = currentBend_;
+        if (monoBendZone_)
+            *monoBendZone_ = currentBend_;
+    }
 
     ::dsp* active =
         (mode == Poly) ? static_cast<::dsp*>(poly_.get()) : static_cast<::dsp*>(monoVoice_.get());
@@ -611,6 +627,7 @@ void MagdaCompiledPolyInstrument::process(DeviceProcessContext& context) {
 
             if (m.isPitchWheel()) {
                 currentBend_ = static_cast<float>(m.getPitchWheelValue() - 8192) / 8192.0f;
+                fannedBend_ = currentBend_;
                 for (FAUSTFLOAT* zone : voiceBendZones_)
                     if (zone)
                         *zone = currentBend_;

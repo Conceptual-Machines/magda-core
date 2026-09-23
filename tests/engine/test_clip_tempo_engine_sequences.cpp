@@ -192,10 +192,8 @@ struct ModelFixture {
 
 }  // namespace
 
-// Fails today: sessionCycleBeats reads AudioEvent::loopLengthBeats, which ignores
-// the warp map. Passes after phase 4.
 TEST_CASE("A warped session slot's cycle is the warp-aware loop length",
-          "[engine][clip][tempo][sequence][!mayfail]") {
+          "[engine][clip][tempo][sequence]") {
     auto clip = makeSessionClip(1, 0, 0.0, 8.0);
     clip.loopEnabled = true;
     auto& event = eventOf(clip);

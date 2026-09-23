@@ -226,6 +226,8 @@ OfflineRenderResult renderOfflineOn(Executor& executor, const PlanValues& values
                 if (clips != nullptr) {
                     advanceTrackSections(clips->sections(), clips->live(), launcher.handles,
                                          segment.block);
+                    if (voices != nullptr)
+                        voices->announceHandBacks(clips->sections(), segment.block);
                 }
 
                 executor.process(values, segment.block, piece);
