@@ -36,6 +36,7 @@ The fixture rig stages it with every source pointed at its stand-in material
 | --- | --- |
 | `load_ms` | From the commit until the engine renders all of the model: the plan published and settled (native), or the graph built and every proxy rendered (Tracktion). Includes waiting for every external plugin to load. |
 | `cpu_mean_us`, `cpu_p99_us` | Wall time of each device callback, over `--passes` passes of the project's window. One untimed pass comes first. Pulled at the device's pace (`--speed` 1 is real time), so worker threads sleep and wake as they do live. |
+| `cpu_total_us` | CPU time the whole process spent per block over the same passes, across every thread: callback, workers and readers. A callback can finish in time while workers spin; this is what catches it. |
 | `session_mb` | Highest physical footprint during load and play, minus the footprint just before the commit. The footprint is sampled every 5 ms: `phys_footprint` on macOS, resident set on Linux, private commit on Windows. |
 | `latency_samples` | The latency the engine reports. A second run takes every clip out, adds one track playing a seeded noise burst at the window's start, and exports the window through the engine's own offline render. The export is trimmed by the reported latency, so the burst lands late by exactly what the report left out. The burst is found by cross-correlation, because some projects keep sounding with no clips (test tones, generators). |
 
@@ -43,7 +44,6 @@ The JSON also carries figures that are recorded but not gated:
 
 - `p50`, `p95` and `max` of the callback times.
 - Callbacks that overran their block.
-- Process CPU per block, across every thread.
 - The output peak. A silent run is failed rather than measured.
 
 ## Thresholds

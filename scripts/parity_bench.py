@@ -204,6 +204,7 @@ def figures(result):
     values = {
         "cpu_mean_us": result["cpu"]["mean_us"],
         "cpu_p99_us": result["cpu"]["p99_us"],
+        "cpu_total_us": result["cpu"]["process_cpu_us_per_block"],
         "session_mb": result["memory"]["session_mb"],
         "load_ms": result["load_ms"],
     }
