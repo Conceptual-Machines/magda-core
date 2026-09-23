@@ -574,28 +574,31 @@ void installHostedPlugins(juce::AudioPluginFormatManager& formats,
 }
 
 void addInstalledPluginsNamed(const std::vector<std::string>& names,
-                              juce::AudioPluginFormatManager& formats,
-                              juce::KnownPluginList& known) {
+                              juce::AudioPluginFormatManager& formats, juce::KnownPluginList& known,
+                              const juce::FileSearchPath& extraFolders) {
     if (names.empty())
         return;
 
     // A project names a plugin what its author's host called it, and a bundle is
     // named what its vendor called the file. Those agree often and not always:
-    // FabFilter ships "Pro-L 2" inside "FabFilter Pro-L 2.vst3". So the match is
-    // containment in either direction, folded for case.
+    // FabFilter ships "Pro-L 2" inside "FabFilter Pro-L 2.vst3", Xfer "Serum 2" as
+    // "Serum2.vst3". So the match is containment in either direction, folded for
+    // case and spaces.
     //
     // Loose on purpose, and it can only be loose in one direction that matters.
     // A false match costs one bundle loaded that resolution then declines,
     // because matchInstalledPlugin has the project's own identifier to check
     // against and this does not; a missed match costs a case that never runs on
     // a machine that could have measured it.
-    const auto matches = [&names](const juce::String& identifier) {
+    const auto fold = [](const juce::String& text) {
+        return text.toLowerCase().removeCharacters(" ");
+    };
+    const auto matches = [&names, &fold](const juce::String& identifier) {
         const auto file = juce::File::createFileWithoutCheckingPath(identifier);
-        const auto base =
-            (file.exists() ? file.getFileNameWithoutExtension() : identifier).toLowerCase();
+        const auto base = fold(file.exists() ? file.getFileNameWithoutExtension() : identifier);
 
-        return std::any_of(names.begin(), names.end(), [&base](const std::string& name) {
-            const auto folded = juce::String(name).toLowerCase();
+        return std::any_of(names.begin(), names.end(), [&base, &fold](const std::string& name) {
+            const auto folded = fold(juce::String(name));
             return folded.isNotEmpty() && (base.contains(folded) || folded.contains(base));
         });
     };
@@ -606,8 +609,10 @@ void addInstalledPluginsNamed(const std::vector<std::string>& names,
             continue;
 
         // The walk, which reads directory entries and loads nothing.
-        const auto found =
-            format->searchPathsForPlugins(format->getDefaultLocationsToSearch(), true);
+        auto folders = format->getDefaultLocationsToSearch();
+        for (int folder = 0; folder < extraFolders.getNumPaths(); ++folder)
+            folders.addIfNotAlreadyThere(extraFolders.getRawString(folder));
+        const auto found = format->searchPathsForPlugins(folders, true);
 
         for (const auto& identifier : found) {
             if (!matches(identifier))

@@ -713,4 +713,50 @@ const std::vector<MgdFixture>& retrospectScaleFixtures() {
     return fixtures;
 }
 
+const std::vector<MgdFixture>& parityOnlyFixtures() {
+    static const std::vector<MgdFixture> fixtures = [] {
+        MgdFixture fixture;
+        fixture.file = "parity/synthstack.mgd";
+        fixture.savedBy = "scripts/build_synthstack_session.py";
+        fixture.isMigrationFixture = false;
+        fixture.declaration = declarationFor(
+            "project.synthstack",
+            "sixteen MIDI tracks into hosted synths, one or two hosted effects each", 0.0, 32.0);
+        fixture.declaration.tier = AudioTier::Invariants;
+        fixture.hostedPlugins = {"Addictive Drums 2",
+                                 "CS-80 V4",
+                                 "Cyberdrive",
+                                 "Dexed",
+                                 "Diva",
+                                 "Jup-8 V4",
+                                 "Kick 3",
+                                 "Mini V3",
+                                 "Phase Plant",
+                                 "Pro-C 2",
+                                 "Pro-L 2",
+                                 "Pro-MB",
+                                 "Pro-Q 3",
+                                 "Pro-Q 4",
+                                 "Pro-R 2",
+                                 "Prophet-5 V",
+                                 "Prophet-VS V",
+                                 "Serum 2",
+                                 "Serum 2 FX",
+                                 "ShaperBox 3",
+                                 "ValhallaDelay",
+                                 "ValhallaFreqEcho",
+                                 "ValhallaPlate",
+                                 "ValhallaRoom",
+                                 "ValhallaShimmer",
+                                 "ValhallaSpaceModulator",
+                                 "ValhallaSupermassive",
+                                 "ValhallaUberMod",
+                                 "ValhallaVintageVerb",
+                                 "kHs Chorus",
+                                 "kHs Trance Gate"};
+        return std::vector<MgdFixture>{std::move(fixture)};
+    }();
+    return fixtures;
+}
+
 }  // namespace magda::nulldiff
