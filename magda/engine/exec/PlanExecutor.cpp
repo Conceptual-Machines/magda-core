@@ -377,6 +377,8 @@ void PlanExecutor::reset() {
     reroutedOps_.clear();
     epoch_ = 0;
     audioSourceForOp_.clear();
+    sessionSourceForOp_.clear();
+    sessionScratch_.clear();
     midiSourceForOp_.clear();
     meterForOp_.clear();
     boundMeterCount_ = 0;
@@ -445,6 +447,9 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     reroutedOps_.clear();
     insertForOp_.assign(numOps, nullptr);
     audioSourceForOp_.assign(numOps, nullptr);
+    sessionSourceForOp_.assign(numOps, nullptr);
+    sessionScratch_.clear();
+    sessionScratch_.resize(numOps);
     midiSourceForOp_.assign(numOps, nullptr);
     meterForOp_.assign(numOps, nullptr);
     midiTapForOp_.assign(numOps, nullptr);
@@ -666,11 +671,22 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
         const auto trackId = op.key.trackId;
 
         switch (op.kind) {
+            // The arrangement and the session of one track, in one op: only one of them sounds
+            // outside a hand-over. A session source is reported only by a host that has a
+            // launcher at all, which is what a non-empty binding map says (#2301).
             case OpKind::ClipAudio:
                 audioSourceForOp_[i] = findAudioSource(bindings.clipAudio, trackId);
                 if (audioSourceForOp_[i] == nullptr)
                     messages.push_back(describe(i) + "no clip audio source bound for track " +
                                        std::to_string(trackId) + ", it renders silence");
+
+                sessionSourceForOp_[i] = findAudioSource(bindings.sessionAudio, trackId);
+                if (sessionSourceForOp_[i] != nullptr)
+                    sessionScratch_[i].setSize(context.numChannels, context.maxBlockSize, false,
+                                               true, false);
+                else if (!bindings.sessionAudio.empty())
+                    messages.push_back(describe(i) + "no session audio source bound for track " +
+                                       std::to_string(trackId) + ", its session is silent");
                 break;
 
             // Not reported here: an input op is compiled whether or not the
@@ -680,18 +696,6 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
             // published with, and publishValues asks again for every set after.
             case OpKind::AudioInput:
                 audioSourceForOp_[i] = findAudioSource(bindings.audioInputs, trackId);
-                break;
-
-            // Reported only by a host that has a launcher at all, which is what
-            // a non-empty binding map says. A session op is emitted for every
-            // clip-carrying track whether or not the project has a session
-            // (#2301), so binding none of them is an ordinary configuration.
-            // Binding some and not others is a track that lost its source.
-            case OpKind::SessionAudio:
-                audioSourceForOp_[i] = findAudioSource(bindings.sessionAudio, trackId);
-                if (audioSourceForOp_[i] == nullptr && !bindings.sessionAudio.empty())
-                    messages.push_back(describe(i) + "no session audio source bound for track " +
-                                       std::to_string(trackId) + ", it renders silence");
                 break;
 
             case OpKind::SessionMidi:
@@ -1586,13 +1590,20 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
 
     switch (op.kind) {
         case OpKind::ClipAudio:
-        case OpKind::AudioInput:
-        case OpKind::SessionAudio: {
+        case OpKind::AudioInput: {
             auto out = audioOut(id, 0, numSamples);
             if (value.silent || audioSourceForOp_[i] == nullptr)
                 out.clear();
             else
                 audioSourceForOp_[i]->render(block, out);
+
+            // Added after the arrangement, the order the track's mix summed the two in.
+            if (auto* session = sessionSourceForOp_[i]; session != nullptr && !value.silent) {
+                auto scratch = juce::dsp::AudioBlock<float>(sessionScratch_[i])
+                                   .getSubBlock(0, static_cast<std::size_t>(numSamples));
+                session->render(block, scratch);
+                out.add(scratch);
+            }
             break;
         }
 

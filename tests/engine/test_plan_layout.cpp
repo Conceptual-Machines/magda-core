@@ -254,9 +254,8 @@ TEST_CASE("A delay holding no samples is not a buffer and not an op",
             const auto& input = layout.plan.ops[i].inputs.front();
             CHECK(layout.slot(static_cast<OpId>(i), 0) == layout.slot(input.op, input.port));
         }
-        // Two per track for its own arrangement and session sections (#2301),
-        // and two at the master for the two tracks it sums.
-        REQUIRE(delays == 6);
+        // Two at the master for the two tracks it sums; a track's clips are one source.
+        REQUIRE(delays == 2);
     }
 
     SECTION("a delay that has samples to hold is not elided") {

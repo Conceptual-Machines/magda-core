@@ -157,6 +157,10 @@ PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderCont
                         return factory_.createClipAudioSource(id);
                     }))
                     bindings.clipAudio[trackId] = source;
+                if (auto* source = realiseOne(sessionAudio_, trackId, context, [this](TrackId id) {
+                        return factory_.createSessionAudioSource(id);
+                    }))
+                    bindings.sessionAudio[trackId] = source;
                 break;
 
             case OpKind::ClipMidi:
@@ -164,13 +168,6 @@ PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderCont
                         return factory_.createClipMidiSource(id);
                     }))
                     bindings.clipMidi[trackId] = source;
-                break;
-
-            case OpKind::SessionAudio:
-                if (auto* source = realiseOne(sessionAudio_, trackId, context, [this](TrackId id) {
-                        return factory_.createSessionAudioSource(id);
-                    }))
-                    bindings.sessionAudio[trackId] = source;
                 break;
 
             case OpKind::SessionMidi:
@@ -283,7 +280,6 @@ std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
             case OpKind::ClipMidi:
             case OpKind::AudioInput:
             case OpKind::MidiInput:
-            case OpKind::SessionAudio:
             case OpKind::SessionMidi:
                 keep.tracks.insert(op.key.trackId);
                 break;

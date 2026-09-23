@@ -1624,19 +1624,9 @@ void Compiler::emitTrack(const TrackInfo& track) {
     if (carriesClips(track)) {
         const OpKey key{track.id,          INVALID_RACK_ID,   INVALID_CHAIN_ID,
                         INVALID_DEVICE_ID, OpRole::ClipAudio, 0};
+        // The session plays through the same op, so putting a clip in a scene no more
+        // recompiles a plan than dropping one on the timeline does (#2301).
         audioSources.push_back(PortRef{addOp(OpKind::ClipAudio, key, {}, {SignalKind::Audio}), 0});
-
-        // The session's own source, beside the arrangement's. Emitted for every
-        // clip-carrying track on the same terms: whether a track has clips is a
-        // property of the snapshot, so putting a clip in a scene must no more
-        // recompile a plan than dropping one on the timeline (#2301).
-        //
-        // Arrangement first, session second, and fixed: a mix sums in compiled
-        // order.
-        const OpKey sessionKey{track.id,          INVALID_RACK_ID,      INVALID_CHAIN_ID,
-                               INVALID_DEVICE_ID, OpRole::SessionAudio, 0};
-        audioSources.push_back(
-            PortRef{addOp(OpKind::SessionAudio, sessionKey, {}, {SignalKind::Audio}), 0});
     }
 
     // Every input a track names is compiled, and the monitor switch is a value
