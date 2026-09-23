@@ -240,6 +240,12 @@ bool MidiBridge::injectMidiToTrack(TrackId trackId, const juce::MidiMessage& msg
 }
 
 void MidiBridge::enableMidiInput(const juce::String& deviceId) {
+    // Unattached, nothing would ever close the port: forgetEngine() is what does. A unit
+    // test that set a renderer without attaching one left a hardware input open across
+    // JUCE shutdowns, and a later MIDI device change crashed into it.
+    if (owner_ == nullptr)
+        return;
+
     juce::ScopedLock lock(routingLock_);
 
     // Check if already listening
