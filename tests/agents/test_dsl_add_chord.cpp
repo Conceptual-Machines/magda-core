@@ -5,6 +5,7 @@
 #include "magda/daw/api/magda_api_live.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/SelectionManager.hpp"
+#include "magda/daw/core/TempoMap.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/core/UndoManager.hpp"
 #include "magda/daw/project/ProjectManager.hpp"
@@ -542,3 +543,41 @@ TEST_CASE("notes.add_chord - undo removes all chord notes", "[dsl][chord][undo]"
 
 // End of notes.add_chord tests
 // Arpeggio tests are in test_dsl_add_arpeggio.cpp
+
+namespace {
+/// 120 BPM for the first two beats, 60 after.
+class StepTempoMap final : public TempoMap {
+  public:
+    double beatToTime(double beat) const override {
+        return beat <= 2.0 ? beat * 0.5 : 1.0 + (beat - 2.0);
+    }
+    double timeToBeat(double seconds) const override {
+        return seconds <= 1.0 ? seconds * 2.0 : 2.0 + (seconds - 1.0);
+    }
+    double bpmAt(double beat) const override {
+        return beat < 2.0 ? 120.0 : 60.0;
+    }
+};
+}  // namespace
+
+// Clip seconds walk the tempo map, not the project's scalar tempo (#2791).
+TEST_CASE("clips.select reads clip seconds through the tempo map", "[dsl][clips][tempo]") {
+    resetState();
+    magda::MagdaApiLive api;
+    const StepTempoMap map;
+    api.setProjectTempoMap([&map] { return &map; });
+    dsl::Interpreter interp(api);
+
+    REQUIRE(interp.execute("track(name=\"Test\", type=\"midi\")"));
+    const auto trackId = TrackManager::getInstance().getTracks().back().id;
+    auto& cm = ClipManager::getInstance();
+    const auto early = cm.createMidiClipBeats(trackId, 0.0, 1.0);
+    const auto late = cm.createMidiClipBeats(trackId, 4.0, 1.0);
+
+    // Beat 4 is 3 s on the map; the scalar 120 would put it at 2 s.
+    REQUIRE(interp.execute("track(name=\"Test\").clips.select(clip.start > 2.5)"));
+
+    const auto& selected = SelectionManager::getInstance().getSelectedClips();
+    CHECK(selected.count(late) == 1);
+    CHECK(selected.count(early) == 0);
+}

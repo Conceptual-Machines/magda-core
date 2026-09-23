@@ -25,6 +25,7 @@
 #include "../daw/core/MidiNoteCommands.hpp"
 #include "../daw/core/PluginAlias.hpp"
 #include "../daw/core/SelectionManager.hpp"
+#include "../daw/core/TempoMap.hpp"
 #include "../daw/core/TrackManager.hpp"
 #include "../daw/core/TrackPropertyCommands.hpp"
 #include "../daw/core/UndoManager.hpp"
@@ -1707,6 +1708,8 @@ bool Interpreter::executeSelectClips(Tokenizer& tok) {
     bool isStringField = (field.value == "name" || field.value == "type");
 
     const double beatsPerBar = barsToBeats(1.0);
+    // Seconds walk the tempo map; the constant tempo stands in only headless.
+    const TempoMap* tempoMap = api_.project().tempoMap();
     double projectBpm = api_.project().getCurrentProjectInfo().tempo;
     if (!isValidBpm(projectBpm))
         projectBpm = 120.0;
@@ -1761,9 +1764,11 @@ bool Interpreter::executeSelectClips(Tokenizer& tok) {
         else if (field.value == "start_bar")
             val = clip->placement.startBeat / beatsPerBar + 1.0;
         else if (field.value == "length")
-            val = clip->getTimelineLength(projectBpm);
+            val = tempoMap != nullptr ? clip->getTimelineLength(*tempoMap)
+                                      : clip->getTimelineLength(projectBpm);
         else if (field.value == "start")
-            val = clip->getTimelineStart(projectBpm);
+            val = tempoMap != nullptr ? clip->getTimelineStart(*tempoMap)
+                                      : clip->getTimelineStart(projectBpm);
         else if (field.value == "start_beats")
             val = clip->startBeats;
         else if (field.value == "id")

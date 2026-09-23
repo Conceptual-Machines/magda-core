@@ -20,12 +20,20 @@ void ProjectApiLive::setTimeSignature(int numerator, int denominator) {
     ProjectManager::getInstance().setTimeSignature(numerator, denominator);
 }
 
+const TempoMap* ProjectApiLive::tempoMap() const {
+    return engineTempoMap_ ? engineTempoMap_() : nullptr;
+}
+
 void ProjectApiLive::setEngineTempoWriter(std::function<void(double)> writer) {
     engineTempoWriter_ = std::move(writer);
 }
 
 void ProjectApiLive::setEngineTimeSignatureWriter(std::function<void(int, int)> writer) {
     engineTimeSignatureWriter_ = std::move(writer);
+}
+
+void ProjectApiLive::setEngineTempoMap(std::function<const TempoMap*()> getter) {
+    engineTempoMap_ = std::move(getter);
 }
 
 }  // namespace magda
