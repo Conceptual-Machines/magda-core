@@ -543,6 +543,16 @@ NativeRender renderNative(const Case& value, const InstalledPlugins& installed) 
                 source->prepare(context);
                 bindings.clipAudio[op.key.trackId] = source.get();
                 audioSources[op.key.trackId] = std::move(source);
+
+                // The session plays through the same op, bound only for a case that has one:
+                // the executor reports an unbound session only when something else bound one.
+                if (hasSession) {
+                    auto session = std::make_unique<ClipAudioSource>(
+                        op.key.trackId, clips, voices.feed(), handles, Section::Session);
+                    session->prepare(context);
+                    bindings.sessionAudio[op.key.trackId] = session.get();
+                    sessionAudioSources[op.key.trackId] = std::move(session);
+                }
                 break;
             }
 
@@ -556,23 +566,7 @@ NativeRender renderNative(const Case& value, const InstalledPlugins& installed) 
                 break;
             }
 
-            // The session's two, bound only for a case that has one. The plan
-            // emits these for every clip-carrying track whether or not the
-            // project has a session, and the executor reports an unbound
-            // session op only when something else bound one, so a case with no
-            // slots binds none of them and says nothing (PlanExecutor.cpp).
-            case OpKind::SessionAudio: {
-                if (!hasSession)
-                    break;
-
-                auto source = std::make_unique<ClipAudioSource>(
-                    op.key.trackId, clips, voices.feed(), handles, Section::Session);
-                source->prepare(context);
-                bindings.sessionAudio[op.key.trackId] = source.get();
-                sessionAudioSources[op.key.trackId] = std::move(source);
-                break;
-            }
-
+            // The session's MIDI, bound only for a case that has one, as above.
             case OpKind::SessionMidi: {
                 if (!hasSession)
                     break;

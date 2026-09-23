@@ -117,15 +117,14 @@ constexpr int kMaxMultiOutPairs = 64;
  * cheap ops is a later back-end pass over the same flat list.
  */
 enum class OpKind : std::uint8_t {
-    ClipAudio,  ///< audio clip playback for one track (reads the clip snapshot)
-    ClipMidi,   ///< MIDI clip playback for one track
+    /// A track's audio clips: the arrangement, and whichever session slot a launch handle has
+    /// playing (#2301). One op, because outside a hand-over only one of them sounds.
+    ClipAudio,
+    ClipMidi,  ///< MIDI clip playback for one track
 
-    /// The session's audio and MIDI for one track: whichever slot a launch
-    /// handle currently has playing (#2301). One op per track rather than per
-    /// slot, because a track sounds one session clip at a time and an op per
-    /// slot would put a silent node in the graph for every scene on every
-    /// track, and would change the plan's shape whenever a scene is added.
-    SessionAudio,
+    /// The session's MIDI for one track: whichever slot a launch handle currently has playing
+    /// (#2301). One op per track rather than per slot, so adding a scene does not reshape
+    /// the plan.
     SessionMidi,
     AudioInput,  ///< live hardware audio input
     MidiInput,   ///< live MIDI input
@@ -172,13 +171,12 @@ enum class OpKind : std::uint8_t {
  * second half of the differ's identity key.
  */
 enum class OpRole : std::uint8_t {
-    ClipAudio,            ///< the track's audio clip source
+    ClipAudio,            ///< the track's audio clips, arrangement and session
     ClipMidi,             ///< the track's MIDI clip source
     LiveAudioInput,       ///< the track's live audio input
     LiveInputMeter,       ///< the live audio input's level tap, ahead of the monitor gate
     LiveMidiInput,        ///< the track's live MIDI input
     LiveInputGate,        ///< whether the track hears its live audio input
-    SessionAudio,         ///< the track's session audio, whichever slot is playing
     SessionMidi,          ///< the track's session MIDI
     TrackAudioInput,      ///< sum of everything feeding the track's chain head
     TrackMidiInput,       ///< merge of everything feeding the track's chain head

@@ -715,6 +715,10 @@ class PlanExecutor {
     /// round trip is one object.
     std::vector<EngineInsert*> insertForOp_;
     std::vector<EngineAudioSource*> audioSourceForOp_;
+    /// A ClipAudio op's session source, added through its own scratch so that two tracks
+    /// rendering on two threads never share one.
+    std::vector<EngineAudioSource*> sessionSourceForOp_;
+    std::vector<juce::AudioBuffer<float>> sessionScratch_;
     std::vector<EngineMidiSource*> midiSourceForOp_;
 
     /// Handed to ops whose input slot the plan left unconnected. Kept

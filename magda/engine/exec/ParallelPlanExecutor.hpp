@@ -179,7 +179,8 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     /// The drain on this thread alone, in plan order, which is dependency order.
     void renderInPlanOrder();
 
-    /// Seed the counts and queue the ops ready at the top of a block. Answers how many.
+    /// Seed the counts and queue the ops ready at the top of a block. Answers how many of them
+    /// a worker would render.
     int startSchedule();
 
     void enqueue(OpId op);

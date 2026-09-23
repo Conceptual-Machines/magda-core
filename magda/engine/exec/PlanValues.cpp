@@ -502,7 +502,6 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
         case OpRole::ClipMidi:
         case OpRole::LiveAudioInput:
         case OpRole::LiveMidiInput:
-        case OpRole::SessionAudio:
         case OpRole::SessionMidi:
         case OpRole::TrackAudioInput:
         case OpRole::TrackMidiInput:

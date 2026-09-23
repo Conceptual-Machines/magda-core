@@ -49,6 +49,7 @@ struct ThreadTallies {
     std::array<Tally, BlockProfile::kKinds> ops;
     std::array<Tally, BlockProfile::PhaseCount> phases;
     std::array<DeviceTally, kDeviceSlots> devices;
+    std::array<std::atomic<std::uint64_t>, BlockProfile::CounterCount> counters{};
 };
 
 std::mutex& registryLock() {
@@ -112,13 +113,23 @@ void BlockProfile::addDevice(const char* name, std::chrono::steady_clock::durati
     }
 }
 
+void BlockProfile::count(Counter counter, int amount) {
+    auto& value = mine().counters[static_cast<std::size_t>(counter)];
+    value.store(value.load(std::memory_order_relaxed) + static_cast<std::uint64_t>(amount),
+                std::memory_order_relaxed);
+}
+
 void BlockProfile::report() {
     static const char* const kPhaseNames[PhaseCount] = {
         "beginBlock", "midiPrefix", "resolveParams", "drain (ops)",
         "serialTail", "wholeBlock", "callback"};
+    static const char* const kCounterNames[CounterCount] = {
+        "initial ready", "  of them caller-only", "workers signalled",
+        "worker sleeps", "wakes without work",    "chains on workers"};
 
     std::array<std::uint64_t, kKinds> opNanos{}, opCounts{};
     std::array<std::uint64_t, PhaseCount> phaseNanos{}, phaseCounts{};
+    std::array<std::uint64_t, CounterCount> counters{};
     std::map<std::string, std::pair<std::uint64_t, std::uint64_t>> devices;
 
     {
@@ -132,6 +143,8 @@ void BlockProfile::report() {
                 phaseNanos[phase] += tallies->phases[phase].nanos.load();
                 phaseCounts[phase] += tallies->phases[phase].count.load();
             }
+            for (std::size_t counter = 0; counter < CounterCount; ++counter)
+                counters[counter] += tallies->counters[counter].load();
             for (const auto& slot : tallies->devices) {
                 if (slot.key.load(std::memory_order_acquire) == 0)
                     continue;
@@ -157,6 +170,11 @@ void BlockProfile::report() {
             std::fprintf(stderr, "  %-18s %10.1f %10.2f\n", kPhaseNames[phase],
                          static_cast<double>(phaseNanos[phase]) / 1000.0 / blocks,
                          static_cast<double>(phaseCounts[phase]) / blocks);
+
+    std::fprintf(stderr, "  %-22s %10s\n", "scheduling", "per blk");
+    for (std::size_t counter = 0; counter < CounterCount; ++counter)
+        std::fprintf(stderr, "  %-22s %10.2f\n", kCounterNames[counter],
+                     static_cast<double>(counters[counter]) / blocks);
 
     std::fprintf(stderr, "  %-28s %10s %10s %10s\n", "device", "us/block", "per blk", "us/each");
     for (const auto& [name, tally] : devices)

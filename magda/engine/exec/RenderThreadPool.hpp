@@ -122,8 +122,8 @@ class RenderThreadPool {
     bool takeWork(Worker& worker);
 
     /// Pause, yield, then sleep, as Tracktion's hybrid pool does. Returns at once while work
-    /// is queued.
-    void wait(int& pauses);
+    /// is queued, and true when it slept.
+    bool wait(int& pauses);
 
     std::atomic<int> queued_{0};
     moodycamel::LightweightSemaphore semaphore_;

@@ -211,11 +211,11 @@ TEST_CASE("Delta liveness reads the dry edge only while dry is subtracted",
 TEST_CASE("State effects sources and MIDI observers remain required without consumers",
           "[engine][exec][required-ops]") {
     RenderPlan plan;
-    plan.ops.push_back(audioOp(OpKind::ClipAudio));     // 0
-    plan.ops.push_back(midiOp(OpKind::ClipMidi));       // 1
-    plan.ops.push_back(audioOp(OpKind::SessionAudio));  // 2
-    plan.ops.push_back(midiOp(OpKind::SessionMidi));    // 3
-    auto audioInput = audioOp(OpKind::AudioInput);      // 4
+    plan.ops.push_back(audioOp(OpKind::ClipAudio));   // 0
+    plan.ops.push_back(midiOp(OpKind::ClipMidi));     // 1
+    plan.ops.push_back(audioOp(OpKind::ClipAudio));   // 2
+    plan.ops.push_back(midiOp(OpKind::SessionMidi));  // 3
+    auto audioInput = audioOp(OpKind::AudioInput);    // 4
     audioInput.liveness = magda::engine::LivenessDomain::Live;
     plan.ops.push_back(audioInput);
     auto midiInput = midiOp(OpKind::MidiInput);  // 5
