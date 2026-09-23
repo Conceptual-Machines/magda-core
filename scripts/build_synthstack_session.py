@@ -6,6 +6,11 @@ plugins' default patches. Start MAGDA with MCP on and an empty project open, run
 then save the project over tests/corpus/parity/synthstack.mgd.
 
     python3 scripts/build_synthstack_session.py
+
+--free builds the same session from free plugins only (Surge XT, Vital, Dexed), for a machine
+without the commercial set; save that one over tests/corpus/parity/synthstack_free.mgd.
+--fabfilter-serum builds it from FabFilter, Serum 2 and the free synths; save that one over
+tests/corpus/parity/synthstack_fabfilter_serum.mgd.
 """
 
 import json
@@ -43,7 +48,46 @@ TRACKS = [
     ("Sweep", "Prophet-VS V", ["ValhallaUberMod"], "lead"),
 ]
 MASTER_FX = ["Pro-Q 4", "Pro-L 2"]
-MASTER_PATH = {"trackId": -2, "section": "fx", "trackLevel": False,
+
+FREE_TRACKS = [
+    ("Drums", "Surge XT", ["Surge XT Effects", "Surge XT Effects"], "drums"),
+    ("Kick", "Surge XT", ["Surge XT Effects"], "kick"),
+    ("Bass", "Surge XT", ["Surge XT Effects", "Surge XT Effects"], "bass"),
+    ("Sub", "Dexed", ["Surge XT Effects"], "sub"),
+    ("Lead", "Vital", ["Surge XT Effects", "Surge XT Effects"], "lead"),
+    ("Pad", "Vital", ["Surge XT Effects", "Surge XT Effects"], "pad"),
+    ("Chords", "Dexed", ["Surge XT Effects", "Surge XT Effects"], "chords"),
+    ("Arp", "Dexed", ["Surge XT Effects"], "arp"),
+    ("Brass", "Surge XT", ["Surge XT Effects"], "pad"),
+    ("Keys", "Dexed", ["Surge XT Effects"], "chords"),
+    ("Pluck", "Surge XT", ["Surge XT Effects", "Surge XT Effects"], "arp32"),
+    ("Stab", "Vital", ["Surge XT Effects", "Surge XT Effects"], "stab"),
+    ("Mono", "Dexed", ["Surge XT Effects"], "bass"),
+    ("Texture", "Surge XT", ["Surge XT Effects", "Surge XT Effects"], "pad"),
+    ("Gate", "Vital", ["Surge XT Effects", "Surge XT Effects"], "pad"),
+    ("Sweep", "Vital", ["Surge XT Effects"], "lead"),
+]
+FREE_MASTER_FX = []
+
+FABFILTER_SERUM_TRACKS = [
+    ("Drums", "Surge XT", ["Pro-C 3", "Pro-L 2"], "drums"),
+    ("Kick", "One", ["Pro-Q 4", "Saturn 2"], "kick"),
+    ("Bass", "Serum 2", ["Pro-Q 4", "Pro-C 3"], "bass"),
+    ("Sub", "Twin 3", ["Pro-Q 4"], "sub"),
+    ("Lead", "Serum 2", ["Timeless 3", "Pro-R 2"], "lead"),
+    ("Pad", "Vital", ["Volcano 3", "Pro-R 2"], "pad"),
+    ("Chords", "Twin 3", ["Pro-Q 4", "Pro-R 2"], "chords"),
+    ("Arp", "Vital", ["Timeless 3"], "arp"),
+    ("Brass", "Twin 3", ["Pro-R 2"], "pad"),
+    ("Keys", "Dexed", ["Timeless 3"], "chords"),
+    ("Pluck", "Vital", ["Saturn 2", "Pro-Q 4"], "arp32"),
+    ("Stab", "Serum 2", ["Serum 2 FX", "Pro-MB"], "stab"),
+    ("Mono", "One", ["Saturn 2"], "bass"),
+    ("Texture", "Vital", ["Volcano 3", "Pro-R 2"], "pad"),
+    ("Gate", "Serum 2", ["Pro-G", "Timeless 3"], "pad"),
+    ("Sweep", "Surge XT", ["Volcano 3"], "lead"),
+]
+MASTER_PATH = {"trackId": -2, "section": "fx", "trackLevel": True,
                "topLevelDeviceId": None, "steps": []}
 
 
@@ -102,15 +146,24 @@ def bar_notes(kind, bar, rng):
 
 
 def main():
+    if "--free" in sys.argv[1:]:
+        tracks, master_fx = FREE_TRACKS, FREE_MASTER_FX
+    elif "--fabfilter-serum" in sys.argv[1:]:
+        tracks, master_fx = FABFILTER_SERUM_TRACKS, MASTER_FX
+    else:
+        tracks, master_fx = TRACKS, MASTER_FX
     magda = Magda()
     rng = random.Random(2790)
     catalog = {}
     for device in magda.call("devices.catalog")["items"]:
         if device["format"] == "vst3":
             catalog.setdefault(device["name"], device["catalogId"])
+    missing = sorted(({d for _, i, fx, _ in tracks for d in [i] + fx} | set(master_fx)) - set(catalog))
+    if missing:
+        raise SystemExit(f"not in MAGDA's VST3 catalog, scan for them first: {missing}")
 
     magda.call("project.setTempo", {"tempo": TEMPO})
-    for name, instrument, effects, kind in TRACKS:
+    for name, instrument, effects, kind in tracks:
         track = magda.call("tracks.create", {"name": name, "type": "audio"})["id"]
         for device in [instrument] + effects:
             magda.call("devices.add", {"trackId": track, "catalogId": catalog[device]})
@@ -126,9 +179,9 @@ def main():
                                                      "lengthBeats": length})
         print(name, instrument, effects, flush=True)
 
-    for device in MASTER_FX:
+    for device in master_fx:
         magda.call("devices.add", {"catalogId": catalog[device], "parentPath": MASTER_PATH})
-    print("Master", MASTER_FX)
+    print("Master", master_fx)
 
 
 if __name__ == "__main__":

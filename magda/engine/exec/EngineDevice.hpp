@@ -240,6 +240,12 @@ class EngineAudioSource {
 
     /// Fill @p out completely; it arrives uncleared.
     virtual void render(const BlockInfo&, juce::dsp::AudioBlock<float> out) = 0;
+
+    /// Whether render() would add nothing to @p block and change no state, so a
+    /// caller may skip it. Asked before render(), on the audio thread.
+    virtual bool silentFor(const BlockInfo&) const {
+        return false;
+    }
 };
 
 /** A MIDI source behind a ClipMidi or MidiInput op. */

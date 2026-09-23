@@ -114,6 +114,10 @@ class ClipAudioSource final : public EngineAudioSource {
      */
     void render(const BlockInfo& block, juce::dsp::AudioBlock<float> out) override;
 
+    /// A playing session block with no slot sounding or stopping and no voice
+    /// holding a clip or a tail. Always false for the arrangement.
+    bool silentFor(const BlockInfo& block) const override;
+
     /**
      * @brief Clips that should have sounded and had no reader to sound through.
      *
