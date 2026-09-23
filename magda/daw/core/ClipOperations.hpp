@@ -44,29 +44,6 @@ class ClipOperations {
     static constexpr double MAX_SPEED_RATIO = 4.0;
     static constexpr double MIN_MIDI_NOTE_LENGTH_BEATS = 1.0 / 16.0;
 
-    static inline bool hasDefaultPlacement(const ClipInfo& clip) {
-        constexpr double eps = 0.000001;
-        return std::abs(clip.placement.startBeat) <= eps && std::abs(clip.startBeats) <= eps &&
-               std::abs(clip.placement.lengthBeats - 4.0) <= eps &&
-               std::abs(clip.lengthBeats - 4.0) <= eps;
-    }
-
-    static inline void seedPlacementFromTimelineCacheIfNeeded(ClipInfo& clip, double bpm) {
-        if (!isValidBpm(bpm) || !hasDefaultPlacement(clip))
-            return;
-
-        constexpr double eps = 0.000001;
-        const double placementStartSeconds = clip.getTimelineStart(bpm);
-        const double placementLengthSeconds = clip.getTimelineLength(bpm);
-        if (std::abs(clip.startTime - placementStartSeconds) <= eps &&
-            std::abs(clip.length - placementLengthSeconds) <= eps) {
-            return;
-        }
-
-        clip.setPlacementBeats(clip.startTime * bpm / 60.0, clip.length * bpm / 60.0);
-        clip.deriveTimesFromBeats(bpm);
-    }
-
     struct MidiNoteRange {
         double startBeat = 0.0;
         double lengthBeats = 0.0;
@@ -209,7 +186,6 @@ class ClipOperations {
         startBeat = juce::jmax(0.0, startBeat);
         lengthBeats = juce::jmax(MIN_CLIP_LENGTH * bpm / 60.0, lengthBeats);
         clip.setPlacementBeats(startBeat, lengthBeats);
-        clip.deriveTimesFromBeats(bpm);
     }
 
     static inline void setTimelinePlacement(ClipInfo& clip, double newStartTime, double newLength,
@@ -223,12 +199,10 @@ class ClipOperations {
     }
 
     static inline void setStartBeat(ClipInfo& clip, double newStartBeat, double bpm) {
-        seedPlacementFromTimelineCacheIfNeeded(clip, bpm);
         setBeatPlacement(clip, newStartBeat, clip.placement.lengthBeats, bpm);
     }
 
     static inline void setTimelineStart(ClipInfo& clip, double newStartTime, double bpm) {
-        seedPlacementFromTimelineCacheIfNeeded(clip, bpm);
         if (!isValidBpm(bpm))
             return;
         setStartBeat(clip, newStartTime * bpm / 60.0, bpm);
@@ -263,7 +237,6 @@ class ClipOperations {
      */
     static inline void resizeContainerFromLeft(ClipInfo& clip, double newLength,
                                                double bpm = DEFAULT_BPM) {
-        seedPlacementFromTimelineCacheIfNeeded(clip, bpm);
         newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
         const double clipStart = clip.getTimelineStart(bpm);
         const double clipLength = clip.getTimelineLength(bpm);
@@ -342,7 +315,6 @@ class ClipOperations {
      */
     static inline void resizeContainerFromRight(ClipInfo& clip, double newLength,
                                                 double bpm = DEFAULT_BPM) {
-        seedPlacementFromTimelineCacheIfNeeded(clip, bpm);
         newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
         const bool hasExplicitBeatStart = std::abs(clip.placement.startBeat) > 0.000001;
         const double currentStart = isValidBpm(bpm) && hasExplicitBeatStart
@@ -367,7 +339,6 @@ class ClipOperations {
         auto* event = clip.primaryEvent();
         if (event == nullptr || fileDuration <= 0.0)
             return;
-        seedPlacementFromTimelineCacheIfNeeded(clip, bpm);
 
         event->clampLoopRegionToSource(fileDuration);
         event->setAnchorSeconds(juce::jlimit(0.0, fileDuration, event->anchorSeconds()));
@@ -389,7 +360,6 @@ class ClipOperations {
         auto* event = clip.primaryEvent();
         if (event == nullptr)
             return;
-        seedPlacementFromTimelineCacheIfNeeded(clip, bpm);
 
         if (fileDuration > 0.0)
             newOffset = juce::jmin(newOffset, fileDuration);
@@ -426,7 +396,6 @@ class ClipOperations {
         auto* event = clip.primaryEvent();
         if (event == nullptr)
             return;
-        seedPlacementFromTimelineCacheIfNeeded(clip, bpm);
         const double oldOffset = event->anchorSeconds();
         double newOffset = oldOffset + trimAmount * event->speedRatio;
 
@@ -457,7 +426,6 @@ class ClipOperations {
         auto* event = clip.primaryEvent();
         if (event == nullptr)
             return;
-        seedPlacementFromTimelineCacheIfNeeded(clip, bpm);
         double newLength = clip.getTimelineLength(bpm) - trimAmount;
 
         if (fileDuration > 0.0) {
@@ -483,7 +451,6 @@ class ClipOperations {
         auto* event = clip.primaryEvent();
         if (event == nullptr)
             return;
-        seedPlacementFromTimelineCacheIfNeeded(clip, bpm);
         newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
 
         double stretchRatio = newLength / oldLength;
@@ -514,7 +481,6 @@ class ClipOperations {
         auto* event = clip.primaryEvent();
         if (event == nullptr)
             return;
-        seedPlacementFromTimelineCacheIfNeeded(clip, bpm);
         double rightEdge = clip.getTimelineEnd(bpm);
 
         newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
@@ -604,7 +570,6 @@ class ClipOperations {
      */
     static inline void resizeContainerAbsolute(ClipInfo& clip, double newStartTime,
                                                double newLength, double bpm = DEFAULT_BPM) {
-        seedPlacementFromTimelineCacheIfNeeded(clip, bpm);
         setTimelinePlacement(clip, newStartTime, newLength, bpm);
     }
 
@@ -618,12 +583,9 @@ class ClipOperations {
 
         if (!isValidBpm(bpm))
             return;
-
-        seedPlacementFromTimelineCacheIfNeeded(clip, bpm);
         double startBeat = clip.getStartBeats(bpm);
 
         clip.setPlacementBeats(startBeat, newTotalBeats);
-        clip.deriveTimesFromBeats(bpm);
     }
 
     /**
@@ -661,7 +623,6 @@ class ClipOperations {
     static inline void stretchAbsolute(ClipInfo& clip, double newSpeedRatio, double newLength,
                                        double bpm = DEFAULT_BPM) {
         auto* event = clip.primaryEvent();
-        seedPlacementFromTimelineCacheIfNeeded(clip, bpm);
         const double currentStart = clip.getTimelineStart(bpm);
         const double oldLengthBeats = clip.placement.lengthBeats;
         setTimelinePlacement(clip, currentStart, newLength, bpm);
@@ -688,7 +649,6 @@ class ClipOperations {
                                                double newLength, double rightEdge,
                                                double bpm = DEFAULT_BPM) {
         auto* event = clip.primaryEvent();
-        seedPlacementFromTimelineCacheIfNeeded(clip, bpm);
         const double oldLengthBeats = clip.placement.lengthBeats;
         setTimelinePlacement(clip, rightEdge - newLength, newLength, bpm);
         if (event != nullptr && event->autoTempo && isValidBpm(bpm)) {
@@ -776,9 +736,6 @@ class ClipOperations {
             event->setLoopStartSeconds(loopStartBeats * 60.0 / srcBpm);
         }
 
-        // Update time-based fields (derived values)
-        clip.setLengthFromBeats(lengthBeats, bpm);
-
         // Auto-tempo requires speedRatio=1.0
         event->speedRatio = 1.0;
     }
@@ -837,8 +794,6 @@ class ClipOperations {
         if (enabled && !event->hasInterpretedBpm())
             return;
 
-        seedPlacementFromTimelineCacheIfNeeded(clip, bpm);
-
         event->resolveBeatMode();
 
         if (enabled) {
@@ -896,9 +851,6 @@ class ClipOperations {
 
             // Force speedRatio to 1.0 (TE requirement for autoTempo)
             event->speedRatio = 1.0;
-            // A stale seconds cache would make the next enable re-seed the
-            // placement from it.
-            clip.deriveTimesFromBeats(bpm);
         } else if (clip.loopEnabled && event->loopLengthSamples > 0) {
             // Timeline placement remains beat-domain. The source region is
             // already in samples and survives the mode change untouched; only
@@ -920,7 +872,6 @@ class ClipOperations {
         newLengthBeats = juce::jmax(MIN_CLIP_LENGTH * bpm / 60.0, newLengthBeats);
 
         clip.setPlacementBeats(clip.placement.startBeat, newLengthBeats);
-        clip.deriveTimesFromBeats(bpm);
     }
 
     /**
@@ -942,16 +893,13 @@ class ClipOperations {
                 event.startBeat -= deltaBeat;
             clip.audio().envelopeWindow->startBeat -= deltaBeat;
             clip.setPlacementBeats(newStartBeat, newLengthBeats);
-            clip.deriveTimesFromBeats(bpm);
             return;
         }
 
         clip.setPlacementBeats(clip.placement.startBeat, newLengthBeats);
-        clip.deriveTimesFromBeats(bpm);
 
         // Adjust placement start to keep right edge fixed.
         clip.setPlacementBeats(newStartBeat, newLengthBeats);
-        clip.deriveTimesFromBeats(bpm);
     }
 
     // ========================================================================
@@ -969,7 +917,6 @@ class ClipOperations {
         auto* event = clip.primaryEvent();
         if (event == nullptr)
             return;
-        seedPlacementFromTimelineCacheIfNeeded(clip, bpm);
         event->setLoopStartSeconds(newLoopStart);
         // Clamp source-authored regions to the audio available from the new start.
         if (fileDuration > 0.0 && event->loopLengthIntent == LoopLengthIntent::Source) {

@@ -172,7 +172,6 @@ TEST_CASE("A routed MIDI source is not captured", "[nulldiff][native]") {
         clip.view = ClipView::Arrangement;
         clip.setMidiContent();
         clip.setPlacementBeats(0.0, 4.0);
-        clip.deriveTimesFromBeats(120.0);
 
         MidiNote note;
         note.noteNumber = pitch;
@@ -245,7 +244,6 @@ TEST_CASE("An eligible track with nothing to play is still captured", "[nulldiff
     clip.view = ClipView::Arrangement;
     clip.setMidiContent();
     clip.setPlacementBeats(0.0, 4.0);
-    clip.deriveTimesFromBeats(120.0);
 
     MidiNote note;
     note.noteNumber = 60;
@@ -314,7 +312,6 @@ ClipInfo oneNoteClip(ClipId clipId, TrackId trackId) {
     clip.view = ClipView::Arrangement;
     clip.setMidiContent();
     clip.setPlacementBeats(0.0, 4.0);
-    clip.deriveTimesFromBeats(120.0);
 
     MidiNote note;
     note.noteNumber = 60;

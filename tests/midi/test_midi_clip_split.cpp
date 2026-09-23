@@ -17,16 +17,16 @@
  * Implementation: Notes are partitioned at the split beat.
  * Left clip keeps notes before split point (unchanged).
  * Right clip gets notes at/after split point (adjusted by -splitBeat).
- * At 120 BPM: 1 second = 2 beats.
  */
 
 using namespace magda;
 
 // Helper to create a MIDI clip with notes
-static ClipId createMidiClipWithNotes(TrackId trackId, double startTime, double length,
+static ClipId createMidiClipWithNotes(TrackId trackId, double startBeat, double lengthBeats,
                                       const std::vector<double>& noteBeatPositions) {
     auto& clipManager = ClipManager::getInstance();
-    ClipId clipId = clipManager.createMidiClip(trackId, startTime, length, ClipView::Arrangement);
+    ClipId clipId =
+        clipManager.createMidiClipBeats(trackId, startBeat, lengthBeats, ClipView::Arrangement);
 
     auto* clip = clipManager.getClip(clipId);
     if (clip) {
@@ -57,12 +57,12 @@ TEST_CASE("MIDI clip split - basic operation", "[midi][clip][split]") {
     TrackId trackId = trackManager.createTrack("Test Track", TrackType::Media);
 
     SECTION("Split clip with notes at different positions") {
-        // Create clip: 0-4 seconds (8 beats at 120 BPM)
+        // Create clip: beats 0-8
         // Notes at beats: 0, 2, 4, 6
-        ClipId clipId = createMidiClipWithNotes(trackId, 0.0, 4.0, {0.0, 2.0, 4.0, 6.0});
+        ClipId clipId = createMidiClipWithNotes(trackId, 0.0, 8.0, {0.0, 2.0, 4.0, 6.0});
 
-        // Split at 2 seconds (4 beats)
-        SplitClipCommand splitCmd(clipId, BeatPosition{2.0 * 2.0});
+        // Split at beat 4
+        SplitClipCommand splitCmd(clipId, BeatPosition{4.0});
         REQUIRE(splitCmd.canExecute());
         splitCmd.execute();
 
@@ -75,13 +75,13 @@ TEST_CASE("MIDI clip split - basic operation", "[midi][clip][split]") {
         REQUIRE(leftClip != nullptr);
         REQUIRE(rightClip != nullptr);
 
-        // Left clip: 0-2 seconds
-        REQUIRE(leftClip->startTime == Catch::Approx(0.0));
-        REQUIRE(leftClip->length == Catch::Approx(2.0));
+        // Left clip: beats 0-4
+        REQUIRE(leftClip->placement.startBeat == Catch::Approx(0.0));
+        REQUIRE(leftClip->placement.lengthBeats == Catch::Approx(4.0));
 
-        // Right clip: 2-4 seconds
-        REQUIRE(rightClip->startTime == Catch::Approx(2.0));
-        REQUIRE(rightClip->length == Catch::Approx(2.0));
+        // Right clip: beats 4-8
+        REQUIRE(rightClip->placement.startBeat == Catch::Approx(4.0));
+        REQUIRE(rightClip->placement.lengthBeats == Catch::Approx(4.0));
 
         // Destructive split: notes partitioned at beat 4
         // Left clip gets notes at beats 0, 2 (before split beat 4)
@@ -111,10 +111,10 @@ TEST_CASE("MIDI clip split - note position adjustment", "[midi][clip][split][not
 
     SECTION("Right clip notes adjusted relative to split point") {
         // Create clip with notes at beats: 1, 3, 5, 7
-        ClipId clipId = createMidiClipWithNotes(trackId, 0.0, 4.0, {1.0, 3.0, 5.0, 7.0});
+        ClipId clipId = createMidiClipWithNotes(trackId, 0.0, 8.0, {1.0, 3.0, 5.0, 7.0});
 
-        // Split at 2 seconds (4 beats at 120 BPM)
-        SplitClipCommand splitCmd(clipId, BeatPosition{2.0 * 2.0});
+        // Split at beat 4
+        SplitClipCommand splitCmd(clipId, BeatPosition{4.0});
         splitCmd.execute();
 
         auto* leftClip = clipManager.getClip(clipId);
@@ -133,10 +133,10 @@ TEST_CASE("MIDI clip split - note position adjustment", "[midi][clip][split][not
 
     SECTION("Notes exactly at split point go to right clip") {
         // Create clip with a note exactly at the split beat
-        ClipId clipId = createMidiClipWithNotes(trackId, 0.0, 4.0, {0.0, 4.0, 8.0});
+        ClipId clipId = createMidiClipWithNotes(trackId, 0.0, 8.0, {0.0, 4.0, 8.0});
 
-        // Split at 2 seconds (4 beats)
-        SplitClipCommand splitCmd(clipId, BeatPosition{2.0 * 2.0});
+        // Split at beat 4
+        SplitClipCommand splitCmd(clipId, BeatPosition{4.0});
         splitCmd.execute();
 
         auto* leftClip = clipManager.getClip(clipId);
@@ -167,28 +167,28 @@ TEST_CASE("MIDI clip split - sequential operations", "[midi][clip][split][sequen
     TrackId trackId = trackManager.createTrack("Test Track", TrackType::Media);
 
     SECTION("Multiple splits maintain correct note positions") {
-        // Create clip: 0-8 seconds (16 beats)
+        // Create clip: beats 0-16
         // Notes at beats: 0, 4, 8, 12
-        ClipId clipId = createMidiClipWithNotes(trackId, 0.0, 8.0, {0.0, 4.0, 8.0, 12.0});
+        ClipId clipId = createMidiClipWithNotes(trackId, 0.0, 16.0, {0.0, 4.0, 8.0, 12.0});
 
-        // First split at 2 seconds (4 beats) -> left gets beat 0, right gets 4,8,12
-        SplitClipCommand split1(clipId, BeatPosition{2.0 * 2.0});
+        // First split at beat 4 -> left gets beat 0, right gets 4,8,12
+        SplitClipCommand split1(clipId, BeatPosition{4.0});
         split1.execute();
         ClipId clip2 = split1.getRightClipId();
 
         // After split1: clip2 has notes at [0, 4, 8] (adjusted from [4, 8, 12] by -4)
-        // Second split clip2 at 4 seconds. clip2 starts at 2s, so leftLength=2s -> splitBeat=4
+        // Second split clip2 at beat 8. clip2 starts at beat 4, so local splitBeat=4
         // Notes before beat 4: [0] stays in clip2. Notes at/after beat 4: [4, 8] -> adjusted by -4
         // -> [0, 4]
-        SplitClipCommand split2(clip2, BeatPosition{4.0 * 2.0});
+        SplitClipCommand split2(clip2, BeatPosition{8.0});
         split2.execute();
         ClipId clip3 = split2.getRightClipId();
 
         // After split2: clip3 has notes at [0, 4] (adjusted from [4, 8] by -4)
-        // Third split clip3 at 6 seconds. clip3 starts at 4s, so leftLength=2s -> splitBeat=4
+        // Third split clip3 at beat 12. clip3 starts at beat 8, so local splitBeat=4
         // Notes before beat 4: [0] stays in clip3. Notes at/after beat 4: [4] -> adjusted by -4 ->
         // [0]
-        SplitClipCommand split3(clip3, BeatPosition{6.0 * 2.0});
+        SplitClipCommand split3(clip3, BeatPosition{12.0});
         split3.execute();
         ClipId clip4 = split3.getRightClipId();
 
@@ -203,17 +203,17 @@ TEST_CASE("MIDI clip split - sequential operations", "[midi][clip][split][sequen
         REQUIRE(clip4Ptr != nullptr);
 
         // Verify clip boundaries
-        REQUIRE(clip1Ptr->startTime == Catch::Approx(0.0));
-        REQUIRE(clip1Ptr->length == Catch::Approx(2.0));
+        REQUIRE(clip1Ptr->placement.startBeat == Catch::Approx(0.0));
+        REQUIRE(clip1Ptr->placement.lengthBeats == Catch::Approx(4.0));
 
-        REQUIRE(clip2Ptr->startTime == Catch::Approx(2.0));
-        REQUIRE(clip2Ptr->length == Catch::Approx(2.0));
+        REQUIRE(clip2Ptr->placement.startBeat == Catch::Approx(4.0));
+        REQUIRE(clip2Ptr->placement.lengthBeats == Catch::Approx(4.0));
 
-        REQUIRE(clip3Ptr->startTime == Catch::Approx(4.0));
-        REQUIRE(clip3Ptr->length == Catch::Approx(2.0));
+        REQUIRE(clip3Ptr->placement.startBeat == Catch::Approx(8.0));
+        REQUIRE(clip3Ptr->placement.lengthBeats == Catch::Approx(4.0));
 
-        REQUIRE(clip4Ptr->startTime == Catch::Approx(6.0));
-        REQUIRE(clip4Ptr->length == Catch::Approx(2.0));
+        REQUIRE(clip4Ptr->placement.startBeat == Catch::Approx(12.0));
+        REQUIRE(clip4Ptr->placement.lengthBeats == Catch::Approx(4.0));
 
         // Each clip should have exactly 1 note at beat 0
         REQUIRE(clip1Ptr->midiNotes.size() == 1);
@@ -244,15 +244,15 @@ TEST_CASE("MIDI clip split - edge cases", "[midi][clip][split][edge]") {
     TrackId trackId = trackManager.createTrack("Test Track", TrackType::Media);
 
     SECTION("Split with existing midiOffset") {
-        ClipId clipId = createMidiClipWithNotes(trackId, 0.0, 4.0, {2.0, 4.0, 6.0});
+        ClipId clipId = createMidiClipWithNotes(trackId, 0.0, 8.0, {2.0, 4.0, 6.0});
 
         auto* clip = clipManager.getClip(clipId);
         clip->midiOffset = 2.0;  // Clip already has offset (from previous operation)
 
-        // Split at 2 seconds (4 beats). splitBeat = leftLength * 2.0 = 4.0
+        // Split at beat 4
         // Notes before beat 4: [2.0]. Notes at/after beat 4: [4.0, 6.0] -> adjusted by -4 ->
         // [0.0, 2.0]
-        SplitClipCommand splitCmd(clipId, BeatPosition{2.0 * 2.0});
+        SplitClipCommand splitCmd(clipId, BeatPosition{4.0});
         splitCmd.execute();
 
         auto* leftClip = clipManager.getClip(clipId);
@@ -267,9 +267,9 @@ TEST_CASE("MIDI clip split - edge cases", "[midi][clip][split][edge]") {
     }
 
     SECTION("Split empty MIDI clip") {
-        ClipId clipId = clipManager.createMidiClip(trackId, 0.0, 4.0, ClipView::Arrangement);
+        ClipId clipId = clipManager.createMidiClipBeats(trackId, 0.0, 8.0, ClipView::Arrangement);
 
-        SplitClipCommand splitCmd(clipId, BeatPosition{2.0 * 2.0});
+        SplitClipCommand splitCmd(clipId, BeatPosition{4.0});
         REQUIRE(splitCmd.canExecute());
         splitCmd.execute();
 
@@ -284,18 +284,18 @@ TEST_CASE("MIDI clip split - edge cases", "[midi][clip][split][edge]") {
     }
 
     SECTION("Cannot split outside clip boundaries") {
-        ClipId clipId = createMidiClipWithNotes(trackId, 2.0, 4.0, {0.0});
+        ClipId clipId = createMidiClipWithNotes(trackId, 4.0, 8.0, {0.0});
 
         // Try to split before clip start
-        SplitClipCommand splitBefore(clipId, BeatPosition{1.0 * 2.0});
+        SplitClipCommand splitBefore(clipId, BeatPosition{2.0});
         REQUIRE_FALSE(splitBefore.canExecute());
 
         // Try to split after clip end
-        SplitClipCommand splitAfter(clipId, BeatPosition{7.0 * 2.0});
+        SplitClipCommand splitAfter(clipId, BeatPosition{14.0});
         REQUIRE_FALSE(splitAfter.canExecute());
 
         // Valid split should work
-        SplitClipCommand splitValid(clipId, BeatPosition{3.0 * 2.0});
+        SplitClipCommand splitValid(clipId, BeatPosition{6.0});
         REQUIRE(splitValid.canExecute());
     }
 }
@@ -314,21 +314,21 @@ TEST_CASE("MIDI clip split - undo/redo", "[midi][clip][split][undo]") {
     TrackId trackId = trackManager.createTrack("Test Track", TrackType::Media);
 
     SECTION("Undo restores original clip state") {
-        ClipId clipId = createMidiClipWithNotes(trackId, 0.0, 4.0, {0.0, 2.0, 4.0, 6.0});
+        ClipId clipId = createMidiClipWithNotes(trackId, 0.0, 8.0, {0.0, 2.0, 4.0, 6.0});
 
         // Capture original state
         auto* originalClip = clipManager.getClip(clipId);
-        double originalLength = originalClip->length;
+        double originalLength = originalClip->placement.lengthBeats;
         size_t originalNoteCount = originalClip->midiNotes.size();
         double originalFirstNotePos = originalClip->midiNotes[0].startBeat;
 
         // Split
-        SplitClipCommand splitCmd(clipId, BeatPosition{2.0 * 2.0});
+        SplitClipCommand splitCmd(clipId, BeatPosition{4.0});
         splitCmd.execute();
         ClipId rightClipId = splitCmd.getRightClipId();
 
         // Verify split happened
-        REQUIRE(clipManager.getClip(clipId)->length < originalLength);
+        REQUIRE(clipManager.getClip(clipId)->placement.lengthBeats < originalLength);
         REQUIRE(clipManager.getClip(rightClipId) != nullptr);
 
         // Undo
@@ -336,7 +336,7 @@ TEST_CASE("MIDI clip split - undo/redo", "[midi][clip][split][undo]") {
 
         // Verify restoration
         auto* restoredClip = clipManager.getClip(clipId);
-        REQUIRE(restoredClip->length == Catch::Approx(originalLength));
+        REQUIRE(restoredClip->placement.lengthBeats == Catch::Approx(originalLength));
         REQUIRE(restoredClip->midiNotes.size() == originalNoteCount);
         REQUIRE(restoredClip->midiNotes[0].startBeat == Catch::Approx(originalFirstNotePos));
 
@@ -350,18 +350,18 @@ TEST_CASE("MIDI clip split - undo/redo", "[midi][clip][split][undo]") {
 // ============================================================================
 
 // Helper to create a looped MIDI clip
-static ClipId createLoopedMidiClip(TrackId trackId, double startTime, double length,
+static ClipId createLoopedMidiClip(TrackId trackId, double startBeat, double lengthBeats,
                                    double loopLengthBeats,
                                    const std::vector<double>& noteBeatPositions,
                                    double midiOffset = 0.0) {
     auto& clipManager = ClipManager::getInstance();
-    ClipId clipId = clipManager.createMidiClip(trackId, startTime, length, ClipView::Arrangement);
+    ClipId clipId =
+        clipManager.createMidiClipBeats(trackId, startBeat, lengthBeats, ClipView::Arrangement);
 
     auto* clip = clipManager.getClip(clipId);
     if (clip) {
         clip->loopEnabled = true;
         clip->loopLengthBeats = loopLengthBeats;
-        clip->lengthBeats = length * 2.0;  // At 120 BPM
         clip->midiOffset = midiOffset;
         for (double beatPos : noteBeatPositions) {
             MidiNote note;
@@ -385,12 +385,12 @@ TEST_CASE("Looped MIDI clip split - both halves keep notes", "[midi][clip][split
     TrackId trackId = trackManager.createTrack("Test Track", TrackType::Media);
 
     SECTION("Split in middle preserves notes on both sides") {
-        // Looped clip: 8 seconds (16 beats at 120 BPM), loop = 4 beats
+        // Looped clip: 16 beats, loop = 4 beats
         // Notes at beats 0, 1, 2, 3 within the loop region
-        ClipId clipId = createLoopedMidiClip(trackId, 0.0, 8.0, 4.0, {0.0, 1.0, 2.0, 3.0});
+        ClipId clipId = createLoopedMidiClip(trackId, 0.0, 16.0, 4.0, {0.0, 1.0, 2.0, 3.0});
 
-        // Split at 4 seconds (middle)
-        SplitClipCommand splitCmd(clipId, BeatPosition{4.0 * 2.0});
+        // Split at beat 8 (middle)
+        SplitClipCommand splitCmd(clipId, BeatPosition{8.0});
         REQUIRE(splitCmd.canExecute());
         splitCmd.execute();
 
@@ -417,12 +417,12 @@ TEST_CASE("Looped MIDI clip split - both halves keep notes", "[midi][clip][split
     }
 
     SECTION("Split at non-loop-boundary adjusts right clip midiOffset") {
-        // Looped clip: 8 seconds, loop = 4 beats, no initial offset
-        ClipId clipId = createLoopedMidiClip(trackId, 0.0, 8.0, 4.0, {0.0, 1.0, 2.0, 3.0});
+        // Looped clip: 16 beats, loop = 4 beats, no initial offset
+        ClipId clipId = createLoopedMidiClip(trackId, 0.0, 16.0, 4.0, {0.0, 1.0, 2.0, 3.0});
 
-        // Split at 3 seconds (6 beats at 120 BPM). Phase = 6 % 4 = 2 beats.
+        // Split at beat 6. Phase = 6 % 4 = 2 beats.
         // Right clip starts playing from beat 2 within the loop pattern.
-        SplitClipCommand splitCmd(clipId, BeatPosition{3.0 * 2.0});
+        SplitClipCommand splitCmd(clipId, BeatPosition{6.0});
         splitCmd.execute();
 
         auto* leftClip = clipManager.getClip(clipId);
@@ -438,10 +438,10 @@ TEST_CASE("Looped MIDI clip split - both halves keep notes", "[midi][clip][split
 
     SECTION("Split preserves existing midiOffset") {
         // Looped clip with existing offset of 1 beat
-        ClipId clipId = createLoopedMidiClip(trackId, 0.0, 8.0, 4.0, {0.0, 1.0, 2.0, 3.0}, 1.0);
+        ClipId clipId = createLoopedMidiClip(trackId, 0.0, 16.0, 4.0, {0.0, 1.0, 2.0, 3.0}, 1.0);
 
-        // Split at 2 seconds (4 beats). New phase = (1.0 + 4.0) % 4.0 = 1.0
-        SplitClipCommand splitCmd(clipId, BeatPosition{2.0 * 2.0});
+        // Split at beat 4. New phase = (1.0 + 4.0) % 4.0 = 1.0
+        SplitClipCommand splitCmd(clipId, BeatPosition{4.0});
         splitCmd.execute();
 
         auto* leftClip = clipManager.getClip(clipId);
@@ -455,11 +455,11 @@ TEST_CASE("Looped MIDI clip split - both halves keep notes", "[midi][clip][split
     }
 
     SECTION("Split at loop boundary keeps zero phase") {
-        // Looped clip: 8 seconds, loop = 4 beats
-        ClipId clipId = createLoopedMidiClip(trackId, 0.0, 8.0, 4.0, {0.0, 2.0});
+        // Looped clip: 16 beats, loop = 4 beats
+        ClipId clipId = createLoopedMidiClip(trackId, 0.0, 16.0, 4.0, {0.0, 2.0});
 
-        // Split at 4 seconds (8 beats). Phase = (0 + 8) % 4 = 0
-        SplitClipCommand splitCmd(clipId, BeatPosition{4.0 * 2.0});
+        // Split at beat 8. Phase = (0 + 8) % 4 = 0
+        SplitClipCommand splitCmd(clipId, BeatPosition{8.0});
         splitCmd.execute();
 
         auto* rightClip = clipManager.getClip(splitCmd.getRightClipId());
@@ -469,14 +469,14 @@ TEST_CASE("Looped MIDI clip split - both halves keep notes", "[midi][clip][split
     }
 
     SECTION("Split 2-bar loop mid-loop adjusts midiOffset correctly") {
-        // Loop from bar 1 to bar 3 (8 beats at 120 BPM = 4 seconds).
-        // Clip extended to 16 seconds (32 beats = 4 loop repetitions).
+        // Loop from bar 1 to bar 3 (8 beats).
+        // Clip extended to 32 beats (4 loop repetitions).
         // Notes at beats 0, 2, 4, 6 within the 8-beat loop.
-        ClipId clipId = createLoopedMidiClip(trackId, 0.0, 16.0, 8.0, {0.0, 2.0, 4.0, 6.0});
+        ClipId clipId = createLoopedMidiClip(trackId, 0.0, 32.0, 8.0, {0.0, 2.0, 4.0, 6.0});
 
-        // Split at bar 2 (= 2 seconds = 4 beats into the clip).
+        // Split at bar 2 (beat 4).
         // Phase within loop = fmod(4, 8) = 4 beats (half way through loop).
-        SplitClipCommand splitCmd(clipId, BeatPosition{2.0 * 2.0});
+        SplitClipCommand splitCmd(clipId, BeatPosition{4.0});
         splitCmd.execute();
 
         auto* leftClip = clipManager.getClip(clipId);
@@ -501,30 +501,30 @@ TEST_CASE("Looped MIDI clip split - both halves keep notes", "[midi][clip][split
         REQUIRE(rightClip->midiNotes[3].startBeat == Catch::Approx(6.0));
 
         // Loop region: truncated to clip length when clip is shorter than one cycle
-        REQUIRE(leftClip->loopLengthBeats == Catch::Approx(4.0));   // 2s = 4 beats
-        REQUIRE(rightClip->loopLengthBeats == Catch::Approx(8.0));  // 14s = 28 beats > 8
+        REQUIRE(leftClip->loopLengthBeats == Catch::Approx(4.0));   // clip is 4 beats
+        REQUIRE(rightClip->loopLengthBeats == Catch::Approx(8.0));  // clip is 28 beats > 8
         REQUIRE(leftClip->loopEnabled == true);
         REQUIRE(rightClip->loopEnabled == true);
 
         // Container lengths are correct
-        REQUIRE(leftClip->length == Catch::Approx(2.0));
-        REQUIRE(rightClip->length == Catch::Approx(14.0));
+        REQUIRE(leftClip->placement.lengthBeats == Catch::Approx(4.0));
+        REQUIRE(rightClip->placement.lengthBeats == Catch::Approx(28.0));
     }
 
     SECTION("Sequential splits of looped clip all keep notes") {
-        // Looped clip: 8 seconds, loop = 2 beats
-        ClipId clipId = createLoopedMidiClip(trackId, 0.0, 8.0, 2.0, {0.0, 1.0});
+        // Looped clip: 16 beats, loop = 2 beats
+        ClipId clipId = createLoopedMidiClip(trackId, 0.0, 16.0, 2.0, {0.0, 1.0});
 
-        // Split into 4 x 2-second clips
-        SplitClipCommand split1(clipId, BeatPosition{4.0 * 2.0});
+        // Split into 4 x 4-beat clips
+        SplitClipCommand split1(clipId, BeatPosition{8.0});
         split1.execute();
         ClipId clip2 = split1.getRightClipId();
 
-        SplitClipCommand split2(clipId, BeatPosition{2.0 * 2.0});
+        SplitClipCommand split2(clipId, BeatPosition{4.0});
         split2.execute();
         ClipId clip1b = split2.getRightClipId();
 
-        SplitClipCommand split3(clip2, BeatPosition{6.0 * 2.0});
+        SplitClipCommand split3(clip2, BeatPosition{12.0});
         split3.execute();
         ClipId clip2b = split3.getRightClipId();
 

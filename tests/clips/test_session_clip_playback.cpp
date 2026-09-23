@@ -307,7 +307,7 @@ TEST_CASE("Session clip trigger/stop state transitions", "[session][clip][state]
 TEST_CASE("CreateMidiClip — create via ClipManager and verify type", "[session][midi][create]") {
     ClipManager::getInstance().shutdown();
 
-    ClipId clipId = ClipManager::getInstance().createMidiClip(1, 0.0, 4.0, ClipView::Session);
+    ClipId clipId = ClipManager::getInstance().createMidiClipBeats(1, 0.0, 4.0, ClipView::Session);
     REQUIRE(clipId != INVALID_CLIP_ID);
 
     const auto* clip = ClipManager::getInstance().getClip(clipId);
@@ -315,7 +315,7 @@ TEST_CASE("CreateMidiClip — create via ClipManager and verify type", "[session
     REQUIRE(clip->isMidi());
     REQUIRE(clip->view == ClipView::Session);
     REQUIRE(clip->trackId == 1);
-    REQUIRE(clip->length == Catch::Approx(4.0));
+    REQUIRE(clip->placement.lengthBeats == Catch::Approx(4.0));
     REQUIRE(clip->midiNotes.empty());
 }
 
@@ -669,10 +669,7 @@ constexpr double MIN_LOOP_LENGTH_BEATS = 0.25;
  * Given a clip with loop state, applies a new clip end and clamps loop.
  */
 void applyClipEnd(ClipManager& cm, ClipId clipId, double newClipEndBeats, double bpm) {
-    double secondsPerBeat = 60.0 / bpm;
-
-    // Resize the clip
-    cm.resizeClip(clipId, newClipEndBeats * secondsPerBeat, false, bpm);
+    cm.resizeClipBeats(clipId, newClipEndBeats, false, bpm);
 
     // Re-fetch clip after mutation
     const auto* clip = cm.getClip(clipId);
@@ -700,7 +697,7 @@ void applyClipEnd(ClipManager& cm, ClipId clipId, double newClipEndBeats, double
  */
 void applyLoopPos(ClipManager& cm, ClipId clipId, double newLoopPos, double bpm) {
     const auto* clip = cm.getClip(clipId);
-    double clipEndBeats = clip->length / (60.0 / bpm);
+    double clipEndBeats = clip->placement.lengthBeats;
 
     if (newLoopPos + clip->loopLengthBeats > clipEndBeats) {
         newLoopPos = clipEndBeats - clip->loopLengthBeats;
@@ -716,7 +713,7 @@ void applyLoopPos(ClipManager& cm, ClipId clipId, double newLoopPos, double bpm)
  */
 void applyLoopLength(ClipManager& cm, ClipId clipId, double newLoopLength, double bpm) {
     const auto* clip = cm.getClip(clipId);
-    double clipEndBeats = clip->length / (60.0 / bpm);
+    double clipEndBeats = clip->placement.lengthBeats;
     double loopEnd = clip->loopStartBeats + clip->loopLengthBeats;
 
     bool loopEndMatchedClipEnd = std::abs(loopEnd - clipEndBeats) < 0.001;
@@ -724,11 +721,11 @@ void applyLoopLength(ClipManager& cm, ClipId clipId, double newLoopLength, doubl
 
     if (loopEndMatchedClipEnd && newLoopEnd > clipEndBeats) {
         // Grow clip to follow
-        cm.resizeClip(clipId, newLoopEnd * (60.0 / bpm), false, bpm);
+        cm.resizeClipBeats(clipId, newLoopEnd, false, bpm);
     } else {
         // Re-fetch after potential mutation above
         clip = cm.getClip(clipId);
-        clipEndBeats = clip->length / (60.0 / bpm);
+        clipEndBeats = clip->placement.lengthBeats;
         if (newLoopEnd > clipEndBeats) {
             newLoopLength = clipEndBeats - clip->loopStartBeats;
         }
@@ -743,17 +740,16 @@ TEST_CASE("Shrinking clip end clamps loop length", "[session][clip][clamp][end]"
     auto& cm = ClipManager::getInstance();
     cm.clearAllClips();
     constexpr double bpm = 120.0;
-    constexpr double spb = 60.0 / bpm;
 
     // 8-beat clip, loop offset=0, loop length=8 (loop end == clip end)
-    ClipId id = cm.createMidiClip(1, 0.0, 8.0 * spb, ClipView::Session);
+    ClipId id = cm.createMidiClipBeats(1, 0.0, 8.0, ClipView::Session);
     cm.setMidiLoopStartBeats(id, 0.0, bpm);
     cm.setMidiLoopLengthBeats(id, 8.0, bpm);
 
     SECTION("Shrink clip to 6 beats — loop length clamped to 6") {
         applyClipEnd(cm, id, 6.0, bpm);
         auto* clip = cm.getClip(id);
-        REQUIRE(clip->length == Catch::Approx(6.0 * spb));
+        REQUIRE(clip->placement.lengthBeats == Catch::Approx(6.0));
         REQUIRE(clip->loopLengthBeats == Catch::Approx(6.0));
         REQUIRE(clip->loopStartBeats == Catch::Approx(0.0));
     }
@@ -761,7 +757,7 @@ TEST_CASE("Shrinking clip end clamps loop length", "[session][clip][clamp][end]"
     SECTION("Shrink clip to 4 beats — loop length clamped to 4") {
         applyClipEnd(cm, id, 4.0, bpm);
         auto* clip = cm.getClip(id);
-        REQUIRE(clip->length == Catch::Approx(4.0 * spb));
+        REQUIRE(clip->placement.lengthBeats == Catch::Approx(4.0));
         REQUIRE(clip->loopLengthBeats == Catch::Approx(4.0));
     }
 }
@@ -770,10 +766,9 @@ TEST_CASE("Shrinking clip end clamps loop with offset", "[session][clip][clamp][
     auto& cm = ClipManager::getInstance();
     cm.clearAllClips();
     constexpr double bpm = 120.0;
-    constexpr double spb = 60.0 / bpm;
 
     // 8-beat clip, loop offset=2, loop length=4 (loop end = 6)
-    ClipId id = cm.createMidiClip(1, 0.0, 8.0 * spb, ClipView::Session);
+    ClipId id = cm.createMidiClipBeats(1, 0.0, 8.0, ClipView::Session);
     cm.setMidiLoopStartBeats(id, 2.0, bpm);
     cm.setMidiLoopLengthBeats(id, 4.0, bpm);
 
@@ -808,10 +803,9 @@ TEST_CASE("Shrinking clip end does not affect loop when loop is inside",
     auto& cm = ClipManager::getInstance();
     cm.clearAllClips();
     constexpr double bpm = 120.0;
-    constexpr double spb = 60.0 / bpm;
 
     // 8-beat clip, loop offset=1, loop length=2 (loop end = 3)
-    ClipId id = cm.createMidiClip(1, 0.0, 8.0 * spb, ClipView::Session);
+    ClipId id = cm.createMidiClipBeats(1, 0.0, 8.0, ClipView::Session);
     cm.setMidiLoopStartBeats(id, 1.0, bpm);
     cm.setMidiLoopLengthBeats(id, 2.0, bpm);
 
@@ -827,10 +821,9 @@ TEST_CASE("Loop pos clamped to keep loop within clip", "[session][clip][clamp][p
     auto& cm = ClipManager::getInstance();
     cm.clearAllClips();
     constexpr double bpm = 120.0;
-    constexpr double spb = 60.0 / bpm;
 
     // 8-beat clip, loop length=4
-    ClipId id = cm.createMidiClip(1, 0.0, 8.0 * spb, ClipView::Session);
+    ClipId id = cm.createMidiClipBeats(1, 0.0, 8.0, ClipView::Session);
     cm.setMidiLoopStartBeats(id, 0.0, bpm);
     cm.setMidiLoopLengthBeats(id, 4.0, bpm);
 
@@ -859,10 +852,9 @@ TEST_CASE("Shrinking loop length does not shrink clip", "[session][clip][clamp][
     auto& cm = ClipManager::getInstance();
     cm.clearAllClips();
     constexpr double bpm = 120.0;
-    constexpr double spb = 60.0 / bpm;
 
     // 8-beat clip, loop offset=0, loop length=8 (aligned with clip end)
-    ClipId id = cm.createMidiClip(1, 0.0, 8.0 * spb, ClipView::Session);
+    ClipId id = cm.createMidiClipBeats(1, 0.0, 8.0, ClipView::Session);
     cm.setMidiLoopStartBeats(id, 0.0, bpm);
     cm.setMidiLoopLengthBeats(id, 8.0, bpm);
 
@@ -870,14 +862,14 @@ TEST_CASE("Shrinking loop length does not shrink clip", "[session][clip][clamp][
         applyLoopLength(cm, id, 4.0, bpm);
         auto* clip = cm.getClip(id);
         REQUIRE(clip->loopLengthBeats == Catch::Approx(4.0));
-        REQUIRE(clip->length == Catch::Approx(8.0 * spb));
+        REQUIRE(clip->placement.lengthBeats == Catch::Approx(8.0));
     }
 
     SECTION("Shrink loop to 2 — clip stays at 8") {
         applyLoopLength(cm, id, 2.0, bpm);
         auto* clip = cm.getClip(id);
         REQUIRE(clip->loopLengthBeats == Catch::Approx(2.0));
-        REQUIRE(clip->length == Catch::Approx(8.0 * spb));
+        REQUIRE(clip->placement.lengthBeats == Catch::Approx(8.0));
     }
 }
 
@@ -886,10 +878,9 @@ TEST_CASE("Growing loop length when aligned extends clip",
     auto& cm = ClipManager::getInstance();
     cm.clearAllClips();
     constexpr double bpm = 120.0;
-    constexpr double spb = 60.0 / bpm;
 
     // 8-beat clip, loop offset=0, loop length=8 (aligned with clip end)
-    ClipId id = cm.createMidiClip(1, 0.0, 8.0 * spb, ClipView::Session);
+    ClipId id = cm.createMidiClipBeats(1, 0.0, 8.0, ClipView::Session);
     cm.setMidiLoopStartBeats(id, 0.0, bpm);
     cm.setMidiLoopLengthBeats(id, 8.0, bpm);
 
@@ -897,7 +888,7 @@ TEST_CASE("Growing loop length when aligned extends clip",
     auto* clip = cm.getClip(id);
 
     REQUIRE(clip->loopLengthBeats == Catch::Approx(12.0));
-    REQUIRE(clip->length == Catch::Approx(12.0 * spb));
+    REQUIRE(clip->placement.lengthBeats == Catch::Approx(12.0));
 }
 
 TEST_CASE("Growing loop length when NOT aligned clamps to clip end",
@@ -905,10 +896,9 @@ TEST_CASE("Growing loop length when NOT aligned clamps to clip end",
     auto& cm = ClipManager::getInstance();
     cm.clearAllClips();
     constexpr double bpm = 120.0;
-    constexpr double spb = 60.0 / bpm;
 
     // 8-beat clip, loop offset=0, loop length=4 (NOT aligned with clip end)
-    ClipId id = cm.createMidiClip(1, 0.0, 8.0 * spb, ClipView::Session);
+    ClipId id = cm.createMidiClipBeats(1, 0.0, 8.0, ClipView::Session);
     cm.setMidiLoopStartBeats(id, 0.0, bpm);
     cm.setMidiLoopLengthBeats(id, 4.0, bpm);
 
@@ -916,14 +906,14 @@ TEST_CASE("Growing loop length when NOT aligned clamps to clip end",
         applyLoopLength(cm, id, 6.0, bpm);
         auto* clip = cm.getClip(id);
         REQUIRE(clip->loopLengthBeats == Catch::Approx(6.0));
-        REQUIRE(clip->length == Catch::Approx(8.0 * spb));
+        REQUIRE(clip->placement.lengthBeats == Catch::Approx(8.0));
     }
 
     SECTION("Grow loop to 10 — exceeds clip, clamped to 8") {
         applyLoopLength(cm, id, 10.0, bpm);
         auto* clip = cm.getClip(id);
         REQUIRE(clip->loopLengthBeats == Catch::Approx(8.0));
-        REQUIRE(clip->length == Catch::Approx(8.0 * spb));
+        REQUIRE(clip->placement.lengthBeats == Catch::Approx(8.0));
     }
 }
 
@@ -951,11 +941,11 @@ std::pair<double, double> computeAutoTempoTimings(const ClipInfo& clip, double b
  * Replicates the non-autoTempo timing path for comparison.
  * Returns {clipLength, loopLength} in wall-clock seconds.
  */
-std::pair<double, double> computeTimeBasedTimings(const ClipInfo& clip) {
-    double clipLength = clip.length;
+std::pair<double, double> computeTimeBasedTimings(const ClipInfo& clip, double bpm) {
+    double clipLength = clip.getTimelineLength(bpm);
     double srcLength = magda::audioEventRef(clip).loopLengthSeconds() > 0.0
                            ? magda::audioEventRef(clip).loopLengthSeconds()
-                           : clip.length * magda::audioEventRef(clip).speedRatio;
+                           : clipLength * magda::audioEventRef(clip).speedRatio;
     double loopLength = srcLength / magda::audioEventRef(clip).speedRatio;
     return {clipLength, loopLength};
 }
@@ -970,13 +960,14 @@ TEST_CASE("AutoTempo session clip timing: 172bpm clip in 120bpm project",
     magda::test::giveAudioEvent(clip, "loop_172bpm.wav");
     magda::test::audioEvent(clip).interpBpm = 172.0;
     magda::test::audioEvent(clip).interpTotalBeats = 8.0;  // 2 bars = 8 beats
-    clip.length = 8.0 * 60.0 / 172.0;                      // ~2.79s original duration
+    constexpr double PROJECT_BPM = 120.0;
+    // The whole ~2.79 s file, unstretched on the 120 bpm timeline.
+    clip.setPlacementBeats(0.0, 8.0 * PROJECT_BPM / 172.0);
     magda::test::audioEvent(clip).speedRatio = 1.0;
     clip.loopEnabled = true;
     magda::test::audioEvent(clip).setLoopStartSeconds(0.0);
-    magda::test::audioEvent(clip).setLoopLengthSeconds(clip.length);
+    magda::test::audioEvent(clip).setLoopLengthSeconds(8.0 * 60.0 / 172.0);
 
-    constexpr double PROJECT_BPM = 120.0;
     ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
 
     SECTION("lengthBeats stays at the file's musical beat count") {
@@ -1016,9 +1007,9 @@ TEST_CASE("AutoTempo session clip timing: 172bpm clip in 120bpm project",
         // the playhead wraps at the original ~2.79s instead of 4s
         ClipInfo rawClip = clip;
         magda::test::audioEvent(rawClip).autoTempo = false;
-        rawClip.length = 8.0 * 60.0 / 172.0;  // the original ~2.79 s
-        magda::test::audioEvent(rawClip).setLoopLengthSeconds(rawClip.length);
-        auto [clipLen, loopLen] = computeTimeBasedTimings(rawClip);
+        // The original ~2.79 s
+        magda::test::audioEvent(rawClip).setLoopLengthSeconds(8.0 * 60.0 / 172.0);
+        auto [clipLen, loopLen] = computeTimeBasedTimings(rawClip, PROJECT_BPM);
         // Would wrap at ~2.79s — incorrect for a 120bpm playback
         REQUIRE(loopLen < 3.0);
     }
@@ -1032,13 +1023,14 @@ TEST_CASE("AutoTempo session clip timing: sub-loop region",
     magda::test::giveAudioEvent(clip, "sample.wav");
     magda::test::audioEvent(clip).interpBpm = 140.0;
     magda::test::audioEvent(clip).interpTotalBeats = 8.0;
-    clip.length = 8.0 * 60.0 / 140.0;
+    constexpr double PROJECT_BPM = 120.0;
+    // The whole file, unstretched on the 120 bpm timeline.
+    clip.setPlacementBeats(0.0, 8.0 * PROJECT_BPM / 140.0);
     magda::test::audioEvent(clip).speedRatio = 1.0;
     clip.loopEnabled = true;
     magda::test::audioEvent(clip).setLoopStartSeconds(0.0);
     magda::test::audioEvent(clip).setLoopLengthSeconds(4.0 * 60.0 / 140.0);  // half the file
 
-    constexpr double PROJECT_BPM = 120.0;
     ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
 
     // lengthBeats preserves timeline length, loopLengthBeats preserves loop length
@@ -1064,7 +1056,7 @@ TEST_CASE("AutoTempo session clip timing: BPM edge cases",
     magda::test::giveAudioEvent(clip, "sample.wav");
     magda::test::audioEvent(clip).interpBpm = 120.0;
     magda::test::audioEvent(clip).interpTotalBeats = 4.0;
-    clip.length = 2.0;
+    clip.setPlacementBeats(0.0, 4.0);
     magda::test::audioEvent(clip).speedRatio = 1.0;
     clip.loopEnabled = true;
     magda::test::audioEvent(clip).setLoopStartSeconds(0.0);
@@ -1104,13 +1096,13 @@ TEST_CASE("AutoTempo session clip: getAutoTempoBeatRange for session loop",
     magda::test::giveAudioEvent(clip, "loop.wav");
     magda::test::audioEvent(clip).interpBpm = 172.0;
     magda::test::audioEvent(clip).interpTotalBeats = 8.0;
-    clip.length = 8.0 * 60.0 / 172.0;
+    constexpr double PROJECT_BPM = 120.0;
+    clip.setPlacementBeats(0.0, 8.0 * PROJECT_BPM / 172.0);  // the whole file, unstretched
     magda::test::audioEvent(clip).speedRatio = 1.0;
     clip.loopEnabled = true;
     magda::test::audioEvent(clip).setLoopStartSeconds(0.0);
-    magda::test::audioEvent(clip).setLoopLengthSeconds(clip.length);
+    magda::test::audioEvent(clip).setLoopLengthSeconds(8.0 * 60.0 / 172.0);
 
-    constexpr double PROJECT_BPM = 120.0;
     ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
 
     SECTION("Beat range is valid after setAutoTempo") {

@@ -927,14 +927,8 @@ struct ClipInfo {
     // Not serialized.
     bool takesExpanded = true;
 
-    // Derived timeline seconds cache. Kept only for bridge/UI call sites that
-    // have not moved to beats yet; do not treat these as model authority.
-    double startTime = 0.0;
-    double length = 4.0;
-
     // Transitional mirrors for call sites that still access beat fields directly.
-    // Keep in sync via setPlacementBeats / deriveTimesFromBeats while the refactor
-    // removes direct field access.
+    // Kept in sync by setPlacementBeats.
     double startBeats = 0.0;
 
     // =========================================================================
@@ -1244,35 +1238,14 @@ struct ClipInfo {
         return true;
     }
 
-    /// Derive startTime/length from placement beats using the given BPM.
-    void deriveTimesFromBeats(double bpm) {
-        if (isValidBpm(bpm)) {
-            if (placement.lengthBeats <= 0.0 && lengthBeats > 0.0)
-                setPlacementBeats(startBeats, lengthBeats);
-            if (placement.lengthBeats > 0.0) {
-                startTime = (placement.startBeat * 60.0) / bpm;
-                length = (placement.lengthBeats * 60.0) / bpm;
-            }
-        }
-    }
-
     /// Get end position in beats without BPM conversion (beats are always valid for MIDI)
     double getEndBeatsRaw() const {
         return placement.endBeat();
     }
 
-    /// The clip's length, which is already in beats. No tempo: beats are what
-    /// this model places things in, and deriveTimesFromBeats runs the other way
-    /// (#2563). It used to take one and ignore it, which had callers computing
-    /// a tempo for nothing.
+    /// The clip's length, which is already in beats (#2563).
     double getLengthInBeats() const {
         return placement.lengthBeats;
-    }
-
-    /// Set clip length from beats (updates placement and derived seconds cache)
-    void setLengthFromBeats(double beats, double bpm) {
-        setPlacementBeats(placement.startBeat, beats);
-        deriveTimesFromBeats(bpm);
     }
 
     /// Get clip start position in project beats.
@@ -1288,31 +1261,19 @@ struct ClipInfo {
     }
 
     // =========================================================================
-    // Robust seconds accessors (issue #1157)
-    //
-    // For autoTempo audio clips and MIDI clips, beats are AUTHORITATIVE — the
-    // seconds fields (length, startTime, offset, loopStart, loopLength) are
-    // derived caches that go stale every time projectBPM or source interpretation BPM changes.
-    // Renderers, sync code, and inspector readouts that go through these
-    // accessors compute the live value from beats and never depend on cache
-    // freshness. The cached fields are still maintained (so non-migrated
-    // readers stay correct), but new code should prefer the accessors.
+    // Timeline seconds, derived from placement beats. A clip stores no
+    // timeline seconds (#2791); the TempoMap overloads are right under a
+    // tempo change, the scalar ones only at a constant tempo.
     // =========================================================================
 
-    /// Timeline-domain seconds for the clip's length, derived from placement.
+    /// Timeline-domain seconds for the clip's length at a constant tempo.
     double getTimelineLength(double projectBPM) const {
-        if (placement.lengthBeats > 0.0 && isValidBpm(projectBPM)) {
-            return placement.lengthBeats * 60.0 / projectBPM;
-        }
-        return length;
+        return isValidBpm(projectBPM) ? placement.lengthBeats * 60.0 / projectBPM : 0.0;
     }
 
-    /// Timeline-domain seconds for the clip's start position, derived from placement.
+    /// Timeline-domain seconds for the clip's start at a constant tempo.
     double getTimelineStart(double projectBPM) const {
-        if (isValidBpm(projectBPM)) {
-            return placement.startBeat * 60.0 / projectBPM;
-        }
-        return startTime;
+        return isValidBpm(projectBPM) ? placement.startBeat * 60.0 / projectBPM : 0.0;
     }
 
     /// Timeline-domain end position (start + length).

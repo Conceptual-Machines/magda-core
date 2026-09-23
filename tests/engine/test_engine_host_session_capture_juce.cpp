@@ -202,7 +202,7 @@ class EngineHostSessionCaptureTest final : public juce::UnitTest {
     static magda::ClipId sessionAudio(magda::TrackId track, int scene, const juce::File& file) {
         auto& clips = magda::ClipManager::getInstance();
         const auto clip = clips.createAudioClipBeats(track, 0.0, 4.0, file.getFullPathName(),
-                                                     magda::ClipView::Session, 120.0);
+                                                     magda::ClipView::Session);
         clips.setClipSceneIndex(clip, scene);
         clips.setClipLaunchQuantize(clip, magda::LaunchQuantize::None);
         return clip;

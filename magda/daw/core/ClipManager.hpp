@@ -109,13 +109,12 @@ class ClipManager {
     /**
      * @brief Create an audio clip from a file — beats-authoritative API.
      *
-     * Source duration, offset, and loop fields remain source-domain seconds.
-     * Timeline placement is stored in beats and seconds are derived only for
-     * bridge/UI compatibility.
+     * Timeline placement is stored in beats; source positions stay in the
+     * source's own samples.
      */
     ClipId createAudioClipBeats(
         TrackId trackId, double startBeats, double lengthBeats, const juce::String& audioFilePath,
-        ClipView view = ClipView::Arrangement, double projectBPM = 0.0,
+        ClipView view = ClipView::Arrangement,
         ClipOverlapPolicy overlapPolicy = ClipOverlapPolicy::PreserveExisting);
 
     /**
@@ -457,7 +456,9 @@ class ClipManager {
     // Tempo and beat count are one fact in two units, tied by the file
     // length: setting either restates the other, and the loop region stays
     // where it is (an interpretation-sized one refits). Each write is refused
-    // over a value the user owns unless `from` is User.
+    // over a value the user owns unless `from` is User. A clip in beat mode
+    // refits its beat length to the same audio (#2791); a user write to a
+    // clip that has not asked for beat mode is refused.
 
     /** @brief The source's tempo. Refused outside 20-999. */
     void setSourceTempo(ClipId clipId, double bpm, Provenance from = Provenance::User);
@@ -490,14 +491,6 @@ class ClipManager {
 
     [[nodiscard]] bool saveClipToLibrary(
         ClipId clipId, std::optional<std::vector<WarpMarker>> warpMarkers = std::nullopt);
-
-    /** @brief Refresh the seconds-domain cache (length, startTime, offset,
-     *         loopStart, loopLength) on a beat-authoritative clip from its
-     *         canonical beat fields. No-op for time-authoritative clips.
-     *
-     *  Called by the interpretation operations and by TimelineController on
-     *  project-BPM change. Does NOT notify listeners — caller's responsibility. */
-    void refreshDerivedSeconds(ClipId clipId, double projectBPM);
 
     /** @brief The BEAT toggle: setPlaybackIntent with Beat or Free. */
     void setAutoTempo(ClipId clipId, bool enabled, double bpm);

@@ -259,7 +259,7 @@ class CreateClipCommand : public ValidatedCommand {
   public:
     CreateClipCommand(ClipType type, TrackId trackId, BeatPosition startBeat,
                       BeatDuration lengthBeats, juce::String audioFilePath = {},
-                      ClipView view = ClipView::Arrangement, double tempo = 0.0,
+                      ClipView view = ClipView::Arrangement,
                       ClipOverlapPolicy overlapPolicy = ClipOverlapPolicy::PreserveExisting);
 
     juce::String getDescription() const override {
@@ -281,7 +281,6 @@ class CreateClipCommand : public ValidatedCommand {
     double lengthBeats_;
     juce::String audioFilePath_;
     ClipView view_;
-    double tempo_;
     ClipOverlapPolicy overlapPolicy_;
     ClipId createdClipId_ = INVALID_CLIP_ID;
     std::vector<ClipInfo> arrangementSnapshot_;

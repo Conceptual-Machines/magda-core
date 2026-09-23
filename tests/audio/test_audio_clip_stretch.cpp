@@ -22,16 +22,17 @@
 
 TEST_CASE("Audio clip - Stretch factor basics", "[audio][clip][stretch]") {
     using namespace magda;
+    constexpr double kBpm = 120.0;
 
     SECTION("Default stretch factor is 1.0") {
         ClipInfo clip;
         clip.setAudioContent();
         magda::test::giveAudioEvent(clip, "test.wav");
-        clip.length = 4.0;
+        clip.setPlacementBeats(0.0, 8.0);
         magda::test::audioEvent(clip).speedRatio = 1.0;
 
         // File window equals length when stretch factor is 1.0
-        double fileWindow = clip.length * magda::test::audioEvent(clip).speedRatio;
+        double fileWindow = clip.getTimelineLength(kBpm) * magda::test::audioEvent(clip).speedRatio;
         REQUIRE(fileWindow == 4.0);
     }
 
@@ -40,11 +41,11 @@ TEST_CASE("Audio clip - Stretch factor basics", "[audio][clip][stretch]") {
         clip.setAudioContent();
         magda::test::giveAudioEvent(clip, "test.wav");
         magda::test::audioEvent(clip).setAnchorSeconds(0.0);
-        clip.length = 4.0;
+        clip.setPlacementBeats(0.0, 8.0);
         magda::test::audioEvent(clip).speedRatio = 2.0;  // 2x faster
 
         // File window is double the length when 2x faster
-        double fileWindow = clip.length * magda::test::audioEvent(clip).speedRatio;
+        double fileWindow = clip.getTimelineLength(kBpm) * magda::test::audioEvent(clip).speedRatio;
         REQUIRE(fileWindow == 8.0);
 
         // Reading from file offset 0-8, displaying as 0-4 seconds
@@ -55,11 +56,11 @@ TEST_CASE("Audio clip - Stretch factor basics", "[audio][clip][stretch]") {
         clip.setAudioContent();
         magda::test::giveAudioEvent(clip, "test.wav");
         magda::test::audioEvent(clip).setAnchorSeconds(0.0);
-        clip.length = 8.0;
+        clip.setPlacementBeats(0.0, 16.0);
         magda::test::audioEvent(clip).speedRatio = 0.5;  // 2x slower
 
         // File window is half the length when 2x slower
-        double fileWindow = clip.length * magda::test::audioEvent(clip).speedRatio;
+        double fileWindow = clip.getTimelineLength(kBpm) * magda::test::audioEvent(clip).speedRatio;
         REQUIRE(fileWindow == 4.0);
 
         // Reading from file offset 0-4, displaying as 0-8 seconds
@@ -73,7 +74,7 @@ TEST_CASE("ClipManager - setSpeedRatio clamping", "[audio][clip][stretch]") {
     ClipManager::getInstance().shutdown();
 
     SECTION("Stretch factor clamped to [0.25, 4.0] range") {
-        ClipId clipId = ClipManager::getInstance().createAudioClip(1, 0.0, 4.0, "test.wav");
+        ClipId clipId = ClipManager::getInstance().createAudioClipBeats(1, 0.0, 8.0, "test.wav");
         REQUIRE(clipId != INVALID_CLIP_ID);
 
         const auto* clip = ClipManager::getInstance().getClip(clipId);
@@ -99,41 +100,40 @@ TEST_CASE("ClipManager - setSpeedRatio clamping", "[audio][clip][stretch]") {
 
 TEST_CASE("Audio Clip - Left edge resize trims file offset", "[audio][clip][trim]") {
     using namespace magda;
+    constexpr double kBpm = 120.0;
 
     ClipManager::getInstance().shutdown();
 
     SECTION("Trim from left advances file offset (audio at clip start)") {
-        // Create audio clip: starts at 0, length 4.0
-        ClipId clipId = ClipManager::getInstance().createAudioClip(1, 0.0, 4.0, "test.wav");
+        ClipId clipId = ClipManager::getInstance().createAudioClipBeats(1, 0.0, 8.0, "test.wav");
         auto* clip = ClipManager::getInstance().getClip(clipId);
         REQUIRE(clip != nullptr);
 
         primaryEventOf(clip)->setAnchorSeconds(0.0);
         primaryEventOf(clip)->speedRatio = 1.0;
 
-        // Trim from left by 1.0 seconds
-        ClipManager::getInstance().resizeClip(clipId, 3.0, true);
+        // Trim from left by 2 beats (1 s at 120 BPM)
+        ClipManager::getInstance().resizeClipBeats(clipId, 6.0, true, kBpm);
 
-        // Clip moved right by 1.0 second
-        REQUIRE(clip->startTime == 1.0);
-        REQUIRE(clip->length == 3.0);
+        REQUIRE(clip->placement.startBeat == Catch::Approx(2.0));
+        REQUIRE(clip->placement.lengthBeats == Catch::Approx(6.0));
 
         // Audio offset advanced by 1.0 second
         REQUIRE(primaryEventOf(clip)->anchorSeconds() == Catch::Approx(1.0));
     }
 
     SECTION("Trim with stretch factor converts to file time") {
-        ClipId clipId = ClipManager::getInstance().createAudioClip(1, 0.0, 4.0, "test.wav");
+        ClipId clipId = ClipManager::getInstance().createAudioClipBeats(1, 0.0, 8.0, "test.wav");
         auto* clip = ClipManager::getInstance().getClip(clipId);
 
         primaryEventOf(clip)->setAnchorSeconds(0.0);
         primaryEventOf(clip)->speedRatio = 2.0;  // 2x faster, file window = 8.0
 
-        // Trim from left by 2.0 timeline seconds
-        ClipManager::getInstance().resizeClip(clipId, 2.0, true);
+        // Trim from left by 4 beats (2 s at 120 BPM)
+        ClipManager::getInstance().resizeClipBeats(clipId, 4.0, true, kBpm);
 
-        REQUIRE(clip->startTime == 2.0);
-        REQUIRE(clip->length == 2.0);
+        REQUIRE(clip->placement.startBeat == Catch::Approx(4.0));
+        REQUIRE(clip->placement.lengthBeats == Catch::Approx(4.0));
 
         // File trim amount = 2.0 * 2.0 = 4.0 file seconds
         REQUIRE(primaryEventOf(clip)->anchorSeconds() == Catch::Approx(4.0));
@@ -146,16 +146,16 @@ TEST_CASE("Audio Clip - Right edge resize doesn't change offset", "[audio][clip]
     ClipManager::getInstance().shutdown();
 
     SECTION("Right edge resize only changes length") {
-        ClipId clipId = ClipManager::getInstance().createAudioClip(1, 0.0, 4.0, "test.wav");
+        ClipId clipId = ClipManager::getInstance().createAudioClipBeats(1, 0.0, 8.0, "test.wav");
         auto* clip = ClipManager::getInstance().getClip(clipId);
 
         primaryEventOf(clip)->setAnchorSeconds(1.0);
 
         // Resize from right edge
-        ClipManager::getInstance().resizeClip(clipId, 6.0, false);
+        ClipManager::getInstance().resizeClipBeats(clipId, 12.0, false, 120.0);
 
-        REQUIRE(clip->startTime == 0.0);
-        REQUIRE(clip->length == 6.0);
+        REQUIRE(clip->placement.startBeat == 0.0);
+        REQUIRE(clip->placement.lengthBeats == Catch::Approx(12.0));
 
         // Audio offset unchanged
         REQUIRE(primaryEventOf(clip)->anchorSeconds() == 1.0);
@@ -164,42 +164,45 @@ TEST_CASE("Audio Clip - Right edge resize doesn't change offset", "[audio][clip]
 
 TEST_CASE("Audio Clip - Stretch maintains file window", "[audio][clip][stretch]") {
     using namespace magda;
+    constexpr double kBpm = 120.0;
 
     ClipManager::getInstance().shutdown();
 
     SECTION("Stretching by 2x halves length but file window stays same") {
-        ClipId clipId = ClipManager::getInstance().createAudioClip(1, 0.0, 4.0, "test.wav");
+        ClipId clipId = ClipManager::getInstance().createAudioClipBeats(1, 0.0, 8.0, "test.wav");
         auto* clip = ClipManager::getInstance().getClip(clipId);
 
         primaryEventOf(clip)->setAnchorSeconds(0.0);
         primaryEventOf(clip)->speedRatio = 1.0;
 
-        double originalFileWindow = clip->length * primaryEventOf(clip)->speedRatio;
+        double originalFileWindow =
+            clip->getTimelineLength(kBpm) * primaryEventOf(clip)->speedRatio;
         REQUIRE(originalFileWindow == 4.0);
 
-        // Stretch 2x slower: length becomes 8, stretch factor becomes 0.5
-        clip->length = 8.0;
+        // Stretch 2x slower: length becomes 16 beats, stretch factor becomes 0.5
+        clip->setPlacementBeats(0.0, 16.0);
         ClipManager::getInstance().setSpeedRatio(clipId, 0.5);
 
-        double newFileWindow = clip->length * primaryEventOf(clip)->speedRatio;
+        double newFileWindow = clip->getTimelineLength(kBpm) * primaryEventOf(clip)->speedRatio;
         REQUIRE(newFileWindow == Catch::Approx(originalFileWindow));
     }
 
     SECTION("Compressing by 2x halves length but file window stays same") {
-        ClipId clipId = ClipManager::getInstance().createAudioClip(1, 0.0, 4.0, "test.wav");
+        ClipId clipId = ClipManager::getInstance().createAudioClipBeats(1, 0.0, 8.0, "test.wav");
         auto* clip = ClipManager::getInstance().getClip(clipId);
 
         primaryEventOf(clip)->setAnchorSeconds(1.0);
         primaryEventOf(clip)->speedRatio = 1.0;
 
-        double originalFileWindow = clip->length * primaryEventOf(clip)->speedRatio;
+        double originalFileWindow =
+            clip->getTimelineLength(kBpm) * primaryEventOf(clip)->speedRatio;
         REQUIRE(originalFileWindow == 4.0);
 
-        // Compress 2x faster: length becomes 2, stretch factor becomes 2.0
-        clip->length = 2.0;
+        // Compress 2x faster: length becomes 4 beats, stretch factor becomes 2.0
+        clip->setPlacementBeats(0.0, 4.0);
         ClipManager::getInstance().setSpeedRatio(clipId, 2.0);
 
-        double newFileWindow = clip->length * primaryEventOf(clip)->speedRatio;
+        double newFileWindow = clip->getTimelineLength(kBpm) * primaryEventOf(clip)->speedRatio;
         REQUIRE(newFileWindow == Catch::Approx(originalFileWindow));
 
         // File offset unchanged
@@ -210,88 +213,83 @@ TEST_CASE("Audio Clip - Stretch maintains file window", "[audio][clip][stretch]"
 TEST_CASE("Audio Clip - Analog pitch resamples instead of time-stretching",
           "[audio][clip][pitch][analog]") {
     using namespace magda;
+    constexpr double kBpm = 120.0;
 
     ClipManager::getInstance().shutdown();
 
     SECTION("Pitch down slows playback and grows timeline length") {
-        ClipId clipId = ClipManager::getInstance().createAudioClip(1, 0.0, 2.0, "test.wav");
+        ClipId clipId = ClipManager::getInstance().createAudioClipBeats(1, 0.0, 4.0, "test.wav");
         auto* clip = ClipManager::getInstance().getClip(clipId);
         REQUIRE(clip != nullptr);
 
         primaryEventOf(clip)->speedRatio = 1.0;
-        clip->length = 2.0;
-        clip->setPlacementBeats(0.0, 4.0);
 
         ClipManager::getInstance().setAnalogPitch(clipId, true);
         ClipManager::getInstance().setPitchChange(clipId, -12.0f);
 
         REQUIRE(primaryEventOf(clip)->analogPitch);
         REQUIRE(primaryEventOf(clip)->speedRatio == Catch::Approx(0.5));
-        REQUIRE(clip->length == Catch::Approx(4.0));
-        REQUIRE(clip->lengthBeats == Catch::Approx(8.0));
-        REQUIRE(primaryEventOf(clip)->timelineToSource(clip->length) == Catch::Approx(2.0));
+        REQUIRE(clip->getTimelineLength(kBpm) == Catch::Approx(4.0));
+        REQUIRE(clip->placement.lengthBeats == Catch::Approx(8.0));
+        REQUIRE(primaryEventOf(clip)->timelineToSource(clip->getTimelineLength(kBpm)) ==
+                Catch::Approx(2.0));
     }
 
     SECTION("Pitch up speeds playback and shrinks timeline length") {
-        ClipId clipId = ClipManager::getInstance().createAudioClip(1, 0.0, 2.0, "test.wav");
+        ClipId clipId = ClipManager::getInstance().createAudioClipBeats(1, 0.0, 4.0, "test.wav");
         auto* clip = ClipManager::getInstance().getClip(clipId);
         REQUIRE(clip != nullptr);
 
         primaryEventOf(clip)->speedRatio = 1.0;
-        clip->length = 2.0;
-        clip->setPlacementBeats(0.0, 4.0);
 
         ClipManager::getInstance().setAnalogPitch(clipId, true);
         ClipManager::getInstance().setPitchChange(clipId, 12.0f);
 
         REQUIRE(primaryEventOf(clip)->speedRatio == Catch::Approx(2.0));
-        REQUIRE(clip->length == Catch::Approx(1.0));
-        REQUIRE(clip->lengthBeats == Catch::Approx(2.0));
-        REQUIRE(primaryEventOf(clip)->timelineToSource(clip->length) == Catch::Approx(2.0));
+        REQUIRE(clip->getTimelineLength(kBpm) == Catch::Approx(1.0));
+        REQUIRE(clip->placement.lengthBeats == Catch::Approx(2.0));
+        REQUIRE(primaryEventOf(clip)->timelineToSource(clip->getTimelineLength(kBpm)) ==
+                Catch::Approx(2.0));
     }
 }
 
 TEST_CASE("Audio Clip - Real-world scenario: Amen break trim", "[audio][clip][integration]") {
     using namespace magda;
+    constexpr double kBpm = 120.0;
 
     ClipManager::getInstance().shutdown();
 
     SECTION("Trim amen break from left preserves timeline positions") {
-        // Amen break: ~4.5 bars at given BPM = 9 seconds
-        constexpr double kBPM = 120.0;
-        constexpr double kSecondsPerBeat = 60.0 / kBPM;  // 0.5s at 120 BPM
-        juce::ignoreUnused(kSecondsPerBeat);
-
-        ClipId clipId = ClipManager::getInstance().createAudioClip(1, 0.0, 9.0, "amen.wav");
+        // Amen break: 4.5 bars at 120 BPM = 18 beats, 9 seconds
+        ClipId clipId = ClipManager::getInstance().createAudioClipBeats(1, 0.0, 18.0, "amen.wav");
         auto* clip = ClipManager::getInstance().getClip(clipId);
 
         primaryEventOf(clip)->setAnchorSeconds(0.0);
         primaryEventOf(clip)->speedRatio = 1.0;
 
-        // Trim from left by 1.0 second (to bar 1.3, where first snare is)
-        ClipManager::getInstance().resizeClip(clipId, 8.0, true);
+        // Trim from left by 2 beats (to bar 1.3, where first snare is)
+        ClipManager::getInstance().resizeClipBeats(clipId, 16.0, true, kBpm);
 
-        // Clip now starts at 1.0s
-        REQUIRE(clip->startTime == 1.0);
-        REQUIRE(clip->length == 8.0);
+        REQUIRE(clip->placement.startBeat == Catch::Approx(2.0));
+        REQUIRE(clip->placement.lengthBeats == Catch::Approx(16.0));
 
         // Audio offset advanced to 1.0s (skipping first bar)
         REQUIRE(primaryEventOf(clip)->anchorSeconds() == Catch::Approx(1.0));
     }
 
     SECTION("Trim stretched amen break converts to file time") {
-        // Amen break stretched 2x slower: 18 seconds timeline duration
-        ClipId clipId = ClipManager::getInstance().createAudioClip(1, 0.0, 18.0, "amen.wav");
+        // Amen break stretched 2x slower: 36 beats, 18 seconds on the timeline
+        ClipId clipId = ClipManager::getInstance().createAudioClipBeats(1, 0.0, 36.0, "amen.wav");
         auto* clip = ClipManager::getInstance().getClip(clipId);
 
         primaryEventOf(clip)->setAnchorSeconds(0.0);
         primaryEventOf(clip)->speedRatio = 0.5;  // 2x slower, file window = 9.0s
 
-        // Trim from left by 2.0 timeline seconds (to first snare)
-        ClipManager::getInstance().resizeClip(clipId, 16.0, true);
+        // Trim from left by 4 beats, 2 timeline seconds (to first snare)
+        ClipManager::getInstance().resizeClipBeats(clipId, 32.0, true, kBpm);
 
-        REQUIRE(clip->startTime == 2.0);
-        REQUIRE(clip->length == 16.0);
+        REQUIRE(clip->placement.startBeat == Catch::Approx(4.0));
+        REQUIRE(clip->placement.lengthBeats == Catch::Approx(32.0));
 
         // File trim amount = 2.0 * 0.5 = 1.0 file seconds
         REQUIRE(primaryEventOf(clip)->anchorSeconds() == Catch::Approx(1.0));
@@ -300,30 +298,31 @@ TEST_CASE("Audio Clip - Real-world scenario: Amen break trim", "[audio][clip][in
 
 TEST_CASE("Audio Clip - Edge cases", "[audio][clip][edge]") {
     using namespace magda;
+    constexpr double kBpm = 120.0;
 
     ClipManager::getInstance().shutdown();
 
     SECTION("Minimum clip length enforced") {
-        ClipId clipId = ClipManager::getInstance().createAudioClip(1, 0.0, 4.0, "test.wav");
+        ClipId clipId = ClipManager::getInstance().createAudioClipBeats(1, 0.0, 8.0, "test.wav");
         auto* clip = ClipManager::getInstance().getClip(clipId);
 
         // Try to resize to very small length
-        ClipManager::getInstance().resizeClip(clipId, 0.01, false);
+        ClipManager::getInstance().resizeClipBeats(clipId, 0.02, false, kBpm);
 
-        // Clamped to minimum 0.1
-        REQUIRE(clip->length == Catch::Approx(0.1));
+        // Clamped to minimum 0.1 s
+        REQUIRE(clip->getTimelineLength(kBpm) == Catch::Approx(0.1));
     }
 
     SECTION("Trim to zero start time") {
-        ClipId clipId = ClipManager::getInstance().createAudioClip(1, 1.0, 4.0, "test.wav");
+        ClipId clipId = ClipManager::getInstance().createAudioClipBeats(1, 2.0, 8.0, "test.wav");
         auto* clip = ClipManager::getInstance().getClip(clipId);
 
         // Resize from left past zero
-        ClipManager::getInstance().resizeClip(clipId, 6.0, true);
+        ClipManager::getInstance().resizeClipBeats(clipId, 12.0, true, kBpm);
 
-        // Start time clamped to zero
-        REQUIRE(clip->startTime == 0.0);
-        REQUIRE(clip->length == 6.0);
+        // Start clamped to zero
+        REQUIRE(clip->placement.startBeat == 0.0);
+        REQUIRE(clip->placement.lengthBeats == Catch::Approx(12.0));
     }
 }
 
@@ -434,7 +433,7 @@ TEST_CASE("Auto-tempo selects the default quality tier",
         ClipInfo clip;
         clip.setAudioContent();
         magda::test::giveAudioEvent(clip, "test.wav");
-        clip.length = 4.0;
+        clip.setPlacementBeats(0.0, 8.0);
         // Beat mode is granted only with an interpretation behind it (#2676),
         // and this case is about the tier it picks once it is in.
         magda::test::audioEvent(clip).interpBpm = 120.0;
@@ -699,62 +698,62 @@ TEST_CASE("Signalsmith preserves a transient at the start of a stream",
 TEST_CASE("ClipOperations - stretchAudioFromLeft right edge anchoring",
           "[audio][clip][stretch][regression]") {
     using namespace magda;
+    // stretchAudioFromLeft takes timeline seconds; at 120 BPM one second is two beats.
+    constexpr double kBpm = 120.0;
 
     SECTION("Multiple stretch events maintain fixed right edge") {
         ClipInfo clip;
         clip.setAudioContent();
         magda::test::giveAudioEvent(clip, "test.wav");
         magda::test::audioEvent(clip).setAnchorSeconds(0.0);
-        clip.startTime = 10.0;
-        clip.length = 5.0;
+        clip.setPlacementBeats(20.0, 10.0);
         magda::test::audioEvent(clip).speedRatio = 1.0;
 
-        // Calculate expected right edge (should never change)
-        double expectedRightEdge = 10.0 + 5.0;  // 15.0
-        REQUIRE(expectedRightEdge == 15.0);
+        const double expectedEndBeat = 30.0;
 
         // Capture original values at "mouseDown"
-        double originalLength = clip.length;
+        double originalLength = clip.getTimelineLength(kBpm);
         double originalStretchFactor = magda::test::audioEvent(clip).speedRatio;
+        REQUIRE(originalLength == Catch::Approx(5.0));
 
         // Simulate drag event 1: stretch to 6.0 seconds
-        ClipOperations::stretchAudioFromLeft(clip, 6.0, originalLength, originalStretchFactor);
+        ClipOperations::stretchAudioFromLeft(clip, 6.0, originalLength, originalStretchFactor,
+                                             kBpm);
 
-        double rightEdge1 = clip.startTime + clip.length;
-        REQUIRE(rightEdge1 == Catch::Approx(expectedRightEdge));
-        REQUIRE(clip.startTime == Catch::Approx(9.0));  // 15.0 - 6.0
-        REQUIRE(clip.length == Catch::Approx(6.0));
+        REQUIRE(clip.placement.endBeat() == Catch::Approx(expectedEndBeat));
+        REQUIRE(clip.placement.startBeat == Catch::Approx(18.0));
+        REQUIRE(clip.placement.lengthBeats == Catch::Approx(12.0));
         REQUIRE(magda::test::audioEvent(clip).speedRatio ==
                 Catch::Approx(1.0 / 1.2));  // 1.0 / (6.0 / 5.0) = 5.0 / 6.0
 
         // Simulate drag event 2: stretch to 7.0 seconds (more stretching)
-        ClipOperations::stretchAudioFromLeft(clip, 7.0, originalLength, originalStretchFactor);
+        ClipOperations::stretchAudioFromLeft(clip, 7.0, originalLength, originalStretchFactor,
+                                             kBpm);
 
-        double rightEdge2 = clip.startTime + clip.length;
-        REQUIRE(rightEdge2 == Catch::Approx(expectedRightEdge));  // Still 15.0!
-        REQUIRE(clip.startTime == Catch::Approx(8.0));            // 15.0 - 7.0
-        REQUIRE(clip.length == Catch::Approx(7.0));
+        REQUIRE(clip.placement.endBeat() == Catch::Approx(expectedEndBeat));
+        REQUIRE(clip.placement.startBeat == Catch::Approx(16.0));
+        REQUIRE(clip.placement.lengthBeats == Catch::Approx(14.0));
         REQUIRE(magda::test::audioEvent(clip).speedRatio ==
                 Catch::Approx(1.0 / 1.4));  // 1.0 / (7.0 / 5.0) = 5.0 / 7.0
 
         // Simulate drag event 3: compress to 4.0 seconds (user dragged right)
-        ClipOperations::stretchAudioFromLeft(clip, 4.0, originalLength, originalStretchFactor);
+        ClipOperations::stretchAudioFromLeft(clip, 4.0, originalLength, originalStretchFactor,
+                                             kBpm);
 
-        double rightEdge3 = clip.startTime + clip.length;
-        REQUIRE(rightEdge3 == Catch::Approx(expectedRightEdge));  // Still 15.0!
-        REQUIRE(clip.startTime == Catch::Approx(11.0));           // 15.0 - 4.0
-        REQUIRE(clip.length == Catch::Approx(4.0));
+        REQUIRE(clip.placement.endBeat() == Catch::Approx(expectedEndBeat));
+        REQUIRE(clip.placement.startBeat == Catch::Approx(22.0));
+        REQUIRE(clip.placement.lengthBeats == Catch::Approx(8.0));
         REQUIRE(magda::test::audioEvent(clip).speedRatio ==
                 Catch::Approx(1.0 / 0.8));  // 1.0 / (4.0 / 5.0) = 5.0 / 4.0 = 1.25
 
         // Simulate drag event 4: back to original length
-        ClipOperations::stretchAudioFromLeft(clip, 5.0, originalLength, originalStretchFactor);
+        ClipOperations::stretchAudioFromLeft(clip, 5.0, originalLength, originalStretchFactor,
+                                             kBpm);
 
-        double rightEdge4 = clip.startTime + clip.length;
-        REQUIRE(rightEdge4 == Catch::Approx(expectedRightEdge));  // Still 15.0!
-        REQUIRE(clip.startTime == Catch::Approx(10.0));           // Back to original
-        REQUIRE(clip.length == Catch::Approx(originalLength));    // Back to 5.0
-        REQUIRE(magda::test::audioEvent(clip).speedRatio == Catch::Approx(1.0));  // Back to 1.0
+        REQUIRE(clip.placement.endBeat() == Catch::Approx(expectedEndBeat));
+        REQUIRE(clip.placement.startBeat == Catch::Approx(20.0));
+        REQUIRE(clip.placement.lengthBeats == Catch::Approx(10.0));
+        REQUIRE(magda::test::audioEvent(clip).speedRatio == Catch::Approx(1.0));
     }
 
     SECTION("Stretch factor clamping doesn't break right edge anchoring") {
@@ -762,26 +761,22 @@ TEST_CASE("ClipOperations - stretchAudioFromLeft right edge anchoring",
         clip.setAudioContent();
         magda::test::giveAudioEvent(clip, "test.wav");
         magda::test::audioEvent(clip).setAnchorSeconds(0.0);
-        clip.startTime = 5.0;
-        clip.length = 2.0;
+        clip.setPlacementBeats(10.0, 4.0);
         magda::test::audioEvent(clip).speedRatio = 1.0;
 
-        double expectedRightEdge = 5.0 + 2.0;  // 7.0
-        double originalLength = clip.length;
+        double originalLength = clip.getTimelineLength(kBpm);
         double originalStretchFactor = magda::test::audioEvent(clip).speedRatio;
 
-        // Try to stretch to 10.0 (5.0x ratio). The requested speed would clamp at the
+        // Try to stretch to 10.0 s (5.0x ratio). The requested speed would clamp at the
         // minimum speed, but keeping the right edge fixed must not push the clip before
         // the timeline origin.
-        ClipOperations::stretchAudioFromLeft(clip, 10.0, originalLength, originalStretchFactor);
+        ClipOperations::stretchAudioFromLeft(clip, 10.0, originalLength, originalStretchFactor,
+                                             kBpm);
 
         REQUIRE(magda::test::audioEvent(clip).speedRatio == Catch::Approx(2.0 / 7.0));
-        REQUIRE(clip.startTime == Catch::Approx(0.0));
-        REQUIRE(clip.length == Catch::Approx(7.0));
-
-        // Right edge maintained
-        double rightEdge = clip.startTime + clip.length;
-        REQUIRE(rightEdge == Catch::Approx(expectedRightEdge));
+        REQUIRE(clip.placement.startBeat == Catch::Approx(0.0));
+        REQUIRE(clip.placement.lengthBeats == Catch::Approx(14.0));
+        REQUIRE(clip.placement.endBeat() == Catch::Approx(14.0));
     }
 
     SECTION("Stretch with pre-stretched audio maintains correct calculations") {
@@ -789,24 +784,22 @@ TEST_CASE("ClipOperations - stretchAudioFromLeft right edge anchoring",
         clip.setAudioContent();
         magda::test::giveAudioEvent(clip, "test.wav");
         magda::test::audioEvent(clip).setAnchorSeconds(0.0);
-        clip.startTime = 20.0;
-        clip.length = 10.0;
+        clip.setPlacementBeats(40.0, 20.0);
         magda::test::audioEvent(clip).speedRatio = 2.0;  // Already stretched 2x
 
-        double expectedRightEdge = 20.0 + 10.0;  // 30.0
-        double originalLength = clip.length;
+        double originalLength = clip.getTimelineLength(kBpm);
         double originalStretchFactor = magda::test::audioEvent(clip).speedRatio;
 
-        // Stretch from 10.0 to 15.0 (1.5x stretch on top of existing 2.0x)
-        ClipOperations::stretchAudioFromLeft(clip, 15.0, originalLength, originalStretchFactor);
+        // Stretch from 10.0 s to 15.0 s (1.5x stretch on top of existing 2.0x)
+        ClipOperations::stretchAudioFromLeft(clip, 15.0, originalLength, originalStretchFactor,
+                                             kBpm);
 
         // New stretch factor: 2.0 / (15.0 / 10.0) = 2.0 / 1.5 = 1.333...
         REQUIRE(magda::test::audioEvent(clip).speedRatio == Catch::Approx(2.0 / 1.5));
-        REQUIRE(clip.length == Catch::Approx(15.0));
+        REQUIRE(clip.placement.lengthBeats == Catch::Approx(30.0));
 
-        // Right edge still anchored
-        double rightEdge = clip.startTime + clip.length;
-        REQUIRE(rightEdge == Catch::Approx(expectedRightEdge));
-        REQUIRE(clip.startTime == Catch::Approx(15.0));  // 30.0 - 15.0
+        // Right edge still anchored at beat 60
+        REQUIRE(clip.placement.endBeat() == Catch::Approx(60.0));
+        REQUIRE(clip.placement.startBeat == Catch::Approx(30.0));
     }
 }

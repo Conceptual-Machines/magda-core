@@ -63,8 +63,8 @@ int pixelsDiffering(const juce::Image& a, const juce::Image& b) {
 /// to cope: the file can go missing between sessions.
 ClipId createAudioClip(double startBeats, double lengthBeats,
                        ClipView view = ClipView::Arrangement) {
-    return ClipManager::getInstance().createAudioClipBeats(
-        testTrackId, startBeats, lengthBeats, "/tmp/magda_paint_test.wav", view, testTempoBPM);
+    return ClipManager::getInstance().createAudioClipBeats(testTrackId, startBeats, lengthBeats,
+                                                           "/tmp/magda_paint_test.wav", view);
 }
 
 struct PaintFixture {

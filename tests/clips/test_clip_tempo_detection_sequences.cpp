@@ -80,8 +80,8 @@ struct DetectionFixture {
     }
 
     ClipId createSessionClip() const {
-        return ClipManager::getInstance().createAudioClipBeats(1, 0.0, 4.0, path, ClipView::Session,
-                                                               kProjectBpm);
+        return ClipManager::getInstance().createAudioClipBeats(1, 0.0, 4.0, path,
+                                                               ClipView::Session);
     }
 
     static void pump(int times = 3) {
@@ -126,6 +126,7 @@ TEST_CASE("A detection that lands on a clip the user already set does not replac
     DetectionFixture fx;
     const auto clipId = fx.createSessionClip();
 
+    ClipManager::getInstance().setAutoTempo(clipId, true, kProjectBpm);
     ClipManager::getInstance().setSourceTempo(clipId, kProjectBpm, Provenance::User);
     REQUIRE(eventOf(clipId)->interpBpm == Approx(kProjectBpm));
 
@@ -142,6 +143,7 @@ TEST_CASE("A detection that lands on a clip the user set to another tempo does n
     DetectionFixture fx;
     const auto clipId = fx.createSessionClip();
 
+    ClipManager::getInstance().setAutoTempo(clipId, true, kProjectBpm);
     ClipManager::getInstance().setSourceTempo(clipId, 100.0, Provenance::User);
 
     ClipManager::getInstance().detectMissingTempo({clipId}, kProjectBpm, nullptr);
@@ -194,8 +196,7 @@ TEST_CASE("A typed tempo completes a BEAT request made without one",
           "[clip][tempo][sequence][detection]") {
     DetectionFixture fx;
     auto& clips = ClipManager::getInstance();
-    const auto clipId =
-        clips.createAudioClipBeats(1, 0.0, 4.0, fx.path, ClipView::Arrangement, kProjectBpm);
+    const auto clipId = clips.createAudioClipBeats(1, 0.0, 4.0, fx.path, ClipView::Arrangement);
     auto* event = clips.getClip(clipId)->primaryEvent();
     event->analogPitch = true;
     event->speedRatio = 1.5;
@@ -214,27 +215,20 @@ TEST_CASE("A typed tempo completes a BEAT request made without one",
     REQUIRE(event->loopExtent == RegionExtent::Interpretation);
 }
 
-// The same whether BEAT or the tempo comes first: an untrimmed clip takes
-// its musical length on the way into beat mode.
-TEST_CASE("A typed tempo after a BEAT request sizes the clip as BEAT after the tempo would",
+// An untrimmed clip takes its musical length on the way into beat mode.
+TEST_CASE("A typed tempo after a BEAT request sizes an untrimmed clip to its beat count",
           "[clip][tempo][sequence][detection]") {
     DetectionFixture fx;
     auto& clips = ClipManager::getInstance();
     const double fileBeatsAtProject = kFileSeconds * kProjectBpm / 60.0;
 
-    const auto beatFirst = clips.createAudioClipBeats(1, 0.0, fileBeatsAtProject, fx.path,
-                                                      ClipView::Arrangement, kProjectBpm);
-    clips.setAutoTempo(beatFirst, true, kProjectBpm);
-    clips.setSourceTempo(beatFirst, 180.0);
-
-    const auto tempoFirst = clips.createAudioClipBeats(1, 32.0, fileBeatsAtProject, fx.path,
-                                                       ClipView::Arrangement, kProjectBpm);
-    clips.setSourceTempo(tempoFirst, 180.0);
-    clips.setAutoTempo(tempoFirst, true, kProjectBpm);
+    const auto clipId =
+        clips.createAudioClipBeats(1, 0.0, fileBeatsAtProject, fx.path, ClipView::Arrangement);
+    clips.setAutoTempo(clipId, true, kProjectBpm);
+    clips.setSourceTempo(clipId, 180.0);
 
     const double musicalBeats = kFileSeconds * 180.0 / 60.0;
-    REQUIRE(clips.getClip(tempoFirst)->placement.lengthBeats == Approx(musicalBeats).margin(0.01));
-    REQUIRE(clips.getClip(beatFirst)->placement.lengthBeats == Approx(musicalBeats).margin(0.01));
+    REQUIRE(clips.getClip(clipId)->placement.lengthBeats == Approx(musicalBeats).margin(0.01));
 }
 
 TEST_CASE("A detection answering for a file the clip no longer plays lands nowhere",
@@ -259,6 +253,7 @@ TEST_CASE("A detection is refused over the user's tempo and taken over an earlie
     auto& clips = ClipManager::getInstance();
 
     const auto owned = fx.createSessionClip();
+    clips.setAutoTempo(owned, true, kProjectBpm);
     clips.setSourceTempo(owned, 100.0, Provenance::User);
     clips.adoptAnalysis(owned, fx.path, 90.0);
     REQUIRE(eventOf(owned)->interpBpm == Approx(100.0));

@@ -580,14 +580,14 @@ void AudioClipPropertiesContent::updateFromClip() {
 
     bool enabled = hasClip;
     bool isAutoTempo = hasClip && magda::audioEventRef(*clip).autoTempo;
-    // Speed is live in time-based mode only. Source BPM / Beats are live in
-    // both: they say what the file is, which is what a clip in time mode for
-    // want of a tempo needs a way to state (#2676). Mirrors the right-panel
-    // clip inspector.
+    // Speed is live in time-based mode only. Source BPM / Beats are live once
+    // beat mode is asked for, granted or waiting on a tempo (#2676); a raw
+    // clip has none to state (#2791). Mirrors the right-panel clip inspector.
+    const bool tempoLive = hasClip && magda::audioEventRef(*clip).wantsBeatMode();
     stretchValue_->setEnabled(enabled && !isAutoTempo);
     stretchModeCombo_->setEnabled(enabled);
-    bpmValue_->setEnabled(enabled);
-    beatsValue_->setEnabled(enabled);
+    bpmValue_->setEnabled(tempoLive);
+    beatsValue_->setEnabled(tempoLive);
     pitchValue_->setEnabled(enabled);
     analogPitchToggle_->setEnabled(enabled && !isAutoTempo &&
                                    !(hasClip && magda::audioEventRef(*clip).warpEnabled));

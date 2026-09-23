@@ -134,8 +134,8 @@ TEST_CASE("DuplicateClipCommand - basic duplicate", "[clip][command][duplicate]"
         REQUIRE(dup != nullptr);
 
         // Duplicate starts after original
-        REQUIRE(dup->startTime == Catch::Approx(orig->startTime + orig->length));
-        REQUIRE(dup->length == Catch::Approx(orig->length));
+        REQUIRE(dup->placement.startBeat == Catch::Approx(orig->placement.endBeat()));
+        REQUIRE(dup->placement.lengthBeats == Catch::Approx(orig->placement.lengthBeats));
         REQUIRE(dup->trackId == orig->trackId);
         REQUIRE(dup->getType() == orig->getType());
 
@@ -153,7 +153,7 @@ TEST_CASE("DuplicateClipCommand - basic duplicate", "[clip][command][duplicate]"
 
         auto* dup = ClipManager::getInstance().getClip(cmd.getDuplicatedClipId());
         REQUIRE(dup != nullptr);
-        REQUIRE(dup->startTime == Catch::Approx(5.0));
+        REQUIRE(dup->placement.startBeat == Catch::Approx(10.0));
         REQUIRE(dup->trackId == track2);
     }
 
@@ -180,7 +180,7 @@ TEST_CASE("DuplicateClipCommand - undo/redo", "[clip][command][duplicate][undo]"
     // Original untouched
     auto* orig = ClipManager::getInstance().getClip(original);
     REQUIRE(orig != nullptr);
-    REQUIRE(orig->length == Catch::Approx(2.0));
+    REQUIRE(orig->placement.lengthBeats == Catch::Approx(4.0));
     REQUIRE(orig->midiNotes.size() == 2);
 
     // Redo recreates it
@@ -230,16 +230,13 @@ TEST_CASE("DuplicateClipCommand - audio clip", "[clip][command][duplicate]") {
     auto* dup = ClipManager::getInstance().getClip(cmd.getDuplicatedClipId());
     REQUIRE(dup != nullptr);
     REQUIRE(dup->isAudio());
-    REQUIRE(dup->startTime == Catch::Approx(4.0));  // 1.0 + 3.0
-    REQUIRE(dup->length == Catch::Approx(3.0));
+    REQUIRE(dup->placement.startBeat == Catch::Approx(8.0));  // 2 + 6
+    REQUIRE(dup->placement.lengthBeats == Catch::Approx(6.0));
 }
 
-// Regression: ClipManager::duplicateClip used to update startTime on audio
-// clips but leave startBeats equal to the original's, so any later
-// beats-driven re-derivation (BPM change, beats-aware paint) snapped the
-// duplicate back on top of the original. Position is beats-authoritative
-// for every clip type — startBeats must reflect the new startTime.
-TEST_CASE("DuplicateClipCommand - audio clip startBeats stays in sync with startTime",
+// Regression: ClipManager::duplicateClip used to leave an audio duplicate's
+// startBeats equal to the original's, stacking it on top of the original.
+TEST_CASE("DuplicateClipCommand - audio duplicate is placed after the original in beats",
           "[clip][command][duplicate][bpm-snap-regression]") {
     resetState();
     auto& proj = ProjectManager::getInstance();
@@ -260,12 +257,9 @@ TEST_CASE("DuplicateClipCommand - audio clip startBeats stays in sync with start
 
     auto* dup = ClipManager::getInstance().getClip(cmd.getDuplicatedClipId());
     REQUIRE(dup != nullptr);
-    // Position math in beats: original at 2.0s @ 90 BPM = beat 3, length 4.0s = 6 beats.
-    // Duplicate should sit at beat 9, derived seconds 6.0.
+    // Original at 2.0s @ 90 BPM = beat 3, length 4.0s = 6 beats.
     REQUIRE(dup->startBeats == Catch::Approx(9.0));
-    REQUIRE(dup->startTime == Catch::Approx(6.0));
-    // Pre-fix dup->startBeats was the original's (3.0) — would have snapped
-    // back to startTime 2.0 the moment anything re-derived from beats.
+    // Pre-fix dup->startBeats was the original's (3.0).
     auto* origAfter = ClipManager::getInstance().getClip(original);
     REQUIRE(origAfter != nullptr);
     REQUIRE(dup->startBeats != Catch::Approx(origAfter->startBeats));
@@ -296,17 +290,16 @@ TEST_CASE("Arrangement multi-clip duplicate preserves selection spacing",
     REQUIRE(dupLeft != nullptr);
     REQUIRE(dupRight != nullptr);
 
-    REQUIRE(dupLeft->startTime == Catch::Approx(2.0));
-    REQUIRE(dupRight->startTime == Catch::Approx(3.0));
+    REQUIRE(dupLeft->placement.startBeat == Catch::Approx(4.0));
+    REQUIRE(dupRight->placement.startBeat == Catch::Approx(6.0));
     REQUIRE(dupLeft->trackId == track);
     REQUIRE(dupRight->trackId == track);
 }
 
 // Regression: time-range duplicate (Cmd+D over an active time selection)
 // must preserve the relative spacing of clips inside the range, regardless
-// of project tempo. Each pasted clip's newStartTime = clipData.startTime +
-// (pasteTime - referenceTime), so the gap between A and B copies should
-// equal the gap between A and B in the source range.
+// of project tempo: the gap between the A and B copies equals the gap
+// between A and B in the source range.
 TEST_CASE("copyTimeRangeToClipboard + paste - preserves internal clip spacing",
           "[clip][duplicate][time-selection][bpm-snap-regression]") {
     resetState();
@@ -329,20 +322,20 @@ TEST_CASE("copyTimeRangeToClipboard + paste - preserves internal clip spacing",
     auto pastedIds = paste.getPastedClipIds();
     REQUIRE(pastedIds.size() == 2);
 
-    // Sort pasted by startTime to align with originals.
+    // Sort pasted by start to align with originals.
     std::sort(pastedIds.begin(), pastedIds.end(), [&](ClipId x, ClipId y) {
-        return cm.getClip(x)->startTime < cm.getClip(y)->startTime;
+        return cm.getClip(x)->placement.startBeat < cm.getClip(y)->placement.startBeat;
     });
     auto* pa = cm.getClip(pastedIds[0]);
     auto* pb = cm.getClip(pastedIds[1]);
     REQUIRE(pa != nullptr);
     REQUIRE(pb != nullptr);
 
-    // A copy: 2.0 + (6 - 2) = 6.0. B copy: 4.0 + 4 = 8.0. Gap preserved.
-    REQUIRE(pa->startTime == Catch::Approx(6.0));
-    REQUIRE(pb->startTime == Catch::Approx(8.0));
-    REQUIRE((pb->startTime - pa->startTime) ==
-            Catch::Approx(cm.getClip(b)->startTime - cm.getClip(a)->startTime));
+    // A copy at 6.0s = beat 9, B copy at 8.0s = beat 12. Gap preserved.
+    REQUIRE(pa->placement.startBeat == Catch::Approx(9.0));
+    REQUIRE(pb->placement.startBeat == Catch::Approx(12.0));
+    REQUIRE((pb->placement.startBeat - pa->placement.startBeat) ==
+            Catch::Approx(cm.getClip(b)->placement.startBeat - cm.getClip(a)->placement.startBeat));
 
     proj.setTempo(originalTempo);
     juce::ignoreUnused(a, b);
@@ -376,8 +369,6 @@ TEST_CASE("copyTimeRangeToClipboard + paste - trimmed audio keeps beat placement
 
     auto* pasted = cm.getClip(pastedIds.front());
     REQUIRE(pasted != nullptr);
-    REQUIRE(pasted->startTime == Catch::Approx(6.0));
-    REQUIRE(pasted->length == Catch::Approx(4.0));
     REQUIRE(pasted->startBeats == Catch::Approx(9.0));
     REQUIRE(pasted->lengthBeats == Catch::Approx(6.0));
     REQUIRE(pasted->placement.startBeat == Catch::Approx(9.0));
@@ -386,9 +377,8 @@ TEST_CASE("copyTimeRangeToClipboard + paste - trimmed audio keeps beat placement
     proj.setTempo(originalTempo);
 }
 
-TEST_CASE(
-    "copyTimeRangeToClipboard + paste - trims from beat placement when seconds cache is stale",
-    "[clip][duplicate][time-selection][ui-placement][beat-cache]") {
+TEST_CASE("copyTimeRangeToClipboard + paste - trims a beat-mode clip from its beat placement",
+          "[clip][duplicate][time-selection][ui-placement]") {
     resetState();
     auto& proj = ProjectManager::getInstance();
     const double originalTempo = proj.getCurrentProjectInfo().tempo;
@@ -411,9 +401,7 @@ TEST_CASE(
     primaryEventOf(source)->setLoopStartBeats(0.0);
     primaryEventOf(source)->setLoopLengthBeats(16.0);
     primaryEventOf(source)->setAnchorBeats(0.0);
-    source->setPlacementBeats(2.0, 4.0);  // actual timeline: 1s..3s at 120 BPM
-    source->startTime = 99.0;             // stale transitional cache
-    source->length = 99.0;
+    source->setPlacementBeats(2.0, 4.0);  // 1s..3s at 120 BPM
 
     cm.copyTimeRangeToClipboard(1.5, 2.0, {track}, /*tempoBPM=*/120.0);
 
@@ -425,8 +413,6 @@ TEST_CASE(
 
     auto* pasted = cm.getClip(pastedIds.front());
     REQUIRE(pasted != nullptr);
-    REQUIRE(pasted->startTime == Catch::Approx(3.0));
-    REQUIRE(pasted->length == Catch::Approx(0.5));
     REQUIRE(pasted->placement.startBeat == Catch::Approx(6.0));
     REQUIRE(pasted->placement.lengthBeats == Catch::Approx(1.0));
     REQUIRE(primaryEventOf(pasted)->anchorBeats() == Catch::Approx(1.0));
@@ -463,7 +449,6 @@ TEST_CASE("copyTimeRangeToClipboard + paste - exact beat slice keeps waveform id
     primaryEventOf(source)->setLoopStartSeconds(0.0);
     primaryEventOf(source)->setLoopLengthSeconds(primaryEventOf(source)->sourceDurationSeconds());
     source->setPlacementBeats(1.0, 1.0);
-    source->deriveTimesFromBeats(120.0);
 
     cm.copyTimeRangeToClipboard(source->getTimelineStart(120.0), source->getTimelineEnd(120.0),
                                 {track}, /*tempoBPM=*/120.0);
@@ -523,8 +508,8 @@ TEST_CASE("JoinClipsCommand - basic MIDI join", "[clip][command][join]") {
         auto& cm = ClipManager::getInstance();
         auto* joined = cm.getClip(left);
         REQUIRE(joined != nullptr);
-        REQUIRE(joined->startTime == Catch::Approx(0.0));
-        REQUIRE(joined->length == Catch::Approx(4.0));
+        REQUIRE(joined->placement.startBeat == Catch::Approx(0.0));
+        REQUIRE(joined->placement.lengthBeats == Catch::Approx(8.0));
 
         // Right clip deleted
         REQUIRE(cm.getClip(right) == nullptr);
@@ -597,7 +582,7 @@ TEST_CASE("JoinClipsCommand - basic MIDI join", "[clip][command][join]") {
 
         auto* joined = ClipManager::getInstance().getClip(c1);
         REQUIRE(joined != nullptr);
-        REQUIRE(joined->length == Catch::Approx(6.0));
+        REQUIRE(joined->placement.lengthBeats == Catch::Approx(12.0));
         REQUIRE(joined->midiNotes.size() == 3);
         REQUIRE(joined->midiNotes[0].startBeat == Catch::Approx(0.0));
         REQUIRE(joined->midiNotes[1].startBeat == Catch::Approx(4.0));
@@ -808,7 +793,7 @@ TEST_CASE("JoinClipsCommand - undo/redo", "[clip][command][join][undo]") {
 
     // Capture original state
     auto& cm = ClipManager::getInstance();
-    double leftOrigLen = cm.getClip(left)->length;
+    double leftOrigLen = cm.getClip(left)->placement.lengthBeats;
     size_t leftOrigNotes = cm.getClip(left)->midiNotes.size();
     size_t rightOrigNotes = cm.getClip(right)->midiNotes.size();
 
@@ -816,7 +801,7 @@ TEST_CASE("JoinClipsCommand - undo/redo", "[clip][command][join][undo]") {
     cmd.execute();
 
     // Verify joined
-    REQUIRE(cm.getClip(left)->length == Catch::Approx(4.0));
+    REQUIRE(cm.getClip(left)->placement.lengthBeats == Catch::Approx(8.0));
     REQUIRE(cm.getClip(right) == nullptr);
 
     // Undo restores both clips
@@ -826,10 +811,10 @@ TEST_CASE("JoinClipsCommand - undo/redo", "[clip][command][join][undo]") {
     auto* rightClip = cm.getClip(right);
     REQUIRE(leftClip != nullptr);
     REQUIRE(rightClip != nullptr);
-    REQUIRE(leftClip->length == Catch::Approx(leftOrigLen));
+    REQUIRE(leftClip->placement.lengthBeats == Catch::Approx(leftOrigLen));
     REQUIRE(leftClip->midiNotes.size() == leftOrigNotes);
-    REQUIRE(rightClip->startTime == Catch::Approx(2.0));
-    REQUIRE(rightClip->length == Catch::Approx(2.0));
+    REQUIRE(rightClip->placement.startBeat == Catch::Approx(4.0));
+    REQUIRE(rightClip->placement.lengthBeats == Catch::Approx(4.0));
     REQUIRE(rightClip->midiNotes.size() == rightOrigNotes);
 }
 
@@ -853,7 +838,7 @@ TEST_CASE("JoinClipsCommand - split then join roundtrip", "[clip][command][join]
 
     auto* joined = cm.getClip(original);
     REQUIRE(joined != nullptr);
-    REQUIRE(joined->length == Catch::Approx(4.0));
+    REQUIRE(joined->placement.lengthBeats == Catch::Approx(8.0));
     REQUIRE(joined->midiNotes.size() == originalNoteCount);
 }
 
@@ -904,7 +889,7 @@ TEST_CASE("SplitClipCommand - undo notifies restored left clip property",
     cm.removeListener(&listener);
 
     REQUIRE(cm.getClip(original) != nullptr);
-    REQUIRE(cm.getClip(original)->length == Catch::Approx(4.0));
+    REQUIRE(cm.getClip(original)->placement.lengthBeats == Catch::Approx(8.0));
     REQUIRE(listener.clipsChangedCount > 0);
     REQUIRE(listener.sawPropertyChangeFor(original));
 }
@@ -939,8 +924,8 @@ TEST_CASE("DeleteClipCommand - undo/redo", "[clip][command][delete][undo]") {
     cmd.undo();
     auto* restored = cm.getClip(clipId);
     REQUIRE(restored != nullptr);
-    REQUIRE(restored->startTime == Catch::Approx(1.0));
-    REQUIRE(restored->length == Catch::Approx(3.0));
+    REQUIRE(restored->placement.startBeat == Catch::Approx(2.0));
+    REQUIRE(restored->placement.lengthBeats == Catch::Approx(6.0));
     REQUIRE(restored->trackId == track);
     REQUIRE(restored->midiNotes.size() == 3);
     REQUIRE(restored->midiNotes[0].startBeat == Catch::Approx(0.0));
@@ -965,8 +950,8 @@ TEST_CASE("MoveClipCommand - basic move", "[clip][command][move]") {
     cmd.execute();
 
     auto* clip = ClipManager::getInstance().getClip(clipId);
-    REQUIRE(clip->startTime == Catch::Approx(5.0));
-    REQUIRE(clip->length == Catch::Approx(2.0));
+    REQUIRE(clip->placement.startBeat == Catch::Approx(10.0));
+    REQUIRE(clip->placement.lengthBeats == Catch::Approx(4.0));
     // Notes unchanged (they're relative to clip)
     REQUIRE(clip->midiNotes[0].startBeat == Catch::Approx(0.0));
 }
@@ -978,19 +963,19 @@ TEST_CASE("MoveClipCommand - undo/redo", "[clip][command][move][undo]") {
 
     MoveClipCommand cmd(clipId, secondsToBeatPosition(5.0));
     cmd.execute();
-    REQUIRE(ClipManager::getInstance().getClip(clipId)->startTime == Catch::Approx(5.0));
+    REQUIRE(ClipManager::getInstance().getClip(clipId)->placement.startBeat == Catch::Approx(10.0));
 
     cmd.undo();
-    REQUIRE(ClipManager::getInstance().getClip(clipId)->startTime == Catch::Approx(1.0));
+    REQUIRE(ClipManager::getInstance().getClip(clipId)->placement.startBeat == Catch::Approx(2.0));
 
     cmd.execute();
-    REQUIRE(ClipManager::getInstance().getClip(clipId)->startTime == Catch::Approx(5.0));
+    REQUIRE(ClipManager::getInstance().getClip(clipId)->placement.startBeat == Catch::Approx(10.0));
 }
 
 // Regression: ClipManager::moveClip used to default tempo to 120 BPM, and
 // MoveClipCommand::execute called it without an override. Anyone running a
 // project at any other tempo therefore got a wrong startBeats baked in,
-// which the next BPM change then translated into a wrong startTime — clips
+// which the next BPM change then translated into a wrong position — clips
 // snapping to bizarre positions. The fix has moveClip read the live project
 // tempo from ProjectManager when no explicit tempo is passed.
 TEST_CASE("MoveClipCommand - startBeats derived from live project tempo, not 120",
@@ -1007,40 +992,9 @@ TEST_CASE("MoveClipCommand - startBeats derived from live project tempo, not 120
     cmd.execute();
 
     auto* clip = ClipManager::getInstance().getClip(clipId);
-    REQUIRE(clip->startTime == Catch::Approx(6.0));
     // 6 seconds * 90 BPM / 60 = 9 beats. Pre-fix this was 12 (using the
     // hard-coded 120 default).
     REQUIRE(clip->startBeats == Catch::Approx(9.0));
-
-    proj.setTempo(originalTempo);
-}
-
-// Companion to the regression above: with startBeats correctly derived from
-// the live tempo, a subsequent BPM change keeps the clip at the same bar
-// position (i.e. the clip's startTime tracks the new BPM via beats).
-// Operates on the ClipManager state directly — TimelineController's
-// SetTempoEvent does the same beats→seconds re-derivation on tempo change,
-// just orchestrated through more layers.
-TEST_CASE("MoveClipCommand - clip stays bar-anchored across BPM change",
-          "[clip][command][move][bpm-snap-regression]") {
-    resetState();
-    auto& proj = ProjectManager::getInstance();
-    const double originalTempo = proj.getCurrentProjectInfo().tempo;
-    proj.setTempo(90.0);
-
-    TrackId track = createTrack();
-    ClipId clipId = createAudio(track, 0.0, 2.0);
-
-    MoveClipCommand cmd(clipId, secondsToBeatPosition(6.0, 90.0));
-    cmd.execute();
-
-    auto* clip = ClipManager::getInstance().getClip(clipId);
-    REQUIRE(clip->startBeats == Catch::Approx(9.0));
-
-    // Simulate the SetTempoEvent re-derivation: at 60 BPM, beat 9 lives at
-    // 9 * 60/60 = 9 seconds.
-    clip->startTime = (clip->startBeats * 60.0) / 60.0;
-    REQUIRE(clip->startTime == Catch::Approx(9.0));
 
     proj.setTempo(originalTempo);
 }
@@ -1059,7 +1013,7 @@ TEST_CASE("MoveClipCommand - merge consecutive moves", "[clip][command][move][me
 
     cmd1.mergeWith(&cmd2);
     cmd1.execute();
-    REQUIRE(ClipManager::getInstance().getClip(clipId)->startTime == Catch::Approx(3.0));
+    REQUIRE(ClipManager::getInstance().getClip(clipId)->placement.startBeat == Catch::Approx(6.0));
 }
 
 // ============================================================================
@@ -1119,8 +1073,8 @@ TEST_CASE("ResizeClipCommand - resize from right", "[clip][command][resize]") {
     cmd.execute();
 
     auto* clip = ClipManager::getInstance().getClip(clipId);
-    REQUIRE(clip->length == Catch::Approx(2.0));
-    REQUIRE(clip->startTime == Catch::Approx(0.0));  // Start unchanged
+    REQUIRE(clip->placement.lengthBeats == Catch::Approx(4.0));
+    REQUIRE(clip->placement.startBeat == Catch::Approx(0.0));  // Start unchanged
 }
 
 TEST_CASE("ResizeClipCommand - resize from left", "[clip][command][resize]") {
@@ -1132,9 +1086,9 @@ TEST_CASE("ResizeClipCommand - resize from left", "[clip][command][resize]") {
     cmd.execute();
 
     auto* clip = ClipManager::getInstance().getClip(clipId);
-    REQUIRE(clip->length == Catch::Approx(2.0));
+    REQUIRE(clip->placement.lengthBeats == Catch::Approx(4.0));
     // Start shifts right when resizing from left
-    REQUIRE(clip->startTime == Catch::Approx(4.0));
+    REQUIRE(clip->placement.startBeat == Catch::Approx(8.0));
 }
 
 TEST_CASE("ResizeClipCommand - undo/redo", "[clip][command][resize][undo]") {
@@ -1144,13 +1098,16 @@ TEST_CASE("ResizeClipCommand - undo/redo", "[clip][command][resize][undo]") {
 
     ResizeClipCommand cmd(clipId, secondsToBeatDuration(2.0), false);
     cmd.execute();
-    REQUIRE(ClipManager::getInstance().getClip(clipId)->length == Catch::Approx(2.0));
+    REQUIRE(ClipManager::getInstance().getClip(clipId)->placement.lengthBeats ==
+            Catch::Approx(4.0));
 
     cmd.undo();
-    REQUIRE(ClipManager::getInstance().getClip(clipId)->length == Catch::Approx(4.0));
+    REQUIRE(ClipManager::getInstance().getClip(clipId)->placement.lengthBeats ==
+            Catch::Approx(8.0));
 
     cmd.execute();
-    REQUIRE(ClipManager::getInstance().getClip(clipId)->length == Catch::Approx(2.0));
+    REQUIRE(ClipManager::getInstance().getClip(clipId)->placement.lengthBeats ==
+            Catch::Approx(4.0));
 }
 
 TEST_CASE("ResizeClipCommand - merge consecutive resizes", "[clip][command][resize][merge]") {
@@ -1406,6 +1363,7 @@ TEST_CASE("SetSourceTempoCommand - execute then undo restores bpm, beat count an
     REQUIRE(ev != nullptr);
     REQUIRE(ev->adoptBpm(120.0, Provenance::FileMetadata));
     REQUIRE(ev->adoptTotalBeats(8.0, Provenance::FileMetadata));
+    ev->setPlaybackIntent(PlaybackIntent::Beat);  // a raw clip has no tempo to state
 
     const double oldBpm = ev->interpBpm;
     const double oldBeats = ev->interpTotalBeats;
@@ -1444,6 +1402,7 @@ TEST_CASE("SetSourceBeatCountCommand - two edits merge and a single undo restore
     REQUIRE(ev != nullptr);
     REQUIRE(ev->adoptBpm(120.0, Provenance::FileMetadata));
     REQUIRE(ev->adoptTotalBeats(8.0, Provenance::FileMetadata));
+    ev->setPlaybackIntent(PlaybackIntent::Beat);  // a raw clip has no tempo to state
 
     const double oldBeats = ev->interpTotalBeats;
     const double oldBpm = ev->interpBpm;
@@ -1576,8 +1535,6 @@ TEST_CASE("DeleteTimeSelectionCommand - trim keeps beat placement in sync",
 
     auto* clip = ClipManager::getInstance().getClip(clipId);
     REQUIRE(clip != nullptr);
-    REQUIRE(clip->startTime == Catch::Approx(0.0));
-    REQUIRE(clip->length == Catch::Approx(2.0));
     REQUIRE(clip->placement.startBeat == Catch::Approx(0.0));
     REQUIRE(clip->placement.lengthBeats == Catch::Approx(4.0));
     REQUIRE(clip->startBeats == Catch::Approx(0.0));
@@ -1587,7 +1544,6 @@ TEST_CASE("DeleteTimeSelectionCommand - trim keeps beat placement in sync",
 
     clip = ClipManager::getInstance().getClip(clipId);
     REQUIRE(clip != nullptr);
-    REQUIRE(clip->length == Catch::Approx(4.0));
     REQUIRE(clip->placement.lengthBeats == Catch::Approx(8.0));
 }
 
@@ -1607,8 +1563,6 @@ TEST_CASE("DeleteTimeSelectionCommand - looped trim keeps beat placement in sync
 
     auto* clip = ClipManager::getInstance().getClip(clipId);
     REQUIRE(clip != nullptr);
-    REQUIRE(clip->startTime == Catch::Approx(3.0));
-    REQUIRE(clip->length == Catch::Approx(3.0));
     REQUIRE(clip->placement.startBeat == Catch::Approx(6.0));
     REQUIRE(clip->placement.lengthBeats == Catch::Approx(6.0));
     REQUIRE(clip->startBeats == Catch::Approx(6.0));
@@ -1830,8 +1784,7 @@ TEST_CASE("CreateClipCommand - create MIDI clip", "[clip][command][create]") {
     resetState();
     TrackId track = createTrack();
 
-    CreateClipCommand cmd(ClipType::MIDI, track, secondsToBeatPosition(1.0),
-                          secondsToBeatDuration(3.0));
+    CreateClipCommand cmd(ClipType::MIDI, track, BeatPosition{2.0}, BeatDuration{6.0});
     REQUIRE(cmd.canExecute());
     cmd.execute();
 
@@ -1841,8 +1794,8 @@ TEST_CASE("CreateClipCommand - create MIDI clip", "[clip][command][create]") {
     auto* clip = ClipManager::getInstance().getClip(created);
     REQUIRE(clip != nullptr);
     REQUIRE(clip->isMidi());
-    REQUIRE(clip->startTime == Catch::Approx(1.0));
-    REQUIRE(clip->length == Catch::Approx(3.0));
+    REQUIRE(clip->placement.startBeat == Catch::Approx(2.0));
+    REQUIRE(clip->placement.lengthBeats == Catch::Approx(6.0));
     REQUIRE(clip->trackId == track);
 }
 
@@ -1906,8 +1859,8 @@ TEST_CASE("PasteClipCommand - paste from clipboard", "[clip][command][paste]") {
 
     auto* pasted = cm.getClip(pastedIds[0]);
     REQUIRE(pasted != nullptr);
-    REQUIRE(pasted->startTime == Catch::Approx(5.0));
-    REQUIRE(pasted->length == Catch::Approx(2.0));
+    REQUIRE(pasted->placement.startBeat == Catch::Approx(10.0));
+    REQUIRE(pasted->placement.lengthBeats == Catch::Approx(4.0));
     REQUIRE(pasted->trackId == track);
 }
 

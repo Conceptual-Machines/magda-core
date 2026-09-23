@@ -423,10 +423,10 @@ TEST_CASE("clip.new without bar places after last clip", "[dsl][chord][autoplace
     auto clipIds = cm.getClipsOnTrack(tracks[0].id);
     REQUIRE(clipIds.size() == 2);
 
-    // Second clip should start at bar 5 (= 8 seconds at 120 BPM)
+    // Second clip should start at bar 5 (beat 16)
     auto* clip2 = cm.getClip(clipIds[1]);
     REQUIRE(clip2 != nullptr);
-    REQUIRE(clip2->startTime == Catch::Approx(8.0));
+    REQUIRE(clip2->placement.startBeat == Catch::Approx(16.0));
 
     // Chords should be on the second clip, not the first
     REQUIRE(clip2->midiNotes.size() == 3);
@@ -446,10 +446,10 @@ TEST_CASE("clip.new without bar on empty track places at bar 1", "[dsl][chord][a
     auto clipIds = cm.getClipsOnTrack(tracks[0].id);
     REQUIRE(clipIds.size() == 1);
 
-    // Should start at bar 1 (= 0 seconds)
+    // Should start at bar 1 (beat 0)
     auto* clip = cm.getClip(clipIds[0]);
     REQUIRE(clip != nullptr);
-    REQUIRE(clip->startTime == Catch::Approx(0.0));
+    REQUIRE(clip->placement.startBeat == Catch::Approx(0.0));
 }
 
 // ============================================================================

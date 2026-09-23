@@ -590,14 +590,14 @@ TEST_CASE("Missing project media is discovered, searched and relinked",
 
     const auto trackId = TrackManager::getInstance().createTrack("Audio", TrackType::Media);
     const auto missingClip = ClipManager::getInstance().createAudioClipBeats(
-        trackId, 0.0, 4.0, oldPath.getFullPathName(), ClipView::Arrangement, 120.0);
+        trackId, 0.0, 4.0, oldPath.getFullPathName(), ClipView::Arrangement);
     REQUIRE(missingClip != INVALID_CLIP_ID);
     auto* clip = ClipManager::getInstance().getClip(missingClip);
     REQUIRE(clip != nullptr);
     clip->audio().takes.push_back({oldPath.getFullPathName(), 1.0});
 
     REQUIRE(ClipManager::getInstance().createAudioClipBeats(
-                trackId, 8.0, 4.0, existingPath.getFullPathName(), ClipView::Arrangement, 120.0) !=
+                trackId, 8.0, 4.0, existingPath.getFullPathName(), ClipView::Arrangement) !=
             INVALID_CLIP_ID);
 
     auto missing = projects.getMissingMediaFiles();
@@ -734,7 +734,7 @@ TEST_CASE("Project Serialization Basics", "[project][serialization]") {
         REQUIRE(sourceFile.replaceWithText("placeholder audio"));
 
         auto clipId = ClipManager::getInstance().createAudioClipBeats(
-            trackId, 0.0, 4.0, sourceFile.getFullPathName(), ClipView::Arrangement, 120.0);
+            trackId, 0.0, 4.0, sourceFile.getFullPathName(), ClipView::Arrangement);
         REQUIRE(clipId != INVALID_CLIP_ID);
 
         auto tempFile = fixture.createTempProjectFile(".mgd");
@@ -769,7 +769,7 @@ TEST_CASE("Project Serialization Basics", "[project][serialization]") {
         REQUIRE(stemFile.replaceWithText("placeholder audio"));
 
         auto clipId = ClipManager::getInstance().createAudioClipBeats(
-            trackId, 0.0, 4.0, stemFile.getFullPathName(), ClipView::Arrangement, 120.0);
+            trackId, 0.0, 4.0, stemFile.getFullPathName(), ClipView::Arrangement);
         REQUIRE(clipId != INVALID_CLIP_ID);
 
         auto tempFile = fixture.createTempProjectFile(".mgd");
@@ -831,8 +831,8 @@ TEST_CASE("Project Serialization Basics", "[project][serialization]") {
 
         for (const auto& legacyFile : {bounceFile, editFile, stemFile}) {
             REQUIRE(ClipManager::getInstance().createAudioClipBeats(
-                        trackId, 0.0, 4.0, legacyFile.getFullPathName(), ClipView::Arrangement,
-                        120.0) != INVALID_CLIP_ID);
+                        trackId, 0.0, 4.0, legacyFile.getFullPathName(), ClipView::Arrangement) !=
+                    INVALID_CLIP_ID);
         }
 
         REQUIRE(projectManager.saveProjectAs(tempFile));
@@ -932,8 +932,8 @@ TEST_CASE("Project Serialization Basics", "[project][serialization]") {
         REQUIRE(bounceFile.replaceWithText("the bounce"));
 
         REQUIRE(ClipManager::getInstance().createAudioClipBeats(
-                    trackId, 0.0, 4.0, bounceFile.getFullPathName(), ClipView::Arrangement,
-                    120.0) != INVALID_CLIP_ID);
+                    trackId, 0.0, 4.0, bounceFile.getFullPathName(), ClipView::Arrangement) !=
+                INVALID_CLIP_ID);
 
         REQUIRE(projectManager.saveProjectAs(tempFile));
         REQUIRE(projectManager.loadProject(actualFile));
@@ -973,8 +973,8 @@ TEST_CASE("Project Serialization Basics", "[project][serialization]") {
         REQUIRE(bounceFile.replaceWithText("the bounce"));
 
         REQUIRE(ClipManager::getInstance().createAudioClipBeats(
-                    trackId, 0.0, 4.0, bounceFile.getFullPathName(), ClipView::Arrangement,
-                    120.0) != INVALID_CLIP_ID);
+                    trackId, 0.0, 4.0, bounceFile.getFullPathName(), ClipView::Arrangement) !=
+                INVALID_CLIP_ID);
         REQUIRE(projectManager.saveProjectAs(tempFile));
 
         // Stand in for a previous load that folded and was never saved: the
@@ -1015,8 +1015,8 @@ TEST_CASE("Project Serialization Basics", "[project][serialization]") {
         REQUIRE(bounceFile.replaceWithText("the bounce"));
 
         REQUIRE(ClipManager::getInstance().createAudioClipBeats(
-                    trackId, 0.0, 4.0, bounceFile.getFullPathName(), ClipView::Arrangement,
-                    120.0) != INVALID_CLIP_ID);
+                    trackId, 0.0, 4.0, bounceFile.getFullPathName(), ClipView::Arrangement) !=
+                INVALID_CLIP_ID);
         REQUIRE(projectManager.saveProjectAs(tempFile));
 
         // The referenced bounce is gone — deleted outside MAGDA, say — and an
@@ -1885,7 +1885,6 @@ TEST_CASE("Clip serialization validates type and audio schema", "[project][seria
         REQUIRE(restored->isAudio());
         REQUIRE(restored->placement.startBeat == Approx(4.0));
         REQUIRE(restored->placement.lengthBeats == Approx(12.0));
-        REQUIRE(restored->length == Approx(6.0));
         REQUIRE(primaryEventOf(restored)->sourceFilePath() == "/tmp/flat-legacy.wav");
         REQUIRE(primaryEventOf(restored)->sourceDurationSeconds() == Approx(6.0));
         REQUIRE(primaryEventOf(restored)->interpTotalBeats == Approx(12.0));

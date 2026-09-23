@@ -56,7 +56,7 @@ struct LoopFile {
 ClipId dropSessionClip(const juce::String& path) {
     const double placementBeats = kFileSeconds * kProjectBpm / 60.0;
     return ClipManager::getInstance().createAudioClipBeats(1, 0.0, placementBeats, path,
-                                                           ClipView::Session, kProjectBpm);
+                                                           ClipView::Session);
 }
 
 /// A session clip whose tempo was cached before the drop, then picked up by
@@ -103,7 +103,7 @@ TEST_CASE("A dropped loop's region is the whole source until a tempo lands",
     REQUIRE(event->playbackIntent == PlaybackIntent::Free);
 
     const auto arrangement =
-        clips.createAudioClipBeats(1, 0.0, 4.0, file.path(), ClipView::Arrangement, kProjectBpm);
+        clips.createAudioClipBeats(1, 0.0, 4.0, file.path(), ClipView::Arrangement);
     const auto* arrangementEvent = clips.getClip(arrangement)->primaryEvent();
     REQUIRE(arrangementEvent->loopExtent == RegionExtent::WholeSource);
     REQUIRE(arrangementEvent->sourceLengthSeconds(2.0) == Approx(2.0));
@@ -125,9 +125,8 @@ TEST_CASE("Changing the beat count at a typed tempo keeps the loop region",
     SourcePool::getInstance().seedFactsForTesting(temp.getFile().getFullPathName(), kSeconds,
                                                   kFileRate);
 
-    const auto clipId = clips.createAudioClipBeats(1, 0.0, kSeconds * kProjectBpm / 60.0,
-                                                   temp.getFile().getFullPathName(),
-                                                   ClipView::Session, kProjectBpm);
+    const auto clipId = clips.createAudioClipBeats(
+        1, 0.0, kSeconds * kProjectBpm / 60.0, temp.getFile().getFullPathName(), ClipView::Session);
     clips.setAutoTempo(clipId, true, kProjectBpm);
 
     clips.setSourceTempo(clipId, 116.0);
@@ -168,8 +167,8 @@ TEST_CASE("A free-playing slot's pass is its region at the project tempo",
     clips.setSpeedRatio(clipId, 1.0);
 
     // In beat mode the region's source beats are the pass whatever the project plays at.
-    clips.setSourceTempo(clipId, kFileBpm);
     clips.setAutoTempo(clipId, true, kProjectBpm);
+    clips.setSourceTempo(clipId, kFileBpm);
     REQUIRE(clip->primaryEvent()->autoTempo);
     REQUIRE(clip->sessionCycleBeats(60.0) == Approx(kFileBeats));
 }
@@ -185,9 +184,8 @@ TEST_CASE("A tempo typed on a loop with no beat count derives a whole count from
     SourcePool::getInstance().seedFactsForTesting(temp.getFile().getFullPathName(), 5.516,
                                                   kFileRate);
 
-    const auto clipId = clips.createAudioClipBeats(1, 0.0, 5.516 * kProjectBpm / 60.0,
-                                                   temp.getFile().getFullPathName(),
-                                                   ClipView::Session, kProjectBpm);
+    const auto clipId = clips.createAudioClipBeats(
+        1, 0.0, 5.516 * kProjectBpm / 60.0, temp.getFile().getFullPathName(), ClipView::Session);
     clips.setAutoTempo(clipId, true, kProjectBpm);  // no tempo yet: intent only
     REQUIRE(!clips.getClip(clipId)->primaryEvent()->autoTempo);
 
@@ -208,7 +206,8 @@ TEST_CASE("A tempo typed on a loop with no beat count derives a whole count from
     clips.clearAllClips();
     SourcePool::getInstance().seedFactsForTesting(temp.getFile().getFullPathName(), 3.3, kFileRate);
     const auto take = clips.createAudioClipBeats(1, 0.0, 6.6, temp.getFile().getFullPathName(),
-                                                 ClipView::Arrangement, kProjectBpm);
+                                                 ClipView::Arrangement);
+    clips.setAutoTempo(take, true, kProjectBpm);
     clips.setSourceTempo(take, 174.0);
     REQUIRE(clips.getClip(take)->primaryEvent()->interpTotalBeats == Approx(3.3 * 174.0 / 60.0));
 }
@@ -223,12 +222,16 @@ TEST_CASE("A tempo the user typed survives the BEAT toggle", "[clip][tempo][sequ
     const auto clipId = dropSessionClip(file.path());
     REQUIRE(!clips.getClip(clipId)->primaryEvent()->hasInterpretedBpm());
 
+    // BEAT with nothing detected waits for the tempo the user types.
+    clips.setAutoTempo(clipId, true, kProjectBpm);
     clips.setSourceTempo(clipId, kProjectBpm);
+    clips.setAutoTempo(clipId, false, kProjectBpm);
 
-    // Pressing BEAT asks for a detection; the user's tempo already owns the
-    // clip, so it is refused.
+    // Pressing BEAT again asks for a detection; the user's tempo already owns
+    // the clip, so it is refused.
     AudioThumbnailManager::getInstance().cacheBPM(file.path(), kFileBpm);
     clips.detectMissingTempo({clipId}, kProjectBpm, nullptr);
+    clips.adoptAnalysis(clipId, file.path(), kFileBpm);
     clips.setAutoTempo(clipId, true, kProjectBpm);
 
     const auto* event = clips.getClip(clipId)->primaryEvent();
@@ -345,8 +348,11 @@ TEST_CASE("Pasting an arrangement clip into a slot keeps the user's interpretati
     LoopFile file;
 
     const auto arrangement =
-        clips.createAudioClipBeats(1, 0.0, 4.0, file.path(), ClipView::Arrangement, kProjectBpm);
-    clips.setSourceTempo(arrangement, kFileBpm);
+        clips.createAudioClipBeats(1, 0.0, 4.0, file.path(), ClipView::Arrangement);
+    // A time-mode clip keeps a tempo typed while it was in beat mode.
+    auto* typed = clips.getClip(arrangement)->primaryEvent();
+    typed->adoptBpm(kFileBpm, Provenance::User);
+    typed->adoptTotalBeats(kFileBeats, Provenance::User);
     const auto* srcEvent = clips.getClip(arrangement)->primaryEvent();
     REQUIRE(srcEvent->bpmFrom == Provenance::User);
     REQUIRE(srcEvent->beatsFrom == Provenance::User);
@@ -379,6 +385,7 @@ TEST_CASE("Sanitizing a loop that follows its interpretation does not shorten it
     LoopFile file;
 
     const auto clipId = dropSessionClip(file.path());
+    clips.setAutoTempo(clipId, true, kProjectBpm);
     clips.setSourceTempo(clipId, 174.0);
 
     const auto* event = clips.getClip(clipId)->primaryEvent();

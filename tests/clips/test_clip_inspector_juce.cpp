@@ -16,7 +16,6 @@ using namespace magda;
 using magda::daw::ui::ClipInspector;
 
 namespace {
-constexpr double projectBPM = 120.0;
 constexpr double sourceBPM = 172.0;
 constexpr double sourceBeats = 16.0;
 constexpr double sourceDuration = sourceBeats * 60.0 / sourceBPM;
@@ -36,7 +35,6 @@ ClipInfo makeInspectorAudioClip(ClipId id = 9001) {
     magda::test::audioEvent(clip).interpBpm = sourceBPM;
     magda::test::audioEvent(clip).interpTotalBeats = sourceBeats;
     clip.setPlacementBeats(0.0, sourceBeats);
-    clip.length = sourceBeats * 60.0 / projectBPM;
     magda::test::audioEvent(clip).setLoopStartSeconds(0.0);
     magda::test::audioEvent(clip).setLoopStartBeats(0.0);
     magda::test::audioEvent(clip).setLoopLengthSeconds(sourceDuration);
@@ -179,7 +177,6 @@ class ClipInspectorJuceTest final : public juce::UnitTest {
 
         auto seed = makeInspectorAudioClip();
         seed.setPlacementBeats(0.0, 96.0);
-        seed.length = 96.0 * 60.0 / projectBPM;
         magda::test::audioEvent(seed).setLoopLengthBeats(12.0);
         magda::test::audioEvent(seed).setLoopLengthSeconds(12.0 * 60.0 / sourceBPM);
         ClipManager::getInstance().restoreClip(seed);
@@ -215,7 +212,6 @@ class ClipInspectorJuceTest final : public juce::UnitTest {
         seed.loopEnabled = true;
         event.setLoopExtent(RegionExtent::Interpretation);
         seed.setPlacementBeats(0.0, 16.0);
-        seed.length = 16.0 * 60.0 / projectBPM;
 
         const int64_t regionSamples = event.loopLengthSamples;
         expect(regionSamples > static_cast<int64_t>(fileSeconds * fileRate),

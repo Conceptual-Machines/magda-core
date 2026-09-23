@@ -313,7 +313,7 @@ double ClipManager::findNonOverlappingStartBeats(TrackId trackId, double desired
 
 ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, double lengthBeats,
                                          const juce::String& audioFilePath, ClipView view,
-                                         double projectBPM, ClipOverlapPolicy overlapPolicy) {
+                                         ClipOverlapPolicy overlapPolicy) {
     if (overlapPolicy == ClipOverlapPolicy::PreserveExisting) {
         startBeats = findNonOverlappingStartBeats(trackId, startBeats, lengthBeats, view);
     }
@@ -352,10 +352,7 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
     // from here on: the project default seeds it and never speaks for it again.
     clip.overlapPlaysBoth = projectDefaults.overlapPlaysBoth;
 
-    const double bpm = isValidBpm(projectBPM) ? projectBPM : currentProjectTempoOrDefault();
-
     clip.setPlacementBeats(startBeats, lengthBeats);
-    clip.deriveTimesFromBeats(bpm);
 
     // Read from the top of the file, over the whole of it. Nothing has chosen
     // a range yet, so nothing may look like the user did.
@@ -422,7 +419,6 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
                     if (savedEvent->interpBpm > 0.0)
                         savedEvent->setLoopExtent(RegionExtent::Interpretation);
                 }
-                savedClip.deriveTimesFromBeats(bpm);
             }
         }
     }
@@ -442,7 +438,7 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
                                     double projectBPM, ClipOverlapPolicy overlapPolicy) {
     const double bpm = isValidBpm(projectBPM) ? projectBPM : currentProjectTempoOrDefault();
     return createAudioClipBeats(trackId, startTime * bpm / 60.0, length * bpm / 60.0, audioFilePath,
-                                view, bpm, overlapPolicy);
+                                view, overlapPolicy);
 }
 
 ClipId ClipManager::createRecordedAudioClip(TrackId trackId, RecordedAudioClipData recording,
@@ -474,7 +470,6 @@ ClipId ClipManager::createRecordedAudioClip(TrackId trackId, RecordedAudioClipDa
     clip.overlapPlaysBoth = projectDefaults.overlapPlaysBoth;
     const auto projectBpm = currentProjectTempoOrDefault();
     clip.setPlacementBeats(recording.startBeat, recording.lengthBeats);
-    clip.deriveTimesFromBeats(projectBpm);
     clip.audio() = std::move(recording.takeModel);
 
     AudioEvent event;
@@ -539,12 +534,6 @@ ClipId ClipManager::createMidiClipBeats(TrackId trackId, double startBeats, doub
 
     clip.setPlacementBeats(startBeats, lengthBeats);
 
-    // Derive seconds for display caches only — never round-tripped back into
-    // beats. ClipSynchronizer reads clip->startBeats / lengthBeats directly
-    // when positioning the TE clip, so the seconds stored here are advisory.
-    double tempo = currentProjectTempoOrDefault();
-    clip.deriveTimesFromBeats(tempo);
-
     if (view == ClipView::Arrangement) {
         clips_[clip.id] = clip;
     } else {
@@ -587,7 +576,6 @@ ClipId ClipManager::createRecordedMidiClip(TrackId trackId, RecordedMidiClipData
     }
 
     clip.setPlacementBeats(recording.startBeat, recording.lengthBeats);
-    clip.deriveTimesFromBeats(currentProjectTempoOrDefault());
     clip.midiNotes = std::move(recording.active.notes);
     clip.midiCCData = std::move(recording.active.cc);
     clip.midiPitchBendData = std::move(recording.active.pitchBend);
@@ -1712,7 +1700,6 @@ void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double project
                 const double bpm =
                     isValidBpm(projectBPM) ? projectBPM : currentProjectTempoOrDefault();
                 clip->setPlacementBeats(clip->placement.startBeat, newTimelineLength * bpm / 60.0);
-                clip->deriveTimesFromBeats(bpm);
 
                 // The new timeline length can exceed the previous loop region,
                 // which on the arrangement view can push the clip into a
@@ -1798,9 +1785,6 @@ void ClipManager::setPlaybackIntent(ClipId clipId, PlaybackIntent intent, double
     if (event->autoTempo && event->timeStretchMode == time_stretch_mode::kDisabled)
         event->timeStretchMode = time_stretch_mode::kSignalsmith;
 
-    // Issue #1157: ClipOperations wrote the placement in beats at the mode
-    // boundary. Refresh the seconds cache from it rather than converting back.
-    refreshDerivedSeconds(clipId, projectBPM);
     notifyClipPropertyChanged(clipId);
 }
 
@@ -2042,7 +2026,6 @@ void ClipManager::setLengthBeats(ClipId clipId, double newBeats, double bpm) {
     const double minBeats = isValidBpm(bpm) ? (ClipInfo::MIN_CLIP_LENGTH * bpm / 60.0) : 0.0;
     clip->setPlacementBeats(clip->placement.startBeat, juce::jmax(minBeats, newBeats));
 
-    refreshDerivedSeconds(clipId, bpm);
     notifyClipPropertyChanged(clipId);
 }
 
@@ -2211,6 +2194,27 @@ static void settleBeatMode(ClipInfo& clip, double projectBpm, bool wasInBeatMode
         event->timeStretchMode = time_stretch_mode::kSignalsmith;
 }
 
+/// A clip already in beat mode is its region's seconds at the source tempo, so
+/// a restated tempo refits its beat length and leaves the audio alone (#2791).
+/// A loop set in beats keeps them (#2675).
+static void refitToRestatedTempo(ClipInfo& clip, double oldBpm, bool wasInBeatMode) {
+    const auto* event = clip.primaryEvent();
+    if (event == nullptr || !wasInBeatMode || !event->autoTempo || !isValidBpm(oldBpm) ||
+        event->interpBpm == oldBpm)
+        return;
+    if (event->loopExtent == RegionExtent::Explicit &&
+        event->loopLengthIntent == LoopLengthIntent::Musical)
+        return;
+    clip.setPlacementBeats(clip.placement.startBeat,
+                           clip.placement.lengthBeats * event->interpBpm / oldBpm);
+}
+
+/// A raw clip is samples at a speed; it has no tempo for the user to state
+/// (#2791). A clip waiting on one for beat mode does (#2676).
+static bool acceptsStatedTempo(const AudioEvent& event, Provenance from) {
+    return from != Provenance::User || event.wantsBeatMode();
+}
+
 void ClipManager::setSourceTempo(ClipId clipId, double bpm, Provenance from) {
     auto* clip = getClip(clipId);
     auto* event = primaryEventOf(clip);
@@ -2219,12 +2223,13 @@ void ClipManager::setSourceTempo(ClipId clipId, double bpm, Provenance from) {
 
     // A tempo no file has is refused whole: a beat count typed into the wrong
     // field implied 43,000 BPM and the engine played a 20 ms sliver of the loop.
-    if (!isValidBpm(bpm)) {
+    if (!isValidBpm(bpm) || !acceptsStatedTempo(*event, from)) {
         return;
     }
 
     ensureSourceDurationKnown(*event);
     const bool wasInBeatMode = event->autoTempo;
+    const double oldBpm = event->interpBpm;
 
     if (!event->adoptBpm(bpm, from)) {
         return;
@@ -2239,9 +2244,9 @@ void ClipManager::setSourceTempo(ClipId clipId, double bpm, Provenance from) {
 
     if (clip->loopEnabled)
         event->followInterpretationIfWholeSource();
+    refitToRestatedTempo(*clip, oldBpm, wasInBeatMode);
     settleBeatMode(*clip, currentProjectTempoOrDefault(), wasInBeatMode);
 
-    refreshDerivedSeconds(clipId, currentProjectTempoOrDefault());
     notifyClipPropertyChanged(clipId);
 }
 
@@ -2251,12 +2256,13 @@ void ClipManager::setSourceBeatCount(ClipId clipId, double beats, Provenance fro
     if (event == nullptr)
         return;
 
-    if (!(beats > 0.0)) {
+    if (!(beats > 0.0) || !acceptsStatedTempo(*event, from)) {
         return;
     }
 
     ensureSourceDurationKnown(*event);
     const bool wasInBeatMode = event->autoTempo;
+    const double oldBpm = event->interpBpm;
     const double fileSeconds = event->sourceDurationSeconds();
     const double impliedBpm = fileSeconds > 0.0 ? beats * 60.0 / fileSeconds : 0.0;
     if (fileSeconds > 0.0 && !isValidBpm(impliedBpm)) {
@@ -2276,9 +2282,9 @@ void ClipManager::setSourceBeatCount(ClipId clipId, double beats, Provenance fro
 
     if (clip->loopEnabled)
         event->followInterpretationIfWholeSource();
+    refitToRestatedTempo(*clip, oldBpm, wasInBeatMode);
     settleBeatMode(*clip, currentProjectTempoOrDefault(), wasInBeatMode);
 
-    refreshDerivedSeconds(clipId, currentProjectTempoOrDefault());
     notifyClipPropertyChanged(clipId);
 }
 
@@ -2298,6 +2304,7 @@ void ClipManager::adoptAnalysis(ClipId clipId, const juce::String& sourcePath, d
 
     ensureSourceDurationKnown(*event);
     const bool wasInBeatMode = event->autoTempo;
+    const double oldBpm = event->interpBpm;
 
     if (!event->adoptBpm(bpm, Provenance::Analysis)) {
         return;
@@ -2311,31 +2318,10 @@ void ClipManager::adoptAnalysis(ClipId clipId, const juce::String& sourcePath, d
     // A loop with a tempo is its beat count.
     if (clip->loopEnabled)
         event->followInterpretationIfWholeSource();
+    refitToRestatedTempo(*clip, oldBpm, wasInBeatMode);
     settleBeatMode(*clip, currentProjectTempoOrDefault(), wasInBeatMode);
 
-    refreshDerivedSeconds(clipId, currentProjectTempoOrDefault());
     notifyClipPropertyChanged(clipId);
-}
-
-void ClipManager::refreshDerivedSeconds(ClipId clipId, double projectBPM) {
-    auto* clip = getClip(clipId);
-    if (!clip)
-        return;
-
-    // TE requires speedRatio == 1.0 in autoTempo mode.
-    if (auto* event = clip->primaryEvent(); event != nullptr && event->autoTempo)
-        event->speedRatio = 1.0;
-
-    // Timeline-domain seconds (length, startTime): depend on PROJECT BPM.
-    // The source domain needs no refreshing at all now that it is stored in
-    // samples; only these timeline caches are derived.
-    if (isValidBpm(projectBPM)) {
-        if (clip->placement.lengthBeats > 0.0)
-            clip->length = clip->placement.lengthBeats * 60.0 / projectBPM;
-        clip->startTime = clip->placement.startBeat * 60.0 / projectBPM;
-        clip->startBeats = clip->placement.startBeat;
-        clip->lengthBeats = clip->placement.lengthBeats;
-    }
 }
 
 void ClipManager::setSpeedRatio(ClipId clipId, double speedRatio) {
@@ -3658,7 +3644,7 @@ std::vector<ClipId> ClipManager::pasteFromClipboardBeats(double pasteBeat, Track
             if (pastedPath.isNotEmpty()) {
                 newClipId =
                     createAudioClipBeats(newTrackId, newStartBeat, clipLengthBeats, pastedPath,
-                                         targetView, 0.0, ClipOverlapPolicy::ResolveOverlaps);
+                                         targetView, ClipOverlapPolicy::ResolveOverlaps);
             }
         } else if (clipData.isMidi()) {
             // For MIDI clips, create empty then copy notes
@@ -3926,7 +3912,6 @@ void ClipManager::setMidiClipClipboard(std::vector<MidiNote> notes, juce::String
     const double clipboardLength =
         lengthBeats > 0.0 ? juce::jmax(lengthBeats, inferredLength) : inferredLength;
     clip.setPlacementBeats(0.0, juce::jmax(0.25, clipboardLength));
-    clip.deriveTimesFromBeats(currentProjectTempoOrDefault());
 
     clipboard_.push_back(std::move(clip));
     stashClipboardSourcePaths();

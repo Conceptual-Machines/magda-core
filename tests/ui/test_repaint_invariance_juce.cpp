@@ -144,8 +144,7 @@ class RepaintInvarianceTests : public juce::UnitTest {
             expect(!source.exists(), "the placeholder needs a source that is genuinely unreadable");
 
             const auto clipId = ClipManager::getInstance().createAudioClipBeats(
-                testTrackId, 8.0, 4.0, source.getFullPathName(), ClipView::Arrangement,
-                testTempoBPM);
+                testTrackId, 8.0, 4.0, source.getFullPathName(), ClipView::Arrangement);
 
             ClipComponent component(clipId, &fixture.panel);
             component.setBounds(0, 0, 400, 80);

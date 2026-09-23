@@ -1535,20 +1535,11 @@ void PianoRollGridComponent::setCopyDragPreview(double beat, int noteNumber, dou
     auto toDisplayBeat = [this, srcClip](double clipBeat) {
         const double visibleStart = ClipOperations::getMidiVisibleRange(*srcClip).startBeat;
         if (relativeMode_) {
-            if (clipIds_.size() > 1) {
-                double tempo = 120.0;
-                if (auto* controller = TimelineController::getCurrent())
-                    tempo = controller->getState().tempo.bpm;
-                return srcClip->startTime * (tempo / 60.0) - clipStartBeats_ + clipBeat -
-                       visibleStart;
-            }
+            if (clipIds_.size() > 1)
+                return srcClip->placement.startBeat - clipStartBeats_ + clipBeat - visibleStart;
             return clipBeat - visibleStart;
         }
-
-        double tempo = 120.0;
-        if (auto* controller = TimelineController::getCurrent())
-            tempo = controller->getState().tempo.bpm;
-        return srcClip->startTime * (tempo / 60.0) + clipBeat - visibleStart;
+        return srcClip->placement.startBeat + clipBeat - visibleStart;
     };
 
     auto addGhost = [&](double clipBeat, int ghostNote, double ghostLength) {

@@ -46,9 +46,7 @@ te::TimeStretcher::Mode stretchModeFor(const ClipInfo& clip, bool forceOn) {
 /// Both fallbacks this used to carry were dead, and provably so (#2563).
 /// ClipInfo::lengthBeats is written in one place, setPlacementBeats, where it
 /// mirrors placement.lengthBeats, so it is non-zero only where that already
-/// was. The seconds branch read the cache deriveTimesFromBeats fills from the
-/// same beats, so a zero length reached it as a zero duration. A clip whose
-/// length deserialised as zero got zero from all three.
+/// was. A clip whose length deserialised as zero got zero from every branch.
 double timelineLengthBeats(const ClipInfo& clip) {
     return clip.getLengthInBeats();
 }
@@ -911,9 +909,9 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
                 seedInterpretationFromLoopInfo(*mutableClip, loopInfoRef.getNumBeats(),
                                                loopInfoRef.getBpm(waveInfo));
                 initialiseSourceLoopRegionFromMetadata(*mutableClip);
+                // TE requires speedRatio == 1.0 in autoTempo mode.
                 if (sourceInterpretationBpmWasUnset && audioEventRef(*mutableClip).autoTempo) {
-                    double projectBpm = projectBpmAtClip(edit_, *clip);
-                    cm.refreshDerivedSeconds(clipId, projectBpm);
+                    mutableClip->primaryEvent()->speedRatio = 1.0;
                     cm.forceNotifyClipPropertyChanged(clipId);
                 }
             }
@@ -2130,7 +2128,7 @@ te::WaveAudioClip* ClipSynchronizer::createTeClip(ClipId clipId, te::AudioTrack&
                                        loopInfoRef.getBpm(waveInfo));
         initialiseSourceLoopRegionFromMetadata(*mutableClip);
         if (interpretationBpmWasUnset && audioEventRef(*mutableClip).autoTempo) {
-            cm.refreshDerivedSeconds(clipId, projectBpmAtClip(edit_, clip));
+            mutableClip->primaryEvent()->speedRatio = 1.0;
             cm.forceNotifyClipPropertyChanged(clipId);
         }
     }
