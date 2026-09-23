@@ -754,7 +754,36 @@ const std::vector<MgdFixture>& parityOnlyFixtures() {
                                  "ValhallaVintageVerb",
                                  "kHs Chorus",
                                  "kHs Trance Gate"};
-        return std::vector<MgdFixture>{std::move(fixture)};
+
+        // The same session on free plugins only, so the bench runs on any machine.
+        MgdFixture free;
+        free.file = "parity/synthstack_free.mgd";
+        free.savedBy = "scripts/build_synthstack_session.py --free";
+        free.isMigrationFixture = false;
+        free.declaration = declarationFor(
+            "project.synthstack.free",
+            "sixteen MIDI tracks into Surge XT, Vital and Dexed, one or two Surge XT Effects each",
+            0.0, 32.0);
+        free.declaration.tier = AudioTier::Invariants;
+        free.hostedPlugins = {"Dexed", "Surge XT", "Surge XT Effects", "Vital"};
+
+        // The same session on FabFilter, Serum 2 and the free synths.
+        MgdFixture fabFilterSerum;
+        fabFilterSerum.file = "parity/synthstack_fabfilter_serum.mgd";
+        fabFilterSerum.savedBy = "scripts/build_synthstack_session.py --fabfilter-serum";
+        fabFilterSerum.isMigrationFixture = false;
+        fabFilterSerum.declaration = declarationFor(
+            "project.synthstack.fabfilter-serum",
+            "sixteen MIDI tracks into FabFilter, Serum 2 and free synths, FabFilter effects", 0.0,
+            32.0);
+        fabFilterSerum.declaration.tier = AudioTier::Invariants;
+        fabFilterSerum.hostedPlugins = {"Dexed",      "One",     "Pro-C 3",    "Pro-G",
+                                        "Pro-L 2",    "Pro-MB",  "Pro-Q 4",    "Pro-R 2",
+                                        "Saturn 2",   "Serum 2", "Serum 2 FX", "Surge XT",
+                                        "Timeless 3", "Twin 3",  "Vital",      "Volcano 3"};
+
+        return std::vector<MgdFixture>{std::move(fixture), std::move(free),
+                                       std::move(fabFilterSerum)};
     }();
     return fixtures;
 }
