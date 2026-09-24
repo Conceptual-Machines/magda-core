@@ -53,6 +53,18 @@ juce::String trackTypeName(TrackType type) {
     return "audio";
 }
 
+juce::String inputMonitorModeName(InputMonitorMode mode) {
+    switch (mode) {
+        case InputMonitorMode::Off:
+            return "off";
+        case InputMonitorMode::In:
+            return "in";
+        case InputMonitorMode::Auto:
+            return "auto";
+    }
+    return "off";
+}
+
 juce::String deviceTypeName(DeviceType type) {
     switch (type) {
         case DeviceType::Instrument:
@@ -313,6 +325,7 @@ TrackDto makeTrackDto(const TrackInfo& track) {
     dto.muted = track.muted;
     dto.soloed = track.soloed;
     dto.recordArmed = track.recordArmed;
+    dto.inputMonitor = inputMonitorModeName(track.inputMonitor);
     dto.frozen = track.frozen;
     dto.audioInputDevice = safeRoutingId(track.audioInputDevice);
     dto.midiInputDevice = safeRoutingId(track.midiInputDevice);

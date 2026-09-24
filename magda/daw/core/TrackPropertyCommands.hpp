@@ -226,6 +226,33 @@ class SetTrackSoloCommand : public UndoableCommand {
 };
 
 /**
+ * @brief Command for setting track record-arm state
+ */
+class SetTrackRecordArmedCommand : public UndoableCommand {
+  public:
+    SetTrackRecordArmedCommand(TrackId trackId, bool newArmed)
+        : trackId_(trackId), newArmed_(newArmed) {
+        auto* track = TrackManager::getInstance().getTrack(trackId);
+        if (track)
+            oldArmed_ = track->recordArmed;
+    }
+
+    void execute() override {
+        TrackManager::getInstance().setTrackRecordArmed(trackId_, newArmed_);
+    }
+    void undo() override {
+        TrackManager::getInstance().setTrackRecordArmed(trackId_, oldArmed_);
+    }
+    juce::String getDescription() const override {
+        return "Set Track Record Arm";
+    }
+
+  private:
+    TrackId trackId_;
+    bool oldArmed_ = false, newArmed_;
+};
+
+/**
  * @brief Command for setting track input monitor mode
  */
 class SetTrackInputMonitorCommand : public UndoableCommand {

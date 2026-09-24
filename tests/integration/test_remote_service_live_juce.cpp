@@ -86,6 +86,73 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
             expect(fixture.service.currentRevision() == before + 1);
         }
 
+        beginTest("Track colour and input state update atomically and undo together");
+        {
+            Fixture fixture;
+            const auto created =
+                fixture.run("tracks.create", object({{"name", "Input"}, {"type", "audio"}}));
+            expect(created.ok);
+            const auto trackId = static_cast<TrackId>(static_cast<int>(created.result["id"]));
+            const auto* original = TrackManager::getInstance().getTrack(trackId);
+            expect(original != nullptr);
+            const auto originalColour = original != nullptr ? original->colour.getARGB() : 0u;
+            const auto colour = static_cast<juce::int64>(0xff102030u);
+            const auto before = fixture.service.currentRevision();
+
+            const auto updated =
+                fixture.run("tracks.update", object({{"trackId", static_cast<int>(trackId)},
+                                                     {"colourArgb", colour},
+                                                     {"recordArmed", true},
+                                                     {"inputMonitor", "in"}}));
+            expect(updated.ok);
+            expect(static_cast<juce::int64>(updated.result["colourArgb"]) == colour);
+            expect(static_cast<bool>(updated.result["recordArmed"]));
+            expectEquals(updated.result["inputMonitor"].toString(), juce::String("in"));
+            expect(fixture.service.currentRevision() == before + 1);
+
+            const auto beforeNoOp = fixture.service.currentRevision();
+            expect(fixture
+                       .run("tracks.update", object({{"trackId", static_cast<int>(trackId)},
+                                                     {"colourArgb", colour},
+                                                     {"recordArmed", true},
+                                                     {"inputMonitor", "in"}}))
+                       .ok);
+            expect(fixture.service.currentRevision() == beforeNoOp);
+
+            expect(UndoManager::getInstance().undo());
+            const auto* restored = TrackManager::getInstance().getTrack(trackId);
+            expect(restored != nullptr);
+            if (restored != nullptr) {
+                expect(restored->colour.getARGB() == originalColour);
+                expect(!restored->recordArmed);
+                expect(restored->inputMonitor == InputMonitorMode::Off);
+            }
+        }
+
+        beginTest("Input state is rejected atomically for input-less tracks");
+        {
+            Fixture fixture;
+            const auto created =
+                fixture.run("tracks.create", object({{"name", "Bus"}, {"type", "group"}}));
+            expect(created.ok);
+            const auto trackId = static_cast<TrackId>(static_cast<int>(created.result["id"]));
+            const auto before = fixture.service.currentRevision();
+
+            const auto rejected =
+                fixture.run("tracks.update", object({{"trackId", static_cast<int>(trackId)},
+                                                     {"name", "Partially changed"},
+                                                     {"recordArmed", true}}));
+            expect(!rejected.ok);
+            expectEquals(toString(rejected.error.code), juce::String("conflict"));
+            expect(fixture.service.currentRevision() == before);
+            const auto* track = TrackManager::getInstance().getTrack(trackId);
+            expect(track != nullptr);
+            if (track != nullptr) {
+                expectEquals(track->name, juce::String("Bus"));
+                expect(!track->recordArmed);
+            }
+        }
+
         beginTest("A patch that changes nothing does not advance the revision");
         {
             Fixture fixture;
