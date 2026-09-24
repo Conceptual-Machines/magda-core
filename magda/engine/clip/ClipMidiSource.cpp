@@ -194,6 +194,28 @@ void ClipMidiSource::chaseClip(juce::MidiBuffer& out, const BlockInfo& block,
 
     for (std::size_t i = 0; i < scratch_.size(); ++i)
         startNote(out, block, clip, scratch_[i], timelineBeat);
+
+    // Polyphonic aftertouch belongs to a sounding note, so it is chased only
+    // after the note-on above and only for notes this clip actually owns.
+    scratch_.clear();
+    clip.events.polyAftertouchStateAt(
+        contentBeat,
+        [&](std::int32_t index) {
+            const auto& event = clip.events.events[static_cast<std::size_t>(index)];
+            return !inHole(clip, pass.timelineOfContentZero + event.beat);
+        },
+        scratch_);
+    for (const auto index : scratch_) {
+        const auto& event = clip.events.events[static_cast<std::size_t>(index)];
+        if (!active_.active(event.channel(), static_cast<int>(event.data1)) ||
+            active_.owner(event.channel(), static_cast<int>(event.data1)) != clip.clipId)
+            continue;
+        if (!fits(kMidiShortMessageBytes)) {
+            dropped_.fetch_add(1, std::memory_order_relaxed);
+            continue;
+        }
+        emit(out, sample, event);
+    }
 }
 
 void ClipMidiSource::gatherSounding(const MidiClipPlayback& clip, const MidiFoldPass& pass,
@@ -286,7 +308,8 @@ void ClipMidiSource::renderClip(juce::MidiBuffer& out, const BlockInfo& block,
 
                 const auto isOff = event.isNoteOff();
                 const auto isOn = event.isNoteOn();
-                if ((isOn || isOff) != (phase == 1))
+                const auto followsNotes = event.isPolyAftertouch();
+                if ((isOn || isOff || followsNotes) != (phase == 1))
                     continue;
 
                 auto timelineBeat = pass.timelineOfContentZero + event.beat;

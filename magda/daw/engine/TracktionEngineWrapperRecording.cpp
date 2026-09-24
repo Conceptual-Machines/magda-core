@@ -695,6 +695,8 @@ bool TracktionEngineWrapper::finalizeSessionSlotMidiRecording(TrackId trackId,
     std::vector<MidiNote> recordedNotes;
     std::vector<MidiCCData> recordedCC;
     std::vector<MidiPitchBendData> recordedPB;
+    std::vector<MidiChannelPressureData> recordedChannelPressure;
+    std::vector<MidiPolyAftertouchData> recordedPolyAftertouch;
 
     // Defensive cap: an un-terminated note in TE's MidiList would otherwise
     // come through with a huge length, and the clip-length extension below
@@ -734,6 +736,12 @@ bool TracktionEngineWrapper::finalizeSessionSlotMidiRecording(TrackId trackId,
             pb.value = ce->getControllerValue();
             pb.beatPosition = ce->getBeatPosition().inBeats();
             recordedPB.push_back(pb);
+        } else if (eventType == tracktion::MidiControllerEvent::channelPressureType) {
+            recordedChannelPressure.push_back(
+                {ce->getControllerValue() >> 7, ce->getBeatPosition().inBeats()});
+        } else if (eventType == tracktion::MidiControllerEvent::aftertouchType) {
+            recordedPolyAftertouch.push_back({ce->getMetadata(), ce->getControllerValue() >> 7,
+                                              ce->getBeatPosition().inBeats()});
         } else if (eventType < 128) {
             MidiCCData cc;
             cc.controller = eventType;
@@ -750,6 +758,10 @@ bool TracktionEngineWrapper::finalizeSessionSlotMidiRecording(TrackId trackId,
         lengthBeats = juce::jmax(lengthBeats, cc.beatPosition);
     for (const auto& pb : recordedPB)
         lengthBeats = juce::jmax(lengthBeats, pb.beatPosition);
+    for (const auto& pressure : recordedChannelPressure)
+        lengthBeats = juce::jmax(lengthBeats, pressure.beatPosition);
+    for (const auto& pressure : recordedPolyAftertouch)
+        lengthBeats = juce::jmax(lengthBeats, pressure.beatPosition);
     lengthBeats = snapLengthToBars(*this, lengthBeats);
 
     if (auto* edit = currentEdit_.get()) {
@@ -776,6 +788,8 @@ bool TracktionEngineWrapper::finalizeSessionSlotMidiRecording(TrackId trackId,
         clipInfo->midiNotes = std::move(recordedNotes);
         clipInfo->midiCCData = std::move(recordedCC);
         clipInfo->midiPitchBendData = std::move(recordedPB);
+        clipInfo->midiChannelPressureData = std::move(recordedChannelPressure);
+        clipInfo->midiPolyAftertouchData = std::move(recordedPolyAftertouch);
         clipManager.forceNotifyClipPropertyChanged(clipId);
         SelectionManager::getInstance().selectClip(clipId);
     }
@@ -833,6 +847,12 @@ void TracktionEngineWrapper::finalizeMidiRecording(TrackId trackId) {
                 pb.value = ce->getControllerValue();
                 pb.beatPosition = ce->getBeatPosition().inBeats();
                 take.pitchBend.push_back(pb);
+            } else if (eventType == tracktion::MidiControllerEvent::channelPressureType) {
+                take.channelPressure.push_back(
+                    {ce->getControllerValue() >> 7, ce->getBeatPosition().inBeats()});
+            } else if (eventType == tracktion::MidiControllerEvent::aftertouchType) {
+                take.polyAftertouch.push_back({ce->getMetadata(), ce->getControllerValue() >> 7,
+                                               ce->getBeatPosition().inBeats()});
             } else if (eventType < 128) {
                 MidiCCData cc;
                 cc.controller = eventType;
@@ -889,6 +909,8 @@ void TracktionEngineWrapper::finalizeMidiRecording(TrackId trackId) {
         clipInfo->midiNotes = active.notes;
         clipInfo->midiCCData = active.cc;
         clipInfo->midiPitchBendData = active.pitchBend;
+        clipInfo->midiChannelPressureData = active.channelPressure;
+        clipInfo->midiPolyAftertouchData = active.polyAftertouch;
         if (takes.size() > 1) {
             clipInfo->midi().takes = std::move(takes);
             clipInfo->midi().currentTakeIndex = activeTakeIndex;

@@ -218,10 +218,10 @@ Loss takesAndComp() {
 }
 
 Loss controllers() {
-    return {.field = "ClipInfo::midiCCData, midiPitchBendData, MidiNote::pitchExpression",
+    return {.field = "expressive MIDI events, event ids, and keyswitch roles",
             .reason = "the format's <Notes> carries pitch, velocity and duration and nothing "
-                      "else. Continuous controllers, pitch bend and per-note expression have "
-                      "no element to go in",
+                      "else. Controllers, pressure, stable ids, keyswitch roles, and per-note "
+                      "expression have no element to go in",
             .restore = [](Case& imported, const Case& original) {
                 return forEachClip(imported, original, [](ClipInfo& clip, const ClipInfo& source) {
                     bool restored = false;
@@ -234,6 +234,19 @@ Loss controllers() {
                         clip.midiPitchBendData = source.midiPitchBendData;
                         restored = true;
                     }
+                    if (clip.midiChannelPressureData != source.midiChannelPressureData) {
+                        clip.midiChannelPressureData = source.midiChannelPressureData;
+                        restored = true;
+                    }
+                    if (clip.midiPolyAftertouchData != source.midiPolyAftertouchData) {
+                        clip.midiPolyAftertouchData = source.midiPolyAftertouchData;
+                        restored = true;
+                    }
+                    if (clip.isMidi() && source.isMidi() &&
+                        clip.midi().nextEventId != source.midi().nextEventId) {
+                        clip.midi().nextEventId = source.midi().nextEventId;
+                        restored = true;
+                    }
 
                     // Expression is per note, and the notes themselves did make
                     // the trip, so it goes back onto them in order rather than
@@ -242,10 +255,14 @@ Loss controllers() {
                     const auto notes = std::min(clip.midiNotes.size(), source.midiNotes.size());
                     for (std::size_t index = 0; index < notes; ++index) {
                         if (clip.midiNotes[index].pitchExpression ==
-                            source.midiNotes[index].pitchExpression)
+                                source.midiNotes[index].pitchExpression &&
+                            clip.midiNotes[index].keyswitch == source.midiNotes[index].keyswitch &&
+                            clip.midiNotes[index].id == source.midiNotes[index].id)
                             continue;
                         clip.midiNotes[index].pitchExpression =
                             source.midiNotes[index].pitchExpression;
+                        clip.midiNotes[index].keyswitch = source.midiNotes[index].keyswitch;
+                        clip.midiNotes[index].id = source.midiNotes[index].id;
                         restored = true;
                     }
 

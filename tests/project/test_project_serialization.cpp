@@ -3500,7 +3500,7 @@ TEST_CASE("Parameter value conventions migrate at their owning device boundary",
     }
 }
 
-TEST_CASE("MIDI controller curve metadata roundtrip", "[project][serialization][midi]") {
+TEST_CASE("Expressive MIDI events and stable ids roundtrip", "[project][serialization][midi]") {
     ProjectTestFixture fixture;
 
     auto trackId = TrackManager::getInstance().createTrack("MIDI", TrackType::Media);
@@ -3512,6 +3512,15 @@ TEST_CASE("MIDI controller curve metadata roundtrip", "[project][serialization][
     clip.setMidiContent();
     clip.setPlacementBeats(0.0, 4.0);
 
+    MidiNote keyswitch;
+    keyswitch.id = 1;
+    keyswitch.noteNumber = 36;
+    keyswitch.velocity = 100;
+    keyswitch.startBeat = 0.0;
+    keyswitch.lengthBeats = 0.25;
+    keyswitch.keyswitch = true;
+    clip.midiNotes.push_back(keyswitch);
+
     MidiCCData cc;
     cc.controller = 74;
     cc.value = 96;
@@ -3520,6 +3529,7 @@ TEST_CASE("MIDI controller curve metadata roundtrip", "[project][serialization][
     cc.tension = 0.25;
     cc.inHandle = {-0.25, -0.1, false};
     cc.outHandle = {0.5, 0.2, false};
+    cc.id = 2;
     clip.midiCCData.push_back(cc);
 
     MidiPitchBendData pb;
@@ -3529,7 +3539,12 @@ TEST_CASE("MIDI controller curve metadata roundtrip", "[project][serialization][
     pb.tension = -0.5;
     pb.inHandle = {-0.1, 0.3, true};
     pb.outHandle = {0.4, -0.2, false};
+    pb.id = 3;
     clip.midiPitchBendData.push_back(pb);
+
+    clip.midiChannelPressureData.push_back({80, 2.5, 4});
+    clip.midiPolyAftertouchData.push_back({60, 70, 3.0, 5});
+    clip.midi().nextEventId = 8;
 
     ClipManager::getInstance().restoreClip(clip);
 
@@ -3541,7 +3556,11 @@ TEST_CASE("MIDI controller curve metadata roundtrip", "[project][serialization][
     REQUIRE(ProjectSerializer::deserializeProject(json, loadedInfo));
     auto* loaded = ClipManager::getInstance().getClip(clip.id);
     REQUIRE(loaded != nullptr);
+    REQUIRE(loaded->midiNotes.size() == 1);
+    REQUIRE(loaded->midiNotes[0].id == 1);
+    REQUIRE(loaded->midiNotes[0].keyswitch);
     REQUIRE(loaded->midiCCData.size() == 1);
+    REQUIRE(loaded->midiCCData[0].id == 2);
     REQUIRE(loaded->midiCCData[0].curveType == MidiCurveType::Bezier);
     REQUIRE(loaded->midiCCData[0].tension == Approx(0.25));
     REQUIRE(loaded->midiCCData[0].inHandle.dx == Approx(-0.25));
@@ -3552,6 +3571,7 @@ TEST_CASE("MIDI controller curve metadata roundtrip", "[project][serialization][
     REQUIRE_FALSE(loaded->midiCCData[0].outHandle.linked);
 
     REQUIRE(loaded->midiPitchBendData.size() == 1);
+    REQUIRE(loaded->midiPitchBendData[0].id == 3);
     REQUIRE(loaded->midiPitchBendData[0].curveType == MidiCurveType::Linear);
     REQUIRE(loaded->midiPitchBendData[0].tension == Approx(-0.5));
     REQUIRE(loaded->midiPitchBendData[0].inHandle.dx == Approx(-0.1));
@@ -3560,6 +3580,10 @@ TEST_CASE("MIDI controller curve metadata roundtrip", "[project][serialization][
     REQUIRE(loaded->midiPitchBendData[0].outHandle.dx == Approx(0.4));
     REQUIRE(loaded->midiPitchBendData[0].outHandle.dy == Approx(-0.2));
     REQUIRE_FALSE(loaded->midiPitchBendData[0].outHandle.linked);
+    REQUIRE(loaded->midiChannelPressureData == std::vector<MidiChannelPressureData>{{80, 2.5, 4}});
+    REQUIRE(loaded->midiPolyAftertouchData ==
+            std::vector<MidiPolyAftertouchData>{{60, 70, 3.0, 5}});
+    REQUIRE(loaded->midi().nextEventId == 8);
 }
 
 TEST_CASE("RackInfo panel UI state roundtrip", "[project][serialization][rack][ui_state]") {

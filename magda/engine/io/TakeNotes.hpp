@@ -23,7 +23,15 @@
 namespace magda::engine {
 
 /// What one channel message is, as far as the model has a field for it.
-enum class MidiKind : std::uint8_t { noteOn, noteOff, controller, pitchBend, unsupported };
+enum class MidiKind : std::uint8_t {
+    noteOn,
+    noteOff,
+    controller,
+    pitchBend,
+    channelPressure,
+    polyAftertouch,
+    unsupported
+};
 
 /**
  * @brief The kind of a channel message, from its status and second data byte.
@@ -41,6 +49,12 @@ constexpr MidiKind kindOf(std::uint8_t status, std::uint8_t data2) {
 
         case 0xb0U:
             return MidiKind::controller;
+
+        case 0xa0U:
+            return MidiKind::polyAftertouch;
+
+        case 0xd0U:
+            return MidiKind::channelPressure;
 
         case 0xe0U:
             return MidiKind::pitchBend;

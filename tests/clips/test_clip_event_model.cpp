@@ -351,6 +351,26 @@ TEST_CASE("A MIDI clip's loop stays per-instance across ghosts", "[clip][event][
     REQUIRE(source.sharedContentEquals(ghost));
 }
 
+TEST_CASE("MIDI ghost propagation never rewinds event ids", "[clip][event][ghost][midi]") {
+    EventModelFixture fixture;
+
+    ClipInfo source;
+    source.setMidiContent();
+    source.midiNotes.push_back(MidiNote{60, 100, 0.0, 1.0});
+    source.midiNotes.back().id = 3;
+    source.midi().nextEventId = 4;
+
+    ClipInfo ghost;
+    ghost.setMidiContent();
+    ghost.midi().nextEventId = 100;
+
+    ghost.copySharedContentFrom(source);
+
+    REQUIRE(ghost.midi().nextEventId == 100);
+    REQUIRE(source.sharedContentEquals(ghost));
+    REQUIRE(ghost.allocateMidiEventId() == 100);
+}
+
 // =============================================================================
 // Interpretation seeding
 // =============================================================================

@@ -1006,6 +1006,8 @@ void JoinClipsCommand::performAction() {
         left->midiNotes = std::move(flattenedLeft.midiNotes);
         left->midiCCData = std::move(flattenedLeft.midiCCData);
         left->midiPitchBendData = std::move(flattenedLeft.midiPitchBendData);
+        left->midiChannelPressureData = std::move(flattenedLeft.midiChannelPressureData);
+        left->midiPolyAftertouchData = std::move(flattenedLeft.midiPolyAftertouchData);
 
         for (const auto& note : flattenedRight.midiNotes) {
             MidiNote adjustedNote = note;
@@ -1023,6 +1025,17 @@ void JoinClipsCommand::performAction() {
             MidiPitchBendData adjustedPitchBend = pitchBend;
             adjustedPitchBend.beatPosition += beatOffset;
             left->midiPitchBendData.push_back(adjustedPitchBend);
+        }
+
+        for (const auto& pressure : flattenedRight.midiChannelPressureData) {
+            auto adjusted = pressure;
+            adjusted.beatPosition += beatOffset;
+            left->midiChannelPressureData.push_back(adjusted);
+        }
+        for (const auto& pressure : flattenedRight.midiPolyAftertouchData) {
+            auto adjusted = pressure;
+            adjusted.beatPosition += beatOffset;
+            left->midiPolyAftertouchData.push_back(adjusted);
         }
 
         left->loopEnabled = false;
@@ -2503,6 +2516,8 @@ void FlattenClipStackCommand::execute() {
     std::vector<MidiNote> mergedNotes;
     std::vector<MidiCCData> mergedCC;
     std::vector<MidiPitchBendData> mergedPitchBend;
+    std::vector<MidiChannelPressureData> mergedChannelPressure;
+    std::vector<MidiPolyAftertouchData> mergedPolyAftertouch;
 
     for (const auto& member : members) {
         // Unroll first: what a looped clip plays is its expanded note list, and
@@ -2539,6 +2554,22 @@ void FlattenClipStackCommand::execute() {
             moved.beatPosition = timelineBeat - mergedStart;
             mergedPitchBend.push_back(moved);
         }
+        for (const auto& pressure : flattened.midiChannelPressureData) {
+            const double timelineBeat = flattened.placement.startBeat + pressure.beatPosition;
+            if (!playsAt(span, timelineBeat))
+                continue;
+            auto moved = pressure;
+            moved.beatPosition = timelineBeat - mergedStart;
+            mergedChannelPressure.push_back(moved);
+        }
+        for (const auto& pressure : flattened.midiPolyAftertouchData) {
+            const double timelineBeat = flattened.placement.startBeat + pressure.beatPosition;
+            if (!playsAt(span, timelineBeat))
+                continue;
+            auto moved = pressure;
+            moved.beatPosition = timelineBeat - mergedStart;
+            mergedPolyAftertouch.push_back(moved);
+        }
     }
 
     std::sort(mergedNotes.begin(), mergedNotes.end(),
@@ -2560,6 +2591,8 @@ void FlattenClipStackCommand::execute() {
     target->midiNotes = std::move(mergedNotes);
     target->midiCCData = std::move(mergedCC);
     target->midiPitchBendData = std::move(mergedPitchBend);
+    target->midiChannelPressureData = std::move(mergedChannelPressure);
+    target->midiPolyAftertouchData = std::move(mergedPolyAftertouch);
     target->loopEnabled = false;
     target->midiOffset = 0.0;
     target->midiTrimOffset = 0.0;
