@@ -1253,6 +1253,358 @@ HandlerResult devicesOpenEditor(MagdaApi& api, const juce::var& input, const Req
     return HandlerResult::unchanged(juce::var(object));
 }
 
+// ===========================================================================
+// Device modulation and macros. The registry exposes these handlers to both
+// WebSocket and MCP; every mutation still crosses the DeviceApi facade.
+// ===========================================================================
+namespace {
+
+std::optional<ChainNodePath> modulationPath(const juce::var& input) {
+    return toChainNodePath(devicePathFromJson(input["devicePath"]));
+}
+
+const char* modTypeName(ModType type) {
+    switch (type) {
+        case ModType::LFO:
+            return "lfo";
+        case ModType::Envelope:
+            return "envelope";
+        case ModType::Random:
+            return "random";
+        case ModType::Follower:
+            return "follower";
+    }
+    return "lfo";
+}
+
+ModType modTypeFromName(const juce::String& name) {
+    if (name == "envelope")
+        return ModType::Envelope;
+    if (name == "random")
+        return ModType::Random;
+    if (name == "follower")
+        return ModType::Follower;
+    return ModType::LFO;
+}
+
+const char* waveformName(LFOWaveform waveform) {
+    switch (waveform) {
+        case LFOWaveform::Sine:
+            return "sine";
+        case LFOWaveform::Triangle:
+            return "triangle";
+        case LFOWaveform::Square:
+            return "square";
+        case LFOWaveform::Saw:
+            return "saw";
+        case LFOWaveform::ReverseSaw:
+            return "reverse_saw";
+        case LFOWaveform::Custom:
+            return "custom";
+    }
+    return "sine";
+}
+
+LFOWaveform waveformFromName(const juce::String& name) {
+    if (name == "triangle")
+        return LFOWaveform::Triangle;
+    if (name == "square")
+        return LFOWaveform::Square;
+    if (name == "saw")
+        return LFOWaveform::Saw;
+    if (name == "reverse_saw")
+        return LFOWaveform::ReverseSaw;
+    if (name == "custom")
+        return LFOWaveform::Custom;
+    return LFOWaveform::Sine;
+}
+
+juce::var modJson(const ModInfo& mod) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("modId", mod.id);
+    object->setProperty("name", mod.name);
+    object->setProperty("type", modTypeName(mod.type));
+    object->setProperty("waveform", waveformName(mod.waveform));
+    object->setProperty("enabled", mod.enabled);
+    object->setProperty("rate", mod.rate);
+    object->setProperty("tempoSync", mod.tempoSync);
+    object->setProperty("syncDivision", static_cast<int>(mod.syncDivision));
+    object->setProperty("oneShot", mod.oneShot);
+    object->setProperty("attackMs", mod.envAttackMs);
+    object->setProperty("decayMs", mod.envDecayMs);
+    object->setProperty("sustain", mod.envSustain);
+    object->setProperty("releaseMs", mod.envReleaseMs);
+    juce::Array<juce::var> links;
+    for (const auto& link : mod.links) {
+        auto* item = new juce::DynamicObject();
+        item->setProperty("target", toVar(link.target));
+        item->setProperty("amount", link.amount);
+        item->setProperty("bipolar", link.bipolar);
+        item->setProperty("enabled", link.enabled);
+        links.add(juce::var(item));
+    }
+    object->setProperty("links", links);
+    return object;
+}
+
+juce::var macroJson(const MacroInfo& macro) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("macroIndex", macro.id);
+    object->setProperty("name", macro.name);
+    object->setProperty("value", macro.value);
+    juce::Array<juce::var> links;
+    for (const auto& link : macro.links) {
+        auto* item = new juce::DynamicObject();
+        item->setProperty("target", toVar(link.target));
+        item->setProperty("amount", link.amount);
+        item->setProperty("bipolar", link.bipolar);
+        links.add(juce::var(item));
+    }
+    object->setProperty("links", links);
+    return object;
+}
+
+DeviceModUpdate modUpdateFrom(const juce::var& input) {
+    DeviceModUpdate update;
+    if (has(input, "name"))
+        update.name = input["name"].toString();
+    if (has(input, "type"))
+        update.type = modTypeFromName(input["type"].toString());
+    if (has(input, "waveform"))
+        update.waveform = waveformFromName(input["waveform"].toString());
+    if (has(input, "rate"))
+        update.rate = static_cast<float>(static_cast<double>(input["rate"]));
+    if (has(input, "enabled"))
+        update.enabled = readBool(input, "enabled");
+    if (has(input, "tempoSync"))
+        update.tempoSync = readBool(input, "tempoSync");
+    if (has(input, "syncDivision"))
+        update.syncDivision = static_cast<SyncDivision>(readInt(input, "syncDivision"));
+    if (has(input, "oneShot"))
+        update.oneShot = readBool(input, "oneShot");
+    if (has(input, "attackMs"))
+        update.attackMs = static_cast<float>(readDouble(input, "attackMs"));
+    if (has(input, "decayMs"))
+        update.decayMs = static_cast<float>(readDouble(input, "decayMs"));
+    if (has(input, "sustain"))
+        update.sustain = static_cast<float>(readDouble(input, "sustain"));
+    if (has(input, "releaseMs"))
+        update.releaseMs = static_cast<float>(readDouble(input, "releaseMs"));
+    return update;
+}
+
+bool validModUpdate(const DeviceModUpdate& update) {
+    return (!update.rate || (std::isfinite(*update.rate) && *update.rate > 0.0f)) &&
+           (!update.attackMs || (std::isfinite(*update.attackMs) && *update.attackMs >= 0.0f &&
+                                 *update.attackMs <= 30000.0f)) &&
+           (!update.decayMs || (std::isfinite(*update.decayMs) && *update.decayMs >= 0.0f &&
+                                *update.decayMs <= 30000.0f)) &&
+           (!update.sustain || (std::isfinite(*update.sustain) && *update.sustain >= 0.0f &&
+                                *update.sustain <= 1.0f)) &&
+           (!update.releaseMs || (std::isfinite(*update.releaseMs) && *update.releaseMs >= 0.0f &&
+                                  *update.releaseMs <= 30000.0f));
+}
+
+std::optional<HandlerResult> linkRefusal(MagdaApi& api, const ChainNodePath& path,
+                                         int parameterIndex) {
+    const auto* device = api.devices().getDevice(path);
+    if (device == nullptr)
+        return HandlerResult::fail(ErrorCode::NotFound, "no device at devicePath");
+    const auto parameters = makeDeviceParameterDtos(*device, path);
+    const auto found = std::ranges::find(parameters, parameterIndex, &DeviceParameterDto::index);
+    if (found == parameters.end())
+        return notFound("parameter", parameterIndex);
+    if (!found->aiAgentEnabled)
+        return HandlerResult::fail(ErrorCode::PermissionDenied,
+                                   "parameter " + juce::String(parameterIndex) +
+                                       " is not enabled for AI agent control");
+    return std::nullopt;
+}
+
+std::optional<HandlerResult> modulationOwnerError(MagdaApi& api, const ChainNodePath& path) {
+    if (api.devices().getDevice(path) == nullptr)
+        return HandlerResult::fail(ErrorCode::NotFound, "no device at devicePath");
+    if (path.isPostFx())
+        return HandlerResult::fail(ErrorCode::Conflict,
+                                   "post-FX devices do not own mods or macros");
+    return std::nullopt;
+}
+
+}  // namespace
+
+HandlerResult modsList(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto path = modulationPath(input);
+    if (!path)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "devicePath does not resolve");
+    if (auto error = modulationOwnerError(api, *path))
+        return *error;
+    std::vector<juce::var> items;
+    for (const auto& mod : api.devices().getDeviceMods(*path))
+        items.push_back(modJson(mod));
+    return HandlerResult::ok(toJsonArray(items));
+}
+
+HandlerResult modsCreate(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto path = modulationPath(input);
+    if (!path)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "devicePath does not resolve");
+    if (auto error = modulationOwnerError(api, *path))
+        return *error;
+    auto update = modUpdateFrom(input);
+    if (!validModUpdate(update))
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "mod settings are out of range");
+    if (!has(input, "parameterIndex") && (has(input, "amount") || has(input, "bipolar")))
+        return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                   "amount and bipolar require parameterIndex");
+    if (has(input, "parameterIndex")) {
+        if (auto error = linkRefusal(api, *path, readInt(input, "parameterIndex")))
+            return *error;
+    }
+    const auto type = *update.type;
+    const auto waveform = update.waveform.value_or(LFOWaveform::Sine);
+    const auto id = api.devices().createDeviceMod(*path, type, waveform);
+    if (id == INVALID_MOD_ID)
+        return HandlerResult::fail(ErrorCode::Conflict, "mod could not be created");
+    update.type.reset();
+    update.waveform.reset();
+    if (!api.devices().updateDeviceMod(*path, id, update)) {
+        api.devices().removeDeviceMod(*path, id);
+        return HandlerResult::fail(ErrorCode::Conflict, "mod settings were rejected");
+    }
+    if (has(input, "parameterIndex") &&
+        !api.devices().linkDeviceMod(*path, id, readInt(input, "parameterIndex"),
+                                     static_cast<float>(readDouble(input, "amount", 0.3)),
+                                     readBool(input, "bipolar"))) {
+        api.devices().removeDeviceMod(*path, id);
+        return HandlerResult::fail(ErrorCode::Conflict, "mod link was rejected");
+    }
+    const auto mods = api.devices().getDeviceMods(*path);
+    return HandlerResult::ok(modJson(mods[static_cast<size_t>(id)]));
+}
+
+HandlerResult modsUpdate(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto path = modulationPath(input);
+    if (!path)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "devicePath does not resolve");
+    if (auto error = modulationOwnerError(api, *path))
+        return *error;
+    const auto id = readInt(input, "modId");
+    const auto mods = api.devices().getDeviceMods(*path);
+    if (id < 0 || id >= static_cast<int>(mods.size()))
+        return notFound("mod", id);
+    const auto update = modUpdateFrom(input);
+    if (!validModUpdate(update))
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "mod settings are out of range");
+    if (!update.name && !update.type && !update.waveform && !update.rate && !update.enabled &&
+        !update.tempoSync && !update.syncDivision && !update.oneShot && !update.attackMs &&
+        !update.decayMs && !update.sustain && !update.releaseMs)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "no mod settings to update");
+    if (!api.devices().updateDeviceMod(*path, id, update))
+        return HandlerResult::fail(ErrorCode::Conflict, "mod update was rejected");
+    return HandlerResult::ok(modJson(api.devices().getDeviceMods(*path)[static_cast<size_t>(id)]));
+}
+
+HandlerResult modsRemove(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto path = modulationPath(input);
+    if (!path)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "devicePath does not resolve");
+    if (auto error = modulationOwnerError(api, *path))
+        return *error;
+    const auto id = readInt(input, "modId");
+    if (!api.devices().removeDeviceMod(*path, id))
+        return notFound("mod", id);
+    return HandlerResult::ok(acceptedResult());
+}
+
+HandlerResult modsLink(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto path = modulationPath(input);
+    if (!path)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "devicePath does not resolve");
+    if (auto error = modulationOwnerError(api, *path))
+        return *error;
+    const auto id = readInt(input, "modId");
+    if (id < 0 || id >= static_cast<int>(api.devices().getDeviceMods(*path).size()))
+        return notFound("mod", id);
+    const auto parameterIndex = readInt(input, "parameterIndex");
+    if (auto error = linkRefusal(api, *path, parameterIndex))
+        return *error;
+    if (!api.devices().linkDeviceMod(*path, id, parameterIndex,
+                                     static_cast<float>(readDouble(input, "amount")),
+                                     readBool(input, "bipolar")))
+        return HandlerResult::fail(ErrorCode::Conflict, "mod link was rejected");
+    return HandlerResult::ok(modJson(api.devices().getDeviceMods(*path)[static_cast<size_t>(id)]));
+}
+
+HandlerResult modsUnlink(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto path = modulationPath(input);
+    if (!path)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "devicePath does not resolve");
+    if (auto error = modulationOwnerError(api, *path))
+        return *error;
+    if (!api.devices().unlinkDeviceMod(*path, readInt(input, "modId"),
+                                       readInt(input, "parameterIndex")))
+        return HandlerResult::fail(ErrorCode::NotFound, "mod link not found");
+    return HandlerResult::ok(acceptedResult());
+}
+
+HandlerResult macrosList(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto path = modulationPath(input);
+    if (!path)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "devicePath does not resolve");
+    if (auto error = modulationOwnerError(api, *path))
+        return *error;
+    std::vector<juce::var> items;
+    for (const auto& macro : api.devices().getDeviceMacros(*path))
+        items.push_back(macroJson(macro));
+    return HandlerResult::ok(toJsonArray(items));
+}
+
+HandlerResult macrosSetValue(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto path = modulationPath(input);
+    if (!path)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "devicePath does not resolve");
+    if (auto error = modulationOwnerError(api, *path))
+        return *error;
+    const auto id = readInt(input, "macroIndex");
+    if (!api.devices().setDeviceMacroValue(*path, id,
+                                           static_cast<float>(readDouble(input, "value"))))
+        return HandlerResult::fail(ErrorCode::NotFound, "macro not found or value rejected");
+    return HandlerResult::ok(
+        macroJson(api.devices().getDeviceMacros(*path)[static_cast<size_t>(id)]));
+}
+
+HandlerResult macrosLink(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto path = modulationPath(input);
+    if (!path)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "devicePath does not resolve");
+    if (auto error = modulationOwnerError(api, *path))
+        return *error;
+    const auto id = readInt(input, "macroIndex");
+    if (id < 0 || id >= static_cast<int>(api.devices().getDeviceMacros(*path).size()))
+        return notFound("macro", id);
+    const auto parameterIndex = readInt(input, "parameterIndex");
+    if (auto error = linkRefusal(api, *path, parameterIndex))
+        return *error;
+    if (!api.devices().linkDeviceMacro(*path, id, parameterIndex,
+                                       static_cast<float>(readDouble(input, "amount")),
+                                       readBool(input, "bipolar")))
+        return HandlerResult::fail(ErrorCode::Conflict, "macro link was rejected");
+    return HandlerResult::ok(
+        macroJson(api.devices().getDeviceMacros(*path)[static_cast<size_t>(id)]));
+}
+
+HandlerResult macrosUnlink(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto path = modulationPath(input);
+    if (!path)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "devicePath does not resolve");
+    if (auto error = modulationOwnerError(api, *path))
+        return *error;
+    if (!api.devices().unlinkDeviceMacro(*path, readInt(input, "macroIndex"),
+                                         readInt(input, "parameterIndex")))
+        return HandlerResult::fail(ErrorCode::NotFound, "macro link not found");
+    return HandlerResult::ok(acceptedResult());
+}
+
 HandlerResult racksCreate(MagdaApi& api, const juce::var& input, const RequestContext&) {
     const auto trackId = static_cast<TrackId>(static_cast<int>(input["trackId"]));
     if (api.tracks().getTrack(trackId) == nullptr)

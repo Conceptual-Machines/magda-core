@@ -887,3 +887,34 @@ TEST_CASE("A dropped subscriber stops being able to change the project",
     REQUIRE(server.connectionCount() == 0);
     REQUIRE(api.transport_.playCalls == 0);
 }
+
+TEST_CASE("WebSocket dispatches device modulation through the shared API",
+          "[remote][websocket][2294]") {
+    MessageThreadRelaxation relax;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    DeviceInfo device;
+    device.id = 5;
+    device.format = PluginFormat::Internal;
+    device.parameters.emplace_back(0, "Cutoff", "Hz", 20.0f, 20000.0f, 800.0f);
+    api.devices_.devices[path] = device;
+    RemoteApiService service(api);
+    RemoteWebSocketServer server(service, testOptions());
+    REQUIRE(server.start());
+    httplib::ws::WebSocketClient client(endpoint(server), authorised());
+    REQUIRE(client.connect());
+    const auto address = toJson(makeDevicePathDto(path));
+    auto* create = new juce::DynamicObject();
+    create->setProperty("devicePath", address);
+    create->setProperty("type", "lfo");
+    create->setProperty("parameterIndex", 0);
+    create->setProperty("amount", 0.5);
+    const auto created = roundTrip(client, request("mods.create", juce::var(create)));
+    REQUIRE(created["error"].isVoid());
+    REQUIRE(static_cast<int>(created["result"]["modId"]) == 0);
+    auto* list = new juce::DynamicObject();
+    list->setProperty("devicePath", address);
+    const auto listed = roundTrip(client, request("mods.list", juce::var(list), 2));
+    REQUIRE(listed["error"].isVoid());
+    REQUIRE(listed["result"].getArray()->size() == 1);
+}

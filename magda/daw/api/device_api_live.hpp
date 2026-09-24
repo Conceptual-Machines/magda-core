@@ -25,6 +25,21 @@ class DeviceApiLive : public DeviceApi {
     bool setDeviceParameterConfig(const ChainNodePath& devicePath,
                                   const DeviceParameterConfigUpdate& update) override;
     bool openDeviceEditor(const ChainNodePath& devicePath) override;
+    std::vector<ModInfo> getDeviceMods(const ChainNodePath& devicePath) const override;
+    std::vector<MacroInfo> getDeviceMacros(const ChainNodePath& devicePath) const override;
+    ModId createDeviceMod(const ChainNodePath& devicePath, ModType type,
+                          LFOWaveform waveform) override;
+    bool updateDeviceMod(const ChainNodePath& devicePath, ModId modId,
+                         const DeviceModUpdate& update) override;
+    bool removeDeviceMod(const ChainNodePath& devicePath, ModId modId) override;
+    bool linkDeviceMod(const ChainNodePath& devicePath, ModId modId, int parameterIndex,
+                       float amount, bool bipolar) override;
+    bool unlinkDeviceMod(const ChainNodePath& devicePath, ModId modId, int parameterIndex) override;
+    bool setDeviceMacroValue(const ChainNodePath& devicePath, int macroIndex, float value) override;
+    bool linkDeviceMacro(const ChainNodePath& devicePath, int macroIndex, int parameterIndex,
+                         float amount, bool bipolar) override;
+    bool unlinkDeviceMacro(const ChainNodePath& devicePath, int macroIndex,
+                           int parameterIndex) override;
 };
 
 }  // namespace magda

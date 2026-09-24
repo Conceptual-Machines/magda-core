@@ -525,6 +525,56 @@ const juce::var& deviceParameterSchema() {
     return value;
 }
 
+const juce::var& deviceModSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "modId":{"type":"integer","minimum":0},
+            "name":{"type":"string"},
+            "type":{"type":"string","enum":["lfo","envelope","random","follower"]},
+            "waveform":{"type":"string","enum":["sine","triangle","square","saw","reverse_saw","custom"]},
+            "enabled":{"type":"boolean"},
+            "rate":{"type":"number"},
+            "tempoSync":{"type":"boolean"},
+            "syncDivision":{"type":"integer"},
+            "oneShot":{"type":"boolean"},
+            "attackMs":{"type":"number"},
+            "decayMs":{"type":"number"},
+            "sustain":{"type":"number"},
+            "releaseMs":{"type":"number"},
+            "links":{"type":"array","items":{
+                "type":"object",
+                "properties":{"target":{},"amount":{"type":"number"},
+                              "bipolar":{"type":"boolean"},"enabled":{"type":"boolean"}},
+                "required":["target","amount","bipolar","enabled"],"additionalProperties":false
+            }}
+        },
+        "required":["modId","name","type","waveform","enabled","rate","tempoSync",
+                    "syncDivision","oneShot","attackMs","decayMs","sustain","releaseMs","links"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
+const juce::var& deviceMacroSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "macroIndex":{"type":"integer","minimum":0},
+            "name":{"type":"string"},
+            "value":{"type":"number","minimum":0,"maximum":1},
+            "links":{"type":"array","items":{
+                "type":"object",
+                "properties":{"target":{},"amount":{"type":"number"},
+                              "bipolar":{"type":"boolean"}},
+                "required":["target","amount","bipolar"],"additionalProperties":false
+            }}
+        },
+        "required":["macroIndex","name","value","links"],"additionalProperties":false
+    })json");
+    return value;
+}
+
 const juce::var& deviceCatalogEntrySchema() {
     static const auto value = parseSchema(R"json({
         "type":"object",
@@ -2201,6 +2251,120 @@ OperationRegistry::OperationRegistry() {
         okResult);
     operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
         "devicePath", devicePathSchema());
+    // Device-owned mods and macros (#2294). The operation registry is shared by
+    // WebSocket and MCP, so both transports expose exactly this contract.
+    const auto addModulationOperation = [&](const char* name, const char* summary,
+                                            OperationAccess access, OperationHandler handler,
+                                            juce::var input, juce::var output) {
+        add(name, summary, access, handler, std::move(input), std::move(output));
+        operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+            "devicePath", devicePathSchema());
+    };
+    addModulationOperation("mods.list", "List modulators on a device", OperationAccess::Read,
+                           &handlers::modsList, operationInputSchema(R"json({
+        "type":"object","properties":{"devicePath":{}},
+        "required":["devicePath"],"additionalProperties":false
+    })json"),
+                           arraySchema(deviceModSchema()));
+    addModulationOperation("mods.create", "Create a device modulator", OperationAccess::Write,
+                           &handlers::modsCreate, operationInputSchema(R"json({
+        "type":"object","properties":{
+            "devicePath":{},
+            "type":{"type":"string","enum":["lfo","envelope","random","follower"]},
+            "waveform":{"type":"string","enum":["sine","triangle","square","saw","reverse_saw","custom"]},
+            "name":{"type":"string"},
+            "rate":{"type":"number","exclusiveMinimum":0},
+            "enabled":{"type":"boolean"},"tempoSync":{"type":"boolean"},
+            "syncDivision":{"type":"integer","enum":[1,2,3,4,6,8,12,16,24,32,33,48,66,132,200,264,400,528,800,1600]},
+            "oneShot":{"type":"boolean"},
+            "attackMs":{"type":"number","minimum":0,"maximum":30000},
+            "decayMs":{"type":"number","minimum":0,"maximum":30000},
+            "sustain":{"type":"number","minimum":0,"maximum":1},
+            "releaseMs":{"type":"number","minimum":0,"maximum":30000},
+            "parameterIndex":{"type":"integer","minimum":0},
+            "amount":{"type":"number","minimum":-1,"maximum":1},
+            "bipolar":{"type":"boolean"}
+        },"required":["devicePath","type"],"additionalProperties":false
+    })json"),
+                           deviceModSchema());
+    addModulationOperation("mods.update", "Update a device modulator", OperationAccess::Write,
+                           &handlers::modsUpdate, operationInputSchema(R"json({
+        "type":"object","properties":{
+            "devicePath":{},"modId":{"type":"integer","minimum":0},
+            "name":{"type":"string"},
+            "type":{"type":"string","enum":["lfo","envelope","random","follower"]},
+            "waveform":{"type":"string","enum":["sine","triangle","square","saw","reverse_saw","custom"]},
+            "rate":{"type":"number","exclusiveMinimum":0},
+            "enabled":{"type":"boolean"},"tempoSync":{"type":"boolean"},
+            "syncDivision":{"type":"integer","enum":[1,2,3,4,6,8,12,16,24,32,33,48,66,132,200,264,400,528,800,1600]},
+            "oneShot":{"type":"boolean"},
+            "attackMs":{"type":"number","minimum":0,"maximum":30000},
+            "decayMs":{"type":"number","minimum":0,"maximum":30000},
+            "sustain":{"type":"number","minimum":0,"maximum":1},
+            "releaseMs":{"type":"number","minimum":0,"maximum":30000}
+        },"required":["devicePath","modId"],"additionalProperties":false
+    })json"),
+                           deviceModSchema());
+    addModulationOperation("mods.remove", "Remove a device modulator", OperationAccess::Write,
+                           &handlers::modsRemove, operationInputSchema(R"json({
+        "type":"object","properties":{"devicePath":{},"modId":{"type":"integer","minimum":0}},
+        "required":["devicePath","modId"],"additionalProperties":false
+    })json"),
+                           okResult);
+    addModulationOperation("mods.link", "Link a modulator to an AI-enabled device parameter",
+                           OperationAccess::Write, &handlers::modsLink,
+                           operationInputSchema(R"json({
+        "type":"object","properties":{
+            "devicePath":{},"modId":{"type":"integer","minimum":0},
+            "parameterIndex":{"type":"integer","minimum":0},
+            "amount":{"type":"number","minimum":-1,"maximum":1},
+            "bipolar":{"type":"boolean"}
+        },"required":["devicePath","modId","parameterIndex","amount"],
+        "additionalProperties":false
+    })json"),
+                           deviceModSchema());
+    addModulationOperation("mods.unlink", "Remove a modulator's parameter link",
+                           OperationAccess::Write, &handlers::modsUnlink,
+                           operationInputSchema(R"json({
+        "type":"object","properties":{"devicePath":{},"modId":{"type":"integer","minimum":0},
+                                        "parameterIndex":{"type":"integer","minimum":0}},
+        "required":["devicePath","modId","parameterIndex"],"additionalProperties":false
+    })json"),
+                           okResult);
+    addModulationOperation("macros.list", "List device macros and their links",
+                           OperationAccess::Read, &handlers::macrosList,
+                           operationInputSchema(R"json({
+        "type":"object","properties":{"devicePath":{}},
+        "required":["devicePath"],"additionalProperties":false
+    })json"),
+                           arraySchema(deviceMacroSchema()));
+    addModulationOperation("macros.setValue", "Set a device macro value", OperationAccess::Write,
+                           &handlers::macrosSetValue, operationInputSchema(R"json({
+        "type":"object","properties":{"devicePath":{},"macroIndex":{"type":"integer","minimum":0},
+                                        "value":{"type":"number","minimum":0,"maximum":1}},
+        "required":["devicePath","macroIndex","value"],"additionalProperties":false
+    })json"),
+                           deviceMacroSchema());
+    addModulationOperation("macros.link", "Link a macro to an AI-enabled device parameter",
+                           OperationAccess::Write, &handlers::macrosLink,
+                           operationInputSchema(R"json({
+        "type":"object","properties":{
+            "devicePath":{},"macroIndex":{"type":"integer","minimum":0},
+            "parameterIndex":{"type":"integer","minimum":0},
+            "amount":{"type":"number","minimum":-1,"maximum":1},
+            "bipolar":{"type":"boolean"}
+        },"required":["devicePath","macroIndex","parameterIndex","amount"],
+        "additionalProperties":false
+    })json"),
+                           deviceMacroSchema());
+    addModulationOperation("macros.unlink", "Remove a macro's parameter link",
+                           OperationAccess::Write, &handlers::macrosUnlink,
+                           operationInputSchema(R"json({
+        "type":"object","properties":{"devicePath":{},"macroIndex":{"type":"integer","minimum":0},
+                                        "parameterIndex":{"type":"integer","minimum":0}},
+        "required":["devicePath","macroIndex","parameterIndex"],"additionalProperties":false
+    })json"),
+                           okResult);
     add("racks.create", "Create a top-level rack", OperationAccess::Write, &handlers::racksCreate,
         operationInputSchema(R"json({
             "type":"object",
@@ -2524,6 +2688,14 @@ OperationRegistry::OperationRegistry() {
         {"devices.setBypassed", Scope::Edit},
         {"devices.setParameter", Scope::Edit},
         {"devices.setParameterConfig", Scope::Edit},
+        {"mods.create", Scope::Edit},
+        {"mods.update", Scope::Edit},
+        {"mods.remove", Scope::Edit},
+        {"mods.link", Scope::Edit},
+        {"mods.unlink", Scope::Edit},
+        {"macros.setValue", Scope::Edit},
+        {"macros.link", Scope::Edit},
+        {"macros.unlink", Scope::Edit},
         // Opening a plugin editor changes no project content, but it takes
         // over part of the user's screen — an edit-grade intrusion, not
         // something a read-only client should reach.

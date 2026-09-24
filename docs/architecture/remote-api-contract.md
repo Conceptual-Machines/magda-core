@@ -216,8 +216,9 @@ DTO fields are allow-listed. In particular, the remote API does not expose:
 - native plugin state, preset blobs, plugin filesystem identifiers, or raw
   plugin identity strings;
 - pointers, engine objects, manager objects, or host/plugin instances;
-- device parameter internals, wrapper parameters, macros, modulators, kit
-  internals, or transient loading objects;
+- raw device parameter internals, wrapper parameters, kit internals, or
+  transient loading objects. Device-owned mods and macros are projected through
+  explicit read DTOs; plugin state and engine instances remain private;
 - transient AI conversations, AI output, prompts, or model state;
 - UI layout and expansion state, zoom/scroll state, active panels, parameter
   pages, editor grids, playhead caches, waveform/transient caches, and
