@@ -108,6 +108,33 @@ template <typename Command, typename... Args> void runCommand(MagdaApi& api, Arg
     api.undo().executeCommand(std::make_unique<Command>(std::forward<Args>(args)...));
 }
 
+class SetProjectLoopRangeCommand final : public UndoableCommand {
+  public:
+    SetProjectLoopRangeCommand(ProjectApi& project, double startBeats, double endBeats)
+        : project_(project), newStartBeats_(startBeats), newEndBeats_(endBeats) {
+        const auto& info = project_.getCurrentProjectInfo();
+        oldStartBeats_ = info.loopStartBeats;
+        oldEndBeats_ = info.loopEndBeats;
+    }
+
+    void execute() override {
+        project_.setLoopRange(newStartBeats_, newEndBeats_);
+    }
+    void undo() override {
+        project_.setLoopRange(oldStartBeats_, oldEndBeats_);
+    }
+    juce::String getDescription() const override {
+        return "Set Project Loop Range";
+    }
+
+  private:
+    ProjectApi& project_;
+    double oldStartBeats_ = 0.0;
+    double oldEndBeats_ = 0.0;
+    double newStartBeats_;
+    double newEndBeats_;
+};
+
 juce::var acceptedResult() {
     auto* object = new juce::DynamicObject();
     object->setProperty("accepted", true);
@@ -473,6 +500,24 @@ HandlerResult projectSetTimeSignature(MagdaApi& api, const juce::var& input,
     return HandlerResult::ok(
         toJson(makeProjectDto(api.project().getCurrentProjectInfo(), api.project().isDirty(),
                               api.project().hasSaveTarget())));
+}
+
+HandlerResult projectSetLoopRange(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto startBeats = readDouble(input, "startBeat");
+    const auto endBeats = readDouble(input, "endBeat");
+    if (endBeats <= startBeats)
+        return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                   "loop endBeat must be greater than startBeat");
+
+    auto& project = api.project();
+    const auto& current = project.getCurrentProjectInfo();
+    if (current.loopStartBeats == startBeats && current.loopEndBeats == endBeats)
+        return HandlerResult::unchanged(
+            toJson(makeProjectDto(current, project.isDirty(), project.hasSaveTarget())));
+
+    runCommand<SetProjectLoopRangeCommand>(api, project, startBeats, endBeats);
+    return HandlerResult::ok(toJson(makeProjectDto(project.getCurrentProjectInfo(),
+                                                   project.isDirty(), project.hasSaveTarget())));
 }
 
 // ===========================================================================

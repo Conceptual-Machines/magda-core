@@ -81,8 +81,17 @@ class MagdaAudioEngineTest final : public juce::UnitTest {
         engine.setLooping(true);
         expect(engine.isLooping(), "The loop is the host's too");
 
-        expect(engine.getMagdaApi().project().getCurrentProjectInfo().tempo > 0.0,
-               "The engine's own MagdaApi answers");
+        auto& project = engine.getMagdaApi().project();
+        expect(project.getCurrentProjectInfo().tempo > 0.0, "The engine's own MagdaApi answers");
+        const auto originalLoopStart = project.getCurrentProjectInfo().loopStartBeats;
+        const auto originalLoopEnd = project.getCurrentProjectInfo().loopEndBeats;
+        project.setLoopRange(4.0, 12.0);
+        const auto loop = engine.getLoopRegionBeats();
+        expect(std::abs(loop.start.value - 4.0) < kTolerance,
+               "ProjectApi loop start reaches the engine");
+        expect(std::abs(loop.end.value - 12.0) < kTolerance,
+               "ProjectApi loop end reaches the engine");
+        project.setLoopRange(originalLoopStart, originalLoopEnd);
 
         engine.shutdown();
 

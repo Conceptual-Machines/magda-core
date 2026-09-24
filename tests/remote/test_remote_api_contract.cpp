@@ -40,6 +40,7 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(registry.find("system.describe") != nullptr);
     REQUIRE(registry.find("project.get") != nullptr);
     REQUIRE(registry.find("project.save") != nullptr);
+    REQUIRE(registry.find("project.setLoopRange") != nullptr);
     REQUIRE(registry.find("trackPresets.list") != nullptr);
     REQUIRE(registry.find("tracks.createFromPreset") != nullptr);
     REQUIRE(registry.find("devices.list") != nullptr);
@@ -136,6 +137,20 @@ TEST_CASE("Device modulation reads and writes declare their scopes",
         CHECK(operation->access == OperationAccess::Write);
         CHECK(operation->requiredScope == Scope::Edit);
     }
+}
+
+TEST_CASE("Project loop range uses a closed edit-scoped beat contract",
+          "[remote-api][contract][project]") {
+    const auto* operation = OperationRegistry::instance().find("project.setLoopRange");
+    REQUIRE(operation != nullptr);
+    CHECK(operation->requiredScope == Scope::Edit);
+    CHECK_FALSE(validateOperationInput(*operation, object({{"startBeat", 4.0}, {"endBeat", 12.0}}))
+                    .has_value());
+    CHECK(validateOperationInput(*operation, object({{"startBeat", -1.0}, {"endBeat", 12.0}}))
+              .has_value());
+    CHECK(validateOperationInput(*operation,
+                                 object({{"startBeat", 4.0}, {"endBeat", 12.0}, {"enabled", true}}))
+              .has_value());
 }
 
 TEST_CASE("Track preset operations expose only safe metadata and an opaque-id create contract",

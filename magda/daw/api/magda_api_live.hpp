@@ -86,6 +86,11 @@ class MagdaApiLive : public MagdaApi {
         project_.setEngineTimeSignatureWriter(std::move(writer));
     }
 
+    /** Wire loop-range writes through the owning engine before ProjectInfo is updated. */
+    void setProjectLoopRangeWriter(std::function<void(double, double)> writer) {
+        project_.setEngineLoopRangeWriter(std::move(writer));
+    }
+
     /** Wire the owning engine's tempo map, read on each call. */
     void setProjectTempoMap(std::function<const TempoMap*()> getter) {
         project_.setEngineTempoMap(std::move(getter));

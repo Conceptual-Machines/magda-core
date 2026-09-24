@@ -15,15 +15,18 @@ class ProjectApiLive : public ProjectApi {
     bool saveProject() override;
     void setTempo(double bpm) override;
     void setTimeSignature(int numerator, int denominator) override;
+    void setLoopRange(double startBeats, double endBeats) override;
     const TempoMap* tempoMap() const override;
 
     void setEngineTempoWriter(std::function<void(double)> writer);
     void setEngineTimeSignatureWriter(std::function<void(int, int)> writer);
+    void setEngineLoopRangeWriter(std::function<void(double, double)> writer);
     void setEngineTempoMap(std::function<const TempoMap*()> getter);
 
   private:
     std::function<void(double)> engineTempoWriter_;
     std::function<void(int, int)> engineTimeSignatureWriter_;
+    std::function<void(double, double)> engineLoopRangeWriter_;
     std::function<const TempoMap*()> engineTempoMap_;
 };
 

@@ -1883,6 +1883,16 @@ OperationRegistry::OperationRegistry() {
             "required":["numerator","denominator"],"additionalProperties":false
         })json"),
         projectSchema());
+    add("project.setLoopRange", "Set the project loop range in beats", OperationAccess::Write,
+        &handlers::projectSetLoopRange, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "startBeat":{"type":"number","minimum":0},
+                "endBeat":{"type":"number","exclusiveMinimum":0}
+            },
+            "required":["startBeat","endBeat"],"additionalProperties":false
+        })json"),
+        projectSchema());
 
     add("trackPresets.list", "List saved track-chain presets by opaque id", OperationAccess::Read,
         &handlers::trackPresetsList, emptyObjectSchema(), arraySchema(trackPresetSchema()));
@@ -2659,6 +2669,7 @@ OperationRegistry::OperationRegistry() {
         // acts on, which is not something a read-only client should reach.
         {"project.setTempo", Scope::Edit},
         {"project.setTimeSignature", Scope::Edit},
+        {"project.setLoopRange", Scope::Edit},
         {"project.save", Scope::Edit},
         {"tracks.create", Scope::Edit},
         {"tracks.createFromPreset", Scope::Edit},
