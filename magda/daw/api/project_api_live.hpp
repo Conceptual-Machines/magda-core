@@ -12,13 +12,16 @@ class ProjectApiLive : public ProjectApi {
     const ProjectInfo& getCurrentProjectInfo() const override;
     void setTempo(double bpm) override;
     void setTimeSignature(int numerator, int denominator) override;
+    const TempoMap* tempoMap() const override;
 
     void setEngineTempoWriter(std::function<void(double)> writer);
     void setEngineTimeSignatureWriter(std::function<void(int, int)> writer);
+    void setEngineTempoMap(std::function<const TempoMap*()> getter);
 
   private:
     std::function<void(double)> engineTempoWriter_;
     std::function<void(int, int)> engineTimeSignatureWriter_;
+    std::function<const TempoMap*()> engineTempoMap_;
 };
 
 }  // namespace magda

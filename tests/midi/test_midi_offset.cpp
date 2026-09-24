@@ -20,8 +20,7 @@ TEST_CASE("MidiOffset - Basic offset behavior", "[midi][offset]") {
     SECTION("Offset shifts visible note window") {
         ClipInfo clip;
         clip.setMidiContent();
-        clip.startTime = 0.0;
-        clip.length = 4.0;  // 4 seconds = 8 beats at 120 BPM
+        clip.setPlacementBeats(0.0, 8.0);
         clip.midiOffset = 0.0;
 
         // Add notes at beats 0, 1, 2, 3, 4, 5
@@ -37,7 +36,7 @@ TEST_CASE("MidiOffset - Basic offset behavior", "[midi][offset]") {
         REQUIRE(clip.midiNotes.size() == 6);
 
         // With offset = 0, all notes within clip length are visible
-        double clipLengthInBeats = 8.0;  // 4 seconds = 8 beats at 120 BPM
+        double clipLengthInBeats = clip.placement.lengthBeats;
         int visibleCount = 0;
         for (const auto& note : clip.midiNotes) {
             if (note.startBeat >= clip.midiOffset &&
@@ -62,8 +61,7 @@ TEST_CASE("MidiOffset - Basic offset behavior", "[midi][offset]") {
     SECTION("Offset doesn't modify note data") {
         ClipInfo clip;
         clip.setMidiContent();
-        clip.startTime = 0.0;
-        clip.length = 4.0;
+        clip.setPlacementBeats(0.0, 8.0);
         clip.midiOffset = 0.0;
 
         MidiNote note;
@@ -91,8 +89,7 @@ TEST_CASE("MidiOffset - Split operation (destructive)", "[midi][offset][split]")
         // Reset ClipManager state
         ClipManager::getInstance().shutdown();
 
-        // Create clip at timeline position 0-4 seconds (0-8 beats)
-        ClipId clipId = ClipManager::getInstance().createMidiClip(1, 0.0, 4.0);
+        ClipId clipId = ClipManager::getInstance().createMidiClipBeats(1, 0.0, 8.0);
         REQUIRE(clipId != INVALID_CLIP_ID);
 
         auto* clip = ClipManager::getInstance().getClip(clipId);
@@ -111,8 +108,7 @@ TEST_CASE("MidiOffset - Split operation (destructive)", "[midi][offset][split]")
         REQUIRE(clip->midiNotes.size() == 4);
         REQUIRE(clip->midiOffset == 0.0);
 
-        // Split at 2 seconds (4 beats at 120 BPM)
-        ClipId rightClipId = ClipManager::getInstance().splitClip(clipId, 2.0);
+        ClipId rightClipId = ClipManager::getInstance().splitClipAtBeat(clipId, 4.0);
         REQUIRE(rightClipId != INVALID_CLIP_ID);
 
         const auto* leftClip = ClipManager::getInstance().getClip(clipId);
@@ -122,13 +118,13 @@ TEST_CASE("MidiOffset - Split operation (destructive)", "[midi][offset][split]")
         REQUIRE(rightClip != nullptr);
 
         // Left clip: notes before beat 4 (beats 0, 2)
-        REQUIRE(leftClip->length == 2.0);
+        REQUIRE(leftClip->placement.lengthBeats == Catch::Approx(4.0));
         REQUIRE(leftClip->midiNotes.size() == 2);
         REQUIRE(leftClip->midiNotes[0].startBeat == Catch::Approx(0.0));
         REQUIRE(leftClip->midiNotes[1].startBeat == Catch::Approx(2.0));
 
         // Right clip: notes at/after beat 4 (beats 4, 6) adjusted by -4 -> (0, 2)
-        REQUIRE(rightClip->length == 2.0);
+        REQUIRE(rightClip->placement.lengthBeats == Catch::Approx(4.0));
         REQUIRE(rightClip->midiNotes.size() == 2);
         REQUIRE(rightClip->midiNotes[0].startBeat == Catch::Approx(0.0));
         REQUIRE(rightClip->midiNotes[1].startBeat == Catch::Approx(2.0));
@@ -141,8 +137,7 @@ TEST_CASE("MidiOffset - Display position calculation", "[midi][offset][display]"
     SECTION("Notes shift left by offset amount in display") {
         ClipInfo clip;
         clip.setMidiContent();
-        clip.startTime = 10.0;  // Timeline position
-        clip.length = 4.0;
+        clip.setPlacementBeats(20.0, 8.0);
         clip.midiOffset = 2.0;  // Skip first 2 beats
 
         MidiNote note;
@@ -152,10 +147,8 @@ TEST_CASE("MidiOffset - Display position calculation", "[midi][offset][display]"
         note.velocity = 100;
         clip.midiNotes.push_back(note);
 
-        // In absolute mode, display position should be:
-        // clipStartBeats + note.startBeat - clip.midiOffset
-        // Assuming clipStartBeats = 20 (10 seconds * 2 beats/second)
-        double clipStartBeats = 20.0;
+        // Absolute display position: clipStartBeats + note.startBeat - clip.midiOffset
+        double clipStartBeats = clip.placement.startBeat;
         double displayBeat = clipStartBeats + note.startBeat - clip.midiOffset;
 
         // 20 + 3 - 2 = 21
@@ -165,8 +158,7 @@ TEST_CASE("MidiOffset - Display position calculation", "[midi][offset][display]"
     SECTION("Note before offset should be identified") {
         ClipInfo clip;
         clip.setMidiContent();
-        clip.startTime = 0.0;
-        clip.length = 4.0;
+        clip.setPlacementBeats(0.0, 8.0);
         clip.midiOffset = 3.0;
 
         // Note at beat 2 (before offset at 3)
@@ -198,8 +190,7 @@ TEST_CASE("MidiOffset - Arrangement preview with offset", "[midi][offset][previe
     SECTION("Preview shows only visible notes within offset range") {
         ClipInfo clip;
         clip.setMidiContent();
-        clip.startTime = 0.0;
-        clip.length = 2.0;  // 2 seconds = 4 beats at 120 BPM
+        clip.setPlacementBeats(0.0, 4.0);
         clip.midiOffset = 2.0;
 
         // Add notes at beats 0, 1, 2, 3, 4, 5
@@ -212,7 +203,7 @@ TEST_CASE("MidiOffset - Arrangement preview with offset", "[midi][offset][previe
             clip.midiNotes.push_back(note);
         }
 
-        double clipLengthInBeats = 4.0;  // 2 seconds = 4 beats
+        double clipLengthInBeats = clip.placement.lengthBeats;
 
         // Calculate visible notes for preview
         std::vector<int> visibleIndices;
@@ -241,8 +232,7 @@ TEST_CASE("MidiOffset - Arrangement preview with offset", "[midi][offset][previe
         // Simulate split scenario: L, C, R clips from same source
         ClipInfo sourceClip;
         sourceClip.setMidiContent();
-        sourceClip.startTime = 0.0;
-        sourceClip.length = 6.0;  // 6 seconds = 12 beats
+        sourceClip.setPlacementBeats(0.0, 12.0);
         sourceClip.midiOffset = 0.0;
 
         // Add notes at beats 0, 2, 4, 6, 8, 10
@@ -255,27 +245,25 @@ TEST_CASE("MidiOffset - Arrangement preview with offset", "[midi][offset][previe
             sourceClip.midiNotes.push_back(note);
         }
 
-        // Create L clip (0-2 seconds, offset 0)
+        // L: beats 0-4, offset 0
         ClipInfo leftClip = sourceClip;
-        leftClip.length = 2.0;  // 4 beats
+        leftClip.setPlacementBeats(0.0, 4.0);
         leftClip.midiOffset = 0.0;
 
-        // Create C clip (2-4 seconds, offset 4)
+        // C: beats 4-8, offset 4
         ClipInfo centerClip = sourceClip;
-        centerClip.startTime = 2.0;
-        centerClip.length = 2.0;  // 4 beats
+        centerClip.setPlacementBeats(4.0, 4.0);
         centerClip.midiOffset = 4.0;
 
-        // Create R clip (4-6 seconds, offset 8)
+        // R: beats 8-12, offset 8
         ClipInfo rightClip = sourceClip;
-        rightClip.startTime = 4.0;
-        rightClip.length = 2.0;  // 4 beats
+        rightClip.setPlacementBeats(8.0, 4.0);
         rightClip.midiOffset = 8.0;
 
         // Find which notes are visible in each clip's preview
         auto getVisibleNoteIndices = [](const ClipInfo& clip) {
             std::vector<int> indices;
-            double clipLengthInBeats = clip.length * 2.0;  // 120 BPM
+            double clipLengthInBeats = clip.placement.lengthBeats;
             for (size_t i = 0; i < clip.midiNotes.size(); i++) {
                 const auto& note = clip.midiNotes[i];
                 double displayStart = note.startBeat - clip.midiOffset;
@@ -328,9 +316,8 @@ TEST_CASE("MidiOffset - Edge cases", "[midi][offset][edge]") {
     SECTION("Offset equals clip length shows no notes") {
         ClipInfo clip;
         clip.setMidiContent();
-        clip.startTime = 0.0;
-        clip.length = 2.0;      // 4 beats
-        clip.midiOffset = 4.0;  // Same as clip length in beats
+        clip.setPlacementBeats(0.0, 4.0);
+        clip.midiOffset = 4.0;  // Same as clip length
 
         MidiNote note;
         note.startBeat = 2.0;
@@ -356,7 +343,7 @@ TEST_CASE("MidiOffset - Edge cases", "[midi][offset][edge]") {
         // When setting offset via ClipManager, it should be clamped
         ClipManager::getInstance().shutdown();
 
-        ClipId clipId = ClipManager::getInstance().createMidiClip(1, 0.0, 4.0);
+        ClipId clipId = ClipManager::getInstance().createMidiClipBeats(1, 0.0, 8.0);
         REQUIRE(clipId != INVALID_CLIP_ID);
 
         // Try to set negative offset
@@ -372,8 +359,7 @@ TEST_CASE("MidiOffset - Edge cases", "[midi][offset][edge]") {
     SECTION("Partial note visibility at offset boundary") {
         ClipInfo clip;
         clip.setMidiContent();
-        clip.startTime = 0.0;
-        clip.length = 2.0;  // 4 beats
+        clip.setPlacementBeats(0.0, 4.0);
         clip.midiOffset = 2.0;
 
         // Note that starts before offset but extends into visible range

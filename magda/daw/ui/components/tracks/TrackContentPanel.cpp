@@ -3491,7 +3491,7 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
                 auto cmd = std::make_unique<CreateClipCommand>(
                     ClipType::Audio, clipTrackId, BeatPosition{dropTime * tempoBPM / 60.0},
                     BeatDuration{fileDuration * tempoBPM / 60.0}, filePath.toStdString(),
-                    ClipView::Arrangement, tempoBPM);
+                    ClipView::Arrangement);
                 UndoManager::getInstance().executeCommand(std::move(cmd));
                 importedCount++;
             }
@@ -3519,7 +3519,7 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
                 auto cmd = std::make_unique<CreateClipCommand>(
                     ClipType::Audio, targetTrackId, BeatPosition{currentTime * tempoBPM / 60.0},
                     BeatDuration{fileDuration * tempoBPM / 60.0}, filePath.toStdString(),
-                    ClipView::Arrangement, tempoBPM, ClipOverlapPolicy::ResolveOverlaps);
+                    ClipView::Arrangement, ClipOverlapPolicy::ResolveOverlaps);
                 UndoManager::getInstance().executeCommand(std::move(cmd));
 
                 currentTime += fileDuration + 0.5;
@@ -3616,7 +3616,7 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
                 auto cmd = std::make_unique<CreateClipCommand>(
                     ClipType::MIDI, clipTrackId, BeatPosition{dropTime * projectTempo / 60.0},
                     BeatDuration{clipDuration * projectTempo / 60.0}, juce::String{},
-                    ClipView::Arrangement, 0.0, ClipOverlapPolicy::ResolveOverlaps);
+                    ClipView::Arrangement, ClipOverlapPolicy::ResolveOverlaps);
                 auto* cmdPtr = cmd.get();
                 UndoManager::getInstance().executeCommand(std::move(cmd));
 

@@ -296,7 +296,7 @@ bool BounceInPlaceReplacement::replace(ClipManager& clipManager, ClipId sourceCl
     clipManager.deleteClip(replacementSourceId);
     newClipId_ = clipManager.createAudioClipBeats(originalClip_.trackId, range.startBeats,
                                                   range.lengthBeats(), renderedFilePath,
-                                                  ClipView::Arrangement, projectBPM);
+                                                  ClipView::Arrangement);
     if (newClipId_ == INVALID_CLIP_ID) {
         restoreOriginalClip(clipManager);
         return false;
@@ -624,14 +624,13 @@ bool DeleteClipCommand::validateState() const {
 
 CreateClipCommand::CreateClipCommand(ClipType type, TrackId trackId, BeatPosition startBeat,
                                      BeatDuration lengthBeats, juce::String audioFilePath,
-                                     ClipView view, double tempo, ClipOverlapPolicy overlapPolicy)
+                                     ClipView view, ClipOverlapPolicy overlapPolicy)
     : type_(type),
       trackId_(trackId),
       startBeat_(startBeat.value),
       lengthBeats_(lengthBeats.value),
       audioFilePath_(std::move(audioFilePath)),
       view_(view),
-      tempo_(tempo),
       overlapPolicy_(overlapPolicy) {}
 
 bool CreateClipCommand::canExecute() const {
@@ -649,8 +648,8 @@ void CreateClipCommand::execute() {
     }
 
     if (type_ == ClipType::Audio) {
-        createdClipId_ = clipManager.createAudioClipBeats(
-            trackId_, startBeat_, lengthBeats_, audioFilePath_, view_, tempo_, overlapPolicy_);
+        createdClipId_ = clipManager.createAudioClipBeats(trackId_, startBeat_, lengthBeats_,
+                                                          audioFilePath_, view_, overlapPolicy_);
     } else {
         createdClipId_ = clipManager.createMidiClipBeats(trackId_, startBeat_, lengthBeats_, view_,
                                                          overlapPolicy_);
@@ -1038,7 +1037,6 @@ void JoinClipsCommand::performAction() {
 
     // Extend left clip length
     left->setPlacementBeats(leftStartBeats, joinedLengthBeats);
-    left->deriveTimesFromBeats(bpm);
 
     // Delete right clip
     clipManager.deleteClip(rightClipId_);
@@ -2200,7 +2198,6 @@ void BounceToNewTrackCommand::execute() {
         return;
     }
 
-    const double projectBPM = currentProjectBpm();
     const auto* tempoMap =
         TimelineController::getCurrent() ? TimelineController::getCurrent()->tempoMap() : nullptr;
     const auto bounceRange = resolveBounceRenderRange(*clip, range_, tempoMap, false);
@@ -2312,7 +2309,7 @@ void BounceToNewTrackCommand::execute() {
     // Create audio clip on new track
     newClipId_ = clipManager.createAudioClipBeats(
         newTrackId_, bounceRange.startBeats, bounceRange.lengthBeats(),
-        renderedFile_.getFullPathName(), ClipView::Arrangement, projectBPM);
+        renderedFile_.getFullPathName(), ClipView::Arrangement);
 
     if (auto* newClip = clipManager.getClip(newClipId_)) {
         newClip->colour = sourceClipColour;

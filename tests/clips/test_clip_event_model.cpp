@@ -635,8 +635,8 @@ TEST_CASE("A session clip enters beat mode only when a tempo is known",
         const auto sourceId = pool.acquire("/tmp/known-tempo.wav");
         pool.getMutable(sourceId)->detectedBpm = 140.0;
 
-        const auto clipId = clips.createAudioClipBeats(1, 0.0, 4.0, "/tmp/known-tempo.wav",
-                                                       ClipView::Session, 120.0);
+        const auto clipId =
+            clips.createAudioClipBeats(1, 0.0, 4.0, "/tmp/known-tempo.wav", ClipView::Session);
 
         const auto* event = clips.getClip(clipId)->primaryEvent();
         REQUIRE(event != nullptr);
@@ -654,7 +654,7 @@ TEST_CASE("A session clip enters beat mode only when a tempo is known",
         SourcePool::getInstance().seedFactsForTesting("/tmp/no-tempo.wav", 8.0, 44100.0);
 
         const auto clipId =
-            clips.createAudioClipBeats(1, 0.0, 4.0, "/tmp/no-tempo.wav", ClipView::Session, 120.0);
+            clips.createAudioClipBeats(1, 0.0, 4.0, "/tmp/no-tempo.wav", ClipView::Session);
 
         const auto* clip = clips.getClip(clipId);
         const auto* event = clip->primaryEvent();
@@ -676,7 +676,7 @@ TEST_CASE("A session clip enters beat mode only when a tempo is known",
         SourcePool::getInstance().seedFactsForTesting(path, 8.0, 44100.0);
         AudioThumbnailManager::getInstance().cacheBPM(path, 174.0);
 
-        const auto clipId = clips.createAudioClipBeats(1, 0.0, 4.0, path, ClipView::Session, 120.0);
+        const auto clipId = clips.createAudioClipBeats(1, 0.0, 4.0, path, ClipView::Session);
 
         const auto* event = clips.getClip(clipId)->primaryEvent();
         REQUIRE(event != nullptr);
@@ -708,7 +708,7 @@ TEST_CASE("ClipManager: setSourceTempo refuses an interpretation no file could h
     const auto path = temp.getFile().getFullPathName();
     SourcePool::getInstance().seedFactsForTesting(path, 5.517, 44100.0);
     AudioThumbnailManager::getInstance().cacheBPM(path, 174.0);
-    const auto clipId = clips.createAudioClipBeats(1, 0.0, 4.0, path, ClipView::Session, 120.0);
+    const auto clipId = clips.createAudioClipBeats(1, 0.0, 4.0, path, ClipView::Session);
     clips.detectMissingTempo({clipId}, 120.0, nullptr);
     REQUIRE(clips.getClip(clipId)->primaryEvent()->interpBpm == Approx(174.0));
 
@@ -737,9 +737,10 @@ TEST_CASE("ClipManager: setSourceTempo and setSourceBeatCount each restate the u
     const auto path = temp.getFile().getFullPathName();
     SourcePool::getInstance().seedFactsForTesting(path, 5.486, 44100.0);
     AudioThumbnailManager::getInstance().cacheBPM(path, 175.0);
-    const auto clipId = clips.createAudioClipBeats(1, 0.0, 4.0, path, ClipView::Session, 120.0);
+    const auto clipId = clips.createAudioClipBeats(1, 0.0, 4.0, path, ClipView::Session);
     clips.detectMissingTempo({clipId}, 120.0, nullptr);
     REQUIRE(clips.getClip(clipId)->primaryEvent()->interpTotalBeats == Approx(16.0).margin(0.01));
+    clips.setAutoTempo(clipId, true, 120.0);
 
     // 5.486 s at 174 is 15.909 beats, too far from a whole beat to snap.
     clips.setSourceTempo(clipId, 174.0);
@@ -771,7 +772,7 @@ TEST_CASE("ClipManager: detectMissingTempo answers at once for clips that need n
         SourcePool::getInstance().seedFactsForTesting(path, 8.0, 44100.0);
         AudioThumbnailManager::getInstance().cacheBPM(path, 174.0);
 
-        const auto clipId = clips.createAudioClipBeats(1, 0.0, 4.0, path, ClipView::Session, 120.0);
+        const auto clipId = clips.createAudioClipBeats(1, 0.0, 4.0, path, ClipView::Session);
         REQUIRE(!clips.getClip(clipId)->primaryEvent()->hasInterpretedBpm());
 
         bool ready = false;
@@ -784,7 +785,7 @@ TEST_CASE("ClipManager: detectMissingTempo answers at once for clips that need n
         SourcePool::getInstance().seedFactsForTesting("/tmp/absent.wav", 8.0, 44100.0);
 
         const auto clipId =
-            clips.createAudioClipBeats(1, 0.0, 4.0, "/tmp/absent.wav", ClipView::Session, 120.0);
+            clips.createAudioClipBeats(1, 0.0, 4.0, "/tmp/absent.wav", ClipView::Session);
 
         bool ready = false;
         clips.detectMissingTempo({clipId}, 120.0, [&ready] { ready = true; });
@@ -799,46 +800,47 @@ TEST_CASE("ClipManager: detectMissingTempo answers at once for clips that need n
     AudioThumbnailManager::getInstance().clearCache();
 }
 
-TEST_CASE("The source's tempo and beat count can be set on a clip in time mode",
+TEST_CASE("A raw clip has no tempo to state; one waiting on beat mode takes it",
           "[clip][event][interpretation][session]") {
-    // Detection cannot answer for a pad, a vocal take or a one-shot, and a user
-    // may simply disagree with what it found. Neither is a reason to refuse the
-    // fields: what a file is, is a fact about the file, and beat mode is a
-    // separate choice about how to play it (#2676).
+    // Raw mode is samples at a speed (#2791). A clip whose BEAT request is
+    // waiting on a tempo is where a user supplies one (#2676).
     EventModelFixture fixture;
     auto& clips = ClipManager::getInstance();
     clips.clearAllClips();
+    AudioThumbnailManager::getInstance().clearCache();
 
     SourcePool::getInstance().seedFactsForTesting("/tmp/untellable.wav", 4.0, 44100.0);
 
     const auto clipId =
-        clips.createAudioClipBeats(1, 0.0, 4.0, "/tmp/untellable.wav", ClipView::Session, 120.0);
-
-    REQUIRE(!clips.getClip(clipId)->primaryEvent()->autoTempo);
+        clips.createAudioClipBeats(1, 0.0, 4.0, "/tmp/untellable.wav", ClipView::Session);
+    const AudioEvent* event = clips.getClip(clipId)->primaryEvent();
+    REQUIRE(event->playbackIntent == PlaybackIntent::Free);
+    const double bpmBefore = event->interpBpm;
+    const double beatsBefore = event->interpTotalBeats;
 
     clips.setSourceTempo(clipId, 90.0);
+    clips.setSourceBeatCount(clipId, 6.0);
+    event = clips.getClip(clipId)->primaryEvent();
+    REQUIRE(event->interpBpm == bpmBefore);
+    REQUIRE(event->interpTotalBeats == beatsBefore);
 
-    const AudioEvent* event = clips.getClip(clipId)->primaryEvent();
-    REQUIRE(event->interpBpm == Approx(90.0));
-    REQUIRE(event->interpTotalBeats == Approx(6.0));
-
-    // Typing a tempo says what the file is; it does not touch the intent. A
-    // drop asks for nothing, so the tempo alone does not grant beat mode.
-    REQUIRE(event->playbackIntent == PlaybackIntent::Free);
-    REQUIRE(!event->autoTempo);
-
-    // BEAT asks for beat mode, and the known tempo grants it immediately.
+    // BEAT with no tempo to grant it leaves the request waiting.
     clips.setAutoTempo(clipId, true, 120.0);
     event = clips.getClip(clipId)->primaryEvent();
     REQUIRE(event->playbackIntent == PlaybackIntent::Beat);
+    REQUIRE(!event->autoTempo);
+
+    clips.setSourceTempo(clipId, 90.0);
+    event = clips.getClip(clipId)->primaryEvent();
+    REQUIRE(event->interpBpm == Approx(90.0));
+    REQUIRE(event->interpTotalBeats == Approx(6.0));
     REQUIRE(event->autoTempo);
 
-    // A slot the user put back in time mode stays there when a tempo is typed.
+    // Back in raw mode the field is closed again.
     clips.setAutoTempo(clipId, false, 120.0);
     clips.setSourceTempo(clipId, 95.0);
     event = clips.getClip(clipId)->primaryEvent();
-    REQUIRE(event->interpBpm == Approx(95.0));
-    REQUIRE(event->playbackIntent == PlaybackIntent::Free);
+    REQUIRE(event->interpBpm == Approx(90.0));
     REQUIRE(!event->autoTempo);
 
     clips.clearAllClips();
@@ -857,7 +859,7 @@ TEST_CASE("BEAT grants beat mode only with a tempo behind it",
     SourcePool::getInstance().seedFactsForTesting("/tmp/nothing-says.wav", 4.0, 44100.0);
 
     const auto clipId =
-        clips.createAudioClipBeats(1, 0.0, 4.0, "/tmp/nothing-says.wav", ClipView::Session, 120.0);
+        clips.createAudioClipBeats(1, 0.0, 4.0, "/tmp/nothing-says.wav", ClipView::Session);
     REQUIRE(!clips.getClip(clipId)->primaryEvent()->autoTempo);
 
     clips.setAutoTempo(clipId, true, 120.0);

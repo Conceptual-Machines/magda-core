@@ -6,14 +6,6 @@
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 
-namespace {
-
-void syncPlacement(magda::ClipInfo& clip, double bpm = 120.0) {
-    clip.setPlacementBeats(clip.startTime * bpm / 60.0, clip.length * bpm / 60.0);
-}
-
-}  // namespace
-
 /**
  * Tests for the ClipDisplayInfo file-extent / loop-region contract.
  *
@@ -42,13 +34,11 @@ TEST_CASE("ClipDisplayInfo - file extent always covers the full source file",
     SECTION("Non-loop, fileDuration known: extent = [0, fileDuration]") {
         ClipInfo clip;
         clip.setAudioContent();
-        clip.startTime = 0.0;
-        clip.length = 4.0;
+        clip.setPlacementBeats(0.0, 8.0);
         magda::test::audioEvent(clip).setAnchorSeconds(1.0);
         magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = false;
 
-        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/5.0);
 
         REQUIRE(di.sourceFileStart == Catch::Approx(0.0));
@@ -62,15 +52,13 @@ TEST_CASE("ClipDisplayInfo - file extent always covers the full source file",
         // the loop region as an overlay.
         ClipInfo clip;
         clip.setAudioContent();
-        clip.startTime = 0.0;
-        clip.length = 4.0;
+        clip.setPlacementBeats(0.0, 8.0);
         magda::test::audioEvent(clip).setAnchorSeconds(0.0);
         magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = true;
         magda::test::audioEvent(clip).setLoopStartSeconds(1.0);
         magda::test::audioEvent(clip).setLoopLengthSeconds(3.0);
 
-        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/4.0);
 
         REQUIRE(di.sourceFileStart == Catch::Approx(0.0));
@@ -81,15 +69,13 @@ TEST_CASE("ClipDisplayInfo - file extent always covers the full source file",
     SECTION("Loop region shorter than file: loop fields reflect region, extent reflects file") {
         ClipInfo clip;
         clip.setAudioContent();
-        clip.startTime = 0.0;
-        clip.length = 16.0;
+        clip.setPlacementBeats(0.0, 32.0);
         magda::test::audioEvent(clip).setAnchorSeconds(0.0);
         magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = true;
         magda::test::audioEvent(clip).setLoopStartSeconds(0.0);
         magda::test::audioEvent(clip).setLoopLengthSeconds(5.0);
 
-        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/8.0);
 
         // Loop region is the user's selected subset.
@@ -105,13 +91,11 @@ TEST_CASE("ClipDisplayInfo - file extent always covers the full source file",
     SECTION("fileDuration unknown: fall back to clip-derived extent so the editor still draws") {
         ClipInfo clip;
         clip.setAudioContent();
-        clip.startTime = 0.0;
-        clip.length = 4.0;
+        clip.setPlacementBeats(0.0, 8.0);
         magda::test::audioEvent(clip).setAnchorSeconds(0.0);
         magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = false;
 
-        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/0.0);
 
         REQUIRE(di.sourceFileStart == Catch::Approx(0.0));
@@ -130,13 +114,11 @@ TEST_CASE("ClipDisplayInfo - srcToTimelineRatio drives both directions",
     SECTION("speedRatio = 1: timeline == source") {
         ClipInfo clip;
         clip.setAudioContent();
-        clip.startTime = 0.0;
-        clip.length = 4.0;
+        clip.setPlacementBeats(0.0, 8.0);
         magda::test::audioEvent(clip).setAnchorSeconds(0.0);
         magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = false;
 
-        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/4.0);
 
         REQUIRE(di.sourceToTimeline(2.0) == Catch::Approx(2.0));
@@ -147,13 +129,11 @@ TEST_CASE("ClipDisplayInfo - srcToTimelineRatio drives both directions",
     SECTION("speedRatio = 2: timeline = source / 2") {
         ClipInfo clip;
         clip.setAudioContent();
-        clip.startTime = 0.0;
-        clip.length = 4.0;
+        clip.setPlacementBeats(0.0, 8.0);
         magda::test::audioEvent(clip).setAnchorSeconds(0.0);
         magda::test::audioEvent(clip).speedRatio = 2.0;
         clip.loopEnabled = false;
 
-        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/8.0);
 
         REQUIRE(di.sourceToTimeline(8.0) == Catch::Approx(4.0));
@@ -180,15 +160,13 @@ TEST_CASE("ClipDisplayInfo - loop region tracks magda::test::audioEvent(clip).lo
         // overlay drew it as non-looped.
         ClipInfo clip;
         clip.setAudioContent();
-        clip.startTime = 0.0;
-        clip.length = 4.0;
+        clip.setPlacementBeats(0.0, 8.0);
         magda::test::audioEvent(clip).setAnchorSeconds(0.0);
         magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = true;
         magda::test::audioEvent(clip).setLoopStartSeconds(1.0);
         magda::test::audioEvent(clip).setLoopLengthSeconds(0.0);  // sentinel
 
-        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/4.0);
 
         REQUIRE(di.isLooped());
@@ -199,15 +177,13 @@ TEST_CASE("ClipDisplayInfo - loop region tracks magda::test::audioEvent(clip).lo
     SECTION("Loop disabled: loop region length is 0, isLooped() is false") {
         ClipInfo clip;
         clip.setAudioContent();
-        clip.startTime = 0.0;
-        clip.length = 4.0;
+        clip.setPlacementBeats(0.0, 8.0);
         magda::test::audioEvent(clip).setAnchorSeconds(0.0);
         magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = false;
         magda::test::audioEvent(clip).setLoopLengthSeconds(
             4.0);  // present but ignored when disabled
 
-        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/4.0);
 
         REQUIRE_FALSE(di.isLooped());
@@ -218,15 +194,13 @@ TEST_CASE("ClipDisplayInfo - loop region tracks magda::test::audioEvent(clip).lo
     SECTION("Loop enabled with sub-region: loop fields match user selection") {
         ClipInfo clip;
         clip.setAudioContent();
-        clip.startTime = 0.0;
-        clip.length = 16.0;
+        clip.setPlacementBeats(0.0, 32.0);
         magda::test::audioEvent(clip).setAnchorSeconds(0.0);
         magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = true;
         magda::test::audioEvent(clip).setLoopStartSeconds(1.0);
         magda::test::audioEvent(clip).setLoopLengthSeconds(3.0);
 
-        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/4.0);
 
         REQUIRE(di.isLooped());
@@ -239,8 +213,7 @@ TEST_CASE("ClipDisplayInfo - loop region tracks magda::test::audioEvent(clip).lo
     SECTION("Loop region beyond file end: clamped to fit, file extent unchanged") {
         ClipInfo clip;
         clip.setAudioContent();
-        clip.startTime = 0.0;
-        clip.length = 16.0;
+        clip.setPlacementBeats(0.0, 32.0);
         magda::test::audioEvent(clip).setAnchorSeconds(0.0);
         magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = true;
@@ -248,7 +221,6 @@ TEST_CASE("ClipDisplayInfo - loop region tracks magda::test::audioEvent(clip).lo
         magda::test::audioEvent(clip).setLoopLengthSeconds(
             5.0);  // would extend to 8s, file only 4s
 
-        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/4.0);
 
         REQUIRE(di.loopRegionStartSource == Catch::Approx(3.0));
@@ -267,7 +239,7 @@ TEST_CASE("ClipManager - setClipLoopEnabled preserves loopLength", "[audio][clip
     ClipManager::getInstance().shutdown();
 
     SECTION("Enabling loop fixes the region at the clip's span") {
-        ClipId clipId = ClipManager::getInstance().createAudioClip(1, 0.0, 4.0, "test.wav");
+        ClipId clipId = ClipManager::getInstance().createAudioClipBeats(1, 0.0, 8.0, "test.wav");
         auto* clip = ClipManager::getInstance().getClip(clipId);
         REQUIRE(clip != nullptr);
 
@@ -288,7 +260,7 @@ TEST_CASE("ClipManager - setClipLoopEnabled preserves loopLength", "[audio][clip
         constexpr double FILE_DURATION = 8.0;
         constexpr double BPM = 120.0;
 
-        ClipId clipId = ClipManager::getInstance().createAudioClip(1, 0.0, 2.0, "test.wav");
+        ClipId clipId = ClipManager::getInstance().createAudioClipBeats(1, 0.0, 4.0, "test.wav");
         auto* clip = ClipManager::getInstance().getClip(clipId);
         REQUIRE(clip != nullptr);
 
@@ -304,16 +276,14 @@ TEST_CASE("ClipManager - setClipLoopEnabled preserves loopLength", "[audio][clip
         clip->loopEnabled = true;
         primaryEventOf(clip)->setLoopStartSeconds(1.0);
         primaryEventOf(clip)->setLoopLengthSeconds(2.0);
-        clip->length = 2.0;
-        clip->setPlacementBeats(0.0, 2.0 * BPM / 60.0);
 
         ClipManager::getInstance().setClipLoopEnabled(clipId, false, BPM);
 
         const double expectedLength =
             FILE_DURATION - primaryEventOf(clip)->anchorSeconds();  // speedRatio = 1
         REQUIRE(clip->loopEnabled == false);
-        REQUIRE(clip->length == Catch::Approx(expectedLength));
-        REQUIRE(clip->placement.lengthBeats == Catch::Approx(expectedLength * BPM / 60.0));
+        REQUIRE(clip->getTimelineLength(BPM) == Catch::Approx(expectedLength));
+        REQUIRE(clip->placement.lengthBeats == Catch::Approx(14.0));
     }
 
     SECTION("Disabling loop with speedRatio > 1 shortens the timeline length proportionally") {
@@ -321,7 +291,7 @@ TEST_CASE("ClipManager - setClipLoopEnabled preserves loopLength", "[audio][clip
         constexpr double SPEED = 2.0;
         constexpr double BPM = 120.0;
 
-        ClipId clipId = ClipManager::getInstance().createAudioClip(1, 0.0, 2.0, "test.wav");
+        ClipId clipId = ClipManager::getInstance().createAudioClipBeats(1, 0.0, 2.0, "test.wav");
         auto* clip = ClipManager::getInstance().getClip(clipId);
         REQUIRE(clip != nullptr);
 
@@ -334,13 +304,11 @@ TEST_CASE("ClipManager - setClipLoopEnabled preserves loopLength", "[audio][clip
         clip->loopEnabled = true;
         primaryEventOf(clip)->setLoopStartSeconds(0.0);
         primaryEventOf(clip)->setLoopLengthSeconds(1.0);
-        clip->length = 1.0;
-        clip->setPlacementBeats(0.0, 1.0 * BPM / 60.0);
 
         ClipManager::getInstance().setClipLoopEnabled(clipId, false, BPM);
 
         const double expectedLength = FILE_DURATION / SPEED;  // 4.0s on the timeline
-        REQUIRE(clip->length == Catch::Approx(expectedLength));
-        REQUIRE(clip->placement.lengthBeats == Catch::Approx(expectedLength * BPM / 60.0));
+        REQUIRE(clip->getTimelineLength(BPM) == Catch::Approx(expectedLength));
+        REQUIRE(clip->placement.lengthBeats == Catch::Approx(8.0));
     }
 }

@@ -908,6 +908,10 @@ class MockSessionApi : public SessionApi {
 class MockProjectApi : public ProjectApi {
   public:
     ProjectInfo info;
+    const TempoMap* map = nullptr;
+    const TempoMap* tempoMap() const override {
+        return map;
+    }
     const ProjectInfo& getCurrentProjectInfo() const override {
         return info;
     }

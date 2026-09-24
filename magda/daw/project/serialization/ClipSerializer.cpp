@@ -730,7 +730,6 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
         lastError_ = "Clip is missing placement";
         return false;
     }
-    outClip.deriveTimesFromBeats(projectTempo);
 
     // Enabled state (missing in projects saved before #1736 → default true)
     if (!obj->getProperty("enabled").isVoid())
@@ -1038,8 +1037,6 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     }
     if (obj->hasProperty("nextChordGroupId"))
         outClip.nextChordGroupId = static_cast<int>(obj->getProperty("nextChordGroupId"));
-
-    outClip.deriveTimesFromBeats(projectTempo);
 
     return true;
 }

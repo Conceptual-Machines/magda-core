@@ -273,7 +273,7 @@ void TranscriptionService::transcribeAudioClip(ClipId sourceClipId, Completion o
 
             auto createCmd = std::make_unique<magda::CreateClipCommand>(
                 ClipType::MIDI, newTrackId, BeatPosition{startBeat}, BeatDuration{lengthBeats},
-                juce::String(), view, bpm);
+                juce::String(), view);
             auto* createPtr = createCmd.get();
             magda::UndoManager::getInstance().executeCommand(std::move(createCmd));
             const ClipId newClipId = createPtr->getCreatedClipId();

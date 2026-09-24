@@ -25,6 +25,7 @@
 #include "../daw/core/MidiNoteCommands.hpp"
 #include "../daw/core/PluginAlias.hpp"
 #include "../daw/core/SelectionManager.hpp"
+#include "../daw/core/TempoMap.hpp"
 #include "../daw/core/TrackManager.hpp"
 #include "../daw/core/TrackPropertyCommands.hpp"
 #include "../daw/core/UndoManager.hpp"
@@ -1259,7 +1260,7 @@ bool Interpreter::executeRenameClip(const Params& params) {
                 const auto* cb = cm.getClip(b);
                 if (!ca || !cb)
                     return a < b;
-                return ca->startTime < cb->startTime;
+                return ca->placement.startBeat < cb->placement.startBeat;
             };
             std::ranges::sort(sorted, inTimelineOrder);
 
@@ -1707,6 +1708,11 @@ bool Interpreter::executeSelectClips(Tokenizer& tok) {
     bool isStringField = (field.value == "name" || field.value == "type");
 
     const double beatsPerBar = barsToBeats(1.0);
+    // Seconds walk the tempo map; the constant tempo stands in only headless.
+    const TempoMap* tempoMap = api_.project().tempoMap();
+    double projectBpm = api_.project().getCurrentProjectInfo().tempo;
+    if (!isValidBpm(projectBpm))
+        projectBpm = 120.0;
 
     double numValue = isStringField ? 0.0 : std::atof(valueStr.c_str());
 
@@ -1758,9 +1764,11 @@ bool Interpreter::executeSelectClips(Tokenizer& tok) {
         else if (field.value == "start_bar")
             val = clip->placement.startBeat / beatsPerBar + 1.0;
         else if (field.value == "length")
-            val = clip->length;
+            val = tempoMap != nullptr ? clip->getTimelineLength(*tempoMap)
+                                      : clip->getTimelineLength(projectBpm);
         else if (field.value == "start")
-            val = clip->startTime;
+            val = tempoMap != nullptr ? clip->getTimelineStart(*tempoMap)
+                                      : clip->getTimelineStart(projectBpm);
         else if (field.value == "start_beats")
             val = clip->startBeats;
         else if (field.value == "id")
@@ -2475,13 +2483,8 @@ bool Interpreter::executeAddArpeggio(const Params& params) {
     if (params.has("beats")) {
         fillBeats = beat + params.getFloat("beats");
     } else if (fill) {
-        auto* clip = api_.clips().getClip(clipId);
-        if (clip) {
-            double bpm = api_.project().getCurrentProjectInfo().tempo;
-            if (!isValidBpm(bpm))
-                bpm = 120.0;
-            fillBeats = clip->length * bpm / 60.0;
-        }
+        if (const auto* clip = api_.clips().getClip(clipId))
+            fillBeats = clip->placement.lengthBeats;
     }
 
     // Build MidiNote objects with sequential beat offsets

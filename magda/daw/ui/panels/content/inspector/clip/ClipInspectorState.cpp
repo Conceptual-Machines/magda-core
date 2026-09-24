@@ -271,26 +271,25 @@ void ClipInspector::updateFromSelectedClip() {
             }
             clipBpmValue_.setVisible(true);
             clipBpmUnitLabel_.setVisible(true);
-            // Live in both modes. What tempo a file is, is a fact about the
-            // file, and a clip left in time mode for want of one is exactly
-            // where a user types it (#2676).
-            clipBpmValue_.setEnabled(true);
-            clipBpmValue_.setAlpha(1.0f);
-            clipBpmUnitLabel_.setAlpha(1.0f);
+            // Live once beat mode is asked for, granted or waiting on a tempo
+            // (#2676). A raw clip has no tempo to state (#2791).
+            const bool tempoLive = magda::audioEventRef(*clip).wantsBeatMode();
+            clipBpmValue_.setEnabled(tempoLive);
+            clipBpmValue_.setAlpha(tempoLive ? 1.0f : 0.5f);
+            clipBpmUnitLabel_.setAlpha(tempoLive ? 1.0f : 0.5f);
             updateAudioSourceValueDisplays(*clip);
         } else {
             clipBpmValue_.setVisible(false);
             clipBpmUnitLabel_.setVisible(false);
         }
 
-        // Show source interpretation total beats for audio clips, in either mode —
-        // it is the other half of the interpretation the BPM field edits (#2676).
-        // Clip placement length is already represented by start/end and by the clip body itself.
+        // The other half of the interpretation the BPM field edits, live when it is.
         if (showAudioProps && !isMulti) {
+            const bool tempoLive = magda::audioEventRef(*clip).wantsBeatMode();
             clipBeatsLengthValue_->setVisible(true);
             clipBeatsUnitLabel_.setVisible(true);
-            clipBeatsLengthValue_->setEnabled(true);
-            clipBeatsLengthValue_->setAlpha(1.0f);
+            clipBeatsLengthValue_->setEnabled(tempoLive);
+            clipBeatsLengthValue_->setAlpha(tempoLive ? 1.0f : 0.5f);
             updateAudioSourceValueDisplays(*clip);
         } else {
             clipBeatsLengthValue_->setVisible(false);

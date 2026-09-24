@@ -28,10 +28,6 @@
 
 namespace {
 
-void syncPlacement(magda::ClipInfo& clip, double bpm = 120.0) {
-    clip.setPlacementBeats(clip.startTime * bpm / 60.0, clip.length * bpm / 60.0);
-}
-
 /// Mirrors the tile source-range calculation used in ClipComponent::paintAudioClip
 /// and WaveformGridComponent::paintWaveformThumbnail for looped clips.
 struct TileSourceRange {
@@ -79,15 +75,13 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
     SECTION("Non-looped clip: file extent uses the file (or a fallback derived from clip length)") {
         ClipInfo clip;
         clip.setAudioContent();
-        clip.startTime = 0.0;
-        clip.length = 4.0;
+        clip.setPlacementBeats(0.0, 8.0);
         magda::test::audioEvent(clip).setAnchorSeconds(1.0);
         magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = false;
         magda::test::audioEvent(clip).setLoopStartSeconds(0.0);
         magda::test::audioEvent(clip).setLoopLengthSeconds(0.0);
 
-        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0);  // fileDuration=0 → fallback
 
         REQUIRE(di.sourceFileStart == Catch::Approx(0.0));
@@ -98,8 +92,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
     SECTION("Looped clip: loop region tracks the selection; file extent stays full file") {
         ClipInfo clip;
         clip.setAudioContent();
-        clip.startTime = 0.0;
-        clip.length = 8.0;
+        clip.setPlacementBeats(0.0, 16.0);
         magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = true;
         magda::test::audioEvent(clip).setLoopStartSeconds(0.5);
@@ -107,7 +100,6 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         magda::test::audioEvent(clip).setAnchorSeconds(
             magda::test::audioEvent(clip).loopStartSeconds());
 
-        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/4.0);
 
         // Loop region matches selection.
@@ -127,8 +119,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         "Looped clip with stretch: loop in timeline scales by speedRatio; file extent unchanged") {
         ClipInfo clip;
         clip.setAudioContent();
-        clip.startTime = 0.0;
-        clip.length = 16.0;
+        clip.setPlacementBeats(0.0, 32.0);
         magda::test::audioEvent(clip).speedRatio = 2.0;  // 2x faster
         clip.loopEnabled = true;
         magda::test::audioEvent(clip).setLoopStartSeconds(1.0);
@@ -136,7 +127,6 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         magda::test::audioEvent(clip).setAnchorSeconds(
             magda::test::audioEvent(clip).loopStartSeconds());
 
-        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/3.0);
 
         REQUIRE(di.loopLengthSeconds == Catch::Approx(0.5));  // 1s source / 2x = 0.5s timeline
@@ -156,15 +146,13 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         // looped while the overlay draws it as non-looped.
         ClipInfo clip;
         clip.setAudioContent();
-        clip.startTime = 0.0;
-        clip.length = 1.0;
+        clip.setPlacementBeats(0.0, 2.0);
         magda::test::audioEvent(clip).setAnchorSeconds(0.0);
         magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = true;
         magda::test::audioEvent(clip).setLoopStartSeconds(0.0);
         magda::test::audioEvent(clip).setLoopLengthSeconds(0.0);
 
-        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/1.0);
 
         REQUIRE(di.isLooped());
@@ -175,8 +163,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
     SECTION("Loop region inside a longer file: loop fields == selection, file extent == file") {
         ClipInfo clip;
         clip.setAudioContent();
-        clip.startTime = 0.0;
-        clip.length = 1.0;
+        clip.setPlacementBeats(0.0, 2.0);
         magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = true;
         magda::test::audioEvent(clip).setLoopStartSeconds(0.5);
@@ -184,7 +171,6 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         magda::test::audioEvent(clip).setAnchorSeconds(
             magda::test::audioEvent(clip).loopStartSeconds());
 
-        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/4.0);
 
         REQUIRE(di.loopRegionStartSource == Catch::Approx(0.5));
@@ -196,15 +182,13 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
     SECTION("Clip = one loop cycle: loop region matches; file extent untouched") {
         ClipInfo clip;
         clip.setAudioContent();
-        clip.startTime = 0.0;
-        clip.length = 2.0;
+        clip.setPlacementBeats(0.0, 4.0);
         magda::test::audioEvent(clip).setAnchorSeconds(0.0);
         magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = true;
         magda::test::audioEvent(clip).setLoopStartSeconds(0.0);
         magda::test::audioEvent(clip).setLoopLengthSeconds(2.0);
 
-        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/2.0);
 
         REQUIRE(di.loopRegionStartSource == Catch::Approx(0.0));
@@ -220,15 +204,13 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         // full file even though the loop is shorter.
         ClipInfo clip;
         clip.setAudioContent();
-        clip.startTime = 0.0;
-        clip.length = 6.0;
+        clip.setPlacementBeats(0.0, 12.0);
         magda::test::audioEvent(clip).setAnchorSeconds(0.0);
         magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = true;
         magda::test::audioEvent(clip).setLoopStartSeconds(0.0);
         magda::test::audioEvent(clip).setLoopLengthSeconds(2.0);
 
-        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0, /*fileDuration=*/4.0);
 
         REQUIRE(di.loopRegionLengthSource == Catch::Approx(2.0));
@@ -245,13 +227,11 @@ TEST_CASE("ClipDisplayInfo maps session playhead into waveform editor display ti
     SECTION("Non-looped clips start from the source offset display position") {
         ClipInfo clip;
         clip.setAudioContent();
-        clip.startTime = 0.0;
-        clip.length = 8.0;
+        clip.setPlacementBeats(0.0, 16.0);
         magda::test::audioEvent(clip).setAnchorSeconds(1.5);
         magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = false;
 
-        syncPlacement(clip);
         const auto di = ClipDisplayInfo::from(clip, 120.0);
 
         REQUIRE(di.sessionPlayheadToDisplayPosition(-0.001) == Catch::Approx(-1.0));
@@ -262,15 +242,13 @@ TEST_CASE("ClipDisplayInfo maps session playhead into waveform editor display ti
     SECTION("Looped clips at zero phase wrap inside the loop display range") {
         ClipInfo clip;
         clip.setAudioContent();
-        clip.startTime = 0.0;
-        clip.length = 12.0;
+        clip.setPlacementBeats(0.0, 24.0);
         magda::test::audioEvent(clip).setAnchorSeconds(1.0);
         magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = true;
         magda::test::audioEvent(clip).setLoopStartSeconds(1.0);
         magda::test::audioEvent(clip).setLoopLengthSeconds(4.0);
 
-        syncPlacement(clip);
         const auto di = ClipDisplayInfo::from(clip, 120.0);
 
         REQUIRE(di.sessionPlayheadToDisplayPosition(0.0) == Catch::Approx(1.0));
@@ -282,15 +260,13 @@ TEST_CASE("ClipDisplayInfo maps session playhead into waveform editor display ti
     SECTION("Looped clips preserve phase offset when wrapping") {
         ClipInfo clip;
         clip.setAudioContent();
-        clip.startTime = 0.0;
-        clip.length = 12.0;
+        clip.setPlacementBeats(0.0, 24.0);
         magda::test::audioEvent(clip).setAnchorSeconds(2.0);
         magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = true;
         magda::test::audioEvent(clip).setLoopStartSeconds(1.0);
         magda::test::audioEvent(clip).setLoopLengthSeconds(4.0);
 
-        syncPlacement(clip);
         const auto di = ClipDisplayInfo::from(clip, 120.0);
 
         REQUIRE(di.sessionPlayheadToDisplayPosition(0.0) == Catch::Approx(2.0));
@@ -303,8 +279,7 @@ TEST_CASE("ClipDisplayInfo maps session playhead into waveform editor display ti
         ClipInfo clip;
         clip.setAudioContent();
         magda::test::audioEvent(clip).autoTempo = true;
-        clip.startTime = 0.0;
-        clip.length = 8.0;
+        clip.setPlacementBeats(0.0, 16.0);
         magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = true;
         magda::test::audioEvent(clip).interpBpm = 172.0;
@@ -331,8 +306,6 @@ TEST_CASE("ClipDisplayInfo maps session playhead into waveform editor display ti
         ClipInfo clip;
         clip.setAudioContent();
         magda::test::audioEvent(clip).autoTempo = true;
-        clip.startTime = 99.0;  // stale cache; placement is authoritative
-        clip.length = 99.0;     // stale cache; placement is authoritative
         magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = true;
         magda::test::audioEvent(clip).interpBpm = 172.0;
@@ -395,14 +368,12 @@ TEST_CASE("ClipDisplayInfo keeps a reversed selection on the original source rul
     SECTION("trimmed range uses the matching original-file segment") {
         ClipInfo clip;
         clip.setAudioContent();
-        clip.startTime = 0.0;
-        clip.length = 2.0;
+        clip.setPlacementBeats(0.0, 4.0);
         magda::test::audioEvent(clip).setAnchorSeconds(2.0);
         magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = false;
         magda::test::audioEvent(clip).reversed = true;
 
-        syncPlacement(clip);
         const auto di = ClipDisplayInfo::from(clip, 120.0, 10.0);
 
         const auto editorRange = di.displayRangeToSourceRange(2.0, 4.0);
@@ -422,14 +393,12 @@ TEST_CASE("ClipDisplayInfo keeps a reversed selection on the original source rul
     SECTION("a scrolled visible slice maps independently of the viewport") {
         ClipInfo clip;
         clip.setAudioContent();
-        clip.startTime = 0.0;
-        clip.length = 2.0;
+        clip.setPlacementBeats(0.0, 4.0);
         magda::test::audioEvent(clip).setAnchorSeconds(2.0);
         magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = false;
         magda::test::audioEvent(clip).reversed = true;
 
-        syncPlacement(clip);
         const auto di = ClipDisplayInfo::from(clip, 120.0, 10.0);
         const auto visibleRange = di.displayRangeToSourceRange(2.5, 3.5);
 
@@ -442,14 +411,12 @@ TEST_CASE("ClipDisplayInfo keeps a reversed selection on the original source rul
     SECTION("time stretching is applied before reverse source lookup") {
         ClipInfo clip;
         clip.setAudioContent();
-        clip.startTime = 0.0;
-        clip.length = 1.0;
+        clip.setPlacementBeats(0.0, 2.0);
         magda::test::audioEvent(clip).setAnchorSeconds(2.0);
         magda::test::audioEvent(clip).speedRatio = 2.0;
         clip.loopEnabled = false;
         magda::test::audioEvent(clip).reversed = true;
 
-        syncPlacement(clip);
         const auto di = ClipDisplayInfo::from(clip, 120.0, 10.0);
         const auto visibleRange = di.displayRangeToSourceRange(1.0, 2.0);
 
@@ -463,14 +430,12 @@ TEST_CASE("ClipDisplayInfo keeps a reversed selection on the original source rul
     SECTION("forward clips preserve the existing source mapping") {
         ClipInfo clip;
         clip.setAudioContent();
-        clip.startTime = 0.0;
-        clip.length = 2.0;
+        clip.setPlacementBeats(0.0, 4.0);
         magda::test::audioEvent(clip).setAnchorSeconds(2.0);
         magda::test::audioEvent(clip).speedRatio = 1.0;
         clip.loopEnabled = false;
         magda::test::audioEvent(clip).reversed = false;
 
-        syncPlacement(clip);
         const auto di = ClipDisplayInfo::from(clip, 120.0, 10.0);
         const auto visibleRange = di.displayRangeToSourceRange(2.0, 4.0);
 

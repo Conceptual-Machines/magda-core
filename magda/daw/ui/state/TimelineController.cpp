@@ -889,59 +889,13 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
         }
     }
 
-    // Update beat-authoritative clips when project tempo changes.
-    //
-    // Beats are the canonical state for these clips — seconds are a derived
-    // cache. ClipManager::refreshDerivedSeconds is the single source of truth
-    // for that derivation; calling it here keeps every reader (renderers,
-    // ClipSynchronizer, inspector readouts) consistent without duplicating
-    // formulas. Process clips of every view (arrangement AND session) — the
-    // earlier session-only skip caused issue #1157: session autoTempo clips
-    // kept stale `length` / `startTime` after a project-tempo change, which
-    // made the inspector beat readout disagree with the rendered loop region.
+    // Clips are placed in beats, so a tempo change moves their seconds. Every
+    // view: a session clip skipped here kept stale seconds (#1157).
     if (std::abs(newBpm - oldBpm) > 0.01) {
         auto& clipManager = ClipManager::getInstance();
-        auto allClips = clipManager.getClips();
-
-        std::vector<ClipId> updatedClipIds;
-        for (const auto& clip : allClips) {
-            auto* mutableClip = clipManager.getClip(clip.id);
-            if (!mutableClip)
-                continue;
-
-            // Legacy migration: old projects may have meaningful startTime/length
-            // caches while placement is still at its default value. Once a clip
-            // has explicit beat placement, never derive beats back from the
-            // seconds cache on tempo changes; the cache may be stale.
-            constexpr double eps = 0.000001;
-            double startBeats = mutableClip->placement.startBeat;
-            double lengthBeats = mutableClip->placement.lengthBeats;
-
-            const bool hasBeatStart = startBeats > eps || mutableClip->startBeats > eps;
-            const bool hasBeatLength = lengthBeats > eps || mutableClip->lengthBeats > eps;
-
-            if (startBeats <= eps && mutableClip->startBeats > eps)
-                startBeats = mutableClip->startBeats;
-            if (!hasBeatStart && mutableClip->startTime > eps)
-                startBeats = magda::TimelineUtils::secondsToBeats(mutableClip->startTime, oldBpm);
-
-            if (lengthBeats <= eps && mutableClip->lengthBeats > eps)
-                lengthBeats = mutableClip->lengthBeats;
-
-            if (!hasBeatLength && mutableClip->length > eps)
-                lengthBeats = magda::TimelineUtils::secondsToBeats(mutableClip->length, oldBpm);
-
-            mutableClip->setPlacementBeats(startBeats, lengthBeats);
-
-            // Beat-authoritative path: refresh the seconds cache from beats.
-            clipManager.refreshDerivedSeconds(clip.id, newBpm);
-            updatedClipIds.push_back(clip.id);
-        }
-
         // Notify so AudioBridge re-syncs TE positions and the UI re-reads.
-        for (auto clipId : updatedClipIds) {
-            clipManager.forceNotifyClipPropertyChanged(clipId);
-        }
+        for (const auto& clip : clipManager.getClips())
+            clipManager.forceNotifyClipPropertyChanged(clip.id);
     }
 
     // Return combined flags for all updated state

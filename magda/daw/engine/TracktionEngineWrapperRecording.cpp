@@ -650,15 +650,14 @@ bool TracktionEngineWrapper::finalizeSessionSlotAudioRecording(
     auto& clipManager = ClipManager::getInstance();
     ClipId clipId = clipManager.getClipInSlot(trackId, targetIt->second.sceneIndex);
     if (clipId == INVALID_CLIP_ID) {
-        clipId = clipManager.createAudioClipBeats(
-            trackId, 0.0, lengthBeats, audioFile.getFullPathName(), ClipView::Session, projectBpm);
+        clipId = clipManager.createAudioClipBeats(trackId, 0.0, lengthBeats,
+                                                  audioFile.getFullPathName(), ClipView::Session);
         if (clipId != INVALID_CLIP_ID)
             clipManager.setClipSceneIndex(clipId, targetIt->second.sceneIndex);
     }
 
     if (auto* clipInfo = clipManager.getClip(clipId)) {
         clipInfo->setPlacementBeats(0.0, lengthBeats);
-        clipInfo->deriveTimesFromBeats(projectBpm);
         if (auto* event = clipInfo->primaryEvent()) {
             // Recorded at the project tempo, so the interpretation is exact
             // and the user owns it. Beat mode is asked for after the tempo is
@@ -771,9 +770,7 @@ bool TracktionEngineWrapper::finalizeSessionSlotMidiRecording(TrackId trackId,
     }
 
     if (auto* clipInfo = clipManager.getClip(clipId)) {
-        const double tempo = getTempo() > 0.0 ? getTempo() : 120.0;
         clipInfo->setPlacementBeats(0.0, lengthBeats);
-        clipInfo->deriveTimesFromBeats(tempo);
         clipInfo->loopEnabled = true;
         clipInfo->loopLengthBeats = lengthBeats;
         clipInfo->midiNotes = std::move(recordedNotes);

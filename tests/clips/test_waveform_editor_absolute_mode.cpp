@@ -284,7 +284,7 @@ TEST_CASE("ClipOperations - audio sanitizing preserves sample start",
     magda::test::giveAudioEvent(clip, "/tmp/magda_offset_regression.wav");
     clip.loopEnabled = false;
     magda::test::audioEvent(clip).autoTempo = false;
-    clip.length = 4.0;
+    clip.setPlacementBeats(0.0, 8.0);
     magda::test::audioEvent(clip).speedRatio = 1.0;
     magda::test::audioEvent(clip).setLoopStartSeconds(0.25);
     magda::test::audioEvent(clip).setAnchorSeconds(0.75);
@@ -302,17 +302,15 @@ TEST_CASE("ClipOperations - audio sanitizing clamps length through beat placemen
     magda::test::giveAudioEvent(clip, "/tmp/magda_source_sanitize_beats.wav");
     clip.loopEnabled = false;
     magda::test::audioEvent(clip).autoTempo = false;
-    clip.startTime = 2.0;
-    clip.length = 10.0;
     clip.setPlacementBeats(4.0, 20.0);
     magda::test::audioEvent(clip).speedRatio = 1.0;
     magda::test::audioEvent(clip).setAnchorSeconds(3.0);
 
     ClipOperations::sanitizeAudioToSourceDuration(clip, 8.0, 120.0);
 
-    REQUIRE(clip.startTime == Catch::Approx(2.0));
+    REQUIRE(clip.getTimelineStart(120.0) == Catch::Approx(2.0));
     REQUIRE(clip.startBeats == Catch::Approx(4.0));
-    REQUIRE(clip.length == Catch::Approx(5.0));
+    REQUIRE(clip.getTimelineLength(120.0) == Catch::Approx(5.0));
     REQUIRE(clip.lengthBeats == Catch::Approx(10.0));
 }
 
@@ -323,8 +321,6 @@ TEST_CASE("ClipOperations - non-loop offset drag preserves sample start and clam
     magda::test::giveAudioEvent(clip, "/tmp/magda_offset_drag_regression.wav");
     clip.loopEnabled = false;
     magda::test::audioEvent(clip).autoTempo = false;
-    clip.startTime = 4.0;
-    clip.length = 7.75;
     clip.setPlacementBeats(8.0, 15.5);
     magda::test::audioEvent(clip).speedRatio = 1.0;
     magda::test::audioEvent(clip).setLoopStartSeconds(0.25);
@@ -334,8 +330,8 @@ TEST_CASE("ClipOperations - non-loop offset drag preserves sample start and clam
 
     REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == Catch::Approx(0.75));
     REQUIRE(magda::test::audioEvent(clip).loopStartSeconds() == Catch::Approx(0.25));
-    REQUIRE(clip.startTime == Catch::Approx(4.0));
-    REQUIRE(clip.length == Catch::Approx(7.25));
+    REQUIRE(clip.getTimelineStart(120.0) == Catch::Approx(4.0));
+    REQUIRE(clip.getTimelineLength(120.0) == Catch::Approx(7.25));
     REQUIRE(clip.lengthBeats == Catch::Approx(14.5));
 }
 
@@ -346,8 +342,7 @@ TEST_CASE("ClipDisplayInfo - non-loop source end stays fixed when offset clamps 
     magda::test::giveAudioEvent(clip, "/tmp/magda_offset_display_regression.wav");
     clip.loopEnabled = false;
     magda::test::audioEvent(clip).autoTempo = false;
-    clip.startTime = 0.0;
-    clip.length = 8.0;
+    clip.setPlacementBeats(0.0, 16.0);
     magda::test::audioEvent(clip).speedRatio = 1.0;
     magda::test::audioEvent(clip).setAnchorSeconds(0.0);
 
@@ -367,8 +362,6 @@ TEST_CASE("ClipOperations - non-loop right resize changes clip length only",
     magda::test::giveAudioEvent(clip, "/tmp/magda_right_resize_regression.wav");
     clip.loopEnabled = false;
     magda::test::audioEvent(clip).autoTempo = false;
-    clip.startTime = 0.0;
-    clip.length = 2.0;
     clip.setPlacementBeats(0.0, 4.0);
     magda::test::audioEvent(clip).speedRatio = 1.0;
     magda::test::audioEvent(clip).setLoopStartSeconds(0.25);
@@ -378,7 +371,7 @@ TEST_CASE("ClipOperations - non-loop right resize changes clip length only",
 
     const auto displayInfo = ClipDisplayInfo::from(clip, 120.0, 8.0);
 
-    REQUIRE(clip.length == Catch::Approx(3.0));
+    REQUIRE(clip.getTimelineLength(120.0) == Catch::Approx(3.0));
     REQUIRE(clip.lengthBeats == Catch::Approx(6.0));
     REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == Catch::Approx(0.5));
     REQUIRE(magda::test::audioEvent(clip).loopStartSeconds() == Catch::Approx(0.25));
@@ -410,7 +403,7 @@ TEST_CASE("SetClipOffsetCommand - non-loop offset clamp restores length on undo"
     clipManager.clearAllClips();
 
     ClipId clipId =
-        clipManager.createAudioClip(INVALID_TRACK_ID, 0.0, 8.0, "/tmp/magda_offset_undo.wav");
+        clipManager.createAudioClipBeats(INVALID_TRACK_ID, 0.0, 16.0, "/tmp/magda_offset_undo.wav");
     auto* clip = clipManager.getClip(clipId);
     REQUIRE(clip != nullptr);
 
@@ -420,21 +413,19 @@ TEST_CASE("SetClipOffsetCommand - non-loop offset clamp restores length on undo"
                                                          8.0, magda::test::kTestSourceSampleRate);
     magda::SourcePool::getInstance().resolveFacts(primaryEventOf(clip)->sourceId);
     primaryEventOf(clip)->setAnchorSeconds(0.0);
-    clip->length = 8.0;
-    clip->setPlacementBeats(0.0, 16.0);
 
     SetClipOffsetCommand cmd(clipId, 1.0);
     cmd.execute();
 
     REQUIRE(primaryEventOf(clip)->anchorSeconds() == Catch::Approx(1.0));
-    REQUIRE(clip->length == Catch::Approx(7.0));
+    REQUIRE(clip->getTimelineLength(120.0) == Catch::Approx(7.0));
 
     cmd.undo();
 
     clip = clipManager.getClip(clipId);
     REQUIRE(clip != nullptr);
     REQUIRE(primaryEventOf(clip)->anchorSeconds() == Catch::Approx(0.0));
-    REQUIRE(clip->length == Catch::Approx(8.0));
+    REQUIRE(clip->getTimelineLength(120.0) == Catch::Approx(8.0));
     REQUIRE(clip->lengthBeats == Catch::Approx(16.0));
 }
 
@@ -468,18 +459,18 @@ TEST_CASE("ClipManager - Clip position change notifies listeners", "[clip][manag
     ClipManager::getInstance().addListener(&listener);
 
     // Create a MIDI clip (doesn't require audio file path)
-    ClipId clipId = ClipManager::getInstance().createMidiClip(1, 0.0, 4.0);
+    ClipId clipId = ClipManager::getInstance().createMidiClipBeats(1, 0.0, 8.0);
     REQUIRE(clipId != INVALID_CLIP_ID);
     REQUIRE(listener.clipsChangedCount == 1);
 
     // Get the clip and modify it
     auto* clip = ClipManager::getInstance().getClip(clipId);
     REQUIRE(clip != nullptr);
-    REQUIRE(clip->startTime == 0.0);
+    REQUIRE(clip->placement.startBeat == 0.0);
 
     // Move the clip (simulating drag on timeline)
     listener.propertyChangedCount = 0;
-    ClipManager::getInstance().moveClip(clipId, 2.0);
+    ClipManager::getInstance().moveClipBeats(clipId, 4.0);
 
     // Verify notification was sent
     REQUIRE(listener.propertyChangedCount >= 1);
@@ -487,7 +478,7 @@ TEST_CASE("ClipManager - Clip position change notifies listeners", "[clip][manag
 
     // Verify clip position actually changed
     clip = ClipManager::getInstance().getClip(clipId);
-    REQUIRE(clip->startTime == 2.0);
+    REQUIRE(clip->placement.startBeat == 4.0);
 
     ClipManager::getInstance().removeListener(&listener);
 }

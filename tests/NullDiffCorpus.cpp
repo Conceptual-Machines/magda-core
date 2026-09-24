@@ -494,7 +494,6 @@ ClipInfo audioClipOn(TrackId trackId, ClipId id, double startBeat, double length
     clip.audio().addEvent(std::move(event));
 
     clip.setPlacementBeats(startBeat, lengthBeats);
-    clip.deriveTimesFromBeats(kBpm);
     return clip;
 }
 
@@ -514,7 +513,6 @@ ClipInfo midiClipOn(TrackId trackId, ClipId id, double startBeat, double lengthB
     clip.view = ClipView::Arrangement;
     clip.setMidiContent();
     clip.setPlacementBeats(startBeat, lengthBeats);
-    clip.deriveTimesFromBeats(kBpm);
     return clip;
 }
 

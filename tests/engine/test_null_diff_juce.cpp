@@ -250,7 +250,6 @@ class TrimmedSessionLaunchTests : public juce::UnitTest {
             auto value = buildTrimmedSessionLaunchCase(nullDiffScratchDirectory());
             auto& clip = value.clips.front();
             clip.setPlacementBeats(0.0, 24.0);
-            clip.deriveTimesFromBeats(value.startBpm());
             auto& event = *clip.primaryEvent();
             event.sourceAnchorSamples = 0;
             event.reversed = true;

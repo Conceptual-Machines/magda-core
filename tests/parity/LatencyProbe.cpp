@@ -94,7 +94,6 @@ std::optional<LatencyProbe> addLatencyProbe(StagedProjectData& staged, const juc
     event.sourceId = sourceId;
     clip.audio().addEvent(std::move(event));
     clip.setPlacementBeats(beat, kClipSeconds * staged.info.tempo / 60.0);
-    clip.deriveTimesFromBeats(staged.info.tempo);
     staged.clips.push_back(clip);
 
     return probe;

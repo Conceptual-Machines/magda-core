@@ -240,10 +240,11 @@ TEST_CASE("The compiler places a clip across a tempo change by the map",
     CHECK(clip->span.seconds.length() == Approx(3.0));
 }
 
-// Fails today: refreshDerivedSeconds writes clip.length from a scalar BPM, and
-// ClipManager has no way to be handed the map. Passes after phase 5.
-TEST_CASE("A tempo change inside a clip is reflected in its seconds cache",
-          "[engine][clip][tempo][sequence][!mayfail]") {
+// A beat-mode clip is its region's seconds at the source tempo: restating the
+// tempo refits its beats and leaves the audio alone (#2791). Its timeline
+// seconds come from those beats through the map, never a stored length.
+TEST_CASE("A restated source tempo refits a beat-mode clip, read through the tempo map",
+          "[engine][clip][tempo][sequence]") {
     ModelFixture fixture;
     auto& clips = ClipManager::getInstance();
     auto& pool = SourcePool::getInstance();
@@ -252,28 +253,25 @@ TEST_CASE("A tempo change inside a clip is reflected in its seconds cache",
     pool.seedFactsForTesting(path, 4.0, 48000.0);
     pool.getMutable(pool.acquire(path))->detectedBpm = 120.0;
 
-    const auto clipId =
-        clips.createAudioClipBeats(kTrack, 0.0, 4.0, path, ClipView::Arrangement, 120.0);
+    // Four beats of a 4 s file at 120: the clip plays its first 2 s.
+    const auto clipId = clips.createAudioClipBeats(kTrack, 0.0, 4.0, path, ClipView::Arrangement);
     REQUIRE(clipId != magda::INVALID_CLIP_ID);
-
-    clips.setSourceTempo(clipId, 120.0);
     clips.setAutoTempo(clipId, true, 120.0);
+    clips.setSourceTempo(clipId, 120.0);
     REQUIRE(clips.getClip(clipId)->primaryEvent()->autoTempo);
-
-    // The project's map: 120 for two beats, then 60. ClipManager never sees it,
-    // only the 120 scalar every caller hands it.
-    const auto engineMap = makeStepTempoMap();
-    const EngineTempoMapView tempoMap(engineMap);
+    const auto regionSamples = clips.getClip(clipId)->primaryEvent()->loopLengthSamples;
 
     clips.setSourceTempo(clipId, 100.0);
 
     const auto* clip = clips.getClip(clipId);
     REQUIRE(clip != nullptr);
-    CHECK(clip->placement.lengthBeats == Approx(4.0));
-    REQUIRE(clip->getTimelineLength(tempoMap) == Approx(3.0));
+    CHECK(clip->placement.lengthBeats == Approx(2.0 * 100.0 / 60.0));
+    CHECK(clip->primaryEvent()->loopLengthSamples == regionSamples);
 
-    INFO("map says " << clip->getTimelineLength(tempoMap) << " s, cache holds " << clip->length);
-    CHECK(clip->length == Approx(3.0));
+    // 120 for two beats, then 60: 1 s, then 1.33 beats at a second each.
+    const auto engineMap = makeStepTempoMap();
+    const EngineTempoMapView tempoMap(engineMap);
+    CHECK(clip->getTimelineLength(tempoMap) == Approx(1.0 + (2.0 * 100.0 / 60.0 - 2.0)));
 }
 
 TEST_CASE("A loop whose region runs past the file's end reads silence there, not a wrap",
