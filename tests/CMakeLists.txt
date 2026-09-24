@@ -728,6 +728,7 @@ target_sources(magda_juce_tests PRIVATE
     ui/test_node_id_collision_juce.cpp
     ui/test_transport_seek_juce.cpp
     midi/test_session_slot_recording_juce.cpp
+    engine/test_time_signature_beats_juce.cpp
     routing/test_input_monitor_track_routing_juce.cpp
     # Hardware output selections must reach the TE wave output devices (#2264)
     routing/test_hardware_output_routing_juce.cpp

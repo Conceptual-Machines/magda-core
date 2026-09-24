@@ -160,6 +160,11 @@ class TracktionEngineWrapper : public AudioEngine,
     void testFinishSessionSlotRecordings() {
         finishSessionSlotRecordings();
     }
+
+    void testFinalizeArrangementMidiRecording(TrackId trackId, tracktion::MidiClip::Ptr midiClip) {
+        pendingMidiRecordings_[trackId] = std::move(midiClip);
+        finalizeMidiRecording(trackId);
+    }
 #endif
     void setTempo(double bpm) override;
     double getTempo() const override;
