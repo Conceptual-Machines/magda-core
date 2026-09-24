@@ -1750,7 +1750,10 @@ jobs:
         # construction, and each is its own process, so suite wall time drops
         # to roughly the heaviest shard. Own TMP per shard: concurrent shards
         # must not collide on temp file names.
-        $shards = 16
+        # One shard per core, at most 16: a hosted VM has few cores, and 16 shards there
+        # starved the tests that wait on their own worker threads past their deadlines.
+        $shards = [Math]::Min(16, [Environment]::ProcessorCount)
+        Write-Host "$([Environment]::ProcessorCount) cores"
         # A shard that stopped, not one that is slow: a healthy step is four
         # minutes on the self-hosted runner and four to six on a hosted one,
         # the heaviest shard being most of that.
