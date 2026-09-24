@@ -287,6 +287,12 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     TrackId createTrack(const juce::String& name = "", TrackType type = TrackType::Media);
     TrackId createGroupTrack(const juce::String& name = "");
 
+    /**
+     * Materialise a saved track-chain preset as a new media track. All runtime
+     * ids and links are re-keyed into the current project before publication.
+     */
+    TrackId createTrackFromPreset(TrackInfo presetTrack, const juce::String& name);
+
     // Chord track is a strict singleton (TrackType::Chord). It lives in the
     // normal track list so it gets clip hosting / arrangement rendering for
     // free, but it is monitor-only: its instrument voices chord previews and it

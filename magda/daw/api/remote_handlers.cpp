@@ -18,6 +18,7 @@
 #include "../core/DeviceInfo.hpp"
 #include "../core/MidiNoteCommands.hpp"
 #include "../core/PluginParameterConfigStore.hpp"
+#include "../core/PresetManager.hpp"
 #include "../core/TrackCommands.hpp"
 #include "../core/TrackInfo.hpp"
 #include "../core/TrackPropertyCommands.hpp"
@@ -297,6 +298,22 @@ HandlerResult projectSetTimeSignature(MagdaApi& api, const juce::var& input,
 }
 
 // ===========================================================================
+// Saved track-chain presets
+// ===========================================================================
+
+HandlerResult trackPresetsList(MagdaApi&, const juce::var&, const RequestContext&) {
+    std::vector<juce::var> items;
+    for (const auto& preset : PresetManager::getInstance().getTrackPresetMetadata()) {
+        auto* item = new juce::DynamicObject();
+        item->setProperty("id", preset.id);
+        item->setProperty("name", preset.name);
+        item->setProperty("category", preset.category);
+        items.emplace_back(item);
+    }
+    return HandlerResult::ok(toJsonArray(items));
+}
+
+// ===========================================================================
 // Tracks
 // ===========================================================================
 
@@ -331,6 +348,39 @@ HandlerResult tracksCreate(MagdaApi& api, const juce::var& input, const RequestC
     if (id == INVALID_TRACK_ID)
         return HandlerResult::fail(ErrorCode::InternalError, "track creation failed");
     return HandlerResult::ok(idResult(id));
+}
+
+HandlerResult tracksCreateFromPreset(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    auto& presets = PresetManager::getInstance();
+    const auto presetId = input["presetId"].toString();
+
+    const auto metadata = presets.getTrackPresetMetadata();
+    const auto found =
+        std::ranges::find(metadata, presetId, &PresetManager::TrackPresetMetadata::id);
+    if (found == metadata.end())
+        return HandlerResult::fail(ErrorCode::NotFound, "track preset not found");
+
+    PresetManager::TrackPreset preset;
+    if (!presets.loadTrackPresetById(presetId, preset))
+        // PresetManager diagnostics can contain the on-disk file name. Keep
+        // that implementation detail out of the transport-safe error surface.
+        return HandlerResult::fail(ErrorCode::InternalError, "failed to load track preset");
+
+    const auto id = runCommandAndRead<CreateTrackFromPresetCommand>(
+        api,
+        [](const CreateTrackFromPresetCommand& command) { return command.getCreatedTrackId(); },
+        std::move(preset.track), found->name);
+    if (id == INVALID_TRACK_ID)
+        return HandlerResult::fail(ErrorCode::InternalError, "track creation from preset failed");
+
+    const auto* track = api.tracks().getTrack(id);
+    if (track == nullptr)
+        return HandlerResult::fail(ErrorCode::InternalError, "created preset track is unavailable");
+
+    auto* result = new juce::DynamicObject();
+    result->setProperty("trackId", id);
+    result->setProperty("deviceGraph", toJson(makeDeviceGraphDto({*track})));
+    return HandlerResult::ok(result);
 }
 
 HandlerResult tracksUpdate(MagdaApi& api, const juce::var& input, const RequestContext&) {

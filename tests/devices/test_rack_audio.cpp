@@ -4,7 +4,9 @@
 
 #include "../../magda/daw/core/DrumGridPads.hpp"
 #include "../../magda/daw/core/RackInfo.hpp"
+#include "../../magda/daw/core/TrackCommands.hpp"
 #include "../../magda/daw/core/TrackManager.hpp"
+#include "../../magda/daw/core/UndoManager.hpp"
 
 using namespace magda;
 
@@ -179,6 +181,161 @@ TEST_CASE("MAGDA track presets retarget top-level macro and mod links",
     CHECK(liveDevice.mods[0].links[0].target.devicePath == expectedTarget);
     CHECK(liveDevice.macros[0].links[0].target.paramIndex == 5);
     CHECK(liveDevice.mods[0].links[0].target.paramIndex == 6);
+}
+
+TEST_CASE("Creating a track from a preset restores every chain section and rekeys links",
+          "[rack_audio][track_presets][create]") {
+    RackAudioTestFixture fixture;
+
+    TrackInfo preset;
+    preset.id = 700;
+    preset.name = "Saved Name";
+    preset.volume = 0.37f;
+    preset.manualVolume = 0.37f;
+    preset.pan = -0.4f;
+    preset.manualPan = -0.4f;
+    preset.muted = true;
+    preset.midiInputDevice = "all";
+    preset.chain.enabled = false;
+    preset.chain.postFxPostFader = false;
+
+    DeviceInfo fx;
+    fx.id = 701;
+    fx.name = "Instrument";
+    fx.pluginId = "instrument";
+    fx.format = PluginFormat::VST3;
+    fx.pluginState = "opaque-fx-state";
+    preset.chain.fxChainElements.push_back(makeDeviceElement(fx));
+
+    DeviceInfo nested = fx;
+    nested.id = 706;
+    nested.name = "Nested FX";
+    nested.pluginState = "opaque-nested-state";
+    ChainInfo chain;
+    chain.id = 705;
+    chain.name = "Parallel";
+    chain.elements.push_back(makeDeviceElement(nested));
+    RackInfo rack;
+    rack.id = 704;
+    rack.name = "Nested Rack";
+    const auto nestedPresetPath =
+        ChainNodePath::chainDevice(preset.id, rack.id, chain.id, nested.id);
+    MacroInfo rackMacro(0);
+    rackMacro.links.push_back({ControlTarget::pluginParam(nestedPresetPath, 4), 0.5f, false});
+    rack.macros = {rackMacro};
+    rack.chains.push_back(std::move(chain));
+    preset.chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
+
+    DeviceInfo post = fx;
+    post.id = 702;
+    post.name = "Post FX";
+    post.pluginState = "opaque-post-state";
+    preset.chain.postFxChainElements.push_back({post});
+
+    DeviceInfo analysis = fx;
+    analysis.id = 703;
+    analysis.name = "Analysis";
+    preset.chain.mixerAnalysisElements.push_back({analysis});
+
+    MacroInfo macro(0);
+    macro.links.push_back(
+        {ControlTarget::pluginParam(ChainNodePath::topLevelDevice(preset.id, fx.id), 1), 1.0f,
+         false});
+    macro.links.push_back(
+        {ControlTarget::pluginParam(ChainNodePath::postFxDevice(preset.id, post.id), 2), 1.0f,
+         false});
+    macro.links.push_back(
+        {ControlTarget::pluginParam(ChainNodePath::mixerAnalysisDevice(preset.id, analysis.id), 3),
+         1.0f, false});
+    preset.macros = {macro};
+    ModInfo mod(0);
+    mod.links.push_back({ControlTarget::pluginParam(nestedPresetPath, 5), 0.75f, true});
+    preset.mods = {mod};
+
+    const auto createdId = fixture.tm().createTrackFromPreset(preset, "Emotional Violin");
+    REQUIRE(createdId != INVALID_TRACK_ID);
+    const auto* created = fixture.tm().getTrack(createdId);
+    REQUIRE(created != nullptr);
+    CHECK(created->name == "Emotional Violin");
+    CHECK(created->type == TrackType::Media);
+    CHECK(created->volume == preset.volume);
+    CHECK(created->pan == preset.pan);
+    CHECK(created->muted);
+    CHECK_FALSE(created->chain.enabled);
+    CHECK_FALSE(created->chain.postFxPostFader);
+    REQUIRE(created->chain.fxChainElements.size() == 2);
+    REQUIRE(created->chain.postFxChainElements.size() == 1);
+    REQUIRE(created->chain.mixerAnalysisElements.size() == 1);
+
+    const auto& liveFx = getDevice(created->chain.fxChainElements.front());
+    const auto& liveRack = getRack(created->chain.fxChainElements[1]);
+    REQUIRE(liveRack.chains.size() == 1);
+    REQUIRE(liveRack.chains.front().elements.size() == 1);
+    const auto& liveNested = getDevice(liveRack.chains.front().elements.front());
+    const auto& livePost = created->chain.postFxChainElements.front().device;
+    const auto& liveAnalysis = created->chain.mixerAnalysisElements.front().device;
+    CHECK(liveFx.id != fx.id);
+    CHECK(liveRack.id != 704);
+    CHECK(liveRack.chains.front().id != 705);
+    CHECK(liveNested.id != nested.id);
+    CHECK(livePost.id != post.id);
+    CHECK(liveAnalysis.id != analysis.id);
+    CHECK(liveFx.pluginState == "opaque-fx-state");
+    CHECK(liveNested.pluginState == "opaque-nested-state");
+    CHECK(livePost.pluginState == "opaque-post-state");
+
+    const auto liveNestedPath = ChainNodePath::chainDevice(
+        createdId, liveRack.id, liveRack.chains.front().id, liveNested.id);
+    REQUIRE(liveRack.macros.size() == 1);
+    REQUIRE(liveRack.macros.front().links.size() == 1);
+    CHECK(liveRack.macros.front().links.front().target.devicePath == liveNestedPath);
+    REQUIRE(created->mods.size() == 1);
+    REQUIRE(created->mods.front().links.size() == 1);
+    CHECK(created->mods.front().links.front().target.devicePath == liveNestedPath);
+
+    REQUIRE(created->macros.size() == 1);
+    REQUIRE(created->macros.front().links.size() == 3);
+    CHECK(created->macros.front().links[0].target.devicePath ==
+          ChainNodePath::topLevelDevice(createdId, liveFx.id));
+    CHECK(created->macros.front().links[1].target.devicePath ==
+          ChainNodePath::postFxDevice(createdId, livePost.id));
+    CHECK(created->macros.front().links[2].target.devicePath ==
+          ChainNodePath::mixerAnalysisDevice(createdId, liveAnalysis.id));
+}
+
+TEST_CASE("Create-track-from-preset is one undoable mutation with stable redo identity",
+          "[rack_audio][track_presets][create][undo]") {
+    RackAudioTestFixture fixture;
+    auto& undo = UndoManager::getInstance();
+    undo.clearHistory();
+
+    TrackInfo preset;
+    preset.name = "Preset";
+    DeviceInfo device;
+    device.id = 900;
+    device.name = "Synth";
+    device.pluginId = "synth";
+    device.format = PluginFormat::VST3;
+    device.pluginState = "opaque";
+    preset.chain.fxChainElements.push_back(makeDeviceElement(device));
+
+    auto command = std::make_unique<CreateTrackFromPresetCommand>(preset, "Remote Synth");
+    auto* raw = command.get();
+    undo.executeCommand(std::move(command));
+    const auto createdId = raw->getCreatedTrackId();
+    REQUIRE(createdId != INVALID_TRACK_ID);
+    REQUIRE(fixture.tm().getTrack(createdId) != nullptr);
+    CHECK(undo.getUndoDescription() == "Create Track from Preset");
+
+    REQUIRE(undo.undo());
+    CHECK(fixture.tm().getTrack(createdId) == nullptr);
+    REQUIRE(undo.redo());
+    const auto* restored = fixture.tm().getTrack(createdId);
+    REQUIRE(restored != nullptr);
+    REQUIRE(restored->chain.fxChainElements.size() == 1);
+    CHECK(getDevice(restored->chain.fxChainElements.front()).pluginState == "opaque");
+
+    undo.clearHistory();
 }
 
 TEST_CASE("MAGDA duplicate track retargets copied macro and mod links",

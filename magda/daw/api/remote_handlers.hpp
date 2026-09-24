@@ -32,10 +32,14 @@ HandlerResult projectGet(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult projectSetTempo(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult projectSetTimeSignature(MagdaApi&, const juce::var&, const RequestContext&);
 
+// Saved track-chain presets
+HandlerResult trackPresetsList(MagdaApi&, const juce::var&, const RequestContext&);
+
 // Tracks
 HandlerResult tracksList(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult tracksGet(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult tracksCreate(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult tracksCreateFromPreset(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult tracksUpdate(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult tracksDelete(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult tracksGroup(MagdaApi&, const juce::var&, const RequestContext&);

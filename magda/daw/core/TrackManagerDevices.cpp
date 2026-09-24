@@ -30,6 +30,8 @@ namespace {
 struct PresetIdRemap {
     TrackId trackId = INVALID_TRACK_ID;
     std::map<DeviceId, DeviceId> devices;
+    std::map<DeviceId, DeviceId> postFxDevices;
+    std::map<DeviceId, DeviceId> mixerAnalysisDevices;
     std::map<RackId, RackId> racks;
     std::map<ChainId, ChainId> chains;
 };
@@ -166,6 +168,10 @@ void remapPresetPath(ChainNodePath& path, const PresetIdRemap& remap) {
     if (path.topLevelDeviceId != INVALID_DEVICE_ID)
         touched = remapId(remap.devices, path.topLevelDeviceId) || touched;
 
+    const auto& deviceIds = path.isPostFx()          ? remap.postFxDevices
+                            : path.isMixerAnalysis() ? remap.mixerAnalysisDevices
+                                                     : remap.devices;
+
     for (auto& step : path.steps) {
         switch (step.type) {
             case ChainStepType::Rack:
@@ -175,7 +181,7 @@ void remapPresetPath(ChainNodePath& path, const PresetIdRemap& remap) {
                 touched = remapId(remap.chains, step.id) || touched;
                 break;
             case ChainStepType::Device:
-                touched = remapId(remap.devices, step.id) || touched;
+                touched = remapId(deviceIds, step.id) || touched;
                 break;
             case ChainStepType::PadRack:
                 // A PadRack step carries the owning grid's DeviceId, so it moves
@@ -392,6 +398,57 @@ DeviceInfo* findPadOwner(std::vector<ChainElement>& elements, DeviceId deviceId)
 }
 
 }  // namespace
+
+TrackId TrackManager::createTrackFromPreset(TrackInfo presetTrack, const juce::String& name) {
+    // A chain preset creates one ordinary playable track. Project hierarchy,
+    // child ownership and multi-output child links are not portable properties
+    // of a standalone preset.
+    presetTrack.id = nextTrackId_++;
+    presetTrack.type = TrackType::Media;
+    presetTrack.name = name.isNotEmpty() ? name : presetTrack.name;
+    presetTrack.parentId = INVALID_TRACK_ID;
+    presetTrack.childIds.clear();
+    presetTrack.activeSessionClipId = INVALID_CLIP_ID;
+    presetTrack.multiOutLink.reset();
+    presetTrack.auxBusIndex = -1;
+
+    PresetIdRemap remap;
+    remap.trackId = presetTrack.id;
+    ChainIdRemap ids;
+    reassignChainElementIds(presetTrack.chain.fxChainElements, ids);
+    remap.devices = std::move(ids.devices);
+    remap.racks = std::move(ids.racks);
+    remap.chains = std::move(ids.chains);
+
+    for (auto& element : presetTrack.chain.postFxChainElements) {
+        const auto oldId = element.device.id;
+        element.device.id = nextPostFxDeviceId_++;
+        remap.postFxDevices[oldId] = element.device.id;
+    }
+    for (auto& element : presetTrack.chain.mixerAnalysisElements) {
+        const auto oldId = element.device.id;
+        element.device.id = nextMixerAnalysisDeviceId_++;
+        remap.mixerAnalysisDevices[oldId] = element.device.id;
+    }
+
+    remapPresetLinks(presetTrack.macros, presetTrack.mods, remap);
+    remapPresetLinksRecursive(presetTrack.chain.fxChainElements, remap);
+    const auto remapFlat = [&remap](std::vector<PostFxChainElement>& elements) {
+        for (auto& element : elements) {
+            remapPresetLinks(element.device.macros, element.device.mods, remap);
+            element.device.pluginState = stripPresetRuntimePluginState(element.device.pluginState);
+        }
+    };
+    remapFlat(presetTrack.chain.postFxChainElements);
+    remapFlat(presetTrack.chain.mixerAnalysisElements);
+
+    presetTrack.normalizeForType();
+    const auto id = presetTrack.id;
+    tracks_.push_back(std::move(presetTrack));
+    startMidiMonitoring(tracks_.back(), tracks_.back().midiInputDevice);
+    notifyTracksChanged();
+    return id;
+}
 
 // ============================================================================
 // Device Management in Chains

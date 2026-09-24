@@ -39,6 +39,8 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(registry.operations().size() >= 25);
     REQUIRE(registry.find("system.describe") != nullptr);
     REQUIRE(registry.find("project.get") != nullptr);
+    REQUIRE(registry.find("trackPresets.list") != nullptr);
+    REQUIRE(registry.find("tracks.createFromPreset") != nullptr);
     REQUIRE(registry.find("devices.list") != nullptr);
     REQUIRE(registry.find("devices.listParameters") != nullptr);
     REQUIRE(registry.find("devices.setParameter") != nullptr);
@@ -63,6 +65,40 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(description["apiVersion"].toString() == "1.0");
     REQUIRE(description["operations"].getArray()->size() ==
             static_cast<int>(registry.operations().size()));
+}
+
+TEST_CASE("Track preset operations expose only safe metadata and an opaque-id create contract",
+          "[remote-api][contract][presets]") {
+    const auto& registry = OperationRegistry::instance();
+    const auto* list = registry.find("trackPresets.list");
+    const auto* create = registry.find("tracks.createFromPreset");
+    REQUIRE(list != nullptr);
+    REQUIRE(create != nullptr);
+    CHECK(list->access == OperationAccess::Read);
+    CHECK(list->requiredScope == Scope::Read);
+    CHECK(create->access == OperationAccess::Write);
+    CHECK(create->requiredScope == Scope::Edit);
+
+    const auto itemSchema = list->outputSchema["items"];
+    const auto* properties = itemSchema["properties"].getDynamicObject();
+    REQUIRE(properties != nullptr);
+    CHECK(properties->hasProperty("id"));
+    CHECK(properties->hasProperty("name"));
+    CHECK(properties->hasProperty("category"));
+    CHECK_FALSE(properties->hasProperty("path"));
+    CHECK_FALSE(properties->hasProperty("state"));
+
+    CHECK_FALSE(
+        validateOperationInput(*create, object({{"presetId", "track-preset:abc"}})).has_value());
+    const auto unknown = validateOperationInput(
+        *create, object({{"presetId", "track-preset:abc"}, {"filePath", "/tmp/preset.mps"}}));
+    REQUIRE(unknown.has_value());
+    CHECK(unknown->issues.front().code == "unknown_field");
+
+    const auto* output = create->outputSchema["properties"].getDynamicObject();
+    REQUIRE(output != nullptr);
+    CHECK(output->hasProperty("trackId"));
+    CHECK(output->hasProperty("deviceGraph"));
 }
 
 TEST_CASE("Remote API input validation returns structured issues",

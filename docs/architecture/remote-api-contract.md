@@ -65,6 +65,24 @@ things. A WebSocket client names itself in the upgrade's query string
 `clientInfo.name`. Sending nothing is allowed and means anonymous, which is
 read-only.
 
+### Saved track-chain presets
+
+Saved track-chain presets are exposed through the shared operation registry, so
+the same contract is available over WebSocket and MCP:
+
+- `trackPresets.list` is a read operation. It returns only the preset's opaque,
+  stable `id`, display `name`, and optional folder-derived `category`; it never
+  exposes a path or serialized plugin state.
+- `tracks.createFromPreset` is an edit operation. Its sole input is `presetId`.
+  It creates one media track, restores the preset's settings and complete device
+  graph, and returns the new `trackId` plus the normal safe `deviceGraph`
+  projection.
+
+Creation is one undoable mutation. Like every remote write it supports the
+transport's `expectedRevision` and `requestId` metadata; neither value is part of
+the operation payload. Preset IDs are addresses only: clients cannot supply a
+filesystem path or native state blob.
+
 ## Subscriptions
 
 Ten topics partition what a client can watch: `project`, `tracks`, `clips`,

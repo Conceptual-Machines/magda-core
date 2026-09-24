@@ -73,6 +73,15 @@ class PresetManager {
                          const juce::String& presetName);
 
     /**
+     * @brief Save a complete track-chain preset.
+     *
+     * In addition to the main FX tree this preserves the post-FX section,
+     * track-level modulators/macros, routing, and mixer settings. The legacy
+     * chain-only overload remains for callers that only own a fragment.
+     */
+    bool saveChainPreset(const TrackInfo& track, const juce::String& presetName);
+
+    /**
      * @brief Load a chain preset
      * @param presetName Name of the preset file
      * @param outChainElements Output chain elements
@@ -85,6 +94,24 @@ class PresetManager {
      * @brief Get list of available chain presets
      */
     juce::StringArray getChainPresets() const;
+
+    /** Safe, path-free metadata exposed to remote clients. */
+    struct TrackPresetMetadata {
+        juce::String id;
+        juce::String name;
+        juce::String category;
+    };
+
+    /** A loaded preset. Legacy chain-only files are promoted to a media track. */
+    struct TrackPreset {
+        TrackInfo track;
+        bool hasTrackSettings = false;
+    };
+
+    std::vector<TrackPresetMetadata> getTrackPresetMetadata() const;
+
+    /** Resolve an opaque id returned by getTrackPresetMetadata(). */
+    bool loadTrackPresetById(const juce::String& presetId, TrackPreset& outPreset);
 
     /** @brief Delete a chain preset file (and its media DB row). */
     bool deleteChainPreset(const juce::String& presetName);

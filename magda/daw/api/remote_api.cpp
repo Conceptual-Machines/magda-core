@@ -180,6 +180,20 @@ const juce::var& trackSchema() {
     return value;
 }
 
+const juce::var& trackPresetSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "id":{"type":"string"},
+            "name":{"type":"string"},
+            "category":{"type":"string"}
+        },
+        "required":["id","name","category"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
 const juce::var& clipSchema() {
     static auto value = [] {
         auto schema = parseSchema(R"json({
@@ -1577,6 +1591,9 @@ OperationRegistry::OperationRegistry() {
         })json"),
         projectSchema());
 
+    add("trackPresets.list", "List saved track-chain presets by opaque id", OperationAccess::Read,
+        &handlers::trackPresetsList, emptyObjectSchema(), arraySchema(trackPresetSchema()));
+
     add("tracks.list", "List tracks", OperationAccess::Read, &handlers::tracksList,
         emptyObjectSchema(), arraySchema(trackSchema()));
     add("tracks.get", "Get one track", OperationAccess::Read, &handlers::tracksGet,
@@ -1596,6 +1613,22 @@ OperationRegistry::OperationRegistry() {
             "required":["name","type"],"additionalProperties":false
         })json"),
         idResult);
+    add("tracks.createFromPreset", "Create a track from a saved track-chain preset",
+        OperationAccess::Write, &handlers::tracksCreateFromPreset, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{"presetId":{"type":"string","minLength":1}},
+            "required":["presetId"],"additionalProperties":false
+        })json"),
+        parseSchema(R"json({
+            "type":"object",
+            "properties":{
+                "trackId":{"type":"integer","minimum":0},
+                "deviceGraph":{}
+            },
+            "required":["trackId","deviceGraph"],"additionalProperties":false
+        })json"));
+    operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
+        "deviceGraph", deviceGraphSchema());
     add("tracks.update", "Update track mixer or display fields", OperationAccess::Write,
         &handlers::tracksUpdate, operationInputSchema(R"json({
             "type":"object",
@@ -2139,6 +2172,7 @@ OperationRegistry::OperationRegistry() {
         {"project.setTempo", Scope::Edit},
         {"project.setTimeSignature", Scope::Edit},
         {"tracks.create", Scope::Edit},
+        {"tracks.createFromPreset", Scope::Edit},
         {"tracks.update", Scope::Edit},
         {"tracks.delete", Scope::Edit},
         {"tracks.group", Scope::Edit},

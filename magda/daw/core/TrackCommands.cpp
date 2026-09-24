@@ -194,6 +194,37 @@ juce::String CreateTrackCommand::getDescription() const {
 }
 
 // ============================================================================
+// CreateTrackFromPresetCommand
+// ============================================================================
+
+CreateTrackFromPresetCommand::CreateTrackFromPresetCommand(TrackInfo presetTrack, juce::String name)
+    : presetTrack_(std::move(presetTrack)), name_(std::move(name)) {}
+
+void CreateTrackFromPresetCommand::execute() {
+    auto& tracks = TrackManager::getInstance();
+    if (hasMaterialisedTrack_) {
+        tracks.restoreTrack(materialisedTrack_, materialisedPosition_);
+        executed_ = tracks.getTrack(createdTrackId_) != nullptr;
+        return;
+    }
+
+    createdTrackId_ = tracks.createTrackFromPreset(presetTrack_, name_);
+    if (const auto* created = tracks.getTrack(createdTrackId_)) {
+        materialisedTrack_ = *created;
+        materialisedPosition_ = tracks.restorePositionOf(createdTrackId_);
+        hasMaterialisedTrack_ = true;
+        executed_ = true;
+    }
+}
+
+void CreateTrackFromPresetCommand::undo() {
+    if (!executed_ || createdTrackId_ == INVALID_TRACK_ID)
+        return;
+    TrackManager::getInstance().deleteTrack(createdTrackId_);
+    executed_ = false;
+}
+
+// ============================================================================
 // DeleteTrackCommand
 // ============================================================================
 
