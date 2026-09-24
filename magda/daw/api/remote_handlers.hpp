@@ -57,6 +57,9 @@ HandlerResult clipsUpdateMidiEvents(MagdaApi&, const juce::var&, const RequestCo
 HandlerResult clipsReplaceMidiEvents(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult clipsDeleteMidiEvents(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult clipsDelete(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult clipsMove(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult clipsResize(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult clipsDuplicate(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult clipsUpdate(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult clipsTranspose(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult clipsQuantize(MagdaApi&, const juce::var&, const RequestContext&);

@@ -35,6 +35,17 @@ juce::var object(std::initializer_list<std::pair<const char*, juce::var>> fields
     return result;
 }
 
+juce::var arrangementDestination(TrackId trackId, double startBeat) {
+    return object({{"view", "arrangement"},
+                   {"trackId", static_cast<int>(trackId)},
+                   {"startBeat", startBeat}});
+}
+
+juce::var sessionDestination(TrackId trackId, int sceneIndex) {
+    return object(
+        {{"view", "session"}, {"trackId", static_cast<int>(trackId)}, {"sceneIndex", sceneIndex}});
+}
+
 class RemoteServiceLiveTest final : public juce::UnitTest {
   public:
     RemoteServiceLiveTest() : juce::UnitTest("Remote Service Live", "magda") {}
@@ -253,6 +264,121 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
 
             expect(fixture.service.currentRevision() == 3);
             expect(UndoManager::getInstance().canUndo());
+        }
+
+        beginTest("Arrangement clips move, resize, and duplicate through undoable operations");
+        {
+            Fixture fixture;
+            const auto first =
+                fixture.run("tracks.create", object({{"name", "First"}, {"type", "audio"}}));
+            const auto second =
+                fixture.run("tracks.create", object({{"name", "Second"}, {"type", "audio"}}));
+            expect(first.ok && second.ok);
+            const auto firstId = static_cast<TrackId>(static_cast<int>(first.result["id"]));
+            const auto secondId = static_cast<TrackId>(static_cast<int>(second.result["id"]));
+            const auto created =
+                fixture.run("clips.createMidi", object({{"trackId", static_cast<int>(firstId)},
+                                                        {"startBeat", 0.0},
+                                                        {"lengthBeats", 4.0},
+                                                        {"view", "arrangement"}}));
+            expect(created.ok);
+            const auto clipId = static_cast<ClipId>(static_cast<int>(created.result["id"]));
+
+            const auto beforeMove = fixture.service.currentRevision();
+            const auto moved = fixture.run(
+                "clips.move", object({{"clipId", static_cast<int>(clipId)},
+                                      {"destination", arrangementDestination(secondId, 8.0)}}));
+            expect(moved.ok);
+            expect(static_cast<int>(moved.result["trackId"]) == secondId);
+            expect(static_cast<double>(moved.result["startBeat"]) == 8.0);
+            expect(fixture.service.currentRevision() == beforeMove + 1);
+
+            // Track and time changed through two commands, but the request is
+            // one compound and therefore one Undo.
+            expect(UndoManager::getInstance().undo());
+            const auto* restored = ClipManager::getInstance().getClip(clipId);
+            expect(restored != nullptr);
+            if (restored != nullptr) {
+                expect(restored->trackId == firstId);
+                expect(restored->placement.startBeat == 0.0);
+            }
+
+            const auto beforeNoOp = fixture.service.currentRevision();
+            expect(fixture
+                       .run("clips.move",
+                            object({{"clipId", static_cast<int>(clipId)},
+                                    {"destination", arrangementDestination(firstId, 0.0)}}))
+                       .ok);
+            expect(fixture.service.currentRevision() == beforeNoOp);
+
+            const auto resized =
+                fixture.run("clips.resize", object({{"clipId", static_cast<int>(clipId)},
+                                                    {"lengthBeats", 2.0},
+                                                    {"edge", "end"}}));
+            expect(resized.ok);
+            expect(static_cast<double>(resized.result["lengthBeats"]) == 2.0);
+            expect(UndoManager::getInstance().undo());
+            expect(ClipManager::getInstance().getClip(clipId)->placement.lengthBeats == 4.0);
+
+            const auto duplicated =
+                fixture.run("clips.duplicate",
+                            object({{"clipId", static_cast<int>(clipId)},
+                                    {"destination", arrangementDestination(secondId, 12.0)}}));
+            expect(duplicated.ok);
+            const auto duplicateId = static_cast<ClipId>(static_cast<int>(duplicated.result["id"]));
+            expect(duplicateId != INVALID_CLIP_ID && duplicateId != clipId);
+            expect(ClipManager::getInstance().getClip(duplicateId) != nullptr);
+            expect(UndoManager::getInstance().undo());
+            expect(ClipManager::getInstance().getClip(duplicateId) == nullptr);
+        }
+
+        beginTest("Session clip placement uses explicit empty slots");
+        {
+            Fixture fixture;
+            const auto first =
+                fixture.run("tracks.create", object({{"name", "First"}, {"type", "audio"}}));
+            const auto second =
+                fixture.run("tracks.create", object({{"name", "Second"}, {"type", "audio"}}));
+            expect(first.ok && second.ok);
+            const auto firstId = static_cast<TrackId>(static_cast<int>(first.result["id"]));
+            const auto secondId = static_cast<TrackId>(static_cast<int>(second.result["id"]));
+            const auto created =
+                fixture.run("clips.createMidi", object({{"trackId", static_cast<int>(firstId)},
+                                                        {"startBeat", 0.0},
+                                                        {"lengthBeats", 4.0},
+                                                        {"view", "session"}}));
+            expect(created.ok);
+            const auto clipId = static_cast<ClipId>(static_cast<int>(created.result["id"]));
+            ClipManager::getInstance().setClipSceneIndex(clipId, 0);
+
+            const auto moved = fixture.run(
+                "clips.move", object({{"clipId", static_cast<int>(clipId)},
+                                      {"destination", sessionDestination(secondId, 1)}}));
+            expect(moved.ok);
+            expect(static_cast<int>(moved.result["trackId"]) == secondId);
+            expect(static_cast<int>(moved.result["sceneIndex"]) == 1);
+            expect(ClipManager::getInstance().getClipInSlot(secondId, 1) == clipId);
+
+            const auto duplicated = fixture.run(
+                "clips.duplicate", object({{"clipId", static_cast<int>(clipId)},
+                                           {"destination", sessionDestination(firstId, 2)}}));
+            expect(duplicated.ok);
+            const auto duplicateId = static_cast<ClipId>(static_cast<int>(duplicated.result["id"]));
+            expect(ClipManager::getInstance().getClipInSlot(firstId, 2) == duplicateId);
+
+            const auto beforeConflict = fixture.service.currentRevision();
+            const auto occupied = fixture.run(
+                "clips.move", object({{"clipId", static_cast<int>(clipId)},
+                                      {"destination", sessionDestination(firstId, 2)}}));
+            expect(!occupied.ok);
+            expectEquals(toString(occupied.error.code), juce::String("conflict"));
+            expect(fixture.service.currentRevision() == beforeConflict);
+
+            const auto wrongView = fixture.run(
+                "clips.move", object({{"clipId", static_cast<int>(clipId)},
+                                      {"destination", arrangementDestination(secondId, 4.0)}}));
+            expect(!wrongView.ok);
+            expectEquals(toString(wrongView.error.code), juce::String("conflict"));
         }
 
         beginTest("Expressive MIDI events have atomic bulk CRUD and one-step undo");

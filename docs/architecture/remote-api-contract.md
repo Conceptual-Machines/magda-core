@@ -100,6 +100,21 @@ transport's `expectedRevision` and `requestId` metadata; neither value is part o
 the operation payload. Preset IDs are addresses only: clients cannot supply a
 filesystem path or native state blob.
 
+### Clip placement and duplication
+
+`clips.move` and `clips.duplicate` require an explicit, view-specific
+`destination`. Arrangement destinations contain `view: "arrangement"`,
+`trackId`, and `startBeat`; session destinations contain `view: "session"`,
+`trackId`, and `sceneIndex`. The destination view must match the source clip's
+current view. Moving between arrangement and session is a separate conversion,
+not an implicit side effect of placement.
+
+`clips.resize` takes `lengthBeats` and an `edge` of `start` or `end`. All three
+operations are edit-scoped and commit as one undo action. A move that restates
+the current destination and a resize that restates the current length are
+successful no-ops and do not advance the revision. A session destination must
+be empty, except that moving a clip to its own current slot is a no-op.
+
 ### MIDI event CRUD
 
 MIDI clips expose one stable per-clip ID space across notes, keyswitch notes,

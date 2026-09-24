@@ -337,6 +337,34 @@ const juce::var& clipSchema() {
     return value;
 }
 
+const juce::var& clipDestinationSchema() {
+    static const auto value = parseSchema(R"json({
+        "oneOf":[
+            {
+                "type":"object",
+                "properties":{
+                    "view":{"type":"string","const":"arrangement"},
+                    "trackId":{"type":"integer","minimum":0},
+                    "startBeat":{"type":"number","minimum":0}
+                },
+                "required":["view","trackId","startBeat"],
+                "additionalProperties":false
+            },
+            {
+                "type":"object",
+                "properties":{
+                    "view":{"type":"string","const":"session"},
+                    "trackId":{"type":"integer","minimum":0},
+                    "sceneIndex":{"type":"integer","minimum":0}
+                },
+                "required":["view","trackId","sceneIndex"],
+                "additionalProperties":false
+            }
+        ]
+    })json");
+    return value;
+}
+
 const juce::var& devicePathSchema() {
     static const auto value = parseSchema(R"json({
         "type":"object",
@@ -1958,6 +1986,41 @@ OperationRegistry::OperationRegistry() {
             "required":["clipId"],"additionalProperties":false
         })json"),
         okResult);
+    add("clips.move", "Move a clip to an arrangement position or session slot",
+        OperationAccess::Write, &handlers::clipsMove, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "destination":{}
+            },
+            "required":["clipId","destination"],"additionalProperties":false
+        })json"),
+        clipSchema());
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "destination", clipDestinationSchema());
+    add("clips.resize", "Resize a clip from its start or end edge", OperationAccess::Write,
+        &handlers::clipsResize, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "lengthBeats":{"type":"number","exclusiveMinimum":0},
+                "edge":{"type":"string","enum":["start","end"]}
+            },
+            "required":["clipId","lengthBeats","edge"],"additionalProperties":false
+        })json"),
+        clipSchema());
+    add("clips.duplicate", "Duplicate a clip to an arrangement position or session slot",
+        OperationAccess::Write, &handlers::clipsDuplicate, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "destination":{}
+            },
+            "required":["clipId","destination"],"additionalProperties":false
+        })json"),
+        clipSchema());
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "destination", clipDestinationSchema());
     add("clips.update", "Update clip name, enabled state, or groove template assignment",
         OperationAccess::Write, &handlers::clipsUpdate, operationInputSchema(R"json({
             "type":"object",
@@ -2440,6 +2503,9 @@ OperationRegistry::OperationRegistry() {
         {"clips.replaceMidiEvents", Scope::Edit},
         {"clips.deleteMidiEvents", Scope::Edit},
         {"clips.delete", Scope::Edit},
+        {"clips.move", Scope::Edit},
+        {"clips.resize", Scope::Edit},
+        {"clips.duplicate", Scope::Edit},
         {"clips.update", Scope::Edit},
         {"clips.transpose", Scope::Edit},
         {"clips.quantize", Scope::Edit},

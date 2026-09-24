@@ -13,6 +13,7 @@
 #include "../core/AutomationTypes.hpp"
 #include "../core/ClipCommands.hpp"
 #include "../core/ClipInfo.hpp"
+#include "../core/ClipPlacementPolicy.hpp"
 #include "../core/ClipPropertyCommands.hpp"
 #include "../core/ControlTarget.hpp"
 #include "../core/DeviceInfo.hpp"
@@ -828,6 +829,126 @@ HandlerResult clipsDelete(MagdaApi& api, const juce::var& input, const RequestCo
         return notFound("clip", clipId);
     runCommand<DeleteClipCommand>(api, clipId);
     return HandlerResult::ok(acceptedResult());
+}
+
+HandlerResult clipsMove(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto clipId = static_cast<ClipId>(readInt(input, "clipId"));
+    const auto* clip = api.clips().getClip(clipId);
+    if (clip == nullptr)
+        return notFound("clip", clipId);
+
+    const auto destination = input["destination"];
+    const auto view = destination["view"].toString();
+    const auto destinationView = view == "session" ? ClipView::Session : ClipView::Arrangement;
+    if (clip->view != destinationView)
+        return HandlerResult::fail(ErrorCode::Conflict,
+                                   "clip destination must use the clip's current view");
+
+    const auto trackId = static_cast<TrackId>(readInt(destination, "trackId"));
+    const auto* track = api.tracks().getTrack(trackId);
+    if (track == nullptr)
+        return notFound("track", trackId);
+    if (!trackAcceptsClip(*track, *clip))
+        return HandlerResult::fail(ErrorCode::Conflict, "destination track does not accept clip");
+
+    if (destinationView == ClipView::Session) {
+        const auto sceneIndex = readInt(destination, "sceneIndex");
+        const auto occupant = api.session().getClipInSlot(trackId, sceneIndex);
+        if (occupant != INVALID_CLIP_ID && occupant != clipId)
+            return HandlerResult::fail(ErrorCode::Conflict, "destination session slot is occupied");
+        if (clip->trackId == trackId && clip->sceneIndex == sceneIndex)
+            return HandlerResult::unchanged(toJson(makeClipDto(*clip)));
+
+        const auto moved = runCommandAndRead<MoveSessionClipCommand>(
+            api, [](const MoveSessionClipCommand& command) { return command.wasExecuted(); },
+            clipId, trackId, sceneIndex);
+        if (!moved)
+            return HandlerResult::fail(ErrorCode::Conflict, "session clip move was rejected");
+    } else {
+        const auto startBeat = readDouble(destination, "startBeat");
+        const bool moveTrack = clip->trackId != trackId;
+        const bool moveTime = clip->placement.startBeat != startBeat;
+        if (!moveTrack && !moveTime)
+            return HandlerResult::unchanged(toJson(makeClipDto(*clip)));
+        if (moveTrack) {
+            const auto moved = runCommandAndRead<MoveClipToTrackCommand>(
+                api, [](const MoveClipToTrackCommand& command) { return command.wasExecuted(); },
+                clipId, trackId);
+            if (!moved)
+                return HandlerResult::fail(ErrorCode::Conflict, "clip track move was rejected");
+        }
+        if (moveTime)
+            runCommand<MoveClipCommand>(api, clipId, BeatPosition{startBeat});
+    }
+
+    const auto* updated = api.clips().getClip(clipId);
+    if (updated == nullptr)
+        return notFound("clip", clipId);
+    return HandlerResult::ok(toJson(makeClipDto(*updated)));
+}
+
+HandlerResult clipsResize(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto clipId = static_cast<ClipId>(readInt(input, "clipId"));
+    const auto* clip = api.clips().getClip(clipId);
+    if (clip == nullptr)
+        return notFound("clip", clipId);
+
+    const auto lengthBeats = readDouble(input, "lengthBeats");
+    if (clip->placement.lengthBeats == lengthBeats)
+        return HandlerResult::unchanged(toJson(makeClipDto(*clip)));
+
+    const bool fromStart = input["edge"].toString() == "start";
+    const auto resized = runCommandAndRead<ResizeClipCommand>(
+        api, [](const ResizeClipCommand& command) { return command.wasExecuted(); }, clipId,
+        BeatDuration{lengthBeats}, fromStart);
+    if (!resized)
+        return HandlerResult::fail(ErrorCode::Conflict, "clip resize was rejected");
+
+    const auto* updated = api.clips().getClip(clipId);
+    if (updated == nullptr)
+        return notFound("clip", clipId);
+    return HandlerResult::ok(toJson(makeClipDto(*updated)));
+}
+
+HandlerResult clipsDuplicate(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto clipId = static_cast<ClipId>(readInt(input, "clipId"));
+    const auto* clip = api.clips().getClip(clipId);
+    if (clip == nullptr)
+        return notFound("clip", clipId);
+
+    const auto destination = input["destination"];
+    const auto view = destination["view"].toString();
+    const auto destinationView = view == "session" ? ClipView::Session : ClipView::Arrangement;
+    if (clip->view != destinationView)
+        return HandlerResult::fail(ErrorCode::Conflict,
+                                   "clip destination must use the clip's current view");
+
+    const auto trackId = static_cast<TrackId>(readInt(destination, "trackId"));
+    const auto* track = api.tracks().getTrack(trackId);
+    if (track == nullptr)
+        return notFound("track", trackId);
+    if (!trackAcceptsClip(*track, *clip))
+        return HandlerResult::fail(ErrorCode::Conflict, "destination track does not accept clip");
+
+    const auto startBeat = destinationView == ClipView::Arrangement
+                               ? readDouble(destination, "startBeat")
+                               : clip->placement.startBeat;
+    const auto sceneIndex =
+        destinationView == ClipView::Session ? readInt(destination, "sceneIndex") : -1;
+    if (destinationView == ClipView::Session &&
+        api.session().getClipInSlot(trackId, sceneIndex) != INVALID_CLIP_ID)
+        return HandlerResult::fail(ErrorCode::Conflict, "destination session slot is occupied");
+
+    const auto duplicateId = runCommandAndRead<DuplicateClipCommand>(
+        api, [](const DuplicateClipCommand& command) { return command.getDuplicatedClipId(); },
+        clipId, BeatPosition{startBeat}, trackId, 0.0, sceneIndex, false);
+    if (duplicateId == INVALID_CLIP_ID)
+        return HandlerResult::fail(ErrorCode::Conflict, "clip duplicate was rejected");
+
+    const auto* duplicate = api.clips().getClip(duplicateId);
+    if (duplicate == nullptr)
+        return notFound("clip", duplicateId);
+    return HandlerResult::ok(toJson(makeClipDto(*duplicate)));
 }
 
 // ===========================================================================
