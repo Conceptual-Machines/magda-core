@@ -624,17 +624,23 @@ bool DeleteClipCommand::validateState() const {
 
 CreateClipCommand::CreateClipCommand(ClipType type, TrackId trackId, BeatPosition startBeat,
                                      BeatDuration lengthBeats, juce::String audioFilePath,
-                                     ClipView view, ClipOverlapPolicy overlapPolicy)
+                                     ClipView view, ClipOverlapPolicy overlapPolicy, int sceneIndex)
     : type_(type),
       trackId_(trackId),
       startBeat_(startBeat.value),
       lengthBeats_(lengthBeats.value),
       audioFilePath_(std::move(audioFilePath)),
       view_(view),
-      overlapPolicy_(overlapPolicy) {}
+      overlapPolicy_(overlapPolicy),
+      sceneIndex_(sceneIndex) {}
 
 bool CreateClipCommand::canExecute() const {
-    return trackId_ != INVALID_TRACK_ID && lengthBeats_ > 0.0;
+    if (trackId_ == INVALID_TRACK_ID || lengthBeats_ <= 0.0)
+        return false;
+    if (view_ != ClipView::Session)
+        return true;
+    return sceneIndex_ >= 0 &&
+           ClipManager::getInstance().getClipInSlot(trackId_, sceneIndex_) == INVALID_CLIP_ID;
 }
 
 void CreateClipCommand::execute() {
@@ -654,6 +660,8 @@ void CreateClipCommand::execute() {
         createdClipId_ = clipManager.createMidiClipBeats(trackId_, startBeat_, lengthBeats_, view_,
                                                          overlapPolicy_);
     }
+    if (view_ == ClipView::Session && createdClipId_ != INVALID_CLIP_ID)
+        clipManager.setClipSceneIndex(createdClipId_, sceneIndex_);
 
     executed_ = true;
 }
@@ -663,6 +671,10 @@ void CreateClipCommand::undo() {
         return;
 
     auto& clipManager = ClipManager::getInstance();
+
+    // The arrangement snapshot does not hold Session clips.
+    if (view_ == ClipView::Session && createdClipId_ != INVALID_CLIP_ID)
+        clipManager.deleteClip(createdClipId_);
 
     auto currentClips = clipManager.getArrangementClips();
     for (const auto& clip : currentClips) {
