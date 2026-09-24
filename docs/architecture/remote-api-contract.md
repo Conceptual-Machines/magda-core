@@ -74,6 +74,14 @@ As an explicit in-app action. Saving changes persistence state rather than
 project content, so a successful save does not advance the Remote API revision
 or create an undo command.
 
+### Project loop range
+
+`project.setLoopRange` takes `startBeat` and `endBeat`, with a non-negative
+start and an end strictly after it. It changes the persisted project range and
+the active engine range together without changing whether looping is enabled.
+The operation is edit-scoped, undoable in one step, and revision-neutral when
+the requested range already matches the project.
+
 ### Device preset discovery
 
 `devicePresets.list` takes the same `devicePath` used by the other device

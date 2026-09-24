@@ -32,6 +32,7 @@ TEST_CASE("agent surface registry has distinct bounded capabilities", "[console_
     REQUIRE(containsTool(arrangement, "clips.duplicate"));
     REQUIRE(containsTool(arrangement, "clips.quantize"));
     REQUIRE(containsTool(arrangement, "project.save"));
+    REQUIRE(containsTool(arrangement, "project.setLoopRange"));
     REQUIRE(containsProvider(arrangement, magda::AgentContextProvider::ReferenceMidi));
 
     REQUIRE(containsTool(piano, "clips.addMidiNote"));

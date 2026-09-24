@@ -19,6 +19,7 @@ class ProjectApi {
     virtual bool saveProject() = 0;
     virtual void setTempo(double bpm) = 0;
     virtual void setTimeSignature(int numerator, int denominator) = 0;
+    virtual void setLoopRange(double startBeats, double endBeats) = 0;
 
     /// The project's tempo map; null until an engine is wired.
     virtual const TempoMap* tempoMap() const = 0;

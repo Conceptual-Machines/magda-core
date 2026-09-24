@@ -34,6 +34,13 @@ void ProjectApiLive::setTimeSignature(int numerator, int denominator) {
     ProjectManager::getInstance().setTimeSignature(numerator, denominator);
 }
 
+void ProjectApiLive::setLoopRange(double startBeats, double endBeats) {
+    if (engineLoopRangeWriter_)
+        engineLoopRangeWriter_(startBeats, endBeats);
+    auto& projects = ProjectManager::getInstance();
+    projects.setLoopSettings(projects.getCurrentProjectInfo().loopEnabled, startBeats, endBeats);
+}
+
 const TempoMap* ProjectApiLive::tempoMap() const {
     return engineTempoMap_ ? engineTempoMap_() : nullptr;
 }
@@ -44,6 +51,10 @@ void ProjectApiLive::setEngineTempoWriter(std::function<void(double)> writer) {
 
 void ProjectApiLive::setEngineTimeSignatureWriter(std::function<void(int, int)> writer) {
     engineTimeSignatureWriter_ = std::move(writer);
+}
+
+void ProjectApiLive::setEngineLoopRangeWriter(std::function<void(double, double)> writer) {
+    engineLoopRangeWriter_ = std::move(writer);
 }
 
 void ProjectApiLive::setEngineTempoMap(std::function<const TempoMap*()> getter) {

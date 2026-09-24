@@ -939,6 +939,10 @@ class MockProjectApi : public ProjectApi {
         info.timeSignatureNumerator = numerator;
         info.timeSignatureDenominator = denominator;
     }
+    void setLoopRange(double startBeats, double endBeats) override {
+        info.loopStartBeats = startBeats;
+        info.loopEndBeats = endBeats;
+    }
 };
 
 class MockFocusedApi : public FocusedApi {

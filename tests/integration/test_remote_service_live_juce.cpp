@@ -210,6 +210,56 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
             project.setTempo(originalTempo);
         }
 
+        beginTest("Project loop range updates the engine and project as one undoable edit");
+        {
+            Fixture fixture;
+            auto& projects = ProjectManager::getInstance();
+            const auto originalStart = projects.getCurrentProjectInfo().loopStartBeats;
+            const auto originalEnd = projects.getCurrentProjectInfo().loopEndBeats;
+            const auto newStart = originalStart == 4.0 ? 8.0 : 4.0;
+            const auto newEnd = newStart + 8.0;
+            int engineWrites = 0;
+            double engineStart = -1.0;
+            double engineEnd = -1.0;
+            fixture.api.setProjectLoopRangeWriter([&](double start, double end) {
+                ++engineWrites;
+                engineStart = start;
+                engineEnd = end;
+            });
+
+            const auto beforeInvalid = fixture.service.currentRevision();
+            const auto invalid =
+                fixture.run("project.setLoopRange", object({{"startBeat", 8.0}, {"endBeat", 8.0}}));
+            expect(!invalid.ok);
+            expectEquals(toString(invalid.error.code), juce::String("validation_failed"));
+            expect(fixture.service.currentRevision() == beforeInvalid);
+            expectEquals(engineWrites, 0);
+
+            const auto updated = fixture.run(
+                "project.setLoopRange", object({{"startBeat", newStart}, {"endBeat", newEnd}}));
+            expect(updated.ok);
+            expect(static_cast<double>(updated.result["loopStartBeats"]) == newStart);
+            expect(static_cast<double>(updated.result["loopEndBeats"]) == newEnd);
+            expect(fixture.service.currentRevision() == beforeInvalid + 1);
+            expectEquals(engineWrites, 1);
+            expect(engineStart == newStart && engineEnd == newEnd);
+
+            const auto beforeNoOp = fixture.service.currentRevision();
+            expect(fixture
+                       .run("project.setLoopRange",
+                            object({{"startBeat", newStart}, {"endBeat", newEnd}}))
+                       .ok);
+            expect(fixture.service.currentRevision() == beforeNoOp);
+            expectEquals(engineWrites, 1);
+
+            expect(UndoManager::getInstance().undo());
+            const auto& restored = projects.getCurrentProjectInfo();
+            expect(restored.loopStartBeats == originalStart);
+            expect(restored.loopEndBeats == originalEnd);
+            expectEquals(engineWrites, 2);
+            expect(engineStart == originalStart && engineEnd == originalEnd);
+        }
+
         beginTest("A live write is reachable through the real facade");
         {
             Fixture fixture;

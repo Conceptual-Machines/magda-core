@@ -501,6 +501,9 @@ bool TracktionEngineWrapper::initialisePlayback() {
     live->setProjectTempoWriter([this](double bpm) { setTempo(bpm); });
     live->setProjectTimeSignatureWriter(
         [this](int numerator, int denominator) { setTimeSignature(numerator, denominator); });
+    live->setProjectLoopRangeWriter([this](double start, double end) {
+        setLoopRegionBeats({{start}, {end}});
+    });
     live->setProjectTempoMap([this] { return tempoMap(); });
     live->setEditAccessor([this]() -> tracktion::Edit* { return currentEdit_.get(); });
     magdaApi_ = std::move(live);
