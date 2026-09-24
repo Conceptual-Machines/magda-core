@@ -140,7 +140,6 @@ void TracktionEngineWrapper::recordingFinished(
                 continue;
 
             juce::String audioFilePath = audioClip->getOriginalFile().getFullPathName();
-            double startSeconds = audioClip->getPosition().getStart().inSeconds();
             double lengthSeconds = audioClip->getPosition().getLength().inSeconds();
 
             // NOTE: loop recording is loop-aligned. Tracktion anchors the clip
@@ -196,13 +195,21 @@ void TracktionEngineWrapper::recordingFinished(
                 continue;
             }
 
+            const auto& tempo = audioClip->edit.tempoSequence;
+            const auto start = audioClip->getPosition().getStart();
+            const double startBeat = tempo.toBeats(start).inBeats();
+            const double lengthBeats =
+                tempo.toBeats(start + tracktion::TimeDuration::fromSeconds(lengthSeconds))
+                    .inBeats() -
+                startBeat;
+
             // Remove TE's recording clip before creating MAGDA clip
             audioClip->removeFromParent();
 
             // Create MAGDA audio clip (triggers syncClipToEngine which re-creates in TE)
             auto& clipManager = ClipManager::getInstance();
-            ClipId clipId = clipManager.createAudioClip(trackId, startSeconds, lengthSeconds,
-                                                        audioFilePath, ClipView::Arrangement);
+            ClipId clipId = clipManager.createAudioClipBeats(trackId, startBeat, lengthBeats,
+                                                             audioFilePath, ClipView::Arrangement);
 
             // Recorded at the project tempo, so the interpretation is exact and
             // the user owns it: no detection may replace it.
@@ -695,6 +702,8 @@ bool TracktionEngineWrapper::finalizeSessionSlotMidiRecording(TrackId trackId,
     std::vector<MidiNote> recordedNotes;
     std::vector<MidiCCData> recordedCC;
     std::vector<MidiPitchBendData> recordedPB;
+    std::vector<MidiChannelPressureData> recordedChannelPressure;
+    std::vector<MidiPolyAftertouchData> recordedPolyAftertouch;
 
     // Defensive cap: an un-terminated note in TE's MidiList would otherwise
     // come through with a huge length, and the clip-length extension below
@@ -734,6 +743,12 @@ bool TracktionEngineWrapper::finalizeSessionSlotMidiRecording(TrackId trackId,
             pb.value = ce->getControllerValue();
             pb.beatPosition = ce->getBeatPosition().inBeats();
             recordedPB.push_back(pb);
+        } else if (eventType == tracktion::MidiControllerEvent::channelPressureType) {
+            recordedChannelPressure.push_back(
+                {ce->getControllerValue() >> 7, ce->getBeatPosition().inBeats()});
+        } else if (eventType == tracktion::MidiControllerEvent::aftertouchType) {
+            recordedPolyAftertouch.push_back({ce->getMetadata(), ce->getControllerValue() >> 7,
+                                              ce->getBeatPosition().inBeats()});
         } else if (eventType < 128) {
             MidiCCData cc;
             cc.controller = eventType;
@@ -750,6 +765,10 @@ bool TracktionEngineWrapper::finalizeSessionSlotMidiRecording(TrackId trackId,
         lengthBeats = juce::jmax(lengthBeats, cc.beatPosition);
     for (const auto& pb : recordedPB)
         lengthBeats = juce::jmax(lengthBeats, pb.beatPosition);
+    for (const auto& pressure : recordedChannelPressure)
+        lengthBeats = juce::jmax(lengthBeats, pressure.beatPosition);
+    for (const auto& pressure : recordedPolyAftertouch)
+        lengthBeats = juce::jmax(lengthBeats, pressure.beatPosition);
     lengthBeats = snapLengthToBars(*this, lengthBeats);
 
     if (auto* edit = currentEdit_.get()) {
@@ -776,6 +795,8 @@ bool TracktionEngineWrapper::finalizeSessionSlotMidiRecording(TrackId trackId,
         clipInfo->midiNotes = std::move(recordedNotes);
         clipInfo->midiCCData = std::move(recordedCC);
         clipInfo->midiPitchBendData = std::move(recordedPB);
+        clipInfo->midiChannelPressureData = std::move(recordedChannelPressure);
+        clipInfo->midiPolyAftertouchData = std::move(recordedPolyAftertouch);
         clipManager.forceNotifyClipPropertyChanged(clipId);
         SelectionManager::getInstance().selectClip(clipId);
     }
@@ -808,8 +829,8 @@ void TracktionEngineWrapper::finalizeMidiRecording(TrackId trackId) {
     if (finalizeSessionSlotMidiRecording(trackId, *midiClip))
         return;
 
-    double startSeconds = midiClip->getPosition().getStart().inSeconds();
-    double lengthSeconds = midiClip->getPosition().getLength().inSeconds();
+    const double startBeat = midiClip->getStartBeat().inBeats();
+    const double lengthBeats = midiClip->getLengthInBeats().inBeats();
 
     // Extract a TE MidiList (one take's sequence) into a MAGDA MidiTake.
     auto extractTake = [](tracktion::MidiList& midiList) {
@@ -833,6 +854,12 @@ void TracktionEngineWrapper::finalizeMidiRecording(TrackId trackId) {
                 pb.value = ce->getControllerValue();
                 pb.beatPosition = ce->getBeatPosition().inBeats();
                 take.pitchBend.push_back(pb);
+            } else if (eventType == tracktion::MidiControllerEvent::channelPressureType) {
+                take.channelPressure.push_back(
+                    {ce->getControllerValue() >> 7, ce->getBeatPosition().inBeats()});
+            } else if (eventType == tracktion::MidiControllerEvent::aftertouchType) {
+                take.polyAftertouch.push_back({ce->getMetadata(), ce->getControllerValue() >> 7,
+                                               ce->getBeatPosition().inBeats()});
             } else if (eventType < 128) {
                 MidiCCData cc;
                 cc.controller = eventType;
@@ -876,19 +903,21 @@ void TracktionEngineWrapper::finalizeMidiRecording(TrackId trackId) {
                              " takes=" + juce::String(static_cast<int>(takes.size())) +
                              " active=" + juce::String(activeTakeIndex) +
                              " notes=" + juce::String(static_cast<int>(active.notes.size())) +
-                             " len=" + juce::String(lengthSeconds, 3));
+                             " lenBeats=" + juce::String(lengthBeats, 3));
 
     midiClip->removeFromParent();
 
     auto& clipManager = ClipManager::getInstance();
     ClipId clipId =
-        clipManager.createMidiClip(trackId, startSeconds, lengthSeconds, ClipView::Arrangement);
+        clipManager.createMidiClipBeats(trackId, startBeat, lengthBeats, ClipView::Arrangement);
     activeRecordingClips_[trackId] = clipId;
 
     if (auto* clipInfo = clipManager.getClip(clipId)) {
         clipInfo->midiNotes = active.notes;
         clipInfo->midiCCData = active.cc;
         clipInfo->midiPitchBendData = active.pitchBend;
+        clipInfo->midiChannelPressureData = active.channelPressure;
+        clipInfo->midiPolyAftertouchData = active.polyAftertouch;
         if (takes.size() > 1) {
             clipInfo->midi().takes = std::move(takes);
             clipInfo->midi().currentTakeIndex = activeTakeIndex;

@@ -126,6 +126,103 @@ const juce::var& midiNoteSchema() {
     return value;
 }
 
+const juce::var& midiEventSchema() {
+    static const auto value = parseSchema(R"json({"oneOf":[
+        {"type":"object","properties":{
+            "id":{"type":"integer","minimum":1},
+            "type":{"type":"string","const":"note"},
+            "note":{"type":"integer","minimum":0,"maximum":127},
+            "velocity":{"type":"integer","minimum":1,"maximum":127},
+            "beat":{"type":"number","minimum":0},
+            "lengthBeats":{"type":"number","exclusiveMinimum":0},
+            "keyswitch":{"type":"boolean"}},
+         "required":["id","type","note","velocity","beat","lengthBeats","keyswitch"],
+         "additionalProperties":false},
+        {"type":"object","properties":{
+            "id":{"type":"integer","minimum":1},
+            "type":{"type":"string","const":"controlChange"},
+            "controller":{"type":"integer","minimum":0,"maximum":127},
+            "value":{"type":"integer","minimum":0,"maximum":127},
+            "beat":{"type":"number","minimum":0}},
+         "required":["id","type","controller","value","beat"],
+         "additionalProperties":false},
+        {"type":"object","properties":{
+            "id":{"type":"integer","minimum":1},
+            "type":{"type":"string","const":"pitchBend"},
+            "value":{"type":"integer","minimum":0,"maximum":16383},
+            "beat":{"type":"number","minimum":0}},
+         "required":["id","type","value","beat"],"additionalProperties":false},
+        {"type":"object","properties":{
+            "id":{"type":"integer","minimum":1},
+            "type":{"type":"string","const":"channelPressure"},
+            "value":{"type":"integer","minimum":0,"maximum":127},
+            "beat":{"type":"number","minimum":0}},
+         "required":["id","type","value","beat"],"additionalProperties":false},
+        {"type":"object","properties":{
+            "id":{"type":"integer","minimum":1},
+            "type":{"type":"string","const":"polyAftertouch"},
+            "note":{"type":"integer","minimum":0,"maximum":127},
+            "value":{"type":"integer","minimum":0,"maximum":127},
+            "beat":{"type":"number","minimum":0}},
+         "required":["id","type","note","value","beat"],"additionalProperties":false}
+    ]})json");
+    return value;
+}
+
+const juce::var& midiEventCreateSchema() {
+    static const auto value = parseSchema(R"json({"oneOf":[
+        {"type":"object","properties":{
+            "type":{"type":"string","const":"note"},
+            "note":{"type":"integer","minimum":0,"maximum":127},
+            "velocity":{"type":"integer","minimum":1,"maximum":127},
+            "beat":{"type":"number","minimum":0},
+            "lengthBeats":{"type":"number","exclusiveMinimum":0},
+            "keyswitch":{"type":"boolean"}},
+         "required":["type","note","velocity","beat","lengthBeats"],
+         "additionalProperties":false},
+        {"type":"object","properties":{
+            "type":{"type":"string","const":"controlChange"},
+            "controller":{"type":"integer","minimum":0,"maximum":127},
+            "value":{"type":"integer","minimum":0,"maximum":127},
+            "beat":{"type":"number","minimum":0}},
+         "required":["type","controller","value","beat"],
+         "additionalProperties":false},
+        {"type":"object","properties":{
+            "type":{"type":"string","const":"pitchBend"},
+            "value":{"type":"integer","minimum":0,"maximum":16383},
+            "beat":{"type":"number","minimum":0}},
+         "required":["type","value","beat"],"additionalProperties":false},
+        {"type":"object","properties":{
+            "type":{"type":"string","const":"channelPressure"},
+            "value":{"type":"integer","minimum":0,"maximum":127},
+            "beat":{"type":"number","minimum":0}},
+         "required":["type","value","beat"],"additionalProperties":false},
+        {"type":"object","properties":{
+            "type":{"type":"string","const":"polyAftertouch"},
+            "note":{"type":"integer","minimum":0,"maximum":127},
+            "value":{"type":"integer","minimum":0,"maximum":127},
+            "beat":{"type":"number","minimum":0}},
+         "required":["type","note","value","beat"],"additionalProperties":false}
+    ]})json");
+    return value;
+}
+
+juce::var midiEventMutationInputSchema(const juce::var& eventSchema, bool allowEmpty) {
+    auto schema = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "clipId":{"type":"integer","minimum":0},
+            "events":{"type":"array","maxItems":4096,"items":{}}
+        },
+        "required":["clipId","events"],"additionalProperties":false
+    })json");
+    auto* events = schema["properties"]["events"].getDynamicObject();
+    events->setProperty("items", eventSchema);
+    if (!allowEmpty)
+        events->setProperty("minItems", 1);
+    return schema;
+}
+
 const juce::var& projectSchema() {
     static const auto value = parseSchema(R"json({
         "type":"object",
@@ -213,10 +310,12 @@ const juce::var& clipSchema() {
                 "launchQuantize":{"type":"string","enum":["none","8_bars","4_bars","2_bars",
                     "1_bar","1/2","1/4","1/8","1/16"]},
                 "followAction":{"type":"string","enum":["none","next","previous","random","stop","again"]},
-                "notes":{"type":"array","maxItems":100000}
+                "notes":{"type":"array","maxItems":100000},
+                "midiEvents":{"type":"array","maxItems":100000}
             },
             "required":["id","trackId","type","view","name","colourArgb","startBeat","lengthBeats",
-                        "enabled","sceneIndex","launchMode","launchQuantize","followAction","notes"],
+                        "enabled","sceneIndex","launchMode","launchQuantize","followAction",
+                        "notes","midiEvents"],
             "additionalProperties":false
         })json");
         schema.getDynamicObject()
@@ -225,6 +324,12 @@ const juce::var& clipSchema() {
             ->getProperty("notes")
             .getDynamicObject()
             ->setProperty("items", midiNoteSchema());
+        schema.getDynamicObject()
+            ->getProperty("properties")
+            .getDynamicObject()
+            ->getProperty("midiEvents")
+            .getDynamicObject()
+            ->setProperty("items", midiEventSchema());
         return schema;
     }();
     return value;
@@ -1009,6 +1114,31 @@ juce::var toJson(const MidiNoteDto& dto) {
     return object;
 }
 
+juce::var toJson(const MidiEventDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("id", dto.id);
+    object->setProperty("type", dto.type);
+    if (dto.type == "note") {
+        object->setProperty("note", dto.note);
+        object->setProperty("velocity", dto.velocity);
+        object->setProperty("beat", dto.beat);
+        object->setProperty("lengthBeats", dto.lengthBeats);
+        object->setProperty("keyswitch", dto.keyswitch);
+    } else if (dto.type == "controlChange") {
+        object->setProperty("controller", dto.controller);
+        object->setProperty("value", dto.value);
+        object->setProperty("beat", dto.beat);
+    } else if (dto.type == "polyAftertouch") {
+        object->setProperty("note", dto.note);
+        object->setProperty("value", dto.value);
+        object->setProperty("beat", dto.beat);
+    } else {
+        object->setProperty("value", dto.value);
+        object->setProperty("beat", dto.beat);
+    }
+    return object;
+}
+
 juce::var toJson(const ProjectDto& dto) {
     auto* object = new juce::DynamicObject();
     object->setProperty("name", dto.name);
@@ -1065,6 +1195,10 @@ juce::var toJson(const ClipDto& dto) {
     for (const auto& note : dto.notes)
         notes.add(toJson(note));
     object->setProperty("notes", notes);
+    juce::Array<juce::var> midiEvents;
+    for (const auto& event : dto.midiEvents)
+        midiEvents.add(toJson(event));
+    object->setProperty("midiEvents", midiEvents);
     return object;
 }
 
@@ -1279,6 +1413,33 @@ std::optional<MidiNoteDto> midiNoteFromJson(const juce::var& json, Error& error)
                        static_cast<double>(json["lengthBeats"])};
 }
 
+std::optional<MidiEventDto> midiEventFromJson(const juce::var& json, Error& error) {
+    if (!prepareDecode(json, midiEventSchema(), error))
+        return std::nullopt;
+    MidiEventDto dto;
+    dto.id = readInt(json, "id");
+    dto.type = json["type"].toString();
+    if (dto.type == "note") {
+        dto.note = readInt(json, "note");
+        dto.velocity = readInt(json, "velocity");
+        dto.beat = static_cast<double>(json["beat"]);
+        dto.lengthBeats = static_cast<double>(json["lengthBeats"]);
+        dto.keyswitch = static_cast<bool>(json["keyswitch"]);
+    } else if (dto.type == "controlChange") {
+        dto.controller = readInt(json, "controller");
+        dto.value = readInt(json, "value");
+        dto.beat = static_cast<double>(json["beat"]);
+    } else if (dto.type == "polyAftertouch") {
+        dto.note = readInt(json, "note");
+        dto.value = readInt(json, "value");
+        dto.beat = static_cast<double>(json["beat"]);
+    } else {
+        dto.value = readInt(json, "value");
+        dto.beat = static_cast<double>(json["beat"]);
+    }
+    return dto;
+}
+
 std::optional<ProjectDto> projectFromJson(const juce::var& json, Error& error) {
     if (!prepareDecode(json, projectSchema(), error))
         return std::nullopt;
@@ -1343,6 +1504,14 @@ std::optional<ClipDto> clipFromJson(const juce::var& json, Error& error) {
             if (!decoded)
                 return std::nullopt;
             dto.notes.push_back(*decoded);
+        }
+    }
+    if (auto* events = json["midiEvents"].getArray()) {
+        for (const auto& event : *events) {
+            auto decoded = midiEventFromJson(event, error);
+            if (!decoded)
+                return std::nullopt;
+            dto.midiEvents.push_back(*decoded);
         }
     }
     return dto;
@@ -1712,6 +1881,32 @@ OperationRegistry::OperationRegistry() {
             },
             "required":["clipId","note","velocity","startBeat","lengthBeats"],
             "additionalProperties":false
+        })json"),
+        clipSchema());
+    add("clips.listMidiEvents", "List every expressive MIDI event in a clip", OperationAccess::Read,
+        &handlers::clipsListMidiEvents, operationInputSchema(R"json({
+            "type":"object","properties":{"clipId":{"type":"integer","minimum":0}},
+            "required":["clipId"],"additionalProperties":false
+        })json"),
+        arraySchema(midiEventSchema()));
+    add("clips.addMidiEvents", "Atomically add MIDI events", OperationAccess::Write,
+        &handlers::clipsAddMidiEvents, midiEventMutationInputSchema(midiEventCreateSchema(), false),
+        clipSchema());
+    add("clips.updateMidiEvents", "Atomically update MIDI events by id", OperationAccess::Write,
+        &handlers::clipsUpdateMidiEvents, midiEventMutationInputSchema(midiEventSchema(), false),
+        clipSchema());
+    add("clips.replaceMidiEvents", "Atomically replace every MIDI event in a clip",
+        OperationAccess::Write, &handlers::clipsReplaceMidiEvents,
+        midiEventMutationInputSchema(midiEventCreateSchema(), true), clipSchema());
+    add("clips.deleteMidiEvents", "Atomically delete MIDI events by id", OperationAccess::Write,
+        &handlers::clipsDeleteMidiEvents, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "eventIds":{"type":"array","minItems":1,"maxItems":4096,
+                            "items":{"type":"integer","minimum":1}}
+            },
+            "required":["clipId","eventIds"],"additionalProperties":false
         })json"),
         clipSchema());
     add("clips.delete", "Delete a clip", OperationAccess::Write, &handlers::clipsDelete,
@@ -2179,6 +2374,10 @@ OperationRegistry::OperationRegistry() {
         {"tracks.move", Scope::Edit},
         {"clips.createMidi", Scope::Edit},
         {"clips.addMidiNote", Scope::Edit},
+        {"clips.addMidiEvents", Scope::Edit},
+        {"clips.updateMidiEvents", Scope::Edit},
+        {"clips.replaceMidiEvents", Scope::Edit},
+        {"clips.deleteMidiEvents", Scope::Edit},
         {"clips.delete", Scope::Edit},
         {"clips.update", Scope::Edit},
         {"clips.transpose", Scope::Edit},

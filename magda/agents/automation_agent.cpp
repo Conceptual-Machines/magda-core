@@ -99,7 +99,8 @@ juce::String buildSelectionContext(MagdaApi& api) {
 
     const auto& project = api.project().getCurrentProjectInfo();
     out << "Project timing: " << project.timeSignatureNumerator << "/"
-        << project.timeSignatureDenominator << " (beats_per_bar=" << project.timeSignatureNumerator
+        << project.timeSignatureDenominator << " (beats_per_bar="
+        << beatsPerBar(project.timeSignatureNumerator, project.timeSignatureDenominator)
         << ", tempo=" << project.tempo << " BPM).\n";
 
     TrackId contextTrackId = sel.getSelectedTrack();

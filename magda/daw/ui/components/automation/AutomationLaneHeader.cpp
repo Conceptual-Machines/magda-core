@@ -294,7 +294,7 @@ std::unique_ptr<AutoLaneHeaderButtons> makeAutoLaneHeaderButtons(AutomationLaneI
         // point) converts into a one-bar clip, per the time signature.
         double barBeats = 4.0;
         if (auto* tc = TimelineController::getCurrent())
-            barBeats = juce::jmax(1, tc->getState().tempo.timeSignatureNumerator);
+            barBeats = tc->getState().tempo.beatsPerBar();
         UndoManager::getInstance().executeCommand(
             std::make_unique<ConvertAutomationLaneTypeCommand>(id, barBeats));
     };

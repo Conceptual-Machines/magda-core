@@ -68,13 +68,13 @@ void ClipInspector::updateAudioSourceValueDisplays(const magda::ClipInfo& clip) 
 }
 
 void ClipInspector::updateLoopValueDisplays(const magda::ClipInfo& clip, double projectBPM,
-                                            int beatsPerBar) {
+                                            int numerator, int denominator) {
     if (!clipLoopStartValue_ || !clipLoopEndValue_ || !clipLoopPhaseValue_)
         return;
 
-    clipLoopStartValue_->setBeatsPerBar(beatsPerBar);
-    clipLoopEndValue_->setBeatsPerBar(beatsPerBar);
-    clipLoopPhaseValue_->setBeatsPerBar(beatsPerBar);
+    clipLoopStartValue_->setTimeSignature(numerator, denominator);
+    clipLoopEndValue_->setTimeSignature(numerator, denominator);
+    clipLoopPhaseValue_->setTimeSignature(numerator, denominator);
 
     double loopBpm = magda::isValidBpm(projectBPM) ? projectBPM : magda::DEFAULT_BPM;
 
@@ -332,20 +332,21 @@ void ClipInspector::updateFromSelectedClip() {
 
         // Get tempo from TimelineController, fallback to 120 BPM if not available
         double bpm = 120.0;
-        int beatsPerBar = magda::DEFAULT_TIME_SIGNATURE_NUMERATOR;
+        int numerator = magda::DEFAULT_TIME_SIGNATURE_NUMERATOR;
+        int denominator = magda::DEFAULT_TIME_SIGNATURE_DENOMINATOR;
         if (timelineController_) {
             const auto& state = timelineController_->getState();
             bpm = state.tempo.bpm;
-            beatsPerBar = state.tempo.timeSignatureNumerator;
+            numerator = state.tempo.timeSignatureNumerator;
+            denominator = state.tempo.timeSignatureDenominator;
         }
 
         bool isSessionClip = (clip->view == magda::ClipView::Session);
 
-        // Update beatsPerBar on all draggable labels
-        clipStartValue_->setBeatsPerBar(beatsPerBar);
-        clipEndValue_->setBeatsPerBar(beatsPerBar);
-        clipLengthValue_->setBeatsPerBar(beatsPerBar);
-        clipLoopEndValue_->setBeatsPerBar(beatsPerBar);
+        clipStartValue_->setTimeSignature(numerator, denominator);
+        clipEndValue_->setTimeSignature(numerator, denominator);
+        clipLengthValue_->setTimeSignature(numerator, denominator);
+        clipLoopEndValue_->setTimeSignature(numerator, denominator);
 
         if (isSessionClip) {
             // Session clips: hide the position row entirely (no arrangement position)
@@ -383,7 +384,7 @@ void ClipInspector::updateFromSelectedClip() {
 
         // Loop state determines source-row labels/interactivity.
         bool loopOn = isSessionClip || clip->loopEnabled || magda::audioEventRef(*clip).autoTempo;
-        updateLoopValueDisplays(*clip, bpm, beatsPerBar);
+        updateLoopValueDisplays(*clip, bpm, numerator, denominator);
 
         if (loopOn) {
             // Show loop row: lstart | lend | phase

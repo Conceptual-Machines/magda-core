@@ -921,7 +921,8 @@ TEST_CASE("Retiring an epoch waits for its own workers and not for the ones afte
     // retires the ones they replace. What is being asked of the retirement is
     // that it ends, and ends while the pool is busy. A wait on how many workers
     // are in the pool rather than on how many are in this job would be pushed
-    // back up by every block the render thread starts next.
+    // back up by every block the render thread starts next. Such a wait never ends, which
+    // the suite's hang timeout catches; how long a finishing one takes is the machine's.
     struct Epoch {
         Epoch(Scene scene, RenderThreadPool& pool) : rig(std::move(scene)), executor(&pool) {}
 
@@ -959,7 +960,6 @@ TEST_CASE("Retiring an epoch waits for its own workers and not for the ones afte
         }
     });
 
-    const auto started = std::chrono::steady_clock::now();
     for (int swap = 0; swap < 20; ++swap) {
         auto next = std::make_shared<Epoch>(wideScene(), pool);
         REQUIRE(next->executor.prepare(next->rig.plan, next->rig.scene.bindings, next->rig.context)
@@ -981,14 +981,10 @@ TEST_CASE("Retiring an epoch waits for its own workers and not for the ones afte
         // The last reference, so the destructor and its wait run here.
         retiring.reset();
     }
-    const auto elapsed =
-        std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
-
     stop.store(true);
     audioThread.join();
 
     CHECK(blocks.load() > 0);
-    CHECK(elapsed < 10.0);
 }
 
 TEST_CASE("An executor with no plan renders silence", "[engine][exec][parallel]") {

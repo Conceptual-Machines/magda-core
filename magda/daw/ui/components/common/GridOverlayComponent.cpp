@@ -190,15 +190,16 @@ void GridOverlayComponent::drawBarsBeatsGrid(juce::Graphics& g, juce::Rectangle<
 
     double markerIntervalBeats = 1.0;
 
+    const double barLengthBeats = beatsPerBar(timeSignatureNumerator, timeSignatureDenominator);
+    const double sigBeat = signatureBeatLength(timeSignatureDenominator);
     markerIntervalBeats = GridConstants::computeGridInterval(
-        gridQuantize, currentZoom, timeSignatureNumerator, minPixelSpacing);
+        gridQuantize, currentZoom, barLengthBeats, sigBeat, minPixelSpacing);
 
     double totalTimelineBeats = timelineLength * tempoBPM / 60.0;
-    auto barLengthBeats = static_cast<double>(timeSignatureNumerator);
 
     // Check if grid interval aligns with bar and beat boundaries
     bool alignsWithBars = GridConstants::gridAlignsWithBars(markerIntervalBeats, barLengthBeats);
-    bool alignsWithBeats = GridConstants::gridAlignsWithBeats(markerIntervalBeats);
+    bool alignsWithBeats = GridConstants::gridAlignsWithBeats(markerIntervalBeats, sigBeat);
 
     // Compute visible beat range to avoid iterating the entire timeline
     double firstVisibleBeat =
@@ -216,7 +217,7 @@ void GridOverlayComponent::drawBarsBeatsGrid(juce::Graphics& g, juce::Rectangle<
         if (alignsWithBars && alignsWithBeats) {
             // Grid aligns with musical structure — classify normally
             auto [isBarLine, isBeatLine] =
-                GridConstants::classifyBeatPosition(beat, barLengthBeats);
+                GridConstants::classifyBeatPosition(beat, barLengthBeats, sigBeat);
 
             if (isBarLine) {
                 g.setColour(ActiveTheme::getColour(ActiveTheme::GRID_LINE).brighter(0.4f));

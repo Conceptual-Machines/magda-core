@@ -233,7 +233,8 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
 
     // Update methods
     void updateFromSelectedClip();
-    void updateLoopValueDisplays(const magda::ClipInfo& clip, double projectBPM, int beatsPerBar);
+    void updateLoopValueDisplays(const magda::ClipInfo& clip, double projectBPM, int numerator,
+                                 int denominator);
     void showClipControls(bool show);
     void computeClipRange();
     void refreshClipRangeDisplay();

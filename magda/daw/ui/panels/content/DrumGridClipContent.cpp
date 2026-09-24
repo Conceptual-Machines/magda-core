@@ -139,9 +139,10 @@ class DrumGridClipGrid : public juce::Component,
         overlayTrackIds_ = std::move(trackIds);
         repaint();
     }
-    void setTimeSignatureNumerator(int n) {
-        if (timeSigNumerator_ != n) {
-            timeSigNumerator_ = n;
+    void setTimeSignature(int numerator, int denominator) {
+        if (timeSigNumerator_ != numerator || timeSigDenominator_ != denominator) {
+            timeSigNumerator_ = numerator;
+            timeSigDenominator_ = denominator;
             repaint();
         }
     }
@@ -490,7 +491,8 @@ class DrumGridClipGrid : public juce::Component,
                 static_cast<double>(bounds.getWidth() - GRID_LEFT_PADDING) / pixelsPerBeat_;
             auto gridBottom = static_cast<float>(numRows * rowHeight_);
             int maxX = bounds.getWidth();
-            int tsNum = timeSigNumerator_;
+            const double barBeats = magda::beatsPerBar(timeSigNumerator_, timeSigDenominator_);
+            const double sigBeat = magda::signatureBeatLength(timeSigDenominator_);
 
             // Pass 1: Subdivision lines at grid resolution (finest, drawn first)
             if (gridResolutionBeats_ > 0.0) {
@@ -501,7 +503,7 @@ class DrumGridClipGrid : public juce::Component,
                     double beat = i * gridResolutionBeats_;
                     if (beat > beatsVisible + 1.0)
                         break;
-                    if (std::abs(beat - std::round(beat)) < 0.001)
+                    if (std::abs(beat - std::round(beat / sigBeat) * sigBeat) < 0.001)
                         continue;
                     int x = static_cast<int>(beat * pixelsPerBeat_) + GRID_LEFT_PADDING;
                     if (x > maxX)
@@ -512,11 +514,11 @@ class DrumGridClipGrid : public juce::Component,
 
             // Pass 2: Beat lines
             g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.55f));
-            for (int b = 1; b <= static_cast<int>(beatsVisible) + 1; b++) {
-                if (b % tsNum == 0)
+            for (int b = 1; b * sigBeat <= beatsVisible + 1.0; b++) {
+                const double barRemainder = std::fmod(b * sigBeat, barBeats);
+                if (barRemainder < 0.001 || barRemainder > barBeats - 0.001)
                     continue;
-                int x =
-                    static_cast<int>(static_cast<double>(b) * pixelsPerBeat_) + GRID_LEFT_PADDING;
+                int x = static_cast<int>(b * sigBeat * pixelsPerBeat_) + GRID_LEFT_PADDING;
                 if (x > maxX)
                     break;
                 g.drawVerticalLine(x, 0.0f, gridBottom);
@@ -524,9 +526,8 @@ class DrumGridClipGrid : public juce::Component,
 
             // Pass 3: Bar lines
             g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.85f));
-            for (int bar = 0; bar * tsNum <= static_cast<int>(beatsVisible) + 1; bar++) {
-                int x = static_cast<int>(static_cast<double>(bar * tsNum) * pixelsPerBeat_) +
-                        GRID_LEFT_PADDING;
+            for (int bar = 0; bar * barBeats <= beatsVisible + 1.0; bar++) {
+                int x = static_cast<int>(bar * barBeats * pixelsPerBeat_) + GRID_LEFT_PADDING;
                 if (x > maxX)
                     break;
                 g.drawVerticalLine(x, 0.0f, gridBottom);
@@ -1134,6 +1135,7 @@ class DrumGridClipGrid : public juce::Component,
     double gridResolutionBeats_ = 0.25;
     bool snapEnabled_ = true;
     int timeSigNumerator_ = 4;
+    int timeSigDenominator_ = 4;
     bool relativeMode_ = true;
 
     bool nearPhaseMarker_ = false;
@@ -2155,8 +2157,9 @@ DrumGridClipContent::DrumGridClipContent() {
         setRowHeightAnchored(rowHeight_ + heightDelta, anchorRow, anchorScreenY, true);
     };
     if (auto* controller = magda::TimelineController::getCurrent()) {
-        gridComponent_->setTimeSignatureNumerator(
-            controller->getState().tempo.timeSignatureNumerator);
+        const auto& tempo = controller->getState().tempo;
+        gridComponent_->setTimeSignature(tempo.timeSignatureNumerator,
+                                         tempo.timeSignatureDenominator);
     }
 
     // Set up callbacks
@@ -2433,8 +2436,9 @@ void DrumGridClipContent::onGridResolutionChanged() {
         gridComponent_->setSnapEnabled(snapEnabled_);
 
         if (auto* controller = magda::TimelineController::getCurrent()) {
-            gridComponent_->setTimeSignatureNumerator(
-                controller->getState().tempo.timeSignatureNumerator);
+            const auto& tempo = controller->getState().tempo;
+            gridComponent_->setTimeSignature(tempo.timeSignatureNumerator,
+                                             tempo.timeSignatureDenominator);
         }
     }
     if (timeRuler_)

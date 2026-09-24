@@ -160,6 +160,11 @@ class TracktionEngineWrapper : public AudioEngine,
     void testFinishSessionSlotRecordings() {
         finishSessionSlotRecordings();
     }
+
+    void testFinalizeArrangementMidiRecording(TrackId trackId, tracktion::MidiClip::Ptr midiClip) {
+        pendingMidiRecordings_[trackId] = std::move(midiClip);
+        finalizeMidiRecording(trackId);
+    }
 #endif
     void setTempo(double bpm) override;
     double getTempo() const override;
@@ -470,6 +475,7 @@ class TracktionEngineWrapper : public AudioEngine,
 
     // Initialization helper methods
     void initializePluginFormats();
+    void useNativeClickSounds();
     void initializeDeviceManager();
     void configureAudioDevices();
     void setupMidiDevices();

@@ -44,6 +44,15 @@ void ClickGenerator::prepare(const RenderContext& context) {
     elapsed_ = 0.0;
 }
 
+juce::AudioBuffer<float> ClickGenerator::renderSound(bool accent, double sampleRate) {
+    const auto length = static_cast<int>(std::ceil(kClickSeconds * sampleRate));
+    juce::AudioBuffer<float> sound(1, length);
+    auto* samples = sound.getWritePointer(0);
+    for (auto i = 0; i < length; ++i)
+        samples[i] = clickAt(i / sampleRate, accent ? kBarFrequency : kBeatFrequency);
+    return sound;
+}
+
 void ClickGenerator::trigger(bool accent, double fraction) {
     frequency_ = accent ? kBarFrequency : kBeatFrequency;
     elapsed_ = -fraction;

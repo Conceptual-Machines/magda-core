@@ -120,9 +120,9 @@ void extractChordsToChordTrack(magda::ClipId sourceClipId, bool replace) {
     if (source == nullptr || !source->isMidi() || source->midiNotes.empty())
         return;
 
-    int beatsPerBar = magda::DEFAULT_TIME_SIGNATURE_NUMERATOR;
+    double beatsPerBar = 4.0;
     if (auto* controller = TimelineController::getCurrent())
-        beatsPerBar = controller->getState().tempo.timeSignatureNumerator;
+        beatsPerBar = controller->getState().tempo.beatsPerBar();
 
     const auto extracted = magda::extractChordsFromNotes(source->midiNotes, beatsPerBar);
     if (extracted.empty()) {
@@ -3628,7 +3628,7 @@ void ClipComponent::showContextMenu() {
                 const auto& state = parentPanel_->getTimelineController()->getState();
                 double gridBeats = GridConstants::computeGridInterval(
                     state.display.gridQuantize, state.zoom.horizontalZoom,
-                    state.tempo.timeSignatureNumerator, 50);
+                    state.tempo.beatsPerBar(), state.tempo.signatureBeatLength(), 50);
                 hasGrid = gridBeats > 0.0;
             }
             {
@@ -4380,7 +4380,7 @@ void ClipComponent::showContextMenu() {
                         const auto& state = parentPanel_->getTimelineController()->getState();
                         grid = GridConstants::computeGridInterval(
                             state.display.gridQuantize, state.zoom.horizontalZoom,
-                            state.tempo.timeSignatureNumerator, 50);
+                            state.tempo.beatsPerBar(), state.tempo.signatureBeatLength(), 50);
                     }
 
                     auto selectedClips = selectionManager.getSelectedClips();

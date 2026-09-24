@@ -65,9 +65,10 @@ class DraggableValueLabel : public juce::Component,
         return format_;
     }
 
-    // Beats per bar for BarsBeats format
-    void setBeatsPerBar(int beatsPerBar) {
-        beatsPerBar_ = beatsPerBar;
+    // Time signature for BarsBeats format; beats are the signature's beats
+    void setTimeSignature(int numerator, int denominator) {
+        numerator_ = numerator;
+        denominator_ = denominator;
         syncValueControl();
     }
 
@@ -244,7 +245,8 @@ class DraggableValueLabel : public juce::Component,
     double defaultValue_ = 0.0;
     double dragSensitivity_ = 200.0;  // pixels for full range
     int decimalPlaces_ = 1;
-    int beatsPerBar_ = DEFAULT_TIME_SIGNATURE_NUMERATOR;
+    int numerator_ = DEFAULT_TIME_SIGNATURE_NUMERATOR;
+    int denominator_ = DEFAULT_TIME_SIGNATURE_DENOMINATOR;
     bool barsBeatsIsPosition_ = true;
     juce::String suffix_;
     bool doubleClickResets_ = true;

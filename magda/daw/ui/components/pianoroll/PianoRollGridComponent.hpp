@@ -189,7 +189,7 @@ class PianoRollGridComponent : public juce::Component,
     bool isSnapEnabled() const {
         return snapEnabled_;
     }
-    void setTimeSignatureNumerator(int numerator);
+    void setTimeSignature(int numerator, int denominator);
 
     // Coordinate conversion
     int beatToPixel(double beat) const;
@@ -344,6 +344,7 @@ class PianoRollGridComponent : public juce::Component,
     double gridResolutionBeats_ = 0.25;  // Default 1/16 note
     bool snapEnabled_ = true;
     int timeSignatureNumerator_ = DEFAULT_TIME_SIGNATURE_NUMERATOR;
+    int timeSignatureDenominator_ = DEFAULT_TIME_SIGNATURE_DENOMINATOR;
 
     // Clip position and display mode
     double clipStartBeats_ = 0.0;        // Clip's start position on timeline (in beats)

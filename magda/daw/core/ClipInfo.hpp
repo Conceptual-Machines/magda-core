@@ -3,11 +3,13 @@
 #include <juce_core/juce_core.h>
 #include <juce_graphics/juce_graphics.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <map>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <variant>
 #include <vector>
 
@@ -77,6 +79,12 @@ struct MidiNote {
     // Per-note pitch glide (MPE). Sorted by beat. Empty = no expression.
     std::vector<MidiPitchExpressionPoint> pitchExpression;
 
+    // A keyswitch is still an ordinary MIDI note on the wire. Keeping its
+    // authored role lets remote clients and editors distinguish articulation
+    // triggers from musical notes without changing playback semantics.
+    bool keyswitch = false;
+    EventId id = INVALID_EVENT_ID;
+
     bool hasPitchExpression() const {
         return !pitchExpression.empty();
     }
@@ -111,6 +119,7 @@ struct MidiCCData {
     double tension = 0.0;  // -3 to +3 curve shape
     MidiCurveHandle inHandle;
     MidiCurveHandle outHandle;
+    EventId id = INVALID_EVENT_ID;
 
     bool operator==(const MidiCCData&) const = default;
 };
@@ -125,8 +134,40 @@ struct MidiPitchBendData {
     double tension = 0.0;  // -3 to +3 curve shape
     MidiCurveHandle inHandle;
     MidiCurveHandle outHandle;
+    EventId id = INVALID_EVENT_ID;
 
     bool operator==(const MidiPitchBendData&) const = default;
+};
+
+/** @brief One channel-pressure event. */
+struct MidiChannelPressureData {
+    int value = 0;              // 0-127
+    double beatPosition = 0.0;  // Position in beats within clip
+    EventId id = INVALID_EVENT_ID;
+
+    bool operator==(const MidiChannelPressureData&) const = default;
+};
+
+/** @brief One polyphonic-aftertouch event, addressed to a note number. */
+struct MidiPolyAftertouchData {
+    int noteNumber = 60;        // 0-127
+    int value = 0;              // 0-127
+    double beatPosition = 0.0;  // Position in beats within clip
+    EventId id = INVALID_EVENT_ID;
+
+    bool operator==(const MidiPolyAftertouchData&) const = default;
+};
+
+/** The complete editable MIDI-event state of one clip. */
+struct MidiEventState {
+    std::vector<MidiNote> notes;
+    std::vector<MidiCCData> cc;
+    std::vector<MidiPitchBendData> pitchBend;
+    std::vector<MidiChannelPressureData> channelPressure;
+    std::vector<MidiPolyAftertouchData> polyAftertouch;
+    EventId nextEventId = 1;
+
+    bool operator==(const MidiEventState&) const = default;
 };
 
 /**
@@ -780,6 +821,8 @@ struct MidiTake {
     std::vector<MidiNote> notes;
     std::vector<MidiCCData> cc;
     std::vector<MidiPitchBendData> pitchBend;
+    std::vector<MidiChannelPressureData> channelPressure;
+    std::vector<MidiPolyAftertouchData> polyAftertouch;
 
     bool operator==(const MidiTake&) const = default;
 };
@@ -810,6 +853,11 @@ struct MidiClipModel {
     // takes[currentTakeIndex] into the primary event's source.
     std::vector<MidiTake> takes;
     int currentTakeIndex = 0;
+
+    // One id space across every active MIDI event kind. IDs are stable across
+    // reordering and undo/redo, and are what remote update/delete operations
+    // address. Takes inherit the IDs of the active events mirrored into them.
+    EventId nextEventId = 1;
 
     // Comping. When compActive, the authoritative event vectors are assembled
     // from `comp` (each section assigns a take to a beat range) instead of a
@@ -920,6 +968,9 @@ struct ClipInfo {
         midiNotes = m.takes[static_cast<size_t>(idx)].notes;
         midiCCData = m.takes[static_cast<size_t>(idx)].cc;
         midiPitchBendData = m.takes[static_cast<size_t>(idx)].pitchBend;
+        midiChannelPressureData = m.takes[static_cast<size_t>(idx)].channelPressure;
+        midiPolyAftertouchData = m.takes[static_cast<size_t>(idx)].polyAftertouch;
+        ensureMidiEventIds();
     }
 
     // Transient UI: whether the loop-record take lanes are expanded in the
@@ -1044,6 +1095,87 @@ struct ClipInfo {
     std::vector<MidiNote> midiNotes;
     std::vector<MidiCCData> midiCCData;
     std::vector<MidiPitchBendData> midiPitchBendData;
+    std::vector<MidiChannelPressureData> midiChannelPressureData;
+    std::vector<MidiPolyAftertouchData> midiPolyAftertouchData;
+
+    MidiEventState midiEventState() const {
+        MidiEventState state;
+        state.notes = midiNotes;
+        state.cc = midiCCData;
+        state.pitchBend = midiPitchBendData;
+        state.channelPressure = midiChannelPressureData;
+        state.polyAftertouch = midiPolyAftertouchData;
+        state.nextEventId = isMidi() ? midi().nextEventId : 1;
+        return state;
+    }
+
+    void setMidiEventState(MidiEventState state) {
+        if (!isMidi())
+            return;
+        midiNotes = std::move(state.notes);
+        midiCCData = std::move(state.cc);
+        midiPitchBendData = std::move(state.pitchBend);
+        midiChannelPressureData = std::move(state.channelPressure);
+        midiPolyAftertouchData = std::move(state.polyAftertouch);
+        midi().nextEventId = state.nextEventId;
+        ensureMidiEventIds();
+    }
+
+    /** Assign ids to legacy/imported events and advance the per-clip allocator. */
+    void ensureMidiEventIds() {
+        if (!isMidi())
+            return;
+
+        auto& next = midi().nextEventId;
+        const auto observe = [&next](const auto& events) {
+            for (const auto& event : events)
+                if (event.id != INVALID_EVENT_ID)
+                    next = std::max(next, event.id + 1);
+        };
+        observe(midiNotes);
+        observe(midiCCData);
+        observe(midiPitchBendData);
+        observe(midiChannelPressureData);
+        observe(midiPolyAftertouchData);
+
+        // IDs only need to be unique in the active event set. A take mirrors
+        // that set while it is active, so identical IDs in inactive takes are
+        // intentional rather than collisions.
+        std::unordered_set<EventId> seen;
+
+        const auto assign = [&next, &seen](auto& events) {
+            for (auto& event : events) {
+                if (event.id == INVALID_EVENT_ID || !seen.insert(event.id).second) {
+                    event.id = next++;
+                    seen.insert(event.id);
+                }
+            }
+        };
+        assign(midiNotes);
+        assign(midiCCData);
+        assign(midiPitchBendData);
+        assign(midiChannelPressureData);
+        assign(midiPolyAftertouchData);
+
+        auto& model = midi();
+        if (!model.compActive && !model.takes.empty()) {
+            const auto index =
+                std::clamp(model.currentTakeIndex, 0, static_cast<int>(model.takes.size()) - 1);
+            auto& active = model.takes[static_cast<std::size_t>(index)];
+            active.notes = midiNotes;
+            active.cc = midiCCData;
+            active.pitchBend = midiPitchBendData;
+            active.channelPressure = midiChannelPressureData;
+            active.polyAftertouch = midiPolyAftertouchData;
+        }
+    }
+
+    EventId allocateMidiEventId() {
+        if (!isMidi())
+            return INVALID_EVENT_ID;
+        ensureMidiEventIds();
+        return midi().nextEventId++;
+    }
 
     // Chord annotations (displayed in piano roll chord row)
     struct ChordAnnotation {
@@ -1174,6 +1306,7 @@ struct ClipInfo {
     /// event list is taken wholesale: the structure itself changed, and there
     /// is no per-instance state on an event that does not exist yet.
     void copySharedContentFrom(const ClipInfo& src) {
+        const EventId previousMidiNextEventId = isMidi() ? midi().nextEventId : 1;
         name = src.name;
 
         if (isAudio() && src.isAudio() && events().size() == src.events().size()) {
@@ -1201,9 +1334,18 @@ struct ClipInfo {
             content = src.content;
         }
 
+        // MIDI ids are copied with the shared event vectors below, but the
+        // allocator remains per clip instance and must never move backwards.
+        // Otherwise a ghost with a longer edit history could reuse an id on
+        // its next local add after receiving a sibling update.
+        if (isMidi() && src.isMidi())
+            midi().nextEventId = juce::jmax(previousMidiNextEventId, src.midi().nextEventId);
+
         midiNotes = src.midiNotes;
         midiCCData = src.midiCCData;
         midiPitchBendData = src.midiPitchBendData;
+        midiChannelPressureData = src.midiChannelPressureData;
+        midiPolyAftertouchData = src.midiPolyAftertouchData;
         chordAnnotations = src.chordAnnotations;
         nextChordGroupId = src.nextChordGroupId;
         grooveTemplate = src.grooveTemplate;
@@ -1217,9 +1359,21 @@ struct ClipInfo {
     bool sharedContentEquals(const ClipInfo& src) const {
         if (name != src.name || midiNotes != src.midiNotes || midiCCData != src.midiCCData ||
             midiPitchBendData != src.midiPitchBendData ||
+            midiChannelPressureData != src.midiChannelPressureData ||
+            midiPolyAftertouchData != src.midiPolyAftertouchData ||
             chordAnnotations != src.chordAnnotations || nextChordGroupId != src.nextChordGroupId ||
             grooveTemplate != src.grooveTemplate || grooveStrength != src.grooveStrength) {
             return false;
+        }
+
+        if (isMidi() && src.isMidi()) {
+            auto a = midi();
+            auto b = src.midi();
+            // Allocation history is intentionally per-instance and is not
+            // shared content. Ignore it once all persisted MIDI content has
+            // otherwise been compared.
+            a.nextEventId = b.nextEventId;
+            return a == b;
         }
 
         if (!isAudio() || !src.isAudio())

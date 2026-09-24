@@ -1,4 +1,6 @@
+#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
+#include <vector>
 
 #include "core/ClipManager.hpp"
 
@@ -79,10 +81,37 @@ TEST_CASE("A recorded MIDI clip is published as one complete model change",
     REQUIRE(clip->view == ClipView::Arrangement);
     REQUIRE_FALSE(clip->loopEnabled);
     REQUIRE(clip->sceneIndex == -1);
-    REQUIRE(clip->midiNotes == secondTake.notes);
-    REQUIRE(clip->midiCCData == secondTake.cc);
-    REQUIRE(clip->midiPitchBendData == secondTake.pitchBend);
-    REQUIRE(clip->midi() == takeModel);
+
+    // Publishing assigns stable per-clip event ids. Compare the captured
+    // musical data independently, then verify the new identity contract.
+    auto notesWithoutIds = clip->midiNotes;
+    auto ccWithoutIds = clip->midiCCData;
+    auto pitchBendWithoutIds = clip->midiPitchBendData;
+    for (auto& note : notesWithoutIds)
+        note.id = INVALID_EVENT_ID;
+    for (auto& cc : ccWithoutIds)
+        cc.id = INVALID_EVENT_ID;
+    for (auto& bend : pitchBendWithoutIds)
+        bend.id = INVALID_EVENT_ID;
+    REQUIRE(notesWithoutIds == secondTake.notes);
+    REQUIRE(ccWithoutIds == secondTake.cc);
+    REQUIRE(pitchBendWithoutIds == secondTake.pitchBend);
+
+    auto modelWithoutAllocator = clip->midi();
+    modelWithoutAllocator.nextEventId = takeModel.nextEventId;
+    REQUIRE(modelWithoutAllocator == takeModel);
+
+    std::vector<EventId> ids;
+    for (const auto& note : clip->midiNotes)
+        ids.push_back(note.id);
+    for (const auto& cc : clip->midiCCData)
+        ids.push_back(cc.id);
+    for (const auto& bend : clip->midiPitchBendData)
+        ids.push_back(bend.id);
+    REQUIRE(std::ranges::all_of(ids, [](EventId id) { return id > 0; }));
+    std::ranges::sort(ids);
+    REQUIRE(std::ranges::adjacent_find(ids) == ids.end());
+    REQUIRE(clip->midi().nextEventId > ids.back());
 
     clips.clearAllClips();
 }

@@ -128,16 +128,11 @@ juce::String DraggableValueLabel::formatValue(double val) const {
         }
 
         case Format::BarsBeats: {
-            constexpr int TICKS_PER_BEAT = 480;
-            int wholeBars = static_cast<int>(val / beatsPerBar_);
-            double remaining = std::fmod(val, static_cast<double>(beatsPerBar_));
-            remaining = std::max(remaining, 0.0);
-            int wholeBeats = static_cast<int>(remaining);
-            int ticks = static_cast<int>((remaining - wholeBeats) * TICKS_PER_BEAT);
+            const auto position = toBarsBeatsTicks(val, numerator_, denominator_);
             int offset = barsBeatsIsPosition_ ? 1 : 0;
             char buffer[32];
-            std::snprintf(buffer, sizeof(buffer), "%d.%d.%03d", wholeBars + offset,
-                          wholeBeats + offset, ticks);
+            std::snprintf(buffer, sizeof(buffer), "%d.%d.%03d", position.bars + offset,
+                          position.beats + offset, position.ticks);
             return {buffer};
         }
 
@@ -243,7 +238,6 @@ double DraggableValueLabel::parseValue(const juce::String& text) const {
         }
 
         case Format::BarsBeats: {
-            constexpr int TICKS_PER_BEAT = 480;
             int offset = barsBeatsIsPosition_ ? 1 : 0;
             auto parts = juce::StringArray::fromTokens(trimmed, ".", "");
             int bar = 0, beat = 0, ticks = 0;
@@ -256,7 +250,7 @@ double DraggableValueLabel::parseValue(const juce::String& text) const {
             bar = std::max(bar, 0);
             beat = std::max(beat, 0);
             ticks = std::max(ticks, 0);
-            return bar * beatsPerBar_ + beat + ticks / static_cast<double>(TICKS_PER_BEAT);
+            return fromBarsBeatsTicks({bar, beat, ticks}, numerator_, denominator_);
         }
 
         case Format::Raw:

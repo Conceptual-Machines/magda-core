@@ -1233,7 +1233,7 @@ void MainView::applyInitialZoomForProject(const ProjectInfo& info) {
         return;
 
     const auto& state = timelineController->getState();
-    const double viewBeats = info.defaults.zoomViewBars * state.tempo.timeSignatureNumerator;
+    const double viewBeats = info.defaults.zoomViewBars * state.tempo.beatsPerBar();
     const double zoom =
         juce::jmax(viewBeats > 0.0 ? static_cast<double>(availableWidth) / viewBeats : 10.0, 0.5);
     timelineController->dispatch(SetZoomCenteredEvent{zoom, 0.0});
@@ -2726,25 +2726,22 @@ void MainView::calculateSmartGridNumeratorDenominator(int& outNum, int& outDen,
                                                       bool& outIsBars) const {
     const auto& state = timelineController->getState();
     double zoom = state.zoom.horizontalZoom;
-    int timeSigNumerator = state.tempo.timeSignatureNumerator;
+    const double barBeats = state.tempo.beatsPerBar();
     auto& layout = LayoutConfig::getInstance();
     int minPixelSpacing = layout.minGridPixelSpacing;
 
     outIsBars = false;
 
     // Try beat subdivisions (powers of 2)
-    double frac = GridConstants::findBeatSubdivision(zoom, minPixelSpacing);
+    double frac = GridConstants::findBeatSubdivision(zoom, state.tempo.signatureBeatLength(),
+                                                     minPixelSpacing);
     if (frac > 0) {
-        // Convert beat fraction to whole-note-relative num/den
-        // beatFraction = 2^p, denominator = 4 / beatFraction
-        outNum = 1;
-        outDen = static_cast<int>(4.0 / frac);
-        outDen = std::max(outDen, 1);  // For frac > 4 (shouldn't happen)
+        std::tie(outNum, outDen) = GridConstants::noteFraction(frac);
         return;
     }
 
     // Bar multiples
-    int mult = GridConstants::findBarMultiple(zoom, timeSigNumerator, minPixelSpacing);
+    int mult = GridConstants::findBarMultiple(zoom, barBeats, minPixelSpacing);
     outNum = mult;
     outDen = 0;
     outIsBars = true;

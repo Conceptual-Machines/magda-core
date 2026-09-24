@@ -51,6 +51,11 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(registry.find("devices.openEditor") != nullptr);
     REQUIRE(registry.find("session.launchClip") != nullptr);
     REQUIRE(registry.find("automation.addPoint") != nullptr);
+    REQUIRE(registry.find("clips.listMidiEvents") != nullptr);
+    REQUIRE(registry.find("clips.addMidiEvents") != nullptr);
+    REQUIRE(registry.find("clips.updateMidiEvents") != nullptr);
+    REQUIRE(registry.find("clips.replaceMidiEvents") != nullptr);
+    REQUIRE(registry.find("clips.deleteMidiEvents") != nullptr);
     REQUIRE(registry.find("does.not.exist") == nullptr);
 
     std::set<juce::String> names;
@@ -337,8 +342,15 @@ TEST_CASE("Remote API DTOs round-trip through JSON", "[remote-api][contract][dto
                        0.0,       4.0,
                        true,      2,
                        "trigger", "1_bar",
-                       "next",    {{60, 110, 0.0, 0.5}, {64, 100, 1.0, 0.5}}};
+                       "next",    {{60, 110, 0.0, 0.5}, {64, 100, 1.0, 0.5}},
+                       {}};
     requireRoundTrip(clip, clipFromJson);
+
+    requireRoundTrip(MidiEventDto{1, "note", 36, 110, 0, 0, 0.0, 0.25, true}, midiEventFromJson);
+    requireRoundTrip(MidiEventDto{2, "controlChange", 0, 0, 74, 96, 0.5}, midiEventFromJson);
+    requireRoundTrip(MidiEventDto{3, "pitchBend", 0, 0, 0, 9000, 1.0}, midiEventFromJson);
+    requireRoundTrip(MidiEventDto{4, "channelPressure", 0, 0, 0, 80, 1.5}, midiEventFromJson);
+    requireRoundTrip(MidiEventDto{5, "polyAftertouch", 60, 0, 0, 70, 2.0}, midiEventFromJson);
 
     // Every sidechain field carries a non-default value: a decoder that dropped
     // one would round-trip through the defaults and prove nothing.

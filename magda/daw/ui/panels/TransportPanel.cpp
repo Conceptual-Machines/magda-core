@@ -1156,15 +1156,10 @@ void TransportPanel::setTimeSignature(int numerator, int denominator) {
     timeSigDenominatorLabel->setValue(static_cast<double>(timeSignatureDenominator),
                                       juce::dontSendNotification);
 
-    // Update beats per bar on BarsBeatsTicksLabels
-    playheadPositionLabel->setBeatsPerBar(numerator);
-    editCursorLabel->setBeatsPerBar(numerator);
-    selectionStartLabel->setBeatsPerBar(numerator);
-    selectionEndLabel->setBeatsPerBar(numerator);
-    loopStartLabel->setBeatsPerBar(numerator);
-    loopEndLabel->setBeatsPerBar(numerator);
-    punchStartLabel->setBeatsPerBar(numerator);
-    punchEndLabel->setBeatsPerBar(numerator);
+    for (auto* label : {playheadPositionLabel.get(), editCursorLabel.get(),
+                        selectionStartLabel.get(), selectionEndLabel.get(), loopStartLabel.get(),
+                        loopEndLabel.get(), punchStartLabel.get(), punchEndLabel.get()})
+        label->setTimeSignature(timeSignatureNumerator, timeSignatureDenominator);
 
     // Refresh all displays with new time signature
     setPlayheadPosition(cachedPlayheadPosition);

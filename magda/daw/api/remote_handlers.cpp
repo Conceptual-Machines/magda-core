@@ -115,6 +115,157 @@ HandlerResult notFound(const juce::String& what, int id) {
     return HandlerResult::fail(ErrorCode::NotFound, what + " " + juce::String(id) + " not found");
 }
 
+MidiEventDto midiEventInput(const juce::var& value, bool hasId) {
+    MidiEventDto event;
+    event.id = hasId ? readInt(value, "id", INVALID_EVENT_ID) : INVALID_EVENT_ID;
+    event.type = value["type"].toString();
+    if (event.type == "note") {
+        event.note = readInt(value, "note");
+        event.velocity = readInt(value, "velocity");
+        event.beat = readDouble(value, "beat");
+        event.lengthBeats = readDouble(value, "lengthBeats");
+        event.keyswitch = readBool(value, "keyswitch");
+    } else if (event.type == "controlChange") {
+        event.controller = readInt(value, "controller");
+        event.value = readInt(value, "value");
+        event.beat = readDouble(value, "beat");
+    } else if (event.type == "polyAftertouch") {
+        event.note = readInt(value, "note");
+        event.value = readInt(value, "value");
+        event.beat = readDouble(value, "beat");
+    } else {
+        event.value = readInt(value, "value");
+        event.beat = readDouble(value, "beat");
+    }
+    return event;
+}
+
+std::optional<juce::String> validateMidiEventBounds(const MidiEventDto& event, double clipLength) {
+    constexpr double epsilon = 1e-9;
+    if (event.type == "note") {
+        if (event.beat + event.lengthBeats > clipLength + epsilon)
+            return "MIDI note extends beyond the clip";
+    } else if (event.beat > clipLength + epsilon) {
+        return "MIDI event is beyond the clip";
+    }
+    return std::nullopt;
+}
+
+template <typename Event> bool containsEventId(const std::vector<Event>& events, EventId id) {
+    return std::ranges::any_of(events, [id](const auto& event) { return event.id == id; });
+}
+
+bool containsEventId(const MidiEventState& state, EventId id) {
+    return containsEventId(state.notes, id) || containsEventId(state.cc, id) ||
+           containsEventId(state.pitchBend, id) || containsEventId(state.channelPressure, id) ||
+           containsEventId(state.polyAftertouch, id);
+}
+
+template <typename Event> void eraseEventId(std::vector<Event>& events, EventId id) {
+    std::erase_if(events, [id](const auto& event) { return event.id == id; });
+}
+
+void eraseEventId(MidiEventState& state, EventId id) {
+    eraseEventId(state.notes, id);
+    eraseEventId(state.cc, id);
+    eraseEventId(state.pitchBend, id);
+    eraseEventId(state.channelPressure, id);
+    eraseEventId(state.polyAftertouch, id);
+}
+
+void appendMidiEvent(MidiEventState& state, const MidiEventDto& dto, EventId id) {
+    if (dto.type == "note") {
+        MidiNote note;
+        note.id = id;
+        note.noteNumber = dto.note;
+        note.velocity = dto.velocity;
+        note.startBeat = dto.beat;
+        note.lengthBeats = dto.lengthBeats;
+        note.keyswitch = dto.keyswitch;
+        state.notes.push_back(std::move(note));
+    } else if (dto.type == "controlChange") {
+        MidiCCData cc;
+        cc.id = id;
+        cc.controller = dto.controller;
+        cc.value = dto.value;
+        cc.beatPosition = dto.beat;
+        state.cc.push_back(std::move(cc));
+    } else if (dto.type == "pitchBend") {
+        MidiPitchBendData bend;
+        bend.id = id;
+        bend.value = dto.value;
+        bend.beatPosition = dto.beat;
+        state.pitchBend.push_back(std::move(bend));
+    } else if (dto.type == "channelPressure") {
+        state.channelPressure.push_back({dto.value, dto.beat, id});
+    } else if (dto.type == "polyAftertouch") {
+        state.polyAftertouch.push_back({dto.note, dto.value, dto.beat, id});
+    }
+}
+
+template <typename Event, typename Build>
+bool replaceSameKind(std::vector<Event>& events, EventId id, Build&& build) {
+    const auto found = std::ranges::find(events, id, &Event::id);
+    if (found == events.end())
+        return false;
+    *found = build(*found);
+    return true;
+}
+
+void updateMidiEvent(MidiEventState& state, const MidiEventDto& dto) {
+    const auto id = dto.id;
+    bool replaced = false;
+    if (dto.type == "note") {
+        replaced = replaceSameKind(state.notes, id, [&](const MidiNote& existing) {
+            auto note = existing;
+            note.id = id;
+            note.noteNumber = dto.note;
+            note.velocity = dto.velocity;
+            note.startBeat = dto.beat;
+            note.lengthBeats = dto.lengthBeats;
+            note.keyswitch = dto.keyswitch;
+            return note;
+        });
+    } else if (dto.type == "controlChange") {
+        replaced = replaceSameKind(state.cc, id, [&](const MidiCCData& existing) {
+            auto cc = existing;
+            cc.id = id;
+            cc.controller = dto.controller;
+            cc.value = dto.value;
+            cc.beatPosition = dto.beat;
+            return cc;
+        });
+    } else if (dto.type == "pitchBend") {
+        replaced = replaceSameKind(state.pitchBend, id, [&](const MidiPitchBendData& existing) {
+            auto bend = existing;
+            bend.id = id;
+            bend.value = dto.value;
+            bend.beatPosition = dto.beat;
+            return bend;
+        });
+    } else if (dto.type == "channelPressure") {
+        replaced = replaceSameKind(state.channelPressure, id, [&](const auto&) {
+            return MidiChannelPressureData{dto.value, dto.beat, id};
+        });
+    } else if (dto.type == "polyAftertouch") {
+        replaced = replaceSameKind(state.polyAftertouch, id, [&](const auto&) {
+            return MidiPolyAftertouchData{dto.note, dto.value, dto.beat, id};
+        });
+    }
+
+    if (!replaced) {
+        eraseEventId(state, id);
+        appendMidiEvent(state, dto, id);
+    }
+}
+
+HandlerResult midiEventStateResult(MagdaApi& api, ClipId clipId) {
+    const auto* updated = api.clips().getClip(clipId);
+    if (updated == nullptr)
+        return notFound("clip", clipId);
+    return HandlerResult::ok(toJson(makeClipDto(*updated)));
+}
+
 // ---------------------------------------------------------------------------
 // Enum projections
 //
@@ -511,6 +662,147 @@ HandlerResult clipsAddMidiNote(MagdaApi& api, const juce::var& input, const Requ
     if (clip == nullptr)
         return notFound("clip", clipId);
     return HandlerResult::ok(toJson(makeClipDto(*clip)));
+}
+
+HandlerResult clipsListMidiEvents(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto clipId = static_cast<ClipId>(readInt(input, "clipId"));
+    const auto* clip = api.clips().getClip(clipId);
+    if (clip == nullptr)
+        return notFound("clip", clipId);
+    if (!clip->isMidi())
+        return HandlerResult::fail(ErrorCode::Conflict, "MIDI events require a MIDI clip");
+
+    std::vector<juce::var> events;
+    for (const auto& event : makeMidiEventDtos(*clip))
+        events.push_back(toJson(event));
+    return HandlerResult::ok(toJsonArray(events));
+}
+
+HandlerResult clipsAddMidiEvents(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto clipId = static_cast<ClipId>(readInt(input, "clipId"));
+    const auto* clip = api.clips().getClip(clipId);
+    if (clip == nullptr)
+        return notFound("clip", clipId);
+    if (!clip->isMidi())
+        return HandlerResult::fail(ErrorCode::Conflict, "MIDI events require a MIDI clip");
+
+    const auto before = clip->midiEventState();
+    auto after = before;
+    for (const auto& value : *input["events"].getArray()) {
+        const auto event = midiEventInput(value, false);
+        if (const auto invalid = validateMidiEventBounds(event, clip->placement.lengthBeats))
+            return HandlerResult::fail(ErrorCode::ValidationFailed, *invalid);
+        appendMidiEvent(after, event, after.nextEventId++);
+    }
+
+    const auto succeeded = runCommandAndRead<SetMidiEventStateCommand>(
+        api, [](const SetMidiEventStateCommand& command) { return command.succeeded(); }, clipId,
+        before, after, "Add MIDI Events");
+    if (!succeeded)
+        return HandlerResult::fail(ErrorCode::Conflict, "MIDI event addition was rejected");
+    return midiEventStateResult(api, clipId);
+}
+
+HandlerResult clipsUpdateMidiEvents(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto clipId = static_cast<ClipId>(readInt(input, "clipId"));
+    const auto* clip = api.clips().getClip(clipId);
+    if (clip == nullptr)
+        return notFound("clip", clipId);
+    if (!clip->isMidi())
+        return HandlerResult::fail(ErrorCode::Conflict, "MIDI events require a MIDI clip");
+
+    const auto before = clip->midiEventState();
+    std::vector<MidiEventDto> updates;
+    std::unordered_set<EventId> requested;
+    updates.reserve(static_cast<std::size_t>(input["events"].getArray()->size()));
+    for (const auto& value : *input["events"].getArray()) {
+        auto event = midiEventInput(value, true);
+        if (!requested.insert(event.id).second)
+            return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                       "duplicate MIDI event id in update");
+        if (!containsEventId(before, event.id))
+            return HandlerResult::fail(ErrorCode::NotFound,
+                                       "MIDI event " + juce::String(event.id) + " not found");
+        if (const auto invalid = validateMidiEventBounds(event, clip->placement.lengthBeats))
+            return HandlerResult::fail(ErrorCode::ValidationFailed, *invalid);
+        updates.push_back(std::move(event));
+    }
+
+    auto after = before;
+    for (const auto& event : updates)
+        updateMidiEvent(after, event);
+    if (after == before)
+        return HandlerResult::unchanged(toJson(makeClipDto(*clip)));
+
+    const auto succeeded = runCommandAndRead<SetMidiEventStateCommand>(
+        api, [](const SetMidiEventStateCommand& command) { return command.succeeded(); }, clipId,
+        before, after, "Update MIDI Events");
+    if (!succeeded)
+        return HandlerResult::fail(ErrorCode::Conflict, "MIDI event update was rejected");
+    return midiEventStateResult(api, clipId);
+}
+
+HandlerResult clipsReplaceMidiEvents(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto clipId = static_cast<ClipId>(readInt(input, "clipId"));
+    const auto* clip = api.clips().getClip(clipId);
+    if (clip == nullptr)
+        return notFound("clip", clipId);
+    if (!clip->isMidi())
+        return HandlerResult::fail(ErrorCode::Conflict, "MIDI events require a MIDI clip");
+
+    const auto before = clip->midiEventState();
+    MidiEventState after;
+    // Never recycle an id removed by replacement: a stale client reference
+    // must not silently begin naming a different event.
+    after.nextEventId = before.nextEventId;
+    for (const auto& value : *input["events"].getArray()) {
+        const auto event = midiEventInput(value, false);
+        if (const auto invalid = validateMidiEventBounds(event, clip->placement.lengthBeats))
+            return HandlerResult::fail(ErrorCode::ValidationFailed, *invalid);
+        appendMidiEvent(after, event, after.nextEventId++);
+    }
+    if (after == before)
+        return HandlerResult::unchanged(toJson(makeClipDto(*clip)));
+
+    const auto succeeded = runCommandAndRead<SetMidiEventStateCommand>(
+        api, [](const SetMidiEventStateCommand& command) { return command.succeeded(); }, clipId,
+        before, after, "Replace MIDI Events");
+    if (!succeeded)
+        return HandlerResult::fail(ErrorCode::Conflict, "MIDI event replacement was rejected");
+    return midiEventStateResult(api, clipId);
+}
+
+HandlerResult clipsDeleteMidiEvents(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto clipId = static_cast<ClipId>(readInt(input, "clipId"));
+    const auto* clip = api.clips().getClip(clipId);
+    if (clip == nullptr)
+        return notFound("clip", clipId);
+    if (!clip->isMidi())
+        return HandlerResult::fail(ErrorCode::Conflict, "MIDI events require a MIDI clip");
+
+    const auto before = clip->midiEventState();
+    std::vector<EventId> ids;
+    std::unordered_set<EventId> requested;
+    for (const auto& value : *input["eventIds"].getArray()) {
+        const auto id = static_cast<EventId>(static_cast<int>(value));
+        if (!requested.insert(id).second)
+            return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                       "duplicate MIDI event id in delete");
+        if (!containsEventId(before, id))
+            return HandlerResult::fail(ErrorCode::NotFound,
+                                       "MIDI event " + juce::String(id) + " not found");
+        ids.push_back(id);
+    }
+
+    auto after = before;
+    for (const auto id : ids)
+        eraseEventId(after, id);
+    const auto succeeded = runCommandAndRead<SetMidiEventStateCommand>(
+        api, [](const SetMidiEventStateCommand& command) { return command.succeeded(); }, clipId,
+        before, after, "Delete MIDI Events");
+    if (!succeeded)
+        return HandlerResult::fail(ErrorCode::Conflict, "MIDI event deletion was rejected");
+    return midiEventStateResult(api, clipId);
 }
 
 HandlerResult clipsDelete(MagdaApi& api, const juce::var& input, const RequestContext&) {

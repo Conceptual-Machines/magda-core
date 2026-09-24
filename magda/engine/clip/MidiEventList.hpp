@@ -39,7 +39,7 @@ namespace magda::engine {
  * @brief One short message, at one content beat.
  *
  * Three data bytes and no more, since a MIDI clip has no SysEx: the model
- * holds notes, CC and pitch bend and nothing else. That keeps the per-block
+ * holds notes, CC, pitch bend and pressure events and nothing larger. That keeps the per-block
  * cost bounded by events rather than by bytes, which matters against a port
  * budget counted in bytes (EngineDevice.hpp).
  */
@@ -78,6 +78,9 @@ struct MidiClipEvent {
     }
     bool isNoteEdge() const {
         return isNoteOn() || isNoteOff();
+    }
+    bool isPolyAftertouch() const {
+        return kind() == 0xa0u;
     }
     int channel() const {
         return static_cast<int>(status & 0x0fu) + 1;
@@ -119,6 +122,13 @@ struct MidiControllerStream {
     static constexpr int kChannelPressure = 257;
 };
 
+/** The authored poly-aftertouch history for one note/channel pair. */
+struct MidiPolyAftertouchStream {
+    int channel = 1;
+    int note = 60;
+    std::vector<std::int32_t> events;
+};
+
 /**
  * @brief One stretch of a block, in one pass of a clip's loop.
  *
@@ -156,8 +166,8 @@ struct MidiFoldPass {
  * @brief One MIDI clip's messages and the indexes over them.
  */
 struct MidiEventList {
-    /// Sorted by beat, and at equal beats by kind: controllers, then pitch
-    /// bend, then note-offs, then note-ons. Controllers first since a bank
+    /// Sorted by beat, and at equal beats by kind: controllers, channel pressure,
+    /// pitch bend, note-offs, note-ons, then poly aftertouch. Controllers first since a bank
     /// or program change has to land before the note it configures (the
     /// fork's rule too); offs before ons since two notes of one pitch
     /// meeting exactly is otherwise a coin toss between a retrigger and a
@@ -165,6 +175,7 @@ struct MidiEventList {
     std::vector<MidiClipEvent> events;
 
     std::vector<MidiControllerStream> controllers;
+    std::vector<MidiPolyAftertouchStream> polyAftertouch;
 
     /// The longest note in the list. What bounds the backwards scan the chase
     /// makes: a note-on further back than this cannot still be sounding, so
@@ -207,6 +218,25 @@ struct MidiEventList {
                                      return events[static_cast<std::size_t>(index)].beat < b;
                                  });
 
+            while (found != stream.events.begin()) {
+                --found;
+                if (allowed(*found)) {
+                    out.push_back(*found);
+                    break;
+                }
+            }
+        }
+    }
+
+    template <typename Allowed>
+    void polyAftertouchStateAt(double beat, Allowed&& allowed,
+                               std::vector<std::int32_t>& out) const {
+        for (const auto& stream : polyAftertouch) {
+            auto found =
+                std::lower_bound(stream.events.begin(), stream.events.end(), beat,
+                                 [this](std::int32_t index, double b) {
+                                     return events[static_cast<std::size_t>(index)].beat < b;
+                                 });
             while (found != stream.events.begin()) {
                 --found;
                 if (allowed(*found)) {

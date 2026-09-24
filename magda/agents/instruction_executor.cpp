@@ -89,12 +89,8 @@ double InstructionExecutor::barsToLength(double bars) const {
 }
 
 double InstructionExecutor::barsToBeats(double bars) const {
-    // Use the project's time-signature numerator. Hard-coding 4 here was
-    // the source of the seconds↔beats round-trip drift under non-4/4 sigs.
-    int beatsPerBar = api_.project().getCurrentProjectInfo().timeSignatureNumerator;
-    if (beatsPerBar <= 0)
-        beatsPerBar = 4;
-    return bars * static_cast<double>(beatsPerBar);
+    const auto& project = api_.project().getCurrentProjectInfo();
+    return bars * beatsPerBar(project.timeSignatureNumerator, project.timeSignatureDenominator);
 }
 
 double InstructionExecutor::beatsToBar(double beats) const {
