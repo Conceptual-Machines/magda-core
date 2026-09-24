@@ -98,6 +98,22 @@ struct DeviceParameterConfigUpdate {
     std::optional<std::vector<DeviceParameterOverride>> parameterOverrides;
 };
 
+/** Fields an agent may change on a device modulator. Missing fields are retained. */
+struct DeviceModUpdate {
+    std::optional<juce::String> name;
+    std::optional<ModType> type;
+    std::optional<LFOWaveform> waveform;
+    std::optional<float> rate;
+    std::optional<bool> enabled;
+    std::optional<bool> tempoSync;
+    std::optional<SyncDivision> syncDivision;
+    std::optional<bool> oneShot;
+    std::optional<float> attackMs;
+    std::optional<float> decayMs;
+    std::optional<float> sustain;
+    std::optional<float> releaseMs;
+};
+
 /**
  * @brief Device discovery and inspection, addressed by `ChainNodePath`.
  *
@@ -188,6 +204,26 @@ class DeviceApi {
      * the device has no native editor to show.
      */
     virtual bool openDeviceEditor(const ChainNodePath& devicePath) = 0;
+
+    /** Device-owned modulation. Link targets are parameters on the same device.
+     * External targets require the same AI opt-in as setDeviceParameter. */
+    virtual std::vector<ModInfo> getDeviceMods(const ChainNodePath& devicePath) const = 0;
+    virtual std::vector<MacroInfo> getDeviceMacros(const ChainNodePath& devicePath) const = 0;
+    virtual ModId createDeviceMod(const ChainNodePath& devicePath, ModType type,
+                                  LFOWaveform waveform) = 0;
+    virtual bool updateDeviceMod(const ChainNodePath& devicePath, ModId modId,
+                                 const DeviceModUpdate& update) = 0;
+    virtual bool removeDeviceMod(const ChainNodePath& devicePath, ModId modId) = 0;
+    virtual bool linkDeviceMod(const ChainNodePath& devicePath, ModId modId, int parameterIndex,
+                               float amount, bool bipolar) = 0;
+    virtual bool unlinkDeviceMod(const ChainNodePath& devicePath, ModId modId,
+                                 int parameterIndex) = 0;
+    virtual bool setDeviceMacroValue(const ChainNodePath& devicePath, int macroIndex,
+                                     float value) = 0;
+    virtual bool linkDeviceMacro(const ChainNodePath& devicePath, int macroIndex,
+                                 int parameterIndex, float amount, bool bipolar) = 0;
+    virtual bool unlinkDeviceMacro(const ChainNodePath& devicePath, int macroIndex,
+                                   int parameterIndex) = 0;
 };
 
 }  // namespace magda

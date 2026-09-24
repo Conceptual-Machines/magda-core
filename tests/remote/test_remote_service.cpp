@@ -1416,3 +1416,81 @@ TEST_CASE("midi.sendSysEx delivers the unframed payload", "[remote][service][mid
     REQUIRE(service.currentRevision() == INITIAL_REVISION);
     REQUIRE(api.undo_.executeCalls == 0);
 }
+
+TEST_CASE("Device mods and macros are discoverable and respect the parameter allowlist",
+          "[remote][service][modulation][2294]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    RemoteApiService service(api);
+    const auto address = toJson(makeDevicePathDto(path));
+
+    const auto empty = run(service, "mods.list", object({{"devicePath", address}}));
+    REQUIRE(empty.ok);
+    REQUIRE(empty.result.getArray()->isEmpty());
+
+    // A refused target must leave no half-created mod in the model.
+    const auto denied = run(
+        service, "mods.create",
+        object({{"devicePath", address}, {"type", "lfo"}, {"parameterIndex", 1}, {"amount", 0.6}}));
+    REQUIRE_FALSE(denied.ok);
+    REQUIRE(errorCodeOf(denied) == "permission_denied");
+    REQUIRE(api.devices_.devices[path].mods.empty());
+
+    const auto created = run(service, "mods.create",
+                             object({{"devicePath", address},
+                                     {"type", "lfo"},
+                                     {"waveform", "triangle"},
+                                     {"rate", 2.5},
+                                     {"parameterIndex", 0},
+                                     {"amount", 0.6}}));
+    REQUIRE(created.ok);
+    REQUIRE(static_cast<int>(created.result["modId"]) == 0);
+    REQUIRE(created.result["waveform"].toString() == "triangle");
+    REQUIRE(created.result["links"].getArray()->size() == 1);
+    REQUIRE(std::abs(static_cast<double>(created.result["links"][0]["amount"]) - 0.6) < 1e-6);
+
+    const auto updated =
+        run(service, "mods.update",
+            object({{"devicePath", address}, {"modId", 0}, {"rate", 4.0}, {"enabled", false}}));
+    REQUIRE(updated.ok);
+    REQUIRE(static_cast<double>(updated.result["rate"]) == 4.0);
+    REQUIRE_FALSE(static_cast<bool>(updated.result["enabled"]));
+
+    const auto blockedLink = run(
+        service, "mods.link",
+        object({{"devicePath", address}, {"modId", 0}, {"parameterIndex", 1}, {"amount", 0.8}}));
+    REQUIRE_FALSE(blockedLink.ok);
+    REQUIRE(errorCodeOf(blockedLink) == "permission_denied");
+    REQUIRE_FALSE(api.devices_.linkDeviceMod(path, 0, 1, 0.8f, false));
+
+    const auto macros = run(service, "macros.list", object({{"devicePath", address}}));
+    REQUIRE(macros.ok);
+    REQUIRE(macros.result.getArray()->size() == NUM_MACROS);
+    const auto macroDenied = run(
+        service, "macros.link",
+        object(
+            {{"devicePath", address}, {"macroIndex", 0}, {"parameterIndex", 1}, {"amount", 0.5}}));
+    REQUIRE_FALSE(macroDenied.ok);
+    REQUIRE(errorCodeOf(macroDenied) == "permission_denied");
+    const auto linked = run(
+        service, "macros.link",
+        object(
+            {{"devicePath", address}, {"macroIndex", 0}, {"parameterIndex", 0}, {"amount", 0.5}}));
+    REQUIRE(linked.ok);
+    REQUIRE(linked.result["links"].getArray()->size() == 1);
+    const auto value = run(service, "macros.setValue",
+                           object({{"devicePath", address}, {"macroIndex", 0}, {"value", 0.75}}));
+    REQUIRE(value.ok);
+    REQUIRE(static_cast<double>(value.result["value"]) == 0.75);
+
+    REQUIRE(run(service, "mods.unlink",
+                object({{"devicePath", address}, {"modId", 0}, {"parameterIndex", 0}}))
+                .ok);
+    REQUIRE(run(service, "macros.unlink",
+                object({{"devicePath", address}, {"macroIndex", 0}, {"parameterIndex", 0}}))
+                .ok);
+    REQUIRE(run(service, "mods.remove", object({{"devicePath", address}, {"modId", 0}})).ok);
+    REQUIRE(api.devices_.devices[path].mods.empty());
+}

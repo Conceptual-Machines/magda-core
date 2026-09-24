@@ -52,6 +52,10 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(registry.find("devices.setBypassed") != nullptr);
     REQUIRE(registry.find("devicePresets.list") != nullptr);
     REQUIRE(registry.find("devices.openEditor") != nullptr);
+    for (const auto* name :
+         {"mods.list", "mods.create", "mods.update", "mods.remove", "mods.link", "mods.unlink",
+          "macros.list", "macros.setValue", "macros.link", "macros.unlink"})
+        REQUIRE(registry.find(name) != nullptr);
     REQUIRE(registry.find("session.launchClip") != nullptr);
     REQUIRE(registry.find("automation.addPoint") != nullptr);
     REQUIRE(registry.find("clips.listMidiEvents") != nullptr);
@@ -114,6 +118,24 @@ TEST_CASE("Clip placement operations require explicit view-specific destinations
                       {"destination",
                        object({{"view", "session"}, {"trackId", 2}, {"startBeat", 8.0}})}}))
               .has_value());
+}
+
+TEST_CASE("Device modulation reads and writes declare their scopes",
+          "[remote-api][contract][2294]") {
+    const auto& registry = OperationRegistry::instance();
+    for (const auto* name : {"mods.list", "macros.list"}) {
+        const auto* operation = registry.find(name);
+        REQUIRE(operation != nullptr);
+        CHECK(operation->access == OperationAccess::Read);
+        CHECK(operation->requiredScope == Scope::Read);
+    }
+    for (const auto* name : {"mods.create", "mods.update", "mods.remove", "mods.link",
+                             "mods.unlink", "macros.setValue", "macros.link", "macros.unlink"}) {
+        const auto* operation = registry.find(name);
+        REQUIRE(operation != nullptr);
+        CHECK(operation->access == OperationAccess::Write);
+        CHECK(operation->requiredScope == Scope::Edit);
+    }
 }
 
 TEST_CASE("Track preset operations expose only safe metadata and an opaque-id create contract",

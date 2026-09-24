@@ -1191,6 +1191,144 @@ class MockDeviceApi : public DeviceApi {
         return it != presets.end() ? it->second : std::vector<DevicePresetEntry>{};
     }
 
+    std::vector<ModInfo> getDeviceMods(const ChainNodePath& path) const override {
+        const auto* device = getDevice(path);
+        return device && !path.isPostFx() ? device->mods : std::vector<ModInfo>{};
+    }
+    std::vector<MacroInfo> getDeviceMacros(const ChainNodePath& path) const override {
+        const auto* device = getDevice(path);
+        return device && !path.isPostFx() ? device->macros : std::vector<MacroInfo>{};
+    }
+    ModId createDeviceMod(const ChainNodePath& path, ModType type, LFOWaveform waveform) override {
+        auto it = devices.find(path);
+        if (it == devices.end() || path.isPostFx())
+            return INVALID_MOD_ID;
+        auto& mods = it->second.mods;
+        const auto id = static_cast<ModId>(mods.size());
+        mods.emplace_back(id);
+        mods.back().setType(type);
+        mods.back().waveform = waveform;
+        mods.back().name = ModInfo::getDefaultName(id, type);
+        return id;
+    }
+    bool updateDeviceMod(const ChainNodePath& path, ModId id,
+                         const DeviceModUpdate& update) override {
+        auto it = devices.find(path);
+        if (it == devices.end() || path.isPostFx() || id < 0 ||
+            id >= static_cast<int>(it->second.mods.size()))
+            return false;
+        auto& mod = it->second.mods[static_cast<size_t>(id)];
+        if (update.type)
+            mod.setType(*update.type);
+        if (update.name)
+            mod.name = *update.name;
+        if (update.waveform)
+            mod.waveform = *update.waveform;
+        if (update.rate)
+            mod.rate = *update.rate;
+        if (update.enabled)
+            mod.enabled = *update.enabled;
+        if (update.tempoSync)
+            mod.tempoSync = *update.tempoSync;
+        if (update.syncDivision)
+            mod.syncDivision = *update.syncDivision;
+        if (update.oneShot)
+            mod.oneShot = *update.oneShot;
+        if (update.attackMs)
+            mod.envAttackMs = *update.attackMs;
+        if (update.decayMs)
+            mod.envDecayMs = *update.decayMs;
+        if (update.sustain)
+            mod.envSustain = *update.sustain;
+        if (update.releaseMs)
+            mod.envReleaseMs = *update.releaseMs;
+        return true;
+    }
+    bool removeDeviceMod(const ChainNodePath& path, ModId id) override {
+        auto it = devices.find(path);
+        if (it == devices.end() || path.isPostFx() || id < 0 ||
+            id >= static_cast<int>(it->second.mods.size()))
+            return false;
+        auto& mods = it->second.mods;
+        mods.erase(mods.begin() + id);
+        for (int i = id; i < static_cast<int>(mods.size()); ++i)
+            mods[static_cast<size_t>(i)].id = i;
+        return true;
+    }
+    bool mayLink(const ChainNodePath& path, int index) const {
+        const auto* device = getDevice(path);
+        if (device == nullptr || path.isPostFx() ||
+            !std::ranges::contains(device->parameters, index, &ParameterInfo::paramIndex))
+            return false;
+        return device->format == PluginFormat::Internal ||
+               std::ranges::contains(device->aiSoundDesignerParameters, index);
+    }
+    bool linkDeviceMod(const ChainNodePath& path, ModId id, int index, float amount,
+                       bool bipolar) override {
+        auto it = devices.find(path);
+        if (it == devices.end() || id < 0 || id >= static_cast<int>(it->second.mods.size()) ||
+            !mayLink(path, index) || !std::isfinite(amount) || amount < -1 || amount > 1)
+            return false;
+        auto& mod = it->second.mods[static_cast<size_t>(id)];
+        const auto target = ControlTarget::pluginParam(path, index);
+        if (auto* link = mod.getLink(target)) {
+            link->amount = amount;
+            link->bipolar = bipolar;
+        } else {
+            mod.links.push_back({target, amount, bipolar, true});
+        }
+        return true;
+    }
+    bool unlinkDeviceMod(const ChainNodePath& path, ModId id, int index) override {
+        auto it = devices.find(path);
+        if (it == devices.end() || id < 0 || id >= static_cast<int>(it->second.mods.size()))
+            return false;
+        auto& mod = it->second.mods[static_cast<size_t>(id)];
+        const auto target = ControlTarget::pluginParam(path, index);
+        if (mod.getLink(target) == nullptr)
+            return false;
+        mod.removeLink(target);
+        return true;
+    }
+    bool setDeviceMacroValue(const ChainNodePath& path, int index, float value) override {
+        auto it = devices.find(path);
+        if (it == devices.end() || path.isPostFx() || index < 0 ||
+            index >= static_cast<int>(it->second.macros.size()) || !std::isfinite(value) ||
+            value < 0 || value > 1)
+            return false;
+        it->second.macros[static_cast<size_t>(index)].value = value;
+        return true;
+    }
+    bool linkDeviceMacro(const ChainNodePath& path, int macroIndex, int index, float amount,
+                         bool bipolar) override {
+        auto it = devices.find(path);
+        if (it == devices.end() || macroIndex < 0 ||
+            macroIndex >= static_cast<int>(it->second.macros.size()) || !mayLink(path, index) ||
+            !std::isfinite(amount) || amount < -1 || amount > 1)
+            return false;
+        auto& macro = it->second.macros[static_cast<size_t>(macroIndex)];
+        const auto target = ControlTarget::pluginParam(path, index);
+        if (auto* link = macro.getLink(target)) {
+            link->amount = amount;
+            link->bipolar = bipolar;
+        } else {
+            macro.links.push_back({target, amount, bipolar});
+        }
+        return true;
+    }
+    bool unlinkDeviceMacro(const ChainNodePath& path, int macroIndex, int index) override {
+        auto it = devices.find(path);
+        if (it == devices.end() || macroIndex < 0 ||
+            macroIndex >= static_cast<int>(it->second.macros.size()))
+            return false;
+        auto& macro = it->second.macros[static_cast<size_t>(macroIndex)];
+        const auto target = ControlTarget::pluginParam(path, index);
+        if (macro.getLink(target) == nullptr)
+            return false;
+        macro.removeLink(target);
+        return true;
+    }
+
     // Recorded mutations, for asserting what a caller invoked.
     struct AddRecord {
         ChainNodePath parentPath;

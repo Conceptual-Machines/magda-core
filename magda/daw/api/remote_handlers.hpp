@@ -77,6 +77,16 @@ HandlerResult devicesListParameters(MagdaApi&, const juce::var&, const RequestCo
 HandlerResult devicesSetParameter(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesSetParameterConfig(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesOpenEditor(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult modsList(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult modsCreate(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult modsUpdate(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult modsRemove(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult modsLink(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult modsUnlink(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult macrosList(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult macrosSetValue(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult macrosLink(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult macrosUnlink(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult racksCreate(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult racksRemove(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult racksSetBypassed(MagdaApi&, const juce::var&, const RequestContext&);

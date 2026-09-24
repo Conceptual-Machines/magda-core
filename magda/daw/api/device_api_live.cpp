@@ -434,4 +434,165 @@ bool DeviceApiLive::openDeviceEditor(const ChainNodePath& devicePath) {
     return engine->showDeviceEditor(devicePath);
 }
 
+namespace {
+
+bool ownsModulation(const ChainNodePath& path, const DeviceInfo* device) {
+    // Post-FX devices exist in the graph but TrackManager does not expose a
+    // modulation array for them.
+    return device != nullptr && !path.isPostFx();
+}
+
+bool agentMayLink(const DeviceInfo& device, const ChainNodePath& path, int parameterIndex) {
+    const auto parameters = deviceParameterList(device, path);
+    const auto found = std::ranges::find(parameters, parameterIndex, &ParameterInfo::paramIndex);
+    return found != parameters.end() &&
+           (device.format == PluginFormat::Internal ||
+            std::ranges::contains(device.aiSoundDesignerParameters, parameterIndex));
+}
+
+bool validDepth(float amount) {
+    return std::isfinite(amount) && amount >= -1.0f && amount <= 1.0f;
+}
+
+}  // namespace
+
+std::vector<ModInfo> DeviceApiLive::getDeviceMods(const ChainNodePath& path) const {
+    const auto* device = getDevice(path);
+    return ownsModulation(path, device) ? device->mods : std::vector<ModInfo>{};
+}
+
+std::vector<MacroInfo> DeviceApiLive::getDeviceMacros(const ChainNodePath& path) const {
+    const auto* device = getDevice(path);
+    return ownsModulation(path, device) ? device->macros : std::vector<MacroInfo>{};
+}
+
+ModId DeviceApiLive::createDeviceMod(const ChainNodePath& path, ModType type,
+                                     LFOWaveform waveform) {
+    const auto* device = getDevice(path);
+    if (!ownsModulation(path, device))
+        return INVALID_MOD_ID;
+    const auto id = static_cast<ModId>(device->mods.size());
+    auto& manager = TrackManager::getInstance();
+    manager.addMod(path, id, type, waveform);
+    // addMod deliberately leaves the UI notification to its caller.
+    manager.notifyTrackDevicesChanged(path.trackId);
+    return id;
+}
+
+bool DeviceApiLive::updateDeviceMod(const ChainNodePath& path, ModId id,
+                                    const DeviceModUpdate& update) {
+    const auto* device = getDevice(path);
+    if (!ownsModulation(path, device) || id < 0 || id >= static_cast<int>(device->mods.size()))
+        return false;
+    if ((update.rate && (!std::isfinite(*update.rate) || *update.rate <= 0.0f)) ||
+        (update.attackMs && (!std::isfinite(*update.attackMs) || *update.attackMs < 0.0f ||
+                             *update.attackMs > 30000.0f)) ||
+        (update.decayMs && (!std::isfinite(*update.decayMs) || *update.decayMs < 0.0f ||
+                            *update.decayMs > 30000.0f)) ||
+        (update.sustain &&
+         (!std::isfinite(*update.sustain) || *update.sustain < 0.0f || *update.sustain > 1.0f)) ||
+        (update.releaseMs && (!std::isfinite(*update.releaseMs) || *update.releaseMs < 0.0f ||
+                              *update.releaseMs > 30000.0f)))
+        return false;
+
+    auto& manager = TrackManager::getInstance();
+    if (update.type)
+        manager.setModType(path, id, *update.type);
+    if (update.name)
+        manager.setModName(path, id, *update.name);
+    if (update.waveform)
+        manager.setModWaveform(path, id, *update.waveform);
+    if (update.rate)
+        manager.setModRate(path, id, *update.rate);
+    if (update.enabled)
+        manager.setModEnabled(path, id, *update.enabled);
+    if (update.tempoSync)
+        manager.setModTempoSync(path, id, *update.tempoSync);
+    if (update.syncDivision)
+        manager.setModSyncDivision(path, id, *update.syncDivision);
+    if (update.oneShot)
+        manager.setModOneShot(path, id, *update.oneShot);
+    if (update.attackMs || update.decayMs || update.sustain || update.releaseMs) {
+        ModInfo envelope = getDevice(path)->mods[static_cast<size_t>(id)];
+        if (update.attackMs)
+            envelope.envAttackMs = *update.attackMs;
+        if (update.decayMs)
+            envelope.envDecayMs = *update.decayMs;
+        if (update.sustain)
+            envelope.envSustain = *update.sustain;
+        if (update.releaseMs)
+            envelope.envReleaseMs = *update.releaseMs;
+        manager.setModEnvelope(path, id, envelope);
+    }
+    return true;
+}
+
+bool DeviceApiLive::removeDeviceMod(const ChainNodePath& path, ModId id) {
+    const auto* device = getDevice(path);
+    if (!ownsModulation(path, device) || id < 0 || id >= static_cast<int>(device->mods.size()))
+        return false;
+    TrackManager::getInstance().removeMod(path, id);
+    return true;
+}
+
+bool DeviceApiLive::linkDeviceMod(const ChainNodePath& path, ModId id, int parameterIndex,
+                                  float amount, bool bipolar) {
+    const auto* device = getDevice(path);
+    if (!ownsModulation(path, device) || id < 0 || id >= static_cast<int>(device->mods.size()) ||
+        !validDepth(amount) || !agentMayLink(*device, path, parameterIndex))
+        return false;
+    const auto target = ControlTarget::pluginParam(path, parameterIndex);
+    auto& manager = TrackManager::getInstance();
+    manager.setModLinkAmount(path, id, target, amount);
+    manager.setModLinkBipolar(path, id, target, bipolar);
+    return true;
+}
+
+bool DeviceApiLive::unlinkDeviceMod(const ChainNodePath& path, ModId id, int parameterIndex) {
+    const auto* device = getDevice(path);
+    if (!ownsModulation(path, device) || id < 0 || id >= static_cast<int>(device->mods.size()))
+        return false;
+    const auto target = ControlTarget::pluginParam(path, parameterIndex);
+    if (device->mods[static_cast<size_t>(id)].getLink(target) == nullptr)
+        return false;
+    TrackManager::getInstance().removeModLink(path, id, target);
+    return true;
+}
+
+bool DeviceApiLive::setDeviceMacroValue(const ChainNodePath& path, int index, float value) {
+    const auto* device = getDevice(path);
+    if (!ownsModulation(path, device) || index < 0 ||
+        index >= static_cast<int>(device->macros.size()) || !std::isfinite(value) || value < 0.0f ||
+        value > 1.0f)
+        return false;
+    TrackManager::getInstance().setMacroValue(path, index, value);
+    return true;
+}
+
+bool DeviceApiLive::linkDeviceMacro(const ChainNodePath& path, int index, int parameterIndex,
+                                    float amount, bool bipolar) {
+    const auto* device = getDevice(path);
+    if (!ownsModulation(path, device) || index < 0 ||
+        index >= static_cast<int>(device->macros.size()) || !validDepth(amount) ||
+        !agentMayLink(*device, path, parameterIndex))
+        return false;
+    const auto target = ControlTarget::pluginParam(path, parameterIndex);
+    auto& manager = TrackManager::getInstance();
+    manager.setMacroLinkAmount(path, index, target, amount);
+    manager.setMacroLinkBipolar(path, index, target, bipolar);
+    return true;
+}
+
+bool DeviceApiLive::unlinkDeviceMacro(const ChainNodePath& path, int index, int parameterIndex) {
+    const auto* device = getDevice(path);
+    if (!ownsModulation(path, device) || index < 0 ||
+        index >= static_cast<int>(device->macros.size()))
+        return false;
+    const auto target = ControlTarget::pluginParam(path, parameterIndex);
+    if (device->macros[static_cast<size_t>(index)].getLink(target) == nullptr)
+        return false;
+    TrackManager::getInstance().removeMacroLink(path, index, target);
+    return true;
+}
+
 }  // namespace magda

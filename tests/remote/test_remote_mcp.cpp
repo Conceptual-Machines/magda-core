@@ -200,6 +200,8 @@ TEST_CASE("Every executable operation is exposed as a tool, and nothing else is"
     REQUIRE(toolNames.count("subscriptions.subscribe") == 0);
     REQUIRE(toolNames.count("tracks.list") == 1);
     REQUIRE(toolNames.count("devices.catalog") == 1);
+    REQUIRE(toolNames.count("mods.create") == 1);
+    REQUIRE(toolNames.count("macros.link") == 1);
 }
 
 TEST_CASE("Tool schemas are the registry's own, not a copy", "[remote-api][mcp]") {
@@ -725,4 +727,35 @@ TEST_CASE("Without a subscription hub, resource updates are not advertised", "[r
         object({{"notifications", object({{"resourceSubscriptions", requested}})}}));
     REQUIRE(filter.resourceSubscriptions.empty());
     REQUIRE_FALSE(filter.wantsAnything());
+}
+
+TEST_CASE("MCP tools can create and inspect device modulation", "[remote-api][mcp][2294]") {
+    Harness harness;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    DeviceInfo device;
+    device.id = 5;
+    device.format = PluginFormat::Internal;
+    device.parameters.emplace_back(0, "Cutoff", "Hz", 20.0f, 20000.0f, 800.0f);
+    harness.api.devices_.devices[path] = device;
+    const auto address = toJson(makeDevicePathDto(path));
+
+    const auto created =
+        run(harness.endpoint,
+            modernCall("tools/call", object({{"name", "mods.create"},
+                                             {"arguments", object({{"devicePath", address},
+                                                                   {"type", "lfo"},
+                                                                   {"parameterIndex", 0},
+                                                                   {"amount", 0.5}})}})));
+    REQUIRE_FALSE(created.failed());
+    REQUIRE_FALSE(static_cast<bool>(created.result["isError"]));
+    REQUIRE(static_cast<int>(created.result["structuredContent"]["modId"]) == 0);
+
+    const auto listed =
+        run(harness.endpoint,
+            modernCall("tools/call", object({{"name", "mods.list"},
+                                             {"arguments", object({{"devicePath", address}})}})));
+    REQUIRE_FALSE(listed.failed());
+    REQUIRE_FALSE(static_cast<bool>(listed.result["isError"]));
+    REQUIRE(listed.result["structuredContent"]["items"].getArray()->size() == 1);
+    REQUIRE(static_cast<int>(listed.result["structuredContent"]["items"][0]["modId"]) == 0);
 }
