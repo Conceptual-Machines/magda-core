@@ -167,6 +167,15 @@ class TimeSignatureBeatsTest final : public juce::UnitTest {
 
         fixture.wrapper.setTimeSignature(6, 8);
         fixture.wrapper.setMetronomeEnabled(true);
+        auto& storage = fixture.wrapper.getEngine()->getPropertyStorage();
+        expect(storage.getProperty(te::SettingID::clickTrackSampleBig)
+                   .toString()
+                   .endsWith("accent.wav"),
+               "Tracktion plays native's accent");
+        expect(storage.getProperty(te::SettingID::clickTrackSampleSmall)
+                   .toString()
+                   .endsWith("beat.wav"),
+               "Tracktion plays native's beat");
         fixture.edit->getTransport().ensureContextAllocated();
         expect(fixture.edit->getTransport().getCurrentPlaybackContext() != nullptr,
                "The click needs a playback context");

@@ -9,12 +9,14 @@
 #include "../audio/insert_capture/InsertRenderCaptureService.hpp"
 #include "../audio/session/SessionClipScheduler.hpp"
 #include "../audio/session/SessionRecorder.hpp"
+#include "../core/AppPaths.hpp"
 #include "../core/Config.hpp"
 #include "../core/controllers/MidiLearnCoordinator.hpp"
 #include "AppServices.hpp"
 #include "AudioEngineChoice.hpp"
 #if MAGDA_HAS_NATIVE_ENGINE
     #include "MagdaAudioEngine.hpp"
+    #include "host/ClickSounds.hpp"
 #endif
 #include "MagdaEngineBehaviour.hpp"
 #include "MagdaUIBehaviour.hpp"
@@ -65,6 +67,41 @@ std::unique_ptr<AudioEngine> createDefaultAudioEngine(AudioEngineOptions options
 
 bool TracktionEngineWrapper::isHeadlessRuntime() const {
     return app_services::isHeadless(forceHeadless_);
+}
+
+// Tracktion's click plays sample files; hand it native's two synthesised clicks so the
+// metronome sounds the same on both engines (#2802).
+void TracktionEngineWrapper::useNativeClickSounds() {
+#if MAGDA_HAS_NATIVE_ENGINE
+    constexpr double kSampleRate = 96000.0;
+    const auto folder = paths::dataDir().getChildFile("Click");
+    if (!folder.createDirectory())
+        return;
+
+    auto& storage = engine_->getPropertyStorage();
+    for (const bool accent : {true, false}) {
+        const auto file = folder.getChildFile(accent ? "accent.wav" : "beat.wav");
+        const auto sound = daw::engine_host::renderClickSound(accent, kSampleRate);
+
+        file.deleteFile();
+        std::unique_ptr<juce::OutputStream> stream = file.createOutputStream();
+        if (stream == nullptr)
+            continue;
+        juce::WavAudioFormat wav;
+        auto writer = wav.createWriterFor(stream, juce::AudioFormatWriterOptions()
+                                                      .withSampleRate(kSampleRate)
+                                                      .withNumChannels(1)
+                                                      .withBitsPerSample(24));
+        if (writer == nullptr ||
+            !writer->writeFromAudioSampleBuffer(sound, 0, sound.getNumSamples()))
+            continue;
+        writer.reset();
+
+        storage.setProperty(accent ? tracktion::SettingID::clickTrackSampleBig
+                                   : tracktion::SettingID::clickTrackSampleSmall,
+                            file.getFullPathName());
+    }
+#endif
 }
 
 void TracktionEngineWrapper::initializePluginFormats() {
@@ -301,6 +338,8 @@ bool TracktionEngineWrapper::initialiseServices() {
 
     // Config before the devices, whose preferred settings it holds.
     app_services::bringUp();
+
+    useNativeClickSounds();
 
     // Initialize plugin formats and load plugin list
     juce::Logger::writeToLog("[Init] initializePluginFormats()...");

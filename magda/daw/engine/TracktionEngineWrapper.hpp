@@ -475,6 +475,7 @@ class TracktionEngineWrapper : public AudioEngine,
 
     // Initialization helper methods
     void initializePluginFormats();
+    void useNativeClickSounds();
     void initializeDeviceManager();
     void configureAudioDevices();
     void setupMidiDevices();

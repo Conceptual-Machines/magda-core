@@ -126,6 +126,23 @@ TEST_CASE("A bar is accented", "[engine][transport][click]") {
     }
 }
 
+TEST_CASE("A rendered click is the one the metronome plays", "[engine][transport][click]") {
+    // Tracktion plays these as its click samples, so both engines sound the same (#2802)
+    for (const bool accent : {true, false}) {
+        Fixture fixture;
+        constexpr int kWholeClick = 2048;
+        fixture.output.setSize(fixture.output.getNumChannels(), kWholeClick);
+        fixture.output.clear();
+        fixture.render(blockFrom(accent ? 0.0 : 1.0, kWholeClick));
+        const auto sound = ClickGenerator::renderSound(accent, kSampleRate);
+
+        REQUIRE(sound.getNumSamples() < kWholeClick);
+        for (auto sample = 0; sample < sound.getNumSamples(); ++sample)
+            REQUIRE(sound.getSample(0, sample) * fixture.click.gain ==
+                    Catch::Approx(fixture.output.getSample(0, sample)).margin(1.0e-6));
+    }
+}
+
 TEST_CASE("A click outlives the block it starts in", "[engine][transport][click]") {
     Fixture fixture;
 
