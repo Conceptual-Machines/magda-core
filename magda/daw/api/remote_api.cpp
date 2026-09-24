@@ -265,6 +265,7 @@ const juce::var& trackSchema() {
             "muted":{"type":"boolean"},
             "soloed":{"type":"boolean"},
             "recordArmed":{"type":"boolean"},
+            "inputMonitor":{"type":"string","enum":["off","in","auto"]},
             "frozen":{"type":"boolean"},
             "audioInputDevice":{"type":"string"},
             "midiInputDevice":{"type":"string"},
@@ -272,8 +273,8 @@ const juce::var& trackSchema() {
             "midiOutputDevice":{"type":"string"}
         },
         "required":["id","type","name","colourArgb","parentId","childIds","volume","pan",
-                    "muted","soloed","recordArmed","frozen","audioInputDevice","midiInputDevice",
-                    "audioOutputDevice","midiOutputDevice"],
+                    "muted","soloed","recordArmed","inputMonitor","frozen","audioInputDevice",
+                    "midiInputDevice","audioOutputDevice","midiOutputDevice"],
         "additionalProperties":false
     })json");
     return value;
@@ -1215,6 +1216,7 @@ juce::var toJson(const TrackDto& dto) {
     object->setProperty("muted", dto.muted);
     object->setProperty("soloed", dto.soloed);
     object->setProperty("recordArmed", dto.recordArmed);
+    object->setProperty("inputMonitor", dto.inputMonitor);
     object->setProperty("frozen", dto.frozen);
     object->setProperty("audioInputDevice", dto.audioInputDevice);
     object->setProperty("midiInputDevice", dto.midiInputDevice);
@@ -1531,6 +1533,7 @@ std::optional<TrackDto> trackFromJson(const juce::var& json, Error& error) {
     dto.muted = static_cast<bool>(json["muted"]);
     dto.soloed = static_cast<bool>(json["soloed"]);
     dto.recordArmed = static_cast<bool>(json["recordArmed"]);
+    dto.inputMonitor = json["inputMonitor"].toString();
     dto.frozen = static_cast<bool>(json["frozen"]);
     dto.audioInputDevice = json["audioInputDevice"].toString();
     dto.midiInputDevice = json["midiInputDevice"].toString();
@@ -1869,7 +1872,7 @@ OperationRegistry::OperationRegistry() {
         })json"));
     operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
         "deviceGraph", deviceGraphSchema());
-    add("tracks.update", "Update track mixer or display fields", OperationAccess::Write,
+    add("tracks.update", "Update track mixer, display, or input state", OperationAccess::Write,
         &handlers::tracksUpdate, operationInputSchema(R"json({
             "type":"object",
             "properties":{
@@ -1878,7 +1881,10 @@ OperationRegistry::OperationRegistry() {
                 "volume":{"type":"number","minimum":0},
                 "pan":{"type":"number","minimum":-1,"maximum":1},
                 "muted":{"type":"boolean"},
-                "soloed":{"type":"boolean"}
+                "soloed":{"type":"boolean"},
+                "colourArgb":{"type":"integer","minimum":0,"maximum":4294967295},
+                "recordArmed":{"type":"boolean"},
+                "inputMonitor":{"type":"string","enum":["off","in","auto"]}
             },
             "required":["trackId"],"additionalProperties":false
         })json"),

@@ -143,6 +143,7 @@ struct TrackDto {
     bool muted = false;
     bool soloed = false;
     bool recordArmed = false;
+    juce::String inputMonitor = "off";
     bool frozen = false;
     juce::String audioInputDevice;
     juce::String midiInputDevice;

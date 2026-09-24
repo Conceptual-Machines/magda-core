@@ -67,6 +67,15 @@ bool readBool(const juce::var& input, const char* key, bool fallback = false) {
     return has(input, key) ? static_cast<bool>(input[key]) : fallback;
 }
 
+InputMonitorMode readInputMonitorMode(const juce::var& input) {
+    const auto value = input["inputMonitor"].toString();
+    if (value == "in")
+        return InputMonitorMode::In;
+    if (value == "auto")
+        return InputMonitorMode::Auto;
+    return InputMonitorMode::Off;
+}
+
 juce::var idResult(int id) {
     auto* object = new juce::DynamicObject();
     object->setProperty("id", id);
@@ -570,6 +579,9 @@ HandlerResult tracksUpdate(MagdaApi& api, const juce::var& input, const RequestC
     const auto* current = tracks.getTrack(trackId);
     if (current == nullptr)
         return notFound("track", trackId);
+    if ((has(input, "recordArmed") || has(input, "inputMonitor")) && !current->takesExternalInput())
+        return HandlerResult::fail(ErrorCode::Conflict,
+                                   "track does not accept external input state");
 
     bool mutated = false;
     const auto applyIfChanged = [&](const char* field, auto currentValue, auto requested,
@@ -595,6 +607,20 @@ HandlerResult tracksUpdate(MagdaApi& api, const juce::var& input, const RequestC
     });
     applyIfChanged("soloed", current->soloed, readBool(input, "soloed"), [&] {
         runCommand<SetTrackSoloCommand>(api, trackId, readBool(input, "soloed"));
+    });
+    const auto requestedColour =
+        has(input, "colourArgb")
+            ? static_cast<std::uint32_t>(static_cast<juce::int64>(input["colourArgb"]))
+            : current->colour.getARGB();
+    applyIfChanged("colourArgb", current->colour.getARGB(), requestedColour, [&] {
+        runCommand<SetTrackColourCommand>(api, trackId, juce::Colour(requestedColour));
+    });
+    applyIfChanged("recordArmed", current->recordArmed, readBool(input, "recordArmed"), [&] {
+        runCommand<SetTrackRecordArmedCommand>(api, trackId, readBool(input, "recordArmed"));
+    });
+    const auto requestedMonitor = readInputMonitorMode(input);
+    applyIfChanged("inputMonitor", current->inputMonitor, requestedMonitor, [&] {
+        runCommand<SetTrackInputMonitorCommand>(api, trackId, requestedMonitor);
     });
 
     const auto* updated = tracks.getTrack(trackId);

@@ -394,9 +394,9 @@ TEST_CASE("Remote API DTOs round-trip through JSON", "[remote-api][contract][dto
                              "minor", true,  4.0, 12.0, true,    true};
     requireRoundTrip(project, projectFromJson);
 
-    const TrackDto track{3,     "audio",   "Bass",   0xff102030, std::nullopt, {4, 5},
-                         0.8,   -0.25,     false,    true,       true,         false,
-                         "all", "track:2", "master", ""};
+    const TrackDto track{3,         "audio",  "Bass", 0xff102030, std::nullopt, {4, 5}, 0.8,
+                         -0.25,     false,    true,   true,       "in",         false,  "all",
+                         "track:2", "master", ""};
     requireRoundTrip(track, trackFromJson);
 
     const ClipDto clip{9,         3,
@@ -450,6 +450,29 @@ TEST_CASE("Remote API DTOs round-trip through JSON", "[remote-api][contract][dto
         {{7, 0.0, 0.5, "linear"}, {8, 4.0, 0.75, "bezier"}},
         {}};
     requireRoundTrip(lane, automationLaneFromJson);
+}
+
+TEST_CASE("Track updates expose bounded colour and safe input state",
+          "[remote-api][contract][tracks]") {
+    const auto* update = OperationRegistry::instance().find("tracks.update");
+    REQUIRE(update != nullptr);
+    CHECK(update->requiredScope == Scope::Edit);
+
+    for (const auto* mode : {"off", "in", "auto"}) {
+        CHECK_FALSE(validateOperationInput(
+                        *update, object({{"trackId", 1},
+                                         {"colourArgb", static_cast<juce::int64>(0xffffffffu)},
+                                         {"recordArmed", true},
+                                         {"inputMonitor", mode}}))
+                        .has_value());
+    }
+
+    CHECK(validateOperationInput(*update, object({{"trackId", 1}, {"inputMonitor", "always"}}))
+              .has_value());
+    CHECK(validateOperationInput(
+              *update,
+              object({{"trackId", 1}, {"colourArgb", static_cast<juce::int64>(0x100000000)}}))
+              .has_value());
 }
 
 TEST_CASE("Dense response payloads round-trip and validate against the published schema",

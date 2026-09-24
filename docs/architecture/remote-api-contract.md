@@ -100,6 +100,18 @@ transport's `expectedRevision` and `requestId` metadata; neither value is part o
 the operation payload. Preset IDs are addresses only: clients cannot supply a
 filesystem path or native state blob.
 
+### Track display and input state
+
+`tracks.update` accepts `colourArgb`, `recordArmed`, and `inputMonitor` in
+addition to its mixer and naming fields. Input monitoring uses the stable
+`off`, `in`, and `auto` values and does not expose a physical device identifier.
+The same value is projected by `tracks.get` and `tracks.list`.
+
+A multi-field patch is one undo action. Restating the current values is a
+revision-neutral no-op. Record-arm and input-monitor changes are rejected for
+track types that do not accept external input, before any other field in the
+patch is applied.
+
 ### Clip placement and duplication
 
 `clips.move` and `clips.duplicate` require an explicit, view-specific
