@@ -70,10 +70,10 @@ class TransportSeekBarsTests final : public juce::UnitTest {
 
         beginTest("A bar is as long as the meter says, not as long as the last one was");
         {
-            // 4/4 from the top, 7/8 from beat 8. The sequence counts a bar of
-            // 7/8 as seven beats, so the bars run 0-4, 4-8, 8-15, 15-22 - the
-            // point being that they stop being four apart, which is the whole
-            // reason seekBars asks the project rather than multiplying.
+            // 4/4 from the top, 7/8 from beat 8. A 7/8 bar is three and a half
+            // quarter-note beats, so the bars run 0-4, 4-8, 8-11.5, 11.5-15: they
+            // stop being four apart, which is why seekBars asks the project
+            // rather than multiplying.
             auto edit = te::engine::test_utilities::createTestEdit(*engine, 1);
             expect(edit != nullptr, "no Edit");
             if (edit == nullptr)
@@ -84,9 +84,8 @@ class TransportSeekBarsTests final : public juce::UnitTest {
             magda::TransportApiLive transport;
             useEdit(transport, *edit);
 
-            // One bar back from the top of the second 7/8 bar is seven beats,
-            // not four.
-            transport.setPositionBeats(15.0);
+            // One bar back from the top of the second 7/8 bar is 3.5 beats.
+            transport.setPositionBeats(11.5);
             transport.seekBars(-1);
             expectWithinAbsoluteError(transport.getPositionBeats(), 8.0, 1.0e-6);
 
@@ -96,7 +95,7 @@ class TransportSeekBarsTests final : public juce::UnitTest {
 
             // Forward over the same change, for the same reason in reverse.
             transport.seekBars(2);
-            expectWithinAbsoluteError(transport.getPositionBeats(), 15.0, 1.0e-6);
+            expectWithinAbsoluteError(transport.getPositionBeats(), 11.5, 1.0e-6);
         }
 
         beginTest("The offset within the bar is carried across");
