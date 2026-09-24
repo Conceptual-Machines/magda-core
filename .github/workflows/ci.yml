@@ -1806,7 +1806,7 @@ jobs:
           # Catch2 prints nothing per case otherwise, and a killed shard would
           # leave an empty file behind.
           $p = Start-Process -FilePath $testExe.FullName `
-            -ArgumentList "--abort", "--durations", "yes", "--shard-count", "$shards", "--shard-index", "$i" `
+            -ArgumentList "--abort", "--durations", "yes", "--shard-count", "$shards", "--shard-index", "$i", "~[parallel]" `
             -NoNewWindow -PassThru `
             -RedirectStandardOutput (Join-Path $outDir "shard-$i.out") `
             -RedirectStandardError (Join-Path $outDir "shard-$i.err")
@@ -1876,8 +1876,26 @@ jobs:
         foreach ($r in ($runs | Sort-Object { $_.Seconds } -Descending)) {
           Write-Host ("shard {0,2}  {1,5}s" -f $r.Index, $r.Seconds)
         }
+
+        # The [parallel] cases run their own worker pools against deadlines, so they get the
+        # machine to themselves: beside the shards on a hosted VM they starved past them.
+        Write-Host "===== [parallel] cases, alone ====="
+        $parallelRun = Start-Process -FilePath $testExe.FullName `
+          -ArgumentList "--abort", "--durations", "yes", "[parallel]" `
+          -NoNewWindow -PassThru -Wait `
+          -RedirectStandardOutput (Join-Path $outDir "parallel.out") `
+          -RedirectStandardError (Join-Path $outDir "parallel.err")
+        $parallelOut = @(Get-Content (Join-Path $outDir "parallel.out") -ErrorAction SilentlyContinue)
+        if ($parallelRun.ExitCode -ne 0) {
+          $parallelOut
+          Get-Content (Join-Path $outDir "parallel.err") -ErrorAction SilentlyContinue
+          $failed++
+        } else {
+          $parallelOut | Select-Object -Last 3
+        }
+
         if ($failed -gt 0) {
-          Write-Error "$failed of $shards test shards failed"
+          Write-Error "$failed test runs failed"
           exit 1
         }
 
