@@ -83,6 +83,28 @@ class MacroListenerSpy : public TrackManagerListener {
     TrackId lastDevicesTrackId = INVALID_TRACK_ID;
 };
 
+TEST_CASE("Aux returns get role-specific default names", "[aux][track][naming]") {
+    GroupMacroTestFixture fixture;
+
+    const auto firstId = fixture.tm().createTrack({}, TrackType::Aux);
+    const auto mediaId = fixture.tm().createTrack();
+    const auto namedId = fixture.tm().createTrack("Plate", TrackType::Aux);
+    const auto secondId = fixture.tm().createTrack({}, TrackType::Aux);
+
+    REQUIRE(fixture.tm().getTrack(firstId) != nullptr);
+    REQUIRE(fixture.tm().getTrack(mediaId) != nullptr);
+    REQUIRE(fixture.tm().getTrack(namedId) != nullptr);
+    REQUIRE(fixture.tm().getTrack(secondId) != nullptr);
+
+    CHECK(fixture.tm().getTrack(firstId)->name == "Aux 1");
+    CHECK(fixture.tm().getTrack(firstId)->auxBusIndex == 0);
+    CHECK(fixture.tm().getTrack(mediaId)->name == "2 Track");
+    CHECK(fixture.tm().getTrack(namedId)->name == "Plate");
+    CHECK(fixture.tm().getTrack(namedId)->auxBusIndex == 1);
+    CHECK(fixture.tm().getTrack(secondId)->name == "Aux 3");
+    CHECK(fixture.tm().getTrack(secondId)->auxBusIndex == 2);
+}
+
 // ============================================================================
 // Group Track: Instrument Restriction
 // ============================================================================
