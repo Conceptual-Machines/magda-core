@@ -560,6 +560,9 @@ HandlerResult tracksCreate(MagdaApi& api, const juce::var& input, const RequestC
     if (!type)
         return HandlerResult::fail(ErrorCode::ValidationFailed,
                                    "unsupported track type: " + input["type"].toString());
+    if (*type == TrackType::Chord)
+        return HandlerResult::fail(ErrorCode::Conflict,
+                                   "the chord track is a singleton; use chordTrack.ensure");
 
     // Through a command rather than TrackApi::createTrack. The facade setters
     // mutate the managers directly, so the dispatcher's compound would close
@@ -571,6 +574,36 @@ HandlerResult tracksCreate(MagdaApi& api, const juce::var& input, const RequestC
     if (id == INVALID_TRACK_ID)
         return HandlerResult::fail(ErrorCode::InternalError, "track creation failed");
     return HandlerResult::ok(idResult(id));
+}
+
+// ===========================================================================
+// Singleton chord track
+// ===========================================================================
+
+namespace {
+const TrackInfo* findChordTrack(MagdaApi& api) {
+    const auto& tracks = api.tracks().getTracks();
+    const auto found = std::ranges::find(tracks, TrackType::Chord, &TrackInfo::type);
+    return found == tracks.end() ? nullptr : &*found;
+}
+
+juce::var chordTrackSnapshot(MagdaApi& api) {
+    return toJson(makeChordTrackDto(findChordTrack(api), api.clips()));
+}
+}  // namespace
+
+HandlerResult chordTrackGet(MagdaApi& api, const juce::var&, const RequestContext&) {
+    return HandlerResult::ok(chordTrackSnapshot(api));
+}
+
+HandlerResult chordTrackEnsure(MagdaApi& api, const juce::var&, const RequestContext&) {
+    if (findChordTrack(api) != nullptr)
+        return HandlerResult::unchanged(chordTrackSnapshot(api));
+
+    runCommand<EnsureChordTrackCommand>(api);
+    if (findChordTrack(api) == nullptr)
+        return HandlerResult::fail(ErrorCode::InternalError, "chord track creation failed");
+    return HandlerResult::ok(chordTrackSnapshot(api));
 }
 
 HandlerResult tracksCreateFromPreset(MagdaApi& api, const juce::var& input, const RequestContext&) {

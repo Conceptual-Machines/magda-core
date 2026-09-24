@@ -31,6 +31,24 @@ class CreateTrackCommand : public UndoableCommand {
     bool executed_ = false;
 };
 
+/** Create the singleton chord track when it is absent. */
+class EnsureChordTrackCommand : public UndoableCommand {
+  public:
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Ensure Chord Track";
+    }
+
+    TrackId getChordTrackId() const {
+        return chordTrackId_;
+    }
+
+  private:
+    TrackId chordTrackId_ = INVALID_TRACK_ID;
+    bool created_ = false;
+};
+
 /** Create and fully populate one track from a saved track-chain preset. */
 class CreateTrackFromPresetCommand : public UndoableCommand {
   public:

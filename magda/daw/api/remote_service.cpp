@@ -26,7 +26,7 @@ std::vector<Topic> topicsFor(const juce::String& operationName) {
     // Session slots are keyed by track and derived from clips, so a track
     // disappearing takes its column of the grid with it.
     if (operationName == "tracks.create" || operationName == "tracks.createFromPreset" ||
-        operationName == "tracks.delete")
+        operationName == "tracks.delete" || operationName == "chordTrack.ensure")
         return {Topic::Tracks, Topic::Clips, Topic::Devices, Topic::Session};
     if (operationName.startsWith("tracks."))
         return {Topic::Tracks};

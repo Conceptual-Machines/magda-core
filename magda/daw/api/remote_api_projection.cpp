@@ -334,6 +334,31 @@ TrackDto makeTrackDto(const TrackInfo& track) {
     return dto;
 }
 
+ChordTrackDto makeChordTrackDto(const TrackInfo* track, ClipApi& clips) {
+    assertMessageThread();
+    ChordTrackDto dto;
+    if (track == nullptr)
+        return dto;
+
+    dto.track = makeTrackDto(*track);
+    for (const auto clipId : clips.getClipsOnTrack(track->id)) {
+        const auto* clip = clips.getClip(clipId);
+        if (clip == nullptr)
+            continue;
+        for (const auto& chord : clip->chordAnnotations) {
+            dto.chords.push_back({clip->id, chord.beatPosition,
+                                  clip->placement.startBeat + chord.beatPosition, chord.lengthBeats,
+                                  chord.chordName});
+        }
+    }
+
+    std::ranges::sort(dto.chords, [](const auto& left, const auto& right) {
+        return std::tie(left.startBeat, left.clipId, left.clipBeat) <
+               std::tie(right.startBeat, right.clipId, right.clipBeat);
+    });
+    return dto;
+}
+
 ClipDto makeClipDto(const ClipInfo& clip) {
     ClipDto dto;
     dto.id = clip.id;

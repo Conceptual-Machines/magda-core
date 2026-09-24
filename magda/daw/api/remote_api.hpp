@@ -17,6 +17,7 @@
 namespace magda {
 
 class MagdaApi;
+class ClipApi;
 struct AutomationLaneInfo;
 struct AutomationClipInfo;
 struct ClipInfo;
@@ -152,6 +153,24 @@ struct TrackDto {
     juce::String midiOutputDevice;
 
     bool operator==(const TrackDto&) const = default;
+};
+
+struct ChordEntryDto {
+    ClipId clipId = INVALID_CLIP_ID;
+    double clipBeat = 0.0;
+    double startBeat = 0.0;
+    double lengthBeats = 0.0;
+    juce::String name;
+
+    bool operator==(const ChordEntryDto&) const = default;
+};
+
+/** Safe snapshot of the singleton chord track and its ordered progression. */
+struct ChordTrackDto {
+    std::optional<TrackDto> track;
+    std::vector<ChordEntryDto> chords;
+
+    bool operator==(const ChordTrackDto&) const = default;
 };
 
 struct ClipDto {
@@ -633,6 +652,8 @@ juce::var toJson(const MidiNoteDto& dto);
 juce::var toJson(const MidiEventDto& dto);
 juce::var toJson(const ProjectDto& dto);
 juce::var toJson(const TrackDto& dto);
+juce::var toJson(const ChordEntryDto& dto);
+juce::var toJson(const ChordTrackDto& dto);
 juce::var toJson(const ClipDto& dto);
 juce::var toJson(const DeviceDto& dto);
 juce::var toJson(const ChainDto& dto);
@@ -681,6 +702,7 @@ std::optional<AutomationClipDto> automationClipFromJson(const juce::var& json, E
 
 ProjectDto makeProjectDto(const ProjectInfo& project, bool dirty, bool hasSaveTarget);
 TrackDto makeTrackDto(const TrackInfo& track);
+ChordTrackDto makeChordTrackDto(const TrackInfo* track, ClipApi& clips);
 ClipDto makeClipDto(const ClipInfo& clip);
 std::vector<MidiEventDto> makeMidiEventDtos(const ClipInfo& clip);
 DeviceGraphDto makeDeviceGraphDto(const std::vector<TrackInfo>& tracks);

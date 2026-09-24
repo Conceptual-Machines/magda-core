@@ -33,12 +33,16 @@ TEST_CASE("agent surface registry has distinct bounded capabilities", "[console_
     REQUIRE(containsTool(arrangement, "clips.quantize"));
     REQUIRE(containsTool(arrangement, "project.save"));
     REQUIRE(containsTool(arrangement, "project.setLoopRange"));
+    REQUIRE(containsTool(arrangement, "chordTrack.get"));
+    REQUIRE(containsTool(arrangement, "chordTrack.ensure"));
     REQUIRE(containsProvider(arrangement, magda::AgentContextProvider::ReferenceMidi));
 
     REQUIRE(containsTool(piano, "clips.addMidiNote"));
     REQUIRE(containsTool(piano, "clips.move"));
     REQUIRE(containsTool(piano, "clips.resize"));
     REQUIRE(containsTool(piano, "clips.duplicate"));
+    REQUIRE(containsTool(piano, "chordTrack.get"));
+    REQUIRE(containsTool(piano, "chordTrack.ensure"));
     REQUIRE_FALSE(containsTool(piano, "tracks.delete"));
 
     REQUIRE(containsTool(session, "session.launchScene"));
@@ -86,7 +90,7 @@ TEST_CASE("surface context is bounded and always revisioned", "[console_routing]
         REQUIRE(containsProvider(surface, magda::AgentContextProvider::ActiveView));
         REQUIRE(containsProvider(surface, magda::AgentContextProvider::Conversation));
         REQUIRE(surface.contextProviders.size() <= 10);
-        REQUIRE(surface.toolAllowlist.size() <= 24);
+        REQUIRE(surface.toolAllowlist.size() <= 26);
     }
 }
 

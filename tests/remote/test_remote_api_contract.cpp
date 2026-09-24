@@ -41,6 +41,8 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(registry.find("project.get") != nullptr);
     REQUIRE(registry.find("project.save") != nullptr);
     REQUIRE(registry.find("project.setLoopRange") != nullptr);
+    REQUIRE(registry.find("chordTrack.get") != nullptr);
+    REQUIRE(registry.find("chordTrack.ensure") != nullptr);
     REQUIRE(registry.find("trackPresets.list") != nullptr);
     REQUIRE(registry.find("tracks.createFromPreset") != nullptr);
     REQUIRE(registry.find("devices.list") != nullptr);
@@ -88,6 +90,80 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(description["apiVersion"].toString() == "1.0");
     REQUIRE(description["operations"].getArray()->size() ==
             static_cast<int>(registry.operations().size()));
+}
+
+TEST_CASE("Chord track operations expose a singleton-safe progression projection",
+          "[remote-api][contract][chord-track]") {
+    const ScopedMessageThreadAssertionDisabler threadAssertionGuard;
+    magda::test::MockMagdaApi api;
+    const auto& registry = OperationRegistry::instance();
+
+    const auto* get = registry.find("chordTrack.get");
+    const auto* ensure = registry.find("chordTrack.ensure");
+    REQUIRE(get != nullptr);
+    REQUIRE(ensure != nullptr);
+    CHECK(get->access == OperationAccess::Read);
+    CHECK(get->requiredScope == Scope::Read);
+    CHECK(ensure->access == OperationAccess::Write);
+    CHECK(ensure->requiredScope == Scope::Edit);
+
+    const auto absent = get->handler(api, object({}), {});
+    REQUIRE_FALSE(absent.failed());
+    CHECK(absent.value["track"].isVoid());
+    REQUIRE(absent.value["chords"].getArray() != nullptr);
+    CHECK(absent.value["chords"].getArray()->isEmpty());
+    CHECK(validateJson(absent.value, get->outputSchema).empty());
+
+    TrackInfo chordTrack;
+    chordTrack.id = 7;
+    chordTrack.type = TrackType::Chord;
+    chordTrack.name = "Chord Track";
+    chordTrack.normalizeForType();
+    api.tracks_.tracks.push_back(chordTrack);
+
+    ClipInfo later;
+    later.id = 20;
+    later.trackId = chordTrack.id;
+    later.setMidiContent();
+    later.setPlacementBeats(8.0, 4.0);
+    later.chordAnnotations.push_back({0.0, 4.0, "G7", 91});
+    api.clips_.clips.emplace(later.id, later);
+
+    ClipInfo earlier;
+    earlier.id = 10;
+    earlier.trackId = chordTrack.id;
+    earlier.setMidiContent();
+    earlier.setPlacementBeats(0.0, 8.0);
+    // Deliberately stored out of order: the public progression is chronological.
+    earlier.chordAnnotations.push_back({4.0, 4.0, "Fmaj7", 42});
+    earlier.chordAnnotations.push_back({0.0, 4.0, "Cmaj7", 17});
+    api.clips_.clips.emplace(earlier.id, earlier);
+    api.clips_.clipsOnTrack[chordTrack.id] = {later.id, earlier.id};
+
+    const auto present = get->handler(api, object({}), {});
+    REQUIRE_FALSE(present.failed());
+    REQUIRE(present.value["track"].getDynamicObject() != nullptr);
+    CHECK(static_cast<int>(present.value["track"]["id"]) == chordTrack.id);
+    const auto* chords = present.value["chords"].getArray();
+    REQUIRE(chords != nullptr);
+    REQUIRE(chords->size() == 3);
+    CHECK((*chords)[0]["name"].toString() == "Cmaj7");
+    CHECK(static_cast<double>((*chords)[0]["clipBeat"]) == 0.0);
+    CHECK(static_cast<double>((*chords)[0]["startBeat"]) == 0.0);
+    CHECK((*chords)[1]["name"].toString() == "Fmaj7");
+    CHECK(static_cast<double>((*chords)[1]["startBeat"]) == 4.0);
+    CHECK((*chords)[2]["name"].toString() == "G7");
+    CHECK(static_cast<int>((*chords)[2]["clipId"]) == later.id);
+    CHECK_FALSE((*chords)[0].getDynamicObject()->hasProperty("chordGroup"));
+    CHECK(validateJson(present.value, get->outputSchema).empty());
+
+    const auto* create = registry.find("tracks.create");
+    REQUIRE(create != nullptr);
+    const auto duplicate =
+        create->handler(api, object({{"name", "Another"}, {"type", "chord"}}), {});
+    REQUIRE(duplicate.failed());
+    CHECK(duplicate.error->code == ErrorCode::Conflict);
+    CHECK(api.undo_.executeCalls == 0);
 }
 
 TEST_CASE("Automation clip operations expose a closed edit-scoped contract",

@@ -280,6 +280,40 @@ const juce::var& trackSchema() {
     return value;
 }
 
+const juce::var& chordEntrySchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "clipId":{"type":"integer","minimum":0},
+            "clipBeat":{"type":"number","minimum":0},
+            "startBeat":{"type":"number","minimum":0},
+            "lengthBeats":{"type":"number","exclusiveMinimum":0},
+            "name":{"type":"string"}
+        },
+        "required":["clipId","clipBeat","startBeat","lengthBeats","name"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
+const juce::var& chordTrackSchema() {
+    static const auto value = [] {
+        auto schema = parseSchema(R"json({
+            "type":"object",
+            "properties":{
+                "track":{"anyOf":[{}, {"type":"null"}]},
+                "chords":{"type":"array","items":{}}
+            },
+            "required":["track","chords"],
+            "additionalProperties":false
+        })json");
+        schema["properties"]["track"]["anyOf"].getArray()->set(0, trackSchema());
+        schema["properties"]["chords"].getDynamicObject()->setProperty("items", chordEntrySchema());
+        return schema;
+    }();
+    return value;
+}
+
 const juce::var& trackPresetSchema() {
     static const auto value = parseSchema(R"json({
         "type":"object",
@@ -1315,6 +1349,26 @@ juce::var toJson(const TrackDto& dto) {
     return object;
 }
 
+juce::var toJson(const ChordEntryDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("clipId", dto.clipId);
+    object->setProperty("clipBeat", dto.clipBeat);
+    object->setProperty("startBeat", dto.startBeat);
+    object->setProperty("lengthBeats", dto.lengthBeats);
+    object->setProperty("name", dto.name);
+    return object;
+}
+
+juce::var toJson(const ChordTrackDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("track", dto.track ? toJson(*dto.track) : juce::var());
+    juce::Array<juce::var> chords;
+    for (const auto& chord : dto.chords)
+        chords.add(toJson(chord));
+    object->setProperty("chords", chords);
+    return object;
+}
+
 juce::var toJson(const ClipDto& dto) {
     auto* object = new juce::DynamicObject();
     object->setProperty("id", dto.id);
@@ -1972,6 +2026,11 @@ OperationRegistry::OperationRegistry() {
 
     add("trackPresets.list", "List saved track-chain presets by opaque id", OperationAccess::Read,
         &handlers::trackPresetsList, emptyObjectSchema(), arraySchema(trackPresetSchema()));
+
+    add("chordTrack.get", "Get the singleton chord track and ordered progression",
+        OperationAccess::Read, &handlers::chordTrackGet, emptyObjectSchema(), chordTrackSchema());
+    add("chordTrack.ensure", "Create the singleton chord track when absent", OperationAccess::Write,
+        &handlers::chordTrackEnsure, emptyObjectSchema(), chordTrackSchema());
 
     add("tracks.list", "List tracks", OperationAccess::Read, &handlers::tracksList,
         emptyObjectSchema(), arraySchema(trackSchema()));
@@ -2834,6 +2893,7 @@ OperationRegistry::OperationRegistry() {
         {"project.setTimeSignature", Scope::Edit},
         {"project.setLoopRange", Scope::Edit},
         {"project.save", Scope::Edit},
+        {"chordTrack.ensure", Scope::Edit},
         {"tracks.create", Scope::Edit},
         {"tracks.createFromPreset", Scope::Edit},
         {"tracks.update", Scope::Edit},
