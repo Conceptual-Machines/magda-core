@@ -32,6 +32,12 @@ on:
         required: false
         type: boolean
         default: false
+      windows-runner:
+        description: 'Windows runner: auto picks the idle self-hosted one, hosted forces windows-latest'
+        required: false
+        type: choice
+        options: [ auto, hosted ]
+        default: auto
 
 # Ensure only one CI run per branch at a time
 concurrency:
@@ -1090,8 +1096,19 @@ jobs:
         id: pick
         env:
           GH_TOKEN: ${{ secrets.RUNNER_STATUS_PAT }}
+          # Through env, never inlined: a commit message is untrusted text
+          HEAD_MESSAGE: ${{ github.event.head_commit.message }}
+          DISPATCH_RUNNER: ${{ github.event.inputs.windows-runner }}
         run: |
           set -euo pipefail
+
+          # A dispatch with windows-runner=hosted, or a push whose commit message
+          # carries [windows-hosted], runs on windows-latest whatever the picker says
+          if [ "${DISPATCH_RUNNER:-}" = "hosted" ] || [[ "${HEAD_MESSAGE:-}" == *"[windows-hosted]"* ]]; then
+            echo 'labels=["windows-latest"]' >> "$GITHUB_OUTPUT"
+            echo "windows-latest requested"
+            exit 0
+          fi
 
           if [ -z "${GH_TOKEN:-}" ]; then
             echo 'labels=["windows-latest"]' >> "$GITHUB_OUTPUT"
@@ -1750,7 +1767,10 @@ jobs:
         # construction, and each is its own process, so suite wall time drops
         # to roughly the heaviest shard. Own TMP per shard: concurrent shards
         # must not collide on temp file names.
-        $shards = 16
+        # One shard per core, at most 16: a hosted VM has few cores, and 16 shards there
+        # starved the tests that wait on their own worker threads past their deadlines.
+        $shards = [Math]::Min(16, [Environment]::ProcessorCount)
+        Write-Host "$([Environment]::ProcessorCount) cores"
         # A shard that stopped, not one that is slow: a healthy step is four
         # minutes on the self-hosted runner and four to six on a hosted one,
         # the heaviest shard being most of that.
