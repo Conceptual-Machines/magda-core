@@ -14,9 +14,13 @@
 
     #include <fstream>
 #elif defined(_WIN32)
-    #define NOMINMAX
-    #include <psapi.h>
+    #ifndef NOMINMAX
+        #define NOMINMAX
+    #endif
     #include <windows.h>
+
+    // psapi.h needs windows.h's types first.
+    #include <psapi.h>
 #endif
 
 namespace magda::parity {
