@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
 #include <condition_variable>
@@ -929,7 +930,9 @@ TEST_CASE("Retiring an epoch waits for its own workers and not for the ones afte
         ParallelPlanExecutor executor;
     };
 
-    RenderThreadPool pool(4, false);
+    // Sized like the app's pool (cores - 1): 4 workers on a 4-core hosted VM held every core
+    // and left the retiring thread waiting on the scheduler for seconds per epoch.
+    RenderThreadPool pool(std::clamp(juce::SystemStats::getNumCpus() - 1, 2, 4), false);
 
     std::mutex swapMutex;
     std::shared_ptr<Epoch> current;
