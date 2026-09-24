@@ -317,11 +317,21 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
     TrackInfo track;
     track.id = nextTrackId_++;
     track.type = type;
-    // Chord track defaults to "Chord Track" (still renameable); other tracks get
-    // the generic "N Track".
+
+    // Allocate an aux return's stable bus number before deriving its default
+    // name.  The fixed aux strip has always displayed this number as "Aux N";
+    // storing the same name in the model keeps the inspector, mixer and project
+    // file from seeing the unrelated generic track index instead.
+    if (type == TrackType::Aux)
+        track.auxBusIndex = nextAuxBusIndex_++;
+
+    // Chord and aux tracks have role-specific defaults (still renameable);
+    // ordinary tracks retain the generic "N Track" name.
     track.name = !name.isEmpty()            ? name
                  : type == TrackType::Chord ? juce::String("Chord Track")
-                                            : generateTrackName();
+                 : type == TrackType::Aux
+                     ? juce::String("Aux ") + juce::String(track.auxBusIndex + 1)
+                     : generateTrackName();
     const auto& projectDefaults = ProjectManager::getInstance().getCurrentProjectInfo().defaults;
     track.colour = juce::Colour(projectDefaults.colourForIndex(static_cast<int>(tracks_.size())));
 
@@ -339,10 +349,6 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
     track.audioOutputDevice = "master";  // Audio always routes to master
     track.audioInputDevice = "";         // Audio input disabled by default (enable via UI)
     // midiOutputDevice left empty - requires specific device selection
-
-    // Aux buses need a bus index.
-    if (type == TrackType::Aux)
-        track.auxBusIndex = nextAuxBusIndex_++;
 
     // Seed the default "listen to all inputs" and let the single type-invariant
     // boundary clear it (plus monitor/record-arm) for input-less tracks.

@@ -2771,6 +2771,10 @@ void MainView::updateGridDivisionDisplay() {
 // ===== AuxHeadersPanel Implementation =====
 
 MainView::AuxHeadersPanel::AuxHeadersPanel() {
+    // The row is composed almost entirely of child controls. Listen to their
+    // mouse-downs as well so clicking the name, fader, buttons, or meter selects
+    // the aux return just like clicking an ordinary track header.
+    addMouseListener(this, true);
     TrackManager::getInstance().addListener(this);
     rebuildAuxRows();
 }
@@ -2783,6 +2787,19 @@ void MainView::AuxHeadersPanel::tracksChanged() {
     rebuildAuxRows();
 }
 
+void MainView::AuxHeadersPanel::trackPropertyChanged(int trackId) {
+    const auto* track = TrackManager::getInstance().getTrack(trackId);
+    if (!track || track->type != TrackType::Aux)
+        return;
+
+    const auto row =
+        std::ranges::find(auxRows_, trackId, [](const auto& entry) { return entry->trackId; });
+    if (row == auxRows_.end())
+        return;
+
+    (*row)->nameLabel->setText(track->name, juce::dontSendNotification);
+}
+
 void MainView::AuxHeadersPanel::rebuildAuxRows() {
     // Remove all existing child components
     for (auto& row : auxRows_) {
@@ -2791,6 +2808,7 @@ void MainView::AuxHeadersPanel::rebuildAuxRows() {
         removeChildComponent(row->panLabel.get());
         removeChildComponent(row->muteButton.get());
         removeChildComponent(row->soloButton.get());
+        removeChildComponent(row->peakMeter.get());
     }
     auxRows_.clear();
 
@@ -2804,9 +2822,10 @@ void MainView::AuxHeadersPanel::rebuildAuxRows() {
         auto row = std::make_unique<AuxRow>();
         row->trackId = track.id;
 
-        // Name label - show "Aux N" based on bus index
-        juce::String auxName = "Aux " + juce::String(track.auxBusIndex + 1);
-        row->nameLabel = std::make_unique<juce::Label>("auxName", auxName);
+        // The model owns the name, just as it does for every other track.  In
+        // particular, renaming an aux in the inspector must also rename this
+        // strip instead of leaving a synthetic "Aux N" behind.
+        row->nameLabel = std::make_unique<juce::Label>("auxName", track.name);
         row->nameLabel->setColour(juce::Label::textColourId,
                                   ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         row->nameLabel->setFont(FontManager::getInstance().getUIFont(11.0f));
@@ -2883,6 +2902,13 @@ void MainView::AuxHeadersPanel::rebuildAuxRows() {
         };
         addAndMakeVisible(*row->soloButton);
 
+        // Aux returns are excluded from the scrolling track headers, so their
+        // meter has to live here too.  It consumes the same per-track meter
+        // stream as an ordinary track header.
+        row->peakMeter = std::make_unique<LevelMeter>();
+        row->peakMeter->setOrientation(LevelMeter::Orientation::Horizontal);
+        addAndMakeVisible(*row->peakMeter);
+
         auxRows_.push_back(std::move(row));
     }
 
@@ -2910,13 +2936,14 @@ void MainView::AuxHeadersPanel::mouseDown(const juce::MouseEvent& event) {
         return;
 
     int rowHeight = getHeight() / static_cast<int>(auxRows_.size());
-    int rowIndex = event.getPosition().getY() / rowHeight;
+    const auto localEvent = event.getEventRelativeTo(this);
+    int rowIndex = localEvent.getPosition().getY() / rowHeight;
 
     if (rowIndex >= 0 && rowIndex < static_cast<int>(auxRows_.size())) {
         const auto trackId = auxRows_[rowIndex]->trackId;
         SelectionManager::getInstance().selectTrack(trackId);
 
-        if (event.mods.isPopupMenu()) {
+        if (localEvent.mods.isPopupMenu()) {
             juce::PopupMenu menu;
             menu.addItem(1, "Delete Aux Track");
             menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this),
@@ -2942,8 +2969,11 @@ void MainView::AuxHeadersPanel::resized() {
         // Centre a fixed 18px-tall strip within the row (matching master header controls)
         auto controlArea = rowArea.withSizeKeepingCentre(rowArea.getWidth() - 8, 18);
 
-        // Layout: [Name 36px] [M 18px] [S 18px] [Vol 40px] [Pan 32px]
-        row.nameLabel->setBounds(controlArea.removeFromLeft(36));
+        // Layout: [Name] [M] [S] [Vol] [Pan] [stereo meter].  Reserve the
+        // controls from the right so a wider header benefits the track name.
+        constexpr int controlsWidth = 4 + 18 + 2 + 18 + 4 + 40 + 4 + 32 + 4 + 24;
+        row.nameLabel->setBounds(
+            controlArea.removeFromLeft(juce::jmax(24, controlArea.getWidth() - controlsWidth)));
         controlArea.removeFromLeft(4);
         row.muteButton->setBounds(controlArea.removeFromLeft(18).withSizeKeepingCentre(16, 16));
         controlArea.removeFromLeft(2);
@@ -2952,13 +2982,21 @@ void MainView::AuxHeadersPanel::resized() {
         row.volumeLabel->setBounds(controlArea.removeFromLeft(40));
         controlArea.removeFromLeft(4);
         row.panLabel->setBounds(controlArea.removeFromLeft(32));
+        controlArea.removeFromLeft(4);
+        row.peakMeter->setBounds(controlArea.removeFromLeft(24));
     }
 }
 
 void MainView::AuxHeadersPanel::updateMetering(AudioEngine* engine) {
-    // Aux metering could be added here in the future
-    // For now, aux tracks share the same metering infrastructure as regular tracks
-    (void)engine;
+    if (!engine)
+        return;
+
+    auto& meteringBuffer = engine->meters().mixer;
+    for (auto& row : auxRows_) {
+        MeterData data;
+        if (meteringBuffer.popLevels(row->trackId, data))
+            row->peakMeter->setLevels(data.peakL, data.peakR);
+    }
 }
 
 // ===== AuxContentPanel Implementation =====

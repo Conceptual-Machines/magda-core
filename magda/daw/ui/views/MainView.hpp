@@ -473,9 +473,10 @@ class MainView::AuxHeadersPanel : public juce::Component, public TrackManagerLis
 
     // TrackManagerListener
     void tracksChanged() override;
+    void trackPropertyChanged(int trackId) override;
 
     // Metering
-    static void updateMetering(AudioEngine* engine);
+    void updateMetering(AudioEngine* engine);
 
     // Get number of aux tracks
     int getAuxTrackCount() const {
@@ -490,6 +491,7 @@ class MainView::AuxHeadersPanel : public juce::Component, public TrackManagerLis
         std::unique_ptr<DraggableValueLabel> panLabel;
         std::unique_ptr<juce::TextButton> muteButton;
         std::unique_ptr<juce::TextButton> soloButton;
+        std::unique_ptr<LevelMeter> peakMeter;
     };
 
     std::vector<std::unique_ptr<AuxRow>> auxRows_;
