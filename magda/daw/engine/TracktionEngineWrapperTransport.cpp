@@ -414,6 +414,8 @@ void TracktionEngineWrapper::updateTriggerState() {
 // Metronome/click track methods
 void TracktionEngineWrapper::setMetronomeEnabled(bool enabled) {
     if (currentEdit_) {
+        // Accent the downbeat like native's click; Tracktion leaves every tick the same by default
+        currentEdit_->clickTrackEmphasiseBars = true;
         currentEdit_->clickTrackEnabled = enabled;
     }
 }

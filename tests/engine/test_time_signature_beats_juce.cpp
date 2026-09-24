@@ -166,16 +166,16 @@ class TimeSignatureBeatsTest final : public juce::UnitTest {
             return;
 
         fixture.wrapper.setTimeSignature(6, 8);
-        fixture.edit->clickTrackEnabled = true;
-        fixture.edit->clickTrackEmphasiseBars = true;
+        fixture.wrapper.setMetronomeEnabled(true);
         fixture.edit->getTransport().ensureContextAllocated();
         expect(fixture.edit->getTransport().getCurrentPlaybackContext() != nullptr,
                "The click needs a playback context");
         if (fixture.edit->getTransport().getCurrentPlaybackContext() == nullptr)
             return;
 
-        // Any query rebuilds the internal sequence the click reads
-        fixture.edit->tempoSequence.toBarsAndBeats(te::TimePosition());
+        // The app never queries the sequence before playing: only the message loop rebuilds it
+        if (auto* mm = juce::MessageManager::getInstanceWithoutCreating())
+            mm->runDispatchLoopUntil(50);
         te::ClickGenerator click(*fixture.edit, true);
         click.prepareToPlay(44100.0, te::TimePosition());
         te::MidiMessageArray midi;
@@ -194,7 +194,7 @@ class TimeSignatureBeatsTest final : public juce::UnitTest {
         }
         expectEquals(accents, 2);
 
-        fixture.edit->clickTrackEnabled = false;
+        fixture.wrapper.setMetronomeEnabled(false);
         fixture.edit->getTransport().freePlaybackContext();
     }
 };
