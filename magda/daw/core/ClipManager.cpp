@@ -1243,6 +1243,12 @@ ClipId ClipManager::duplicateClipAsGhost(ClipId clipId) {
     auto* original = getClip(clipId);
     if (original == nullptr)
         return INVALID_CLIP_ID;
+    // Legacy/imported callers may have populated the vectors directly. Give
+    // those events their stable ids before the full-struct copy so both group
+    // members begin with identical shared content. Normalising only on the
+    // next property notification would make a per-instance edit look like a
+    // content edit and spuriously notify the sibling.
+    original->ensureMidiEventIds();
     ensureLinkGroup(*original);
     // duplicateClip is a full struct copy, so the copy inherits linkGroupId
     // (and, being grouped, keeps the shared name instead of " Copy").
@@ -1254,6 +1260,7 @@ ClipId ClipManager::duplicateClipAsGhostAtBeats(ClipId clipId, double startBeat,
     auto* original = getClip(clipId);
     if (original == nullptr)
         return INVALID_CLIP_ID;
+    original->ensureMidiEventIds();
     ensureLinkGroup(*original);
     return duplicateClipAtBeats(clipId, startBeat, trackId, tempo);
 }
