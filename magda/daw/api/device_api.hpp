@@ -114,6 +114,19 @@ struct DeviceModUpdate {
     std::optional<float> releaseMs;
 };
 
+/** A partial update to one Drum Grid pad chain. */
+struct PadUpdate {
+    std::optional<int> lowNote;
+    std::optional<int> highNote;
+    std::optional<int> rootNote;
+    std::optional<float> levelDb;
+    std::optional<float> pan;
+    std::optional<bool> muted;
+    std::optional<bool> solo;
+    std::optional<bool> bypassed;
+    std::optional<int> outputBus;
+};
+
 /**
  * @brief Device discovery and inspection, addressed by `ChainNodePath`.
  *
@@ -165,6 +178,15 @@ class DeviceApi {
 
     /** Move a device within the chain it already lives in. */
     virtual bool moveDevice(const ChainNodePath& devicePath, int toIndex) = 0;
+
+    /** Drum Grid kit edits. Paths identify the owning grid, never a rack with a colliding id. */
+    virtual ChainId createPad(const ChainNodePath&, int) = 0;
+    virtual DeviceId setPadVoice(const ChainNodePath&, int, const juce::String&) = 0;
+    /** A host-local sample path is accepted only as write input and is never projected. */
+    virtual DeviceId setPadSample(const ChainNodePath&, int, const juce::String&) = 0;
+    virtual bool clearPad(const ChainNodePath&, int) = 0;
+    virtual bool swapPads(const ChainNodePath&, int, int) = 0;
+    virtual bool updatePad(const ChainNodePath&, int, const PadUpdate&) = 0;
 
     virtual bool setDeviceBypassed(const ChainNodePath& devicePath, bool bypassed) = 0;
 

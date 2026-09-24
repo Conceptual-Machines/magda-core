@@ -20,6 +20,14 @@ class DeviceApiLive : public DeviceApi {
                        int index) override;
     bool removeDevice(const ChainNodePath& devicePath) override;
     bool moveDevice(const ChainNodePath& devicePath, int toIndex) override;
+    ChainId createPad(const ChainNodePath& gridPath, int padIndex) override;
+    DeviceId setPadVoice(const ChainNodePath& gridPath, int padIndex,
+                         const juce::String& catalogId) override;
+    DeviceId setPadSample(const ChainNodePath& gridPath, int padIndex,
+                          const juce::String& samplePath) override;
+    bool clearPad(const ChainNodePath& gridPath, int padIndex) override;
+    bool swapPads(const ChainNodePath& gridPath, int padA, int padB) override;
+    bool updatePad(const ChainNodePath& gridPath, int padIndex, const PadUpdate& update) override;
     bool setDeviceBypassed(const ChainNodePath& devicePath, bool bypassed) override;
     bool setDeviceParameter(const ChainNodePath& devicePath, int paramIndex, float value) override;
     bool setDeviceParameterConfig(const ChainNodePath& devicePath,

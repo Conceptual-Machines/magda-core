@@ -511,6 +511,8 @@ const juce::var& rackSchema() {
     return value;
 }
 
+const juce::var& padSchema();
+
 const juce::var& deviceGraphSchema() {
     static auto value = [] {
         auto schema = parseSchema(R"json({
@@ -518,15 +520,55 @@ const juce::var& deviceGraphSchema() {
             "properties":{
                 "devices":{"type":"array"},
                 "racks":{"type":"array"},
-                "chains":{"type":"array"}
+                "chains":{"type":"array"},
+                "pads":{"type":"array"}
             },
-            "required":["devices","racks","chains"],
+            "required":["devices","racks","chains","pads"],
             "additionalProperties":false
         })json");
         auto* properties = schema["properties"].getDynamicObject();
         properties->getProperty("devices").getDynamicObject()->setProperty("items", deviceSchema());
         properties->getProperty("racks").getDynamicObject()->setProperty("items", rackSchema());
         properties->getProperty("chains").getDynamicObject()->setProperty("items", chainSchema());
+        properties->getProperty("pads").getDynamicObject()->setProperty("items", padSchema());
+        return schema;
+    }();
+    return value;
+}
+
+const juce::var& padSchema() {
+    static auto value = [] {
+        auto schema = parseSchema(R"json({
+            "type":"object",
+            "properties":{
+                "gridPath":{},
+                "index":{"type":"integer","minimum":0,"maximum":63},
+                "midiNote":{"type":"integer","minimum":0,"maximum":127},
+                "populated":{"type":"boolean"},
+                "chainId":{"type":["integer","null"],"minimum":0},
+                "chainPath":{"type":["object","null"]},
+                "lowNote":{"type":"integer","minimum":0,"maximum":127},
+                "highNote":{"type":"integer","minimum":0,"maximum":127},
+                "rootNote":{"type":"integer","minimum":0,"maximum":127},
+                "name":{"type":"string"},
+                "levelDb":{"type":"number"},
+                "pan":{"type":"number","minimum":-1,"maximum":1},
+                "muted":{"type":"boolean"},
+                "solo":{"type":"boolean"},
+                "bypassed":{"type":"boolean"},
+                "outputBus":{"type":"integer","minimum":0,"maximum":31},
+                "devicePaths":{"type":"array"}
+            },
+            "required":["gridPath","index","midiNote","populated","chainId","chainPath","lowNote",
+                        "highNote","rootNote","name","levelDb","pan","muted","solo",
+                        "bypassed","outputBus","devicePaths"],
+            "additionalProperties":false
+        })json");
+        auto* properties = schema["properties"].getDynamicObject();
+        properties->setProperty("gridPath", devicePathSchema());
+        properties->getProperty("devicePaths")
+            .getDynamicObject()
+            ->setProperty("items", devicePathSchema());
         return schema;
     }();
     return value;
@@ -1459,15 +1501,44 @@ juce::var toJson(const DeviceGraphDto& dto) {
     juce::Array<juce::var> devices;
     juce::Array<juce::var> racks;
     juce::Array<juce::var> chains;
+    juce::Array<juce::var> pads;
     for (const auto& device : dto.devices)
         devices.add(toJson(device));
     for (const auto& rack : dto.racks)
         racks.add(toJson(rack));
     for (const auto& chain : dto.chains)
         chains.add(toJson(chain));
+    for (const auto& pad : dto.pads)
+        pads.add(toJson(pad));
     object->setProperty("devices", devices);
     object->setProperty("racks", racks);
     object->setProperty("chains", chains);
+    object->setProperty("pads", pads);
+    return object;
+}
+
+juce::var toJson(const PadDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("gridPath", toJson(dto.gridPath));
+    object->setProperty("index", dto.index);
+    object->setProperty("midiNote", dto.midiNote);
+    object->setProperty("populated", dto.populated);
+    object->setProperty("chainId", nullableId(dto.chainId));
+    object->setProperty("chainPath", dto.chainPath ? toJson(*dto.chainPath) : juce::var());
+    object->setProperty("lowNote", dto.lowNote);
+    object->setProperty("highNote", dto.highNote);
+    object->setProperty("rootNote", dto.rootNote);
+    object->setProperty("name", dto.name);
+    object->setProperty("levelDb", dto.levelDb);
+    object->setProperty("pan", dto.pan);
+    object->setProperty("muted", dto.muted);
+    object->setProperty("solo", dto.solo);
+    object->setProperty("bypassed", dto.bypassed);
+    object->setProperty("outputBus", dto.outputBus);
+    juce::Array<juce::var> paths;
+    for (const auto& path : dto.devicePaths)
+        paths.add(toJson(path));
+    object->setProperty("devicePaths", paths);
     return object;
 }
 
@@ -1800,6 +1871,32 @@ std::optional<RackDto> rackFromJson(const juce::var& json, Error& error) {
     return dto;
 }
 
+std::optional<PadDto> padFromJson(const juce::var& json, Error& error) {
+    if (!prepareDecode(json, padSchema(), error))
+        return std::nullopt;
+    PadDto dto;
+    dto.gridPath = devicePathFromJson(json["gridPath"]);
+    dto.index = readInt(json, "index");
+    dto.midiNote = readInt(json, "midiNote");
+    dto.populated = static_cast<bool>(json["populated"]);
+    dto.chainId = readNullableId<ChainId>(json, "chainId");
+    if (json["chainPath"].isObject())
+        dto.chainPath = devicePathFromJson(json["chainPath"]);
+    dto.lowNote = readInt(json, "lowNote");
+    dto.highNote = readInt(json, "highNote");
+    dto.rootNote = readInt(json, "rootNote");
+    dto.name = json["name"].toString();
+    dto.levelDb = static_cast<double>(json["levelDb"]);
+    dto.pan = static_cast<double>(json["pan"]);
+    dto.muted = static_cast<bool>(json["muted"]);
+    dto.solo = static_cast<bool>(json["solo"]);
+    dto.bypassed = static_cast<bool>(json["bypassed"]);
+    dto.outputBus = readInt(json, "outputBus");
+    for (const auto& path : *json["devicePaths"].getArray())
+        dto.devicePaths.push_back(devicePathFromJson(path));
+    return dto;
+}
+
 std::optional<DeviceGraphDto> deviceGraphFromJson(const juce::var& json, Error& error) {
     if (!prepareDecode(json, deviceGraphSchema(), error))
         return std::nullopt;
@@ -1821,6 +1918,12 @@ std::optional<DeviceGraphDto> deviceGraphFromJson(const juce::var& json, Error& 
         if (!decoded)
             return std::nullopt;
         dto.chains.push_back(*decoded);
+    }
+    for (const auto& item : *json["pads"].getArray()) {
+        auto decoded = padFromJson(item, error);
+        if (!decoded)
+            return std::nullopt;
+        dto.pads.push_back(*decoded);
     }
     return dto;
 }
@@ -2276,6 +2379,66 @@ OperationRegistry::OperationRegistry() {
             "additionalProperties":false
         })json"),
         deviceGraphSchema());
+    auto addPadOperation = [&](const char* name, const char* summary, OperationAccess access,
+                               OperationHandler handler, const char* inputJson, juce::var output) {
+        add(name, summary, access, handler, operationInputSchema(inputJson), output);
+        operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+            "gridPath", devicePathSchema());
+    };
+    addPadOperation("pads.list", "List all 64 slots of a Drum Grid", OperationAccess::Read,
+                    &handlers::padsList, R"json({
+        "type":"object","properties":{"gridPath":{}},
+        "required":["gridPath"],"additionalProperties":false
+    })json",
+                    arraySchema(padSchema()));
+    addPadOperation("pads.create", "Create an empty pad chain", OperationAccess::Write,
+                    &handlers::padsCreate, R"json({
+        "type":"object","properties":{"gridPath":{},"padIndex":{"type":"integer","minimum":0,"maximum":63}},
+        "required":["gridPath","padIndex"],"additionalProperties":false
+    })json",
+                    padSchema());
+    addPadOperation("pads.setDevice", "Replace a pad voice with a catalogue device",
+                    OperationAccess::Write, &handlers::padsSetDevice, R"json({
+        "type":"object","properties":{"gridPath":{},"padIndex":{"type":"integer","minimum":0,"maximum":63},
+        "catalogId":{"type":"string","minLength":1}},
+        "required":["gridPath","padIndex","catalogId"],"additionalProperties":false
+    })json",
+                    padSchema());
+    addPadOperation("pads.setSample",
+                    "Replace a pad voice with a sampler using a host-local audio file",
+                    OperationAccess::Write, &handlers::padsSetSample, R"json({
+        "type":"object","properties":{"gridPath":{},"padIndex":{"type":"integer","minimum":0,"maximum":63},
+        "samplePath":{"type":"string","minLength":1}},
+        "required":["gridPath","padIndex","samplePath"],"additionalProperties":false
+    })json",
+                    padSchema());
+    addPadOperation("pads.clear", "Clear one pad", OperationAccess::Write, &handlers::padsClear,
+                    R"json({
+        "type":"object","properties":{"gridPath":{},"padIndex":{"type":"integer","minimum":0,"maximum":63}},
+        "required":["gridPath","padIndex"],"additionalProperties":false
+    })json",
+                    okResult);
+    addPadOperation("pads.swap", "Swap two single-note pads", OperationAccess::Write,
+                    &handlers::padsSwap, R"json({
+        "type":"object","properties":{"gridPath":{},"padA":{"type":"integer","minimum":0,"maximum":63},
+        "padB":{"type":"integer","minimum":0,"maximum":63}},
+        "required":["gridPath","padA","padB"],"additionalProperties":false
+    })json",
+                    okResult);
+    addPadOperation("pads.update", "Edit pad notes, level, pan, switches, and output bus",
+                    OperationAccess::Write, &handlers::padsUpdate, R"json({
+        "type":"object","properties":{"gridPath":{},"padIndex":{"type":"integer","minimum":0,"maximum":63},
+        "lowNote":{"type":"integer","minimum":24,"maximum":87},
+        "highNote":{"type":"integer","minimum":24,"maximum":87},
+        "rootNote":{"type":"integer","minimum":0,"maximum":127},
+        "levelDb":{"type":"number","minimum":-60,"maximum":6},
+        "pan":{"type":"number","minimum":-1,"maximum":1},
+        "muted":{"type":"boolean"},"solo":{"type":"boolean"},
+        "bypassed":{"type":"boolean"},
+        "outputBus":{"type":"integer","minimum":0,"maximum":31}},
+        "required":["gridPath","padIndex"],"additionalProperties":false
+    })json",
+                    padSchema());
     // The kinds a client may add, as opposed to devices.list's instances. Read
     // rather than write, and answered from the same catalogue `addDevice` takes
     // its `catalogId` from — so what this lists is exactly what can be asked for.
@@ -2923,6 +3086,12 @@ OperationRegistry::OperationRegistry() {
         {"racks.remove", Scope::Edit},
         {"racks.setBypassed", Scope::Edit},
         {"devices.add", Scope::Edit},
+        {"pads.create", Scope::Edit},
+        {"pads.setDevice", Scope::Edit},
+        {"pads.setSample", Scope::Edit},
+        {"pads.clear", Scope::Edit},
+        {"pads.swap", Scope::Edit},
+        {"pads.update", Scope::Edit},
         {"devices.remove", Scope::Edit},
         {"devices.move", Scope::Edit},
         {"devices.setBypassed", Scope::Edit},
