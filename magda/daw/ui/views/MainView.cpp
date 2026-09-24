@@ -18,6 +18,7 @@
 #include "../components/navigation/SongNavigatorPanel.hpp"
 #include "../themes/ActiveTheme.hpp"
 #include "../themes/FontManager.hpp"
+#include "ArrangementViewportPolicy.hpp"
 #include "Config.hpp"
 #include "audio/TrackMeters.hpp"
 #include "audio/controllers/ControllerParamWriter.hpp"
@@ -360,17 +361,26 @@ void MainView::setupComponents() {
                 trackContentPanel->setVerticalZoom(verticalZoom);
                 trackHeadersPanel->setVerticalZoom(verticalZoom);
 
-                // getTotalTracksHeight already incorporates verticalZoom per track,
-                // so no extra multiplication here. No jmax with viewport height —
-                // the two panels must end up at the exact same content size to
-                // stay in scroll sync (otherwise one viewport can scroll past the
-                // other and they visually drift on first scroll-down).
-                int scaledHeight = trackHeadersPanel->getTotalTracksHeight();
-                int scrollY = static_cast<int>(start * scaledHeight);
+                // getTotalTracksHeight already incorporates verticalZoom per track.
+                // Both viewed components must still cover the viewport when the
+                // rows are shorter; the header panel owns the empty-area context
+                // menu, so shrinking it to the raw row height makes that area
+                // non-interactive (#2809).
+                const int scaledHeight = trackHeadersPanel->getTotalTracksHeight();
+                const int viewportHeight = trackContentViewport->getHeight();
+                const int panelHeight =
+                    arrangement_viewport::panelHeight(scaledHeight, viewportHeight);
+
+                // updateVerticalZoomScrollBar maps the scroll fraction into the
+                // thumb's available travel (1 - rangeHeight); invert that mapping
+                // here and clamp to the viewport's real scrollable extent.
+                const int scrollY = arrangement_viewport::scrollOffset(
+                    start, rangeHeight, scaledHeight, viewportHeight);
 
                 int contentWidth = trackContentPanel->getWidth();
-                trackContentPanel->setSize(contentWidth, scaledHeight);
-                trackHeadersPanel->setSize(trackHeaderWidth, scaledHeight);
+                trackContentPanel->setMinHeight(viewportHeight);
+                trackContentPanel->setSize(contentWidth, panelHeight);
+                trackHeadersPanel->setSize(trackHeaderWidth, panelHeight);
 
                 trackContentViewport->setViewPosition(trackContentViewport->getViewPositionX(),
                                                       scrollY);
@@ -378,6 +388,7 @@ void MainView::setupComponents() {
                 playheadComponent->repaint();
 
                 isUpdatingFromVerticalZoomScrollBar = false;
+                updateVerticalZoomScrollBar();
             }
         });
     // Corner toolbar buttons (above track headers)
@@ -638,13 +649,10 @@ void MainView::applyVerticalZoom(double newVerticalZoom) {
     trackContentPanel->setVerticalZoom(verticalZoom);
     trackHeadersPanel->setVerticalZoom(verticalZoom);
 
-    // Both panels must end at the exact same content height to stay in scroll
-    // sync (see the vertical zoom scrollbar handler for the rationale).
-    const int scaledHeight = trackHeadersPanel->getTotalTracksHeight();
-    trackContentPanel->setSize(trackContentPanel->getWidth(), scaledHeight);
-    trackHeadersPanel->setSize(trackHeaderWidth, scaledHeight);
-
-    updateVerticalZoomScrollBar();
+    // Re-apply the viewport-height floor as well as the matching content size.
+    // Vertical zoom can make the rows shorter than the viewport, but the empty
+    // area must remain part of both panels for painting, drops, and context menus.
+    updateContentSizes();
     playheadComponent->repaint();
 }
 
@@ -1045,7 +1053,10 @@ void MainView::resized() {
     scrollContainer_->setAxisLayout(MainViewScrollContainer::Axis::Horizontal,
                                     arrangementLayout.horizontalScrollBarArea, true);
     scrollContainer_->setAxisLayout(MainViewScrollContainer::Axis::Vertical,
-                                    arrangementLayout.verticalScrollBarArea, true);
+                                    arrangementLayout.verticalScrollBarArea,
+                                    arrangement_viewport::needsVerticalScrollBar(
+                                        trackHeadersPanel->getTotalTracksHeight(),
+                                        arrangementLayout.trackContentArea.getHeight()));
     scrollContainer_->toFront(false);
 
     if (masterVisible_) {
@@ -1434,7 +1445,7 @@ void MainView::updateContentSizes() {
     // back to the viewport floor, not its own stale height.
     int contentHeight = trackHeadersPanel->getTotalTracksHeight();
     int viewportFloor = trackContentViewport->getHeight();
-    contentHeight = juce::jmax(contentHeight, viewportFloor);
+    contentHeight = arrangement_viewport::panelHeight(contentHeight, viewportFloor);
 
     // Tell the content panel the minimum height so its own resized() (which
     // re-computes content size from zoom/timeline) doesn't shrink below the
@@ -1598,10 +1609,21 @@ void MainView::updateHorizontalZoomScrollBar() {
 
 void MainView::updateVerticalZoomScrollBar() {
     int totalContentHeight = trackHeadersPanel->getTotalTracksHeight();
-    if (totalContentHeight <= 0)
-        return;
-
     int viewportHeight = trackContentViewport->getHeight();
+
+    const auto layout = computeArrangementLayout();
+    const bool needsScrollBar =
+        arrangement_viewport::needsVerticalScrollBar(totalContentHeight, viewportHeight);
+    scrollContainer_->setAxisLayout(MainViewScrollContainer::Axis::Vertical,
+                                    layout.verticalScrollBarArea, needsScrollBar);
+
+    if (!needsScrollBar) {
+        trackContentViewport->setViewPosition(trackContentViewport->getViewPositionX(), 0);
+        trackHeadersViewport->setViewPosition(0, 0);
+        scrollContainer_->setVisibleRange(MainViewScrollContainer::Axis::Vertical, 0.0, 1.0);
+        return;
+    }
+
     int scrollY = trackContentViewport->getViewPositionY();
 
     // Calculate rangeHeight from zoom using inverse of: zoom = 0.5 + rangeHeight * 2.5

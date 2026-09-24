@@ -856,6 +856,7 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/themes/CursorManager.cpp
     ../magda/daw/ui/themes/FontManager.cpp
     ui/test_arrangement_row_alignment_juce.cpp
+    ui/test_arrangement_vertical_scroll_juce.cpp
     automation/test_automation_modes_juce.cpp
     ui/test_arrangement_transport_loop_juce.cpp
     devices/test_external_plugin_state_restore_juce.cpp
