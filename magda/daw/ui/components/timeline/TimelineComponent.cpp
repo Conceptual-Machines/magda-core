@@ -287,13 +287,13 @@ double TimelineComponent::timeToBars(double timeInSeconds) const {
     // Calculate total beats
     double totalBeats = timeInSeconds * beatsPerSecond;
     // Convert to bars (considering time signature)
-    double bars = totalBeats / timeSignatureNumerator;
+    double bars = totalBeats / getBeatsPerBar();
     return bars;
 }
 
 double TimelineComponent::barsToTime(double bars) const {
     // Convert bars to beats
-    double totalBeats = bars * timeSignatureNumerator;
+    double totalBeats = bars * getBeatsPerBar();
     // Calculate seconds per beat
     double secondsPerBeat = 60.0 / tempoBPM;
     return totalBeats * secondsPerBeat;
@@ -316,12 +316,13 @@ juce::String TimelineComponent::formatTimePosition(double timeInSeconds) const {
         double beatsPerSecond = tempoBPM / 60.0;
         double totalBeats = timeInSeconds * beatsPerSecond;
 
-        int bar = static_cast<int>(totalBeats / timeSignatureNumerator) + 1;
-        int beatInBar = static_cast<int>(std::fmod(totalBeats, timeSignatureNumerator)) + 1;
+        const double sigBeat = getSignatureBeatLength();
+        int bar = static_cast<int>(totalBeats / getBeatsPerBar()) + 1;
+        int beatInBar = static_cast<int>(std::fmod(totalBeats, getBeatsPerBar()) / sigBeat) + 1;
 
-        // Subdivision (16th notes within the beat)
-        double beatFraction = std::fmod(totalBeats, 1.0);
-        int subdivision = static_cast<int>(beatFraction * 4) + 1;  // 1-4 for 16th notes
+        // Subdivision (16th notes within the signature's beat)
+        double beatFraction = std::fmod(totalBeats, sigBeat);
+        int subdivision = static_cast<int>(beatFraction * 4) + 1;
 
         return juce::String(bar) + "." + juce::String(beatInBar) + "." + juce::String(subdivision);
     }
@@ -1085,19 +1086,19 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
     } else {
         // ===== BARS/BEATS MODE =====
         // Everything in beats — zoom is pixels per beat (ppb)
+        const double barLengthBeats = getBeatsPerBar();
+        const double sigBeat = getSignatureBeatLength();
         double markerIntervalBeats = GridConstants::computeGridInterval(
-            gridQuantize, pixelsPerBeat, timeSignatureNumerator, minPixelSpacing);
-
-        auto barLengthBeats = static_cast<double>(timeSignatureNumerator);
+            gridQuantize, pixelsPerBeat, barLengthBeats, sigBeat, minPixelSpacing);
 
         // Check if grid interval aligns with bar and beat boundaries
         bool alignsWithBars =
             GridConstants::gridAlignsWithBars(markerIntervalBeats, barLengthBeats);
-        bool alignsWithBeats = GridConstants::gridAlignsWithBeats(markerIntervalBeats);
+        bool alignsWithBeats = GridConstants::gridAlignsWithBeats(markerIntervalBeats, sigBeat);
         bool gridAligned = alignsWithBars && alignsWithBeats;
 
         // Pixel spacings directly from zoom (no seconds conversion)
-        double beatPixelSpacing = pixelsPerBeat;
+        double beatPixelSpacing = pixelsPerBeat * sigBeat;
         double pixelsPerBar = pixelsPerBeat * barLengthBeats;
         double pixelsPerSubdiv = pixelsPerBeat * markerIntervalBeats;
 
@@ -1168,11 +1169,11 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                 double totalBeats = beat;
                 double beatInBarFractional = std::fmod(totalBeats, barLengthBeats);
 
-                auto [isBarStart, isBeatStart] =
-                    GridConstants::classifyBeatPosition(beatInBarFractional, barLengthBeats);
+                auto [isBarStart, isBeatStart] = GridConstants::classifyBeatPosition(
+                    beatInBarFractional, barLengthBeats, sigBeat);
 
-                int bar = static_cast<int>(totalBeats / timeSignatureNumerator) + 1;
-                int beatInBar = static_cast<int>(beatInBarFractional) + 1;
+                int bar = static_cast<int>(totalBeats / barLengthBeats) + 1;
+                int beatInBar = static_cast<int>(beatInBarFractional / sigBeat) + 1;
                 if (beatInBarFractional > (barLengthBeats - 0.001)) {
                     bar += 1;
                     beatInBar = 1;
@@ -1198,7 +1199,7 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                 // Only bars, beats, and 16th notes get labels. Finer ticks = no label.
                 constexpr double k16th = 0.25;
                 constexpr double eps = 0.001;
-                double subdivInBeat = std::fmod(beatInBarFractional, 1.0);
+                double subdivInBeat = std::fmod(beatInBarFractional, sigBeat);
 
                 // Check if this tick falls on a 16th-note boundary
                 double pos16th = subdivInBeat / k16th;
@@ -1233,17 +1234,17 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
 
         // Pass 2: For non-aligned grids, draw bar/beat reference ticks and labels on top
         if (!gridAligned) {
-            double refStartBeat = std::floor(visStartBeat);
+            double refStartBeat = std::floor(visStartBeat / sigBeat) * sigBeat;
             double refEndBeat = std::ceil(visEndBeat);
-            for (double beat = refStartBeat; beat <= refEndBeat; beat += 1.0) {
+            for (double beat = refStartBeat; beat <= refEndBeat; beat += sigBeat) {
                 int x = beatsToPixel(beat) + LayoutConfig::TIMELINE_LEFT_PADDING;
                 if (x < 0 || x >= getWidth())
                     continue;
 
                 double barRemainder = std::fmod(beat, barLengthBeats);
-                bool isBarStart = barRemainder < 0.001;
-                int bar = static_cast<int>(beat / timeSignatureNumerator) + 1;
-                int beatInBar = static_cast<int>(barRemainder) + 1;
+                bool isBarStart = barRemainder < 0.001 || barRemainder > barLengthBeats - 0.001;
+                int bar = static_cast<int>((beat + 0.001) / barLengthBeats) + 1;
+                int beatInBar = static_cast<int>(std::round(barRemainder / sigBeat)) + 1;
 
                 if (isBarStart) {
                     g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
@@ -1265,7 +1266,7 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                             drawSecondsBandLabel(g, x, secondsLabelFor(beat), bar == 1);
                     }
                 } else {
-                    if (pixelsPerBeat >= 50) {
+                    if (beatPixelSpacing >= 50) {
                         g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
                         g.setFont(FontManager::getInstance().getUIFont(10.0f));
                         g.drawText(juce::String(bar) + "." + juce::String(beatInBar), x - 25,
@@ -1507,15 +1508,15 @@ double TimelineComponent::getSnapInterval() const {
         // zoom is in pixels per beat
         double secondsPerBeat = 60.0 / tempoBPM;
 
-        double frac = GridConstants::findBeatSubdivision(pixelsPerBeat, minPixelSpacing);
+        double frac = GridConstants::findBeatSubdivision(pixelsPerBeat, getSignatureBeatLength(),
+                                                         minPixelSpacing);
         if (frac > 0) {
             return secondsPerBeat * frac;
         }
 
         // Fall back to bar multiples
-        int mult =
-            GridConstants::findBarMultiple(pixelsPerBeat, timeSignatureNumerator, minPixelSpacing);
-        return secondsPerBeat * timeSignatureNumerator * mult;
+        int mult = GridConstants::findBarMultiple(pixelsPerBeat, getBeatsPerBar(), minPixelSpacing);
+        return secondsPerBeat * getBeatsPerBar() * mult;
     }
 }
 

@@ -69,10 +69,10 @@ void ChordProgressionSection::paint(juce::Graphics& g) {
         return;
     }
 
-    int beatsPerBar = magda::DEFAULT_TIME_SIGNATURE_NUMERATOR;
+    double beatsPerBar = 4.0;
     if (auto* controller = magda::TimelineController::getCurrent())
-        beatsPerBar = controller->getState().tempo.timeSignatureNumerator;
-    const double bar = std::max(1, beatsPerBar);
+        beatsPerBar = controller->getState().tempo.beatsPerBar();
+    const double bar = beatsPerBar;
 
     // Display in time order.
     std::vector<ClipInfo::ChordAnnotation> chords(clip->chordAnnotations.begin(),

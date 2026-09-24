@@ -3667,10 +3667,10 @@ void SessionView::timerCallback() {
                 double period = 1.0;
                 switch (getTrackBeatRate(visibleTrackIds_[i])) {
                     case BeatRate::Whole:
-                        period = static_cast<double>(tsNum);
+                        period = beatsPerBar(tsNum, tsDen);
                         break;
                     case BeatRate::Half:
-                        period = static_cast<double>(tsNum) * 0.5;
+                        period = beatsPerBar(tsNum, tsDen) * 0.5;
                         break;
                     case BeatRate::Quarter:
                         period = 1.0;

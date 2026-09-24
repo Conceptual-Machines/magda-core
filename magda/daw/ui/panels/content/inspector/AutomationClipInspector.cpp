@@ -255,6 +255,10 @@ void AutomationClipInspector::refreshDisplay() {
     if (!titleLabel_.isBeingEdited())
         titleLabel_.setText(clip->name, juce::dontSendNotification);
     colourSwatch_->setColour(clip->colour);
+    const auto& project = magda::ProjectManager::getInstance().getCurrentProjectInfo();
+    for (auto* label :
+         {startValue_.get(), endValue_.get(), lengthValue_.get(), loopLengthValue_.get()})
+        label->setTimeSignature(project.timeSignatureNumerator, project.timeSignatureDenominator);
     startValue_->setValue(clip->startBeats, juce::dontSendNotification);
     endValue_->setValue(clip->getEndBeats(), juce::dontSendNotification);
     lengthValue_->setValue(clip->lengthBeats, juce::dontSendNotification);

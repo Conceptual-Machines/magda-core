@@ -7,12 +7,12 @@
 namespace magda {
 
 std::vector<ExtractedChord> extractChordsFromNotes(const std::vector<MidiNote>& notes,
-                                                   int beatsPerBar) {
+                                                   double beatsPerBar) {
     std::vector<ExtractedChord> detected;
     if (notes.empty())
         return detected;
 
-    const double step = std::max(1, beatsPerBar);
+    const double step = beatsPerBar > 0.0 ? beatsPerBar : 4.0;
 
     // Scan only up to the last note end, not the full clip length.
     double lastNoteEnd = 0.0;

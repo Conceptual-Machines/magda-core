@@ -19,7 +19,7 @@ TimelineController::TimelineController() {
 
     // Load the current project's values (bars → seconds using default 120 BPM).
     const auto& project = ProjectManager::getInstance().getCurrentProjectInfo();
-    state.timelineLengthBeats = project.timelineLengthBars * state.tempo.timeSignatureNumerator;
+    state.timelineLengthBeats = project.timelineLengthBars * state.tempo.beatsPerBar();
     state.timelineLength = state.tempo.barsToTime(project.timelineLengthBars);
 
     // Set default zoom (ppb) to show a reasonable view duration
@@ -625,8 +625,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopEna
         return ChangeFlags::None;
     }
 
-    const double defaultDurationBeats =
-        juce::jmax(minLoopBeats, static_cast<double>(state.tempo.timeSignatureNumerator));
+    const double defaultDurationBeats = juce::jmax(minLoopBeats, state.tempo.beatsPerBar());
     double start =
         juce::jlimit(0.0, state.timelineLengthBeats, state.playhead.getCurrentPositionBeats());
     double end = juce::jmin(state.timelineLengthBeats, start + defaultDurationBeats);
@@ -966,10 +965,9 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetGridQua
             newNum = gq.autoEffectiveNumerator;
             newDen = gq.autoEffectiveDenominator;
         } else {
-            // Bar multiple — convert to note fraction using time signature
-            // e.g. 1 bar in 4/4 → 4/1, 2 bars in 4/4 → 8/1
+            // Bar multiple as a note fraction: 1 bar of 4/4 is 4/4, 2 bars of 6/8 are 12/8
             newNum = gq.autoEffectiveNumerator * state.tempo.timeSignatureNumerator;
-            newDen = 1;
+            newDen = state.tempo.timeSignatureDenominator;
         }
     }
 
@@ -1328,7 +1326,7 @@ void TimelineController::restoreProjectState(double tempo, int timeSigNum, int t
     // A missing legacy field is seeded by deserialization. An explicitly
     // invalid value uses a neutral schema default, never the outgoing project.
     const int lengthBars = timelineLengthBars > 0 ? timelineLengthBars : kDefaultTimelineLengthBars;
-    state.timelineLengthBeats = lengthBars * state.tempo.timeSignatureNumerator;
+    state.timelineLengthBeats = lengthBars * state.tempo.beatsPerBar();
     state.timelineLength = state.tempo.barsToTime(lengthBars);
 
     // Loop: beats are authoritative, derive seconds from BPM

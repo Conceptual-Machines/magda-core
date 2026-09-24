@@ -140,7 +140,6 @@ void TracktionEngineWrapper::recordingFinished(
                 continue;
 
             juce::String audioFilePath = audioClip->getOriginalFile().getFullPathName();
-            double startSeconds = audioClip->getPosition().getStart().inSeconds();
             double lengthSeconds = audioClip->getPosition().getLength().inSeconds();
 
             // NOTE: loop recording is loop-aligned. Tracktion anchors the clip
@@ -196,13 +195,21 @@ void TracktionEngineWrapper::recordingFinished(
                 continue;
             }
 
+            const auto& tempo = audioClip->edit.tempoSequence;
+            const auto start = audioClip->getPosition().getStart();
+            const double startBeat = tempo.toBeats(start).inBeats();
+            const double lengthBeats =
+                tempo.toBeats(start + tracktion::TimeDuration::fromSeconds(lengthSeconds))
+                    .inBeats() -
+                startBeat;
+
             // Remove TE's recording clip before creating MAGDA clip
             audioClip->removeFromParent();
 
             // Create MAGDA audio clip (triggers syncClipToEngine which re-creates in TE)
             auto& clipManager = ClipManager::getInstance();
-            ClipId clipId = clipManager.createAudioClip(trackId, startSeconds, lengthSeconds,
-                                                        audioFilePath, ClipView::Arrangement);
+            ClipId clipId = clipManager.createAudioClipBeats(trackId, startBeat, lengthBeats,
+                                                             audioFilePath, ClipView::Arrangement);
 
             // Recorded at the project tempo, so the interpretation is exact and
             // the user owns it: no detection may replace it.
@@ -822,8 +829,8 @@ void TracktionEngineWrapper::finalizeMidiRecording(TrackId trackId) {
     if (finalizeSessionSlotMidiRecording(trackId, *midiClip))
         return;
 
-    double startSeconds = midiClip->getPosition().getStart().inSeconds();
-    double lengthSeconds = midiClip->getPosition().getLength().inSeconds();
+    const double startBeat = midiClip->getStartBeat().inBeats();
+    const double lengthBeats = midiClip->getLengthInBeats().inBeats();
 
     // Extract a TE MidiList (one take's sequence) into a MAGDA MidiTake.
     auto extractTake = [](tracktion::MidiList& midiList) {
@@ -896,13 +903,13 @@ void TracktionEngineWrapper::finalizeMidiRecording(TrackId trackId) {
                              " takes=" + juce::String(static_cast<int>(takes.size())) +
                              " active=" + juce::String(activeTakeIndex) +
                              " notes=" + juce::String(static_cast<int>(active.notes.size())) +
-                             " len=" + juce::String(lengthSeconds, 3));
+                             " lenBeats=" + juce::String(lengthBeats, 3));
 
     midiClip->removeFromParent();
 
     auto& clipManager = ClipManager::getInstance();
     ClipId clipId =
-        clipManager.createMidiClip(trackId, startSeconds, lengthSeconds, ClipView::Arrangement);
+        clipManager.createMidiClipBeats(trackId, startBeat, lengthBeats, ClipView::Arrangement);
     activeRecordingClips_[trackId] = clipId;
 
     if (auto* clipInfo = clipManager.getClip(clipId)) {

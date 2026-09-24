@@ -652,7 +652,9 @@ std::optional<double> parseRenderBeat(const juce::String& text, const magda::Pro
     for (const auto* suffix : {"bars", "bar"})
         if (token.endsWith(suffix)) {
             const auto bars = parseDouble(token.dropLastCharacters(juce::String(suffix).length()));
-            return bars ? std::optional(*bars * info.timeSignatureNumerator) : std::nullopt;
+            return bars ? std::optional(*bars * magda::beatsPerBar(info.timeSignatureNumerator,
+                                                                   info.timeSignatureDenominator))
+                        : std::nullopt;
         }
 
     for (const auto* suffix : {"beats", "beat"})
@@ -670,8 +672,9 @@ double defaultRenderEndBeat(magda::AudioEngine& engine, const magda::ProjectInfo
     if (const auto editLength = engine.getEditLengthBeats(); editLength.value > 0.0)
         return editLength.value;
 
-    return juce::jmax(1.0,
-                      static_cast<double>(info.timelineLengthBars) * info.timeSignatureNumerator);
+    return juce::jmax(
+        1.0, static_cast<double>(info.timelineLengthBars) *
+                 magda::beatsPerBar(info.timeSignatureNumerator, info.timeSignatureDenominator));
 }
 
 std::optional<magda::OfflineRenderDither> parseDither(const juce::String& text) {

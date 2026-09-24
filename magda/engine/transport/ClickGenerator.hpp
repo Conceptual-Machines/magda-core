@@ -42,6 +42,9 @@ class ClickGenerator {
     void render(const TempoMap& tempo, const ClickSettings& click, const BlockInfo& block,
                 bool countingIn, juce::AudioBuffer<float>& output, int startSample);
 
+    /// One whole click at unity gain, for an engine that plays samples rather than synthesising.
+    static juce::AudioBuffer<float> renderSound(bool accent, double sampleRate);
+
   private:
     /// Start a click @p fraction of a sample after the sample it lands on.
     void trigger(bool accent, double fraction);

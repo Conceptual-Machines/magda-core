@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include "../../state/TimelineController.hpp"
 #include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "core/AutomationCommands.hpp"
@@ -192,6 +193,11 @@ void AutomationPointInspector::refreshDisplay() {
 
     if (selection_.isSinglePoint()) {
         valueValue_->clearTextOverride();
+        if (auto* controller = magda::TimelineController::getCurrent()) {
+            const auto& tempo = controller->getState().tempo;
+            posValue_->setTimeSignature(tempo.timeSignatureNumerator,
+                                        tempo.timeSignatureDenominator);
+        }
         posValue_->setValue(rep->beatPosition, juce::dontSendNotification);
         posDragStart_ = rep->beatPosition;
     } else {

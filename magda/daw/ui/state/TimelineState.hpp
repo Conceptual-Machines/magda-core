@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <algorithm>
 #include <set>
 #include <utility>
 #include <vector>
@@ -77,9 +78,9 @@ struct GridConstants {
      * Find the first beat subdivision where pixelSpacing >= minPixels.
      * Returns the beat fraction, or -1 if none found (caller should try bar multiples).
      */
-    static double findBeatSubdivision(double zoom, int minPixels) {
+    static double findBeatSubdivision(double zoom, double beatLength, int minPixels) {
         for (int p = minBeatPow; p <= maxBeatPow; p++) {
-            double frac = beatFraction(p);
+            double frac = beatLength * beatFraction(p);
             if (static_cast<int>(frac * zoom) >= minPixels) {
                 return frac;
             }
@@ -91,15 +92,25 @@ struct GridConstants {
      * Find the first bar multiple where pixelSpacing >= minPixels.
      * Returns the bar multiple count (1, 2, 4, ...), or the max as fallback.
      */
-    static int findBarMultiple(double zoom, int timeSigNumerator, int minPixels) {
+    static int findBarMultiple(double zoom, double barLengthBeats, int minPixels) {
         for (int p = 0; p <= maxBarPow; p++) {
             int mult = 1 << p;
-            double pixelSpacing = zoom * timeSigNumerator * mult;
+            double pixelSpacing = zoom * barLengthBeats * mult;
             if (static_cast<int>(pixelSpacing) >= minPixels) {
                 return mult;
             }
         }
         return 1 << maxBarPow;
+    }
+
+    /** A span of quarter-note beats as a whole-note fraction: 0.8 beats is 1/5. */
+    static std::pair<int, int> noteFraction(double beats) {
+        for (int den = 1; den <= 1024; ++den) {
+            const double num = beats * den / 4.0;
+            if (num >= 1.0 - 1.0e-6 && std::abs(num - std::round(num)) < 1.0e-6)
+                return {static_cast<int>(std::round(num)), den};
+        }
+        return {1, std::max(1, static_cast<int>(std::round(4.0 / beats)))};
     }
 
     // ===== Grid alignment and classification utilities =====
@@ -111,10 +122,10 @@ struct GridConstants {
                barMod > (intervalBeats - 0.001);
     }
 
-    /** Check if grid interval evenly divides beats (or spans multiple beats). */
-    static bool gridAlignsWithBeats(double intervalBeats) {
-        double beatMod = std::fmod(1.0, intervalBeats);
-        return intervalBeats >= 1.0 || beatMod < 0.001 || beatMod > (intervalBeats - 0.001);
+    /** Check if grid interval evenly divides the signature's beat (or spans several). */
+    static bool gridAlignsWithBeats(double intervalBeats, double beatLength = 1.0) {
+        double beatMod = std::fmod(beatLength, intervalBeats);
+        return intervalBeats >= beatLength || beatMod < 0.001 || beatMod > (intervalBeats - 0.001);
     }
 
     /** Result of classifying a beat position within the bar/beat hierarchy. */
@@ -124,11 +135,12 @@ struct GridConstants {
     };
 
     /** Classify a beat position as bar start, beat start, or subdivision. */
-    static BeatClassification classifyBeatPosition(double beatPosition, double barLengthBeats) {
+    static BeatClassification classifyBeatPosition(double beatPosition, double barLengthBeats,
+                                                   double beatLength = 1.0) {
         double barRemainder = std::fmod(beatPosition, barLengthBeats);
         bool isBar = barRemainder < 0.001 || barRemainder > (barLengthBeats - 0.001);
-        double beatRemainder = std::fmod(beatPosition, 1.0);
-        bool isBeat = isBar || beatRemainder < 0.001 || beatRemainder > 0.999;
+        double beatRemainder = std::fmod(beatPosition, beatLength);
+        bool isBeat = isBar || beatRemainder < 0.001 || beatRemainder > (beatLength - 0.001);
         return {isBar, isBeat};
     }
 
@@ -137,16 +149,17 @@ struct GridConstants {
      * Returns the interval in beats (e.g. 0.5 for 1/8, 4.0 for 1 bar in 4/4).
      */
     static double computeGridInterval(const GridQuantize& gridQuantize, double zoom,
-                                      int timeSigNumerator, int minPixelSpacing) {
+                                      double barLengthBeats, double beatLength,
+                                      int minPixelSpacing) {
         if (!gridQuantize.autoGrid) {
             return gridQuantize.toBeatFraction();
         }
-        double frac = findBeatSubdivision(zoom, minPixelSpacing);
+        double frac = findBeatSubdivision(zoom, beatLength, minPixelSpacing);
         if (frac > 0) {
             return frac;
         }
-        int mult = findBarMultiple(zoom, timeSigNumerator, minPixelSpacing);
-        return static_cast<double>(timeSigNumerator) * mult;
+        int mult = findBarMultiple(zoom, barLengthBeats, minPixelSpacing);
+        return barLengthBeats * mult;
     }
 };
 
@@ -372,16 +385,22 @@ struct TempoState {
     double getSecondsPerBeat() const {
         return 60.0 / bpm;
     }
+    double beatsPerBar() const {
+        return magda::beatsPerBar(timeSignatureNumerator, timeSignatureDenominator);
+    }
+    double signatureBeatLength() const {
+        return magda::signatureBeatLength(timeSignatureDenominator);
+    }
     double getSecondsPerBar() const {
-        return getSecondsPerBeat() * timeSignatureNumerator;
+        return getSecondsPerBeat() * beatsPerBar();
     }
     double timeToBars(double timeInSeconds) const {
         double beatsPerSecond = bpm / 60.0;
         double totalBeats = timeInSeconds * beatsPerSecond;
-        return totalBeats / timeSignatureNumerator;
+        return totalBeats / beatsPerBar();
     }
     double barsToTime(double bars) const {
-        double totalBeats = bars * timeSignatureNumerator;
+        double totalBeats = bars * beatsPerBar();
         return totalBeats * getSecondsPerBeat();
     }
 };
@@ -638,13 +657,14 @@ struct TimelineState {
         }
 
         const int minPixelSpacing = 50;
-        double frac = GridConstants::findBeatSubdivision(zoom.horizontalZoom, minPixelSpacing);
+        double frac = GridConstants::findBeatSubdivision(
+            zoom.horizontalZoom, tempo.signatureBeatLength(), minPixelSpacing);
         if (frac > 0) {
             return frac;
         }
-        int mult = GridConstants::findBarMultiple(zoom.horizontalZoom, tempo.timeSignatureNumerator,
+        int mult = GridConstants::findBarMultiple(zoom.horizontalZoom, tempo.beatsPerBar(),
                                                   minPixelSpacing);
-        return static_cast<double>(tempo.timeSignatureNumerator) * mult;
+        return tempo.beatsPerBar() * mult;
     }
 
     double getSnapInterval() const {
@@ -667,13 +687,14 @@ struct TimelineState {
             return 1.0;
         } else {
             // BarsBeats: zoom is ppb, find first power-of-2 beat fraction that fits
-            double frac = GridConstants::findBeatSubdivision(zoom.horizontalZoom, minPixelSpacing);
+            double frac = GridConstants::findBeatSubdivision(
+                zoom.horizontalZoom, tempo.signatureBeatLength(), minPixelSpacing);
             if (frac > 0) {
                 return tempo.getSecondsPerBeat() * frac;
             }
             // Fall back to bar multiples
-            int mult = GridConstants::findBarMultiple(
-                zoom.horizontalZoom, tempo.timeSignatureNumerator, minPixelSpacing);
+            int mult = GridConstants::findBarMultiple(zoom.horizontalZoom, tempo.beatsPerBar(),
+                                                      minPixelSpacing);
             return tempo.getSecondsPerBar() * mult;
         }
     }
@@ -696,10 +717,11 @@ struct TimelineState {
             double beatsPerSecond = tempo.bpm / 60.0;
             double totalBeats = timeInSeconds * beatsPerSecond;
 
-            int bar = static_cast<int>(totalBeats / tempo.timeSignatureNumerator) + 1;
-            int beatInBar =
-                static_cast<int>(std::fmod(totalBeats, tempo.timeSignatureNumerator)) + 1;
-            double beatFraction = std::fmod(totalBeats, 1.0);
+            const double barBeats = tempo.beatsPerBar();
+            const double sigBeat = tempo.signatureBeatLength();
+            int bar = static_cast<int>(totalBeats / barBeats) + 1;
+            int beatInBar = static_cast<int>(std::fmod(totalBeats, barBeats) / sigBeat) + 1;
+            double beatFraction = std::fmod(totalBeats, sigBeat) / sigBeat;
             int subdivision = static_cast<int>(beatFraction * 4) + 1;
 
             return juce::String(bar) + "." + juce::String(beatInBar) + "." +

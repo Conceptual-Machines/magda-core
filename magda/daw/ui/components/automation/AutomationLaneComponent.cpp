@@ -220,7 +220,7 @@ void AutomationLaneComponent::mouseDoubleClick(const juce::MouseEvent& e) {
     // Default clip length: one bar, from the timeline's time signature.
     double lengthBeats = 4.0;
     if (auto* tc = TimelineController::getCurrent())
-        lengthBeats = juce::jmax(1, tc->getState().tempo.timeSignatureNumerator);
+        lengthBeats = tc->getState().tempo.beatsPerBar();
 
     auto cmd = std::make_unique<CreateAutomationClipCommand>(laneId_, beat, lengthBeats);
     auto* cmdPtr = cmd.get();
@@ -277,7 +277,7 @@ void AutomationLaneComponent::mouseUp(const juce::MouseEvent& e) {
             // the double-click gesture.
             lengthBeats = 4.0;
             if (auto* tc = TimelineController::getCurrent())
-                lengthBeats = juce::jmax(1, tc->getState().tempo.timeSignatureNumerator);
+                lengthBeats = tc->getState().tempo.beatsPerBar();
         }
         auto cmd =
             std::make_unique<CreateAutomationClipCommand>(laneId_, drawClipStartBeat_, lengthBeats);
