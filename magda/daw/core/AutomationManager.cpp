@@ -1206,6 +1206,15 @@ void AutomationManager::restoreClip(AutomationClipInfo& clip) {
     notifyClipsChanged(laneId);
 }
 
+bool AutomationManager::restoreClipState(const AutomationClipInfo& state) {
+    auto* clip = getClip(state.id);
+    if (clip == nullptr || clip->laneId != state.laneId)
+        return false;
+    *clip = state;
+    notifyClipsChanged(clip->laneId);
+    return true;
+}
+
 void AutomationManager::refreshIdCountersFromLanes() {
     auto laneIds = lanes_ | std::views::transform(&AutomationLaneInfo::id);
     auto lanePointIds = lanes_ | std::views::transform(&AutomationLaneInfo::absolutePoints) |

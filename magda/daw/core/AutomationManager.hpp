@@ -516,6 +516,9 @@ class AutomationManager : public TrackManagerListener {
      */
     void restoreClip(AutomationClipInfo& clip);
 
+    /** Restore every property of an existing clip, preserving its id and lane. */
+    bool restoreClipState(const AutomationClipInfo& clip);
+
     /**
      * @brief Update ID counters to avoid collisions after restoring lanes/clips
      */

@@ -537,6 +537,22 @@ AutomationLaneDto makeAutomationLaneDto(const AutomationLaneInfo& lane) {
     return dto;
 }
 
+AutomationClipDto makeAutomationClipDto(const AutomationClipInfo& clip) {
+    AutomationClipDto dto;
+    dto.id = clip.id;
+    dto.laneId = clip.laneId;
+    dto.name = clip.name;
+    dto.colourArgb = clip.colour.getARGB();
+    dto.startBeat = clip.startBeats;
+    dto.lengthBeats = clip.lengthBeats;
+    dto.looping = clip.looping;
+    dto.loopLengthBeats = clip.loopLengthBeats;
+    for (const auto& point : clip.points)
+        dto.points.push_back(
+            {point.id, point.beatPosition, point.value, curveName(point.curveType)});
+    return dto;
+}
+
 // ============================================================================
 // ChainNodePath <-> DevicePathDto
 // ============================================================================

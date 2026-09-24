@@ -147,6 +147,19 @@ lanes reject this operation because their points belong to automation clips.
 one undoable mutation. Both operations require the `edit` scope and participate
 in the normal `expectedRevision` and `requestId` handling.
 
+Clip-based lanes expose their contents through `automation.listClips` and
+`automation.getClip`. The safe projection contains IDs, display metadata,
+timeline bounds, looping state, and normalized points; it contains no engine or
+plugin state.
+
+`automation.createClip`, `automation.deleteClip`, `automation.moveClip`,
+`automation.resizeClip`, and `automation.duplicateClip` each commit one undoable
+timeline mutation. `automation.updateClip` atomically updates any combination
+of name, colour, looping, loop length, and the complete local point set. Point
+IDs are allocated by MAGDA. No-op moves, resizes, and updates are
+revision-neutral, and points outside the clip's local beat range are rejected
+before mutation.
+
 ### MIDI event CRUD
 
 MIDI clips expose one stable per-clip ID space across notes, keyswitch notes,

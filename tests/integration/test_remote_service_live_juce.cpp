@@ -711,6 +711,106 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
             expect(AutomationManager::getInstance().getClip(clipId) != nullptr);
         }
 
+        beginTest("Automation clips support safe reads and undoable lifecycle edits");
+        {
+            Fixture fixture;
+            const auto laneId = createLane(AutomationLaneType::ClipBased);
+            const auto created =
+                fixture.run("automation.createClip", object({{"laneId", static_cast<int>(laneId)},
+                                                             {"startBeat", 4.0},
+                                                             {"lengthBeats", 8.0}}));
+            expect(created.ok);
+            const auto clipId =
+                static_cast<AutomationClipId>(static_cast<int>(created.result["id"]));
+            expect(clipId != INVALID_AUTOMATION_CLIP_ID);
+            expect(created.result["points"].getArray()->size() == 2);
+
+            const auto listed =
+                fixture.run("automation.listClips", object({{"laneId", static_cast<int>(laneId)}}));
+            expect(listed.ok);
+            expect(listed.result.getArray()->size() == 1);
+            const auto fetched =
+                fixture.run("automation.getClip", object({{"clipId", static_cast<int>(clipId)}}));
+            expect(fetched.ok);
+            expectEquals(fetched.result["name"].toString(), created.result["name"].toString());
+
+            const auto moved =
+                fixture.run("automation.moveClip",
+                            object({{"clipId", static_cast<int>(clipId)}, {"startBeat", 12.0}}));
+            expect(moved.ok);
+            expectWithinAbsoluteError(static_cast<double>(moved.result["startBeat"]), 12.0, 1.0e-9);
+            UndoManager::getInstance().undo();
+            expectWithinAbsoluteError(AutomationManager::getInstance().getClip(clipId)->startBeats,
+                                      4.0, 1.0e-9);
+
+            const auto resized =
+                fixture.run("automation.resizeClip", object({{"clipId", static_cast<int>(clipId)},
+                                                             {"lengthBeats", 6.0},
+                                                             {"edge", "end"}}));
+            expect(resized.ok);
+            expectWithinAbsoluteError(static_cast<double>(resized.result["lengthBeats"]), 6.0,
+                                      1.0e-9);
+            UndoManager::getInstance().undo();
+            expectWithinAbsoluteError(AutomationManager::getInstance().getClip(clipId)->lengthBeats,
+                                      8.0, 1.0e-9);
+
+            const auto duplicated = fixture.run("automation.duplicateClip",
+                                                object({{"clipId", static_cast<int>(clipId)}}));
+            expect(duplicated.ok);
+            const auto duplicateId =
+                static_cast<AutomationClipId>(static_cast<int>(duplicated.result["id"]));
+            expect(duplicateId != clipId);
+            expectWithinAbsoluteError(static_cast<double>(duplicated.result["startBeat"]), 12.0,
+                                      1.0e-9);
+            UndoManager::getInstance().undo();
+            expect(AutomationManager::getInstance().getClip(duplicateId) == nullptr);
+
+            juce::Array<juce::var> points;
+            points.add(object({{"beatPosition", 0.0}, {"value", 0.2}, {"curve", "linear"}}));
+            points.add(object({{"beatPosition", 4.0}, {"value", 0.8}, {"curve", "step"}}));
+            const auto updateInput = object({{"clipId", static_cast<int>(clipId)},
+                                             {"name", "Remote curve"},
+                                             {"colourArgb", static_cast<juce::int64>(0xFF123456)},
+                                             {"looping", true},
+                                             {"loopLengthBeats", 4.0},
+                                             {"points", juce::var(points)}});
+            const auto beforeUpdate = fixture.service.currentRevision();
+            const auto updated = fixture.run("automation.updateClip", updateInput);
+            expect(updated.ok);
+            expectEquals(updated.result["name"].toString(), juce::String("Remote curve"));
+            expect(static_cast<bool>(updated.result["looping"]));
+            expect(updated.result["points"].getArray()->size() == 2);
+            expect(fixture.service.currentRevision() == beforeUpdate + 1);
+
+            const auto unchanged = fixture.run("automation.updateClip", updateInput);
+            expect(unchanged.ok);
+            expect(fixture.service.currentRevision() == beforeUpdate + 1);
+
+            juce::Array<juce::var> invalidPoints;
+            invalidPoints.add(object({{"beatPosition", 9.0}, {"value", 0.5}, {"curve", "linear"}}));
+            const auto rejected = fixture.run("automation.updateClip",
+                                              object({{"clipId", static_cast<int>(clipId)},
+                                                      {"points", juce::var(invalidPoints)}}));
+            expect(!rejected.ok);
+            expectEquals(toString(rejected.error.code), juce::String("validation_failed"));
+            expect(fixture.service.currentRevision() == beforeUpdate + 1);
+
+            UndoManager::getInstance().undo();
+            const auto* restored = AutomationManager::getInstance().getClip(clipId);
+            expect(restored != nullptr);
+            if (restored != nullptr) {
+                expect(restored->name != "Remote curve");
+                expect(!restored->looping);
+            }
+
+            const auto deleted = fixture.run("automation.deleteClip",
+                                             object({{"clipId", static_cast<int>(clipId)}}));
+            expect(deleted.ok);
+            expect(AutomationManager::getInstance().getClip(clipId) == nullptr);
+            UndoManager::getInstance().undo();
+            expect(AutomationManager::getInstance().getClip(clipId) != nullptr);
+        }
+
         beginTest("A lane targeting a track that does not exist is refused");
         {
             Fixture fixture;

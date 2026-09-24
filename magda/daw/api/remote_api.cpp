@@ -755,6 +755,32 @@ const juce::var& automationLaneSchema() {
     return value;
 }
 
+const juce::var& automationClipSchema() {
+    static auto value = [] {
+        auto schema = parseSchema(R"json({
+            "type":"object",
+            "properties":{
+                "id":{"type":"integer","minimum":0},
+                "laneId":{"type":"integer","minimum":0},
+                "name":{"type":"string"},
+                "colourArgb":{"type":"integer","minimum":0,"maximum":4294967295},
+                "startBeat":{"type":"number","minimum":0},
+                "lengthBeats":{"type":"number","minimum":0.1},
+                "looping":{"type":"boolean"},
+                "loopLengthBeats":{"type":"number","minimum":0.1},
+                "points":{"type":"array","maxItems":100000}
+            },
+            "required":["id","laneId","name","colourArgb","startBeat","lengthBeats",
+                        "looping","loopLengthBeats","points"],
+            "additionalProperties":false
+        })json");
+        schema["properties"]["points"].getDynamicObject()->setProperty("items",
+                                                                       automationPointSchema());
+        return schema;
+    }();
+    return value;
+}
+
 // ---------------------------------------------------------------------------
 // Subscription schemas (#1857)
 // ---------------------------------------------------------------------------
@@ -1527,6 +1553,23 @@ juce::var toJson(const AutomationLaneDto& dto) {
     return object;
 }
 
+juce::var toJson(const AutomationClipDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("id", dto.id);
+    object->setProperty("laneId", dto.laneId);
+    object->setProperty("name", dto.name);
+    object->setProperty("colourArgb", static_cast<juce::int64>(dto.colourArgb));
+    object->setProperty("startBeat", dto.startBeat);
+    object->setProperty("lengthBeats", dto.lengthBeats);
+    object->setProperty("looping", dto.looping);
+    object->setProperty("loopLengthBeats", dto.loopLengthBeats);
+    juce::Array<juce::var> points;
+    for (const auto& point : dto.points)
+        points.add(toJson(point));
+    object->setProperty("points", points);
+    return object;
+}
+
 std::optional<MidiNoteDto> midiNoteFromJson(const juce::var& json, Error& error) {
     if (!prepareDecode(json, midiNoteSchema(), error))
         return std::nullopt;
@@ -1840,6 +1883,25 @@ std::optional<AutomationLaneDto> automationLaneFromJson(const juce::var& json, E
         dto.points.push_back(std::move(point));
     }
     dto.clipIds = readIntegerArray<AutomationClipId>(json["clipIds"]);
+    return dto;
+}
+
+std::optional<AutomationClipDto> automationClipFromJson(const juce::var& json, Error& error) {
+    if (!prepareDecode(json, automationClipSchema(), error))
+        return std::nullopt;
+    AutomationClipDto dto;
+    dto.id = readInt(json, "id");
+    dto.laneId = readInt(json, "laneId");
+    dto.name = json["name"].toString();
+    dto.colourArgb = decodeBoundedInt<std::uint32_t>(json["colourArgb"]);
+    dto.startBeat = static_cast<double>(json["startBeat"]);
+    dto.lengthBeats = static_cast<double>(json["lengthBeats"]);
+    dto.looping = static_cast<bool>(json["looping"]);
+    dto.loopLengthBeats = static_cast<double>(json["loopLengthBeats"]);
+    for (const auto& item : *json["points"].getArray()) {
+        dto.points.push_back({readInt(item, "id"), static_cast<double>(item["beatPosition"]),
+                              static_cast<double>(item["value"]), item["curve"].toString()});
+    }
     return dto;
 }
 
@@ -2552,6 +2614,74 @@ OperationRegistry::OperationRegistry() {
             "required":["laneId"],"additionalProperties":false
         })json"),
         okResult);
+    add("automation.listClips", "List automation clips, optionally filtered by lane",
+        OperationAccess::Read, &handlers::automationListClips, operationInputSchema(R"json({
+            "type":"object","properties":{"laneId":{"type":"integer","minimum":0}},
+            "additionalProperties":false
+        })json"),
+        arraySchema(automationClipSchema()));
+    add("automation.getClip", "Get an automation clip", OperationAccess::Read,
+        &handlers::automationGetClip, operationInputSchema(R"json({
+            "type":"object","properties":{"clipId":{"type":"integer","minimum":0}},
+            "required":["clipId"],"additionalProperties":false
+        })json"),
+        automationClipSchema());
+    add("automation.createClip", "Create a clip on a clip-based automation lane",
+        OperationAccess::Write, &handlers::automationCreateClip, operationInputSchema(R"json({
+            "type":"object","properties":{
+                "laneId":{"type":"integer","minimum":0},
+                "startBeat":{"type":"number","minimum":0},
+                "lengthBeats":{"type":"number","minimum":0.1}
+            },
+            "required":["laneId","startBeat","lengthBeats"],"additionalProperties":false
+        })json"),
+        automationClipSchema());
+    add("automation.deleteClip", "Delete an automation clip", OperationAccess::Write,
+        &handlers::automationDeleteClip, operationInputSchema(R"json({
+            "type":"object","properties":{"clipId":{"type":"integer","minimum":0}},
+            "required":["clipId"],"additionalProperties":false
+        })json"),
+        okResult);
+    add("automation.moveClip", "Move an automation clip", OperationAccess::Write,
+        &handlers::automationMoveClip, operationInputSchema(R"json({
+            "type":"object","properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "startBeat":{"type":"number","minimum":0}
+            },
+            "required":["clipId","startBeat"],"additionalProperties":false
+        })json"),
+        automationClipSchema());
+    add("automation.resizeClip", "Resize an automation clip from either edge",
+        OperationAccess::Write, &handlers::automationResizeClip, operationInputSchema(R"json({
+            "type":"object","properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "lengthBeats":{"type":"number","minimum":0.1},
+                "edge":{"type":"string","enum":["start","end"]}
+            },
+            "required":["clipId","lengthBeats","edge"],"additionalProperties":false
+        })json"),
+        automationClipSchema());
+    add("automation.duplicateClip", "Duplicate an automation clip after its source",
+        OperationAccess::Write, &handlers::automationDuplicateClip, operationInputSchema(R"json({
+            "type":"object","properties":{"clipId":{"type":"integer","minimum":0}},
+            "required":["clipId"],"additionalProperties":false
+        })json"),
+        automationClipSchema());
+    add("automation.updateClip", "Update automation clip metadata, looping, or points",
+        OperationAccess::Write, &handlers::automationUpdateClip, operationInputSchema(R"json({
+            "type":"object","properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "name":{"type":"string"},
+                "colourArgb":{"type":"integer","minimum":0,"maximum":4294967295},
+                "looping":{"type":"boolean"},
+                "loopLengthBeats":{"type":"number","minimum":0.1},
+                "points":{"type":"array","maxItems":100000}
+            },
+            "required":["clipId"],"additionalProperties":false
+        })json"),
+        automationClipSchema());
+    operations_.back().inputSchema["properties"]["points"].getDynamicObject()->setProperty(
+        "items", automationPointInputSchema());
 
     const auto stringArraySchema = arraySchema(parseSchema(R"json({"type":"string"})json"));
     add("grooves.list", "List groove template names", OperationAccess::Read, &handlers::groovesList,
@@ -2756,6 +2886,12 @@ OperationRegistry::OperationRegistry() {
         {"automation.setPoints", Scope::Edit},
         {"automation.clearLane", Scope::Edit},
         {"automation.deleteLane", Scope::Edit},
+        {"automation.createClip", Scope::Edit},
+        {"automation.deleteClip", Scope::Edit},
+        {"automation.moveClip", Scope::Edit},
+        {"automation.resizeClip", Scope::Edit},
+        {"automation.duplicateClip", Scope::Edit},
+        {"automation.updateClip", Scope::Edit},
 
         // The timeline. Separable from editing because a remote that only
         // starts and stops playback is a thing people actually want, and it

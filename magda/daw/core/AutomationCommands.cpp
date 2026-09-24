@@ -418,6 +418,35 @@ void DuplicateAutomationClipCommand::undo() {
         AutomationManager::getInstance().deleteClip(createdClipId_);
 }
 
+void UpdateAutomationClipCommand::execute() {
+    if (!captured_)
+        return;
+
+    auto& manager = AutomationManager::getInstance();
+    if (applied_) {
+        manager.restoreClipState(desired_);
+        return;
+    }
+
+    AutomationManager::BatchScope batch;
+    manager.setClipName(clipId_, desired_.name);
+    manager.setClipColour(clipId_, desired_.colour);
+    manager.setClipLooping(clipId_, desired_.looping);
+    manager.setClipLoopLength(clipId_, desired_.loopLengthBeats);
+    if (replacePoints_)
+        manager.setClipPoints(clipId_, desired_.points);
+
+    if (const auto* updated = manager.getClip(clipId_)) {
+        desired_ = *updated;
+        applied_ = true;
+    }
+}
+
+void UpdateAutomationClipCommand::undo() {
+    if (applied_)
+        AutomationManager::getInstance().restoreClipState(original_);
+}
+
 // ============================================================================
 // BakeModulationCommand
 // ============================================================================
