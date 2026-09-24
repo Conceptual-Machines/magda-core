@@ -181,7 +181,7 @@ TEST_CASE("Every executable operation is exposed as a tool, and nothing else is"
         // `tools/list` response against that — so a single tool declaring an
         // array-valued output does not go merely unvalidated, it rejects the
         // entire response and the server appears to have no tools at all. A real
-        // host did exactly that over `tracks.list`, which is why the four
+        // host did exactly that over `tracks.list`, which is why the
         // array-valued operations are wrapped rather than declared as they are.
         REQUIRE(tool["inputSchema"]["type"].toString() == "object");
         REQUIRE(tool["outputSchema"]["type"].toString() == "object");
@@ -239,8 +239,8 @@ TEST_CASE("An array-valued operation is wrapped, schema and result together", "[
     // array schema rejected the whole `tools/list`, and then returning a bare
     // array rejected every list *call*. Wrapping fixes both, and has to be done
     // in both places or they describe different shapes.
-    for (const char* name :
-         {"tracks.list", "clips.list", "devices.catalog", "automation.listLanes"}) {
+    for (const char* name : {"tracks.list", "clips.list", "devices.catalog", "devicePresets.list",
+                             "automation.listLanes"}) {
         const auto* operation = OperationRegistry::instance().find(name);
         REQUIRE(operation != nullptr);
         REQUIRE(operation->outputSchema["type"].toString() == "array");

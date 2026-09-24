@@ -111,3 +111,25 @@ TEST_CASE("Legacy chain-only presets are addressable and promoted for track crea
     REQUIRE(loaded.track.chain.fxChainElements.size() == 1);
     CHECK(getDevice(loaded.track.chain.fxChainElements.front()).pluginState == "opaque-legacy");
 }
+
+TEST_CASE("Device presets expose stable path-free metadata", "[presets][device][remote]") {
+    PresetDirectoryScope scope;
+    auto& presets = PresetManager::getInstance();
+    auto source = device(3, "Serum", "opaque-state");
+
+    REQUIRE(presets.saveDevicePreset(source, "Bass/Reese 808"));
+    auto listed = presets.getDevicePresetMetadata(source.name);
+    REQUIRE(listed.size() == 1);
+    CHECK(listed[0].id.startsWith("device-preset:"));
+    CHECK(listed[0].name == "Reese 808");
+    CHECK(listed[0].category == "Bass");
+    CHECK_FALSE(listed[0].id.contains(scope.directory.getFullPathName()));
+    const auto stableId = listed[0].id;
+
+    REQUIRE(presets.renameDevicePreset(source.name, "Bass/Reese 808", "Factory/Reese"));
+    listed = presets.getDevicePresetMetadata(source.name);
+    REQUIRE(listed.size() == 1);
+    CHECK(listed[0].id == stableId);
+    CHECK(listed[0].name == "Reese");
+    CHECK(listed[0].category == "Factory");
+}

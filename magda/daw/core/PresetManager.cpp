@@ -572,6 +572,27 @@ juce::StringArray PresetManager::getDevicePresets(const juce::String& pluginFold
     return out;
 }
 
+std::vector<PresetManager::DevicePresetMetadata> PresetManager::getDevicePresetMetadata(
+    const juce::String& pluginFolder) const {
+    std::vector<DevicePresetMetadata> result;
+    const auto relativeNames = getDevicePresets(pluginFolder);
+    result.reserve(static_cast<std::size_t>(relativeNames.size()));
+
+    for (const auto& relativeName : relativeNames) {
+        const auto file = getDevicePluginDirectory(pluginFolder)
+                              .getChildFile(relativeName + juce::String(kPresetExtension));
+        const auto rawId = idFromPresetFile(file);
+        if (rawId.isEmpty())
+            continue;
+
+        const auto slash = relativeName.lastIndexOfChar('/');
+        result.push_back({"device-preset:" + rawId,
+                          slash >= 0 ? relativeName.substring(slash + 1) : relativeName,
+                          slash >= 0 ? relativeName.substring(0, slash) : juce::String()});
+    }
+    return result;
+}
+
 bool PresetManager::deleteDevicePreset(const juce::String& pluginFolder,
                                        const juce::String& presetRelativePath) {
     auto target = getDevicePluginDirectory(pluginFolder)

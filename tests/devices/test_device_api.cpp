@@ -464,8 +464,18 @@ TEST_CASE("Bypass is applied and reported through the facade", "[device-api][mut
     const auto deviceId = devices.addDevice(ChainNodePath::trackLevel(trackId), anyCatalogId(), -1);
     const auto path = TrackManager::getInstance().findDevicePath(deviceId);
 
+    TrackManager::getInstance().setDeviceDeltaSoloByPath(path, true);
     REQUIRE(devices.setDeviceBypassed(path, true));
     REQUIRE(devices.getDevice(path)->bypassed);
+    REQUIRE_FALSE(devices.getDevice(path)->deltaSolo);
+
+    REQUIRE(UndoManager::getInstance().undo());
+    REQUIRE_FALSE(devices.getDevice(path)->bypassed);
+    REQUIRE(devices.getDevice(path)->deltaSolo);
+    REQUIRE(UndoManager::getInstance().redo());
+    REQUIRE(devices.getDevice(path)->bypassed);
+    REQUIRE_FALSE(devices.getDevice(path)->deltaSolo);
+
     REQUIRE(devices.setDeviceBypassed(path, false));
     REQUIRE_FALSE(devices.getDevice(path)->bypassed);
 

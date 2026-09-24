@@ -28,6 +28,7 @@ TEST_CASE("agent surface registry has distinct bounded capabilities", "[console_
 
     REQUIRE(containsTool(arrangement, "tracks.create"));
     REQUIRE(containsTool(arrangement, "clips.addMidiNote"));
+    REQUIRE(containsTool(arrangement, "project.save"));
     REQUIRE(containsProvider(arrangement, magda::AgentContextProvider::ReferenceMidi));
 
     REQUIRE(containsTool(piano, "clips.addMidiNote"));
@@ -37,6 +38,7 @@ TEST_CASE("agent surface registry has distinct bounded capabilities", "[console_
     REQUIRE_FALSE(containsTool(session, "automation.addPoint"));
 
     REQUIRE(containsTool(mixer, "tracks.update"));
+    REQUIRE(containsTool(mixer, "devices.setBypassed"));
     REQUIRE(containsProvider(mixer, magda::AgentContextProvider::MixAnalysis));
     REQUIRE_FALSE(containsTool(mixer, "clips.addMidiNote"));
 
@@ -45,6 +47,8 @@ TEST_CASE("agent surface registry has distinct bounded capabilities", "[console_
 
     REQUIRE(containsTool(device, "racks.setBypassed"));
     REQUIRE(containsTool(device, "devices.listParameters"));
+    REQUIRE(containsTool(device, "devicePresets.list"));
+    REQUIRE(containsTool(device, "devices.setBypassed"));
     REQUIRE(containsTool(device, "devices.setParameter"));
     REQUIRE(containsTool(device, "devices.setParameterConfig"));
     REQUIRE(containsTool(device, "devices.add"));

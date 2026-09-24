@@ -65,6 +65,23 @@ things. A WebSocket client names itself in the upgrade's query string
 `clientInfo.name`. Sending nothing is allowed and means anonymous, which is
 read-only.
 
+### Current-project save
+
+`project.get` reports `dirty` and `hasSaveTarget` without exposing the target's
+path. `project.save` is edit-scoped and writes only to that existing target. It
+never opens a chooser; an untitled project fails with `conflict`, leaving Save
+As an explicit in-app action. Saving changes persistence state rather than
+project content, so a successful save does not advance the Remote API revision
+or create an undo command.
+
+### Device preset discovery
+
+`devicePresets.list` takes the same `devicePath` used by the other device
+operations and returns `id`, display `name`, folder-derived `category`, and
+`source` (`magda` or `plugin`). It combines MAGDA device-state presets with
+scanned VST3/AU presets. IDs are opaque and stable; filesystem paths and preset
+state never cross the facade.
+
 ### Saved track-chain presets
 
 Saved track-chain presets are exposed through the shared operation registry, so

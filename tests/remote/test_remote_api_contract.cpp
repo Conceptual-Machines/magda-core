@@ -39,6 +39,7 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(registry.operations().size() >= 25);
     REQUIRE(registry.find("system.describe") != nullptr);
     REQUIRE(registry.find("project.get") != nullptr);
+    REQUIRE(registry.find("project.save") != nullptr);
     REQUIRE(registry.find("trackPresets.list") != nullptr);
     REQUIRE(registry.find("tracks.createFromPreset") != nullptr);
     REQUIRE(registry.find("devices.list") != nullptr);
@@ -48,6 +49,8 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(registry.find("devices.add") != nullptr);
     REQUIRE(registry.find("devices.remove") != nullptr);
     REQUIRE(registry.find("devices.move") != nullptr);
+    REQUIRE(registry.find("devices.setBypassed") != nullptr);
+    REQUIRE(registry.find("devicePresets.list") != nullptr);
     REQUIRE(registry.find("devices.openEditor") != nullptr);
     REQUIRE(registry.find("session.launchClip") != nullptr);
     REQUIRE(registry.find("automation.addPoint") != nullptr);
@@ -104,6 +107,24 @@ TEST_CASE("Track preset operations expose only safe metadata and an opaque-id cr
     REQUIRE(output != nullptr);
     CHECK(output->hasProperty("trackId"));
     CHECK(output->hasProperty("deviceGraph"));
+}
+
+TEST_CASE("Device preset discovery is path-free and device-scoped",
+          "[remote-api][contract][presets]") {
+    const auto* operation = OperationRegistry::instance().find("devicePresets.list");
+    REQUIRE(operation != nullptr);
+    CHECK(operation->access == OperationAccess::Read);
+    CHECK(operation->requiredScope == Scope::Read);
+
+    const auto* properties = operation->outputSchema["items"]["properties"].getDynamicObject();
+    REQUIRE(properties != nullptr);
+    CHECK(properties->hasProperty("id"));
+    CHECK(properties->hasProperty("name"));
+    CHECK(properties->hasProperty("category"));
+    CHECK(properties->hasProperty("source"));
+    CHECK_FALSE(properties->hasProperty("path"));
+    CHECK_FALSE(properties->hasProperty("file"));
+    CHECK_FALSE(properties->hasProperty("state"));
 }
 
 TEST_CASE("Remote API input validation returns structured issues",
@@ -328,7 +349,8 @@ TEST_CASE("Remote API input validation returns structured issues",
 }
 
 TEST_CASE("Remote API DTOs round-trip through JSON", "[remote-api][contract][dto]") {
-    const ProjectDto project{"Demo", 128.0, 7, 8, 48000.0, 128, 9, "minor", true, 4.0, 12.0};
+    const ProjectDto project{"Demo",  128.0, 7,   8,    48000.0, 128, 9,
+                             "minor", true,  4.0, 12.0, true,    true};
     requireRoundTrip(project, projectFromJson);
 
     const TrackDto track{3,     "audio",   "Bass",   0xff102030, std::nullopt, {4, 5},
@@ -366,6 +388,9 @@ TEST_CASE("Remote API DTOs round-trip through JSON", "[remote-api][contract][dto
         "4osc",     "4OSC",       "Tracktion", "Synth", "Four oscillator synth",
         "internal", "instrument", true};
     requireRoundTrip(catalogEntry, deviceCatalogEntryFromJson);
+
+    const DevicePresetDto preset{"device-preset:opaque", "Reese 808", "Bass", "magda"};
+    requireRoundTrip(preset, devicePresetFromJson);
 
     const SelectionDto selection{3, 9, {9, 12}, 5, 6, 9, {0, 2}};
     requireRoundTrip(selection, selectionFromJson);
@@ -476,7 +501,8 @@ TEST_CASE("Remote projections expose only allow-listed state",
     api.clips_.clips.emplace(clip.id, clip);
     api.clips_.clipsOnTrack[1] = {clip.id};
 
-    const auto projectJson = juce::JSON::toString(toJson(makeProjectDto(api.project_.info)));
+    const auto projectJson =
+        juce::JSON::toString(toJson(makeProjectDto(api.project_.info, false, false)));
     const auto trackJson = juce::JSON::toString(toJson(makeTrackDto(api.tracks_.tracks.front())));
     const auto clipJson = juce::JSON::toString(toJson(makeClipDto(api.clips_.clips.at(40))));
     const auto graph = makeDeviceGraphDto(api.tracks_.tracks);

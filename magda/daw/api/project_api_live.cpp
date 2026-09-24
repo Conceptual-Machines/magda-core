@@ -8,6 +8,20 @@ const ProjectInfo& ProjectApiLive::getCurrentProjectInfo() const {
     return ProjectManager::getInstance().getCurrentProjectInfo();
 }
 
+bool ProjectApiLive::isDirty() const {
+    return ProjectManager::getInstance().isDirty();
+}
+
+bool ProjectApiLive::hasSaveTarget() const {
+    const auto& projects = ProjectManager::getInstance();
+    return projects.hasOpenProject() &&
+           projects.getCurrentProjectFile().getFullPathName().isNotEmpty();
+}
+
+bool ProjectApiLive::saveProject() {
+    return ProjectManager::getInstance().saveProject();
+}
+
 void ProjectApiLive::setTempo(double bpm) {
     if (engineTempoWriter_)
         engineTempoWriter_(bpm);
