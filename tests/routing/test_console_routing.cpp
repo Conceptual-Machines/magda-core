@@ -27,14 +27,23 @@ TEST_CASE("agent surface registry has distinct bounded capabilities", "[console_
     const auto& master = magda::agentSurface(AgentSurfaceId::Master);
 
     REQUIRE(containsTool(arrangement, "tracks.create"));
-    REQUIRE(containsTool(arrangement, "clips.addMidiNote"));
+    REQUIRE(containsTool(arrangement, "clips.move"));
+    REQUIRE(containsTool(arrangement, "clips.resize"));
+    REQUIRE(containsTool(arrangement, "clips.duplicate"));
+    REQUIRE(containsTool(arrangement, "clips.quantize"));
     REQUIRE(containsTool(arrangement, "project.save"));
     REQUIRE(containsProvider(arrangement, magda::AgentContextProvider::ReferenceMidi));
 
     REQUIRE(containsTool(piano, "clips.addMidiNote"));
+    REQUIRE(containsTool(piano, "clips.move"));
+    REQUIRE(containsTool(piano, "clips.resize"));
+    REQUIRE(containsTool(piano, "clips.duplicate"));
     REQUIRE_FALSE(containsTool(piano, "tracks.delete"));
 
     REQUIRE(containsTool(session, "session.launchScene"));
+    REQUIRE(containsTool(session, "clips.move"));
+    REQUIRE(containsTool(session, "clips.resize"));
+    REQUIRE(containsTool(session, "clips.duplicate"));
     REQUIRE_FALSE(containsTool(session, "automation.addPoint"));
 
     REQUIRE(containsTool(mixer, "tracks.update"));

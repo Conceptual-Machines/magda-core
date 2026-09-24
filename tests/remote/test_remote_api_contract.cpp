@@ -59,6 +59,9 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(registry.find("clips.updateMidiEvents") != nullptr);
     REQUIRE(registry.find("clips.replaceMidiEvents") != nullptr);
     REQUIRE(registry.find("clips.deleteMidiEvents") != nullptr);
+    REQUIRE(registry.find("clips.move") != nullptr);
+    REQUIRE(registry.find("clips.resize") != nullptr);
+    REQUIRE(registry.find("clips.duplicate") != nullptr);
     REQUIRE(registry.find("does.not.exist") == nullptr);
 
     std::set<juce::String> names;
@@ -73,6 +76,44 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(description["apiVersion"].toString() == "1.0");
     REQUIRE(description["operations"].getArray()->size() ==
             static_cast<int>(registry.operations().size()));
+}
+
+TEST_CASE("Clip placement operations require explicit view-specific destinations",
+          "[remote-api][contract][clips]") {
+    const auto& registry = OperationRegistry::instance();
+    const auto* move = registry.find("clips.move");
+    const auto* resize = registry.find("clips.resize");
+    const auto* duplicate = registry.find("clips.duplicate");
+    REQUIRE(move != nullptr);
+    REQUIRE(resize != nullptr);
+    REQUIRE(duplicate != nullptr);
+    CHECK(move->requiredScope == Scope::Edit);
+    CHECK(resize->requiredScope == Scope::Edit);
+    CHECK(duplicate->requiredScope == Scope::Edit);
+
+    const auto arrangement = object({{"view", "arrangement"}, {"trackId", 2}, {"startBeat", 8.0}});
+    const auto session = object({{"view", "session"}, {"trackId", 2}, {"sceneIndex", 3}});
+    CHECK_FALSE(validateOperationInput(*move, object({{"clipId", 1}, {"destination", arrangement}}))
+                    .has_value());
+    CHECK_FALSE(
+        validateOperationInput(*duplicate, object({{"clipId", 1}, {"destination", session}}))
+            .has_value());
+    CHECK_FALSE(validateOperationInput(
+                    *resize, object({{"clipId", 1}, {"lengthBeats", 4.0}, {"edge", "end"}}))
+                    .has_value());
+
+    CHECK(
+        validateOperationInput(
+            *move, object({{"clipId", 1},
+                           {"destination",
+                            object({{"view", "arrangement"}, {"trackId", 2}, {"sceneIndex", 3}})}}))
+            .has_value());
+    CHECK(validateOperationInput(
+              *duplicate,
+              object({{"clipId", 1},
+                      {"destination",
+                       object({{"view", "session"}, {"trackId", 2}, {"startBeat", 8.0}})}}))
+              .has_value());
 }
 
 TEST_CASE("Track preset operations expose only safe metadata and an opaque-id create contract",
