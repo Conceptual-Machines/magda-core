@@ -49,8 +49,8 @@ class BarsBeatsTicksLabel : public juce::Component {
         return value_;
     }
 
-    // Beats per bar for display decomposition
-    void setBeatsPerBar(int beatsPerBar);
+    // Time signature the value is decomposed by; beats are the signature's beats
+    void setTimeSignature(int numerator, int denominator);
 
     // Whether display is 1-indexed position (true) or 0-indexed duration (false)
     void setBarsBeatsIsPosition(bool isPosition);
@@ -112,9 +112,6 @@ class BarsBeatsTicksLabel : public juce::Component {
     // that gains or loses a digit relayouts rather than just repaints.
     std::array<int, 2> laidOutDigits_{0, 0};
 
-    static constexpr int TICKS_PER_BEAT = 480;
-    static constexpr int TICKS_PER_16TH = 120;  // 480 / 4
-
     enum class SegmentType { Bars, Beats, Ticks };
 
     // Forward declaration
@@ -124,7 +121,8 @@ class BarsBeatsTicksLabel : public juce::Component {
     double minValue_ = 0.0;
     double maxValue_ = 1.0;
     double defaultValue_ = 0.0;
-    int beatsPerBar_ = DEFAULT_TIME_SIGNATURE_NUMERATOR;
+    int numerator_ = DEFAULT_TIME_SIGNATURE_NUMERATOR;
+    int denominator_ = DEFAULT_TIME_SIGNATURE_DENOMINATOR;
     bool barsBeatsIsPosition_ = true;
     bool doubleClickResets_ = true;
     juce::Colour customTextColour_;

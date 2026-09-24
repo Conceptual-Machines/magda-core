@@ -579,7 +579,10 @@ ClipId ClipManager::createRecordedMidiClip(TrackId trackId, RecordedMidiClipData
     clip.midiNotes = std::move(recording.active.notes);
     clip.midiCCData = std::move(recording.active.cc);
     clip.midiPitchBendData = std::move(recording.active.pitchBend);
+    clip.midiChannelPressureData = std::move(recording.active.channelPressure);
+    clip.midiPolyAftertouchData = std::move(recording.active.polyAftertouch);
     clip.midi() = std::move(recording.takeModel);
+    clip.ensureMidiEventIds();
     if (view == ClipView::Session) {
         clip.loopEnabled = true;
         clip.loopLengthBeats = clip.placement.lengthBeats;
@@ -793,6 +796,15 @@ void ClipManager::replaceClipState(const ClipInfo& clipInfo) {
     forceNotifyClipPropertyChanged(clipInfo.id);
 }
 
+bool ClipManager::replaceMidiEventState(ClipId clipId, MidiEventState state) {
+    auto* clip = getClip(clipId);
+    if (clip == nullptr || !clip->isMidi())
+        return false;
+    clip->setMidiEventState(std::move(state));
+    notifyClipPropertyChanged(clipId);
+    return true;
+}
+
 void ClipManager::forceNotifyClipPropertyChanged(ClipId clipId) {
     notifyClipPropertyChanged(clipId);
 }
@@ -862,6 +874,8 @@ void rebuildMidiComp(ClipInfo& clip) {
     std::vector<MidiNote> notes;
     std::vector<MidiCCData> cc;
     std::vector<MidiPitchBendData> pb;
+    std::vector<MidiChannelPressureData> pressure;
+    std::vector<MidiPolyAftertouchData> polyAftertouch;
 
     const int numTakes = static_cast<int>(midi.takes.size());
     const auto namesATake = [numTakes](const MidiCompSection& section) {
@@ -873,11 +887,18 @@ void rebuildMidiComp(ClipInfo& clip) {
         appendEventsInSection(take.notes, &MidiNote::startBeat, section, notes);
         appendEventsInSection(take.cc, &MidiCCData::beatPosition, section, cc);
         appendEventsInSection(take.pitchBend, &MidiPitchBendData::beatPosition, section, pb);
+        appendEventsInSection(take.channelPressure, &MidiChannelPressureData::beatPosition, section,
+                              pressure);
+        appendEventsInSection(take.polyAftertouch, &MidiPolyAftertouchData::beatPosition, section,
+                              polyAftertouch);
     }
 
     clip.midiNotes = std::move(notes);
     clip.midiCCData = std::move(cc);
     clip.midiPitchBendData = std::move(pb);
+    clip.midiChannelPressureData = std::move(pressure);
+    clip.midiPolyAftertouchData = std::move(polyAftertouch);
+    clip.ensureMidiEventIds();
 }
 
 // Persist edits to the active take: mirror the clip's live event vectors back
@@ -896,6 +917,8 @@ void syncActiveMidiTake(ClipInfo& clip) {
     take.notes = clip.midiNotes;
     take.cc = clip.midiCCData;
     take.pitchBend = clip.midiPitchBendData;
+    take.channelPressure = clip.midiChannelPressureData;
+    take.polyAftertouch = clip.midiPolyAftertouchData;
 }
 }  // namespace
 
@@ -1220,6 +1243,12 @@ ClipId ClipManager::duplicateClipAsGhost(ClipId clipId) {
     auto* original = getClip(clipId);
     if (original == nullptr)
         return INVALID_CLIP_ID;
+    // Legacy/imported callers may have populated the vectors directly. Give
+    // those events their stable ids before the full-struct copy so both group
+    // members begin with identical shared content. Normalising only on the
+    // next property notification would make a per-instance edit look like a
+    // content edit and spuriously notify the sibling.
+    original->ensureMidiEventIds();
     ensureLinkGroup(*original);
     // duplicateClip is a full struct copy, so the copy inherits linkGroupId
     // (and, being grouped, keeps the shared name instead of " Copy").
@@ -1231,6 +1260,7 @@ ClipId ClipManager::duplicateClipAsGhostAtBeats(ClipId clipId, double startBeat,
     auto* original = getClip(clipId);
     if (original == nullptr)
         return INVALID_CLIP_ID;
+    original->ensureMidiEventIds();
     ensureLinkGroup(*original);
     return duplicateClipAtBeats(clipId, startBeat, trackId, tempo);
 }
@@ -2971,6 +3001,9 @@ bool ClipManager::addMidiNote(ClipId clipId, const MidiNote& note) {
             if (!ClipOperations::clipMidiNoteToVisibleRange(*clip, clippedNote))
                 return false;
 
+            if (clippedNote.id == INVALID_EVENT_ID)
+                clippedNote.id = clip->allocateMidiEventId();
+
             clip->midiNotes.push_back(clippedNote);
             notifyClipPropertyChanged(clipId);
             return true;
@@ -3338,6 +3371,7 @@ void ClipManager::notifyClipPropertyChanged(ClipId clipId) {
     // is their notification contract.
     if (auto* clip = getClip(clipId)) {
         indexClipGroup(clipId, clip->linkGroupId);
+        clip->ensureMidiEventIds();
         syncActiveMidiTake(*clip);
     }
 
@@ -3680,6 +3714,8 @@ std::vector<ClipId> ClipManager::pasteFromClipboardBeats(double pasteBeat, Track
                     newClip->midiOffset = clipData.midiOffset;
                     newClip->midiCCData = clipData.midiCCData;
                     newClip->midiPitchBendData = clipData.midiPitchBendData;
+                    newClip->midiChannelPressureData = clipData.midiChannelPressureData;
+                    newClip->midiPolyAftertouchData = clipData.midiPolyAftertouchData;
                 }
 
                 // Copy audio properties — but NOT when pasting arrangement→session,

@@ -10,6 +10,24 @@
 
 namespace magda {
 
+SetMidiEventStateCommand::SetMidiEventStateCommand(ClipId clipId, MidiEventState before,
+                                                   MidiEventState after, juce::String description)
+    : clipId_(clipId),
+      before_(std::move(before)),
+      after_(std::move(after)),
+      description_(std::move(description)) {}
+
+void SetMidiEventStateCommand::execute() {
+    executed_ = ClipManager::getInstance().replaceMidiEventState(clipId_, after_);
+}
+
+void SetMidiEventStateCommand::undo() {
+    if (!executed_)
+        return;
+    ClipManager::getInstance().replaceMidiEventState(clipId_, before_);
+    executed_ = false;
+}
+
 std::vector<MidiNoteStartBeat> collectMidiNoteStartBeats(const ClipInfo& clip,
                                                          const std::vector<size_t>& noteIndices) {
     std::vector<MidiNoteStartBeat> starts;
@@ -177,6 +195,7 @@ void AddMidiNoteCommand::execute() {
         return;
 
     insertedIndex_ = oldSize;
+    note_.id = clip->midiNotes[insertedIndex_].id;
     executed_ = true;
 }
 
@@ -967,10 +986,15 @@ void AddMultipleMidiNotesCommand::execute() {
     }
 
     insertedIndices_.clear();
-    for (const auto& note : notes_) {
+    for (auto& note : notes_) {
         auto clippedNote = note;
         if (!ClipOperations::clipMidiNoteToVisibleRange(*clip, clippedNote))
             continue;
+
+        if (clippedNote.id == INVALID_EVENT_ID) {
+            clippedNote.id = clip->allocateMidiEventId();
+            note.id = clippedNote.id;
+        }
 
         size_t idx = clip->midiNotes.size();
         clip->midiNotes.push_back(clippedNote);
@@ -1155,6 +1179,8 @@ void AddMidiCCEventCommand::execute() {
     if (!clip || !clip->isMidi())
         return;
 
+    if (event_.id == INVALID_EVENT_ID)
+        event_.id = clip->allocateMidiEventId();
     clip->midiCCData.push_back(event_);
     clipManager.forceNotifyClipPropertyChanged(clipId_);
     executed_ = true;
@@ -1269,7 +1295,9 @@ void DrawMidiCCEventsCommand::execute() {
         return;
 
     insertStartIndex_ = clip->midiCCData.size();
-    for (const auto& event : events_) {
+    for (auto& event : events_) {
+        if (event.id == INVALID_EVENT_ID)
+            event.id = clip->allocateMidiEventId();
         clip->midiCCData.push_back(event);
     }
     clipManager.forceNotifyClipPropertyChanged(clipId_);
@@ -1470,6 +1498,8 @@ void AddMidiPitchBendEventCommand::execute() {
     if (!clip || !clip->isMidi())
         return;
 
+    if (event_.id == INVALID_EVENT_ID)
+        event_.id = clip->allocateMidiEventId();
     clip->midiPitchBendData.push_back(event_);
     clipManager.forceNotifyClipPropertyChanged(clipId_);
     executed_ = true;
@@ -1587,7 +1617,9 @@ void DrawMidiPitchBendEventsCommand::execute() {
         return;
 
     insertStartIndex_ = clip->midiPitchBendData.size();
-    for (const auto& event : events_) {
+    for (auto& event : events_) {
+        if (event.id == INVALID_EVENT_ID)
+            event.id = clip->allocateMidiEventId();
         clip->midiPitchBendData.push_back(event);
     }
     clipManager.forceNotifyClipPropertyChanged(clipId_);

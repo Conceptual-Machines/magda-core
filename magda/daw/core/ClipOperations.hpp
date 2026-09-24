@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <optional>
+#include <type_traits>
 #include <utility>
 
 #include "ClipInfo.hpp"
@@ -1102,6 +1103,27 @@ class ClipOperations {
             }
             clip.midiPitchBendData = std::move(flatPB);
 
+            const auto flattenPoints = [numCycles, loopLen, phase, clipLen](const auto& points) {
+                using Event = typename std::decay_t<decltype(points)>::value_type;
+                std::vector<Event> flattened;
+                for (int cycle = 0; cycle < numCycles; ++cycle) {
+                    const double cycleStart = cycle * loopLen - phase;
+                    for (const auto& point : points) {
+                        if (point.beatPosition >= loopLen)
+                            continue;
+                        const double position = cycleStart + point.beatPosition;
+                        if (position < 0.0 || position >= clipLen)
+                            continue;
+                        auto copy = point;
+                        copy.beatPosition = position;
+                        flattened.push_back(copy);
+                    }
+                }
+                return flattened;
+            };
+            clip.midiChannelPressureData = flattenPoints(clip.midiChannelPressureData);
+            clip.midiPolyAftertouchData = flattenPoints(clip.midiPolyAftertouchData);
+
             clip.loopEnabled = false;
             clip.loopLengthBeats = 0.0;
             clip.loopStartBeats = 0.0;
@@ -1158,6 +1180,22 @@ class ClipOperations {
                 flatPB.push_back(flat);
             }
             clip.midiPitchBendData = std::move(flatPB);
+
+            const auto trimPoints = [trimOffset, clipLen](const auto& points) {
+                using Event = typename std::decay_t<decltype(points)>::value_type;
+                std::vector<Event> trimmed;
+                for (const auto& point : points) {
+                    const double position = point.beatPosition - trimOffset;
+                    if (position < 0.0 || position >= clipLen)
+                        continue;
+                    auto copy = point;
+                    copy.beatPosition = position;
+                    trimmed.push_back(copy);
+                }
+                return trimmed;
+            };
+            clip.midiChannelPressureData = trimPoints(clip.midiChannelPressureData);
+            clip.midiPolyAftertouchData = trimPoints(clip.midiPolyAftertouchData);
 
             clip.midiTrimOffset = 0.0;
         }

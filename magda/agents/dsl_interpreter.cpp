@@ -1875,12 +1875,8 @@ double Interpreter::barsToTime(double bar) const {
 }
 
 double Interpreter::barsToBeats(double bars) const {
-    // Use project time signature; never assume 4/4 here — the seconds round
-    // trip is what got us into trouble under non-4/4 sigs.
-    int beatsPerBar = api_.project().getCurrentProjectInfo().timeSignatureNumerator;
-    if (beatsPerBar <= 0)
-        beatsPerBar = 4;
-    return bars * static_cast<double>(beatsPerBar);
+    const auto& project = api_.project().getCurrentProjectInfo();
+    return bars * beatsPerBar(project.timeSignatureNumerator, project.timeSignatureDenominator);
 }
 
 // ============================================================================
@@ -2014,7 +2010,8 @@ juce::String Interpreter::buildStateSnapshot(MagdaApi& api) {
     projectObj->setProperty("tempo_bpm", project.tempo);
     projectObj->setProperty("time_signature", juce::String(project.timeSignatureNumerator) + "/" +
                                                   juce::String(project.timeSignatureDenominator));
-    projectObj->setProperty("beats_per_bar", project.timeSignatureNumerator);
+    projectObj->setProperty("beats_per_bar", beatsPerBar(project.timeSignatureNumerator,
+                                                         project.timeSignatureDenominator));
     root->setProperty("project", juce::var(projectObj));
 
     // Tracks — lightweight: just id, name, type
@@ -2908,10 +2905,10 @@ bool Interpreter::executeGrooveExtract(const Params& params) {
 
     // Determine repeating pattern length (try to find the smallest cycle)
     // Default: use all steps, but try 1 bar (notesPerBeat * beatsPerBar)
-    int beatsPerBar = api_.project().getCurrentProjectInfo().timeSignatureNumerator;
-    if (beatsPerBar <= 0)
-        beatsPerBar = 4;
-    int stepsPerBar = notesPerBeat * beatsPerBar;
+    const auto& project = api_.project().getCurrentProjectInfo();
+    const int stepsPerBar =
+        static_cast<int>(std::lround(notesPerBeat * beatsPerBar(project.timeSignatureNumerator,
+                                                                project.timeSignatureDenominator)));
     int patternLength = (numSteps >= stepsPerBar) ? stepsPerBar : numSteps;
 
     const std::vector<float> grooveLateness(latenesses.begin(), latenesses.begin() + patternLength);

@@ -533,10 +533,11 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
             obj->setProperty("loopStartBeats", clip.loopStartBeats);
         if (clip.loopLengthBeats > 0.0)
             obj->setProperty("loopLengthBeats", clip.loopLengthBeats);
-        if (midi.sourceFilePath.isNotEmpty() || !midi.takes.empty()) {
+        if (midi.sourceFilePath.isNotEmpty() || !midi.takes.empty() || midi.nextEventId != 1) {
             auto* midiObj = new juce::DynamicObject();
             if (midi.sourceFilePath.isNotEmpty())
                 midiObj->setProperty("sourceFilePath", midi.sourceFilePath);
+            midiObj->setProperty("nextEventId", midi.nextEventId);
             // Loop-record takes (one note set per pass).
             if (!midi.takes.empty()) {
                 juce::Array<juce::var> takesArray;
@@ -551,9 +552,17 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
                     juce::Array<juce::var> pbs;
                     for (const auto& pb : take.pitchBend)
                         pbs.add(serializeMidiPitchBendData(pb));
+                    juce::Array<juce::var> pressure;
+                    for (const auto& event : take.channelPressure)
+                        pressure.add(serializeMidiChannelPressureData(event));
+                    juce::Array<juce::var> polyAftertouch;
+                    for (const auto& event : take.polyAftertouch)
+                        polyAftertouch.add(serializeMidiPolyAftertouchData(event));
                     takeObj->setProperty("notes", juce::var(notes));
                     takeObj->setProperty("cc", juce::var(ccs));
                     takeObj->setProperty("pitchBend", juce::var(pbs));
+                    takeObj->setProperty("channelPressure", juce::var(pressure));
+                    takeObj->setProperty("polyAftertouch", juce::var(polyAftertouch));
                     takesArray.add(juce::var(takeObj));
                 }
                 midiObj->setProperty("takes", juce::var(takesArray));
@@ -655,6 +664,20 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
             pbArray.add(serializeMidiPitchBendData(pb));
         }
         obj->setProperty("midiPitchBendData", juce::var(pbArray));
+    }
+
+    if (!clip.midiChannelPressureData.empty()) {
+        juce::Array<juce::var> pressureArray;
+        for (const auto& pressure : clip.midiChannelPressureData)
+            pressureArray.add(serializeMidiChannelPressureData(pressure));
+        obj->setProperty("midiChannelPressureData", juce::var(pressureArray));
+    }
+
+    if (!clip.midiPolyAftertouchData.empty()) {
+        juce::Array<juce::var> aftertouchArray;
+        for (const auto& aftertouch : clip.midiPolyAftertouchData)
+            aftertouchArray.add(serializeMidiPolyAftertouchData(aftertouch));
+        obj->setProperty("midiPolyAftertouchData", juce::var(aftertouchArray));
     }
 
     // Chord annotations
@@ -825,6 +848,8 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
 
         if (auto* midiObj = obj->getProperty("midi").getDynamicObject()) {
             outClip.midi().sourceFilePath = midiObj->getProperty("sourceFilePath").toString();
+            if (midiObj->hasProperty("nextEventId"))
+                outClip.midi().nextEventId = static_cast<int>(midiObj->getProperty("nextEventId"));
 
             // Loop-record takes
             auto takesVar = midiObj->getProperty("takes");
@@ -854,6 +879,20 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
                             MidiPitchBendData pb;
                             if (deserializeMidiPitchBendData(pv, pb))
                                 take.pitchBend.push_back(pb);
+                        }
+                    }
+                    if (auto* pressure = takeObj->getProperty("channelPressure").getArray()) {
+                        for (const auto& value : *pressure) {
+                            MidiChannelPressureData event;
+                            if (deserializeMidiChannelPressureData(value, event))
+                                take.channelPressure.push_back(event);
+                        }
+                    }
+                    if (auto* aftertouch = takeObj->getProperty("polyAftertouch").getArray()) {
+                        for (const auto& value : *aftertouch) {
+                            MidiPolyAftertouchData event;
+                            if (deserializeMidiPolyAftertouchData(value, event))
+                                take.polyAftertouch.push_back(event);
                         }
                     }
                     takes.push_back(std::move(take));
@@ -1019,6 +1058,26 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
         }
     }
 
+    auto midiPressureVar = obj->getProperty("midiChannelPressureData");
+    if (midiPressureVar.isArray()) {
+        for (const auto& value : *midiPressureVar.getArray()) {
+            MidiChannelPressureData pressure;
+            if (!deserializeMidiChannelPressureData(value, pressure))
+                return false;
+            outClip.midiChannelPressureData.push_back(pressure);
+        }
+    }
+
+    auto midiAftertouchVar = obj->getProperty("midiPolyAftertouchData");
+    if (midiAftertouchVar.isArray()) {
+        for (const auto& value : *midiAftertouchVar.getArray()) {
+            MidiPolyAftertouchData aftertouch;
+            if (!deserializeMidiPolyAftertouchData(value, aftertouch))
+                return false;
+            outClip.midiPolyAftertouchData.push_back(aftertouch);
+        }
+    }
+
     // Chord annotations
     auto chordAnnotVar = obj->getProperty("chordAnnotations");
     if (chordAnnotVar.isArray()) {
@@ -1037,6 +1096,8 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     }
     if (obj->hasProperty("nextChordGroupId"))
         outClip.nextChordGroupId = static_cast<int>(obj->getProperty("nextChordGroupId"));
+
+    outClip.ensureMidiEventIds();
 
     return true;
 }
@@ -1063,6 +1124,10 @@ juce::var ProjectSerializer::serializeMidiNote(const MidiNote& data) {
         }
         obj->setProperty("pitchExpression", juce::var(points));
     }
+    if (data.keyswitch)
+        obj->setProperty("keyswitch", true);
+    if (data.id != INVALID_EVENT_ID)
+        obj->setProperty("id", data.id);
     return {obj};
 }
 
@@ -1078,6 +1143,10 @@ bool ProjectSerializer::deserializeMidiNote(const juce::var& json, MidiNote& dat
     DESER(lengthBeats);
     if (obj->hasProperty("chordGroup"))
         data.chordGroup = static_cast<int>(obj->getProperty("chordGroup"));
+    if (obj->hasProperty("keyswitch"))
+        data.keyswitch = static_cast<bool>(obj->getProperty("keyswitch"));
+    if (obj->hasProperty("id"))
+        data.id = static_cast<int>(obj->getProperty("id"));
     auto pitchExpVar = obj->getProperty("pitchExpression");
     if (pitchExpVar.isArray()) {
         for (const auto& pVar : *pitchExpVar.getArray()) {
@@ -1105,6 +1174,8 @@ juce::var ProjectSerializer::serializeMidiCCData(const MidiCCData& data) {
     SER(tension);
     obj->setProperty("inHandle", serializeMidiCurveHandle(data.inHandle));
     obj->setProperty("outHandle", serializeMidiCurveHandle(data.outHandle));
+    if (data.id != INVALID_EVENT_ID)
+        obj->setProperty("id", data.id);
     return {obj};
 }
 
@@ -1123,6 +1194,8 @@ bool ProjectSerializer::deserializeMidiCCData(const juce::var& json, MidiCCData&
         DESER(tension);
     deserializeMidiCurveHandle(obj->getProperty("inHandle"), data.inHandle);
     deserializeMidiCurveHandle(obj->getProperty("outHandle"), data.outHandle);
+    if (obj->hasProperty("id"))
+        data.id = static_cast<int>(obj->getProperty("id"));
     return true;
 }
 
@@ -1134,6 +1207,8 @@ juce::var ProjectSerializer::serializeMidiPitchBendData(const MidiPitchBendData&
     SER(tension);
     obj->setProperty("inHandle", serializeMidiCurveHandle(data.inHandle));
     obj->setProperty("outHandle", serializeMidiCurveHandle(data.outHandle));
+    if (data.id != INVALID_EVENT_ID)
+        obj->setProperty("id", data.id);
     return {obj};
 }
 
@@ -1152,6 +1227,56 @@ bool ProjectSerializer::deserializeMidiPitchBendData(const juce::var& json,
         DESER(tension);
     deserializeMidiCurveHandle(obj->getProperty("inHandle"), data.inHandle);
     deserializeMidiCurveHandle(obj->getProperty("outHandle"), data.outHandle);
+    if (obj->hasProperty("id"))
+        data.id = static_cast<int>(obj->getProperty("id"));
+    return true;
+}
+
+juce::var ProjectSerializer::serializeMidiChannelPressureData(const MidiChannelPressureData& data) {
+    auto* obj = new juce::DynamicObject();
+    SER(value);
+    SER(beatPosition);
+    if (data.id != INVALID_EVENT_ID)
+        obj->setProperty("id", data.id);
+    return {obj};
+}
+
+bool ProjectSerializer::deserializeMidiChannelPressureData(const juce::var& json,
+                                                           MidiChannelPressureData& data) {
+    if (!json.isObject()) {
+        lastError_ = "MIDI channel pressure data is not an object";
+        return false;
+    }
+    auto* obj = json.getDynamicObject();
+    DESER(value);
+    DESER(beatPosition);
+    if (obj->hasProperty("id"))
+        data.id = static_cast<int>(obj->getProperty("id"));
+    return true;
+}
+
+juce::var ProjectSerializer::serializeMidiPolyAftertouchData(const MidiPolyAftertouchData& data) {
+    auto* obj = new juce::DynamicObject();
+    SER(noteNumber);
+    SER(value);
+    SER(beatPosition);
+    if (data.id != INVALID_EVENT_ID)
+        obj->setProperty("id", data.id);
+    return {obj};
+}
+
+bool ProjectSerializer::deserializeMidiPolyAftertouchData(const juce::var& json,
+                                                          MidiPolyAftertouchData& data) {
+    if (!json.isObject()) {
+        lastError_ = "MIDI poly aftertouch data is not an object";
+        return false;
+    }
+    auto* obj = json.getDynamicObject();
+    DESER(noteNumber);
+    DESER(value);
+    DESER(beatPosition);
+    if (obj->hasProperty("id"))
+        data.id = static_cast<int>(obj->getProperty("id"));
     return true;
 }
 

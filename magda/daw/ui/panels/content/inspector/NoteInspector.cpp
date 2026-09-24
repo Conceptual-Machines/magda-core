@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "../../state/TimelineController.hpp"
 #include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "core/ClipManager.hpp"
@@ -285,6 +286,14 @@ void NoteInspector::updateFromSelectedNotes() {
     if (!multiRange_.valid)
         return;
 
+    if (auto* controller = magda::TimelineController::getCurrent()) {
+        const auto& tempo = controller->getState().tempo;
+        noteStartValue_->setTimeSignature(tempo.timeSignatureNumerator,
+                                          tempo.timeSignatureDenominator);
+        noteLengthValue_->setTimeSignature(tempo.timeSignatureNumerator,
+                                           tempo.timeSignatureDenominator);
+    }
+
     // Set virtual values centered at midpoints for drag starting point
     double midPitch = (multiRange_.minPitch + multiRange_.maxPitch) / 2.0;
     double midVelocity = (multiRange_.minVelocity + multiRange_.maxVelocity) / 2.0;
@@ -372,18 +381,18 @@ void NoteInspector::refreshMultiRangeDisplay() {
     }
 
     // Start range (position format: 1-indexed)
-    auto formatBarsBeats = [](double val, bool isPosition) -> juce::String {
-        constexpr int TICKS_PER_BEAT = 480;
-        constexpr int BEATS_PER_BAR = 4;
-        int wholeBars = static_cast<int>(val / BEATS_PER_BAR);
-        double remaining = std::fmod(val, static_cast<double>(BEATS_PER_BAR));
-        remaining = std::max(remaining, 0.0);
-        int wholeBeats = static_cast<int>(remaining);
-        int ticks = static_cast<int>((remaining - wholeBeats) * TICKS_PER_BEAT);
+    int numerator = magda::DEFAULT_TIME_SIGNATURE_NUMERATOR;
+    int denominator = magda::DEFAULT_TIME_SIGNATURE_DENOMINATOR;
+    if (auto* controller = magda::TimelineController::getCurrent()) {
+        numerator = controller->getState().tempo.timeSignatureNumerator;
+        denominator = controller->getState().tempo.timeSignatureDenominator;
+    }
+    auto formatBarsBeats = [numerator, denominator](double val, bool isPosition) -> juce::String {
+        const auto position = magda::toBarsBeatsTicks(val, numerator, denominator);
         int offset = isPosition ? 1 : 0;
         char buffer[32];
-        std::snprintf(buffer, sizeof(buffer), "%d.%d.%03d", wholeBars + offset, wholeBeats + offset,
-                      ticks);
+        std::snprintf(buffer, sizeof(buffer), "%d.%d.%03d", position.bars + offset,
+                      position.beats + offset, position.ticks);
         return {buffer};
     };
 

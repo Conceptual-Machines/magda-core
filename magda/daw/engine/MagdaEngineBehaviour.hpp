@@ -30,6 +30,11 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         return false;
     }
 
+    // A model beat is a quarter note in every signature, as in the native TempoMap (#2802).
+    bool lengthOfOneBeatDependsOnTimeSignature() override {
+        return false;
+    }
+
     // Process muted tracks so LevelMeterPlugin still receives audio and meters
     // stay active. Track output is still silenced by TrackMutingNode.
     bool shouldProcessMutedTracks() override {

@@ -80,8 +80,9 @@ void BarsBeatsTicksLabel::setValue(double newValue, juce::NotificationType notif
     }
 }
 
-void BarsBeatsTicksLabel::setBeatsPerBar(int beatsPerBar) {
-    beatsPerBar_ = beatsPerBar;
+void BarsBeatsTicksLabel::setTimeSignature(int numerator, int denominator) {
+    numerator_ = numerator;
+    denominator_ = denominator;
     // updateSegmentTexts relayouts if the bar or beat number changes width.
     updateSegmentTexts();
     repaint();
@@ -94,27 +95,14 @@ void BarsBeatsTicksLabel::setBarsBeatsIsPosition(bool isPosition) {
 }
 
 void BarsBeatsTicksLabel::decompose(int& bars, int& beats, int& ticks) const {
-    double v = value_;
-    v = std::max(v, 0.0);
-
-    bars = static_cast<int>(v / beatsPerBar_);
-    double remaining = std::fmod(v, static_cast<double>(beatsPerBar_));
-    remaining = std::max(remaining, 0.0);
-
-    beats = static_cast<int>(remaining);
-    ticks = static_cast<int>(std::round((remaining - beats) * TICKS_PER_BEAT));
-    if (ticks >= TICKS_PER_BEAT) {
-        ticks = 0;
-        beats++;
-        if (beats >= beatsPerBar_) {
-            beats = 0;
-            bars++;
-        }
-    }
+    const auto position = toBarsBeatsTicks(value_, numerator_, denominator_);
+    bars = position.bars;
+    beats = position.beats;
+    ticks = position.ticks;
 }
 
 double BarsBeatsTicksLabel::recompose(int bars, int beats, int ticks) const {
-    return bars * beatsPerBar_ + beats + ticks / static_cast<double>(TICKS_PER_BEAT);
+    return fromBarsBeatsTicks({bars, beats, ticks}, numerator_, denominator_);
 }
 
 void BarsBeatsTicksLabel::onSegmentChanged() {
@@ -226,7 +214,8 @@ std::array<int, 3> BarsBeatsTicksLabel::segmentWidthsFor(double maxValue, int mi
 
     // Fewest beats per bar gives the most bars; most beats per bar gives the
     // highest beat number. Ticks are zero-padded to three digits either way.
-    const int maxBars = static_cast<int>(maxValue / lowBeatsPerBar) + offset;
+    const int maxBars =
+        static_cast<int>(maxValue / beatsPerBar(lowBeatsPerBar, MAX_TIME_SIGNATURE_VALUE)) + offset;
     const int maxBeats = highBeatsPerBar - 1 + offset;
 
     return {widthOfDigits(juce::String(maxBars).length()),
@@ -379,12 +368,13 @@ void BarsBeatsTicksLabel::SegmentLabel::mouseWheelMove(const juce::MouseEvent& e
 double BarsBeatsTicksLabel::SegmentLabel::getDefaultIncrement(bool shift) const {
     switch (type_) {
         case SegmentType::Bars:
-            return shift ? 1.0 : static_cast<double>(owner_.beatsPerBar_);
+            return shift ? signatureBeatLength(owner_.denominator_)
+                         : beatsPerBar(owner_.numerator_, owner_.denominator_);
         case SegmentType::Beats:
-            return shift ? 0.25 : 1.0;
+            return shift ? 0.25 : signatureBeatLength(owner_.denominator_);
         case SegmentType::Ticks:
-            return shift ? (1.0 / TICKS_PER_BEAT)
-                         : (static_cast<double>(TICKS_PER_16TH) / TICKS_PER_BEAT);
+            return shift ? signatureBeatLength(owner_.denominator_) / TICKS_PER_SIGNATURE_BEAT
+                         : 0.25;
         default:
             return 1.0;
     }

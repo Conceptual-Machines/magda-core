@@ -170,8 +170,24 @@ void PassWalk::add(const RecordedMidiEvent& event) {
             break;
         }
 
-        // Program change, aftertouch, pressure, system: no field to put them
-        // in, counted here rather than dropped inside a converter.
+        case MidiKind::channelPressure: {
+            MidiChannelPressureData pressure;
+            pressure.value = event.data1;
+            pressure.beatPosition = beatIn(pass_, event.sample);
+            takes_[pass_].channelPressure.push_back(pressure);
+            break;
+        }
+
+        case MidiKind::polyAftertouch: {
+            MidiPolyAftertouchData aftertouch;
+            aftertouch.noteNumber = event.data1;
+            aftertouch.value = event.data2;
+            aftertouch.beatPosition = beatIn(pass_, event.sample);
+            takes_[pass_].polyAftertouch.push_back(aftertouch);
+            break;
+        }
+
+        // Program change and system messages still have no model field.
         case MidiKind::unsupported:
             ++dropped_;
             break;

@@ -245,6 +245,9 @@ class ClipManager {
      */
     void replaceClipState(const ClipInfo& clipInfo);
 
+    /** Replace only a MIDI clip's editable event collections and notify once. */
+    bool replaceMidiEventState(ClipId clipId, MidiEventState state);
+
     /**
      * @brief Push an undoable take/comp snapshot. `before` is the clip state
      * captured before the edit; the current (post-edit) state is the redo state.

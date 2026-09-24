@@ -1761,6 +1761,28 @@ bool ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
                             visibleEnd, contentLengthBeats);
     }
 
+    // Pressure events have no curve metadata in the authored model, so retain
+    // their exact points. Tracktion stores 7-bit controller values in its
+    // internal 14-bit representation.
+    for (const auto& pressure : clip->midiChannelPressureData) {
+        const auto adjusted = pressure.beatPosition - effectiveOffset;
+        if (pressure.beatPosition >= visibleStart && pressure.beatPosition < visibleEnd &&
+            adjusted >= 0.0 && adjusted < contentLengthBeats) {
+            sequence.addControllerEvent(te::BeatPosition::fromBeats(adjusted),
+                                        te::MidiControllerEvent::channelPressureType,
+                                        pressure.value << 7, nullptr);
+        }
+    }
+    for (const auto& pressure : clip->midiPolyAftertouchData) {
+        const auto adjusted = pressure.beatPosition - effectiveOffset;
+        if (pressure.beatPosition >= visibleStart && pressure.beatPosition < visibleEnd &&
+            adjusted >= 0.0 && adjusted < contentLengthBeats) {
+            sequence.addControllerEvent(te::BeatPosition::fromBeats(adjusted),
+                                        te::MidiControllerEvent::aftertouchType,
+                                        pressure.value << 7, pressure.noteNumber, nullptr);
+        }
+    }
+
     return needsGraphReallocation;
 }
 

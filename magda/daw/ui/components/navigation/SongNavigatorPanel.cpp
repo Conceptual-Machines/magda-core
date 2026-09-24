@@ -112,8 +112,7 @@ void SongNavigatorPanel::paint(juce::Graphics& g) {
     // Mini ruler band along the top, plus faint bar gridlines down the strip so
     // the navigator carries its own scale (no need to read it against the main
     // ruler above, which has a different zoom).
-    const int beatsPerBar =
-        controller_ ? juce::jmax(1, controller_->getState().tempo.timeSignatureNumerator) : 4;
+    const double beatsPerBar = controller_ ? controller_->getState().tempo.beatsPerBar() : 4.0;
     const double totalBars = totalBeats() / beatsPerBar;
     {
         // Pick a "nice" bar step so labels stay readable (~one per 70px).
@@ -153,9 +152,9 @@ void SongNavigatorPanel::paint(juce::Graphics& g) {
             if (endBar - bar < barStep) {
                 continue;
             }
-            drawTick(bar, (bar - 1) * static_cast<double>(beatsPerBar));
+            drawTick(bar, (bar - 1) * beatsPerBar);
         }
-        drawTick(endBar, totalBars * static_cast<double>(beatsPerBar));
+        drawTick(endBar, totalBars * beatsPerBar);
     }
 
     // Height is limited, so merge tracks onto a few lanes rather than one thin

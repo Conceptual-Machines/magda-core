@@ -327,13 +327,14 @@ void MarkerLaneComponent::showEditPositionDialog(int markerId, const TimelineMar
     if (!controller)
         return;
 
-    const int beatsPerBar = juce::jmax(1, controller->getState().tempo.timeSignatureNumerator);
+    const double beatsPerBar = controller->getState().tempo.beatsPerBar();
+    const double sigBeat = controller->getState().tempo.signatureBeatLength();
 
     // Present the position as 1-indexed bar.beat (beat 1.0 == the downbeat) to
     // match the ruler and transport. positionBeats is 0-indexed absolute beats.
     const int bar = static_cast<int>(marker.positionBeats / beatsPerBar) + 1;
     const double beatInBar =
-        marker.positionBeats - static_cast<double>(bar - 1) * beatsPerBar + 1.0;
+        (marker.positionBeats - static_cast<double>(bar - 1) * beatsPerBar) / sigBeat + 1.0;
 
     auto* alert =
         new juce::AlertWindow("Edit Marker Position", "", juce::MessageBoxIconType::NoIcon);
@@ -344,8 +345,8 @@ void MarkerLaneComponent::showEditPositionDialog(int markerId, const TimelineMar
 
     juce::Component::SafePointer<MarkerLaneComponent> safeThis(this);
     alert->enterModalState(
-        true, juce::ModalCallbackFunction::create([alert, safeThis, markerId, marker,
-                                                   beatsPerBar](int result) {
+        true, juce::ModalCallbackFunction::create([alert, safeThis, markerId, marker, beatsPerBar,
+                                                   sigBeat](int result) {
             if (result != 1) {
                 delete alert;
                 return;
@@ -358,8 +359,8 @@ void MarkerLaneComponent::showEditPositionDialog(int markerId, const TimelineMar
             if (safeThis == nullptr)
                 return;
 
-            const double positionBeats =
-                juce::jmax(0.0, static_cast<double>(bar - 1) * beatsPerBar + (beat - 1.0));
+            const double positionBeats = juce::jmax(
+                0.0, static_cast<double>(bar - 1) * beatsPerBar + (beat - 1.0) * sigBeat);
             if (auto* tc = safeThis->timelineListener_.get()) {
                 tc->dispatch(
                     UpdateMarkerEvent{markerId, positionBeats, marker.name, marker.colour});

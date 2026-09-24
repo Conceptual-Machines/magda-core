@@ -58,6 +58,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     target_sources(magda_daw PRIVATE MagdaAudioEngine.cpp MagdaAudioEngine.hpp)
 
     add_library(magda_engine_host STATIC
+        host/ClickSounds.cpp
         host/EngineHost.cpp
         host/EngineInsertCapture.cpp
         host/EngineOfflineRender.cpp

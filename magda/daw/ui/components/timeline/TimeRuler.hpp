@@ -37,8 +37,11 @@ class TimeRuler : public juce::Component, private juce::Timer {
         return tempo;
     }
     void setTimeSignature(int numerator, int denominator);
-    int getTimeSigNumerator() const {
-        return timeSigNumerator;
+    double getBeatsPerBar() const {
+        return beatsPerBar(timeSigNumerator, timeSigDenominator);
+    }
+    int getTimeSigDenominator() const {
+        return timeSigDenominator;
     }
 
     // Grid resolution for subdivision alignment (in beats, e.g. 0.25 = 1/16)

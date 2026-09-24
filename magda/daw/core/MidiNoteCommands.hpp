@@ -6,6 +6,30 @@
 
 namespace magda {
 
+/** Atomically replace the editable MIDI-event state of one clip. */
+class SetMidiEventStateCommand : public UndoableCommand {
+  public:
+    SetMidiEventStateCommand(ClipId clipId, MidiEventState before, MidiEventState after,
+                             juce::String description);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return description_;
+    }
+
+    bool succeeded() const {
+        return executed_;
+    }
+
+  private:
+    ClipId clipId_ = INVALID_CLIP_ID;
+    MidiEventState before_;
+    MidiEventState after_;
+    juce::String description_;
+    bool executed_ = false;
+};
+
 /**
  * @brief Mode for quantizing MIDI notes
  */

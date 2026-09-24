@@ -1015,6 +1015,7 @@ void seedMidiClip(MockMagdaApi& api, ClipId clipId) {
     second.noteNumber = 64;
     second.lengthBeats = 1.0;
     clip.midiNotes = {first, second};
+    clip.ensureMidiEventIds();
     api.clips_.clips[clipId] = clip;
 }
 
