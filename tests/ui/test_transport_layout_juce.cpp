@@ -127,7 +127,7 @@ class TransportLayoutFontsTest final : public juce::UnitTest {
             magda::BarsBeatsTicksLabel label;
             label.setRange(0.0, kTimecodeMaxBeats, 0.0);
             label.setBarsBeatsIsPosition(true);
-            label.setBeatsPerBar(4);
+            label.setTimeSignature(4, 4);
             label.setSize(text.timecodeBox, 20);
             expect(label.getNumChildComponents() == 3, "expected three segments");
 

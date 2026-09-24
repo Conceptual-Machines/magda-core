@@ -662,10 +662,10 @@ void ChordClipContent::duplicateChord(int annIndex) {
         return;
     const auto& ann = clip->chordAnnotations[static_cast<size_t>(annIndex)];
 
-    int beatsPerBar = magda::DEFAULT_TIME_SIGNATURE_NUMERATOR;
+    double beatsPerBar = 4.0;
     if (auto* controller = magda::TimelineController::getCurrent())
-        beatsPerBar = controller->getState().tempo.timeSignatureNumerator;
-    const double bar = std::max(1, beatsPerBar);
+        beatsPerBar = controller->getState().tempo.beatsPerBar();
+    const double bar = beatsPerBar;
 
     // Drop the copy in the next free bar after the chord.
     double t = ann.beatPosition + std::max(bar, ann.lengthBeats);
@@ -719,10 +719,10 @@ bool ChordClipContent::insertChordAtBeat(double clipRelativeBeat, const std::vec
 
     // Chords snap to the bar so the per-bar chord detection picks them up
     // cleanly. A chord defaults to one bar long.
-    int beatsPerBar = magda::DEFAULT_TIME_SIGNATURE_NUMERATOR;
+    double beatsPerBar = 4.0;
     if (auto* controller = magda::TimelineController::getCurrent())
-        beatsPerBar = controller->getState().tempo.timeSignatureNumerator;
-    const double barBeats = std::max(1, beatsPerBar);
+        beatsPerBar = controller->getState().tempo.beatsPerBar();
+    const double barBeats = beatsPerBar;
     const double bar = std::max(0.0, std::round(clipRelativeBeat / barBeats) * barBeats);
     constexpr int kDefaultVelocity = 100;
 

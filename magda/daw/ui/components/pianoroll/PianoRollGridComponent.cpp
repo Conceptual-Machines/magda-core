@@ -503,7 +503,8 @@ void PianoRollGridComponent::paintBeatLines(juce::Graphics& g, juce::Rectangle<i
     const auto bottom = static_cast<float>(area.getBottom());
     const int left = area.getX();
     const int right = area.getRight();
-    const int tsNum = timeSignatureNumerator_;
+    const double barBeats = beatsPerBar(timeSignatureNumerator_, timeSignatureDenominator_);
+    const double sigBeat = signatureBeatLength(timeSignatureDenominator_);
 
     // Pass 1: Subdivision lines at grid resolution (finest, drawn first)
     // Use integer counter to avoid floating-point drift (important for triplets etc.)
@@ -514,8 +515,8 @@ void PianoRollGridComponent::paintBeatLines(juce::Graphics& g, juce::Rectangle<i
             double beat = i * gridRes;
             if (beat > lengthBeats)
                 break;
-            // Skip positions on whole beats (drawn in pass 2/3)
-            double nearest = std::round(beat);
+            // Skip positions on signature beats (drawn in pass 2/3)
+            double nearest = std::round(beat / sigBeat) * sigBeat;
             if (std::abs(beat - nearest) < 0.001)
                 continue;
             int x = beatToPixel(beat);
@@ -526,19 +527,21 @@ void PianoRollGridComponent::paintBeatLines(juce::Graphics& g, juce::Rectangle<i
 
     // Pass 2: Beat lines (always visible)
     g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_GRID_BEAT));
-    for (int b = 1; b <= static_cast<int>(lengthBeats); b++) {
+    for (int b = 1; b * sigBeat <= lengthBeats + 0.001; b++) {
+        const double beat = b * sigBeat;
         // Skip bar boundaries (drawn in pass 3)
-        if (b % tsNum == 0)
+        const double barRemainder = std::fmod(beat, barBeats);
+        if (barRemainder < 0.001 || barRemainder > barBeats - 0.001)
             continue;
-        int x = beatToPixel(static_cast<double>(b));
+        int x = beatToPixel(beat);
         if (x >= left && x <= right)
             g.drawVerticalLine(x, top, bottom);
     }
 
     // Pass 3: Bar lines (brightest, always visible, drawn last)
     g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_GRID_BAR));
-    for (int bar = 0; bar * tsNum <= static_cast<int>(lengthBeats); bar++) {
-        int x = beatToPixel(static_cast<double>(bar * tsNum));
+    for (int bar = 0; bar * barBeats <= lengthBeats + 0.001; bar++) {
+        int x = beatToPixel(bar * barBeats);
         if (x >= left && x <= right)
             g.drawVerticalLine(x, top, bottom);
     }
@@ -1354,9 +1357,10 @@ void PianoRollGridComponent::setSnapEnabled(bool enabled) {
     snapEnabled_ = enabled;
 }
 
-void PianoRollGridComponent::setTimeSignatureNumerator(int numerator) {
-    if (timeSignatureNumerator_ != numerator) {
+void PianoRollGridComponent::setTimeSignature(int numerator, int denominator) {
+    if (timeSignatureNumerator_ != numerator || timeSignatureDenominator_ != denominator) {
         timeSignatureNumerator_ = numerator;
+        timeSignatureDenominator_ = denominator;
         repaint();
     }
 }

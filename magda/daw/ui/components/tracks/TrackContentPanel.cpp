@@ -88,9 +88,9 @@ std::vector<FileDropGhost> makeMidiDropGhosts(const juce::File& midiFile, double
     }
 
     const double tempo = isValidBpm(tempoBPM) ? tempoBPM : DEFAULT_BPM;
-    int beatsPerBar = 4;
-    if (!numerators.isEmpty() && numerators[0] > 0)
-        beatsPerBar = numerators[0];
+    double beatsPerBar = 4.0;
+    if (!numerators.isEmpty() && numerators[0] > 0 && !denominators.isEmpty())
+        beatsPerBar = magda::beatsPerBar(numerators[0], denominators[0]);
 
     for (int listIdx = 0; listIdx < lists.size(); ++listIdx) {
         auto* list = lists[listIdx];
@@ -1915,11 +1915,9 @@ void TrackContentPanel::mouseDoubleClick(const juce::MouseEvent& event) {
 }
 
 void TrackContentPanel::createMidiClipAtPosition(TrackId trackId, double startTime) {
-    double barLength = (timeSignatureNumerator * 60.0) / tempoBPM;
-
-    auto cmd = std::make_unique<CreateClipCommand>(ClipType::MIDI, trackId,
-                                                   BeatPosition{startTime * tempoBPM / 60.0},
-                                                   BeatDuration{barLength * tempoBPM / 60.0});
+    auto cmd = std::make_unique<CreateClipCommand>(
+        ClipType::MIDI, trackId, BeatPosition{startTime * tempoBPM / 60.0},
+        BeatDuration{beatsPerBar(timeSignatureNumerator, timeSignatureDenominator)});
     UndoManager::getInstance().executeCommand(std::move(cmd));
 
     auto clipId = ClipManager::getInstance().getClipAtPosition(trackId, startTime);
@@ -1951,7 +1949,7 @@ void TrackContentPanel::createMidiClipFromBeatRange(TrackId trackId, double star
     double end = juce::jmax(startBeat, endBeat);
     double length = end - start;
 
-    const double oneBarBeats = juce::jmax(1.0, static_cast<double>(timeSignatureNumerator));
+    const double oneBarBeats = beatsPerBar(timeSignatureNumerator, timeSignatureDenominator);
     if (length <= 0.000001) {
         length = oneBarBeats;
     } else {
@@ -1983,7 +1981,7 @@ void TrackContentPanel::paintClipDrawPreview(juce::Graphics& g) {
     double start = juce::jmin(drawingClipStartBeat_, drawingClipEndBeat_);
     double end = juce::jmax(drawingClipStartBeat_, drawingClipEndBeat_);
     if (end - start <= 0.000001)
-        end = start + juce::jmax(1.0, static_cast<double>(timeSignatureNumerator));
+        end = start + beatsPerBar(timeSignatureNumerator, timeSignatureDenominator);
 
     const int x = beatsToPixel(start);
     const int right = beatsToPixel(end);
@@ -3579,9 +3577,9 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
                     lengthBeats = 4.0;
 
                 // Round up to whole bars
-                int beatsPerBar = 4;
-                if (!numerators.isEmpty() && numerators[0] > 0)
-                    beatsPerBar = numerators[0];
+                double beatsPerBar = 4.0;
+                if (!numerators.isEmpty() && numerators[0] > 0 && !denominators.isEmpty())
+                    beatsPerBar = magda::beatsPerBar(numerators[0], denominators[0]);
                 double bars = std::ceil(lengthBeats / beatsPerBar);
                 lengthBeats = bars * beatsPerBar;
 

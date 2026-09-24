@@ -166,7 +166,7 @@ TEST_CASE("computeGridInterval - manual mode 1/8 returns 0.5", "[grid_constants]
     gq.autoGrid = false;
     gq.numerator = 1;
     gq.denominator = 8;
-    REQUIRE(GridConstants::computeGridInterval(gq, 100.0, 4, 10) == Catch::Approx(0.5));
+    REQUIRE(GridConstants::computeGridInterval(gq, 100.0, 4, 1.0, 10) == Catch::Approx(0.5));
 }
 
 TEST_CASE("computeGridInterval - manual mode 3/16 returns 0.75", "[grid_constants]") {
@@ -174,7 +174,7 @@ TEST_CASE("computeGridInterval - manual mode 3/16 returns 0.75", "[grid_constant
     gq.autoGrid = false;
     gq.numerator = 3;
     gq.denominator = 16;
-    REQUIRE(GridConstants::computeGridInterval(gq, 100.0, 4, 10) == Catch::Approx(0.75));
+    REQUIRE(GridConstants::computeGridInterval(gq, 100.0, 4, 1.0, 10) == Catch::Approx(0.75));
 }
 
 TEST_CASE("computeGridInterval - auto mode high zoom returns beat subdivision",
@@ -183,7 +183,7 @@ TEST_CASE("computeGridInterval - auto mode high zoom returns beat subdivision",
     gq.autoGrid = true;
     // zoom=100 ppb, minPixels=10 → 0.125 beats * 100 = 12.5px ≥ 10 → should pick a small
     // subdivision
-    double interval = GridConstants::computeGridInterval(gq, 100.0, 4, 10);
+    double interval = GridConstants::computeGridInterval(gq, 100.0, 4, 1.0, 10);
     REQUIRE(interval > 0.0);
     REQUIRE(interval <= 1.0);  // Should be a beat subdivision, not bar multiple
 }
@@ -192,7 +192,7 @@ TEST_CASE("computeGridInterval - auto mode low zoom falls to bar multiples", "[g
     GridQuantize gq;
     gq.autoGrid = true;
     // zoom=1 ppb, minPixels=10 → even 2 beats * 1 = 2px < 10, so must go to bar multiples
-    double interval = GridConstants::computeGridInterval(gq, 1.0, 4, 10);
+    double interval = GridConstants::computeGridInterval(gq, 1.0, 4, 1.0, 10);
     // Should be a bar multiple: timeSigNumerator * mult
     REQUIRE(interval >= 4.0);  // At least 1 bar in 4/4
 }
@@ -285,4 +285,73 @@ TEST_CASE("Timeline edit cursor is beat-authoritative across tempo changes",
     controller.dispatch(magda::SetEditCursorEvent{-1.0});
     REQUIRE(state.editCursorBeats == Catch::Approx(-1.0));
     REQUIRE(state.editCursorPosition == Catch::Approx(-1.0));
+}
+
+// ============================================================================
+// The denominator sets the bar length in quarter-note beats (#2802)
+// ============================================================================
+
+TEST_CASE("A bar is numerator times the denominator's note", "[grid_constants][signature]") {
+    REQUIRE(magda::beatsPerBar(4, 4) == Catch::Approx(4.0));
+    REQUIRE(magda::beatsPerBar(6, 4) == Catch::Approx(6.0));
+    REQUIRE(magda::beatsPerBar(6, 8) == Catch::Approx(3.0));
+    REQUIRE(magda::beatsPerBar(7, 8) == Catch::Approx(3.5));
+    REQUIRE(magda::beatsPerBar(2, 2) == Catch::Approx(4.0));
+    REQUIRE(magda::signatureBeatLength(8) == Catch::Approx(0.5));
+}
+
+TEST_CASE("Bars.beats.ticks counts the signature's beats", "[grid_constants][signature]") {
+    auto p = magda::toBarsBeatsTicks(3.0, 6, 8);
+    REQUIRE(p.bars == 1);
+    REQUIRE(p.beats == 0);
+    REQUIRE(p.ticks == 0);
+
+    p = magda::toBarsBeatsTicks(1.75, 6, 8);
+    REQUIRE(p.bars == 0);
+    REQUIRE(p.beats == 3);
+    REQUIRE(p.ticks == 240);
+    REQUIRE(magda::fromBarsBeatsTicks(p, 6, 8) == Catch::Approx(1.75));
+
+    p = magda::toBarsBeatsTicks(5.0, 4, 4);
+    REQUIRE(p.bars == 1);
+    REQUIRE(p.beats == 1);
+    REQUIRE(p.ticks == 0);
+}
+
+TEST_CASE("classifyBeatPosition in 6/8 marks bars every 3 beats and beats every eighth",
+          "[grid_constants][signature]") {
+    const double bar = magda::beatsPerBar(6, 8);
+    const double beat = magda::signatureBeatLength(8);
+    REQUIRE(GridConstants::classifyBeatPosition(3.0, bar, beat).isBar);
+    REQUIRE_FALSE(GridConstants::classifyBeatPosition(6.0 - 4.5, bar, beat).isBar);
+    REQUIRE(GridConstants::classifyBeatPosition(1.5, bar, beat).isBeat);
+    REQUIRE_FALSE(GridConstants::classifyBeatPosition(0.25, bar, beat).isBeat);
+}
+
+TEST_CASE("Timeline bars in 6/8 are three quarter notes long", "[timeline][signature]") {
+    magda::TimelineController controller;
+    controller.dispatch(magda::SetTempoEvent{120.0});
+    controller.dispatch(magda::SetTimeSignatureEvent{6, 8});
+
+    const auto& tempo = controller.getState().tempo;
+    REQUIRE(tempo.beatsPerBar() == Catch::Approx(3.0));
+    REQUIRE(tempo.getSecondsPerBar() == Catch::Approx(1.5));
+    REQUIRE(controller.getState().formatTimePosition(1.5) == "2.1.1");
+    REQUIRE(controller.getState().formatTimePosition(2.25) == "2.4.1");
+}
+
+TEST_CASE("The auto grid in 4/5 subdivides the fifth-note beat", "[grid_constants][signature]") {
+    const double bar = magda::beatsPerBar(4, 5);
+    const double beat = magda::signatureBeatLength(5);
+    GridQuantize gq;
+    gq.autoGrid = true;
+
+    // 149 px per quarter note, as in the arrangement report: half a fifth-note clears 50 px.
+    const double interval = GridConstants::computeGridInterval(gq, 149.0, bar, beat, 50);
+    REQUIRE(interval == Catch::Approx(0.4));
+    REQUIRE(GridConstants::gridAlignsWithBars(interval, bar));
+    REQUIRE(GridConstants::gridAlignsWithBeats(interval, beat));
+    REQUIRE(GridConstants::noteFraction(interval) == std::pair{1, 10});
+    REQUIRE(GridConstants::noteFraction(beat) == std::pair{1, 5});
+    REQUIRE(GridConstants::noteFraction(0.25) == std::pair{1, 16});
 }

@@ -245,9 +245,8 @@ void ProjectSettingsDialog::applySettings() {
 
     // Apply the new length to the live timeline immediately.
     if (auto* tc = TimelineController::getCurrent()) {
-        const int beatsPerBar = juce::jmax(1, tc->getState().tempo.timeSignatureNumerator);
         tc->dispatch(SetTimelineLengthBeatsEvent{static_cast<double>(info.timelineLengthBars) *
-                                                 beatsPerBar});
+                                                 tc->getState().tempo.beatsPerBar()});
     }
 }
 

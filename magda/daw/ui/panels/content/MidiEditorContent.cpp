@@ -28,6 +28,16 @@
 
 namespace magda::daw::ui {
 
+namespace {
+
+double projectSignatureBeat() {
+    if (auto* controller = magda::TimelineController::getCurrent())
+        return controller->getState().tempo.signatureBeatLength();
+    return 1.0;
+}
+
+}  // namespace
+
 // Static members — persist across editor switches
 bool MidiEditorContent::velocityDrawerOpen_ = false;
 bool MidiEditorContent::velocityLaneVisible_ = false;
@@ -913,8 +923,9 @@ void MidiEditorContent::updateGridResolution() {
     }
 
     constexpr int minPixelSpacing = 20;
-    double frac = magda::GridConstants::findBeatSubdivision(horizontalZoom_, minPixelSpacing);
-    double newResolution = (frac > 0.0) ? frac : 1.0;
+    double frac = magda::GridConstants::findBeatSubdivision(horizontalZoom_, projectSignatureBeat(),
+                                                            minPixelSpacing);
+    double newResolution = (frac > 0.0) ? frac : projectSignatureBeat();
 
     if (newResolution != gridResolutionBeats_) {
         gridResolutionBeats_ = newResolution;
@@ -922,9 +933,8 @@ void MidiEditorContent::updateGridResolution() {
 
         // Notify BottomPanel to update its num/den display
         if (onAutoGridDisplayChanged) {
-            int den = static_cast<int>(std::round(4.0 / gridResolutionBeats_));
-            den = std::max(den, 1);
-            onAutoGridDisplayChanged(1, den);
+            const auto [num, den] = magda::GridConstants::noteFraction(gridResolutionBeats_);
+            onAutoGridDisplayChanged(num, den);
         }
     }
 }
@@ -949,9 +959,9 @@ void MidiEditorContent::applyClipGridSettings() {
             if (clip->gridAutoGrid) {
                 // Auto-compute from zoom
                 constexpr int minPixelSpacing = 20;
-                double frac =
-                    magda::GridConstants::findBeatSubdivision(horizontalZoom_, minPixelSpacing);
-                gridResolutionBeats_ = (frac > 0.0) ? frac : 1.0;
+                double frac = magda::GridConstants::findBeatSubdivision(
+                    horizontalZoom_, projectSignatureBeat(), minPixelSpacing);
+                gridResolutionBeats_ = (frac > 0.0) ? frac : projectSignatureBeat();
             } else {
                 // Manual: compute from numerator/denominator
                 gridResolutionBeats_ =
@@ -965,8 +975,9 @@ void MidiEditorContent::applyClipGridSettings() {
 
     // No clip — fall back to auto-compute from zoom
     constexpr int minPixelSpacing = 20;
-    double frac = magda::GridConstants::findBeatSubdivision(horizontalZoom_, minPixelSpacing);
-    gridResolutionBeats_ = (frac > 0.0) ? frac : 1.0;
+    double frac = magda::GridConstants::findBeatSubdivision(horizontalZoom_, projectSignatureBeat(),
+                                                            minPixelSpacing);
+    gridResolutionBeats_ = (frac > 0.0) ? frac : projectSignatureBeat();
     onGridResolutionChanged();
 }
 

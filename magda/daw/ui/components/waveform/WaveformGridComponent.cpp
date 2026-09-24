@@ -565,7 +565,8 @@ void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipIn
     if (bpm <= 0.0)
         return;
     double secondsPerBeat = 60.0 / bpm;
-    auto beatsPerBar = static_cast<double>(timeRuler_->getTimeSigNumerator());
+    const double beatsPerBar = timeRuler_->getBeatsPerBar();
+    const double sigBeat = magda::signatureBeatLength(timeRuler_->getTimeSigDenominator());
 
     // Match the arrangement (GridConstants::computeGridInterval): never draw grid
     // lines or bar numbers denser than ~50px. The display interval grows to
@@ -575,14 +576,12 @@ void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipIn
     const double pixelsPerBeat = secondsPerBeat * horizontalZoom_;
     constexpr int kMinGridLinePx = 50;  // matches LayoutConfig::minGridPixelSpacing
     {
-        const int timeSigNum = juce::jmax(1, static_cast<int>(beatsPerBar));
         const double frac =
-            magda::GridConstants::findBeatSubdivision(pixelsPerBeat, kMinGridLinePx);
+            magda::GridConstants::findBeatSubdivision(pixelsPerBeat, sigBeat, kMinGridLinePx);
         const double adaptiveBeats =
-            (frac > 0.0)
-                ? frac
-                : static_cast<double>(timeSigNum) * magda::GridConstants::findBarMultiple(
-                                                        pixelsPerBeat, timeSigNum, kMinGridLinePx);
+            (frac > 0.0) ? frac
+                         : beatsPerBar * magda::GridConstants::findBarMultiple(
+                                             pixelsPerBeat, beatsPerBar, kMinGridLinePx);
         gridBeats = std::max(gridBeats, adaptiveBeats);
     }
     double secondsPerGrid = gridBeats * secondsPerBeat;
@@ -623,7 +622,7 @@ void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipIn
         // Round to avoid floating-point drift
         double beatPosRounded = std::round(beatPos * 1000.0) / 1000.0;
         bool isBar = (std::fmod(std::abs(beatPosRounded), beatsPerBar) < 0.001);
-        bool isBeat = (std::fmod(std::abs(beatPosRounded), 1.0) < 0.001);
+        bool isBeat = (std::fmod(std::abs(beatPosRounded), sigBeat) < 0.001);
 
         if (isBar) {
             g.setColour(juce::Colour(0xFF707070));
@@ -1019,9 +1018,10 @@ double WaveformGridComponent::getGridResolutionBeats() const {
         return customGridBeats_;
     switch (gridResolution_) {
         case GridResolution::Bar:
-            return timeRuler_ ? static_cast<double>(timeRuler_->getTimeSigNumerator()) : 4.0;
+            return timeRuler_ ? timeRuler_->getBeatsPerBar() : 4.0;
         case GridResolution::Beat:
-            return 1.0;
+            return timeRuler_ ? magda::signatureBeatLength(timeRuler_->getTimeSigDenominator())
+                              : 1.0;
         case GridResolution::Eighth:
             return 0.5;
         case GridResolution::Sixteenth:

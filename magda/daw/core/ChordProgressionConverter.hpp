@@ -30,7 +30,7 @@ struct ExtractedChord {
  * in-editor "detect chords" action and the "extract to chord track" feature.
  */
 std::vector<ExtractedChord> extractChordsFromNotes(const std::vector<MidiNote>& notes,
-                                                   int beatsPerBar);
+                                                   double beatsPerBar);
 
 /**
  * @brief Build a canonical root-position voicing for a chord.

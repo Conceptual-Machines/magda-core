@@ -319,8 +319,9 @@ PianoRollContent::PianoRollContent() {
         setNoteHeightAnchored(noteHeight_ + heightDelta, anchorNote, anchorScreenY, true);
     };
     if (auto* controller = magda::TimelineController::getCurrent()) {
-        gridComponent_->setTimeSignatureNumerator(
-            controller->getState().tempo.timeSignatureNumerator);
+        const auto& tempo = controller->getState().tempo;
+        gridComponent_->setTimeSignature(tempo.timeSignatureNumerator,
+                                         tempo.timeSignatureDenominator);
     }
     viewport_->setViewedComponent(gridComponent_.get(), false);
 
@@ -926,8 +927,9 @@ void PianoRollContent::onGridResolutionChanged() {
 
         // Sync time signature
         if (auto* controller = magda::TimelineController::getCurrent()) {
-            gridComponent_->setTimeSignatureNumerator(
-                controller->getState().tempo.timeSignatureNumerator);
+            const auto& tempo = controller->getState().tempo;
+            gridComponent_->setTimeSignature(tempo.timeSignatureNumerator,
+                                             tempo.timeSignatureDenominator);
         }
     }
     if (timeRuler_)
@@ -2179,9 +2181,9 @@ void PianoRollContent::detectChordsFromNotes() {
     if (!clip || clip->midiNotes.empty())
         return;
 
-    int beatsPerBar = magda::DEFAULT_TIME_SIGNATURE_NUMERATOR;
+    double beatsPerBar = 4.0;
     if (auto* controller = magda::TimelineController::getCurrent())
-        beatsPerBar = controller->getState().tempo.timeSignatureNumerator;
+        beatsPerBar = controller->getState().tempo.beatsPerBar();
 
     // Bar-by-bar detection lives in the shared converter so this and the
     // "extract to chord track" feature stay in sync.
