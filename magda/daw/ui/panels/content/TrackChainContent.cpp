@@ -3369,10 +3369,12 @@ void TrackChainContent::showSaveTrackPresetDialog() {
                     return;
                 if (self->selectedTrackId_ == magda::INVALID_TRACK_ID)
                     return;
-                const auto& elements =
-                    magda::TrackManager::getInstance().getChainElements(self->selectedTrackId_);
+                const auto* track =
+                    magda::TrackManager::getInstance().getTrack(self->selectedTrackId_);
+                if (track == nullptr)
+                    return;
                 auto& mgr = magda::PresetManager::getInstance();
-                if (!mgr.saveChainPreset(elements, name)) {
+                if (!mgr.saveChainPreset(*track, name)) {
                     showChainPresetErrorAsync("Save Track Preset Failed", mgr.getLastError());
                     return;
                 }
@@ -3400,9 +3402,11 @@ void TrackChainContent::showSaveTrackPresetDialog() {
 void TrackChainContent::saveCurrentTrackPreset() {
     if (currentPresetName_.isEmpty() || selectedTrackId_ == magda::INVALID_TRACK_ID)
         return;
-    const auto& elements = magda::TrackManager::getInstance().getChainElements(selectedTrackId_);
+    const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+    if (track == nullptr)
+        return;
     auto& pm = magda::PresetManager::getInstance();
-    if (!pm.saveChainPreset(elements, currentPresetName_))
+    if (!pm.saveChainPreset(*track, currentPresetName_))
         showChainPresetErrorAsync("Save Track Preset Failed", pm.getLastError());
 }
 

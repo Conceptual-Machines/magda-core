@@ -31,6 +31,31 @@ class CreateTrackCommand : public UndoableCommand {
     bool executed_ = false;
 };
 
+/** Create and fully populate one track from a saved track-chain preset. */
+class CreateTrackFromPresetCommand : public UndoableCommand {
+  public:
+    CreateTrackFromPresetCommand(TrackInfo presetTrack, juce::String name);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Create Track from Preset";
+    }
+
+    TrackId getCreatedTrackId() const {
+        return createdTrackId_;
+    }
+
+  private:
+    TrackInfo presetTrack_;
+    juce::String name_;
+    TrackId createdTrackId_ = INVALID_TRACK_ID;
+    TrackInfo materialisedTrack_;
+    TrackRestorePosition materialisedPosition_;
+    bool hasMaterialisedTrack_ = false;
+    bool executed_ = false;
+};
+
 /**
  * @brief Command for deleting a track
  */
