@@ -32,6 +32,12 @@ on:
         required: false
         type: boolean
         default: false
+      windows-runner:
+        description: 'Windows runner: auto picks the idle self-hosted one, hosted forces windows-latest'
+        required: false
+        type: choice
+        options: [ auto, hosted ]
+        default: auto
 
 # Ensure only one CI run per branch at a time
 concurrency:
@@ -1090,8 +1096,19 @@ jobs:
         id: pick
         env:
           GH_TOKEN: ${{ secrets.RUNNER_STATUS_PAT }}
+          # Through env, never inlined: a commit message is untrusted text
+          HEAD_MESSAGE: ${{ github.event.head_commit.message }}
+          DISPATCH_RUNNER: ${{ github.event.inputs.windows-runner }}
         run: |
           set -euo pipefail
+
+          # A dispatch with windows-runner=hosted, or a push whose commit message
+          # carries [windows-hosted], runs on windows-latest whatever the picker says
+          if [ "${DISPATCH_RUNNER:-}" = "hosted" ] || [[ "${HEAD_MESSAGE:-}" == *"[windows-hosted]"* ]]; then
+            echo 'labels=["windows-latest"]' >> "$GITHUB_OUTPUT"
+            echo "windows-latest requested"
+            exit 0
+          fi
 
           if [ -z "${GH_TOKEN:-}" ]; then
             echo 'labels=["windows-latest"]' >> "$GITHUB_OUTPUT"
