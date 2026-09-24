@@ -717,6 +717,20 @@ const juce::var& automationPointSchema() {
     return value;
 }
 
+const juce::var& automationPointInputSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "beatPosition":{"type":"number","minimum":0},
+            "value":{"type":"number","minimum":0,"maximum":1},
+            "curve":{"type":"string","enum":["linear","bezier","step","hard_corner"]}
+        },
+        "required":["beatPosition","value","curve"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
 const juce::var& automationLaneSchema() {
     static auto value = [] {
         auto schema = parseSchema(R"json({
@@ -2513,12 +2527,31 @@ OperationRegistry::OperationRegistry() {
             "additionalProperties":false
         })json"),
         automationLaneSchema());
+    add("automation.setPoints", "Replace every point on an absolute automation lane",
+        OperationAccess::Write, &handlers::automationSetPoints, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "laneId":{"type":"integer","minimum":0},
+                "points":{"type":"array","maxItems":100000}
+            },
+            "required":["laneId","points"],
+            "additionalProperties":false
+        })json"),
+        automationLaneSchema());
+    operations_.back().inputSchema["properties"]["points"].getDynamicObject()->setProperty(
+        "items", automationPointInputSchema());
     add("automation.clearLane", "Remove all points from an automation lane", OperationAccess::Write,
         &handlers::automationClearLane, operationInputSchema(R"json({
             "type":"object","properties":{"laneId":{"type":"integer","minimum":0}},
             "required":["laneId"],"additionalProperties":false
         })json"),
         automationLaneSchema());
+    add("automation.deleteLane", "Delete an automation lane and its clips", OperationAccess::Write,
+        &handlers::automationDeleteLane, operationInputSchema(R"json({
+            "type":"object","properties":{"laneId":{"type":"integer","minimum":0}},
+            "required":["laneId"],"additionalProperties":false
+        })json"),
+        okResult);
 
     const auto stringArraySchema = arraySchema(parseSchema(R"json({"type":"string"})json"));
     add("grooves.list", "List groove template names", OperationAccess::Read, &handlers::groovesList,
@@ -2720,7 +2753,9 @@ OperationRegistry::OperationRegistry() {
         {"selection.set", Scope::Edit},
         {"automation.createLane", Scope::Edit},
         {"automation.addPoint", Scope::Edit},
+        {"automation.setPoints", Scope::Edit},
         {"automation.clearLane", Scope::Edit},
+        {"automation.deleteLane", Scope::Edit},
 
         // The timeline. Separable from editing because a remote that only
         // starts and stops playback is a thing people actually want, and it

@@ -53,6 +53,8 @@ TEST_CASE("agent surface registry has distinct bounded capabilities", "[console_
     REQUIRE_FALSE(containsTool(mixer, "clips.addMidiNote"));
 
     REQUIRE(containsTool(automation, "automation.createLane"));
+    REQUIRE(containsTool(automation, "automation.setPoints"));
+    REQUIRE(containsTool(automation, "automation.deleteLane"));
     REQUIRE_FALSE(containsTool(automation, "session.launchClip"));
 
     REQUIRE(containsTool(device, "racks.setBypassed"));

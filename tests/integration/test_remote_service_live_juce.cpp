@@ -653,6 +653,64 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
             expect(fixture.service.currentRevision() == before);
         }
 
+        beginTest("Replacing a lane curve is atomic, undoable, and no-op aware");
+        {
+            Fixture fixture;
+            const auto laneId = createLane(AutomationLaneType::Absolute);
+            expect(laneId != INVALID_AUTOMATION_LANE_ID);
+            const auto original = AutomationManager::getInstance().getLane(laneId)->absolutePoints;
+
+            juce::Array<juce::var> points;
+            points.add(object({{"beatPosition", 8.0}, {"value", 0.8}, {"curve", "step"}}));
+            points.add(object({{"beatPosition", 2.0}, {"value", 0.2}, {"curve", "linear"}}));
+            const auto input =
+                object({{"laneId", static_cast<int>(laneId)}, {"points", juce::var(points)}});
+
+            const auto before = fixture.service.currentRevision();
+            const auto replaced = fixture.run("automation.setPoints", input);
+            expect(replaced.ok);
+            expect(fixture.service.currentRevision() == before + 1);
+            const auto* resultPoints = replaced.result["points"].getArray();
+            expect(resultPoints != nullptr && resultPoints->size() == 2);
+            if (resultPoints != nullptr && resultPoints->size() == 2) {
+                expectWithinAbsoluteError(static_cast<double>((*resultPoints)[0]["beatPosition"]),
+                                          2.0, 1.0e-9);
+                expectWithinAbsoluteError(static_cast<double>((*resultPoints)[1]["beatPosition"]),
+                                          8.0, 1.0e-9);
+            }
+
+            const auto unchanged = fixture.run("automation.setPoints", input);
+            expect(unchanged.ok);
+            expect(fixture.service.currentRevision() == before + 1);
+
+            UndoManager::getInstance().undo();
+            const auto* restored = AutomationManager::getInstance().getLane(laneId);
+            expect(restored != nullptr);
+            if (restored != nullptr) {
+                expect(restored->absolutePoints.size() == original.size());
+                if (!original.empty() && !restored->absolutePoints.empty())
+                    expect(restored->absolutePoints.front().id == original.front().id);
+            }
+        }
+
+        beginTest("Deleting an automation lane restores its clips on undo");
+        {
+            Fixture fixture;
+            const auto laneId = createLane(AutomationLaneType::ClipBased);
+            const auto clipId = AutomationManager::getInstance().createClip(laneId, 4.0, 8.0);
+            expect(clipId != INVALID_AUTOMATION_CLIP_ID);
+
+            const auto deleted = fixture.run("automation.deleteLane",
+                                             object({{"laneId", static_cast<int>(laneId)}}));
+            expect(deleted.ok);
+            expect(AutomationManager::getInstance().getLane(laneId) == nullptr);
+            expect(AutomationManager::getInstance().getClip(clipId) == nullptr);
+
+            UndoManager::getInstance().undo();
+            expect(AutomationManager::getInstance().getLane(laneId) != nullptr);
+            expect(AutomationManager::getInstance().getClip(clipId) != nullptr);
+        }
+
         beginTest("A lane targeting a track that does not exist is refused");
         {
             Fixture fixture;

@@ -118,7 +118,9 @@ HandlerResult automationListLanes(MagdaApi&, const juce::var&, const RequestCont
 HandlerResult automationGetLane(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult automationCreateLane(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult automationAddPoint(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult automationSetPoints(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult automationClearLane(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult automationDeleteLane(MagdaApi&, const juce::var&, const RequestContext&);
 
 // Grooves
 HandlerResult groovesList(MagdaApi&, const juce::var&, const RequestContext&);
