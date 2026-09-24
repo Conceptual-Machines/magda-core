@@ -134,7 +134,8 @@ juce::var trackToJson(magda::MagdaApi& api, const magda::TrackInfo& track) {
 
 juce::String dumpProjectJson(magda::MagdaApi& api) {
     const auto& project = api.project().getCurrentProjectInfo();
-    auto value = magda::remote::toJson(magda::remote::makeProjectDto(project));
+    auto value = magda::remote::toJson(magda::remote::makeProjectDto(
+        project, api.project().isDirty(), api.project().hasSaveTarget()));
     auto* root = value.getDynamicObject();
 
     juce::Array<juce::var> tracks;

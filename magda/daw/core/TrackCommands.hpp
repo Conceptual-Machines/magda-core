@@ -402,6 +402,30 @@ class AddDeviceByPathCommand : public UndoableCommand {
     bool executed_ = false;
 };
 
+/** Set one device's bypass state while preserving delta-solo across undo. */
+class SetDeviceBypassedCommand : public UndoableCommand {
+  public:
+    SetDeviceBypassedCommand(ChainNodePath devicePath, bool bypassed);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return bypassed_ ? "Bypass Device" : "Enable Device";
+    }
+
+    bool didSet() const {
+        return executed_;
+    }
+
+  private:
+    ChainNodePath devicePath_;
+    bool bypassed_ = false;
+    bool previousBypassed_ = false;
+    bool previousDeltaSolo_ = false;
+    bool captured_ = false;
+    bool executed_ = false;
+};
+
 /**
  * @brief Remove a device addressed by path, restoring it in place on undo.
  *

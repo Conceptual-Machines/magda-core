@@ -107,6 +107,8 @@ TEST_CASE("A read executes and leaves the revision alone", "[remote][service]") 
     MockMagdaApi api;
     api.project_.info.name = "Demo";
     api.project_.info.tempo = 128.0;
+    api.project_.dirty = true;
+    api.project_.saveTarget = true;
     RemoteApiService service(api);
 
     const auto response = run(service, "project.get", emptyInput());
@@ -114,9 +116,35 @@ TEST_CASE("A read executes and leaves the revision alone", "[remote][service]") 
     REQUIRE(response.ok);
     REQUIRE(response.result["name"].toString() == "Demo");
     REQUIRE(static_cast<double>(response.result["tempo"]) == 128.0);
+    REQUIRE(static_cast<bool>(response.result["dirty"]));
+    REQUIRE(static_cast<bool>(response.result["hasSaveTarget"]));
     REQUIRE(response.revision == INITIAL_REVISION);
     // A read must not open an undo step.
     REQUIRE(api.undo_.compoundDescriptions.empty());
+}
+
+TEST_CASE("project.save writes only to an existing target and is revision-neutral",
+          "[remote][service][project]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.project_.dirty = true;
+    api.project_.saveTarget = true;
+    RemoteApiService service(api);
+
+    const auto saved = run(service, "project.save", emptyInput());
+
+    REQUIRE(saved.ok);
+    REQUIRE(api.project_.saveCalls == 1);
+    REQUIRE_FALSE(static_cast<bool>(saved.result["dirty"]));
+    REQUIRE(static_cast<bool>(saved.result["hasSaveTarget"]));
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+    REQUIRE(api.undo_.executeCalls == 0);
+
+    api.project_.saveTarget = false;
+    const auto untitled = run(service, "project.save", emptyInput());
+    REQUIRE_FALSE(untitled.ok);
+    REQUIRE(errorCodeOf(untitled) == "conflict");
+    REQUIRE(api.project_.saveCalls == 1);
 }
 
 TEST_CASE("A committed write advances the revision by exactly one", "[remote][service]") {
@@ -722,6 +750,54 @@ TEST_CASE("devices.listParameters returns the device's parameters", "[remote][se
         run(service, "devices.listParameters", pathInput(ChainNodePath::topLevelDevice(1, 99)));
     REQUIRE_FALSE(missing.ok);
     REQUIRE(errorCodeOf(missing) == "not_found");
+}
+
+TEST_CASE("devicePresets.list returns opaque path-free metadata",
+          "[remote][service][devices][presets]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    api.devices_.presets[path] = {{"device-preset:abc", "Init", "", "magda"},
+                                  {"plugin-preset:def", "Wide Pad", "Factory/Pads", "plugin"}};
+    RemoteApiService service(api);
+
+    const auto response = run(service, "devicePresets.list", pathInput(path));
+
+    REQUIRE(response.ok);
+    const auto* presets = response.result.getArray();
+    REQUIRE(presets != nullptr);
+    REQUIRE(presets->size() == 2);
+    CHECK((*presets)[0]["id"].toString() == "device-preset:abc");
+    CHECK((*presets)[1]["category"].toString() == "Factory/Pads");
+    CHECK_FALSE(juce::JSON::toString(response.result).containsIgnoreCase("path"));
+
+    const auto missing =
+        run(service, "devicePresets.list", pathInput(ChainNodePath::topLevelDevice(1, 99)));
+    REQUIRE_FALSE(missing.ok);
+    REQUIRE(errorCodeOf(missing) == "not_found");
+}
+
+TEST_CASE("devices.setBypassed updates once and treats an identical write as a no-op",
+          "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    RemoteApiService service(api);
+
+    auto input = pathInput(path);
+    input.getDynamicObject()->setProperty("bypassed", true);
+    const auto changed = run(service, "devices.setBypassed", input);
+    REQUIRE(changed.ok);
+    REQUIRE(api.devices_.bypassed.size() == 1);
+    REQUIRE(api.devices_.devices[path].bypassed);
+    REQUIRE(changed.revision == INITIAL_REVISION + 1);
+
+    const auto unchanged = run(service, "devices.setBypassed", input);
+    REQUIRE(unchanged.ok);
+    REQUIRE(api.devices_.bypassed.size() == 1);
+    REQUIRE(unchanged.revision == INITIAL_REVISION + 1);
 }
 
 TEST_CASE("devices.setParameter writes an allowed parameter and echoes the model",

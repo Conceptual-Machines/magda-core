@@ -140,11 +140,13 @@ const juce::var& projectSchema() {
             "keyQuality":{"type":"string","enum":["major","minor"]},
             "loopEnabled":{"type":"boolean"},
             "loopStartBeats":{"type":"number","minimum":0},
-            "loopEndBeats":{"type":"number","minimum":0}
+            "loopEndBeats":{"type":"number","minimum":0},
+            "dirty":{"type":"boolean"},
+            "hasSaveTarget":{"type":"boolean"}
         },
         "required":["name","tempo","timeSignatureNumerator","timeSignatureDenominator",
                     "sampleRate","timelineLengthBars","keyRoot","keyQuality","loopEnabled",
-                    "loopStartBeats","loopEndBeats"],
+                    "loopStartBeats","loopEndBeats","dirty","hasSaveTarget"],
         "additionalProperties":false
     })json");
     return value;
@@ -405,6 +407,21 @@ const juce::var& deviceCatalogEntrySchema() {
         },
         "required":["catalogId","name","manufacturer","category","description","format","type",
                     "instrument"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
+const juce::var& devicePresetSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "id":{"type":"string","minLength":1},
+            "name":{"type":"string"},
+            "category":{"type":"string"},
+            "source":{"type":"string","enum":["magda","plugin"]}
+        },
+        "required":["id","name","category","source"],
         "additionalProperties":false
     })json");
     return value;
@@ -1022,6 +1039,8 @@ juce::var toJson(const ProjectDto& dto) {
     object->setProperty("loopEnabled", dto.loopEnabled);
     object->setProperty("loopStartBeats", dto.loopStartBeats);
     object->setProperty("loopEndBeats", dto.loopEndBeats);
+    object->setProperty("dirty", dto.dirty);
+    object->setProperty("hasSaveTarget", dto.hasSaveTarget);
     return object;
 }
 
@@ -1154,6 +1173,15 @@ juce::var toJson(const DeviceCatalogEntryDto& dto) {
     object->setProperty("format", dto.format);
     object->setProperty("type", dto.type);
     object->setProperty("instrument", dto.instrument);
+    return object;
+}
+
+juce::var toJson(const DevicePresetDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("id", dto.id);
+    object->setProperty("name", dto.name);
+    object->setProperty("category", dto.category);
+    object->setProperty("source", dto.source);
     return object;
 }
 
@@ -1294,6 +1322,8 @@ std::optional<ProjectDto> projectFromJson(const juce::var& json, Error& error) {
     dto.loopEnabled = static_cast<bool>(json["loopEnabled"]);
     dto.loopStartBeats = static_cast<double>(json["loopStartBeats"]);
     dto.loopEndBeats = static_cast<double>(json["loopEndBeats"]);
+    dto.dirty = static_cast<bool>(json["dirty"]);
+    dto.hasSaveTarget = static_cast<bool>(json["hasSaveTarget"]);
     return dto;
 }
 
@@ -1450,6 +1480,17 @@ std::optional<DeviceCatalogEntryDto> deviceCatalogEntryFromJson(const juce::var&
     return dto;
 }
 
+std::optional<DevicePresetDto> devicePresetFromJson(const juce::var& json, Error& error) {
+    if (!prepareDecode(json, devicePresetSchema(), error))
+        return std::nullopt;
+    DevicePresetDto dto;
+    dto.id = json["id"].toString();
+    dto.name = json["name"].toString();
+    dto.category = json["category"].toString();
+    dto.source = json["source"].toString();
+    return dto;
+}
+
 std::optional<DeviceParameterDto> deviceParameterFromJson(const juce::var& json, Error& error) {
     if (!prepareDecode(json, deviceParameterSchema(), error))
         return std::nullopt;
@@ -1574,6 +1615,8 @@ OperationRegistry::OperationRegistry() {
 
     add("project.get", "Get safe project metadata", OperationAccess::Read, &handlers::projectGet,
         emptyObjectSchema(), projectSchema());
+    add("project.save", "Save the project to its existing target", OperationAccess::Write,
+        &handlers::projectSave, emptyObjectSchema(), projectSchema());
     add("project.setTempo", "Set the project tempo", OperationAccess::Write,
         &handlers::projectSetTempo, operationInputSchema(R"json({
             "type":"object","properties":{"tempo":{"type":"number","minimum":20,"maximum":400}},
@@ -1779,6 +1822,14 @@ OperationRegistry::OperationRegistry() {
     // its `catalogId` from — so what this lists is exactly what can be asked for.
     add("devices.catalog", "List devices that can be added, by catalogue id", OperationAccess::Read,
         &handlers::devicesCatalog, emptyObjectSchema(), arraySchema(deviceCatalogEntrySchema()));
+    add("devicePresets.list", "List presets for a device by opaque id", OperationAccess::Read,
+        &handlers::devicePresetsList, operationInputSchema(R"json({
+            "type":"object","properties":{"devicePath":{}},
+            "required":["devicePath"],"additionalProperties":false
+        })json"),
+        arraySchema(devicePresetSchema()));
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "devicePath", devicePathSchema());
     add("devices.add", "Add a device from the catalogue to a track's FX chain or a rack chain",
         OperationAccess::Write, &handlers::devicesAdd, operationInputSchema(R"json({
             "type":"object",
@@ -1803,6 +1854,15 @@ OperationRegistry::OperationRegistry() {
         operationInputSchema(R"json({
             "type":"object","properties":{"devicePath":{}},
             "required":["devicePath"],"additionalProperties":false
+        })json"),
+        okResult);
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "devicePath", devicePathSchema());
+    add("devices.setBypassed", "Set a device's bypass state", OperationAccess::Write,
+        &handlers::devicesSetBypassed, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{"devicePath":{},"bypassed":{"type":"boolean"}},
+            "required":["devicePath","bypassed"],"additionalProperties":false
         })json"),
         okResult);
     operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
@@ -2171,6 +2231,7 @@ OperationRegistry::OperationRegistry() {
         // acts on, which is not something a read-only client should reach.
         {"project.setTempo", Scope::Edit},
         {"project.setTimeSignature", Scope::Edit},
+        {"project.save", Scope::Edit},
         {"tracks.create", Scope::Edit},
         {"tracks.createFromPreset", Scope::Edit},
         {"tracks.update", Scope::Edit},
@@ -2195,6 +2256,7 @@ OperationRegistry::OperationRegistry() {
         {"devices.add", Scope::Edit},
         {"devices.remove", Scope::Edit},
         {"devices.move", Scope::Edit},
+        {"devices.setBypassed", Scope::Edit},
         {"devices.setParameter", Scope::Edit},
         {"devices.setParameterConfig", Scope::Edit},
         // Opening a plugin editor changes no project content, but it takes

@@ -908,12 +908,29 @@ class MockSessionApi : public SessionApi {
 class MockProjectApi : public ProjectApi {
   public:
     ProjectInfo info;
+    bool dirty = false;
+    bool saveTarget = false;
+    bool saveSucceeds = true;
+    int saveCalls = 0;
     const TempoMap* map = nullptr;
     const TempoMap* tempoMap() const override {
         return map;
     }
     const ProjectInfo& getCurrentProjectInfo() const override {
         return info;
+    }
+    bool isDirty() const override {
+        return dirty;
+    }
+    bool hasSaveTarget() const override {
+        return saveTarget;
+    }
+    bool saveProject() override {
+        ++saveCalls;
+        if (!saveSucceeds)
+            return false;
+        dirty = false;
+        return true;
     }
     void setTempo(double bpm) override {
         info.tempo = bpm;
@@ -1135,6 +1152,7 @@ class MockPluginApi : public PluginApi {
 class MockDeviceApi : public DeviceApi {
   public:
     std::vector<DeviceCatalogEntry> catalog;
+    std::map<ChainNodePath, std::vector<DevicePresetEntry>> presets;
     // Live devices, keyed by the path that addresses them.
     std::map<ChainNodePath, DeviceInfo> devices;
 
@@ -1166,6 +1184,11 @@ class MockDeviceApi : public DeviceApi {
                                   ParameterUtils::modelToRealValue({info.currentValue}, info)});
         }
         return parameters;
+    }
+    std::vector<DevicePresetEntry> getDevicePresets(
+        const ChainNodePath& devicePath) const override {
+        const auto it = presets.find(devicePath);
+        return it != presets.end() ? it->second : std::vector<DevicePresetEntry>{};
     }
 
     // Recorded mutations, for asserting what a caller invoked.
@@ -1201,8 +1224,12 @@ class MockDeviceApi : public DeviceApi {
         return true;
     }
     bool setDeviceBypassed(const ChainNodePath& devicePath, bool value) override {
-        if (getDevice(devicePath) == nullptr)
+        const auto it = devices.find(devicePath);
+        if (it == devices.end())
             return false;
+        it->second.bypassed = value;
+        if (value)
+            it->second.deltaSolo = false;
         bypassed.emplace_back(devicePath, value);
         return true;
     }

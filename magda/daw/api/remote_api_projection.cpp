@@ -281,7 +281,7 @@ ScopedMessageThreadAssertionDisabler::~ScopedMessageThreadAssertionDisabler() {
     setMessageThreadAssertionEnabled(previous_);
 }
 
-ProjectDto makeProjectDto(const ProjectInfo& project) {
+ProjectDto makeProjectDto(const ProjectInfo& project, bool dirty, bool hasSaveTarget) {
     ProjectDto dto;
     dto.name = project.name;
     dto.tempo = project.tempo;
@@ -294,6 +294,8 @@ ProjectDto makeProjectDto(const ProjectInfo& project) {
     dto.loopEnabled = project.loopEnabled;
     dto.loopStartBeats = project.loopStartBeats;
     dto.loopEndBeats = project.loopEndBeats;
+    dto.dirty = dirty;
+    dto.hasSaveTarget = hasSaveTarget;
     return dto;
 }
 
@@ -378,6 +380,10 @@ DeviceCatalogEntryDto makeDeviceCatalogEntryDto(const DeviceCatalogEntry& entry)
     dto.type = deviceTypeName(entry.type);
     dto.instrument = entry.isInstrument;
     return dto;
+}
+
+DevicePresetDto makeDevicePresetDto(const DevicePresetEntry& entry) {
+    return {entry.id, entry.name, entry.category, entry.source};
 }
 
 std::vector<DeviceParameterDto> makeDeviceParameterDtos(const DeviceInfo& device,

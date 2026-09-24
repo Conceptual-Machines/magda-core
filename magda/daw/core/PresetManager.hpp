@@ -180,6 +180,16 @@ class PresetManager {
      */
     juce::StringArray getDevicePresets(const juce::String& pluginFolder) const;
 
+    /** Safe, path-free metadata for MAGDA device-state presets. */
+    struct DevicePresetMetadata {
+        juce::String id;
+        juce::String name;
+        juce::String category;
+    };
+
+    std::vector<DevicePresetMetadata> getDevicePresetMetadata(
+        const juce::String& pluginFolder) const;
+
     /** @brief The Devices/<pluginFolder>/ directory. Created lazily on save. */
     juce::File getDevicePluginDirectory(const juce::String& pluginFolder) const;
 

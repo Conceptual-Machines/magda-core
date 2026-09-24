@@ -10,6 +10,9 @@ namespace magda {
 class ProjectApiLive : public ProjectApi {
   public:
     const ProjectInfo& getCurrentProjectInfo() const override;
+    bool isDirty() const override;
+    bool hasSaveTarget() const override;
+    bool saveProject() override;
     void setTempo(double bpm) override;
     void setTimeSignature(int numerator, int denominator) override;
     const TempoMap* tempoMap() const override;

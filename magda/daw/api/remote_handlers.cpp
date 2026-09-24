@@ -282,19 +282,36 @@ HandlerResult systemDescribe(MagdaApi&, const juce::var&, const RequestContext&)
 // ===========================================================================
 
 HandlerResult projectGet(MagdaApi& api, const juce::var&, const RequestContext&) {
-    return HandlerResult::ok(toJson(makeProjectDto(api.project().getCurrentProjectInfo())));
+    return HandlerResult::ok(
+        toJson(makeProjectDto(api.project().getCurrentProjectInfo(), api.project().isDirty(),
+                              api.project().hasSaveTarget())));
+}
+
+HandlerResult projectSave(MagdaApi& api, const juce::var&, const RequestContext&) {
+    if (!api.project().hasSaveTarget())
+        return HandlerResult::fail(ErrorCode::Conflict,
+                                   "project has no save target; use Save As in MAGDA first");
+    if (!api.project().saveProject())
+        return HandlerResult::fail(ErrorCode::InternalError, "project save failed");
+    return HandlerResult::unchanged(
+        toJson(makeProjectDto(api.project().getCurrentProjectInfo(), api.project().isDirty(),
+                              api.project().hasSaveTarget())));
 }
 
 HandlerResult projectSetTempo(MagdaApi& api, const juce::var& input, const RequestContext&) {
     api.project().setTempo(static_cast<double>(input["tempo"]));
-    return HandlerResult::ok(toJson(makeProjectDto(api.project().getCurrentProjectInfo())));
+    return HandlerResult::ok(
+        toJson(makeProjectDto(api.project().getCurrentProjectInfo(), api.project().isDirty(),
+                              api.project().hasSaveTarget())));
 }
 
 HandlerResult projectSetTimeSignature(MagdaApi& api, const juce::var& input,
                                       const RequestContext&) {
     api.project().setTimeSignature(static_cast<int>(input["numerator"]),
                                    static_cast<int>(input["denominator"]));
-    return HandlerResult::ok(toJson(makeProjectDto(api.project().getCurrentProjectInfo())));
+    return HandlerResult::ok(
+        toJson(makeProjectDto(api.project().getCurrentProjectInfo(), api.project().isDirty(),
+                              api.project().hasSaveTarget())));
 }
 
 // ===========================================================================
@@ -544,6 +561,19 @@ HandlerResult devicesCatalog(MagdaApi& api, const juce::var&, const RequestConte
     return HandlerResult::ok(toJsonArray(items));
 }
 
+HandlerResult devicePresetsList(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto path = toChainNodePath(devicePathFromJson(input["devicePath"]));
+    if (!path)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "devicePath does not resolve");
+    if (api.devices().getDevice(*path) == nullptr)
+        return HandlerResult::fail(ErrorCode::NotFound, "no device at devicePath");
+
+    std::vector<juce::var> items;
+    for (const auto& preset : api.devices().getDevicePresets(*path))
+        items.push_back(toJson(makeDevicePresetDto(preset)));
+    return HandlerResult::ok(toJsonArray(items));
+}
+
 HandlerResult devicesAdd(MagdaApi& api, const juce::var& input, const RequestContext&) {
     const auto catalogId = input["catalogId"].toString();
     if (!api.devices().findCatalogEntry(catalogId).has_value())
@@ -599,6 +629,22 @@ HandlerResult devicesMove(MagdaApi& api, const juce::var& input, const RequestCo
         return HandlerResult::fail(ErrorCode::NotFound, "no device at devicePath");
     if (!api.devices().moveDevice(*path, readInt(input, "toIndex", -1)))
         return HandlerResult::fail(ErrorCode::Conflict, "device move failed");
+    return HandlerResult::ok(acceptedResult());
+}
+
+HandlerResult devicesSetBypassed(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto path = toChainNodePath(devicePathFromJson(input["devicePath"]));
+    if (!path)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "devicePath does not resolve");
+    const auto* device = api.devices().getDevice(*path);
+    if (device == nullptr)
+        return HandlerResult::fail(ErrorCode::NotFound, "no device at devicePath");
+
+    const auto bypassed = readBool(input, "bypassed");
+    if (device->bypassed == bypassed)
+        return HandlerResult::unchanged(acceptedResult());
+    if (!api.devices().setDeviceBypassed(*path, bypassed))
+        return HandlerResult::fail(ErrorCode::Conflict, "device bypass change failed");
     return HandlerResult::ok(acceptedResult());
 }
 

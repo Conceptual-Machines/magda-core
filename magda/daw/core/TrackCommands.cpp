@@ -1007,6 +1007,35 @@ void AddDeviceByPathCommand::undo() {
     DBG("UNDO: Removed added device " << createdDeviceId_);
 }
 
+SetDeviceBypassedCommand::SetDeviceBypassedCommand(ChainNodePath devicePath, bool bypassed)
+    : devicePath_(std::move(devicePath)), bypassed_(bypassed) {}
+
+void SetDeviceBypassedCommand::execute() {
+    auto& tracks = TrackManager::getInstance();
+    const auto* device = tracks.getDeviceInChainByPath(devicePath_);
+    if (device == nullptr) {
+        executed_ = false;
+        return;
+    }
+
+    if (!captured_) {
+        previousBypassed_ = device->bypassed;
+        previousDeltaSolo_ = device->deltaSolo;
+        captured_ = true;
+    }
+    tracks.setDeviceBypassedByPath(devicePath_, bypassed_);
+    executed_ = true;
+}
+
+void SetDeviceBypassedCommand::undo() {
+    if (!executed_ || !captured_)
+        return;
+    auto& tracks = TrackManager::getInstance();
+    tracks.setDeviceBypassedByPath(devicePath_, previousBypassed_);
+    tracks.setDeviceDeltaSoloByPath(devicePath_, previousDeltaSolo_);
+    executed_ = false;
+}
+
 RemoveDeviceByPathCommand::RemoveDeviceByPathCommand(const ChainNodePath& devicePath)
     : devicePath_(devicePath), parentPath_(devicePath.parentChain()) {}
 

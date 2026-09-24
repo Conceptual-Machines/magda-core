@@ -20,6 +20,7 @@ class MagdaApi;
 struct AutomationLaneInfo;
 struct ClipInfo;
 struct DeviceCatalogEntry;
+struct DevicePresetEntry;
 struct DeviceInfo;
 struct ProjectInfo;
 struct TrackInfo;
@@ -109,6 +110,8 @@ struct ProjectDto {
     bool loopEnabled = false;
     double loopStartBeats = 0.0;
     double loopEndBeats = 0.0;
+    bool dirty = false;
+    bool hasSaveTarget = false;
 
     bool operator==(const ProjectDto&) const = default;
 };
@@ -321,6 +324,15 @@ struct DeviceCatalogEntryDto {
     bool instrument = false;
 
     bool operator==(const DeviceCatalogEntryDto&) const = default;
+};
+
+struct DevicePresetDto {
+    juce::String id;
+    juce::String name;
+    juce::String category;
+    juce::String source;  // "magda" | "plugin"
+
+    bool operator==(const DevicePresetDto&) const = default;
 };
 
 struct SelectionDto {
@@ -594,6 +606,7 @@ juce::var toJson(const ChainDto& dto);
 juce::var toJson(const RackDto& dto);
 juce::var toJson(const DeviceGraphDto& dto);
 juce::var toJson(const DeviceCatalogEntryDto& dto);
+juce::var toJson(const DevicePresetDto& dto);
 juce::var toJson(const DeviceParameterDto& dto);
 juce::var toJson(const SelectionDto& dto);
 juce::var toJson(const TransportDto& dto);
@@ -623,17 +636,19 @@ std::optional<RackDto> rackFromJson(const juce::var& json, Error& error);
 std::optional<DeviceGraphDto> deviceGraphFromJson(const juce::var& json, Error& error);
 std::optional<DeviceCatalogEntryDto> deviceCatalogEntryFromJson(const juce::var& json,
                                                                 Error& error);
+std::optional<DevicePresetDto> devicePresetFromJson(const juce::var& json, Error& error);
 std::optional<DeviceParameterDto> deviceParameterFromJson(const juce::var& json, Error& error);
 std::optional<SelectionDto> selectionFromJson(const juce::var& json, Error& error);
 std::optional<TransportDto> transportFromJson(const juce::var& json, Error& error);
 std::optional<SessionDto> sessionFromJson(const juce::var& json, Error& error);
 std::optional<AutomationLaneDto> automationLaneFromJson(const juce::var& json, Error& error);
 
-ProjectDto makeProjectDto(const ProjectInfo& project);
+ProjectDto makeProjectDto(const ProjectInfo& project, bool dirty, bool hasSaveTarget);
 TrackDto makeTrackDto(const TrackInfo& track);
 ClipDto makeClipDto(const ClipInfo& clip);
 DeviceGraphDto makeDeviceGraphDto(const std::vector<TrackInfo>& tracks);
 DeviceCatalogEntryDto makeDeviceCatalogEntryDto(const DeviceCatalogEntry& entry);
+DevicePresetDto makeDevicePresetDto(const DevicePresetEntry& entry);
 /**
  * @brief One DTO per parameter of the device at @p devicePath.
  *

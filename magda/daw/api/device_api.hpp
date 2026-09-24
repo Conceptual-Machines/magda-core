@@ -35,6 +35,17 @@ struct DeviceCatalogEntry {
     bool operator==(const DeviceCatalogEntry&) const = default;
 };
 
+/** One path-free preset address for a particular live device. */
+struct DevicePresetEntry {
+    juce::String id;
+    juce::String name;
+    juce::String category;
+    /** "magda" for a saved device state, "plugin" for VST3/AU preset files. */
+    juce::String source;
+
+    bool operator==(const DevicePresetEntry&) const = default;
+};
+
 /**
  * @brief One automatable parameter of a live device.
  *
@@ -116,6 +127,10 @@ class DeviceApi {
 
     /** Empty if the path does not resolve, or the device has no parameters. */
     virtual std::vector<DeviceParameter> getDeviceParameters(
+        const ChainNodePath& devicePath) const = 0;
+
+    /** Presets applicable to this device, with opaque ids and no file paths. */
+    virtual std::vector<DevicePresetEntry> getDevicePresets(
         const ChainNodePath& devicePath) const = 0;
 
     /**

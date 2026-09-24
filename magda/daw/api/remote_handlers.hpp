@@ -29,6 +29,7 @@ HandlerResult systemDescribe(MagdaApi&, const juce::var&, const RequestContext&)
 
 // Project
 HandlerResult projectGet(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult projectSave(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult projectSetTempo(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult projectSetTimeSignature(MagdaApi&, const juce::var&, const RequestContext&);
 
@@ -59,9 +60,11 @@ HandlerResult clipsSliceNotes(MagdaApi&, const juce::var&, const RequestContext&
 // Devices and racks
 HandlerResult devicesList(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesCatalog(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult devicePresetsList(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesAdd(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesRemove(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesMove(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult devicesSetBypassed(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesListParameters(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesSetParameter(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesSetParameterConfig(MagdaApi&, const juce::var&, const RequestContext&);

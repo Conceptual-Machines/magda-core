@@ -1,5 +1,7 @@
 #include "device_api_live.hpp"
 
+#include <juce_cryptography/juce_cryptography.h>
+
 #include <algorithm>
 #include <cmath>
 #include <memory>
@@ -9,6 +11,8 @@
 #include "../audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "../core/ParameterUtils.hpp"
 #include "../core/PluginParameterConfigStore.hpp"
+#include "../core/PluginPresetScanner.hpp"
+#include "../core/PresetManager.hpp"
 #include "../core/TrackCommands.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/UndoManager.hpp"
@@ -101,6 +105,28 @@ std::optional<DeviceInfo> deviceFromCatalogId(const juce::String& catalogId) {
     return std::nullopt;
 }
 
+void appendPluginPresets(const DeviceInfo& device,
+                         const std::vector<PluginPresetScanner::Entry>& entries,
+                         const juce::String& category, std::vector<DevicePresetEntry>& out) {
+    for (const auto& entry : entries) {
+        if (entry.isFolder) {
+            const auto childCategory =
+                category.isEmpty() ? entry.name : category + "/" + entry.name;
+            appendPluginPresets(device, entry.children, childCategory, out);
+            continue;
+        }
+
+        auto stream = entry.file.createInputStream();
+        if (stream == nullptr)
+            continue;
+        const auto contentHash = juce::SHA256(*stream).toHexString();
+        const auto identity = device.getFormatString() + "|" + device.manufacturer + "|" +
+                              device.name + "|" + device.pluginId + "|" + contentHash;
+        out.push_back({"plugin-preset:" + juce::SHA256(identity.toUTF8()).toHexString(), entry.name,
+                       category, "plugin"});
+    }
+}
+
 }  // namespace
 
 std::vector<DeviceCatalogEntry> DeviceApiLive::getCatalog() const {
@@ -173,6 +199,22 @@ std::vector<DeviceParameter> DeviceApiLive::getDeviceParameters(
     return parameters;
 }
 
+std::vector<DevicePresetEntry> DeviceApiLive::getDevicePresets(
+    const ChainNodePath& devicePath) const {
+    const auto* device = getDevice(devicePath);
+    if (device == nullptr)
+        return {};
+
+    std::vector<DevicePresetEntry> presets;
+    for (const auto& preset : PresetManager::getInstance().getDevicePresetMetadata(device->name)) {
+        presets.push_back({preset.id, preset.name, preset.category, "magda"});
+    }
+
+    const auto& pluginPresets = PluginPresetScanner::getInstance().getPresets(*device);
+    appendPluginPresets(*device, pluginPresets.roots, {}, presets);
+    return presets;
+}
+
 DeviceId DeviceApiLive::addDevice(const ChainNodePath& parentPath, const juce::String& catalogId,
                                   int index) {
     const auto device = deviceFromCatalogId(catalogId);
@@ -221,10 +263,16 @@ bool DeviceApiLive::moveDevice(const ChainNodePath& devicePath, int toIndex) {
 }
 
 bool DeviceApiLive::setDeviceBypassed(const ChainNodePath& devicePath, bool bypassed) {
-    if (getDevice(devicePath) == nullptr)
+    const auto* device = getDevice(devicePath);
+    if (device == nullptr)
         return false;
-    TrackManager::getInstance().setDeviceBypassedByPath(devicePath, bypassed);
-    return true;
+    if (device->bypassed == bypassed)
+        return true;
+
+    auto command = std::make_unique<SetDeviceBypassedCommand>(devicePath, bypassed);
+    auto* raw = command.get();
+    UndoManager::getInstance().executeCommand(std::move(command));
+    return raw->didSet();
 }
 
 bool DeviceApiLive::setDeviceParameter(const ChainNodePath& devicePath, int paramIndex,
