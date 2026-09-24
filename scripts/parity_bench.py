@@ -36,8 +36,9 @@ SCHEMA = 1
 def find_bench(explicit, build_dir):
     if explicit:
         return Path(explicit)
-    for candidate in sorted((ROOT / build_dir).glob("**/magda_parity_bench")):
-        if candidate.is_file() and os.access(candidate, os.X_OK):
+    for candidate in sorted((ROOT / build_dir).glob("**/magda_parity_bench*")):
+        if candidate.name in ("magda_parity_bench", "magda_parity_bench.exe") \
+                and candidate.is_file() and os.access(candidate, os.X_OK):
             return candidate
     sys.exit("magda_parity_bench not found; build it with `make parity-bench-build`")
 
@@ -47,6 +48,9 @@ def link_real_user_data(home):
 
     Only the engines' own settings stay in the sandbox.
     """
+    # Windows resolves these folders through the shell, not HOME, and symlinks need admin rights.
+    if platform.system() == "Windows":
+        return
     real = Path.home()
     (home / "Library" / "Logs").mkdir(parents=True, exist_ok=True)
     for folder, private in (("Library/Application Support", {"Tracktion"}),
@@ -97,9 +101,10 @@ def run_bench(bench, args, timeout):
 # --- the machine ------------------------------------------------------------------------
 
 
-def command_output(command):
+def command_output(command, timeout=10):
     try:
-        return subprocess.run(command, capture_output=True, text=True, timeout=10).stdout.strip()
+        return subprocess.run(command, capture_output=True, text=True,
+                              timeout=timeout).stdout.strip()
     except (OSError, subprocess.TimeoutExpired):
         return ""
 
@@ -379,10 +384,23 @@ def list_projects(bench, timeout):
 
 def other_load():
     """What else is using this machine, as a note, or empty when it is quiet enough to measure."""
-    if platform.system() == "Windows":
-        return ""
+    def sample_windows():
+        # Takes several seconds on a loaded machine, hence the longer timeout.
+        heavy = {}
+        script = ("Get-CimInstance Win32_PerfFormattedData_PerfProc_Process -Filter "
+                  "'PercentProcessorTime >= 25 AND IDProcess > 0' | ForEach-Object "
+                  "{ '{0} {1} {2}' -f $_.PercentProcessorTime, $_.IDProcess, $_.Name }")
+        output = command_output(["powershell", "-NoProfile", "-Command", script], timeout=60)
+        for line in output.splitlines():
+            parts = line.strip().split(None, 2)
+            if len(parts) == 3 and int(parts[1]) != os.getpid() \
+                    and not parts[2].startswith("powershell"):
+                heavy[int(parts[1])] = "%s at %s%%" % (parts[2].split("#")[0], parts[0])
+        return heavy
 
     def sample():
+        if platform.system() == "Windows":
+            return sample_windows()
         heavy = {}
         for line in command_output(["ps", "-Ao", "pcpu,pid,comm", "-r"]).splitlines()[1:9]:
             parts = line.strip().split(None, 2)
