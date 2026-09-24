@@ -121,6 +121,14 @@ HandlerResult automationAddPoint(MagdaApi&, const juce::var&, const RequestConte
 HandlerResult automationSetPoints(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult automationClearLane(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult automationDeleteLane(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult automationListClips(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult automationGetClip(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult automationCreateClip(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult automationDeleteClip(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult automationMoveClip(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult automationResizeClip(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult automationDuplicateClip(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult automationUpdateClip(MagdaApi&, const juce::var&, const RequestContext&);
 
 // Grooves
 HandlerResult groovesList(MagdaApi&, const juce::var&, const RequestContext&);

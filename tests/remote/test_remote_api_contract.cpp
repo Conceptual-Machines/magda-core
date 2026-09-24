@@ -61,6 +61,11 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(registry.find("automation.addPoint") != nullptr);
     REQUIRE(registry.find("automation.setPoints") != nullptr);
     REQUIRE(registry.find("automation.deleteLane") != nullptr);
+    for (const auto* name :
+         {"automation.listClips", "automation.getClip", "automation.createClip",
+          "automation.deleteClip", "automation.moveClip", "automation.resizeClip",
+          "automation.duplicateClip", "automation.updateClip"})
+        REQUIRE(registry.find(name) != nullptr);
     REQUIRE(registry.find("clips.listMidiEvents") != nullptr);
     REQUIRE(registry.find("clips.addMidiEvents") != nullptr);
     REQUIRE(registry.find("clips.updateMidiEvents") != nullptr);
@@ -83,6 +88,59 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(description["apiVersion"].toString() == "1.0");
     REQUIRE(description["operations"].getArray()->size() ==
             static_cast<int>(registry.operations().size()));
+}
+
+TEST_CASE("Automation clip operations expose a closed edit-scoped contract",
+          "[remote-api][contract][automation]") {
+    const auto& registry = OperationRegistry::instance();
+    for (const auto* name : {"automation.listClips", "automation.getClip"}) {
+        const auto* operation = registry.find(name);
+        REQUIRE(operation != nullptr);
+        CHECK(operation->requiredScope == Scope::Read);
+    }
+    for (const auto* name :
+         {"automation.createClip", "automation.deleteClip", "automation.moveClip",
+          "automation.resizeClip", "automation.duplicateClip", "automation.updateClip"}) {
+        const auto* operation = registry.find(name);
+        REQUIRE(operation != nullptr);
+        CHECK(operation->requiredScope == Scope::Edit);
+    }
+
+    const auto* create = registry.find("automation.createClip");
+    REQUIRE(create != nullptr);
+    CHECK_FALSE(validateOperationInput(
+                    *create, object({{"laneId", 3}, {"startBeat", 8.0}, {"lengthBeats", 4.0}}))
+                    .has_value());
+    CHECK(validateOperationInput(*create,
+                                 object({{"laneId", 3}, {"startBeat", 8.0}, {"lengthBeats", 0.0}}))
+              .has_value());
+
+    const auto* update = registry.find("automation.updateClip");
+    REQUIRE(update != nullptr);
+    juce::Array<juce::var> points;
+    points.add(object({{"beatPosition", 1.0}, {"value", 0.25}, {"curve", "bezier"}}));
+    CHECK_FALSE(
+        validateOperationInput(*update, object({{"clipId", 4}, {"points", juce::var(points)}}))
+            .has_value());
+    juce::Array<juce::var> pointsWithId;
+    pointsWithId.add(
+        object({{"id", 9}, {"beatPosition", 1.0}, {"value", 0.25}, {"curve", "bezier"}}));
+    CHECK(validateOperationInput(*update,
+                                 object({{"clipId", 4}, {"points", juce::var(pointsWithId)}}))
+              .has_value());
+
+    AutomationClipDto clip;
+    clip.id = 4;
+    clip.laneId = 3;
+    clip.name = "Filter shape";
+    clip.colourArgb = 0xFF112233;
+    clip.startBeat = 8.0;
+    clip.lengthBeats = 4.0;
+    clip.looping = true;
+    clip.loopLengthBeats = 2.0;
+    clip.points.push_back({9, 1.0, 0.25, "bezier"});
+    requireRoundTrip(clip, automationClipFromJson);
+    CHECK(validateJson(toJson(clip), update->outputSchema).empty());
 }
 
 TEST_CASE("Automation lane bulk writes are closed and edit-scoped",

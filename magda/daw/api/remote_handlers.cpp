@@ -2064,6 +2064,174 @@ HandlerResult automationDeleteLane(MagdaApi& api, const juce::var& input, const 
     return HandlerResult::ok(acceptedResult());
 }
 
+HandlerResult automationListClips(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const bool filterLane = has(input, "laneId");
+    const auto laneId = static_cast<AutomationLaneId>(readInt(input, "laneId"));
+    if (filterLane && api.automation().getLane(laneId) == nullptr)
+        return notFound("automation lane", laneId);
+
+    std::vector<juce::var> items;
+    for (const auto& clip : api.automation().getClips()) {
+        if (!filterLane || clip.laneId == laneId)
+            items.push_back(toJson(makeAutomationClipDto(clip)));
+    }
+    return HandlerResult::ok(toJsonArray(items));
+}
+
+HandlerResult automationGetClip(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto clipId = static_cast<AutomationClipId>(readInt(input, "clipId"));
+    const auto* clip = api.automation().getClip(clipId);
+    if (clip == nullptr)
+        return notFound("automation clip", clipId);
+    return HandlerResult::ok(toJson(makeAutomationClipDto(*clip)));
+}
+
+HandlerResult automationCreateClip(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto laneId = static_cast<AutomationLaneId>(readInt(input, "laneId"));
+    const auto* lane = api.automation().getLane(laneId);
+    if (lane == nullptr)
+        return notFound("automation lane", laneId);
+    if (!lane->isClipBased())
+        return HandlerResult::fail(ErrorCode::Conflict,
+                                   "automation clips require a clip-based lane");
+
+    const auto clipId = runCommandAndRead<CreateAutomationClipCommand>(
+        api, [](const CreateAutomationClipCommand& command) { return command.getCreatedClipId(); },
+        laneId, readDouble(input, "startBeat"), readDouble(input, "lengthBeats"));
+    const auto* clip = api.automation().getClip(clipId);
+    if (clip == nullptr)
+        return HandlerResult::fail(ErrorCode::Conflict, "automation clip creation failed");
+    return HandlerResult::ok(toJson(makeAutomationClipDto(*clip)));
+}
+
+HandlerResult automationDeleteClip(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto clipId = static_cast<AutomationClipId>(readInt(input, "clipId"));
+    if (api.automation().getClip(clipId) == nullptr)
+        return notFound("automation clip", clipId);
+    runCommand<DeleteAutomationClipCommand>(api, clipId);
+    return HandlerResult::ok(acceptedResult());
+}
+
+HandlerResult automationMoveClip(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto clipId = static_cast<AutomationClipId>(readInt(input, "clipId"));
+    const auto* clip = api.automation().getClip(clipId);
+    if (clip == nullptr)
+        return notFound("automation clip", clipId);
+    const auto startBeat = readDouble(input, "startBeat");
+    if (clip->startBeats == startBeat)
+        return HandlerResult::unchanged(toJson(makeAutomationClipDto(*clip)));
+    runCommand<MoveAutomationClipCommand>(api, clipId, startBeat);
+    const auto* moved = api.automation().getClip(clipId);
+    if (moved == nullptr)
+        return HandlerResult::fail(ErrorCode::InternalError, "automation clip move failed");
+    return HandlerResult::ok(toJson(makeAutomationClipDto(*moved)));
+}
+
+HandlerResult automationResizeClip(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto clipId = static_cast<AutomationClipId>(readInt(input, "clipId"));
+    const auto* clip = api.automation().getClip(clipId);
+    if (clip == nullptr)
+        return notFound("automation clip", clipId);
+
+    const auto requestedLength = readDouble(input, "lengthBeats");
+    const bool fromStart = input["edge"].toString() == "start";
+    const auto endBeat = clip->getEndBeats();
+    const auto effectiveLength = fromStart ? std::min(requestedLength, endBeat) : requestedLength;
+    const auto effectiveStart = fromStart ? endBeat - effectiveLength : clip->startBeats;
+    if (clip->startBeats == effectiveStart && clip->lengthBeats == effectiveLength)
+        return HandlerResult::unchanged(toJson(makeAutomationClipDto(*clip)));
+
+    runCommand<ResizeAutomationClipCommand>(api, clipId, requestedLength, fromStart);
+    const auto* resized = api.automation().getClip(clipId);
+    if (resized == nullptr)
+        return HandlerResult::fail(ErrorCode::InternalError, "automation clip resize failed");
+    return HandlerResult::ok(toJson(makeAutomationClipDto(*resized)));
+}
+
+HandlerResult automationDuplicateClip(MagdaApi& api, const juce::var& input,
+                                      const RequestContext&) {
+    const auto clipId = static_cast<AutomationClipId>(readInt(input, "clipId"));
+    if (api.automation().getClip(clipId) == nullptr)
+        return notFound("automation clip", clipId);
+    const auto createdId = runCommandAndRead<DuplicateAutomationClipCommand>(
+        api,
+        [](const DuplicateAutomationClipCommand& command) { return command.getCreatedClipId(); },
+        clipId);
+    const auto* created = api.automation().getClip(createdId);
+    if (created == nullptr)
+        return HandlerResult::fail(ErrorCode::Conflict, "automation clip duplication failed");
+    return HandlerResult::ok(toJson(makeAutomationClipDto(*created)));
+}
+
+HandlerResult automationUpdateClip(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto clipId = static_cast<AutomationClipId>(readInt(input, "clipId"));
+    const auto* clip = api.automation().getClip(clipId);
+    if (clip == nullptr)
+        return notFound("automation clip", clipId);
+    if (!has(input, "name") && !has(input, "colourArgb") && !has(input, "looping") &&
+        !has(input, "loopLengthBeats") && !has(input, "points"))
+        return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                   "at least one automation clip field is required");
+
+    auto desired = *clip;
+    if (has(input, "name"))
+        desired.name = input["name"].toString();
+    if (has(input, "colourArgb"))
+        desired.colour =
+            juce::Colour(static_cast<std::uint32_t>(static_cast<juce::int64>(input["colourArgb"])));
+    if (has(input, "looping"))
+        desired.looping = readBool(input, "looping");
+    if (has(input, "loopLengthBeats"))
+        desired.loopLengthBeats = readDouble(input, "loopLengthBeats");
+
+    const bool replacePoints = has(input, "points");
+    if (replacePoints) {
+        desired.points.clear();
+        desired.points.reserve(static_cast<size_t>(input["points"].getArray()->size()));
+        for (const auto& item : *input["points"].getArray()) {
+            const auto curve = parseCurve(item["curve"].toString());
+            if (!curve)
+                return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                           "unsupported curve: " + item["curve"].toString());
+            const auto beat = readDouble(item, "beatPosition");
+            if (beat > clip->lengthBeats)
+                return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                           "automation point lies beyond the clip");
+            AutomationPoint point;
+            point.beatPosition = beat;
+            point.value = readDouble(item, "value");
+            point.curveType = *curve;
+            desired.points.push_back(point);
+        }
+        std::ranges::sort(desired.points, {}, &AutomationPoint::beatPosition);
+    }
+
+    const auto samePoints = [](const auto& current, const auto& requested) {
+        const auto samePoint = [](const AutomationPoint& a, const AutomationPoint& b) {
+            return a.beatPosition == b.beatPosition && a.value == b.value &&
+                   a.curveType == b.curveType;
+        };
+        return current.size() == requested.size() &&
+               std::ranges::equal(current, requested, samePoint);
+    };
+    const bool unchanged = clip->name == desired.name && clip->colour == desired.colour &&
+                           clip->looping == desired.looping &&
+                           clip->loopLengthBeats == desired.loopLengthBeats &&
+                           (!replacePoints || samePoints(clip->points, desired.points));
+    if (unchanged)
+        return HandlerResult::unchanged(toJson(makeAutomationClipDto(*clip)));
+
+    const auto applied = runCommandAndRead<UpdateAutomationClipCommand>(
+        api, [](const UpdateAutomationClipCommand& command) { return command.didApply(); }, clipId,
+        std::move(desired), replacePoints);
+    if (!applied)
+        return HandlerResult::fail(ErrorCode::Conflict, "automation clip update failed");
+    const auto* updated = api.automation().getClip(clipId);
+    if (updated == nullptr)
+        return HandlerResult::fail(ErrorCode::InternalError, "updated automation clip disappeared");
+    return HandlerResult::ok(toJson(makeAutomationClipDto(*updated)));
+}
+
 // ===========================================================================
 // Clip content editing (#2297)
 // ===========================================================================

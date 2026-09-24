@@ -18,6 +18,7 @@ namespace magda {
 
 class MagdaApi;
 struct AutomationLaneInfo;
+struct AutomationClipInfo;
 struct ClipInfo;
 struct DeviceCatalogEntry;
 struct DevicePresetEntry;
@@ -420,6 +421,20 @@ struct AutomationLaneDto {
     bool operator==(const AutomationLaneDto&) const = default;
 };
 
+struct AutomationClipDto {
+    AutomationClipId id = INVALID_AUTOMATION_CLIP_ID;
+    AutomationLaneId laneId = INVALID_AUTOMATION_LANE_ID;
+    juce::String name;
+    std::uint32_t colourArgb = 0;
+    double startBeat = 0.0;
+    double lengthBeats = 0.0;
+    bool looping = false;
+    double loopLengthBeats = 0.0;
+    std::vector<AutomationPointDto> points;
+
+    bool operator==(const AutomationClipDto&) const = default;
+};
+
 enum class OperationAccess { Read, Write };
 
 /**
@@ -634,6 +649,7 @@ juce::var toJson(const AutomationPointDto& dto);
 juce::var toJson(const DevicePathDto& dto);
 juce::var toJson(const AutomationTargetDto& dto);
 juce::var toJson(const AutomationLaneDto& dto);
+juce::var toJson(const AutomationClipDto& dto);
 
 /**
  * @brief Decode a device path from its wire form.
@@ -661,6 +677,7 @@ std::optional<SelectionDto> selectionFromJson(const juce::var& json, Error& erro
 std::optional<TransportDto> transportFromJson(const juce::var& json, Error& error);
 std::optional<SessionDto> sessionFromJson(const juce::var& json, Error& error);
 std::optional<AutomationLaneDto> automationLaneFromJson(const juce::var& json, Error& error);
+std::optional<AutomationClipDto> automationClipFromJson(const juce::var& json, Error& error);
 
 ProjectDto makeProjectDto(const ProjectInfo& project, bool dirty, bool hasSaveTarget);
 TrackDto makeTrackDto(const TrackInfo& track);
@@ -678,6 +695,7 @@ DevicePresetDto makeDevicePresetDto(const DevicePresetEntry& entry);
 std::vector<DeviceParameterDto> makeDeviceParameterDtos(const DeviceInfo& device,
                                                         const ChainNodePath& devicePath);
 SelectionDto makeSelectionDto(MagdaApi& api);
+AutomationClipDto makeAutomationClipDto(const AutomationClipInfo& clip);
 TransportDto makeTransportDto(MagdaApi& api);
 SessionDto makeSessionDto(MagdaApi& api);
 AutomationLaneDto makeAutomationLaneDto(const AutomationLaneInfo& lane);
