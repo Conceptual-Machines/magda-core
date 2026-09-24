@@ -1986,6 +1986,47 @@ HandlerResult automationAddPoint(MagdaApi& api, const juce::var& input, const Re
     return HandlerResult::ok(toJson(makeAutomationLaneDto(*lane)));
 }
 
+HandlerResult automationSetPoints(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto laneId = static_cast<AutomationLaneId>(static_cast<int>(input["laneId"]));
+    const auto* lane = api.automation().getLane(laneId);
+    if (lane == nullptr)
+        return notFound("automation lane", laneId);
+    if (!lane->isAbsolute())
+        return HandlerResult::fail(ErrorCode::Conflict,
+                                   "lane " + juce::String(laneId) +
+                                       " does not hold points directly; set points on its clips");
+
+    std::vector<AutomationPoint> points;
+    points.reserve(static_cast<size_t>(input["points"].getArray()->size()));
+    for (const auto& item : *input["points"].getArray()) {
+        const auto curve = parseCurve(item["curve"].toString());
+        if (!curve)
+            return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                       "unsupported curve: " + item["curve"].toString());
+        AutomationPoint point;
+        point.beatPosition = static_cast<double>(item["beatPosition"]);
+        point.value = static_cast<double>(item["value"]);
+        point.curveType = *curve;
+        points.push_back(point);
+    }
+    std::ranges::sort(points, {}, &AutomationPoint::beatPosition);
+
+    const auto samePoint = [](const AutomationPoint& current, const AutomationPoint& requested) {
+        return current.beatPosition == requested.beatPosition && current.value == requested.value &&
+               current.curveType == requested.curveType;
+    };
+    if (lane->absolutePoints.size() == points.size() &&
+        std::ranges::equal(lane->absolutePoints, points, samePoint))
+        return HandlerResult::unchanged(toJson(makeAutomationLaneDto(*lane)));
+
+    if (!api.automation().setLanePoints(laneId, std::move(points)))
+        return HandlerResult::fail(ErrorCode::Conflict, "automation point replacement failed");
+    const auto* updated = api.automation().getLane(laneId);
+    if (updated == nullptr)
+        return notFound("automation lane", laneId);
+    return HandlerResult::ok(toJson(makeAutomationLaneDto(*updated)));
+}
+
 HandlerResult automationClearLane(MagdaApi& api, const juce::var& input, const RequestContext&) {
     const auto laneId = static_cast<AutomationLaneId>(static_cast<int>(input["laneId"]));
     const auto* lane = api.automation().getLane(laneId);
@@ -2012,6 +2053,15 @@ HandlerResult automationClearLane(MagdaApi& api, const juce::var& input, const R
     if (cleared == nullptr)
         return notFound("automation lane", laneId);
     return HandlerResult::ok(toJson(makeAutomationLaneDto(*cleared)));
+}
+
+HandlerResult automationDeleteLane(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto laneId = static_cast<AutomationLaneId>(static_cast<int>(input["laneId"]));
+    if (api.automation().getLane(laneId) == nullptr)
+        return notFound("automation lane", laneId);
+    if (!api.automation().deleteLane(laneId))
+        return HandlerResult::fail(ErrorCode::Conflict, "automation lane deletion failed");
+    return HandlerResult::ok(acceptedResult());
 }
 
 // ===========================================================================

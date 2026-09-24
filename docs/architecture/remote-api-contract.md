@@ -135,6 +135,18 @@ the current destination and a resize that restates the current length are
 successful no-ops and do not advance the revision. A session destination must
 be empty, except that moving a clip to its own current slot is a no-op.
 
+### Automation lane writes
+
+`automation.setPoints` replaces the complete point set on an absolute lane as
+one undoable mutation. Input points contain beat position, normalized value,
+and curve type; point IDs are allocated by MAGDA and returned only in the lane
+projection. Repeating the same curve is a revision-neutral no-op. Clip-based
+lanes reject this operation because their points belong to automation clips.
+
+`automation.deleteLane` removes the lane and any automation clips it owns as
+one undoable mutation. Both operations require the `edit` scope and participate
+in the normal `expectedRevision` and `requestId` handling.
+
 ### MIDI event CRUD
 
 MIDI clips expose one stable per-clip ID space across notes, keyswitch notes,

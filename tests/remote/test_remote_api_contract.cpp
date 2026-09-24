@@ -59,6 +59,8 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
         REQUIRE(registry.find(name) != nullptr);
     REQUIRE(registry.find("session.launchClip") != nullptr);
     REQUIRE(registry.find("automation.addPoint") != nullptr);
+    REQUIRE(registry.find("automation.setPoints") != nullptr);
+    REQUIRE(registry.find("automation.deleteLane") != nullptr);
     REQUIRE(registry.find("clips.listMidiEvents") != nullptr);
     REQUIRE(registry.find("clips.addMidiEvents") != nullptr);
     REQUIRE(registry.find("clips.updateMidiEvents") != nullptr);
@@ -81,6 +83,34 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(description["apiVersion"].toString() == "1.0");
     REQUIRE(description["operations"].getArray()->size() ==
             static_cast<int>(registry.operations().size()));
+}
+
+TEST_CASE("Automation lane bulk writes are closed and edit-scoped",
+          "[remote-api][contract][automation]") {
+    const auto& registry = OperationRegistry::instance();
+    const auto* setPoints = registry.find("automation.setPoints");
+    const auto* deleteLane = registry.find("automation.deleteLane");
+    REQUIRE(setPoints != nullptr);
+    REQUIRE(deleteLane != nullptr);
+    CHECK(setPoints->requiredScope == Scope::Edit);
+    CHECK(deleteLane->requiredScope == Scope::Edit);
+
+    juce::Array<juce::var> points;
+    points.add(object({{"beatPosition", 4.0}, {"value", 0.75}, {"curve", "hard_corner"}}));
+    const auto valid = object({{"laneId", 7}, {"points", juce::var(points)}});
+    CHECK_FALSE(validateOperationInput(*setPoints, valid).has_value());
+
+    juce::Array<juce::var> withId;
+    withId.add(object({{"id", 99}, {"beatPosition", 4.0}, {"value", 0.75}, {"curve", "linear"}}));
+    CHECK(validateOperationInput(*setPoints, object({{"laneId", 7}, {"points", juce::var(withId)}}))
+              .has_value());
+
+    juce::Array<juce::var> outOfRange;
+    outOfRange.add(object({{"beatPosition", 4.0}, {"value", 1.25}, {"curve", "linear"}}));
+    CHECK(validateOperationInput(*setPoints,
+                                 object({{"laneId", 7}, {"points", juce::var(outOfRange)}}))
+              .has_value());
+    CHECK_FALSE(validateOperationInput(*deleteLane, object({{"laneId", 7}})).has_value());
 }
 
 TEST_CASE("Clip placement operations require explicit view-specific destinations",
