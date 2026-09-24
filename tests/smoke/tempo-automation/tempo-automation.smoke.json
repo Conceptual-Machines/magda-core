@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "project": "tempo-automation.mgd",
+  "cluster": "tempo automation",
+  "range": { "startBeat": 0, "endBeat": 16 },
+  "requires": { "plugins": [], "hardware": [] },
+  "tracks": [
+    { "name": "Hat", "sound": true, "peakDb": { "min": -48, "max": 0 } },
+    { "name": "Synth", "sound": true, "peakDb": { "min": -48, "max": 0 } }
+  ],
+  "listen": "8th-note hats and quarter-note synth speed up smoothly from 100 to 140 BPM over the first two bars, then hold, with no stutter at the bend."
+}
