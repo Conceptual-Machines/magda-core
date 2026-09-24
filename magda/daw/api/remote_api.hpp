@@ -97,6 +97,21 @@ struct MidiNoteDto {
     bool operator==(const MidiNoteDto&) const = default;
 };
 
+/** One typed MIDI event in the public Remote API representation. */
+struct MidiEventDto {
+    EventId id = INVALID_EVENT_ID;
+    juce::String type;
+    int note = 0;
+    int velocity = 0;
+    int controller = 0;
+    int value = 0;
+    double beat = 0.0;
+    double lengthBeats = 0.0;
+    bool keyswitch = false;
+
+    bool operator==(const MidiEventDto&) const = default;
+};
+
 struct ProjectDto {
     juce::String name;
     double tempo = 120.0;
@@ -149,6 +164,7 @@ struct ClipDto {
     juce::String launchQuantize;
     juce::String followAction;
     std::vector<MidiNoteDto> notes;
+    std::vector<MidiEventDto> midiEvents;
 
     bool operator==(const ClipDto&) const = default;
 };
@@ -586,6 +602,7 @@ std::optional<Error> validateOperationInput(const OperationDescriptor& operation
                                             const juce::var& input);
 
 juce::var toJson(const MidiNoteDto& dto);
+juce::var toJson(const MidiEventDto& dto);
 juce::var toJson(const ProjectDto& dto);
 juce::var toJson(const TrackDto& dto);
 juce::var toJson(const ClipDto& dto);
@@ -614,6 +631,7 @@ juce::var toJson(const AutomationLaneDto& dto);
 DevicePathDto devicePathFromJson(const juce::var& json);
 
 std::optional<MidiNoteDto> midiNoteFromJson(const juce::var& json, Error& error);
+std::optional<MidiEventDto> midiEventFromJson(const juce::var& json, Error& error);
 std::optional<ProjectDto> projectFromJson(const juce::var& json, Error& error);
 std::optional<TrackDto> trackFromJson(const juce::var& json, Error& error);
 std::optional<ClipDto> clipFromJson(const juce::var& json, Error& error);
@@ -632,6 +650,7 @@ std::optional<AutomationLaneDto> automationLaneFromJson(const juce::var& json, E
 ProjectDto makeProjectDto(const ProjectInfo& project);
 TrackDto makeTrackDto(const TrackInfo& track);
 ClipDto makeClipDto(const ClipInfo& clip);
+std::vector<MidiEventDto> makeMidiEventDtos(const ClipInfo& clip);
 DeviceGraphDto makeDeviceGraphDto(const std::vector<TrackInfo>& tracks);
 DeviceCatalogEntryDto makeDeviceCatalogEntryDto(const DeviceCatalogEntry& entry);
 /**

@@ -255,6 +255,120 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
             expect(UndoManager::getInstance().canUndo());
         }
 
+        beginTest("Expressive MIDI events have atomic bulk CRUD and one-step undo");
+        {
+            Fixture fixture;
+            const auto track =
+                fixture.run("tracks.create", object({{"name", "Expressive"}, {"type", "audio"}}));
+            expect(track.ok);
+            const auto trackId = static_cast<int>(track.result["id"]);
+            const auto clip = fixture.run("clips.createMidi", object({{"trackId", trackId},
+                                                                      {"startBeat", 0.0},
+                                                                      {"lengthBeats", 4.0},
+                                                                      {"view", "arrangement"}}));
+            expect(clip.ok);
+            const auto clipId = static_cast<int>(clip.result["id"]);
+
+            juce::Array<juce::var> additions;
+            additions.add(object({{"type", "note"},
+                                  {"note", 36},
+                                  {"velocity", 100},
+                                  {"beat", 0.0},
+                                  {"lengthBeats", 0.25},
+                                  {"keyswitch", true}}));
+            additions.add(object(
+                {{"type", "controlChange"}, {"controller", 74}, {"value", 96}, {"beat", 0.5}}));
+            additions.add(object({{"type", "pitchBend"}, {"value", 9000}, {"beat", 1.0}}));
+            additions.add(object({{"type", "channelPressure"}, {"value", 80}, {"beat", 1.5}}));
+            additions.add(
+                object({{"type", "polyAftertouch"}, {"note", 60}, {"value", 70}, {"beat", 2.0}}));
+
+            const auto added =
+                fixture.run("clips.addMidiEvents",
+                            object({{"clipId", clipId}, {"events", juce::var(additions)}}));
+            expect(added.ok);
+            auto* addedEvents = added.result["midiEvents"].getArray();
+            expect(addedEvents != nullptr && addedEvents->size() == 5);
+            if (addedEvents != nullptr && addedEvents->size() == 5) {
+                std::vector<int> ids;
+                for (const auto& event : *addedEvents)
+                    ids.push_back(static_cast<int>(event["id"]));
+                std::ranges::sort(ids);
+                expect(std::ranges::adjacent_find(ids) == ids.end());
+                expect(ids.front() > 0);
+                const int oldMaximumId = ids.back();
+
+                const auto listed =
+                    fixture.run("clips.listMidiEvents", object({{"clipId", clipId}}));
+                expect(listed.ok);
+                expect(listed.result.getArray() != nullptr &&
+                       listed.result.getArray()->size() == 5);
+
+                const auto noteId = static_cast<int>((*addedEvents)[0]["id"]);
+                juce::Array<juce::var> updates;
+                updates.add(object({{"id", noteId},
+                                    {"type", "note"},
+                                    {"note", 38},
+                                    {"velocity", 110},
+                                    {"beat", 0.25},
+                                    {"lengthBeats", 0.5},
+                                    {"keyswitch", false}}));
+                const auto updated =
+                    fixture.run("clips.updateMidiEvents",
+                                object({{"clipId", clipId}, {"events", juce::var(updates)}}));
+                expect(updated.ok);
+                expectEquals(static_cast<int>((*updated.result["midiEvents"].getArray())[0]["id"]),
+                             noteId);
+
+                const auto beforeInvalid = fixture.service.currentRevision();
+                const auto stateBeforeInvalid =
+                    ClipManager::getInstance().getClip(clipId)->midiEventState();
+                juce::Array<juce::var> invalid;
+                invalid.add(object(
+                    {{"type", "controlChange"}, {"controller", 1}, {"value", 127}, {"beat", 0.0}}));
+                invalid.add(object({{"type", "note"},
+                                    {"note", 60},
+                                    {"velocity", 100},
+                                    {"beat", 3.75},
+                                    {"lengthBeats", 1.0}}));
+                const auto rejected =
+                    fixture.run("clips.addMidiEvents",
+                                object({{"clipId", clipId}, {"events", juce::var(invalid)}}));
+                expect(!rejected.ok);
+                expect(fixture.service.currentRevision() == beforeInvalid);
+                expect(ClipManager::getInstance().getClip(clipId)->midiEventState() ==
+                       stateBeforeInvalid);
+
+                juce::Array<juce::var> deletedIds;
+                deletedIds.add(ids[1]);
+                deletedIds.add(ids[2]);
+                const auto deleted =
+                    fixture.run("clips.deleteMidiEvents",
+                                object({{"clipId", clipId}, {"eventIds", juce::var(deletedIds)}}));
+                expect(deleted.ok);
+                expect(deleted.result["midiEvents"].getArray()->size() == 3);
+                UndoManager::getInstance().undo();
+                expect(ClipManager::getInstance().getClip(clipId)->midiEventState().cc.size() +
+                           ClipManager::getInstance()
+                               .getClip(clipId)
+                               ->midiEventState()
+                               .pitchBend.size() ==
+                       2);
+
+                juce::Array<juce::var> replacement;
+                replacement.add(
+                    object({{"type", "channelPressure"}, {"value", 64}, {"beat", 0.0}}));
+                const auto replaced =
+                    fixture.run("clips.replaceMidiEvents",
+                                object({{"clipId", clipId}, {"events", juce::var(replacement)}}));
+                expect(replaced.ok);
+                auto* replacementEvents = replaced.result["midiEvents"].getArray();
+                expect(replacementEvents != nullptr && replacementEvents->size() == 1);
+                if (replacementEvents != nullptr && replacementEvents->size() == 1)
+                    expect(static_cast<int>((*replacementEvents)[0]["id"]) > oldMaximumId);
+            }
+        }
+
         beginTest("Adding a point to a clip-based lane is refused");
         {
             Fixture fixture;

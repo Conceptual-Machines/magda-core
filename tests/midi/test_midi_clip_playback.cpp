@@ -31,10 +31,12 @@
 using Catch::Approx;
 using magda::ClipInfo;
 using magda::MidiCCData;
+using magda::MidiChannelPressureData;
 using magda::MidiCurveType;
 using magda::MidiNote;
 using magda::MidiPitchBendData;
 using magda::MidiPitchExpressionPoint;
+using magda::MidiPolyAftertouchData;
 using magda::engine::BlockInfo;
 using magda::engine::ClipLane;
 using magda::engine::ClipMidiSource;
@@ -150,6 +152,12 @@ class Recorder {
     }
     std::vector<Captured> pitchBends() const {
         return ofKind([](const juce::MidiMessage& m) { return m.isPitchWheel(); });
+    }
+    std::vector<Captured> channelPressure() const {
+        return ofKind([](const juce::MidiMessage& m) { return m.isChannelPressure(); });
+    }
+    std::vector<Captured> polyAftertouch() const {
+        return ofKind([](const juce::MidiMessage& m) { return m.isAftertouch(); });
     }
 
     std::vector<Captured> captured;
@@ -300,6 +308,24 @@ TEST_CASE("Controllers land before notes at the same instant", "[engine][clip][m
     // configures, which is the fork's ordering too.
     CHECK(list.events[0].kind() == 0xb0u);
     CHECK(list.events[1].isNoteOn());
+}
+
+TEST_CASE("Authored pressure events compile in note-safe order", "[engine][clip][midi]") {
+    auto clip = makeMidiClip(1, 0.0, 4.0);
+    clip.midiNotes.push_back(note(60, 1.0, 1.0));
+    clip.midiChannelPressureData.push_back(MidiChannelPressureData{80, 1.0});
+    clip.midiPolyAftertouchData.push_back(MidiPolyAftertouchData{60, 70, 1.0});
+
+    const auto list = compileMidiEvents(clip, 0.0);
+    REQUIRE(list.events.size() == 4);
+    CHECK(list.events[0].kind() == 0xd0u);
+    CHECK(list.events[0].data1 == 80);
+    CHECK(list.events[1].isNoteOn());
+    CHECK(list.events[2].isPolyAftertouch());
+    CHECK(list.events[2].data1 == 60);
+    CHECK(list.events[2].data2 == 70);
+    CHECK(list.controllers.size() == 1);
+    CHECK(list.polyAftertouch.size() == 1);
 }
 
 // =============================================================================
@@ -1023,6 +1049,26 @@ TEST_CASE("Locating past a controller sets it", "[engine][clip][midi]") {
     // point up to a sixteenth of a beat stale.
     CHECK(static_cast<int>(controllers.front().message.getControllerValue()) ==
           Approx(63.0).margin(2.0));
+}
+
+TEST_CASE("Locating into a note chases authored pressure", "[engine][clip][midi]") {
+    auto clip = makeMidiClip(1, 0.0, 8.0);
+    clip.midiNotes.push_back(note(60, 0.0, 6.0));
+    clip.midiChannelPressureData.push_back(MidiChannelPressureData{80, 1.0});
+    clip.midiPolyAftertouchData.push_back(MidiPolyAftertouchData{60, 70, 1.5});
+
+    Rig rig;
+    rig.publish({clip});
+
+    Recorder recorder;
+    rig.locate(blockOf(3.0), recorder);
+
+    REQUIRE(recorder.noteOns().size() == 1);
+    REQUIRE(recorder.channelPressure().size() == 1);
+    CHECK(recorder.channelPressure().front().message.getChannelPressureValue() == 80);
+    REQUIRE(recorder.polyAftertouch().size() == 1);
+    CHECK(recorder.polyAftertouch().front().message.getNoteNumber() == 60);
+    CHECK(recorder.polyAftertouch().front().message.getAfterTouchValue() == 70);
 }
 
 TEST_CASE("Locating into an expressive note reconstructs its bend on its own channel",

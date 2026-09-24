@@ -338,7 +338,33 @@ ClipDto makeClipDto(const ClipInfo& clip) {
     dto.notes.reserve(clip.midiNotes.size());
     for (const auto& note : clip.midiNotes)
         dto.notes.push_back({note.noteNumber, note.velocity, note.startBeat, note.lengthBeats});
+    dto.midiEvents = makeMidiEventDtos(clip);
     return dto;
+}
+
+std::vector<MidiEventDto> makeMidiEventDtos(const ClipInfo& clip) {
+    std::vector<MidiEventDto> result;
+    result.reserve(clip.midiNotes.size() + clip.midiCCData.size() + clip.midiPitchBendData.size() +
+                   clip.midiChannelPressureData.size() + clip.midiPolyAftertouchData.size());
+
+    for (const auto& note : clip.midiNotes)
+        result.push_back({note.id, "note", note.noteNumber, note.velocity, 0, 0, note.startBeat,
+                          note.lengthBeats, note.keyswitch});
+    for (const auto& cc : clip.midiCCData)
+        result.push_back({cc.id, "controlChange", 0, 0, cc.controller, cc.value, cc.beatPosition});
+    for (const auto& bend : clip.midiPitchBendData)
+        result.push_back({bend.id, "pitchBend", 0, 0, 0, bend.value, bend.beatPosition});
+    for (const auto& pressure : clip.midiChannelPressureData)
+        result.push_back(
+            {pressure.id, "channelPressure", 0, 0, 0, pressure.value, pressure.beatPosition});
+    for (const auto& aftertouch : clip.midiPolyAftertouchData)
+        result.push_back({aftertouch.id, "polyAftertouch", aftertouch.noteNumber, 0, 0,
+                          aftertouch.value, aftertouch.beatPosition});
+
+    std::ranges::stable_sort(result, [](const MidiEventDto& lhs, const MidiEventDto& rhs) {
+        return std::tie(lhs.beat, lhs.id) < std::tie(rhs.beat, rhs.id);
+    });
+    return result;
 }
 
 DeviceGraphDto makeDeviceGraphDto(const std::vector<TrackInfo>& tracks) {

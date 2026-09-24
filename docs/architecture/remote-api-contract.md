@@ -83,6 +83,27 @@ transport's `expectedRevision` and `requestId` metadata; neither value is part o
 the operation payload. Preset IDs are addresses only: clients cannot supply a
 filesystem path or native state blob.
 
+### MIDI event CRUD
+
+MIDI clips expose one stable per-clip ID space across notes, keyswitch notes,
+control changes, pitch bend, channel pressure, and polyphonic aftertouch.
+Keyswitches use the `note` event shape with `"keyswitch": true`; they remain
+ordinary notes on the MIDI wire while retaining their authored role.
+
+- `clips.listMidiEvents` reads the complete typed event list.
+- `clips.addMidiEvents` atomically appends one or more events and assigns IDs.
+- `clips.updateMidiEvents` atomically replaces the events named by `id`. An event
+  may change type while retaining its ID.
+- `clips.deleteMidiEvents` atomically removes the supplied `eventIds`.
+- `clips.replaceMidiEvents` atomically replaces the complete list and assigns
+  fresh IDs. Deleted IDs are never recycled.
+
+Every mutator validates its whole request before changing the clip and commits
+as one undo action. Passing a one-element `events` array is the singular create
+or update form; the contract does not duplicate those operations with separate
+singular names. Optimistic concurrency and idempotency use the same transport
+`expectedRevision` and `requestId` metadata as every other write.
+
 ## Subscriptions
 
 Ten topics partition what a client can watch: `project`, `tracks`, `clips`,

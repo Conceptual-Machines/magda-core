@@ -745,7 +745,7 @@ TEST_CASE("CC and pitch bend survive with their positions", "[engine][io][record
     CHECK(take.active.pitchBend[0].beatPosition == Catch::Approx(1.5));
 }
 
-TEST_CASE("A message the model cannot hold is dropped where it can be said",
+TEST_CASE("Pressure is recorded and unsupported messages are dropped where it can be said",
           "[engine][io][record][midi][2462]") {
     Rig rig(takeOf());
     rig.schedule({
@@ -759,7 +759,15 @@ TEST_CASE("A message the model cannot hold is dropped where it can be said",
     rig.run(kBeatSamples * 2);
 
     const auto take = rig.finish();
-    CHECK(take.messagesDropped == 3);
+    CHECK(take.messagesDropped == 1);
+
+    REQUIRE(take.active.channelPressure.size() == 1);
+    CHECK(take.active.channelPressure[0].value == 64);
+    CHECK(take.active.channelPressure[0].beatPosition == Catch::Approx(1.025));
+    REQUIRE(take.active.polyAftertouch.size() == 1);
+    CHECK(take.active.polyAftertouch[0].noteNumber == 60);
+    CHECK(take.active.polyAftertouch[0].value == 64);
+    CHECK(take.active.polyAftertouch[0].beatPosition == Catch::Approx(1.05));
 
     // What the model does hold is untouched by what it does not.
     CHECK(take.active.notes.size() == 1);

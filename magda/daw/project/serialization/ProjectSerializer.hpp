@@ -322,6 +322,14 @@ class ProjectSerializer {
     static juce::var serializeMidiPitchBendData(const MidiPitchBendData& data);
     static bool deserializeMidiPitchBendData(const juce::var& json, MidiPitchBendData& data);
 
+    static juce::var serializeMidiChannelPressureData(const MidiChannelPressureData& data);
+    static bool deserializeMidiChannelPressureData(const juce::var& json,
+                                                   MidiChannelPressureData& data);
+
+    static juce::var serializeMidiPolyAftertouchData(const MidiPolyAftertouchData& data);
+    static bool deserializeMidiPolyAftertouchData(const juce::var& json,
+                                                  MidiPolyAftertouchData& data);
+
     static juce::var serializeSendInfo(const SendInfo& data);
     static bool deserializeSendInfo(const juce::var& json, SendInfo& data);
 

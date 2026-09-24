@@ -15,6 +15,7 @@ namespace {
 
 constexpr std::uint8_t kNoteOn = 0x90;
 constexpr std::uint8_t kNoteOff = 0x80;
+constexpr std::uint8_t kPolyAftertouch = 0xa0;
 constexpr std::uint8_t kControlChange = 0xb0;
 constexpr std::uint8_t kChannelPressure = 0xd0;
 constexpr std::uint8_t kPitchWheel = 0xe0;
@@ -53,6 +54,8 @@ int rankOf(std::uint8_t status) {
             return 2;
         case kNoteOff:
             return 3;
+        case kPolyAftertouch:
+            return 5;  // after a note-on authored at the same beat
         default:
             return 4;
     }
@@ -446,6 +449,21 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
         }
     }
 
+    for (const auto& pressure : clip.midiChannelPressureData) {
+        pending.push_back(PendingEvent{
+            MidiClipEvent{pressure.beatPosition, statusFor(kChannelPressure, 1),
+                          static_cast<std::uint8_t>(std::clamp(pressure.value, 0, 127)), 0, 0.0},
+            -1});
+    }
+
+    for (const auto& aftertouch : clip.midiPolyAftertouchData) {
+        pending.push_back(PendingEvent{
+            MidiClipEvent{aftertouch.beatPosition, statusFor(kPolyAftertouch, 1),
+                          static_cast<std::uint8_t>(std::clamp(aftertouch.noteNumber, 0, 127)),
+                          static_cast<std::uint8_t>(std::clamp(aftertouch.value, 0, 127)), 0.0},
+            -1});
+    }
+
     // ---- Sort, then pair the notes up again ---------------------------------
 
     const auto beatThenRank = [](const PendingEvent& pendingEvent) {
@@ -485,6 +503,23 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
             found = std::prev(list.controllers.end());
         }
 
+        found->events.push_back(static_cast<std::int32_t>(i));
+    }
+
+    for (std::size_t i = 0; i < list.events.size(); ++i) {
+        const auto& event = list.events[i];
+        if (!event.isPolyAftertouch())
+            continue;
+
+        const auto note = static_cast<int>(event.data1);
+        const auto isThisStream = [&](const MidiPolyAftertouchStream& stream) {
+            return stream.channel == event.channel() && stream.note == note;
+        };
+        auto found = std::ranges::find_if(list.polyAftertouch, isThisStream);
+        if (found == list.polyAftertouch.end()) {
+            list.polyAftertouch.push_back({event.channel(), note, {}});
+            found = std::prev(list.polyAftertouch.end());
+        }
         found->events.push_back(static_cast<std::int32_t>(i));
     }
 
