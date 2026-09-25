@@ -90,6 +90,95 @@ TEST_CASE("Unknown catalog ids resolve to nothing", "[device-api][catalog]") {
     REQUIRE_FALSE(devices.findCatalogEntry("").has_value());
 }
 
+TEST_CASE("Path-addressed sidechains validate, retain disabled sources, and undo atomically",
+          "[device-api][sidechains][2838]") {
+    auto& tracks = TrackManager::getInstance();
+    const auto targetTrack = freshTrack("Sidechain target");
+    const auto sourceTrack = tracks.createTrack("Sidechain source", TrackType::Media);
+
+    DeviceInfo device;
+    device.name = "Sidechain receiver";
+    device.sidechainPort = {.kind = SidechainPort::Kind::Audio, .channels = 2};
+    const auto deviceId = tracks.addDeviceToTrack(targetTrack, device);
+    REQUIRE(deviceId != INVALID_DEVICE_ID);
+    const auto path = ChainNodePath::topLevelDevice(targetTrack, deviceId);
+
+    DeviceApiLive api;
+    const auto initial = api.getSidechain(path);
+    REQUIRE(initial.has_value());
+    CHECK(initial->capabilities.audio);
+    CHECK(initial->capabilities.audioChannels == 2);
+    CHECK(initial->capabilities.channelMappings == std::vector<juce::String>{"automatic"});
+    CHECK_FALSE(initial->sourceEndpointId.has_value());
+
+    SidechainPatch configure;
+    configure.sourceEndpointId = std::optional<juce::String>{"track:" + juce::String(sourceTrack)};
+    configure.type = SidechainConfig::Type::Audio;
+    configure.tapPoint = ModTapPoint::PreFx;
+    configure.gainDb = -6.0f;
+    configure.listen = true;
+    configure.channelMapping = "automatic";
+    const auto applied = api.setSidechain(path, configure);
+    REQUIRE(applied.status == SetSidechainStatus::Applied);
+    REQUIRE(applied.sidechain.has_value());
+    CHECK(applied.sidechain->sourceEndpointId ==
+          std::optional<juce::String>{"track:" + juce::String(sourceTrack)});
+    CHECK(applied.sidechain->tapPoint == ModTapPoint::PreFx);
+    CHECK(applied.sidechain->gainDb == -6.0f);
+    CHECK(applied.sidechain->listen);
+    CHECK(UndoManager::getInstance().canUndo());
+
+    SidechainPatch disable;
+    disable.enabled = false;
+    const auto disabled = api.setSidechain(path, disable);
+    REQUIRE(disabled.status == SetSidechainStatus::Applied);
+    REQUIRE(disabled.sidechain.has_value());
+    CHECK_FALSE(disabled.sidechain->enabled);
+    CHECK(disabled.sidechain->sourceEndpointId ==
+          std::optional<juce::String>{"track:" + juce::String(sourceTrack)});
+    const auto* stored = tracks.getDeviceInChainByPath(path);
+    REQUIRE(stored != nullptr);
+    CHECK(stored->sidechain.isConfigured());
+    CHECK_FALSE(stored->sidechain.isActive());
+
+    REQUIRE(UndoManager::getInstance().undo());
+    stored = tracks.getDeviceInChainByPath(path);
+    REQUIRE(stored != nullptr);
+    CHECK(stored->sidechain.isActive());
+
+    SidechainPatch self;
+    self.sourceEndpointId = std::optional<juce::String>{"track:" + juce::String(targetTrack)};
+    CHECK(api.setSidechain(path, self).status == SetSidechainStatus::FeedbackCycle);
+
+    SidechainPatch clear;
+    clear.sourceEndpointId.emplace(std::nullopt);
+    const auto cleared = api.setSidechain(path, clear);
+    REQUIRE(cleared.status == SetSidechainStatus::Applied);
+    REQUIRE(cleared.sidechain.has_value());
+    CHECK_FALSE(cleared.sidechain->sourceEndpointId.has_value());
+    CHECK(cleared.referenceImpact.dropped.size() == 1);
+
+    const auto rackId = tracks.addRackToTrack(targetTrack, "Sidechain rack");
+    REQUIRE(rackId != INVALID_RACK_ID);
+    const auto rackPath = ChainNodePath::rack(targetTrack, rackId);
+    const auto rackView = api.getSidechain(rackPath);
+    REQUIRE(rackView.has_value());
+    CHECK_FALSE(rackView->capabilities.gain);
+    CHECK_FALSE(rackView->capabilities.listen);
+    CHECK(rackView->capabilities.channelMappings.empty());
+
+    SidechainPatch unsupportedGain;
+    unsupportedGain.gainDb = 0.0f;
+    CHECK(api.setSidechain(rackPath, unsupportedGain).status == SetSidechainStatus::Incompatible);
+    SidechainPatch unsupportedListen;
+    unsupportedListen.listen = false;
+    CHECK(api.setSidechain(rackPath, unsupportedListen).status == SetSidechainStatus::Incompatible);
+    SidechainPatch unsupportedMapping;
+    unsupportedMapping.channelMapping = "automatic";
+    CHECK(api.setSidechain(rackPath, unsupportedMapping).status ==
+          SetSidechainStatus::Incompatible);
+}
+
 TEST_CASE("A MAGDA preset applies in place as one no-op-aware undo step",
           "[device-api][presets][2836]") {
     PresetDirectoryScope presetDirectory;

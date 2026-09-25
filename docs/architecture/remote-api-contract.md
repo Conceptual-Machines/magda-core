@@ -230,6 +230,37 @@ another track, commits as one undo action and advances the revision once; a
 no-op advances neither. Both transports use their normal `expectedRevision`
 and `requestId` metadata for the operation.
 
+### Device and rack sidechains
+
+`sidechains.list` enumerates devices and racks (optionally for one track), while
+`sidechains.get` inspects one owner by canonical `ownerPath`. Each result carries
+current state beside capabilities derived from that live owner: supported
+audio/MIDI types, declared audio width, tap points, trim/listen support, and
+channel mappings. Sources use logical `track:N` IDs; plugin bus identifiers and
+backend routing IDs never cross the facade.
+
+`sidechains.set` is an edit-scoped patch. A string `sourceEndpointId` sets a
+logical source and `null` clears the complete configuration. Type, pre-FX or
+post-fader tap, -60..+24 dB trim, enabled/listen state, and a supported channel
+mapping may be updated together. Devices advertise their declared audio port
+and MIDI capability. Racks accept audio or MIDI for their own triggers but do
+not advertise device-key tap, trim, listen, or channel-map controls. Both
+engines currently expose only `automatic` channel mapping; a future mapping
+must be advertised before it can be requested.
+
+The complete patch is validated before mutation: owner and source must resolve,
+media must be compatible, and the proposed edge must not close a cycle through
+track inputs, outputs, sends, hierarchy, multi-output links, or another active
+sidechain. A disabled sidechain retains its configured source. Removing that
+source track clears it; replacing or removing its owning device/rack removes it
+with the owner. Source changes and clears return the structured reference-impact
+plan from the shared reference inventory.
+
+One successful patch is one undo action and advances the revision once. A
+failure changes nothing, and an identical patch is revision-neutral. WebSocket
+and MCP share the handler, closed schemas, `expectedRevision`, and `requestId`
+behaviour.
+
 ### Singleton chord track
 
 The chord track is project-wide singleton state rather than a repeatable track

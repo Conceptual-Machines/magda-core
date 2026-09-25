@@ -161,6 +161,63 @@ struct PadUpdate {
     std::optional<int> outputBus;
 };
 
+enum class SidechainOwnerKind { Device, Rack };
+
+/** Capabilities are derived from the live owner and are safe to expose remotely. */
+struct SidechainCapabilities {
+    bool audio = false;
+    bool midi = false;
+    int audioChannels = 0;
+    std::vector<ModTapPoint> tapPoints;
+    bool gain = false;
+    bool listen = false;
+    std::vector<juce::String> channelMappings;
+};
+
+/** Path-addressed sidechain state. Source ids are public logical endpoint ids. */
+struct SidechainView {
+    ChainNodePath ownerPath;
+    SidechainOwnerKind ownerKind = SidechainOwnerKind::Device;
+    SidechainCapabilities capabilities;
+    std::optional<juce::String> sourceEndpointId;
+    SidechainConfig::Type type = SidechainConfig::Type::None;
+    ModTapPoint tapPoint = ModTapPoint::PostFader;
+    float gainDb = 0.0f;
+    bool enabled = false;
+    bool listen = false;
+    juce::String channelMapping = "automatic";
+};
+
+/**
+ * A partial sidechain update. The outer source optional means "not supplied";
+ * a supplied empty inner optional clears the source.
+ */
+struct SidechainPatch {
+    std::optional<std::optional<juce::String>> sourceEndpointId;
+    std::optional<SidechainConfig::Type> type;
+    std::optional<ModTapPoint> tapPoint;
+    std::optional<float> gainDb;
+    std::optional<bool> enabled;
+    std::optional<bool> listen;
+    std::optional<juce::String> channelMapping;
+};
+
+enum class SetSidechainStatus {
+    Applied,
+    Unchanged,
+    OwnerNotFound,
+    EndpointNotFound,
+    Incompatible,
+    FeedbackCycle,
+    ApplyFailed,
+};
+
+struct SetSidechainResult {
+    SetSidechainStatus status = SetSidechainStatus::ApplyFailed;
+    std::optional<SidechainView> sidechain;
+    ReferenceImpactPlan referenceImpact;
+};
+
 /**
  * @brief Device discovery and inspection, addressed by `ChainNodePath`.
  *
@@ -232,6 +289,13 @@ class DeviceApi {
     virtual bool updatePad(const ChainNodePath&, int, const PadUpdate&) = 0;
 
     virtual bool setDeviceBypassed(const ChainNodePath& devicePath, bool bypassed) = 0;
+
+    /** Inspect or atomically update a device/rack sidechain by exact owner path. */
+    virtual std::vector<SidechainView> getSidechains(
+        std::optional<TrackId> trackId = std::nullopt) const = 0;
+    virtual std::optional<SidechainView> getSidechain(const ChainNodePath& ownerPath) const = 0;
+    virtual SetSidechainResult setSidechain(const ChainNodePath& ownerPath,
+                                            const SidechainPatch& patch) = 0;
 
     /**
      * @brief Write one parameter, in real parameter units.

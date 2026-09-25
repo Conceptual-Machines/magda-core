@@ -152,6 +152,11 @@ struct SidechainConfig {
     Type type = Type::None;
     TrackId sourceTrackId = INVALID_TRACK_ID;
 
+    /// A configured source may be temporarily disabled without forgetting it.
+    /// Older projects have no such field and therefore load enabled, preserving
+    /// their historical behaviour.
+    bool enabled = true;
+
     /// Which point on the source track the key is taken at, the same two points
     /// a modifier chooses between. PostFader is where the current engine's
     /// sidechain send sits, so a project that predates the field sounds as it
@@ -167,6 +172,10 @@ struct SidechainConfig {
     bool listen = false;
 
     bool isActive() const {
+        return enabled && isConfigured();
+    }
+
+    bool isConfigured() const {
         return type != Type::None && sourceTrackId != INVALID_TRACK_ID;
     }
 
@@ -177,8 +186,9 @@ struct SidechainConfig {
     /// because @ref listen survives a change of source type and the model can
     /// therefore hold the pair legitimately.
     bool listensToKey() const {
-        return listen && type == Type::Audio && sourceTrackId != INVALID_TRACK_ID;
+        return listen && isActive() && type == Type::Audio;
     }
+    bool operator==(const SidechainConfig&) const = default;
 };
 
 /**

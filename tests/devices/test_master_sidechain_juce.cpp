@@ -37,6 +37,7 @@ class MasterSidechainTest final : public juce::UnitTest {
 
     void runTest() override {
         magda::test::runWithCleanJuceState([this] { testMasterModifierAndSourceMonitor(); });
+        magda::test::runWithCleanJuceState([this] { testDisabledSidechainRetainsSource(); });
         magda::test::runWithCleanJuceState([this] { testSidesModePreservesMid(); });
     }
 
@@ -174,6 +175,65 @@ class MasterSidechainTest final : public juce::UnitTest {
         bridge->syncTrackPlugins(magda::MASTER_TRACK_ID);
         expect(modifierList == nullptr || modifierList->getModifiers().isEmpty(),
                "Removing a master sidechain should also remove its master modifier");
+
+        trackManager.clearAllTracks();
+        trackManager.setAudioEngine(nullptr);
+    }
+
+    void testDisabledSidechainRetainsSource() {
+        beginTest("A disabled sidechain retains its source without a source monitor");
+
+        auto& wrapper = magda::test::getSharedEngine();
+        auto* bridge = wrapper.getAudioBridge();
+        expect(bridge != nullptr, "AudioBridge must exist");
+        if (!bridge)
+            return;
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        trackManager.clearAllTracks();
+        trackManager.setAudioEngine(&wrapper);
+
+        const auto sourceTrackId = trackManager.createTrack("Disabled sidechain source");
+        const auto sidechainId =
+            trackManager.addDeviceToTrack(magda::MASTER_TRACK_ID, makeSidechainDevice());
+        expect(sourceTrackId != magda::INVALID_TRACK_ID, "Source track should be created");
+        expect(sidechainId != magda::INVALID_DEVICE_ID,
+               "Sidechain should be accepted on the master track");
+        if (sourceTrackId == magda::INVALID_TRACK_ID || sidechainId == magda::INVALID_DEVICE_ID) {
+            trackManager.clearAllTracks();
+            trackManager.setAudioEngine(nullptr);
+            return;
+        }
+
+        const auto path = magda::ChainNodePath::topLevelDevice(magda::MASTER_TRACK_ID, sidechainId);
+        trackManager.setSidechainSource(sidechainId, sourceTrackId,
+                                        magda::SidechainConfig::Type::MIDI);
+        const auto* configured = trackManager.getDeviceInChainByPath(path);
+        expect(configured != nullptr, "Configured sidechain device should be addressable");
+        if (configured == nullptr)
+            return;
+        auto disabled = configured->sidechain;
+        disabled.enabled = false;
+        expect(trackManager.setSidechainConfigByPath(path, disabled),
+               "Disabling the sidechain should succeed");
+
+        bridge->syncTrackPlugins(sourceTrackId);
+        bridge->syncTrackPlugins(magda::MASTER_TRACK_ID);
+
+        const auto* retained = trackManager.getDeviceInChainByPath(path);
+        expect(retained != nullptr && retained->sidechain.isConfigured(),
+               "The disabled sidechain should retain its configured source");
+        expect(retained != nullptr && !retained->sidechain.isActive(),
+               "The disabled sidechain should not be active");
+
+        auto* sourceTrack = bridge->getAudioTrack(sourceTrackId);
+        bool hasMonitor = false;
+        if (sourceTrack) {
+            for (int i = 0; i < sourceTrack->pluginList.size(); ++i)
+                hasMonitor = hasMonitor || dynamic_cast<magda::SidechainMonitorPlugin*>(
+                                               sourceTrack->pluginList[i]) != nullptr;
+        }
+        expect(!hasMonitor, "A disabled sidechain must not retain a source monitor");
 
         trackManager.clearAllTracks();
         trackManager.setAudioEngine(nullptr);

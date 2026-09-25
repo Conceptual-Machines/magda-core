@@ -71,8 +71,7 @@ struct ChainRoutingPlan {
 };
 
 inline bool usesExternalMidiSidechain(const DeviceInfo& device) {
-    return device.sidechain.type == SidechainConfig::Type::MIDI &&
-           device.sidechain.sourceTrackId != INVALID_TRACK_ID;
+    return device.sidechain.type == SidechainConfig::Type::MIDI && device.sidechain.isActive();
 }
 
 inline ChainRoutingNode makeRoutingNode(const DeviceInfo& device) {

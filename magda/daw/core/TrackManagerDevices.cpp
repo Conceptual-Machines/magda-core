@@ -2788,6 +2788,7 @@ void TrackManager::setSidechainSource(DeviceId targetDevice, TrackId sourceTrack
     editSidechain(targetDevice, [&](SidechainConfig& sidechain) {
         sidechain.type = type;
         sidechain.sourceTrackId = sourceTrack;
+        sidechain.enabled = true;
     });
 }
 
@@ -2816,11 +2817,41 @@ void TrackManager::setRackSidechainSource(const ChainNodePath& rackPath, TrackId
         return;
     rack->sidechain.type = type;
     rack->sidechain.sourceTrackId = sourceTrack;
+    rack->sidechain.enabled = true;
     notifyDeviceModifiersChanged(rackPath.trackId);
 }
 
 void TrackManager::clearRackSidechain(const ChainNodePath& rackPath) {
     setRackSidechainSource(rackPath, INVALID_TRACK_ID, SidechainConfig::Type::None);
+}
+
+bool TrackManager::setSidechainConfigByPath(const ChainNodePath& ownerPath,
+                                            const SidechainConfig& sidechain) {
+    if (ownerPath.getType() == ChainNodeType::Device ||
+        ownerPath.getType() == ChainNodeType::TopLevelDevice) {
+        auto* device = getDeviceInChainByPath(ownerPath);
+        if (device == nullptr)
+            return false;
+        if (device->sidechain == sidechain)
+            return true;
+        device->sidechain = sidechain;
+        notifyDevicePropertyChanged(ownerPath);
+        notifyDeviceModifiersChanged(ownerPath.trackId);
+        return true;
+    }
+
+    if (ownerPath.getType() == ChainNodeType::Rack) {
+        auto* rack = getRackByPath(ownerPath);
+        if (rack == nullptr)
+            return false;
+        if (rack->sidechain == sidechain)
+            return true;
+        rack->sidechain = sidechain;
+        notifyDeviceModifiersChanged(ownerPath.trackId);
+        return true;
+    }
+
+    return false;
 }
 
 }  // namespace magda

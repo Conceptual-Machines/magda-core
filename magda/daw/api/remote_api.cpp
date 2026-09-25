@@ -479,6 +479,41 @@ const juce::var& devicePathSchema() {
     return value;
 }
 
+const juce::var& sidechainViewSchema() {
+    static auto value = [] {
+        auto schema = parseSchema(R"json({
+            "type":"object",
+            "properties":{
+                "ownerPath":{},
+                "ownerType":{"type":"string","enum":["device","rack"]},
+                "supportedTypes":{"type":"array","items":{"type":"string","enum":["audio","midi"]}},
+                "audioChannels":{"type":"integer","minimum":0},
+                "supportedTapPoints":{"type":"array","items":{"type":"string","enum":["preFx","postFader"]}},
+                "supportsGain":{"type":"boolean"},
+                "gainDbMin":{"type":"number"},
+                "gainDbMax":{"type":"number"},
+                "supportsListen":{"type":"boolean"},
+                "supportedChannelMappings":{"type":"array","items":{"type":"string","enum":["automatic"]}},
+                "sourceEndpointId":{"type":["string","null"]},
+                "type":{"type":"string","enum":["none","audio","midi"]},
+                "tapPoint":{"type":"string","enum":["preFx","postFader"]},
+                "gainDb":{"type":"number"},
+                "enabled":{"type":"boolean"},
+                "listen":{"type":"boolean"},
+                "channelMapping":{"type":"string","enum":["automatic"]}
+            },
+            "required":["ownerPath","ownerType","supportedTypes","audioChannels",
+                        "supportedTapPoints","supportsGain","gainDbMin","gainDbMax",
+                        "supportsListen","supportedChannelMappings","sourceEndpointId","type",
+                        "tapPoint","gainDb","enabled","listen","channelMapping"],
+            "additionalProperties":false
+        })json");
+        schema["properties"].getDynamicObject()->setProperty("ownerPath", devicePathSchema());
+        return schema;
+    }();
+    return value;
+}
+
 const juce::var& referenceAddressSchema() {
     static const auto value = [] {
         auto schema = parseSchema(R"json({
@@ -2675,6 +2710,48 @@ OperationRegistry::OperationRegistry() {
         .getDynamicObject()
         ->setProperty("items", droppedRoutingConnectionSchema());
 
+    add("sidechains.list", "List device and rack sidechains and their capabilities",
+        OperationAccess::Read, &handlers::sidechainsList, operationInputSchema(R"json({
+            "type":"object","properties":{"trackId":{"anyOf":[
+                {"type":"integer","const":-2},{"type":"integer","minimum":0}]}},
+            "additionalProperties":false
+        })json"),
+        arraySchema(sidechainViewSchema()));
+    add("sidechains.get", "Inspect one device or rack sidechain and its capabilities",
+        OperationAccess::Read, &handlers::sidechainsGet, operationInputSchema(R"json({
+            "type":"object","properties":{"ownerPath":{}},
+            "required":["ownerPath"],"additionalProperties":false
+        })json"),
+        sidechainViewSchema());
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "ownerPath", devicePathSchema());
+    add("sidechains.set", "Atomically configure or clear one device or rack sidechain",
+        OperationAccess::Write, &handlers::sidechainsSet, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "ownerPath":{},
+                "sourceEndpointId":{"anyOf":[{"type":"string","minLength":1},{"type":"null"}]},
+                "type":{"type":"string","enum":["audio","midi"]},
+                "tapPoint":{"type":"string","enum":["preFx","postFader"]},
+                "gainDb":{"type":"number","minimum":-60,"maximum":24},
+                "enabled":{"type":"boolean"},
+                "listen":{"type":"boolean"},
+                "channelMapping":{"type":"string","enum":["automatic"]}
+            },
+            "required":["ownerPath"],"additionalProperties":false
+        })json"),
+        parseSchema(R"json({
+            "type":"object",
+            "properties":{"sidechain":{},"referenceImpact":{}},
+            "required":["sidechain","referenceImpact"],"additionalProperties":false
+        })json"));
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "ownerPath", devicePathSchema());
+    operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
+        "sidechain", sidechainViewSchema());
+    operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
+        "referenceImpact", referenceImpactResultSchema());
+
     add("clips.list", "List clips with optional track and view filters", OperationAccess::Read,
         &handlers::clipsList, operationInputSchema(R"json({
             "type":"object",
@@ -3634,6 +3711,7 @@ OperationRegistry::OperationRegistry() {
         {"tracks.group", Scope::Edit},
         {"tracks.move", Scope::Edit},
         {"routing.set", Scope::Edit},
+        {"sidechains.set", Scope::Edit},
         {"clips.createMidi", Scope::Edit},
         {"clips.addMidiNote", Scope::Edit},
         {"clips.addMidiEvents", Scope::Edit},

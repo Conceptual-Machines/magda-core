@@ -170,14 +170,14 @@ std::vector<ReferenceDescriptor> inventoryReferences(const ReferenceInventorySou
             track,
             [&devices, &result](const DeviceInfo& device, const ChainNodePath& path) {
                 recordLinks(device.macros, device.mods, path, devices, result);
-                if (device.sidechain.isActive())
+                if (device.sidechain.isConfigured())
                     result.push_back({ReferenceKind::Sidechain,
                                       nodeAddress(ReferenceAddressKind::Sidechain, path),
                                       trackAddress(device.sidechain.sourceTrackId)});
             },
             [&devices, &result](const RackInfo& rack, const ChainNodePath& path) {
                 recordLinks(rack.macros, rack.mods, path, devices, result);
-                if (rack.sidechain.isActive())
+                if (rack.sidechain.isConfigured())
                     result.push_back({ReferenceKind::Sidechain,
                                       nodeAddress(ReferenceAddressKind::Sidechain, path),
                                       trackAddress(rack.sidechain.sourceTrackId)});

@@ -3084,6 +3084,7 @@ TEST_CASE("A modelled sidechain source survives a roundtrip", "[project][seriali
     device.sidechain.tapPoint = ModTapPoint::PreFx;
     device.sidechain.gainDb = -4.5f;
     device.sidechain.listen = true;
+    device.sidechain.enabled = false;
 
     const auto json = ProjectSerializer::serializeDeviceInfo(device);
     REQUIRE(json.isObject());
@@ -3096,6 +3097,9 @@ TEST_CASE("A modelled sidechain source survives a roundtrip", "[project][seriali
     CHECK(loaded.sidechain.tapPoint == ModTapPoint::PreFx);
     CHECK(loaded.sidechain.gainDb == Catch::Approx(-4.5f));
     CHECK(loaded.sidechain.listen);
+    CHECK_FALSE(loaded.sidechain.enabled);
+    CHECK(loaded.sidechain.isConfigured());
+    CHECK_FALSE(loaded.sidechain.isActive());
 }
 
 TEST_CASE("A sidechain saved before the source had a shape reads as it sounded",
@@ -3124,6 +3128,7 @@ TEST_CASE("A sidechain saved before the source had a shape reads as it sounded",
     CHECK(loaded.sidechain.tapPoint == ModTapPoint::PostFader);
     CHECK(loaded.sidechain.gainDb == 0.0f);
     CHECK_FALSE(loaded.sidechain.listen);
+    CHECK(loaded.sidechain.enabled);
 }
 
 TEST_CASE("Section-scoped device ids survive project roundtrip",

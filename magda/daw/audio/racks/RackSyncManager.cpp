@@ -1203,7 +1203,7 @@ void RackSyncManager::syncRackModulationRecursive(SyncedRack& synced, const Rack
             deviceCtx.macroList = ctx.macroList;
             deviceCtx.lookup = &lookup;
             deviceCtx.forEachScopePlugin = ctx.forEachScopePlugin;
-            deviceCtx.hasCrossTrackSidechain = device.sidechain.sourceTrackId != INVALID_TRACK_ID;
+            deviceCtx.hasCrossTrackSidechain = device.sidechain.isActive();
 
             auto& devState = innerDeviceMods[device.id];
             ModifierSyncState devSyncState{devState.modifiers, devState.curveSnapshots,
@@ -1454,12 +1454,13 @@ void RackSyncManager::collectLFOModifiersWithModesForSidechainSource(
     };
 
     auto rackContainsSidechainSource = [&](auto&& self, const RackInfo& rack) -> bool {
-        if (rack.sidechain.sourceTrackId == sourceTrackId)
+        if (rack.sidechain.isActive() && rack.sidechain.sourceTrackId == sourceTrackId)
             return true;
 
         const auto elementContainsSource = [&](const ChainElement& element) {
             if (isDevice(element))
-                return getDevice(element).sidechain.sourceTrackId == sourceTrackId;
+                return getDevice(element).sidechain.isActive() &&
+                       getDevice(element).sidechain.sourceTrackId == sourceTrackId;
             if (isRack(element))
                 return self(self, getRack(element));
             return false;
@@ -1487,8 +1488,8 @@ void RackSyncManager::collectLFOModifiersWithModesForSidechainSource(
             int collected = 0;
             const auto rackSource = rack.sidechain.sourceTrackId;
             const bool rackSourceMatches =
-                rackSource == sourceTrackId ||
-                (rackSource == INVALID_TRACK_ID &&
+                (rack.sidechain.isActive() && rackSource == sourceTrackId) ||
+                (!rack.sidechain.isActive() &&
                  rackContainsSidechainSource(rackContainsSidechainSource, rack));
 
             if (rackSourceMatches)
@@ -1499,7 +1500,8 @@ void RackSyncManager::collectLFOModifiersWithModesForSidechainSource(
                 for (auto& element : chain.elements) {
                     if (isDevice(element)) {
                         auto& device = getDevice(element);
-                        if (device.sidechain.sourceTrackId != sourceTrackId)
+                        if (!device.sidechain.isActive() ||
+                            device.sidechain.sourceTrackId != sourceTrackId)
                             continue;
                         auto devIt = deviceMods.find(device.id);
                         if (devIt != deviceMods.end())

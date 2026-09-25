@@ -705,6 +705,24 @@ TEST_CASE("An audio sidechain wires the source track's output into the device",
     CHECK(inputOp(plan, device, 2) == sourceMeter);
 }
 
+TEST_CASE("A disabled sidechain retains its source without wiring an engine edge",
+          "[engine][plan][compiler][sidechain][2838]") {
+    auto compressor = makeEffect(7);
+    compressor.sidechainPort = magda::monoAudioSidechain;
+    compressor.sidechain.type = SidechainConfig::Type::Audio;
+    compressor.sidechain.sourceTrackId = 2;
+    compressor.sidechain.enabled = false;
+
+    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(compressor));
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+    CHECK(plan.diagnostics.empty());
+    CHECK(opsWithRole(plan, OpRole::DeviceSidechainGain).empty());
+    CHECK(getDevice(tracks[0].chain.fxChainElements[0]).sidechain.isConfigured());
+    CHECK_FALSE(getDevice(tracks[0].chain.fxChainElements[0]).sidechain.isActive());
+}
+
 TEST_CASE("A pre-FX key reads the source's trigger tap, not its fader",
           "[engine][plan][compiler]") {
     auto compressor = makeEffect(7);
