@@ -129,6 +129,7 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
 
     // The swap. This blocks until the audio thread is out of the block it was
     // in, then hands the previous epoch back here, where its destructor runs.
+    // Modelled in specs/tla/plan_swap.
     published_.nonRealtimeReplace(prepared);
 
     // Only now: until the swap, the epoch this replaces was the one rendering,

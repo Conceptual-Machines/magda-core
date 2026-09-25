@@ -198,6 +198,7 @@ void RenderThreadPool::configure(double blockSeconds, juce::AudioWorkgroup workg
     workgroupGeneration_.fetch_add(1, std::memory_order_release);
 }
 
+// Modelled in specs/tla/plan_swap, with takeWork() and render().
 void RenderThreadPool::release(Job& job) {
     // Only this job: another one may have been published since.
     auto* expected = &job;
