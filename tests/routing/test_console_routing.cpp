@@ -96,6 +96,7 @@ TEST_CASE("agent surface registry has distinct bounded capabilities", "[console_
     REQUIRE(containsTool(device, "macros.link"));
     REQUIRE(containsTool(device, "devices.setParameterConfig"));
     REQUIRE(containsTool(device, "devices.add"));
+    REQUIRE(containsTool(device, "devices.replace"));
     REQUIRE(containsTool(device, "devices.remove"));
     REQUIRE(containsTool(device, "devices.openEditor"));
     REQUIRE_FALSE(containsTool(device, "tracks.update"));

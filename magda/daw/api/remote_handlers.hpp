@@ -83,6 +83,7 @@ HandlerResult padsUpdate(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesCatalog(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicePresetsList(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesApplyPreset(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult devicesReplace(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesAdd(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesRemove(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesMove(MagdaApi&, const juce::var&, const RequestContext&);

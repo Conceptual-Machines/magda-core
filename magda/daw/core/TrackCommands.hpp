@@ -421,6 +421,42 @@ class AddDeviceByPathCommand : public UndoableCommand {
     bool executed_ = false;
 };
 
+/** Stage a replacement, then atomically exchange it with a device in the same slot. */
+class ReplaceDeviceByPathCommand : public UndoableCommand {
+  public:
+    ReplaceDeviceByPathCommand(ChainNodePath devicePath, DeviceInfo replacement,
+                               std::vector<ReferenceTargetMapping> referenceRemaps = {},
+                               std::optional<DeviceInfo> presetState = std::nullopt,
+                               std::optional<juce::File> pluginPresetFile = std::nullopt);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Replace Device";
+    }
+    bool didMutate() const override {
+        return executed_;
+    }
+
+    const ChainNodePath& getReplacementPath() const {
+        return replacementPath_;
+    }
+
+  private:
+    ChainNodePath devicePath_;
+    ChainNodePath parentPath_;
+    ChainNodePath replacementPath_;
+    DeviceInfo replacement_;
+    DeviceInfo previousDevice_;
+    DeviceInfo materialisedReplacement_;
+    std::vector<ReferenceTargetMapping> referenceRemaps_;
+    std::optional<DeviceInfo> presetState_;
+    std::optional<juce::File> pluginPresetFile_;
+    int insertIndex_ = -1;
+    bool captured_ = false;
+    bool executed_ = false;
+};
+
 /** Set one device's bypass state while preserving delta-solo across undo. */
 class SetDeviceBypassedCommand : public UndoableCommand {
   public:

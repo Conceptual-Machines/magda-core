@@ -63,6 +63,23 @@ struct ApplyDevicePresetResult {
     ReferenceImpactPlan referenceImpact;
 };
 
+enum class ReplaceDeviceStatus {
+    Replaced,
+    DeviceNotFound,
+    CatalogNotFound,
+    PresetNotFound,
+    Incompatible,
+    ReferenceConflict,
+    LoadFailed,
+};
+
+/** Result of staging and atomically replacing one device in its existing slot. */
+struct ReplaceDeviceResult {
+    ReplaceDeviceStatus status = ReplaceDeviceStatus::LoadFailed;
+    ChainNodePath devicePath;
+    ReferenceImpactPlan referenceImpact;
+};
+
 /**
  * @brief One automatable parameter of a live device.
  *
@@ -182,6 +199,11 @@ class DeviceApi {
     /** Apply an id returned by getDevicePresets() without replacing the device slot. */
     virtual ApplyDevicePresetResult applyPreset(const ChainNodePath& devicePath,
                                                 const juce::String& presetId) = 0;
+
+    /** Replace a device in place, optionally loading an opaque compatible preset first. */
+    virtual ReplaceDeviceResult replaceDevice(
+        const ChainNodePath& devicePath, const juce::String& catalogId,
+        const std::optional<juce::String>& presetId = std::nullopt) = 0;
 
     /**
      * @brief Add a device to a track's FX chain or to a rack chain.

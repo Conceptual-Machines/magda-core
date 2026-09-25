@@ -53,6 +53,7 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(registry.find("devices.setParameter") != nullptr);
     REQUIRE(registry.find("devices.setParameterConfig") != nullptr);
     REQUIRE(registry.find("devices.add") != nullptr);
+    REQUIRE(registry.find("devices.replace") != nullptr);
     REQUIRE(registry.find("devices.remove") != nullptr);
     REQUIRE(registry.find("devices.move") != nullptr);
     REQUIRE(registry.find("devices.setBypassed") != nullptr);
@@ -584,6 +585,32 @@ TEST_CASE("Device preset application is a closed edit with safe structured outpu
 
     const auto* output = operation->outputSchema["properties"].getDynamicObject();
     REQUIRE(output != nullptr);
+    CHECK(output->hasProperty("deviceGraph"));
+    CHECK(output->hasProperty("referenceImpact"));
+    CHECK_FALSE(output->hasProperty("pluginId"));
+    CHECK_FALSE(output->hasProperty("state"));
+}
+
+TEST_CASE("Device replacement is a closed edit with safe structured output",
+          "[remote-api][contract][devices][replace]") {
+    const auto* operation = OperationRegistry::instance().find("devices.replace");
+    REQUIRE(operation != nullptr);
+    CHECK(operation->access == OperationAccess::Write);
+    CHECK(operation->requiredScope == Scope::Edit);
+
+    auto input =
+        object({{"devicePath", toJson(makeDevicePathDto(ChainNodePath::topLevelDevice(1, 5)))},
+                {"catalogId", "filter"},
+                {"presetId", "device-preset:abc"}});
+    CHECK_FALSE(validateOperationInput(*operation, input).has_value());
+    input.getDynamicObject()->setProperty("pluginPath", "/tmp/secret.vst3");
+    const auto unknown = validateOperationInput(*operation, input);
+    REQUIRE(unknown.has_value());
+    CHECK(unknown->issues.front().code == "unknown_field");
+
+    const auto* output = operation->outputSchema["properties"].getDynamicObject();
+    REQUIRE(output != nullptr);
+    CHECK(output->hasProperty("devicePath"));
     CHECK(output->hasProperty("deviceGraph"));
     CHECK(output->hasProperty("referenceImpact"));
     CHECK_FALSE(output->hasProperty("pluginId"));

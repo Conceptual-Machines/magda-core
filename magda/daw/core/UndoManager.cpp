@@ -18,10 +18,10 @@ UndoManager& UndoManager::getInstance() {
 
 UndoManager::UndoManager() = default;
 
-void UndoManager::executeCommand(std::unique_ptr<UndoableCommand> command) {
+bool UndoManager::executeCommand(std::unique_ptr<UndoableCommand> command) {
     if (!command) {
         DBG("UNDO: executeCommand called with null command!");
-        return;
+        return false;
     }
 
     const auto beforeStateId = currentStateId_;
@@ -29,13 +29,15 @@ void UndoManager::executeCommand(std::unique_ptr<UndoableCommand> command) {
         ProjectManager::UndoableMutationScope mutationScope;
         command->execute();
     }
+    if (!command->didMutate())
+        return false;
     currentStateId_ = nextStateId_++;
 
     // If in compound operation, collect commands instead of pushing to stack
     if (compoundDepth_ > 0) {
         compoundCommands_.push_back(std::move(command));
         updateProjectDirtyState();
-        return;
+        return true;
     }
 
     // Check if we can merge with the previous command
@@ -56,6 +58,7 @@ void UndoManager::executeCommand(std::unique_ptr<UndoableCommand> command) {
 
     updateProjectDirtyState();
     notifyListeners();
+    return true;
 }
 
 bool UndoManager::undo() {

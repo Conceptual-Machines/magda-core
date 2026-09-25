@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "../audio/DeviceParameterList.hpp"
+#include "../audio/plugins/DeviceCatalogParameters.hpp"
 #include "../audio/plugins/InternalPluginRegistry.hpp"
 #include "../audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "../core/AutomationManager.hpp"
@@ -202,6 +203,83 @@ struct PresetReferencePreflight {
     ReferenceImpactPlan impact;
     std::vector<std::pair<int, int>> parameterRemaps;
 };
+
+struct ReplacementReferencePreflight {
+    ReferenceImpactPlan impact;
+    std::vector<ReferenceTargetMapping> mappings;
+};
+
+ReplacementReferencePreflight preflightReplacementReferences(const ChainNodePath& devicePath,
+                                                             const ChainNodePath& replacementPath,
+                                                             const DeviceInfo& replacement) {
+    auto& tracks = TrackManager::getInstance();
+    const auto bound = boundControlReferences();
+    const auto inventory =
+        inventoryReferences({tracks.getTracks(), tracks.getTrack(MASTER_TRACK_ID),
+                             AutomationManager::getInstance().getLanes(), bound});
+    const std::array paths{devicePath};
+    const auto affected = referencesAffectedBy(inventory, paths);
+    const auto* incumbent = tracks.getDeviceInChainByPath(devicePath);
+    const bool stableDeviceIdentity = incumbent != nullptr &&
+                                      incumbent->pluginId == replacement.pluginId &&
+                                      incumbent->format == replacement.format;
+
+    ReplacementReferencePreflight result;
+    for (const auto& reference : affected) {
+        const std::array one{reference};
+
+        // Links and sidechains owned by the old device leave with its saved
+        // state. Undo restores them with that device, so report the drop rather
+        // than pretending an unrelated replacement owns them.
+        if (reference.source.devicePath == devicePath) {
+            ReferencePolicySet policy;
+            policy.set(reference.kind, ReferencePolicy::Drop);
+            appendImpact(result.impact, planReferenceImpacts(one, {}, policy));
+            continue;
+        }
+
+        if (reference.target.devicePath != devicePath) {
+            ReferencePolicySet policy;
+            policy.set(reference.kind, ReferencePolicy::Preserve);
+            appendImpact(result.impact, planReferenceImpacts(one, {}, policy));
+            continue;
+        }
+
+        // An index alone is not identity. Only a non-empty parameter stable id
+        // present on the replacement proves that automation, links, or a bound
+        // control may follow the new device path.
+        if (stableDeviceIdentity && reference.target.kind == ReferenceAddressKind::Parameter &&
+            reference.target.parameterStableId.isNotEmpty()) {
+            const auto found =
+                std::ranges::find(replacement.parameters, reference.target.parameterStableId,
+                                  &ParameterInfo::stableId);
+            if (found != replacement.parameters.end()) {
+                auto mapped = reference.target;
+                mapped.devicePath = replacementPath;
+                mapped.parameterIndex = found->paramIndex;
+                const ReferenceTargetMapping mapping{
+                    reference.target, mapped, reference.target.parameterStableId, found->stableId};
+                const std::array mappings{mapping};
+                ReferencePolicySet policy;
+                policy.set(reference.kind, ReferencePolicy::Remap);
+                appendImpact(result.impact, planReferenceImpacts(one, mappings, policy));
+                if (result.impact.rejected.empty() &&
+                    std::ranges::find(result.mappings, mapping.from,
+                                      &ReferenceTargetMapping::from) == result.mappings.end())
+                    result.mappings.push_back(mapping);
+                continue;
+            }
+        }
+
+        // Device-level routing, macros, and modulators have no stable identity
+        // shared by arbitrary catalogue entries. Refuse instead of silently
+        // attaching them to a different semantic target.
+        ReferencePolicySet policy;
+        policy.set(reference.kind, ReferencePolicy::Remap);
+        appendImpact(result.impact, planReferenceImpacts(one, {}, policy));
+    }
+    return result;
+}
 
 PresetReferencePreflight preflightPresetReferences(const ChainNodePath& devicePath,
                                                    const DeviceInfo& prepared) {
@@ -447,6 +525,72 @@ ApplyDevicePresetResult DeviceApiLive::applyPreset(const ChainNodePath& devicePa
     return {raw->didApply() ? ApplyDevicePresetStatus::Applied
                             : ApplyDevicePresetStatus::LoadFailed,
             std::move(preflight.impact)};
+}
+
+ReplaceDeviceResult DeviceApiLive::replaceDevice(const ChainNodePath& devicePath,
+                                                 const juce::String& catalogId,
+                                                 const std::optional<juce::String>& presetId) {
+    auto& tracks = TrackManager::getInstance();
+    if (tracks.getDeviceInChainByPath(devicePath) == nullptr)
+        return {ReplaceDeviceStatus::DeviceNotFound, {}, {}};
+
+    auto replacement = deviceFromCatalogId(catalogId);
+    if (!replacement)
+        return {ReplaceDeviceStatus::CatalogNotFound, {}, {}};
+
+    // Declarations hydrate the parameter schema without touching the project;
+    // that schema is enough to prove (or refuse) stable parameter remaps.
+    daw::audio::applyDeviceDeclaration(*replacement);
+    std::optional<DeviceInfo> presetState;
+    std::optional<juce::File> pluginPresetFile;
+    if (presetId && presetId->isNotEmpty()) {
+        std::vector<DevicePresetEntry> listed;
+        for (const auto& preset :
+             PresetManager::getInstance().getDevicePresetMetadata(replacement->name))
+            listed.push_back({preset.id, preset.name, preset.category, "magda"});
+        const auto& pluginPresets = PluginPresetScanner::getInstance().getPresets(*replacement);
+        appendPluginPresets(*replacement, pluginPresets.roots, {}, listed);
+
+        const auto entry = std::ranges::find(listed, *presetId, &DevicePresetEntry::id);
+        if (entry == listed.end())
+            return {ReplaceDeviceStatus::PresetNotFound, {}, {}};
+        if (entry->source == "magda") {
+            DeviceInfo loaded;
+            if (!PresetManager::getInstance().loadDevicePresetById(replacement->name, *presetId,
+                                                                   loaded))
+                return {ReplaceDeviceStatus::LoadFailed, {}, {}};
+            if (loaded.pluginId != replacement->pluginId)
+                return {ReplaceDeviceStatus::Incompatible, {}, {}};
+            replacement->parameters = loaded.parameters;
+            presetState = std::move(loaded);
+        } else if (entry->source == "plugin") {
+            pluginPresetFile = findPluginPresetFile(*replacement, pluginPresets.roots, *presetId);
+            if (!pluginPresetFile)
+                return {ReplaceDeviceStatus::LoadFailed, {}, {}};
+        } else {
+            return {ReplaceDeviceStatus::PresetNotFound, {}, {}};
+        }
+    }
+
+    // The provisional destination is deliberately the old path: planning only
+    // needs the target schema and stable identities. The command substitutes
+    // the fresh path after the replacement has materialised, and the returned
+    // plan is rebuilt with that real path.
+    auto preflight = preflightReplacementReferences(devicePath, devicePath, *replacement);
+    if (!preflight.impact.canCommit())
+        return {ReplaceDeviceStatus::ReferenceConflict, {}, std::move(preflight.impact)};
+
+    auto command = std::make_unique<ReplaceDeviceByPathCommand>(
+        devicePath, std::move(*replacement), std::move(preflight.mappings), std::move(presetState),
+        std::move(pluginPresetFile));
+    auto* raw = command.get();
+    if (!UndoManager::getInstance().executeCommand(std::move(command)))
+        return {ReplaceDeviceStatus::LoadFailed, {}, {}};
+
+    const auto newPath = raw->getReplacementPath();
+    for (auto& remapped : preflight.impact.remapped)
+        remapped.newTarget.devicePath = newPath;
+    return {ReplaceDeviceStatus::Replaced, newPath, std::move(preflight.impact)};
 }
 
 DeviceId DeviceApiLive::addDevice(const ChainNodePath& parentPath, const juce::String& catalogId,

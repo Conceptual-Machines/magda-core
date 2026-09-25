@@ -2722,6 +2722,30 @@ OperationRegistry::OperationRegistry() {
         "deviceGraph", deviceGraphSchema());
     operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
         "referenceImpact", referenceImpactResultSchema());
+    add("devices.replace", "Atomically replace a device while preserving its chain slot",
+        OperationAccess::Write, &handlers::devicesReplace, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "devicePath":{},
+                "catalogId":{"type":"string","minLength":1},
+                "presetId":{"type":"string","minLength":1}
+            },
+            "required":["devicePath","catalogId"],"additionalProperties":false
+        })json"),
+        parseSchema(R"json({
+            "type":"object",
+            "properties":{"devicePath":{},"deviceGraph":{},"referenceImpact":{}},
+            "required":["devicePath","deviceGraph","referenceImpact"],
+            "additionalProperties":false
+        })json"));
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "devicePath", devicePathSchema());
+    operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
+        "devicePath", devicePathSchema());
+    operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
+        "deviceGraph", deviceGraphSchema());
+    operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
+        "referenceImpact", referenceImpactResultSchema());
     add("devices.add", "Add a device from the catalogue to a track's FX chain or a rack chain",
         OperationAccess::Write, &handlers::devicesAdd, operationInputSchema(R"json({
             "type":"object",
@@ -3430,6 +3454,7 @@ OperationRegistry::OperationRegistry() {
         {"chains.update", Scope::Edit},
         {"devices.add", Scope::Edit},
         {"devices.applyPreset", Scope::Edit},
+        {"devices.replace", Scope::Edit},
         {"pads.create", Scope::Edit},
         {"pads.setDevice", Scope::Edit},
         {"pads.setSample", Scope::Edit},
