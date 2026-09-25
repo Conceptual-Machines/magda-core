@@ -1323,6 +1323,56 @@ HandlerResult devicesApplyPreset(MagdaApi& api, const juce::var& input, const Re
                                                                 : HandlerResult::ok(result);
 }
 
+HandlerResult devicesReplace(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto path = toChainNodePath(devicePathFromJson(input["devicePath"]));
+    if (!path)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "devicePath does not resolve");
+    if (api.devices().getDevice(*path) == nullptr)
+        return HandlerResult::fail(ErrorCode::NotFound, "no device at devicePath");
+
+    const auto catalogId = input["catalogId"].toString();
+    if (!api.devices().findCatalogEntry(catalogId).has_value())
+        return HandlerResult::fail(ErrorCode::NotFound, "no catalogue entry " + catalogId);
+
+    std::optional<juce::String> presetId;
+    if (has(input, "presetId"))
+        presetId = input["presetId"].toString();
+    auto replaced = api.devices().replaceDevice(*path, catalogId, presetId);
+    switch (replaced.status) {
+        case ReplaceDeviceStatus::DeviceNotFound:
+            return HandlerResult::fail(ErrorCode::NotFound, "no device at devicePath");
+        case ReplaceDeviceStatus::CatalogNotFound:
+            return HandlerResult::fail(ErrorCode::NotFound, "no catalogue entry " + catalogId);
+        case ReplaceDeviceStatus::PresetNotFound:
+            return HandlerResult::fail(ErrorCode::NotFound,
+                                       "preset is not available for the replacement device");
+        case ReplaceDeviceStatus::Incompatible:
+            return HandlerResult::fail(ErrorCode::Conflict,
+                                       "preset is not compatible with the replacement device");
+        case ReplaceDeviceStatus::ReferenceConflict: {
+            auto* details = new juce::DynamicObject();
+            details->setProperty("referenceImpact",
+                                 toJson(makeReferenceImpactResultDto(replaced.referenceImpact)));
+            return HandlerResult::fail(Error{ErrorCode::Conflict,
+                                             "replacement would invalidate an existing reference",
+                                             {},
+                                             juce::var(details)});
+        }
+        case ReplaceDeviceStatus::LoadFailed:
+            return HandlerResult::fail(ErrorCode::InternalError,
+                                       "failed to stage replacement device");
+        case ReplaceDeviceStatus::Replaced:
+            break;
+    }
+
+    auto* result = new juce::DynamicObject();
+    result->setProperty("devicePath", toJson(makeDevicePathDto(replaced.devicePath)));
+    result->setProperty("deviceGraph", toJson(makeDeviceGraphDto(api.tracks().getTracks())));
+    result->setProperty("referenceImpact",
+                        toJson(makeReferenceImpactResultDto(replaced.referenceImpact)));
+    return HandlerResult::ok(result);
+}
+
 HandlerResult devicesAdd(MagdaApi& api, const juce::var& input, const RequestContext&) {
     const auto catalogId = input["catalogId"].toString();
     if (!api.devices().findCatalogEntry(catalogId).has_value())

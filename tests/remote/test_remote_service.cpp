@@ -955,6 +955,73 @@ TEST_CASE("devices.applyPreset rejects unavailable and incompatible presets with
     CHECK(service.currentRevision() == INITIAL_REVISION);
 }
 
+TEST_CASE("devices.replace returns the new path and commits exactly once",
+          "[remote][service][devices][replace]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto oldPath = ChainNodePath::topLevelDevice(1, 5);
+    const auto newPath = ChainNodePath::topLevelDevice(1, 8);
+    api.devices_.devices[oldPath] = makeFilterDevice();
+    api.devices_.catalog.push_back({"new-filter", "New Filter"});
+    api.devices_.replaceDeviceResult.devicePath = newPath;
+
+    ReferenceDescriptor dropped;
+    dropped.kind = ReferenceKind::Sidechain;
+    dropped.source.kind = ReferenceAddressKind::Sidechain;
+    dropped.source.devicePath = oldPath;
+    api.devices_.replaceDeviceResult.referenceImpact.dropped.push_back(
+        {dropped, ReferenceImpactReason::PolicyDrop});
+
+    RemoteApiService service(api);
+    auto input = pathInput(oldPath);
+    input.getDynamicObject()->setProperty("catalogId", "new-filter");
+    input.getDynamicObject()->setProperty("presetId", "device-preset:abc");
+    auto context = fullyGrantedContext();
+    context.requestId = "replace-device-1";
+    context.expectedRevision = INITIAL_REVISION;
+    const auto changed = run(service, "devices.replace", input, context);
+
+    REQUIRE(changed.ok);
+    REQUIRE(api.devices_.replacements.size() == 1);
+    CHECK(api.devices_.replacements.front().catalogId == "new-filter");
+    REQUIRE(api.devices_.replacements.front().presetId.has_value());
+    CHECK(*api.devices_.replacements.front().presetId == "device-preset:abc");
+    CHECK(toChainNodePath(devicePathFromJson(changed.result["devicePath"])) == newPath);
+    REQUIRE(changed.result["referenceImpact"]["droppedReferences"].isArray());
+    CHECK(changed.result["referenceImpact"]["droppedReferences"].getArray()->size() == 1);
+    CHECK(changed.revision == INITIAL_REVISION + 1);
+
+    const auto replayed = run(service, "devices.replace", input, context);
+    REQUIRE(replayed.ok);
+    CHECK(api.devices_.replacements.size() == 1);
+    CHECK(replayed.revision == changed.revision);
+}
+
+TEST_CASE("devices.replace reports reference conflicts without a revision",
+          "[remote][service][devices][replace]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    api.devices_.catalog.push_back({"new-filter", "New Filter"});
+    ReferenceDescriptor rejected;
+    rejected.kind = ReferenceKind::Automation;
+    rejected.target.kind = ReferenceAddressKind::Parameter;
+    rejected.target.devicePath = path;
+    api.devices_.replaceDeviceResult.status = ReplaceDeviceStatus::ReferenceConflict;
+    api.devices_.replaceDeviceResult.referenceImpact.rejected.push_back(
+        {rejected, ReferenceImpactReason::NoProvenRemap});
+
+    RemoteApiService service(api);
+    auto input = pathInput(path);
+    input.getDynamicObject()->setProperty("catalogId", "new-filter");
+    const auto response = run(service, "devices.replace", input);
+    REQUIRE_FALSE(response.ok);
+    CHECK(errorCodeOf(response) == "conflict");
+    REQUIRE(response.error.details["referenceImpact"]["rejectedReferences"].isArray());
+    CHECK(service.currentRevision() == INITIAL_REVISION);
+}
+
 TEST_CASE("devices.setBypassed updates once and treats an identical write as a no-op",
           "[remote][service][devices]") {
     const MessageThreadRelaxation relaxation;

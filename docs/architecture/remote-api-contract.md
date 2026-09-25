@@ -98,6 +98,17 @@ references that cannot be preserved make the request fail before its one
 undoable commit, with the rejected plan in `error.details.referenceImpact`.
 Reapplying identical state is revision-neutral.
 
+`devices.replace` takes an existing `devicePath`, a `catalogId` from
+`devices.catalog`, and an optional opaque `presetId`. It stages the replacement
+and preset while the incumbent is still live, then exchanges them in the same
+chain slot as one undoable edit. The response contains the replacement's new
+path, the safe device graph, and a complete reference-impact plan. Parameter
+targets are remapped only when the device identity is compatible and matching
+non-empty parameter stable IDs prove the target; owned links and sidechains are
+reported as dropped, while unproven automation, macro, modulator, binding, and
+routing targets reject the operation before commit. Filesystem paths, raw
+loader identifiers, and plugin state never cross the API.
+
 ### Saved track-chain presets
 
 Saved track-chain presets are exposed through the shared operation registry, so

@@ -196,6 +196,7 @@ const std::vector<AgentSurface>& registeredAgentSurfaces() {
          .toolAllowlist = {"devices.list",
                            "devices.catalog",
                            "devices.add",
+                           "devices.replace",
                            "devices.remove",
                            "devices.move",
                            "devicePresets.list",

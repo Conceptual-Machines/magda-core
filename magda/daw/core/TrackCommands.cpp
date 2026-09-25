@@ -6,6 +6,7 @@
 #include <ranges>
 #include <utility>
 
+#include "../engine/AudioEngine.hpp"
 #include "../engine/PluginService.hpp"
 #include "../project/ProjectManager.hpp"
 #include "AutomationManager.hpp"
@@ -165,7 +166,7 @@ void remapLinks(MacroArray& macros, ModArray& mods,
             remapControlTarget(link.target, mappings);
 }
 
-void remapTrackPresetReferences(const std::vector<ReferenceTargetMapping>& mappings) {
+void remapReferences(const std::vector<ReferenceTargetMapping>& mappings) {
     if (mappings.empty())
         return;
 
@@ -1230,6 +1231,153 @@ void AddDeviceByPathCommand::undo() {
     DBG("UNDO: Removed added device " << createdDeviceId_);
 }
 
+ReplaceDeviceByPathCommand::ReplaceDeviceByPathCommand(
+    ChainNodePath devicePath, DeviceInfo replacement,
+    std::vector<ReferenceTargetMapping> referenceRemaps, std::optional<DeviceInfo> presetState,
+    std::optional<juce::File> pluginPresetFile)
+    : devicePath_(std::move(devicePath)),
+      parentPath_(devicePath_.parentChain()),
+      replacement_(std::move(replacement)),
+      referenceRemaps_(std::move(referenceRemaps)),
+      presetState_(std::move(presetState)),
+      pluginPresetFile_(std::move(pluginPresetFile)) {}
+
+void ReplaceDeviceByPathCommand::execute() {
+    auto& tm = TrackManager::getInstance();
+    const auto* incumbent = tm.getDeviceInChainByPath(devicePath_);
+    if (incumbent == nullptr) {
+        executed_ = false;
+        return;
+    }
+
+    const auto insertMaterialised = [&](const ChainNodePath& path, const DeviceInfo& device) {
+        if (path.isPostFx() || path.isMixerAnalysis())
+            return tm.insertFlatSectionDeviceByPath(path, device, insertIndex_);
+        std::vector<ChainElement> elements;
+        elements.push_back(makeDeviceElement(device));
+        return tm.insertChainElementsByPath(path.parentChain(), std::move(elements), insertIndex_,
+                                            /*reassignIds=*/false);
+    };
+
+    // Redo puts back the exact instance the first execution materialised. Put
+    // it beside the incumbent before taking the incumbent out, so an insertion
+    // refusal cannot turn replacement into deletion.
+    if (captured_) {
+        if (!insertMaterialised(replacementPath_, materialisedReplacement_)) {
+            executed_ = false;
+            return;
+        }
+        remapReferences(referenceRemaps_);
+        tm.removeDeviceFromChainByPath(devicePath_);
+        executed_ = tm.getDeviceInChainByPath(replacementPath_) != nullptr &&
+                    tm.getDeviceInChainByPath(devicePath_) == nullptr;
+        return;
+    }
+
+    PluginService::getInstance().capturePluginStateAt(devicePath_);
+    incumbent = tm.getDeviceInChainByPath(devicePath_);
+    if (incumbent == nullptr) {
+        executed_ = false;
+        return;
+    }
+    previousDevice_ = *incumbent;
+    insertIndex_ = tm.getChainElementIndex(devicePath_);
+    if (insertIndex_ < 0) {
+        executed_ = false;
+        return;
+    }
+
+    DeviceId replacementId = INVALID_DEVICE_ID;
+    if (devicePath_.isPostFx()) {
+        replacementId = tm.stageFlatSectionReplacement(devicePath_, replacement_, insertIndex_);
+        replacementPath_ = ChainNodePath::postFxDevice(devicePath_.trackId, replacementId);
+    } else if (devicePath_.isMixerAnalysis()) {
+        replacementId = tm.stageFlatSectionReplacement(devicePath_, replacement_, insertIndex_);
+        replacementPath_ = ChainNodePath::mixerAnalysisDevice(devicePath_.trackId, replacementId);
+    } else if (parentPath_.isPadOwned()) {
+        const auto gridPath = tm.findDevicePath(parentPath_.getPadOwnerDeviceId());
+        replacementId =
+            tm.addDeviceToPad(gridPath, parentPath_.getPadChainId(), replacement_, insertIndex_);
+        replacementPath_ = parentPath_.withDevice(replacementId);
+    } else if (devicePath_.topLevelDeviceId != INVALID_DEVICE_ID) {
+        replacementId = tm.addDeviceToTrack(devicePath_.trackId, replacement_, insertIndex_);
+        replacementPath_ = ChainNodePath::topLevelDevice(devicePath_.trackId, replacementId);
+    } else {
+        replacementId = tm.addDeviceToChainByPath(parentPath_, replacement_, insertIndex_);
+        replacementPath_ = parentPath_.withDevice(replacementId);
+    }
+
+    const auto rollbackStaged = [&] {
+        if (replacementPath_.isValid())
+            tm.removeDeviceFromChainByPath(replacementPath_);
+        replacementPath_ = {};
+        executed_ = false;
+    };
+    if (replacementId == INVALID_DEVICE_ID ||
+        tm.getChainElementIndex(replacementPath_) != insertIndex_) {
+        rollbackStaged();
+        return;
+    }
+
+    // Decode the optional preset on the replacement instance while the old
+    // device is still present. A failure removes only this staged device.
+    if (presetState_ && !tm.applyDevicePreset(replacementPath_, *presetState_)) {
+        rollbackStaged();
+        return;
+    }
+    if (pluginPresetFile_) {
+        auto* engine = tm.getAudioEngine();
+        if (engine == nullptr ||
+            !engine->loadPluginPresetFile(replacementPath_, *pluginPresetFile_)) {
+            rollbackStaged();
+            return;
+        }
+    }
+
+    PluginService::getInstance().capturePluginStateAt(replacementPath_);
+    const auto* staged = tm.getDeviceInChainByPath(replacementPath_);
+    if (staged == nullptr) {
+        rollbackStaged();
+        return;
+    }
+    materialisedReplacement_ = *staged;
+    for (auto& mapping : referenceRemaps_)
+        mapping.to.devicePath = replacementPath_;
+
+    remapReferences(referenceRemaps_);
+    tm.removeDeviceFromChainByPath(devicePath_);
+    if (tm.getDeviceInChainByPath(devicePath_) != nullptr) {
+        remapReferences(reverseMappings(referenceRemaps_));
+        rollbackStaged();
+        return;
+    }
+
+    captured_ = true;
+    executed_ = true;
+}
+
+void ReplaceDeviceByPathCommand::undo() {
+    if (!executed_ || !captured_)
+        return;
+
+    auto& tm = TrackManager::getInstance();
+    bool restored = false;
+    if (devicePath_.isPostFx() || devicePath_.isMixerAnalysis()) {
+        restored = tm.insertFlatSectionDeviceByPath(devicePath_, previousDevice_, insertIndex_);
+    } else {
+        std::vector<ChainElement> elements;
+        elements.push_back(makeDeviceElement(previousDevice_));
+        restored = tm.insertChainElementsByPath(parentPath_, std::move(elements), insertIndex_,
+                                                /*reassignIds=*/false);
+    }
+    if (!restored)
+        return;
+
+    remapReferences(reverseMappings(referenceRemaps_));
+    tm.removeDeviceFromChainByPath(replacementPath_);
+    executed_ = false;
+}
+
 SetDeviceBypassedCommand::SetDeviceBypassedCommand(ChainNodePath devicePath, bool bypassed)
     : devicePath_(std::move(devicePath)), bypassed_(bypassed) {}
 
@@ -1321,17 +1469,17 @@ void ApplyTrackPresetCommand::execute() {
         captured_ = true;
     }
 
-    remapTrackPresetReferences(referenceRemaps_);
+    remapReferences(referenceRemaps_);
     executed_ = tracks.applyPreparedTrackPreset(trackId_, presetState_);
     if (!executed_)
-        remapTrackPresetReferences(reverseMappings(referenceRemaps_));
+        remapReferences(reverseMappings(referenceRemaps_));
 }
 
 void ApplyTrackPresetCommand::undo() {
     if (!executed_ || !captured_)
         return;
 
-    remapTrackPresetReferences(reverseMappings(referenceRemaps_));
+    remapReferences(reverseMappings(referenceRemaps_));
     TrackManager::getInstance().applyPreparedTrackPreset(trackId_, previousState_);
     executed_ = false;
 }

@@ -37,6 +37,11 @@ class UndoableCommand {
      */
     virtual juce::String getDescription() const = 0;
 
+    /** False when execute() validated or staged nothing and the command must not enter history. */
+    virtual bool didMutate() const {
+        return true;
+    }
+
     /**
      * Check if this command can be merged with another command.
      * Used for coalescing rapid repeated operations (e.g., multiple small moves).
@@ -89,7 +94,8 @@ class UndoManager {
      * Execute a command and add it to the undo stack.
      * The command's execute() method is called immediately.
      */
-    void executeCommand(std::unique_ptr<UndoableCommand> command);
+    /** Execute and record a command; false means it reported no mutation. */
+    bool executeCommand(std::unique_ptr<UndoableCommand> command);
 
     /**
      * Undo the last command.

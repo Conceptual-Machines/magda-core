@@ -1160,6 +1160,44 @@ bool TrackManager::insertFlatSectionDeviceByPath(const ChainNodePath& devicePath
     return true;
 }
 
+DeviceId TrackManager::stageFlatSectionReplacement(const ChainNodePath& incumbentPath,
+                                                   const DeviceInfo& device, int index) {
+    auto* track = getTrack(incumbentPath.trackId);
+    if (track == nullptr || (!incumbentPath.isPostFx() && !incumbentPath.isMixerAnalysis()) ||
+        getDeviceInChainByPath(incumbentPath) == nullptr || device.isInstrument)
+        return INVALID_DEVICE_ID;
+
+    const bool postFx = incumbentPath.isPostFx();
+    if (postFx && daw::audio::internalPluginHasTag(device.pluginId, "sidechain"))
+        return INVALID_DEVICE_ID;
+
+    auto& section = postFx ? track->chain.postFxChainElements : track->chain.mixerAnalysisElements;
+    const bool uniqueKind = !postFx || daw::audio::isInternalAnalysisPlugin(device.pluginId);
+    if (uniqueKind && std::ranges::any_of(section, [&](const PostFxChainElement& element) {
+            return element.device.id != incumbentPath.getDeviceId() &&
+                   element.device.pluginId == device.pluginId;
+        }))
+        return INVALID_DEVICE_ID;
+
+    DeviceInfo staged = device;
+    staged.id = postFx ? nextPostFxDeviceId_++ : nextMixerAnalysisDeviceId_++;
+    applyCachedCapabilitiesToDevice(staged);
+    daw::audio::applyDeviceDeclaration(staged);
+    if (daw::audio::isInternalAnalysisPlugin(staged.pluginId))
+        staged.deviceType = DeviceType::Analysis;
+    if (postFx)
+        legacy_devices::normalizeChordEngineRole(staged);
+
+    index = std::clamp(index, 0, static_cast<int>(section.size()));
+    section.insert(section.begin() + index, PostFxChainElement{staged});
+    const auto stagedPath =
+        postFx ? ChainNodePath::postFxDevice(incumbentPath.trackId, staged.id)
+               : ChainNodePath::mixerAnalysisDevice(incumbentPath.trackId, staged.id);
+    notifyTrackDevicesChanged(incumbentPath.trackId);
+    notifyDeviceAdded(stagedPath, staged);
+    return staged.id;
+}
+
 bool TrackManager::insertChainElementsByPath(const ChainNodePath& destinationChainPath,
                                              std::vector<ChainElement> elements, int insertIndex,
                                              bool reassignIds) {

@@ -198,6 +198,218 @@ TEST_CASE("The preset command remaps stable parameter references on execute and 
     CHECK(tracks.getTrack(trackId)->macros[0].links[0].target.paramIndex == 0);
 }
 
+TEST_CASE("A device replacement preserves its slot and round-trips through undo",
+          "[device-api][replace][2814]") {
+    auto& tracks = TrackManager::getInstance();
+    const auto trackId = freshTrack("Replace target");
+    DeviceApiLive api;
+    const auto catalog = api.getCatalog();
+    REQUIRE(catalog.size() >= 2);
+
+    const auto oldId = api.addDevice(ChainNodePath::trackLevel(trackId), catalog[0].catalogId, -1);
+    const auto sentinelId =
+        api.addDevice(ChainNodePath::trackLevel(trackId), catalog[0].catalogId, -1);
+    REQUIRE(oldId != INVALID_DEVICE_ID);
+    REQUIRE(sentinelId != INVALID_DEVICE_ID);
+    const auto oldPath = ChainNodePath::topLevelDevice(trackId, oldId);
+    auto* incumbent = tracks.getDeviceInChainByPath(oldPath);
+    REQUIRE(incumbent != nullptr);
+    incumbent->sidechain.type = SidechainConfig::Type::Audio;
+    incumbent->sidechain.sourceTrackId = trackId;
+    UndoManager::getInstance().clearHistory();
+
+    const auto replaced = api.replaceDevice(oldPath, catalog[1].catalogId);
+    REQUIRE(replaced.status == ReplaceDeviceStatus::Replaced);
+    REQUIRE(replaced.devicePath.isValid());
+    CHECK(replaced.devicePath != oldPath);
+    REQUIRE(replaced.referenceImpact.dropped.size() == 1);
+    CHECK(replaced.referenceImpact.dropped.front().reference.kind == ReferenceKind::Sidechain);
+    REQUIRE(tracks.getChainElements(trackId).size() == 2);
+    CHECK(getDevice(tracks.getChainElements(trackId)[0]).id == replaced.devicePath.getDeviceId());
+    CHECK(getDevice(tracks.getChainElements(trackId)[0]).pluginId == catalog[1].catalogId);
+    CHECK(getDevice(tracks.getChainElements(trackId)[1]).id == sentinelId);
+    CHECK(UndoManager::getInstance().getUndoDescription() == "Replace Device");
+
+    REQUIRE(UndoManager::getInstance().undo());
+    const auto* restoredIncumbent = tracks.getDeviceInChainByPath(oldPath);
+    REQUIRE(restoredIncumbent != nullptr);
+    CHECK(restoredIncumbent->sidechain.type == SidechainConfig::Type::Audio);
+    CHECK(restoredIncumbent->sidechain.sourceTrackId == trackId);
+    CHECK(tracks.getDeviceInChainByPath(replaced.devicePath) == nullptr);
+    CHECK(getDevice(tracks.getChainElements(trackId)[0]).id == oldId);
+    CHECK(getDevice(tracks.getChainElements(trackId)[1]).id == sentinelId);
+
+    REQUIRE(UndoManager::getInstance().redo());
+    CHECK(tracks.getDeviceInChainByPath(oldPath) == nullptr);
+    REQUIRE(tracks.getDeviceInChainByPath(replaced.devicePath) != nullptr);
+    CHECK(getDevice(tracks.getChainElements(trackId)[0]).id == replaced.devicePath.getDeviceId());
+    CHECK(getDevice(tracks.getChainElements(trackId)[1]).id == sentinelId);
+}
+
+TEST_CASE("A device replacement stages a compatible opaque preset before commit",
+          "[device-api][replace][presets][2814]") {
+    PresetDirectoryScope presetDirectory;
+    auto& tracks = TrackManager::getInstance();
+    const auto trackId = freshTrack("Preset replacement");
+    DeviceApiLive api;
+    const auto catalog = api.getCatalog();
+    REQUIRE(catalog.size() >= 2);
+
+    const auto oldId = api.addDevice(ChainNodePath::trackLevel(trackId), catalog[0].catalogId, -1);
+    const auto donorId =
+        api.addDevice(ChainNodePath::trackLevel(trackId), catalog[1].catalogId, -1);
+    const auto oldPath = ChainNodePath::topLevelDevice(trackId, oldId);
+    const auto donorPath = ChainNodePath::topLevelDevice(trackId, donorId);
+    const auto* donor = tracks.getDeviceInChainByPath(donorPath);
+    REQUIRE(donor != nullptr);
+    auto preset = *donor;
+    preset.gainDb = -9.0f;
+    REQUIRE(PresetManager::getInstance().saveDevicePreset(preset, "Replacement State"));
+    const auto presets = api.getDevicePresets(donorPath);
+    REQUIRE(presets.size() == 1);
+
+    tracks.removeDeviceFromChainByPath(donorPath);
+    UndoManager::getInstance().clearHistory();
+    const auto result = api.replaceDevice(oldPath, catalog[1].catalogId, presets.front().id);
+    REQUIRE(result.status == ReplaceDeviceStatus::Replaced);
+    const auto* replacement = tracks.getDeviceInChainByPath(result.devicePath);
+    REQUIRE(replacement != nullptr);
+    CHECK(replacement->pluginId == catalog[1].catalogId);
+    CHECK(replacement->gainDb == -9.0f);
+    CHECK(tracks.getChainElements(trackId).size() == 1);
+}
+
+TEST_CASE("A device replacement rejects unproven parameter references without mutation",
+          "[device-api][replace][references][2814]") {
+    auto& tracks = TrackManager::getInstance();
+    const auto trackId = freshTrack("Referenced replacement");
+
+    DeviceInfo old;
+    old.name = "Old Device";
+    old.pluginId = "old_device";
+    ParameterInfo parameter;
+    parameter.paramIndex = 0;
+    parameter.stableId = "definitely-not-a-catalog-parameter";
+    old.parameters = {parameter};
+    const auto oldId = tracks.addDeviceToTrack(trackId, old);
+    const auto oldPath = ChainNodePath::topLevelDevice(trackId, oldId);
+    MacroInfo macro(0);
+    macro.links.push_back({ControlTarget::pluginParam(oldPath, 0), 1.0f, false});
+    tracks.getTrack(trackId)->macros = {macro};
+    UndoManager::getInstance().clearHistory();
+
+    DeviceApiLive api;
+    const auto result = api.replaceDevice(oldPath, anyCatalogId());
+    CHECK(result.status == ReplaceDeviceStatus::ReferenceConflict);
+    REQUIRE(result.referenceImpact.rejected.size() == 1);
+    REQUIRE(tracks.getDeviceInChainByPath(oldPath) != nullptr);
+    CHECK(tracks.getChainElements(trackId).size() == 1);
+    CHECK_FALSE(UndoManager::getInstance().canUndo());
+}
+
+TEST_CASE("Replacement remaps proven stable parameter targets and reverses them on undo",
+          "[device-api][replace][references][2814]") {
+    auto& tracks = TrackManager::getInstance();
+    const auto trackId = freshTrack("Stable replacement");
+
+    DeviceInfo old;
+    old.name = "Old";
+    old.pluginId = "old";
+    ParameterInfo oldParameter;
+    oldParameter.paramIndex = 0;
+    oldParameter.stableId = "cutoff";
+    old.parameters = {oldParameter};
+    const auto oldId = tracks.addDeviceToTrack(trackId, old);
+    const auto oldPath = ChainNodePath::topLevelDevice(trackId, oldId);
+
+    MacroInfo macro(0);
+    macro.links.push_back({ControlTarget::pluginParam(oldPath, 0), 1.0f, false});
+    tracks.getTrack(trackId)->macros = {macro};
+    UndoManager::getInstance().clearHistory();
+
+    DeviceInfo replacement;
+    replacement.name = "New";
+    replacement.pluginId = "new";
+    ParameterInfo newParameter;
+    newParameter.paramIndex = 7;
+    newParameter.stableId = "cutoff";
+    replacement.parameters = {newParameter};
+
+    ReferenceAddress from;
+    from.kind = ReferenceAddressKind::Parameter;
+    from.devicePath = oldPath;
+    from.parameterIndex = 0;
+    from.parameterStableId = "cutoff";
+    auto to = from;
+    to.parameterIndex = 7;
+    auto command = std::make_unique<ReplaceDeviceByPathCommand>(
+        oldPath, replacement, std::vector<ReferenceTargetMapping>{{from, to, "cutoff", "cutoff"}});
+    auto* raw = command.get();
+    REQUIRE(UndoManager::getInstance().executeCommand(std::move(command)));
+    const auto newPath = raw->getReplacementPath();
+    REQUIRE(newPath.isValid());
+    const auto& remapped = tracks.getTrack(trackId)->macros[0].links[0].target;
+    CHECK(remapped.devicePath == newPath);
+    CHECK(remapped.paramIndex == 7);
+
+    REQUIRE(UndoManager::getInstance().undo());
+    const auto& restored = tracks.getTrack(trackId)->macros[0].links[0].target;
+    CHECK(restored.devicePath == oldPath);
+    CHECK(restored.paramIndex == 0);
+}
+
+TEST_CASE("A failed replacement stage rolls back without an undo entry",
+          "[device-api][replace][rollback][2814]") {
+    auto& tracks = TrackManager::getInstance();
+    const auto trackId = freshTrack("Rollback replacement");
+    DeviceInfo old;
+    old.name = "Incumbent";
+    old.pluginId = "incumbent";
+    const auto oldId = tracks.addDeviceToTrack(trackId, old);
+    const auto oldPath = ChainNodePath::topLevelDevice(trackId, oldId);
+    UndoManager::getInstance().clearHistory();
+
+    DeviceInfo replacement;
+    replacement.name = "Staged";
+    replacement.pluginId = "staged";
+    auto command = std::make_unique<ReplaceDeviceByPathCommand>(
+        oldPath, replacement, std::vector<ReferenceTargetMapping>{}, std::nullopt,
+        juce::File::getSpecialLocation(juce::File::tempDirectory)
+            .getChildFile("missing-device-preset.vstpreset"));
+    UndoManager::getInstance().executeCommand(std::move(command));
+
+    REQUIRE(tracks.getDeviceInChainByPath(oldPath) != nullptr);
+    CHECK(tracks.getChainElements(trackId).size() == 1);
+    CHECK_FALSE(UndoManager::getInstance().canUndo());
+}
+
+TEST_CASE("Replacement preserves a flat-section slot even for the same plugin kind",
+          "[device-api][replace][flat][2814]") {
+    auto& tracks = TrackManager::getInstance();
+    const auto trackId = freshTrack("Flat replacement");
+    DeviceInfo device;
+    device.name = "Meter";
+    device.pluginId = "same_meter";
+    device.deviceType = DeviceType::Analysis;
+    const auto oldId = tracks.addDeviceToMixerAnalysis(trackId, device);
+    REQUIRE(oldId != INVALID_DEVICE_ID);
+    const auto oldPath = ChainNodePath::mixerAnalysisDevice(trackId, oldId);
+    UndoManager::getInstance().clearHistory();
+
+    auto command = std::make_unique<ReplaceDeviceByPathCommand>(oldPath, device);
+    auto* raw = command.get();
+    REQUIRE(UndoManager::getInstance().executeCommand(std::move(command)));
+    REQUIRE(raw->getReplacementPath().isMixerAnalysis());
+    CHECK(raw->getReplacementPath() != oldPath);
+    REQUIRE(tracks.getMixerAnalysisElements(trackId).size() == 1);
+    CHECK(tracks.getMixerAnalysisElements(trackId)[0].device.id ==
+          raw->getReplacementPath().getDeviceId());
+
+    REQUIRE(UndoManager::getInstance().undo());
+    REQUIRE(tracks.getMixerAnalysisElements(trackId).size() == 1);
+    CHECK(tracks.getMixerAnalysisElements(trackId)[0].device.id == oldId);
+}
+
 TEST_CASE("A track preset replaces only chain-owned state and remaps stable references",
           "[track-api][presets][2839]") {
     PresetDirectoryScope presetDirectory;
