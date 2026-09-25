@@ -429,6 +429,13 @@ test-transport-mutations:
 		python3 tools/transport_check/mutation_test.py; \
 	fi
 
+# Model-check the thread handoff specs in specs/tla (#2863). Local only, needs
+# Java; minutes per model. ARGS narrows it, e.g. `make tla ARGS="plan_swap Safety"`.
+.PHONY: tla
+tla:
+	@echo "🔍 Model-checking specs/tla with TLC..."
+	scripts/tla.sh $(ARGS)
+
 # Clean build artifacts
 .PHONY: clean
 clean:
@@ -602,6 +609,7 @@ help:
 	@echo "  test-threading - Run thread safety tests only"
 	@echo "  test-list      - List all available tests"
 	@echo "  parity-bench   - Measure native against Tracktion on the project corpus (Release)"
+	@echo "  tla            - Model-check the thread handoff specs in specs/tla (needs Java)"
 	@echo ""
 	@echo "Code Quality targets:"
 	@echo "  format         - Format code with clang-format"
