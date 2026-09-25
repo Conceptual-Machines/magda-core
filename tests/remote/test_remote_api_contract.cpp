@@ -8,6 +8,7 @@
 #include "magda/daw/api/remote_api.hpp"
 #include "magda/daw/core/AutomationInfo.hpp"
 #include "magda/daw/core/DeviceInfo.hpp"
+#include "magda/daw/core/DrumGridPads.hpp"
 #include "magda/daw/core/RackInfo.hpp"
 
 namespace {
@@ -53,6 +54,13 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(registry.find("devices.remove") != nullptr);
     REQUIRE(registry.find("devices.move") != nullptr);
     REQUIRE(registry.find("devices.setBypassed") != nullptr);
+    REQUIRE(registry.find("pads.list") != nullptr);
+    for (const auto* name : {"pads.create", "pads.setDevice", "pads.setSample", "pads.clear",
+                             "pads.swap", "pads.update"}) {
+        const auto* operation = registry.find(name);
+        REQUIRE(operation != nullptr);
+        REQUIRE(operation->requiredScope == Scope::Edit);
+    }
     REQUIRE(registry.find("devicePresets.list") != nullptr);
     REQUIRE(registry.find("devices.openEditor") != nullptr);
     for (const auto* name : {"racks.create", "racks.remove", "racks.update", "chains.create",
@@ -1092,6 +1100,51 @@ TEST_CASE("Rack and chain writes have closed path-addressed contracts",
     REQUIRE(wrongNode.failed());
     CHECK(wrongNode.error->code == ErrorCode::ValidationFailed);
     CHECK(api.undo_.executeCalls == 0);
+}
+
+TEST_CASE("Drum Grid pad discovery returns empty slots and addressable child devices",
+          "[remote-api][contract][pads]") {
+    TrackInfo track;
+    track.id = 1;
+    DeviceInfo grid;
+    grid.id = 7;
+    grid.pluginId = "drumgrid";
+    grid.name = "Drum Grid";
+    auto& pads = ensurePads(grid);
+    auto& kick = ensurePadChain(pads, 0);
+    DeviceInfo sampler;
+    sampler.id = 11;
+    sampler.name = "Sampler";
+    kick.elements.push_back(makeDeviceElement(sampler));
+    const auto chainId = kick.id;
+    track.chain.fxChainElements.push_back(makeDeviceElement(grid));
+
+    const auto gridPath = ChainNodePath::topLevelDevice(1, 7);
+    const auto slots = makePadDtos(grid, gridPath);
+    REQUIRE(slots.size() == 64);
+    REQUIRE(slots[0].populated);
+    REQUIRE(slots[0].chainId == chainId);
+    REQUIRE(toChainNodePath(*slots[0].chainPath) == ChainNodePath::padChain(1, 7, chainId));
+    REQUIRE(slots[0].devicePaths.size() == 1);
+    REQUIRE(toChainNodePath(slots[0].devicePaths.front()) ==
+            ChainNodePath::padChain(1, 7, chainId).withDevice(11));
+    REQUIRE_FALSE(slots[1].populated);
+    REQUIRE_FALSE(slots[1].chainPath);
+
+    const auto graph = makeDeviceGraphDto({track});
+    REQUIRE(graph.devices.size() == 2);
+    REQUIRE(graph.pads.size() == 64);
+    REQUIRE(graph.pads[0].gridPath == makeDevicePathDto(gridPath));
+    requireRoundTrip(graph, deviceGraphFromJson);
+    auto changed = track;
+    magda::getDevice(changed.chain.fxChainElements.front()).pads->chains.front().volume = -3.0f;
+    REQUIRE(makeDeviceGraphDto({changed}) != graph);
+    REQUIRE(toChainNodePath(graph.devices[1].devicePath) ==
+            ChainNodePath::padChain(1, 7, chainId).withDevice(11));
+    const auto* list = OperationRegistry::instance().find("pads.list");
+    REQUIRE(list != nullptr);
+    for (const auto& slot : slots)
+        REQUIRE(validateJson(toJson(slot), list->outputSchema["items"]).empty());
 }
 
 TEST_CASE("Device paths distinguish the three per-section DeviceId spaces",

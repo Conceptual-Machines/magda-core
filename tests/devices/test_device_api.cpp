@@ -679,3 +679,85 @@ TEST_CASE("A Chord Engine dropped into post-FX is a listener too", "[device-api]
 
     tracks.clearAllTracks();
 }
+
+TEST_CASE("Drum Grid facade edits pads and their device chains as undoable steps",
+          "[device-api][pads]") {
+    auto& tm = TrackManager::getInstance();
+    const auto trackId = freshTrack("Remote kit");
+    DeviceInfo grid;
+    grid.name = "Drum Grid";
+    grid.pluginId = "drumgrid";
+    grid.isInstrument = true;
+    grid.deviceType = DeviceType::Instrument;
+    const auto gridId = tm.addDeviceToTrack(trackId, grid);
+    REQUIRE(gridId != INVALID_DEVICE_ID);
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+
+    DeviceApiLive devices;
+    const auto chainId = devices.createPad(gridPath, 0);
+    REQUIRE(chainId != INVALID_CHAIN_ID);
+    REQUIRE(tm.getPad(gridPath, 0) != nullptr);
+    UndoManager::getInstance().undo();
+    REQUIRE(tm.getPad(gridPath, 0) == nullptr);
+    UndoManager::getInstance().redo();
+    REQUIRE(tm.getPad(gridPath, 0)->id == chainId);
+
+    const auto catalogId = anyCatalogId();
+    const auto voiceId = devices.setPadVoice(gridPath, 0, catalogId);
+    REQUIRE(voiceId != INVALID_DEVICE_ID);
+    const auto chainPath = ChainNodePath::padChain(trackId, gridId, chainId);
+    REQUIRE(devices.getDevice(chainPath.withDevice(voiceId)) != nullptr);
+    const auto effectId = devices.addDevice(chainPath, catalogId, -1);
+    REQUIRE(effectId != INVALID_DEVICE_ID);
+    REQUIRE(devices.getDevice(chainPath.withDevice(effectId)) != nullptr);
+    REQUIRE(devices.moveDevice(chainPath.withDevice(effectId), 0));
+    REQUIRE(magda::getDevice(tm.getPad(gridPath, 0)->elements.front()).id == effectId);
+    REQUIRE(devices.removeDevice(chainPath.withDevice(effectId)));
+    REQUIRE(devices.getDevice(chainPath.withDevice(effectId)) == nullptr);
+    UndoManager::getInstance().undo();
+    REQUIRE(devices.getDevice(chainPath.withDevice(effectId)) != nullptr);
+
+    REQUIRE(devices.createPad(gridPath, 1) != INVALID_CHAIN_ID);
+    PadUpdate overlap;
+    overlap.highNote = padNoteFor(1);
+    REQUIRE_FALSE(devices.updatePad(gridPath, 0, overlap));
+    REQUIRE(tm.getPad(gridPath, 0)->highNote == padNoteFor(0));
+
+    PadUpdate settings;
+    settings.levelDb = -6.0f;
+    settings.pan = 0.25f;
+    settings.muted = true;
+    settings.outputBus = 1;
+    REQUIRE(devices.updatePad(gridPath, 0, settings));
+    REQUIRE(tm.getPad(gridPath, 0)->volume == -6.0f);
+    REQUIRE(tm.getPad(gridPath, 0)->outputIndex == 1);
+    UndoManager::getInstance().undo();
+    REQUIRE(tm.getPad(gridPath, 0)->volume == 0.0f);
+    REQUIRE(tm.getPad(gridPath, 0)->outputIndex == 0);
+
+    PadUpdate moved;
+    moved.lowNote = padNoteFor(2);
+    moved.highNote = padNoteFor(2);
+    moved.levelDb = -9.0f;
+    REQUIRE(devices.updatePad(gridPath, 0, moved));
+    REQUIRE(tm.getPad(gridPath, 0) == nullptr);
+    REQUIRE(tm.getPad(gridPath, 2)->id == chainId);
+    REQUIRE(tm.getPad(gridPath, 2)->volume == -9.0f);
+
+    const auto sampleFile = juce::File::createTempFile(".wav");
+    REQUIRE(sampleFile.create().wasOk());
+    const unsigned char wav[] = {'R', 'I', 'F', 'F', 38,  0,  0, 0, 'W', 'A', 'V', 'E',
+                                 'f', 'm', 't', ' ', 16,  0,  0, 0, 1,   0,   1,   0,
+                                 68,  172, 0,   0,   136, 88, 1, 0, 2,   0,   16,  0,
+                                 'd', 'a', 't', 'a', 2,   0,  0, 0, 0,   0};
+    REQUIRE(sampleFile.appendData(wav, sizeof(wav)));
+    const auto sampleId = devices.setPadSample(gridPath, 3, sampleFile.getFullPathName());
+    REQUIRE(sampleId != INVALID_DEVICE_ID);
+    REQUIRE(devices.getDevice(ChainNodePath::padChain(trackId, gridId, tm.getPad(gridPath, 3)->id)
+                                  .withDevice(sampleId)) != nullptr);
+    REQUIRE(sampleFile.deleteFile());
+    REQUIRE(devices.setPadSample(gridPath, 4, sampleFile.getFullPathName()) == INVALID_DEVICE_ID);
+    REQUIRE(tm.getPad(gridPath, 4) == nullptr);
+
+    tm.clearAllTracks();
+}

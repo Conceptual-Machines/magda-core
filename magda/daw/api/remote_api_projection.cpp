@@ -6,6 +6,7 @@
 #include "../core/AutomationInfo.hpp"
 #include "../core/ClipInfo.hpp"
 #include "../core/DeviceInfo.hpp"
+#include "../core/DrumGridPads.hpp"
 #include "../core/ParameterUtils.hpp"
 #include "../core/PluginParameterConfigStore.hpp"
 #include "../core/RackInfo.hpp"
@@ -226,6 +227,41 @@ DeviceDto makeDeviceDto(const DeviceInfo& device, TrackId trackId, std::optional
     return dto;
 }
 
+void appendPadDevices(const DeviceInfo& grid, const ChainNodePath& gridPath, DeviceGraphDto& graph);
+
+void appendPadElements(const std::vector<ChainElement>& elements, const ChainNodePath& parentPath,
+                       TrackId trackId, std::optional<RackId> rackId, ChainId chainId,
+                       DeviceGraphDto& graph) {
+    for (const auto& element : elements) {
+        if (isDevice(element)) {
+            const auto& child = getDevice(element);
+            const auto childPath = parentPath.withDevice(child.id);
+            graph.devices.push_back(makeDeviceDto(child, trackId, rackId, chainId, childPath));
+            appendPadDevices(child, childPath, graph);
+        } else if (isRack(element)) {
+            const auto& rack = getRack(element);
+            const auto rackPath = parentPath.withRack(rack.id);
+            for (const auto& chain : rack.chains)
+                appendPadElements(chain.elements, rackPath.withChain(chain.id), trackId, rack.id,
+                                  chain.id, graph);
+        }
+    }
+}
+
+void appendPadDevices(const DeviceInfo& grid, const ChainNodePath& gridPath,
+                      DeviceGraphDto& graph) {
+    if (!grid.pads)
+        return;
+
+    for (auto& pad : makePadDtos(grid, gridPath))
+        graph.pads.push_back(std::move(pad));
+
+    for (const auto& pad : grid.pads->chains) {
+        const auto chainPath = ChainNodePath::padChain(gridPath.trackId, grid.id, pad.id);
+        appendPadElements(pad.elements, chainPath, gridPath.trackId, std::nullopt, pad.id, graph);
+    }
+}
+
 // `rackPath` addresses this rack; each chain and device extends it, so nesting
 // depth is carried exactly rather than flattened to an immediate parent.
 void appendRack(const RackInfo& rack, TrackId trackId, std::optional<RackId> parentRackId,
@@ -263,8 +299,10 @@ void appendRack(const RackInfo& rack, TrackId trackId, std::optional<RackId> par
             if (isDevice(element)) {
                 const auto& device = getDevice(element);
                 chainDto.deviceIds.push_back(device.id);
-                graph.devices.push_back(makeDeviceDto(device, trackId, rack.id, chain.id,
-                                                      chainPath.withDevice(device.id)));
+                const auto devicePath = chainPath.withDevice(device.id);
+                graph.devices.push_back(
+                    makeDeviceDto(device, trackId, rack.id, chain.id, devicePath));
+                appendPadDevices(device, devicePath, graph);
             } else {
                 const auto& nested = getRack(element);
                 chainDto.nestedRackIds.push_back(nested.id);
@@ -415,9 +453,10 @@ DeviceGraphDto makeDeviceGraphDto(const std::vector<TrackInfo>& tracks) {
         for (const auto& element : track.chain.fxChainElements) {
             if (isDevice(element)) {
                 const auto& device = getDevice(element);
+                const auto devicePath = ChainNodePath::topLevelDevice(track.id, device.id);
                 graph.devices.push_back(
-                    makeDeviceDto(device, track.id, std::nullopt, std::nullopt,
-                                  ChainNodePath::topLevelDevice(track.id, device.id)));
+                    makeDeviceDto(device, track.id, std::nullopt, std::nullopt, devicePath));
+                appendPadDevices(device, devicePath, graph);
             } else {
                 const auto& rack = getRack(element);
                 appendRack(rack, track.id, std::nullopt, std::nullopt,
@@ -433,6 +472,43 @@ DeviceGraphDto makeDeviceGraphDto(const std::vector<TrackInfo>& tracks) {
         // mixerAnalysisElements are session-only UI state and are deliberately excluded.
     }
     return graph;
+}
+
+std::vector<PadDto> makePadDtos(const DeviceInfo& grid, const ChainNodePath& gridPath) {
+    std::vector<PadDto> result;
+    result.reserve(kPadCount);
+    for (int index = 0; index < kPadCount; ++index) {
+        PadDto dto;
+        dto.gridPath = makeDevicePathDto(gridPath);
+        dto.index = index;
+        dto.midiNote = padNoteFor(index);
+        dto.lowNote = dto.highNote = dto.rootNote = dto.midiNote;
+        const auto* pad = grid.pads ? findPadChain(*grid.pads.get(), index) : nullptr;
+        if (pad != nullptr) {
+            dto.populated = true;
+            dto.chainId = pad->id;
+            const auto chainPath = ChainNodePath::padChain(gridPath.trackId, grid.id, pad->id);
+            dto.chainPath = makeDevicePathDto(chainPath);
+            dto.lowNote = pad->lowNote;
+            dto.highNote = pad->highNote;
+            dto.rootNote = pad->rootNote;
+            dto.name = padVoiceName(*pad);
+            if (dto.name.isEmpty())
+                dto.name = pad->name;
+            dto.levelDb = pad->volume;
+            dto.pan = pad->pan;
+            dto.muted = pad->muted;
+            dto.solo = pad->solo;
+            dto.bypassed = pad->bypassed;
+            dto.outputBus = pad->outputIndex;
+            for (const auto& element : pad->elements)
+                if (isDevice(element))
+                    dto.devicePaths.push_back(
+                        makeDevicePathDto(chainPath.withDevice(getDevice(element).id)));
+        }
+        result.push_back(std::move(dto));
+    }
+    return result;
 }
 
 DeviceCatalogEntryDto makeDeviceCatalogEntryDto(const DeviceCatalogEntry& entry) {

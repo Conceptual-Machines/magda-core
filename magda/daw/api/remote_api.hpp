@@ -331,10 +331,34 @@ struct RackDto {
     bool operator==(const RackDto&) const = default;
 };
 
+/** One visible Drum Grid slot. Empty slots have no chain address. */
+struct PadDto {
+    DevicePathDto gridPath;
+    int index = 0;
+    int midiNote = 0;
+    bool populated = false;
+    std::optional<ChainId> chainId;
+    std::optional<DevicePathDto> chainPath;
+    int lowNote = 0;
+    int highNote = 0;
+    int rootNote = 0;
+    juce::String name;
+    double levelDb = 0.0;
+    double pan = 0.0;
+    bool muted = false;
+    bool solo = false;
+    bool bypassed = false;
+    int outputBus = 0;
+    std::vector<DevicePathDto> devicePaths;
+
+    bool operator==(const PadDto&) const = default;
+};
+
 struct DeviceGraphDto {
     std::vector<DeviceDto> devices;
     std::vector<RackDto> racks;
     std::vector<ChainDto> chains;
+    std::vector<PadDto> pads;
 
     bool operator==(const DeviceGraphDto&) const = default;
 };
@@ -661,6 +685,7 @@ juce::var toJson(const DeviceDto& dto);
 juce::var toJson(const ChainDto& dto);
 juce::var toJson(const RackDto& dto);
 juce::var toJson(const DeviceGraphDto& dto);
+juce::var toJson(const PadDto& dto);
 juce::var toJson(const DeviceCatalogEntryDto& dto);
 juce::var toJson(const DevicePresetDto& dto);
 juce::var toJson(const DeviceParameterDto& dto);
@@ -708,6 +733,7 @@ ChordTrackDto makeChordTrackDto(const TrackInfo* track, ClipApi& clips);
 ClipDto makeClipDto(const ClipInfo& clip);
 std::vector<MidiEventDto> makeMidiEventDtos(const ClipInfo& clip);
 DeviceGraphDto makeDeviceGraphDto(const std::vector<TrackInfo>& tracks);
+std::vector<PadDto> makePadDtos(const DeviceInfo& grid, const ChainNodePath& gridPath);
 DeviceCatalogEntryDto makeDeviceCatalogEntryDto(const DeviceCatalogEntry& entry);
 DevicePresetDto makeDevicePresetDto(const DevicePresetEntry& entry);
 /**

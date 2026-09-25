@@ -72,6 +72,13 @@ HandlerResult clipsSliceNotes(MagdaApi&, const juce::var&, const RequestContext&
 
 // Devices and racks
 HandlerResult devicesList(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult padsList(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult padsCreate(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult padsSetDevice(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult padsSetSample(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult padsClear(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult padsSwap(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult padsUpdate(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesCatalog(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicePresetsList(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesAdd(MagdaApi&, const juce::var&, const RequestContext&);
