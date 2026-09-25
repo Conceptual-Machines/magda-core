@@ -51,6 +51,59 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
     RemoteServiceLiveTest() : juce::UnitTest("Remote Service Live", "magda") {}
 
     void runTest() override {
+        beginTest("Chord track ensure is singleton, idempotent, and readable");
+        {
+            Fixture fixture;
+            const auto absent = fixture.run("chordTrack.get", object({}));
+            expect(absent.ok);
+            expect(absent.result["track"].isVoid());
+
+            const auto before = fixture.service.currentRevision();
+            const auto ensured = fixture.run("chordTrack.ensure", object({}));
+            expect(ensured.ok);
+            expect(ensured.revision == before + 1);
+            const auto trackId =
+                static_cast<TrackId>(static_cast<int>(ensured.result["track"]["id"]));
+            expect(trackId != INVALID_TRACK_ID);
+
+            auto& tracks = TrackManager::getInstance();
+            expect(tracks.getChordTrackId() == trackId);
+            expect(tracks.createTrack("Must not duplicate", TrackType::Chord) == trackId);
+            expect(std::ranges::count(tracks.getTracks(), TrackType::Chord, &TrackInfo::type) == 1);
+
+            const auto beforeNoOp = fixture.service.currentRevision();
+            const auto ensuredAgain = fixture.run("chordTrack.ensure", object({}));
+            expect(ensuredAgain.ok);
+            expect(ensuredAgain.revision == beforeNoOp);
+            expect(static_cast<int>(ensuredAgain.result["track"]["id"]) == trackId);
+
+            const auto duplicate =
+                fixture.run("tracks.create", object({{"name", "Another"}, {"type", "chord"}}));
+            expect(!duplicate.ok);
+            expect(duplicate.error.code == ErrorCode::Conflict);
+            expect(std::ranges::count(tracks.getTracks(), TrackType::Chord, &TrackInfo::type) == 1);
+
+            const auto clipId = ClipManager::getInstance().createMidiClipBeats(trackId, 8.0, 8.0);
+            ClipManager::getInstance().addChordAnnotation(
+                clipId, ClipInfo::ChordAnnotation{2.0, 2.0, "Am7", 123});
+            const auto snapshot = fixture.run("chordTrack.get", object({}));
+            expect(snapshot.ok);
+            const auto* chords = snapshot.result["chords"].getArray();
+            expect(chords != nullptr && chords->size() == 1);
+            if (chords != nullptr && chords->size() == 1) {
+                expect(static_cast<int>((*chords)[0]["clipId"]) == clipId);
+                expectWithinAbsoluteError(static_cast<double>((*chords)[0]["clipBeat"]), 2.0,
+                                          1.0e-9);
+                expectWithinAbsoluteError(static_cast<double>((*chords)[0]["startBeat"]), 10.0,
+                                          1.0e-9);
+                expectEquals((*chords)[0]["name"].toString(), juce::String("Am7"));
+                expect((*chords)[0]["chordGroup"].isVoid());
+            }
+
+            expect(UndoManager::getInstance().undo());
+            expect(tracks.getChordTrackId() == INVALID_TRACK_ID);
+        }
+
         beginTest("A live write advances the revision exactly once");
         {
             Fixture fixture;

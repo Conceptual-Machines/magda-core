@@ -314,6 +314,14 @@ TrackId TrackManager::createTrackWithPlugin(const juce::DynamicObject& pluginObj
 // ============================================================================
 
 TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
+    // The chord track is project-wide state, not a repeatable track kind. Keep
+    // the invariant at the model boundary so UI, command, and remote callers
+    // cannot accidentally materialise a second one through a lower-level path.
+    if (type == TrackType::Chord) {
+        if (const auto existing = getChordTrackId(); existing != INVALID_TRACK_ID)
+            return existing;
+    }
+
     TrackInfo track;
     track.id = nextTrackId_++;
     track.type = type;

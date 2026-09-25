@@ -120,6 +120,20 @@ revision-neutral no-op. Record-arm and input-monitor changes are rejected for
 track types that do not accept external input, before any other field in the
 patch is applied.
 
+### Singleton chord track
+
+The chord track is project-wide singleton state rather than a repeatable track
+kind. `chordTrack.get` returns `{ track, chords }`: `track` is the normal safe
+track projection or `null` when absent, and `chords` is chronological. Each
+chord exposes its owning `clipId`, clip-relative `clipBeat`, absolute
+`startBeat`, `lengthBeats`, and display `name`. Internal chord-group IDs that
+link annotations to generated voicing notes never cross the API boundary.
+
+`chordTrack.ensure` is an edit-scoped, undoable creation operation. It returns
+the existing snapshot without changing the revision when the singleton already
+exists. Generic `tracks.create` rejects the `chord` type with a conflict so a
+caller cannot create a second chord track or bypass the singleton contract.
+
 ### Clip placement and duplication
 
 `clips.move` and `clips.duplicate` require an explicit, view-specific

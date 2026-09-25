@@ -144,6 +144,17 @@ CreateTrackCommand::CreateTrackCommand(TrackType type, juce::String name, TrackI
 void CreateTrackCommand::execute() {
     auto& trackManager = TrackManager::getInstance();
 
+    // TrackManager enforces the singleton too, but the command must know
+    // whether it actually created anything: undoing a no-op must never delete
+    // the chord track that was already there.
+    if (type_ == TrackType::Chord) {
+        if (const auto existing = trackManager.getChordTrackId(); existing != INVALID_TRACK_ID) {
+            createdTrackId_ = existing;
+            executed_ = false;
+            return;
+        }
+    }
+
     if (type_ == TrackType::Group) {
         createdTrackId_ = trackManager.createGroupTrack(name_);
     } else {
@@ -191,6 +202,24 @@ juce::String CreateTrackCommand::getDescription() const {
         default:
             return "Create Track";
     }
+}
+
+// ============================================================================
+// EnsureChordTrackCommand
+// ============================================================================
+
+void EnsureChordTrackCommand::execute() {
+    auto& tracks = TrackManager::getInstance();
+    const auto existing = tracks.getChordTrackId();
+    chordTrackId_ = tracks.ensureChordTrack();
+    created_ = existing == INVALID_TRACK_ID && chordTrackId_ != INVALID_TRACK_ID;
+}
+
+void EnsureChordTrackCommand::undo() {
+    if (!created_ || chordTrackId_ == INVALID_TRACK_ID)
+        return;
+    TrackManager::getInstance().deleteTrack(chordTrackId_);
+    created_ = false;
 }
 
 // ============================================================================
