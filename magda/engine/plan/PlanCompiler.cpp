@@ -529,8 +529,10 @@ std::vector<const TrackInfo*> Compiler::computeTrackOrder() {
             addEdge(i, static_cast<std::size_t>(destination));
 
         for (const auto& send : track.sends)
-            if (const auto destination = indexOf(resolveSendDestination(send)); destination >= 0)
-                addEdge(i, static_cast<std::size_t>(destination));
+            if (send.enabled)
+                if (const auto destination = indexOf(resolveSendDestination(send));
+                    destination >= 0)
+                    addEdge(i, static_cast<std::size_t>(destination));
 
         // Sidechains, internal input routes and multi-out pairs read another
         // track, so that track comes first. Every edge here has to correspond
@@ -1796,7 +1798,7 @@ void Compiler::emitTrack(const TrackInfo& track) {
     auto emitSends = [&](bool preFader, PortRef source) {
         for (std::size_t slot = 0; slot < track.sends.size(); ++slot) {
             const auto& send = track.sends[slot];
-            if (send.preFader != preFader)
+            if (!send.enabled || send.preFader != preFader)
                 continue;
 
             const auto destination = resolveSendDestination(send);

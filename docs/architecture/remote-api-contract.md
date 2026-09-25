@@ -205,6 +205,31 @@ another track, commits as one undo action and advances the revision once; a
 no-op advances neither. Both transports use their normal `expectedRevision`
 and `requestId` metadata for the operation.
 
+### Track sends
+
+Track sends use four shared-registry operations:
+
+- `sends.list` returns a track's sends. Each send has a stable opaque `id`, the
+  public `sourceTrackId`, a logical `destinationEndpointId`, normalized `level`,
+  `enabled`, and a `position` of `pre_fader` or `post_fader`.
+- `sends.create`, `sends.update`, and `sends.remove` are `edit`-scoped
+  mutations. Destinations are accepted only as currently available audio-input
+  track endpoint IDs such as `track:N`; backend identifiers and raw bus indices
+  never cross the facade.
+
+Every mutation preflights track and engine compatibility, destination
+availability, duplicate sends, the per-track send limit, and feedback cycles
+before changing the model. A successful mutation is one undo action and one
+revision. Restating the current send is a revision-neutral no-op, and rejected
+requests leave both model and revision unchanged. Stable send identity survives
+undo, redo, and project round trips.
+
+Replacing a destination and removing a send report affected connections in the
+closed `invalidatedConnections` collection. Durable references to a send level
+are remapped when its destination changes; removal is rejected while such a
+reference remains. Both transports use their normal `expectedRevision` and
+`requestId` metadata for all three mutations.
+
 ### Singleton chord track
 
 The chord track is project-wide singleton state rather than a repeatable track

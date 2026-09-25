@@ -445,6 +445,41 @@ TEST_CASE("MCP routes track I/O through the shared routing operation",
     CHECK(harness.service.currentRevision() == before + 1);
 }
 
+TEST_CASE("MCP exposes the shared atomic send lifecycle", "[remote-api][mcp][sends][2837]") {
+    Harness harness;
+    const auto source = harness.api.tracks_.createTrack("Source", TrackType::Media);
+    const auto destination = harness.api.tracks_.createTrack("Reverb", TrackType::Aux);
+    const auto endpointId = "track:" + juce::String(destination);
+    harness.api.tracks_.routingEndpoints.push_back({endpointId,
+                                                    "Reverb",
+                                                    RoutingMedia::Audio,
+                                                    RoutingDirection::Input,
+                                                    RoutingEndpointKind::Track,
+                                                    true,
+                                                    2,
+                                                    destination,
+                                                    {}});
+    const auto before = harness.service.currentRevision();
+
+    const auto reply =
+        run(harness.endpoint,
+            modernCall("tools/call",
+                       object({{"name", "sends.create"},
+                               {"arguments", object({{"trackId", static_cast<int>(source)},
+                                                     {"destinationEndpointId", endpointId},
+                                                     {"level", 0.35},
+                                                     {"position", "pre_fader"}})}})));
+
+    REQUIRE_FALSE(reply.failed());
+    REQUIRE_FALSE(static_cast<bool>(reply.result["isError"]));
+    const auto send = reply.result["structuredContent"]["send"];
+    CHECK(send["id"].toString().startsWith("send:"));
+    CHECK(send["destinationEndpointId"].toString() == endpointId);
+    CHECK(send["position"].toString() == "pre_fader");
+    CHECK_FALSE(send.getDynamicObject()->hasProperty("busIndex"));
+    CHECK(harness.service.currentRevision() == before + 1);
+}
+
 TEST_CASE("An operation failure is a tool execution error, not a protocol error",
           "[remote-api][mcp]") {
     Harness harness;

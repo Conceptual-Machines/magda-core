@@ -70,6 +70,13 @@ TEST_CASE("agent surface registry has distinct bounded capabilities", "[console_
 
     REQUIRE(containsTool(mixer, "tracks.update"));
     REQUIRE(containsTool(mixer, "devices.setBypassed"));
+    REQUIRE(containsTool(mixer, "routing.endpoints.list"));
+    REQUIRE(containsTool(mixer, "routing.get"));
+    REQUIRE(containsTool(mixer, "routing.set"));
+    REQUIRE(containsTool(mixer, "sends.list"));
+    REQUIRE(containsTool(mixer, "sends.create"));
+    REQUIRE(containsTool(mixer, "sends.update"));
+    REQUIRE(containsTool(mixer, "sends.remove"));
     REQUIRE(containsProvider(mixer, magda::AgentContextProvider::MixAnalysis));
     REQUIRE_FALSE(containsTool(mixer, "clips.addMidiNote"));
 

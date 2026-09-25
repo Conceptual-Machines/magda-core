@@ -1649,6 +1649,91 @@ TEST_CASE("routing.set reports cascaded drops and is revision-neutral on no-op o
     CHECK(service.currentRevision() == INITIAL_REVISION + 1);
 }
 
+TEST_CASE("Send lifecycle is atomic and revisioned through the shared service",
+          "[remote][service][sends][2837]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto source = api.tracks_.createTrack("Source", TrackType::Media);
+    const auto firstDestination = api.tracks_.createTrack("Delay", TrackType::Aux);
+    const auto secondDestination = api.tracks_.createTrack("Reverb", TrackType::Aux);
+    api.tracks_.routingEndpoints.push_back({"track:" + juce::String(firstDestination),
+                                            "Delay",
+                                            RoutingMedia::Audio,
+                                            RoutingDirection::Input,
+                                            RoutingEndpointKind::Track,
+                                            true,
+                                            2,
+                                            firstDestination,
+                                            {}});
+    api.tracks_.routingEndpoints.push_back({"track:" + juce::String(secondDestination),
+                                            "Reverb",
+                                            RoutingMedia::Audio,
+                                            RoutingDirection::Input,
+                                            RoutingEndpointKind::Track,
+                                            true,
+                                            2,
+                                            secondDestination,
+                                            {}});
+    RemoteApiService service(api);
+
+    const auto created =
+        run(service, "sends.create",
+            object({{"trackId", static_cast<int>(source)},
+                    {"destinationEndpointId", "track:" + juce::String(firstDestination)},
+                    {"level", 0.4},
+                    {"enabled", false},
+                    {"position", "pre_fader"}}));
+    REQUIRE(created.ok);
+    const auto sendId = created.result["send"]["id"].toString();
+    CHECK(sendId.startsWith("send:"));
+    CHECK(created.result["send"]["destinationEndpointId"].toString() ==
+          "track:" + juce::String(firstDestination));
+    CHECK(created.result["send"]["position"].toString() == "pre_fader");
+    CHECK(service.currentRevision() == INITIAL_REVISION + 1);
+
+    const auto listed = run(service, "sends.list", object({{"trackId", static_cast<int>(source)}}));
+    REQUIRE(listed.ok);
+    REQUIRE(listed.result.getArray()->size() == 1);
+    CHECK(listed.result[0]["id"].toString() == sendId);
+    CHECK(service.currentRevision() == INITIAL_REVISION + 1);
+
+    api.tracks_.sendStatusOverride = TrackSendMutationStatus::Unchanged;
+    const auto unchanged =
+        run(service, "sends.update", object({{"sendId", sendId}, {"level", 0.4}}));
+    REQUIRE(unchanged.ok);
+    CHECK(service.currentRevision() == INITIAL_REVISION + 1);
+
+    api.tracks_.sendStatusOverride.reset();
+    const auto updated =
+        run(service, "sends.update",
+            object({{"sendId", sendId},
+                    {"destinationEndpointId", "track:" + juce::String(secondDestination)},
+                    {"level", 0.8},
+                    {"enabled", true},
+                    {"position", "post_fader"}}));
+    REQUIRE(updated.ok);
+    REQUIRE(updated.result["invalidatedConnections"].getArray()->size() == 1);
+    CHECK(updated.result["invalidatedConnections"][0]["reason"].toString() ==
+          "destination_replaced");
+    CHECK(service.currentRevision() == INITIAL_REVISION + 2);
+
+    const auto removed = run(service, "sends.remove", object({{"sendId", sendId}}));
+    REQUIRE(removed.ok);
+    CHECK(removed.result["removedSendId"].toString() == sendId);
+    REQUIRE(removed.result["invalidatedConnections"].getArray()->size() == 1);
+    CHECK(removed.result["invalidatedConnections"][0]["reason"].toString() == "send_removed");
+    CHECK(service.currentRevision() == INITIAL_REVISION + 3);
+
+    api.tracks_.sendStatusOverride = TrackSendMutationStatus::FeedbackCycle;
+    const auto rejected =
+        run(service, "sends.create",
+            object({{"trackId", static_cast<int>(source)},
+                    {"destinationEndpointId", "track:" + juce::String(firstDestination)}}));
+    REQUIRE_FALSE(rejected.ok);
+    CHECK(errorCodeOf(rejected) == "conflict");
+    CHECK(service.currentRevision() == INITIAL_REVISION + 3);
+}
+
 TEST_CASE("grooves.upsert then grooves.list round-trips the template name",
           "[remote][service][grooves]") {
     const MessageThreadRelaxation relaxation;

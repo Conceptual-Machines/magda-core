@@ -23,6 +23,27 @@ juce::String idFor(const char* prefix, int value) {
     return juce::String(prefix) + juce::String(value);
 }
 
+juce::String sendIdForDawProject(const juce::String& sendId) {
+    if (sendId.isEmpty())
+        return {};
+    return "magda_send_" +
+           juce::String::toHexString(sendId.toRawUTF8(), sendId.getNumBytesAsUTF8(), 0);
+}
+
+juce::String sendIdFromDawProject(const juce::String& xmlId) {
+    constexpr auto prefix = "magda_send_";
+    if (!xmlId.startsWith(prefix))
+        return xmlId;
+    const auto encoded = xmlId.substring(static_cast<int>(std::strlen(prefix)));
+    if (encoded.isEmpty() || encoded.length() % 2 != 0 ||
+        !encoded.containsOnly("0123456789abcdefABCDEF"))
+        return xmlId;
+    juce::MemoryBlock bytes;
+    bytes.loadFromHexString(encoded);
+    return juce::String::fromUTF8(static_cast<const char*>(bytes.getData()),
+                                  static_cast<int>(bytes.getSize()));
+}
+
 juce::String colourToDawProject(const juce::Colour colour) {
     return "#" + colour.toDisplayString(false).toLowerCase();
 }
@@ -1025,11 +1046,14 @@ juce::String DawProjectXmlAdapter::toProjectXml(const ProjectDocument& document)
                     if (send.destTrackId == INVALID_TRACK_ID)
                         continue;
                     auto* sendEl = sends->createNewChildElement("Send");
-                    const auto sendId = idFor("send", track.id) + "_" + juce::String(sendCounter++);
+                    const auto generatedId =
+                        idFor("send", track.id) + "_" + juce::String(sendCounter++);
+                    const auto sendId =
+                        send.id.isNotEmpty() ? sendIdForDawProject(send.id) : generatedId;
                     sendEl->setAttribute("destination", idFor("channel", send.destTrackId));
                     sendEl->setAttribute("type", send.preFader ? "pre" : "post");
                     sendEl->setAttribute("id", sendId);
-                    addBoolParameter(*sendEl, "Enable", sendId + "_en", "Enable", true);
+                    addBoolParameter(*sendEl, "Enable", sendId + "_en", "Enable", send.enabled);
                     addRealParameter(*sendEl, "Volume", sendId + "_vol", "Send", "linear",
                                      send.level, 0.0, 1.0);
                 }
@@ -1147,6 +1171,8 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
         juce::String destChannel;
         float level;
         bool preFader;
+        bool enabled;
+        juce::String id;
     };
     struct PendingOutput {
         size_t sourceTrackIndex;
@@ -1194,22 +1220,23 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
                     if (destination.isNotEmpty())
                         pendingOutputs.push_back({trackIndex, destination});
 
-                    // Sends to aux/effect channels. Skip disabled sends (Bitwig
-                    // writes a default disabled send from every track to every
-                    // effect bus); resolve the destination bus in the second pass.
+                    // Sends to aux/effect channels. Disabled connections remain
+                    // first-class model sends so their level and identity survive
+                    // a round trip; resolve the destination bus in the second pass.
                     if (auto* sends = channel->getChildByName("Sends")) {
                         for (auto* sendEl : sends->getChildWithTagNameIterator("Send")) {
-                            if (auto* en = sendEl->getChildByName("Enable");
-                                en != nullptr && !en->getBoolAttribute("value", true))
-                                continue;
                             const auto dest = sendEl->getStringAttribute("destination");
                             if (dest.isEmpty())
                                 continue;
                             float level = 1.0f;
                             if (auto* vol = sendEl->getChildByName("Volume"))
                                 level = static_cast<float>(vol->getDoubleAttribute("value", 1.0));
-                            pendingSends.push_back({trackIndex, dest, level,
-                                                    sendEl->getStringAttribute("type") == "pre"});
+                            const auto* enable = sendEl->getChildByName("Enable");
+                            pendingSends.push_back(
+                                {trackIndex, dest, level,
+                                 sendEl->getStringAttribute("type") == "pre",
+                                 enable == nullptr || enable->getBoolAttribute("value", true),
+                                 sendEl->getStringAttribute("id")});
                         }
                     }
 
@@ -1319,6 +1346,8 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
         send.busIndex = busIt->second;
         send.level = ps.level;
         send.preFader = ps.preFader;
+        send.enabled = ps.enabled;
+        send.id = sendIdFromDawProject(ps.id);
         if (const auto idxIt = channelToTrackIndex.find(ps.destChannel);
             idxIt != channelToTrackIndex.end())
             send.destTrackId = document.tracks[idxIt->second].id;

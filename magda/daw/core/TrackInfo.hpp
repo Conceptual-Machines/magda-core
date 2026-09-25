@@ -30,6 +30,10 @@ struct SendInfo {
     float level = 1.0f;                      // Send level (0.0 - 1.0)
     bool preFader = false;                   // Pre/post fader
     TrackId destTrackId = INVALID_TRACK_ID;  // Target aux track (for display)
+    bool enabled = true;
+    juce::String id;  // Stable public identity; older projects may leave this empty
+
+    bool operator==(const SendInfo&) const = default;
 };
 
 /** The four routing selectors owned by one track. */

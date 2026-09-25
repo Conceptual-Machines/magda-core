@@ -1423,6 +1423,7 @@ void PluginManager::reconcileSends(const TrackInfo& trackInfo, te::AudioTrack& t
         if (auto* auxSend = dynamic_cast<te::AuxSendPlugin*>(sendPlugin.get())) {
             auxSend->busNumber = send.busIndex;
             auxSend->setGainDb(juce::Decibels::gainToDecibels(send.level));
+            auxSend->setEnabled(send.enabled);
         }
         // Appended; appendStripOrder sequences it onto the right side of the
         // fader afterwards.
@@ -1434,6 +1435,7 @@ void PluginManager::reconcileSends(const TrackInfo& trackInfo, te::AudioTrack& t
             if (auto* auxSend = dynamic_cast<te::AuxSendPlugin*>(i);
                 auxSend != nullptr && auxSend->getBusNumber() == send.busIndex) {
                 auxSend->setGainDb(juce::Decibels::gainToDecibels(send.level));
+                auxSend->setEnabled(send.enabled);
                 break;
             }
         }

@@ -823,6 +823,111 @@ HandlerResult routingSet(MagdaApi& api, const juce::var& input, const RequestCon
 }
 
 // ===========================================================================
+// Track sends
+// ===========================================================================
+
+namespace {
+TrackSendPatch sendPatchFromInput(const juce::var& input) {
+    TrackSendPatch patch;
+    if (has(input, "destinationEndpointId"))
+        patch.destinationEndpointId = input["destinationEndpointId"].toString();
+    if (has(input, "level"))
+        patch.level = static_cast<float>(readDouble(input, "level"));
+    if (has(input, "enabled"))
+        patch.enabled = readBool(input, "enabled");
+    if (has(input, "position"))
+        patch.preFader = input["position"].toString() == "pre_fader";
+    return patch;
+}
+
+juce::var invalidatedSendConnections(const std::vector<InvalidatedSendConnection>& invalidated) {
+    juce::Array<juce::var> result;
+    for (const auto& connection : invalidated)
+        result.add(toJson(makeInvalidatedSendConnectionDto(connection)));
+    return result;
+}
+
+std::optional<HandlerResult> sendFailure(const TrackSendMutationResult& result) {
+    switch (result.status) {
+        case TrackSendMutationStatus::TrackNotFound:
+            return HandlerResult::fail(ErrorCode::NotFound, "source track not found");
+        case TrackSendMutationStatus::SendNotFound:
+            return HandlerResult::fail(ErrorCode::NotFound, "send not found");
+        case TrackSendMutationStatus::EndpointNotFound:
+            return HandlerResult::fail(ErrorCode::Conflict,
+                                       "send destination endpoint is unavailable");
+        case TrackSendMutationStatus::Incompatible:
+            return HandlerResult::fail(ErrorCode::Conflict,
+                                       "send is not supported by this source or destination");
+        case TrackSendMutationStatus::Duplicate:
+            return HandlerResult::fail(ErrorCode::Conflict,
+                                       "source track already has a send to this destination");
+        case TrackSendMutationStatus::LimitReached:
+            return HandlerResult::fail(ErrorCode::Conflict, "source track send limit reached");
+        case TrackSendMutationStatus::FeedbackCycle:
+            return HandlerResult::fail(ErrorCode::Conflict,
+                                       "send change would create a feedback cycle");
+        case TrackSendMutationStatus::Referenced:
+            return HandlerResult::fail(
+                ErrorCode::Conflict,
+                "send is targeted by automation, modulation, or a controller binding");
+        case TrackSendMutationStatus::ApplyFailed:
+            return HandlerResult::fail(ErrorCode::InternalError,
+                                       "send change could not be committed");
+        case TrackSendMutationStatus::Applied:
+        case TrackSendMutationStatus::Unchanged:
+            return std::nullopt;
+    }
+    return HandlerResult::fail(ErrorCode::InternalError, "unknown send result");
+}
+
+HandlerResult sendMutationResponse(TrackSendMutationResult result) {
+    if (const auto failure = sendFailure(result))
+        return *failure;
+    if (!result.send)
+        return HandlerResult::fail(ErrorCode::InternalError, "updated send is unavailable");
+    auto* payload = new juce::DynamicObject();
+    payload->setProperty("send", toJson(makeTrackSendDto(*result.send)));
+    payload->setProperty("invalidatedConnections",
+                         invalidatedSendConnections(result.invalidatedConnections));
+    return result.status == TrackSendMutationStatus::Unchanged ? HandlerResult::unchanged(payload)
+                                                               : HandlerResult::ok(payload);
+}
+}  // namespace
+
+HandlerResult sendsList(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto trackId = static_cast<TrackId>(readInt(input, "trackId"));
+    if (api.tracks().getTrack(trackId) == nullptr)
+        return notFound("track", trackId);
+    std::vector<juce::var> sends;
+    for (const auto& send : api.tracks().getSends(trackId))
+        sends.push_back(toJson(makeTrackSendDto(send)));
+    return HandlerResult::ok(toJsonArray(sends));
+}
+
+HandlerResult sendsCreate(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto trackId = static_cast<TrackId>(readInt(input, "trackId"));
+    return sendMutationResponse(api.tracks().createSend(trackId, sendPatchFromInput(input)));
+}
+
+HandlerResult sendsUpdate(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    return sendMutationResponse(
+        api.tracks().updateSend(input["sendId"].toString(), sendPatchFromInput(input)));
+}
+
+HandlerResult sendsRemove(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto sendId = input["sendId"].toString();
+    auto result = api.tracks().removeSend(sendId);
+    if (const auto failure = sendFailure(result))
+        return *failure;
+    auto* payload = new juce::DynamicObject();
+    payload->setProperty("removedSendId", sendId);
+    payload->setProperty("invalidatedConnections",
+                         invalidatedSendConnections(result.invalidatedConnections));
+    return HandlerResult::ok(payload);
+}
+
+// ===========================================================================
 // Clips
 // ===========================================================================
 

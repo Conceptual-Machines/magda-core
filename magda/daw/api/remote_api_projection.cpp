@@ -414,6 +414,16 @@ DroppedRoutingConnectionDto makeDroppedRoutingConnectionDto(
     return {connection.trackId, connection.field, connection.endpointId, connection.reason};
 }
 
+TrackSendDto makeTrackSendDto(const TrackSendView& send) {
+    return {send.id,    send.sourceTrackId, send.destinationEndpointId,
+            send.level, send.enabled,       send.preFader ? "pre_fader" : "post_fader"};
+}
+
+InvalidatedSendConnectionDto makeInvalidatedSendConnectionDto(
+    const InvalidatedSendConnection& connection) {
+    return {connection.sendId, connection.destinationEndpointId, connection.reason};
+}
+
 ChordTrackDto makeChordTrackDto(const TrackInfo* track, ClipApi& clips) {
     assertMessageThread();
     ChordTrackDto dto;

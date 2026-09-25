@@ -343,6 +343,7 @@ class PostFxFaderOrderTest final : public juce::UnitTest {
         SendInfo pre;
         pre.busIndex = 0;
         pre.preFader = true;
+        pre.enabled = false;
         SendInfo post;
         post.busIndex = 1;
         post.preFader = false;
@@ -369,9 +370,20 @@ class PostFxFaderOrderTest final : public juce::UnitTest {
             return -1;
         };
 
+        auto sendEnabled = [&](int busIndex) {
+            for (int i = 0; i < teTrack->pluginList.size(); ++i)
+                if (auto* aux =
+                        dynamic_cast<tracktion::engine::AuxSendPlugin*>(teTrack->pluginList[i]);
+                    aux != nullptr && aux->getBusNumber() == busIndex)
+                    return aux->isEnabled();
+            return false;
+        };
+
         const int fader = faderIndex(*teTrack);
         expect(fader >= 0, "the track must have a fader");
         expect(sendIndex(0) >= 0 && sendIndex(1) >= 0, "both sends must reach the plugin list");
+        expect(!sendEnabled(0), "a disabled send stays disabled in Tracktion");
+        expect(sendEnabled(1), "an enabled send stays enabled in Tracktion");
         expect(sendIndex(0) < fader, "a pre-fader send taps above the fader");
         expect(fader < sendIndex(1), "a post-fader send taps below it");
 

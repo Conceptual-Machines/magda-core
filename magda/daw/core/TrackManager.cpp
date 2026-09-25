@@ -1986,6 +1986,40 @@ void TrackManager::setSendLevel(TrackId sourceTrackId, int busIndex, float level
     }
 }
 
+bool TrackManager::applyTrackSends(TrackId sourceTrackId, std::vector<SendInfo>& sends) {
+    auto* source = getTrack(sourceTrackId);
+    if (source == nullptr || static_cast<int>(sends.size()) > MAX_SENDS_PER_TRACK)
+        return false;
+
+    std::set<TrackId> destinations;
+    for (const auto& send : sends) {
+        const auto* destination = getTrack(send.destTrackId);
+        if (destination == nullptr || destination->type == TrackType::Master ||
+            !destinations.insert(send.destTrackId).second)
+            return false;
+    }
+
+    for (auto& send : sends) {
+        auto* destination = getTrack(send.destTrackId);
+        if (destination->auxBusIndex < 0)
+            destination->auxBusIndex = nextAuxBusIndex_++;
+        send.busIndex = destination->auxBusIndex;
+    }
+
+    std::set<TrackId> affectedDestinations;
+    for (const auto& send : source->sends)
+        affectedDestinations.insert(send.destTrackId);
+    affectedDestinations.insert(destinations.begin(), destinations.end());
+
+    source->sends = sends;
+    notifyTrackDevicesChanged(sourceTrackId);
+    notifyTrackPropertyChanged(sourceTrackId);
+    for (const auto destination : affectedDestinations)
+        if (getTrack(destination) != nullptr)
+            notifyTrackDevicesChanged(destination);
+    return true;
+}
+
 // ============================================================================
 // Signal Chain Management (Unified)
 // ============================================================================

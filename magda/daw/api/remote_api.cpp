@@ -334,6 +334,37 @@ const juce::var& droppedRoutingConnectionSchema() {
     return value;
 }
 
+const juce::var& trackSendSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "id":{"type":"string","minLength":1},
+            "sourceTrackId":{"type":"integer","minimum":0},
+            "destinationEndpointId":{"type":"string","minLength":1},
+            "level":{"type":"number","minimum":0,"maximum":1},
+            "enabled":{"type":"boolean"},
+            "position":{"type":"string","enum":["pre_fader","post_fader"]}
+        },
+        "required":["id","sourceTrackId","destinationEndpointId","level","enabled","position"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
+const juce::var& invalidatedSendConnectionSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "sendId":{"type":"string","minLength":1},
+            "destinationEndpointId":{"type":"string","minLength":1},
+            "reason":{"type":"string","enum":["destination_replaced","send_removed"]}
+        },
+        "required":["sendId","destinationEndpointId","reason"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
 const juce::var& chordEntrySchema() {
     static const auto value = parseSchema(R"json({
         "type":"object",
@@ -1609,6 +1640,25 @@ juce::var toJson(const DroppedRoutingConnectionDto& dto) {
     return object;
 }
 
+juce::var toJson(const TrackSendDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("id", dto.id);
+    object->setProperty("sourceTrackId", dto.sourceTrackId);
+    object->setProperty("destinationEndpointId", dto.destinationEndpointId);
+    object->setProperty("level", dto.level);
+    object->setProperty("enabled", dto.enabled);
+    object->setProperty("position", dto.position);
+    return object;
+}
+
+juce::var toJson(const InvalidatedSendConnectionDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("sendId", dto.sendId);
+    object->setProperty("destinationEndpointId", dto.destinationEndpointId);
+    object->setProperty("reason", dto.reason);
+    return object;
+}
+
 juce::var toJson(const ChordEntryDto& dto) {
     auto* object = new juce::DynamicObject();
     object->setProperty("clipId", dto.clipId);
@@ -2071,6 +2121,19 @@ std::optional<TrackRoutingDto> trackRoutingFromJson(const juce::var& json, Error
     dto.midiOutputEndpointId = json["midiOutputEndpointId"].toString();
     dto.recordArmed = static_cast<bool>(json["recordArmed"]);
     dto.inputMonitor = json["inputMonitor"].toString();
+    return dto;
+}
+
+std::optional<TrackSendDto> trackSendFromJson(const juce::var& json, Error& error) {
+    if (!prepareDecode(json, trackSendSchema(), error))
+        return std::nullopt;
+    TrackSendDto dto;
+    dto.id = json["id"].toString();
+    dto.sourceTrackId = readInt(json, "sourceTrackId");
+    dto.destinationEndpointId = json["destinationEndpointId"].toString();
+    dto.level = static_cast<double>(json["level"]);
+    dto.enabled = static_cast<bool>(json["enabled"]);
+    dto.position = json["position"].toString();
     return dto;
 }
 
@@ -2620,6 +2683,66 @@ OperationRegistry::OperationRegistry() {
         .outputSchema["properties"]["droppedConnections"]
         .getDynamicObject()
         ->setProperty("items", droppedRoutingConnectionSchema());
+
+    add("sends.list", "List one track's sends", OperationAccess::Read, &handlers::sendsList,
+        operationInputSchema(R"json({
+            "type":"object","properties":{"trackId":{"type":"integer","minimum":0}},
+            "required":["trackId"],"additionalProperties":false
+        })json"),
+        arraySchema(trackSendSchema()));
+    const auto sendMutationOutput = [] {
+        auto schema = parseSchema(R"json({
+            "type":"object",
+            "properties":{"send":{},"invalidatedConnections":{"type":"array"}},
+            "required":["send","invalidatedConnections"],"additionalProperties":false
+        })json");
+        schema["properties"].getDynamicObject()->setProperty("send", trackSendSchema());
+        schema["properties"]["invalidatedConnections"].getDynamicObject()->setProperty(
+            "items", invalidatedSendConnectionSchema());
+        return schema;
+    }();
+    add("sends.create", "Create an atomic track send", OperationAccess::Write,
+        &handlers::sendsCreate, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "trackId":{"type":"integer","minimum":0},
+                "destinationEndpointId":{"type":"string","minLength":1},
+                "level":{"type":"number","minimum":0,"maximum":1},
+                "enabled":{"type":"boolean"},
+                "position":{"type":"string","enum":["pre_fader","post_fader"]}
+            },
+            "required":["trackId","destinationEndpointId"],"additionalProperties":false
+        })json"),
+        sendMutationOutput);
+    add("sends.update", "Update an atomic track send", OperationAccess::Write,
+        &handlers::sendsUpdate, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "sendId":{"type":"string","minLength":1},
+                "destinationEndpointId":{"type":"string","minLength":1},
+                "level":{"type":"number","minimum":0,"maximum":1},
+                "enabled":{"type":"boolean"},
+                "position":{"type":"string","enum":["pre_fader","post_fader"]}
+            },
+            "required":["sendId"],"additionalProperties":false
+        })json"),
+        sendMutationOutput);
+    auto sendRemoveOutput = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "removedSendId":{"type":"string","minLength":1},
+            "invalidatedConnections":{"type":"array"}
+        },
+        "required":["removedSendId","invalidatedConnections"],"additionalProperties":false
+    })json");
+    sendRemoveOutput["properties"]["invalidatedConnections"].getDynamicObject()->setProperty(
+        "items", invalidatedSendConnectionSchema());
+    add("sends.remove", "Remove an atomic track send", OperationAccess::Write,
+        &handlers::sendsRemove, operationInputSchema(R"json({
+            "type":"object","properties":{"sendId":{"type":"string","minLength":1}},
+            "required":["sendId"],"additionalProperties":false
+        })json"),
+        sendRemoveOutput);
 
     add("clips.list", "List clips with optional track and view filters", OperationAccess::Read,
         &handlers::clipsList, operationInputSchema(R"json({
@@ -3580,6 +3703,9 @@ OperationRegistry::OperationRegistry() {
         {"tracks.group", Scope::Edit},
         {"tracks.move", Scope::Edit},
         {"routing.set", Scope::Edit},
+        {"sends.create", Scope::Edit},
+        {"sends.update", Scope::Edit},
+        {"sends.remove", Scope::Edit},
         {"clips.createMidi", Scope::Edit},
         {"clips.addMidiNote", Scope::Edit},
         {"clips.addMidiEvents", Scope::Edit},

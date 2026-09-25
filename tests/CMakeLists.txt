@@ -228,6 +228,7 @@ set(TEST_SOURCES
     # Internal track-to-track routing (issue #1690)
     routing/test_internal_track_routing.cpp
     routing/test_track_api_routing.cpp
+    routing/test_track_api_sends.cpp
     routing/test_master_track_serialization.cpp
     project/test_utility_width_migration.cpp
     controllers/test_legacy_device_aliases.cpp

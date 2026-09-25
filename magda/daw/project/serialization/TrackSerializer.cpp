@@ -1087,6 +1087,8 @@ juce::var ProjectSerializer::serializeSendInfo(const SendInfo& data) {
     SER(level);
     SER(preFader);
     SER(destTrackId);
+    SER(enabled);
+    SER(id);
     return {obj};
 }
 
@@ -1100,6 +1102,10 @@ bool ProjectSerializer::deserializeSendInfo(const juce::var& json, SendInfo& dat
     DESER(level);
     DESER(preFader);
     DESER(destTrackId);
+    if (obj->hasProperty("enabled"))
+        DESER(enabled);
+    if (obj->hasProperty("id"))
+        DESER(id);
     return true;
 }
 

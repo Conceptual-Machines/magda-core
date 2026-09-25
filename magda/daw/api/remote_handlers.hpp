@@ -53,6 +53,12 @@ HandlerResult routingListEndpoints(MagdaApi&, const juce::var&, const RequestCon
 HandlerResult routingGet(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult routingSet(MagdaApi&, const juce::var&, const RequestContext&);
 
+// Track sends
+HandlerResult sendsList(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult sendsCreate(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult sendsUpdate(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult sendsRemove(MagdaApi&, const juce::var&, const RequestContext&);
+
 // Singleton chord track
 HandlerResult chordTrackGet(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult chordTrackEnsure(MagdaApi&, const juce::var&, const RequestContext&);

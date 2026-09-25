@@ -29,6 +29,8 @@ struct ReferenceImpactPlan;
 struct RoutingEndpoint;
 struct TrackRoutingView;
 struct DroppedRoutingConnection;
+struct TrackSendView;
+struct InvalidatedSendConnection;
 struct TrackInfo;
 
 namespace remote {
@@ -201,6 +203,25 @@ struct DroppedRoutingConnectionDto {
     juce::String reason;
 
     bool operator==(const DroppedRoutingConnectionDto&) const = default;
+};
+
+struct TrackSendDto {
+    juce::String id;
+    TrackId sourceTrackId = INVALID_TRACK_ID;
+    juce::String destinationEndpointId;
+    double level = 1.0;
+    bool enabled = true;
+    juce::String position = "post_fader";
+
+    bool operator==(const TrackSendDto&) const = default;
+};
+
+struct InvalidatedSendConnectionDto {
+    juce::String sendId;
+    juce::String destinationEndpointId;
+    juce::String reason;
+
+    bool operator==(const InvalidatedSendConnectionDto&) const = default;
 };
 
 struct ChordEntryDto {
@@ -776,6 +797,8 @@ juce::var toJson(const TrackDto& dto);
 juce::var toJson(const RoutingEndpointDto& dto);
 juce::var toJson(const TrackRoutingDto& dto);
 juce::var toJson(const DroppedRoutingConnectionDto& dto);
+juce::var toJson(const TrackSendDto& dto);
+juce::var toJson(const InvalidatedSendConnectionDto& dto);
 juce::var toJson(const ChordEntryDto& dto);
 juce::var toJson(const ChordTrackDto& dto);
 juce::var toJson(const ClipDto& dto);
@@ -819,6 +842,7 @@ std::optional<ProjectDto> projectFromJson(const juce::var& json, Error& error);
 std::optional<TrackDto> trackFromJson(const juce::var& json, Error& error);
 std::optional<RoutingEndpointDto> routingEndpointFromJson(const juce::var& json, Error& error);
 std::optional<TrackRoutingDto> trackRoutingFromJson(const juce::var& json, Error& error);
+std::optional<TrackSendDto> trackSendFromJson(const juce::var& json, Error& error);
 std::optional<ClipDto> clipFromJson(const juce::var& json, Error& error);
 std::optional<DeviceDto> deviceFromJson(const juce::var& json, Error& error);
 std::optional<ChainDto> chainFromJson(const juce::var& json, Error& error);
@@ -842,6 +866,9 @@ RoutingEndpointDto makeRoutingEndpointDto(const RoutingEndpoint& endpoint);
 TrackRoutingDto makeTrackRoutingDto(const TrackRoutingView& routing);
 DroppedRoutingConnectionDto makeDroppedRoutingConnectionDto(
     const DroppedRoutingConnection& connection);
+TrackSendDto makeTrackSendDto(const TrackSendView& send);
+InvalidatedSendConnectionDto makeInvalidatedSendConnectionDto(
+    const InvalidatedSendConnection& connection);
 ChordTrackDto makeChordTrackDto(const TrackInfo* track, ClipApi& clips);
 ClipDto makeClipDto(const ClipInfo& clip);
 std::vector<MidiEventDto> makeMidiEventDtos(const ClipInfo& clip);

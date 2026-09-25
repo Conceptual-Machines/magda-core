@@ -485,6 +485,8 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void removeSend(TrackId sourceTrackId, int busIndex);
     void setSendLevel(TrackId sourceTrackId, int busIndex, float level,
                       bool fromAutomation = false);
+    /** Atomically replace one track's preflighted sends, resolving destination buses on commit. */
+    bool applyTrackSends(TrackId sourceTrackId, std::vector<SendInfo>& sends);
 
     // View settings
     void setTrackVisible(TrackId trackId, ViewMode mode, bool visible);

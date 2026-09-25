@@ -224,6 +224,64 @@ void remapReferences(const std::vector<ReferenceTargetMapping>& mappings) {
     tracks.notifyModulationChanged();
 }
 
+bool remapSendTarget(ControlTarget& target, TrackId trackId, int fromBus, int toBus) {
+    if (target.kind != ControlTarget::Kind::SendLevel || target.devicePath.trackId != trackId ||
+        target.sendBusIndex != fromBus)
+        return false;
+    target.sendBusIndex = toBus;
+    return true;
+}
+
+void remapSendLinks(MacroArray& macros, ModArray& mods, TrackId trackId, int fromBus, int toBus) {
+    for (auto& macro : macros)
+        for (auto& link : macro.links)
+            remapSendTarget(link.target, trackId, fromBus, toBus);
+    for (auto& mod : mods)
+        for (auto& link : mod.links)
+            remapSendTarget(link.target, trackId, fromBus, toBus);
+}
+
+void remapSendReferences(TrackId trackId, int fromBus, int toBus) {
+    if (fromBus == toBus)
+        return;
+
+    auto& tracks = TrackManager::getInstance();
+    tracks.forEachTrackIncludingMaster([&](TrackInfo& track) {
+        remapSendLinks(track.macros, track.mods, trackId, fromBus, toBus);
+        chain_walk::forEachNode(
+            track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
+            chain_walk::Pads::Enter,
+            [&](DeviceInfo& device, const ChainNodePath&) {
+                remapSendLinks(device.macros, device.mods, trackId, fromBus, toBus);
+            },
+            [&](RackInfo& rack, const ChainNodePath&) {
+                remapSendLinks(rack.macros, rack.mods, trackId, fromBus, toBus);
+                return chain_walk::Descend::Into;
+            });
+        for (auto& element : track.chain.postFxChainElements)
+            remapSendLinks(element.device.macros, element.device.mods, trackId, fromBus, toBus);
+        for (auto& element : track.chain.mixerAnalysisElements)
+            remapSendLinks(element.device.macros, element.device.mods, trackId, fromBus, toBus);
+    });
+
+    auto& automation = AutomationManager::getInstance();
+    for (const auto& snapshot : automation.getLanes()) {
+        auto* lane = automation.getLane(snapshot.id);
+        if (lane != nullptr && remapSendTarget(lane->target, trackId, fromBus, toBus))
+            automation.invalidateLane(lane->id);
+    }
+
+    auto& bindings = BindingRegistry::getInstance();
+    for (const auto scope : {BindingScope::Global, BindingScope::Project}) {
+        for (auto binding : bindings.bindings(scope)) {
+            auto* target = std::get_if<ControlTarget>(&binding.target);
+            if (target != nullptr && remapSendTarget(*target, trackId, fromBus, toBus))
+                bindings.update(scope, binding);
+        }
+    }
+    tracks.notifyModulationChanged();
+}
+
 std::vector<ReferenceTargetMapping> reverseMappings(
     const std::vector<ReferenceTargetMapping>& mappings) {
     std::vector<ReferenceTargetMapping> reverse;
@@ -344,6 +402,36 @@ void SetTrackRoutingCommand::execute() {
 void SetTrackRoutingCommand::undo() {
     if (applied_)
         TrackManager::getInstance().applyTrackRoutingStates(before_);
+}
+
+// ============================================================================
+// SetTrackSendsCommand
+// ============================================================================
+
+SetTrackSendsCommand::SetTrackSendsCommand(TrackId trackId, std::vector<SendInfo> before,
+                                           std::vector<SendInfo> after)
+    : trackId_(trackId), before_(std::move(before)), after_(std::move(after)) {}
+
+void SetTrackSendsCommand::remapTargets(const std::vector<SendInfo>& from,
+                                        const std::vector<SendInfo>& to) {
+    for (const auto& oldSend : from) {
+        const auto found = std::ranges::find(to, oldSend.id, &SendInfo::id);
+        if (found != to.end())
+            remapSendReferences(trackId_, oldSend.busIndex, found->busIndex);
+    }
+}
+
+void SetTrackSendsCommand::execute() {
+    applied_ = TrackManager::getInstance().applyTrackSends(trackId_, after_);
+    if (applied_)
+        remapTargets(before_, after_);
+}
+
+void SetTrackSendsCommand::undo() {
+    if (!applied_)
+        return;
+    if (TrackManager::getInstance().applyTrackSends(trackId_, before_))
+        remapTargets(after_, before_);
 }
 
 // ============================================================================
