@@ -10,6 +10,7 @@
 #include "magda/daw/core/DeviceInfo.hpp"
 #include "magda/daw/core/DrumGridPads.hpp"
 #include "magda/daw/core/RackInfo.hpp"
+#include "magda/daw/core/ReferenceImpact.hpp"
 
 namespace {
 
@@ -101,6 +102,173 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(description["apiVersion"].toString() == "1.0");
     REQUIRE(description["operations"].getArray()->size() ==
             static_cast<int>(registry.operations().size()));
+}
+
+TEST_CASE("Reference impact inventory covers every replacement-sensitive reference class",
+          "[remote-api][contract][reference-impact]") {
+    TrackInfo sourceTrack;
+    sourceTrack.id = 1;
+    sourceTrack.sends.push_back({2, 0.5f, false, 3});
+    sourceTrack.audioInputDevice = "track:4";
+    sourceTrack.midiInputDevice = "track:5";
+
+    DeviceInfo device;
+    device.id = 9;
+    ParameterInfo parameter;
+    parameter.paramIndex = 4;
+    parameter.stableId = "cutoff";
+    device.parameters.push_back(parameter);
+    device.sidechain.type = SidechainConfig::Type::Audio;
+    device.sidechain.sourceTrackId = 2;
+    sourceTrack.chain.fxChainElements.push_back(makeDeviceElement(device));
+
+    const auto devicePath = ChainNodePath::topLevelDevice(1, 9);
+    const auto parameterTarget = ControlTarget::pluginParam(devicePath, 4);
+    sourceTrack.macros[0].links.push_back({parameterTarget, 0.5f, false});
+    ModInfo mod(7);
+    mod.links.push_back({parameterTarget, 0.25f, false, true});
+    sourceTrack.mods.push_back(mod);
+
+    TrackInfo multiOutTrack;
+    multiOutTrack.id = 6;
+    multiOutTrack.multiOutLink = MultiOutTrackLink{1, 9, 1};
+
+    std::vector<TrackInfo> tracks;
+    tracks.push_back(sourceTrack);
+    tracks.push_back(multiOutTrack);
+
+    AutomationLaneInfo lane;
+    lane.id = 22;
+    lane.target = parameterTarget;
+    const std::vector<AutomationLaneInfo> lanes{lane};
+    const std::vector<BoundControlReference> bound{{"binding-1", parameterTarget}};
+
+    const auto inventory = inventoryReferences({tracks, nullptr, lanes, bound});
+    const auto count = [&inventory](ReferenceKind kind) {
+        return std::ranges::count(inventory, kind, &ReferenceDescriptor::kind);
+    };
+    CHECK(count(ReferenceKind::Automation) == 1);
+    CHECK(count(ReferenceKind::MacroLink) == 1);
+    CHECK(count(ReferenceKind::ModulatorLink) == 1);
+    CHECK(count(ReferenceKind::ControllerBinding) == 1);
+    CHECK(count(ReferenceKind::Sidechain) == 1);
+    CHECK(count(ReferenceKind::Routing) == 4);
+
+    const auto automation =
+        std::ranges::find(inventory, ReferenceKind::Automation, &ReferenceDescriptor::kind);
+    REQUIRE(automation != inventory.end());
+    CHECK(automation->target.parameterIndex == 4);
+    CHECK(automation->target.parameterStableId == "cutoff");
+
+    const std::array affectedPaths{devicePath};
+    const auto affected = referencesAffectedBy(inventory, affectedPaths);
+    CHECK(std::ranges::count(affected, ReferenceKind::Automation, &ReferenceDescriptor::kind) == 1);
+    CHECK(std::ranges::count(affected, ReferenceKind::MacroLink, &ReferenceDescriptor::kind) == 1);
+    CHECK(std::ranges::count(affected, ReferenceKind::ModulatorLink, &ReferenceDescriptor::kind) ==
+          1);
+    CHECK(std::ranges::count(affected, ReferenceKind::ControllerBinding,
+                             &ReferenceDescriptor::kind) == 1);
+    CHECK(std::ranges::count(affected, ReferenceKind::Sidechain, &ReferenceDescriptor::kind) == 1);
+    CHECK(std::ranges::count(affected, ReferenceKind::Routing, &ReferenceDescriptor::kind) == 1);
+
+    ReferencePolicySet injectedFailure(ReferencePolicy::Remap);
+    const auto failedPlan = planReferenceImpacts(affected, {}, injectedFailure);
+    CHECK_FALSE(failedPlan.canCommit());
+    CHECK(failedPlan.rejected.size() == affected.size());
+    CHECK(tracks[0].macros[0].links[0].target == parameterTarget);
+    CHECK(tracks[0].mods[0].links[0].target == parameterTarget);
+    CHECK(getDevice(tracks[0].chain.fxChainElements[0]).sidechain.sourceTrackId == 2);
+}
+
+TEST_CASE("Reference impact planning is pure and remaps only proven stable identity",
+          "[remote-api][contract][reference-impact]") {
+    const auto oldPath = ChainNodePath::topLevelDevice(1, 9);
+    const auto newPath = ChainNodePath::topLevelDevice(1, 10);
+
+    ReferenceAddress oldTarget;
+    oldTarget.kind = ReferenceAddressKind::Parameter;
+    oldTarget.trackId = 1;
+    oldTarget.devicePath = oldPath;
+    oldTarget.parameterIndex = 4;
+    oldTarget.parameterStableId = "cutoff";
+    auto newTarget = oldTarget;
+    newTarget.devicePath = newPath;
+    newTarget.parameterIndex = 17;
+
+    ReferenceAddress source;
+    source.kind = ReferenceAddressKind::AutomationLane;
+    source.automationLaneId = 20;
+    std::vector<ReferenceDescriptor> references{
+        {ReferenceKind::Automation, source, oldTarget},
+        {ReferenceKind::MacroLink, source, oldTarget},
+        {ReferenceKind::Sidechain, source, oldTarget},
+        {ReferenceKind::Routing, source, oldTarget},
+    };
+    const auto unchanged = references;
+
+    ReferencePolicySet policy;
+    policy.set(ReferenceKind::Automation, ReferencePolicy::Preserve)
+        .set(ReferenceKind::MacroLink, ReferencePolicy::Remap)
+        .set(ReferenceKind::Sidechain, ReferencePolicy::Drop)
+        .set(ReferenceKind::Routing, ReferencePolicy::Reject);
+    const std::vector<ReferenceTargetMapping> mappings{{oldTarget, newTarget, "cutoff", "cutoff"}};
+
+    const auto plan = planReferenceImpacts(references, mappings, policy);
+    CHECK_FALSE(plan.canCommit());
+    REQUIRE(plan.preserved.size() == 1);
+    REQUIRE(plan.remapped.size() == 1);
+    CHECK(plan.remapped.front().newTarget.parameterIndex == 17);
+    REQUIRE(plan.dropped.size() == 1);
+    REQUIRE(plan.rejected.size() == 1);
+    CHECK(references == unchanged);
+
+    const std::vector<ReferenceDescriptor> numericIndexOnly{
+        {ReferenceKind::MacroLink, source, oldTarget}};
+    const std::vector<ReferenceTargetMapping> unproven{{oldTarget, newTarget, {}, {}}};
+    const auto refused = planReferenceImpacts(numericIndexOnly, unproven, policy);
+    REQUIRE(refused.rejected.size() == 1);
+    CHECK(refused.rejected.front().reason == ReferenceImpactReason::MissingStableIdentity);
+    CHECK_FALSE(refused.canCommit());
+}
+
+TEST_CASE("Reference impact DTO is closed, safe, and round-trips every decision variant",
+          "[remote-api][contract][reference-impact]") {
+    ReferenceAddress target;
+    target.kind = ReferenceAddressKind::Parameter;
+    target.trackId = 1;
+    target.devicePath = ChainNodePath::topLevelDevice(1, 9);
+    target.parameterIndex = 4;
+    target.parameterStableId = "cutoff";
+
+    ReferenceAddress newTarget = target;
+    newTarget.devicePath = ChainNodePath::topLevelDevice(1, 10);
+    newTarget.parameterIndex = 17;
+
+    ReferenceAddress source;
+    source.kind = ReferenceAddressKind::AutomationLane;
+    source.automationLaneId = 20;
+    const ReferenceDescriptor reference{ReferenceKind::Automation, source, target};
+
+    ReferenceImpactPlan plan;
+    plan.preserved.push_back({reference, ReferenceImpactReason::PolicyPreserve});
+    plan.remapped.push_back({reference, newTarget, ReferenceImpactReason::StableIdentityMatch});
+    plan.dropped.push_back({reference, ReferenceImpactReason::PolicyDrop});
+    plan.rejected.push_back({reference, ReferenceImpactReason::PolicyReject});
+
+    const auto dto = makeReferenceImpactResultDto(plan);
+    const auto json = toJson(dto);
+    CHECK(validateJson(json, referenceImpactResultSchema()).empty());
+    requireRoundTrip(dto, referenceImpactResultFromJson);
+
+    CHECK(json["remappedReferences"][0]["target"]["parameterStableId"].toString() == "cutoff");
+    CHECK(json["remappedReferences"][0]["target"].getDynamicObject()->hasProperty(
+              "fileOrIdentifier") == false);
+    CHECK(json["remappedReferences"][0]["target"].getDynamicObject()->hasProperty("pluginId") ==
+          false);
+
+    auto withUnknown = json.clone();
+    withUnknown.getDynamicObject()->setProperty("pluginState", "forbidden");
+    CHECK_FALSE(validateJson(withUnknown, referenceImpactResultSchema()).empty());
 }
 
 TEST_CASE("Chord track operations expose a singleton-safe progression projection",

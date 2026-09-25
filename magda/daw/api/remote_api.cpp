@@ -425,6 +425,117 @@ const juce::var& devicePathSchema() {
     return value;
 }
 
+const juce::var& referenceAddressSchema() {
+    static const auto value = [] {
+        auto schema = parseSchema(R"json({
+            "type":"object",
+            "properties":{
+                "kind":{"type":"string","enum":["track","device","parameter","automation_lane",
+                    "macro","macro_link","modulator","modulator_link","controller_binding",
+                    "sidechain","routing"]},
+                "trackId":{"type":["integer","null"],"minimum":-2},
+                "devicePath":{"anyOf":[{}, {"type":"null"}]},
+                "automationLaneId":{"type":["integer","null"],"minimum":0},
+                "macroId":{"type":["integer","null"],"minimum":0},
+                "modId":{"type":["integer","null"],"minimum":0},
+                "linkIndex":{"type":["integer","null"],"minimum":0},
+                "parameterIndex":{"type":["integer","null"],"minimum":0},
+                "parameterStableId":{"type":"string"},
+                "bindingId":{"type":"string"},
+                "route":{"anyOf":[
+                    {"type":"string","enum":["audio_input","midi_input","send","multi_output",
+                        "track_volume","track_pan","tempo"]},
+                    {"type":"null"}]},
+                "routeIndex":{"type":["integer","null"],"minimum":0}
+            },
+            "required":["kind","trackId","devicePath","automationLaneId","macroId","modId",
+                "linkIndex","parameterIndex","parameterStableId","bindingId","route","routeIndex"],
+            "additionalProperties":false
+        })json");
+        auto* alternatives = schema["properties"]["devicePath"]["anyOf"].getArray();
+        alternatives->set(0, devicePathSchema());
+        return schema;
+    }();
+    return value;
+}
+
+const juce::var& referenceImpactEntrySchema() {
+    static const auto value = [] {
+        auto schema = parseSchema(R"json({
+            "type":"object",
+            "properties":{
+                "referenceKind":{"type":"string","enum":["automation","macro_link",
+                    "modulator_link","controller_binding","sidechain","routing"]},
+                "source":{},"target":{},
+                "reason":{"type":"string","enum":["policy_preserve","stable_identity_match",
+                    "policy_drop","policy_reject","no_proven_remap","missing_stable_identity",
+                    "stable_identity_mismatch"]}
+            },
+            "required":["referenceKind","source","target","reason"],
+            "additionalProperties":false
+        })json");
+        auto* properties = schema["properties"].getDynamicObject();
+        properties->setProperty("source", referenceAddressSchema());
+        properties->setProperty("target", referenceAddressSchema());
+        return schema;
+    }();
+    return value;
+}
+
+const juce::var& remappedReferenceSchema() {
+    static const auto value = [] {
+        auto schema = parseSchema(R"json({
+            "type":"object",
+            "properties":{
+                "referenceKind":{"type":"string","enum":["automation","macro_link",
+                    "modulator_link","controller_binding","sidechain","routing"]},
+                "source":{},"target":{},"newTarget":{},
+                "reason":{"type":"string","const":"stable_identity_match"}
+            },
+            "required":["referenceKind","source","target","newTarget","reason"],
+            "additionalProperties":false
+        })json");
+        auto* properties = schema["properties"].getDynamicObject();
+        properties->setProperty("source", referenceAddressSchema());
+        properties->setProperty("target", referenceAddressSchema());
+        properties->setProperty("newTarget", referenceAddressSchema());
+        return schema;
+    }();
+    return value;
+}
+
+const juce::var& referenceImpactResultSchemaValue() {
+    static const auto value = [] {
+        auto schema = parseSchema(R"json({
+            "type":"object",
+            "properties":{
+                "preservedReferences":{"type":"array"},
+                "remappedReferences":{"type":"array"},
+                "droppedReferences":{"type":"array"},
+                "rejectedReferences":{"type":"array"}
+            },
+            "required":["preservedReferences","remappedReferences","droppedReferences",
+                "rejectedReferences"],
+            "additionalProperties":false
+        })json");
+        auto* properties = schema["properties"].getDynamicObject();
+        properties->getProperty("preservedReferences")
+            .getDynamicObject()
+            ->setProperty("items", referenceImpactEntrySchema());
+        properties->getProperty("remappedReferences")
+            .getDynamicObject()
+            ->setProperty("items", remappedReferenceSchema());
+        properties->getProperty("droppedReferences")
+            .getDynamicObject()
+            ->setProperty("items", referenceImpactEntrySchema());
+        properties->getProperty("rejectedReferences")
+            .getDynamicObject()
+            ->setProperty("items", referenceImpactEntrySchema());
+        return schema;
+    }();
+    return value;
+}
+
 const juce::var& deviceSchema() {
     static auto value = [] {
         auto schema = parseSchema(R"json({
@@ -1205,6 +1316,10 @@ juce::var operationInputSchema(const char* json) {
 
 }  // namespace
 
+const juce::var& referenceImpactResultSchema() {
+    return referenceImpactResultSchemaValue();
+}
+
 // Shared by device listings, automation targets, and operation handlers: all
 // three address a device the same way, and must not drift apart. Defined
 // outside the anonymous namespace above so handlers in another translation
@@ -1707,6 +1822,57 @@ juce::var toJson(const AutomationClipDto& dto) {
     return object;
 }
 
+juce::var toJson(const ReferenceAddressDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("kind", dto.kind);
+    object->setProperty("trackId", nullableId(dto.trackId));
+    object->setProperty("devicePath", dto.devicePath ? toJson(*dto.devicePath) : juce::var());
+    object->setProperty("automationLaneId", nullableId(dto.automationLaneId));
+    object->setProperty("macroId", nullableId(dto.macroId));
+    object->setProperty("modId", nullableId(dto.modId));
+    object->setProperty("linkIndex", nullableId(dto.linkIndex));
+    object->setProperty("parameterIndex", nullableId(dto.parameterIndex));
+    object->setProperty("parameterStableId", dto.parameterStableId);
+    object->setProperty("bindingId", dto.bindingId);
+    object->setProperty("route", dto.route ? juce::var(*dto.route) : juce::var());
+    object->setProperty("routeIndex", nullableId(dto.routeIndex));
+    return object;
+}
+
+juce::var toJson(const ReferenceImpactEntryDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("referenceKind", dto.referenceKind);
+    object->setProperty("source", toJson(dto.source));
+    object->setProperty("target", toJson(dto.target));
+    object->setProperty("reason", dto.reason);
+    return object;
+}
+
+juce::var toJson(const RemappedReferenceDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("referenceKind", dto.referenceKind);
+    object->setProperty("source", toJson(dto.source));
+    object->setProperty("target", toJson(dto.target));
+    object->setProperty("newTarget", toJson(dto.newTarget));
+    object->setProperty("reason", dto.reason);
+    return object;
+}
+
+juce::var toJson(const ReferenceImpactResultDto& dto) {
+    auto* object = new juce::DynamicObject();
+    const auto entries = [](const auto& values) {
+        juce::Array<juce::var> result;
+        for (const auto& value : values)
+            result.add(toJson(value));
+        return result;
+    };
+    object->setProperty("preservedReferences", entries(dto.preservedReferences));
+    object->setProperty("remappedReferences", entries(dto.remappedReferences));
+    object->setProperty("droppedReferences", entries(dto.droppedReferences));
+    object->setProperty("rejectedReferences", entries(dto.rejectedReferences));
+    return object;
+}
+
 std::optional<MidiNoteDto> midiNoteFromJson(const juce::var& json, Error& error) {
     if (!prepareDecode(json, midiNoteSchema(), error))
         return std::nullopt;
@@ -2073,6 +2239,57 @@ std::optional<AutomationClipDto> automationClipFromJson(const juce::var& json, E
         dto.points.push_back({readInt(item, "id"), static_cast<double>(item["beatPosition"]),
                               static_cast<double>(item["value"]), item["curve"].toString()});
     }
+    return dto;
+}
+
+namespace {
+
+ReferenceAddressDto referenceAddressFromJson(const juce::var& json) {
+    ReferenceAddressDto dto;
+    dto.kind = json["kind"].toString();
+    dto.trackId = readNullableId<TrackId>(json, "trackId");
+    if (json["devicePath"].isObject())
+        dto.devicePath = devicePathFromJson(json["devicePath"]);
+    dto.automationLaneId = readNullableId<AutomationLaneId>(json, "automationLaneId");
+    dto.macroId = readNullableId<MacroId>(json, "macroId");
+    dto.modId = readNullableId<ModId>(json, "modId");
+    dto.linkIndex = readNullableId<int>(json, "linkIndex");
+    dto.parameterIndex = readNullableId<int>(json, "parameterIndex");
+    dto.parameterStableId = json["parameterStableId"].toString();
+    dto.bindingId = json["bindingId"].toString();
+    if (const auto& route = json["route"]; route.isString())
+        dto.route = route.toString();
+    dto.routeIndex = readNullableId<int>(json, "routeIndex");
+    return dto;
+}
+
+ReferenceImpactEntryDto referenceImpactEntryFromJson(const juce::var& json) {
+    return {json["referenceKind"].toString(), referenceAddressFromJson(json["source"]),
+            referenceAddressFromJson(json["target"]), json["reason"].toString()};
+}
+
+RemappedReferenceDto remappedReferenceFromJson(const juce::var& json) {
+    return {json["referenceKind"].toString(), referenceAddressFromJson(json["source"]),
+            referenceAddressFromJson(json["target"]), referenceAddressFromJson(json["newTarget"]),
+            json["reason"].toString()};
+}
+
+}  // namespace
+
+std::optional<ReferenceImpactResultDto> referenceImpactResultFromJson(const juce::var& json,
+                                                                      Error& error) {
+    if (!prepareDecode(json, referenceImpactResultSchema(), error))
+        return std::nullopt;
+
+    ReferenceImpactResultDto dto;
+    const auto readEntries = [](const juce::var& value, auto& destination, auto decode) {
+        for (const auto& item : *value.getArray())
+            destination.push_back(decode(item));
+    };
+    readEntries(json["preservedReferences"], dto.preservedReferences, referenceImpactEntryFromJson);
+    readEntries(json["remappedReferences"], dto.remappedReferences, remappedReferenceFromJson);
+    readEntries(json["droppedReferences"], dto.droppedReferences, referenceImpactEntryFromJson);
+    readEntries(json["rejectedReferences"], dto.rejectedReferences, referenceImpactEntryFromJson);
     return dto;
 }
 
