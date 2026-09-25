@@ -220,6 +220,7 @@ class AudioIOServiceTest final : public juce::UnitTest {
             expect(active.outputChannels == channels({0, 1}));
             expect(active.inputChannels.isZero());
             expectEquals(active.inputInterface, juce::String());
+            expect(rig.service->status().deviceOpen);
         }
 
         beginTest("a fresh configuration opens stereo out and no inputs");

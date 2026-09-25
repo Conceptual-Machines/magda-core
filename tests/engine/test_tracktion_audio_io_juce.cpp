@@ -181,6 +181,7 @@ class TracktionAudioIOTest final : public juce::UnitTest {
             expect(rig.audioIO->outputs().open == channels({2, 3}));
             expect(rig.audioIO->inputs().open == channels({1}));
             expect(rig.audioIO->chosen().outputChannels == std::vector<int>{2, 3});
+            expect(rig.audioIO->status().deviceOpen);
         }
 
         beginTest("Tracktion names channels as the native engine does");

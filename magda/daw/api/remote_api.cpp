@@ -2449,6 +2449,60 @@ OperationRegistry::OperationRegistry() {
             "additionalProperties":false
         })json"));
 
+    add("engine.health", "Read engine binding, callback load, xruns, and recent problems",
+        OperationAccess::Read, &handlers::engineHealth, emptyObjectSchema(), parseSchema(R"json({
+            "type":"object","properties":{
+                "engine":{"type":"string"},
+                "observedAtMs":{"type":"number","minimum":0},
+                "sinceMs":{"type":["number","null"],"minimum":0},
+                "projectBound":{"type":["boolean","null"]},
+                "audioDeviceOpen":{"type":["boolean","null"]},
+                "xrunCount":{"type":["integer","null"],"minimum":0},
+                "dropoutCount":{"type":["integer","null"],"minimum":0},
+                "callbackLoad":{"type":["number","null"],"minimum":0},
+                "problemCoverage":{"type":"string","enum":["audioIoObservations","unavailable"]},
+                "problems":{"type":"array","maxItems":32,"items":{
+                    "type":"object","properties":{
+                        "code":{"type":"string","enum":["audio_xrun","xrun_counter_reset",
+                                                        "audio_device_unavailable"]},
+                        "atMs":{"type":"number","minimum":0},
+                        "count":{"type":"integer","minimum":1}
+                    },"required":["code","atMs","count"],"additionalProperties":false
+                }},
+                "discardedProblemCount":{"type":"integer","minimum":0}
+            },
+            "required":["engine","observedAtMs","sinceMs","projectBound",
+                        "audioDeviceOpen","xrunCount","dropoutCount","callbackLoad",
+                        "problemCoverage","problems","discardedProblemCount"],
+            "additionalProperties":false
+        })json"));
+
+    add("meters.read", "Read one bounded track and master peak snapshot", OperationAccess::Read,
+        &handlers::metersRead, emptyObjectSchema(), parseSchema(R"json({
+            "type":"object","properties":{
+                "observedAtMs":{"type":"number","minimum":0},
+                "tracks":{"type":"array","maxItems":128,"items":{
+                    "type":"object","properties":{
+                        "trackId":{"type":"integer","minimum":0},
+                        "available":{"type":"boolean"},
+                        "peakL":{"type":["number","null"],"minimum":0},
+                        "peakR":{"type":["number","null"],"minimum":0},
+                        "clipped":{"type":["boolean","null"]}
+                    },"required":["trackId","available","peakL","peakR","clipped"],
+                    "additionalProperties":false
+                }},
+                "truncatedTrackCount":{"type":"integer","minimum":0},
+                "master":{"type":"object","properties":{
+                    "available":{"type":"boolean"},
+                    "peakL":{"type":["number","null"],"minimum":0},
+                    "peakR":{"type":["number","null"],"minimum":0},
+                    "clipped":{"type":["boolean","null"]}
+                },"required":["available","peakL","peakR","clipped"],
+                "additionalProperties":false}
+            },"required":["observedAtMs","tracks","truncatedTrackCount","master"],
+            "additionalProperties":false
+        })json"));
+
     add("project.get", "Get safe project metadata", OperationAccess::Read, &handlers::projectGet,
         emptyObjectSchema(), projectSchema());
     add("project.save", "Save the project to its existing target", OperationAccess::Write,

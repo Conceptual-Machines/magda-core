@@ -55,9 +55,9 @@ class RemoteApiHost {
     /**
      * @brief Construct the remote API over a facade, and optionally an engine.
      *
-     * `engine` is what the `meters` subscription reads (#1857) and the only
-     * thing it is used for. Passing nothing is supported, not degraded: the
-     * whole API works and `meters` delivers empty samples instead of failing.
+     * `engine` supplies meter and health snapshots. Passing nothing is
+     * supported: reads report unavailable metrics and subscriptions deliver
+     * empty meter samples.
      */
     explicit RemoteApiHost(MagdaApi& api, AudioEngine* engine = nullptr);
     ~RemoteApiHost();

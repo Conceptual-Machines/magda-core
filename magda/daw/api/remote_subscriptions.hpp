@@ -63,7 +63,7 @@ const char* toString(SubscriptionEvent::Type type);
  *
  * `sample()` is called on the message thread and must not block: it reads a
  * lock-free snapshot the audio path has already published, and never touches the
- * audio thread itself.
+ * audio thread itself. The source is shared with one-shot meter reads.
  */
 class MeterSource {
   public:
@@ -80,6 +80,7 @@ class MeterSource {
 
     /// Latest levels for every track that has any, plus `MASTER_TRACK_ID`.
     virtual std::vector<TrackLevels> sample() = 0;
+    virtual void projectReplaced() {}
 };
 
 /**
@@ -234,7 +235,7 @@ class SubscriptionHub {
      * remote client can do anything about, and a subscription that errors on a
      * headless host would make every client special-case it.
      */
-    void setMeterSource(std::unique_ptr<MeterSource> source);
+    void setMeterSource(std::shared_ptr<MeterSource> source);
 
     /// Stop delivering, drop every client, and detach from the change source.
     /// Idempotent; the destructor calls it. Call on the message thread, which is
@@ -289,7 +290,7 @@ class SubscriptionHub {
     ClientId nextClientId_ = 1;
     std::array<TopicState, TOPIC_COUNT> topics_{};
 
-    std::unique_ptr<MeterSource> meters_;
+    std::shared_ptr<MeterSource> meters_;
     std::unique_ptr<Sampler> sampler_;
     std::shared_ptr<Gate> gate_;
     int changeToken_ = 0;

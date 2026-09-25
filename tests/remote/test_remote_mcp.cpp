@@ -104,6 +104,22 @@ struct Harness {
 
 }  // namespace
 
+TEST_CASE("MCP exposes one-shot engine diagnostics as read tools",
+          "[remote-api][mcp][diagnostics]") {
+    Harness harness;
+    for (const char* name : {"engine.health", "meters.read"}) {
+        const auto reply =
+            run(harness.endpoint, modernCall("tools/call", object({{"name", name}})));
+        REQUIRE_FALSE(reply.failed());
+        REQUIRE_FALSE(static_cast<bool>(reply.result["isError"]));
+        const auto payload = reply.result["structuredContent"];
+        REQUIRE(
+            validateJson(payload, OperationRegistry::instance().find(name)->outputSchema).empty());
+        REQUIRE(static_cast<juce::int64>(reply.result["_meta"][MAGDA_META_REVISION]) ==
+                INITIAL_REVISION);
+    }
+}
+
 TEST_CASE("MCP version negotiation is a table, not a pinned constant", "[remote-api][mcp]") {
     // The acceptance criterion from #1858: negotiation must not be hardcoded to
     // the 2024-11-05 the outbound MCPClient asks for.

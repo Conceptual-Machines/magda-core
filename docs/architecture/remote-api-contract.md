@@ -65,6 +65,31 @@ things. A WebSocket client names itself in the upgrade's query string
 `clientInfo.name`. Sending nothing is allowed and means anonymous, which is
 read-only.
 
+### Engine diagnostics
+
+`engine.health` and `meters.read` are read-scoped, revision-neutral snapshots.
+They require no subscription and never expose logs, device paths, or plugin
+state. `observedAtMs` is a Unix millisecond timestamp for the read.
+
+`engine.health` reports the running engine, whether a project is bound, whether
+an audio interface is open, callback load, and xruns since the current project
+was loaded. `callbackLoad` is JUCE's approximate 0–1 share of the callback
+deadline. `sinceMs` marks the project boundary. The bounded `problems` list
+records observed xrun increments, counter resets, and unavailable audio devices;
+`discardedProblemCount` reports older entries removed after 32. A separate
+dropout count is currently unavailable from either audio I/O backend and is
+reported as `null`. `problemCoverage` says `audioIoObservations` because other
+engine problems have no shared event source yet. Other unavailable metrics are
+also `null`, never zero.
+
+`meters.read` reports the latest published left and right peaks for up to 128
+addressable tracks, plus the master. Entries with no published sample set
+`available` to false and their levels to `null`; `truncatedTrackCount` reports
+additional tracks omitted from the bounded payload. Remote subscriptions and
+one-shot reads share the same latest-value snapshot, so neither consumes data
+needed by the other. A sample older than one second is unavailable rather than
+presented as a current level.
+
 ### Current-project save
 
 `project.get` reports `dirty` and `hasSaveTarget` without exposing the target's
