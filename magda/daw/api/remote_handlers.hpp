@@ -53,6 +53,11 @@ HandlerResult routingListEndpoints(MagdaApi&, const juce::var&, const RequestCon
 HandlerResult routingGet(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult routingSet(MagdaApi&, const juce::var&, const RequestContext&);
 
+// Device/rack sidechains
+HandlerResult sidechainsList(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult sidechainsGet(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult sidechainsSet(MagdaApi&, const juce::var&, const RequestContext&);
+
 // Singleton chord track
 HandlerResult chordTrackGet(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult chordTrackEnsure(MagdaApi&, const juce::var&, const RequestContext&);

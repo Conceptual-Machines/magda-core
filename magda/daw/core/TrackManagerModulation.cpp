@@ -1056,7 +1056,7 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
             float deviceAudioPeak = audioPeak;
 
             // Cross-track sidechain: replace self triggers with source track's
-            if (device.sidechain.sourceTrackId != INVALID_TRACK_ID) {
+            if (device.sidechain.isActive()) {
                 auto srcId = device.sidechain.sourceTrackId;
                 // Replace self triggers with source track's MIDI triggers
                 deviceMidiTriggered = midiNoteOnTracks.count(srcId) > 0;

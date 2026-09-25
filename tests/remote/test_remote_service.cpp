@@ -1649,6 +1649,62 @@ TEST_CASE("routing.set reports cascaded drops and is revision-neutral on no-op o
     CHECK(service.currentRevision() == INITIAL_REVISION + 1);
 }
 
+TEST_CASE("sidechains.get and set use owner paths, logical sources, and no-op revisions",
+          "[remote][service][sidechains][2838]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto ownerPath = ChainNodePath::rack(1, 4);
+    SidechainView initial;
+    initial.ownerPath = ownerPath;
+    initial.ownerKind = SidechainOwnerKind::Rack;
+    initial.capabilities.audio = true;
+    initial.capabilities.midi = true;
+    api.devices_.sidechains.emplace(ownerPath, initial);
+
+    RemoteApiService service(api);
+    const auto ownerJson = toJson(makeDevicePathDto(ownerPath));
+    const auto listed = run(service, "sidechains.list", emptyInput());
+    REQUIRE(listed.ok);
+    REQUIRE(listed.result.getArray()->size() == 1);
+    CHECK(listed.result[0]["ownerType"].toString() == "rack");
+    const auto inspected = run(service, "sidechains.get", object({{"ownerPath", ownerJson}}));
+    REQUIRE(inspected.ok);
+    CHECK(inspected.result["ownerType"].toString() == "rack");
+    CHECK(inspected.result["sourceEndpointId"].isVoid());
+    CHECK(inspected.result["supportedTypes"].getArray()->size() == 2);
+
+    auto updated = initial;
+    updated.sourceEndpointId = "track:2";
+    updated.type = SidechainConfig::Type::Audio;
+    updated.enabled = true;
+    api.devices_.setSidechainResult = {SetSidechainStatus::Applied, updated, {}};
+    const auto changed = run(service, "sidechains.set",
+                             object({{"ownerPath", ownerJson},
+                                     {"sourceEndpointId", "track:2"},
+                                     {"type", "audio"},
+                                     {"enabled", true}}));
+    REQUIRE(changed.ok);
+    CHECK(changed.result["sidechain"]["sourceEndpointId"].toString() == "track:2");
+    CHECK_FALSE(changed.result["sidechain"].hasProperty("sourceTrackId"));
+    REQUIRE(api.devices_.sidechainWrites.size() == 1);
+    REQUIRE(api.devices_.sidechainWrites.back().second.sourceEndpointId.has_value());
+    CHECK(*api.devices_.sidechainWrites.back().second.sourceEndpointId ==
+          std::optional<juce::String>{"track:2"});
+    CHECK(service.currentRevision() == INITIAL_REVISION + 1);
+
+    api.devices_.setSidechainResult = {SetSidechainStatus::Unchanged, updated, {}};
+    const auto unchanged = run(service, "sidechains.set", object({{"ownerPath", ownerJson}}));
+    REQUIRE(unchanged.ok);
+    CHECK(service.currentRevision() == INITIAL_REVISION + 1);
+
+    api.devices_.setSidechainResult = {SetSidechainStatus::Applied, initial, {}};
+    const auto cleared = run(service, "sidechains.set",
+                             object({{"ownerPath", ownerJson}, {"sourceEndpointId", juce::var()}}));
+    REQUIRE(cleared.ok);
+    REQUIRE(api.devices_.sidechainWrites.back().second.sourceEndpointId.has_value());
+    CHECK_FALSE(api.devices_.sidechainWrites.back().second.sourceEndpointId->has_value());
+}
+
 TEST_CASE("grooves.upsert then grooves.list round-trips the template name",
           "[remote][service][grooves]") {
     const MessageThreadRelaxation relaxation;

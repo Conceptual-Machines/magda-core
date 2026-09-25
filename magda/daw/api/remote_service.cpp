@@ -36,6 +36,8 @@ std::vector<Topic> topicsFor(const juce::String& operationName) {
         return {Topic::Tracks};
     if (operationName == "routing.set")
         return {Topic::Tracks};
+    if (operationName.startsWith("sidechains."))
+        return {Topic::Devices};
     // `session.get` projects its slots out of the clips, so creating or deleting
     // one changes the session grid whether or not the request said "session".
     // Over-broad on the clip operations that cannot affect it — adding a note —

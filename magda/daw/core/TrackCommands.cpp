@@ -1424,6 +1424,36 @@ void SetDeviceBypassedCommand::undo() {
     executed_ = false;
 }
 
+SetSidechainConfigCommand::SetSidechainConfigCommand(ChainNodePath ownerPath,
+                                                     SidechainConfig sidechain)
+    : ownerPath_(std::move(ownerPath)), sidechain_(sidechain) {}
+
+void SetSidechainConfigCommand::execute() {
+    auto& tracks = TrackManager::getInstance();
+    const SidechainConfig* current = nullptr;
+    if (const auto* device = tracks.getDeviceInChainByPath(ownerPath_))
+        current = &device->sidechain;
+    else if (const auto* rack = tracks.getRackByPath(ownerPath_))
+        current = &rack->sidechain;
+
+    if (current == nullptr || *current == sidechain_) {
+        executed_ = false;
+        return;
+    }
+    if (!captured_) {
+        previous_ = *current;
+        captured_ = true;
+    }
+    executed_ = tracks.setSidechainConfigByPath(ownerPath_, sidechain_);
+}
+
+void SetSidechainConfigCommand::undo() {
+    if (!executed_ || !captured_)
+        return;
+    TrackManager::getInstance().setSidechainConfigByPath(ownerPath_, previous_);
+    executed_ = false;
+}
+
 ApplyDevicePresetCommand::ApplyDevicePresetCommand(ChainNodePath devicePath, DeviceInfo presetState,
                                                    std::vector<std::pair<int, int>> parameterRemaps)
     : devicePath_(std::move(devicePath)),

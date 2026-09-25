@@ -614,10 +614,12 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
         obj->setProperty("insert", juce::var(insertObj));
     }
 
-    if (device.sidechain.isActive()) {
+    if (device.sidechain.isConfigured()) {
         auto* scObj = new juce::DynamicObject();
         scObj->setProperty("type", static_cast<int>(device.sidechain.type));
         scObj->setProperty("sourceTrackId", device.sidechain.sourceTrackId);
+        if (!device.sidechain.enabled)
+            scObj->setProperty("enabled", false);
         // Only when they are not the defaults a project that predates them
         // reads back as: post-fader, no trim, not listening (#2329).
         if (device.sidechain.tapPoint != ModTapPoint::PostFader)
@@ -864,6 +866,8 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
         outDevice.sidechain.type =
             static_cast<SidechainConfig::Type>(static_cast<int>(scObj->getProperty("type")));
         outDevice.sidechain.sourceTrackId = scObj->getProperty("sourceTrackId");
+        if (scObj->hasProperty("enabled"))
+            outDevice.sidechain.enabled = static_cast<bool>(scObj->getProperty("enabled"));
         // Absent in a project that predates them, which is the default each
         // field carries: post-fader, no trim, not listening.
         if (scObj->hasProperty("tapPoint"))
@@ -913,10 +917,12 @@ juce::var ProjectSerializer::serializeRackInfo(const RackInfo& rack) {
     obj->setProperty("mods", juce::var(modsArray));
 
     // Sidechain
-    if (rack.sidechain.isActive()) {
+    if (rack.sidechain.isConfigured()) {
         auto* scObj = new juce::DynamicObject();
         scObj->setProperty("type", static_cast<int>(rack.sidechain.type));
         scObj->setProperty("sourceTrackId", rack.sidechain.sourceTrackId);
+        if (!rack.sidechain.enabled)
+            scObj->setProperty("enabled", false);
         obj->setProperty("sidechain", juce::var(scObj));
     }
 
@@ -993,6 +999,8 @@ bool ProjectSerializer::deserializeRackInfo(const juce::var& json, RackInfo& out
         outRack.sidechain.type =
             static_cast<SidechainConfig::Type>(static_cast<int>(scObj->getProperty("type")));
         outRack.sidechain.sourceTrackId = scObj->getProperty("sourceTrackId");
+        if (scObj->hasProperty("enabled"))
+            outRack.sidechain.enabled = static_cast<bool>(scObj->getProperty("enabled"));
     }
 
     return true;

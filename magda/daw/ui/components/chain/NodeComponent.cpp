@@ -1614,8 +1614,7 @@ void NodeComponent::initializeModsMacrosPanels() {
 
         juce::PopupMenu menu;
 
-        bool hasSidechain =
-            sidechain.type == sidechainType && sidechain.sourceTrackId != magda::INVALID_TRACK_ID;
+        bool hasSidechain = sidechain.isActive() && sidechain.type == sidechainType;
 
         menu.addSectionHeader(isAudioMode ? "Audio Trigger Source" : "MIDI Trigger Source");
         menu.addItem(1, "Self", true, !hasSidechain);

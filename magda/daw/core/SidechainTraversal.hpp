@@ -14,13 +14,15 @@ inline bool typeMatches(const SidechainConfig& config,
 
 inline bool deviceUsesSource(const DeviceInfo& device, TrackId sourceTrackId,
                              std::optional<SidechainConfig::Type> requiredType = std::nullopt) {
-    return sourceTrackId != INVALID_TRACK_ID && device.sidechain.sourceTrackId == sourceTrackId &&
+    return sourceTrackId != INVALID_TRACK_ID && device.sidechain.isActive() &&
+           device.sidechain.sourceTrackId == sourceTrackId &&
            typeMatches(device.sidechain, requiredType);
 }
 
 inline bool rackUsesSource(const RackInfo& rack, TrackId sourceTrackId,
                            std::optional<SidechainConfig::Type> requiredType = std::nullopt) {
-    return sourceTrackId != INVALID_TRACK_ID && rack.sidechain.sourceTrackId == sourceTrackId &&
+    return sourceTrackId != INVALID_TRACK_ID && rack.sidechain.isActive() &&
+           rack.sidechain.sourceTrackId == sourceTrackId &&
            typeMatches(rack.sidechain, requiredType);
 }
 
@@ -57,11 +59,11 @@ inline bool elementsUseSource(const std::vector<ChainElement>& elements, TrackId
 inline bool elementsContainExternalSource(const std::vector<ChainElement>& elements) {
     for (const auto& element : elements) {
         if (isDevice(element)) {
-            if (getDevice(element).sidechain.sourceTrackId != INVALID_TRACK_ID)
+            if (getDevice(element).sidechain.isActive())
                 return true;
         } else if (isRack(element)) {
             const auto& rack = getRack(element);
-            if (rack.sidechain.sourceTrackId != INVALID_TRACK_ID)
+            if (rack.sidechain.isActive())
                 return true;
 
             for (const auto& chain : rack.chains)
@@ -122,14 +124,14 @@ inline bool rackHasAudioTriggeredModForSource(const RackInfo& rack, TrackId sour
 }
 
 inline std::optional<TrackId> findFirstSource(const RackInfo& rack) {
-    if (rack.sidechain.sourceTrackId != INVALID_TRACK_ID)
+    if (rack.sidechain.isActive())
         return rack.sidechain.sourceTrackId;
 
     for (const auto& chain : rack.chains) {
         for (const auto& element : chain.elements) {
             if (isDevice(element)) {
                 const auto sourceTrackId = getDevice(element).sidechain.sourceTrackId;
-                if (sourceTrackId != INVALID_TRACK_ID)
+                if (getDevice(element).sidechain.isActive())
                     return sourceTrackId;
             } else if (isRack(element)) {
                 if (auto nestedSource = findFirstSource(getRack(element)))

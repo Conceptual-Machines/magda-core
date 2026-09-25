@@ -161,7 +161,7 @@ struct RackInfo {
     ModArray mods = createDefaultMods(0);
 
     // The source a rack's own triggers and followers listen to (cross-track).
-    // Only `type` and `sourceTrackId` apply: a rack has no sidechain edge for
+    // Only `type`, `sourceTrackId`, and `enabled` apply: a rack has no sidechain edge for
     // the tap point, trim and listen a device's key carries (#2329).
     SidechainConfig sidechain;
 
