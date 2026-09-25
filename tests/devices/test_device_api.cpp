@@ -744,8 +744,8 @@ TEST_CASE("Drum Grid facade edits pads and their device chains as undoable steps
     REQUIRE(tm.getPad(gridPath, 2)->id == chainId);
     REQUIRE(tm.getPad(gridPath, 2)->volume == -9.0f);
 
-    const auto sampleFile =
-        juce::File("/private/tmp").getNonexistentChildFile("magda-2822-pad", ".wav", false);
+    const auto sampleFile = juce::File::createTempFile(".wav");
+    REQUIRE(sampleFile.create().wasOk());
     const unsigned char wav[] = {'R', 'I', 'F', 'F', 38,  0,  0, 0, 'W', 'A', 'V', 'E',
                                  'f', 'm', 't', ' ', 16,  0,  0, 0, 1,   0,   1,   0,
                                  68,  172, 0,   0,   136, 88, 1, 0, 2,   0,   16,  0,
