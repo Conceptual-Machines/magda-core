@@ -25,12 +25,22 @@ TEST_CASE("agent surface registry has distinct bounded capabilities", "[console_
     const auto& automation = magda::agentSurface(AgentSurfaceId::Automation);
     const auto& device = magda::agentSurface(AgentSurfaceId::DevicePanel);
     const auto& master = magda::agentSurface(AgentSurfaceId::Master);
+    const auto& drummer = magda::agentSurface(AgentSurfaceId::Drummer);
 
     REQUIRE(containsTool(arrangement, "tracks.create"));
+    REQUIRE(containsTool(arrangement, "trackPresets.list"));
+    REQUIRE(containsTool(arrangement, "tracks.createFromPreset"));
+    REQUIRE(containsTool(arrangement, "tracks.group"));
+    REQUIRE(containsTool(arrangement, "tracks.move"));
     REQUIRE(containsTool(arrangement, "clips.move"));
     REQUIRE(containsTool(arrangement, "clips.resize"));
     REQUIRE(containsTool(arrangement, "clips.duplicate"));
+    REQUIRE(containsTool(arrangement, "clips.update"));
+    REQUIRE(containsTool(arrangement, "clips.transpose"));
     REQUIRE(containsTool(arrangement, "clips.quantize"));
+    REQUIRE(containsTool(arrangement, "clips.sliceNotes"));
+    REQUIRE(containsTool(arrangement, "grooves.list"));
+    REQUIRE(containsTool(arrangement, "grooves.upsert"));
     REQUIRE(containsTool(arrangement, "project.save"));
     REQUIRE(containsTool(arrangement, "project.setLoopRange"));
     REQUIRE(containsTool(arrangement, "chordTrack.get"));
@@ -41,6 +51,12 @@ TEST_CASE("agent surface registry has distinct bounded capabilities", "[console_
     REQUIRE(containsTool(piano, "clips.move"));
     REQUIRE(containsTool(piano, "clips.resize"));
     REQUIRE(containsTool(piano, "clips.duplicate"));
+    REQUIRE(containsTool(piano, "clips.update"));
+    REQUIRE(containsTool(piano, "clips.transpose"));
+    REQUIRE(containsTool(piano, "clips.quantize"));
+    REQUIRE(containsTool(piano, "clips.sliceNotes"));
+    REQUIRE(containsTool(piano, "grooves.list"));
+    REQUIRE(containsTool(piano, "grooves.upsert"));
     REQUIRE(containsTool(piano, "chordTrack.get"));
     REQUIRE(containsTool(piano, "chordTrack.ensure"));
     REQUIRE_FALSE(containsTool(piano, "tracks.delete"));
@@ -85,6 +101,13 @@ TEST_CASE("agent surface registry has distinct bounded capabilities", "[console_
 
     REQUIRE(master.runPolicy.maxMutations == 0);
     REQUIRE_FALSE(containsTool(master, "tracks.update"));
+
+    REQUIRE(containsTool(drummer, "clips.update"));
+    REQUIRE(containsTool(drummer, "clips.transpose"));
+    REQUIRE(containsTool(drummer, "clips.quantize"));
+    REQUIRE(containsTool(drummer, "clips.sliceNotes"));
+    REQUIRE(containsTool(drummer, "grooves.list"));
+    REQUIRE(containsTool(drummer, "grooves.upsert"));
 }
 
 TEST_CASE("surface context is bounded and always revisioned", "[console_routing]") {
@@ -94,7 +117,7 @@ TEST_CASE("surface context is bounded and always revisioned", "[console_routing]
         REQUIRE(containsProvider(surface, magda::AgentContextProvider::ActiveView));
         REQUIRE(containsProvider(surface, magda::AgentContextProvider::Conversation));
         REQUIRE(surface.contextProviders.size() <= 10);
-        REQUIRE(surface.toolAllowlist.size() <= 29);
+        REQUIRE(surface.toolAllowlist.size() <= 32);
     }
 }
 

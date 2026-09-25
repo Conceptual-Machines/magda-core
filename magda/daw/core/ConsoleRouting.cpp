@@ -36,8 +36,8 @@ AgentSurfaceId defaultSurfaceForView(ViewMode view) {
 
 const std::vector<AgentSurface>& registeredAgentSurfaces() {
     // Tool names deliberately come only from remote::OperationRegistry. Missing
-    // APIs (device parameters/presets, mixer sends, note updates, mix capture)
-    // are described as responsibilities/context but are not fabricated as tools.
+    // APIs (preset application, mixer sends, mix capture) are described as
+    // responsibilities/context but are not fabricated as tools.
     static const std::vector<AgentSurface> surfaces = {
         {.id = AgentSurfaceId::Arrangement,
          .name = "arrangement",
@@ -56,14 +56,17 @@ const std::vector<AgentSurface>& registeredAgentSurfaces() {
                  "project.setTempo",     "project.setTimeSignature",
                  "project.setLoopRange", "tracks.list",
                  "chordTrack.get",       "chordTrack.ensure",
+                 "trackPresets.list",    "tracks.createFromPreset",
                  "tracks.get",           "tracks.create",
                  "tracks.update",        "tracks.delete",
+                 "tracks.group",         "tracks.move",
                  "clips.list",           "clips.get",
                  "clips.createMidi",     "clips.delete",
                  "clips.move",           "clips.resize",
                  "clips.duplicate",      "clips.update",
                  "clips.transpose",      "clips.quantize",
-                 "clips.sliceNotes",     "selection.get",
+                 "clips.sliceNotes",     "grooves.list",
+                 "grooves.upsert",       "selection.get",
                  "selection.set",        "transport.get",
              },
          .runPolicy = {.maxSteps = 12, .maxMutations = 12, .approveMutations = true},
@@ -85,8 +88,9 @@ const std::vector<AgentSurface>& registeredAgentSurfaces() {
                            "clips.get",       "clips.createMidi", "clips.addMidiNote",
                            "clips.delete",    "clips.move",       "clips.resize",
                            "clips.duplicate", "clips.update",     "clips.transpose",
-                           "clips.quantize",  "clips.sliceNotes", "selection.get",
-                           "selection.set",   "transport.get"},
+                           "clips.quantize",  "clips.sliceNotes", "grooves.list",
+                           "grooves.upsert",  "selection.get",    "selection.set",
+                           "transport.get"},
          .runPolicy = {.maxSteps = 10, .maxMutations = 8, .approveMutations = true},
          .outputPolicy = {.kind = AgentOutputKind::MusicalResult,
                           .includeMutationSummary = true,
@@ -246,11 +250,13 @@ const std::vector<AgentSurface>& registeredAgentSurfaces() {
          .contextProviders = {Provider::ProjectRevision, Provider::ActiveView, Provider::Selection,
                               Provider::Timing, Provider::TrackSummaries, Provider::ClipSummaries,
                               Provider::ReferenceMidi, Provider::Conversation},
-         .toolAllowlist = {"project.get", "tracks.list", "tracks.get", "clips.list", "clips.get",
-                           "clips.createMidi", "clips.addMidiNote", "clips.delete", "clips.move",
-                           "clips.resize", "clips.duplicate", "clips.update", "clips.transpose",
-                           "clips.quantize", "clips.sliceNotes", "selection.get", "selection.set",
-                           "transport.get"},
+         .toolAllowlist = {"project.get",       "tracks.list",     "tracks.get",
+                           "clips.list",        "clips.get",       "clips.createMidi",
+                           "clips.addMidiNote", "clips.delete",    "clips.move",
+                           "clips.resize",      "clips.duplicate", "clips.update",
+                           "clips.transpose",   "clips.quantize",  "clips.sliceNotes",
+                           "grooves.list",      "grooves.upsert",  "selection.get",
+                           "selection.set",     "transport.get"},
          .runPolicy = {.maxSteps = 10, .maxMutations = 8, .approveMutations = true},
          .outputPolicy = {.kind = AgentOutputKind::MusicalResult,
                           .includeMutationSummary = true,
