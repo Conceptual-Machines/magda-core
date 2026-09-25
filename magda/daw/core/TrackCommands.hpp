@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ClipInfo.hpp"
+#include "ReferenceImpact.hpp"
 #include "TrackManager.hpp"
 #include "UndoManager.hpp"
 
@@ -465,6 +466,31 @@ class ApplyDevicePresetCommand : public UndoableCommand {
     DeviceInfo presetState_;
     DeviceInfo previousState_;
     std::vector<std::pair<int, int>> parameterRemaps_;
+    bool captured_ = false;
+    bool executed_ = false;
+};
+
+/** Replace a track's preset-owned chain state while preserving the track itself. */
+class ApplyTrackPresetCommand : public UndoableCommand {
+  public:
+    ApplyTrackPresetCommand(TrackId trackId, TrackInfo presetState,
+                            std::vector<ReferenceTargetMapping> referenceRemaps = {});
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Apply Track Preset";
+    }
+
+    bool didApply() const {
+        return executed_;
+    }
+
+  private:
+    TrackId trackId_ = INVALID_TRACK_ID;
+    TrackInfo presetState_;
+    TrackInfo previousState_;
+    std::vector<ReferenceTargetMapping> referenceRemaps_;
     bool captured_ = false;
     bool executed_ = false;
 };

@@ -1023,6 +1023,12 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
      */
     bool applyChainPreset(TrackId trackId, std::vector<ChainElement> presetElements);
 
+    /** Build a re-keyed chain replacement while preserving all non-chain track state. */
+    std::optional<TrackInfo> prepareTrackPresetState(TrackId trackId, const TrackInfo& presetTrack);
+
+    /** Install a state returned by prepareTrackPresetState(). */
+    bool applyPreparedTrackPreset(TrackId trackId, const TrackInfo& preparedTrack);
+
     /**
      * @brief Set a device parameter value from the plugin's native UI
      *

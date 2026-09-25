@@ -779,6 +779,98 @@ TEST_CASE("devicePresets.list returns opaque path-free metadata",
     REQUIRE(errorCodeOf(missing) == "not_found");
 }
 
+TEST_CASE("tracks.applyPreset commits once, reports impacts, and supports replay and no-op",
+          "[remote][service][tracks][presets][2839]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    TrackInfo track;
+    track.id = 1;
+    track.name = "Existing";
+    api.tracks_.tracks.push_back(track);
+
+    ReferenceDescriptor preserved;
+    preserved.kind = ReferenceKind::Routing;
+    preserved.source.kind = ReferenceAddressKind::Routing;
+    preserved.source.trackId = 1;
+    preserved.target.kind = ReferenceAddressKind::Track;
+    preserved.target.trackId = 2;
+    api.tracks_.applyPresetResult.referenceImpact.preserved.push_back(
+        {preserved, ReferenceImpactReason::PolicyPreserve});
+
+    RemoteApiService service(api);
+    const auto input = object({{"trackId", 1}, {"presetId", "track-preset:abc"}});
+    auto context = fullyGrantedContext();
+    context.requestId = "apply-track-preset-1";
+    context.expectedRevision = INITIAL_REVISION;
+    const auto changed = run(service, "tracks.applyPreset", input, context);
+
+    REQUIRE(changed.ok);
+    REQUIRE(api.tracks_.appliedPresets.size() == 1);
+    CHECK(api.tracks_.appliedPresets.front().first == 1);
+    CHECK(api.tracks_.appliedPresets.front().second == "track-preset:abc");
+    CHECK(static_cast<int>(changed.result["trackId"]) == 1);
+    CHECK(changed.result["deviceGraph"].isObject());
+    REQUIRE(changed.result["referenceImpact"]["preservedReferences"].isArray());
+    CHECK(changed.result["referenceImpact"]["preservedReferences"].getArray()->size() == 1);
+    CHECK(changed.revision == INITIAL_REVISION + 1);
+
+    const auto replayed = run(service, "tracks.applyPreset", input, context);
+    REQUIRE(replayed.ok);
+    CHECK(api.tracks_.appliedPresets.size() == 1);
+    CHECK(replayed.revision == changed.revision);
+
+    api.tracks_.applyPresetResult.status = ApplyTrackPresetStatus::Unchanged;
+    context.requestId = "apply-track-preset-2";
+    context.expectedRevision = changed.revision;
+    const auto unchanged = run(service, "tracks.applyPreset", input, context);
+    REQUIRE(unchanged.ok);
+    CHECK(api.tracks_.appliedPresets.size() == 2);
+    CHECK(unchanged.revision == changed.revision);
+}
+
+TEST_CASE("tracks.applyPreset rejects missing presets and reference conflicts without mutation",
+          "[remote][service][tracks][presets][2839]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    TrackInfo track;
+    track.id = 1;
+    api.tracks_.tracks.push_back(track);
+    RemoteApiService service(api);
+    const auto input = object({{"trackId", 1}, {"presetId", "track-preset:missing"}});
+
+    api.tracks_.applyPresetResult.status = ApplyTrackPresetStatus::PresetNotFound;
+    const auto missing = run(service, "tracks.applyPreset", input);
+    REQUIRE_FALSE(missing.ok);
+    CHECK(errorCodeOf(missing) == "not_found");
+    CHECK(service.currentRevision() == INITIAL_REVISION);
+
+    api.tracks_.applyPresetResult.status = ApplyTrackPresetStatus::Incompatible;
+    const auto incompatible = run(service, "tracks.applyPreset", input);
+    REQUIRE_FALSE(incompatible.ok);
+    CHECK(errorCodeOf(incompatible) == "conflict");
+    CHECK(service.currentRevision() == INITIAL_REVISION);
+
+    ReferenceDescriptor rejectedReference;
+    rejectedReference.kind = ReferenceKind::Automation;
+    rejectedReference.target.kind = ReferenceAddressKind::Parameter;
+    rejectedReference.target.devicePath = ChainNodePath::topLevelDevice(1, 5);
+    api.tracks_.applyPresetResult.status = ApplyTrackPresetStatus::ReferenceConflict;
+    api.tracks_.applyPresetResult.referenceImpact.rejected.push_back(
+        {rejectedReference, ReferenceImpactReason::NoProvenRemap});
+    const auto rejected = run(service, "tracks.applyPreset", input);
+    REQUIRE_FALSE(rejected.ok);
+    CHECK(errorCodeOf(rejected) == "conflict");
+    REQUIRE(rejected.error.details["referenceImpact"]["rejectedReferences"].isArray());
+    CHECK(rejected.error.details["referenceImpact"]["rejectedReferences"].getArray()->size() == 1);
+    CHECK(service.currentRevision() == INITIAL_REVISION);
+
+    const auto noTrack = run(service, "tracks.applyPreset",
+                             object({{"trackId", 99}, {"presetId", "track-preset:missing"}}));
+    REQUIRE_FALSE(noTrack.ok);
+    CHECK(errorCodeOf(noTrack) == "not_found");
+    CHECK(service.currentRevision() == INITIAL_REVISION);
+}
+
 TEST_CASE("devices.applyPreset commits once, reports impacts, and detects a no-op",
           "[remote][service][devices][presets]") {
     const MessageThreadRelaxation relaxation;

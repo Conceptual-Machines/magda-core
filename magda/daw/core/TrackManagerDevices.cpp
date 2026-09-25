@@ -2325,6 +2325,72 @@ bool TrackManager::applyChainPreset(TrackId trackId, std::vector<ChainElement> p
     return true;
 }
 
+std::optional<TrackInfo> TrackManager::prepareTrackPresetState(TrackId trackId,
+                                                               const TrackInfo& presetTrack) {
+    const auto* live = getTrack(trackId);
+    if (live == nullptr)
+        return std::nullopt;
+
+    const auto destination = ChainNodePath::trackLevel(trackId);
+    for (const auto& element : presetTrack.chain.fxChainElements) {
+        if (checkPlacement({&element, {}, destination, true, true}) != PlacementRefusal::Allowed)
+            return std::nullopt;
+    }
+
+    std::vector<juce::String> analysisPlugins;
+    for (const auto& element : presetTrack.chain.postFxChainElements) {
+        const auto& device = element.device;
+        if (device.isInstrument || daw::audio::internalPluginHasTag(device.pluginId, "sidechain"))
+            return std::nullopt;
+        if (!daw::audio::isInternalAnalysisPlugin(device.pluginId))
+            continue;
+        if (std::ranges::contains(analysisPlugins, device.pluginId))
+            return std::nullopt;
+        analysisPlugins.push_back(device.pluginId);
+    }
+
+    auto prepared = *live;
+    prepared.chain = presetTrack.chain;
+    // Mixer-analysis devices are rail-managed mixer state, not part of a
+    // user-authored chain preset.
+    prepared.chain.mixerAnalysisElements = live->chain.mixerAnalysisElements;
+    prepared.macros = presetTrack.macros;
+    prepared.mods = presetTrack.mods;
+
+    PresetIdRemap remap;
+    remap.trackId = trackId;
+    ChainIdRemap ids;
+    reassignChainElementIds(prepared.chain.fxChainElements, ids);
+    remap.devices = std::move(ids.devices);
+    remap.racks = std::move(ids.racks);
+    remap.chains = std::move(ids.chains);
+
+    for (auto& element : prepared.chain.postFxChainElements) {
+        const auto oldId = element.device.id;
+        element.device.id = nextPostFxDeviceId_++;
+        remap.postFxDevices[oldId] = element.device.id;
+    }
+
+    remapPresetLinks(prepared.macros, prepared.mods, remap);
+    remapPresetLinksRecursive(prepared.chain.fxChainElements, remap);
+    for (auto& element : prepared.chain.postFxChainElements) {
+        remapPresetLinks(element.device.macros, element.device.mods, remap);
+        element.device.pluginState = stripPresetRuntimePluginState(element.device.pluginState);
+    }
+    return prepared;
+}
+
+bool TrackManager::applyPreparedTrackPreset(TrackId trackId, const TrackInfo& preparedTrack) {
+    auto* live = getTrack(trackId);
+    if (live == nullptr || preparedTrack.id != trackId)
+        return false;
+
+    *live = preparedTrack;
+    notifyTrackDevicesChanged(trackId);
+    notifyModulationChanged();
+    return true;
+}
+
 void TrackManager::setDeviceParameterValueFromPlugin(const ChainNodePath& devicePath,
                                                      int paramIndex, float value) {
     // This method is called when the plugin's native UI changes a parameter.

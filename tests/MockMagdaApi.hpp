@@ -274,6 +274,8 @@ class MockSelectionApi : public SelectionApi {
 class MockTrackApi : public TrackApi {
   public:
     std::vector<TrackInfo> tracks;
+    ApplyTrackPresetResult applyPresetResult{ApplyTrackPresetStatus::Applied, {}};
+    std::vector<std::pair<TrackId, juce::String>> appliedPresets;
 
     struct VolumeWrite {
         TrackId id;
@@ -381,6 +383,10 @@ class MockTrackApi : public TrackApi {
             if (t.id == id)
                 return &t;
         return nullptr;
+    }
+    ApplyTrackPresetResult applyPreset(TrackId id, const juce::String& presetId) override {
+        appliedPresets.emplace_back(id, presetId);
+        return applyPresetResult;
     }
     void setTrackName(TrackId id, const juce::String& name) override {
         nameWrites.push_back({id, name});

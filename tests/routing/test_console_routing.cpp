@@ -30,6 +30,7 @@ TEST_CASE("agent surface registry has distinct bounded capabilities", "[console_
     REQUIRE(containsTool(arrangement, "tracks.create"));
     REQUIRE(containsTool(arrangement, "trackPresets.list"));
     REQUIRE(containsTool(arrangement, "tracks.createFromPreset"));
+    REQUIRE(containsTool(arrangement, "tracks.applyPreset"));
     REQUIRE(containsTool(arrangement, "tracks.group"));
     REQUIRE(containsTool(arrangement, "tracks.move"));
     REQUIRE(containsTool(arrangement, "clips.move"));
