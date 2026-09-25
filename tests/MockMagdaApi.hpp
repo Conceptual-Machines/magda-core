@@ -1175,6 +1175,24 @@ class MockDeviceApi : public DeviceApi {
         const auto it = devices.find(devicePath);
         return it != devices.end() ? &it->second : nullptr;
     }
+    ChainId createPad(const ChainNodePath&, int) override {
+        return INVALID_CHAIN_ID;
+    }
+    DeviceId setPadVoice(const ChainNodePath&, int, const juce::String&) override {
+        return INVALID_DEVICE_ID;
+    }
+    DeviceId setPadSample(const ChainNodePath&, int, const juce::String&) override {
+        return INVALID_DEVICE_ID;
+    }
+    bool clearPad(const ChainNodePath&, int) override {
+        return false;
+    }
+    bool swapPads(const ChainNodePath&, int, int) override {
+        return false;
+    }
+    bool updatePad(const ChainNodePath&, int, const PadUpdate&) override {
+        return false;
+    }
     std::vector<DeviceParameter> getDeviceParameters(
         const ChainNodePath& devicePath) const override {
         const auto* device = getDevice(devicePath);

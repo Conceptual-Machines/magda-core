@@ -8,6 +8,7 @@
 #include "MockMagdaApi.hpp"
 #include "RemoteTestScopes.hpp"
 #include "magda/daw/api/remote_service.hpp"
+#include "magda/daw/core/DrumGridPads.hpp"
 
 using namespace magda;
 using namespace magda::remote;
@@ -999,6 +1000,40 @@ TEST_CASE("devices.add creates a device and returns its address", "[remote][serv
         run(service, "devices.add", object({{"trackId", 1}, {"catalogId", "no.such.device"}}));
     REQUIRE_FALSE(unknown.ok);
     REQUIRE(errorCodeOf(unknown) == "not_found");
+}
+
+TEST_CASE("pads.list reads all slots without exposing sampler state", "[remote][service][pads]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 7);
+    DeviceInfo grid;
+    grid.id = 7;
+    grid.pluginId = "drumgrid";
+    auto& pad = ensurePadChain(ensurePads(grid), 0);
+    DeviceInfo sampler;
+    sampler.id = 8;
+    sampler.name = "Kick";
+    sampler.pluginState = "secret absolute path";
+    pad.elements.push_back(makeDeviceElement(sampler));
+    api.devices_.devices[path] = grid;
+    RemoteApiService service(api);
+
+    const auto response =
+        run(service, "pads.list", object({{"gridPath", toJson(makeDevicePathDto(path))}}));
+    REQUIRE(response.ok);
+    REQUIRE(response.result.isArray());
+    REQUIRE(response.result.getArray()->size() == 64);
+    const auto& first = (*response.result.getArray())[0];
+    REQUIRE(static_cast<bool>(first["populated"]));
+    REQUIRE(first["devicePaths"].getArray()->size() == 1);
+    REQUIRE_FALSE(juce::JSON::toString(response.result).contains("secret absolute path"));
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+
+    const auto missing = run(
+        service, "pads.list",
+        object({{"gridPath", toJson(makeDevicePathDto(ChainNodePath::topLevelDevice(1, 99)))}}));
+    REQUIRE_FALSE(missing.ok);
+    REQUIRE(errorCodeOf(missing) == "not_found");
 }
 
 TEST_CASE("devices.remove and devices.move act on resolvable paths only",

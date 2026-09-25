@@ -1,5 +1,6 @@
 #include "device_api_live.hpp"
 
+#include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_cryptography/juce_cryptography.h>
 
 #include <algorithm>
@@ -9,6 +10,9 @@
 #include "../audio/DeviceParameterList.hpp"
 #include "../audio/plugins/InternalPluginRegistry.hpp"
 #include "../audio/plugins/compiled/CompiledPluginRegistry.hpp"
+#include "../core/ChainWalk.hpp"
+#include "../core/DrumGridPads.hpp"
+#include "../core/PadCommands.hpp"
 #include "../core/ParameterUtils.hpp"
 #include "../core/PluginParameterConfigStore.hpp"
 #include "../core/PluginPresetScanner.hpp"
@@ -103,6 +107,24 @@ std::optional<DeviceInfo> deviceFromCatalogId(const juce::String& catalogId) {
     }
 
     return std::nullopt;
+}
+
+std::optional<ChainNodePath> owningGridPath(const ChainNodePath& padPath) {
+    if (!padPath.isPadOwned())
+        return std::nullopt;
+    const auto* track = TrackManager::getInstance().getTrack(padPath.trackId);
+    if (track == nullptr)
+        return std::nullopt;
+    std::optional<ChainNodePath> result;
+    chain_walk::forEachDevice(
+        track->chain.fxChainElements, ChainNodePath::trackLevel(padPath.trackId),
+        chain_walk::Pads::Enter, [&](const DeviceInfo& device, const ChainNodePath& path) {
+            if (device.id != padPath.getPadOwnerDeviceId() || !isPadRackDevice(device.pluginId))
+                return true;
+            result = path;
+            return false;
+        });
+    return result;
 }
 
 void appendPluginPresets(const DeviceInfo& device,
@@ -221,6 +243,22 @@ DeviceId DeviceApiLive::addDevice(const ChainNodePath& parentPath, const juce::S
     if (!device.has_value())
         return INVALID_DEVICE_ID;
 
+    if (parentPath.isPadOwned() && parentPath.steps.size() == 2 &&
+        parentPath.getType() == ChainNodeType::Chain) {
+        const auto gridPath = owningGridPath(parentPath);
+        auto& tm = TrackManager::getInstance();
+        if (!gridPath || tm.getPadChain(*gridPath, parentPath.getPadChainId()) == nullptr)
+            return INVALID_DEVICE_ID;
+        const auto* track = tm.getTrack(parentPath.trackId);
+        if (track == nullptr || (device->isInstrument && !track->canHostInstrument()))
+            return INVALID_DEVICE_ID;
+        DeviceId id = INVALID_DEVICE_ID;
+        editPads(*gridPath, "Add Pad Device", [&] {
+            id = tm.addDeviceToPad(*gridPath, parentPath.getPadChainId(), *device, index);
+        });
+        return id;
+    }
+
     // Track-level addresses the main FX chain; anything else must be a chain.
     const auto type = parentPath.getType();
     if (type != ChainNodeType::Track && type != ChainNodeType::Chain)
@@ -238,9 +276,160 @@ DeviceId DeviceApiLive::addDevice(const ChainNodePath& parentPath, const juce::S
     return raw->getCreatedDeviceId();
 }
 
+ChainId DeviceApiLive::createPad(const ChainNodePath& gridPath, int padIndex) {
+    const auto* grid = getDevice(gridPath);
+    if (grid == nullptr || !isPadRackDevice(grid->pluginId) || padIndex < 0 ||
+        padIndex >= kPadCount)
+        return INVALID_CHAIN_ID;
+    auto& tm = TrackManager::getInstance();
+    if (const auto* existing = tm.getPad(gridPath, padIndex))
+        return existing->id;
+    ChainId id = INVALID_CHAIN_ID;
+    editPads(gridPath, "Create Pad", [&] { id = tm.ensurePad(gridPath, padIndex); });
+    return id;
+}
+
+DeviceId DeviceApiLive::setPadVoice(const ChainNodePath& gridPath, int padIndex,
+                                    const juce::String& catalogId) {
+    const auto* grid = getDevice(gridPath);
+    const auto device = deviceFromCatalogId(catalogId);
+    if (grid == nullptr || !isPadRackDevice(grid->pluginId) || !device || padIndex < 0 ||
+        padIndex >= kPadCount)
+        return INVALID_DEVICE_ID;
+    auto& tm = TrackManager::getInstance();
+    const auto* track = tm.getTrack(gridPath.trackId);
+    if (track == nullptr || (device->isInstrument && !track->canHostInstrument()))
+        return INVALID_DEVICE_ID;
+    if (const auto* existing = tm.getPad(gridPath, padIndex);
+        existing != nullptr &&
+        (existing->lowNote != padNoteFor(padIndex) || existing->highNote != padNoteFor(padIndex)))
+        return INVALID_DEVICE_ID;
+    DeviceId id = INVALID_DEVICE_ID;
+    editPads(gridPath, "Set Pad Device",
+             [&] { id = tm.setPadDevice(gridPath, padIndex, *device); });
+    return id;
+}
+
+DeviceId DeviceApiLive::setPadSample(const ChainNodePath& gridPath, int padIndex,
+                                     const juce::String& samplePath) {
+    const juce::File file(samplePath);
+    if (!juce::File::isAbsolutePath(samplePath) || !file.existsAsFile())
+        return INVALID_DEVICE_ID;
+    juce::AudioFormatManager formats;
+    formats.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(file));
+    if (!reader || reader->lengthInSamples <= 0)
+        return INVALID_DEVICE_ID;
+    const auto* grid = getDevice(gridPath);
+    if (grid == nullptr || !isPadRackDevice(grid->pluginId) || padIndex < 0 ||
+        padIndex >= kPadCount)
+        return INVALID_DEVICE_ID;
+    auto& tm = TrackManager::getInstance();
+    const auto* track = tm.getTrack(gridPath.trackId);
+    if (track == nullptr || !track->canHostInstrument())
+        return INVALID_DEVICE_ID;
+    if (const auto* existing = tm.getPad(gridPath, padIndex);
+        existing != nullptr &&
+        (existing->lowNote != padNoteFor(padIndex) || existing->highNote != padNoteFor(padIndex)))
+        return INVALID_DEVICE_ID;
+    const auto sampler = padSamplerDevice(file.getFullPathName(), padNoteFor(padIndex));
+    DeviceId id = INVALID_DEVICE_ID;
+    editPads(gridPath, "Set Pad Sample",
+             [&] { id = tm.setPadDevice(gridPath, padIndex, sampler); });
+    return id;
+}
+
+bool DeviceApiLive::clearPad(const ChainNodePath& gridPath, int padIndex) {
+    auto& tm = TrackManager::getInstance();
+    const auto* pad = tm.getPad(gridPath, padIndex);
+    if (pad == nullptr || pad->lowNote != padNoteFor(padIndex) ||
+        pad->highNote != padNoteFor(padIndex))
+        return false;
+    editPads(gridPath, "Clear Pad", [&] { tm.clearPad(gridPath, padIndex); });
+    return true;
+}
+
+bool DeviceApiLive::swapPads(const ChainNodePath& gridPath, int padA, int padB) {
+    auto& tm = TrackManager::getInstance();
+    if (padA < 0 || padA >= kPadCount || padB < 0 || padB >= kPadCount || padA == padB ||
+        tm.getPads(gridPath) == nullptr)
+        return false;
+    if (tm.getPad(gridPath, padA) == nullptr && tm.getPad(gridPath, padB) == nullptr)
+        return true;
+    for (const int index : {padA, padB})
+        if (const auto* pad = tm.getPad(gridPath, index);
+            pad != nullptr &&
+            (pad->lowNote != padNoteFor(index) || pad->highNote != padNoteFor(index)))
+            return false;
+    editPads(gridPath, "Swap Pads", [&] { tm.swapPads(gridPath, padA, padB); });
+    return true;
+}
+
+bool DeviceApiLive::updatePad(const ChainNodePath& gridPath, int padIndex,
+                              const PadUpdate& update) {
+    auto& tm = TrackManager::getInstance();
+    const auto* pad = tm.getPad(gridPath, padIndex);
+    if (pad == nullptr)
+        return false;
+    const bool changed = (update.lowNote && *update.lowNote != pad->lowNote) ||
+                         (update.highNote && *update.highNote != pad->highNote) ||
+                         (update.rootNote && *update.rootNote != pad->rootNote) ||
+                         (update.levelDb && *update.levelDb != pad->volume) ||
+                         (update.pan && *update.pan != pad->pan) ||
+                         (update.muted && *update.muted != pad->muted) ||
+                         (update.solo && *update.solo != pad->solo) ||
+                         (update.bypassed && *update.bypassed != pad->bypassed) ||
+                         (update.outputBus && *update.outputBus != pad->outputIndex);
+    if (!changed)
+        return true;
+    const int low = update.lowNote.value_or(pad->lowNote);
+    const int high = update.highNote.value_or(pad->highNote);
+    const int root = update.rootNote.value_or(pad->rootNote);
+    if (low < kPadBaseNote || high >= kPadBaseNote + kPadCount || low > high || root < 0 ||
+        root > 127 || !tm.padNoteRangeIsFree(gridPath, padIndex, low, high))
+        return false;
+    if (update.outputBus && (*update.outputBus < 0 || *update.outputBus >= kPadBusCount ||
+                             (*update.outputBus > 0 && !tm.padBusesAvailable(gridPath))))
+        return false;
+    if ((update.levelDb &&
+         (!std::isfinite(*update.levelDb) || *update.levelDb < -60.0f || *update.levelDb > 6.0f)) ||
+        (update.pan && (!std::isfinite(*update.pan) || *update.pan < -1.0f || *update.pan > 1.0f)))
+        return false;
+    editPads(gridPath, "Update Pad", [&] {
+        if (update.levelDb)
+            tm.setPadVolume(gridPath, padIndex, *update.levelDb);
+        if (update.pan)
+            tm.setPadPan(gridPath, padIndex, *update.pan);
+        if (update.muted)
+            tm.setPadMuted(gridPath, padIndex, *update.muted);
+        if (update.solo)
+            tm.setPadSolo(gridPath, padIndex, *update.solo);
+        if (update.bypassed)
+            tm.setPadBypassed(gridPath, padIndex, *update.bypassed);
+        if (update.outputBus)
+            tm.setPadOutput(gridPath, padIndex, *update.outputBus);
+        // A changed range may no longer cover padIndex. Apply the other fields
+        // while the chain is still reachable through that index.
+        if (update.lowNote || update.highNote || update.rootNote)
+            tm.setPadNoteRange(gridPath, padIndex, low, high, root);
+    });
+    return true;
+}
+
 bool DeviceApiLive::removeDevice(const ChainNodePath& devicePath) {
     if (getDevice(devicePath) == nullptr)
         return false;
+
+    if (devicePath.isPadOwned() && devicePath.steps.size() == 3) {
+        const auto gridPath = owningGridPath(devicePath);
+        if (!gridPath)
+            return false;
+        editPads(*gridPath, "Remove Pad Device", [&] {
+            TrackManager::getInstance().removeDeviceFromPad(*gridPath, devicePath.getPadChainId(),
+                                                            devicePath.getDeviceId());
+        });
+        return true;
+    }
 
     auto command = std::make_unique<RemoveDeviceByPathCommand>(devicePath);
     auto* raw = command.get();
@@ -251,6 +440,28 @@ bool DeviceApiLive::removeDevice(const ChainNodePath& devicePath) {
 bool DeviceApiLive::moveDevice(const ChainNodePath& devicePath, int toIndex) {
     if (toIndex < 0 || getDevice(devicePath) == nullptr)
         return false;
+
+    if (devicePath.isPadOwned() && devicePath.steps.size() == 3) {
+        const auto gridPath = owningGridPath(devicePath);
+        auto* pad = gridPath ? TrackManager::getInstance().getPadChain(*gridPath,
+                                                                       devicePath.getPadChainId())
+                             : nullptr;
+        if (pad == nullptr || toIndex >= static_cast<int>(pad->elements.size()))
+            return false;
+        const auto found = std::ranges::find_if(pad->elements, [&](const ChainElement& element) {
+            return isDevice(element) && magda::getDevice(element).id == devicePath.getDeviceId();
+        });
+        if (found == pad->elements.end())
+            return false;
+        const auto fromIndex = static_cast<int>(found - pad->elements.begin());
+        if (fromIndex == toIndex)
+            return true;
+        editPads(*gridPath, "Move Pad Device", [&] {
+            TrackManager::getInstance().moveDeviceInPad(*gridPath, devicePath.getPadChainId(),
+                                                        fromIndex, toIndex);
+        });
+        return true;
+    }
 
     // A move within one chain is a move to the same parent, which the existing
     // path-based command already models.
