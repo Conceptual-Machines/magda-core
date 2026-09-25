@@ -132,4 +132,10 @@ TEST_CASE("Device presets expose stable path-free metadata", "[presets][device][
     CHECK(listed[0].id == stableId);
     CHECK(listed[0].name == "Reese");
     CHECK(listed[0].category == "Factory");
+
+    DeviceInfo loaded;
+    REQUIRE(presets.loadDevicePresetById(source.name, listed[0].id, loaded));
+    CHECK(loaded.pluginId == source.pluginId);
+    CHECK(loaded.pluginState == source.pluginState);
+    CHECK_FALSE(presets.loadDevicePresetById(source.name, "device-preset:not-listed", loaded));
 }

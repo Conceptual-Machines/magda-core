@@ -593,6 +593,19 @@ std::vector<PresetManager::DevicePresetMetadata> PresetManager::getDevicePresetM
     return result;
 }
 
+bool PresetManager::loadDevicePresetById(const juce::String& pluginFolder,
+                                         const juce::String& presetId, DeviceInfo& outDevice) {
+    for (const auto& relativeName : getDevicePresets(pluginFolder)) {
+        const auto file = getDevicePluginDirectory(pluginFolder)
+                              .getChildFile(relativeName + juce::String(kPresetExtension));
+        if ("device-preset:" + idFromPresetFile(file) == presetId)
+            return loadDevicePreset(pluginFolder, relativeName, outDevice);
+    }
+
+    lastError_ = "Device preset id was not found";
+    return false;
+}
+
 bool PresetManager::deleteDevicePreset(const juce::String& pluginFolder,
                                        const juce::String& presetRelativePath) {
     auto target = getDevicePluginDirectory(pluginFolder)

@@ -15,6 +15,8 @@ class DeviceApiLive : public DeviceApi {
     std::vector<DeviceParameter> getDeviceParameters(
         const ChainNodePath& devicePath) const override;
     std::vector<DevicePresetEntry> getDevicePresets(const ChainNodePath& devicePath) const override;
+    ApplyDevicePresetResult applyPreset(const ChainNodePath& devicePath,
+                                        const juce::String& presetId) override;
 
     DeviceId addDevice(const ChainNodePath& parentPath, const juce::String& catalogId,
                        int index) override;

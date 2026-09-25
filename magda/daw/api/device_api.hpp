@@ -7,6 +7,7 @@
 
 #include "../core/ChainNodePath.hpp"
 #include "../core/DeviceInfo.hpp"
+#include "../core/ReferenceImpact.hpp"
 #include "../core/TypeIds.hpp"
 
 namespace magda {
@@ -44,6 +45,22 @@ struct DevicePresetEntry {
     juce::String source;
 
     bool operator==(const DevicePresetEntry&) const = default;
+};
+
+enum class ApplyDevicePresetStatus {
+    Applied,
+    Unchanged,
+    DeviceNotFound,
+    PresetNotFound,
+    Incompatible,
+    ReferenceConflict,
+    LoadFailed,
+};
+
+/** Result of resolving, preflighting, and atomically applying one opaque preset id. */
+struct ApplyDevicePresetResult {
+    ApplyDevicePresetStatus status = ApplyDevicePresetStatus::LoadFailed;
+    ReferenceImpactPlan referenceImpact;
 };
 
 /**
@@ -161,6 +178,10 @@ class DeviceApi {
     /** Presets applicable to this device, with opaque ids and no file paths. */
     virtual std::vector<DevicePresetEntry> getDevicePresets(
         const ChainNodePath& devicePath) const = 0;
+
+    /** Apply an id returned by getDevicePresets() without replacing the device slot. */
+    virtual ApplyDevicePresetResult applyPreset(const ChainNodePath& devicePath,
+                                                const juce::String& presetId) = 0;
 
     /**
      * @brief Add a device to a track's FX chain or to a rack chain.

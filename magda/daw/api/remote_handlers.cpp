@@ -1239,6 +1239,47 @@ HandlerResult devicePresetsList(MagdaApi& api, const juce::var& input, const Req
     return HandlerResult::ok(toJsonArray(items));
 }
 
+HandlerResult devicesApplyPreset(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto path = toChainNodePath(devicePathFromJson(input["devicePath"]));
+    if (!path)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "devicePath does not resolve");
+    if (api.devices().getDevice(*path) == nullptr)
+        return HandlerResult::fail(ErrorCode::NotFound, "no device at devicePath");
+
+    auto applied = api.devices().applyPreset(*path, input["presetId"].toString());
+    switch (applied.status) {
+        case ApplyDevicePresetStatus::DeviceNotFound:
+            return HandlerResult::fail(ErrorCode::NotFound, "no device at devicePath");
+        case ApplyDevicePresetStatus::PresetNotFound:
+            return HandlerResult::fail(ErrorCode::NotFound,
+                                       "preset is not available for this device");
+        case ApplyDevicePresetStatus::Incompatible:
+            return HandlerResult::fail(ErrorCode::Conflict,
+                                       "preset is not compatible with this device");
+        case ApplyDevicePresetStatus::ReferenceConflict: {
+            auto* details = new juce::DynamicObject();
+            details->setProperty("referenceImpact",
+                                 toJson(makeReferenceImpactResultDto(applied.referenceImpact)));
+            return HandlerResult::fail(Error{ErrorCode::Conflict,
+                                             "preset would invalidate an existing reference",
+                                             {},
+                                             juce::var(details)});
+        }
+        case ApplyDevicePresetStatus::LoadFailed:
+            return HandlerResult::fail(ErrorCode::InternalError, "failed to load device preset");
+        case ApplyDevicePresetStatus::Applied:
+        case ApplyDevicePresetStatus::Unchanged:
+            break;
+    }
+
+    auto* result = new juce::DynamicObject();
+    result->setProperty("deviceGraph", toJson(makeDeviceGraphDto(api.tracks().getTracks())));
+    result->setProperty("referenceImpact",
+                        toJson(makeReferenceImpactResultDto(applied.referenceImpact)));
+    return applied.status == ApplyDevicePresetStatus::Unchanged ? HandlerResult::unchanged(result)
+                                                                : HandlerResult::ok(result);
+}
+
 HandlerResult devicesAdd(MagdaApi& api, const juce::var& input, const RequestContext&) {
     const auto catalogId = input["catalogId"].toString();
     if (!api.devices().findCatalogEntry(catalogId).has_value())

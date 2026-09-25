@@ -8,9 +8,12 @@
 
 #include "../engine/PluginService.hpp"
 #include "../project/ProjectManager.hpp"
+#include "AutomationManager.hpp"
+#include "ChainWalk.hpp"
 #include "ClipManager.hpp"
 #include "RangesHelpers.hpp"
 #include "TempoUtils.hpp"
+#include "controllers/BindingRegistry.hpp"
 
 namespace magda {
 
@@ -38,6 +41,77 @@ const auto byParentThenIndex = [](const auto& a, const auto& b) {
 const auto sameParent = [](const auto& a, const auto& b) {
     return a.originalParentPath == b.originalParentPath;
 };
+
+void remapParameterTarget(ControlTarget& target, const ChainNodePath& devicePath,
+                          const std::vector<std::pair<int, int>>& remaps) {
+    if (target.kind != ControlTarget::Kind::PluginParam || target.devicePath != devicePath)
+        return;
+    const auto found = std::ranges::find(remaps, target.paramIndex, &std::pair<int, int>::first);
+    if (found != remaps.end())
+        target.paramIndex = found->second;
+}
+
+void remapLinks(MacroArray& macros, ModArray& mods, const ChainNodePath& devicePath,
+                const std::vector<std::pair<int, int>>& remaps) {
+    for (auto& macro : macros)
+        for (auto& link : macro.links)
+            remapParameterTarget(link.target, devicePath, remaps);
+    for (auto& mod : mods)
+        for (auto& link : mod.links)
+            remapParameterTarget(link.target, devicePath, remaps);
+}
+
+void remapParameterReferences(const ChainNodePath& devicePath,
+                              const std::vector<std::pair<int, int>>& remaps) {
+    if (remaps.empty())
+        return;
+
+    auto& tracks = TrackManager::getInstance();
+    tracks.forEachTrackIncludingMaster([&](TrackInfo& track) {
+        remapLinks(track.macros, track.mods, devicePath, remaps);
+        chain_walk::forEachNode(
+            track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
+            chain_walk::Pads::Enter,
+            [&](DeviceInfo& device, const ChainNodePath&) {
+                remapLinks(device.macros, device.mods, devicePath, remaps);
+            },
+            [&](RackInfo& rack, const ChainNodePath&) {
+                remapLinks(rack.macros, rack.mods, devicePath, remaps);
+                return chain_walk::Descend::Into;
+            });
+        for (auto& element : track.chain.postFxChainElements)
+            remapLinks(element.device.macros, element.device.mods, devicePath, remaps);
+        for (auto& element : track.chain.mixerAnalysisElements)
+            remapLinks(element.device.macros, element.device.mods, devicePath, remaps);
+    });
+
+    auto& automation = AutomationManager::getInstance();
+    const auto lanes = automation.getLanes();
+    for (const auto& laneSnapshot : lanes) {
+        auto* lane = automation.getLane(laneSnapshot.id);
+        if (lane == nullptr)
+            continue;
+        const auto before = lane->target;
+        remapParameterTarget(lane->target, devicePath, remaps);
+        if (lane->target != before)
+            automation.invalidateLane(lane->id);
+    }
+
+    auto& bindings = BindingRegistry::getInstance();
+    for (const auto scope : {BindingScope::Global, BindingScope::Project}) {
+        for (auto binding : bindings.bindings(scope)) {
+            auto* target = std::get_if<ControlTarget>(&binding.target);
+            if (target == nullptr)
+                continue;
+            const auto before = *target;
+            remapParameterTarget(*target, devicePath, remaps);
+            if (*target != before)
+                bindings.update(scope, binding);
+        }
+    }
+
+    tracks.notifyModulationChanged();
+}
 
 ChainNodePath findChainElementPathRecursive(const ChainNodePath& parentPath,
                                             const std::vector<ChainElement>& elements,
@@ -1062,6 +1136,49 @@ void SetDeviceBypassedCommand::undo() {
     auto& tracks = TrackManager::getInstance();
     tracks.setDeviceBypassedByPath(devicePath_, previousBypassed_);
     tracks.setDeviceDeltaSoloByPath(devicePath_, previousDeltaSolo_);
+    executed_ = false;
+}
+
+ApplyDevicePresetCommand::ApplyDevicePresetCommand(ChainNodePath devicePath, DeviceInfo presetState,
+                                                   std::vector<std::pair<int, int>> parameterRemaps)
+    : devicePath_(std::move(devicePath)),
+      presetState_(std::move(presetState)),
+      parameterRemaps_(std::move(parameterRemaps)) {}
+
+void ApplyDevicePresetCommand::execute() {
+    auto& tracks = TrackManager::getInstance();
+    const auto* live = tracks.getDeviceInChainByPath(devicePath_);
+    if (live == nullptr) {
+        executed_ = false;
+        return;
+    }
+
+    if (!captured_) {
+        previousState_ = *live;
+        captured_ = true;
+    }
+
+    remapParameterReferences(devicePath_, parameterRemaps_);
+    executed_ = tracks.applyDevicePreset(devicePath_, presetState_);
+    if (!executed_) {
+        std::vector<std::pair<int, int>> reverse;
+        reverse.reserve(parameterRemaps_.size());
+        for (const auto& [from, to] : parameterRemaps_)
+            reverse.emplace_back(to, from);
+        remapParameterReferences(devicePath_, reverse);
+    }
+}
+
+void ApplyDevicePresetCommand::undo() {
+    if (!executed_ || !captured_)
+        return;
+
+    std::vector<std::pair<int, int>> reverse;
+    reverse.reserve(parameterRemaps_.size());
+    for (const auto& [from, to] : parameterRemaps_)
+        reverse.emplace_back(to, from);
+    remapParameterReferences(devicePath_, reverse);
+    TrackManager::getInstance().applyDevicePreset(devicePath_, previousState_);
     executed_ = false;
 }
 

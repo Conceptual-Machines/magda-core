@@ -779,6 +779,90 @@ TEST_CASE("devicePresets.list returns opaque path-free metadata",
     REQUIRE(errorCodeOf(missing) == "not_found");
 }
 
+TEST_CASE("devices.applyPreset commits once, reports impacts, and detects a no-op",
+          "[remote][service][devices][presets]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+
+    ReferenceDescriptor preserved;
+    preserved.kind = ReferenceKind::Automation;
+    preserved.source.kind = ReferenceAddressKind::AutomationLane;
+    preserved.source.automationLaneId = 9;
+    preserved.target.kind = ReferenceAddressKind::Parameter;
+    preserved.target.devicePath = path;
+    preserved.target.parameterIndex = 0;
+    api.devices_.applyPresetResult.referenceImpact.preserved.push_back(
+        {preserved, ReferenceImpactReason::PolicyPreserve});
+
+    RemoteApiService service(api);
+    auto input = pathInput(path);
+    input.getDynamicObject()->setProperty("presetId", "device-preset:abc");
+    auto context = fullyGrantedContext();
+    context.requestId = "apply-preset-1";
+    context.expectedRevision = INITIAL_REVISION;
+    const auto changed = run(service, "devices.applyPreset", input, context);
+
+    REQUIRE(changed.ok);
+    REQUIRE(api.devices_.appliedPresets.size() == 1);
+    CHECK(api.devices_.appliedPresets.front().second == "device-preset:abc");
+    CHECK(changed.result["deviceGraph"].isObject());
+    REQUIRE(changed.result["referenceImpact"]["preservedReferences"].isArray());
+    CHECK(changed.result["referenceImpact"]["preservedReferences"].getArray()->size() == 1);
+    CHECK(changed.revision == INITIAL_REVISION + 1);
+
+    const auto replayed = run(service, "devices.applyPreset", input, context);
+    REQUIRE(replayed.ok);
+    CHECK(api.devices_.appliedPresets.size() == 1);
+    CHECK(replayed.revision == changed.revision);
+
+    api.devices_.applyPresetResult.status = ApplyDevicePresetStatus::Unchanged;
+    context.requestId = "apply-preset-2";
+    context.expectedRevision = changed.revision;
+    const auto unchanged = run(service, "devices.applyPreset", input, context);
+    REQUIRE(unchanged.ok);
+    CHECK(api.devices_.appliedPresets.size() == 2);
+    CHECK(unchanged.revision == INITIAL_REVISION + 1);
+}
+
+TEST_CASE("devices.applyPreset rejects unavailable and incompatible presets without a revision",
+          "[remote][service][devices][presets]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    RemoteApiService service(api);
+    auto input = pathInput(path);
+    input.getDynamicObject()->setProperty("presetId", "device-preset:missing");
+
+    api.devices_.applyPresetResult.status = ApplyDevicePresetStatus::PresetNotFound;
+    const auto missing = run(service, "devices.applyPreset", input);
+    REQUIRE_FALSE(missing.ok);
+    CHECK(errorCodeOf(missing) == "not_found");
+    CHECK(service.currentRevision() == INITIAL_REVISION);
+
+    api.devices_.applyPresetResult.status = ApplyDevicePresetStatus::Incompatible;
+    const auto incompatible = run(service, "devices.applyPreset", input);
+    REQUIRE_FALSE(incompatible.ok);
+    CHECK(errorCodeOf(incompatible) == "conflict");
+    CHECK(service.currentRevision() == INITIAL_REVISION);
+
+    ReferenceDescriptor rejectedReference;
+    rejectedReference.kind = ReferenceKind::Automation;
+    rejectedReference.target.kind = ReferenceAddressKind::Parameter;
+    rejectedReference.target.devicePath = path;
+    api.devices_.applyPresetResult.status = ApplyDevicePresetStatus::ReferenceConflict;
+    api.devices_.applyPresetResult.referenceImpact.rejected.push_back(
+        {rejectedReference, ReferenceImpactReason::NoProvenRemap});
+    const auto rejected = run(service, "devices.applyPreset", input);
+    REQUIRE_FALSE(rejected.ok);
+    CHECK(errorCodeOf(rejected) == "conflict");
+    REQUIRE(rejected.error.details["referenceImpact"]["rejectedReferences"].isArray());
+    CHECK(rejected.error.details["referenceImpact"]["rejectedReferences"].getArray()->size() == 1);
+    CHECK(service.currentRevision() == INITIAL_REVISION);
+}
+
 TEST_CASE("devices.setBypassed updates once and treats an identical write as a no-op",
           "[remote][service][devices]") {
     const MessageThreadRelaxation relaxation;

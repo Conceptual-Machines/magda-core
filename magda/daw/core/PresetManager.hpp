@@ -190,6 +190,10 @@ class PresetManager {
     std::vector<DevicePresetMetadata> getDevicePresetMetadata(
         const juce::String& pluginFolder) const;
 
+    /** Resolve an opaque id returned by getDevicePresetMetadata(). */
+    bool loadDevicePresetById(const juce::String& pluginFolder, const juce::String& presetId,
+                              DeviceInfo& outDevice);
+
     /** @brief The Devices/<pluginFolder>/ directory. Created lazily on save. */
     juce::File getDevicePluginDirectory(const juce::String& pluginFolder) const;
 

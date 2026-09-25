@@ -952,6 +952,10 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void setDeviceParameterValue(const ChainNodePath& devicePath, const ParameterInfo& described,
                                  ParameterModelValue value);
 
+    /** Build the normalized replacement state without mutating the live device. */
+    std::optional<DeviceInfo> prepareDevicePresetState(const ChainNodePath& devicePath,
+                                                       const DeviceInfo& presetDevice) const;
+
     /**
      * @brief Apply a deserialized DeviceInfo (from a .mps preset) to a live device.
      *

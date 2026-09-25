@@ -4,7 +4,10 @@
 #include <set>
 
 #include "magda/daw/api/device_api_live.hpp"
+#include "magda/daw/core/AppPaths.hpp"
+#include "magda/daw/core/Config.hpp"
 #include "magda/daw/core/DrumGridPads.hpp"
+#include "magda/daw/core/PresetManager.hpp"
 #include "magda/daw/core/TrackCommands.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/core/UndoManager.hpp"
@@ -27,6 +30,26 @@ TrackId freshTrack(const juce::String& name) {
     UndoManager::getInstance().clearHistory();
     return tracks.createTrack(name, TrackType::Media);
 }
+
+struct PresetDirectoryScope {
+    PresetDirectoryScope()
+        : previous(Config::getInstance().getPresetsDir()),
+          directory(juce::File::getSpecialLocation(juce::File::tempDirectory)
+                        .getNonexistentChildFile("magda-device-api-presets", {})) {
+        REQUIRE(directory.createDirectory());
+        Config::getInstance().setPresetsDir(directory.getFullPathName().toStdString());
+        paths::resolve();
+    }
+
+    ~PresetDirectoryScope() {
+        Config::getInstance().setPresetsDir(previous);
+        paths::resolve();
+        directory.deleteRecursively();
+    }
+
+    std::string previous;
+    juce::File directory;
+};
 
 }  // namespace
 
@@ -62,6 +85,114 @@ TEST_CASE("Unknown catalog ids resolve to nothing", "[device-api][catalog]") {
     const DeviceApiLive devices;
     REQUIRE_FALSE(devices.findCatalogEntry("not_a_device").has_value());
     REQUIRE_FALSE(devices.findCatalogEntry("").has_value());
+}
+
+TEST_CASE("A MAGDA preset applies in place as one no-op-aware undo step",
+          "[device-api][presets][2836]") {
+    PresetDirectoryScope presetDirectory;
+    auto& tracks = TrackManager::getInstance();
+    const auto trackId = freshTrack("Preset target");
+
+    DeviceInfo initial;
+    initial.name = "Remote Preset Test";
+    initial.pluginId = "remote_preset_test";
+    initial.format = PluginFormat::Internal;
+    initial.bypassed = true;
+    ParameterInfo tone;
+    tone.paramIndex = 0;
+    tone.name = "Tone";
+    tone.currentValue = 0.25f;
+    initial.parameters.push_back(tone);
+    const auto deviceId = tracks.addDeviceToTrack(trackId, initial);
+    REQUIRE(deviceId != INVALID_DEVICE_ID);
+    const auto path = ChainNodePath::topLevelDevice(trackId, deviceId);
+    const auto* before = tracks.getDeviceInChainByPath(path);
+    REQUIRE(before != nullptr);
+
+    auto preset = *before;
+    preset.id = 999;
+    preset.parameters[0].currentValue = 0.75f;
+    preset.bypassed = false;  // Slot state, deliberately not preset state.
+    REQUIRE(PresetManager::getInstance().saveDevicePreset(preset, "Warm"));
+
+    MacroInfo trackMacro(0);
+    trackMacro.links.push_back({ControlTarget::pluginParam(path, 0), 1.0f, false});
+    tracks.getTrack(trackId)->macros = {trackMacro};
+
+    DeviceApiLive api;
+    const auto listed = api.getDevicePresets(path);
+    REQUIRE(listed.size() == 1);
+    const auto result = api.applyPreset(path, listed.front().id);
+    REQUIRE(result.status == ApplyDevicePresetStatus::Applied);
+
+    const auto* applied = tracks.getDeviceInChainByPath(path);
+    REQUIRE(applied != nullptr);
+    CHECK(applied->id == deviceId);
+    CHECK(applied->bypassed);
+    REQUIRE(applied->parameters.size() == 1);
+    CHECK(applied->parameters[0].paramIndex == 0);
+    CHECK(applied->parameters[0].currentValue == 0.75f);
+    REQUIRE(result.referenceImpact.preserved.size() == 1);
+    CHECK(tracks.getTrack(trackId)->macros[0].links[0].target.paramIndex == 0);
+    CHECK(UndoManager::getInstance().getUndoDescription() == "Apply Device Preset");
+
+    const auto noOp = api.applyPreset(path, listed.front().id);
+    CHECK(noOp.status == ApplyDevicePresetStatus::Unchanged);
+    REQUIRE(UndoManager::getInstance().undo());
+    CHECK_FALSE(UndoManager::getInstance().canUndo());
+    const auto* restored = tracks.getDeviceInChainByPath(path);
+    REQUIRE(restored != nullptr);
+    CHECK(restored->id == deviceId);
+    CHECK(restored->bypassed);
+    REQUIRE(restored->parameters.size() == 1);
+    CHECK(restored->parameters[0].paramIndex == 0);
+    CHECK(restored->parameters[0].currentValue == 0.25f);
+    CHECK(tracks.getTrack(trackId)->macros[0].links[0].target.paramIndex == 0);
+
+    auto conflicting = *restored;
+    conflicting.parameters.clear();
+    REQUIRE(PresetManager::getInstance().saveDevicePreset(conflicting, "Missing Tone"));
+    const auto relisted = api.getDevicePresets(path);
+    const auto missingTone =
+        std::ranges::find(relisted, juce::String("Missing Tone"), &DevicePresetEntry::name);
+    REQUIRE(missingTone != relisted.end());
+    const auto rejected = api.applyPreset(path, missingTone->id);
+    CHECK(rejected.status == ApplyDevicePresetStatus::ReferenceConflict);
+    REQUIRE(rejected.referenceImpact.rejected.size() == 1);
+    CHECK_FALSE(UndoManager::getInstance().canUndo());
+    REQUIRE(tracks.getDeviceInChainByPath(path)->parameters.size() == 1);
+    CHECK(tracks.getTrack(trackId)->macros[0].links[0].target.paramIndex == 0);
+}
+
+TEST_CASE("The preset command remaps stable parameter references on execute and undo",
+          "[device-api][presets][2836]") {
+    auto& tracks = TrackManager::getInstance();
+    const auto trackId = freshTrack("Preset remap");
+
+    DeviceInfo initial;
+    initial.name = "Remappable";
+    initial.pluginId = "remappable";
+    ParameterInfo parameter;
+    parameter.paramIndex = 0;
+    parameter.stableId = "tone";
+    initial.parameters = {parameter};
+    const auto deviceId = tracks.addDeviceToTrack(trackId, initial);
+    const auto path = ChainNodePath::topLevelDevice(trackId, deviceId);
+
+    MacroInfo macro(0);
+    macro.links.push_back({ControlTarget::pluginParam(path, 0), 1.0f, false});
+    tracks.getTrack(trackId)->macros = {macro};
+
+    auto preset = *tracks.getDeviceInChainByPath(path);
+    preset.parameters[0].paramIndex = 7;
+    UndoManager::getInstance().executeCommand(std::make_unique<ApplyDevicePresetCommand>(
+        path, preset, std::vector<std::pair<int, int>>{{0, 7}}));
+    CHECK(tracks.getDeviceInChainByPath(path)->parameters[0].paramIndex == 7);
+    CHECK(tracks.getTrack(trackId)->macros[0].links[0].target.paramIndex == 7);
+
+    REQUIRE(UndoManager::getInstance().undo());
+    CHECK(tracks.getDeviceInChainByPath(path)->parameters[0].paramIndex == 0);
+    CHECK(tracks.getTrack(trackId)->macros[0].links[0].target.paramIndex == 0);
 }
 
 TEST_CASE("Live device lookup rejects paths that address nothing", "[device-api][inspection]") {
