@@ -18,7 +18,7 @@
 name: Share a Faust device
 description: A device you wrote, to be listed on magda.land for anyone to play and download
 title: "Faust device: "
-labels: ["faust-device"]
+labels: ["community-faust-device"]
 
 body:
   - type: markdown
