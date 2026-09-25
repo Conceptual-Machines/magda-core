@@ -25,6 +25,7 @@ struct DeviceCatalogEntry;
 struct DevicePresetEntry;
 struct DeviceInfo;
 struct ProjectInfo;
+struct ReferenceImpactPlan;
 struct TrackInfo;
 
 namespace remote {
@@ -221,6 +222,53 @@ struct DevicePathDto {
     std::vector<DevicePathStepDto> steps;
 
     bool operator==(const DevicePathDto&) const = default;
+};
+
+/** A reference endpoint projected without pointers, host paths, or plugin identity. */
+struct ReferenceAddressDto {
+    juce::String kind;
+    std::optional<TrackId> trackId;
+    std::optional<DevicePathDto> devicePath;
+    std::optional<AutomationLaneId> automationLaneId;
+    std::optional<MacroId> macroId;
+    std::optional<ModId> modId;
+    std::optional<int> linkIndex;
+    std::optional<int> parameterIndex;
+    juce::String parameterStableId;
+    juce::String bindingId;
+    std::optional<juce::String> route;
+    std::optional<int> routeIndex;
+
+    bool operator==(const ReferenceAddressDto&) const = default;
+};
+
+struct ReferenceImpactEntryDto {
+    juce::String referenceKind;
+    ReferenceAddressDto source;
+    ReferenceAddressDto target;
+    juce::String reason;
+
+    bool operator==(const ReferenceImpactEntryDto&) const = default;
+};
+
+struct RemappedReferenceDto {
+    juce::String referenceKind;
+    ReferenceAddressDto source;
+    ReferenceAddressDto target;
+    ReferenceAddressDto newTarget;
+    juce::String reason;
+
+    bool operator==(const RemappedReferenceDto&) const = default;
+};
+
+/** Complete preflight decision returned by preset/replacement operations. */
+struct ReferenceImpactResultDto {
+    std::vector<ReferenceImpactEntryDto> preservedReferences;
+    std::vector<RemappedReferenceDto> remappedReferences;
+    std::vector<ReferenceImpactEntryDto> droppedReferences;
+    std::vector<ReferenceImpactEntryDto> rejectedReferences;
+
+    bool operator==(const ReferenceImpactResultDto&) const = default;
 };
 
 /**
@@ -698,6 +746,13 @@ juce::var toJson(const DevicePathDto& dto);
 juce::var toJson(const AutomationTargetDto& dto);
 juce::var toJson(const AutomationLaneDto& dto);
 juce::var toJson(const AutomationClipDto& dto);
+juce::var toJson(const ReferenceAddressDto& dto);
+juce::var toJson(const ReferenceImpactEntryDto& dto);
+juce::var toJson(const RemappedReferenceDto& dto);
+juce::var toJson(const ReferenceImpactResultDto& dto);
+
+/** Shared closed schema embedded by every operation that reports reference impact. */
+const juce::var& referenceImpactResultSchema();
 
 /**
  * @brief Decode a device path from its wire form.
@@ -726,6 +781,8 @@ std::optional<TransportDto> transportFromJson(const juce::var& json, Error& erro
 std::optional<SessionDto> sessionFromJson(const juce::var& json, Error& error);
 std::optional<AutomationLaneDto> automationLaneFromJson(const juce::var& json, Error& error);
 std::optional<AutomationClipDto> automationClipFromJson(const juce::var& json, Error& error);
+std::optional<ReferenceImpactResultDto> referenceImpactResultFromJson(const juce::var& json,
+                                                                      Error& error);
 
 ProjectDto makeProjectDto(const ProjectInfo& project, bool dirty, bool hasSaveTarget);
 TrackDto makeTrackDto(const TrackInfo& track);
@@ -768,6 +825,8 @@ DevicePathDto makeDevicePathDto(const ChainNodePath& path);
  * implicit form, which is the same path by every accessor.
  */
 std::optional<ChainNodePath> toChainNodePath(const DevicePathDto& dto);
+
+ReferenceImpactResultDto makeReferenceImpactResultDto(const ReferenceImpactPlan& plan);
 
 // makeSelectionDto, makeTransportDto, and makeSessionDto read MagdaApi live
 // state and assert the JUCE message thread. Tests drive them from the Catch2

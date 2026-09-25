@@ -10,6 +10,7 @@
 #include "../core/ParameterUtils.hpp"
 #include "../core/PluginParameterConfigStore.hpp"
 #include "../core/RackInfo.hpp"
+#include "../core/ReferenceImpact.hpp"
 #include "../core/TrackInfo.hpp"
 #include "../project/ProjectInfo.hpp"
 #include "automation_api.hpp"
@@ -747,6 +748,53 @@ std::optional<ChainNodePath> toChainNodePath(const DevicePathDto& dto) {
     }
 
     return path;
+}
+
+namespace {
+
+ReferenceAddressDto makeReferenceAddressDto(const ReferenceAddress& address) {
+    ReferenceAddressDto dto;
+    dto.kind = magda::toString(address.kind);
+    dto.trackId = address.trackId;
+    if (address.devicePath)
+        dto.devicePath = makeDevicePathDto(*address.devicePath);
+    dto.automationLaneId = address.automationLaneId;
+    dto.macroId = address.macroId;
+    dto.modId = address.modId;
+    dto.linkIndex = address.linkIndex;
+    dto.parameterIndex = address.parameterIndex;
+    dto.parameterStableId = address.parameterStableId;
+    dto.bindingId = address.bindingId;
+    if (address.route)
+        dto.route = juce::String(magda::toString(*address.route));
+    dto.routeIndex = address.routeIndex;
+    return dto;
+}
+
+ReferenceImpactEntryDto makeReferenceImpactEntryDto(const PlannedReferenceImpact& impact) {
+    return {magda::toString(impact.reference.kind),
+            makeReferenceAddressDto(impact.reference.source),
+            makeReferenceAddressDto(impact.reference.target), magda::toString(impact.reason)};
+}
+
+}  // namespace
+
+ReferenceImpactResultDto makeReferenceImpactResultDto(const ReferenceImpactPlan& plan) {
+    ReferenceImpactResultDto dto;
+    for (const auto& impact : plan.preserved)
+        dto.preservedReferences.push_back(makeReferenceImpactEntryDto(impact));
+    for (const auto& impact : plan.remapped) {
+        dto.remappedReferences.push_back({magda::toString(impact.reference.kind),
+                                          makeReferenceAddressDto(impact.reference.source),
+                                          makeReferenceAddressDto(impact.reference.target),
+                                          makeReferenceAddressDto(impact.newTarget),
+                                          magda::toString(impact.reason)});
+    }
+    for (const auto& impact : plan.dropped)
+        dto.droppedReferences.push_back(makeReferenceImpactEntryDto(impact));
+    for (const auto& impact : plan.rejected)
+        dto.rejectedReferences.push_back(makeReferenceImpactEntryDto(impact));
+    return dto;
 }
 
 }  // namespace magda::remote

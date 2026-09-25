@@ -108,6 +108,31 @@ transport's `expectedRevision` and `requestId` metadata; neither value is part o
 the operation payload. Preset IDs are addresses only: clients cannot supply a
 filesystem path or native state blob.
 
+### Reference-impact preflight
+
+Operations that replace a device or a track's device chain must build a complete
+reference-impact plan before they mutate the project. The shared inventory
+covers automation lanes, macro links, modulator links, resolved controller or
+alias bindings, device and rack sidechains, sends, track-to-track inputs, and
+multi-output child links. A caller selects the references whose source or
+target lies in the replaced graph and assigns each class one explicit policy:
+`reject`, `preserve`, `remap`, or `drop`.
+
+A remap is valid only when the old and new targets carry the same non-empty
+stable identity. In particular, equal numeric parameter indices are not
+evidence of compatibility. Missing mappings, missing identities, and identity
+mismatches become rejected plan entries, and a plan with any rejection cannot
+commit. Planning is pure over a snapshot; loading or validation failure cannot
+change project state.
+
+The result contract reports `preservedReferences`, `remappedReferences`,
+`droppedReferences`, and `rejectedReferences`. Every entry carries a reference
+kind, safe structured source and target addresses, and a reason code; remaps
+also carry `newTarget`. Addresses can contain public track/node/lane/macro/mod
+IDs, opaque binding IDs, routing roles, and public parameter stable IDs. They
+cannot represent pointers, filesystem paths, raw plugin identifiers, or plugin
+state. All four collections and every nested address are closed schemas.
+
 ### Track display and input state
 
 `tracks.update` accepts `colourArgb`, `recordArmed`, and `inputMonitor` in
