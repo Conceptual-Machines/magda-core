@@ -55,6 +55,9 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(registry.find("devices.setBypassed") != nullptr);
     REQUIRE(registry.find("devicePresets.list") != nullptr);
     REQUIRE(registry.find("devices.openEditor") != nullptr);
+    for (const auto* name : {"racks.create", "racks.remove", "racks.update", "chains.create",
+                             "chains.remove", "chains.update"})
+        REQUIRE(registry.find(name) != nullptr);
     for (const auto* name :
          {"mods.list", "mods.create", "mods.update", "mods.remove", "mods.link", "mods.unlink",
           "macros.list", "macros.setValue", "macros.link", "macros.unlink"})
@@ -622,8 +625,28 @@ TEST_CASE("Remote API DTOs round-trip through JSON", "[remote-api][contract][dto
     const DeviceGraphDto graph{
         {{10, 3, 20, 30, makeDevicePathDto(ChainNodePath::chainDevice(3, 20, 30, 10)), "Synth",
           "instrument", "internal", true, false, -3.0, sidechain}},
-        {{20, 3, std::nullopt, std::nullopt, "Parallel", false, 0.0, 0.0, {30}}},
-        {{30, 20, "Main", 0, false, false, false, 0.0, 0.0, {10}, {}}}};
+        {{20,
+          3,
+          std::nullopt,
+          std::nullopt,
+          makeDevicePathDto(ChainNodePath::rack(3, 20)),
+          "Parallel",
+          false,
+          0.0,
+          0.0,
+          {30}}},
+        {{30,
+          20,
+          makeDevicePathDto(ChainNodePath::chain(3, 20, 30)),
+          "Main",
+          0,
+          false,
+          false,
+          false,
+          0.0,
+          0.0,
+          {10},
+          {}}}};
     requireRoundTrip(graph, deviceGraphFromJson);
 
     const DeviceCatalogEntryDto catalogEntry{
@@ -997,7 +1020,78 @@ TEST_CASE("devices.list carries full depth for nested racks",
     REQUIRE(toChainNodePath(device.devicePath) ==
             ChainNodePath::chain(1, 2, 4).withRack(7).withChain(8).withDevice(9));
 
+    REQUIRE(graph.racks.size() == 2);
+    REQUIRE(graph.chains.size() == 2);
+    REQUIRE(toChainNodePath(graph.racks[0].nodePath) == ChainNodePath::rack(1, 2));
+    REQUIRE(toChainNodePath(graph.racks[1].nodePath) == ChainNodePath::chain(1, 2, 4).withRack(7));
+    const auto hasChainPath = [&graph](const ChainNodePath& path) {
+        return std::ranges::contains(graph.chains, makeDevicePathDto(path), &ChainDto::nodePath);
+    };
+    REQUIRE(hasChainPath(ChainNodePath::chain(1, 2, 4)));
+    REQUIRE(hasChainPath(ChainNodePath::chain(1, 2, 4).withRack(7).withChain(8)));
+
     requireRoundTrip(graph, deviceGraphFromJson);
+}
+
+TEST_CASE("Rack and chain writes have closed path-addressed contracts",
+          "[remote-api][contract][racks][chains]") {
+    const auto& registry = OperationRegistry::instance();
+    const auto rackPath = toJson(makeDevicePathDto(ChainNodePath::rack(1, 2)));
+    const auto chainPath = toJson(makeDevicePathDto(ChainNodePath::chain(1, 2, 3)));
+
+    const auto requireEditOperation = [&](const char* name) -> const OperationDescriptor& {
+        const auto* operation = registry.find(name);
+        REQUIRE(operation != nullptr);
+        CHECK(operation->access == OperationAccess::Write);
+        CHECK(operation->requiredScope == Scope::Edit);
+        return *operation;
+    };
+
+    const auto& rackCreate = requireEditOperation("racks.create");
+    CHECK(validateJson(object({{"parentPath", chainPath}, {"name", "Nested"}}),
+                       rackCreate.inputSchema)
+              .empty());
+    CHECK(validateJson(object({{"trackId", 1}, {"name", "Top"}}), rackCreate.inputSchema).empty());
+    CHECK_FALSE(validateJson(object({{"name", "Ownerless"}}), rackCreate.inputSchema).empty());
+    CHECK_FALSE(
+        validateJson(object({{"trackId", 1}, {"parentPath", chainPath}, {"name", "Ambiguous"}}),
+                     rackCreate.inputSchema)
+            .empty());
+
+    const auto& rackUpdate = requireEditOperation("racks.update");
+    CHECK(validateJson(object({{"rackPath", rackPath}, {"volumeDb", -3.0}}), rackUpdate.inputSchema)
+              .empty());
+    CHECK(validateJson(object({{"rackPath", rackPath}}), rackUpdate.inputSchema).empty());
+    CHECK_FALSE(validateJson(object({{"rackPath", rackPath}, {"pan", 0.5}}), rackUpdate.inputSchema)
+                    .empty());
+
+    requireEditOperation("racks.remove");
+    const auto& chainCreate = requireEditOperation("chains.create");
+    CHECK(validateJson(object({{"rackPath", rackPath}, {"name", "Parallel"}}),
+                       chainCreate.inputSchema)
+              .empty());
+    const auto& chainUpdate = requireEditOperation("chains.update");
+    CHECK(validateJson(object({{"chainPath", chainPath}, {"name", "Wet"}, {"pan", -0.5}}),
+                       chainUpdate.inputSchema)
+              .empty());
+    CHECK(validateJson(object({{"chainPath", chainPath}}), chainUpdate.inputSchema).empty());
+    CHECK_FALSE(
+        validateJson(object({{"chainPath", chainPath}, {"pan", 2.0}}), chainUpdate.inputSchema)
+            .empty());
+    requireEditOperation("chains.remove");
+
+    magda::test::MockMagdaApi api;
+    const auto emptyPatch = rackUpdate.handler(api, object({{"rackPath", rackPath}}), {});
+    REQUIRE(emptyPatch.failed());
+    CHECK(emptyPatch.error->code == ErrorCode::ValidationFailed);
+    const auto emptyChainPatch = chainUpdate.handler(api, object({{"chainPath", chainPath}}), {});
+    REQUIRE(emptyChainPatch.failed());
+    CHECK(emptyChainPatch.error->code == ErrorCode::ValidationFailed);
+    const auto wrongNode =
+        rackUpdate.handler(api, object({{"rackPath", chainPath}, {"bypassed", true}}), {});
+    REQUIRE(wrongNode.failed());
+    CHECK(wrongNode.error->code == ErrorCode::ValidationFailed);
+    CHECK(api.undo_.executeCalls == 0);
 }
 
 TEST_CASE("Device paths distinguish the three per-section DeviceId spaces",

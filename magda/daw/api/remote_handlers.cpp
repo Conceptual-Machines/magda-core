@@ -1709,42 +1709,202 @@ HandlerResult macrosUnlink(MagdaApi& api, const juce::var& input, const RequestC
     return HandlerResult::ok(acceptedResult());
 }
 
+namespace {
+std::optional<ChainNodePath> nodePath(const juce::var& input, const char* property) {
+    if (!has(input, property))
+        return std::nullopt;
+    return toChainNodePath(devicePathFromJson(input[property]));
+}
+
+std::optional<RackDto> rackProjection(MagdaApi& api, const ChainNodePath& rackPath) {
+    const auto* track = api.tracks().getTrack(rackPath.trackId);
+    if (track == nullptr)
+        return std::nullopt;
+    const auto expected = makeDevicePathDto(rackPath);
+    auto graph = makeDeviceGraphDto({*track});
+    const auto found = std::ranges::find(graph.racks, expected, &RackDto::nodePath);
+    return found == graph.racks.end() ? std::nullopt : std::optional<RackDto>{*found};
+}
+
+std::optional<ChainDto> chainProjection(MagdaApi& api, const ChainNodePath& chainPath) {
+    const auto* track = api.tracks().getTrack(chainPath.trackId);
+    if (track == nullptr)
+        return std::nullopt;
+    const auto expected = makeDevicePathDto(chainPath);
+    auto graph = makeDeviceGraphDto({*track});
+    const auto found = std::ranges::find(graph.chains, expected, &ChainDto::nodePath);
+    return found == graph.chains.end() ? std::nullopt : std::optional<ChainDto>{*found};
+}
+
+std::optional<ChainNodePath> rackPathFromLegacyOrPath(const juce::var& input) {
+    if (has(input, "rackPath"))
+        return nodePath(input, "rackPath");
+    return ChainNodePath::rack(static_cast<TrackId>(readInt(input, "trackId")),
+                               static_cast<RackId>(readInt(input, "rackId")));
+}
+}  // namespace
+
 HandlerResult racksCreate(MagdaApi& api, const juce::var& input, const RequestContext&) {
-    const auto trackId = static_cast<TrackId>(static_cast<int>(input["trackId"]));
-    if (api.tracks().getTrack(trackId) == nullptr)
-        return notFound("track", trackId);
-    const auto id = api.tracks().addRackToTrack(trackId, input["name"].toString());
+    ChainNodePath parentPath;
+    if (has(input, "parentPath")) {
+        const auto decoded = nodePath(input, "parentPath");
+        if (!decoded || (decoded->getType() != ChainNodeType::Track &&
+                         decoded->getType() != ChainNodeType::Chain))
+            return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                       "parentPath must address a track or rack chain");
+        parentPath = *decoded;
+        if (parentPath.getType() == ChainNodeType::Chain &&
+            api.tracks().getChainByPath(parentPath) == nullptr)
+            return HandlerResult::fail(ErrorCode::NotFound, "parent rack chain not found");
+    } else {
+        parentPath.trackId = static_cast<TrackId>(readInt(input, "trackId"));
+    }
+    if (api.tracks().getTrack(parentPath.trackId) == nullptr)
+        return notFound("track", parentPath.trackId);
+
+    const auto id = runCommandAndRead<AddRackByPathCommand>(
+        api, [](const auto& command) { return command.getCreatedRackId(); }, parentPath,
+        input["name"].toString());
     if (id == INVALID_RACK_ID)
         return HandlerResult::fail(ErrorCode::InternalError, "rack creation failed");
     return HandlerResult::ok(idResult(id));
 }
 
 HandlerResult racksRemove(MagdaApi& api, const juce::var& input, const RequestContext&) {
-    const auto trackId = static_cast<TrackId>(static_cast<int>(input["trackId"]));
-    const auto rackId = static_cast<RackId>(static_cast<int>(input["rackId"]));
-    if (api.tracks().getRack(trackId, rackId) == nullptr)
-        return notFound("rack", rackId);
-    api.tracks().removeRackFromTrack(trackId, rackId);
+    const auto path = rackPathFromLegacyOrPath(input);
+    if (!path || path->getType() != ChainNodeType::Rack)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "rackPath must address a rack");
+    if (api.tracks().getRackByPath(*path) == nullptr)
+        return HandlerResult::fail(ErrorCode::NotFound, "rack not found");
+    runCommand<RemoveRackByPathCommand>(api, *path);
     return HandlerResult::ok(acceptedResult());
 }
 
 HandlerResult racksSetBypassed(MagdaApi& api, const juce::var& input, const RequestContext&) {
-    const auto trackId = static_cast<TrackId>(static_cast<int>(input["trackId"]));
-    const auto rackId = static_cast<RackId>(static_cast<int>(input["rackId"]));
-    if (api.tracks().getRack(trackId, rackId) == nullptr)
-        return notFound("rack", rackId);
-    api.tracks().setRackBypassed(trackId, rackId, static_cast<bool>(input["bypassed"]));
+    const auto path = rackPathFromLegacyOrPath(input);
+    if (!path || path->getType() != ChainNodeType::Rack)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "rackPath must address a rack");
+    const auto* rack = api.tracks().getRackByPath(*path);
+    if (rack == nullptr)
+        return HandlerResult::fail(ErrorCode::NotFound, "rack not found");
+    const auto bypassed = readBool(input, "bypassed");
+    if (rack->bypassed == bypassed) {
+        const auto projection = rackProjection(api, *path);
+        return projection ? HandlerResult::unchanged(toJson(*projection))
+                          : HandlerResult::fail(ErrorCode::InternalError, "rack projection failed");
+    }
+    runCommand<SetRackPropertiesByPathCommand>(api, *path,
+                                               RackPropertyPatch{bypassed, std::nullopt});
+    const auto projection = rackProjection(api, *path);
+    return projection ? HandlerResult::ok(toJson(*projection))
+                      : HandlerResult::fail(ErrorCode::InternalError, "rack projection failed");
+}
 
-    // Project the rack through the shared graph builder rather than hand-rolling
-    // a second RackDto projection that could drift from it.
-    const auto* track = api.tracks().getTrack(trackId);
-    if (track == nullptr)
-        return notFound("track", trackId);
-    const auto graph = makeDeviceGraphDto({*track});
-    const auto found = std::ranges::find(graph.racks, rackId, &RackDto::id);
-    if (found == graph.racks.end())
-        return notFound("rack", rackId);
-    return HandlerResult::ok(toJson(*found));
+HandlerResult racksUpdate(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto path = nodePath(input, "rackPath");
+    if (!path || path->getType() != ChainNodeType::Rack)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "rackPath must address a rack");
+    if (!has(input, "bypassed") && !has(input, "volumeDb"))
+        return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                   "rack update requires at least one property");
+    const auto* rack = api.tracks().getRackByPath(*path);
+    if (rack == nullptr)
+        return HandlerResult::fail(ErrorCode::NotFound, "rack not found");
+
+    RackPropertyPatch patch;
+    if (has(input, "bypassed"))
+        patch.bypassed = readBool(input, "bypassed");
+    if (has(input, "volumeDb"))
+        patch.volumeDb = static_cast<float>(readDouble(input, "volumeDb"));
+    const bool unchanged = (!patch.bypassed || *patch.bypassed == rack->bypassed) &&
+                           (!patch.volumeDb || *patch.volumeDb == rack->volume);
+    if (unchanged) {
+        const auto projection = rackProjection(api, *path);
+        return projection ? HandlerResult::unchanged(toJson(*projection))
+                          : HandlerResult::fail(ErrorCode::InternalError, "rack projection failed");
+    }
+
+    runCommand<SetRackPropertiesByPathCommand>(api, *path, patch);
+    const auto projection = rackProjection(api, *path);
+    return projection ? HandlerResult::ok(toJson(*projection))
+                      : HandlerResult::fail(ErrorCode::InternalError, "rack projection failed");
+}
+
+HandlerResult chainsCreate(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto rackPath = nodePath(input, "rackPath");
+    if (!rackPath || rackPath->getType() != ChainNodeType::Rack)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "rackPath must address a rack");
+    if (api.tracks().getRackByPath(*rackPath) == nullptr)
+        return HandlerResult::fail(ErrorCode::NotFound, "rack not found");
+
+    const auto id = runCommandAndRead<AddChainByPathCommand>(
+        api, [](const auto& command) { return command.getCreatedChainId(); }, *rackPath,
+        input["name"].toString());
+    if (id == INVALID_CHAIN_ID)
+        return HandlerResult::fail(ErrorCode::InternalError, "chain creation failed");
+    return HandlerResult::ok(idResult(id));
+}
+
+HandlerResult chainsRemove(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto path = nodePath(input, "chainPath");
+    if (!path || path->getType() != ChainNodeType::Chain)
+        return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                   "chainPath must address a rack chain");
+    if (api.tracks().getChainByPath(*path) == nullptr)
+        return HandlerResult::fail(ErrorCode::NotFound, "rack chain not found");
+    runCommand<RemoveChainByPathCommand>(api, *path);
+    return HandlerResult::ok(acceptedResult());
+}
+
+HandlerResult chainsUpdate(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto path = nodePath(input, "chainPath");
+    if (!path || path->getType() != ChainNodeType::Chain)
+        return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                   "chainPath must address a rack chain");
+    if (!has(input, "name") && !has(input, "outputIndex") && !has(input, "muted") &&
+        !has(input, "solo") && !has(input, "bypassed") && !has(input, "volumeDb") &&
+        !has(input, "pan"))
+        return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                   "chain update requires at least one property");
+    const auto* chain = api.tracks().getChainByPath(*path);
+    if (chain == nullptr)
+        return HandlerResult::fail(ErrorCode::NotFound, "rack chain not found");
+
+    ChainPropertyPatch patch;
+    if (has(input, "name"))
+        patch.name = input["name"].toString();
+    if (has(input, "outputIndex"))
+        patch.outputIndex = readInt(input, "outputIndex");
+    if (has(input, "muted"))
+        patch.muted = readBool(input, "muted");
+    if (has(input, "solo"))
+        patch.solo = readBool(input, "solo");
+    if (has(input, "bypassed"))
+        patch.bypassed = readBool(input, "bypassed");
+    if (has(input, "volumeDb"))
+        patch.volumeDb = static_cast<float>(readDouble(input, "volumeDb"));
+    if (has(input, "pan"))
+        patch.pan = static_cast<float>(readDouble(input, "pan"));
+
+    const bool unchanged = (!patch.name || *patch.name == chain->name) &&
+                           (!patch.outputIndex || *patch.outputIndex == chain->outputIndex) &&
+                           (!patch.muted || *patch.muted == chain->muted) &&
+                           (!patch.solo || *patch.solo == chain->solo) &&
+                           (!patch.bypassed || *patch.bypassed == chain->bypassed) &&
+                           (!patch.volumeDb || *patch.volumeDb == chain->volume) &&
+                           (!patch.pan || *patch.pan == chain->pan);
+    if (unchanged) {
+        const auto projection = chainProjection(api, *path);
+        return projection
+                   ? HandlerResult::unchanged(toJson(*projection))
+                   : HandlerResult::fail(ErrorCode::InternalError, "rack chain projection failed");
+    }
+
+    runCommand<SetChainPropertiesByPathCommand>(api, *path, patch);
+    const auto projection = chainProjection(api, *path);
+    return projection
+               ? HandlerResult::ok(toJson(*projection))
+               : HandlerResult::fail(ErrorCode::InternalError, "rack chain projection failed");
 }
 
 // ===========================================================================

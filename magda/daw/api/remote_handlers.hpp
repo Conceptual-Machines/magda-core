@@ -95,6 +95,10 @@ HandlerResult macrosUnlink(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult racksCreate(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult racksRemove(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult racksSetBypassed(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult racksUpdate(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult chainsCreate(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult chainsRemove(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult chainsUpdate(MagdaApi&, const juce::var&, const RequestContext&);
 
 // Selection
 HandlerResult selectionGet(MagdaApi&, const juce::var&, const RequestContext&);

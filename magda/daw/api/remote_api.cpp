@@ -468,11 +468,13 @@ const juce::var& deviceSchema() {
 }
 
 const juce::var& chainSchema() {
-    static const auto value = parseSchema(R"json({
+    static const auto value = [] {
+        auto schema = parseSchema(R"json({
         "type":"object",
         "properties":{
             "id":{"type":"integer","minimum":0},
             "rackId":{"type":"integer","minimum":0},
+            "nodePath":{},
             "name":{"type":"string"},
             "outputIndex":{"type":"integer","minimum":0},
             "muted":{"type":"boolean"},
@@ -483,31 +485,39 @@ const juce::var& chainSchema() {
             "deviceIds":{"type":"array","items":{"type":"integer","minimum":0}},
             "nestedRackIds":{"type":"array","items":{"type":"integer","minimum":0}}
         },
-        "required":["id","rackId","name","outputIndex","muted","solo","bypassed","volumeDb",
+        "required":["id","rackId","nodePath","name","outputIndex","muted","solo","bypassed","volumeDb",
                     "pan","deviceIds","nestedRackIds"],
         "additionalProperties":false
     })json");
+        schema["properties"].getDynamicObject()->setProperty("nodePath", devicePathSchema());
+        return schema;
+    }();
     return value;
 }
 
 const juce::var& rackSchema() {
-    static const auto value = parseSchema(R"json({
+    static const auto value = [] {
+        auto schema = parseSchema(R"json({
         "type":"object",
         "properties":{
             "id":{"type":"integer","minimum":0},
             "trackId":{"type":"integer","minimum":0},
             "parentRackId":{"type":["integer","null"]},
             "parentChainId":{"type":["integer","null"]},
+            "nodePath":{},
             "name":{"type":"string"},
             "bypassed":{"type":"boolean"},
             "volumeDb":{"type":"number"},
             "pan":{"type":"number","minimum":-1,"maximum":1},
             "chainIds":{"type":"array","items":{"type":"integer","minimum":0}}
         },
-        "required":["id","trackId","parentRackId","parentChainId","name","bypassed",
+        "required":["id","trackId","parentRackId","parentChainId","nodePath","name","bypassed",
                     "volumeDb","pan","chainIds"],
         "additionalProperties":false
     })json");
+        schema["properties"].getDynamicObject()->setProperty("nodePath", devicePathSchema());
+        return schema;
+    }();
     return value;
 }
 
@@ -1428,6 +1438,7 @@ juce::var toJson(const ChainDto& dto) {
     auto* object = new juce::DynamicObject();
     object->setProperty("id", dto.id);
     object->setProperty("rackId", dto.rackId);
+    object->setProperty("nodePath", toJson(dto.nodePath));
     object->setProperty("name", dto.name);
     object->setProperty("outputIndex", dto.outputIndex);
     object->setProperty("muted", dto.muted);
@@ -1446,6 +1457,7 @@ juce::var toJson(const RackDto& dto) {
     object->setProperty("trackId", dto.trackId);
     object->setProperty("parentRackId", nullableId(dto.parentRackId));
     object->setProperty("parentChainId", nullableId(dto.parentChainId));
+    object->setProperty("nodePath", toJson(dto.nodePath));
     object->setProperty("name", dto.name);
     object->setProperty("bypassed", dto.bypassed);
     object->setProperty("volumeDb", dto.volumeDb);
@@ -1772,6 +1784,7 @@ std::optional<ChainDto> chainFromJson(const juce::var& json, Error& error) {
     ChainDto dto;
     dto.id = readInt(json, "id");
     dto.rackId = readInt(json, "rackId");
+    dto.nodePath = devicePathFromJson(json["nodePath"]);
     dto.name = json["name"].toString();
     dto.outputIndex = readInt(json, "outputIndex");
     dto.muted = static_cast<bool>(json["muted"]);
@@ -1792,6 +1805,7 @@ std::optional<RackDto> rackFromJson(const juce::var& json, Error& error) {
     dto.trackId = readInt(json, "trackId");
     dto.parentRackId = readNullableId<RackId>(json, "parentRackId");
     dto.parentChainId = readNullableId<ChainId>(json, "parentChainId");
+    dto.nodePath = devicePathFromJson(json["nodePath"]);
     dto.name = json["name"].toString();
     dto.bypassed = static_cast<bool>(json["bypassed"]);
     dto.volumeDb = static_cast<double>(json["volumeDb"]);
@@ -2516,34 +2530,102 @@ OperationRegistry::OperationRegistry() {
         "required":["devicePath","macroIndex","parameterIndex"],"additionalProperties":false
     })json"),
                            okResult);
-    add("racks.create", "Create a top-level rack", OperationAccess::Write, &handlers::racksCreate,
-        operationInputSchema(R"json({
-            "type":"object",
-            "properties":{"trackId":{"type":"integer","minimum":0},"name":{"type":"string"}},
-            "required":["trackId","name"],"additionalProperties":false
-        })json"),
-        idResult);
-    add("racks.remove", "Remove a top-level rack", OperationAccess::Write, &handlers::racksRemove,
-        operationInputSchema(R"json({
+    add("racks.create", "Create a rack on a track or inside a rack chain", OperationAccess::Write,
+        &handlers::racksCreate, operationInputSchema(R"json({
             "type":"object",
             "properties":{
                 "trackId":{"type":"integer","minimum":0},
-                "rackId":{"type":"integer","minimum":0}
+                "parentPath":{},
+                "name":{"type":"string"}
             },
-            "required":["trackId","rackId"],"additionalProperties":false
+            "required":["name"],
+            "oneOf":[{"required":["trackId"]},{"required":["parentPath"]}],
+            "additionalProperties":false
+        })json"),
+        idResult);
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "parentPath", devicePathSchema());
+    add("racks.remove", "Remove a rack at any nesting depth", OperationAccess::Write,
+        &handlers::racksRemove, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "trackId":{"type":"integer","minimum":0},
+                "rackId":{"type":"integer","minimum":0},
+                "rackPath":{}
+            },
+            "oneOf":[{"required":["trackId","rackId"]},{"required":["rackPath"]}],
+            "additionalProperties":false
         })json"),
         okResult);
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "rackPath", devicePathSchema());
     add("racks.setBypassed", "Set rack bypass", OperationAccess::Write, &handlers::racksSetBypassed,
         operationInputSchema(R"json({
             "type":"object",
             "properties":{
                 "trackId":{"type":"integer","minimum":0},
                 "rackId":{"type":"integer","minimum":0},
+                "rackPath":{},
                 "bypassed":{"type":"boolean"}
             },
-            "required":["trackId","rackId","bypassed"],"additionalProperties":false
+            "required":["bypassed"],
+            "oneOf":[{"required":["trackId","rackId"]},{"required":["rackPath"]}],
+            "additionalProperties":false
         })json"),
         rackSchema());
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "rackPath", devicePathSchema());
+    add("racks.update", "Update a rack at any nesting depth", OperationAccess::Write,
+        &handlers::racksUpdate, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "rackPath":{},
+                "bypassed":{"type":"boolean"},
+                "volumeDb":{"type":"number"}
+            },
+            "required":["rackPath"],
+            "additionalProperties":false
+        })json"),
+        rackSchema());
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "rackPath", devicePathSchema());
+
+    add("chains.create", "Create a chain inside a rack at any nesting depth",
+        OperationAccess::Write, &handlers::chainsCreate, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{"rackPath":{},"name":{"type":"string"}},
+            "required":["rackPath","name"],"additionalProperties":false
+        })json"),
+        idResult);
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "rackPath", devicePathSchema());
+    add("chains.remove", "Remove a chain from a rack at any nesting depth", OperationAccess::Write,
+        &handlers::chainsRemove, operationInputSchema(R"json({
+            "type":"object","properties":{"chainPath":{}},
+            "required":["chainPath"],"additionalProperties":false
+        })json"),
+        okResult);
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "chainPath", devicePathSchema());
+    add("chains.update", "Update a chain at any nesting depth", OperationAccess::Write,
+        &handlers::chainsUpdate, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "chainPath":{},
+                "name":{"type":"string"},
+                "outputIndex":{"type":"integer","minimum":0},
+                "muted":{"type":"boolean"},
+                "solo":{"type":"boolean"},
+                "bypassed":{"type":"boolean"},
+                "volumeDb":{"type":"number"},
+                "pan":{"type":"number","minimum":-1,"maximum":1}
+            },
+            "required":["chainPath"],
+            "additionalProperties":false
+        })json"),
+        chainSchema());
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "chainPath", devicePathSchema());
 
     add("selection.get", "Get the current selection", OperationAccess::Read,
         &handlers::selectionGet, emptyObjectSchema(), selectionSchema());
@@ -2922,6 +3004,10 @@ OperationRegistry::OperationRegistry() {
         {"racks.create", Scope::Edit},
         {"racks.remove", Scope::Edit},
         {"racks.setBypassed", Scope::Edit},
+        {"racks.update", Scope::Edit},
+        {"chains.create", Scope::Edit},
+        {"chains.remove", Scope::Edit},
+        {"chains.update", Scope::Edit},
         {"devices.add", Scope::Edit},
         {"devices.remove", Scope::Edit},
         {"devices.move", Scope::Edit},

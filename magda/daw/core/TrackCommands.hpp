@@ -444,6 +444,113 @@ class SetDeviceBypassedCommand : public UndoableCommand {
     bool executed_ = false;
 };
 
+/** Add a rack to the track FX chain or to a rack chain at any depth. */
+class AddRackByPathCommand : public UndoableCommand {
+  public:
+    AddRackByPathCommand(ChainNodePath parentPath, juce::String name);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Add Rack";
+    }
+
+    RackId getCreatedRackId() const {
+        return createdRackId_;
+    }
+
+  private:
+    ChainNodePath parentPath_;
+    ChainNodePath createdRackPath_;
+    juce::String name_;
+    RackId createdRackId_ = INVALID_RACK_ID;
+    RackInfo materialisedRack_;
+    int insertIndex_ = -1;
+    bool hasMaterialisedRack_ = false;
+    bool executed_ = false;
+};
+
+/** Add a chain to a rack at any depth. */
+class AddChainByPathCommand : public UndoableCommand {
+  public:
+    AddChainByPathCommand(ChainNodePath rackPath, juce::String name);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Add Rack Chain";
+    }
+
+    ChainId getCreatedChainId() const {
+        return createdChainId_;
+    }
+
+  private:
+    ChainNodePath rackPath_;
+    ChainNodePath createdChainPath_;
+    juce::String name_;
+    ChainId createdChainId_ = INVALID_CHAIN_ID;
+    ChainInfo materialisedChain_;
+    int insertIndex_ = -1;
+    bool hasMaterialisedChain_ = false;
+    bool executed_ = false;
+};
+
+struct RackPropertyPatch {
+    std::optional<bool> bypassed;
+    std::optional<float> volumeDb;
+};
+
+/** Apply one atomic rack property patch at any nesting depth. */
+class SetRackPropertiesByPathCommand : public UndoableCommand {
+  public:
+    SetRackPropertiesByPathCommand(ChainNodePath rackPath, RackPropertyPatch patch);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Update Rack";
+    }
+
+  private:
+    ChainNodePath rackPath_;
+    RackPropertyPatch patch_;
+    bool previousBypassed_ = false;
+    bool previousDeltaSolo_ = false;
+    float previousVolumeDb_ = 0.0f;
+    bool captured_ = false;
+    bool executed_ = false;
+};
+
+struct ChainPropertyPatch {
+    std::optional<juce::String> name;
+    std::optional<int> outputIndex;
+    std::optional<bool> muted;
+    std::optional<bool> solo;
+    std::optional<bool> bypassed;
+    std::optional<float> volumeDb;
+    std::optional<float> pan;
+};
+
+/** Apply one atomic chain property patch at any nesting depth. */
+class SetChainPropertiesByPathCommand : public UndoableCommand {
+  public:
+    SetChainPropertiesByPathCommand(ChainNodePath chainPath, ChainPropertyPatch patch);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Update Rack Chain";
+    }
+
+  private:
+    ChainNodePath chainPath_;
+    ChainPropertyPatch patch_;
+    ChainInfo previous_;
+    bool captured_ = false;
+    bool executed_ = false;
+};
+
 /**
  * @brief Remove a device addressed by path, restoring it in place on undo.
  *

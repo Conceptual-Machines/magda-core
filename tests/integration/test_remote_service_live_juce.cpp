@@ -51,6 +51,131 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
     RemoteServiceLiveTest() : juce::UnitTest("Remote Service Live", "magda") {}
 
     void runTest() override {
+        beginTest("Nested rack and chain operations are path-addressed and undoable");
+        {
+            Fixture fixture;
+            const auto createdTrack =
+                fixture.run("tracks.create", object({{"name", "Nested"}, {"type", "audio"}}));
+            expect(createdTrack.ok);
+            const auto trackId = static_cast<TrackId>(static_cast<int>(createdTrack.result["id"]));
+
+            const auto outer =
+                fixture.run("racks.create",
+                            object({{"trackId", static_cast<int>(trackId)}, {"name", "Outer"}}));
+            expect(outer.ok);
+            const auto outerId = static_cast<RackId>(static_cast<int>(outer.result["id"]));
+            const auto outerPath = ChainNodePath::rack(trackId, outerId);
+            const auto* outerRack = TrackManager::getInstance().getRackByPath(outerPath);
+            expect(outerRack != nullptr && outerRack->chains.size() == 1);
+            if (outerRack == nullptr || outerRack->chains.empty())
+                return;
+
+            const auto outerChainPath = outerPath.withChain(outerRack->chains.front().id);
+            const auto nested = fixture.run(
+                "racks.create", object({{"parentPath", toJson(makeDevicePathDto(outerChainPath))},
+                                        {"name", "Nested"}}));
+            expect(nested.ok);
+            const auto nestedId = static_cast<RackId>(static_cast<int>(nested.result["id"]));
+            const auto nestedPath = outerChainPath.withRack(nestedId);
+            expect(TrackManager::getInstance().getRackByPath(nestedPath) != nullptr);
+
+            // Creation replays the same materialised node, rather than
+            // allocating a different public identity on redo.
+            expect(UndoManager::getInstance().undo());
+            expect(TrackManager::getInstance().getRackByPath(nestedPath) == nullptr);
+            expect(UndoManager::getInstance().redo());
+            expect(TrackManager::getInstance().getRackByPath(nestedPath) != nullptr);
+
+            const auto addedChain = fixture.run(
+                "chains.create", object({{"rackPath", toJson(makeDevicePathDto(nestedPath))},
+                                         {"name", "Parallel"}}));
+            expect(addedChain.ok);
+            const auto chainId = static_cast<ChainId>(static_cast<int>(addedChain.result["id"]));
+            const auto chainPath = nestedPath.withChain(chainId);
+            expect(TrackManager::getInstance().getChainByPath(chainPath) != nullptr);
+            expect(UndoManager::getInstance().undo());
+            expect(TrackManager::getInstance().getChainByPath(chainPath) == nullptr);
+            expect(UndoManager::getInstance().redo());
+            expect(TrackManager::getInstance().getChainByPath(chainPath) != nullptr);
+
+            const auto rackUpdate = fixture.run(
+                "racks.update", object({{"rackPath", toJson(makeDevicePathDto(nestedPath))},
+                                        {"bypassed", true},
+                                        {"volumeDb", -3.0}}));
+            expect(rackUpdate.ok);
+            expect(static_cast<bool>(rackUpdate.result["bypassed"]));
+            expectWithinAbsoluteError(static_cast<double>(rackUpdate.result["volumeDb"]), -3.0,
+                                      1.0e-9);
+            expect(rackUpdate.result["nodePath"] == toJson(makeDevicePathDto(nestedPath)));
+
+            const auto beforeNoOp = fixture.service.currentRevision();
+            const auto rackNoOp = fixture.run(
+                "racks.update", object({{"rackPath", toJson(makeDevicePathDto(nestedPath))},
+                                        {"bypassed", true},
+                                        {"volumeDb", -3.0}}));
+            expect(rackNoOp.ok);
+            expect(rackNoOp.revision == beforeNoOp);
+            expect(UndoManager::getInstance().undo());
+            const auto* undoneRack = TrackManager::getInstance().getRackByPath(nestedPath);
+            expect(undoneRack != nullptr);
+            if (undoneRack != nullptr) {
+                expect(!undoneRack->bypassed);
+                expectWithinAbsoluteError(static_cast<double>(undoneRack->volume), 0.0, 1.0e-9);
+            }
+            expect(UndoManager::getInstance().redo());
+
+            const auto chainUpdate = fixture.run(
+                "chains.update", object({{"chainPath", toJson(makeDevicePathDto(chainPath))},
+                                         {"name", "Wide"},
+                                         {"muted", true},
+                                         {"volumeDb", -6.0},
+                                         {"pan", 0.25}}));
+            expect(chainUpdate.ok);
+            expectEquals(chainUpdate.result["name"].toString(), juce::String("Wide"));
+            expect(static_cast<bool>(chainUpdate.result["muted"]));
+            expect(chainUpdate.result["nodePath"] == toJson(makeDevicePathDto(chainPath)));
+            expect(UndoManager::getInstance().undo());
+            const auto* undoneChain = TrackManager::getInstance().getChainByPath(chainPath);
+            expect(undoneChain != nullptr);
+            if (undoneChain != nullptr) {
+                expectEquals(undoneChain->name, juce::String("Parallel"));
+                expect(!undoneChain->muted);
+                expectWithinAbsoluteError(static_cast<double>(undoneChain->volume), 0.0, 1.0e-9);
+                expectWithinAbsoluteError(static_cast<double>(undoneChain->pan), 0.0, 1.0e-9);
+            }
+            expect(UndoManager::getInstance().redo());
+
+            const auto graph =
+                fixture.run("devices.list", object({{"trackId", static_cast<int>(trackId)}}));
+            expect(graph.ok);
+            bool foundNestedPath = false;
+            if (const auto* racks = graph.result["racks"].getArray()) {
+                for (const auto& rack : *racks)
+                    foundNestedPath = foundNestedPath ||
+                                      rack["nodePath"] == toJson(makeDevicePathDto(nestedPath));
+            }
+            expect(foundNestedPath);
+
+            const auto removedChain = fixture.run(
+                "chains.remove", object({{"chainPath", toJson(makeDevicePathDto(chainPath))}}));
+            expect(removedChain.ok,
+                   toString(removedChain.error.code) + ": " + removedChain.error.message);
+            expect(TrackManager::getInstance().getChainByPath(chainPath) == nullptr);
+            expect(UndoManager::getInstance().undo());
+            const auto* restoredChain = TrackManager::getInstance().getChainByPath(chainPath);
+            expect(restoredChain != nullptr);
+            if (restoredChain != nullptr)
+                expectEquals(restoredChain->name, juce::String("Wide"));
+
+            const auto removed = fixture.run(
+                "racks.remove", object({{"rackPath", toJson(makeDevicePathDto(nestedPath))}}));
+            expect(removed.ok);
+            expect(TrackManager::getInstance().getRackByPath(nestedPath) == nullptr);
+            expect(UndoManager::getInstance().undo());
+            expect(TrackManager::getInstance().getRackByPath(nestedPath) != nullptr);
+            expect(TrackManager::getInstance().getChainByPath(chainPath) != nullptr);
+        }
+
         beginTest("Chord track ensure is singleton, idempotent, and readable");
         {
             Fixture fixture;

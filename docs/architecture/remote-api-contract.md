@@ -134,6 +134,23 @@ the existing snapshot without changing the revision when the singleton already
 exists. Generic `tracks.create` rejects the `chord` type with a conflict so a
 caller cannot create a second chord track or bypass the singleton contract.
 
+### Nested racks and chains
+
+`devices.list` gives every rack and rack chain a canonical `nodePath`, using the
+same safe path shape as devices. The full route is required because racks can
+nest arbitrarily; an immediate `rackId`/`chainId` pair is not an address once a
+rack contains another rack.
+
+`racks.create`, `racks.remove`, and `racks.update` accept those paths at any
+depth. Top-level `racks.create`/`remove` inputs remain supported for existing
+clients. `chains.create`, `chains.remove`, and `chains.update` address the rack
+or chain directly. Rack updates cover bypass and output volume; chain updates
+cover name, output, mute, solo, bypass, volume, and pan.
+
+Each successful mutation is one undo step. Creating a rack or chain preserves
+its allocated identity through undo/redo, removing one restores its complete
+subtree, and a property patch that restates current values is revision-neutral.
+
 ### Clip placement and duplication
 
 `clips.move` and `clips.duplicate` require an explicit, view-specific

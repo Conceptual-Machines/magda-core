@@ -236,6 +236,7 @@ void appendRack(const RackInfo& rack, TrackId trackId, std::optional<RackId> par
     rackDto.trackId = trackId;
     rackDto.parentRackId = parentRackId;
     rackDto.parentChainId = parentChainId;
+    rackDto.nodePath = makeDevicePathDto(rackPath);
     rackDto.name = rack.name;
     rackDto.bypassed = rack.bypassed;
     rackDto.volumeDb = rack.volume;
@@ -248,6 +249,8 @@ void appendRack(const RackInfo& rack, TrackId trackId, std::optional<RackId> par
         ChainDto chainDto;
         chainDto.id = chain.id;
         chainDto.rackId = rack.id;
+        const auto chainPath = rackPath.withChain(chain.id);
+        chainDto.nodePath = makeDevicePathDto(chainPath);
         chainDto.name = chain.name;
         chainDto.outputIndex = chain.outputIndex;
         chainDto.muted = chain.muted;
@@ -256,7 +259,6 @@ void appendRack(const RackInfo& rack, TrackId trackId, std::optional<RackId> par
         chainDto.volumeDb = chain.volume;
         chainDto.pan = chain.pan;
 
-        const auto chainPath = rackPath.withChain(chain.id);
         for (const auto& element : chain.elements) {
             if (isDevice(element)) {
                 const auto& device = getDevice(element);
