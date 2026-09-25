@@ -52,14 +52,29 @@ jobs:
   # owns validation (it is the only event the main ruleset accepts required
   # checks from), so the push run for the same commits stands down instead of
   # duplicating every build on the self-hosted runners. Fails open: any API
-  # hiccup keeps the push run building.
+  # hiccup keeps the push run building. A push made before the PR existed
+  # passed this check, so opening the PR cancels that run instead.
   release-pr-gate:
     runs-on: ubuntu-latest
     permissions:
       pull-requests: read
+      actions: write
     outputs:
       proceed: ${{ steps.check.outputs.proceed }}
     steps:
+    - name: Cancel push runs the PR now covers
+      if: github.event_name == 'pull_request' && (github.event.action == 'opened' || github.event.action == 'reopened')
+      env:
+        GH_TOKEN: ${{ github.token }}
+        HEAD_REF: ${{ github.head_ref }}
+      run: |
+        gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --branch "$HEAD_REF" \
+          --event push --limit 20 --json databaseId,status \
+          --jq '.[] | select(.status != "completed") | .databaseId' |
+        while read -r id; do
+          gh run cancel "$id" --repo "$GITHUB_REPOSITORY" || true
+        done
+
     - id: check
       env:
         GH_TOKEN: ${{ github.token }}

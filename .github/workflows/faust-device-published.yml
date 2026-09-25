@@ -2,8 +2,9 @@
 #
 # magda.land/community/devices hands a contributor a prefilled issue rather
 # than uploading anything: GitHub is the identity and the store. The gallery
-# lists every issue carrying `faust-device`, open or closed, so the label is
-# what publishes a device and removing it is what takes one down.
+# lists every issue carrying `community-faust-device`, open or closed, so the
+# label is what publishes a device and removing it is what takes one down. It is
+# its own label because `faust-device` is the topic label for engineering issues.
 #
 # The prefilled link asks for that label, but GitHub only honours `labels=` for
 # people with triage rights on the repo -- so a contributor's submission always
@@ -13,8 +14,8 @@
 # review before they appear.
 #
 # The guard is the body contract the submission form writes: the title it uses
-# and the ```faust fence the gallery parses. An issue that does not match is
-# left entirely alone, so this cannot fire on an ordinary bug report.
+# and the ```faust fence the gallery parses. It applies to both events, so an
+# issue that does not match is left alone even if someone labels it by mistake.
 #
 # Once labelled, the issue itself has nothing outstanding on it, so it closes
 # and says where the device went.
@@ -30,12 +31,12 @@ permissions:
 jobs:
   publish:
     if: >-
-      (github.event.action == 'opened' &&
-       startsWith(github.event.issue.title, 'Faust device:') &&
-       contains(github.event.issue.body, '```faust')) ||
-      (github.event.action == 'labeled' &&
-       github.event.label.name == 'faust-device' &&
-       github.event.issue.state == 'open')
+      startsWith(github.event.issue.title, 'Faust device:') &&
+      contains(github.event.issue.body, '```faust') &&
+      (github.event.action == 'opened' ||
+       (github.event.action == 'labeled' &&
+        github.event.label.name == 'community-faust-device' &&
+        github.event.issue.state == 'open'))
     runs-on: ubuntu-latest
     steps:
       - name: Publish it, say where it went, and close it
@@ -46,11 +47,11 @@ jobs:
         run: |
           # Adding a label already present is not an error, so the two events
           # take the same path rather than needing to know which one ran.
-          gh issue edit "$NUMBER" --repo "$REPO" --add-label faust-device
+          gh issue edit "$NUMBER" --repo "$REPO" --add-label community-faust-device
 
           gh issue comment "$NUMBER" --repo "$REPO" --body \
             'Published — this device is now on [magda.land/community/devices](https://magda.land/community/devices/), where anyone can play it in their browser and download the `.dsp`.
 
-          Closing, because the label is what keeps it listed: it stays on that page whether this issue is open or closed. Comment here if something needs changing, and removing the `faust-device` label takes it back down.'
+          Closing, because the label is what keeps it listed: it stays on that page whether this issue is open or closed. Comment here if something needs changing, and removing the `community-faust-device` label takes it back down.'
 
           gh issue close "$NUMBER" --repo "$REPO" --reason completed
