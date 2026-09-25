@@ -1376,6 +1376,8 @@ juce::var toJson(const Error& error) {
         issues.add(issueObject);
     }
     object->setProperty("issues", issues);
+    if (!error.details.isVoid())
+        object->setProperty("details", error.details);
     return object;
 }
 
@@ -2683,6 +2685,23 @@ OperationRegistry::OperationRegistry() {
         arraySchema(devicePresetSchema()));
     operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
         "devicePath", devicePathSchema());
+    add("devices.applyPreset", "Apply an opaque preset to an existing device",
+        OperationAccess::Write, &handlers::devicesApplyPreset, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{"devicePath":{},"presetId":{"type":"string","minLength":1}},
+            "required":["devicePath","presetId"],"additionalProperties":false
+        })json"),
+        parseSchema(R"json({
+            "type":"object",
+            "properties":{"deviceGraph":{},"referenceImpact":{}},
+            "required":["deviceGraph","referenceImpact"],"additionalProperties":false
+        })json"));
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "devicePath", devicePathSchema());
+    operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
+        "deviceGraph", deviceGraphSchema());
+    operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
+        "referenceImpact", referenceImpactResultSchema());
     add("devices.add", "Add a device from the catalogue to a track's FX chain or a rack chain",
         OperationAccess::Write, &handlers::devicesAdd, operationInputSchema(R"json({
             "type":"object",
@@ -3389,6 +3408,7 @@ OperationRegistry::OperationRegistry() {
         {"chains.remove", Scope::Edit},
         {"chains.update", Scope::Edit},
         {"devices.add", Scope::Edit},
+        {"devices.applyPreset", Scope::Edit},
         {"pads.create", Scope::Edit},
         {"pads.setDevice", Scope::Edit},
         {"pads.setSample", Scope::Edit},

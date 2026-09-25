@@ -88,6 +88,16 @@ struct Error {
     ErrorCode code = ErrorCode::InternalError;
     juce::String message;
     std::vector<ValidationIssue> issues;
+    /** Optional operation-specific, transport-safe structured diagnostics. */
+    juce::var details;
+
+    Error() = default;
+    Error(ErrorCode codeIn, juce::String messageIn, std::vector<ValidationIssue> issuesIn = {},
+          juce::var detailsIn = {})
+        : code(codeIn),
+          message(std::move(messageIn)),
+          issues(std::move(issuesIn)),
+          details(std::move(detailsIn)) {}
 
     bool operator==(const Error&) const = default;
 };

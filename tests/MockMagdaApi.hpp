@@ -1157,6 +1157,8 @@ class MockDeviceApi : public DeviceApi {
   public:
     std::vector<DeviceCatalogEntry> catalog;
     std::map<ChainNodePath, std::vector<DevicePresetEntry>> presets;
+    std::vector<std::pair<ChainNodePath, juce::String>> appliedPresets;
+    ApplyDevicePresetResult applyPresetResult{ApplyDevicePresetStatus::Applied, {}};
     // Live devices, keyed by the path that addresses them.
     std::map<ChainNodePath, DeviceInfo> devices;
 
@@ -1211,6 +1213,13 @@ class MockDeviceApi : public DeviceApi {
         const ChainNodePath& devicePath) const override {
         const auto it = presets.find(devicePath);
         return it != presets.end() ? it->second : std::vector<DevicePresetEntry>{};
+    }
+    ApplyDevicePresetResult applyPreset(const ChainNodePath& devicePath,
+                                        const juce::String& presetId) override {
+        if (!devices.contains(devicePath))
+            return {ApplyDevicePresetStatus::DeviceNotFound, {}};
+        appliedPresets.emplace_back(devicePath, presetId);
+        return applyPresetResult;
     }
 
     std::vector<ModInfo> getDeviceMods(const ChainNodePath& path) const override {

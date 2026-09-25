@@ -444,6 +444,31 @@ class SetDeviceBypassedCommand : public UndoableCommand {
     bool executed_ = false;
 };
 
+/** Replace one device's state while keeping its identity and slot. */
+class ApplyDevicePresetCommand : public UndoableCommand {
+  public:
+    ApplyDevicePresetCommand(ChainNodePath devicePath, DeviceInfo presetState,
+                             std::vector<std::pair<int, int>> parameterRemaps = {});
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Apply Device Preset";
+    }
+
+    bool didApply() const {
+        return executed_;
+    }
+
+  private:
+    ChainNodePath devicePath_;
+    DeviceInfo presetState_;
+    DeviceInfo previousState_;
+    std::vector<std::pair<int, int>> parameterRemaps_;
+    bool captured_ = false;
+    bool executed_ = false;
+};
+
 /** Add a rack to the track FX chain or to a rack chain at any depth. */
 class AddRackByPathCommand : public UndoableCommand {
   public:

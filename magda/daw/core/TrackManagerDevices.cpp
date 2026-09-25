@@ -2107,30 +2107,32 @@ bool TrackManager::setDeviceAuthoredState(const ChainNodePath& devicePath,
     return true;
 }
 
-bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
-                                     const DeviceInfo& presetDevice) {
-    auto* live = getDeviceInChainByPath(devicePath);
-    if (!live) {
-        return false;
-    }
+std::optional<DeviceInfo> TrackManager::prepareDevicePresetState(
+    const ChainNodePath& devicePath, const DeviceInfo& presetDevice) const {
+    const auto* live = getDeviceInChainByPath(devicePath);
+    if (live == nullptr || live->pluginId != presetDevice.pluginId)
+        return std::nullopt;
 
-    // Don't load a preset captured from a different plugin onto this slot.
-    if (live->pluginId != presetDevice.pluginId) {
-        return false;
-    }
-
-    auto presetMacros = presetDevice.macros;
-    auto presetMods = presetDevice.mods;
-    retargetPresetLinks(presetMacros, presetMods, presetDevice.id, devicePath);
-
+    auto prepared = *live;
     // Copy state-y fields; preserve identity (id, name, format, fileOrIdentifier,
     // capabilities, sidechain wiring, current track placement).
-    live->parameters = presetDevice.parameters;
-    live->macros = std::move(presetMacros);
-    live->mods = std::move(presetMods);
-    live->gainDb = presetDevice.gainDb;
-    live->gainValue = std::pow(10.0f, presetDevice.gainDb / 20.0f);
-    live->pluginState = stripPresetRuntimePluginState(presetDevice.pluginState);
+    prepared.parameters = presetDevice.parameters;
+    prepared.macros = presetDevice.macros;
+    prepared.mods = presetDevice.mods;
+    prepared.gainDb = presetDevice.gainDb;
+    prepared.gainValue = std::pow(10.0f, presetDevice.gainDb / 20.0f);
+    prepared.pluginState = stripPresetRuntimePluginState(presetDevice.pluginState);
+    retargetPresetLinks(prepared.macros, prepared.mods, presetDevice.id, devicePath);
+    return prepared;
+}
+
+bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
+                                     const DeviceInfo& presetDevice) {
+    auto prepared = prepareDevicePresetState(devicePath, presetDevice);
+    auto* live = getDeviceInChainByPath(devicePath);
+    if (!prepared || live == nullptr)
+        return false;
+    *live = std::move(*prepared);
 
     if (live->format == PluginFormat::Internal) {
         // Internal authored state is projected onto either the bridge plugin or the

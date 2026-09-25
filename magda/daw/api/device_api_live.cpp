@@ -10,6 +10,7 @@
 #include "../audio/DeviceParameterList.hpp"
 #include "../audio/plugins/InternalPluginRegistry.hpp"
 #include "../audio/plugins/compiled/CompiledPluginRegistry.hpp"
+#include "../core/AutomationManager.hpp"
 #include "../core/ChainWalk.hpp"
 #include "../core/DrumGridPads.hpp"
 #include "../core/PadCommands.hpp"
@@ -20,7 +21,10 @@
 #include "../core/TrackCommands.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/UndoManager.hpp"
+#include "../core/controllers/BindingRegistry.hpp"
 #include "../engine/AudioEngine.hpp"
+#include "../engine/PluginService.hpp"
+#include "../project/serialization/ProjectSerializer.hpp"
 #include "plugin_api_live.hpp"
 
 namespace magda {
@@ -127,6 +131,16 @@ std::optional<ChainNodePath> owningGridPath(const ChainNodePath& padPath) {
     return result;
 }
 
+juce::String pluginPresetId(const DeviceInfo& device, const juce::File& file) {
+    auto stream = file.createInputStream();
+    if (stream == nullptr)
+        return {};
+    const auto contentHash = juce::SHA256(*stream).toHexString();
+    const auto identity = device.getFormatString() + "|" + device.manufacturer + "|" + device.name +
+                          "|" + device.pluginId + "|" + contentHash;
+    return "plugin-preset:" + juce::SHA256(identity.toUTF8()).toHexString();
+}
+
 void appendPluginPresets(const DeviceInfo& device,
                          const std::vector<PluginPresetScanner::Entry>& entries,
                          const juce::String& category, std::vector<DevicePresetEntry>& out) {
@@ -138,15 +152,147 @@ void appendPluginPresets(const DeviceInfo& device,
             continue;
         }
 
-        auto stream = entry.file.createInputStream();
-        if (stream == nullptr)
+        const auto id = pluginPresetId(device, entry.file);
+        if (id.isEmpty())
             continue;
-        const auto contentHash = juce::SHA256(*stream).toHexString();
-        const auto identity = device.getFormatString() + "|" + device.manufacturer + "|" +
-                              device.name + "|" + device.pluginId + "|" + contentHash;
-        out.push_back({"plugin-preset:" + juce::SHA256(identity.toUTF8()).toHexString(), entry.name,
-                       category, "plugin"});
+        out.push_back({id, entry.name, category, "plugin"});
     }
+}
+
+std::optional<juce::File> findPluginPresetFile(
+    const DeviceInfo& device, const std::vector<PluginPresetScanner::Entry>& entries,
+    const juce::String& presetId) {
+    for (const auto& entry : entries) {
+        if (entry.isFolder) {
+            if (auto found = findPluginPresetFile(device, entry.children, presetId))
+                return found;
+        } else if (pluginPresetId(device, entry.file) == presetId) {
+            return entry.file;
+        }
+    }
+    return std::nullopt;
+}
+
+std::vector<BoundControlReference> boundControlReferences() {
+    std::vector<BoundControlReference> result;
+    auto& bindings = BindingRegistry::getInstance();
+    for (const auto scope : {BindingScope::Global, BindingScope::Project})
+        for (const auto& binding : bindings.bindings(scope))
+            if (const auto* target = std::get_if<ControlTarget>(&binding.target))
+                result.push_back({binding.id.toString(), *target});
+    return result;
+}
+
+void appendImpact(ReferenceImpactPlan& destination, ReferenceImpactPlan source) {
+    destination.preserved.insert(destination.preserved.end(),
+                                 std::make_move_iterator(source.preserved.begin()),
+                                 std::make_move_iterator(source.preserved.end()));
+    destination.remapped.insert(destination.remapped.end(),
+                                std::make_move_iterator(source.remapped.begin()),
+                                std::make_move_iterator(source.remapped.end()));
+    destination.dropped.insert(destination.dropped.end(),
+                               std::make_move_iterator(source.dropped.begin()),
+                               std::make_move_iterator(source.dropped.end()));
+    destination.rejected.insert(destination.rejected.end(),
+                                std::make_move_iterator(source.rejected.begin()),
+                                std::make_move_iterator(source.rejected.end()));
+}
+
+struct PresetReferencePreflight {
+    ReferenceImpactPlan impact;
+    std::vector<std::pair<int, int>> parameterRemaps;
+};
+
+PresetReferencePreflight preflightPresetReferences(const ChainNodePath& devicePath,
+                                                   const DeviceInfo& prepared) {
+    auto& tracks = TrackManager::getInstance();
+    const auto bound = boundControlReferences();
+    const auto inventory =
+        inventoryReferences({tracks.getTracks(), tracks.getTrack(MASTER_TRACK_ID),
+                             AutomationManager::getInstance().getLanes(), bound});
+    const std::array paths{devicePath};
+    const auto affected = referencesAffectedBy(inventory, paths);
+
+    PresetReferencePreflight result;
+    for (const auto& reference : affected) {
+        const std::array one{reference};
+        const bool ownedLink = reference.source.devicePath == devicePath &&
+                               (reference.kind == ReferenceKind::MacroLink ||
+                                reference.kind == ReferenceKind::ModulatorLink);
+        if (ownedLink) {
+            ReferencePolicySet policy;
+            policy.set(reference.kind, ReferencePolicy::Drop);
+            appendImpact(result.impact, planReferenceImpacts(one, {}, policy));
+            continue;
+        }
+
+        if (reference.target.devicePath != devicePath) {
+            ReferencePolicySet policy;
+            policy.set(reference.kind, ReferencePolicy::Preserve);
+            appendImpact(result.impact, planReferenceImpacts(one, {}, policy));
+            continue;
+        }
+
+        if (reference.target.kind == ReferenceAddressKind::Parameter) {
+            const auto oldIndex = reference.target.parameterIndex.value_or(-1);
+            const auto stableId = reference.target.parameterStableId;
+            const ParameterInfo* target = nullptr;
+            const auto* sameIndex = prepared.findParameterByIndex(oldIndex);
+            if (sameIndex != nullptr && (stableId.isEmpty() || sameIndex->stableId == stableId)) {
+                target = sameIndex;
+            } else if (stableId.isNotEmpty()) {
+                const auto matching =
+                    std::ranges::find(prepared.parameters, stableId, &ParameterInfo::stableId);
+                target = matching != prepared.parameters.end() ? &*matching : nullptr;
+            }
+
+            if (target != nullptr && target->paramIndex == oldIndex) {
+                ReferencePolicySet policy;
+                policy.set(reference.kind, ReferencePolicy::Preserve);
+                appendImpact(result.impact, planReferenceImpacts(one, {}, policy));
+            } else if (target != nullptr && stableId.isNotEmpty()) {
+                auto mapped = reference.target;
+                mapped.parameterIndex = target->paramIndex;
+                const std::array mappings{
+                    ReferenceTargetMapping{reference.target, mapped, stableId, target->stableId}};
+                ReferencePolicySet policy;
+                policy.set(reference.kind, ReferencePolicy::Remap);
+                appendImpact(result.impact, planReferenceImpacts(one, mappings, policy));
+                if (result.impact.rejected.empty())
+                    result.parameterRemaps.emplace_back(oldIndex, target->paramIndex);
+            } else {
+                ReferencePolicySet policy;
+                policy.set(reference.kind, ReferencePolicy::Remap);
+                appendImpact(result.impact, planReferenceImpacts(one, {}, policy));
+            }
+            continue;
+        }
+
+        bool targetSurvives = true;
+        if (reference.target.kind == ReferenceAddressKind::Macro) {
+            const auto id = reference.target.macroId.value_or(INVALID_MACRO_ID);
+            targetSurvives = std::ranges::contains(prepared.macros, id, &MacroInfo::id);
+        } else if (reference.target.kind == ReferenceAddressKind::Modulator) {
+            const auto id = reference.target.modId.value_or(INVALID_MOD_ID);
+            targetSurvives = std::ranges::contains(prepared.mods, id, &ModInfo::id);
+        }
+
+        ReferencePolicySet policy;
+        policy.set(reference.kind,
+                   targetSurvives ? ReferencePolicy::Preserve : ReferencePolicy::Reject);
+        appendImpact(result.impact, planReferenceImpacts(one, {}, policy));
+    }
+
+    std::ranges::sort(result.parameterRemaps);
+    result.parameterRemaps.erase(
+        std::unique(result.parameterRemaps.begin(), result.parameterRemaps.end()),
+        result.parameterRemaps.end());
+    return result;
+}
+
+bool samePresetState(const DeviceInfo& left, const DeviceInfo& right) {
+    return juce::JSON::toString(ProjectSerializer::serializeDeviceInfo(left), true) ==
+           juce::JSON::toString(ProjectSerializer::serializeDeviceInfo(right), true);
 }
 
 }  // namespace
@@ -235,6 +381,72 @@ std::vector<DevicePresetEntry> DeviceApiLive::getDevicePresets(
     const auto& pluginPresets = PluginPresetScanner::getInstance().getPresets(*device);
     appendPluginPresets(*device, pluginPresets.roots, {}, presets);
     return presets;
+}
+
+ApplyDevicePresetResult DeviceApiLive::applyPreset(const ChainNodePath& devicePath,
+                                                   const juce::String& presetId) {
+    auto& tracks = TrackManager::getInstance();
+    const auto* live = tracks.getDeviceInChainByPath(devicePath);
+    if (live == nullptr)
+        return {ApplyDevicePresetStatus::DeviceNotFound, {}};
+
+    const auto listed = getDevicePresets(devicePath);
+    const auto entry = std::ranges::find(listed, presetId, &DevicePresetEntry::id);
+    if (entry == listed.end())
+        return {ApplyDevicePresetStatus::PresetNotFound, {}};
+
+    const auto before = *live;
+    DeviceInfo prepared;
+    if (entry->source == "magda") {
+        DeviceInfo preset;
+        if (!PresetManager::getInstance().loadDevicePresetById(live->name, presetId, preset))
+            return {ApplyDevicePresetStatus::LoadFailed, {}};
+        if (preset.pluginId != live->pluginId)
+            return {ApplyDevicePresetStatus::Incompatible, {}};
+        const auto staged = tracks.prepareDevicePresetState(devicePath, preset);
+        if (!staged)
+            return {ApplyDevicePresetStatus::Incompatible, {}};
+        prepared = *staged;
+    } else if (entry->source == "plugin") {
+        const auto& roots = PluginPresetScanner::getInstance().getPresets(*live).roots;
+        const auto file = findPluginPresetFile(*live, roots, presetId);
+        auto* engine = tracks.getAudioEngine();
+        if (!file || engine == nullptr)
+            return {ApplyDevicePresetStatus::LoadFailed, {}};
+
+        // A hosted preset can only be decoded by its plugin. Stage it on the
+        // instance, capture the complete model state, then restore the original
+        // state before deciding whether to commit one undoable edit.
+        if (!engine->loadPluginPresetFile(devicePath, *file)) {
+            tracks.applyDevicePreset(devicePath, before);
+            return {ApplyDevicePresetStatus::LoadFailed, {}};
+        }
+        PluginService::getInstance().capturePluginStateAt(devicePath);
+        const auto* staged = tracks.getDeviceInChainByPath(devicePath);
+        if (staged == nullptr) {
+            tracks.applyDevicePreset(devicePath, before);
+            return {ApplyDevicePresetStatus::LoadFailed, {}};
+        }
+        prepared = *staged;
+        if (!tracks.applyDevicePreset(devicePath, before))
+            return {ApplyDevicePresetStatus::LoadFailed, {}};
+    } else {
+        return {ApplyDevicePresetStatus::PresetNotFound, {}};
+    }
+
+    auto preflight = preflightPresetReferences(devicePath, prepared);
+    if (!preflight.impact.canCommit())
+        return {ApplyDevicePresetStatus::ReferenceConflict, std::move(preflight.impact)};
+    if (samePresetState(before, prepared))
+        return {ApplyDevicePresetStatus::Unchanged, std::move(preflight.impact)};
+
+    auto command = std::make_unique<ApplyDevicePresetCommand>(devicePath, std::move(prepared),
+                                                              std::move(preflight.parameterRemaps));
+    auto* raw = command.get();
+    UndoManager::getInstance().executeCommand(std::move(command));
+    return {raw->didApply() ? ApplyDevicePresetStatus::Applied
+                            : ApplyDevicePresetStatus::LoadFailed,
+            std::move(preflight.impact)};
 }
 
 DeviceId DeviceApiLive::addDevice(const ChainNodePath& parentPath, const juce::String& catalogId,

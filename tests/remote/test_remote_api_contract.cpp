@@ -548,6 +548,30 @@ TEST_CASE("Device preset discovery is path-free and device-scoped",
     CHECK_FALSE(properties->hasProperty("state"));
 }
 
+TEST_CASE("Device preset application is a closed edit with safe structured output",
+          "[remote-api][contract][presets]") {
+    const auto* operation = OperationRegistry::instance().find("devices.applyPreset");
+    REQUIRE(operation != nullptr);
+    CHECK(operation->access == OperationAccess::Write);
+    CHECK(operation->requiredScope == Scope::Edit);
+
+    auto input =
+        object({{"devicePath", toJson(makeDevicePathDto(ChainNodePath::topLevelDevice(1, 5)))},
+                {"presetId", "device-preset:abc"}});
+    CHECK_FALSE(validateOperationInput(*operation, input).has_value());
+    input.getDynamicObject()->setProperty("presetPath", "/tmp/secret.mps");
+    const auto unknown = validateOperationInput(*operation, input);
+    REQUIRE(unknown.has_value());
+    CHECK(unknown->issues.front().code == "unknown_field");
+
+    const auto* output = operation->outputSchema["properties"].getDynamicObject();
+    REQUIRE(output != nullptr);
+    CHECK(output->hasProperty("deviceGraph"));
+    CHECK(output->hasProperty("referenceImpact"));
+    CHECK_FALSE(output->hasProperty("pluginId"));
+    CHECK_FALSE(output->hasProperty("state"));
+}
+
 TEST_CASE("Remote API input validation returns structured issues",
           "[remote-api][contract][validation]") {
     const auto& registry = OperationRegistry::instance();
@@ -760,12 +784,16 @@ TEST_CASE("Remote API input validation returns structured issues",
     }
 
     SECTION("error envelope") {
-        const Error error{ErrorCode::NotFound, "No such clip", {{"$.clipId", "not_found", "42"}}};
+        const Error error{ErrorCode::NotFound,
+                          "No such clip",
+                          {{"$.clipId", "not_found", "42"}},
+                          object({{"referenceImpact", object({{"safe", true}})}})};
         const auto envelope = errorEnvelope(error);
         REQUIRE(static_cast<bool>(envelope["ok"]) == false);
         REQUIRE(envelope["apiVersion"].toString() == "1.0");
         REQUIRE(envelope["error"]["code"].toString() == "not_found");
         REQUIRE(envelope["error"]["issues"].getArray()->size() == 1);
+        REQUIRE(static_cast<bool>(envelope["error"]["details"]["referenceImpact"]["safe"]));
     }
 }
 

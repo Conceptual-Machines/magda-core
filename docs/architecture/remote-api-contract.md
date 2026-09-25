@@ -90,6 +90,14 @@ operations and returns `id`, display `name`, folder-derived `category`, and
 scanned VST3/AU presets. IDs are opaque and stable; filesystem paths and preset
 state never cross the facade.
 
+`devices.applyPreset` consumes one of those IDs for the addressed device. It
+keeps the device identity, slot, bypass state, and unrelated graph intact, and
+returns the updated safe device graph plus the structured reference-impact
+plan. Parameter references move only when a stable identity proves the remap;
+references that cannot be preserved make the request fail before its one
+undoable commit, with the rejected plan in `error.details.referenceImpact`.
+Reapplying identical state is revision-neutral.
+
 ### Saved track-chain presets
 
 Saved track-chain presets are exposed through the shared operation registry, so
