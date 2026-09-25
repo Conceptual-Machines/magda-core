@@ -528,6 +528,28 @@ class SetDeviceBypassedCommand : public UndoableCommand {
     bool executed_ = false;
 };
 
+/** Atomically replace one path-addressed device or rack sidechain configuration. */
+class SetSidechainConfigCommand : public UndoableCommand {
+  public:
+    SetSidechainConfigCommand(ChainNodePath ownerPath, SidechainConfig sidechain);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Set Sidechain";
+    }
+    bool didMutate() const override {
+        return executed_;
+    }
+
+  private:
+    ChainNodePath ownerPath_;
+    SidechainConfig sidechain_;
+    SidechainConfig previous_;
+    bool captured_ = false;
+    bool executed_ = false;
+};
+
 /** Replace one device's state while keeping its identity and slot. */
 class ApplyDevicePresetCommand : public UndoableCommand {
   public:

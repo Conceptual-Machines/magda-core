@@ -510,6 +510,41 @@ const juce::var& devicePathSchema() {
     return value;
 }
 
+const juce::var& sidechainViewSchema() {
+    static auto value = [] {
+        auto schema = parseSchema(R"json({
+            "type":"object",
+            "properties":{
+                "ownerPath":{},
+                "ownerType":{"type":"string","enum":["device","rack"]},
+                "supportedTypes":{"type":"array","items":{"type":"string","enum":["audio","midi"]}},
+                "audioChannels":{"type":"integer","minimum":0},
+                "supportedTapPoints":{"type":"array","items":{"type":"string","enum":["preFx","postFader"]}},
+                "supportsGain":{"type":"boolean"},
+                "gainDbMin":{"type":"number"},
+                "gainDbMax":{"type":"number"},
+                "supportsListen":{"type":"boolean"},
+                "supportedChannelMappings":{"type":"array","items":{"type":"string","enum":["automatic"]}},
+                "sourceEndpointId":{"type":["string","null"]},
+                "type":{"type":"string","enum":["none","audio","midi"]},
+                "tapPoint":{"type":"string","enum":["preFx","postFader"]},
+                "gainDb":{"type":"number"},
+                "enabled":{"type":"boolean"},
+                "listen":{"type":"boolean"},
+                "channelMapping":{"type":"string","enum":["automatic"]}
+            },
+            "required":["ownerPath","ownerType","supportedTypes","audioChannels",
+                        "supportedTapPoints","supportsGain","gainDbMin","gainDbMax",
+                        "supportsListen","supportedChannelMappings","sourceEndpointId","type",
+                        "tapPoint","gainDb","enabled","listen","channelMapping"],
+            "additionalProperties":false
+        })json");
+        schema["properties"].getDynamicObject()->setProperty("ownerPath", devicePathSchema());
+        return schema;
+    }();
+    return value;
+}
+
 const juce::var& referenceAddressSchema() {
     static const auto value = [] {
         auto schema = parseSchema(R"json({
@@ -2512,6 +2547,60 @@ OperationRegistry::OperationRegistry() {
             "additionalProperties":false
         })json"));
 
+    add("engine.health", "Read engine binding, callback load, xruns, and recent problems",
+        OperationAccess::Read, &handlers::engineHealth, emptyObjectSchema(), parseSchema(R"json({
+            "type":"object","properties":{
+                "engine":{"type":"string"},
+                "observedAtMs":{"type":"number","minimum":0},
+                "sinceMs":{"type":["number","null"],"minimum":0},
+                "projectBound":{"type":["boolean","null"]},
+                "audioDeviceOpen":{"type":["boolean","null"]},
+                "xrunCount":{"type":["integer","null"],"minimum":0},
+                "dropoutCount":{"type":["integer","null"],"minimum":0},
+                "callbackLoad":{"type":["number","null"],"minimum":0},
+                "problemCoverage":{"type":"string","enum":["audioIoObservations","unavailable"]},
+                "problems":{"type":"array","maxItems":32,"items":{
+                    "type":"object","properties":{
+                        "code":{"type":"string","enum":["audio_xrun","xrun_counter_reset",
+                                                        "audio_device_unavailable"]},
+                        "atMs":{"type":"number","minimum":0},
+                        "count":{"type":"integer","minimum":1}
+                    },"required":["code","atMs","count"],"additionalProperties":false
+                }},
+                "discardedProblemCount":{"type":"integer","minimum":0}
+            },
+            "required":["engine","observedAtMs","sinceMs","projectBound",
+                        "audioDeviceOpen","xrunCount","dropoutCount","callbackLoad",
+                        "problemCoverage","problems","discardedProblemCount"],
+            "additionalProperties":false
+        })json"));
+
+    add("meters.read", "Read one bounded track and master peak snapshot", OperationAccess::Read,
+        &handlers::metersRead, emptyObjectSchema(), parseSchema(R"json({
+            "type":"object","properties":{
+                "observedAtMs":{"type":"number","minimum":0},
+                "tracks":{"type":"array","maxItems":128,"items":{
+                    "type":"object","properties":{
+                        "trackId":{"type":"integer","minimum":0},
+                        "available":{"type":"boolean"},
+                        "peakL":{"type":["number","null"],"minimum":0},
+                        "peakR":{"type":["number","null"],"minimum":0},
+                        "clipped":{"type":["boolean","null"]}
+                    },"required":["trackId","available","peakL","peakR","clipped"],
+                    "additionalProperties":false
+                }},
+                "truncatedTrackCount":{"type":"integer","minimum":0},
+                "master":{"type":"object","properties":{
+                    "available":{"type":"boolean"},
+                    "peakL":{"type":["number","null"],"minimum":0},
+                    "peakR":{"type":["number","null"],"minimum":0},
+                    "clipped":{"type":["boolean","null"]}
+                },"required":["available","peakL","peakR","clipped"],
+                "additionalProperties":false}
+            },"required":["observedAtMs","tracks","truncatedTrackCount","master"],
+            "additionalProperties":false
+        })json"));
+
     add("project.get", "Get safe project metadata", OperationAccess::Read, &handlers::projectGet,
         emptyObjectSchema(), projectSchema());
     add("project.save", "Save the project to its existing target", OperationAccess::Write,
@@ -2743,6 +2832,47 @@ OperationRegistry::OperationRegistry() {
             "required":["sendId"],"additionalProperties":false
         })json"),
         sendRemoveOutput);
+    add("sidechains.list", "List device and rack sidechains and their capabilities",
+        OperationAccess::Read, &handlers::sidechainsList, operationInputSchema(R"json({
+            "type":"object","properties":{"trackId":{"anyOf":[
+                {"type":"integer","const":-2},{"type":"integer","minimum":0}]}},
+            "additionalProperties":false
+        })json"),
+        arraySchema(sidechainViewSchema()));
+    add("sidechains.get", "Inspect one device or rack sidechain and its capabilities",
+        OperationAccess::Read, &handlers::sidechainsGet, operationInputSchema(R"json({
+            "type":"object","properties":{"ownerPath":{}},
+            "required":["ownerPath"],"additionalProperties":false
+        })json"),
+        sidechainViewSchema());
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "ownerPath", devicePathSchema());
+    add("sidechains.set", "Atomically configure or clear one device or rack sidechain",
+        OperationAccess::Write, &handlers::sidechainsSet, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "ownerPath":{},
+                "sourceEndpointId":{"anyOf":[{"type":"string","minLength":1},{"type":"null"}]},
+                "type":{"type":"string","enum":["audio","midi"]},
+                "tapPoint":{"type":"string","enum":["preFx","postFader"]},
+                "gainDb":{"type":"number","minimum":-60,"maximum":24},
+                "enabled":{"type":"boolean"},
+                "listen":{"type":"boolean"},
+                "channelMapping":{"type":"string","enum":["automatic"]}
+            },
+            "required":["ownerPath"],"additionalProperties":false
+        })json"),
+        parseSchema(R"json({
+            "type":"object",
+            "properties":{"sidechain":{},"referenceImpact":{}},
+            "required":["sidechain","referenceImpact"],"additionalProperties":false
+        })json"));
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "ownerPath", devicePathSchema());
+    operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
+        "sidechain", sidechainViewSchema());
+    operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
+        "referenceImpact", referenceImpactResultSchema());
 
     add("clips.list", "List clips with optional track and view filters", OperationAccess::Read,
         &handlers::clipsList, operationInputSchema(R"json({
@@ -3706,6 +3836,7 @@ OperationRegistry::OperationRegistry() {
         {"sends.create", Scope::Edit},
         {"sends.update", Scope::Edit},
         {"sends.remove", Scope::Edit},
+        {"sidechains.set", Scope::Edit},
         {"clips.createMidi", Scope::Edit},
         {"clips.addMidiNote", Scope::Edit},
         {"clips.addMidiEvents", Scope::Edit},

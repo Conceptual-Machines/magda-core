@@ -66,6 +66,7 @@ target_sources(magda_daw PRIVATE
     remote_scopes.hpp
     remote_clients.hpp
     remote_audit.hpp
+    remote_diagnostics.hpp
     remote_service.hpp
     remote_changes.hpp
     remote_model_bridge.hpp

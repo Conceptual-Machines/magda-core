@@ -1330,6 +1330,9 @@ class MockDeviceApi : public DeviceApi {
     ReplaceDeviceResult replaceDeviceResult{ReplaceDeviceStatus::Replaced, {}, {}};
     // Live devices, keyed by the path that addresses them.
     std::map<ChainNodePath, DeviceInfo> devices;
+    std::map<ChainNodePath, SidechainView> sidechains;
+    std::vector<std::pair<ChainNodePath, SidechainPatch>> sidechainWrites;
+    SetSidechainResult setSidechainResult{SetSidechainStatus::Applied, std::nullopt, {}};
 
     std::vector<DeviceCatalogEntry> getCatalog() const override {
         return catalog;
@@ -1578,6 +1581,24 @@ class MockDeviceApi : public DeviceApi {
             it->second.deltaSolo = false;
         bypassed.emplace_back(devicePath, value);
         return true;
+    }
+    std::optional<SidechainView> getSidechain(const ChainNodePath& ownerPath) const override {
+        const auto found = sidechains.find(ownerPath);
+        return found == sidechains.end() ? std::nullopt
+                                         : std::optional<SidechainView>{found->second};
+    }
+    std::vector<SidechainView> getSidechains(
+        std::optional<TrackId> trackId = std::nullopt) const override {
+        std::vector<SidechainView> result;
+        for (const auto& [path, sidechain] : sidechains)
+            if (!trackId || path.trackId == *trackId)
+                result.push_back(sidechain);
+        return result;
+    }
+    SetSidechainResult setSidechain(const ChainNodePath& ownerPath,
+                                    const SidechainPatch& patch) override {
+        sidechainWrites.emplace_back(ownerPath, patch);
+        return setSidechainResult;
     }
     bool setDeviceParameter(const ChainNodePath& devicePath, int paramIndex, float value) override {
         const auto it = devices.find(devicePath);

@@ -26,6 +26,8 @@ namespace remote::handlers {
 
 // System
 HandlerResult systemDescribe(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult engineHealth(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult metersRead(MagdaApi&, const juce::var&, const RequestContext&);
 
 // Project
 HandlerResult projectGet(MagdaApi&, const juce::var&, const RequestContext&);
@@ -58,6 +60,11 @@ HandlerResult sendsList(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult sendsCreate(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult sendsUpdate(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult sendsRemove(MagdaApi&, const juce::var&, const RequestContext&);
+
+// Device/rack sidechains
+HandlerResult sidechainsList(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult sidechainsGet(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult sidechainsSet(MagdaApi&, const juce::var&, const RequestContext&);
 
 // Singleton chord track
 HandlerResult chordTrackGet(MagdaApi&, const juce::var&, const RequestContext&);

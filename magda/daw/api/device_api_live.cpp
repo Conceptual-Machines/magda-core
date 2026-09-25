@@ -5,7 +5,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <memory>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "../audio/DeviceParameterList.hpp"
 #include "../audio/plugins/DeviceCatalogParameters.hpp"
@@ -16,6 +19,7 @@
 #include "../core/DrumGridPads.hpp"
 #include "../core/PadCommands.hpp"
 #include "../core/ParameterUtils.hpp"
+#include "../core/PluginCapabilities.hpp"
 #include "../core/PluginParameterConfigStore.hpp"
 #include "../core/PluginPresetScanner.hpp"
 #include "../core/PresetManager.hpp"
@@ -31,6 +35,170 @@
 namespace magda {
 
 namespace {
+
+std::vector<BoundControlReference> boundControlReferences();
+
+juce::String sidechainEndpointId(TrackId trackId) {
+    return "track:" + juce::String(trackId);
+}
+
+std::optional<TrackId> sidechainTrackId(const juce::String& endpointId) {
+    if (!endpointId.startsWith("track:"))
+        return std::nullopt;
+    const auto suffix = endpointId.substring(6);
+    if (suffix.isEmpty() || suffix.containsOnly("0123456789") == false)
+        return std::nullopt;
+    return static_cast<TrackId>(suffix.getIntValue());
+}
+
+SidechainCapabilities sidechainCapabilities(const DeviceInfo& device) {
+    SidechainCapabilities result;
+    result.audio = device.sidechainPort.takesAudio();
+    result.midi = supportsMidiSidechainSource(device);
+    result.audioChannels = result.audio ? device.sidechainPort.channels : 0;
+    if (result.audio) {
+        result.tapPoints = {ModTapPoint::PreFx, ModTapPoint::PostFader};
+        result.gain = true;
+        result.listen = true;
+        // Both engines currently adapt the source width to the declared port.
+        // Advertise that one supported mapping instead of accepting a mapping
+        // one backend would silently ignore.
+        result.channelMappings = {"automatic"};
+    }
+    return result;
+}
+
+SidechainCapabilities rackSidechainCapabilities() {
+    SidechainCapabilities result;
+    result.audio = true;
+    result.midi = true;
+    return result;
+}
+
+SidechainView makeSidechainView(const ChainNodePath& ownerPath, SidechainOwnerKind kind,
+                                const SidechainCapabilities& capabilities,
+                                const SidechainConfig& sidechain) {
+    SidechainView result;
+    result.ownerPath = ownerPath;
+    result.ownerKind = kind;
+    result.capabilities = capabilities;
+    if (sidechain.isConfigured())
+        result.sourceEndpointId = sidechainEndpointId(sidechain.sourceTrackId);
+    result.type = sidechain.type;
+    result.tapPoint = sidechain.tapPoint;
+    result.gainDb = sidechain.gainDb;
+    result.enabled = sidechain.enabled && sidechain.isConfigured();
+    result.listen = sidechain.listen;
+    return result;
+}
+
+std::optional<TrackId> routeTrackId(const juce::String& route) {
+    return sidechainTrackId(route);
+}
+
+bool sidechainWouldCreateCycle(const ChainNodePath& ownerPath, const SidechainConfig& proposed) {
+    if (!proposed.isActive())
+        return false;
+
+    auto& manager = TrackManager::getInstance();
+    std::unordered_map<TrackId, std::vector<TrackId>> edges;
+    std::unordered_set<TrackId> known;
+    manager.forEachTrackIncludingMaster([&](const TrackInfo& track) { known.insert(track.id); });
+    const auto addEdge = [&](TrackId source, TrackId destination) {
+        if (known.contains(source) && known.contains(destination))
+            edges[source].push_back(destination);
+    };
+
+    manager.forEachTrackIncludingMaster([&](const TrackInfo& track) {
+        if (track.parentId != INVALID_TRACK_ID)
+            addEdge(track.id, track.parentId);
+        for (const auto& send : track.sends)
+            addEdge(track.id, send.destTrackId);
+        if (track.multiOutLink)
+            addEdge(track.multiOutLink->sourceTrackId, track.id);
+        if (const auto source = routeTrackId(track.audioInputDevice))
+            addEdge(*source, track.id);
+        if (const auto source = routeTrackId(track.midiInputDevice))
+            addEdge(*source, track.id);
+        if (const auto destination = routeTrackId(track.audioOutputDevice))
+            addEdge(track.id, *destination);
+        if (const auto destination = routeTrackId(track.midiOutputDevice))
+            addEdge(track.id, *destination);
+
+        chain_walk::forEachNode(
+            track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
+            chain_walk::Pads::Enter,
+            [&](const DeviceInfo& device, const ChainNodePath& path) {
+                const auto& sidechain = path == ownerPath ? proposed : device.sidechain;
+                if (sidechain.isActive())
+                    addEdge(sidechain.sourceTrackId, track.id);
+            },
+            [&](const RackInfo& rack, const ChainNodePath& path) {
+                const auto& sidechain = path == ownerPath ? proposed : rack.sidechain;
+                if (sidechain.isActive())
+                    addEdge(sidechain.sourceTrackId, track.id);
+                return chain_walk::Descend::Into;
+            });
+        for (const auto& element : track.chain.postFxChainElements) {
+            const auto path = ChainNodePath::postFxDevice(track.id, element.device.id);
+            const auto& sidechain = path == ownerPath ? proposed : element.device.sidechain;
+            if (sidechain.isActive())
+                addEdge(sidechain.sourceTrackId, track.id);
+        }
+        for (const auto& element : track.chain.mixerAnalysisElements) {
+            const auto path = ChainNodePath::mixerAnalysisDevice(track.id, element.device.id);
+            const auto& sidechain = path == ownerPath ? proposed : element.device.sidechain;
+            if (sidechain.isActive())
+                addEdge(sidechain.sourceTrackId, track.id);
+        }
+    });
+
+    std::unordered_map<TrackId, int> colour;
+    const std::function<bool(TrackId)> visit = [&](TrackId id) {
+        if (colour[id] == 1)
+            return true;
+        if (colour[id] == 2)
+            return false;
+        colour[id] = 1;
+        for (const auto next : edges[id])
+            if (visit(next))
+                return true;
+        colour[id] = 2;
+        return false;
+    };
+    for (const auto id : known)
+        if (visit(id))
+            return true;
+    return false;
+}
+
+ReferenceImpactPlan sidechainReferenceImpact(const ChainNodePath& ownerPath,
+                                             const SidechainConfig& before,
+                                             const SidechainConfig& after) {
+    ReferenceImpactPlan result;
+    if (!before.isConfigured())
+        return result;
+
+    auto& tracks = TrackManager::getInstance();
+    const auto bound = boundControlReferences();
+    const auto inventory =
+        inventoryReferences({tracks.getTracks(), tracks.getTrack(MASTER_TRACK_ID),
+                             AutomationManager::getInstance().getLanes(), bound});
+    const auto found = std::ranges::find_if(inventory, [&](const ReferenceDescriptor& reference) {
+        return reference.kind == ReferenceKind::Sidechain && reference.source.devicePath &&
+               *reference.source.devicePath == ownerPath;
+    });
+    if (found == inventory.end())
+        return result;
+
+    const std::array reference{*found};
+    ReferencePolicySet policy;
+    const bool sameLink = after.isConfigured() && before.type == after.type &&
+                          before.sourceTrackId == after.sourceTrackId;
+    policy.set(ReferenceKind::Sidechain,
+               sameLink ? ReferencePolicy::Preserve : ReferencePolicy::Drop);
+    return planReferenceImpacts(reference, {}, policy);
+}
 
 juce::String safeText(const char* text) {
     return text != nullptr ? juce::String(text) : juce::String();
@@ -840,6 +1008,135 @@ bool DeviceApiLive::setDeviceBypassed(const ChainNodePath& devicePath, bool bypa
     auto* raw = command.get();
     UndoManager::getInstance().executeCommand(std::move(command));
     return raw->didSet();
+}
+
+std::optional<SidechainView> DeviceApiLive::getSidechain(const ChainNodePath& ownerPath) const {
+    auto& tracks = TrackManager::getInstance();
+    if (const auto* device = tracks.getDeviceInChainByPath(ownerPath))
+        return makeSidechainView(ownerPath, SidechainOwnerKind::Device,
+                                 sidechainCapabilities(*device), device->sidechain);
+    if (const auto* rack = tracks.getRackByPath(ownerPath))
+        return makeSidechainView(ownerPath, SidechainOwnerKind::Rack, rackSidechainCapabilities(),
+                                 rack->sidechain);
+    return std::nullopt;
+}
+
+std::vector<SidechainView> DeviceApiLive::getSidechains(std::optional<TrackId> trackId) const {
+    std::vector<SidechainView> result;
+    TrackManager::getInstance().forEachTrackIncludingMaster([&](const TrackInfo& track) {
+        if (trackId && track.id != *trackId)
+            return;
+        chain_walk::forEachNode(
+            track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
+            chain_walk::Pads::Enter,
+            [&](const DeviceInfo& device, const ChainNodePath& path) {
+                result.push_back(makeSidechainView(path, SidechainOwnerKind::Device,
+                                                   sidechainCapabilities(device),
+                                                   device.sidechain));
+            },
+            [&](const RackInfo& rack, const ChainNodePath& path) {
+                result.push_back(makeSidechainView(path, SidechainOwnerKind::Rack,
+                                                   rackSidechainCapabilities(), rack.sidechain));
+                return chain_walk::Descend::Into;
+            });
+        for (const auto& element : track.chain.postFxChainElements) {
+            const auto path = ChainNodePath::postFxDevice(track.id, element.device.id);
+            result.push_back(makeSidechainView(path, SidechainOwnerKind::Device,
+                                               sidechainCapabilities(element.device),
+                                               element.device.sidechain));
+        }
+        for (const auto& element : track.chain.mixerAnalysisElements) {
+            const auto path = ChainNodePath::mixerAnalysisDevice(track.id, element.device.id);
+            result.push_back(makeSidechainView(path, SidechainOwnerKind::Device,
+                                               sidechainCapabilities(element.device),
+                                               element.device.sidechain));
+        }
+    });
+    return result;
+}
+
+SetSidechainResult DeviceApiLive::setSidechain(const ChainNodePath& ownerPath,
+                                               const SidechainPatch& patch) {
+    auto currentView = getSidechain(ownerPath);
+    if (!currentView)
+        return {SetSidechainStatus::OwnerNotFound, std::nullopt, {}};
+
+    auto& tracks = TrackManager::getInstance();
+    const auto* device = tracks.getDeviceInChainByPath(ownerPath);
+    const auto* rack = device == nullptr ? tracks.getRackByPath(ownerPath) : nullptr;
+    const auto before = device != nullptr ? device->sidechain : rack->sidechain;
+    auto after = before;
+
+    if (patch.sourceEndpointId && !*patch.sourceEndpointId) {
+        const bool hasOtherFields = patch.type || patch.tapPoint || patch.gainDb || patch.enabled ||
+                                    patch.listen || patch.channelMapping;
+        if (hasOtherFields)
+            return {SetSidechainStatus::Incompatible, std::move(currentView), {}};
+        after = {};
+    } else {
+        if (patch.sourceEndpointId) {
+            const auto sourceTrackId = sidechainTrackId(**patch.sourceEndpointId);
+            if (!sourceTrackId || tracks.getTrack(*sourceTrackId) == nullptr)
+                return {SetSidechainStatus::EndpointNotFound, std::move(currentView), {}};
+            after.sourceTrackId = *sourceTrackId;
+        }
+        if (patch.type)
+            after.type = *patch.type;
+        if (patch.tapPoint)
+            after.tapPoint = *patch.tapPoint;
+        if (patch.gainDb)
+            after.gainDb = *patch.gainDb;
+        if (patch.enabled)
+            after.enabled = *patch.enabled;
+        if (patch.listen)
+            after.listen = *patch.listen;
+    }
+
+    const auto& capabilities = currentView->capabilities;
+    if (patch.channelMapping &&
+        std::ranges::find(capabilities.channelMappings, *patch.channelMapping) ==
+            capabilities.channelMappings.end())
+        return {SetSidechainStatus::Incompatible, std::move(currentView), {}};
+    if (patch.tapPoint &&
+        std::ranges::find(capabilities.tapPoints, *patch.tapPoint) == capabilities.tapPoints.end())
+        return {SetSidechainStatus::Incompatible, std::move(currentView), {}};
+    if (patch.gainDb && (!capabilities.gain || !std::isfinite(*patch.gainDb) ||
+                         *patch.gainDb < -60.0f || *patch.gainDb > 24.0f))
+        return {SetSidechainStatus::Incompatible, std::move(currentView), {}};
+    if (patch.listen && !capabilities.listen)
+        return {SetSidechainStatus::Incompatible, std::move(currentView), {}};
+
+    if (after.isConfigured()) {
+        const auto* source = tracks.getTrack(after.sourceTrackId);
+        if (source == nullptr)
+            return {SetSidechainStatus::EndpointNotFound, std::move(currentView), {}};
+        if (after.sourceTrackId == ownerPath.trackId)
+            return {SetSidechainStatus::FeedbackCycle, std::move(currentView), {}};
+        if ((after.type == SidechainConfig::Type::Audio && !capabilities.audio) ||
+            (after.type == SidechainConfig::Type::MIDI && !capabilities.midi) ||
+            after.type == SidechainConfig::Type::None)
+            return {SetSidechainStatus::Incompatible, std::move(currentView), {}};
+        if ((after.type == SidechainConfig::Type::Audio && source->type == TrackType::Chord) ||
+            (after.type == SidechainConfig::Type::MIDI && source->type != TrackType::Media &&
+             source->type != TrackType::MultiOut && source->type != TrackType::Chord))
+            return {SetSidechainStatus::Incompatible, std::move(currentView), {}};
+    } else if (after.type != SidechainConfig::Type::None ||
+               after.sourceTrackId != INVALID_TRACK_ID) {
+        return {SetSidechainStatus::Incompatible, std::move(currentView), {}};
+    }
+
+    if (sidechainWouldCreateCycle(ownerPath, after))
+        return {SetSidechainStatus::FeedbackCycle, std::move(currentView), {}};
+
+    auto impact = sidechainReferenceImpact(ownerPath, before, after);
+    if (after == before)
+        return {SetSidechainStatus::Unchanged, std::move(currentView), std::move(impact)};
+
+    auto command = std::make_unique<SetSidechainConfigCommand>(ownerPath, after);
+    if (!UndoManager::getInstance().executeCommand(std::move(command)))
+        return {SetSidechainStatus::ApplyFailed, std::nullopt, std::move(impact)};
+
+    return {SetSidechainStatus::Applied, getSidechain(ownerPath), std::move(impact)};
 }
 
 bool DeviceApiLive::setDeviceParameter(const ChainNodePath& devicePath, int paramIndex,

@@ -903,6 +903,9 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void setSidechainListen(DeviceId targetDevice, bool listen);
     void clearSidechain(DeviceId targetDevice);
 
+    /** Replace one device or rack sidechain by its unambiguous hierarchy path. */
+    bool setSidechainConfigByPath(const ChainNodePath& ownerPath, const SidechainConfig& sidechain);
+
     // Sidechain configuration (rack-level)
     void setRackSidechainSource(const ChainNodePath& rackPath, TrackId sourceTrack,
                                 SidechainConfig::Type type);

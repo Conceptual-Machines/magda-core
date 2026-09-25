@@ -97,6 +97,9 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(registry.find("sends.create") != nullptr);
     REQUIRE(registry.find("sends.update") != nullptr);
     REQUIRE(registry.find("sends.remove") != nullptr);
+    REQUIRE(registry.find("sidechains.list") != nullptr);
+    REQUIRE(registry.find("sidechains.get") != nullptr);
+    REQUIRE(registry.find("sidechains.set") != nullptr);
     REQUIRE(registry.find("does.not.exist") == nullptr);
 
     std::set<juce::String> names;
@@ -111,6 +114,43 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(description["apiVersion"].toString() == "1.0");
     REQUIRE(description["operations"].getArray()->size() ==
             static_cast<int>(registry.operations().size()));
+}
+
+TEST_CASE("Sidechain operations expose closed path and logical-source schemas",
+          "[remote-api][contract][sidechains][2838]") {
+    const auto& registry = OperationRegistry::instance();
+    const auto* list = registry.find("sidechains.list");
+    const auto* get = registry.find("sidechains.get");
+    const auto* set = registry.find("sidechains.set");
+    REQUIRE(list != nullptr);
+    REQUIRE(get != nullptr);
+    REQUIRE(set != nullptr);
+    CHECK(list->access == OperationAccess::Read);
+    CHECK(list->requiredScope == Scope::Read);
+    CHECK(list->access == OperationAccess::Read);
+    CHECK(list->requiredScope == Scope::Read);
+    CHECK(get->access == OperationAccess::Read);
+    CHECK(get->requiredScope == Scope::Read);
+    CHECK(set->access == OperationAccess::Write);
+    CHECK(set->requiredScope == Scope::Edit);
+
+    const auto owner = toJson(makeDevicePathDto(ChainNodePath::topLevelDevice(3, 7)));
+    CHECK_FALSE(validateOperationInput(*set, object({{"ownerPath", owner},
+                                                     {"sourceEndpointId", "track:2"},
+                                                     {"type", "audio"},
+                                                     {"tapPoint", "preFx"},
+                                                     {"gainDb", -6.0},
+                                                     {"enabled", true},
+                                                     {"listen", false},
+                                                     {"channelMapping", "automatic"}}))
+                    .has_value());
+    CHECK(validateOperationInput(*set, object({{"ownerPath", owner}, {"sourceTrackId", 2}}))
+              .has_value());
+    CHECK(validateOperationInput(*set,
+                                 object({{"ownerPath", owner}, {"channelMapping", "left_only"}}))
+              .has_value());
+    CHECK(validateOperationInput(*set, object({{"ownerPath", owner}, {"gainDb", -61.0}}))
+              .has_value());
 }
 
 TEST_CASE("Routing operations use closed safe schemas and edit scope",

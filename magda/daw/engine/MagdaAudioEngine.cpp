@@ -68,8 +68,8 @@ MagdaAudioEngine::MagdaAudioEngine(AudioEngineOptions options) : headless_(optio
 /**
  * @brief Point the host's meters at meters_ and deviceMeters_ (#2579, #2570).
  *
- * Three rings on the track side because they are three readers of one
- * measurement; the device side is handed the store itself, since the host has
+ * Mixer and recording each have a ring; remote readers share a latest-value
+ * snapshot. The device side is handed the store itself, since the host has
  * nothing to translate and is what hears a project close.
  */
 void MagdaAudioEngine::meterInto() {
@@ -83,7 +83,7 @@ void MagdaAudioEngine::meterInto() {
         const MeterData data{.peakL = peakL, .peakR = peakR};
         meters_.mixer.pushLevels(trackId, data);
         meters_.recording.pushLevels(trackId, data);
-        meters_.remote.pushLevels(trackId, data);
+        meters_.setRemotePeak(trackId, data);
     });
 
     host_->meterDevicesInto(deviceMeters_);

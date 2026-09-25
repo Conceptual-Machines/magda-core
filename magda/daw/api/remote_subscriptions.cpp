@@ -393,7 +393,7 @@ int SubscriptionHub::clientCount() const {
     return static_cast<int>(clients_.size());
 }
 
-void SubscriptionHub::setMeterSource(std::unique_ptr<MeterSource> source) {
+void SubscriptionHub::setMeterSource(std::shared_ptr<MeterSource> source) {
     const std::scoped_lock lock(mutex_);
     meters_ = std::move(source);
 }

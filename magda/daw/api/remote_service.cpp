@@ -6,6 +6,7 @@
 #include <chrono>
 
 #include "magda_api.hpp"
+#include "remote_diagnostics.hpp"
 #include "undo_api.hpp"
 
 namespace magda::remote {
@@ -38,6 +39,8 @@ std::vector<Topic> topicsFor(const juce::String& operationName) {
         return {Topic::Tracks};
     if (operationName.startsWith("sends."))
         return {Topic::Tracks};
+    if (operationName.startsWith("sidechains."))
+        return {Topic::Devices};
     // `session.get` projects its slots out of the clips, so creating or deleting
     // one changes the session grid whether or not the request said "session".
     // Over-broad on the clip operations that cannot affect it — adding a note —
@@ -373,6 +376,8 @@ Response RemoteApiService::execute(const OperationDescriptor& operation, const j
         return Response::failure(ErrorCode::InternalError,
                                  "operation " + operation.name + " has no handler", revision);
 
+    RequestContext handlerContext = context;
+    handlerContext.diagnostics = diagnostics_.get();
     HandlerResult result;
     {
         // Model listeners fire synchronously from inside the handler's own
@@ -382,9 +387,9 @@ Response RemoteApiService::execute(const OperationDescriptor& operation, const j
         const ScopedExecutingThread marker(executingThread_);
         if (isWrite) {
             const ScopedUndoStep step(api_.undo(), operation.summary);
-            result = operation.handler(api_, input, context);
+            result = operation.handler(api_, input, handlerContext);
         } else {
-            result = operation.handler(api_, input, context);
+            result = operation.handler(api_, input, handlerContext);
         }
     }
 
@@ -439,6 +444,8 @@ bool RemoteApiService::isShutdown() const {
 void RemoteApiService::projectReplaced() {
     if (shutdown_.load(std::memory_order_acquire))
         return;
+    if (diagnostics_)
+        diagnostics_->projectReplaced();
 
     // Retire the outgoing state, then install a fresh one so requests arriving
     // after the swap are not cancelled by the retirement of the old project's
@@ -522,6 +529,10 @@ void RemoteApiService::setAuditLog(std::shared_ptr<RemoteAuditLog> log) {
 std::shared_ptr<RemoteAuditLog> RemoteApiService::auditLog() const {
     const std::scoped_lock lock(auditMutex_);
     return audit_;
+}
+
+void RemoteApiService::setDiagnosticsSource(std::unique_ptr<DiagnosticsSource> source) {
+    diagnostics_ = std::move(source);
 }
 
 void RemoteApiService::recordAudit(const std::shared_ptr<RemoteAuditLog>& log,

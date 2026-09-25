@@ -7,7 +7,9 @@
 
 #include "MockMagdaApi.hpp"
 #include "RemoteTestScopes.hpp"
+#include "magda/daw/api/remote_diagnostics.hpp"
 #include "magda/daw/api/remote_service.hpp"
+#include "magda/daw/audio/TrackMeters.hpp"
 #include "magda/daw/core/DrumGridPads.hpp"
 
 using namespace magda;
@@ -54,6 +56,103 @@ juce::String errorCodeOf(const Response& response) {
 }
 
 }  // namespace
+
+TEST_CASE("Diagnostic reads are bounded, schema-valid, and revision neutral",
+          "[remote][service][diagnostics]") {
+    const MessageThreadRelaxation relaxation;
+    struct FakeDiagnostics final : DiagnosticsSource {
+        int resets = 0;
+        juce::var health() override {
+            return object({{"engine", "Native"},
+                           {"observedAtMs", 1000.0},
+                           {"sinceMs", 500.0},
+                           {"projectBound", true},
+                           {"audioDeviceOpen", true},
+                           {"xrunCount", 2},
+                           {"dropoutCount", juce::var()},
+                           {"callbackLoad", 0.25},
+                           {"problemCoverage", "audioIoObservations"},
+                           {"problems", juce::Array<juce::var>{}},
+                           {"discardedProblemCount", 0}});
+        }
+        juce::var meters(const std::vector<TrackId>& ids) override {
+            REQUIRE(ids == std::vector<TrackId>{3});
+            return object({{"observedAtMs", 1000.0},
+                           {"tracks", juce::Array<juce::var>{object({{"trackId", 3},
+                                                                     {"available", true},
+                                                                     {"peakL", 0.5},
+                                                                     {"peakR", 0.4},
+                                                                     {"clipped", false}})}},
+                           {"truncatedTrackCount", 0},
+                           {"master", object({{"available", false},
+                                              {"peakL", juce::var()},
+                                              {"peakR", juce::var()},
+                                              {"clipped", juce::var()}})}});
+        }
+        void projectReplaced() override {
+            ++resets;
+        }
+    };
+
+    MockMagdaApi api;
+    TrackInfo track;
+    track.id = 3;
+    api.tracks_.tracks.push_back(track);
+    RemoteApiService service(api);
+    auto source = std::make_unique<FakeDiagnostics>();
+    auto* observer = source.get();
+    service.setDiagnosticsSource(std::move(source));
+
+    for (const auto* name : {"engine.health", "meters.read"}) {
+        const auto response = run(service, name, emptyInput());
+        REQUIRE(response.ok);
+        REQUIRE(response.revision == INITIAL_REVISION);
+        const auto* operation = OperationRegistry::instance().find(name);
+        REQUIRE(operation != nullptr);
+        REQUIRE(operation->access == OperationAccess::Read);
+        REQUIRE(validateJson(response.result, operation->outputSchema).empty());
+    }
+    service.projectReplaced();
+    REQUIRE(observer->resets == 1);
+}
+
+TEST_CASE("Diagnostic reads report unavailable metrics without an engine",
+          "[remote][service][diagnostics]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    const auto health = run(service, "engine.health", emptyInput());
+    REQUIRE(health.ok);
+    REQUIRE(health.result["xrunCount"].isVoid());
+    REQUIRE(health.result["callbackLoad"].isVoid());
+    REQUIRE(validateJson(health.result,
+                         OperationRegistry::instance().find("engine.health")->outputSchema)
+                .empty());
+    for (int id = 0; id < 130; ++id) {
+        TrackInfo track;
+        track.id = id;
+        api.tracks_.tracks.push_back(track);
+    }
+    const auto meters = run(service, "meters.read", emptyInput());
+    REQUIRE(meters.ok);
+    REQUIRE(meters.result["tracks"].getArray()->size() == 128);
+    REQUIRE(static_cast<int>(meters.result["truncatedTrackCount"]) == 2);
+    REQUIRE_FALSE(static_cast<bool>(meters.result["master"]["available"]));
+    REQUIRE(
+        validateJson(meters.result, OperationRegistry::instance().find("meters.read")->outputSchema)
+            .empty());
+}
+
+TEST_CASE("Remote meter storage keeps the newest peak without a reader", "[remote][diagnostics]") {
+    TrackMeters meters;
+    for (int i = 0; i < 100; ++i)
+        meters.setRemotePeak(7, MeterData{.peakL = static_cast<float>(i) / 100.0f, .peakR = 0.25f});
+    const auto& latest = meters.remoteLatest[7];
+    REQUIRE(latest.available.load());
+    REQUIRE(latest.peakL.load() == 0.99f);
+    meters.clearRemotePeaks();
+    REQUIRE_FALSE(latest.available.load());
+}
 
 TEST_CASE("Every declared operation has a handler", "[remote][service][registry]") {
     // The property the handler-on-descriptor design exists to guarantee: before
@@ -1732,6 +1831,62 @@ TEST_CASE("Send lifecycle is atomic and revisioned through the shared service",
     REQUIRE_FALSE(rejected.ok);
     CHECK(errorCodeOf(rejected) == "conflict");
     CHECK(service.currentRevision() == INITIAL_REVISION + 3);
+}
+
+TEST_CASE("sidechains.get and set use owner paths, logical sources, and no-op revisions",
+          "[remote][service][sidechains][2838]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto ownerPath = ChainNodePath::rack(1, 4);
+    SidechainView initial;
+    initial.ownerPath = ownerPath;
+    initial.ownerKind = SidechainOwnerKind::Rack;
+    initial.capabilities.audio = true;
+    initial.capabilities.midi = true;
+    api.devices_.sidechains.emplace(ownerPath, initial);
+
+    RemoteApiService service(api);
+    const auto ownerJson = toJson(makeDevicePathDto(ownerPath));
+    const auto listed = run(service, "sidechains.list", emptyInput());
+    REQUIRE(listed.ok);
+    REQUIRE(listed.result.getArray()->size() == 1);
+    CHECK(listed.result[0]["ownerType"].toString() == "rack");
+    const auto inspected = run(service, "sidechains.get", object({{"ownerPath", ownerJson}}));
+    REQUIRE(inspected.ok);
+    CHECK(inspected.result["ownerType"].toString() == "rack");
+    CHECK(inspected.result["sourceEndpointId"].isVoid());
+    CHECK(inspected.result["supportedTypes"].getArray()->size() == 2);
+
+    auto updated = initial;
+    updated.sourceEndpointId = "track:2";
+    updated.type = SidechainConfig::Type::Audio;
+    updated.enabled = true;
+    api.devices_.setSidechainResult = {SetSidechainStatus::Applied, updated, {}};
+    const auto changed = run(service, "sidechains.set",
+                             object({{"ownerPath", ownerJson},
+                                     {"sourceEndpointId", "track:2"},
+                                     {"type", "audio"},
+                                     {"enabled", true}}));
+    REQUIRE(changed.ok);
+    CHECK(changed.result["sidechain"]["sourceEndpointId"].toString() == "track:2");
+    CHECK_FALSE(changed.result["sidechain"].hasProperty("sourceTrackId"));
+    REQUIRE(api.devices_.sidechainWrites.size() == 1);
+    REQUIRE(api.devices_.sidechainWrites.back().second.sourceEndpointId.has_value());
+    CHECK(*api.devices_.sidechainWrites.back().second.sourceEndpointId ==
+          std::optional<juce::String>{"track:2"});
+    CHECK(service.currentRevision() == INITIAL_REVISION + 1);
+
+    api.devices_.setSidechainResult = {SetSidechainStatus::Unchanged, updated, {}};
+    const auto unchanged = run(service, "sidechains.set", object({{"ownerPath", ownerJson}}));
+    REQUIRE(unchanged.ok);
+    CHECK(service.currentRevision() == INITIAL_REVISION + 1);
+
+    api.devices_.setSidechainResult = {SetSidechainStatus::Applied, initial, {}};
+    const auto cleared = run(service, "sidechains.set",
+                             object({{"ownerPath", ownerJson}, {"sourceEndpointId", juce::var()}}));
+    REQUIRE(cleared.ok);
+    REQUIRE(api.devices_.sidechainWrites.back().second.sourceEndpointId.has_value());
+    CHECK_FALSE(api.devices_.sidechainWrites.back().second.sourceEndpointId->has_value());
 }
 
 TEST_CASE("grooves.upsert then grooves.list round-trips the template name",

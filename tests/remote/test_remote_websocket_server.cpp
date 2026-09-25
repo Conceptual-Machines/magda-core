@@ -102,6 +102,26 @@ int errorCodeOf(const juce::var& reply) {
 
 }  // namespace
 
+TEST_CASE("WebSocket exposes one-shot engine diagnostics without an engine",
+          "[remote][websocket][diagnostics]") {
+    MessageThreadRelaxation relax;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    RemoteWebSocketServer server(service, testOptions());
+    REQUIRE(server.start());
+    httplib::ws::WebSocketClient client(endpoint(server), authorised());
+    REQUIRE(client.connect());
+
+    for (const char* name : {"engine.health", "meters.read"}) {
+        const auto reply = roundTrip(client, request(name));
+        REQUIRE(reply["error"].isVoid());
+        REQUIRE(
+            validateJson(reply["result"], OperationRegistry::instance().find(name)->outputSchema)
+                .empty());
+        REQUIRE(static_cast<juce::int64>(reply["meta"]["revision"]) == INITIAL_REVISION);
+    }
+}
+
 TEST_CASE("The server refuses to start without a bearer token", "[remote][websocket][auth]") {
     MessageThreadRelaxation relax;
     MockMagdaApi api;

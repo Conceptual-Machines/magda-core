@@ -34,6 +34,7 @@
 #include "magda_api.hpp"
 #include "midi_api.hpp"
 #include "project_api.hpp"
+#include "remote_diagnostics.hpp"
 #include "selection_api.hpp"
 #include "session_api.hpp"
 #include "track_api.hpp"
@@ -466,6 +467,59 @@ HandlerResult systemDescribe(MagdaApi&, const juce::var&, const RequestContext&)
     return HandlerResult::ok(OperationRegistry::instance().describe());
 }
 
+HandlerResult engineHealth(MagdaApi&, const juce::var&, const RequestContext& context) {
+    if (context.diagnostics != nullptr)
+        return HandlerResult::ok(context.diagnostics->health());
+
+    auto* result = new juce::DynamicObject();
+    result->setProperty("engine", "unavailable");
+    result->setProperty("observedAtMs", juce::Time::currentTimeMillis());
+    result->setProperty("sinceMs", juce::var());
+    result->setProperty("projectBound", juce::var());
+    result->setProperty("audioDeviceOpen", juce::var());
+    result->setProperty("xrunCount", juce::var());
+    result->setProperty("dropoutCount", juce::var());
+    result->setProperty("callbackLoad", juce::var());
+    result->setProperty("problemCoverage", "unavailable");
+    result->setProperty("problems", juce::Array<juce::var>{});
+    result->setProperty("discardedProblemCount", 0);
+    return HandlerResult::ok(result);
+}
+
+HandlerResult metersRead(MagdaApi& api, const juce::var&, const RequestContext& context) {
+    std::vector<TrackId> ids;
+    for (const auto& track : api.tracks().getTracks())
+        ids.push_back(track.id);
+    std::sort(ids.begin(), ids.end());
+    ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+    if (context.diagnostics != nullptr)
+        return HandlerResult::ok(context.diagnostics->meters(ids));
+
+    auto* result = new juce::DynamicObject();
+    result->setProperty("observedAtMs", juce::Time::currentTimeMillis());
+    juce::Array<juce::var> tracks;
+    constexpr size_t limit = 128;
+    for (size_t i = 0; i < std::min(ids.size(), limit); ++i) {
+        auto* entry = new juce::DynamicObject();
+        entry->setProperty("trackId", ids[i]);
+        entry->setProperty("available", false);
+        entry->setProperty("peakL", juce::var());
+        entry->setProperty("peakR", juce::var());
+        entry->setProperty("clipped", juce::var());
+        tracks.add(entry);
+    }
+    result->setProperty("tracks", tracks);
+    result->setProperty("truncatedTrackCount",
+                        static_cast<int>(ids.size() > limit ? ids.size() - limit : 0));
+    auto* master = new juce::DynamicObject();
+    master->setProperty("available", false);
+    master->setProperty("peakL", juce::var());
+    master->setProperty("peakR", juce::var());
+    master->setProperty("clipped", juce::var());
+    result->setProperty("master", master);
+    return HandlerResult::ok(result);
+}
+
 // ===========================================================================
 // Project
 // ===========================================================================
@@ -820,6 +874,148 @@ HandlerResult routingSet(MagdaApi& api, const juce::var& input, const RequestCon
     payload->setProperty("droppedConnections", dropped);
     return result.status == SetTrackRoutingStatus::Unchanged ? HandlerResult::unchanged(payload)
                                                              : HandlerResult::ok(payload);
+}
+
+namespace {
+const char* sidechainTypeName(SidechainConfig::Type type) {
+    switch (type) {
+        case SidechainConfig::Type::Audio:
+            return "audio";
+        case SidechainConfig::Type::MIDI:
+            return "midi";
+        case SidechainConfig::Type::None:
+            return "none";
+    }
+    return "none";
+}
+
+juce::var sidechainViewJson(const SidechainView& view) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("ownerPath", toJson(makeDevicePathDto(view.ownerPath)));
+    object->setProperty("ownerType",
+                        view.ownerKind == SidechainOwnerKind::Device ? "device" : "rack");
+    juce::Array<juce::var> supportedTypes;
+    if (view.capabilities.audio)
+        supportedTypes.add("audio");
+    if (view.capabilities.midi)
+        supportedTypes.add("midi");
+    object->setProperty("supportedTypes", supportedTypes);
+    object->setProperty("audioChannels", view.capabilities.audioChannels);
+    juce::Array<juce::var> tapPoints;
+    for (const auto tapPoint : view.capabilities.tapPoints)
+        tapPoints.add(tapPoint == ModTapPoint::PreFx ? "preFx" : "postFader");
+    object->setProperty("supportedTapPoints", tapPoints);
+    object->setProperty("supportsGain", view.capabilities.gain);
+    object->setProperty("gainDbMin", -60.0);
+    object->setProperty("gainDbMax", 24.0);
+    object->setProperty("supportsListen", view.capabilities.listen);
+    juce::Array<juce::var> mappings;
+    for (const auto& mapping : view.capabilities.channelMappings)
+        mappings.add(mapping);
+    object->setProperty("supportedChannelMappings", mappings);
+    object->setProperty("sourceEndpointId",
+                        view.sourceEndpointId ? juce::var(*view.sourceEndpointId) : juce::var());
+    object->setProperty("type", sidechainTypeName(view.type));
+    object->setProperty("tapPoint", view.tapPoint == ModTapPoint::PreFx ? "preFx" : "postFader");
+    object->setProperty("gainDb", view.gainDb);
+    object->setProperty("enabled", view.enabled);
+    object->setProperty("listen", view.listen);
+    object->setProperty("channelMapping", view.channelMapping);
+    return object;
+}
+
+std::optional<ChainNodePath> sidechainOwnerPath(const juce::var& input) {
+    return toChainNodePath(devicePathFromJson(input["ownerPath"]));
+}
+}  // namespace
+
+HandlerResult sidechainsList(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    std::optional<TrackId> trackId;
+    if (has(input, "trackId")) {
+        trackId = static_cast<TrackId>(readInt(input, "trackId"));
+        if (api.tracks().getTrack(*trackId) == nullptr)
+            return notFound("track", *trackId);
+    }
+    std::vector<juce::var> items;
+    for (const auto& sidechain : api.devices().getSidechains(trackId))
+        items.push_back(sidechainViewJson(sidechain));
+    return HandlerResult::ok(toJsonArray(items));
+}
+
+HandlerResult sidechainsGet(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto path = sidechainOwnerPath(input);
+    if (!path || (path->getType() != ChainNodeType::Device &&
+                  path->getType() != ChainNodeType::TopLevelDevice &&
+                  path->getType() != ChainNodeType::Rack))
+        return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                   "ownerPath must address a device or rack");
+    const auto sidechain = api.devices().getSidechain(*path);
+    if (!sidechain)
+        return HandlerResult::fail(ErrorCode::NotFound, "no device or rack at ownerPath");
+    return HandlerResult::ok(sidechainViewJson(*sidechain));
+}
+
+HandlerResult sidechainsSet(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto path = sidechainOwnerPath(input);
+    if (!path || (path->getType() != ChainNodeType::Device &&
+                  path->getType() != ChainNodeType::TopLevelDevice &&
+                  path->getType() != ChainNodeType::Rack))
+        return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                   "ownerPath must address a device or rack");
+
+    SidechainPatch patch;
+    if (const auto* object = input.getDynamicObject();
+        object != nullptr && object->hasProperty("sourceEndpointId")) {
+        if (input["sourceEndpointId"].isVoid())
+            patch.sourceEndpointId.emplace(std::nullopt);
+        else
+            patch.sourceEndpointId.emplace(input["sourceEndpointId"].toString());
+    }
+    if (has(input, "type"))
+        patch.type = input["type"].toString() == "audio" ? SidechainConfig::Type::Audio
+                                                         : SidechainConfig::Type::MIDI;
+    if (has(input, "tapPoint"))
+        patch.tapPoint =
+            input["tapPoint"].toString() == "preFx" ? ModTapPoint::PreFx : ModTapPoint::PostFader;
+    if (has(input, "gainDb"))
+        patch.gainDb = static_cast<float>(readDouble(input, "gainDb"));
+    if (has(input, "enabled"))
+        patch.enabled = readBool(input, "enabled");
+    if (has(input, "listen"))
+        patch.listen = readBool(input, "listen");
+    if (has(input, "channelMapping"))
+        patch.channelMapping = input["channelMapping"].toString();
+
+    auto result = api.devices().setSidechain(*path, patch);
+    switch (result.status) {
+        case SetSidechainStatus::OwnerNotFound:
+            return HandlerResult::fail(ErrorCode::NotFound, "no device or rack at ownerPath");
+        case SetSidechainStatus::EndpointNotFound:
+            return HandlerResult::fail(ErrorCode::NotFound,
+                                       "sidechain source endpoint is unavailable");
+        case SetSidechainStatus::Incompatible:
+            return HandlerResult::fail(
+                ErrorCode::Conflict, "sidechain fields are incompatible with the owner or source");
+        case SetSidechainStatus::FeedbackCycle:
+            return HandlerResult::fail(ErrorCode::Conflict,
+                                       "sidechain change would create a feedback cycle");
+        case SetSidechainStatus::ApplyFailed:
+            return HandlerResult::fail(ErrorCode::InternalError,
+                                       "sidechain change could not be committed");
+        case SetSidechainStatus::Applied:
+        case SetSidechainStatus::Unchanged:
+            break;
+    }
+    if (!result.sidechain)
+        return HandlerResult::fail(ErrorCode::InternalError,
+                                   "updated sidechain state is unavailable");
+
+    auto* payload = new juce::DynamicObject();
+    payload->setProperty("sidechain", sidechainViewJson(*result.sidechain));
+    payload->setProperty("referenceImpact",
+                         toJson(makeReferenceImpactResultDto(result.referenceImpact)));
+    return result.status == SetSidechainStatus::Unchanged ? HandlerResult::unchanged(payload)
+                                                          : HandlerResult::ok(payload);
 }
 
 // ===========================================================================

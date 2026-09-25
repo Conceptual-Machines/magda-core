@@ -605,6 +605,9 @@ enum class OperationAccess { Read, Write };
  * the handler.
  */
 struct RequestContext {
+    // Installed by RemoteApiService immediately before invoking a handler.
+    // Transport-provided values are overwritten; never client-controlled.
+    class DiagnosticsSource* diagnostics = nullptr;
     /**
      * The transport's own handle for the caller — `ws:3:7`, `mcp:sess-…`.
      *
