@@ -48,6 +48,11 @@ HandlerResult tracksDelete(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult tracksGroup(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult tracksMove(MagdaApi&, const juce::var&, const RequestContext&);
 
+// Track audio/MIDI routing
+HandlerResult routingListEndpoints(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult routingGet(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult routingSet(MagdaApi&, const juce::var&, const RequestContext&);
+
 // Singleton chord track
 HandlerResult chordTrackGet(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult chordTrackEnsure(MagdaApi&, const juce::var&, const RequestContext&);

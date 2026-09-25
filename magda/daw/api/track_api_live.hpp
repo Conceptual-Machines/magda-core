@@ -17,6 +17,9 @@ class TrackApiLive : public TrackApi {
     TrackInfo* getTrack(TrackId trackId) override;
     const TrackInfo* getTrack(TrackId trackId) const override;
     ApplyTrackPresetResult applyPreset(TrackId trackId, const juce::String& presetId) override;
+    std::vector<RoutingEndpoint> getRoutingEndpoints() const override;
+    std::optional<TrackRoutingView> getRouting(TrackId trackId) const override;
+    SetTrackRoutingResult setRouting(TrackId trackId, const TrackRoutingPatch& patch) override;
 
     void setTrackName(TrackId trackId, const juce::String& name) override;
     void setTrackColour(TrackId trackId, juce::Colour colour) override;

@@ -280,6 +280,60 @@ const juce::var& trackSchema() {
     return value;
 }
 
+const juce::var& routingEndpointSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "id":{"type":"string"},
+            "name":{"type":"string"},
+            "media":{"type":"string","enum":["audio","midi"]},
+            "direction":{"type":"string","enum":["input","output"]},
+            "kind":{"type":"string","enum":["none","hardware","track","master","all_midi_inputs"]},
+            "available":{"type":"boolean"},
+            "channelCount":{"type":"integer","minimum":0},
+            "trackId":{"type":["integer","null"],"minimum":0}
+        },
+        "required":["id","name","media","direction","kind","available","channelCount","trackId"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
+const juce::var& trackRoutingSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "trackId":{"type":"integer","minimum":0},
+            "audioInputEndpointId":{"type":"string"},
+            "midiInputEndpointId":{"type":"string"},
+            "audioOutputEndpointId":{"type":"string"},
+            "midiOutputEndpointId":{"type":"string"},
+            "recordArmed":{"type":"boolean"},
+            "inputMonitor":{"type":"string","enum":["off","in","auto"]}
+        },
+        "required":["trackId","audioInputEndpointId","midiInputEndpointId",
+                    "audioOutputEndpointId","midiOutputEndpointId","recordArmed","inputMonitor"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
+const juce::var& droppedRoutingConnectionSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "trackId":{"type":"integer","minimum":0},
+            "field":{"type":"string","enum":["audioInputEndpointId","midiInputEndpointId",
+                                                   "audioOutputEndpointId","midiOutputEndpointId"]},
+            "endpointId":{"type":"string","minLength":1},
+            "reason":{"type":"string","enum":["replaced_by_requested_route"]}
+        },
+        "required":["trackId","field","endpointId","reason"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
 const juce::var& chordEntrySchema() {
     static const auto value = parseSchema(R"json({
         "type":"object",
@@ -1209,6 +1263,9 @@ void validateValue(const juce::var& value, const juce::var& schema, const juce::
     }
 
     if (value.isString()) {
+        const auto minLength = schemaObject->getProperty("minLength");
+        if (!minLength.isVoid() && value.toString().length() < static_cast<int>(minLength))
+            addIssue(issues, path, "min_length", "String is shorter than the allowed length");
         const auto maxLength = schemaObject->getProperty("maxLength");
         if (!maxLength.isVoid() && value.toString().length() > static_cast<int>(maxLength))
             addIssue(issues, path, "max_length", "String exceeds the allowed length");
@@ -1515,6 +1572,40 @@ juce::var toJson(const TrackDto& dto) {
     object->setProperty("midiInputDevice", dto.midiInputDevice);
     object->setProperty("audioOutputDevice", dto.audioOutputDevice);
     object->setProperty("midiOutputDevice", dto.midiOutputDevice);
+    return object;
+}
+
+juce::var toJson(const RoutingEndpointDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("id", dto.id);
+    object->setProperty("name", dto.name);
+    object->setProperty("media", dto.media);
+    object->setProperty("direction", dto.direction);
+    object->setProperty("kind", dto.kind);
+    object->setProperty("available", dto.available);
+    object->setProperty("channelCount", dto.channelCount);
+    object->setProperty("trackId", nullableId(dto.trackId));
+    return object;
+}
+
+juce::var toJson(const TrackRoutingDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("trackId", dto.trackId);
+    object->setProperty("audioInputEndpointId", dto.audioInputEndpointId);
+    object->setProperty("midiInputEndpointId", dto.midiInputEndpointId);
+    object->setProperty("audioOutputEndpointId", dto.audioOutputEndpointId);
+    object->setProperty("midiOutputEndpointId", dto.midiOutputEndpointId);
+    object->setProperty("recordArmed", dto.recordArmed);
+    object->setProperty("inputMonitor", dto.inputMonitor);
+    return object;
+}
+
+juce::var toJson(const DroppedRoutingConnectionDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("trackId", dto.trackId);
+    object->setProperty("field", dto.field);
+    object->setProperty("endpointId", dto.endpointId);
+    object->setProperty("reason", dto.reason);
     return object;
 }
 
@@ -1951,6 +2042,35 @@ std::optional<TrackDto> trackFromJson(const juce::var& json, Error& error) {
     dto.midiInputDevice = json["midiInputDevice"].toString();
     dto.audioOutputDevice = json["audioOutputDevice"].toString();
     dto.midiOutputDevice = json["midiOutputDevice"].toString();
+    return dto;
+}
+
+std::optional<RoutingEndpointDto> routingEndpointFromJson(const juce::var& json, Error& error) {
+    if (!prepareDecode(json, routingEndpointSchema(), error))
+        return std::nullopt;
+    RoutingEndpointDto dto;
+    dto.id = json["id"].toString();
+    dto.name = json["name"].toString();
+    dto.media = json["media"].toString();
+    dto.direction = json["direction"].toString();
+    dto.kind = json["kind"].toString();
+    dto.available = static_cast<bool>(json["available"]);
+    dto.channelCount = readInt(json, "channelCount");
+    dto.trackId = readNullableId<TrackId>(json, "trackId");
+    return dto;
+}
+
+std::optional<TrackRoutingDto> trackRoutingFromJson(const juce::var& json, Error& error) {
+    if (!prepareDecode(json, trackRoutingSchema(), error))
+        return std::nullopt;
+    TrackRoutingDto dto;
+    dto.trackId = readInt(json, "trackId");
+    dto.audioInputEndpointId = json["audioInputEndpointId"].toString();
+    dto.midiInputEndpointId = json["midiInputEndpointId"].toString();
+    dto.audioOutputEndpointId = json["audioOutputEndpointId"].toString();
+    dto.midiOutputEndpointId = json["midiOutputEndpointId"].toString();
+    dto.recordArmed = static_cast<bool>(json["recordArmed"]);
+    dto.inputMonitor = json["inputMonitor"].toString();
     return dto;
 }
 
@@ -2467,6 +2587,39 @@ OperationRegistry::OperationRegistry() {
             "required":["trackId","position"],"additionalProperties":false
         })json"),
         okResult);
+
+    add("routing.endpoints.list", "List safe audio and MIDI routing endpoints",
+        OperationAccess::Read, &handlers::routingListEndpoints, emptyObjectSchema(),
+        arraySchema(routingEndpointSchema()));
+    add("routing.get", "Get one track's audio and MIDI routing", OperationAccess::Read,
+        &handlers::routingGet, operationInputSchema(R"json({
+            "type":"object","properties":{"trackId":{"type":"integer","minimum":0}},
+            "required":["trackId"],"additionalProperties":false
+        })json"),
+        trackRoutingSchema());
+    add("routing.set", "Atomically set track audio and MIDI routes", OperationAccess::Write,
+        &handlers::routingSet, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "trackId":{"type":"integer","minimum":0},
+                "audioInputEndpointId":{"type":"string","minLength":1},
+                "midiInputEndpointId":{"type":"string","minLength":1},
+                "audioOutputEndpointId":{"type":"string","minLength":1},
+                "midiOutputEndpointId":{"type":"string","minLength":1}
+            },
+            "required":["trackId"],"additionalProperties":false
+        })json"),
+        parseSchema(R"json({
+            "type":"object",
+            "properties":{"routing":{},"droppedConnections":{"type":"array"}},
+            "required":["routing","droppedConnections"],"additionalProperties":false
+        })json"));
+    operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
+        "routing", trackRoutingSchema());
+    operations_.back()
+        .outputSchema["properties"]["droppedConnections"]
+        .getDynamicObject()
+        ->setProperty("items", droppedRoutingConnectionSchema());
 
     add("clips.list", "List clips with optional track and view filters", OperationAccess::Read,
         &handlers::clipsList, operationInputSchema(R"json({
@@ -3426,6 +3579,7 @@ OperationRegistry::OperationRegistry() {
         {"tracks.delete", Scope::Edit},
         {"tracks.group", Scope::Edit},
         {"tracks.move", Scope::Edit},
+        {"routing.set", Scope::Edit},
         {"clips.createMidi", Scope::Edit},
         {"clips.addMidiNote", Scope::Edit},
         {"clips.addMidiEvents", Scope::Edit},

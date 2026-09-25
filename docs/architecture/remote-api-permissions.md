@@ -53,7 +53,7 @@ Five words, shared by both transports. An operation requires exactly one.
 | Scope | Covers |
 | --- | --- |
 | `read` | Every read operation, and subscribing to any topic. Every client has this — it is what being admitted means. |
-| `edit` | Project content and lifecycle: save, tempo, time signature, tracks, clips, notes, devices, racks, grooves, automation, and the user's selection. Device parameter writes, focused-macro writes, and opening plugin editor windows are edits too. |
+| `edit` | Project content and lifecycle: save, tempo, time signature, tracks and their routing, clips, notes, devices, racks, grooves, automation, and the user's selection. Device parameter writes, focused-macro writes, and opening plugin editor windows are edits too. |
 | `transport` | The timeline: play, stop, record-arm, loop, seek. |
 | `session` | Launching and stopping session clips and scenes. |
 | `hardware-midi` | Physical MIDI ports: `midi.send` and `midi.sendSysEx`. |

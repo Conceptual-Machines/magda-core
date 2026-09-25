@@ -330,6 +330,23 @@ int dropIndexForHome(TrackManager& tm, const ChainNodePath& elementPath,
 }  // namespace
 
 // ============================================================================
+// SetTrackRoutingCommand
+// ============================================================================
+
+SetTrackRoutingCommand::SetTrackRoutingCommand(std::vector<TrackRoutingState> before,
+                                               std::vector<TrackRoutingState> after)
+    : before_(std::move(before)), after_(std::move(after)) {}
+
+void SetTrackRoutingCommand::execute() {
+    applied_ = TrackManager::getInstance().applyTrackRoutingStates(after_);
+}
+
+void SetTrackRoutingCommand::undo() {
+    if (applied_)
+        TrackManager::getInstance().applyTrackRoutingStates(before_);
+}
+
+// ============================================================================
 // CreateTrackCommand
 // ============================================================================
 

@@ -32,6 +32,28 @@ class CreateTrackCommand : public UndoableCommand {
     bool executed_ = false;
 };
 
+/** Replace a preflighted set of track routes as one undoable graph edit. */
+class SetTrackRoutingCommand : public UndoableCommand {
+  public:
+    SetTrackRoutingCommand(std::vector<TrackRoutingState> before,
+                           std::vector<TrackRoutingState> after);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Set Track Routing";
+    }
+
+    bool didApply() const {
+        return applied_;
+    }
+
+  private:
+    std::vector<TrackRoutingState> before_;
+    std::vector<TrackRoutingState> after_;
+    bool applied_ = false;
+};
+
 /** Create the singleton chord track when it is absent. */
 class EnsureChordTrackCommand : public UndoableCommand {
   public:

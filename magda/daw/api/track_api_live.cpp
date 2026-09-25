@@ -1,9 +1,17 @@
 #include "track_api_live.hpp"
 
+#include <juce_cryptography/juce_cryptography.h>
+
 #include <array>
 #include <map>
 #include <ranges>
+#include <set>
+#include <unordered_map>
+#include <unordered_set>
 
+#include "../audio/MidiBridge.hpp"
+#include "../audio/io/AudioIOControl.hpp"
+#include "../audio/io/HardwareChannels.hpp"
 #include "../core/AutomationManager.hpp"
 #include "../core/ChainWalk.hpp"
 #include "../core/PluginPreferences.hpp"
@@ -12,9 +20,77 @@
 #include "../core/TrackManager.hpp"
 #include "../core/UndoManager.hpp"
 #include "../core/controllers/BindingRegistry.hpp"
+#include "../engine/AudioEngine.hpp"
 
 namespace magda {
+
+juce::String routingEndpointId(RoutingMedia media, RoutingDirection direction,
+                               const juce::String& internalId) {
+    if (internalId.isEmpty() || internalId == "all" || internalId == "master" ||
+        internalId == "default" || internalId.startsWith("track:"))
+        return internalId;
+
+    const auto prefix = media == RoutingMedia::Audio ? "audio" : "midi";
+    const auto suffix = direction == RoutingDirection::Input ? "input" : "output";
+    return "route:" + juce::String(prefix) + ":" + suffix + ":" +
+           juce::SHA256(internalId.toUTF8()).toHexString();
+}
+
 namespace {
+
+juce::String noneEndpointId(RoutingMedia media, RoutingDirection direction) {
+    return "none:" + juce::String(media == RoutingMedia::Audio ? "audio" : "midi") + ":" +
+           (direction == RoutingDirection::Input ? "input" : "output");
+}
+
+juce::String publicRouteId(RoutingMedia media, RoutingDirection direction,
+                           const juce::String& internalId) {
+    return internalId.isEmpty() ? noneEndpointId(media, direction)
+                                : routingEndpointId(media, direction, internalId);
+}
+
+std::optional<TrackId> trackIdFromRoute(const juce::String& route) {
+    if (!route.startsWith("track:"))
+        return std::nullopt;
+    return static_cast<TrackId>(route.fromFirstOccurrenceOf("track:", false, false).getIntValue());
+}
+
+bool routingHasCycle(const std::vector<TrackRoutingState>& states) {
+    std::unordered_map<TrackId, std::vector<TrackId>> edges;
+    std::unordered_set<TrackId> known;
+    for (const auto& state : states)
+        known.insert(state.trackId);
+
+    const auto add = [&](TrackId from, const juce::String& route) {
+        if (const auto to = trackIdFromRoute(route); to && known.contains(*to))
+            edges[from].push_back(*to);
+    };
+    for (const auto& state : states) {
+        if (const auto source = trackIdFromRoute(state.audioInput))
+            edges[*source].push_back(state.trackId);
+        if (const auto source = trackIdFromRoute(state.midiInput))
+            edges[*source].push_back(state.trackId);
+        add(state.trackId, state.audioOutput);
+    }
+
+    std::unordered_map<TrackId, int> colour;
+    const std::function<bool(TrackId)> visit = [&](TrackId id) {
+        if (colour[id] == 1)
+            return true;
+        if (colour[id] == 2)
+            return false;
+        colour[id] = 1;
+        for (const auto next : edges[id])
+            if (visit(next))
+                return true;
+        colour[id] = 2;
+        return false;
+    };
+    for (const auto id : known)
+        if (visit(id))
+            return true;
+    return false;
+}
 
 struct DeviceAtPath {
     ChainNodePath path;
@@ -259,6 +335,330 @@ TrackInfo* TrackApiLive::getTrack(TrackId trackId) {
 
 const TrackInfo* TrackApiLive::getTrack(TrackId trackId) const {
     return TrackManager::getInstance().getTrack(trackId);
+}
+
+std::vector<RoutingEndpoint> TrackApiLive::getRoutingEndpoints() const {
+    std::vector<RoutingEndpoint> result;
+    const auto add = [&](RoutingMedia media, RoutingDirection direction, RoutingEndpointKind kind,
+                         const juce::String& internalId, const juce::String& name, int channels = 0,
+                         std::optional<TrackId> trackId = std::nullopt, bool available = true) {
+        const auto id = kind == RoutingEndpointKind::None
+                            ? noneEndpointId(media, direction)
+                            : routingEndpointId(media, direction, internalId);
+        const auto duplicate = std::ranges::find_if(result, [&](const auto& endpoint) {
+            return endpoint.id == id && endpoint.media == media && endpoint.direction == direction;
+        });
+        if (duplicate == result.end())
+            result.push_back(
+                {id, name, media, direction, kind, available, channels, trackId, internalId});
+    };
+
+    for (const auto media : {RoutingMedia::Audio, RoutingMedia::Midi})
+        for (const auto direction : {RoutingDirection::Input, RoutingDirection::Output})
+            add(media, direction, RoutingEndpointKind::None, {}, "None");
+
+    add(RoutingMedia::Audio, RoutingDirection::Output, RoutingEndpointKind::Master, "master",
+        "Master", 2);
+    add(RoutingMedia::Midi, RoutingDirection::Input, RoutingEndpointKind::AllMidiInputs, "all",
+        "All MIDI Inputs");
+
+    auto& tracks = TrackManager::getInstance();
+    for (const auto& track : tracks.getTracks()) {
+        if (track.type == TrackType::Media || track.type == TrackType::Group ||
+            track.type == TrackType::Aux) {
+            add(RoutingMedia::Audio, RoutingDirection::Input, RoutingEndpointKind::Track,
+                "track:" + juce::String(track.id), track.name, 2, track.id);
+        }
+        if (track.type == TrackType::Media || track.type == TrackType::Group ||
+            track.type == TrackType::Aux) {
+            add(RoutingMedia::Audio, RoutingDirection::Output, RoutingEndpointKind::Track,
+                "track:" + juce::String(track.id), track.name, 2, track.id);
+        }
+        if (track.type == TrackType::Media || track.type == TrackType::Chord) {
+            add(RoutingMedia::Midi, RoutingDirection::Input, RoutingEndpointKind::Track,
+                "track:" + juce::String(track.id), track.name, 0, track.id);
+        }
+        if (track.type == TrackType::Media) {
+            add(RoutingMedia::Midi, RoutingDirection::Output, RoutingEndpointKind::Track,
+                "track:" + juce::String(track.id), track.name, 0, track.id);
+        }
+    }
+
+    if (auto* engine = tracks.getAudioEngine()) {
+        if (auto* io = engine->getAudioIO(); io != nullptr && io->isOpen()) {
+            const auto inputs = io->inputs();
+            std::vector<int> activeInputs;
+            for (auto channel = inputs.open.findNextSetBit(0); channel >= 0;
+                 channel = inputs.open.findNextSetBit(channel + 1))
+                activeInputs.push_back(channel);
+            if (!activeInputs.empty())
+                add(RoutingMedia::Audio, RoutingDirection::Input, RoutingEndpointKind::Hardware,
+                    "default", "Default Audio Input",
+                    std::min(2, static_cast<int>(activeInputs.size())));
+            const auto inputRoute = [&](int channel) {
+                const auto found = inputs.routeNames.find(channel);
+                return found != inputs.routeNames.end() ? found->second
+                                                        : "In " + juce::String(channel + 1);
+            };
+            const auto inputName = [&](int channel) {
+                return channel < inputs.channelNames.size() ? inputs.channelNames[channel]
+                                                            : "Input " + juce::String(channel + 1);
+            };
+            for (std::size_t index = 0; index < activeInputs.size(); ++index) {
+                const auto channel = activeInputs[index];
+                add(RoutingMedia::Audio, RoutingDirection::Input, RoutingEndpointKind::Hardware,
+                    inputRoute(channel), inputName(channel), 1);
+                if (index + 1 < activeInputs.size()) {
+                    const auto right = activeInputs[index + 1];
+                    add(RoutingMedia::Audio, RoutingDirection::Input, RoutingEndpointKind::Hardware,
+                        "stereo:" + inputRoute(channel),
+                        inputName(channel) + " + " + inputName(right), 2);
+                    ++index;
+                }
+            }
+
+            const auto outputs = io->outputs();
+            std::vector<int> activeOutputs;
+            for (auto channel = outputs.open.findNextSetBit(0); channel >= 0;
+                 channel = outputs.open.findNextSetBit(channel + 1))
+                activeOutputs.push_back(channel);
+            const auto outputRoute = [&](int channel) {
+                const auto found = outputs.routeNames.find(channel);
+                return found != outputs.routeNames.end() ? found->second
+                                                         : "Out " + juce::String(channel + 1);
+            };
+            const auto outputName = [&](int channel) {
+                return channel < outputs.channelNames.size()
+                           ? outputs.channelNames[channel]
+                           : "Output " + juce::String(channel + 1);
+            };
+            for (std::size_t index = 0; index < activeOutputs.size();) {
+                const auto first = activeOutputs[index];
+                const auto route = outputRoute(first);
+                if (index + 1 < activeOutputs.size() &&
+                    outputRoute(activeOutputs[index + 1]) == route) {
+                    const auto second = activeOutputs[index + 1];
+                    add(RoutingMedia::Audio, RoutingDirection::Output,
+                        RoutingEndpointKind::Hardware, "stereo:" + route,
+                        outputName(first) + " + " + outputName(second), 2);
+                    index += 2;
+                } else {
+                    add(RoutingMedia::Audio, RoutingDirection::Output,
+                        RoutingEndpointKind::Hardware, route, outputName(first), 1);
+                    ++index;
+                }
+            }
+        }
+    }
+
+    for (const auto& device : MidiBridge::getInstance().getAvailableMidiInputs())
+        add(RoutingMedia::Midi, RoutingDirection::Input, RoutingEndpointKind::Hardware, device.id,
+            device.name);
+    for (const auto& device : MidiBridge::getAvailableMidiOutputs())
+        add(RoutingMedia::Midi, RoutingDirection::Output, RoutingEndpointKind::Hardware, device.id,
+            device.name);
+
+    // Keep a selected-but-missing route visible without revealing the stale
+    // backend identifier or allowing a client to select it again.
+    const auto addMissing = [&](RoutingMedia media, RoutingDirection direction,
+                                const juce::String& internalId) {
+        if (internalId.isEmpty() || internalId == "all" || internalId == "master")
+            return;
+        if (const auto trackId = trackIdFromRoute(internalId)) {
+            add(media, direction, RoutingEndpointKind::Track, internalId, "Unavailable track", 0,
+                *trackId, false);
+        } else {
+            add(media, direction, RoutingEndpointKind::Hardware, internalId, "Unavailable endpoint",
+                0, std::nullopt, false);
+        }
+    };
+    for (const auto& track : tracks.getTracks()) {
+        addMissing(RoutingMedia::Audio, RoutingDirection::Input, track.audioInputDevice);
+        addMissing(RoutingMedia::Midi, RoutingDirection::Input, track.midiInputDevice);
+        addMissing(RoutingMedia::Audio, RoutingDirection::Output, track.audioOutputDevice);
+        addMissing(RoutingMedia::Midi, RoutingDirection::Output, track.midiOutputDevice);
+    }
+    return result;
+}
+
+std::optional<TrackRoutingView> TrackApiLive::getRouting(TrackId trackId) const {
+    const auto& tracks = TrackManager::getInstance();
+    const auto* track = tracks.getTrack(trackId);
+    if (track == nullptr)
+        return std::nullopt;
+
+    juce::String midiOutput = track->midiOutputDevice;
+    const auto source = "track:" + juce::String(trackId);
+    for (const auto& candidate : tracks.getTracks()) {
+        if (candidate.midiInputDevice == source) {
+            midiOutput = "track:" + juce::String(candidate.id);
+            break;
+        }
+    }
+    return TrackRoutingView{
+        trackId,
+        publicRouteId(RoutingMedia::Audio, RoutingDirection::Input, track->audioInputDevice),
+        publicRouteId(RoutingMedia::Midi, RoutingDirection::Input, track->midiInputDevice),
+        publicRouteId(RoutingMedia::Audio, RoutingDirection::Output, track->audioOutputDevice),
+        publicRouteId(RoutingMedia::Midi, RoutingDirection::Output, midiOutput),
+        track->recordArmed,
+        track->inputMonitor};
+}
+
+SetTrackRoutingResult TrackApiLive::setRouting(TrackId trackId, const TrackRoutingPatch& patch) {
+    auto& tracks = TrackManager::getInstance();
+    const auto* target = tracks.getTrack(trackId);
+    if (target == nullptr)
+        return {SetTrackRoutingStatus::TrackNotFound, {}};
+    if (!patch.audioInputEndpointId && !patch.midiInputEndpointId && !patch.audioOutputEndpointId &&
+        !patch.midiOutputEndpointId)
+        return {SetTrackRoutingStatus::Unchanged, {}};
+    if ((patch.audioInputEndpointId || patch.midiInputEndpointId) && !target->takesExternalInput())
+        return {SetTrackRoutingStatus::Incompatible, {}};
+
+    const auto endpoints = getRoutingEndpoints();
+    const auto resolve = [&](const std::optional<juce::String>& requested, RoutingMedia media,
+                             RoutingDirection direction) -> std::optional<juce::String> {
+        if (!requested)
+            return std::nullopt;
+        const auto found = std::ranges::find_if(endpoints, [&](const auto& endpoint) {
+            return endpoint.id == *requested && endpoint.media == media &&
+                   endpoint.direction == direction && endpoint.available;
+        });
+        if (found == endpoints.end())
+            return std::nullopt;
+        return found->internalId;
+    };
+
+    const auto audioInput =
+        resolve(patch.audioInputEndpointId, RoutingMedia::Audio, RoutingDirection::Input);
+    const auto midiInput =
+        resolve(patch.midiInputEndpointId, RoutingMedia::Midi, RoutingDirection::Input);
+    const auto audioOutput =
+        resolve(patch.audioOutputEndpointId, RoutingMedia::Audio, RoutingDirection::Output);
+    const auto midiOutput =
+        resolve(patch.midiOutputEndpointId, RoutingMedia::Midi, RoutingDirection::Output);
+    if ((patch.audioInputEndpointId && !audioInput) || (patch.midiInputEndpointId && !midiInput) ||
+        (patch.audioOutputEndpointId && !audioOutput) ||
+        (patch.midiOutputEndpointId && !midiOutput))
+        return {SetTrackRoutingStatus::EndpointNotFound, {}};
+    if (audioInput && midiInput && audioInput->isNotEmpty() && midiInput->isNotEmpty())
+        return {SetTrackRoutingStatus::Incompatible, {}};
+
+    const auto external = tracks.getExternalInstrumentRouting(trackId);
+    if (external.present && (patch.audioInputEndpointId || patch.midiOutputEndpointId))
+        return {SetTrackRoutingStatus::Incompatible, {}};
+
+    std::vector<TrackRoutingState> before;
+    before.reserve(tracks.getTracks().size());
+    for (const auto& track : tracks.getTracks())
+        before.push_back(track.routingState());
+    auto after = before;
+    const auto stateFor = [&](std::vector<TrackRoutingState>& states,
+                              TrackId id) -> TrackRoutingState* {
+        const auto found = std::ranges::find(states, id, &TrackRoutingState::trackId);
+        return found == states.end() ? nullptr : &*found;
+    };
+    auto* edited = stateFor(after, trackId);
+    if (edited == nullptr)
+        return {SetTrackRoutingStatus::TrackNotFound, {}};
+
+    if (audioInput) {
+        edited->audioInput = *audioInput;
+        if (audioInput->isNotEmpty())
+            edited->midiInput.clear();
+    }
+    if (midiInput) {
+        edited->midiInput = *midiInput;
+        if (midiInput->isNotEmpty())
+            edited->audioInput.clear();
+    }
+    if (audioOutput)
+        edited->audioOutput = *audioOutput;
+
+    // Ungrouped multi-output children follow their source track's audio
+    // destination. Include that engine-owned cascade in the same preflighted
+    // command so undo restores the complete graph rather than only its parent.
+    if (audioOutput) {
+        for (const auto& track : tracks.getTracks()) {
+            if (track.type != TrackType::MultiOut || !track.multiOutLink || track.hasParent() ||
+                track.multiOutLink->sourceTrackId != trackId)
+                continue;
+            if (auto* child = stateFor(after, track.id))
+                child->audioOutput = *audioOutput;
+        }
+    }
+
+    // A track-to-track MIDI route is stored on the destination's input. Keep
+    // that single edge coherent whichever side of it the caller edits.
+    if (midiInput) {
+        if (const auto sourceId = trackIdFromRoute(*midiInput)) {
+            for (auto& state : after)
+                if (state.trackId != trackId && state.midiInput == *midiInput)
+                    state.midiInput.clear();
+            if (auto* source = stateFor(after, *sourceId))
+                source->midiOutput.clear();
+        }
+    }
+    if (midiOutput) {
+        const auto sourceRoute = "track:" + juce::String(trackId);
+        for (auto& state : after)
+            if (state.midiInput == sourceRoute)
+                state.midiInput.clear();
+        if (const auto destinationId = trackIdFromRoute(*midiOutput)) {
+            auto* destination = stateFor(after, *destinationId);
+            if (destination == nullptr)
+                return {SetTrackRoutingStatus::EndpointNotFound, {}};
+            destination->audioInput.clear();
+            destination->midiInput = sourceRoute;
+            edited->midiOutput.clear();
+        } else {
+            edited->midiOutput = *midiOutput;
+        }
+    }
+
+    if (routingHasCycle(after))
+        return {SetTrackRoutingStatus::FeedbackCycle, {}};
+
+    std::set<std::pair<TrackId, juce::String>> requestedFields;
+    if (patch.audioInputEndpointId)
+        requestedFields.emplace(trackId, "audioInputEndpointId");
+    if (patch.midiInputEndpointId)
+        requestedFields.emplace(trackId, "midiInputEndpointId");
+    if (patch.audioOutputEndpointId)
+        requestedFields.emplace(trackId, "audioOutputEndpointId");
+    if (patch.midiOutputEndpointId)
+        requestedFields.emplace(trackId, "midiOutputEndpointId");
+
+    std::vector<DroppedRoutingConnection> dropped;
+    const auto reportDrop = [&](TrackId id, const char* field, RoutingMedia media,
+                                RoutingDirection direction, const juce::String& oldValue,
+                                const juce::String& newValue) {
+        if (oldValue.isEmpty() || oldValue == newValue ||
+            requestedFields.contains({id, juce::String(field)}))
+            return;
+        dropped.push_back({id, field, routingEndpointId(media, direction, oldValue),
+                           "replaced_by_requested_route"});
+    };
+    for (std::size_t index = 0; index < before.size(); ++index) {
+        reportDrop(before[index].trackId, "audioInputEndpointId", RoutingMedia::Audio,
+                   RoutingDirection::Input, before[index].audioInput, after[index].audioInput);
+        reportDrop(before[index].trackId, "midiInputEndpointId", RoutingMedia::Midi,
+                   RoutingDirection::Input, before[index].midiInput, after[index].midiInput);
+        reportDrop(before[index].trackId, "audioOutputEndpointId", RoutingMedia::Audio,
+                   RoutingDirection::Output, before[index].audioOutput, after[index].audioOutput);
+        reportDrop(before[index].trackId, "midiOutputEndpointId", RoutingMedia::Midi,
+                   RoutingDirection::Output, before[index].midiOutput, after[index].midiOutput);
+    }
+
+    if (before == after)
+        return {SetTrackRoutingStatus::Unchanged, std::move(dropped)};
+
+    auto command = std::make_unique<SetTrackRoutingCommand>(std::move(before), std::move(after));
+    auto* raw = command.get();
+    UndoManager::getInstance().executeCommand(std::move(command));
+    return {raw->didApply() ? SetTrackRoutingStatus::Applied : SetTrackRoutingStatus::ApplyFailed,
+            std::move(dropped)};
 }
 
 ApplyTrackPresetResult TrackApiLive::applyPreset(TrackId trackId, const juce::String& presetId) {
