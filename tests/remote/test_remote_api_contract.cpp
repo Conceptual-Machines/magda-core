@@ -47,6 +47,7 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(registry.find("chordTrack.ensure") != nullptr);
     REQUIRE(registry.find("trackPresets.list") != nullptr);
     REQUIRE(registry.find("tracks.createFromPreset") != nullptr);
+    REQUIRE(registry.find("tracks.applyPreset") != nullptr);
     REQUIRE(registry.find("devices.list") != nullptr);
     REQUIRE(registry.find("devices.listParameters") != nullptr);
     REQUIRE(registry.find("devices.setParameter") != nullptr);
@@ -501,12 +502,16 @@ TEST_CASE("Track preset operations expose only safe metadata and an opaque-id cr
     const auto& registry = OperationRegistry::instance();
     const auto* list = registry.find("trackPresets.list");
     const auto* create = registry.find("tracks.createFromPreset");
+    const auto* apply = registry.find("tracks.applyPreset");
     REQUIRE(list != nullptr);
     REQUIRE(create != nullptr);
+    REQUIRE(apply != nullptr);
     CHECK(list->access == OperationAccess::Read);
     CHECK(list->requiredScope == Scope::Read);
     CHECK(create->access == OperationAccess::Write);
     CHECK(create->requiredScope == Scope::Edit);
+    CHECK(apply->access == OperationAccess::Write);
+    CHECK(apply->requiredScope == Scope::Edit);
 
     const auto itemSchema = list->outputSchema["items"];
     const auto* properties = itemSchema["properties"].getDynamicObject();
@@ -528,6 +533,19 @@ TEST_CASE("Track preset operations expose only safe metadata and an opaque-id cr
     REQUIRE(output != nullptr);
     CHECK(output->hasProperty("trackId"));
     CHECK(output->hasProperty("deviceGraph"));
+
+    CHECK_FALSE(
+        validateOperationInput(*apply, object({{"trackId", 3}, {"presetId", "track-preset:abc"}}))
+            .has_value());
+    CHECK(validateOperationInput(
+              *apply,
+              object({{"trackId", 3}, {"presetId", "track-preset:abc"}, {"pluginState", "opaque"}}))
+              .has_value());
+    const auto* applyOutput = apply->outputSchema["properties"].getDynamicObject();
+    REQUIRE(applyOutput != nullptr);
+    CHECK(applyOutput->hasProperty("trackId"));
+    CHECK(applyOutput->hasProperty("deviceGraph"));
+    CHECK(applyOutput->hasProperty("referenceImpact"));
 }
 
 TEST_CASE("Device preset discovery is path-free and device-scoped",

@@ -5,11 +5,27 @@
 #include "../core/ChainNodePath.hpp"
 #include "../core/DeviceInfo.hpp"
 #include "../core/RackInfo.hpp"
+#include "../core/ReferenceImpact.hpp"
 #include "../core/TrackInfo.hpp"
 #include "../core/TrackTypes.hpp"
 #include "../core/TypeIds.hpp"
 
 namespace magda {
+
+enum class ApplyTrackPresetStatus {
+    Applied,
+    Unchanged,
+    TrackNotFound,
+    PresetNotFound,
+    Incompatible,
+    ReferenceConflict,
+    LoadFailed,
+};
+
+struct ApplyTrackPresetResult {
+    ApplyTrackPresetStatus status = ApplyTrackPresetStatus::LoadFailed;
+    ReferenceImpactPlan referenceImpact;
+};
 
 /**
  * Abstract view onto TrackManager — the track-level surface the agent
@@ -30,6 +46,8 @@ class TrackApi {
     virtual const std::vector<TrackInfo>& getTracks() const = 0;
     virtual TrackInfo* getTrack(TrackId trackId) = 0;
     virtual const TrackInfo* getTrack(TrackId trackId) const = 0;
+
+    virtual ApplyTrackPresetResult applyPreset(TrackId trackId, const juce::String& presetId) = 0;
 
     virtual void setTrackName(TrackId trackId, const juce::String& name) = 0;
     virtual void setTrackColour(TrackId trackId, juce::Colour colour) = 0;

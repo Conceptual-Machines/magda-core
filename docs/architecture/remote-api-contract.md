@@ -110,11 +110,24 @@ the same contract is available over WebSocket and MCP:
   It creates one media track, restores the preset's settings and complete device
   graph, and returns the new `trackId` plus the normal safe `deviceGraph`
   projection.
+- `tracks.applyPreset` is an edit operation over an existing `trackId`. It
+  consumes only an opaque ID returned by `trackPresets.list`, replaces the
+  preset-owned main/post-FX chain plus track macros and modulators, and preserves
+  the addressed track's identity, clips, hierarchy, mixer/input/routing state,
+  sends, and rail-managed analysis devices. The result contains the same
+  `trackId`, the updated safe `deviceGraph`, and a structured `referenceImpact`.
 
-Creation is one undoable mutation. Like every remote write it supports the
-transport's `expectedRevision` and `requestId` metadata; neither value is part of
-the operation payload. Preset IDs are addresses only: clients cannot supply a
-filesystem path or native state blob.
+Track-preset application prepares and re-keys the complete replacement graph
+before one undoable commit. Existing references owned by the removed chain are
+reported as dropped. External references are remapped only when a unique plugin
+identity and, for parameters, a stable parameter identity prove the target;
+ambiguous or unproven targets reject the entire operation. A rejection is
+revision-neutral and returns its plan at `error.details.referenceImpact`.
+
+Creation and application are each one undoable mutation. Like every remote
+write, both support the transport's `expectedRevision` and `requestId` metadata;
+neither value is part of the operation payload. Preset IDs are addresses only:
+clients cannot supply a filesystem path or native state blob.
 
 ### Reference-impact preflight
 

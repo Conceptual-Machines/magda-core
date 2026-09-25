@@ -632,6 +632,7 @@ bool ProjectSerializer::deserializeModInfo(const juce::var& json, ModInfo& outMo
 juce::var ProjectSerializer::serializeParameterInfo(const ParameterInfo& data) {
     auto* obj = new juce::DynamicObject();
     SER(paramIndex);
+    SER(stableId);
     SER(name);
     SER(unit);
     SER(minValue);
@@ -684,6 +685,8 @@ bool ProjectSerializer::deserializeParameterInfo(const juce::var& json, Paramete
     }
     auto* obj = json.getDynamicObject();
     DESER(paramIndex);
+    if (obj->hasProperty("stableId"))
+        DESER(stableId);
     DESER(name);
     DESER(unit);
     DESER(minValue);

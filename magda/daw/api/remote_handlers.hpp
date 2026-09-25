@@ -42,6 +42,7 @@ HandlerResult tracksList(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult tracksGet(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult tracksCreate(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult tracksCreateFromPreset(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult tracksApplyPreset(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult tracksUpdate(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult tracksDelete(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult tracksGroup(MagdaApi&, const juce::var&, const RequestContext&);

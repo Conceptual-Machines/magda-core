@@ -3342,6 +3342,7 @@ TEST_CASE("ParameterInfo display metadata roundtrip", "[project][serialization][
 
     ParameterInfo param;
     param.paramIndex = 12;
+    param.stableId = "feedback-bank";
     param.name = "FB Bank";
     param.unit = "dB";
     param.minValue = -48.0f;
@@ -3396,6 +3397,7 @@ TEST_CASE("ParameterInfo display metadata roundtrip", "[project][serialization][
     REQUIRE(params->size() == 1);
     auto* paramObj = params->getReference(0).getDynamicObject();
     REQUIRE(paramObj != nullptr);
+    REQUIRE(paramObj->hasProperty("stableId"));
     REQUIRE(paramObj->hasProperty("teMinValue"));
     REQUIRE(paramObj->hasProperty("teMaxValue"));
     REQUIRE(paramObj->hasProperty("valueConvention"));
@@ -3418,6 +3420,7 @@ TEST_CASE("ParameterInfo display metadata roundtrip", "[project][serialization][
     REQUIRE(loadedDevice.parameters.size() == 1);
     const auto& loaded = loadedDevice.parameters[0];
     REQUIRE(loaded.paramIndex == 12);
+    REQUIRE(loaded.stableId == "feedback-bank");
     REQUIRE(loaded.name == "FB Bank");
     REQUIRE(loaded.unit == "dB");
     REQUIRE(loaded.minValue == Approx(-48.0f));

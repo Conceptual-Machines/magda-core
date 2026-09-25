@@ -2403,6 +2403,26 @@ OperationRegistry::OperationRegistry() {
         })json"));
     operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
         "deviceGraph", deviceGraphSchema());
+    add("tracks.applyPreset", "Apply an opaque chain preset to an existing track",
+        OperationAccess::Write, &handlers::tracksApplyPreset, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "trackId":{"type":"integer","minimum":0},
+                "presetId":{"type":"string","minLength":1}
+            },
+            "required":["trackId","presetId"],"additionalProperties":false
+        })json"),
+        parseSchema(R"json({
+            "type":"object",
+            "properties":{"trackId":{"type":"integer","minimum":0},
+                          "deviceGraph":{},"referenceImpact":{}},
+            "required":["trackId","deviceGraph","referenceImpact"],
+            "additionalProperties":false
+        })json"));
+    operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
+        "deviceGraph", deviceGraphSchema());
+    operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
+        "referenceImpact", referenceImpactResultSchema());
     add("tracks.update", "Update track mixer, display, or input state", OperationAccess::Write,
         &handlers::tracksUpdate, operationInputSchema(R"json({
             "type":"object",
@@ -3377,6 +3397,7 @@ OperationRegistry::OperationRegistry() {
         {"chordTrack.ensure", Scope::Edit},
         {"tracks.create", Scope::Edit},
         {"tracks.createFromPreset", Scope::Edit},
+        {"tracks.applyPreset", Scope::Edit},
         {"tracks.update", Scope::Edit},
         {"tracks.delete", Scope::Edit},
         {"tracks.group", Scope::Edit},

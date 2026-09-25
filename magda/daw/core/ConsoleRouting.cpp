@@ -36,7 +36,7 @@ AgentSurfaceId defaultSurfaceForView(ViewMode view) {
 
 const std::vector<AgentSurface>& registeredAgentSurfaces() {
     // Tool names deliberately come only from remote::OperationRegistry. Missing
-    // APIs (preset application, mixer sends, mix capture) are described as
+    // APIs (device-preset application, mixer sends, mix capture) are described as
     // responsibilities/context but are not fabricated as tools.
     static const std::vector<AgentSurface> surfaces = {
         {.id = AgentSurfaceId::Arrangement,
@@ -57,10 +57,10 @@ const std::vector<AgentSurface>& registeredAgentSurfaces() {
                  "project.setLoopRange", "tracks.list",
                  "chordTrack.get",       "chordTrack.ensure",
                  "trackPresets.list",    "tracks.createFromPreset",
-                 "tracks.get",           "tracks.create",
-                 "tracks.update",        "tracks.delete",
-                 "tracks.group",         "tracks.move",
-                 "clips.list",           "clips.get",
+                 "tracks.applyPreset",   "tracks.get",
+                 "tracks.create",        "tracks.update",
+                 "tracks.delete",        "tracks.group",
+                 "tracks.move",          "clips.list",
                  "clips.createMidi",     "clips.delete",
                  "clips.move",           "clips.resize",
                  "clips.duplicate",      "clips.update",

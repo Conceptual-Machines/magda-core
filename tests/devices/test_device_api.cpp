@@ -4,7 +4,9 @@
 #include <set>
 
 #include "magda/daw/api/device_api_live.hpp"
+#include "magda/daw/api/track_api_live.hpp"
 #include "magda/daw/core/AppPaths.hpp"
+#include "magda/daw/core/AutomationManager.hpp"
 #include "magda/daw/core/Config.hpp"
 #include "magda/daw/core/DrumGridPads.hpp"
 #include "magda/daw/core/PresetManager.hpp"
@@ -26,6 +28,7 @@ juce::String anyCatalogId() {
 
 TrackId freshTrack(const juce::String& name) {
     auto& tracks = TrackManager::getInstance();
+    AutomationManager::getInstance().clearAll();
     tracks.clearAllTracks();
     UndoManager::getInstance().clearHistory();
     return tracks.createTrack(name, TrackType::Media);
@@ -193,6 +196,177 @@ TEST_CASE("The preset command remaps stable parameter references on execute and 
     REQUIRE(UndoManager::getInstance().undo());
     CHECK(tracks.getDeviceInChainByPath(path)->parameters[0].paramIndex == 0);
     CHECK(tracks.getTrack(trackId)->macros[0].links[0].target.paramIndex == 0);
+}
+
+TEST_CASE("A track preset replaces only chain-owned state and remaps stable references",
+          "[track-api][presets][2839]") {
+    PresetDirectoryScope presetDirectory;
+    auto& tracks = TrackManager::getInstance();
+    const auto trackId = freshTrack("Keep This Track");
+    const auto sourceTrackId = tracks.createTrack("Sidechain Source", TrackType::Media);
+    const auto routedTrackId = tracks.createTrack("Routed Child", TrackType::MultiOut);
+
+    auto* target = tracks.getTrack(trackId);
+    REQUIRE(target != nullptr);
+    target->colour = juce::Colours::orange;
+    target->volume = 0.42f;
+    target->manualVolume = 0.42f;
+    target->pan = -0.25f;
+    target->recordArmed = true;
+    target->inputMonitor = InputMonitorMode::In;
+    target->midiInputDevice = "all";
+    target->audioOutputDevice = "master";
+    target->sends = {{2, 0.6f, true, sourceTrackId}};
+    target->parentId = 77;
+
+    DeviceInfo original;
+    original.name = "Stable Synth";
+    original.pluginId = "stable_synth";
+    original.format = PluginFormat::Internal;
+    original.sidechain.type = SidechainConfig::Type::Audio;
+    original.sidechain.sourceTrackId = sourceTrackId;
+    ParameterInfo oldCutoff;
+    oldCutoff.paramIndex = 0;
+    oldCutoff.stableId = "cutoff";
+    oldCutoff.currentValue = 0.2f;
+    original.parameters = {oldCutoff};
+    const auto originalId = tracks.addDeviceToTrack(trackId, original);
+    const auto originalPath = ChainNodePath::topLevelDevice(trackId, originalId);
+
+    auto* routed = tracks.getTrack(routedTrackId);
+    REQUIRE(routed != nullptr);
+    routed->multiOutLink = MultiOutTrackLink{trackId, originalId, 1};
+    auto& automation = AutomationManager::getInstance();
+    const auto laneId =
+        automation.createLane(ControlTarget::pluginParam(originalPath, oldCutoff.paramIndex),
+                              AutomationLaneType::Absolute);
+    REQUIRE(laneId != INVALID_AUTOMATION_LANE_ID);
+
+    DeviceInfo analysis;
+    analysis.id = 500;
+    analysis.name = "Rail Analysis";
+    analysis.pluginId = "scope";
+    target = tracks.getTrack(trackId);
+    REQUIRE(target != nullptr);
+    target->chain.mixerAnalysisElements.push_back({analysis});
+
+    auto* source = tracks.getTrack(sourceTrackId);
+    REQUIRE(source != nullptr);
+    MacroInfo externalMacro(0);
+    externalMacro.links.push_back(
+        {ControlTarget::pluginParam(originalPath, oldCutoff.paramIndex), 1.0f, false});
+    source->macros = {externalMacro};
+
+    TrackInfo preset;
+    preset.id = 999;
+    preset.name = "Do Not Replace Name";
+    preset.volume = 0.1f;
+    preset.parentId = INVALID_TRACK_ID;
+    preset.chain.enabled = false;
+    preset.chain.postFxPostFader = false;
+    DeviceInfo replacement = original;
+    replacement.id = 700;
+    replacement.sidechain = {};
+    replacement.parameters[0].paramIndex = 7;
+    replacement.parameters[0].currentValue = 0.8f;
+    preset.chain.fxChainElements.push_back(makeDeviceElement(replacement));
+    REQUIRE(PresetManager::getInstance().saveChainPreset(preset, "Remote Chain"));
+
+    const auto listed = PresetManager::getInstance().getTrackPresetMetadata();
+    REQUIRE(listed.size() == 1);
+    TrackApiLive api;
+    const auto result = api.applyPreset(trackId, listed.front().id);
+    REQUIRE(result.status == ApplyTrackPresetStatus::Applied);
+    REQUIRE(result.referenceImpact.remapped.size() == 3);
+    REQUIRE(result.referenceImpact.dropped.size() == 1);
+
+    const auto* applied = tracks.getTrack(trackId);
+    REQUIRE(applied != nullptr);
+    CHECK(applied->id == trackId);
+    CHECK(applied->name == "Keep This Track");
+    CHECK(applied->colour == juce::Colours::orange);
+    CHECK(applied->volume == 0.42f);
+    CHECK(applied->pan == -0.25f);
+    CHECK(applied->recordArmed);
+    CHECK(applied->inputMonitor == InputMonitorMode::In);
+    CHECK(applied->midiInputDevice == "all");
+    CHECK(applied->audioOutputDevice == "master");
+    CHECK(applied->sends.size() == 1);
+    CHECK(applied->parentId == 77);
+    CHECK_FALSE(applied->chain.enabled);
+    CHECK_FALSE(applied->chain.postFxPostFader);
+    REQUIRE(applied->chain.mixerAnalysisElements.size() == 1);
+    CHECK(applied->chain.mixerAnalysisElements.front().device.id == 500);
+    REQUIRE(applied->chain.fxChainElements.size() == 1);
+    const auto& liveReplacement = getDevice(applied->chain.fxChainElements.front());
+    CHECK(liveReplacement.id != originalId);
+    REQUIRE(liveReplacement.parameters.size() == 1);
+    CHECK(liveReplacement.parameters.front().paramIndex == 7);
+    CHECK(liveReplacement.parameters.front().currentValue == 0.8f);
+    const auto replacementPath = ChainNodePath::topLevelDevice(trackId, liveReplacement.id);
+    REQUIRE(source->macros.front().links.size() == 1);
+    CHECK(source->macros.front().links.front().target.devicePath == replacementPath);
+    CHECK(source->macros.front().links.front().target.paramIndex == 7);
+    REQUIRE(automation.getLane(laneId) != nullptr);
+    CHECK(automation.getLane(laneId)->target.devicePath == replacementPath);
+    CHECK(automation.getLane(laneId)->target.paramIndex == 7);
+    REQUIRE(routed->multiOutLink.has_value());
+    CHECK(routed->multiOutLink->sourceTrackId == trackId);
+    CHECK(routed->multiOutLink->sourceDeviceId == liveReplacement.id);
+    CHECK(UndoManager::getInstance().getUndoDescription() == "Apply Track Preset");
+
+    REQUIRE(UndoManager::getInstance().undo());
+    const auto* restored = tracks.getTrack(trackId);
+    REQUIRE(restored != nullptr);
+    REQUIRE(restored->chain.fxChainElements.size() == 1);
+    CHECK(getDevice(restored->chain.fxChainElements.front()).id == originalId);
+    CHECK(source->macros.front().links.front().target.devicePath == originalPath);
+    CHECK(source->macros.front().links.front().target.paramIndex == 0);
+    REQUIRE(automation.getLane(laneId) != nullptr);
+    CHECK(automation.getLane(laneId)->target.devicePath == originalPath);
+    CHECK(automation.getLane(laneId)->target.paramIndex == 0);
+    REQUIRE(routed->multiOutLink.has_value());
+    CHECK(routed->multiOutLink->sourceDeviceId == originalId);
+
+    UndoManager::getInstance().clearHistory();
+    TrackInfo conflictingPreset;
+    DeviceInfo unrelated;
+    unrelated.id = 800;
+    unrelated.name = "Different Synth";
+    unrelated.pluginId = "different_synth";
+    unrelated.parameters = {oldCutoff};
+    conflictingPreset.chain.fxChainElements.push_back(makeDeviceElement(unrelated));
+    REQUIRE(PresetManager::getInstance().saveChainPreset(conflictingPreset, "Conflict"));
+    const auto relisted = PresetManager::getInstance().getTrackPresetMetadata();
+    const auto conflict = std::ranges::find(relisted, juce::String("Conflict"),
+                                            &PresetManager::TrackPresetMetadata::name);
+    REQUIRE(conflict != relisted.end());
+    const auto rejected = api.applyPreset(trackId, conflict->id);
+    CHECK(rejected.status == ApplyTrackPresetStatus::ReferenceConflict);
+    CHECK_FALSE(rejected.referenceImpact.rejected.empty());
+    CHECK_FALSE(UndoManager::getInstance().canUndo());
+    CHECK(getDevice(tracks.getTrack(trackId)->chain.fxChainElements.front()).id == originalId);
+    CHECK(source->macros.front().links.front().target.devicePath == originalPath);
+
+    source->macros.clear();
+    automation.clearAll();
+    routed->multiOutLink.reset();
+    TrackInfo incompatiblePreset;
+    DeviceInfo postFxInstrument;
+    postFxInstrument.id = 900;
+    postFxInstrument.name = "Invalid Post-FX Instrument";
+    postFxInstrument.pluginId = "invalid_post_fx_instrument";
+    postFxInstrument.isInstrument = true;
+    incompatiblePreset.chain.postFxChainElements.push_back({postFxInstrument});
+    REQUIRE(PresetManager::getInstance().saveChainPreset(incompatiblePreset, "Incompatible"));
+    const auto finalList = PresetManager::getInstance().getTrackPresetMetadata();
+    const auto incompatible = std::ranges::find(finalList, juce::String("Incompatible"),
+                                                &PresetManager::TrackPresetMetadata::name);
+    REQUIRE(incompatible != finalList.end());
+    CHECK(api.applyPreset(trackId, incompatible->id).status ==
+          ApplyTrackPresetStatus::Incompatible);
+    CHECK_FALSE(UndoManager::getInstance().canUndo());
+    CHECK(getDevice(tracks.getTrack(trackId)->chain.fxChainElements.front()).id == originalId);
 }
 
 TEST_CASE("Live device lookup rejects paths that address nothing", "[device-api][inspection]") {

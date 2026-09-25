@@ -640,6 +640,49 @@ HandlerResult tracksCreateFromPreset(MagdaApi& api, const juce::var& input, cons
     return HandlerResult::ok(result);
 }
 
+HandlerResult tracksApplyPreset(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto trackId = static_cast<TrackId>(static_cast<int>(input["trackId"]));
+    if (api.tracks().getTrack(trackId) == nullptr)
+        return notFound("track", trackId);
+
+    auto applied = api.tracks().applyPreset(trackId, input["presetId"].toString());
+    switch (applied.status) {
+        case ApplyTrackPresetStatus::TrackNotFound:
+            return notFound("track", trackId);
+        case ApplyTrackPresetStatus::PresetNotFound:
+            return HandlerResult::fail(ErrorCode::NotFound, "track preset not found");
+        case ApplyTrackPresetStatus::Incompatible:
+            return HandlerResult::fail(ErrorCode::Conflict,
+                                       "preset is not compatible with this track");
+        case ApplyTrackPresetStatus::ReferenceConflict: {
+            auto* details = new juce::DynamicObject();
+            details->setProperty("referenceImpact",
+                                 toJson(makeReferenceImpactResultDto(applied.referenceImpact)));
+            return HandlerResult::fail(Error{ErrorCode::Conflict,
+                                             "preset would invalidate an existing reference",
+                                             {},
+                                             juce::var(details)});
+        }
+        case ApplyTrackPresetStatus::LoadFailed:
+            return HandlerResult::fail(ErrorCode::InternalError, "failed to load track preset");
+        case ApplyTrackPresetStatus::Applied:
+        case ApplyTrackPresetStatus::Unchanged:
+            break;
+    }
+
+    const auto* track = api.tracks().getTrack(trackId);
+    if (track == nullptr)
+        return HandlerResult::fail(ErrorCode::InternalError, "updated preset track is unavailable");
+
+    auto* result = new juce::DynamicObject();
+    result->setProperty("trackId", trackId);
+    result->setProperty("deviceGraph", toJson(makeDeviceGraphDto({*track})));
+    result->setProperty("referenceImpact",
+                        toJson(makeReferenceImpactResultDto(applied.referenceImpact)));
+    return applied.status == ApplyTrackPresetStatus::Unchanged ? HandlerResult::unchanged(result)
+                                                               : HandlerResult::ok(result);
+}
+
 HandlerResult tracksUpdate(MagdaApi& api, const juce::var& input, const RequestContext&) {
     const auto trackId = static_cast<TrackId>(static_cast<int>(input["trackId"]));
     auto& tracks = api.tracks();

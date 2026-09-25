@@ -113,6 +113,126 @@ void remapParameterReferences(const ChainNodePath& devicePath,
     tracks.notifyModulationChanged();
 }
 
+bool remapControlTarget(ControlTarget& target,
+                        const std::vector<ReferenceTargetMapping>& mappings) {
+    for (const auto& mapping : mappings) {
+        if (!mapping.from.devicePath || !mapping.to.devicePath ||
+            target.devicePath != *mapping.from.devicePath)
+            continue;
+
+        switch (target.kind) {
+            case ControlTarget::Kind::PluginParam:
+                if (mapping.from.kind != ReferenceAddressKind::Parameter ||
+                    mapping.from.parameterIndex != target.paramIndex || !mapping.to.parameterIndex)
+                    continue;
+                target.devicePath = *mapping.to.devicePath;
+                target.paramIndex = *mapping.to.parameterIndex;
+                return true;
+            case ControlTarget::Kind::DeviceMacro:
+                if (mapping.from.kind != ReferenceAddressKind::Macro ||
+                    mapping.from.macroId != target.paramIndex || !mapping.to.macroId)
+                    continue;
+                target.devicePath = *mapping.to.devicePath;
+                target.paramIndex = *mapping.to.macroId;
+                return true;
+            case ControlTarget::Kind::ModParam:
+                if (mapping.from.kind != ReferenceAddressKind::Modulator ||
+                    mapping.from.modId != target.modId ||
+                    mapping.from.parameterIndex != target.modParamIndex || !mapping.to.modId ||
+                    !mapping.to.parameterIndex)
+                    continue;
+                target.devicePath = *mapping.to.devicePath;
+                target.modId = *mapping.to.modId;
+                target.modParamIndex = *mapping.to.parameterIndex;
+                return true;
+            case ControlTarget::Kind::TrackVolume:
+            case ControlTarget::Kind::TrackPan:
+            case ControlTarget::Kind::SendLevel:
+            case ControlTarget::Kind::Tempo:
+                break;
+        }
+    }
+    return false;
+}
+
+void remapLinks(MacroArray& macros, ModArray& mods,
+                const std::vector<ReferenceTargetMapping>& mappings) {
+    for (auto& macro : macros)
+        for (auto& link : macro.links)
+            remapControlTarget(link.target, mappings);
+    for (auto& mod : mods)
+        for (auto& link : mod.links)
+            remapControlTarget(link.target, mappings);
+}
+
+void remapTrackPresetReferences(const std::vector<ReferenceTargetMapping>& mappings) {
+    if (mappings.empty())
+        return;
+
+    auto& tracks = TrackManager::getInstance();
+    tracks.forEachTrackIncludingMaster([&](TrackInfo& track) {
+        remapLinks(track.macros, track.mods, mappings);
+        chain_walk::forEachNode(
+            track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
+            chain_walk::Pads::Enter,
+            [&](DeviceInfo& device, const ChainNodePath&) {
+                remapLinks(device.macros, device.mods, mappings);
+            },
+            [&](RackInfo& rack, const ChainNodePath&) {
+                remapLinks(rack.macros, rack.mods, mappings);
+                return chain_walk::Descend::Into;
+            });
+        for (auto& element : track.chain.postFxChainElements)
+            remapLinks(element.device.macros, element.device.mods, mappings);
+        for (auto& element : track.chain.mixerAnalysisElements)
+            remapLinks(element.device.macros, element.device.mods, mappings);
+
+        if (track.multiOutLink) {
+            for (const auto& mapping : mappings) {
+                if (mapping.from.kind != ReferenceAddressKind::Device || !mapping.from.devicePath ||
+                    !mapping.to.devicePath)
+                    continue;
+                const auto& from = *mapping.from.devicePath;
+                if (track.multiOutLink->sourceTrackId != from.trackId ||
+                    track.multiOutLink->sourceDeviceId != from.getDeviceId())
+                    continue;
+                track.multiOutLink->sourceTrackId = mapping.to.devicePath->trackId;
+                track.multiOutLink->sourceDeviceId = mapping.to.devicePath->getDeviceId();
+                break;
+            }
+        }
+    });
+
+    auto& automation = AutomationManager::getInstance();
+    const auto lanes = automation.getLanes();
+    for (const auto& laneSnapshot : lanes) {
+        auto* lane = automation.getLane(laneSnapshot.id);
+        if (lane != nullptr && remapControlTarget(lane->target, mappings))
+            automation.invalidateLane(lane->id);
+    }
+
+    auto& bindings = BindingRegistry::getInstance();
+    for (const auto scope : {BindingScope::Global, BindingScope::Project}) {
+        for (auto binding : bindings.bindings(scope)) {
+            auto* target = std::get_if<ControlTarget>(&binding.target);
+            if (target != nullptr && remapControlTarget(*target, mappings))
+                bindings.update(scope, binding);
+        }
+    }
+
+    tracks.notifyModulationChanged();
+}
+
+std::vector<ReferenceTargetMapping> reverseMappings(
+    const std::vector<ReferenceTargetMapping>& mappings) {
+    std::vector<ReferenceTargetMapping> reverse;
+    reverse.reserve(mappings.size());
+    for (const auto& mapping : mappings)
+        reverse.push_back(
+            {mapping.to, mapping.from, mapping.targetStableIdentity, mapping.sourceStableIdentity});
+    return reverse;
+}
+
 ChainNodePath findChainElementPathRecursive(const ChainNodePath& parentPath,
                                             const std::vector<ChainElement>& elements,
                                             ChainStepType type, int id) {
@@ -1179,6 +1299,40 @@ void ApplyDevicePresetCommand::undo() {
         reverse.emplace_back(to, from);
     remapParameterReferences(devicePath_, reverse);
     TrackManager::getInstance().applyDevicePreset(devicePath_, previousState_);
+    executed_ = false;
+}
+
+ApplyTrackPresetCommand::ApplyTrackPresetCommand(
+    TrackId trackId, TrackInfo presetState, std::vector<ReferenceTargetMapping> referenceRemaps)
+    : trackId_(trackId),
+      presetState_(std::move(presetState)),
+      referenceRemaps_(std::move(referenceRemaps)) {}
+
+void ApplyTrackPresetCommand::execute() {
+    auto& tracks = TrackManager::getInstance();
+    const auto* live = tracks.getTrack(trackId_);
+    if (live == nullptr) {
+        executed_ = false;
+        return;
+    }
+
+    if (!captured_) {
+        previousState_ = *live;
+        captured_ = true;
+    }
+
+    remapTrackPresetReferences(referenceRemaps_);
+    executed_ = tracks.applyPreparedTrackPreset(trackId_, presetState_);
+    if (!executed_)
+        remapTrackPresetReferences(reverseMappings(referenceRemaps_));
+}
+
+void ApplyTrackPresetCommand::undo() {
+    if (!executed_ || !captured_)
+        return;
+
+    remapTrackPresetReferences(reverseMappings(referenceRemaps_));
+    TrackManager::getInstance().applyPreparedTrackPreset(trackId_, previousState_);
     executed_ = false;
 }
 
