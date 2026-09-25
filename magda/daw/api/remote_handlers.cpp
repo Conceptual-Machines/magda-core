@@ -761,6 +761,67 @@ HandlerResult tracksDelete(MagdaApi& api, const juce::var& input, const RequestC
     return HandlerResult::ok(acceptedResult());
 }
 
+HandlerResult routingListEndpoints(MagdaApi& api, const juce::var&, const RequestContext&) {
+    std::vector<juce::var> endpoints;
+    for (const auto& endpoint : api.tracks().getRoutingEndpoints())
+        endpoints.push_back(toJson(makeRoutingEndpointDto(endpoint)));
+    return HandlerResult::ok(toJsonArray(endpoints));
+}
+
+HandlerResult routingGet(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto trackId = static_cast<TrackId>(static_cast<int>(input["trackId"]));
+    const auto routing = api.tracks().getRouting(trackId);
+    if (!routing)
+        return notFound("track", trackId);
+    return HandlerResult::ok(toJson(makeTrackRoutingDto(*routing)));
+}
+
+HandlerResult routingSet(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto trackId = static_cast<TrackId>(static_cast<int>(input["trackId"]));
+    TrackRoutingPatch patch;
+    if (has(input, "audioInputEndpointId"))
+        patch.audioInputEndpointId = input["audioInputEndpointId"].toString();
+    if (has(input, "midiInputEndpointId"))
+        patch.midiInputEndpointId = input["midiInputEndpointId"].toString();
+    if (has(input, "audioOutputEndpointId"))
+        patch.audioOutputEndpointId = input["audioOutputEndpointId"].toString();
+    if (has(input, "midiOutputEndpointId"))
+        patch.midiOutputEndpointId = input["midiOutputEndpointId"].toString();
+
+    auto result = api.tracks().setRouting(trackId, patch);
+    switch (result.status) {
+        case SetTrackRoutingStatus::TrackNotFound:
+            return notFound("track", trackId);
+        case SetTrackRoutingStatus::EndpointNotFound:
+            return HandlerResult::fail(ErrorCode::Conflict, "routing endpoint is unavailable");
+        case SetTrackRoutingStatus::Incompatible:
+            return HandlerResult::fail(ErrorCode::Conflict,
+                                       "routing endpoint is incompatible with this track or field");
+        case SetTrackRoutingStatus::FeedbackCycle:
+            return HandlerResult::fail(ErrorCode::Conflict,
+                                       "routing change would create a feedback cycle");
+        case SetTrackRoutingStatus::ApplyFailed:
+            return HandlerResult::fail(ErrorCode::InternalError,
+                                       "routing change could not be committed");
+        case SetTrackRoutingStatus::Applied:
+        case SetTrackRoutingStatus::Unchanged:
+            break;
+    }
+
+    const auto routing = api.tracks().getRouting(trackId);
+    if (!routing)
+        return HandlerResult::fail(ErrorCode::InternalError,
+                                   "updated track routing is unavailable");
+    auto* payload = new juce::DynamicObject();
+    payload->setProperty("routing", toJson(makeTrackRoutingDto(*routing)));
+    juce::Array<juce::var> dropped;
+    for (const auto& connection : result.droppedConnections)
+        dropped.add(toJson(makeDroppedRoutingConnectionDto(connection)));
+    payload->setProperty("droppedConnections", dropped);
+    return result.status == SetTrackRoutingStatus::Unchanged ? HandlerResult::unchanged(payload)
+                                                             : HandlerResult::ok(payload);
+}
+
 // ===========================================================================
 // Clips
 // ===========================================================================

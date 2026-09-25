@@ -26,6 +26,9 @@ struct DevicePresetEntry;
 struct DeviceInfo;
 struct ProjectInfo;
 struct ReferenceImpactPlan;
+struct RoutingEndpoint;
+struct TrackRoutingView;
+struct DroppedRoutingConnection;
 struct TrackInfo;
 
 namespace remote {
@@ -164,6 +167,40 @@ struct TrackDto {
     juce::String midiOutputDevice;
 
     bool operator==(const TrackDto&) const = default;
+};
+
+struct RoutingEndpointDto {
+    juce::String id;
+    juce::String name;
+    juce::String media;
+    juce::String direction;
+    juce::String kind;
+    bool available = true;
+    int channelCount = 0;
+    std::optional<TrackId> trackId;
+
+    bool operator==(const RoutingEndpointDto&) const = default;
+};
+
+struct TrackRoutingDto {
+    TrackId trackId = INVALID_TRACK_ID;
+    juce::String audioInputEndpointId;
+    juce::String midiInputEndpointId;
+    juce::String audioOutputEndpointId;
+    juce::String midiOutputEndpointId;
+    bool recordArmed = false;
+    juce::String inputMonitor = "off";
+
+    bool operator==(const TrackRoutingDto&) const = default;
+};
+
+struct DroppedRoutingConnectionDto {
+    TrackId trackId = INVALID_TRACK_ID;
+    juce::String field;
+    juce::String endpointId;
+    juce::String reason;
+
+    bool operator==(const DroppedRoutingConnectionDto&) const = default;
 };
 
 struct ChordEntryDto {
@@ -736,6 +773,9 @@ juce::var toJson(const MidiNoteDto& dto);
 juce::var toJson(const MidiEventDto& dto);
 juce::var toJson(const ProjectDto& dto);
 juce::var toJson(const TrackDto& dto);
+juce::var toJson(const RoutingEndpointDto& dto);
+juce::var toJson(const TrackRoutingDto& dto);
+juce::var toJson(const DroppedRoutingConnectionDto& dto);
 juce::var toJson(const ChordEntryDto& dto);
 juce::var toJson(const ChordTrackDto& dto);
 juce::var toJson(const ClipDto& dto);
@@ -777,6 +817,8 @@ std::optional<MidiNoteDto> midiNoteFromJson(const juce::var& json, Error& error)
 std::optional<MidiEventDto> midiEventFromJson(const juce::var& json, Error& error);
 std::optional<ProjectDto> projectFromJson(const juce::var& json, Error& error);
 std::optional<TrackDto> trackFromJson(const juce::var& json, Error& error);
+std::optional<RoutingEndpointDto> routingEndpointFromJson(const juce::var& json, Error& error);
+std::optional<TrackRoutingDto> trackRoutingFromJson(const juce::var& json, Error& error);
 std::optional<ClipDto> clipFromJson(const juce::var& json, Error& error);
 std::optional<DeviceDto> deviceFromJson(const juce::var& json, Error& error);
 std::optional<ChainDto> chainFromJson(const juce::var& json, Error& error);
@@ -796,6 +838,10 @@ std::optional<ReferenceImpactResultDto> referenceImpactResultFromJson(const juce
 
 ProjectDto makeProjectDto(const ProjectInfo& project, bool dirty, bool hasSaveTarget);
 TrackDto makeTrackDto(const TrackInfo& track);
+RoutingEndpointDto makeRoutingEndpointDto(const RoutingEndpoint& endpoint);
+TrackRoutingDto makeTrackRoutingDto(const TrackRoutingView& routing);
+DroppedRoutingConnectionDto makeDroppedRoutingConnectionDto(
+    const DroppedRoutingConnection& connection);
 ChordTrackDto makeChordTrackDto(const TrackInfo* track, ClipApi& clips);
 ClipDto makeClipDto(const ClipInfo& clip);
 std::vector<MidiEventDto> makeMidiEventDtos(const ClipInfo& clip);

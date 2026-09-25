@@ -477,6 +477,9 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void setTrackAudioInput(TrackId trackId, const juce::String& deviceId);
     void setTrackAudioOutput(TrackId trackId, const juce::String& routing);
 
+    /** Replace several tracks' routing after resolving every target up front. */
+    bool applyTrackRoutingStates(const std::vector<TrackRoutingState>& states);
+
     // Send management (track → any track)
     void addSend(TrackId sourceTrackId, TrackId destTrackId);
     void removeSend(TrackId sourceTrackId, int busIndex);

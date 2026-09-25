@@ -1852,6 +1852,70 @@ void TrackManager::setTrackAudioOutput(TrackId trackId, const juce::String& rout
     notifyTrackPropertyChanged(trackId);
 }
 
+bool TrackManager::applyTrackRoutingStates(const std::vector<TrackRoutingState>& states) {
+    struct Change {
+        TrackId trackId = INVALID_TRACK_ID;
+        bool audioInput = false;
+        bool midiInput = false;
+        bool property = false;
+    };
+
+    std::vector<Change> changes;
+    changes.reserve(states.size());
+    for (const auto& state : states) {
+        const auto* track = getTrack(state.trackId);
+        if (track == nullptr)
+            return false;
+        changes.push_back({state.trackId, track->audioInputDevice != state.audioInput,
+                           track->midiInputDevice != state.midiInput,
+                           track->audioInputDevice != state.audioInput ||
+                               track->midiInputDevice != state.midiInput ||
+                               track->audioOutputDevice != state.audioOutput ||
+                               track->midiOutputDevice != state.midiOutput});
+    }
+
+    // Commit the complete model before notifying anything. Engine and UI
+    // listeners may read other tracks synchronously from their callbacks.
+    for (const auto& state : states) {
+        auto* track = getTrack(state.trackId);
+        track->audioInputDevice = state.audioInput;
+        track->midiInputDevice = state.midiInput;
+        track->audioOutputDevice = state.audioOutput;
+        track->midiOutputDevice = state.midiOutput;
+    }
+
+    for (const auto& change : changes) {
+        if (!change.property)
+            continue;
+
+        auto* track = getTrack(change.trackId);
+        if (track == nullptr)
+            continue;
+
+        if (change.midiInput) {
+            {
+                std::scoped_lock lock(midiTriggerMutex_);
+                midiHeldNotes_.erase(change.trackId);
+                pendingMidiNoteOns_.erase(change.trackId);
+                pendingMidiNoteOffs_.erase(change.trackId);
+            }
+            auto& midiBridge = MidiBridge::getInstance();
+            if (track->midiInputDevice.isEmpty() || track->midiInputDevice.startsWith("track:")) {
+                midiBridge.clearTrackMidiInput(change.trackId);
+                midiBridge.stopMonitoring(change.trackId);
+            } else {
+                midiBridge.setTrackMidiInput(change.trackId, track->midiInputDevice);
+                midiBridge.startMonitoring(change.trackId);
+            }
+            notifyTrackMidiInputChanged(change.trackId);
+        }
+        if (change.audioInput)
+            notifyTrackAudioInputChanged(change.trackId);
+        notifyTrackPropertyChanged(change.trackId);
+    }
+    return true;
+}
+
 // ============================================================================
 // Send Management
 // ============================================================================

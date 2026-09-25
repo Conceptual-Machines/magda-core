@@ -177,6 +177,34 @@ revision-neutral no-op. Record-arm and input-monitor changes are rejected for
 track types that do not accept external input, before any other field in the
 patch is applied.
 
+### Track routing
+
+Track audio and MIDI I/O use three shared-registry operations:
+
+- `routing.endpoints.list` returns the currently selectable endpoints and any
+  selected-but-unavailable endpoint. Each entry has an opaque or logical `id`,
+  display `name`, `media`, `direction`, `kind`, availability, channel count,
+  and an optional public track ID. Physical backend identifiers never cross the
+  facade. The four contextual None choices are explicit IDs such as
+  `none:audio:input`; `track:N`, `master`, `default`, and `all` remain logical
+  IDs.
+- `routing.get` projects the four endpoint IDs for one track together with the
+  existing `recordArmed` and `inputMonitor` state. Those two fields are
+  informative: their write path remains `tracks.update`, so routing does not
+  create parallel arm or monitor controls.
+- `routing.set` is an `edit`-scoped patch over any combination of the four
+  route fields. It accepts only available IDs from discovery in the matching
+  media and direction.
+
+The complete requested graph is preflighted before mutation. Unsupported track
+or engine combinations, unavailable endpoints, mutually exclusive audio/MIDI
+inputs, and mixed audio/MIDI feedback cycles fail without changing the model or
+revision. A route that must replace another connection reports that connection
+in `droppedConnections`. A successful compound edit, including cascades to
+another track, commits as one undo action and advances the revision once; a
+no-op advances neither. Both transports use their normal `expectedRevision`
+and `requestId` metadata for the operation.
+
 ### Singleton chord track
 
 The chord track is project-wide singleton state rather than a repeatable track
@@ -344,8 +372,9 @@ there is no permission that reveals them.
 DTO fields are allow-listed. In particular, the remote API does not expose:
 
 - project, audio-source, MIDI-source, plugin, render, or cache file paths;
-- physical audio/MIDI device identifiers (logical `track:N`, `master`,
-  `default`, and `all` routing tokens are retained);
+- physical audio/MIDI device identifiers (routing discovery exposes opaque
+  hashes plus logical `track:N`, `master`, `default`, `all`, and contextual
+  `none:*` tokens instead);
 - native plugin state, preset blobs, plugin filesystem identifiers, or raw
   plugin identity strings;
 - pointers, engine objects, manager objects, or host/plugin instances;

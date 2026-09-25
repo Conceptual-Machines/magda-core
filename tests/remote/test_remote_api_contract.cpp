@@ -90,6 +90,9 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(registry.find("clips.move") != nullptr);
     REQUIRE(registry.find("clips.resize") != nullptr);
     REQUIRE(registry.find("clips.duplicate") != nullptr);
+    REQUIRE(registry.find("routing.endpoints.list") != nullptr);
+    REQUIRE(registry.find("routing.get") != nullptr);
+    REQUIRE(registry.find("routing.set") != nullptr);
     REQUIRE(registry.find("does.not.exist") == nullptr);
 
     std::set<juce::String> names;
@@ -104,6 +107,57 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(description["apiVersion"].toString() == "1.0");
     REQUIRE(description["operations"].getArray()->size() ==
             static_cast<int>(registry.operations().size()));
+}
+
+TEST_CASE("Routing operations use closed safe schemas and edit scope",
+          "[remote-api][contract][routing][2832]") {
+    const auto& registry = OperationRegistry::instance();
+    const auto* list = registry.find("routing.endpoints.list");
+    const auto* get = registry.find("routing.get");
+    const auto* set = registry.find("routing.set");
+    REQUIRE(list != nullptr);
+    REQUIRE(get != nullptr);
+    REQUIRE(set != nullptr);
+    CHECK(list->access == OperationAccess::Read);
+    CHECK(list->requiredScope == Scope::Read);
+    CHECK(get->access == OperationAccess::Read);
+    CHECK(get->requiredScope == Scope::Read);
+    CHECK(set->access == OperationAccess::Write);
+    CHECK(set->requiredScope == Scope::Edit);
+
+    CHECK_FALSE(
+        validateOperationInput(*set, object({{"trackId", 3}, {"audioInputEndpointId", "track:2"}}))
+            .has_value());
+    CHECK(
+        validateOperationInput(*set, object({{"trackId", 3}, {"audioInputDevice", "/dev/private"}}))
+            .has_value());
+    CHECK(validateOperationInput(*set, object({{"trackId", 3}, {"audioInputEndpointId", ""}}))
+              .has_value());
+}
+
+TEST_CASE("Routing endpoint and track routing DTOs round-trip without backend ids",
+          "[remote-api][contract][routing][2832]") {
+    RoutingEndpoint endpoint;
+    endpoint.id = routingEndpointId(RoutingMedia::Audio, RoutingDirection::Input,
+                                    "/private/audio-device/input-1");
+    endpoint.name = "Input 1";
+    endpoint.media = RoutingMedia::Audio;
+    endpoint.direction = RoutingDirection::Input;
+    endpoint.kind = RoutingEndpointKind::Hardware;
+    endpoint.available = true;
+    endpoint.channelCount = 1;
+    const auto endpointDto = makeRoutingEndpointDto(endpoint);
+    REQUIRE_FALSE(endpointDto.id.contains("private"));
+    requireRoundTrip(endpointDto, routingEndpointFromJson);
+    const auto endpointJson = toJson(endpointDto);
+    CHECK_FALSE(endpointJson.getDynamicObject()->hasProperty("internalId"));
+
+    const TrackRoutingDto routing{3, "track:2", "", "master", "track:4", true, "auto"};
+    requireRoundTrip(routing, trackRoutingFromJson);
+    auto routingJson = toJson(routing);
+    routingJson.getDynamicObject()->setProperty("backendHandle", "secret");
+    Error error;
+    CHECK_FALSE(trackRoutingFromJson(routingJson, error).has_value());
 }
 
 TEST_CASE("Reference impact inventory covers every replacement-sensitive reference class",

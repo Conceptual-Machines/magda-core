@@ -32,6 +32,17 @@ struct SendInfo {
     TrackId destTrackId = INVALID_TRACK_ID;  // Target aux track (for display)
 };
 
+/** The four routing selectors owned by one track. */
+struct TrackRoutingState {
+    TrackId trackId = INVALID_TRACK_ID;
+    juce::String audioInput;
+    juce::String midiInput;
+    juce::String audioOutput;
+    juce::String midiOutput;
+
+    bool operator==(const TrackRoutingState&) const = default;
+};
+
 enum class InputMonitorMode { Off, In, Auto };
 
 /**
@@ -78,6 +89,10 @@ struct TrackInfo {
     juce::String midiOutputDevice;   // MIDI output device ID (device ID or empty for none)
     juce::String audioInputDevice;   // Audio input device/channel (device ID or empty for none)
     juce::String audioOutputDevice;  // Audio output routing (default: "master")
+
+    TrackRoutingState routingState() const {
+        return {id, audioInputDevice, midiInputDevice, audioOutputDevice, midiOutputDevice};
+    }
 
     // Sends (to aux tracks)
     std::vector<SendInfo> sends;

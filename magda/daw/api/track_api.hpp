@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <vector>
 
 #include "../core/ChainNodePath.hpp"
@@ -27,6 +28,66 @@ struct ApplyTrackPresetResult {
     ReferenceImpactPlan referenceImpact;
 };
 
+enum class RoutingMedia { Audio, Midi };
+enum class RoutingDirection { Input, Output };
+enum class RoutingEndpointKind { None, Hardware, Track, Master, AllMidiInputs };
+
+/** A currently resolvable route. `internalId` never crosses the remote boundary. */
+struct RoutingEndpoint {
+    juce::String id;
+    juce::String name;
+    RoutingMedia media = RoutingMedia::Audio;
+    RoutingDirection direction = RoutingDirection::Input;
+    RoutingEndpointKind kind = RoutingEndpointKind::None;
+    bool available = true;
+    int channelCount = 0;
+    std::optional<TrackId> trackId;
+    juce::String internalId;
+};
+
+struct TrackRoutingPatch {
+    std::optional<juce::String> audioInputEndpointId;
+    std::optional<juce::String> midiInputEndpointId;
+    std::optional<juce::String> audioOutputEndpointId;
+    std::optional<juce::String> midiOutputEndpointId;
+};
+
+struct DroppedRoutingConnection {
+    TrackId trackId = INVALID_TRACK_ID;
+    juce::String field;
+    juce::String endpointId;
+    juce::String reason;
+};
+
+enum class SetTrackRoutingStatus {
+    Applied,
+    Unchanged,
+    TrackNotFound,
+    EndpointNotFound,
+    Incompatible,
+    FeedbackCycle,
+    ApplyFailed,
+};
+
+struct SetTrackRoutingResult {
+    SetTrackRoutingStatus status = SetTrackRoutingStatus::ApplyFailed;
+    std::vector<DroppedRoutingConnection> droppedConnections;
+};
+
+struct TrackRoutingView {
+    TrackId trackId = INVALID_TRACK_ID;
+    juce::String audioInputEndpointId;
+    juce::String midiInputEndpointId;
+    juce::String audioOutputEndpointId;
+    juce::String midiOutputEndpointId;
+    bool recordArmed = false;
+    InputMonitorMode inputMonitor = InputMonitorMode::Off;
+};
+
+/** Public token for a stored route; hashes backend-specific identifiers. */
+juce::String routingEndpointId(RoutingMedia media, RoutingDirection direction,
+                               const juce::String& internalId);
+
 /**
  * Abstract view onto TrackManager — the track-level surface the agent
  * layer needs.
@@ -48,6 +109,9 @@ class TrackApi {
     virtual const TrackInfo* getTrack(TrackId trackId) const = 0;
 
     virtual ApplyTrackPresetResult applyPreset(TrackId trackId, const juce::String& presetId) = 0;
+    virtual std::vector<RoutingEndpoint> getRoutingEndpoints() const = 0;
+    virtual std::optional<TrackRoutingView> getRouting(TrackId trackId) const = 0;
+    virtual SetTrackRoutingResult setRouting(TrackId trackId, const TrackRoutingPatch& patch) = 0;
 
     virtual void setTrackName(TrackId trackId, const juce::String& name) = 0;
     virtual void setTrackColour(TrackId trackId, juce::Colour colour) = 0;

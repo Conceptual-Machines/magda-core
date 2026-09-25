@@ -227,6 +227,7 @@ set(TEST_SOURCES
     routing/test_sends_and_track_deletion.cpp
     # Internal track-to-track routing (issue #1690)
     routing/test_internal_track_routing.cpp
+    routing/test_track_api_routing.cpp
     routing/test_master_track_serialization.cpp
     project/test_utility_width_migration.cpp
     controllers/test_legacy_device_aliases.cpp
@@ -731,6 +732,7 @@ target_sources(magda_juce_tests PRIVATE
     midi/test_session_slot_recording_juce.cpp
     engine/test_time_signature_beats_juce.cpp
     routing/test_input_monitor_track_routing_juce.cpp
+    routing/test_remote_routing_engine_conformance_juce.cpp
     # Hardware output selections must reach the TE wave output devices (#2264)
     routing/test_hardware_output_routing_juce.cpp
     ../magda/daw/ui/components/mixer/RoutingSelector.cpp
@@ -1112,6 +1114,12 @@ add_test(NAME convolution_device_juce
 # an initialised message system to be valid.
 add_test(NAME remote_service_live_juce
          COMMAND magda_juce_tests "Remote Service Live")
+
+add_test(NAME remote_websocket_live_juce
+         COMMAND magda_juce_tests "Remote WebSocket Live")
+
+add_test(NAME remote_routing_engine_conformance_juce
+         COMMAND magda_juce_tests "Remote Routing Engine Conformance")
 
 # The facade's path-addressed rack/chain surface against the real TrackManager.
 add_test(NAME track_api_nested_racks_live_juce

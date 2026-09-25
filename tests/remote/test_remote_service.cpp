@@ -1576,6 +1576,79 @@ TEST_CASE("tracks.move goes through the undo stack, not the facade", "[remote][s
     REQUIRE(api.tracks_.moveWrites.empty());
 }
 
+TEST_CASE("Routing endpoints and current state are projected without internal identifiers",
+          "[remote][service][routing][2832]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto trackId = api.tracks_.createTrack("Audio", TrackType::Media);
+    auto* track = api.tracks_.getTrack(trackId);
+    REQUIRE(track != nullptr);
+    track->audioInputDevice = "/private/backend/input-1";
+    const auto publicId =
+        routingEndpointId(RoutingMedia::Audio, RoutingDirection::Input, track->audioInputDevice);
+    api.tracks_.routingEndpoints.push_back({publicId, "Input 1", RoutingMedia::Audio,
+                                            RoutingDirection::Input, RoutingEndpointKind::Hardware,
+                                            true, 1, std::nullopt, track->audioInputDevice});
+    RemoteApiService service(api);
+
+    const auto listed = run(service, "routing.endpoints.list", emptyInput());
+    REQUIRE(listed.ok);
+    REQUIRE(listed.result.getArray()->size() == 1);
+    const auto endpoint = listed.result.getArray()->getReference(0);
+    CHECK(endpoint["id"].toString() == publicId);
+    CHECK(endpoint["name"].toString() == "Input 1");
+    CHECK_FALSE(juce::JSON::toString(endpoint).contains("/private/backend"));
+
+    const auto current =
+        run(service, "routing.get", object({{"trackId", static_cast<int>(trackId)}}));
+    REQUIRE(current.ok);
+    CHECK(current.result["audioInputEndpointId"].toString() == publicId);
+    CHECK_FALSE(static_cast<bool>(current.result["recordArmed"]));
+    CHECK(service.currentRevision() == INITIAL_REVISION);
+}
+
+TEST_CASE("routing.set reports cascaded drops and is revision-neutral on no-op or failure",
+          "[remote][service][routing][2832]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto trackId = api.tracks_.createTrack("Audio", TrackType::Media);
+    api.tracks_.routingEndpoints.push_back({"none:audio:input",
+                                            "None",
+                                            RoutingMedia::Audio,
+                                            RoutingDirection::Input,
+                                            RoutingEndpointKind::None,
+                                            true,
+                                            0,
+                                            std::nullopt,
+                                            {}});
+    api.tracks_.routingResult.droppedConnections.push_back(
+        {trackId, "midiInputEndpointId", "all", "replaced_by_requested_route"});
+    RemoteApiService service(api);
+
+    const auto changed = run(service, "routing.set",
+                             object({{"trackId", static_cast<int>(trackId)},
+                                     {"audioInputEndpointId", "none:audio:input"}}));
+    REQUIRE(changed.ok);
+    REQUIRE(changed.result["droppedConnections"].getArray()->size() == 1);
+    CHECK(changed.result["droppedConnections"][0]["field"].toString() == "midiInputEndpointId");
+    CHECK(api.tracks_.routingWrites.size() == 1);
+    CHECK(service.currentRevision() == INITIAL_REVISION + 1);
+
+    api.tracks_.routingResult = {SetTrackRoutingStatus::Unchanged, {}};
+    const auto unchanged =
+        run(service, "routing.set", object({{"trackId", static_cast<int>(trackId)}}));
+    REQUIRE(unchanged.ok);
+    CHECK(service.currentRevision() == INITIAL_REVISION + 1);
+
+    api.tracks_.routingResult = {SetTrackRoutingStatus::FeedbackCycle, {}};
+    const auto rejected =
+        run(service, "routing.set",
+            object({{"trackId", static_cast<int>(trackId)}, {"audioOutputEndpointId", "track:2"}}));
+    REQUIRE_FALSE(rejected.ok);
+    CHECK(errorCodeOf(rejected) == "conflict");
+    CHECK(service.currentRevision() == INITIAL_REVISION + 1);
+}
+
 TEST_CASE("grooves.upsert then grooves.list round-trips the template name",
           "[remote][service][grooves]") {
     const MessageThreadRelaxation relaxation;

@@ -242,7 +242,7 @@ TEST_CASE("An array-valued operation is wrapped, schema and result together", "[
     // array rejected every list *call*. Wrapping fixes both, and has to be done
     // in both places or they describe different shapes.
     for (const char* name : {"tracks.list", "clips.list", "devices.catalog", "devicePresets.list",
-                             "automation.listLanes"}) {
+                             "automation.listLanes", "routing.endpoints.list"}) {
         const auto* operation = OperationRegistry::instance().find(name);
         REQUIRE(operation != nullptr);
         REQUIRE(operation->outputSchema["type"].toString() == "array");
@@ -415,6 +415,34 @@ TEST_CASE("tools/call returns structured content and the committed revision", "[
     REQUIRE_FALSE(read.failed());
     REQUIRE(static_cast<juce::int64>(read.result["_meta"][MAGDA_META_REVISION]) ==
             static_cast<juce::int64>(harness.service.currentRevision()));
+}
+
+TEST_CASE("MCP routes track I/O through the shared routing operation",
+          "[remote-api][mcp][routing][2832]") {
+    Harness harness;
+    const auto trackId = harness.api.tracks_.createTrack("Input", TrackType::Media);
+    const juce::String internalId = "/private/backend/input-1";
+    const auto endpointId =
+        routingEndpointId(RoutingMedia::Audio, RoutingDirection::Input, internalId);
+    harness.api.tracks_.routingEndpoints.push_back(
+        {endpointId, "Input 1", RoutingMedia::Audio, RoutingDirection::Input,
+         RoutingEndpointKind::Hardware, true, 1, std::nullopt, internalId});
+    const auto before = harness.service.currentRevision();
+
+    const auto reply =
+        run(harness.endpoint,
+            modernCall("tools/call",
+                       object({{"name", "routing.set"},
+                               {"arguments", object({{"trackId", static_cast<int>(trackId)},
+                                                     {"audioInputEndpointId", endpointId}})}})));
+
+    REQUIRE_FALSE(reply.failed());
+    REQUIRE_FALSE(static_cast<bool>(reply.result["isError"]));
+    CHECK(reply.result["structuredContent"]["routing"]["audioInputEndpointId"].toString() ==
+          endpointId);
+    CHECK_FALSE(juce::JSON::toString(reply.result["structuredContent"]).contains(internalId));
+    REQUIRE(harness.api.tracks_.routingWrites.size() == 1);
+    CHECK(harness.service.currentRevision() == before + 1);
 }
 
 TEST_CASE("An operation failure is a tool execution error, not a protocol error",

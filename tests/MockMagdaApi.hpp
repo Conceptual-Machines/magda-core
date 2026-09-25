@@ -276,6 +276,9 @@ class MockTrackApi : public TrackApi {
     std::vector<TrackInfo> tracks;
     ApplyTrackPresetResult applyPresetResult{ApplyTrackPresetStatus::Applied, {}};
     std::vector<std::pair<TrackId, juce::String>> appliedPresets;
+    std::vector<RoutingEndpoint> routingEndpoints;
+    SetTrackRoutingResult routingResult{SetTrackRoutingStatus::Applied, {}};
+    std::vector<std::pair<TrackId, TrackRoutingPatch>> routingWrites;
 
     struct VolumeWrite {
         TrackId id;
@@ -387,6 +390,69 @@ class MockTrackApi : public TrackApi {
     ApplyTrackPresetResult applyPreset(TrackId id, const juce::String& presetId) override {
         appliedPresets.emplace_back(id, presetId);
         return applyPresetResult;
+    }
+    std::vector<RoutingEndpoint> getRoutingEndpoints() const override {
+        return routingEndpoints;
+    }
+    std::optional<TrackRoutingView> getRouting(TrackId id) const override {
+        const auto* track = getTrack(id);
+        if (track == nullptr)
+            return std::nullopt;
+        juce::String midiOutput = track->midiOutputDevice;
+        const auto source = "track:" + juce::String(id);
+        for (const auto& candidate : tracks)
+            if (candidate.midiInputDevice == source) {
+                midiOutput = "track:" + juce::String(candidate.id);
+                break;
+            }
+        const auto publicId = [](RoutingMedia media, RoutingDirection direction,
+                                 const juce::String& internalId) {
+            if (internalId.isNotEmpty())
+                return routingEndpointId(media, direction, internalId);
+            return "none:" + juce::String(media == RoutingMedia::Audio ? "audio" : "midi") + ":" +
+                   (direction == RoutingDirection::Input ? "input" : "output");
+        };
+        return TrackRoutingView{
+            id,
+            publicId(RoutingMedia::Audio, RoutingDirection::Input, track->audioInputDevice),
+            publicId(RoutingMedia::Midi, RoutingDirection::Input, track->midiInputDevice),
+            publicId(RoutingMedia::Audio, RoutingDirection::Output, track->audioOutputDevice),
+            publicId(RoutingMedia::Midi, RoutingDirection::Output, midiOutput),
+            track->recordArmed,
+            track->inputMonitor};
+    }
+    SetTrackRoutingResult setRouting(TrackId id, const TrackRoutingPatch& patch) override {
+        routingWrites.emplace_back(id, patch);
+        if (routingResult.status != SetTrackRoutingStatus::Applied &&
+            routingResult.status != SetTrackRoutingStatus::Unchanged)
+            return routingResult;
+        auto* track = getTrack(id);
+        if (track == nullptr)
+            return {SetTrackRoutingStatus::TrackNotFound, {}};
+        const auto resolve = [&](const std::optional<juce::String>& endpointId, RoutingMedia media,
+                                 RoutingDirection direction) -> std::optional<juce::String> {
+            if (!endpointId)
+                return std::nullopt;
+            const auto found = std::ranges::find_if(routingEndpoints, [&](const auto& endpoint) {
+                return endpoint.id == *endpointId && endpoint.media == media &&
+                       endpoint.direction == direction;
+            });
+            return found == routingEndpoints.end() ? std::optional<juce::String>(*endpointId)
+                                                   : std::optional<juce::String>(found->internalId);
+        };
+        if (const auto value =
+                resolve(patch.audioInputEndpointId, RoutingMedia::Audio, RoutingDirection::Input))
+            track->audioInputDevice = *value;
+        if (const auto value =
+                resolve(patch.midiInputEndpointId, RoutingMedia::Midi, RoutingDirection::Input))
+            track->midiInputDevice = *value;
+        if (const auto value =
+                resolve(patch.audioOutputEndpointId, RoutingMedia::Audio, RoutingDirection::Output))
+            track->audioOutputDevice = *value;
+        if (const auto value =
+                resolve(patch.midiOutputEndpointId, RoutingMedia::Midi, RoutingDirection::Output))
+            track->midiOutputDevice = *value;
+        return routingResult;
     }
     void setTrackName(TrackId id, const juce::String& name) override {
         nameWrites.push_back({id, name});

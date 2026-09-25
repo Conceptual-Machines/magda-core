@@ -167,12 +167,6 @@ juce::String curveName(AutomationCurveType curve) {
     return "linear";
 }
 
-juce::String safeRoutingId(const juce::String& id) {
-    if (id.isEmpty() || id == "all" || id == "master" || id == "default" || id.startsWith("track:"))
-        return id;
-    return {};
-}
-
 const char* sidechainKindName(SidechainConfig::Type type) {
     switch (type) {
         case SidechainConfig::Type::Audio:
@@ -368,11 +362,56 @@ TrackDto makeTrackDto(const TrackInfo& track) {
     dto.recordArmed = track.recordArmed;
     dto.inputMonitor = inputMonitorModeName(track.inputMonitor);
     dto.frozen = track.frozen;
-    dto.audioInputDevice = safeRoutingId(track.audioInputDevice);
-    dto.midiInputDevice = safeRoutingId(track.midiInputDevice);
-    dto.audioOutputDevice = safeRoutingId(track.audioOutputDevice);
-    dto.midiOutputDevice = safeRoutingId(track.midiOutputDevice);
+    dto.audioInputDevice =
+        routingEndpointId(RoutingMedia::Audio, RoutingDirection::Input, track.audioInputDevice);
+    dto.midiInputDevice =
+        routingEndpointId(RoutingMedia::Midi, RoutingDirection::Input, track.midiInputDevice);
+    dto.audioOutputDevice =
+        routingEndpointId(RoutingMedia::Audio, RoutingDirection::Output, track.audioOutputDevice);
+    dto.midiOutputDevice =
+        routingEndpointId(RoutingMedia::Midi, RoutingDirection::Output, track.midiOutputDevice);
     return dto;
+}
+
+RoutingEndpointDto makeRoutingEndpointDto(const RoutingEndpoint& endpoint) {
+    const auto kind = [&] {
+        switch (endpoint.kind) {
+            case RoutingEndpointKind::None:
+                return "none";
+            case RoutingEndpointKind::Hardware:
+                return "hardware";
+            case RoutingEndpointKind::Track:
+                return "track";
+            case RoutingEndpointKind::Master:
+                return "master";
+            case RoutingEndpointKind::AllMidiInputs:
+                return "all_midi_inputs";
+        }
+        return "none";
+    }();
+    return {endpoint.id,
+            endpoint.name,
+            endpoint.media == RoutingMedia::Audio ? "audio" : "midi",
+            endpoint.direction == RoutingDirection::Input ? "input" : "output",
+            kind,
+            endpoint.available,
+            endpoint.channelCount,
+            endpoint.trackId};
+}
+
+TrackRoutingDto makeTrackRoutingDto(const TrackRoutingView& routing) {
+    return {routing.trackId,
+            routing.audioInputEndpointId,
+            routing.midiInputEndpointId,
+            routing.audioOutputEndpointId,
+            routing.midiOutputEndpointId,
+            routing.recordArmed,
+            inputMonitorModeName(routing.inputMonitor)};
+}
+
+DroppedRoutingConnectionDto makeDroppedRoutingConnectionDto(
+    const DroppedRoutingConnection& connection) {
+    return {connection.trackId, connection.field, connection.endpointId, connection.reason};
 }
 
 ChordTrackDto makeChordTrackDto(const TrackInfo* track, ClipApi& clips) {

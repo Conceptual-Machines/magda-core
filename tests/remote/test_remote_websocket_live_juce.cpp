@@ -104,6 +104,40 @@ class RemoteWebSocketLiveTest final : public juce::UnitTest {
             }
         }
 
+        beginTest("Track routing over the socket is one undoable revision");
+        {
+            Fixture fixture;
+            const auto source = static_cast<int>(fixture.exchange(requestJson(
+                "tracks.create", object({{"name", "Source"}, {"type", "audio"}})))["result"]["id"]);
+            const auto destination = static_cast<int>(fixture.exchange(
+                requestJson("tracks.create",
+                            object({{"name", "Destination"}, {"type", "audio"}})))["result"]["id"]);
+            const auto before = fixture.service.currentRevision();
+
+            const auto endpointId = "track:" + juce::String(source);
+            const auto reply = fixture.exchange(requestJson(
+                "routing.set",
+                object({{"trackId", destination}, {"audioInputEndpointId", endpointId}})));
+
+            expect(reply["error"].isVoid());
+            expect(reply["result"]["routing"]["audioInputEndpointId"].toString() == endpointId);
+            expect(fixture.service.currentRevision() == before + 1);
+            const auto* routed = TrackManager::getInstance().getTrack(destination);
+            expect(routed != nullptr);
+            if (routed != nullptr) {
+                expect(routed->audioInputDevice == endpointId);
+                expect(routed->midiInputDevice.isEmpty());
+            }
+
+            expect(UndoManager::getInstance().undo());
+            const auto* restored = TrackManager::getInstance().getTrack(destination);
+            expect(restored != nullptr);
+            if (restored != nullptr) {
+                expect(restored->audioInputDevice.isEmpty());
+                expect(restored->midiInputDevice == "all");
+            }
+        }
+
         beginTest("A stale expectedRevision is refused and changes nothing");
         {
             Fixture fixture;
