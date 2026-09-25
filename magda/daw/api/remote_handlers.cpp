@@ -34,6 +34,7 @@
 #include "magda_api.hpp"
 #include "midi_api.hpp"
 #include "project_api.hpp"
+#include "remote_diagnostics.hpp"
 #include "selection_api.hpp"
 #include "session_api.hpp"
 #include "track_api.hpp"
@@ -464,6 +465,59 @@ bool targetResolves(MagdaApi& api, const AutomationTarget& target) {
 
 HandlerResult systemDescribe(MagdaApi&, const juce::var&, const RequestContext&) {
     return HandlerResult::ok(OperationRegistry::instance().describe());
+}
+
+HandlerResult engineHealth(MagdaApi&, const juce::var&, const RequestContext& context) {
+    if (context.diagnostics != nullptr)
+        return HandlerResult::ok(context.diagnostics->health());
+
+    auto* result = new juce::DynamicObject();
+    result->setProperty("engine", "unavailable");
+    result->setProperty("observedAtMs", juce::Time::currentTimeMillis());
+    result->setProperty("sinceMs", juce::var());
+    result->setProperty("projectBound", juce::var());
+    result->setProperty("audioDeviceOpen", juce::var());
+    result->setProperty("xrunCount", juce::var());
+    result->setProperty("dropoutCount", juce::var());
+    result->setProperty("callbackLoad", juce::var());
+    result->setProperty("problemCoverage", "unavailable");
+    result->setProperty("problems", juce::Array<juce::var>{});
+    result->setProperty("discardedProblemCount", 0);
+    return HandlerResult::ok(result);
+}
+
+HandlerResult metersRead(MagdaApi& api, const juce::var&, const RequestContext& context) {
+    std::vector<TrackId> ids;
+    for (const auto& track : api.tracks().getTracks())
+        ids.push_back(track.id);
+    std::sort(ids.begin(), ids.end());
+    ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+    if (context.diagnostics != nullptr)
+        return HandlerResult::ok(context.diagnostics->meters(ids));
+
+    auto* result = new juce::DynamicObject();
+    result->setProperty("observedAtMs", juce::Time::currentTimeMillis());
+    juce::Array<juce::var> tracks;
+    constexpr size_t limit = 128;
+    for (size_t i = 0; i < std::min(ids.size(), limit); ++i) {
+        auto* entry = new juce::DynamicObject();
+        entry->setProperty("trackId", ids[i]);
+        entry->setProperty("available", false);
+        entry->setProperty("peakL", juce::var());
+        entry->setProperty("peakR", juce::var());
+        entry->setProperty("clipped", juce::var());
+        tracks.add(entry);
+    }
+    result->setProperty("tracks", tracks);
+    result->setProperty("truncatedTrackCount",
+                        static_cast<int>(ids.size() > limit ? ids.size() - limit : 0));
+    auto* master = new juce::DynamicObject();
+    master->setProperty("available", false);
+    master->setProperty("peakL", juce::var());
+    master->setProperty("peakR", juce::var());
+    master->setProperty("clipped", juce::var());
+    result->setProperty("master", master);
+    return HandlerResult::ok(result);
 }
 
 // ===========================================================================

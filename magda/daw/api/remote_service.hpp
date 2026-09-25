@@ -193,6 +193,9 @@ class RemoteApiService {
     void setAuditLog(std::shared_ptr<RemoteAuditLog> log);
     std::shared_ptr<RemoteAuditLog> auditLog() const;
 
+    /// Install the message-thread diagnostic reader used by read operations.
+    void setDiagnosticsSource(std::unique_ptr<class DiagnosticsSource> source);
+
   private:
     struct CachedResponse {
         juce::String key;
@@ -280,6 +283,7 @@ class RemoteApiService {
     /// reader takes an owning copy, which an atomic pointer cannot give it.
     mutable std::mutex auditMutex_;
     std::shared_ptr<RemoteAuditLog> audit_;
+    std::unique_ptr<class DiagnosticsSource> diagnostics_;
 };
 
 }  // namespace remote

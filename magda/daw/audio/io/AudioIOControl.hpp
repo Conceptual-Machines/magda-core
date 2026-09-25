@@ -90,6 +90,7 @@ class AudioIOControl : public HardwareChannels {
     /** @brief What the open interface is doing, for the status readout. */
     struct Status {
         juce::String interfaceName;
+        bool deviceOpen = false;
         double sampleRate = 0.0;
         int bufferSize = 0;
         double cpuUsage = 0.0;

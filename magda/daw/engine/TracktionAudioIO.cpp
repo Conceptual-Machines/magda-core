@@ -210,6 +210,7 @@ AudioIOControl::Status TracktionAudioIO::status() const {
     Status status;
     if (auto* device = manager().getCurrentAudioDevice()) {
         status.interfaceName = device->getName();
+        status.deviceOpen = device->isOpen();
         status.sampleRate = device->getCurrentSampleRate();
         status.bufferSize = device->getCurrentBufferSizeSamples();
     }

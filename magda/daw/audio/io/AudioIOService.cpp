@@ -137,6 +137,7 @@ AudioIOControl::Status AudioIOService::status() const {
     Status status;
     if (auto* device = manager_.getCurrentAudioDevice()) {
         status.interfaceName = device->getName();
+        status.deviceOpen = device->isOpen();
         status.sampleRate = device->getCurrentSampleRate();
         status.bufferSize = device->getCurrentBufferSizeSamples();
     }

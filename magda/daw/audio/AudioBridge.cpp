@@ -1373,7 +1373,7 @@ void AudioBridge::updateMetersFromGraph() {
 
                         meters_.mixer.pushLevels(trackId, data);
                         meters_.recording.pushLevels(trackId, data);
-                        meters_.remote.pushLevels(trackId, data);
+                        meters_.setRemotePeak(trackId, data);
 
                         // Write audio peak to sidechain bus for Audio-triggered modulators
                         float peak = std::max(data.peakL, data.peakR);
