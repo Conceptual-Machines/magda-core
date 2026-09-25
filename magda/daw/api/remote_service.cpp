@@ -38,7 +38,8 @@ std::vector<Topic> topicsFor(const juce::String& operationName) {
     if (operationName.startsWith("clips."))
         return {Topic::Clips, Topic::Session};
     if (operationName.startsWith("devices.") || operationName.startsWith("racks.") ||
-        operationName.startsWith("mods.") || operationName.startsWith("macros."))
+        operationName.startsWith("chains.") || operationName.startsWith("mods.") ||
+        operationName.startsWith("macros."))
         return {Topic::Devices};
     if (operationName.startsWith("selection."))
         return {Topic::Selection};

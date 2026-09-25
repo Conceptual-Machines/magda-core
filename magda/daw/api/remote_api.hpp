@@ -302,6 +302,7 @@ struct DeviceParameterDto {
 struct ChainDto {
     ChainId id = INVALID_CHAIN_ID;
     RackId rackId = INVALID_RACK_ID;
+    DevicePathDto nodePath;
     juce::String name;
     int outputIndex = 0;
     bool muted = false;
@@ -320,6 +321,7 @@ struct RackDto {
     TrackId trackId = INVALID_TRACK_ID;
     std::optional<RackId> parentRackId;
     std::optional<ChainId> parentChainId;
+    DevicePathDto nodePath;
     juce::String name;
     bool bypassed = false;
     double volumeDb = 0.0;

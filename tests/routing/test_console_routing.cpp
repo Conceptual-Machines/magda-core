@@ -65,6 +65,10 @@ TEST_CASE("agent surface registry has distinct bounded capabilities", "[console_
     REQUIRE_FALSE(containsTool(automation, "session.launchClip"));
 
     REQUIRE(containsTool(device, "racks.setBypassed"));
+    REQUIRE(containsTool(device, "racks.update"));
+    REQUIRE(containsTool(device, "chains.create"));
+    REQUIRE(containsTool(device, "chains.remove"));
+    REQUIRE(containsTool(device, "chains.update"));
     REQUIRE(containsTool(device, "devices.listParameters"));
     REQUIRE(containsTool(device, "devicePresets.list"));
     REQUIRE(containsTool(device, "devices.setBypassed"));
@@ -90,7 +94,7 @@ TEST_CASE("surface context is bounded and always revisioned", "[console_routing]
         REQUIRE(containsProvider(surface, magda::AgentContextProvider::ActiveView));
         REQUIRE(containsProvider(surface, magda::AgentContextProvider::Conversation));
         REQUIRE(surface.contextProviders.size() <= 10);
-        REQUIRE(surface.toolAllowlist.size() <= 26);
+        REQUIRE(surface.toolAllowlist.size() <= 29);
     }
 }
 

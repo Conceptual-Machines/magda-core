@@ -1065,6 +1065,167 @@ void SetDeviceBypassedCommand::undo() {
     executed_ = false;
 }
 
+AddRackByPathCommand::AddRackByPathCommand(ChainNodePath parentPath, juce::String name)
+    : parentPath_(std::move(parentPath)), name_(std::move(name)) {
+    // A track-level DTO addresses the track itself, while the model's main FX
+    // container is the same track id with no node selector.
+    parentPath_.isTrackLevel = false;
+}
+
+void AddRackByPathCommand::execute() {
+    auto& tracks = TrackManager::getInstance();
+    if (hasMaterialisedRack_) {
+        std::vector<ChainElement> elements;
+        elements.push_back(makeRackElement(materialisedRack_));
+        executed_ = tracks.insertChainElementsByPath(parentPath_, std::move(elements), insertIndex_,
+                                                     /*reassignIds=*/false);
+        return;
+    }
+
+    createdRackId_ = parentPath_.steps.empty() ? tracks.addRackToTrack(parentPath_.trackId, name_)
+                                               : tracks.addRackToChainByPath(parentPath_, name_);
+    if (createdRackId_ == INVALID_RACK_ID)
+        return;
+
+    createdRackPath_ = parentPath_.withRack(createdRackId_);
+    const auto* rack = tracks.getRackByPath(createdRackPath_);
+    insertIndex_ = tracks.getChainElementIndex(createdRackPath_);
+    if (rack == nullptr || insertIndex_ < 0) {
+        tracks.removeRackFromChainByPath(createdRackPath_);
+        createdRackId_ = INVALID_RACK_ID;
+        return;
+    }
+
+    materialisedRack_ = *rack;
+    hasMaterialisedRack_ = true;
+    executed_ = true;
+}
+
+void AddRackByPathCommand::undo() {
+    if (!executed_)
+        return;
+    TrackManager::getInstance().removeRackFromChainByPath(createdRackPath_);
+    executed_ = false;
+}
+
+AddChainByPathCommand::AddChainByPathCommand(ChainNodePath rackPath, juce::String name)
+    : rackPath_(std::move(rackPath)), name_(std::move(name)) {}
+
+void AddChainByPathCommand::execute() {
+    auto& tracks = TrackManager::getInstance();
+    if (hasMaterialisedChain_) {
+        executed_ = tracks.insertChainIntoRackByPath(rackPath_, materialisedChain_, insertIndex_);
+        return;
+    }
+
+    createdChainId_ = tracks.addChainToRack(rackPath_, name_);
+    if (createdChainId_ == INVALID_CHAIN_ID)
+        return;
+
+    createdChainPath_ = rackPath_.withChain(createdChainId_);
+    const auto* chain = tracks.getChainByPath(createdChainPath_);
+    const auto* rack = tracks.getRackByPath(rackPath_);
+    if (chain == nullptr || rack == nullptr) {
+        tracks.removeChainByPath(createdChainPath_);
+        createdChainId_ = INVALID_CHAIN_ID;
+        return;
+    }
+    const auto found = std::ranges::find(rack->chains, createdChainId_, &ChainInfo::id);
+    if (found == rack->chains.end()) {
+        tracks.removeChainByPath(createdChainPath_);
+        createdChainId_ = INVALID_CHAIN_ID;
+        return;
+    }
+
+    insertIndex_ = static_cast<int>(std::distance(rack->chains.begin(), found));
+    materialisedChain_ = *chain;
+    hasMaterialisedChain_ = true;
+    executed_ = true;
+}
+
+void AddChainByPathCommand::undo() {
+    if (!executed_)
+        return;
+    TrackManager::getInstance().removeChainByPath(createdChainPath_);
+    executed_ = false;
+}
+
+SetRackPropertiesByPathCommand::SetRackPropertiesByPathCommand(ChainNodePath rackPath,
+                                                               RackPropertyPatch patch)
+    : rackPath_(std::move(rackPath)), patch_(std::move(patch)) {}
+
+void SetRackPropertiesByPathCommand::execute() {
+    auto& tracks = TrackManager::getInstance();
+    const auto* rack = tracks.getRackByPath(rackPath_);
+    if (rack == nullptr)
+        return;
+    if (!captured_) {
+        previousBypassed_ = rack->bypassed;
+        previousDeltaSolo_ = rack->deltaSolo;
+        previousVolumeDb_ = rack->volume;
+        captured_ = true;
+    }
+    if (patch_.bypassed)
+        tracks.setRackBypassedByPath(rackPath_, *patch_.bypassed);
+    if (patch_.volumeDb)
+        tracks.setRackVolume(rackPath_, *patch_.volumeDb);
+    executed_ = true;
+}
+
+void SetRackPropertiesByPathCommand::undo() {
+    if (!executed_ || !captured_)
+        return;
+    auto& tracks = TrackManager::getInstance();
+    tracks.setRackBypassedByPath(rackPath_, previousBypassed_);
+    tracks.setRackDeltaSoloByPath(rackPath_, previousDeltaSolo_);
+    tracks.setRackVolume(rackPath_, previousVolumeDb_);
+    executed_ = false;
+}
+
+SetChainPropertiesByPathCommand::SetChainPropertiesByPathCommand(ChainNodePath chainPath,
+                                                                 ChainPropertyPatch patch)
+    : chainPath_(std::move(chainPath)), patch_(std::move(patch)) {}
+
+void SetChainPropertiesByPathCommand::execute() {
+    auto& tracks = TrackManager::getInstance();
+    const auto* chain = tracks.getChainByPath(chainPath_);
+    if (chain == nullptr)
+        return;
+    if (!captured_) {
+        previous_ = *chain;
+        captured_ = true;
+    }
+    if (patch_.name)
+        tracks.setChainName(chainPath_, *patch_.name);
+    if (patch_.outputIndex)
+        tracks.setChainOutput(chainPath_, *patch_.outputIndex);
+    if (patch_.muted)
+        tracks.setChainMuted(chainPath_, *patch_.muted);
+    if (patch_.solo)
+        tracks.setChainSolo(chainPath_, *patch_.solo);
+    if (patch_.bypassed)
+        tracks.setChainBypassed(chainPath_, *patch_.bypassed);
+    if (patch_.volumeDb)
+        tracks.setChainVolume(chainPath_, *patch_.volumeDb);
+    if (patch_.pan)
+        tracks.setChainPan(chainPath_, *patch_.pan);
+    executed_ = true;
+}
+
+void SetChainPropertiesByPathCommand::undo() {
+    if (!executed_ || !captured_)
+        return;
+    auto& tracks = TrackManager::getInstance();
+    tracks.setChainName(chainPath_, previous_.name);
+    tracks.setChainOutput(chainPath_, previous_.outputIndex);
+    tracks.setChainMuted(chainPath_, previous_.muted);
+    tracks.setChainSolo(chainPath_, previous_.solo);
+    tracks.setChainBypassed(chainPath_, previous_.bypassed);
+    tracks.setChainVolume(chainPath_, previous_.volume);
+    tracks.setChainPan(chainPath_, previous_.pan);
+    executed_ = false;
+}
+
 RemoveDeviceByPathCommand::RemoveDeviceByPathCommand(const ChainNodePath& devicePath)
     : devicePath_(devicePath), parentPath_(devicePath.parentChain()) {}
 
