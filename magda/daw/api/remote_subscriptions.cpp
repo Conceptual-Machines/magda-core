@@ -94,6 +94,7 @@ std::vector<const char*> keyFieldsFor(Topic topic) {
         case Topic::Devices:
         case Topic::Selection:
         case Topic::Transport:
+        case Topic::Jobs:
         case Topic::Meters:
         case Topic::Playhead:
             break;
@@ -222,6 +223,8 @@ const char* snapshotOperationFor(Topic topic) {
             return "session.get";
         case Topic::Automation:
             return "automation.listLanes";
+        case Topic::Jobs:
+            return "jobs.list";
         case Topic::Meters:
         case Topic::Playhead:
             break;
@@ -260,6 +263,8 @@ struct SubscriptionHub::Client {
     ClientId id = 0;
     Sink sink;
     Disconnect disconnect;
+    juce::String ownerClientId;
+    ScopeProvider scopes;
     std::array<bool, TOPIC_COUNT> subscribed{};
     /// Set when a delivery was refused: the client has no baseline for the
     /// delta it just missed, so the next thing it takes has to be complete.
@@ -282,6 +287,8 @@ struct SubscriptionHub::Client {
      */
     bool refusedThisFlush = false;
     bool acceptedThisFlush = false;
+    bool hasJobsBaseline = false;
+    juce::var jobsBaseline;
 };
 
 /**
@@ -366,13 +373,25 @@ void SubscriptionHub::shutdown() {
         service_.changes().removeListener(token);
 }
 
-SubscriptionHub::ClientId SubscriptionHub::addClient(Sink sink, Disconnect disconnect) {
+SubscriptionHub::ClientId SubscriptionHub::addClient(Sink sink, Disconnect disconnect,
+                                                     juce::String ownerClientId,
+                                                     ScopeProvider scopes) {
     const std::scoped_lock lock(mutex_);
     if (shutdown_)
         return 0;
 
     const auto id = nextClientId_++;
-    clients_.push_back(Client{id, std::move(sink), std::move(disconnect), {}, {}, 0});
+    if (ownerClientId.isEmpty())
+        ownerClientId = "subscription:" + juce::String(id);
+    if (!scopes)
+        scopes = [] { return allScopes(); };
+    Client client;
+    client.id = id;
+    client.sink = std::move(sink);
+    client.disconnect = std::move(disconnect);
+    client.ownerClientId = std::move(ownerClientId);
+    client.scopes = std::move(scopes);
+    clients_.push_back(std::move(client));
     return id;
 }
 
@@ -535,7 +554,14 @@ void SubscriptionHub::scheduleTopology() {
 // Projection
 // ---------------------------------------------------------------------------
 
-juce::var SubscriptionHub::projectTopic(Topic topic) {
+juce::var SubscriptionHub::projectTopic(Topic topic, const juce::String& ownerClientId,
+                                        ScopeSet scopes) {
+    if (topic == Topic::Jobs) {
+        juce::Array<juce::var> jobs;
+        for (const auto& job : service_.jobs().list(ownerClientId, scopes))
+            jobs.add(toJson(job));
+        return jobs;
+    }
     const auto* name = snapshotOperationFor(topic);
     if (name == nullptr)
         return {};
@@ -635,6 +661,10 @@ bool SubscriptionHub::owesSnapshotLocked(Topic topic) const {
 }
 
 void SubscriptionHub::publishTopicLocked(Topic topic, Revision revision) {
+    if (topic == Topic::Jobs) {
+        publishJobsLocked(revision);
+        return;
+    }
     const auto index = indexOf(topic);
 
     // A client that refused an event is owed complete state, and it is owed it
@@ -694,6 +724,25 @@ void SubscriptionHub::publishTopicLocked(Topic topic, Revision revision) {
         // only for the ones that are behind.
         if (changed)
             deliverLocked(client, delta);
+    }
+}
+
+void SubscriptionHub::publishJobsLocked(Revision revision) {
+    const auto index = indexOf(Topic::Jobs);
+    for (auto& client : clients_) {
+        if (!client.subscribed[index])
+            continue;
+        const auto current = projectTopic(Topic::Jobs, client.ownerClientId,
+                                          client.scopes ? client.scopes() : ScopeSet{});
+        const bool changed = !client.hasJobsBaseline || !deepEquals(client.jobsBaseline, current);
+        if (!changed && !client.needsSnapshot[index])
+            continue;
+        const auto type = client.needsSnapshot[index] || !client.hasJobsBaseline
+                              ? SubscriptionEvent::Type::Snapshot
+                              : SubscriptionEvent::Type::Delta;
+        deliverLocked(client, {Topic::Jobs, type, revision, current});
+        client.jobsBaseline = current;
+        client.hasJobsBaseline = true;
     }
 }
 
@@ -814,7 +863,8 @@ void SubscriptionHub::sendSnapshotsLocked(Client& client, const std::vector<Topi
             continue;
 
         const auto index = indexOf(topic);
-        auto current = projectTopic(topic);
+        auto current =
+            projectTopic(topic, client.ownerClientId, client.scopes ? client.scopes() : ScopeSet{});
 
         // Deliberately does not overwrite an existing baseline. Another client
         // may still be current against it, and moving it forward here would
@@ -822,7 +872,10 @@ void SubscriptionHub::sendSnapshotsLocked(Client& client, const std::vector<Topi
         // subscriber may therefore receive a delta covering ground its snapshot
         // already had, which is harmless: added and updated are upserts keyed by
         // id, so applying one twice lands in the same place.
-        if (!topics_[index].hasBaseline) {
+        if (topic == Topic::Jobs) {
+            client.jobsBaseline = current;
+            client.hasJobsBaseline = true;
+        } else if (!topics_[index].hasBaseline) {
             topics_[index].baseline = current;
             topics_[index].hasBaseline = true;
         }
@@ -951,8 +1004,15 @@ Response SubscriptionHub::execute(ClientId client, const juce::String& method,
             else
                 for (const auto topic : requested)
                     if (!isContinuousTopic(topic) && !topics_[indexOf(topic)].hasBaseline) {
-                        topics_[indexOf(topic)].baseline = projectTopic(topic);
-                        topics_[indexOf(topic)].hasBaseline = true;
+                        if (topic == Topic::Jobs) {
+                            entry->jobsBaseline =
+                                projectTopic(topic, entry->ownerClientId,
+                                             entry->scopes ? entry->scopes() : ScopeSet{});
+                            entry->hasJobsBaseline = true;
+                        } else {
+                            topics_[indexOf(topic)].baseline = projectTopic(topic);
+                            topics_[indexOf(topic)].hasBaseline = true;
+                        }
                     }
         } else if (method == kUnsubscribe) {
             // No topics means all of them: the shape a client uses when it is

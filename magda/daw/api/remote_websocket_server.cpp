@@ -865,7 +865,10 @@ struct RemoteWebSocketServer::Impl {
                 [connection](const SubscriptionEvent& event) {
                     return connection->enqueueEvent(notificationFor(event));
                 },
-                [connection](const juce::String&) { connection->shutdown(); });
+                [connection](const juce::String&) { connection->shutdown(); }, connection->handle,
+                [clients = options.clients, name = connection->clientName] {
+                    return clients != nullptr ? clients->scopesFor(name) : ScopeSet{};
+                });
         }
 
         std::thread writer([connection] {
@@ -929,6 +932,7 @@ struct RemoteWebSocketServer::Impl {
             live.erase(std::remove(live.begin(), live.end(), connection), live.end());
         }
 
+        service.clientDisconnected(connection->handle);
         if (options.clients != nullptr)
             options.clients->noteDisconnected(connection->handle);
         audit(connection, AUDIT_CONNECTION_CLOSE, {}, AuditOutcome::Disconnected);

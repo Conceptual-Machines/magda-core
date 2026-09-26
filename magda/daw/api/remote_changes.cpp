@@ -29,6 +29,8 @@ const char* toString(Topic topic) {
             return "session";
         case Topic::Automation:
             return "automation";
+        case Topic::Jobs:
+            return "jobs";
         case Topic::Meters:
             return "meters";
         case Topic::Playhead:

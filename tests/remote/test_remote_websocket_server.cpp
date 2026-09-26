@@ -122,6 +122,23 @@ TEST_CASE("WebSocket exposes one-shot engine diagnostics without an engine",
     }
 }
 
+TEST_CASE("WebSocket exposes the shared owner-scoped job contract",
+          "[remote][websocket][jobs][2834]") {
+    MessageThreadRelaxation relax;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    RemoteWebSocketServer server(service, testOptions());
+    REQUIRE(server.start());
+    httplib::ws::WebSocketClient client(endpoint(server), authorised());
+    REQUIRE(client.connect());
+
+    const auto reply = roundTrip(client, request("jobs.list"));
+    REQUIRE(reply["error"].isVoid());
+    REQUIRE(reply["result"].getArray() != nullptr);
+    CHECK(reply["result"].getArray()->isEmpty());
+    CHECK(static_cast<juce::int64>(reply["meta"]["revision"]) == INITIAL_REVISION);
+}
+
 TEST_CASE("The server refuses to start without a bearer token", "[remote][websocket][auth]") {
     MessageThreadRelaxation relax;
     MockMagdaApi api;

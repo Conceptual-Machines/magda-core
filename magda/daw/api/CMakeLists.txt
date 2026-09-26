@@ -23,6 +23,7 @@ target_sources(magda_daw PRIVATE
     remote_scopes.cpp
     remote_clients.cpp
     remote_audit.cpp
+    remote_jobs.cpp
     remote_service.cpp
     remote_changes.cpp
     remote_model_bridge_live.cpp
@@ -66,6 +67,7 @@ target_sources(magda_daw PRIVATE
     remote_scopes.hpp
     remote_clients.hpp
     remote_audit.hpp
+    remote_jobs.hpp
     remote_diagnostics.hpp
     remote_service.hpp
     remote_changes.hpp

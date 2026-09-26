@@ -619,7 +619,13 @@ struct AutomationClipDto {
     bool operator==(const AutomationClipDto&) const = default;
 };
 
-enum class OperationAccess { Read, Write };
+enum class OperationAccess {
+    Read,
+    /// A synchronous, undoable project mutation that advances the revision.
+    Write,
+    /// Ephemeral control such as cancelling a job: idempotent, but not a project edit.
+    Control,
+};
 
 /**
  * @brief Per-request identity, permission, limits, and concurrency expectations.
@@ -631,6 +637,13 @@ struct RequestContext {
     // Installed by RemoteApiService immediately before invoking a handler.
     // Transport-provided values are overwritten; never client-controlled.
     class DiagnosticsSource* diagnostics = nullptr;
+    // Installed by RemoteApiService. Job endpoints and future job-producing
+    // operations share this one owner-scoped registry across both transports.
+    class RemoteJobManager* jobs = nullptr;
+    // The validated project revision at handler entry. Future job-producing
+    // handlers capture this as RemoteJobSpec::acceptedRevision; client values
+    // are overwritten alongside the two service pointers above.
+    Revision revision = INITIAL_REVISION;
     /**
      * The transport's own handle for the caller — `ws:3:7`, `mcp:sess-…`.
      *

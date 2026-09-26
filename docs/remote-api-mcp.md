@@ -319,6 +319,7 @@ Something no argument could fix — an unknown tool, a malformed request — is 
 | `magda://selection` | `selection.get` |
 | `magda://transport` | `transport.get` |
 | `magda://session` | `session.get` |
+| `magda://jobs` | `jobs.list` |
 | `magda://devices` | `devices.list` |
 | `magda://devices/catalog` | `devices.catalog` |
 

@@ -90,6 +90,12 @@ TEST_CASE("Tool definitions carry the registry's contract", "[agent-bridge][surf
     REQUIRE(create->access == ToolAccess::Mutation);
     // The model sees the same input schema an MCP client is validated against.
     REQUIRE(create->inputSchema["properties"]["name"].isObject());
+
+    AgentSurface controlSurface;
+    controlSurface.toolAllowlist = {"jobs.cancel"};
+    const auto controls = agentToolsForSurface(controlSurface);
+    REQUIRE(controls.size() == 1);
+    CHECK(controls.front().access == ToolAccess::Mutation);
 }
 
 TEST_CASE("A surface is granted only the scopes its allowlist needs", "[agent-bridge][surfaces]") {

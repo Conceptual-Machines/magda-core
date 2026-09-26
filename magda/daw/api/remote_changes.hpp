@@ -32,11 +32,12 @@ enum class Topic {
     Transport,
     Session,
     Automation,
+    Jobs,
     Meters,
     Playhead,
 };
 
-inline constexpr std::size_t TOPIC_COUNT = 10;
+inline constexpr std::size_t TOPIC_COUNT = 11;
 
 const char* toString(Topic topic);
 std::optional<Topic> parseTopic(juce::StringRef topic);

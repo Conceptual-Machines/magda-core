@@ -40,9 +40,9 @@ std::vector<ToolDefinition> agentToolsForSurface(const AgentSurface& surface) {
         tools.push_back({.name = operation->name,
                          .description = operation->summary,
                          .inputSchema = operation->inputSchema.clone(),
-                         .access = operation->access == remote::OperationAccess::Write
-                                       ? ToolAccess::Mutation
-                                       : ToolAccess::Read});
+                         .access = operation->access == remote::OperationAccess::Read
+                                       ? ToolAccess::Read
+                                       : ToolAccess::Mutation});
     }
     return tools;
 }

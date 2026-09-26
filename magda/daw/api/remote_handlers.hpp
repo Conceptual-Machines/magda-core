@@ -29,6 +29,11 @@ HandlerResult systemDescribe(MagdaApi&, const juce::var&, const RequestContext&)
 HandlerResult engineHealth(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult metersRead(MagdaApi&, const juce::var&, const RequestContext&);
 
+// Asynchronous jobs
+HandlerResult jobsList(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult jobsGet(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult jobsCancel(MagdaApi&, const juce::var&, const RequestContext&);
+
 // Project
 HandlerResult projectGet(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult projectSave(MagdaApi&, const juce::var&, const RequestContext&);

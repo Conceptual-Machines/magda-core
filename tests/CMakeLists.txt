@@ -320,6 +320,7 @@ set(TEST_SOURCES
     remote/test_remote_permissions.cpp
     remote/test_remote_permission_conformance.cpp
     remote/test_remote_service.cpp
+    remote/test_remote_jobs.cpp
     remote/test_remote_changes.cpp
     remote/test_remote_subscriptions.cpp
     remote/test_remote_model_bridge.cpp
