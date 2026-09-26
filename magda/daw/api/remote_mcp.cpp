@@ -339,6 +339,8 @@ McpEndpoint::McpEndpoint(RemoteApiService& service, Options options, Subscriptio
         {"magda://session", "", "session", "Session",
          "The session clip grid: which slot holds which clip, and what it is doing", "session.get",
          Topic::Session},
+        {"magda://jobs", "", "jobs", "Jobs", "Asynchronous jobs owned by this MCP session",
+         "jobs.list", Topic::Jobs},
         {"magda://devices", "", "devices", "Devices",
          "The device, rack, and chain graph for every track", "devices.list", Topic::Devices},
         // No topic: the catalogue changes only when plugins are rescanned, which

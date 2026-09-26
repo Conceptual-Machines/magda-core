@@ -12,6 +12,7 @@
 #include "remote_api.hpp"
 #include "remote_audit.hpp"
 #include "remote_changes.hpp"
+#include "remote_jobs.hpp"
 
 namespace magda {
 
@@ -166,6 +167,12 @@ class RemoteApiService {
     ChangeSource& changes();
     const ChangeSource& changes() const;
 
+    RemoteJobManager& jobs();
+    const RemoteJobManager& jobs() const;
+
+    /// Release owner-scoped jobs when a transport identity goes away.
+    void clientDisconnected(const juce::String& clientId);
+
     /// Idempotency cache capacity, in completed write responses.
     void setIdempotencyCacheCapacity(std::size_t capacity);
 
@@ -254,6 +261,7 @@ class RemoteApiService {
 
     MagdaApi& api_;
     ChangeSource changes_;
+    RemoteJobManager jobs_;
 
     std::atomic<Revision> revision_{INITIAL_REVISION};
     std::atomic<bool> shutdown_{false};

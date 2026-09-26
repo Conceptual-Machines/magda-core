@@ -161,11 +161,12 @@ juce::String generateSessionId() {
  */
 struct EventStream {
     EventStream(int outboxCapacity, juce::var streamSubscriptionId, juce::String streamHandle,
-                juce::String streamClientName)
+                juce::String streamClientName, juce::String ownerId)
         : capacity(outboxCapacity),
           subscriptionId(std::move(streamSubscriptionId)),
           handle(std::move(streamHandle)),
-          clientName(std::move(streamClientName)) {}
+          clientName(std::move(streamClientName)),
+          jobOwnerId(std::move(ownerId)) {}
 
     enum class Take { Frame, KeepAlive, Closed };
 
@@ -176,6 +177,8 @@ struct EventStream {
     const juce::String handle;
     /// Normalised declared name of whoever opened it.
     const juce::String clientName;
+    /// The request identity whose owner-scoped jobs this stream may project.
+    const juce::String jobOwnerId;
 
     mutable std::mutex mutex;
     std::condition_variable ready;
@@ -329,7 +332,8 @@ struct RemoteMcpServer::Impl {
     struct Waiter;
 
     Impl(RemoteApiService& apiService, Options serverOptions, SubscriptionHub* hub)
-        : options(std::move(serverOptions)),
+        : service(apiService),
+          options(std::move(serverOptions)),
           subscriptions(hub),
           endpoint(apiService,
                    McpEndpoint::Options{"MAGDA", options.serverVersion, options.defaultDeadlineMs},
@@ -340,6 +344,7 @@ struct RemoteMcpServer::Impl {
           // indistinguishable from the server being broken.
           tokens(static_cast<double>(options.maxConcurrentRequests)) {}
 
+    RemoteApiService& service;
     const Options options;
     SubscriptionHub* const subscriptions;
     McpEndpoint endpoint;
@@ -557,6 +562,7 @@ struct RemoteMcpServer::Impl {
     }
 
     void noteSessionClosed(const juce::String& sessionId, const juce::String& clientName) {
+        service.clientDisconnected(handleForSession(sessionId));
         if (options.clients != nullptr)
             options.clients->noteDisconnected(handleForSession(sessionId));
         audit(clientName, handleForSession(sessionId), AUDIT_CONNECTION_CLOSE,
@@ -627,7 +633,8 @@ struct RemoteMcpServer::Impl {
     // -----------------------------------------------------------------------
 
     std::shared_ptr<EventStream> claimStream(const juce::var& subscriptionId,
-                                             const juce::String& clientName) {
+                                             const juce::String& clientName,
+                                             const juce::String& jobOwnerId) {
         std::shared_ptr<EventStream> stream;
         {
             const std::scoped_lock lock(streamMutex);
@@ -638,7 +645,7 @@ struct RemoteMcpServer::Impl {
             // a client may fall rather than about memory.
             stream = std::make_shared<EventStream>(
                 64, subscriptionId, "mcp:stream:" + juce::String(nextStreamId.fetch_add(1)),
-                clientName);
+                clientName, jobOwnerId);
             streams.push_back(stream);
         }
 
@@ -694,6 +701,10 @@ struct RemoteMcpServer::Impl {
                         }
                         live->close(std::move(terminal));
                     }
+                },
+                stream->jobOwnerId,
+                [clients = options.clients, name = stream->clientName] {
+                    return clients != nullptr ? clients->scopesFor(name) : ScopeSet{};
                 });
         }
 
@@ -1119,7 +1130,7 @@ struct RemoteMcpServer::Impl {
         }
 
         const auto filter = endpoint.parseListenFilter(call.params);
-        auto stream = claimStream(id, call.clientName);
+        auto stream = claimStream(id, call.clientName, call.clientId);
         if (stream == nullptr) {
             writeJson(response, httplib::StatusCode::ServiceUnavailable_503,
                       jsonRpcError(id, McpError{MCP_INTERNAL_ERROR,
@@ -1400,7 +1411,7 @@ struct RemoteMcpServer::Impl {
             return;
         }
 
-        auto stream = claimStream({}, session->clientName);
+        auto stream = claimStream({}, session->clientName, handleForSession(sessionId));
         if (stream == nullptr) {
             response.status = httplib::StatusCode::ServiceUnavailable_503;
             return;

@@ -38,6 +38,7 @@
 #include "midi_api.hpp"
 #include "project_api.hpp"
 #include "remote_diagnostics.hpp"
+#include "remote_jobs.hpp"
 #include "selection_api.hpp"
 #include "session_api.hpp"
 #include "track_api.hpp"
@@ -662,6 +663,39 @@ HandlerResult metersRead(MagdaApi& api, const juce::var&, const RequestContext& 
     master->setProperty("clipped", juce::var());
     result->setProperty("master", master);
     return HandlerResult::ok(result);
+}
+
+// ===========================================================================
+// Asynchronous jobs
+// ===========================================================================
+
+HandlerResult jobsList(MagdaApi&, const juce::var&, const RequestContext& context) {
+    if (context.jobs == nullptr)
+        return HandlerResult::fail(ErrorCode::InternalError, "job service is unavailable");
+    juce::Array<juce::var> result;
+    for (const auto& job : context.jobs->list(context.clientId, context.scopes))
+        result.add(toJson(job));
+    return HandlerResult::ok(result);
+}
+
+HandlerResult jobsGet(MagdaApi&, const juce::var& input, const RequestContext& context) {
+    if (context.jobs == nullptr)
+        return HandlerResult::fail(ErrorCode::InternalError, "job service is unavailable");
+    Error error;
+    const auto job =
+        context.jobs->get(input["jobId"].toString(), context.clientId, context.scopes, error);
+    return job ? HandlerResult::ok(toJson(*job)) : HandlerResult::fail(std::move(error));
+}
+
+HandlerResult jobsCancel(MagdaApi&, const juce::var& input, const RequestContext& context) {
+    if (context.jobs == nullptr)
+        return HandlerResult::fail(ErrorCode::InternalError, "job service is unavailable");
+    Error error;
+    if (!context.jobs->cancel(input["jobId"].toString(), context.clientId, context.scopes, error))
+        return HandlerResult::fail(std::move(error));
+    const auto job =
+        context.jobs->get(input["jobId"].toString(), context.clientId, context.scopes, error);
+    return job ? HandlerResult::ok(toJson(*job)) : HandlerResult::fail(std::move(error));
 }
 
 // ===========================================================================

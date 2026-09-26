@@ -161,6 +161,7 @@ class SubscriptionHub {
     /// Drop a client that has stopped consuming. Called with the hub's lock
     /// held, so it must do no more than mark the connection.
     using Disconnect = std::function<void(const juce::String& reason)>;
+    using ScopeProvider = std::function<ScopeSet()>;
 
     /// Answer to one subscription method. Called exactly once.
     using Completion = std::function<void(Response)>;
@@ -189,7 +190,8 @@ class SubscriptionHub {
 
     /// Register a transport connection. The returned id addresses it until
     /// `removeClient`; ids are never reused.
-    ClientId addClient(Sink sink, Disconnect disconnect);
+    ClientId addClient(Sink sink, Disconnect disconnect, juce::String ownerClientId = {},
+                       ScopeProvider scopes = {});
     void removeClient(ClientId client);
 
     /// Subscribed clients. For tests and diagnostics.
@@ -254,13 +256,15 @@ class SubscriptionHub {
         juce::var baseline;
     };
 
-    juce::var projectTopic(Topic topic);
+    juce::var projectTopic(Topic topic, const juce::String& ownerClientId = {},
+                           ScopeSet scopes = allScopes());
     juce::var sampleTopic(Topic topic);
 
     Response execute(ClientId client, const juce::String& method, const juce::var& params,
                      const std::vector<Topic>& requested, bool topicsGiven);
 
     void publishTopicLocked(Topic topic, Revision revision);
+    void publishJobsLocked(Revision revision);
     static void deliverLocked(Client& client, const SubscriptionEvent& event);
     void foldFlushOutcomesLocked();
     void sendSnapshotsLocked(Client& client, const std::vector<Topic>& topics, Revision revision,

@@ -68,6 +68,13 @@ changes no project content and does not move the playhead.
 user is looking at and what their next keystroke acts on, which is not something
 a read-only client should reach.
 
+`jobs.list` and `jobs.get` use `read`. `jobs.cancel` is a special control action:
+it first requires ownership, then dynamically requires the scope captured when
+the producing operation accepted the job. Cancelling a render therefore cannot
+be used to bypass the render operation's grant, and revoking that grant takes
+effect before cancellation just as it does before an idempotent replay. Job
+control never creates undo history or advances the project revision.
+
 **`hardware-midi` gates `midi.send` and `midi.sendSysEx`** (#2297). The scope
 was declared before any operation required it, because grants are persisted: a
 word invented later would read as "not granted" on every existing client — the
@@ -85,10 +92,12 @@ because the question a reviewer needs to answer is not "does this operation
 declare a scope" but "is the whole division of the API into scopes the one we
 meant" — and that is only answerable by reading the policy in one piece.
 
-Reads are absent from the table: `read` is the descriptor default. Writes are
+Reads are absent from the table: `read` is the descriptor default. Project writes are
 never absent — one that is keeps the default, and the registry constructor turns
 that into a startup failure. `test_remote_permissions.cpp` asserts the same
-property in release builds, where `jassert` is a no-op.
+property in release builds, where `jassert` is a no-op. Ephemeral control is
+represented separately from a project write so it can be idempotent without
+opening an undo compound or consuming a revision.
 
 `system.describe` publishes `requiredScope` per operation, so a client can tell
 the user what to grant *before* it tries something rather than after being

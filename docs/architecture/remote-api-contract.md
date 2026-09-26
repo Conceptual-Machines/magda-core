@@ -90,6 +90,36 @@ one-shot reads share the same latest-value snapshot, so neither consumes data
 needed by the other. A sample older than one second is unavailable rather than
 presented as a current level.
 
+### Asynchronous jobs
+
+Long-running project, render, capture, and plugin-heavy work shares one job
+contract. A producing operation accepts work with an opaque `job_…` id and a
+captured project revision, then moves it through `accepted`, `running`, and
+exactly one of `completed`, `cancelled`, `failed`, or `unsupported`. Progress is
+monotonic from 0 to 1. A cancellation is terminal immediately: a worker that
+finishes late cannot overwrite it with success or publish a complete artifact.
+
+`jobs.list` and `jobs.get` are read-scoped. `jobs.cancel` is revision-neutral
+control, not an undoable project edit; ownership is checked first and the caller
+must still hold the scope captured by the producing operation. Job ids are
+connection-owned, so another connection receives `not_found` rather than being
+allowed to inspect or cancel the work. Active work is cancelled and all of its
+records are forgotten when that owner disconnects. Completed records are kept
+for at most ten minutes and the newest 128 terminal jobs.
+
+Project-bound jobs default to `stable_until_completion`: the completion revision
+must equal the acceptance revision before a project transition or final artifact
+is published. A producer that prepares a complete immutable snapshot may
+explicitly declare `check_at_start_only`. Project replacement cancels all
+project-bound work. Job results are operation-defined safe objects capped at 64
+KB; errors must be transport-safe and artifacts carry only opaque `artifact_…`
+ids, kind, and media type—never a filesystem path or native engine object.
+
+The `jobs` subscription topic is owner-specific and revision-neutral. Its
+snapshot is `jobs.list`; updates send the owner's complete bounded list so a
+shared subscription baseline can never leak another connection's work. MCP also
+projects the same list as `magda://jobs`.
+
 ### Current-project save
 
 `project.get` reports `dirty` and `hasSaveTarget` without exposing the target's
@@ -427,9 +457,9 @@ current index are revision-neutral no-ops.
 
 ## Subscriptions
 
-Ten topics partition what a client can watch: `project`, `tracks`, `clips`,
-`devices`, `selection`, `transport`, `session`, `automation`, and the two
-continuous ones, `meters` and `playhead`.
+Eleven topics partition what a client can watch: `project`, `tracks`, `clips`,
+`devices`, `selection`, `transport`, `session`, `automation`, owner-specific
+`jobs`, and the two continuous ones, `meters` and `playhead`.
 
 `subscriptions.subscribe`, `.unsubscribe`, `.list`, and `.resync` are declared in
 the registry like any other operation and marked `transportScoped: true`. They
@@ -457,8 +487,9 @@ A pushed change is one envelope, independent of the transport that carries it:
   identities only — an id, or `{trackId, sceneIndex}` for a session slot. Apply
   `added` and `updated` as upserts keyed by id: a client may legitimately be sent
   a change it already has, and doing so must be harmless. For `project`,
-  `transport`, `selection`, and `devices` the payload is the topic's full state,
-  because there is nothing useful to diff.
+  `transport`, `selection`, `devices`, and `jobs` the payload is the topic's full
+  state, because there is nothing useful to diff (and a job baseline belongs to
+  one connection rather than the shared project).
 - A change to the `session` scene or track envelope (scene metadata/order,
   active clip, or playback mode) is sent as a fresh `session.get` snapshot.
   Slot-only occupancy, launch, and recording changes retain the keyed delta

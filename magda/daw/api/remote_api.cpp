@@ -1144,6 +1144,43 @@ const juce::var& automationClipSchema() {
     return value;
 }
 
+const juce::var& remoteJobSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "id":{"type":"string","minLength":1},
+            "kind":{"type":"string","minLength":1},
+            "state":{"type":"string","enum":["accepted","running","completed","cancelled",
+                                                   "failed","unsupported"]},
+            "progress":{"type":"number","minimum":0,"maximum":1},
+            "cancellable":{"type":"boolean"},
+            "cancelRequested":{"type":"boolean"},
+            "projectBound":{"type":"boolean"},
+            "revisionPolicy":{"type":"string","enum":["stable_until_completion",
+                                                            "check_at_start_only"]},
+            "acceptedRevision":{"type":"integer","minimum":0},
+            "completionRevision":{"type":["integer","null"],"minimum":0},
+            "createdAtMs":{"type":"number","minimum":0},
+            "startedAtMs":{"type":["number","null"],"minimum":0},
+            "finishedAtMs":{"type":["number","null"],"minimum":0},
+            "result":{"type":["object","null"]},
+            "error":{"type":["object","null"]},
+            "artifacts":{"type":"array","maxItems":64,"items":{
+                "type":"object","properties":{
+                    "id":{"type":"string","minLength":1},
+                    "kind":{"type":"string","minLength":1},
+                    "mediaType":{"type":"string"}
+                },"required":["id","kind","mediaType"],"additionalProperties":false
+            }}
+        },
+        "required":["id","kind","state","progress","cancellable","cancelRequested",
+                    "projectBound","revisionPolicy","acceptedRevision","completionRevision",
+                    "createdAtMs","startedAtMs","finishedAtMs","result","error","artifacts"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
 // ---------------------------------------------------------------------------
 // Subscription schemas (#1857)
 // ---------------------------------------------------------------------------
@@ -1151,9 +1188,9 @@ const juce::var& automationClipSchema() {
 /// The topic names, spelled once. Kept in step with `magda::remote::Topic` by
 /// the round-trip test over `parseTopic`, which fails the moment the two drift.
 const char* kTopicEnumJson =
-    R"json({"type":"array","minItems":1,"maxItems":10,
+    R"json({"type":"array","minItems":1,"maxItems":11,
             "items":{"type":"string","enum":["project","tracks","clips","devices","selection",
-                                             "transport","session","automation","meters",
+                                             "transport","session","automation","jobs","meters",
                                              "playhead"]}})json";
 
 juce::var topicListSchema() {
@@ -2695,6 +2732,17 @@ OperationRegistry::OperationRegistry() {
             "additionalProperties":false
         })json"));
 
+    const auto jobIdInput = operationInputSchema(R"json({
+        "type":"object","properties":{"jobId":{"type":"string","minLength":1,"maxLength":128}},
+        "required":["jobId"],"additionalProperties":false
+    })json");
+    add("jobs.list", "List asynchronous jobs owned by this connection", OperationAccess::Read,
+        &handlers::jobsList, emptyObjectSchema(), arraySchema(remoteJobSchema()));
+    add("jobs.get", "Inspect one asynchronous job owned by this connection", OperationAccess::Read,
+        &handlers::jobsGet, jobIdInput, remoteJobSchema());
+    add("jobs.cancel", "Cancel one owned asynchronous job", OperationAccess::Control,
+        &handlers::jobsCancel, jobIdInput, remoteJobSchema());
+
     add("project.get", "Get safe project metadata", OperationAccess::Read, &handlers::projectGet,
         emptyObjectSchema(), projectSchema());
     add("project.save", "Save the project to its existing target", OperationAccess::Write,
@@ -4157,8 +4205,11 @@ OperationRegistry::OperationRegistry() {
         if (!operation.transportScoped && operation.handler == nullptr)
             juce::Logger::writeToLog("Remote API operation has no handler: " + operation.name);
 
+        // Project writes may never ride the read grant. A control operation can:
+        // `jobs.cancel` first requires ownership and then dynamically requires
+        // the scope captured by the job it addresses.
         const bool writeNeedsMoreThanRead =
-            operation.access == OperationAccess::Read || operation.requiredScope != Scope::Read;
+            operation.access != OperationAccess::Write || operation.requiredScope != Scope::Read;
         jassert(writeNeedsMoreThanRead);
         if (!writeNeedsMoreThanRead)
             juce::Logger::writeToLog("Remote API write operation has no scope: " + operation.name);

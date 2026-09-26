@@ -148,6 +148,7 @@ juce::var Response::toEnvelope() const {
 RemoteApiService::RemoteApiService(MagdaApi& api)
     : api_(api), state_(std::make_shared<ExecutionState>()) {
     state_->service = this;
+    jobs_.setChangeCallback([this] { changes_.markChanged(Topic::Jobs, currentRevision()); });
 }
 
 RemoteApiService::~RemoteApiService() {
@@ -253,7 +254,7 @@ void RemoteApiService::dispatch(const juce::String& operationName, const juce::v
     // Replay a completed retry before queuing, so a client that lost the
     // response to a network fault does not re-apply the mutation.
     const auto key = idempotencyKey(context);
-    if (operation->access == OperationAccess::Write && key.isNotEmpty()) {
+    if (operation->access != OperationAccess::Read && key.isNotEmpty()) {
         if (auto cached = cachedResponse(key)) {
             onComplete(*cached);
             return;
@@ -347,6 +348,7 @@ Response RemoteApiService::execute(const OperationDescriptor& operation, const j
                                    const RequestContext& context) {
     auto revision = currentRevision();
     const bool isWrite = operation.access == OperationAccess::Write;
+    const bool isCommand = operation.access != OperationAccess::Read;
     const auto key = idempotencyKey(context);
 
     // Re-checked here and not only before queuing. Two retries of the same
@@ -355,7 +357,7 @@ Response RemoteApiService::execute(const OperationDescriptor& operation, const j
     // first has completed and cached its response. Without it the duplicate
     // would apply the mutation twice, or fail with a spurious conflict when the
     // client sent an expectedRevision.
-    if (isWrite && key.isNotEmpty()) {
+    if (isCommand && key.isNotEmpty()) {
         if (auto cached = cachedResponse(key))
             return *cached;
     }
@@ -365,10 +367,10 @@ Response RemoteApiService::execute(const OperationDescriptor& operation, const j
     if (deadlinePassed(context))
         return Response::failure(ErrorCode::Timeout, "deadline passed before execution", revision);
 
-    // Writes only. A read is safe at any revision, so a client that carries its
+    // Commands only. A read is safe at any revision, so a client that carries its
     // cursor on every request would otherwise get Conflict on `project.get`
     // after any intervening edit — precisely when it most needs to re-read.
-    if (isWrite && context.expectedRevision && *context.expectedRevision != revision) {
+    if (isCommand && context.expectedRevision && *context.expectedRevision != revision) {
         return Response::failure(
             ErrorCode::Conflict,
             "expected revision " +
@@ -383,6 +385,8 @@ Response RemoteApiService::execute(const OperationDescriptor& operation, const j
 
     RequestContext handlerContext = context;
     handlerContext.diagnostics = diagnostics_.get();
+    handlerContext.jobs = &jobs_;
+    handlerContext.revision = revision;
     HandlerResult result;
     {
         // Model listeners fire synchronously from inside the handler's own
@@ -413,12 +417,13 @@ Response RemoteApiService::execute(const OperationDescriptor& operation, const j
     }
 
     auto response = Response::success(result.value, revision);
-    // Every successful write is cached, including one that resolved to a no-op.
+    // Every successful command is cached, including a project write that
+    // resolved to a no-op and revision-neutral control such as job cancellation.
     // `mutated` governs the revision and change publication, not idempotency:
     // clearing an already-empty lane succeeds without changing anything, and if
     // that request id were forgotten, a retry after points were added would
     // delete them instead of replaying the original response.
-    if (isWrite && key.isNotEmpty())
+    if (isCommand && key.isNotEmpty())
         cacheResponse(key, response);
     return response;
 }
@@ -439,6 +444,7 @@ void RemoteApiService::shutdown() {
     // once no handler is running and none can start. Queued jobs then observe a
     // null service and complete with Cancelled without touching it.
     retireState();
+    jobs_.shutdown();
     changes_.discardPending();
 }
 
@@ -451,6 +457,7 @@ void RemoteApiService::projectReplaced() {
         return;
     if (diagnostics_)
         diagnostics_->projectReplaced();
+    jobs_.projectReplaced();
 
     // Retire the outgoing state, then install a fresh one so requests arriving
     // after the swap are not cancelled by the retirement of the old project's
@@ -524,6 +531,19 @@ ChangeSource& RemoteApiService::changes() {
 
 const ChangeSource& RemoteApiService::changes() const {
     return changes_;
+}
+
+RemoteJobManager& RemoteApiService::jobs() {
+    return jobs_;
+}
+
+const RemoteJobManager& RemoteApiService::jobs() const {
+    return jobs_;
+}
+
+void RemoteApiService::clientDisconnected(const juce::String& clientId) {
+    if (clientId.isNotEmpty())
+        jobs_.ownerDisconnected(clientId);
 }
 
 void RemoteApiService::setAuditLog(std::shared_ptr<RemoteAuditLog> log) {

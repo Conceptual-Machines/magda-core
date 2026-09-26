@@ -382,6 +382,7 @@ void OscFeedbackProjector::onChanges(const std::vector<remote::ChangeSource::Cha
                 // by the time this arrives.
             case remote::Topic::Clips:
             case remote::Topic::Session:
+            case remote::Topic::Jobs:
             case remote::Topic::Meters:
             case remote::Topic::Playhead:
                 break;
