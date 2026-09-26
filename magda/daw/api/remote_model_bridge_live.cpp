@@ -203,17 +203,17 @@ class ModelChangeBridge::Impl final : public TrackManagerListener,
     void projectOpened(const ProjectInfo&) override {
         if (transport_ != nullptr)
             transport_->refreshStateSource();
-        // Everything queued against the outgoing project is now addressed at
-        // state that no longer exists. This is the trigger the service's
-        // cancellation path exists for, and it already bumps the revision and
-        // publishes Topic::Project — bumping again here would advance it twice
-        // for one swap.
-        service_.projectReplaced();
+        // A remote lifecycle handler owns the service's execution lock and
+        // retires its queued work after the manager returns. UI transitions
+        // arrive outside that lock and must retire it here instead.
+        if (!service_.isExecutingOnThisThread())
+            service_.projectReplaced();
     }
     void projectClosed() override {
         if (transport_ != nullptr)
             transport_->refreshStateSource();
-        service_.projectReplaced();
+        if (!service_.isExecutingOnThisThread())
+            service_.projectReplaced();
     }
     void projectSaved(const ProjectInfo&) override {
         service_.noteModelChanged(Topic::Project);

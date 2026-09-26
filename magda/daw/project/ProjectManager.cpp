@@ -432,9 +432,9 @@ void ProjectManager::joinBackgroundThread() {
 // Project Lifecycle
 // ============================================================================
 
-bool ProjectManager::newProject() {
-    // Check for unsaved changes
-    if (isDirty_ && !showUnsavedChangesDialog()) {
+bool ProjectManager::newProject(UnsavedChangesPolicy policy) {
+    if (isDirty_ && (policy == UnsavedChangesPolicy::Refuse ||
+                     (policy == UnsavedChangesPolicy::AskUser && !showUnsavedChangesDialog()))) {
         return false;
     }
 
@@ -824,9 +824,9 @@ void ProjectManager::loadProjectAsync(
     });
 }
 
-bool ProjectManager::closeProject() {
-    // Check for unsaved changes
-    if (isDirty_ && !showUnsavedChangesDialog()) {
+bool ProjectManager::closeProject(UnsavedChangesPolicy policy) {
+    if (isDirty_ && (policy == UnsavedChangesPolicy::Refuse ||
+                     (policy == UnsavedChangesPolicy::AskUser && !showUnsavedChangesDialog()))) {
         return false;
     }
 

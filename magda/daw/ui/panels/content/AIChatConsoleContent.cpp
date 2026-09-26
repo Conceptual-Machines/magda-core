@@ -1849,6 +1849,14 @@ void AIChatConsoleContent::appendDSLOutput(const juce::String& text, juce::Colou
 // ============================================================================
 
 void AIChatConsoleContent::projectOpened(const magda::ProjectInfo& /*info*/) {
+    resetForProjectBoundary();
+}
+
+void AIChatConsoleContent::projectClosed() {
+    resetForProjectBoundary();
+}
+
+void AIChatConsoleContent::resetForProjectBoundary() {
     // Reset chat history
     chatHistory_.setText(juce::String::charToString(0x25C6) + " MAGDA\n\n");
 

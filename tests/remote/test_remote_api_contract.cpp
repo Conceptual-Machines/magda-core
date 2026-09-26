@@ -41,6 +41,8 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(registry.operations().size() >= 25);
     REQUIRE(registry.find("system.describe") != nullptr);
     REQUIRE(registry.find("project.get") != nullptr);
+    REQUIRE(registry.find("project.new") != nullptr);
+    REQUIRE(registry.find("project.close") != nullptr);
     REQUIRE(registry.find("project.save") != nullptr);
     REQUIRE(registry.find("project.setLoopRange") != nullptr);
     REQUIRE(registry.find("chordTrack.get") != nullptr);
@@ -1084,8 +1086,8 @@ TEST_CASE("Remote API input validation returns structured issues",
 }
 
 TEST_CASE("Remote API DTOs round-trip through JSON", "[remote-api][contract][dto]") {
-    const ProjectDto project{"Demo",  128.0, 7,   8,    48000.0, 128, 9,
-                             "minor", true,  4.0, 12.0, true,    true};
+    const ProjectDto project{true, "Demo",  128.0, 7,   8,    48000.0, 128,
+                             9,    "minor", true,  4.0, 12.0, true,    true};
     requireRoundTrip(project, projectFromJson);
 
     const TrackDto track{3,         "audio",  "Bass", 0xff102030, std::nullopt, {4, 5}, 0.8,
@@ -1282,7 +1284,7 @@ TEST_CASE("Remote projections expose only allow-listed state",
     api.clips_.clipsOnTrack[1] = {clip.id};
 
     const auto projectJson =
-        juce::JSON::toString(toJson(makeProjectDto(api.project_.info, false, false)));
+        juce::JSON::toString(toJson(makeProjectDto(api.project_.info, true, false, false)));
     const auto trackJson = juce::JSON::toString(toJson(makeTrackDto(api.tracks_.tracks.front())));
     const auto clipJson = juce::JSON::toString(toJson(makeClipDto(api.clips_.clips.at(40))));
     const auto graph = makeDeviceGraphDto(api.tracks_.tracks);

@@ -79,6 +79,12 @@ std::vector<Vector> vectors() {
     const auto read = defaultClientScopes();
     return {
         {"a read is allowed with the default grant", "project.get", emptyObject(), read, true},
+        {"project creation needs edit", "project.new", emptyObject(), read, false},
+        {"project creation works with edit", "project.new", emptyObject(),
+         ScopeSet{Scope::Read, Scope::Edit}, true},
+        {"project close needs edit", "project.close", emptyObject(), read, false},
+        {"project close works with edit", "project.close", emptyObject(),
+         ScopeSet{Scope::Read, Scope::Edit}, true},
         {"a read is allowed with a write grant too", "tracks.list", emptyObject(),
          ScopeSet{Scope::Read, Scope::Edit}, true},
 

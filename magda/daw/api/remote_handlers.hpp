@@ -36,6 +36,8 @@ HandlerResult jobsCancel(MagdaApi&, const juce::var&, const RequestContext&);
 
 // Project
 HandlerResult projectGet(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult projectNew(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult projectClose(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult projectSave(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult projectSetTempo(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult projectSetTimeSignature(MagdaApi&, const juce::var&, const RequestContext&);

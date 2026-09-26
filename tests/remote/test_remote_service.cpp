@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <atomic>
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
@@ -247,6 +248,108 @@ TEST_CASE("project.save writes only to an existing target and is revision-neutra
     REQUIRE(api.project_.saveCalls == 1);
 }
 
+TEST_CASE("Project lifecycle refuses dirty state unless discard is explicit",
+          "[remote][service][project][2833]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.project_.info.name = "Existing";
+    api.project_.dirty = true;
+    RemoteApiService service(api);
+
+    const auto initial = run(service, "project.get", emptyInput());
+    REQUIRE(initial.ok);
+    REQUIRE(static_cast<bool>(initial.result["open"]));
+
+    const auto refused = run(service, "project.new", emptyInput());
+    REQUIRE_FALSE(refused.ok);
+    REQUIRE(errorCodeOf(refused) == "conflict");
+    REQUIRE(api.project_.newCalls == 0);
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+
+    const auto created = run(service, "project.new", object({{"discardUnsavedChanges", true}}));
+    REQUIRE(created.ok);
+    REQUIRE(created.revision == INITIAL_REVISION + 1);
+    REQUIRE(static_cast<bool>(created.result["open"]));
+    REQUIRE_FALSE(static_cast<bool>(created.result["dirty"]));
+    REQUIRE(api.project_.newCalls == 1);
+    REQUIRE(api.undo_.compoundDescriptions.empty());
+
+    api.project_.dirty = true;
+    const auto closeRefused = run(service, "project.close", emptyInput());
+    REQUIRE_FALSE(closeRefused.ok);
+    REQUIRE(errorCodeOf(closeRefused) == "conflict");
+    REQUIRE(api.project_.closeCalls == 0);
+
+    const auto closed = run(service, "project.close", object({{"discardUnsavedChanges", true}}));
+    REQUIRE(closed.ok);
+    REQUIRE(closed.revision == INITIAL_REVISION + 2);
+    REQUIRE_FALSE(static_cast<bool>(closed.result["open"]));
+    REQUIRE_FALSE(static_cast<bool>(closed.result["dirty"]));
+    REQUIRE(api.project_.closeCalls == 1);
+    REQUIRE(api.undo_.compoundDescriptions.empty());
+
+    const auto alreadyClosed = run(service, "project.close", emptyInput());
+    REQUIRE(alreadyClosed.ok);
+    REQUIRE(alreadyClosed.revision == closed.revision);
+    REQUIRE(api.project_.closeCalls == 1);
+}
+
+TEST_CASE("Project boundaries clear old request IDs and reject stale revisions",
+          "[remote][service][project][2833]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    auto context = fullyGrantedContext();
+    context.clientId = "lifecycle-client";
+    context.requestId = "old-edit";
+    REQUIRE(run(service, "project.setTempo", object({{"tempo", 95.0}}), context).ok);
+
+    context.requestId = "new-project";
+    context.expectedRevision = service.currentRevision();
+    const auto created = run(service, "project.new", emptyInput(), context);
+    REQUIRE(created.ok);
+    REQUIRE(created.revision == 2);
+
+    const auto replay = run(service, "project.new", emptyInput(), context);
+    REQUIRE(replay.ok);
+    REQUIRE(replay.revision == created.revision);
+    REQUIRE(api.project_.newCalls == 1);
+
+    context.requestId = "old-edit";
+    context.expectedRevision = 2;
+    REQUIRE(run(service, "project.setTempo", object({{"tempo", 130.0}}), context).ok);
+    REQUIRE(api.project_.info.tempo == 130.0);
+
+    context.requestId = "stale";
+    context.expectedRevision = 1;
+    const auto stale = run(service, "project.close", emptyInput(), context);
+    REQUIRE_FALSE(stale.ok);
+    REQUIRE(errorCodeOf(stale) == "conflict");
+    REQUIRE(api.project_.open);
+}
+
+TEST_CASE("Project transitions invalidate every discrete subscription topic",
+          "[remote][service][project][changes][2833]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    std::vector<ChangeSource::Change> seen;
+    service.changes().addListener([&](const std::vector<ChangeSource::Change>& changes) {
+        seen.insert(seen.end(), changes.begin(), changes.end());
+    });
+
+    const auto created = run(service, "project.new", emptyInput());
+    REQUIRE(created.ok);
+    service.changes().flush();
+    for (std::size_t index = 0; index < TOPIC_COUNT; ++index) {
+        const auto topic = static_cast<Topic>(index);
+        const auto count = std::count_if(seen.begin(), seen.end(), [&](const auto& change) {
+            return change.topic == topic && change.revision == created.revision;
+        });
+        REQUIRE(count == (isContinuousTopic(topic) ? 0 : 1));
+    }
+}
+
 TEST_CASE("A committed write advances the revision by exactly one", "[remote][service]") {
     const MessageThreadRelaxation relaxation;
     MockMagdaApi api;
@@ -444,6 +547,12 @@ TEST_CASE("Retrying a completed write does not apply it twice", "[remote][servic
     REQUIRE(static_cast<double>(retry.result["tempo"]) == 90.0);
     REQUIRE(retry.revision == first.revision);
     REQUIRE(service.currentRevision() == first.revision);
+
+    context.deadline = std::chrono::steady_clock::now() - std::chrono::milliseconds(1);
+    const auto lateRetry = run(service, "project.setTempo", object({{"tempo", 150.0}}), context);
+    REQUIRE(lateRetry.ok);
+    REQUIRE(lateRetry.revision == first.revision);
+    REQUIRE(api.project_.info.tempo == 90.0);
 }
 
 TEST_CASE("Idempotency keys are scoped per client", "[remote][service][idempotency]") {

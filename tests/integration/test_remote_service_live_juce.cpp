@@ -61,6 +61,69 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
     RemoteServiceLiveTest() : juce::UnitTest("Remote Service Live", "magda") {}
 
     void runTest() override {
+        beginTest("Project new and close are dialog-free lifecycle boundaries");
+        {
+            Fixture fixture;
+            auto& projects = ProjectManager::getInstance();
+            expect(projects.newProject(ProjectManager::UnsavedChangesPolicy::Discard));
+            expect(projects.hasOpenProject());
+
+            const auto track =
+                fixture.run("tracks.create", object({{"name", "Outgoing"}, {"type", "audio"}}));
+            expect(track.ok);
+            expect(UndoManager::getInstance().canUndo());
+            projects.markDirty();
+
+            const auto before = fixture.service.currentRevision();
+            const auto refused = fixture.run("project.close", object({}));
+            expect(!refused.ok);
+            expect(refused.error.code == ErrorCode::Conflict);
+            expect(projects.hasOpenProject());
+            expectEquals(static_cast<juce::int64>(fixture.service.currentRevision()),
+                         static_cast<juce::int64>(before));
+
+            const auto closed =
+                fixture.run("project.close", object({{"discardUnsavedChanges", true}}));
+            expect(closed.ok);
+            expect(!projects.hasOpenProject());
+            expect(!static_cast<bool>(closed.result["open"]));
+            expect(!UndoManager::getInstance().canUndo());
+            expect(TrackManager::getInstance().getTracks().empty());
+            expectEquals(static_cast<juce::int64>(closed.revision),
+                         static_cast<juce::int64>(before + 1));
+
+            const auto noOp = fixture.run("project.close", object({}));
+            expect(noOp.ok);
+            expectEquals(static_cast<juce::int64>(noOp.revision),
+                         static_cast<juce::int64>(closed.revision));
+
+            const auto created = fixture.run("project.new", object({}));
+            expect(created.ok);
+            expect(projects.hasOpenProject());
+            expect(static_cast<bool>(created.result["open"]));
+            expectEquals(static_cast<juce::int64>(created.revision),
+                         static_cast<juce::int64>(closed.revision + 1));
+            expect(!UndoManager::getInstance().canUndo());
+
+            const auto nextTrack =
+                fixture.run("tracks.create", object({{"name", "Second"}, {"type", "audio"}}));
+            expect(nextTrack.ok);
+            projects.markDirty();
+            const auto newRefused = fixture.run("project.new", object({}));
+            expect(!newRefused.ok);
+            expect(newRefused.error.code == ErrorCode::Conflict);
+            expect(TrackManager::getInstance().getTracks().size() == 1);
+
+            const auto replaced =
+                fixture.run("project.new", object({{"discardUnsavedChanges", true}}));
+            expect(replaced.ok);
+            expect(projects.hasOpenProject());
+            expect(TrackManager::getInstance().getTracks().empty());
+            expect(!UndoManager::getInstance().canUndo());
+            expectEquals(static_cast<juce::int64>(replaced.revision),
+                         static_cast<juce::int64>(nextTrack.revision + 1));
+        }
+
         beginTest("Nested rack and chain operations are path-addressed and undoable");
         {
             Fixture fixture;

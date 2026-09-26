@@ -86,7 +86,9 @@ class ProjectManager {
      * @brief Create a new empty project
      * @return true on success
      */
-    bool newProject();
+    enum class UnsavedChangesPolicy { AskUser, Refuse, Discard };
+
+    bool newProject(UnsavedChangesPolicy policy = UnsavedChangesPolicy::AskUser);
 
     /** Copy Config's new-project preferences into a ProjectInfo snapshot. */
     static void seedProjectFromConfig(ProjectInfo& project);
@@ -182,7 +184,7 @@ class ProjectManager {
      * @brief Close current project
      * @return true on success, false if user cancels due to unsaved changes
      */
-    bool closeProject();
+    bool closeProject(UnsavedChangesPolicy policy = UnsavedChangesPolicy::AskUser);
 
     // ========================================================================
     // Project State

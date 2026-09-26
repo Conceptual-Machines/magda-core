@@ -83,6 +83,7 @@ class AIChatConsoleContent : public PanelContent,
 
     // ProjectManagerListener
     void projectOpened(const magda::ProjectInfo& info) override;
+    void projectClosed() override;
 
     // ConfigListener
     void configChanged() override;
@@ -125,6 +126,7 @@ class AIChatConsoleContent : public PanelContent,
 
     void sendMessage(const juce::String& text);
     void cancelRequest();
+    void resetForProjectBoundary();
     void restoreSendIcon();
     static void setThemedButtonIcon(juce::DrawableButton& button, const void* svgData,
                                     std::size_t svgDataSize);

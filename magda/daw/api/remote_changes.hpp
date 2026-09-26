@@ -82,6 +82,8 @@ class ChangeSource {
     struct Change {
         Topic topic = Topic::Project;
         Revision revision = INITIAL_REVISION;
+        /// A project boundary requires a full snapshot even when values match.
+        bool reset = false;
 
         bool operator==(const Change&) const = default;
     };
@@ -107,7 +109,7 @@ class ChangeSource {
      * Latest-value-wins: repeated calls before the next flush produce one
      * notification carrying the highest revision seen. Safe from any thread.
      */
-    void markChanged(Topic topic, Revision revision);
+    void markChanged(Topic topic, Revision revision, bool reset = false);
 
     /// Deliver pending changes now. Called by the timer; exposed for tests and
     /// for adapters that need a synchronous drain before shutdown.
@@ -130,6 +132,7 @@ class ChangeSource {
     void stopPumpIfIdle();
 
     std::atomic<std::uint32_t> dirtyMask_{0};
+    std::atomic<std::uint32_t> resetMask_{0};
     std::array<std::atomic<Revision>, TOPIC_COUNT> revisions_{};
 
     mutable std::mutex listenerMutex_;
