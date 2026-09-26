@@ -400,6 +400,25 @@ name and colour. A legacy Session clip with no valid row is assigned to the
 first empty slot on its track during load; a duplicate legacy slot is resolved
 the same way, so the loaded grid is never ambiguous.
 
+Scene structure is edited only by the `edit`-scoped lifecycle operations:
+
+- `session.createScene` inserts a fresh stable ID at an optional zero-based
+  `index` and accepts initial name and colour metadata;
+- `session.updateScene` changes name and/or colour as one metadata edit;
+- `session.moveScene` reorders one stable `sceneId` to `toIndex`;
+- `session.duplicateScene` inserts a metadata copy after its source and requires
+  `copyClips` to state whether occupied source slots are copied;
+- `session.deleteScene` requires `populatedPolicy`: `fail`, `deleteClips`, or
+  `moveClips`. Moving also requires a distinct `destinationSceneId` whose
+  corresponding track slots are all empty.
+
+Every operation returns the complete updated `session.get` projection. The
+complete slot plan is checked before mutation, scene order and all affected
+clip indices publish as one structural change, and each successful request is
+one undo step and one revision. Stable scene IDs survive moves and undo/redo;
+the final scene cannot be deleted. Metadata restatements and moves to the
+current index are revision-neutral no-ops.
+
 ## Subscriptions
 
 Ten topics partition what a client can watch: `project`, `tracks`, `clips`,

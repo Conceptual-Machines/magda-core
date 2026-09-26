@@ -920,6 +920,16 @@ bool ProjectManager::removeLastSessionScene() {
     return true;
 }
 
+void ProjectManager::replaceSessionScenes(std::vector<ProjectScene> scenes, SceneId nextSceneId) {
+    if (currentProject_.scenes == scenes && currentProject_.nextSceneId == nextSceneId)
+        return;
+    currentProject_.scenes = std::move(scenes);
+    currentProject_.nextSceneId = nextSceneId;
+    markDirty();
+    for (auto* listener : listeners_)
+        listener->projectPropertiesChanged();
+}
+
 void ProjectManager::markDirty() {
     ++mutationRevision_;
     if (undoableMutationDepth_ == 0)

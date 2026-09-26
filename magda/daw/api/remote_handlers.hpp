@@ -148,6 +148,11 @@ HandlerResult sessionStopClip(MagdaApi&, const juce::var&, const RequestContext&
 HandlerResult sessionStopTrack(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult sessionStopAll(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult sessionLaunchScene(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult sessionCreateScene(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult sessionUpdateScene(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult sessionMoveScene(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult sessionDuplicateScene(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult sessionDeleteScene(MagdaApi&, const juce::var&, const RequestContext&);
 
 // Automation
 HandlerResult automationListLanes(MagdaApi&, const juce::var&, const RequestContext&);

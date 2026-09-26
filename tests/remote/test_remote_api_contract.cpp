@@ -74,6 +74,12 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
           "macros.list", "macros.setValue", "macros.link", "macros.unlink"})
         REQUIRE(registry.find(name) != nullptr);
     REQUIRE(registry.find("session.launchClip") != nullptr);
+    for (const auto* name : {"session.createScene", "session.updateScene", "session.moveScene",
+                             "session.duplicateScene", "session.deleteScene"}) {
+        const auto* operation = registry.find(name);
+        REQUIRE(operation != nullptr);
+        REQUIRE(operation->requiredScope == Scope::Edit);
+    }
     REQUIRE(registry.find("automation.addPoint") != nullptr);
     REQUIRE(registry.find("automation.setPoints") != nullptr);
     REQUIRE(registry.find("automation.deleteLane") != nullptr);
@@ -114,6 +120,44 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(description["apiVersion"].toString() == "1.0");
     REQUIRE(description["operations"].getArray()->size() ==
             static_cast<int>(registry.operations().size()));
+}
+
+TEST_CASE("Session scene lifecycle inputs are closed and explicit",
+          "[remote-api][contract][session][scenes]") {
+    const auto& registry = OperationRegistry::instance();
+
+    const auto* create = registry.find("session.createScene");
+    REQUIRE(create != nullptr);
+    CHECK_FALSE(validateOperationInput(
+                    *create, object({{"index", 2}, {"name", "Break"}, {"colourArgb", 0x123456}}))
+                    .has_value());
+    CHECK(validateOperationInput(*create, object({{"index", 2}, {"extra", true}})).has_value());
+
+    const auto* update = registry.find("session.updateScene");
+    REQUIRE(update != nullptr);
+    CHECK(validateOperationInput(*update, object({{"sceneId", 3}})).has_value());
+    CHECK_FALSE(
+        validateOperationInput(*update, object({{"sceneId", 3}, {"name", "Drop"}})).has_value());
+
+    const auto* duplicate = registry.find("session.duplicateScene");
+    REQUIRE(duplicate != nullptr);
+    CHECK(validateOperationInput(*duplicate, object({{"sceneId", 3}})).has_value());
+    CHECK_FALSE(validateOperationInput(*duplicate, object({{"sceneId", 3}, {"copyClips", false}}))
+                    .has_value());
+
+    const auto* remove = registry.find("session.deleteScene");
+    REQUIRE(remove != nullptr);
+    CHECK(validateOperationInput(*remove, object({{"sceneId", 3}})).has_value());
+    CHECK_FALSE(
+        validateOperationInput(*remove, object({{"sceneId", 3}, {"populatedPolicy", "fail"}}))
+            .has_value());
+    CHECK(
+        validateOperationInput(*remove, object({{"sceneId", 3}, {"populatedPolicy", "moveClips"}}))
+            .has_value());
+    CHECK_FALSE(validateOperationInput(*remove, object({{"sceneId", 3},
+                                                        {"populatedPolicy", "moveClips"},
+                                                        {"destinationSceneId", 4}}))
+                    .has_value());
 }
 
 TEST_CASE("Sidechain operations expose closed path and logical-source schemas",

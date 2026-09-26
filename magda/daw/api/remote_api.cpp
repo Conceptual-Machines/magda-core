@@ -3611,6 +3611,83 @@ OperationRegistry::OperationRegistry() {
 
     add("session.get", "Get scenes, tracks, and every session slot state", OperationAccess::Read,
         &handlers::sessionGet, emptyObjectSchema(), sessionSchema());
+    add("session.createScene", "Create a durable session scene", OperationAccess::Write,
+        &handlers::sessionCreateScene, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "index":{"type":"integer","minimum":0},
+                "name":{"type":"string","maxLength":256},
+                "colourArgb":{"type":"integer","minimum":0,"maximum":4294967295}
+            },
+            "additionalProperties":false
+        })json"),
+        sessionSchema());
+    add("session.updateScene", "Atomically update session scene metadata", OperationAccess::Write,
+        &handlers::sessionUpdateScene, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "sceneId":{"type":"integer","minimum":0},
+                "name":{"type":"string","maxLength":256},
+                "colourArgb":{"type":"integer","minimum":0,"maximum":4294967295}
+            },
+            "required":["sceneId"],
+            "anyOf":[{"required":["name"]},{"required":["colourArgb"]}],
+            "additionalProperties":false
+        })json"),
+        sessionSchema());
+    add("session.moveScene", "Move a session scene by stable id", OperationAccess::Write,
+        &handlers::sessionMoveScene, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "sceneId":{"type":"integer","minimum":0},
+                "toIndex":{"type":"integer","minimum":0}
+            },
+            "required":["sceneId","toIndex"],"additionalProperties":false
+        })json"),
+        sessionSchema());
+    add("session.duplicateScene", "Duplicate a scene with explicit clip-copy behaviour",
+        OperationAccess::Write, &handlers::sessionDuplicateScene, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "sceneId":{"type":"integer","minimum":0},
+                "copyClips":{"type":"boolean"}
+            },
+            "required":["sceneId","copyClips"],"additionalProperties":false
+        })json"),
+        sessionSchema());
+    add("session.deleteScene", "Delete a scene with an explicit populated-slot policy",
+        OperationAccess::Write, &handlers::sessionDeleteScene, operationInputSchema(R"json({
+            "type":"object",
+            "oneOf":[
+                {
+                    "type":"object",
+                    "properties":{
+                        "sceneId":{"type":"integer","minimum":0},
+                        "populatedPolicy":{"const":"fail"}
+                    },
+                    "required":["sceneId","populatedPolicy"],"additionalProperties":false
+                },
+                {
+                    "type":"object",
+                    "properties":{
+                        "sceneId":{"type":"integer","minimum":0},
+                        "populatedPolicy":{"const":"deleteClips"}
+                    },
+                    "required":["sceneId","populatedPolicy"],"additionalProperties":false
+                },
+                {
+                    "type":"object",
+                    "properties":{
+                        "sceneId":{"type":"integer","minimum":0},
+                        "populatedPolicy":{"const":"moveClips"},
+                        "destinationSceneId":{"type":"integer","minimum":0}
+                    },
+                    "required":["sceneId","populatedPolicy","destinationSceneId"],
+                    "additionalProperties":false
+                }
+            ]
+        })json"),
+        sessionSchema());
     add("session.launchClip", "Launch a session clip", OperationAccess::Write,
         &handlers::sessionLaunchClip, operationInputSchema(R"json({
             "type":"object","properties":{"clipId":{"type":"integer","minimum":0}},
@@ -3993,6 +4070,11 @@ OperationRegistry::OperationRegistry() {
         {"automation.resizeClip", Scope::Edit},
         {"automation.duplicateClip", Scope::Edit},
         {"automation.updateClip", Scope::Edit},
+        {"session.createScene", Scope::Edit},
+        {"session.updateScene", Scope::Edit},
+        {"session.moveScene", Scope::Edit},
+        {"session.duplicateScene", Scope::Edit},
+        {"session.deleteScene", Scope::Edit},
 
         // The timeline. Separable from editing because a remote that only
         // starts and stops playback is a thing people actually want, and it

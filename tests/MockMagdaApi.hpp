@@ -1069,11 +1069,64 @@ class MockSessionApi : public SessionApi {
 
     std::set<std::pair<TrackId, int>> armedSlots;
     std::set<std::pair<TrackId, int>> recordingSlots;
+    SessionSceneState sceneState;
     bool isSlotRecordArmed(TrackId trackId, int sceneIndex) const override {
         return armedSlots.contains({trackId, sceneIndex});
     }
     bool isSlotRecording(TrackId trackId, int sceneIndex) const override {
         return recordingSlots.contains({trackId, sceneIndex});
+    }
+    SessionSceneState captureSceneState() const override {
+        return sceneState;
+    }
+    void restoreSceneState(const SessionSceneState& state) override {
+        sceneState = state;
+    }
+    SceneId createScene(int index, const juce::String& name, std::uint32_t colourArgb) override {
+        if (index < 0 || index > static_cast<int>(sceneState.scenes.size()))
+            return INVALID_SCENE_ID;
+        const auto id = sceneState.nextSceneId++;
+        sceneState.scenes.insert(sceneState.scenes.begin() + index, {id, name, colourArgb});
+        return id;
+    }
+    bool updateScene(SceneId id, const juce::String& name, std::uint32_t colourArgb) override {
+        auto it = std::ranges::find(sceneState.scenes, id, &ProjectScene::id);
+        if (it == sceneState.scenes.end() || (it->name == name && it->colourArgb == colourArgb))
+            return false;
+        it->name = name;
+        it->colourArgb = colourArgb;
+        return true;
+    }
+    bool moveScene(SceneId id, int toIndex) override {
+        auto it = std::ranges::find(sceneState.scenes, id, &ProjectScene::id);
+        if (it == sceneState.scenes.end() || toIndex < 0 ||
+            toIndex >= static_cast<int>(sceneState.scenes.size()))
+            return false;
+        const auto from = static_cast<int>(it - sceneState.scenes.begin());
+        if (from == toIndex)
+            return false;
+        auto scene = *it;
+        sceneState.scenes.erase(it);
+        sceneState.scenes.insert(sceneState.scenes.begin() + toIndex, std::move(scene));
+        return true;
+    }
+    SceneId duplicateScene(SceneId id, bool) override {
+        auto it = std::ranges::find(sceneState.scenes, id, &ProjectScene::id);
+        if (it == sceneState.scenes.end())
+            return INVALID_SCENE_ID;
+        const auto index = static_cast<int>(it - sceneState.scenes.begin());
+        auto copy = *it;
+        copy.id = sceneState.nextSceneId++;
+        copy.name += " Copy";
+        sceneState.scenes.insert(sceneState.scenes.begin() + index + 1, copy);
+        return copy.id;
+    }
+    bool deleteScene(SceneId id, PopulatedScenePolicy, SceneId) override {
+        auto it = std::ranges::find(sceneState.scenes, id, &ProjectScene::id);
+        if (it == sceneState.scenes.end() || sceneState.scenes.size() <= 1)
+            return false;
+        sceneState.scenes.erase(it);
+        return true;
     }
 };
 
