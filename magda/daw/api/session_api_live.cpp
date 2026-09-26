@@ -61,6 +61,59 @@ bool SessionApiLive::isSlotRecording(TrackId trackId, int sceneIndex) const {
     return engine != nullptr && engine->isSessionSlotRecording(trackId, sceneIndex);
 }
 
+bool SessionApiLive::setClipLaunchSettings(ClipId clipId,
+                                           const SessionClipLaunchSettings& settings) {
+    auto& clips = ClipManager::getInstance();
+    auto* clip = clips.getClip(clipId);
+    if (clip == nullptr || clip->view != ClipView::Session)
+        return false;
+    const SessionClipLaunchSettings current{clip->launchMode, clip->launchQuantize,
+                                            clip->followAction, clip->followActionDelayBeats,
+                                            clip->followActionLoopCount};
+    if (current == settings)
+        return false;
+
+    clip->launchMode = settings.launchMode;
+    clip->launchQuantize = settings.launchQuantize;
+    clip->followAction = settings.followAction;
+    clip->followActionDelayBeats = settings.followActionDelayBeats;
+    clip->followActionLoopCount = settings.followActionLoopCount;
+    clips.forceNotifyClipPropertyChanged(clipId);
+    return true;
+}
+
+bool SessionApiLive::returnToArrangement(std::optional<TrackId> trackId) {
+    auto& tracks = TrackManager::getInstance();
+    auto* engine = tracks.getAudioEngine();
+
+    if (trackId) {
+        const auto* track = tracks.getTrack(*trackId);
+        if (track == nullptr)
+            return false;
+        const bool changed = track->playbackMode == TrackPlaybackMode::Session ||
+                             track->activeSessionClipId != INVALID_CLIP_ID;
+        if (!changed)
+            return false;
+        if (engine != nullptr)
+            engine->stopSessionTrack(*trackId);
+        else
+            tracks.setTrackPlaybackMode(*trackId, TrackPlaybackMode::Arrangement);
+        return true;
+    }
+
+    const bool changed = std::ranges::any_of(tracks.getTracks(), [](const TrackInfo& track) {
+        return track.playbackMode == TrackPlaybackMode::Session ||
+               track.activeSessionClipId != INVALID_CLIP_ID;
+    });
+    if (!changed)
+        return false;
+    if (engine != nullptr)
+        engine->deactivateAllSessionClips();
+    else
+        tracks.setAllTracksPlaybackMode(TrackPlaybackMode::Arrangement);
+    return true;
+}
+
 namespace {
 
 int sceneIndexFor(const std::vector<ProjectScene>& scenes, SceneId id) {

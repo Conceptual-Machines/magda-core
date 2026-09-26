@@ -1558,7 +1558,7 @@ void TrackManager::setTrackPlaybackMode(TrackId trackId, TrackPlaybackMode mode)
         if (track->playbackMode == mode)
             return;
         track->playbackMode = mode;
-        notifyTrackPropertyChanged(trackId);
+        notifyTrackPlaybackModeChanged(trackId);
     }
 }
 
@@ -3541,6 +3541,14 @@ void TrackManager::notifyTrackPropertyChanged(int trackId) {
     for (size_t i = 0; i < listeners_.size(); ++i) {
         if (listeners_[i])
             listeners_[i]->trackPropertyChanged(trackId);
+    }
+}
+
+void TrackManager::notifyTrackPlaybackModeChanged(TrackId trackId) {
+    ScopedNotifyGuard guard(*this);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->trackPlaybackModeChanged(trackId);
     }
 }
 

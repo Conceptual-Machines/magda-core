@@ -428,7 +428,10 @@ clients; it is never accepted as an address.
   the track's `arrangement`/`session` playback mode;
 - `slots`, ordered by scene and then track, including empty slots. Every slot
   carries its stable `sceneId`, zero-based `sceneIndex`, nullable `clipId`,
-  launch state, and record-arm/recording state.
+  launch state, and record-arm/recording state. Occupied slots also expose
+  `launchSettings`: `launchMode`, `launchQuantize`, `followAction`,
+  `followActionDelayBeats`, and `followActionLoopCount`; empty slots report it
+  as null.
 
 Native projects preserve the scene records and their next-ID watermark.
 DAWproject import/export maps them to ordered `<Scene>` elements and retains
@@ -454,6 +457,21 @@ clip indices publish as one structural change, and each successful request is
 one undo step and one revision. Stable scene IDs survive moves and undo/redo;
 the final scene cannot be deleted. Metadata restatements and moves to the
 current index are revision-neutral no-ops.
+
+`session.updateClipSettings` applies any non-empty subset of an occupied
+Session clip's launch settings as one validated edit, one undo step, and one
+revision. Launch mode is `trigger` or `toggle`; quantize accepts `none`,
+`8_bars`, `4_bars`, `2_bars`, `1_bar`, `1/2`, `1/4`, `1/8`, or `1/16`; and
+follow action accepts `none`, `next`, `previous`, `random`, `stop`, or `again`.
+Unknown enum values, negative delays, and loop counts below one are rejected
+before the model is touched. A restatement is a revision-neutral no-op.
+
+`session.returnToArrangement` hands either one `trackId`, or every track when
+`trackId` is absent, from Session playback back to the arrangement. It is live
+engine control under the `session` scope: it creates no undo history and does
+not advance the project revision. Playback-mode handoffs and launch-setting
+edits both publish a fresh `session` snapshot; settings edits also publish the
+updated clip on the `clips` topic.
 
 ## Subscriptions
 

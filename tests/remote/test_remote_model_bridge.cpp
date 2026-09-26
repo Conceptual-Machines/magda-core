@@ -189,3 +189,19 @@ TEST_CASE("Empty-slot recording state reaches session subscribers without advanc
     REQUIRE(fixture.sawTopic(Topic::Session));
     REQUIRE(fixture.service.currentRevision() == before);
 }
+
+TEST_CASE("Playback-mode handoff reaches session subscribers without advancing revision",
+          "[remote][bridge][session][2848]") {
+    BridgeFixture fixture;
+    const auto trackId = TrackManager::getInstance().createTrack("Session", TrackType::Media);
+    fixture.service.changes().flush();
+    fixture.seen.clear();
+    const auto before = fixture.service.currentRevision();
+
+    TrackManager::getInstance().setTrackPlaybackMode(trackId, TrackPlaybackMode::Session);
+    fixture.service.changes().flush();
+
+    REQUIRE(fixture.sawTopic(Topic::Session));
+    REQUIRE_FALSE(fixture.sawTopic(Topic::Tracks));
+    REQUIRE(fixture.service.currentRevision() == before);
+}

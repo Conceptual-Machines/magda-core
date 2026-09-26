@@ -55,6 +55,13 @@ class TrackManagerListener {
         juce::ignoreUnused(trackId);
     }
 
+    // Runtime handoff between arrangement and Session playback. The default
+    // preserves existing listeners; remote observers override it to keep this
+    // live state revision-neutral.
+    virtual void trackPlaybackModeChanged(TrackId trackId) {
+        trackPropertyChanged(trackId);
+    }
+
     // Called when a track's audio input changes, just before its trackPropertyChanged
     virtual void trackAudioInputChanged(TrackId trackId) {
         juce::ignoreUnused(trackId);
@@ -1442,6 +1449,7 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     std::array<uint64_t, kMaxBusTracks> lastBusNoteOff_{};
 
     void notifyTrackPropertyChanged(int trackId);
+    void notifyTrackPlaybackModeChanged(TrackId trackId);
     void notifyTrackAudioInputChanged(TrackId trackId);
     void notifyTrackMidiInputChanged(TrackId trackId);
     void notifyChainElementMoving(const ChainNodePath& sourcePath,

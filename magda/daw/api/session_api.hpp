@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 #include "../core/ClipInfo.hpp"
@@ -16,6 +17,16 @@ struct SessionSceneState {
     std::vector<ProjectScene> scenes;
     SceneId nextSceneId = 1;
     std::vector<ClipInfo> clips;
+};
+
+struct SessionClipLaunchSettings {
+    LaunchMode launchMode = LaunchMode::Trigger;
+    LaunchQuantize launchQuantize = LaunchQuantize::OneBar;
+    FollowAction followAction = FollowAction::None;
+    double followActionDelayBeats = 0.0;
+    int followActionLoopCount = 1;
+
+    bool operator==(const SessionClipLaunchSettings&) const = default;
 };
 
 enum class PopulatedScenePolicy { Fail, DeleteClips, MoveClips };
@@ -68,6 +79,16 @@ class SessionApi {
     /// no live engine is attached (for example in a headless project reader).
     virtual bool isSlotRecordArmed(TrackId trackId, int sceneIndex) const = 0;
     virtual bool isSlotRecording(TrackId trackId, int sceneIndex) const = 0;
+
+    /// Atomically replace the launch behaviour of one session clip.
+    virtual bool setClipLaunchSettings(ClipId clipId,
+                                       const SessionClipLaunchSettings& settings) = 0;
+
+    /**
+     * Hand one track, or every track when absent, back to arrangement playback.
+     * This is live engine state rather than an undoable project edit.
+     */
+    virtual bool returnToArrangement(std::optional<TrackId> trackId) = 0;
 
     /// Snapshot/restore boundary used by one-step scene lifecycle commands.
     virtual SessionSceneState captureSceneState() const = 0;

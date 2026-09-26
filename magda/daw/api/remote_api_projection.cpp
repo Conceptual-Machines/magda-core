@@ -465,6 +465,8 @@ ClipDto makeClipDto(const ClipInfo& clip) {
     dto.launchMode = launchModeName(clip.launchMode);
     dto.launchQuantize = launchQuantizeName(clip.launchQuantize);
     dto.followAction = followActionName(clip.followAction);
+    dto.followActionDelayBeats = clip.followActionDelayBeats;
+    dto.followActionLoopCount = clip.followActionLoopCount;
     dto.notes.reserve(clip.midiNotes.size());
     for (const auto& note : clip.midiNotes)
         dto.notes.push_back({note.noteNumber, note.velocity, note.startBeat, note.lengthBeats});
@@ -684,9 +686,16 @@ SessionDto makeSessionDto(MagdaApi& api) {
                 occupiedClip = clipId;
                 state = sessionStateName(api.session().getClipPlayState(clipId));
             }
+            std::optional<SessionClipLaunchSettingsDto> launchSettings;
+            if (const auto* clip = api.clips().getClip(clipId)) {
+                launchSettings = SessionClipLaunchSettingsDto{
+                    launchModeName(clip->launchMode), launchQuantizeName(clip->launchQuantize),
+                    followActionName(clip->followAction), clip->followActionDelayBeats,
+                    clip->followActionLoopCount};
+            }
             dto.slots.push_back({track.id, scenes[sceneIndex].id, index, occupiedClip, state,
                                  api.session().isSlotRecordArmed(track.id, index),
-                                 api.session().isSlotRecording(track.id, index)});
+                                 api.session().isSlotRecording(track.id, index), launchSettings});
         }
     }
     return dto;

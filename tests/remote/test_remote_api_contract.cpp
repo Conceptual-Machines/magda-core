@@ -80,6 +80,8 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
         REQUIRE(operation != nullptr);
         REQUIRE(operation->requiredScope == Scope::Edit);
     }
+    REQUIRE(registry.find("session.updateClipSettings") != nullptr);
+    REQUIRE(registry.find("session.returnToArrangement") != nullptr);
     REQUIRE(registry.find("automation.addPoint") != nullptr);
     REQUIRE(registry.find("automation.setPoints") != nullptr);
     REQUIRE(registry.find("automation.deleteLane") != nullptr);
@@ -158,6 +160,35 @@ TEST_CASE("Session scene lifecycle inputs are closed and explicit",
                                                         {"populatedPolicy", "moveClips"},
                                                         {"destinationSceneId", 4}}))
                     .has_value());
+}
+
+TEST_CASE("Session launch settings and handoff publish closed capability contracts",
+          "[remote-api][contract][session][2848]") {
+    const auto& registry = OperationRegistry::instance();
+    const auto* update = registry.find("session.updateClipSettings");
+    REQUIRE(update != nullptr);
+    CHECK(update->access == OperationAccess::Write);
+    CHECK(update->requiredScope == Scope::Edit);
+    CHECK(validateOperationInput(*update, object({{"clipId", 4}})).has_value());
+    CHECK_FALSE(validateOperationInput(*update, object({{"clipId", 4},
+                                                        {"launchMode", "toggle"},
+                                                        {"launchQuantize", "1/16"},
+                                                        {"followAction", "again"},
+                                                        {"followActionDelayBeats", 2.5},
+                                                        {"followActionLoopCount", 3}}))
+                    .has_value());
+    CHECK(validateOperationInput(*update, object({{"clipId", 4}, {"launchQuantize", "1/32"}}))
+              .has_value());
+    CHECK(validateOperationInput(*update, object({{"clipId", 4}, {"followActionLoopCount", 0}}))
+              .has_value());
+
+    const auto* handoff = registry.find("session.returnToArrangement");
+    REQUIRE(handoff != nullptr);
+    CHECK(handoff->access == OperationAccess::Control);
+    CHECK(handoff->requiredScope == Scope::Session);
+    CHECK_FALSE(validateOperationInput(*handoff, object({})).has_value());
+    CHECK_FALSE(validateOperationInput(*handoff, object({{"trackId", 7}})).has_value());
+    CHECK(validateOperationInput(*handoff, object({{"all", true}})).has_value());
 }
 
 TEST_CASE("Sidechain operations expose closed path and logical-source schemas",
@@ -1062,13 +1093,10 @@ TEST_CASE("Remote API DTOs round-trip through JSON", "[remote-api][contract][dto
                          "track:2", "master", ""};
     requireRoundTrip(track, trackFromJson);
 
-    const ClipDto clip{9,         3,
-                       "midi",    "session",
-                       "Pattern", 0xffaabbcc,
-                       0.0,       4.0,
-                       true,      2,
-                       "trigger", "1_bar",
-                       "next",    {{60, 110, 0.0, 0.5}, {64, 100, 1.0, 0.5}},
+    const ClipDto clip{9,         3,          "midi",    "session",
+                       "Pattern", 0xffaabbcc, 0.0,       4.0,
+                       true,      2,          "trigger", "1_bar",
+                       "next",    0.0,        1,         {{60, 110, 0.0, 0.5}, {64, 100, 1.0, 0.5}},
                        {}};
     requireRoundTrip(clip, clipFromJson);
 
@@ -1122,10 +1150,10 @@ TEST_CASE("Remote API DTOs round-trip through JSON", "[remote-api][contract][dto
     const TransportDto transport{true, false, true, 16.5};
     requireRoundTrip(transport, transportFromJson);
 
-    const SessionDto session{
-        {{7, 0, 1, "Verse", 0xFF336699}},
-        {{3, 9, "session"}, {4, std::nullopt, "arrangement"}},
-        {{3, 7, 0, 9, "playing", false, false}, {4, 7, 0, 12, "queued", true, false}}};
+    const SessionDto session{{{7, 0, 1, "Verse", 0xFF336699}},
+                             {{3, 9, "session"}, {4, std::nullopt, "arrangement"}},
+                             {{3, 7, 0, 9, "playing", false, false, std::nullopt},
+                              {4, 7, 0, 12, "queued", true, false, std::nullopt}}};
     requireRoundTrip(session, sessionFromJson);
 
     const AutomationLaneDto lane{
@@ -1174,6 +1202,8 @@ TEST_CASE("Dense response payloads round-trip and validate against the published
     clip.launchMode = "trigger";
     clip.launchQuantize = "none";
     clip.followAction = "none";
+    clip.followActionDelayBeats = 2.5;
+    clip.followActionLoopCount = 4;
     clip.notes.reserve(5000);
     for (int index = 0; index < 5000; ++index)
         clip.notes.push_back({36 + index % 48, 100, index * 0.25, 0.25});
@@ -1753,6 +1783,11 @@ TEST_CASE("Remote session and automation projections use MagdaApi values",
     sessionClip.trackId = 1;
     sessionClip.view = ClipView::Session;
     sessionClip.sceneIndex = 3;
+    sessionClip.launchMode = LaunchMode::Toggle;
+    sessionClip.launchQuantize = LaunchQuantize::SixteenthBar;
+    sessionClip.followAction = FollowAction::PlayAgain;
+    sessionClip.followActionDelayBeats = 2.0;
+    sessionClip.followActionLoopCount = 3;
     api.clips_.clips.emplace(50, sessionClip);
     api.clips_.clipsOnTrack[1] = {50};
     api.session_.slots[{1, 3}] = 50;
@@ -1766,9 +1801,11 @@ TEST_CASE("Remote session and automation projections use MagdaApi values",
     REQUIRE(session.tracks == std::vector<SessionTrackDto>{{1, 50, "session"}});
     REQUIRE(session.slots.size() == kDefaultSessionSceneCount);
     REQUIRE((session.slots[3] ==
-             SessionSlotDto{1, session.scenes[3].id, 3, 50, "queued", false, false}));
+             SessionSlotDto{1, session.scenes[3].id, 3, 50, "queued", false, false,
+                            SessionClipLaunchSettingsDto{"toggle", "1/16", "again", 2.0, 3}}));
     REQUIRE(session.slots[4].state == "empty");
     REQUIRE(session.slots[4].recording);
+    REQUIRE_FALSE(session.slots[4].launchSettings.has_value());
 
     AutomationLaneInfo lane;
     lane.id = 60;

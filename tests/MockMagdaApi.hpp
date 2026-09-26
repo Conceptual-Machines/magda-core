@@ -1031,6 +1031,7 @@ class MockSessionApi : public SessionApi {
     std::vector<TrackId> stoppedTracks;
     std::vector<int> launchedScenes;
     int stopAllCalls = 0;
+    std::vector<std::optional<TrackId>> arrangementReturns;
     std::unordered_map<TrackId, ClipId> activeOnTrack;
 
     void launchClip(ClipId id) override {
@@ -1076,6 +1077,15 @@ class MockSessionApi : public SessionApi {
     bool isSlotRecording(TrackId trackId, int sceneIndex) const override {
         return recordingSlots.contains({trackId, sceneIndex});
     }
+    bool setClipLaunchSettings(ClipId clipId, const SessionClipLaunchSettings& settings) override {
+        launchSettings[clipId] = settings;
+        return true;
+    }
+    bool returnToArrangement(std::optional<TrackId> trackId) override {
+        arrangementReturns.push_back(trackId);
+        return true;
+    }
+    std::unordered_map<ClipId, SessionClipLaunchSettings> launchSettings;
     SessionSceneState captureSceneState() const override {
         return sceneState;
     }

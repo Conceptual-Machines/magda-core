@@ -180,6 +180,34 @@ class SessionSceneCommand final : public UndoableCommand {
     bool mutated_ = false;
 };
 
+class SessionClipLaunchSettingsCommand final : public UndoableCommand {
+  public:
+    SessionClipLaunchSettingsCommand(SessionApi& session, ClipId clipId,
+                                     SessionClipLaunchSettings before,
+                                     SessionClipLaunchSettings after)
+        : session_(session), clipId_(clipId), before_(before), after_(after) {}
+
+    void execute() override {
+        mutated_ = session_.setClipLaunchSettings(clipId_, after_);
+    }
+    void undo() override {
+        session_.setClipLaunchSettings(clipId_, before_);
+    }
+    bool didMutate() const override {
+        return mutated_;
+    }
+    juce::String getDescription() const override {
+        return "Update Session Clip Settings";
+    }
+
+  private:
+    SessionApi& session_;
+    ClipId clipId_;
+    SessionClipLaunchSettings before_;
+    SessionClipLaunchSettings after_;
+    bool mutated_ = false;
+};
+
 class AtomicClipPlacementCommand final : public UndoableCommand {
   public:
     using Action = std::function<ClipId(ClipManager&)>;
@@ -3223,6 +3251,87 @@ HandlerResult sessionLaunchScene(MagdaApi& api, const juce::var& input, const Re
         return HandlerResult::fail(ErrorCode::ValidationFailed,
                                    "sceneIndex does not identify a durable scene");
     api.session().launchScene(sceneIndex);
+    return HandlerResult::ok(toJson(makeSessionDto(api)));
+}
+
+HandlerResult sessionUpdateClipSettings(MagdaApi& api, const juce::var& input,
+                                        const RequestContext&) {
+    const auto clipId = static_cast<ClipId>(readInt(input, "clipId"));
+    const auto* clip = api.clips().getClip(clipId);
+    if (clip == nullptr)
+        return notFound("clip", clipId);
+    if (clip->view != ClipView::Session)
+        return HandlerResult::fail(ErrorCode::Conflict, "launch settings require a session clip");
+
+    const auto launchMode = [](const juce::String& value) {
+        return value == "toggle" ? LaunchMode::Toggle : LaunchMode::Trigger;
+    };
+    const auto launchQuantize = [](const juce::String& value) {
+        if (value == "8_bars")
+            return LaunchQuantize::EightBars;
+        if (value == "4_bars")
+            return LaunchQuantize::FourBars;
+        if (value == "2_bars")
+            return LaunchQuantize::TwoBars;
+        if (value == "1_bar")
+            return LaunchQuantize::OneBar;
+        if (value == "1/2")
+            return LaunchQuantize::HalfBar;
+        if (value == "1/4")
+            return LaunchQuantize::QuarterBar;
+        if (value == "1/8")
+            return LaunchQuantize::EighthBar;
+        if (value == "1/16")
+            return LaunchQuantize::SixteenthBar;
+        return LaunchQuantize::None;
+    };
+    const auto followAction = [](const juce::String& value) {
+        if (value == "next")
+            return FollowAction::PlayNext;
+        if (value == "previous")
+            return FollowAction::PlayPrevious;
+        if (value == "random")
+            return FollowAction::PlayRandom;
+        if (value == "stop")
+            return FollowAction::Stop;
+        if (value == "again")
+            return FollowAction::PlayAgain;
+        return FollowAction::None;
+    };
+
+    const SessionClipLaunchSettings before{clip->launchMode, clip->launchQuantize,
+                                           clip->followAction, clip->followActionDelayBeats,
+                                           clip->followActionLoopCount};
+    auto after = before;
+    if (has(input, "launchMode"))
+        after.launchMode = launchMode(input["launchMode"].toString());
+    if (has(input, "launchQuantize"))
+        after.launchQuantize = launchQuantize(input["launchQuantize"].toString());
+    if (has(input, "followAction"))
+        after.followAction = followAction(input["followAction"].toString());
+    if (has(input, "followActionDelayBeats"))
+        after.followActionDelayBeats = readDouble(input, "followActionDelayBeats");
+    if (has(input, "followActionLoopCount"))
+        after.followActionLoopCount = readInt(input, "followActionLoopCount");
+    if (after == before)
+        return HandlerResult::unchanged(toJson(makeClipDto(*clip)));
+
+    runCommand<SessionClipLaunchSettingsCommand>(api, api.session(), clipId, before, after);
+    const auto* updated = api.clips().getClip(clipId);
+    return HandlerResult::ok(toJson(makeClipDto(updated != nullptr ? *updated : *clip)));
+}
+
+HandlerResult sessionReturnToArrangement(MagdaApi& api, const juce::var& input,
+                                         const RequestContext&) {
+    std::optional<TrackId> trackId;
+    if (has(input, "trackId")) {
+        trackId = static_cast<TrackId>(readInt(input, "trackId"));
+        if (api.tracks().getTrack(*trackId) == nullptr)
+            return notFound("track", *trackId);
+    }
+
+    if (!api.session().returnToArrangement(trackId))
+        return HandlerResult::unchanged(toJson(makeSessionDto(api)));
     return HandlerResult::ok(toJson(makeSessionDto(api)));
 }
 
