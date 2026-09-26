@@ -159,6 +159,28 @@ advances the revision once, and publishes fresh snapshots for all discrete
 topics. Job results report safe project metadata and counts for allowed missing
 media or unavailable devices, never their paths or plugin state.
 
+### Approved audio outputs
+
+`engine.renderRange` renders one explicit beat or time range to a locally
+approved `audio_destination` handle. The request closes over the output format,
+sample rate, bit depth, dither, normalisation, effect inclusion, real-time mode,
+tail, and overwrite policy. A time range is converted through the current
+project tempo map before the job starts. The API never accepts or returns the
+destination path.
+
+`engine.masterCapture.start`, `.stop`, and `.status` expose true master-output
+capture. The native engine writes the stereo buffer produced by its audio-device
+callback; engines without that callback path report the job as `unsupported`
+instead of substituting an offline render. Status reveals an active job id only
+to its owning connection.
+
+Both forms use the shared asynchronous job contract. Output is staged and
+published to the approved destination only after successful completion. A
+cancelled or failed operation, or one whose project revision changed while it
+ran, has no artifact and cannot replace the destination. An existing target is
+replaceable only when the request says `replace` and the native chooser approved
+overwriting that exact file.
+
 ### Project lifecycle
 
 `project.new` creates an untitled project; `project.close` closes the current

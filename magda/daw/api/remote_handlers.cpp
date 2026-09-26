@@ -25,6 +25,7 @@
 #include "../core/MidiNoteCommands.hpp"
 #include "../core/PluginParameterConfigStore.hpp"
 #include "../core/PresetManager.hpp"
+#include "../core/TempoMap.hpp"
 #include "../core/TrackCommands.hpp"
 #include "../core/TrackInfo.hpp"
 #include "../core/TrackPropertyCommands.hpp"
@@ -39,6 +40,7 @@
 #include "midi_api.hpp"
 #include "project_api.hpp"
 #include "remote_diagnostics.hpp"
+#include "remote_engine_jobs.hpp"
 #include "remote_file_handles.hpp"
 #include "remote_jobs.hpp"
 #include "selection_api.hpp"
@@ -746,6 +748,309 @@ HandlerResult fileHandlesRevoke(MagdaApi&, const juce::var& input, const Request
     auto* result = new juce::DynamicObject();
     result->setProperty("revoked", true);
     return HandlerResult::unchanged(result);
+}
+
+namespace {
+
+OfflineRenderFormat renderFormat(const juce::var& input) {
+    return input["format"].toString() == "flac" ? OfflineRenderFormat::Flac
+                                                : OfflineRenderFormat::Wav;
+}
+
+OfflineRenderDither renderDither(const juce::var& input) {
+    const auto value = input["dither"].toString();
+    if (value == "shaped")
+        return OfflineRenderDither::Shaped;
+    if (value == "tpdf")
+        return OfflineRenderDither::Tpdf;
+    return OfflineRenderDither::None;
+}
+
+juce::String mediaType(OfflineRenderFormat format) {
+    return format == OfflineRenderFormat::Flac ? "audio/flac" : "audio/wav";
+}
+
+juce::var engineArtifactResult(const char* kind, OfflineRenderFormat format) {
+    auto* result = new juce::DynamicObject();
+    result->setProperty("kind", kind);
+    result->setProperty("format", format == OfflineRenderFormat::Flac ? "flac" : "wav");
+    return result;
+}
+
+Error engineStartError(EngineJobStartStatus status) {
+    switch (status) {
+        case EngineJobStartStatus::Busy:
+            return {ErrorCode::Conflict, "another engine file operation is already active", {}};
+        case EngineJobStartStatus::Unsupported:
+            return {ErrorCode::ValidationFailed, "this engine does not support this operation", {}};
+        case EngineJobStartStatus::Unavailable:
+            return {ErrorCode::Conflict, "the audio engine is unavailable", {}};
+        case EngineJobStartStatus::Failed:
+        case EngineJobStartStatus::Started:
+            return {ErrorCode::InternalError, "the engine file operation could not start", {}};
+    }
+    return {ErrorCode::InternalError, "the engine file operation could not start", {}};
+}
+
+bool destinationMatches(OfflineRenderFormat format, const juce::File& destination) {
+    return format == OfflineRenderFormat::Flac ? destination.hasFileExtension(".flac")
+                                               : destination.hasFileExtension(".wav");
+}
+
+std::optional<ResolvedRemoteFileHandle> resolveAudioDestination(const juce::var& input,
+                                                                const RequestContext& context,
+                                                                OfflineRenderFormat format,
+                                                                Error& error) {
+    auto destination =
+        context.fileHandles->resolve(input["destinationHandle"].toString(), context.clientId,
+                                     RemoteFileCapability::AudioDestination, error);
+    if (!destination)
+        return std::nullopt;
+    if (!destinationMatches(format, destination->file)) {
+        error = Error{ErrorCode::ValidationFailed,
+                      "approved destination extension does not match the requested format",
+                      {}};
+        return std::nullopt;
+    }
+    const bool overwrite = input["overwritePolicy"].toString() == "replace";
+    if (destination->file.existsAsFile() && !overwrite) {
+        error = Error{ErrorCode::Conflict, "destination already exists", {}};
+        return std::nullopt;
+    }
+    if (destination->file.existsAsFile() && !destination->overwriteApproved) {
+        error = Error{ErrorCode::PermissionDenied,
+                      "overwriting this destination was not approved locally",
+                      {}};
+        return std::nullopt;
+    }
+    return destination;
+}
+
+juce::var currentJob(RemoteJobManager& jobs, const juce::String& jobId,
+                     const RequestContext& context, Error& error) {
+    const auto job = jobs.get(jobId, context.clientId, context.scopes, error);
+    return job ? toJson(*job) : juce::var();
+}
+
+}  // namespace
+
+HandlerResult engineRenderRange(MagdaApi& api, const juce::var& input,
+                                const RequestContext& context) {
+    if (context.jobs == nullptr || context.fileHandles == nullptr || context.engineJobs == nullptr)
+        return HandlerResult::fail(ErrorCode::InternalError,
+                                   "engine file services are unavailable");
+    if (!api.project().hasOpenProject())
+        return HandlerResult::fail(ErrorCode::Conflict, "no project is open");
+
+    const auto format = renderFormat(input);
+    if (format == OfflineRenderFormat::Flac && static_cast<int>(input["bitDepth"]) == 32)
+        return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                   "FLAC output does not support 32-bit samples");
+    Error error;
+    const auto destination = resolveAudioDestination(input, context, format, error);
+    if (!destination)
+        return HandlerResult::fail(std::move(error));
+
+    const auto range = input["range"];
+    const auto start = static_cast<double>(range["start"]);
+    const auto end = static_cast<double>(range["end"]);
+    auto startBeat = start;
+    auto endBeat = end;
+    if (range["unit"].toString() == "seconds") {
+        const auto* tempo = api.project().tempoMap();
+        if (tempo == nullptr)
+            return HandlerResult::fail(ErrorCode::Conflict, "the project tempo map is unavailable");
+        startBeat = tempo->timeToBeat(start);
+        endBeat = tempo->timeToBeat(end);
+    }
+    if (!std::isfinite(startBeat) || !std::isfinite(endBeat) || startBeat < 0.0 ||
+        endBeat <= startBeat)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "render range is invalid");
+
+    auto cancelled = std::make_shared<std::atomic_bool>(false);
+    const auto jobId =
+        context.jobs->accept({.kind = "engine.renderRange",
+                              .ownerClientId = context.clientId,
+                              .requiredScope = Scope::Edit,
+                              .acceptedRevision = context.revision,
+                              .revisionPolicy = JobRevisionPolicy::StableUntilCompletion,
+                              .projectBound = true,
+                              .cancellable = true},
+                             [cancelled] { cancelled->store(true, std::memory_order_release); });
+    if (jobId.isEmpty())
+        return HandlerResult::fail(ErrorCode::InternalError, "render job was not accepted");
+
+    OfflineRenderRequest request;
+    auto temporary = std::make_shared<juce::TemporaryFile>(destination->file);
+    const auto overwriteExisting = destination->file.existsAsFile();
+    request.destination = temporary->getFile();
+    request.format = format;
+    request.bitDepth = static_cast<int>(input["bitDepth"]);
+    request.dither = renderDither(input);
+    request.sampleRate = static_cast<double>(input["sampleRate"]);
+    request.shouldNormalise = static_cast<bool>(input["normalise"]);
+    request.normaliseToLevelDb = static_cast<float>(static_cast<double>(input["normaliseToDb"]));
+    request.useMasterPlugins = static_cast<bool>(input["includeMasterEffects"]);
+    request.useTrackEffects = static_cast<bool>(input["includeTrackEffects"]);
+    request.realTimeRender = static_cast<bool>(input["realTime"]);
+    request.tailSeconds = static_cast<double>(input["tailSeconds"]);
+    request.range = {{startBeat}, {endBeat}};
+
+    auto jobs = context.jobsOwner;
+    auto revision = context.revisionOwner;
+    const auto owner = context.clientId;
+    const auto started = context.engineJobs->renderRange(
+        std::move(request), cancelled,
+        [jobs, jobId](double progress) {
+            if (jobs)
+                jobs->reportProgress(jobId, std::clamp(progress, 0.0, 1.0));
+        },
+        [jobs, revision, temporary, jobId, owner, format,
+         overwriteExisting](EngineJobResult result) {
+            if (!jobs)
+                return;
+            const auto currentRevision =
+                revision ? revision->load(std::memory_order_acquire) : INITIAL_REVISION;
+            if (result.status == EngineJobResultStatus::Cancelled) {
+                jobs->fail(jobId, {ErrorCode::Cancelled, "render was cancelled", {}},
+                           currentRevision);
+                return;
+            }
+            if (result.status != EngineJobResultStatus::Succeeded) {
+                jobs->fail(jobId, {ErrorCode::InternalError, "offline render failed", {}},
+                           currentRevision);
+                return;
+            }
+            if (temporary->getTargetFile().existsAsFile() && !overwriteExisting) {
+                jobs->fail(jobId, {ErrorCode::Conflict, "render destination now exists", {}},
+                           currentRevision);
+                return;
+            }
+            if (!temporary->overwriteTargetFileWithTemporary()) {
+                jobs->fail(jobId, {ErrorCode::InternalError, "render could not be finalised", {}},
+                           currentRevision);
+                return;
+            }
+            jobs->complete(jobId, engineArtifactResult("render_range", format), currentRevision,
+                           {{.kind = "audio", .mediaType = mediaType(format)}});
+            Error lookupError;
+            const auto completed = jobs->get(jobId, owner, allScopes(), lookupError);
+            if (!completed || completed->state != RemoteJobState::Completed)
+                temporary->getTargetFile().deleteFile();
+        });
+
+    if (started == EngineJobStartStatus::Started) {
+        context.jobs->markRunning(jobId);
+    } else if (started == EngineJobStartStatus::Unsupported) {
+        context.jobs->unsupported(jobId, engineStartError(started).message, context.revision);
+    } else {
+        context.jobs->fail(jobId, engineStartError(started), context.revision);
+    }
+    const auto job = currentJob(*context.jobs, jobId, context, error);
+    return !job.isVoid() ? HandlerResult::unchanged(job) : HandlerResult::fail(std::move(error));
+}
+
+HandlerResult engineMasterCaptureStart(MagdaApi& api, const juce::var& input,
+                                       const RequestContext& context) {
+    if (context.jobs == nullptr || context.fileHandles == nullptr || context.engineJobs == nullptr)
+        return HandlerResult::fail(ErrorCode::InternalError,
+                                   "engine file services are unavailable");
+    if (!api.project().hasOpenProject())
+        return HandlerResult::fail(ErrorCode::Conflict, "no project is open");
+    const auto format = renderFormat(input);
+    if (format == OfflineRenderFormat::Flac && static_cast<int>(input["bitDepth"]) == 32)
+        return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                   "FLAC output does not support 32-bit samples");
+    Error error;
+    const auto destination = resolveAudioDestination(input, context, format, error);
+    if (!destination)
+        return HandlerResult::fail(std::move(error));
+
+    auto source = context.engineJobsOwner;
+    auto jobIdHolder = std::make_shared<juce::String>();
+    const auto jobId =
+        context.jobs->accept({.kind = "engine.masterCapture",
+                              .ownerClientId = context.clientId,
+                              .requiredScope = Scope::Edit,
+                              .acceptedRevision = context.revision,
+                              .revisionPolicy = JobRevisionPolicy::StableUntilCompletion,
+                              .projectBound = true,
+                              .cancellable = true},
+                             [source, jobIdHolder] {
+                                 if (source && jobIdHolder->isNotEmpty())
+                                     source->cancelMasterCapture(*jobIdHolder);
+                             });
+    if (jobId.isEmpty())
+        return HandlerResult::fail(ErrorCode::InternalError, "capture job was not accepted");
+    *jobIdHolder = jobId;
+
+    const auto started = context.engineJobs->startMasterCapture(
+        jobId, context.clientId,
+        {.destination = destination->file,
+         .format = format,
+         .bitDepth = static_cast<int>(input["bitDepth"]),
+         .overwriteExisting = destination->file.existsAsFile()});
+    if (started == EngineJobStartStatus::Started) {
+        context.jobs->markRunning(jobId);
+    } else if (started == EngineJobStartStatus::Unsupported) {
+        context.jobs->unsupported(jobId, engineStartError(started).message, context.revision);
+    } else {
+        context.jobs->fail(jobId, engineStartError(started), context.revision);
+    }
+    const auto job = currentJob(*context.jobs, jobId, context, error);
+    return !job.isVoid() ? HandlerResult::unchanged(job) : HandlerResult::fail(std::move(error));
+}
+
+HandlerResult engineMasterCaptureStop(MagdaApi&, const juce::var& input,
+                                      const RequestContext& context) {
+    if (context.jobs == nullptr || context.engineJobs == nullptr)
+        return HandlerResult::fail(ErrorCode::InternalError,
+                                   "engine file services are unavailable");
+    Error error;
+    const auto jobId = input["jobId"].toString();
+    const auto job = context.jobs->get(jobId, context.clientId, context.scopes, error);
+    if (!job)
+        return HandlerResult::fail(std::move(error));
+    if (job->kind != "engine.masterCapture" || job->state != RemoteJobState::Running)
+        return HandlerResult::fail(ErrorCode::Conflict, "capture job is not running");
+    if (job->acceptedRevision != context.revision) {
+        context.engineJobs->cancelMasterCapture(jobId);
+        context.jobs->fail(
+            jobId,
+            {ErrorCode::Conflict, "project revision changed while the capture was running", {}},
+            context.revision);
+    } else {
+        const auto status = context.engineJobs->masterCaptureStatus();
+        const auto result = context.engineJobs->stopMasterCapture(jobId);
+        if (!result.success) {
+            context.jobs->fail(jobId, {ErrorCode::InternalError, "master capture failed", {}},
+                               context.revision);
+        } else {
+            const auto format = status.format;
+            context.jobs->complete(jobId, engineArtifactResult("master_capture", format),
+                                   context.revision,
+                                   {{.kind = "audio", .mediaType = mediaType(format)}});
+        }
+    }
+    const auto stopped = currentJob(*context.jobs, jobId, context, error);
+    return !stopped.isVoid() ? HandlerResult::unchanged(stopped)
+                             : HandlerResult::fail(std::move(error));
+}
+
+HandlerResult engineMasterCaptureStatus(MagdaApi&, const juce::var&,
+                                        const RequestContext& context) {
+    if (context.engineJobs == nullptr)
+        return HandlerResult::fail(ErrorCode::InternalError,
+                                   "engine file services are unavailable");
+    const auto status = context.engineJobs->masterCaptureStatus();
+    auto* result = new juce::DynamicObject();
+    result->setProperty("supported", status.supported);
+    result->setProperty("active", status.active);
+    result->setProperty("failed", status.failed);
+    result->setProperty("jobId", status.active && status.ownerClientId == context.clientId
+                                     ? juce::var(status.jobId)
+                                     : juce::var());
+    return HandlerResult::ok(result);
 }
 
 // ===========================================================================

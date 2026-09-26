@@ -209,6 +209,7 @@ class RemoteApiService {
 
     /// Install the message-thread diagnostic reader used by read operations.
     void setDiagnosticsSource(std::unique_ptr<class DiagnosticsSource> source);
+    void setEngineJobSource(std::shared_ptr<class EngineJobSource> source);
 
   private:
     struct CachedResponse {
@@ -302,6 +303,7 @@ class RemoteApiService {
     mutable std::mutex auditMutex_;
     std::shared_ptr<RemoteAuditLog> audit_;
     std::unique_ptr<class DiagnosticsSource> diagnostics_;
+    std::shared_ptr<class EngineJobSource> engineJobs_;
 };
 
 }  // namespace remote

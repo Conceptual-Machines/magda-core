@@ -82,6 +82,12 @@ native UI must also issue the right source or destination capability to that
 specific live connection. Disconnect, expiry, or local revocation removes that
 second authority immediately.
 
+`engine.renderRange` and master-capture start/stop also require `edit`, plus an
+owned `audio_destination` capability selected in the native UI. Master-capture
+status requires only `read`; it withholds another connection's job id. Cancelling
+either job through `jobs.cancel` dynamically requires the job's captured `edit`
+scope as usual.
+
 **`hardware-midi` gates `midi.send` and `midi.sendSysEx`** (#2297). The scope
 was declared before any operation required it, because grants are persisted: a
 word invented later would read as "not granted" on every existing client — the

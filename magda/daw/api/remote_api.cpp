@@ -2877,6 +2877,62 @@ OperationRegistry::OperationRegistry() {
             "required":["revoked"],"additionalProperties":false
         })json"));
 
+    add("engine.renderRange", "Render an explicit project range to an approved destination",
+        OperationAccess::Control, &handlers::engineRenderRange, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "destinationHandle":{"type":"string","minLength":1,"maxLength":128},
+                "range":{"type":"object","properties":{
+                    "unit":{"type":"string","enum":["beats","seconds"]},
+                    "start":{"type":"number","minimum":0,"maximum":1000000},
+                    "end":{"type":"number","exclusiveMinimum":0,"maximum":1000000}
+                },"required":["unit","start","end"],"additionalProperties":false},
+                "format":{"type":"string","enum":["wav","flac"]},
+                "sampleRate":{"type":"integer","enum":[44100,48000,88200,96000,176400,192000]},
+                "bitDepth":{"type":"integer","enum":[16,24,32]},
+                "dither":{"type":"string","enum":["none","tpdf","shaped"]},
+                "normalise":{"type":"boolean"},
+                "normaliseToDb":{"type":"number","minimum":-60,"maximum":0},
+                "includeMasterEffects":{"type":"boolean"},
+                "includeTrackEffects":{"type":"boolean"},
+                "realTime":{"type":"boolean"},
+                "tailSeconds":{"type":"number","minimum":0,"maximum":60},
+                "overwritePolicy":{"type":"string","enum":["fail","replace"]}
+            },
+            "required":["destinationHandle","range","format","sampleRate","bitDepth","dither",
+                        "normalise","normaliseToDb","includeMasterEffects","includeTrackEffects",
+                        "realTime","tailSeconds","overwritePolicy"],
+            "additionalProperties":false
+        })json"),
+        remoteJobSchema());
+    const auto masterCaptureInput = operationInputSchema(R"json({
+        "type":"object","properties":{
+            "destinationHandle":{"type":"string","minLength":1,"maxLength":128},
+            "format":{"type":"string","enum":["wav","flac"]},
+            "bitDepth":{"type":"integer","enum":[16,24,32]},
+            "overwritePolicy":{"type":"string","enum":["fail","replace"]}
+        },
+        "required":["destinationHandle","format","bitDepth","overwritePolicy"],
+        "additionalProperties":false
+    })json");
+    add("engine.masterCapture.start", "Capture the true master callback output",
+        OperationAccess::Control, &handlers::engineMasterCaptureStart, masterCaptureInput,
+        remoteJobSchema());
+    add("engine.masterCapture.stop", "Stop and finalise one owned master capture",
+        OperationAccess::Control, &handlers::engineMasterCaptureStop, jobIdInput,
+        remoteJobSchema());
+    add("engine.masterCapture.status", "Read master-capture capability and activity",
+        OperationAccess::Read, &handlers::engineMasterCaptureStatus, emptyObjectSchema(),
+        parseSchema(R"json({
+            "type":"object","properties":{
+                "supported":{"type":"boolean"},
+                "active":{"type":"boolean"},
+                "failed":{"type":"boolean"},
+                "jobId":{"type":["string","null"]}
+            },"required":["supported","active","failed","jobId"],
+            "additionalProperties":false
+        })json"));
+
     add("project.get", "Get safe project metadata", OperationAccess::Read, &handlers::projectGet,
         emptyObjectSchema(), projectSchema());
     const auto projectTransitionInput = operationInputSchema(R"json({
@@ -4326,6 +4382,9 @@ OperationRegistry::OperationRegistry() {
         {"project.save", Scope::Edit},
         {"project.saveAs", Scope::Edit},
         {"fileHandles.revoke", Scope::Edit},
+        {"engine.renderRange", Scope::Edit},
+        {"engine.masterCapture.start", Scope::Edit},
+        {"engine.masterCapture.stop", Scope::Edit},
         {"chordTrack.ensure", Scope::Edit},
         {"chordTrack.replaceProgression", Scope::Edit},
         {"chordTrack.extract", Scope::Edit},

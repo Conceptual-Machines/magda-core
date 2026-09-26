@@ -156,6 +156,8 @@ class EngineHostSessionCaptureTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { replacementKeepsBothImmutableSources(); });
         magda::test::runWithCleanJuceState([this] { slotReplacementKeepsBothSources(); });
         magda::test::runWithCleanJuceState([this] { projectBoundaryForgetsOldSources(); });
+        magda::test::runWithCleanJuceState([this] { masterCaptureWritesCallbackOutput(); });
+        magda::test::runWithCleanJuceState([this] { tracktionReportsCaptureUnsupported(); });
     }
 
   private:
@@ -571,6 +573,51 @@ class EngineHostSessionCaptureTest final : public juce::UnitTest {
 
         host.stop();
         devices.closeAudioDevice();
+    }
+
+    void masterCaptureWritesCallbackOutput() {
+        beginTest("Master capture writes every actual device callback block");
+        CapturePumpManager devices;
+        expect(open(devices));
+        if (devices.device == nullptr)
+            return;
+
+        magda::daw::engine_host::EngineHost host;
+        host.start(devices);
+        settle();
+        const auto file = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                              .getNonexistentChildFile("magda-master-capture", ".wav");
+        const magda::MasterCaptureRequest request{
+            .destination = file, .format = magda::OfflineRenderFormat::Wav, .bitDepth = 24};
+        expect(host.startMasterCapture(request) == magda::MasterCaptureStartStatus::Started);
+        expect(host.masterCaptureState().active);
+
+        pump(*devices.device, 4);
+        const auto result = host.stopMasterCapture();
+        expect(result.success, result.error);
+        expect(!host.masterCaptureState().active);
+
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::AudioFormatReader> reader(
+            wav.createReaderFor(file.createInputStream().release(), true));
+        expect(reader != nullptr);
+        if (reader != nullptr)
+            expectEquals(reader->lengthInSamples, static_cast<juce::int64>(4 * 480));
+        reader.reset();
+        file.deleteFile();
+        host.stop();
+        devices.closeAudioDevice();
+    }
+
+    void tracktionReportsCaptureUnsupported() {
+        beginTest("Tracktion explicitly reports true callback capture as unsupported");
+        auto& engine = magda::test::getSharedEngine();
+        const auto file = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                              .getNonexistentChildFile("magda-tracktion-master-capture", ".wav");
+        expect(!engine.masterCaptureState().supported);
+        expect(engine.startMasterCapture({.destination = file}) ==
+               magda::MasterCaptureStartStatus::Unsupported);
+        expect(!file.existsAsFile());
     }
 };
 

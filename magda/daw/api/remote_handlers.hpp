@@ -35,6 +35,10 @@ HandlerResult jobsGet(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult jobsCancel(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult fileHandlesList(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult fileHandlesRevoke(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult engineRenderRange(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult engineMasterCaptureStart(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult engineMasterCaptureStop(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult engineMasterCaptureStatus(MagdaApi&, const juce::var&, const RequestContext&);
 
 // Project
 HandlerResult projectGet(MagdaApi&, const juce::var&, const RequestContext&);

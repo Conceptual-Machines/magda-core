@@ -10,6 +10,7 @@
 #include "remote_audit.hpp"
 #include "remote_clients.hpp"
 #include "remote_diagnostics.hpp"
+#include "remote_engine_jobs.hpp"
 #include "remote_mcp_server.hpp"
 #include "remote_model_bridge.hpp"
 #include "remote_service.hpp"
@@ -208,6 +209,7 @@ RemoteApiHost::RemoteApiHost(MagdaApi& api, AudioEngine* engine)
         std::shared_ptr<MeterSource> meters = makeLiveMeterSource(*engine);
         subscriptions_->setMeterSource(meters);
         service_->setDiagnosticsSource(makeLiveDiagnosticsSource(*engine, std::move(meters)));
+        service_->setEngineJobSource(makeLiveEngineJobSource(*engine));
     }
 
     service_->setAuditLog(audit_);

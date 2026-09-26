@@ -481,6 +481,18 @@ std::unique_ptr<OfflineRenderSession> MagdaAudioEngine::createOfflineRenderSessi
     bool resumePlaybackWhenFinished) {
     return host_->createOfflineRenderSession(resumePlaybackWhenFinished);
 }
+MasterCaptureStartStatus MagdaAudioEngine::startMasterCapture(const MasterCaptureRequest& request) {
+    return host_->startMasterCapture(request);
+}
+MasterCaptureResult MagdaAudioEngine::stopMasterCapture() {
+    return host_->stopMasterCapture();
+}
+void MagdaAudioEngine::cancelMasterCapture() {
+    host_->cancelMasterCapture();
+}
+MasterCaptureState MagdaAudioEngine::masterCaptureState() const {
+    return host_->masterCaptureState();
+}
 
 void MagdaAudioEngine::setTrackFrozen(TrackId trackId, bool frozen) {
     auto& tracks = TrackManager::getInstance();

@@ -101,6 +101,26 @@ struct OfflineRenderResult {
     juce::String error;
 };
 
+struct MasterCaptureRequest {
+    juce::File destination;
+    OfflineRenderFormat format = OfflineRenderFormat::Wav;
+    int bitDepth = 24;
+    bool overwriteExisting = false;
+};
+
+enum class MasterCaptureStartStatus { Started, Unsupported, Busy, Unavailable, Failed };
+
+struct MasterCaptureResult {
+    bool success = false;
+    juce::String error;
+};
+
+struct MasterCaptureState {
+    bool supported = false;
+    bool active = false;
+    bool failed = false;
+};
+
 class OfflineRenderTask {
   public:
     virtual ~OfflineRenderTask() = default;
@@ -383,6 +403,17 @@ class AudioEngine : public AudioEngineListener {
     // ===== Offline Rendering =====
     virtual std::unique_ptr<OfflineRenderSession> createOfflineRenderSession(
         bool resumePlaybackWhenFinished) = 0;
+
+    virtual MasterCaptureStartStatus startMasterCapture(const MasterCaptureRequest&) {
+        return MasterCaptureStartStatus::Unsupported;
+    }
+    virtual MasterCaptureResult stopMasterCapture() {
+        return {false, "Master capture is unsupported"};
+    }
+    virtual void cancelMasterCapture() {}
+    virtual MasterCaptureState masterCaptureState() const {
+        return {};
+    }
 
     /**
      * @brief Freeze or unfreeze @p trackId. Message thread.
