@@ -87,11 +87,25 @@ void RemoteAuditLog::record(AuditEntry entry) {
     // the call sites instead would mean each new one is a chance to forget.
     entry.detail = redactSecrets(entry.detail);
 
+    std::function<void(const AuditEntry&)> deniedHandler;
+    {
+        const std::scoped_lock lock(mutex_);
+        entries_.push_back(std::move(entry));
+        ++totalRecorded_;
+        while (entries_.size() > capacity_)
+            entries_.pop_front();
+        if (entries_.back().outcome == AuditOutcome::Denied)
+            deniedHandler = deniedHandler_;
+        if (deniedHandler)
+            entry = entries_.back();
+    }
+    if (deniedHandler)
+        deniedHandler(entry);
+}
+
+void RemoteAuditLog::setDeniedHandler(std::function<void(const AuditEntry&)> handler) {
     const std::scoped_lock lock(mutex_);
-    entries_.push_back(std::move(entry));
-    ++totalRecorded_;
-    while (entries_.size() > capacity_)
-        entries_.pop_front();
+    deniedHandler_ = std::move(handler);
 }
 
 std::vector<AuditEntry> RemoteAuditLog::entries() const {

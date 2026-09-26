@@ -39,7 +39,8 @@ class KeyMappingStore;
 
 class MainWindow : public juce::DocumentWindow,
                    public ProjectManagerListener,
-                   private ConfigListener {
+                   private ConfigListener,
+                   private juce::Timer {
   public:
     MainWindow(AudioEngine* audioEngine = nullptr);
     ~MainWindow() override;
@@ -55,6 +56,8 @@ class MainWindow : public juce::DocumentWindow,
 
     // ConfigListener
     void configChanged() override;
+
+    void timerCallback() override;
 
     /** Open a .mgd project file (used by menu, command line, and OS file association). */
     void openProjectFile(const juce::File& file);
@@ -117,6 +120,7 @@ class MainWindow : public juce::DocumentWindow,
     float appliedDensityScale_ = -1.0f;
     std::string appliedFontFamily_;
     double appliedFontScale_ = 1.0;
+    bool permissionPromptActive_ = false;
 
     // Hot-reload for user JSON themes: armed while a user theme is active,
     // idle for built-ins. activeThemeFile_ is the file currently watched.

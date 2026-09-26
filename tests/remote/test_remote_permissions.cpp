@@ -212,6 +212,75 @@ TEST_CASE("Grants persist as JSON and reload", "[remote][permissions][registry]"
     REQUIRE(loaded.scopesFor("monitor") == ScopeSet{Scope::Read});
 }
 
+TEST_CASE("First denied requests request only their scopes and a refusal is remembered",
+          "[remote][permissions][registry][2815]") {
+    RemoteClientRegistry registry;
+    REQUIRE(registry.scopesFor("Gateway") == defaultClientScopes());
+    registry.notePermissionDenied("gateway", TRANSPORT_MCP, Scope::Edit);
+    registry.notePermissionDenied("gateway", TRANSPORT_MCP, Scope::Edit);
+    registry.notePermissionDenied("gateway", TRANSPORT_WEBSOCKET, Scope::Transport);
+
+    const auto request = registry.nextPermissionRequest();
+    REQUIRE(request.has_value());
+    REQUIRE(request->client == "gateway");
+    REQUIRE(request->scopes == ScopeSet{Scope::Edit, Scope::Transport});
+    REQUIRE(request->transports.size() == 2);
+    REQUIRE_FALSE(registry.nextPermissionRequest().has_value());
+    REQUIRE(registry.scopesFor("gateway") == defaultClientScopes());
+
+    registry.resolvePermissionRequest(request->client, request->scopes, false);
+    registry.notePermissionDenied("gateway", TRANSPORT_MCP, Scope::Edit);
+    REQUIRE_FALSE(registry.nextPermissionRequest().has_value());
+
+    RemoteClientRegistry restarted;
+    restarted.loadGrantsFromJson(registry.grantsToJson());
+    restarted.notePermissionDenied("gateway", TRANSPORT_MCP, Scope::Transport);
+    REQUIRE_FALSE(restarted.nextPermissionRequest().has_value());
+    restarted.notePermissionDenied("gateway", TRANSPORT_MCP, Scope::Session);
+    const auto later = restarted.nextPermissionRequest();
+    REQUIRE(later.has_value());
+    REQUIRE(later->scopes == ScopeSet{Scope::Session});
+}
+
+TEST_CASE("Allowing a requested scope preserves unrelated permissions and audit denial",
+          "[remote][permissions][registry][audit][2815]") {
+    MessageThreadRelaxation relaxation;
+    RemoteClientRegistry registry;
+    registry.scopesFor("gateway");
+    auto log = std::make_shared<RemoteAuditLog>();
+    log->setDeniedHandler([&](const AuditEntry& entry) {
+        if (const auto scope = scopeFromName(entry.detail))
+            registry.notePermissionDenied(entry.client, entry.transport, *scope);
+    });
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    service.setAuditLog(log);
+
+    const auto denied = run(service, "project.setTempo", object({{"tempo", 99.0}}),
+                            contextWith(registry.scopesFor("gateway"), "gateway"));
+    REQUIRE_FALSE(denied.ok);
+    REQUIRE(denied.error.code == ErrorCode::PermissionDenied);
+    REQUIRE(api.project_.info.tempo != 99.0);
+
+    const auto request = registry.nextPermissionRequest();
+    REQUIRE(request.has_value());
+    REQUIRE(request->scopes == ScopeSet{Scope::Edit});
+    registry.resolvePermissionRequest(request->client, request->scopes, true);
+    REQUIRE(registry.scopesFor("gateway") == ScopeSet{Scope::Read, Scope::Edit});
+    REQUIRE_FALSE(registry.scopesFor("gateway").has(Scope::Transport));
+    REQUIRE_FALSE(registry.scopesFor("gateway").has(Scope::Session));
+    REQUIRE_FALSE(registry.scopesFor("gateway").has(Scope::HardwareMidi));
+
+    const auto allowed = run(service, "project.setTempo", object({{"tempo", 99.0}}),
+                             contextWith(registry.scopesFor("gateway"), "gateway"));
+    REQUIRE(allowed.ok);
+    REQUIRE(api.project_.info.tempo == 99.0);
+
+    registry.setScopes("gateway", defaultClientScopes());
+    registry.notePermissionDenied("gateway", TRANSPORT_MCP, Scope::Edit);
+    REQUIRE_FALSE(registry.nextPermissionRequest().has_value());
+}
+
 TEST_CASE("A hand-edited or newer grants file loads without granting nonsense",
           "[remote][permissions][registry]") {
     juce::Array<juce::var> entries;
