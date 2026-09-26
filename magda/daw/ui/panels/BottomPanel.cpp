@@ -914,19 +914,22 @@ void BottomPanel::drumGridPreferenceChanged(const juce::String& pluginIdentifier
 
 void BottomPanel::timelineStateChanged(const TimelineState& state, ChangeFlags changes) {
     if (hasFlag(changes, ChangeFlags::Display)) {
-        // If a MIDI editor is active, the controls reflect clip state -- skip arrangement sync
+        // Editor snap belongs to the editor, while the remaining grid controls
+        // continue to follow the arrangement.
         auto* content = getActiveContent();
         auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
         if (midiEditor && midiEditor->getEditingClipId() != INVALID_CLIP_ID) {
             return;
         }
+        auto* waveEditor = dynamic_cast<daw::ui::WaveformEditorContent*>(content);
 
         const auto& gq = state.display.gridQuantize;
         // Sync grid controls from timeline state (e.g. changed from TransportPanel)
         isAutoGrid_ = gq.autoGrid;
         gridNumerator_ = gq.numerator;
         gridDenominator_ = gq.denominator;
-        isSnapEnabled_ = state.display.snapEnabled;
+        isSnapEnabled_ =
+            waveEditor != nullptr ? waveEditor->isSnapEnabled() : state.display.snapEnabled;
 
         autoGridButton_->setToggleState(isAutoGrid_, juce::dontSendNotification);
         // Don't overwrite labels while the user is actively dragging them
@@ -1635,6 +1638,9 @@ void BottomPanel::syncGridControlsFromContent() {
             }
             isSnapEnabled_ = clip->gridSnapEnabled;
         }
+    } else if (auto* waveEditor = dynamic_cast<daw::ui::WaveformEditorContent*>(content)) {
+        syncGridStateFromTimeline();
+        isSnapEnabled_ = waveEditor->isSnapEnabled();
     } else {
         // Read from arrangement (timeline state)
         syncGridStateFromTimeline();
@@ -1649,8 +1655,6 @@ void BottomPanel::syncGridControlsFromContent() {
         gridDenominatorLabel_->setValue(static_cast<double>(gridDenominator_),
                                         juce::dontSendNotification);
     snapButton_->setToggleState(isSnapEnabled_, juce::dontSendNotification);
-    if (auto* waveEditor = dynamic_cast<daw::ui::WaveformEditorContent*>(content))
-        waveEditor->setSnapEnabledFromUI(isSnapEnabled_);
 
     gridNumeratorLabel_->setEnabled(!isAutoGrid_);
     gridDenominatorLabel_->setEnabled(!isAutoGrid_);

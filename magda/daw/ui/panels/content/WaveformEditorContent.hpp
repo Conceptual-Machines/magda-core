@@ -98,6 +98,9 @@ class WaveformEditorContent : public PanelContent,
         return true;
     }
     void setSnapEnabledFromUI(bool enabled);
+    bool isSnapEnabled() const {
+        return snapEnabled_;
+    }
 
     // Loop-record take lanes (header TAKES toggle).
     bool editingClipHasMultipleTakes() const;
