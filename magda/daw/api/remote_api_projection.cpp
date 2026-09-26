@@ -328,8 +328,9 @@ ScopedMessageThreadAssertionDisabler::~ScopedMessageThreadAssertionDisabler() {
     setMessageThreadAssertionEnabled(previous_);
 }
 
-ProjectDto makeProjectDto(const ProjectInfo& project, bool dirty, bool hasSaveTarget) {
+ProjectDto makeProjectDto(const ProjectInfo& project, bool open, bool dirty, bool hasSaveTarget) {
     ProjectDto dto;
+    dto.open = open;
     dto.name = project.name;
     dto.tempo = project.tempo;
     dto.timeSignatureNumerator = project.timeSignatureNumerator;

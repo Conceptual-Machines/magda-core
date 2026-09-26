@@ -1060,11 +1060,32 @@ TEST_CASE("Opening a different project reaches subscribers of every topic",
     service.changes().flush();
 
     REQUIRE(tracksOnly.events.size() == 1);
+    REQUIRE(tracksOnly.events[0].type == SubscriptionEvent::Type::Snapshot);
     const auto& payload = tracksOnly.events[0].payload;
-    REQUIRE(payload["removed"].getArray()->size() == 1);
-    REQUIRE(static_cast<int>(payload["removed"][0]) == 1);
-    REQUIRE(payload["added"].getArray()->size() == 1);
-    REQUIRE(payload["added"][0]["name"].toString() == "New project");
+    REQUIRE(payload.getArray()->size() == 1);
+    REQUIRE(payload[0]["name"].toString() == "New project");
+}
+
+TEST_CASE("A project boundary sends a snapshot even when the new state looks identical",
+          "[remote][subscriptions][resync][2833]") {
+    MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    Recorder recorder;
+    SubscriptionHub hub(api, service);
+    const auto client = hub.addClient(recorder.sink(), recorder.disconnect());
+    subscribe(hub, client, {"tracks", "project", "jobs"});
+
+    service.projectReplaced();
+    service.changes().flush();
+
+    REQUIRE(recorder.forTopic(Topic::Tracks).size() == 1);
+    REQUIRE(recorder.forTopic(Topic::Project).size() == 1);
+    REQUIRE(recorder.forTopic(Topic::Jobs).size() == 1);
+    for (const auto& event : recorder.events) {
+        REQUIRE(event.type == SubscriptionEvent::Type::Snapshot);
+        REQUIRE(event.revision == service.currentRevision());
+    }
 }
 
 TEST_CASE("A session subscriber hears about a clip that changes the grid",

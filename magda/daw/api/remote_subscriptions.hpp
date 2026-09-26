@@ -263,8 +263,8 @@ class SubscriptionHub {
     Response execute(ClientId client, const juce::String& method, const juce::var& params,
                      const std::vector<Topic>& requested, bool topicsGiven);
 
-    void publishTopicLocked(Topic topic, Revision revision);
-    void publishJobsLocked(Revision revision);
+    void publishTopicLocked(Topic topic, Revision revision, bool reset);
+    void publishJobsLocked(Revision revision, bool reset);
     static void deliverLocked(Client& client, const SubscriptionEvent& event);
     void foldFlushOutcomesLocked();
     void sendSnapshotsLocked(Client& client, const std::vector<Topic>& topics, Revision revision,

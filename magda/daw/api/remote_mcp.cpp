@@ -328,7 +328,7 @@ McpEndpoint::McpEndpoint(RemoteApiService& service, Options options, Subscriptio
 
     resources_ = {
         {"magda://project/current", "", "project", "Project",
-         "Tempo, time signature, key, and loop for the open project", "project.get",
+         "Open state, tempo, time signature, key, and loop for the current project", "project.get",
          Topic::Project},
         {"magda://tracks", "", "tracks", "Tracks", "Every track in the project, in order",
          "tracks.list", Topic::Tracks},

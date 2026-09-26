@@ -122,12 +122,28 @@ projects the same list as `magda://jobs`.
 
 ### Current-project save
 
-`project.get` reports `dirty` and `hasSaveTarget` without exposing the target's
+`project.get` reports `open`, `dirty`, and `hasSaveTarget` without exposing the target's
 path. `project.save` is edit-scoped and writes only to that existing target. It
 never opens a chooser; an untitled project fails with `conflict`, leaving Save
 As an explicit in-app action. Saving changes persistence state rather than
 project content, so a successful save does not advance the Remote API revision
 or create an undo command.
+
+### Project lifecycle
+
+`project.new` creates an untitled project; `project.close` closes the current
+project. Both require the `edit` scope. A dirty project is refused with
+`conflict` unless the request explicitly sets `discardUnsavedChanges: true`.
+These operations never open a dialog or file picker. Closing an already closed
+project succeeds without changing the revision. Creating a project while none
+is open succeeds. Both return the same safe status as `project.get`; when closed,
+`open` is false and no project file path is exposed.
+
+A successful transition clears project undo history and old idempotency entries,
+cancels queued requests and project-bound jobs, advances the revision once,
+and sends fresh snapshots for all subscribed discrete topics. Lifecycle
+transitions are not undoable edits. A retry with the transition's request ID
+replays its result until the next project boundary.
 
 ### Project loop range
 

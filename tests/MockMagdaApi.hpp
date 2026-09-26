@@ -1143,16 +1143,22 @@ class MockSessionApi : public SessionApi {
 class MockProjectApi : public ProjectApi {
   public:
     ProjectInfo info;
+    bool open = true;
     bool dirty = false;
     bool saveTarget = false;
     bool saveSucceeds = true;
     int saveCalls = 0;
+    int newCalls = 0;
+    int closeCalls = 0;
     const TempoMap* map = nullptr;
     const TempoMap* tempoMap() const override {
         return map;
     }
     const ProjectInfo& getCurrentProjectInfo() const override {
         return info;
+    }
+    bool hasOpenProject() const override {
+        return open;
     }
     bool isDirty() const override {
         return dirty;
@@ -1165,6 +1171,27 @@ class MockProjectApi : public ProjectApi {
         if (!saveSucceeds)
             return false;
         dirty = false;
+        return true;
+    }
+    bool newProject(bool discardUnsavedChanges) override {
+        ++newCalls;
+        if (dirty && !discardUnsavedChanges)
+            return false;
+        info = ProjectInfo{};
+        info.name = "Untitled";
+        open = true;
+        dirty = false;
+        saveTarget = false;
+        return true;
+    }
+    bool closeProject(bool discardUnsavedChanges) override {
+        ++closeCalls;
+        if (dirty && !discardUnsavedChanges)
+            return false;
+        info = ProjectInfo{};
+        open = false;
+        dirty = false;
+        saveTarget = false;
         return true;
     }
     void setTempo(double bpm) override {
