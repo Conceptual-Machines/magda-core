@@ -285,6 +285,50 @@ TEST_CASE("Session scene edits are one revision and scene no-ops are revision ne
     CHECK(api.undo_.compoundDepth == 0);
 }
 
+TEST_CASE("Session clip settings are one atomic edit and handoff is revision neutral",
+          "[remote][service][session][2848]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    TrackInfo track;
+    track.id = 7;
+    track.playbackMode = TrackPlaybackMode::Session;
+    track.activeSessionClipId = 50;
+    api.tracks_.tracks.push_back(track);
+    ClipInfo clip;
+    clip.id = 50;
+    clip.trackId = 7;
+    clip.view = ClipView::Session;
+    clip.sceneIndex = 0;
+    api.clips_.clips.emplace(clip.id, clip);
+    api.session_.slots[{7, 0}] = 50;
+    RemoteApiService service(api);
+
+    const auto updated = run(service, "session.updateClipSettings",
+                             object({{"clipId", 50},
+                                     {"launchMode", "toggle"},
+                                     {"launchQuantize", "1/16"},
+                                     {"followAction", "again"},
+                                     {"followActionDelayBeats", 2.0},
+                                     {"followActionLoopCount", 3}}));
+    REQUIRE(updated.ok);
+    CHECK(updated.revision == INITIAL_REVISION + 1);
+    CHECK(api.undo_.executeCalls == 1);
+    REQUIRE(api.undo_.commands.size() == 1);
+    api.undo_.commands.front()->execute();
+    REQUIRE(api.session_.launchSettings.contains(50));
+    CHECK(api.session_.launchSettings.at(50) ==
+          SessionClipLaunchSettings{LaunchMode::Toggle, LaunchQuantize::SixteenthBar,
+                                    FollowAction::PlayAgain, 2.0, 3});
+
+    const auto handedBack = run(service, "session.returnToArrangement", object({{"trackId", 7}}));
+    REQUIRE(handedBack.ok);
+    CHECK(handedBack.revision == INITIAL_REVISION + 1);
+    CHECK(service.currentRevision() == INITIAL_REVISION + 1);
+    CHECK(api.undo_.executeCalls == 1);
+    REQUIRE(api.session_.arrangementReturns.size() == 1);
+    CHECK(api.session_.arrangementReturns.front() == std::optional<TrackId>{7});
+}
+
 TEST_CASE("Deleting a populated scene with fail policy changes nothing",
           "[remote][service][session][scenes][2842]") {
     const MessageThreadRelaxation relaxation;

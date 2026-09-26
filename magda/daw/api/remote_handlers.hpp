@@ -154,6 +154,8 @@ HandlerResult sessionStopClip(MagdaApi&, const juce::var&, const RequestContext&
 HandlerResult sessionStopTrack(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult sessionStopAll(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult sessionLaunchScene(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult sessionUpdateClipSettings(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult sessionReturnToArrangement(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult sessionCreateScene(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult sessionUpdateScene(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult sessionMoveScene(MagdaApi&, const juce::var&, const RequestContext&);

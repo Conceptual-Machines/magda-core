@@ -256,6 +256,8 @@ struct ClipDto {
     juce::String launchMode;
     juce::String launchQuantize;
     juce::String followAction;
+    double followActionDelayBeats = 0.0;
+    int followActionLoopCount = 1;
     std::vector<MidiNoteDto> notes;
     std::vector<MidiEventDto> midiEvents;
 
@@ -553,6 +555,16 @@ struct SessionTrackDto {
     bool operator==(const SessionTrackDto&) const = default;
 };
 
+struct SessionClipLaunchSettingsDto {
+    juce::String launchMode;
+    juce::String launchQuantize;
+    juce::String followAction;
+    double followActionDelayBeats = 0.0;
+    int followActionLoopCount = 1;
+
+    bool operator==(const SessionClipLaunchSettingsDto&) const = default;
+};
+
 struct SessionSlotDto {
     TrackId trackId = INVALID_TRACK_ID;
     SceneId sceneId = INVALID_SCENE_ID;
@@ -561,6 +573,7 @@ struct SessionSlotDto {
     juce::String state;
     bool recordArmed = false;
     bool recording = false;
+    std::optional<SessionClipLaunchSettingsDto> launchSettings;
 
     bool operator==(const SessionSlotDto&) const = default;
 };
@@ -853,6 +866,7 @@ juce::var toJson(const SelectionDto& dto);
 juce::var toJson(const TransportDto& dto);
 juce::var toJson(const SessionSceneDto& dto);
 juce::var toJson(const SessionTrackDto& dto);
+juce::var toJson(const SessionClipLaunchSettingsDto& dto);
 juce::var toJson(const SessionSlotDto& dto);
 juce::var toJson(const SessionDto& dto);
 juce::var toJson(const AutomationPointDto& dto);

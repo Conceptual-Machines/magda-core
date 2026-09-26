@@ -79,6 +79,9 @@ class ModelChangeBridge::Impl final : public TrackManagerListener,
         else
             service_.noteModelChanged({Topic::Tracks, Topic::Session});
     }
+    void trackPlaybackModeChanged(TrackId) override {
+        service_.noteModelActivity(Topic::Session);
+    }
     void masterChannelChanged() override {
         if (AutomationManager::getInstance().isApplyingAutomationWrite())
             service_.noteModelActivity(Topic::Tracks);

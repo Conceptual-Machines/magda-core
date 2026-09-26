@@ -432,12 +432,14 @@ const juce::var& clipSchema() {
                 "launchQuantize":{"type":"string","enum":["none","8_bars","4_bars","2_bars",
                     "1_bar","1/2","1/4","1/8","1/16"]},
                 "followAction":{"type":"string","enum":["none","next","previous","random","stop","again"]},
+                "followActionDelayBeats":{"type":"number","minimum":0,"maximum":1000000},
+                "followActionLoopCount":{"type":"integer","minimum":1,"maximum":100000},
                 "notes":{"type":"array","maxItems":100000},
                 "midiEvents":{"type":"array","maxItems":100000}
             },
             "required":["id","trackId","type","view","name","colourArgb","startBeat","lengthBeats",
                         "enabled","sceneIndex","launchMode","launchQuantize","followAction",
-                        "notes","midiEvents"],
+                        "followActionDelayBeats","followActionLoopCount","notes","midiEvents"],
             "additionalProperties":false
         })json");
         schema.getDynamicObject()
@@ -995,22 +997,46 @@ const juce::var& sessionTrackSchema() {
     return value;
 }
 
-const juce::var& sessionSlotSchema() {
+const juce::var& sessionClipLaunchSettingsSchema() {
     static const auto value = parseSchema(R"json({
         "type":"object",
         "properties":{
-            "trackId":{"type":"integer","minimum":0},
-            "sceneId":{"type":"integer","minimum":0},
-            "sceneIndex":{"type":"integer","minimum":0},
-            "clipId":{"type":["integer","null"],"minimum":0},
-            "state":{"type":"string","enum":["empty","stopped","queued","playing"]},
-            "recordArmed":{"type":"boolean"},
-            "recording":{"type":"boolean"}
+            "launchMode":{"type":"string","enum":["trigger","toggle"]},
+            "launchQuantize":{"type":"string","enum":["none","8_bars","4_bars","2_bars",
+                "1_bar","1/2","1/4","1/8","1/16"]},
+            "followAction":{"type":"string","enum":["none","next","previous","random","stop","again"]},
+            "followActionDelayBeats":{"type":"number","minimum":0,"maximum":1000000},
+            "followActionLoopCount":{"type":"integer","minimum":1,"maximum":100000}
         },
-        "required":["trackId","sceneId","sceneIndex","clipId","state","recordArmed",
-                    "recording"],
+        "required":["launchMode","launchQuantize","followAction","followActionDelayBeats",
+                    "followActionLoopCount"],
         "additionalProperties":false
     })json");
+    return value;
+}
+
+const juce::var& sessionSlotSchema() {
+    static const auto value = [] {
+        auto schema = parseSchema(R"json({
+            "type":"object",
+            "properties":{
+                "trackId":{"type":"integer","minimum":0},
+                "sceneId":{"type":"integer","minimum":0},
+                "sceneIndex":{"type":"integer","minimum":0},
+                "clipId":{"type":["integer","null"],"minimum":0},
+                "state":{"type":"string","enum":["empty","stopped","queued","playing"]},
+                "recordArmed":{"type":"boolean"},
+                "recording":{"type":"boolean"},
+                "launchSettings":{"anyOf":[{"type":"null"},{}]}
+            },
+            "required":["trackId","sceneId","sceneIndex","clipId","state","recordArmed",
+                        "recording","launchSettings"],
+            "additionalProperties":false
+        })json");
+        schema["properties"]["launchSettings"]["anyOf"].getArray()->set(
+            1, sessionClipLaunchSettingsSchema());
+        return schema;
+    }();
     return value;
 }
 
@@ -1327,17 +1353,26 @@ void validateValue(const juce::var& value, const juce::var& schema, const juce::
 
     if (auto* alternatives = schemaObject->getProperty("anyOf").getArray()) {
         std::vector<ValidationIssue> branchIssues;
+        bool matched = false;
         for (int index = 0; index < alternatives->size(); ++index) {
             std::vector<ValidationIssue> candidateIssues;
             validateValue(value, (*alternatives)[index],
                           path + "<anyOf:" + juce::String(index) + ">", candidateIssues);
-            if (candidateIssues.empty())
-                return;
-            branchIssues.insert(branchIssues.end(), candidateIssues.begin(), candidateIssues.end());
+            if (candidateIssues.empty()) {
+                matched = true;
+            } else {
+                branchIssues.insert(branchIssues.end(), candidateIssues.begin(),
+                                    candidateIssues.end());
+            }
         }
-        addIssue(issues, path, "any_of", "Value does not match any allowed schema");
-        issues.insert(issues.end(), branchIssues.begin(), branchIssues.end());
-        return;
+        // Composition keywords do not replace their sibling constraints. A
+        // successful branch still has to satisfy this schema's properties,
+        // bounds, and additionalProperties policy.
+        if (!matched) {
+            addIssue(issues, path, "any_of", "Value does not match any allowed schema");
+            issues.insert(issues.end(), branchIssues.begin(), branchIssues.end());
+            return;
+        }
     }
 
     // Exactly one branch, where anyOf wants at least one. Implemented rather
@@ -1812,6 +1847,8 @@ juce::var toJson(const ClipDto& dto) {
     object->setProperty("launchMode", dto.launchMode);
     object->setProperty("launchQuantize", dto.launchQuantize);
     object->setProperty("followAction", dto.followAction);
+    object->setProperty("followActionDelayBeats", dto.followActionDelayBeats);
+    object->setProperty("followActionLoopCount", dto.followActionLoopCount);
     juce::Array<juce::var> notes;
     for (const auto& note : dto.notes)
         notes.add(toJson(note));
@@ -2013,6 +2050,16 @@ juce::var toJson(const SessionTrackDto& dto) {
     return object;
 }
 
+juce::var toJson(const SessionClipLaunchSettingsDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("launchMode", dto.launchMode);
+    object->setProperty("launchQuantize", dto.launchQuantize);
+    object->setProperty("followAction", dto.followAction);
+    object->setProperty("followActionDelayBeats", dto.followActionDelayBeats);
+    object->setProperty("followActionLoopCount", dto.followActionLoopCount);
+    return object;
+}
+
 juce::var toJson(const SessionSlotDto& dto) {
     auto* object = new juce::DynamicObject();
     object->setProperty("trackId", dto.trackId);
@@ -2022,6 +2069,8 @@ juce::var toJson(const SessionSlotDto& dto) {
     object->setProperty("state", dto.state);
     object->setProperty("recordArmed", dto.recordArmed);
     object->setProperty("recording", dto.recording);
+    object->setProperty("launchSettings",
+                        dto.launchSettings ? toJson(*dto.launchSettings) : juce::var());
     return object;
 }
 
@@ -2301,6 +2350,8 @@ std::optional<ClipDto> clipFromJson(const juce::var& json, Error& error) {
     dto.launchMode = json["launchMode"].toString();
     dto.launchQuantize = json["launchQuantize"].toString();
     dto.followAction = json["followAction"].toString();
+    dto.followActionDelayBeats = static_cast<double>(json["followActionDelayBeats"]);
+    dto.followActionLoopCount = readInt(json, "followActionLoopCount");
     if (auto* notes = json["notes"].getArray()) {
         for (const auto& note : *notes) {
             auto decoded = midiNoteFromJson(note, error);
@@ -2542,6 +2593,14 @@ std::optional<SessionDto> sessionFromJson(const juce::var& json, Error& error) {
         slot.state = item["state"].toString();
         slot.recordArmed = static_cast<bool>(item["recordArmed"]);
         slot.recording = static_cast<bool>(item["recording"]);
+        if (!item["launchSettings"].isVoid()) {
+            const auto& settings = item["launchSettings"];
+            slot.launchSettings = SessionClipLaunchSettingsDto{
+                settings["launchMode"].toString(), settings["launchQuantize"].toString(),
+                settings["followAction"].toString(),
+                static_cast<double>(settings["followActionDelayBeats"]),
+                readInt(settings, "followActionLoopCount")};
+        }
         dto.slots.push_back(std::move(slot));
     }
     return dto;
@@ -3784,6 +3843,34 @@ OperationRegistry::OperationRegistry() {
             "required":["sceneIndex"],"additionalProperties":false
         })json"),
         sessionSchema());
+    add("session.updateClipSettings", "Atomically update session clip launch behaviour",
+        OperationAccess::Write, &handlers::sessionUpdateClipSettings, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "launchMode":{"type":"string","enum":["trigger","toggle"]},
+                "launchQuantize":{"type":"string","enum":["none","8_bars","4_bars",
+                    "2_bars","1_bar","1/2","1/4","1/8","1/16"]},
+                "followAction":{"type":"string","enum":["none","next","previous",
+                    "random","stop","again"]},
+                "followActionDelayBeats":{"type":"number","minimum":0,"maximum":1000000},
+                "followActionLoopCount":{"type":"integer","minimum":1,"maximum":100000}
+            },
+            "required":["clipId"],
+            "anyOf":[{"required":["launchMode"]},{"required":["launchQuantize"]},
+                     {"required":["followAction"]},{"required":["followActionDelayBeats"]},
+                     {"required":["followActionLoopCount"]}],
+            "additionalProperties":false
+        })json"),
+        clipSchema());
+    add("session.returnToArrangement", "Return one or every track to arrangement playback",
+        OperationAccess::Control, &handlers::sessionReturnToArrangement,
+        operationInputSchema(R"json({
+            "type":"object",
+            "properties":{"trackId":{"type":"integer","minimum":0}},
+            "additionalProperties":false
+        })json"),
+        sessionSchema());
 
     add("automation.listLanes", "List every automation lane in the project", OperationAccess::Read,
         &handlers::automationListLanes, emptyObjectSchema(), arraySchema(automationLaneSchema()));
@@ -4146,6 +4233,7 @@ OperationRegistry::OperationRegistry() {
         {"session.moveScene", Scope::Edit},
         {"session.duplicateScene", Scope::Edit},
         {"session.deleteScene", Scope::Edit},
+        {"session.updateClipSettings", Scope::Edit},
 
         // The timeline. Separable from editing because a remote that only
         // starts and stops playback is a thing people actually want, and it
@@ -4165,6 +4253,7 @@ OperationRegistry::OperationRegistry() {
         {"session.stopTrack", Scope::Session},
         {"session.stopAll", Scope::Session},
         {"session.launchScene", Scope::Session},
+        {"session.returnToArrangement", Scope::Session},
 
         // Physical MIDI ports. The scope existed before any operation did
         // (#1860); these are the operations it was declared for.

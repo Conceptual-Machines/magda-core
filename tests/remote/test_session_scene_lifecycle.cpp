@@ -110,3 +110,47 @@ TEST_CASE("Duplicating a populated scene is one stable undoable command",
     // The command owns a reference into the local MagdaApiLive facade.
     undo.clearHistory();
 }
+
+TEST_CASE("Session launch settings update and undo as one clip snapshot",
+          "[remote][session][settings][undo][2848]") {
+    remote::ScopedMessageThreadAssertionDisabler threadAssertionGuard;
+    RestoreSessionState fixture;
+    auto& clips = ClipManager::getInstance();
+    const auto clipId = clips.createMidiClipBeats(4242, 0.0, 4.0, ClipView::Session);
+    REQUIRE(clipId != INVALID_CLIP_ID);
+    clips.setClipSceneIndex(clipId, 0);
+
+    auto& undo = UndoManager::getInstance();
+    undo.clearHistory();
+    MagdaApiLive api;
+    const auto result =
+        remote::handlers::sessionUpdateClipSettings(api,
+                                                    object({{"clipId", clipId},
+                                                            {"launchMode", "toggle"},
+                                                            {"launchQuantize", "1/16"},
+                                                            {"followAction", "again"},
+                                                            {"followActionDelayBeats", 2.0},
+                                                            {"followActionLoopCount", 3}}),
+                                                    {});
+    REQUIRE_FALSE(result.failed());
+    const auto* updated = clips.getClip(clipId);
+    REQUIRE(updated != nullptr);
+    CHECK(updated->launchMode == LaunchMode::Toggle);
+    CHECK(updated->launchQuantize == LaunchQuantize::SixteenthBar);
+    CHECK(updated->followAction == FollowAction::PlayAgain);
+    CHECK(updated->followActionDelayBeats == 2.0);
+    CHECK(updated->followActionLoopCount == 3);
+
+    REQUIRE(undo.undo());
+    const auto* undone = clips.getClip(clipId);
+    REQUIRE(undone != nullptr);
+    CHECK(undone->launchMode == LaunchMode::Trigger);
+    CHECK(undone->launchQuantize == LaunchQuantize::OneBar);
+    CHECK(undone->followAction == FollowAction::None);
+    CHECK(undone->followActionDelayBeats == 0.0);
+    CHECK(undone->followActionLoopCount == 1);
+
+    REQUIRE(undo.redo());
+    CHECK(clips.getClip(clipId)->followAction == FollowAction::PlayAgain);
+    undo.clearHistory();
+}

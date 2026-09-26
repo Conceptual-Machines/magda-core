@@ -17,6 +17,8 @@ class SessionApiLive : public SessionApi {
     SessionClipPlayState getClipPlayState(ClipId clipId) const override;
     bool isSlotRecordArmed(TrackId trackId, int sceneIndex) const override;
     bool isSlotRecording(TrackId trackId, int sceneIndex) const override;
+    bool setClipLaunchSettings(ClipId clipId, const SessionClipLaunchSettings& settings) override;
+    bool returnToArrangement(std::optional<TrackId> trackId) override;
     SessionSceneState captureSceneState() const override;
     void restoreSceneState(const SessionSceneState& state) override;
     SceneId createScene(int index, const juce::String& name, std::uint32_t colourArgb) override;
