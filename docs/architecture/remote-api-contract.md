@@ -132,6 +132,33 @@ As an explicit in-app action. Saving changes persistence state rather than
 project content, so a successful save does not advance the Remote API revision
 or create an undo command.
 
+### Approved project files
+
+Remote clients never send or receive filesystem paths. A user chooses a project
+source or Save As destination in MAGDA's native Connections UI, which issues an
+opaque `file_…` capability to each live connection for that named client.
+`fileHandles.list` returns only the handle, capability, basename, expiry, and
+whether overwriting that exact destination was approved; `fileHandles.revoke`
+invalidates one owned handle. Handles are scoped to one transport connection,
+expire after 30 minutes, disappear on disconnect, and are held only in memory.
+A source handle cannot be used as a destination or by another connection.
+
+`project.open` requires a `project_source` handle and explicit policies for a
+dirty current project, autosave recovery, missing media, and unavailable
+devices. `project.saveAs` requires a `project_destination` handle plus explicit
+overwrite and media copy/move policies. Neither operation opens a chooser,
+warning, recovery sheet, or plugin dialog. An overwrite is permitted only when
+the resolved target is the exact existing file the native chooser approved;
+the wrapper-directory target used by MAGDA is resolved before this check.
+
+Both operations return an asynchronous job. Cancellation is terminal even if
+late I/O finishes, and a failed or cancelled open leaves the active project
+untouched because parsing and policy inspection happen before commit. A
+successful open commits once, clears project-scoped undo and pending work,
+advances the revision once, and publishes fresh snapshots for all discrete
+topics. Job results report safe project metadata and counts for allowed missing
+media or unavailable devices, never their paths or plugin state.
+
 ### Project lifecycle
 
 `project.new` creates an untitled project; `project.close` closes the current

@@ -16,6 +16,7 @@ class ModelChangeBridge;
 class RemoteApiService;
 class RemoteAuditLog;
 class RemoteClientRegistry;
+class RemoteFileHandleRegistry;
 class RemoteMcpServer;
 class RemoteWebSocketServer;
 class SubscriptionHub;
@@ -160,6 +161,9 @@ class RemoteApiHost {
 
     /// What remote clients have done this run. Bounded and in memory only.
     RemoteAuditLog& audit();
+
+    /** Native-UI seam for issuing path-free capabilities to connected clients. */
+    RemoteFileHandleRegistry& fileHandles();
 
   private:
     /**

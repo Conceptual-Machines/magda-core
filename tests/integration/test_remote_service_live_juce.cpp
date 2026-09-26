@@ -14,6 +14,7 @@
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/core/UndoManager.hpp"
 #include "magda/daw/project/ProjectManager.hpp"
+#include "magda/daw/project/serialization/ProjectSerializer.hpp"
 
 // Remote API driven against the live facade and the real singletons, so these
 // assert on what actually happens to the project rather than on what a mock
@@ -131,6 +132,131 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
             expect(!UndoManager::getInstance().canUndo());
             expectEquals(static_cast<juce::int64>(replaced.revision),
                          static_cast<juce::int64>(nextTrack.revision + 1));
+        }
+
+        beginTest("Project open commits one remote lifecycle boundary");
+        {
+            Fixture fixture;
+            auto& projects = ProjectManager::getInstance();
+            expect(projects.newProject(ProjectManager::UnsavedChangesPolicy::Discard));
+
+            const auto source = juce::File::createTempFile(".mgd");
+            ProjectInfo saved;
+            saved.name = "Remote Open";
+            saved.tempo = 137.0;
+            expect(ProjectSerializer::saveToFile(source, saved));
+
+            TrackManager::getInstance().createTrack("Outgoing", TrackType::Media);
+            UndoManager::getInstance().clearHistory();
+            const auto before = fixture.service.currentRevision();
+            auto request = fullyGrantedContext();
+            request.clientId = "live-file-client";
+            request.clientName = "live-file-client";
+            const auto handle = fixture.service.fileHandles().approve(
+                request.clientId, request.clientName, RemoteFileCapability::ProjectSource, source);
+            const auto accepted = fixture.run("project.open",
+                                              object({{"sourceHandle", handle},
+                                                      {"dirtyPolicy", "discard"},
+                                                      {"autosavePolicy", "ignore"},
+                                                      {"missingMediaPolicy", "fail"},
+                                                      {"unavailableDevicePolicy", "fail"}}),
+                                              request);
+            expect(accepted.ok);
+
+            const auto completed = fixture.waitForJob(accepted.result["id"].toString(), request);
+            expect(completed.has_value());
+            if (completed) {
+                expect(completed->state == RemoteJobState::Completed);
+                expect(completed->completionRevision == before + 1);
+            }
+            expectEquals(projects.getCurrentProjectInfo().name, juce::String("Remote Open"));
+            expectWithinAbsoluteError(projects.getCurrentProjectInfo().tempo, 137.0, 0.001);
+            expect(TrackManager::getInstance().getTracks().empty());
+            expect(!UndoManager::getInstance().canUndo());
+            expect(fixture.service.currentRevision() == before + 1);
+            expect(!projects.interactiveRecoveryAllowedForCurrentOpen());
+
+            expect(projects.newProject(ProjectManager::UnsavedChangesPolicy::Discard));
+            expect(projects.interactiveRecoveryAllowedForCurrentOpen());
+            source.deleteFile();
+        }
+
+        beginTest("A failed project open leaves the active project untouched");
+        {
+            Fixture fixture;
+            auto& projects = ProjectManager::getInstance();
+            expect(projects.newProject(ProjectManager::UnsavedChangesPolicy::Discard));
+            const auto trackId = TrackManager::getInstance().createTrack("Keep", TrackType::Media);
+            const auto originalName = projects.getCurrentProjectInfo().name;
+            const auto before = fixture.service.currentRevision();
+
+            const auto source = juce::File::createTempFile(".mgd");
+            expect(source.replaceWithText("not a project"));
+            auto request = fullyGrantedContext();
+            request.clientId = "live-file-client";
+            request.clientName = "live-file-client";
+            const auto handle = fixture.service.fileHandles().approve(
+                request.clientId, request.clientName, RemoteFileCapability::ProjectSource, source);
+            const auto accepted = fixture.run("project.open",
+                                              object({{"sourceHandle", handle},
+                                                      {"dirtyPolicy", "discard"},
+                                                      {"autosavePolicy", "ignore"},
+                                                      {"missingMediaPolicy", "fail"},
+                                                      {"unavailableDevicePolicy", "fail"}}),
+                                              request);
+            expect(accepted.ok);
+
+            const auto failed = fixture.waitForJob(accepted.result["id"].toString(), request);
+            expect(failed.has_value());
+            if (failed)
+                expect(failed->state == RemoteJobState::Failed);
+            expectEquals(projects.getCurrentProjectInfo().name, originalName);
+            expect(TrackManager::getInstance().getTrack(trackId) != nullptr);
+            expect(fixture.service.currentRevision() == before);
+            source.deleteFile();
+        }
+
+        beginTest("Project save-as writes only to an approved resolved destination");
+        {
+            Fixture fixture;
+            auto& projects = ProjectManager::getInstance();
+            expect(projects.newProject(ProjectManager::UnsavedChangesPolicy::Discard));
+            projects.setTempo(141.0);
+
+            const auto destination = juce::File::createTempFile(".mgd");
+            const auto target = ProjectManager::saveTargetFor(destination);
+            auto request = fullyGrantedContext();
+            request.clientId = "live-file-client";
+            request.clientName = "live-file-client";
+            const auto handle = fixture.service.fileHandles().approve(
+                request.clientId, request.clientName, RemoteFileCapability::ProjectDestination,
+                destination);
+            const auto before = fixture.service.currentRevision();
+            const auto accepted = fixture.run("project.saveAs",
+                                              object({{"destinationHandle", handle},
+                                                      {"overwritePolicy", "fail"},
+                                                      {"mediaPolicy", "copy"}}),
+                                              request);
+            expect(accepted.ok);
+            const auto completed = fixture.waitForJob(accepted.result["id"].toString(), request);
+            expect(completed.has_value() && completed->state == RemoteJobState::Completed);
+            expect(target.existsAsFile());
+            expect(fixture.service.currentRevision() == before);
+
+            const auto unapprovedOverwrite = fixture.service.fileHandles().approve(
+                request.clientId, request.clientName, RemoteFileCapability::ProjectDestination,
+                destination);
+            const auto overwrite = fixture.run("project.saveAs",
+                                               object({{"destinationHandle", unapprovedOverwrite},
+                                                       {"overwritePolicy", "replace"},
+                                                       {"mediaPolicy", "copy"}}),
+                                               request);
+            expect(overwrite.ok);
+            const auto refused = fixture.waitForJob(overwrite.result["id"].toString(), request);
+            expect(refused.has_value() && refused->state == RemoteJobState::Failed);
+
+            expect(projects.newProject(ProjectManager::UnsavedChangesPolicy::Discard));
+            target.getParentDirectory().deleteRecursively();
         }
 
         beginTest("Nested rack and chain operations are path-addressed and undoable");
@@ -1518,6 +1644,18 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
             service.dispatch(name, input, context,
                              [&captured](Response response) { captured = std::move(response); });
             return captured;
+        }
+
+        std::optional<RemoteJobDto> waitForJob(const juce::String& id,
+                                               const RequestContext& request) {
+            for (int attempt = 0; attempt < 200; ++attempt) {
+                Error error;
+                auto job = service.jobs().get(id, request.clientId, request.scopes, error);
+                if (job && isTerminal(job->state))
+                    return job;
+                juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+            }
+            return std::nullopt;
         }
     };
 

@@ -654,10 +654,19 @@ struct RequestContext {
     // Installed by RemoteApiService. Job endpoints and future job-producing
     // operations share this one owner-scoped registry across both transports.
     class RemoteJobManager* jobs = nullptr;
+    // Async completions retain the registry through this owner rather than
+    // keeping the borrowed pointer above past service shutdown.
+    std::shared_ptr<class RemoteJobManager> jobsOwner;
+    // Installed by RemoteApiService. Paths never enter request or response
+    // values; handlers resolve only capabilities approved in the native UI.
+    class RemoteFileHandleRegistry* fileHandles = nullptr;
     // The validated project revision at handler entry. Future job-producing
     // handlers capture this as RemoteJobSpec::acceptedRevision; client values
     // are overwritten alongside the two service pointers above.
     Revision revision = INITIAL_REVISION;
+    // Async completions use the live shared counter for their terminal
+    // revision and optimistic-concurrency check.
+    std::shared_ptr<std::atomic<Revision>> revisionOwner;
     /**
      * The transport's own handle for the caller — `ws:3:7`, `mcp:sess-…`.
      *

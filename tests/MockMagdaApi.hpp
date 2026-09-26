@@ -1150,7 +1150,24 @@ class MockProjectApi : public ProjectApi {
     int saveCalls = 0;
     int newCalls = 0;
     int closeCalls = 0;
+    int openAsyncCalls = 0;
+    int saveAsAsyncCalls = 0;
+    bool deferOpenAsync = false;
+    bool deferSaveAsAsync = false;
+    ProjectFileOperationResult openAsyncResult = succeededFileOperation();
+    ProjectFileOperationResult saveAsAsyncResult = succeededFileOperation();
+    ProjectOpenOptions lastOpenOptions;
+    ProjectSaveAsOptions lastSaveAsOptions;
+    ProjectFileOperationCallback pendingOpenCallback;
+    ProjectFileOperationCallback pendingSaveAsCallback;
+    juce::File lastOpenSource;
+    juce::File lastSaveAsDestination;
     const TempoMap* map = nullptr;
+    static ProjectFileOperationResult succeededFileOperation() {
+        ProjectFileOperationResult result;
+        result.status = ProjectFileOperationStatus::Succeeded;
+        return result;
+    }
     const TempoMap* tempoMap() const override {
         return map;
     }
@@ -1193,6 +1210,45 @@ class MockProjectApi : public ProjectApi {
         dirty = false;
         saveTarget = false;
         return true;
+    }
+    void openProjectAsync(const juce::File& source, ProjectOpenOptions options,
+                          ProjectFileOperationCallback onComplete) override {
+        ++openAsyncCalls;
+        lastOpenSource = source;
+        lastOpenOptions = std::move(options);
+        if (deferOpenAsync) {
+            pendingOpenCallback = std::move(onComplete);
+            return;
+        }
+        if (openAsyncResult.status == ProjectFileOperationStatus::Succeeded) {
+            open = true;
+            dirty = openAsyncResult.recoveredAutosave;
+            saveTarget = true;
+            openAsyncResult.project = info;
+            openAsyncResult.projectOpen = open;
+            openAsyncResult.projectDirty = dirty;
+            openAsyncResult.hasSaveTarget = saveTarget;
+        }
+        onComplete(openAsyncResult);
+    }
+    void saveProjectAsAsync(const juce::File& destination, ProjectSaveAsOptions options,
+                            ProjectFileOperationCallback onComplete) override {
+        ++saveAsAsyncCalls;
+        lastSaveAsDestination = destination;
+        lastSaveAsOptions = std::move(options);
+        if (deferSaveAsAsync) {
+            pendingSaveAsCallback = std::move(onComplete);
+            return;
+        }
+        if (saveAsAsyncResult.status == ProjectFileOperationStatus::Succeeded) {
+            dirty = false;
+            saveTarget = true;
+            saveAsAsyncResult.project = info;
+            saveAsAsyncResult.projectOpen = open;
+            saveAsAsyncResult.projectDirty = dirty;
+            saveAsAsyncResult.hasSaveTarget = saveTarget;
+        }
+        onComplete(saveAsAsyncResult);
     }
     void setTempo(double bpm) override {
         info.tempo = bpm;

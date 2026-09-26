@@ -1,6 +1,7 @@
 #include "remote_handlers.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <functional>
 #include <memory>
@@ -38,6 +39,7 @@
 #include "midi_api.hpp"
 #include "project_api.hpp"
 #include "remote_diagnostics.hpp"
+#include "remote_file_handles.hpp"
 #include "remote_jobs.hpp"
 #include "selection_api.hpp"
 #include "session_api.hpp"
@@ -726,6 +728,26 @@ HandlerResult jobsCancel(MagdaApi&, const juce::var& input, const RequestContext
     return job ? HandlerResult::ok(toJson(*job)) : HandlerResult::fail(std::move(error));
 }
 
+HandlerResult fileHandlesList(MagdaApi&, const juce::var&, const RequestContext& context) {
+    if (context.fileHandles == nullptr)
+        return HandlerResult::fail(ErrorCode::InternalError, "file handle service is unavailable");
+    juce::Array<juce::var> result;
+    for (const auto& handle : context.fileHandles->list(context.clientId))
+        result.add(toJson(handle));
+    return HandlerResult::ok(result);
+}
+
+HandlerResult fileHandlesRevoke(MagdaApi&, const juce::var& input, const RequestContext& context) {
+    if (context.fileHandles == nullptr)
+        return HandlerResult::fail(ErrorCode::InternalError, "file handle service is unavailable");
+    Error error;
+    if (!context.fileHandles->revoke(input["handleId"].toString(), context.clientId, error))
+        return HandlerResult::fail(std::move(error));
+    auto* result = new juce::DynamicObject();
+    result->setProperty("revoked", true);
+    return HandlerResult::unchanged(result);
+}
+
 // ===========================================================================
 // Project
 // ===========================================================================
@@ -761,6 +783,181 @@ HandlerResult projectClose(MagdaApi& api, const juce::var& input, const RequestC
     if (!project.closeProject(discard))
         return HandlerResult::fail(ErrorCode::InternalError, "project close failed");
     return HandlerResult::ok(projectStatus(project));
+}
+
+static juce::var projectFileJobResult(const ProjectFileOperationResult& operation) {
+    auto* result = new juce::DynamicObject();
+    result->setProperty("project",
+                        toJson(makeProjectDto(operation.project, operation.projectOpen,
+                                              operation.projectDirty, operation.hasSaveTarget)));
+    result->setProperty("recoveredAutosave", operation.recoveredAutosave);
+    juce::Array<juce::var> problems;
+    if (operation.missingMediaCount > 0) {
+        auto* problem = new juce::DynamicObject();
+        problem->setProperty("code", "missing_media");
+        problem->setProperty("count", operation.missingMediaCount);
+        problems.add(problem);
+    }
+    if (operation.unavailableDeviceCount > 0) {
+        auto* problem = new juce::DynamicObject();
+        problem->setProperty("code", "unavailable_device");
+        problem->setProperty("count", operation.unavailableDeviceCount);
+        problems.add(problem);
+    }
+    result->setProperty("problems", problems);
+    return result;
+}
+
+static Error projectFileError(ProjectFileOperationStatus status,
+                              const ProjectFileOperationResult& result) {
+    auto* details = new juce::DynamicObject();
+    details->setProperty("missingMediaCount", result.missingMediaCount);
+    details->setProperty("unavailableDeviceCount", result.unavailableDeviceCount);
+    switch (status) {
+        case ProjectFileOperationStatus::Cancelled:
+            return {ErrorCode::Cancelled, "project file operation was cancelled", {}, details};
+        case ProjectFileOperationStatus::Conflict:
+            return {ErrorCode::Conflict,
+                    "project file policy or state prevented the operation",
+                    {},
+                    details};
+        case ProjectFileOperationStatus::NotFound:
+            return {ErrorCode::NotFound, "approved project source is unavailable", {}, details};
+        case ProjectFileOperationStatus::InvalidFormat:
+            return {ErrorCode::ValidationFailed,
+                    "approved file is not a supported project format",
+                    {},
+                    details};
+        case ProjectFileOperationStatus::Failed:
+        case ProjectFileOperationStatus::Succeeded:
+            return {ErrorCode::InternalError, "project file operation failed", {}, details};
+    }
+    return {ErrorCode::InternalError, "project file operation failed", {}, details};
+}
+
+HandlerResult projectOpen(MagdaApi& api, const juce::var& input, const RequestContext& context) {
+    if (context.jobs == nullptr || context.fileHandles == nullptr)
+        return HandlerResult::fail(ErrorCode::InternalError,
+                                   "project file services are unavailable");
+    Error error;
+    const auto source =
+        context.fileHandles->resolve(input["sourceHandle"].toString(), context.clientId,
+                                     RemoteFileCapability::ProjectSource, error);
+    if (!source)
+        return HandlerResult::fail(std::move(error));
+    if (!source->file.existsAsFile())
+        return HandlerResult::fail(ErrorCode::NotFound, "approved project source is unavailable");
+
+    auto& project = api.project();
+    const bool discard = input["dirtyPolicy"].toString() == "discard";
+    if (project.hasOpenProject() && project.isDirty() && !discard)
+        return HandlerResult::fail(ErrorCode::Conflict,
+                                   "project has unsaved changes; dirtyPolicy is fail");
+
+    auto cancelled = std::make_shared<std::atomic_bool>(false);
+    const auto jobId =
+        context.jobs->accept({.kind = "project.open",
+                              .ownerClientId = context.clientId,
+                              .requiredScope = Scope::Edit,
+                              .acceptedRevision = context.revision,
+                              .revisionPolicy = JobRevisionPolicy::CheckAtStartOnly,
+                              .projectBound = false,
+                              .cancellable = true},
+                             [cancelled] { cancelled->store(true, std::memory_order_release); });
+    if (jobId.isEmpty())
+        return HandlerResult::fail(ErrorCode::InternalError, "project open job was not accepted");
+    context.jobs->markRunning(jobId);
+
+    ProjectOpenOptions options;
+    options.discardUnsavedChanges = discard;
+    const auto autosavePolicy = input["autosavePolicy"].toString();
+    options.autosavePolicy = autosavePolicy == "recover"  ? ProjectOpenAutosavePolicy::Recover
+                             : autosavePolicy == "ignore" ? ProjectOpenAutosavePolicy::Ignore
+                                                          : ProjectOpenAutosavePolicy::Fail;
+    options.allowMissingMedia = input["missingMediaPolicy"].toString() == "allow";
+    options.allowUnavailableDevices = input["unavailableDevicePolicy"].toString() == "allow";
+    for (const auto& device : api.devices().getCatalog())
+        options.availableDeviceCatalogIds.push_back(device.catalogId);
+    options.cancelled = cancelled;
+
+    auto jobs = context.jobsOwner;
+    auto revision = context.revisionOwner;
+    project.openProjectAsync(
+        source->file, std::move(options),
+        [jobs, revision, jobId](ProjectFileOperationResult result) {
+            if (!jobs)
+                return;
+            const auto currentRevision =
+                revision ? revision->load(std::memory_order_acquire) : INITIAL_REVISION;
+            if (result.status == ProjectFileOperationStatus::Succeeded) {
+                jobs->complete(jobId, projectFileJobResult(result), currentRevision);
+            } else {
+                jobs->fail(jobId, projectFileError(result.status, result), currentRevision);
+            }
+        });
+
+    const auto job = context.jobs->get(jobId, context.clientId, context.scopes, error);
+    return job ? HandlerResult::unchanged(toJson(*job)) : HandlerResult::fail(std::move(error));
+}
+
+HandlerResult projectSaveAs(MagdaApi& api, const juce::var& input, const RequestContext& context) {
+    if (context.jobs == nullptr || context.fileHandles == nullptr)
+        return HandlerResult::fail(ErrorCode::InternalError,
+                                   "project file services are unavailable");
+    Error error;
+    const auto destination =
+        context.fileHandles->resolve(input["destinationHandle"].toString(), context.clientId,
+                                     RemoteFileCapability::ProjectDestination, error);
+    if (!destination)
+        return HandlerResult::fail(std::move(error));
+    if (!api.project().hasOpenProject())
+        return HandlerResult::fail(ErrorCode::Conflict, "no project is open");
+
+    const bool overwrite = input["overwritePolicy"].toString() == "replace";
+    if (destination->file.existsAsFile() && !overwrite)
+        return HandlerResult::fail(ErrorCode::Conflict, "destination already exists");
+    if (destination->file.existsAsFile() && !destination->overwriteApproved)
+        return HandlerResult::fail(ErrorCode::PermissionDenied,
+                                   "overwriting this destination was not approved locally");
+
+    auto cancelled = std::make_shared<std::atomic_bool>(false);
+    const auto jobId =
+        context.jobs->accept({.kind = "project.saveAs",
+                              .ownerClientId = context.clientId,
+                              .requiredScope = Scope::Edit,
+                              .acceptedRevision = context.revision,
+                              .revisionPolicy = JobRevisionPolicy::StableUntilCompletion,
+                              .projectBound = true,
+                              .cancellable = true},
+                             [cancelled] { cancelled->store(true, std::memory_order_release); });
+    if (jobId.isEmpty())
+        return HandlerResult::fail(ErrorCode::InternalError,
+                                   "project save-as job was not accepted");
+    context.jobs->markRunning(jobId);
+
+    ProjectSaveAsOptions options;
+    options.overwrite = overwrite;
+    options.overwriteApproved = destination->overwriteApproved;
+    options.copyMedia = input["mediaPolicy"].toString() == "copy";
+    options.cancelled = cancelled;
+    auto jobs = context.jobsOwner;
+    auto revision = context.revisionOwner;
+    auto* project = &api.project();
+    project->saveProjectAsAsync(
+        destination->file, std::move(options),
+        [jobs, revision, jobId](ProjectFileOperationResult result) {
+            if (!jobs)
+                return;
+            const auto currentRevision =
+                revision ? revision->load(std::memory_order_acquire) : INITIAL_REVISION;
+            if (result.status == ProjectFileOperationStatus::Succeeded)
+                jobs->complete(jobId, projectFileJobResult(result), currentRevision);
+            else
+                jobs->fail(jobId, projectFileError(result.status, result), currentRevision);
+        });
+
+    const auto job = context.jobs->get(jobId, context.clientId, context.scopes, error);
+    return job ? HandlerResult::unchanged(toJson(*job)) : HandlerResult::fail(std::move(error));
 }
 
 HandlerResult projectSave(MagdaApi& api, const juce::var&, const RequestContext&) {
