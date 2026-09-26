@@ -599,6 +599,7 @@ void SlotLauncher::transportStarted() {
 void SlotLauncher::recordTargetsChanged() {
     refreshRecordTargets();
     syncPlaybackModes();
+    ClipManager::getInstance().notifySessionRuntimeStateChanged();
 }
 
 void SlotLauncher::recordTargetLaunched(TrackId trackId) {
@@ -620,6 +621,7 @@ void SlotLauncher::recordTargetLaunched(TrackId trackId) {
     stopping_.erase(trackId);
     refreshRecordTargets();
     syncPlaybackModes();
+    ClipManager::getInstance().notifySessionRuntimeStateChanged();
 }
 
 std::optional<double> SlotLauncher::dueBeat(const ClipInfo& clip) const {

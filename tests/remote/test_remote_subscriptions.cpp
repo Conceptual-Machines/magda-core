@@ -1080,9 +1080,9 @@ TEST_CASE("A session subscriber hears about a clip that changes the grid",
     const auto client = hub.addClient(sessionOnly.sink(), sessionOnly.disconnect());
     subscribe(hub, client, {"session"});
 
-    // `session.get` projects its slots out of the clips rather than storing them
-    // beside them, so a clip operation that marked only `clips` would leave this
-    // subscriber stale for as long as the session grid went untouched.
+    // `session.get` projects occupied state out of the clips. The empty slot is
+    // already in the complete grid, so occupying it is an update rather than an
+    // added element.
     ClipInfo clip;
     clip.id = 50;
     clip.trackId = 1;
@@ -1092,6 +1092,7 @@ TEST_CASE("A session subscriber hears about a clip that changes the grid",
     clip.sceneIndex = 0;
     api.clips_.clips.emplace(clip.id, clip);
     api.clips_.clipsOnTrack[1] = {clip.id};
+    api.session_.slots[{1, 0}] = clip.id;
 
     for (const auto topic : {Topic::Clips, Topic::Session})
         service.noteModelChanged(topic);
@@ -1099,7 +1100,29 @@ TEST_CASE("A session subscriber hears about a clip that changes the grid",
 
     REQUIRE(sessionOnly.events.size() == 1);
     REQUIRE(sessionOnly.events[0].topic == Topic::Session);
-    REQUIRE(sessionOnly.events[0].payload["added"].getArray()->size() == 1);
+    REQUIRE(sessionOnly.events[0].payload["updated"].getArray()->size() == 1);
+    REQUIRE(static_cast<int>(sessionOnly.events[0].payload["updated"][0]["clipId"]) == 50);
+}
+
+TEST_CASE("Session scene metadata changes publish a complete replacement snapshot",
+          "[remote][subscriptions][session][snapshot]") {
+    MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.tracks_.tracks.push_back(makeTrack(1, "Drums"));
+
+    RemoteApiService service(api);
+    Recorder recorder;
+    SubscriptionHub hub(api, service);
+    const auto client = hub.addClient(recorder.sink(), recorder.disconnect());
+    subscribe(hub, client, {"session"});
+
+    api.project_.info.scenes[0].name = "Drop";
+    service.noteModelChanged(Topic::Session);
+    service.changes().flush();
+
+    REQUIRE(recorder.events.size() == 1);
+    REQUIRE(recorder.events[0].type == SubscriptionEvent::Type::Snapshot);
+    REQUIRE(recorder.events[0].payload["scenes"][0]["name"].toString() == "Drop");
 }
 
 TEST_CASE("Keeping up on one topic is not keeping up", "[remote][subscriptions][backpressure]") {

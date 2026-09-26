@@ -58,6 +58,11 @@ class SessionApi {
     /// the id is invalid, the clip isn't a session clip, or the engine
     /// is unavailable.
     virtual SessionClipPlayState getClipPlayState(ClipId clipId) const = 0;
+
+    /// Runtime recording state for an addressed slot. These remain false when
+    /// no live engine is attached (for example in a headless project reader).
+    virtual bool isSlotRecordArmed(TrackId trackId, int sceneIndex) const = 0;
+    virtual bool isSlotRecording(TrackId trackId, int sceneIndex) const = 0;
 };
 
 }  // namespace magda

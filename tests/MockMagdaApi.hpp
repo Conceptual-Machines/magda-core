@@ -16,6 +16,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <map>
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -1064,6 +1065,15 @@ class MockSessionApi : public SessionApi {
     SessionClipPlayState getClipPlayState(ClipId clipId) const override {
         auto it = clipStates.find(clipId);
         return it != clipStates.end() ? it->second : SessionClipPlayState::Stopped;
+    }
+
+    std::set<std::pair<TrackId, int>> armedSlots;
+    std::set<std::pair<TrackId, int>> recordingSlots;
+    bool isSlotRecordArmed(TrackId trackId, int sceneIndex) const override {
+        return armedSlots.contains({trackId, sceneIndex});
+    }
+    bool isSlotRecording(TrackId trackId, int sceneIndex) const override {
+        return recordingSlots.contains({trackId, sceneIndex});
     }
 };
 

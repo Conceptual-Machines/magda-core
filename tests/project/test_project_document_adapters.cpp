@@ -305,6 +305,9 @@ TEST_CASE("DawProjectXmlAdapter roundtrips session clip scenes",
     document.info.name = "Session Test";
     document.info.version = "0.session";
     document.info.tempo = 120.0;
+    document.info.scenes = {
+        {101, "Intro", 0xFF112233}, {102, "Build", 0xFF445566}, {103, "Drop", 0xFF778899}};
+    document.info.nextSceneId = 104;
 
     TrackInfo track;
     track.id = 1;
@@ -335,9 +338,12 @@ TEST_CASE("DawProjectXmlAdapter roundtrips session clip scenes",
     REQUIRE(root != nullptr);
     auto* scenes = root->getChildByName("Scenes");
     REQUIRE(scenes != nullptr);
-    auto* scene = scenes->getChildByName("Scene");
+    REQUIRE(scenes->getNumChildElements() == 3);
+    auto* scene = scenes->getChildElement(2);
     REQUIRE(scene != nullptr);
-    REQUIRE(scene->getStringAttribute("id") == "scene2");
+    REQUIRE(scene->getStringAttribute("id") == "magdaScene103");
+    REQUIRE(scene->getStringAttribute("name") == "Drop");
+    REQUIRE(scene->getStringAttribute("color") == "#778899");
     auto* sceneLanes = scene->getChildByName("Lanes");
     REQUIRE(sceneLanes != nullptr);
     auto* slot = sceneLanes->getChildByName("ClipSlot");
@@ -367,6 +373,8 @@ TEST_CASE("DawProjectXmlAdapter roundtrips session clip scenes",
     REQUIRE(imported.clips[0].loopLengthBeats == Catch::Approx(4.0));
     REQUIRE(imported.clips[0].midiNotes.size() == 1);
     REQUIRE(imported.clips[0].midiNotes[0].noteNumber == 60);
+    REQUIRE(imported.info.scenes == document.info.scenes);
+    REQUIRE(imported.info.nextSceneId == 104);
 }
 
 TEST_CASE("DawProjectValidator validates vendored project and metadata schemas",

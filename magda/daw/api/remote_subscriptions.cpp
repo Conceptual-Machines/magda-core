@@ -651,6 +651,7 @@ void SubscriptionHub::publishTopicLocked(Topic topic, Revision revision) {
 
     SubscriptionEvent delta{topic, SubscriptionEvent::Type::Delta, revision, {}};
     bool changed = !hadBaseline;
+    bool sessionEnvelopeChanged = false;
 
     if (hadBaseline) {
         if (!keyFieldsFor(topic).empty()) {
@@ -658,6 +659,11 @@ void SubscriptionHub::publishTopicLocked(Topic topic, Revision revision) {
             changed = difference.changed();
             if (changed)
                 delta.payload = difference.toJson();
+            if (topic == Topic::Session) {
+                sessionEnvelopeChanged = !deepEquals(state.baseline["scenes"], current["scenes"]) ||
+                                         !deepEquals(state.baseline["tracks"], current["tracks"]);
+                changed = changed || sessionEnvelopeChanged;
+            }
         } else {
             changed = !deepEquals(state.baseline, current);
             if (changed)
@@ -680,7 +686,7 @@ void SubscriptionHub::publishTopicLocked(Topic topic, Revision revision) {
     for (auto& client : clients_) {
         if (!client.subscribed[index])
             continue;
-        if (client.needsSnapshot[index] || !hadBaseline) {
+        if (client.needsSnapshot[index] || !hadBaseline || sessionEnvelopeChanged) {
             deliverLocked(client, snapshot);
             continue;
         }

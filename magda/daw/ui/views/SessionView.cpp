@@ -1521,6 +1521,8 @@ class SessionView::MiniMasterStrip : public juce::Component {
 
 SessionView::SessionView() {
     MidiBridge::getInstance().addMidiDeviceListListener(this);
+    numScenes_ = std::max(
+        1, static_cast<int>(ProjectManager::getInstance().getCurrentProjectInfo().scenes.size()));
 
     // Get current view mode
     currentViewMode_ = ViewModeController::getInstance().getViewMode();
@@ -1690,6 +1692,8 @@ SessionView::SessionView() {
     // Register as ClipManager listener
     ClipManager::getInstance().addListener(this);
 
+    ProjectManager::getInstance().addListener(this);
+
     // Register as SelectionManager listener so multi-selected headers light up
     SelectionManager::getInstance().addListener(this);
 
@@ -1709,6 +1713,7 @@ SessionView::~SessionView() {
     stopTimer();
     TrackManager::getInstance().removeListener(this);
     ClipManager::getInstance().removeListener(this);
+    ProjectManager::getInstance().removeListener(this);
     SelectionManager::getInstance().removeListener(this);
     ViewModeController::getInstance().removeListener(this);
 }
@@ -1717,6 +1722,14 @@ void SessionView::tracksChanged() {
     DBG("SessionView::tracksChanged oldVisibleTracks=" << formatTrackIds(visibleTrackIds_)
                                                        << " sessionClips=" << formatSessionClips());
     rebuildTracks();
+}
+
+void SessionView::projectOpened(const ProjectInfo& info) {
+    syncScenesFromProject(info);
+}
+
+void SessionView::projectPropertiesChanged() {
+    syncScenesFromProject(ProjectManager::getInstance().getCurrentProjectInfo());
 }
 
 void SessionView::trackPropertyChanged(int trackId) {
@@ -2450,6 +2463,8 @@ void SessionView::viewportScrolled(bool horizontal, double rangeStart) {
 void SessionView::setupSceneButtons() {
     sceneButtons.clear();
 
+    const auto& scenes = ProjectManager::getInstance().getCurrentProjectInfo().scenes;
+
     for (int i = 0; i < numScenes_; ++i) {
         auto btn = std::make_unique<SceneButton>();
         btn->setColour(juce::TextButton::buttonColourId,
@@ -2457,12 +2472,32 @@ void SessionView::setupSceneButtons() {
         btn->setColour(juce::TextButton::textColourOffId,
                        ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         btn->setLookAndFeel(&daw::ui::SmallButtonLookAndFeel::getInstance());
+        btn->setButtonText(i < static_cast<int>(scenes.size())
+                               ? scenes[static_cast<std::size_t>(i)].name
+                               : "Scene " + juce::String(i + 1));
         btn->onClick = [this, i]() { onSceneLaunched(i); };
         sceneContainer->addAndMakeVisible(*btn);
         sceneButtons.push_back(std::move(btn));
     }
 
     syncMixerVisibilityFromConfig();
+}
+
+void SessionView::syncScenesFromProject(const ProjectInfo& info) {
+    const auto newCount = std::max(1, static_cast<int>(info.scenes.size()));
+    if (newCount == numScenes_ && sceneButtons.size() == info.scenes.size()) {
+        for (std::size_t index = 0; index < sceneButtons.size(); ++index)
+            sceneButtons[index]->setButtonText(info.scenes[index].name);
+        return;
+    }
+
+    numScenes_ = newCount;
+    if (gridContent != nullptr)
+        gridContent->setNumScenes(numScenes_);
+    if (sceneContainer != nullptr)
+        setupSceneButtons();
+    if (gridContent != nullptr)
+        rebuildTracks();
 }
 
 void SessionView::applyThemeColours() {
@@ -2504,38 +2539,7 @@ void SessionView::syncMixerVisibilityFromConfig() {
 }
 
 void SessionView::addScene() {
-    numScenes_++;
-    gridContent->setNumScenes(numScenes_);
-
-    // Add a new scene button
-    int sceneIndex = numScenes_ - 1;
-    auto btn = std::make_unique<SceneButton>();
-    btn->setColour(juce::TextButton::buttonColourId, ActiveTheme::getColour(ActiveTheme::SURFACE));
-    btn->setColour(juce::TextButton::textColourOffId,
-                   ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-    btn->setLookAndFeel(&daw::ui::SmallButtonLookAndFeel::getInstance());
-    btn->onClick = [this, sceneIndex]() { onSceneLaunched(sceneIndex); };
-    sceneContainer->addAndMakeVisible(*btn);
-    sceneButtons.push_back(std::move(btn));
-
-    // Add new clip slots for each track
-    int numTracks = static_cast<int>(visibleTrackIds_.size());
-    for (int track = 0; track < numTracks; ++track) {
-        auto slot = std::make_unique<ClipSlotButton>();
-        slot->setButtonText("");
-        slot->setColour(juce::TextButton::buttonColourId,
-                        ActiveTheme::getColour(ActiveTheme::SURFACE));
-        slot->setColour(juce::TextButton::textColourOffId,
-                        ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-
-        wireClipSlotCallbacks(*slot, track, sceneIndex);
-
-        gridContent->addAndMakeVisible(*slot);
-        clipSlots[track].push_back(std::move(slot));
-    }
-
-    resized();
-    updateAllClipSlots();
+    ProjectManager::getInstance().appendSessionScene();
 
     // Scroll to show the newly added scene
     int sceneRowHeight = CLIP_SLOT_HEIGHT + CLIP_SLOT_MARGIN;
@@ -2556,8 +2560,8 @@ void SessionView::removeScene() {
     // Check if any clips exist in the last scene
     auto& clipManager = ClipManager::getInstance();
     bool hasClips = false;
-    for (int visibleTrackId : visibleTrackIds_) {
-        ClipId clipId = clipManager.getClipInSlot(visibleTrackId, lastScene);
+    for (const auto& track : TrackManager::getInstance().getTracks()) {
+        ClipId clipId = clipManager.getClipInSlot(track.id, lastScene);
         if (clipId != INVALID_CLIP_ID) {
             hasClips = true;
             break;
@@ -2592,29 +2596,15 @@ void SessionView::removeSceneAsync(int sceneIndex) {
 
     // Stop and delete any clips in this scene
     auto& clipManager = ClipManager::getInstance();
-    for (int visibleTrackId : visibleTrackIds_) {
-        ClipId clipId = clipManager.getClipInSlot(visibleTrackId, sceneIndex);
+    for (const auto& track : TrackManager::getInstance().getTracks()) {
+        ClipId clipId = clipManager.getClipInSlot(track.id, sceneIndex);
         if (clipId != INVALID_CLIP_ID) {
             clipManager.stopClip(clipId);
             clipManager.deleteClip(clipId);
         }
     }
 
-    // Remove the last scene button
-    sceneButtons.pop_back();
-
-    // Remove the last clip slot from each track
-    for (auto& trackSlots : clipSlots) {
-        if (!trackSlots.empty()) {
-            trackSlots.pop_back();
-        }
-    }
-
-    numScenes_--;
-    gridContent->setNumScenes(numScenes_);
-
-    resized();
-    updateAllClipSlots();
+    ProjectManager::getInstance().removeLastSessionScene();
 }
 
 void SessionView::wireClipSlotCallbacks(ClipSlotButton& slot, int trackIndex, int sceneIndex) {
