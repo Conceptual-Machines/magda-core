@@ -41,11 +41,23 @@ class MagdaAudioEngineTest final : public juce::UnitTest {
 
     void runTest() override {
         magda::test::runWithCleanJuceState([this] { testAnswersWithoutAnEdit(); });
+        magda::test::runWithCleanJuceState([this] { testSessionRecordingCapabilities(); });
         magda::test::runWithCleanJuceState([this] { testUnwiredMethodsNameThemselves(); });
         magda::test::runWithCleanJuceState([this] { testDestructionRunsTheShutdown(); });
     }
 
   private:
+    void testSessionRecordingCapabilities() {
+        beginTest("Native engine advertises the Session recording contract");
+        magda::MagdaAudioEngine engine{magda::AudioEngineOptions{.headless = true}};
+        const auto capabilities = engine.sessionRecordingCapabilities();
+        expect(capabilities.slotRecording);
+        expect(capabilities.performanceCapture);
+        expect(capabilities.slotCancellation);
+        expect(!capabilities.performanceCaptureCancellation);
+        expect(!capabilities.slotStopStopsTransport);
+    }
+
     void testAnswersWithoutAnEdit() {
         beginTest("The engine answers the transport model itself, from no Edit");
 

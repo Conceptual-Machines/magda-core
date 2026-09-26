@@ -63,6 +63,7 @@ class SessionSlotRecordingIntegrationTest final : public juce::UnitTest {
         : juce::UnitTest("Session Slot Recording Integration Tests", "magda") {}
 
     void runTest() override {
+        magda::test::runWithCleanJuceState([this] { testRecordingCapabilities(); });
         magda::test::runWithCleanJuceState(
             [this] { testTeSlotRecordingFinalizesToMagdaSessionClip(); });
         magda::test::runWithCleanJuceState(
@@ -79,6 +80,16 @@ class SessionSlotRecordingIntegrationTest final : public juce::UnitTest {
     }
 
   private:
+    void testRecordingCapabilities() {
+        beginTest("Tracktion advertises its explicit Session recording limits");
+        const auto capabilities = magda::test::getSharedEngine().sessionRecordingCapabilities();
+        expect(capabilities.slotRecording);
+        expect(capabilities.performanceCapture);
+        expect(!capabilities.slotCancellation);
+        expect(!capabilities.performanceCaptureCancellation);
+        expect(capabilities.slotStopStopsTransport);
+    }
+
     struct Fixture {
         TracktionEngineWrapper& wrapper;
         AudioBridge* bridge = nullptr;

@@ -476,6 +476,29 @@ bool TracktionEngineWrapper::isSessionSlotRecording(TrackId trackId, int sceneIn
            it->second.active;
 }
 
+SessionRecordingCapabilities TracktionEngineWrapper::sessionRecordingCapabilities() const {
+    return {.slotRecording = true,
+            .performanceCapture = true,
+            .slotCancellation = false,
+            .performanceCaptureCancellation = false,
+            .slotStopStopsTransport = true};
+}
+
+bool TracktionEngineWrapper::stopSessionSlotRecording(TrackId trackId, bool commit) {
+    auto found = sessionSlotRecordingTargets_.find(trackId);
+    if (found == sessionSlotRecordingTargets_.end() || !commit)
+        return false;
+    if (!found->second.active) {
+        armSessionSlotRecording(trackId, found->second.sceneIndex);
+        return true;
+    }
+
+    // Tracktion owns slot input finalisation at its transport boundary, so a
+    // targeted stop necessarily ends the shared recording pass on this backend.
+    onTransportStopRecording();
+    return true;
+}
+
 bool TracktionEngineWrapper::hasActiveSessionSlotRecordings() const {
     const auto isActive = [](const auto& target) { return target.active; };
     return std::ranges::any_of(sessionSlotRecordingTargets_ | std::views::values, isActive);

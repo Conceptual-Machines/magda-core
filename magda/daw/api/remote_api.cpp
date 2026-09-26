@@ -1103,6 +1103,25 @@ const juce::var& sessionSchema() {
     return value;
 }
 
+const juce::var& sessionRecordingCapabilitiesSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "slotRecording":{"type":"boolean"},
+            "performanceCapture":{"type":"boolean"},
+            "slotCancellation":{"type":"boolean"},
+            "performanceCaptureCancellation":{"type":"boolean"},
+            "slotStopStopsTransport":{"type":"boolean"},
+            "occupiedSlotPolicies":{"type":"array","items":{"type":"string","enum":["fail"]}}
+        },
+        "required":["slotRecording","performanceCapture","slotCancellation",
+                    "performanceCaptureCancellation","slotStopStopsTransport",
+                    "occupiedSlotPolicies"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
 const juce::var& automationTargetSchema() {
     static auto value = [] {
         auto schema = parseSchema(R"json({
@@ -4098,6 +4117,50 @@ OperationRegistry::OperationRegistry() {
             "additionalProperties":false
         })json"),
         sessionSchema());
+    add("session.recordingCapabilities", "Inspect Session recording support and stop policy",
+        OperationAccess::Read, &handlers::sessionRecordingCapabilities, emptyObjectSchema(),
+        sessionRecordingCapabilitiesSchema());
+    add("session.armSlotRecording", "Arm or unarm an empty addressed Session slot",
+        OperationAccess::Control, &handlers::sessionArmSlotRecording, operationInputSchema(R"json({
+            "type":"object","properties":{
+                "trackId":{"type":"integer","minimum":0},
+                "sceneId":{"type":"integer","minimum":0},
+                "armed":{"type":"boolean"},
+                "occupiedPolicy":{"const":"fail"}
+            },
+            "required":["trackId","sceneId","armed","occupiedPolicy"],
+            "additionalProperties":false
+        })json"),
+        sessionSchema());
+    add("session.beginSlotRecording", "Begin a queued slot take as an asynchronous job",
+        OperationAccess::Control, &handlers::sessionBeginSlotRecording,
+        operationInputSchema(R"json({
+            "type":"object","properties":{
+                "trackId":{"type":"integer","minimum":0},
+                "sceneId":{"type":"integer","minimum":0},
+                "occupiedPolicy":{"const":"fail"}
+            },
+            "required":["trackId","sceneId","occupiedPolicy"],
+            "additionalProperties":false
+        })json"),
+        remoteJobSchema());
+    add("session.stopSlotRecording", "Stop a slot take and complete its recording job",
+        OperationAccess::Write, &handlers::sessionStopSlotRecording, operationInputSchema(R"json({
+            "type":"object","properties":{"jobId":{"type":"string","minLength":1}},
+            "required":["jobId"],"additionalProperties":false
+        })json"),
+        remoteJobSchema());
+    add("session.beginPerformanceCapture",
+        "Capture launched Session performance into Arrangement as an asynchronous job",
+        OperationAccess::Control, &handlers::sessionBeginPerformanceCapture, emptyObjectSchema(),
+        remoteJobSchema());
+    add("session.stopPerformanceCapture", "Stop and commit a Session performance capture",
+        OperationAccess::Write, &handlers::sessionStopPerformanceCapture,
+        operationInputSchema(R"json({
+            "type":"object","properties":{"jobId":{"type":"string","minLength":1}},
+            "required":["jobId"],"additionalProperties":false
+        })json"),
+        remoteJobSchema());
 
     add("automation.listLanes", "List every automation lane in the project", OperationAccess::Read,
         &handlers::automationListLanes, emptyObjectSchema(), arraySchema(automationLaneSchema()));
@@ -4491,6 +4554,11 @@ OperationRegistry::OperationRegistry() {
         {"session.stopAll", Scope::Session},
         {"session.launchScene", Scope::Session},
         {"session.returnToArrangement", Scope::Session},
+        {"session.armSlotRecording", Scope::Session},
+        {"session.beginSlotRecording", Scope::Session},
+        {"session.stopSlotRecording", Scope::Session},
+        {"session.beginPerformanceCapture", Scope::Session},
+        {"session.stopPerformanceCapture", Scope::Session},
 
         // Physical MIDI ports. The scope existed before any operation did
         // (#1860); these are the operations it was declared for.

@@ -164,7 +164,7 @@ void SessionRecorder::clipPlaybackStateChanged(ClipId clipId) {
         // Finalize any existing recording on the same track (clip replaced)
         for (auto it = activeRecordings_.begin(); it != activeRecordings_.end();) {
             if (it->second.trackId == clip->trackId) {
-                finalizeRecording(it->second, launchTime);
+                queueRecording(it->second, launchTime);
                 it = activeRecordings_.erase(it);
             } else {
                 ++it;
@@ -195,13 +195,17 @@ void SessionRecorder::clipPlaybackStateChanged(ClipId clipId) {
         if (it != activeRecordings_.end()) {
             if (recordingPreviews_)
                 recordingPreviews_->erase(it->second.trackId);
-            finalizeRecording(it->second, currentTime);
+            queueRecording(it->second, currentTime);
             activeRecordings_.erase(it);
         }
     }
 }
 
-void SessionRecorder::finalizeRecording(const ActiveRecording& rec, double stopTime) {
+void SessionRecorder::queueRecording(const ActiveRecording& rec, double stopTime) {
+    pendingRecordings_.push_back({rec, stopTime});
+}
+
+void SessionRecorder::materializeRecording(const ActiveRecording& rec, double stopTime) {
     auto& clipManager = ClipManager::getInstance();
     const auto* sessionClip = clipManager.getClip(rec.sessionClipId);
     if (!sessionClip)
@@ -324,7 +328,7 @@ void SessionRecorder::finalizeRecording(const ActiveRecording& rec, double stopT
 }
 
 void SessionRecorder::commitIfNeeded() {
-    if (activeRecordings_.empty() && createdArrangementClipIds_.empty())
+    if (activeRecordings_.empty() && pendingRecordings_.empty())
         return;
 
     auto& transport = edit_.getTransport();
@@ -334,11 +338,16 @@ void SessionRecorder::commitIfNeeded() {
     if (recordingPreviews_)
         recordingPreviews_->clear();
 
-    // Finalize any still-active recordings
+    // Freeze every span first, then materialize the complete pass as one model event.
     for (const auto& [clipId, rec] : activeRecordings_) {
-        finalizeRecording(rec, currentTime);
+        juce::ignoreUnused(clipId);
+        queueRecording(rec, currentTime);
     }
     activeRecordings_.clear();
+
+    ClipManager::BatchScope notificationBatch;
+    for (const auto& pending : pendingRecordings_)
+        materializeRecording(pending.recording, pending.stopTime);
 
     // Push undo command if any clips were created
     if (!createdArrangementClipIds_.empty()) {
@@ -352,6 +361,7 @@ void SessionRecorder::commitIfNeeded() {
     }
 
     arrangementSnapshotBeforeRecord_.clear();
+    pendingRecordings_.clear();
     createdArrangementClipIds_.clear();
     snapshotTaken_ = false;
 }

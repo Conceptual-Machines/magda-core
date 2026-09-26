@@ -72,13 +72,20 @@ class SessionRecorder : public ClipManagerListener {
         double arrangementStartTime = 0.0;
     };
 
+    struct PendingRecording {
+        ActiveRecording recording;
+        double stopTime = 0.0;
+    };
+
     void ensureSnapshotTaken();
-    void finalizeRecording(const ActiveRecording& rec, double stopTime);
+    void queueRecording(const ActiveRecording& rec, double stopTime);
+    void materializeRecording(const ActiveRecording& rec, double stopTime);
 
     te::Edit& edit_;
     bool armed_ = false;
     bool snapshotTaken_ = false;
     std::unordered_map<ClipId, ActiveRecording> activeRecordings_;
+    std::vector<PendingRecording> pendingRecordings_;
     std::vector<ClipInfo> arrangementSnapshotBeforeRecord_;
     std::vector<ClipId> createdArrangementClipIds_;
     std::unordered_map<TrackId, RecordingPreview>* recordingPreviews_ = nullptr;

@@ -139,6 +139,8 @@ class TracktionEngineWrapper : public AudioEngine,
     void beginArmedSessionSlotRecordings() override;
     bool isSessionSlotRecordArmed(TrackId trackId, int sceneIndex) const override;
     bool isSessionSlotRecording(TrackId trackId, int sceneIndex) const override;
+    SessionRecordingCapabilities sessionRecordingCapabilities() const override;
+    bool stopSessionSlotRecording(TrackId trackId, bool commit) override;
 #ifdef MAGDA_ENABLE_TEST_HOOKS
     void testSetSessionSlotRecordingActive(TrackId trackId, int sceneIndex) {
         SessionSlotRecordingTarget target;

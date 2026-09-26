@@ -657,6 +657,8 @@ struct RequestContext {
     // Async completions retain the registry through this owner rather than
     // keeping the borrowed pointer above past service shutdown.
     std::shared_ptr<class RemoteJobManager> jobsOwner;
+    class RemoteSessionRecordings* sessionRecordings = nullptr;
+    std::shared_ptr<class RemoteSessionRecordings> sessionRecordingsOwner;
     // Installed by RemoteApiService. Paths never enter request or response
     // values; handlers resolve only capabilities approved in the native UI.
     class RemoteFileHandleRegistry* fileHandles = nullptr;

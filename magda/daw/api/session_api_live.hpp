@@ -17,6 +17,10 @@ class SessionApiLive : public SessionApi {
     SessionClipPlayState getClipPlayState(ClipId clipId) const override;
     bool isSlotRecordArmed(TrackId trackId, int sceneIndex) const override;
     bool isSlotRecording(TrackId trackId, int sceneIndex) const override;
+    SessionRecordingCapabilities recordingCapabilities() const override;
+    bool setSlotRecordArmed(TrackId trackId, int sceneIndex, bool armed) override;
+    bool beginSlotRecording(TrackId trackId, int sceneIndex) override;
+    bool stopSlotRecording(TrackId trackId, int sceneIndex, bool commit) override;
     bool setClipLaunchSettings(ClipId clipId, const SessionClipLaunchSettings& settings) override;
     bool returnToArrangement(std::optional<TrackId> trackId) override;
     SessionSceneState captureSceneState() const override;

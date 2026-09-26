@@ -432,6 +432,144 @@ TEST_CASE("Session clip settings are one atomic edit and handoff is revision neu
     CHECK(api.session_.arrangementReturns.front() == std::optional<TrackId>{7});
 }
 
+TEST_CASE("Session slot recording controls stay neutral and commit through one job revision",
+          "[remote][service][session][recording][2841]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    TrackInfo track;
+    track.id = 7;
+    api.tracks_.tracks.push_back(track);
+    api.project_.info.scenes = {{10, "Take", 0}};
+    RemoteApiService service(api);
+    auto context = fullyGrantedContext();
+    context.clientId = "recording-client";
+
+    const auto capabilities = run(service, "session.recordingCapabilities", emptyInput(), context);
+    REQUIRE(capabilities.ok);
+    CHECK(static_cast<bool>(capabilities.result["slotRecording"]));
+    CHECK(static_cast<bool>(capabilities.result["performanceCapture"]));
+    CHECK(capabilities.revision == INITIAL_REVISION);
+
+    const auto arm =
+        run(service, "session.armSlotRecording",
+            object({{"trackId", 7}, {"sceneId", 10}, {"armed", true}, {"occupiedPolicy", "fail"}}),
+            context);
+    REQUIRE(arm.ok);
+    CHECK(arm.revision == INITIAL_REVISION);
+    CHECK(api.session_.armedSlots.contains({7, 0}));
+
+    const auto begin =
+        run(service, "session.beginSlotRecording",
+            object({{"trackId", 7}, {"sceneId", 10}, {"occupiedPolicy", "fail"}}), context);
+    REQUIRE(begin.ok);
+    CHECK(begin.revision == INITIAL_REVISION);
+    CHECK(begin.result["kind"].toString() == "session.slotRecording");
+    CHECK(begin.result["state"].toString() == "running");
+    CHECK(api.session_.recordingSlots.contains({7, 0}));
+    CHECK(api.transport_.recording);
+
+    const auto stop = run(service, "session.stopSlotRecording",
+                          object({{"jobId", begin.result["id"].toString()}}), context);
+    REQUIRE(stop.ok);
+    CHECK(stop.revision == INITIAL_REVISION + 1);
+    CHECK(api.session_.slots.at({7, 0}) == api.session_.nextRecordedClipId - 1);
+    CHECK_FALSE(api.session_.armedSlots.contains({7, 0}));
+    CHECK(api.undo_.compoundDepth == 0);
+
+    service.pollSessionRecordings();
+    const auto completed =
+        run(service, "jobs.get", object({{"jobId", begin.result["id"].toString()}}), context);
+    REQUIRE(completed.ok);
+    CHECK(completed.result["state"].toString() == "completed");
+    CHECK(static_cast<ClipId>(static_cast<int>(completed.result["result"]["clipId"])) ==
+          api.session_.nextRecordedClipId - 1);
+    CHECK(static_cast<juce::int64>(completed.result["completionRevision"]) ==
+          static_cast<juce::int64>(INITIAL_REVISION + 1));
+}
+
+TEST_CASE("Occupied Session slots reject recording without changing revision",
+          "[remote][service][session][recording][2841]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    TrackInfo track;
+    track.id = 7;
+    api.tracks_.tracks.push_back(track);
+    api.project_.info.scenes = {{10, "Occupied", 0}};
+    api.session_.slots[{7, 0}] = 50;
+    RemoteApiService service(api);
+
+    const auto response =
+        run(service, "session.beginSlotRecording",
+            object({{"trackId", 7}, {"sceneId", 10}, {"occupiedPolicy", "fail"}}));
+    REQUIRE_FALSE(response.ok);
+    CHECK(errorCodeOf(response) == "conflict");
+    CHECK(response.revision == INITIAL_REVISION);
+    CHECK(service.jobs().list("test-client", allScopes()).empty());
+}
+
+TEST_CASE("Session performance capture returns its arrangement clips in one job commit",
+          "[remote][service][session][recording][2841]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    auto context = fullyGrantedContext();
+    context.clientId = "performance-client";
+
+    const auto begin = run(service, "session.beginPerformanceCapture", emptyInput(), context);
+    REQUIRE(begin.ok);
+    CHECK(begin.revision == INITIAL_REVISION);
+    CHECK(begin.result["state"].toString() == "running");
+
+    api.transport_.recordingChanged = [&](bool recording) {
+        if (recording)
+            return;
+        ClipInfo captured;
+        captured.id = 80;
+        captured.trackId = 7;
+        captured.view = ClipView::Arrangement;
+        api.clips_.arrangement.push_back(captured);
+    };
+    const auto stop = run(service, "session.stopPerformanceCapture",
+                          object({{"jobId", begin.result["id"].toString()}}), context);
+    REQUIRE(stop.ok);
+    CHECK(stop.revision == INITIAL_REVISION + 1);
+
+    service.pollSessionRecordings();
+    const auto completed =
+        run(service, "jobs.get", object({{"jobId", begin.result["id"].toString()}}), context);
+    REQUIRE(completed.ok);
+    CHECK(completed.result["state"].toString() == "completed");
+    REQUIRE(completed.result["result"]["clipIds"].getArray() != nullptr);
+    CHECK(completed.result["result"]["clipIds"].getArray()->size() == 1);
+    CHECK(static_cast<int>(completed.result["result"]["clipIds"][0]) == 80);
+}
+
+TEST_CASE("Session slot job cancellation discards the take without a revision",
+          "[remote][service][session][recording][2841]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    TrackInfo track;
+    track.id = 7;
+    api.tracks_.tracks.push_back(track);
+    api.project_.info.scenes = {{10, "Cancel", 0}};
+    RemoteApiService service(api);
+    auto context = fullyGrantedContext();
+    context.clientId = "cancel-client";
+
+    const auto begin =
+        run(service, "session.beginSlotRecording",
+            object({{"trackId", 7}, {"sceneId", 10}, {"occupiedPolicy", "fail"}}), context);
+    REQUIRE(begin.ok);
+    const auto cancelled =
+        run(service, "jobs.cancel", object({{"jobId", begin.result["id"].toString()}}), context);
+    REQUIRE(cancelled.ok);
+    CHECK(cancelled.result["state"].toString() == "cancelled");
+    CHECK(cancelled.revision == INITIAL_REVISION);
+    CHECK_FALSE(api.session_.slots.contains({7, 0}));
+    CHECK_FALSE(api.session_.armedSlots.contains({7, 0}));
+    CHECK_FALSE(api.session_.recordingSlots.contains({7, 0}));
+}
+
 TEST_CASE("Deleting a populated scene with fail policy changes nothing",
           "[remote][service][session][scenes][2842]") {
     const MessageThreadRelaxation relaxation;
