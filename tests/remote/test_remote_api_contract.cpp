@@ -33,6 +33,15 @@ juce::var object(std::initializer_list<std::pair<const char*, juce::var>> proper
     return result;
 }
 
+MidiNote makeMidiNote(int pitch, double startBeat, double lengthBeats) {
+    MidiNote note;
+    note.noteNumber = pitch;
+    note.velocity = 100;
+    note.startBeat = startBeat;
+    note.lengthBeats = lengthBeats;
+    return note;
+}
+
 }  // namespace
 
 TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote-api][contract]") {
@@ -45,6 +54,9 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(registry.find("project.setLoopRange") != nullptr);
     REQUIRE(registry.find("chordTrack.get") != nullptr);
     REQUIRE(registry.find("chordTrack.ensure") != nullptr);
+    REQUIRE(registry.find("chordTrack.detect") != nullptr);
+    REQUIRE(registry.find("chordTrack.extract") != nullptr);
+    REQUIRE(registry.find("chordTrack.sendToTrack") != nullptr);
     REQUIRE(registry.find("trackPresets.list") != nullptr);
     REQUIRE(registry.find("tracks.createFromPreset") != nullptr);
     REQUIRE(registry.find("tracks.applyPreset") != nullptr);
@@ -501,15 +513,62 @@ TEST_CASE("Chord track operations expose a singleton-safe progression projection
     const auto* get = registry.find("chordTrack.get");
     const auto* ensure = registry.find("chordTrack.ensure");
     const auto* replace = registry.find("chordTrack.replaceProgression");
+    const auto* detect = registry.find("chordTrack.detect");
+    const auto* extract = registry.find("chordTrack.extract");
+    const auto* send = registry.find("chordTrack.sendToTrack");
     REQUIRE(get != nullptr);
     REQUIRE(ensure != nullptr);
     REQUIRE(replace != nullptr);
+    REQUIRE(detect != nullptr);
+    REQUIRE(extract != nullptr);
+    REQUIRE(send != nullptr);
     CHECK(get->access == OperationAccess::Read);
     CHECK(get->requiredScope == Scope::Read);
     CHECK(ensure->access == OperationAccess::Write);
     CHECK(ensure->requiredScope == Scope::Edit);
     CHECK(replace->access == OperationAccess::Write);
     CHECK(replace->requiredScope == Scope::Edit);
+    CHECK(detect->access == OperationAccess::Read);
+    CHECK(detect->requiredScope == Scope::Read);
+    CHECK(extract->access == OperationAccess::Write);
+    CHECK(extract->requiredScope == Scope::Edit);
+    CHECK(send->access == OperationAccess::Write);
+    CHECK(send->requiredScope == Scope::Edit);
+
+    const auto detectionInput =
+        object({{"sourceClipId", 90}, {"startBeat", 0.0}, {"endBeat", 8.0}, {"windowBeats", 4.0}});
+    CHECK_FALSE(validateOperationInput(*detect, detectionInput).has_value());
+    auto extractionInput = detectionInput.clone();
+    extractionInput.getDynamicObject()->setProperty("destinationStartBeat", 16.0);
+    extractionInput.getDynamicObject()->setProperty("populatedPolicy", "replace");
+    extractionInput.getDynamicObject()->setProperty("voicing", "root");
+    extractionInput.getDynamicObject()->setProperty("octave", 4);
+    CHECK_FALSE(validateOperationInput(*extract, extractionInput).has_value());
+    CHECK_FALSE(validateOperationInput(*send, object({{"sourceClipId", 91},
+                                                      {"targetTrackId", 2},
+                                                      {"startBeat", 0.0},
+                                                      {"occupiedPolicy", "fail"},
+                                                      {"voicing", "source"},
+                                                      {"instrumentPolicy", "preserve_target"}}))
+                    .has_value());
+
+    ClipInfo source;
+    source.id = 90;
+    source.trackId = 2;
+    source.setMidiContent();
+    source.setPlacementBeats(0.0, 8.0);
+    for (int note : {60, 64, 67})
+        source.midiNotes.push_back(makeMidiNote(note, 0.0, 4.0));
+    for (int note : {67, 71, 74})
+        source.midiNotes.push_back(makeMidiNote(note, 4.0, 4.0));
+    api.clips_.clips.emplace(source.id, source);
+    const auto detected = detect->handler(api, detectionInput, {});
+    REQUIRE_FALSE(detected.failed());
+    REQUIRE(detected.value["chords"].getArray() != nullptr);
+    REQUIRE(detected.value["chords"].getArray()->size() == 2);
+    CHECK(detected.value["chords"][0]["root"].toString() == "C");
+    CHECK(static_cast<double>(detected.value["chords"][0]["confidence"]) == 1.0);
+    CHECK(validateJson(detected.value, detect->outputSchema).empty());
 
     const auto absent = get->handler(api, object({}), {});
     REQUIRE_FALSE(absent.failed());

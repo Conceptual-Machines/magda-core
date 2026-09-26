@@ -1,5 +1,6 @@
 #include <juce_core/juce_core.h>
 
+#include <algorithm>
 #include <set>
 
 #include "magda/daw/core/ChordProgressionConverter.hpp"
@@ -123,6 +124,39 @@ class ChordProgressionConverterTest final : public juce::UnitTest {
             // Last chord runs to the end of its notes.
             expectWithinAbsoluteError(chords[1].startBeat, 8.0, 1e-9);
             expectWithinAbsoluteError(chords[1].lengthBeats, 4.0, 1e-9);
+        }
+
+        beginTest("extractChordsFromNotes: an explicit range excludes earlier harmony");
+        {
+            std::vector<MidiNote> notes;
+            for (int p : {60, 64, 67})
+                notes.push_back(note(p, 0.0, 4.0));
+            for (int p : {67, 71, 74})
+                notes.push_back(note(p, 4.0, 4.0));
+
+            const auto chords = extractChordsFromNotes(notes, 4.0, 8.0, 4.0);
+            expectEquals(static_cast<int>(chords.size()), 1);
+            if (!chords.empty()) {
+                expect(chords[0].root == ChordRoot::G, "range contains only G major");
+                expect(chords[0].exactMatch, "block chord is exact");
+                expectWithinAbsoluteError(chords[0].confidence, 1.0, 1e-9);
+            }
+        }
+
+        beginTest("extractChordsFromNotes: partial matches carry confidence and warnings");
+        {
+            std::vector<MidiNote> notes;
+            for (int pitch : {60, 63, 64, 67})
+                notes.push_back(note(pitch, 0.0, 4.0));
+
+            const auto chords = extractChordsFromNotes(notes, 0.0, 4.0, 4.0);
+            expectEquals(static_cast<int>(chords.size()), 1);
+            if (!chords.empty()) {
+                expect(!chords[0].exactMatch, "extra pitch makes the match ambiguous");
+                expect(chords[0].confidence > 0.0 && chords[0].confidence < 1.0);
+                expect(std::ranges::find(chords[0].warnings, juce::String("partial_match")) !=
+                       chords[0].warnings.end());
+            }
         }
 
         beginTest("extractChordsFromNotes: a lone note is not a chord");

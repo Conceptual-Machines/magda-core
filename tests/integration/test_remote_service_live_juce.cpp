@@ -35,6 +35,15 @@ juce::var object(std::initializer_list<std::pair<const char*, juce::var>> fields
     return result;
 }
 
+MidiNote makeMidiNote(int pitch, double startBeat, double lengthBeats) {
+    MidiNote note;
+    note.noteNumber = pitch;
+    note.velocity = 100;
+    note.startBeat = startBeat;
+    note.lengthBeats = lengthBeats;
+    return note;
+}
+
 juce::var arrangementDestination(TrackId trackId, double startBeat) {
     return object({{"view", "arrangement"},
                    {"trackId", static_cast<int>(trackId)},
@@ -325,6 +334,205 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
             expect(clips.getClipsOnTrack(trackId) == std::vector<ClipId>{oldId});
             expect(UndoManager::getInstance().redo());
             expect(clips.getClipsOnTrack(trackId) == replacementIds);
+        }
+
+        beginTest("Chord detection is range-bounded, read-only, and reports confidence");
+        {
+            Fixture fixture;
+            auto& tracks = TrackManager::getInstance();
+            auto& clips = ClipManager::getInstance();
+            const auto sourceTrack = tracks.createTrack("Harmony", TrackType::Media);
+            const auto sourceClip = clips.createMidiClipBeats(sourceTrack, 0.0, 8.0);
+            auto* clip = clips.getClip(sourceClip);
+            expect(clip != nullptr);
+            if (clip == nullptr)
+                return;
+            for (int note : {60, 64, 67})
+                clip->midiNotes.push_back(makeMidiNote(note, 0.0, 4.0));
+            for (int note : {67, 71, 74})
+                clip->midiNotes.push_back(makeMidiNote(note, 4.0, 4.0));
+            clips.forceNotifyClipPropertyChanged(sourceClip);
+
+            const auto before = fixture.service.currentRevision();
+            const auto detected =
+                fixture.run("chordTrack.detect", object({{"sourceClipId", sourceClip},
+                                                         {"startBeat", 0.0},
+                                                         {"endBeat", 8.0},
+                                                         {"windowBeats", 4.0}}));
+            expect(detected.ok, detected.error.message);
+            expect(detected.revision == before);
+            const auto* chords = detected.result["chords"].getArray();
+            expect(chords != nullptr && chords->size() == 2);
+            if (chords != nullptr && chords->size() == 2) {
+                expectEquals((*chords)[0]["root"].toString(), juce::String("C"));
+                expectEquals((*chords)[1]["root"].toString(), juce::String("G"));
+                expectWithinAbsoluteError(static_cast<double>((*chords)[0]["confidence"]), 1.0,
+                                          1.0e-9);
+            }
+
+            const auto invalid =
+                fixture.run("chordTrack.detect", object({{"sourceClipId", sourceClip},
+                                                         {"startBeat", 0.0},
+                                                         {"endBeat", 9.0},
+                                                         {"windowBeats", 4.0}}));
+            expect(!invalid.ok);
+            expect(fixture.service.currentRevision() == before);
+
+            const auto unsupportedClip = clips.createMidiClipBeats(sourceTrack, 12.0, 4.0);
+            auto* unsupported = clips.getClip(unsupportedClip);
+            expect(unsupported != nullptr);
+            if (unsupported != nullptr) {
+                unsupported->midiNotes.push_back(makeMidiNote(61, 0.0, 4.0));
+                clips.forceNotifyClipPropertyChanged(unsupportedClip);
+            }
+            const auto beforeUnsupported = fixture.service.currentRevision();
+            const auto none =
+                fixture.run("chordTrack.detect", object({{"sourceClipId", unsupportedClip},
+                                                         {"startBeat", 0.0},
+                                                         {"endBeat", 4.0},
+                                                         {"windowBeats", 4.0}}));
+            expect(none.ok);
+            expect(none.revision == beforeUnsupported);
+            expect(none.result["chords"].getArray()->isEmpty());
+            expect(none.result["warnings"].getArray()->size() == 1);
+            expectEquals(none.result["warnings"][0].toString(),
+                         juce::String("no_supported_chords"));
+        }
+
+        beginTest("Chord extraction applies populated policies atomically");
+        {
+            Fixture fixture;
+            auto& tracks = TrackManager::getInstance();
+            auto& clips = ClipManager::getInstance();
+            const auto sourceTrack = tracks.createTrack("Harmony", TrackType::Media);
+            const auto sourceClip = clips.createMidiClipBeats(sourceTrack, 0.0, 8.0);
+            auto* clip = clips.getClip(sourceClip);
+            expect(clip != nullptr);
+            if (clip == nullptr)
+                return;
+            for (int note : {60, 64, 67})
+                clip->midiNotes.push_back(makeMidiNote(note, 0.0, 4.0));
+            for (int note : {67, 71, 74})
+                clip->midiNotes.push_back(makeMidiNote(note, 4.0, 4.0));
+            clips.forceNotifyClipPropertyChanged(sourceClip);
+
+            auto extraction = [&](double destination, const char* policy) {
+                return fixture.run("chordTrack.extract",
+                                   object({{"sourceClipId", sourceClip},
+                                           {"startBeat", 0.0},
+                                           {"endBeat", 8.0},
+                                           {"windowBeats", 4.0},
+                                           {"destinationStartBeat", destination},
+                                           {"populatedPolicy", policy},
+                                           {"voicing", "root"},
+                                           {"octave", 4}}));
+            };
+
+            fixture.service.changes().flush();
+            std::vector<ChangeSource::Change> seen;
+            fixture.service.changes().addListener(
+                [&seen](const std::vector<ChangeSource::Change>& changes) {
+                    seen.insert(seen.end(), changes.begin(), changes.end());
+                });
+            const auto before = fixture.service.currentRevision();
+            const auto first = extraction(0.0, "fail");
+            expect(first.ok, first.error.message);
+            expect(first.revision == before + 1);
+            fixture.service.changes().flush();
+            expect(hasTopic(seen, Topic::Tracks));
+            expect(hasTopic(seen, Topic::Clips));
+            expect(hasTopic(seen, Topic::Devices));
+            const auto chordTrackId = tracks.getChordTrackId();
+            expect(chordTrackId != INVALID_TRACK_ID);
+            const auto firstId =
+                static_cast<ClipId>(static_cast<int>(first.result["createdClipId"]));
+            const auto* firstClip = clips.getClip(firstId);
+            expect(firstClip != nullptr && firstClip->chordAnnotations.size() == 2);
+            expect(firstClip != nullptr && firstClip->midiNotes.size() == 6);
+
+            const auto failed = extraction(16.0, "fail");
+            expect(!failed.ok);
+            expect(failed.revision == first.revision);
+            const auto merged = extraction(16.0, "merge");
+            expect(merged.ok, merged.error.message);
+            expect(clips.getClipsOnTrack(chordTrackId).size() == 2);
+            const auto beforeOverlap = fixture.service.currentRevision();
+            const auto overlap = extraction(4.0, "merge");
+            expect(!overlap.ok);
+            expect(fixture.service.currentRevision() == beforeOverlap);
+
+            const auto idsBeforeReplace = clips.getClipsOnTrack(chordTrackId);
+            const auto replaced = extraction(32.0, "replace");
+            expect(replaced.ok, replaced.error.message);
+            expect(clips.getClipsOnTrack(chordTrackId).size() == 1);
+            expect(UndoManager::getInstance().undo());
+            expect(clips.getClipsOnTrack(chordTrackId) == idsBeforeReplace);
+            expect(UndoManager::getInstance().redo());
+            expect(clips.getClipsOnTrack(chordTrackId).size() == 1);
+        }
+
+        beginTest("Sending a progression respects target and occupied-range policies");
+        {
+            Fixture fixture;
+            auto& tracks = TrackManager::getInstance();
+            auto& clips = ClipManager::getInstance();
+            const auto chordTrackId = tracks.ensureChordTrack();
+            const auto chordClipId = clips.createMidiClipBeats(chordTrackId, 0.0, 4.0);
+            auto* chordClip = clips.getClip(chordClipId);
+            expect(chordClip != nullptr);
+            if (chordClip == nullptr)
+                return;
+            chordClip->chordAnnotations.push_back({0.0, 4.0, "C4 maj", 1});
+            for (int note : {60, 64, 67}) {
+                auto midiNote = makeMidiNote(note, 0.0, 4.0);
+                midiNote.chordGroup = 1;
+                chordClip->midiNotes.push_back(midiNote);
+            }
+            clips.forceNotifyClipPropertyChanged(chordClipId);
+
+            const auto targetTrackId = tracks.createTrack("Target", TrackType::Media);
+            const auto occupant = clips.createMidiClipBeats(targetTrackId, 8.0, 4.0);
+            auto send = [&](const char* occupiedPolicy, const char* instrumentPolicy) {
+                return fixture.run("chordTrack.sendToTrack",
+                                   object({{"sourceClipId", chordClipId},
+                                           {"targetTrackId", targetTrackId},
+                                           {"startBeat", 8.0},
+                                           {"occupiedPolicy", occupiedPolicy},
+                                           {"voicing", "source"},
+                                           {"instrumentPolicy", instrumentPolicy}}));
+            };
+
+            fixture.service.changes().flush();
+            std::vector<ChangeSource::Change> seen;
+            fixture.service.changes().addListener(
+                [&seen](const std::vector<ChangeSource::Change>& changes) {
+                    seen.insert(seen.end(), changes.begin(), changes.end());
+                });
+            const auto before = fixture.service.currentRevision();
+            const auto noInstrument = send("replace", "require_existing");
+            expect(!noInstrument.ok);
+            expect(noInstrument.revision == before);
+            const auto occupiedFailure = send("fail", "preserve_target");
+            expect(!occupiedFailure.ok);
+            expect(occupiedFailure.revision == before);
+
+            const auto sent = send("replace", "preserve_target");
+            expect(sent.ok, sent.error.message);
+            fixture.service.changes().flush();
+            expect(hasTopic(seen, Topic::Clips));
+            const auto sentId = static_cast<ClipId>(static_cast<int>(sent.result["id"]));
+            const auto* baked = clips.getClip(sentId);
+            expect(baked != nullptr && baked->chordAnnotations.empty());
+            expect(baked != nullptr && baked->midiNotes.size() == 3);
+            if (baked != nullptr)
+                expect(std::ranges::all_of(baked->midiNotes,
+                                           [](const auto& note) { return note.chordGroup == 0; }));
+            expect(clips.getClip(occupant) == nullptr);
+            expect(UndoManager::getInstance().undo());
+            expect(clips.getClip(sentId) == nullptr);
+            expect(clips.getClip(occupant) != nullptr);
+            expect(UndoManager::getInstance().redo());
+            expect(clips.getClip(sentId) != nullptr);
         }
 
         beginTest("A live write advances the revision exactly once");

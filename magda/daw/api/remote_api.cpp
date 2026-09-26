@@ -399,6 +399,46 @@ const juce::var& chordTrackSchema() {
     return value;
 }
 
+const juce::var& detectedChordSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "startBeat":{"type":"number","minimum":0},
+            "lengthBeats":{"type":"number","exclusiveMinimum":0},
+            "root":{"type":"string","enum":["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"]},
+            "quality":{"type":"string","minLength":1,"maxLength":32},
+            "name":{"type":"string","minLength":1},
+            "confidence":{"type":"number","minimum":0,"maximum":1},
+            "warnings":{"type":"array","items":{"type":"string","enum":[
+                "partial_match","missing_chord_tones","extra_pitch_classes"]}}
+        },
+        "required":["startBeat","lengthBeats","root","quality","name","confidence","warnings"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
+const juce::var& chordDetectionResultSchema() {
+    static const auto value = [] {
+        auto schema = parseSchema(R"json({
+            "type":"object",
+            "properties":{
+                "sourceClipId":{"type":"integer","minimum":0},
+                "startBeat":{"type":"number","minimum":0},
+                "endBeat":{"type":"number","exclusiveMinimum":0},
+                "chords":{"type":"array","maxItems":256,"items":{}},
+                "warnings":{"type":"array","items":{"type":"string","enum":["no_supported_chords"]}}
+            },
+            "required":["sourceClipId","startBeat","endBeat","chords","warnings"],
+            "additionalProperties":false
+        })json");
+        schema["properties"]["chords"].getDynamicObject()->setProperty("items",
+                                                                       detectedChordSchema());
+        return schema;
+    }();
+    return value;
+}
+
 const juce::var& trackPresetSchema() {
     static const auto value = parseSchema(R"json({
         "type":"object",
@@ -2860,6 +2900,66 @@ OperationRegistry::OperationRegistry() {
             },"required":["chords"],"additionalProperties":false
         })json"),
         chordTrackSchema());
+    add("chordTrack.detect", "Detect a structured progression in a MIDI clip range",
+        OperationAccess::Read, &handlers::chordTrackDetect, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "sourceClipId":{"type":"integer","minimum":0},
+                "startBeat":{"type":"number","minimum":0,"maximum":1000000},
+                "endBeat":{"type":"number","exclusiveMinimum":0,"maximum":1000000},
+                "windowBeats":{"type":"number","exclusiveMinimum":0,"maximum":64}
+            },
+            "required":["sourceClipId","startBeat","endBeat","windowBeats"],
+            "additionalProperties":false
+        })json"),
+        chordDetectionResultSchema());
+    auto extractOutput = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "detection":{},
+            "createdClipId":{"type":["integer","null"],"minimum":0},
+            "chordTrack":{}
+        },
+        "required":["detection","createdClipId","chordTrack"],
+        "additionalProperties":false
+    })json");
+    extractOutput["properties"].getDynamicObject()->setProperty("detection",
+                                                                chordDetectionResultSchema());
+    extractOutput["properties"].getDynamicObject()->setProperty("chordTrack", chordTrackSchema());
+    add("chordTrack.extract", "Detect and atomically materialise a chord-track progression",
+        OperationAccess::Write, &handlers::chordTrackExtract, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "sourceClipId":{"type":"integer","minimum":0},
+                "startBeat":{"type":"number","minimum":0,"maximum":1000000},
+                "endBeat":{"type":"number","exclusiveMinimum":0,"maximum":1000000},
+                "windowBeats":{"type":"number","exclusiveMinimum":0,"maximum":64},
+                "destinationStartBeat":{"type":"number","minimum":0,"maximum":1000000},
+                "populatedPolicy":{"type":"string","enum":["fail","replace","merge"]},
+                "voicing":{"type":"string","const":"root"},
+                "octave":{"type":"integer","minimum":0,"maximum":6}
+            },
+            "required":["sourceClipId","startBeat","endBeat","windowBeats",
+                        "destinationStartBeat","populatedPolicy","voicing","octave"],
+            "additionalProperties":false
+        })json"),
+        extractOutput);
+    add("chordTrack.sendToTrack", "Bake an addressed progression to a normal MIDI track",
+        OperationAccess::Write, &handlers::chordTrackSendToTrack, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "sourceClipId":{"type":"integer","minimum":0},
+                "targetTrackId":{"type":"integer","minimum":0},
+                "startBeat":{"type":"number","minimum":0,"maximum":1000000},
+                "occupiedPolicy":{"type":"string","enum":["fail","replace"]},
+                "voicing":{"type":"string","const":"source"},
+                "instrumentPolicy":{"type":"string","enum":["preserve_target","require_existing"]}
+            },
+            "required":["sourceClipId","targetTrackId","startBeat","occupiedPolicy",
+                        "voicing","instrumentPolicy"],
+            "additionalProperties":false
+        })json"),
+        clipSchema());
 
     add("tracks.list", "List tracks", OperationAccess::Read, &handlers::tracksList,
         emptyObjectSchema(), arraySchema(trackSchema()));
@@ -4152,6 +4252,8 @@ OperationRegistry::OperationRegistry() {
         {"project.save", Scope::Edit},
         {"chordTrack.ensure", Scope::Edit},
         {"chordTrack.replaceProgression", Scope::Edit},
+        {"chordTrack.extract", Scope::Edit},
+        {"chordTrack.sendToTrack", Scope::Edit},
         {"tracks.create", Scope::Edit},
         {"tracks.createFromPreset", Scope::Edit},
         {"tracks.applyPreset", Scope::Edit},

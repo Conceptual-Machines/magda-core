@@ -855,6 +855,83 @@ struct ProgressionChord {
     std::vector<MidiNote> notes;
 };
 
+struct ChordDetection {
+    ClipId sourceClipId = INVALID_CLIP_ID;
+    double startBeat = 0.0;
+    double endBeat = 0.0;
+    std::vector<ExtractedChord> chords;
+};
+
+juce::var chordDetectionJson(const ChordDetection& detection) {
+    auto* result = new juce::DynamicObject();
+    result->setProperty("sourceClipId", detection.sourceClipId);
+    result->setProperty("startBeat", detection.startBeat);
+    result->setProperty("endBeat", detection.endBeat);
+    juce::Array<juce::var> chords;
+    for (const auto& chord : detection.chords) {
+        auto* item = new juce::DynamicObject();
+        item->setProperty("startBeat", chord.startBeat);
+        item->setProperty("lengthBeats", chord.lengthBeats);
+        item->setProperty("root", music::ChordUtils::rootToString(chord.root));
+        item->setProperty("quality", music::ChordUtils::qualityToString(chord.quality));
+        item->setProperty("name", chord.name);
+        item->setProperty("confidence", chord.confidence);
+        juce::Array<juce::var> warnings;
+        for (const auto& warning : chord.warnings)
+            warnings.add(warning);
+        item->setProperty("warnings", std::move(warnings));
+        chords.add(item);
+    }
+    result->setProperty("chords", std::move(chords));
+    juce::Array<juce::var> warnings;
+    if (detection.chords.empty())
+        warnings.add("no_supported_chords");
+    result->setProperty("warnings", std::move(warnings));
+    return result;
+}
+
+std::optional<HandlerResult> detectChords(MagdaApi& api, const juce::var& input,
+                                          ChordDetection& result) {
+    result.sourceClipId = static_cast<ClipId>(readInt(input, "sourceClipId"));
+    const auto* source = api.clips().getClip(result.sourceClipId);
+    if (source == nullptr)
+        return notFound("clip", result.sourceClipId);
+    if (!source->isMidi())
+        return HandlerResult::fail(ErrorCode::Conflict, "chord detection requires a MIDI clip");
+
+    result.startBeat = readDouble(input, "startBeat");
+    result.endBeat = readDouble(input, "endBeat");
+    const auto windowBeats = readDouble(input, "windowBeats");
+    if (!std::isfinite(result.startBeat) || !std::isfinite(result.endBeat) ||
+        !std::isfinite(windowBeats) || result.endBeat <= result.startBeat ||
+        result.endBeat > source->placement.lengthBeats || windowBeats <= 0.0 ||
+        std::ceil((result.endBeat - result.startBeat) / windowBeats) > 256.0)
+        return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                   "invalid or unbounded chord detection range");
+
+    result.chords =
+        extractChordsFromNotes(source->midiNotes, result.startBeat, result.endBeat, windowBeats);
+    return std::nullopt;
+}
+
+bool overlaps(double leftStart, double leftLength, double rightStart, double rightLength) {
+    constexpr double epsilon = 1.0e-9;
+    return leftStart < rightStart + rightLength - epsilon &&
+           rightStart < leftStart + leftLength - epsilon;
+}
+
+bool trackHasArrangementOverlap(MagdaApi& api, TrackId trackId, double startBeat,
+                                double lengthBeats) {
+    for (const auto clipId : api.clips().getClipsOnTrack(trackId)) {
+        const auto* clip = api.clips().getClip(clipId);
+        if (clip != nullptr && clip->view == ClipView::Arrangement &&
+            overlaps(startBeat, lengthBeats, clip->placement.startBeat,
+                     clip->placement.lengthBeats))
+            return true;
+    }
+    return false;
+}
+
 // Keep the public spelling closed over the qualities the chord engine can
 // actually voice. ChordUtils::stringToQuality silently falls back to major.
 std::optional<music::ChordQuality> progressionQuality(const juce::String& name) {
@@ -1001,6 +1078,118 @@ class ReplaceChordProgressionCommand final : public UndoableCommand {
     bool mutated_ = false;
 };
 
+class CreateChordProgressionCommand final : public UndoableCommand {
+  public:
+    CreateChordProgressionCommand(std::vector<ProgressionChord> chords, double startBeat,
+                                  double lengthBeats, bool replaceExisting,
+                                  std::shared_ptr<ClipId> createdClipId,
+                                  std::shared_ptr<bool> completed)
+        : chords_(std::move(chords)),
+          startBeat_(startBeat),
+          lengthBeats_(lengthBeats),
+          replaceExisting_(replaceExisting),
+          createdClipId_(std::move(createdClipId)),
+          completed_(std::move(completed)) {}
+
+    void execute() override {
+        auto& tracks = TrackManager::getInstance();
+        auto& clips = ClipManager::getInstance();
+        ClipManager::BatchScope notificationBatch;
+        if (materialised_) {
+            if (createdTrack_)
+                tracks.restoreTrack(trackSnapshot_, trackPosition_);
+            for (const auto& old : replacedClips_)
+                clips.deleteClip(old.id);
+            clips.restoreClip(*createdClip_);
+            mutated_ = true;
+            *createdClipId_ = createdClip_->id;
+            *completed_ = true;
+            return;
+        }
+
+        trackId_ = tracks.getChordTrackId();
+        if (trackId_ == INVALID_TRACK_ID) {
+            trackId_ = tracks.ensureChordTrack();
+            if (trackId_ == INVALID_TRACK_ID)
+                return;
+            createdTrack_ = true;
+            trackSnapshot_ = *tracks.getTrack(trackId_);
+            trackPosition_ = tracks.restorePositionOf(trackId_);
+        }
+        if (replaceExisting_) {
+            for (const auto id : clips.getClipsOnTrack(trackId_))
+                if (const auto* clip = clips.getClip(id))
+                    replacedClips_.push_back(*clip);
+            for (const auto& old : replacedClips_)
+                clips.deleteClip(old.id);
+        }
+
+        const auto id = clips.createMidiClipBeats(trackId_, startBeat_, lengthBeats_);
+        auto* clip = clips.getClip(id);
+        if (clip == nullptr) {
+            for (const auto& old : replacedClips_)
+                clips.restoreClip(old);
+            if (createdTrack_)
+                tracks.deleteTrack(trackId_);
+            return;
+        }
+        ClipInfo populated = *clip;
+        for (size_t i = 0; i < chords_.size(); ++i) {
+            const auto& chord = chords_[i];
+            const auto group = static_cast<int>(i + 1);
+            populated.chordAnnotations.push_back(
+                {chord.startBeat, chord.lengthBeats, chord.name, group});
+            for (auto note : chord.notes) {
+                note.chordGroup = group;
+                populated.midiNotes.push_back(std::move(note));
+            }
+        }
+        populated.nextChordGroupId = static_cast<int>(chords_.size() + 1);
+        populated.ensureMidiEventIds();
+        clips.replaceClipState(populated);
+        createdClip_ = populated;
+        *createdClipId_ = id;
+        *completed_ = true;
+        materialised_ = true;
+        mutated_ = true;
+    }
+
+    void undo() override {
+        auto& clips = ClipManager::getInstance();
+        ClipManager::BatchScope notificationBatch;
+        if (createdClip_)
+            clips.deleteClip(createdClip_->id);
+        for (const auto& old : replacedClips_)
+            clips.restoreClip(old);
+        if (createdTrack_)
+            TrackManager::getInstance().deleteTrack(trackId_);
+        mutated_ = false;
+    }
+
+    bool didMutate() const override {
+        return mutated_;
+    }
+    juce::String getDescription() const override {
+        return "Extract Chords to Chord Track";
+    }
+
+  private:
+    std::vector<ProgressionChord> chords_;
+    double startBeat_ = 0.0;
+    double lengthBeats_ = 0.0;
+    bool replaceExisting_ = false;
+    std::shared_ptr<ClipId> createdClipId_;
+    std::shared_ptr<bool> completed_;
+    std::vector<ClipInfo> replacedClips_;
+    std::optional<ClipInfo> createdClip_;
+    TrackInfo trackSnapshot_;
+    TrackRestorePosition trackPosition_;
+    TrackId trackId_ = INVALID_TRACK_ID;
+    bool createdTrack_ = false;
+    bool materialised_ = false;
+    bool mutated_ = false;
+};
+
 juce::var chordTrackSnapshot(MagdaApi& api) {
     return toJson(makeChordTrackDto(findChordTrack(api), api.clips()));
 }
@@ -1080,6 +1269,142 @@ HandlerResult chordTrackReplaceProgression(MagdaApi& api, const juce::var& input
     if (!*completed)
         return HandlerResult::fail(ErrorCode::InternalError, "progression replacement failed");
     return HandlerResult::ok(chordTrackSnapshot(api));
+}
+
+HandlerResult chordTrackDetect(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    ChordDetection detection;
+    if (const auto failure = detectChords(api, input, detection))
+        return *failure;
+    return HandlerResult::ok(chordDetectionJson(detection));
+}
+
+HandlerResult chordTrackExtract(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    ChordDetection detection;
+    if (const auto failure = detectChords(api, input, detection))
+        return *failure;
+
+    auto makeResult = [&](std::optional<ClipId> createdClipId) {
+        auto* result = new juce::DynamicObject();
+        result->setProperty("detection", chordDetectionJson(detection));
+        result->setProperty("createdClipId",
+                            createdClipId ? juce::var(*createdClipId) : juce::var());
+        result->setProperty("chordTrack", chordTrackSnapshot(api));
+        return juce::var(result);
+    };
+    if (detection.chords.empty())
+        return HandlerResult::unchanged(makeResult(std::nullopt));
+
+    const auto destinationStart = readDouble(input, "destinationStartBeat");
+    const auto rangeLength = detection.endBeat - detection.startBeat;
+    if (!std::isfinite(destinationStart) || !std::isfinite(destinationStart + rangeLength) ||
+        destinationStart + rangeLength > 1000000.0)
+        return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                   "destination progression range is invalid");
+
+    const auto policy = input["populatedPolicy"].toString();
+    const auto* chordTrack = findChordTrack(api);
+    const auto existingIds =
+        chordTrack == nullptr ? std::vector<ClipId>{} : api.clips().getClipsOnTrack(chordTrack->id);
+    if (policy == "fail" && !existingIds.empty())
+        return HandlerResult::fail(ErrorCode::Conflict, "chord track already has a progression");
+    if (policy == "merge" && chordTrack != nullptr &&
+        trackHasArrangementOverlap(api, chordTrack->id, destinationStart, rangeLength))
+        return HandlerResult::fail(ErrorCode::Conflict,
+                                   "detected progression overlaps the chord track");
+
+    const auto octave = readInt(input, "octave");
+    std::vector<ProgressionChord> progression;
+    progression.reserve(detection.chords.size());
+    for (const auto& detected : detection.chords) {
+        ProgressionChord chord;
+        chord.startBeat = detected.startBeat - detection.startBeat;
+        chord.lengthBeats = detected.lengthBeats;
+        chord.name = detected.name;
+        chord.notes = buildVoicingNotes(detected.root, detected.quality, chord.startBeat,
+                                        chord.lengthBeats, 100, octave);
+        if (chord.notes.empty())
+            return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                       "detected chord has no supported voicing");
+        progression.push_back(std::move(chord));
+    }
+
+    auto createdClipId = std::make_shared<ClipId>(INVALID_CLIP_ID);
+    auto completed = std::make_shared<bool>(false);
+    api.undo().executeCommand(std::make_unique<CreateChordProgressionCommand>(
+        std::move(progression), destinationStart, rangeLength, policy == "replace", createdClipId,
+        completed));
+    if (!*completed || *createdClipId == INVALID_CLIP_ID)
+        return HandlerResult::fail(ErrorCode::InternalError, "progression extraction failed");
+    return HandlerResult::ok(makeResult(*createdClipId));
+}
+
+HandlerResult chordTrackSendToTrack(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto sourceClipId = static_cast<ClipId>(readInt(input, "sourceClipId"));
+    const auto* source = api.clips().getClip(sourceClipId);
+    if (source == nullptr)
+        return notFound("clip", sourceClipId);
+    const auto* sourceTrack = api.tracks().getTrack(source->trackId);
+    if (sourceTrack == nullptr || sourceTrack->type != TrackType::Chord || !source->isMidi() ||
+        source->view != ClipView::Arrangement || source->chordAnnotations.empty())
+        return HandlerResult::fail(ErrorCode::Conflict,
+                                   "source clip is not an arrangement chord progression");
+
+    const auto targetTrackId = static_cast<TrackId>(readInt(input, "targetTrackId"));
+    const auto* target = api.tracks().getTrack(targetTrackId);
+    if (target == nullptr)
+        return notFound("track", targetTrackId);
+    if (target->type != TrackType::Media || target->frozen)
+        return HandlerResult::fail(ErrorCode::Conflict,
+                                   "destination must be an editable normal track");
+    if (input["instrumentPolicy"].toString() == "require_existing" && !target->hasInstrument())
+        return HandlerResult::fail(ErrorCode::Conflict,
+                                   "destination track has no instrument device");
+
+    const auto startBeat = readDouble(input, "startBeat");
+    if (!std::isfinite(startBeat + source->placement.lengthBeats) ||
+        startBeat + source->placement.lengthBeats > 1000000.0)
+        return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                   "destination progression range is invalid");
+    const bool occupied =
+        trackHasArrangementOverlap(api, targetTrackId, startBeat, source->placement.lengthBeats);
+    const bool replaceOccupied = input["occupiedPolicy"].toString() == "replace";
+    if (occupied && !replaceOccupied)
+        return HandlerResult::fail(ErrorCode::Conflict, "destination range is occupied");
+
+    const auto lengthBeats = source->placement.lengthBeats;
+    const auto createdId = runCommandAndRead<AtomicClipPlacementCommand>(
+        api, [](const AtomicClipPlacementCommand& command) { return command.resultClipId(); },
+        [sourceClipId, targetTrackId, startBeat, lengthBeats, replaceOccupied](ClipManager& clips) {
+            ClipManager::BatchScope notificationBatch;
+            if (replaceOccupied) {
+                const auto targetClips = clips.getClipsOnTrack(targetTrackId);
+                for (const auto clipId : targetClips) {
+                    const auto* clip = clips.getClip(clipId);
+                    if (clip != nullptr && clip->view == ClipView::Arrangement &&
+                        overlaps(startBeat, lengthBeats, clip->placement.startBeat,
+                                 clip->placement.lengthBeats))
+                        clips.deleteClip(clipId);
+                }
+            }
+            const auto id = clips.duplicateClipAtBeats(sourceClipId, startBeat, targetTrackId, 0.0);
+            auto* created = clips.getClip(id);
+            if (created == nullptr)
+                return INVALID_CLIP_ID;
+            created->linkGroupId = 0;
+            created->chordAnnotations.clear();
+            created->nextChordGroupId = 1;
+            for (auto& note : created->midiNotes)
+                note.chordGroup = 0;
+            clips.forceNotifyClipPropertyChanged(id);
+            return id;
+        },
+        "Send Chord Progression to Track");
+    if (createdId == INVALID_CLIP_ID)
+        return HandlerResult::fail(ErrorCode::InternalError, "progression send failed");
+    const auto* created = api.clips().getClip(createdId);
+    if (created == nullptr)
+        return notFound("clip", createdId);
+    return HandlerResult::ok(toJson(makeClipDto(*created)));
 }
 
 HandlerResult tracksCreateFromPreset(MagdaApi& api, const juce::var& input, const RequestContext&) {

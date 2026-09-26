@@ -1,6 +1,7 @@
 #include "ChordProgressionConverter.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 #include "music/ChordEngine.hpp"
 
@@ -8,19 +9,26 @@ namespace magda {
 
 std::vector<ExtractedChord> extractChordsFromNotes(const std::vector<MidiNote>& notes,
                                                    double beatsPerBar) {
-    std::vector<ExtractedChord> detected;
     if (notes.empty())
-        return detected;
+        return {};
 
-    const double step = beatsPerBar > 0.0 ? beatsPerBar : 4.0;
-
-    // Scan only up to the last note end, not the full clip length.
     double lastNoteEnd = 0.0;
     for (const auto& note : notes)
         lastNoteEnd = std::max(lastNoteEnd, note.startBeat + note.lengthBeats);
+    return extractChordsFromNotes(notes, 0.0, lastNoteEnd, beatsPerBar > 0.0 ? beatsPerBar : 4.0);
+}
+
+std::vector<ExtractedChord> extractChordsFromNotes(const std::vector<MidiNote>& notes,
+                                                   double startBeat, double endBeat,
+                                                   double windowBeats) {
+    std::vector<ExtractedChord> detected;
+    if (notes.empty() || !std::isfinite(startBeat) || !std::isfinite(endBeat) ||
+        !std::isfinite(windowBeats) || startBeat < 0.0 || endBeat <= startBeat ||
+        windowBeats <= 0.0)
+        return detected;
 
     auto& engine = magda::music::ChordEngine::getInstance();
-    for (double beat = 0.0; beat < lastNoteEnd; beat += step) {
+    for (double beat = startBeat; beat < endBeat; beat += windowBeats) {
         std::vector<magda::music::ChordNote> chordNotes;
         std::vector<size_t> indices;
         for (size_t i = 0; i < notes.size(); ++i) {
@@ -43,11 +51,28 @@ std::vector<ExtractedChord> extractChordsFromNotes(const std::vector<MidiNote>& 
         ex.name = chord.getDisplayName();
         ex.root = chord.root;
         ex.quality = chord.quality;
+        ex.exactMatch = chord.exactMatch;
+        const auto idealCount = music::ChordUtils::getChordIntervals(chord.quality).size();
+        const auto matchedCount = idealCount - chord.missingIntervals.size();
+        const auto unionCount = idealCount + chord.extraPitchClasses.size();
+        ex.confidence = unionCount == 0
+                            ? 0.0
+                            : static_cast<double>(matchedCount) / static_cast<double>(unionCount);
+        if (!chord.exactMatch)
+            ex.warnings.emplace_back("partial_match");
+        if (!chord.missingIntervals.empty())
+            ex.warnings.emplace_back("missing_chord_tones");
+        if (!chord.extraPitchClasses.empty())
+            ex.warnings.emplace_back("extra_pitch_classes");
         ex.noteIndices = std::move(indices);
         detected.push_back(std::move(ex));
     }
 
-    // Each chord extends to the next one, or to the last note end for the tail.
+    double lastNoteEnd = startBeat;
+    for (const auto& note : notes)
+        if (note.startBeat < endBeat && note.startBeat + note.lengthBeats > startBeat)
+            lastNoteEnd =
+                std::max(lastNoteEnd, std::min(endBeat, note.startBeat + note.lengthBeats));
     for (size_t i = 0; i < detected.size(); ++i) {
         detected[i].lengthBeats = (i + 1 < detected.size())
                                       ? (detected[i + 1].startBeat - detected[i].startBeat)

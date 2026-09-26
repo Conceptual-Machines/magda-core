@@ -75,6 +75,9 @@ HandlerResult sidechainsSet(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult chordTrackGet(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult chordTrackEnsure(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult chordTrackReplaceProgression(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult chordTrackDetect(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult chordTrackExtract(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult chordTrackSendToTrack(MagdaApi&, const juce::var&, const RequestContext&);
 
 // Clips
 HandlerResult clipsList(MagdaApi&, const juce::var&, const RequestContext&);
