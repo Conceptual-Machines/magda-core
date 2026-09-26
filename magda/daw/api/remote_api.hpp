@@ -660,6 +660,8 @@ struct RequestContext {
     // Installed by RemoteApiService. Paths never enter request or response
     // values; handlers resolve only capabilities approved in the native UI.
     class RemoteFileHandleRegistry* fileHandles = nullptr;
+    class EngineJobSource* engineJobs = nullptr;
+    std::shared_ptr<class EngineJobSource> engineJobsOwner;
     // The validated project revision at handler entry. Future job-producing
     // handlers capture this as RemoteJobSpec::acceptedRevision; client values
     // are overwritten alongside the two service pointers above.

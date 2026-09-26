@@ -7,6 +7,7 @@
 
 #include "magda_api.hpp"
 #include "remote_diagnostics.hpp"
+#include "remote_engine_jobs.hpp"
 #include "undo_api.hpp"
 
 namespace magda::remote {
@@ -387,6 +388,8 @@ Response RemoteApiService::execute(const OperationDescriptor& operation, const j
     handlerContext.jobs = jobs_.get();
     handlerContext.jobsOwner = jobs_;
     handlerContext.fileHandles = &fileHandles_;
+    handlerContext.engineJobs = engineJobs_.get();
+    handlerContext.engineJobsOwner = engineJobs_;
     handlerContext.revision = revision;
     handlerContext.revisionOwner = revision_;
     HandlerResult result;
@@ -464,6 +467,8 @@ void RemoteApiService::shutdown() {
     // null service and complete with Cancelled without touching it.
     retireState();
     jobs_->shutdown();
+    if (engineJobs_)
+        engineJobs_->shutdown();
     fileHandles_.shutdown();
     changes_.discardPending();
 }
@@ -611,6 +616,10 @@ std::shared_ptr<RemoteAuditLog> RemoteApiService::auditLog() const {
 
 void RemoteApiService::setDiagnosticsSource(std::unique_ptr<DiagnosticsSource> source) {
     diagnostics_ = std::move(source);
+}
+
+void RemoteApiService::setEngineJobSource(std::shared_ptr<EngineJobSource> source) {
+    engineJobs_ = std::move(source);
 }
 
 void RemoteApiService::recordAudit(const std::shared_ptr<RemoteAuditLog>& log,

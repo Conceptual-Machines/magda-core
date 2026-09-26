@@ -1,8 +1,10 @@
 #include "EngineHost.hpp"
 
 #include <juce_audio_devices/juce_audio_devices.h>
+#include <juce_audio_formats/juce_audio_formats.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstdint>
@@ -82,6 +84,95 @@ constexpr std::size_t kRecordingPreviewNotes = 2048;
 
 /// About 23 minutes at 48 kHz with the tap's default 1,024 samples per peak.
 constexpr std::size_t kRecordingPreviewPeaks = 65536;
+
+class MasterCaptureWriter {
+  public:
+    static std::shared_ptr<MasterCaptureWriter> create(const MasterCaptureRequest& request,
+                                                       double sampleRate) {
+        auto fileStream = request.destination.createOutputStream();
+        if (fileStream == nullptr || fileStream->failedToOpen())
+            return {};
+        std::unique_ptr<juce::OutputStream> stream = std::move(fileStream);
+
+        std::unique_ptr<juce::AudioFormatWriter> writer;
+        const auto options = juce::AudioFormatWriterOptions()
+                                 .withSampleRate(sampleRate)
+                                 .withNumChannels(kChannels)
+                                 .withBitsPerSample(request.bitDepth);
+        if (request.format == OfflineRenderFormat::Flac) {
+            juce::FlacAudioFormat format;
+            writer = format.createWriterFor(stream, options);
+        } else {
+            juce::WavAudioFormat format;
+            writer = format.createWriterFor(stream, options);
+        }
+        if (writer == nullptr)
+            return {};
+
+        return std::shared_ptr<MasterCaptureWriter>(
+            new MasterCaptureWriter(request.destination, std::move(writer), sampleRate));
+    }
+
+    ~MasterCaptureWriter() {
+        close();
+    }
+
+    void write(const juce::AudioBuffer<float>& buffer, int startSample, int numSamples) {
+        writers_.fetch_add(1, std::memory_order_acq_rel);
+        if (closing_.load(std::memory_order_acquire)) {
+            writers_.fetch_sub(1, std::memory_order_acq_rel);
+            return;
+        }
+
+        const std::array<const float*, kChannels> channels{buffer.getReadPointer(0, startSample),
+                                                           buffer.getReadPointer(1, startSample)};
+        if (!writer_->write(channels.data(), numSamples))
+            failed_.store(true, std::memory_order_release);
+        writers_.fetch_sub(1, std::memory_order_acq_rel);
+    }
+
+    void markFailed() {
+        failed_.store(true, std::memory_order_release);
+    }
+
+    MasterCaptureResult finish() {
+        close();
+        if (failed_.load(std::memory_order_acquire) || !destination_.existsAsFile() ||
+            destination_.getSize() <= 0)
+            return {false, "Master capture could not be written"};
+        return {true, {}};
+    }
+
+    bool failed() const {
+        return failed_.load(std::memory_order_acquire);
+    }
+
+  private:
+    MasterCaptureWriter(juce::File destination, std::unique_ptr<juce::AudioFormatWriter> writer,
+                        double sampleRate)
+        : destination_(std::move(destination)), thread_("Master capture writer") {
+        thread_.startThread();
+        const auto bufferedSamples = std::max(32768, static_cast<int>(sampleRate * 2.0));
+        writer_ = std::make_unique<juce::AudioFormatWriter::ThreadedWriter>(
+            writer.release(), thread_, bufferedSamples);
+    }
+
+    void close() {
+        if (closing_.exchange(true, std::memory_order_acq_rel))
+            return;
+        while (writers_.load(std::memory_order_acquire) > 0)
+            juce::Thread::yield();
+        writer_.reset();
+        thread_.stopThread(5000);
+    }
+
+    juce::File destination_;
+    juce::TimeSliceThread thread_;
+    std::unique_ptr<juce::AudioFormatWriter::ThreadedWriter> writer_;
+    std::atomic<int> writers_{0};
+    std::atomic<bool> closing_{false};
+    std::atomic<bool> failed_{false};
+};
 
 /// Anything a publish could not honour, named by the half that reported it.
 void report(const juce::String& what, const std::vector<std::string>& messages) {
@@ -2748,6 +2839,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// Also called by removeAudioCallback, so a rebuild passes through here.
     void audioDeviceStopped() override {
         audioRunning_.store(false, std::memory_order_release);
+        if (const auto capture =
+                std::atomic_load_explicit(&masterCapture_, std::memory_order_acquire))
+            capture->markFailed();
         renderedStale_.store(true, std::memory_order_release);
         hardwareOutputGeneration_.fetch_add(1, std::memory_order_acq_rel);
         triggerAsyncUpdate();
@@ -2814,6 +2908,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                 if (output[channel] != nullptr)
                     juce::FloatVectorOperations::copy(output[channel] + done,
                                                       scratch_.getReadPointer(channel), piece);
+            if (const auto capture =
+                    std::atomic_load_explicit(&masterCapture_, std::memory_order_acquire))
+                capture->write(scratch_, 0, piece);
             done += piece;
         }
         completedCallbacks_.store(callback, std::memory_order_release);
@@ -3385,6 +3482,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     std::atomic<bool> renderedStale_{false};
     std::atomic<int> blockSize_{0};
     std::atomic<int> inputChannels_{0};
+    std::shared_ptr<MasterCaptureWriter> masterCapture_;
     /// Every ask to republish, whether or not one followed.
     std::atomic<std::uint64_t> requests_{0};
 
@@ -3808,6 +3906,49 @@ void EngineHost::adoptFreeze(const OfflineRenderRequest& request) {
 std::unique_ptr<OfflineRenderSession> EngineHost::createOfflineRenderSession(
     bool resumePlaybackWhenFinished) {
     return createEngineOfflineRenderSession(*impl_, resumePlaybackWhenFinished);
+}
+
+MasterCaptureStartStatus EngineHost::startMasterCapture(const MasterCaptureRequest& request) {
+    if (std::atomic_load_explicit(&impl_->masterCapture_, std::memory_order_acquire) != nullptr)
+        return MasterCaptureStartStatus::Busy;
+    const auto sampleRate = impl_->rate_.load(std::memory_order_acquire);
+    if (!impl_->audioRunning_.load(std::memory_order_acquire) || sampleRate <= 0.0)
+        return MasterCaptureStartStatus::Unavailable;
+    if (request.destination == juce::File() ||
+        (request.format == OfflineRenderFormat::Flac && request.bitDepth == 32))
+        return MasterCaptureStartStatus::Failed;
+
+    auto capture = MasterCaptureWriter::create(request, sampleRate);
+    if (capture == nullptr)
+        return MasterCaptureStartStatus::Failed;
+    std::shared_ptr<MasterCaptureWriter> expected;
+    if (!std::atomic_compare_exchange_strong_explicit(&impl_->masterCapture_, &expected, capture,
+                                                      std::memory_order_acq_rel,
+                                                      std::memory_order_acquire))
+        return MasterCaptureStartStatus::Busy;
+    return MasterCaptureStartStatus::Started;
+}
+
+MasterCaptureResult EngineHost::stopMasterCapture() {
+    auto capture = std::atomic_exchange_explicit(
+        &impl_->masterCapture_, std::shared_ptr<MasterCaptureWriter>{}, std::memory_order_acq_rel);
+    return capture != nullptr ? capture->finish()
+                              : MasterCaptureResult{false, "Master capture is not active"};
+}
+
+void EngineHost::cancelMasterCapture() {
+    auto capture = std::atomic_exchange_explicit(
+        &impl_->masterCapture_, std::shared_ptr<MasterCaptureWriter>{}, std::memory_order_acq_rel);
+    if (capture != nullptr)
+        capture->finish();
+}
+
+MasterCaptureState EngineHost::masterCaptureState() const {
+    const auto capture =
+        std::atomic_load_explicit(&impl_->masterCapture_, std::memory_order_acquire);
+    return {.supported = true,
+            .active = capture != nullptr,
+            .failed = capture != nullptr && capture->failed()};
 }
 
 InsertRenderCapture& EngineHost::insertCapture() {

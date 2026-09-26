@@ -33,6 +33,10 @@ struct RecordingPreview;
 struct HostParameters;
 struct PluginPrograms;
 struct OfflineRenderRequest;
+struct MasterCaptureRequest;
+struct MasterCaptureResult;
+struct MasterCaptureState;
+enum class MasterCaptureStartStatus;
 }  // namespace magda
 
 namespace magda::daw::audio {
@@ -388,6 +392,11 @@ class EngineHost {
      */
     std::unique_ptr<OfflineRenderSession> createOfflineRenderSession(
         bool resumePlaybackWhenFinished);
+
+    MasterCaptureStartStatus startMasterCapture(const MasterCaptureRequest& request);
+    MasterCaptureResult stopMasterCapture();
+    void cancelMasterCapture();
+    MasterCaptureState masterCaptureState() const;
 
     /** @brief The live pass that records hardware inserts for a render (#2279). */
     InsertRenderCapture& insertCapture();
