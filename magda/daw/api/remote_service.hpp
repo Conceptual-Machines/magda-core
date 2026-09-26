@@ -12,6 +12,7 @@
 #include "remote_api.hpp"
 #include "remote_audit.hpp"
 #include "remote_changes.hpp"
+#include "remote_file_handles.hpp"
 #include "remote_jobs.hpp"
 
 namespace magda {
@@ -120,6 +121,9 @@ class RemoteApiService {
      */
     void projectReplaced();
 
+    /** Coalesce manager callbacks emitted while one project is being replaced. */
+    void projectReplacementStarted();
+
     /**
      * @brief Record a committed change that did not originate from this service.
      *
@@ -169,6 +173,9 @@ class RemoteApiService {
 
     RemoteJobManager& jobs();
     const RemoteJobManager& jobs() const;
+
+    RemoteFileHandleRegistry& fileHandles();
+    const RemoteFileHandleRegistry& fileHandles() const;
 
     /// Release owner-scoped jobs when a transport identity goes away.
     void clientDisconnected(const juce::String& clientId);
@@ -261,10 +268,13 @@ class RemoteApiService {
 
     MagdaApi& api_;
     ChangeSource changes_;
-    RemoteJobManager jobs_;
+    std::shared_ptr<RemoteJobManager> jobs_ = std::make_shared<RemoteJobManager>();
+    RemoteFileHandleRegistry fileHandles_;
 
-    std::atomic<Revision> revision_{INITIAL_REVISION};
+    std::shared_ptr<std::atomic<Revision>> revision_ =
+        std::make_shared<std::atomic<Revision>>(INITIAL_REVISION);
     std::atomic<bool> shutdown_{false};
+    std::atomic<bool> projectReplacementInProgress_{false};
 
     /// Retired on shutdown and replaced on project swap, so work queued against
     /// the outgoing project cannot run against the incoming one.

@@ -33,11 +33,15 @@ HandlerResult metersRead(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult jobsList(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult jobsGet(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult jobsCancel(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult fileHandlesList(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult fileHandlesRevoke(MagdaApi&, const juce::var&, const RequestContext&);
 
 // Project
 HandlerResult projectGet(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult projectNew(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult projectClose(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult projectOpen(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult projectSaveAs(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult projectSave(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult projectSetTempo(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult projectSetTimeSignature(MagdaApi&, const juce::var&, const RequestContext&);

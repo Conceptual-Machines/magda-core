@@ -152,7 +152,7 @@ juce::var Response::toEnvelope() const {
 RemoteApiService::RemoteApiService(MagdaApi& api)
     : api_(api), state_(std::make_shared<ExecutionState>()) {
     state_->service = this;
-    jobs_.setChangeCallback([this] { changes_.markChanged(Topic::Jobs, currentRevision()); });
+    jobs_->setChangeCallback([this] { changes_.markChanged(Topic::Jobs, currentRevision()); });
 }
 
 RemoteApiService::~RemoteApiService() {
@@ -384,8 +384,11 @@ Response RemoteApiService::execute(const OperationDescriptor& operation, const j
 
     RequestContext handlerContext = context;
     handlerContext.diagnostics = diagnostics_.get();
-    handlerContext.jobs = &jobs_;
+    handlerContext.jobs = jobs_.get();
+    handlerContext.jobsOwner = jobs_;
+    handlerContext.fileHandles = &fileHandles_;
     handlerContext.revision = revision;
+    handlerContext.revisionOwner = revision_;
     HandlerResult result;
     {
         // Model listeners fire synchronously from inside the handler's own
@@ -415,7 +418,7 @@ Response RemoteApiService::execute(const OperationDescriptor& operation, const j
     // nothing would invalidate every other client's expectedRevision.
     const bool committed = isWrite && result.mutated && !isProjectLifecycle;
     if (committed) {
-        revision = revision_.fetch_add(1, std::memory_order_acq_rel) + 1;
+        revision = revision_->fetch_add(1, std::memory_order_acq_rel) + 1;
         for (const auto topic : topicsFor(operation.name))
             changes_.markChanged(topic, revision);
     }
@@ -449,7 +452,7 @@ bool RemoteApiService::isExecutingOnThisThread() const {
 }
 
 Revision RemoteApiService::currentRevision() const {
-    return revision_.load(std::memory_order_acquire);
+    return revision_->load(std::memory_order_acquire);
 }
 
 void RemoteApiService::shutdown() {
@@ -460,7 +463,8 @@ void RemoteApiService::shutdown() {
     // once no handler is running and none can start. Queued jobs then observe a
     // null service and complete with Cancelled without touching it.
     retireState();
-    jobs_.shutdown();
+    jobs_->shutdown();
+    fileHandles_.shutdown();
     changes_.discardPending();
 }
 
@@ -471,10 +475,11 @@ bool RemoteApiService::isShutdown() const {
 void RemoteApiService::projectReplaced() {
     if (shutdown_.load(std::memory_order_acquire))
         return;
+    projectReplacementInProgress_.store(false, std::memory_order_release);
     const bool fromHandler = isExecutingOnThisThread();
     if (diagnostics_)
         diagnostics_->projectReplaced();
-    jobs_.projectReplaced();
+    jobs_->projectReplaced();
 
     // Retire the outgoing state. Install the new one only after the revision,
     // notifications, and idempotency cache have crossed the boundary, so a
@@ -504,7 +509,7 @@ void RemoteApiService::projectReplaced() {
     // until something happened to change that topic in the new one. The two
     // continuous topics are excluded because nothing marks them — a meter
     // reading is sampled, not invalidated.
-    const auto revision = revision_.fetch_add(1, std::memory_order_acq_rel) + 1;
+    const auto revision = revision_->fetch_add(1, std::memory_order_acq_rel) + 1;
     changes_.discardPending();
     for (std::size_t index = 0; index < TOPIC_COUNT; ++index) {
         const auto topic = static_cast<Topic>(index);
@@ -525,12 +530,19 @@ void RemoteApiService::projectReplaced() {
     }
 }
 
+void RemoteApiService::projectReplacementStarted() {
+    if (!shutdown_.load(std::memory_order_acquire))
+        projectReplacementInProgress_.store(true, std::memory_order_release);
+}
+
 void RemoteApiService::noteModelChanged(Topic topic) {
     noteModelChanged({topic});
 }
 
 void RemoteApiService::noteModelChanged(std::initializer_list<Topic> topics) {
     if (shutdown_.load(std::memory_order_acquire))
+        return;
+    if (projectReplacementInProgress_.load(std::memory_order_acquire))
         return;
 
     // Fired from inside a handler's own mutation. The dispatcher publishes one
@@ -543,13 +555,15 @@ void RemoteApiService::noteModelChanged(std::initializer_list<Topic> topics) {
         return;
     }
 
-    const auto revision = revision_.fetch_add(1, std::memory_order_acq_rel) + 1;
+    const auto revision = revision_->fetch_add(1, std::memory_order_acq_rel) + 1;
     for (const auto topic : topics)
         changes_.markChanged(topic, revision);
 }
 
 void RemoteApiService::noteModelActivity(Topic topic) {
     if (shutdown_.load(std::memory_order_acquire))
+        return;
+    if (projectReplacementInProgress_.load(std::memory_order_acquire))
         return;
     changes_.markChanged(topic, currentRevision());
 }
@@ -563,16 +577,26 @@ const ChangeSource& RemoteApiService::changes() const {
 }
 
 RemoteJobManager& RemoteApiService::jobs() {
-    return jobs_;
+    return *jobs_;
 }
 
 const RemoteJobManager& RemoteApiService::jobs() const {
-    return jobs_;
+    return *jobs_;
+}
+
+RemoteFileHandleRegistry& RemoteApiService::fileHandles() {
+    return fileHandles_;
+}
+
+const RemoteFileHandleRegistry& RemoteApiService::fileHandles() const {
+    return fileHandles_;
 }
 
 void RemoteApiService::clientDisconnected(const juce::String& clientId) {
-    if (clientId.isNotEmpty())
-        jobs_.ownerDisconnected(clientId);
+    if (clientId.isNotEmpty()) {
+        jobs_->ownerDisconnected(clientId);
+        fileHandles_.ownerDisconnected(clientId);
+    }
 }
 
 void RemoteApiService::setAuditLog(std::shared_ptr<RemoteAuditLog> log) {

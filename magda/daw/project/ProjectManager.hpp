@@ -87,6 +87,36 @@ class ProjectManager {
      * @return true on success
      */
     enum class UnsavedChangesPolicy { AskUser, Refuse, Discard };
+    enum class AutosaveRecoveryPolicy { Fail, Recover, Ignore };
+
+    struct LoadInspection {
+        int missingMediaCount = 0;
+        int unavailableDeviceCount = 0;
+    };
+
+    struct ControlledLoadOptions {
+        UnsavedChangesPolicy unsavedChanges = UnsavedChangesPolicy::Refuse;
+        AutosaveRecoveryPolicy autosaveRecovery = AutosaveRecoveryPolicy::Fail;
+        bool allowMissingMedia = false;
+        bool allowUnavailableDevices = false;
+        std::function<bool()> shouldCancel;
+        std::function<LoadInspection(const StagedProjectData&)> inspect;
+    };
+
+    enum class ControlledLoadStatus {
+        Succeeded,
+        Cancelled,
+        Conflict,
+        NotFound,
+        InvalidFormat,
+        Failed,
+    };
+
+    struct ControlledLoadResult {
+        ControlledLoadStatus status = ControlledLoadStatus::Failed;
+        bool recoveredAutosave = false;
+        LoadInspection inspection;
+    };
 
     bool newProject(UnsavedChangesPolicy policy = UnsavedChangesPolicy::AskUser);
 
@@ -130,6 +160,9 @@ class ProjectManager {
      */
     bool saveProjectAs(const juce::File& file, MediaTransfer transfer = MediaTransfer::Move);
 
+    /** Resolve the on-disk .mgd written by Save As, including its wrapper folder. */
+    static juce::File saveTargetFor(const juce::File& file);
+
     /**
      * @brief Load project from file (synchronous)
      * @param file Source file path
@@ -149,7 +182,12 @@ class ProjectManager {
      */
     void commitStagedProject(StagedProjectData& staged, const juce::File& file,
                              bool recoveredFromAutosave,
-                             const std::function<void(const ProjectInfo&)>& onBeforeCommit);
+                             const std::function<void(const ProjectInfo&)>& onBeforeCommit,
+                             bool allowInteractiveRecovery = true);
+
+    bool interactiveRecoveryAllowedForCurrentOpen() const {
+        return interactiveRecoveryAllowedForCurrentOpen_;
+    }
 
     /**
      * @brief Export the current project to a .dawproject interchange archive.
@@ -179,6 +217,10 @@ class ProjectManager {
     void loadProjectAsync(const juce::File& file,
                           const std::function<void(const ProjectInfo&)>& onBeforeCommit,
                           const std::function<void(bool, const juce::String&)>& onComplete);
+
+    void loadProjectAsyncControlled(const juce::File& file, ControlledLoadOptions options,
+                                    const std::function<void(const ProjectInfo&)>& onBeforeCommit,
+                                    const std::function<void(ControlledLoadResult)>& onComplete);
 
     /**
      * @brief Close current project
@@ -491,6 +533,7 @@ class ProjectManager {
     bool autoSaveEnabled_ = true;
     int undoableMutationDepth_ = 0;
     std::uint64_t mutationRevision_ = 0;
+    bool interactiveRecoveryAllowedForCurrentOpen_ = true;
 
     /// Held rather than inherited, and made only when autosave starts: a
     /// juce::Timer that lives as long as this singleton outlives the message

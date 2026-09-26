@@ -567,6 +567,8 @@ void MainWindow::updateWindowTitle() {
 void MainWindow::projectOpened(const ProjectInfo&) {
     updateWindowTitle();
     const auto generation = ++projectOpenGeneration_;
+    if (!ProjectManager::getInstance().interactiveRecoveryAllowedForCurrentOpen())
+        return;
     const auto safeThis = juce::Component::SafePointer<MainWindow>(this);
     // The project-open notification arrives before the async completion callback
     // dismisses the loading overlay. Defer the snapshot so recovery UI cannot

@@ -53,7 +53,7 @@ Five words, shared by both transports. An operation requires exactly one.
 | Scope | Covers |
 | --- | --- |
 | `read` | Every read operation, and subscribing to any topic. Every client has this — it is what being admitted means. |
-| `edit` | Project content and lifecycle: new, close, save, tempo, time signature, tracks, routing and sends, clips, notes, session clip launch settings, devices, racks, grooves, automation, and the user's selection. Device parameter writes, focused-macro writes, and opening plugin editor windows are edits too. |
+| `edit` | Project content and lifecycle: new, open, close, save, Save As, file-capability revocation, tempo, time signature, tracks, routing and sends, clips, notes, session clip launch settings, devices, racks, grooves, automation, and the user's selection. Device parameter writes, focused-macro writes, and opening plugin editor windows are edits too. |
 | `transport` | The timeline: play, stop, record-arm, loop, seek. |
 | `session` | Launching and stopping session clips and scenes, including returning tracks to arrangement playback. |
 | `hardware-midi` | Physical MIDI ports: `midi.send` and `midi.sendSysEx`. |
@@ -74,6 +74,13 @@ the producing operation accepted the job. Cancelling a render therefore cannot
 be used to bypass the render operation's grant, and revoking that grant takes
 effect before cancellation just as it does before an idempotent replay. Job
 control never creates undo history or advances the project revision.
+
+`fileHandles.list` is read-scoped and reveals only capabilities owned by the
+calling connection. `fileHandles.revoke`, `project.open`, and `project.saveAs`
+require `edit`. The edit grant alone is insufficient to access a file: the
+native UI must also issue the right source or destination capability to that
+specific live connection. Disconnect, expiry, or local revocation removes that
+second authority immediately.
 
 **`hardware-midi` gates `midi.send` and `midi.sendSysEx`** (#2297). The scope
 was declared before any operation required it, because grants are persisted: a
