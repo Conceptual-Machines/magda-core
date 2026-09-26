@@ -48,8 +48,10 @@ class ModelChangeBridge::Impl final : public TrackManagerListener,
         AutomationManager::getInstance().addListener(this);
         SelectionManager::getInstance().addListener(this);
         if (transport_ != nullptr) {
-            transportListener_ = transport_->addStateListener(
-                [this] { service_.noteModelActivity(Topic::Transport); });
+            transportListener_ = transport_->addStateListener([this] {
+                service_.noteModelActivity(Topic::Transport);
+                service_.pollSessionRecordings();
+            });
         }
         if (observingProject_)
             ProjectManager::getInstance().addListener(this);
@@ -126,6 +128,7 @@ class ModelChangeBridge::Impl final : public TrackManagerListener,
     // coalesced away before an event is built.
     void clipsChanged() override {
         service_.noteModelChanged({Topic::Clips, Topic::Session});
+        service_.pollSessionRecordings();
     }
     void clipPropertyChanged(ClipId) override {
         service_.noteModelChanged({Topic::Clips, Topic::Session});
@@ -144,6 +147,7 @@ class ModelChangeBridge::Impl final : public TrackManagerListener,
     }
     void sessionRuntimeStateChanged() override {
         service_.noteModelActivity(Topic::Session);
+        service_.pollSessionRecordings();
     }
     void clipPlaybackRequested(ClipId, ClipPlaybackRequest) override {
         service_.noteModelActivity(Topic::Session);

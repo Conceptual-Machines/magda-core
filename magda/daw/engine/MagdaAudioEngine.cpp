@@ -632,6 +632,18 @@ bool MagdaAudioEngine::isSessionSlotRecording(TrackId trackId, int sceneIndex) c
     return host_->isSessionSlotRecording(trackId, sceneIndex);
 }
 
+SessionRecordingCapabilities MagdaAudioEngine::sessionRecordingCapabilities() const {
+    return {.slotRecording = true,
+            .performanceCapture = true,
+            .slotCancellation = true,
+            .performanceCaptureCancellation = false,
+            .slotStopStopsTransport = false};
+}
+
+bool MagdaAudioEngine::stopSessionSlotRecording(TrackId trackId, bool commit) {
+    return host_->stopSessionSlotRecording(trackId, commit);
+}
+
 const std::unordered_map<TrackId, RecordingPreview>& MagdaAudioEngine::getRecordingPreviews()
     const {
     return host_->recordingPreviews();

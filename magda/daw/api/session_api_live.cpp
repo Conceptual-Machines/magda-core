@@ -61,6 +61,44 @@ bool SessionApiLive::isSlotRecording(TrackId trackId, int sceneIndex) const {
     return engine != nullptr && engine->isSessionSlotRecording(trackId, sceneIndex);
 }
 
+SessionRecordingCapabilities SessionApiLive::recordingCapabilities() const {
+    auto* engine = TrackManager::getInstance().getAudioEngine();
+    return engine != nullptr ? engine->sessionRecordingCapabilities()
+                             : SessionRecordingCapabilities{};
+}
+
+bool SessionApiLive::setSlotRecordArmed(TrackId trackId, int sceneIndex, bool armed) {
+    auto* engine = TrackManager::getInstance().getAudioEngine();
+    if (engine == nullptr || !engine->sessionRecordingCapabilities().slotRecording ||
+        TrackManager::getInstance().getTrack(trackId) == nullptr || sceneIndex < 0)
+        return false;
+    if (armed && ClipManager::getInstance().getClipInSlot(trackId, sceneIndex) != INVALID_CLIP_ID)
+        return false;
+
+    const auto current = engine->isSessionSlotRecordArmed(trackId, sceneIndex);
+    if (current != armed)
+        engine->armSessionSlotRecording(trackId, sceneIndex);
+    return engine->isSessionSlotRecordArmed(trackId, sceneIndex) == armed;
+}
+
+bool SessionApiLive::beginSlotRecording(TrackId trackId, int sceneIndex) {
+    auto* engine = TrackManager::getInstance().getAudioEngine();
+    if (engine == nullptr || !engine->sessionRecordingCapabilities().slotRecording ||
+        !engine->isSessionSlotRecordArmed(trackId, sceneIndex))
+        return false;
+    engine->beginArmedSessionSlotRecordings();
+    return engine->isSessionSlotRecordArmed(trackId, sceneIndex);
+}
+
+bool SessionApiLive::stopSlotRecording(TrackId trackId, int sceneIndex, bool commit) {
+    auto* engine = TrackManager::getInstance().getAudioEngine();
+    if (engine == nullptr || !engine->isSessionSlotRecordArmed(trackId, sceneIndex))
+        return false;
+    if (!commit && !engine->sessionRecordingCapabilities().slotCancellation)
+        return false;
+    return engine->stopSessionSlotRecording(trackId, commit);
+}
+
 bool SessionApiLive::setClipLaunchSettings(ClipId clipId,
                                            const SessionClipLaunchSettings& settings) {
     auto& clips = ClipManager::getInstance();

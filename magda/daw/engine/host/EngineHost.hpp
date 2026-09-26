@@ -339,6 +339,7 @@ class EngineHost {
     void armSessionSlotRecording(TrackId trackId, int sceneIndex);
     void beginArmedSessionSlotRecordings();
     void beginArmedSessionSlotRecordings(double positionSeconds);
+    bool stopSessionSlotRecording(TrackId trackId, bool commit);
     bool isSessionSlotRecordArmed(TrackId trackId, int sceneIndex) const;
     bool isSessionSlotRecording(TrackId trackId, int sceneIndex) const;
 

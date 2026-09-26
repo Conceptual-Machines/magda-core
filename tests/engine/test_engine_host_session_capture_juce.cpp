@@ -261,6 +261,8 @@ class EngineHostSessionCaptureTest final : public juce::UnitTest {
         pump(*devices.device, 50);
         magda::TrackManager::getInstance().createTrack("Unrelated plan swap");
         settle();
+        expect(arrangement(track).empty(),
+               "the capture pass stays structural until its final stop boundary");
         host.stopMidiRecording();
 
         expect(host.isPlaying(), "record punch-out leaves transport playing");

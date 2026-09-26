@@ -8,6 +8,7 @@
 #include "magda_api.hpp"
 #include "remote_diagnostics.hpp"
 #include "remote_engine_jobs.hpp"
+#include "remote_session_recordings.hpp"
 #include "undo_api.hpp"
 
 namespace magda::remote {
@@ -153,6 +154,7 @@ juce::var Response::toEnvelope() const {
 RemoteApiService::RemoteApiService(MagdaApi& api)
     : api_(api), state_(std::make_shared<ExecutionState>()) {
     state_->service = this;
+    sessionRecordings_ = std::make_shared<RemoteSessionRecordings>(api_, jobs_, revision_);
     jobs_->setChangeCallback([this] { changes_.markChanged(Topic::Jobs, currentRevision()); });
 }
 
@@ -387,6 +389,8 @@ Response RemoteApiService::execute(const OperationDescriptor& operation, const j
     handlerContext.diagnostics = diagnostics_.get();
     handlerContext.jobs = jobs_.get();
     handlerContext.jobsOwner = jobs_;
+    handlerContext.sessionRecordings = sessionRecordings_.get();
+    handlerContext.sessionRecordingsOwner = sessionRecordings_;
     handlerContext.fileHandles = &fileHandles_;
     handlerContext.engineJobs = engineJobs_.get();
     handlerContext.engineJobsOwner = engineJobs_;
@@ -466,6 +470,8 @@ void RemoteApiService::shutdown() {
     // once no handler is running and none can start. Queued jobs then observe a
     // null service and complete with Cancelled without touching it.
     retireState();
+    if (sessionRecordings_)
+        sessionRecordings_->shutdown();
     jobs_->shutdown();
     if (engineJobs_)
         engineJobs_->shutdown();
@@ -587,6 +593,11 @@ RemoteJobManager& RemoteApiService::jobs() {
 
 const RemoteJobManager& RemoteApiService::jobs() const {
     return *jobs_;
+}
+
+void RemoteApiService::pollSessionRecordings() {
+    if (sessionRecordings_ && !isExecutingOnThisThread())
+        sessionRecordings_->poll();
 }
 
 RemoteFileHandleRegistry& RemoteApiService::fileHandles() {

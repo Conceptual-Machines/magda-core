@@ -96,6 +96,10 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     }
     REQUIRE(registry.find("session.updateClipSettings") != nullptr);
     REQUIRE(registry.find("session.returnToArrangement") != nullptr);
+    for (const auto* name : {"session.recordingCapabilities", "session.armSlotRecording",
+                             "session.beginSlotRecording", "session.stopSlotRecording",
+                             "session.beginPerformanceCapture", "session.stopPerformanceCapture"})
+        REQUIRE(registry.find(name) != nullptr);
     REQUIRE(registry.find("automation.addPoint") != nullptr);
     REQUIRE(registry.find("automation.setPoints") != nullptr);
     REQUIRE(registry.find("automation.deleteLane") != nullptr);
@@ -136,6 +140,38 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(description["apiVersion"].toString() == "1.0");
     REQUIRE(description["operations"].getArray()->size() ==
             static_cast<int>(registry.operations().size()));
+}
+
+TEST_CASE("Session recording exposes closed job and capability contracts",
+          "[remote-api][contract][session][recording][2841]") {
+    const auto& registry = OperationRegistry::instance();
+    const auto* capabilities = registry.find("session.recordingCapabilities");
+    const auto* arm = registry.find("session.armSlotRecording");
+    const auto* begin = registry.find("session.beginSlotRecording");
+    const auto* stop = registry.find("session.stopSlotRecording");
+    REQUIRE(capabilities != nullptr);
+    REQUIRE(arm != nullptr);
+    REQUIRE(begin != nullptr);
+    REQUIRE(stop != nullptr);
+    CHECK(capabilities->access == OperationAccess::Read);
+    CHECK(arm->access == OperationAccess::Control);
+    CHECK(begin->access == OperationAccess::Control);
+    CHECK(stop->access == OperationAccess::Write);
+    CHECK(arm->requiredScope == Scope::Session);
+    CHECK(begin->requiredScope == Scope::Session);
+    CHECK(stop->requiredScope == Scope::Session);
+
+    const auto address =
+        object({{"trackId", 2}, {"sceneId", 30}, {"armed", true}, {"occupiedPolicy", "fail"}});
+    CHECK_FALSE(validateOperationInput(*arm, address).has_value());
+    CHECK(validateOperationInput(*arm, object({{"trackId", 2}, {"sceneId", 30}, {"armed", true}}))
+              .has_value());
+    CHECK(validateOperationInput(
+              *begin, object({{"trackId", 2}, {"sceneId", 30}, {"occupiedPolicy", "replace"}}))
+              .has_value());
+    CHECK_FALSE(validateOperationInput(*stop, object({{"jobId", "job_opaque"}})).has_value());
+    CHECK(validateOperationInput(*stop, object({{"jobId", "job_opaque"}, {"trackId", 2}}))
+              .has_value());
 }
 
 TEST_CASE("Session scene lifecycle inputs are closed and explicit",

@@ -24,6 +24,7 @@ target_sources(magda_daw PRIVATE
     remote_clients.cpp
     remote_audit.cpp
     remote_jobs.cpp
+    remote_session_recordings.cpp
     remote_file_handles.cpp
     remote_engine_jobs.cpp
     remote_service.cpp

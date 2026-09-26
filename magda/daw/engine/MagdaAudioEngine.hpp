@@ -191,6 +191,8 @@ class MagdaAudioEngine final : public AudioEngine,
     void beginArmedSessionSlotRecordings() override;
     bool isSessionSlotRecordArmed(TrackId trackId, int sceneIndex) const override;
     bool isSessionSlotRecording(TrackId trackId, int sceneIndex) const override;
+    SessionRecordingCapabilities sessionRecordingCapabilities() const override;
+    bool stopSessionSlotRecording(TrackId trackId, bool commit) override;
     const std::unordered_map<TrackId, RecordingPreview>& getRecordingPreviews() const override;
     void onPunchRegionChanged(double startSeconds, double endSeconds, bool punchInEnabled,
                               bool punchOutEnabled) override;

@@ -32,6 +32,16 @@ class TrackMeasurementTap;
 
 namespace magda {
 
+struct SessionRecordingCapabilities {
+    bool slotRecording = false;
+    bool performanceCapture = false;
+    bool slotCancellation = false;
+    bool performanceCaptureCancellation = false;
+    bool slotStopStopsTransport = false;
+
+    bool operator==(const SessionRecordingCapabilities&) const = default;
+};
+
 class DeviceMeters;
 class AudioIOControl;
 class InsertRenderCapture;
@@ -236,6 +246,16 @@ class AudioEngine : public AudioEngineListener {
 
     /** True while the given session slot is actively recording. */
     virtual bool isSessionSlotRecording(TrackId /*trackId*/, int /*sceneIndex*/) const {
+        return false;
+    }
+
+    /** Recording features implemented by this engine. */
+    virtual SessionRecordingCapabilities sessionRecordingCapabilities() const {
+        return {};
+    }
+
+    /** Stop one slot take, committing it when requested. */
+    virtual bool stopSessionSlotRecording(TrackId /*trackId*/, bool /*commit*/) {
         return false;
     }
 

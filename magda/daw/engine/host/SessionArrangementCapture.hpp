@@ -92,6 +92,8 @@ class SessionArrangementCapture {
     std::unordered_map<ClipId, double> revisionTempos_;
     std::uint64_t nextRevision_ = 0;
     std::uint64_t reportedOverflows_ = 0;
+    std::vector<ClipInfo> arrangementBefore_;
+    bool snapshotTaken_ = false;
 
     /// This recording window has had Session material whose intent must survive edits.
     bool participating_ = false;

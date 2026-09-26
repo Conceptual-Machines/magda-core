@@ -1070,6 +1070,7 @@ class MockSessionApi : public SessionApi {
 
     std::set<std::pair<TrackId, int>> armedSlots;
     std::set<std::pair<TrackId, int>> recordingSlots;
+    SessionRecordingCapabilities recordingSupport{true, true, true, false, false};
     SessionSceneState sceneState;
     bool isSlotRecordArmed(TrackId trackId, int sceneIndex) const override {
         return armedSlots.contains({trackId, sceneIndex});
@@ -1077,6 +1078,35 @@ class MockSessionApi : public SessionApi {
     bool isSlotRecording(TrackId trackId, int sceneIndex) const override {
         return recordingSlots.contains({trackId, sceneIndex});
     }
+    SessionRecordingCapabilities recordingCapabilities() const override {
+        return recordingSupport;
+    }
+    bool setSlotRecordArmed(TrackId trackId, int sceneIndex, bool armed) override {
+        const auto key = std::pair{trackId, sceneIndex};
+        if (armed)
+            armedSlots.insert(key);
+        else
+            armedSlots.erase(key);
+        return true;
+    }
+    bool beginSlotRecording(TrackId trackId, int sceneIndex) override {
+        const auto key = std::pair{trackId, sceneIndex};
+        if (!armedSlots.contains(key))
+            return false;
+        recordingSlots.insert(key);
+        return true;
+    }
+    bool stopSlotRecording(TrackId trackId, int sceneIndex, bool commit) override {
+        const auto key = std::pair{trackId, sceneIndex};
+        if (!armedSlots.contains(key))
+            return false;
+        armedSlots.erase(key);
+        recordingSlots.erase(key);
+        if (commit && !slots.contains(key))
+            slots[key] = nextRecordedClipId++;
+        return true;
+    }
+    ClipId nextRecordedClipId = 10000;
     bool setClipLaunchSettings(ClipId clipId, const SessionClipLaunchSettings& settings) override {
         launchSettings[clipId] = settings;
         return true;
@@ -1321,6 +1351,7 @@ class MockTransportApi : public TransportApi {
     int playCalls = 0;
     int stopCalls = 0;
     int refreshStateSourceCalls = 0;
+    std::function<void(bool)> recordingChanged;
 
     void play() override {
         ++playCalls;
@@ -1333,6 +1364,8 @@ class MockTransportApi : public TransportApi {
     }
     void setRecording(bool r) override {
         recording = r;
+        if (recordingChanged)
+            recordingChanged(r);
     }
     bool isPlaying() const override {
         return playing;

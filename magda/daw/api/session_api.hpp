@@ -9,6 +9,7 @@
 #include "../core/ClipInfo.hpp"
 #include "../core/ClipTypes.hpp"
 #include "../core/TypeIds.hpp"
+#include "../engine/AudioEngine.hpp"
 #include "../project/ProjectInfo.hpp"
 
 namespace magda {
@@ -79,6 +80,18 @@ class SessionApi {
     /// no live engine is attached (for example in a headless project reader).
     virtual bool isSlotRecordArmed(TrackId trackId, int sceneIndex) const = 0;
     virtual bool isSlotRecording(TrackId trackId, int sceneIndex) const = 0;
+
+    /// Engine recording support and transport interaction policy.
+    virtual SessionRecordingCapabilities recordingCapabilities() const = 0;
+
+    /// Set the queued state of an empty addressed slot without toggling it.
+    virtual bool setSlotRecordArmed(TrackId trackId, int sceneIndex, bool armed) = 0;
+
+    /// Ask the engine to begin an already-armed slot take.
+    virtual bool beginSlotRecording(TrackId trackId, int sceneIndex) = 0;
+
+    /// End one slot take. A false commit requests cancellation.
+    virtual bool stopSlotRecording(TrackId trackId, int sceneIndex, bool commit) = 0;
 
     /// Atomically replace the launch behaviour of one session clip.
     virtual bool setClipLaunchSettings(ClipId clipId,

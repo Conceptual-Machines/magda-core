@@ -556,6 +556,35 @@ not advance the project revision. Playback-mode handoffs and launch-setting
 edits both publish a fresh `session` snapshot; settings edits also publish the
 updated clip on the `clips` topic.
 
+### Session recording
+
+`session.recordingCapabilities` reports slot recording, launched-performance
+capture, cancellation support, and whether stopping one slot necessarily stops
+the backend's shared recording transport. The occupied-slot policy is closed to
+`fail`: recording never silently replaces existing material. Native supports
+slot cancellation; Tracktion reports it unsupported and also reports that its
+slot-stop boundary stops the shared recording pass.
+
+Slots are addressed by stable `trackId` plus `sceneId`.
+`session.armSlotRecording` queues or unqueues an empty slot without changing the
+project revision. `session.beginSlotRecording` starts the transport-integrated
+take and returns an owner-scoped `session.slotRecording` job. The Session
+snapshot's `recordArmed` and `recording` fields distinguish queued and active
+states, while the terminal job result returns the created `clipId` (or null when
+the take produced no material). `session.stopSlotRecording` accepts that opaque
+job ID and commits the resulting clip as one structural revision. Supported
+cancellation uses the common `jobs.cancel` operation and discards the take.
+
+`session.beginPerformanceCapture` similarly returns a
+`session.performanceCapture` job and records launched Session runs into the
+Arrangement while the transport records. `session.stopPerformanceCapture`
+commits all resulting Arrangement clips together and completes the job with
+their IDs. Neither engine currently advertises cancellation for performance
+capture. Arm, begin, playback, and recording-state transitions are live control
+and revision-neutral; only materialized clips advance the project revision.
+Session subscribers receive the runtime transitions, and clip creation
+invalidates both `clips` and `session`.
+
 ## Subscriptions
 
 Eleven topics partition what a client can watch: `project`, `tracks`, `clips`,

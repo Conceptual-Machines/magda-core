@@ -43,6 +43,7 @@
 #include "remote_engine_jobs.hpp"
 #include "remote_file_handles.hpp"
 #include "remote_jobs.hpp"
+#include "remote_session_recordings.hpp"
 #include "selection_api.hpp"
 #include "session_api.hpp"
 #include "track_api.hpp"
@@ -4059,6 +4060,104 @@ HandlerResult transportSeekRelative(MagdaApi& api, const juce::var& input, const
 
 HandlerResult sessionGet(MagdaApi& api, const juce::var&, const RequestContext&) {
     return HandlerResult::ok(toJson(makeSessionDto(api)));
+}
+
+namespace {
+
+juce::var recordingCapabilitiesResult(const SessionRecordingCapabilities& capabilities) {
+    auto* result = new juce::DynamicObject();
+    result->setProperty("slotRecording", capabilities.slotRecording);
+    result->setProperty("performanceCapture", capabilities.performanceCapture);
+    result->setProperty("slotCancellation", capabilities.slotCancellation);
+    result->setProperty("performanceCaptureCancellation",
+                        capabilities.performanceCaptureCancellation);
+    result->setProperty("slotStopStopsTransport", capabilities.slotStopStopsTransport);
+    juce::Array<juce::var> occupiedPolicies;
+    occupiedPolicies.add("fail");
+    result->setProperty("occupiedSlotPolicies", occupiedPolicies);
+    return result;
+}
+
+std::optional<HandlerResult> resolveRecordingSlot(MagdaApi& api, const juce::var& input,
+                                                  TrackId& trackId, int& sceneIndex) {
+    trackId = static_cast<TrackId>(readInt(input, "trackId"));
+    if (api.tracks().getTrack(trackId) == nullptr)
+        return notFound("track", trackId);
+    const auto sceneId = static_cast<SceneId>(readInt(input, "sceneId"));
+    sceneIndex = sceneIndexForId(api.project().getCurrentProjectInfo(), sceneId);
+    if (sceneIndex < 0)
+        return notFound("scene", sceneId);
+    return std::nullopt;
+}
+
+HandlerResult recordingJobResult(RemoteSessionRecordings::Result result) {
+    if (result.error)
+        return HandlerResult::fail(std::move(*result.error));
+    if (!result.job)
+        return HandlerResult::fail(ErrorCode::InternalError, "recording job state is unavailable");
+    return result.modelChanged ? HandlerResult::ok(toJson(*result.job))
+                               : HandlerResult::unchanged(toJson(*result.job));
+}
+
+}  // namespace
+
+HandlerResult sessionRecordingCapabilities(MagdaApi& api, const juce::var&, const RequestContext&) {
+    return HandlerResult::ok(recordingCapabilitiesResult(api.session().recordingCapabilities()));
+}
+
+HandlerResult sessionArmSlotRecording(MagdaApi& api, const juce::var& input,
+                                      const RequestContext&) {
+    TrackId trackId = INVALID_TRACK_ID;
+    int sceneIndex = -1;
+    if (auto error = resolveRecordingSlot(api, input, trackId, sceneIndex))
+        return *error;
+    const auto armed = static_cast<bool>(input["armed"]);
+    if (armed && api.session().getClipInSlot(trackId, sceneIndex) != INVALID_CLIP_ID)
+        return HandlerResult::fail(ErrorCode::Conflict, "the addressed session slot is occupied");
+    if (!api.session().setSlotRecordArmed(trackId, sceneIndex, armed))
+        return HandlerResult::fail(ErrorCode::Conflict,
+                                   "the slot recording state was not accepted");
+    return HandlerResult::unchanged(toJson(makeSessionDto(api)));
+}
+
+HandlerResult sessionBeginSlotRecording(MagdaApi& api, const juce::var& input,
+                                        const RequestContext& context) {
+    if (context.sessionRecordings == nullptr)
+        return HandlerResult::fail(ErrorCode::InternalError,
+                                   "session recording service is unavailable");
+    TrackId trackId = INVALID_TRACK_ID;
+    int sceneIndex = -1;
+    if (auto error = resolveRecordingSlot(api, input, trackId, sceneIndex))
+        return *error;
+    const auto sceneId = static_cast<SceneId>(readInt(input, "sceneId"));
+    return recordingJobResult(
+        context.sessionRecordings->beginSlot(trackId, sceneId, sceneIndex, context));
+}
+
+HandlerResult sessionStopSlotRecording(MagdaApi&, const juce::var& input,
+                                       const RequestContext& context) {
+    if (context.sessionRecordings == nullptr)
+        return HandlerResult::fail(ErrorCode::InternalError,
+                                   "session recording service is unavailable");
+    return recordingJobResult(
+        context.sessionRecordings->stopSlot(input["jobId"].toString(), context));
+}
+
+HandlerResult sessionBeginPerformanceCapture(MagdaApi&, const juce::var&,
+                                             const RequestContext& context) {
+    if (context.sessionRecordings == nullptr)
+        return HandlerResult::fail(ErrorCode::InternalError,
+                                   "session recording service is unavailable");
+    return recordingJobResult(context.sessionRecordings->beginPerformance(context));
+}
+
+HandlerResult sessionStopPerformanceCapture(MagdaApi&, const juce::var& input,
+                                            const RequestContext& context) {
+    if (context.sessionRecordings == nullptr)
+        return HandlerResult::fail(ErrorCode::InternalError,
+                                   "session recording service is unavailable");
+    return recordingJobResult(
+        context.sessionRecordings->stopPerformance(input["jobId"].toString(), context));
 }
 
 HandlerResult sessionLaunchClip(MagdaApi& api, const juce::var& input, const RequestContext&) {

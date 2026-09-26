@@ -6,8 +6,10 @@
 #include <tuple>
 #include <utility>
 
+#include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
 #include "../../core/TrackManager.hpp"
+#include "../../core/UndoManager.hpp"
 #include "../../project/serialization/ProjectSerializer.hpp"
 #include "clip/ClipSnapshotCompiler.hpp"
 #include "exec/EngineSession.hpp"
@@ -89,6 +91,8 @@ bool SessionArrangementCapture::arm() {
         return false;
 
     capture_->armFromCurrent();
+    arrangementBefore_ = ClipManager::getInstance().getArrangementClips();
+    snapshotTaken_ = true;
     participating_ = true;
     reportOverflows();
     return true;
@@ -104,6 +108,8 @@ bool SessionArrangementCapture::update(bool createClips) {
     if (capture_->armed() && hasMaterial())
         participating_ = true;
     reportOverflows();
+    if (capture_->armed())
+        return false;
     return collect(createClips);
 }
 
@@ -116,7 +122,14 @@ bool SessionArrangementCapture::disarm(bool createClips) {
     capture_->disarm();
     participating_ = false;
     reportOverflows();
-    return collect(createClips);
+    const auto created = collect(createClips);
+    if (createClips && created && snapshotTaken_) {
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<RecordSessionToArrangementCommand>(arrangementBefore_));
+    }
+    arrangementBefore_.clear();
+    snapshotTaken_ = false;
+    return created;
 }
 
 void SessionArrangementCapture::invalidateRecordingGeneration(std::uint64_t generation) {
@@ -134,6 +147,8 @@ void SessionArrangementCapture::reset() {
     revisionTempos_.clear();
     nextRevision_ = 0;
     reportedOverflows_ = 0;
+    arrangementBefore_.clear();
+    snapshotTaken_ = false;
     participating_ = false;
 }
 
@@ -146,6 +161,7 @@ bool SessionArrangementCapture::ownsRecording() const {
 }
 
 bool SessionArrangementCapture::collect(bool createClips) {
+    ClipManager::BatchScope notificationBatch;
     bool created = false;
     for (const auto& run : capture_->collect()) {
         if (!createClips)

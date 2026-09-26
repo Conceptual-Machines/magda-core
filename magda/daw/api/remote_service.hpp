@@ -173,6 +173,7 @@ class RemoteApiService {
 
     RemoteJobManager& jobs();
     const RemoteJobManager& jobs() const;
+    void pollSessionRecordings();
 
     RemoteFileHandleRegistry& fileHandles();
     const RemoteFileHandleRegistry& fileHandles() const;
@@ -270,6 +271,7 @@ class RemoteApiService {
     MagdaApi& api_;
     ChangeSource changes_;
     std::shared_ptr<RemoteJobManager> jobs_ = std::make_shared<RemoteJobManager>();
+    std::shared_ptr<class RemoteSessionRecordings> sessionRecordings_;
     RemoteFileHandleRegistry fileHandles_;
 
     std::shared_ptr<std::atomic<Revision>> revision_ =

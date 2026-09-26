@@ -1528,13 +1528,13 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         ClipManager::getInstance().notifySessionRuntimeStateChanged();
     }
 
-    bool stopSessionSlotRecording(TrackId trackId) {
+    bool stopSessionSlotRecording(TrackId trackId, bool createClip = true) {
         const auto found = sessionSlotTargets_.find(trackId);
         if (found == sessionSlotTargets_.end())
             return false;
         const auto target = found->second;
         if (target.launched)
-            stopSessionMaterialTakes(trackId, true, true);
+            stopSessionMaterialTakes(trackId, createClip, createClip);
         const auto deferred = hasClosingTake(trackId);
         if (deferred)
             setPendingSessionScene(trackId, {});
@@ -3764,6 +3764,10 @@ void EngineHost::beginArmedSessionSlotRecordings() {
 
 void EngineHost::beginArmedSessionSlotRecordings(double positionSeconds) {
     impl_->beginArmedSessionSlotRecordings(positionSeconds);
+}
+
+bool EngineHost::stopSessionSlotRecording(TrackId trackId, bool commit) {
+    return impl_->stopSessionSlotRecording(trackId, commit);
 }
 
 bool EngineHost::isSessionSlotRecordArmed(TrackId trackId, int sceneIndex) const {
