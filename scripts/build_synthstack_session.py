@@ -168,9 +168,11 @@ def main():
         for device in [instrument] + effects:
             magda.call("devices.add", {"trackId": track, "catalogId": catalog[device]})
         for start in range(0, BARS * 4, CLIP_BEATS):
-            clip = magda.call("clips.createMidi", {"trackId": track, "startBeat": start,
-                                                   "lengthBeats": CLIP_BEATS,
-                                                   "view": "arrangement"})["id"]
+            clip = magda.call("clips.createMidi", {
+                "lengthBeats": CLIP_BEATS,
+                "placement": {"view": "arrangement", "trackId": track,
+                              "startBeat": start},
+            })["id"]
             for bar in range(CLIP_BEATS // 4):
                 for note, velocity, beat, length in bar_notes(kind, start // 4 + bar, rng):
                     magda.call("clips.addMidiNote", {"clipId": clip, "note": note,

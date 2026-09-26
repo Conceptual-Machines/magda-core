@@ -617,11 +617,13 @@ TEST_CASE("Automation lane bulk writes are closed and edit-scoped",
 }
 
 TEST_CASE("Clip placement operations require explicit view-specific destinations",
-          "[remote-api][contract][clips]") {
+          "[remote-api][contract][clips][2844]") {
     const auto& registry = OperationRegistry::instance();
+    const auto* create = registry.find("clips.createMidi");
     const auto* move = registry.find("clips.move");
     const auto* resize = registry.find("clips.resize");
     const auto* duplicate = registry.find("clips.duplicate");
+    REQUIRE(create != nullptr);
     REQUIRE(move != nullptr);
     REQUIRE(resize != nullptr);
     REQUIRE(duplicate != nullptr);
@@ -630,7 +632,11 @@ TEST_CASE("Clip placement operations require explicit view-specific destinations
     CHECK(duplicate->requiredScope == Scope::Edit);
 
     const auto arrangement = object({{"view", "arrangement"}, {"trackId", 2}, {"startBeat", 8.0}});
-    const auto session = object({{"view", "session"}, {"trackId", 2}, {"sceneIndex", 3}});
+    const auto session =
+        object({{"view", "session"}, {"trackId", 2}, {"sceneId", 30}, {"occupiedPolicy", "fail"}});
+    CHECK_FALSE(
+        validateOperationInput(*create, object({{"lengthBeats", 4.0}, {"placement", arrangement}}))
+            .has_value());
     CHECK_FALSE(validateOperationInput(*move, object({{"clipId", 1}, {"destination", arrangement}}))
                     .has_value());
     CHECK_FALSE(
@@ -646,11 +652,23 @@ TEST_CASE("Clip placement operations require explicit view-specific destinations
                            {"destination",
                             object({{"view", "arrangement"}, {"trackId", 2}, {"sceneIndex", 3}})}}))
             .has_value());
+    CHECK(
+        validateOperationInput(
+            *create,
+            object({{"trackId", 2}, {"startBeat", 0.0}, {"lengthBeats", 4.0}, {"view", "session"}}))
+            .has_value());
     CHECK(validateOperationInput(
               *duplicate,
               object({{"clipId", 1},
                       {"destination",
                        object({{"view", "session"}, {"trackId", 2}, {"startBeat", 8.0}})}}))
+              .has_value());
+    CHECK(validateOperationInput(
+              *move, object({{"clipId", 1},
+                             {"destination", object({{"view", "session"},
+                                                     {"trackId", 2},
+                                                     {"sceneId", 30},
+                                                     {"occupiedPolicy", "overwrite"}})}}))
               .has_value());
 }
 

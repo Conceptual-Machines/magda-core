@@ -14,6 +14,7 @@
 #include "../core/AutomationTypes.hpp"
 #include "../core/ClipCommands.hpp"
 #include "../core/ClipInfo.hpp"
+#include "../core/ClipManager.hpp"
 #include "../core/ClipPlacementPolicy.hpp"
 #include "../core/ClipPropertyCommands.hpp"
 #include "../core/ControlTarget.hpp"
@@ -176,6 +177,108 @@ class SessionSceneCommand final : public UndoableCommand {
     bool captured_ = false;
     bool mutated_ = false;
 };
+
+class AtomicClipPlacementCommand final : public UndoableCommand {
+  public:
+    using Action = std::function<ClipId(ClipManager&)>;
+
+    AtomicClipPlacementCommand(Action action, juce::String description)
+        : action_(std::move(action)), description_(std::move(description)) {}
+
+    void execute() override {
+        auto& clips = ClipManager::getInstance();
+        if (captured_) {
+            clips.restoreClipCollection(after_);
+            mutated_ = true;
+            return;
+        }
+
+        before_ = clips.getClips();
+        resultClipId_ = action_(clips);
+        mutated_ = resultClipId_ != INVALID_CLIP_ID;
+        if (mutated_)
+            after_ = clips.getClips();
+        else
+            clips.restoreClipCollection(before_);
+        captured_ = true;
+    }
+    void undo() override {
+        if (mutated_)
+            ClipManager::getInstance().restoreClipCollection(before_);
+    }
+    bool didMutate() const override {
+        return mutated_;
+    }
+    juce::String getDescription() const override {
+        return description_;
+    }
+    ClipId resultClipId() const {
+        return resultClipId_;
+    }
+
+  private:
+    Action action_;
+    juce::String description_;
+    std::vector<ClipInfo> before_;
+    std::vector<ClipInfo> after_;
+    ClipId resultClipId_ = INVALID_CLIP_ID;
+    bool captured_ = false;
+    bool mutated_ = false;
+};
+
+enum class SlotOccupiedPolicy { Fail, Swap, Replace };
+
+struct ResolvedClipPlacement {
+    ClipView view = ClipView::Arrangement;
+    TrackId trackId = INVALID_TRACK_ID;
+    double startBeat = 0.0;
+    SceneId sceneId = INVALID_SCENE_ID;
+    int sceneIndex = -1;
+    SlotOccupiedPolicy occupiedPolicy = SlotOccupiedPolicy::Fail;
+};
+
+HandlerResult notFound(const juce::String& what, int id);
+
+SlotOccupiedPolicy slotOccupiedPolicy(const juce::var& placement) {
+    const auto value = placement["occupiedPolicy"].toString();
+    if (value == "swap")
+        return SlotOccupiedPolicy::Swap;
+    if (value == "replace")
+        return SlotOccupiedPolicy::Replace;
+    return SlotOccupiedPolicy::Fail;
+}
+
+int sceneIndexForId(const ProjectInfo& project, SceneId sceneId) {
+    const auto found = std::ranges::find(project.scenes, sceneId, &ProjectScene::id);
+    return found == project.scenes.end() ? -1 : static_cast<int>(found - project.scenes.begin());
+}
+
+std::optional<HandlerResult> resolveClipPlacement(MagdaApi& api, const juce::var& value,
+                                                  ResolvedClipPlacement& result) {
+    result.view = value["view"].toString() == "session" ? ClipView::Session : ClipView::Arrangement;
+    result.trackId = static_cast<TrackId>(readInt(value, "trackId"));
+    if (api.tracks().getTrack(result.trackId) == nullptr)
+        return notFound("track", result.trackId);
+
+    if (result.view == ClipView::Arrangement) {
+        result.startBeat = readDouble(value, "startBeat");
+        return std::nullopt;
+    }
+
+    result.sceneId = static_cast<SceneId>(readInt(value, "sceneId"));
+    result.sceneIndex = sceneIndexForId(api.project().getCurrentProjectInfo(), result.sceneId);
+    if (result.sceneIndex < 0)
+        return notFound("scene", result.sceneId);
+    result.occupiedPolicy = slotOccupiedPolicy(value);
+    return std::nullopt;
+}
+
+bool midiTrackAcceptsClip(const TrackInfo& track, ClipView view) {
+    ClipInfo candidate;
+    candidate.setMidiContent();
+    candidate.view = view;
+    return trackAcceptsClip(track, candidate);
+}
 
 juce::var acceptedResult() {
     auto* object = new juce::DynamicObject();
@@ -1198,15 +1301,40 @@ HandlerResult clipsGet(MagdaApi& api, const juce::var& input, const RequestConte
 }
 
 HandlerResult clipsCreateMidi(MagdaApi& api, const juce::var& input, const RequestContext&) {
-    const auto trackId = static_cast<TrackId>(static_cast<int>(input["trackId"]));
-    if (api.tracks().getTrack(trackId) == nullptr)
-        return notFound("track", trackId);
-    const auto view =
-        input["view"].toString() == "session" ? ClipView::Session : ClipView::Arrangement;
-    const auto id = runCommandAndRead<CreateClipCommand>(
-        api, [](const CreateClipCommand& command) { return command.getCreatedClipId(); },
-        ClipType::MIDI, trackId, BeatPosition{static_cast<double>(input["startBeat"])},
-        BeatDuration{static_cast<double>(input["lengthBeats"])}, juce::String(), view);
+    ResolvedClipPlacement placement;
+    if (const auto failure = resolveClipPlacement(api, input["placement"], placement))
+        return *failure;
+    const auto* track = api.tracks().getTrack(placement.trackId);
+    if (track == nullptr)
+        return notFound("track", placement.trackId);
+    if (!midiTrackAcceptsClip(*track, placement.view))
+        return HandlerResult::fail(ErrorCode::Conflict, "destination track does not accept MIDI");
+
+    ClipId occupant = INVALID_CLIP_ID;
+    if (placement.view == ClipView::Session) {
+        occupant = api.session().getClipInSlot(placement.trackId, placement.sceneIndex);
+        if (occupant != INVALID_CLIP_ID && placement.occupiedPolicy == SlotOccupiedPolicy::Fail)
+            return HandlerResult::fail(ErrorCode::Conflict, "destination session slot is occupied");
+        if (placement.occupiedPolicy == SlotOccupiedPolicy::Swap)
+            return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                       "swap requires moving a placed session clip");
+    }
+
+    const auto lengthBeats = readDouble(input, "lengthBeats");
+    const auto id = runCommandAndRead<AtomicClipPlacementCommand>(
+        api, [](const AtomicClipPlacementCommand& command) { return command.resultClipId(); },
+        [placement, lengthBeats, occupant](ClipManager& clips) {
+            ClipManager::BatchScope notificationBatch;
+            if (occupant != INVALID_CLIP_ID)
+                clips.deleteClip(occupant);
+            const auto created =
+                clips.createMidiClipBeats(placement.trackId, placement.startBeat, lengthBeats,
+                                          placement.view, ClipOverlapPolicy::ResolveOverlaps);
+            if (created != INVALID_CLIP_ID && placement.view == ClipView::Session)
+                clips.setClipSceneIndex(created, placement.sceneIndex);
+            return created;
+        },
+        "Create MIDI Clip");
     if (id == INVALID_CLIP_ID)
         return HandlerResult::fail(ErrorCode::InternalError, "clip creation failed");
     return HandlerResult::ok(idResult(id));
@@ -1387,48 +1515,85 @@ HandlerResult clipsMove(MagdaApi& api, const juce::var& input, const RequestCont
     if (clip == nullptr)
         return notFound("clip", clipId);
 
-    const auto destination = input["destination"];
-    const auto view = destination["view"].toString();
-    const auto destinationView = view == "session" ? ClipView::Session : ClipView::Arrangement;
-    if (clip->view != destinationView)
+    const auto source = *clip;
+    ResolvedClipPlacement destination;
+    if (const auto failure = resolveClipPlacement(api, input["destination"], destination))
+        return *failure;
+    if (source.view != destination.view)
         return HandlerResult::fail(ErrorCode::Conflict,
                                    "clip destination must use the clip's current view");
 
-    const auto trackId = static_cast<TrackId>(readInt(destination, "trackId"));
-    const auto* track = api.tracks().getTrack(trackId);
+    const auto* track = api.tracks().getTrack(destination.trackId);
     if (track == nullptr)
-        return notFound("track", trackId);
-    if (!trackAcceptsClip(*track, *clip))
+        return notFound("track", destination.trackId);
+    if (!trackAcceptsClip(*track, source))
         return HandlerResult::fail(ErrorCode::Conflict, "destination track does not accept clip");
 
-    if (destinationView == ClipView::Session) {
-        const auto sceneIndex = readInt(destination, "sceneIndex");
-        const auto occupant = api.session().getClipInSlot(trackId, sceneIndex);
-        if (occupant != INVALID_CLIP_ID && occupant != clipId)
-            return HandlerResult::fail(ErrorCode::Conflict, "destination session slot is occupied");
-        if (clip->trackId == trackId && clip->sceneIndex == sceneIndex)
-            return HandlerResult::unchanged(toJson(makeClipDto(*clip)));
+    if (destination.view == ClipView::Session) {
+        const auto sceneCount =
+            static_cast<int>(api.project().getCurrentProjectInfo().scenes.size());
+        if (source.sceneIndex < 0 || source.sceneIndex >= sceneCount)
+            return HandlerResult::fail(ErrorCode::Conflict,
+                                       "legacy unassigned session clip cannot be moved");
+        if (source.trackId == destination.trackId && source.sceneIndex == destination.sceneIndex)
+            return HandlerResult::unchanged(toJson(makeClipDto(source)));
 
-        const auto moved = runCommandAndRead<MoveSessionClipCommand>(
-            api, [](const MoveSessionClipCommand& command) { return command.wasExecuted(); },
-            clipId, trackId, sceneIndex);
-        if (!moved)
+        const auto occupant =
+            api.session().getClipInSlot(destination.trackId, destination.sceneIndex);
+        if (occupant != INVALID_CLIP_ID && destination.occupiedPolicy == SlotOccupiedPolicy::Fail)
+            return HandlerResult::fail(ErrorCode::Conflict, "destination session slot is occupied");
+        if (occupant != INVALID_CLIP_ID && destination.occupiedPolicy == SlotOccupiedPolicy::Swap) {
+            const auto* displaced = api.clips().getClip(occupant);
+            const auto* sourceTrack = api.tracks().getTrack(source.trackId);
+            if (displaced == nullptr || sourceTrack == nullptr ||
+                !trackAcceptsClip(*sourceTrack, *displaced))
+                return HandlerResult::fail(ErrorCode::Conflict,
+                                           "displaced clip cannot occupy the source slot");
+        }
+
+        const auto moved = runCommandAndRead<AtomicClipPlacementCommand>(
+            api, [](const AtomicClipPlacementCommand& command) { return command.resultClipId(); },
+            [clipId, source, destination, occupant](ClipManager& clips) {
+                ClipManager::BatchScope notificationBatch;
+                if (occupant != INVALID_CLIP_ID &&
+                    destination.occupiedPolicy == SlotOccupiedPolicy::Replace) {
+                    clips.deleteClip(occupant);
+                } else if (occupant != INVALID_CLIP_ID &&
+                           destination.occupiedPolicy == SlotOccupiedPolicy::Swap) {
+                    clips.setClipSceneIndex(clipId, -1);
+                    clips.setClipSceneIndex(occupant, -1);
+                    clips.moveClipToTrack(clipId, destination.trackId);
+                    clips.moveClipToTrack(occupant, source.trackId);
+                    clips.setClipSceneIndex(clipId, destination.sceneIndex);
+                    clips.setClipSceneIndex(occupant, source.sceneIndex);
+                    return clipId;
+                }
+
+                clips.setClipSceneIndex(clipId, -1);
+                clips.moveClipToTrack(clipId, destination.trackId);
+                clips.setClipSceneIndex(clipId, destination.sceneIndex);
+                return clipId;
+            },
+            "Move Session Clip");
+        if (moved == INVALID_CLIP_ID)
             return HandlerResult::fail(ErrorCode::Conflict, "session clip move was rejected");
     } else {
-        const auto startBeat = readDouble(destination, "startBeat");
-        const bool moveTrack = clip->trackId != trackId;
-        const bool moveTime = clip->placement.startBeat != startBeat;
+        const bool moveTrack = source.trackId != destination.trackId;
+        const bool moveTime = source.placement.startBeat != destination.startBeat;
         if (!moveTrack && !moveTime)
-            return HandlerResult::unchanged(toJson(makeClipDto(*clip)));
-        if (moveTrack) {
-            const auto moved = runCommandAndRead<MoveClipToTrackCommand>(
-                api, [](const MoveClipToTrackCommand& command) { return command.wasExecuted(); },
-                clipId, trackId);
-            if (!moved)
-                return HandlerResult::fail(ErrorCode::Conflict, "clip track move was rejected");
-        }
-        if (moveTime)
-            runCommand<MoveClipCommand>(api, clipId, BeatPosition{startBeat});
+            return HandlerResult::unchanged(toJson(makeClipDto(source)));
+        const auto moved = runCommandAndRead<AtomicClipPlacementCommand>(
+            api, [](const AtomicClipPlacementCommand& command) { return command.resultClipId(); },
+            [clipId, destination](ClipManager& clips) {
+                ClipManager::BatchScope notificationBatch;
+                return clips.placeArrangementClip(clipId, destination.trackId,
+                                                  destination.startBeat)
+                           ? clipId
+                           : INVALID_CLIP_ID;
+            },
+            "Move Clip");
+        if (moved == INVALID_CLIP_ID)
+            return HandlerResult::fail(ErrorCode::Conflict, "clip move was rejected");
     }
 
     const auto* updated = api.clips().getClip(clipId);
@@ -1466,32 +1631,48 @@ HandlerResult clipsDuplicate(MagdaApi& api, const juce::var& input, const Reques
     if (clip == nullptr)
         return notFound("clip", clipId);
 
-    const auto destination = input["destination"];
-    const auto view = destination["view"].toString();
-    const auto destinationView = view == "session" ? ClipView::Session : ClipView::Arrangement;
-    if (clip->view != destinationView)
+    const auto source = *clip;
+    ResolvedClipPlacement destination;
+    if (const auto failure = resolveClipPlacement(api, input["destination"], destination))
+        return *failure;
+    if (source.view != destination.view)
         return HandlerResult::fail(ErrorCode::Conflict,
                                    "clip destination must use the clip's current view");
 
-    const auto trackId = static_cast<TrackId>(readInt(destination, "trackId"));
-    const auto* track = api.tracks().getTrack(trackId);
+    const auto* track = api.tracks().getTrack(destination.trackId);
     if (track == nullptr)
-        return notFound("track", trackId);
-    if (!trackAcceptsClip(*track, *clip))
+        return notFound("track", destination.trackId);
+    if (!trackAcceptsClip(*track, source))
         return HandlerResult::fail(ErrorCode::Conflict, "destination track does not accept clip");
 
-    const auto startBeat = destinationView == ClipView::Arrangement
-                               ? readDouble(destination, "startBeat")
-                               : clip->placement.startBeat;
-    const auto sceneIndex =
-        destinationView == ClipView::Session ? readInt(destination, "sceneIndex") : -1;
-    if (destinationView == ClipView::Session &&
-        api.session().getClipInSlot(trackId, sceneIndex) != INVALID_CLIP_ID)
-        return HandlerResult::fail(ErrorCode::Conflict, "destination session slot is occupied");
+    ClipId occupant = INVALID_CLIP_ID;
+    if (destination.view == ClipView::Session) {
+        const auto sceneCount =
+            static_cast<int>(api.project().getCurrentProjectInfo().scenes.size());
+        if (source.sceneIndex < 0 || source.sceneIndex >= sceneCount)
+            return HandlerResult::fail(ErrorCode::Conflict,
+                                       "legacy unassigned session clip cannot be duplicated");
+        occupant = api.session().getClipInSlot(destination.trackId, destination.sceneIndex);
+        if (occupant != INVALID_CLIP_ID && destination.occupiedPolicy == SlotOccupiedPolicy::Fail)
+            return HandlerResult::fail(ErrorCode::Conflict, "destination session slot is occupied");
+        if (destination.occupiedPolicy == SlotOccupiedPolicy::Swap)
+            return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                       "swap is only valid when moving a session clip");
+    }
 
-    const auto duplicateId = runCommandAndRead<DuplicateClipCommand>(
-        api, [](const DuplicateClipCommand& command) { return command.getDuplicatedClipId(); },
-        clipId, BeatPosition{startBeat}, trackId, 0.0, sceneIndex, false);
+    const auto duplicateId = runCommandAndRead<AtomicClipPlacementCommand>(
+        api, [](const AtomicClipPlacementCommand& command) { return command.resultClipId(); },
+        [clipId, destination, occupant](ClipManager& clips) {
+            ClipManager::BatchScope notificationBatch;
+            if (occupant != INVALID_CLIP_ID)
+                clips.deleteClip(occupant);
+            const auto duplicate =
+                clips.duplicateClipAtBeats(clipId, destination.startBeat, destination.trackId, 0.0);
+            if (duplicate != INVALID_CLIP_ID && destination.view == ClipView::Session)
+                clips.setClipSceneIndex(duplicate, destination.sceneIndex);
+            return duplicate;
+        },
+        "Duplicate Clip");
     if (duplicateId == INVALID_CLIP_ID)
         return HandlerResult::fail(ErrorCode::Conflict, "clip duplicate was rejected");
 
