@@ -500,9 +500,10 @@ void MainWindow::showRecoveryBrowser() {
     menu.addSectionHeader(entries.empty() ? "No unsaved projects found"
                                           : "Unsaved projects (kept for 30 days)");
     for (size_t i = 0; i < entries.size(); ++i)
-        menu.addItem(static_cast<int>(i + 1), entries[i].name + " — " +
+        menu.addItem(static_cast<int>(i + 1), entries[i].name + juce::String::fromUTF8(" — ") +
                                                   entries[i].saved.toString(true, true) +
-                                                  " — MAGDA " + entries[i].version);
+                                                  juce::String::fromUTF8(" — MAGDA ") +
+                                                  entries[i].version);
     const int browseId = static_cast<int>(entries.size() + 1);
     menu.addSeparator();
     menu.addItem(browseId, "Open Older Autosave...");
