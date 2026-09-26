@@ -1097,15 +1097,21 @@ juce::String DawProjectXmlAdapter::toProjectXml(const ProjectDocument& document)
     }
 
     auto* scenes = project.createNewChildElement("Scenes");
-    std::set<int> sceneIndices;
+    auto sceneInfo = document.info;
+    int highestSceneIndex = -1;
     for (const auto& clip : document.clips)
         if (clip.view == ClipView::Session && clip.sceneIndex >= 0)
-            sceneIndices.insert(clip.sceneIndex);
+            highestSceneIndex = std::max(highestSceneIndex, clip.sceneIndex);
+    ensureProjectSceneCount(sceneInfo, highestSceneIndex + 1);
 
-    for (int sceneIndex : sceneIndices) {
+    for (int sceneIndex = 0; sceneIndex < static_cast<int>(sceneInfo.scenes.size()); ++sceneIndex) {
+        const auto& sceneInfoItem = sceneInfo.scenes[static_cast<std::size_t>(sceneIndex)];
         auto* scene = scenes->createNewChildElement("Scene");
-        scene->setAttribute("id", idFor("scene", sceneIndex));
-        scene->setAttribute("name", "Scene " + juce::String(sceneIndex + 1));
+        scene->setAttribute("id", idFor("magdaScene", sceneInfoItem.id));
+        scene->setAttribute("name", sceneInfoItem.name);
+        if (sceneInfoItem.colourArgb != 0)
+            scene->setAttribute("color",
+                                colourToDawProject(juce::Colour(sceneInfoItem.colourArgb)));
 
         auto* sceneLanes = scene->createNewChildElement("Lanes");
         sceneLanes->setAttribute("id", idFor("sceneLanes", sceneIndex));
@@ -1448,12 +1454,35 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
     }
 
     if (auto* scenes = root->getChildByName("Scenes")) {
+        document.info.scenes.clear();
+        document.info.nextSceneId = 1;
         int sceneOrdinal = 0;
         for (auto* sceneElement : scenes->getChildWithTagNameIterator("Scene")) {
             const auto sceneId = sceneElement->getStringAttribute("id");
-            const int sceneIndex = sceneId.startsWith("scene") && sceneId.length() > 5
-                                       ? sceneId.substring(5).getIntValue()
-                                       : sceneOrdinal;
+            const bool hasMagdaIdentity = sceneId.startsWith("magdaScene");
+            const int sceneIndex =
+                !hasMagdaIdentity && sceneId.startsWith("scene") && sceneId.length() > 5
+                    ? sceneId.substring(5).getIntValue()
+                    : sceneOrdinal;
+            ensureProjectSceneCount(document.info, sceneIndex + 1);
+            auto& scene = document.info.scenes[static_cast<std::size_t>(sceneIndex)];
+            if (hasMagdaIdentity) {
+                const auto stableId = sceneId.substring(10).getIntValue();
+                const bool duplicate = std::ranges::any_of(
+                    document.info.scenes, [stableId, &scene](const ProjectScene& candidate) {
+                        return &candidate != &scene && candidate.id == stableId;
+                    });
+                if (stableId >= 0 && !duplicate)
+                    scene.id = stableId;
+            }
+            const auto importedName = sceneElement->getStringAttribute("name");
+            if (importedName.isNotEmpty())
+                scene.name = importedName;
+            const auto importedColour =
+                colourFromDawProject(sceneElement->getStringAttribute("color"));
+            if (!importedColour.isTransparent())
+                scene.colourArgb = importedColour.getARGB();
+            document.info.nextSceneId = std::max(document.info.nextSceneId, scene.id + 1);
             std::function<void(juce::XmlElement*, juce::String)> parseSceneTimeline =
                 [&](juce::XmlElement* timeline, juce::String inheritedTrackRef) {
                     if (timeline == nullptr)
@@ -1486,6 +1515,7 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
                 parseSceneTimeline(slot, {});
             ++sceneOrdinal;
         }
+        ensureProjectSceneCount(document.info, 1);
     }
 
     outDocument = std::move(document);

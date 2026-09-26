@@ -243,6 +243,12 @@ class ProjectManager {
      */
     void setLoopSettings(bool enabled, double startBeats, double endBeats);
 
+    /** Append one durable Session scene and return its stable identity. */
+    SceneId appendSessionScene();
+
+    /** Remove the final Session scene metadata. Callers own occupied-slot policy. */
+    bool removeLastSessionScene();
+
     /**
      * @brief Check if the project has unsaved changes
      */

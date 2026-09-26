@@ -46,6 +46,10 @@ class ClipManagerListener {
         juce::ignoreUnused(clipId);
     }
 
+    // Called when Session runtime state changes without an associated clip,
+    // such as arming or beginning a recording in an empty slot.
+    virtual void sessionRuntimeStateChanged() {}
+
     // Called when a clip playback is requested (Play or Stop)
     virtual void clipPlaybackRequested(ClipId clipId, ClipPlaybackRequest request) {
         juce::ignoreUnused(clipId, request);
@@ -1110,6 +1114,7 @@ class ClipManager {
     // Notification helpers (public so scheduler can emit state changes)
   public:
     void notifyClipPlaybackStateChanged(ClipId clipId);
+    void notifySessionRuntimeStateChanged();
 
   private:
     void notifyClipsChanged();

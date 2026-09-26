@@ -3880,3 +3880,42 @@ TEST_CASE("A hosted device saves only the values something addresses", "[project
     REQUIRE(live != nullptr);
     CHECK(live->parameters.size() == 4);
 }
+
+TEST_CASE("Session scene identity and metadata roundtrip through native projects",
+          "[project][serialization][session][2835]") {
+    ProjectTestFixture fixture;
+    ProjectInfo info;
+    info.name = "Scene metadata";
+    info.scenes = {{41, "Intro", 0xFF123456}, {77, "Drop", 0xFFABCDEF}};
+    info.nextSceneId = 91;
+
+    ProjectInfo loaded;
+    REQUIRE(
+        ProjectSerializer::deserializeProject(ProjectSerializer::serializeProject(info), loaded));
+    REQUIRE(loaded.scenes == info.scenes);
+    REQUIRE(loaded.nextSceneId == 91);
+}
+
+TEST_CASE("Legacy unassigned Session clips migrate into deterministic durable slots",
+          "[project][serialization][session][migration][2835]") {
+    ProjectTestFixture fixture;
+    const auto trackId = TrackManager::getInstance().createTrack("Legacy", TrackType::Media);
+    const auto first =
+        ClipManager::getInstance().createMidiClip(trackId, 0.0, 4.0, ClipView::Session);
+    const auto second =
+        ClipManager::getInstance().createMidiClip(trackId, 0.0, 4.0, ClipView::Session);
+    REQUIRE(first != INVALID_CLIP_ID);
+    REQUIRE(second != INVALID_CLIP_ID);
+
+    auto json = ProjectSerializer::serializeProject(ProjectInfo{});
+    auto* project = json["project"].getDynamicObject();
+    REQUIRE(project != nullptr);
+    project->removeProperty("scenes");
+    project->removeProperty("nextSceneId");
+
+    ProjectInfo loaded;
+    REQUIRE(ProjectSerializer::deserializeProject(json, loaded));
+    REQUIRE(loaded.scenes.size() == kDefaultSessionSceneCount);
+    REQUIRE(ClipManager::getInstance().getClip(first)->sceneIndex == 0);
+    REQUIRE(ClipManager::getInstance().getClip(second)->sceneIndex == 1);
+}

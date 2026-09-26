@@ -77,7 +77,7 @@ class ModelChangeBridge::Impl final : public TrackManagerListener,
         if (AutomationManager::getInstance().isApplyingAutomationWrite())
             service_.noteModelActivity(Topic::Tracks);
         else
-            service_.noteModelChanged(Topic::Tracks);
+            service_.noteModelChanged({Topic::Tracks, Topic::Session});
     }
     void masterChannelChanged() override {
         if (AutomationManager::getInstance().isApplyingAutomationWrite())
@@ -137,6 +137,9 @@ class ModelChangeBridge::Impl final : public TrackManagerListener,
         service_.noteModelChanged(Topic::Selection);
     }
     void clipPlaybackStateChanged(ClipId) override {
+        service_.noteModelActivity(Topic::Session);
+    }
+    void sessionRuntimeStateChanged() override {
         service_.noteModelActivity(Topic::Session);
     }
     void clipPlaybackRequested(ClipId, ClipPlaybackRequest) override {
@@ -213,7 +216,7 @@ class ModelChangeBridge::Impl final : public TrackManagerListener,
         service_.noteModelChanged(Topic::Project);
     }
     void projectPropertiesChanged() override {
-        service_.noteModelChanged(Topic::Project);
+        service_.noteModelChanged({Topic::Project, Topic::Session});
     }
 
   private:

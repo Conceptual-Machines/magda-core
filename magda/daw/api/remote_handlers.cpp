@@ -2746,7 +2746,12 @@ HandlerResult sessionStopAll(MagdaApi& api, const juce::var&, const RequestConte
 }
 
 HandlerResult sessionLaunchScene(MagdaApi& api, const juce::var& input, const RequestContext&) {
-    api.session().launchScene(static_cast<int>(input["sceneIndex"]));
+    const auto sceneIndex = static_cast<int>(input["sceneIndex"]);
+    if (sceneIndex < 0 ||
+        sceneIndex >= static_cast<int>(api.project().getCurrentProjectInfo().scenes.size()))
+        return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                   "sceneIndex does not identify a durable scene");
+    api.session().launchScene(sceneIndex);
     return HandlerResult::ok(toJson(makeSessionDto(api)));
 }
 

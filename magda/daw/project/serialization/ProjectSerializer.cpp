@@ -256,6 +256,76 @@ ProjectDefaults readProjectDefaults(juce::DynamicObject& projectObj, ProjectDefa
     return defaults;
 }
 
+void readProjectScenes(juce::DynamicObject& projectObj, ProjectInfo& info) {
+    if (!projectObj.hasProperty("scenes"))
+        return;  // Legacy project: keep the eight historical UI rows.
+
+    info.scenes.clear();
+    info.nextSceneId = 1;
+    std::set<SceneId> ids;
+    if (const auto* scenes = projectObj.getProperty("scenes").getArray()) {
+        for (const auto& value : *scenes) {
+            const auto* object = value.getDynamicObject();
+            if (object == nullptr)
+                continue;
+
+            const auto id = static_cast<SceneId>(static_cast<int>(object->getProperty("id")));
+            if (id < 0 || !ids.insert(id).second)
+                continue;
+
+            ProjectScene scene;
+            scene.id = id;
+            scene.name = object->getProperty("name").toString();
+            const auto colour = object->getProperty("colour").toString();
+            if (colour.isNotEmpty())
+                scene.colourArgb = juce::Colour::fromString(colour).getARGB();
+            info.scenes.push_back(std::move(scene));
+            info.nextSceneId = std::max(info.nextSceneId, id + 1);
+        }
+    }
+
+    if (projectObj.hasProperty("nextSceneId"))
+        info.nextSceneId =
+            std::max(info.nextSceneId,
+                     static_cast<SceneId>(static_cast<int>(projectObj.getProperty("nextSceneId"))));
+    ensureProjectSceneCount(info, 1);
+}
+
+/**
+ * Give old/unassigned Session clips one deterministic slot and make sure every
+ * referenced scene has durable metadata. A second clip saved into an occupied
+ * slot is migrated to the first free row on that track rather than remaining
+ * an ambiguous grid collision.
+ */
+void reconcileProjectScenes(ProjectInfo& info, std::vector<ClipInfo>& clips) {
+    ensureProjectSceneCount(info, 1);
+
+    std::vector<ClipInfo*> sessionClips;
+    for (auto& clip : clips) {
+        if (clip.view == ClipView::Session)
+            sessionClips.push_back(&clip);
+        else
+            clip.sceneIndex = -1;
+    }
+    std::ranges::sort(sessionClips, {}, [](const ClipInfo* clip) {
+        return std::tuple{clip->trackId, clip->id};
+    });
+
+    std::map<TrackId, std::set<int>> occupied;
+    for (auto* clip : sessionClips) {
+        auto& trackSlots = occupied[clip->trackId];
+        auto sceneIndex = clip->sceneIndex;
+        if (sceneIndex < 0 || trackSlots.contains(sceneIndex)) {
+            sceneIndex = 0;
+            while (trackSlots.contains(sceneIndex))
+                ++sceneIndex;
+            clip->sceneIndex = sceneIndex;
+        }
+        trackSlots.insert(sceneIndex);
+        ensureProjectSceneCount(info, sceneIndex + 1);
+    }
+}
+
 }  // namespace
 
 bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& outData) {
@@ -357,6 +427,7 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
             outData.info.keyQuality = projectObj->getProperty("keyQuality");
 
         outData.info.metadata = readProjectMetadata(*projectObj);
+        readProjectScenes(*projectObj, outData.info);
 
         // Named timeline markers
         outData.info.markers.clear();
@@ -425,6 +496,7 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
                                        &outData.legacySources)) {
             return false;
         }
+        reconcileProjectScenes(outData.info, outData.clips);
 
         if (!deserializeAutomationToStaging(obj->getProperty("automation"), outData.automationLanes,
                                             outData.automationClips)) {
@@ -615,6 +687,17 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
         projectObj->setProperty("markers", juce::var(markersArray));
     }
 
+    juce::Array<juce::var> scenesArray;
+    for (const auto& scene : info.scenes) {
+        auto* sceneObj = new juce::DynamicObject();
+        sceneObj->setProperty("id", scene.id);
+        sceneObj->setProperty("name", scene.name);
+        sceneObj->setProperty("colour", colourToString(juce::Colour(scene.colourArgb)));
+        scenesArray.add(juce::var(sceneObj));
+    }
+    projectObj->setProperty("scenes", juce::var(scenesArray));
+    projectObj->setProperty("nextSceneId", info.nextSceneId);
+
     // Loop settings
     auto* loopObj = new juce::DynamicObject();
     loopObj->setProperty("enabled", info.loopEnabled);
@@ -744,6 +827,7 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
         outInfo.keyQuality = projectObj->getProperty("keyQuality");
 
     outInfo.metadata = readProjectMetadata(*projectObj);
+    readProjectScenes(*projectObj, outInfo);
 
     // Named timeline markers
     outInfo.markers.clear();
@@ -819,6 +903,7 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
                                    &stagedLegacySources)) {
         return false;  // Failed - no state modified
     }
+    reconcileProjectScenes(outInfo, stagedClips);
 
     if (!deserializeAutomationToStaging(obj->getProperty("automation"), stagedAutomation,
                                         stagedAutomationClips)) {

@@ -377,6 +377,29 @@ or update form; the contract does not duplicate those operations with separate
 singular names. Optimistic concurrency and idempotency use the same transport
 `expectedRevision` and `requestId` metadata as every other write.
 
+### Session snapshot and scene indexing
+
+Session scenes are durable project records. Each carries a stable integer `id`,
+name, colour, and an ordered `sceneIndex`. `sceneIndex` is zero-based everywhere
+the model, engine, WebSocket API, and MCP API address a slot. `displayIndex` in
+the scene projection is the corresponding one-based label for user-facing
+clients; it is never accepted as an address.
+
+`session.get` is a complete deterministic snapshot with three arrays:
+
+- `scenes`, in project order, including empty scenes;
+- `tracks`, in project track order, with the active Session clip (or null) and
+  the track's `arrangement`/`session` playback mode;
+- `slots`, ordered by scene and then track, including empty slots. Every slot
+  carries its stable `sceneId`, zero-based `sceneIndex`, nullable `clipId`,
+  launch state, and record-arm/recording state.
+
+Native projects preserve the scene records and their next-ID watermark.
+DAWproject import/export maps them to ordered `<Scene>` elements and retains
+name and colour. A legacy Session clip with no valid row is assigned to the
+first empty slot on its track during load; a duplicate legacy slot is resolved
+the same way, so the loaded grid is never ambiguous.
+
 ## Subscriptions
 
 Ten topics partition what a client can watch: `project`, `tracks`, `clips`,
@@ -411,6 +434,10 @@ A pushed change is one envelope, independent of the transport that carries it:
   a change it already has, and doing so must be harmless. For `project`,
   `transport`, `selection`, and `devices` the payload is the topic's full state,
   because there is nothing useful to diff.
+- A change to the `session` scene or track envelope (scene metadata/order,
+  active clip, or playback mode) is sent as a fresh `session.get` snapshot.
+  Slot-only occupancy, launch, and recording changes retain the keyed delta
+  form.
 - `sample` — a point reading of `meters` or `playhead`. Latest value wins,
   intermediate readings are discarded, and a dropped sample is never resent.
 
