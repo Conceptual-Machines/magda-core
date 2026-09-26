@@ -279,6 +279,8 @@ class MockTrackApi : public TrackApi {
     std::vector<RoutingEndpoint> routingEndpoints;
     SetTrackRoutingResult routingResult{SetTrackRoutingStatus::Applied, {}};
     std::vector<std::pair<TrackId, TrackRoutingPatch>> routingWrites;
+    std::optional<TrackSendMutationStatus> sendStatusOverride;
+    int nextSendId = 1;
 
     struct VolumeWrite {
         TrackId id;
@@ -453,6 +455,94 @@ class MockTrackApi : public TrackApi {
                 resolve(patch.midiOutputEndpointId, RoutingMedia::Midi, RoutingDirection::Output))
             track->midiOutputDevice = *value;
         return routingResult;
+    }
+    std::vector<TrackSendView> getSends(TrackId id) const override {
+        const auto* track = getTrack(id);
+        if (track == nullptr)
+            return {};
+        std::vector<TrackSendView> result;
+        for (const auto& send : track->sends)
+            result.push_back({trackSendId(id, send), id, "track:" + juce::String(send.destTrackId),
+                              send.level, send.enabled, send.preFader});
+        return result;
+    }
+    TrackSendMutationResult createSend(TrackId id, const TrackSendPatch& patch) override {
+        if (sendStatusOverride && *sendStatusOverride != TrackSendMutationStatus::Applied)
+            return {*sendStatusOverride, std::nullopt, {}};
+        auto* track = getTrack(id);
+        if (track == nullptr)
+            return {TrackSendMutationStatus::TrackNotFound, std::nullopt, {}};
+        if (!patch.destinationEndpointId)
+            return {TrackSendMutationStatus::EndpointNotFound, std::nullopt, {}};
+        const auto endpoint =
+            std::ranges::find(routingEndpoints, *patch.destinationEndpointId, &RoutingEndpoint::id);
+        if (endpoint == routingEndpoints.end() || !endpoint->trackId)
+            return {TrackSendMutationStatus::EndpointNotFound, std::nullopt, {}};
+        SendInfo send;
+        send.busIndex = static_cast<int>(track->sends.size());
+        send.level = patch.level.value_or(1.0f);
+        send.preFader = patch.preFader.value_or(false);
+        send.destTrackId = *endpoint->trackId;
+        send.enabled = patch.enabled.value_or(true);
+        send.id = "send:mock:" + juce::String(nextSendId++);
+        track->sends.push_back(send);
+        return {TrackSendMutationStatus::Applied,
+                TrackSendView{send.id, id, *patch.destinationEndpointId, send.level, send.enabled,
+                              send.preFader},
+                {}};
+    }
+    TrackSendMutationResult updateSend(const juce::String& sendId,
+                                       const TrackSendPatch& patch) override {
+        if (sendStatusOverride && *sendStatusOverride != TrackSendMutationStatus::Applied &&
+            *sendStatusOverride != TrackSendMutationStatus::Unchanged)
+            return {*sendStatusOverride, std::nullopt, {}};
+        for (auto& track : tracks) {
+            const auto found = std::ranges::find_if(track.sends, [&](const auto& send) {
+                return trackSendId(track.id, send) == sendId;
+            });
+            if (found == track.sends.end())
+                continue;
+            const auto oldDestination = "track:" + juce::String(found->destTrackId);
+            std::vector<InvalidatedSendConnection> invalidated;
+            if (patch.destinationEndpointId) {
+                const auto endpoint = std::ranges::find(
+                    routingEndpoints, *patch.destinationEndpointId, &RoutingEndpoint::id);
+                if (endpoint == routingEndpoints.end() || !endpoint->trackId)
+                    return {TrackSendMutationStatus::EndpointNotFound, std::nullopt, {}};
+                if (found->destTrackId != *endpoint->trackId)
+                    invalidated.push_back({sendId, oldDestination, "destination_replaced"});
+                found->destTrackId = *endpoint->trackId;
+            }
+            if (patch.level)
+                found->level = *patch.level;
+            if (patch.enabled)
+                found->enabled = *patch.enabled;
+            if (patch.preFader)
+                found->preFader = *patch.preFader;
+            const auto status = sendStatusOverride.value_or(TrackSendMutationStatus::Applied);
+            return {status,
+                    TrackSendView{sendId, track.id, "track:" + juce::String(found->destTrackId),
+                                  found->level, found->enabled, found->preFader},
+                    std::move(invalidated)};
+        }
+        return {TrackSendMutationStatus::SendNotFound, std::nullopt, {}};
+    }
+    TrackSendMutationResult removeSend(const juce::String& sendId) override {
+        if (sendStatusOverride && *sendStatusOverride != TrackSendMutationStatus::Applied)
+            return {*sendStatusOverride, std::nullopt, {}};
+        for (auto& track : tracks) {
+            const auto found = std::ranges::find_if(track.sends, [&](const auto& send) {
+                return trackSendId(track.id, send) == sendId;
+            });
+            if (found == track.sends.end())
+                continue;
+            const auto destination = "track:" + juce::String(found->destTrackId);
+            track.sends.erase(found);
+            return {TrackSendMutationStatus::Applied,
+                    std::nullopt,
+                    {{sendId, destination, "send_removed"}}};
+        }
+        return {TrackSendMutationStatus::SendNotFound, std::nullopt, {}};
     }
     void setTrackName(TrackId id, const juce::String& name) override {
         nameWrites.push_back({id, name});

@@ -54,6 +54,31 @@ class SetTrackRoutingCommand : public UndoableCommand {
     bool applied_ = false;
 };
 
+/** Replace one track's complete send set as a single undoable graph edit. */
+class SetTrackSendsCommand : public UndoableCommand {
+  public:
+    SetTrackSendsCommand(TrackId trackId, std::vector<SendInfo> before,
+                         std::vector<SendInfo> after);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Set Track Sends";
+    }
+
+    bool didApply() const {
+        return applied_;
+    }
+
+  private:
+    void remapTargets(const std::vector<SendInfo>& from, const std::vector<SendInfo>& to);
+
+    TrackId trackId_ = INVALID_TRACK_ID;
+    std::vector<SendInfo> before_;
+    std::vector<SendInfo> after_;
+    bool applied_ = false;
+};
+
 /** Create the singleton chord track when it is absent. */
 class EnsureChordTrackCommand : public UndoableCommand {
   public:

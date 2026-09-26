@@ -138,6 +138,51 @@ class RemoteWebSocketLiveTest final : public juce::UnitTest {
             }
         }
 
+        beginTest("Track sends over the socket preserve safe identity and undo atomically");
+        {
+            Fixture fixture;
+            const auto source = static_cast<int>(fixture.exchange(requestJson(
+                "tracks.create", object({{"name", "Source"}, {"type", "audio"}})))["result"]["id"]);
+            const auto destination = static_cast<int>(fixture.exchange(requestJson(
+                "tracks.create", object({{"name", "Reverb"}, {"type", "audio"}})))["result"]["id"]);
+            const auto before = fixture.service.currentRevision();
+            const auto endpointId = "track:" + juce::String(destination);
+
+            const auto reply = fixture.exchange(
+                requestJson("sends.create", object({{"trackId", source},
+                                                    {"destinationEndpointId", endpointId},
+                                                    {"level", 0.5},
+                                                    {"enabled", false},
+                                                    {"position", "pre_fader"}})));
+
+            expect(reply["error"].isVoid());
+            const auto sendId = reply["result"]["send"]["id"].toString();
+            expect(sendId.startsWith("send:"));
+            expect(reply["result"]["send"]["destinationEndpointId"].toString() == endpointId);
+            expect(reply["result"]["send"]["position"].toString() == "pre_fader");
+            expect(fixture.service.currentRevision() == before + 1);
+            const auto* sourceTrack = TrackManager::getInstance().getTrack(source);
+            expect(sourceTrack != nullptr);
+            if (sourceTrack != nullptr) {
+                expect(sourceTrack->sends.size() == 1);
+                if (!sourceTrack->sends.empty()) {
+                    expect(sourceTrack->sends.front().id == sendId);
+                    expect(!sourceTrack->sends.front().enabled);
+                }
+            }
+
+            expect(UndoManager::getInstance().undo());
+            const auto* restored = TrackManager::getInstance().getTrack(source);
+            expect(restored != nullptr);
+            if (restored != nullptr)
+                expect(restored->sends.empty());
+            expect(UndoManager::getInstance().redo());
+            const auto* redone = TrackManager::getInstance().getTrack(source);
+            expect(redone != nullptr);
+            if (redone != nullptr && !redone->sends.empty())
+                expect(redone->sends.front().id == sendId);
+        }
+
         beginTest("A stale expectedRevision is refused and changes nothing");
         {
             Fixture fixture;

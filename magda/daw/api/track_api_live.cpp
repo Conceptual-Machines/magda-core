@@ -3,6 +3,7 @@
 #include <juce_cryptography/juce_cryptography.h>
 
 #include <array>
+#include <cmath>
 #include <map>
 #include <ranges>
 #include <set>
@@ -36,7 +37,17 @@ juce::String routingEndpointId(RoutingMedia media, RoutingDirection direction,
            juce::SHA256(internalId.toUTF8()).toHexString();
 }
 
+juce::String trackSendId(TrackId sourceTrackId, const SendInfo& send) {
+    if (send.id.isNotEmpty())
+        return send.id;
+    const auto legacyKey = juce::String(sourceTrackId) + ":" + juce::String(send.destTrackId) +
+                           ":" + juce::String(send.busIndex);
+    return "send:legacy:" + juce::SHA256(legacyKey.toUTF8()).toHexString();
+}
+
 namespace {
+
+std::vector<BoundControlReference> boundControlReferences();
 
 juce::String noneEndpointId(RoutingMedia media, RoutingDirection direction) {
     return "none:" + juce::String(media == RoutingMedia::Audio ? "audio" : "midi") + ":" +
@@ -90,6 +101,95 @@ bool routingHasCycle(const std::vector<TrackRoutingState>& states) {
         if (visit(id))
             return true;
     return false;
+}
+
+bool sendGraphHasCycle(const std::vector<TrackInfo>& tracks, TrackId changedTrackId,
+                       const std::vector<SendInfo>& changedSends) {
+    std::unordered_map<TrackId, std::vector<TrackId>> edges;
+    std::unordered_set<TrackId> known;
+    for (const auto& track : tracks)
+        known.insert(track.id);
+
+    const auto addRoute = [&](TrackId from, const juce::String& route) {
+        if (const auto to = trackIdFromRoute(route); to && known.contains(*to))
+            edges[from].push_back(*to);
+    };
+    for (const auto& track : tracks) {
+        if (const auto source = trackIdFromRoute(track.audioInputDevice);
+            source && known.contains(*source))
+            edges[*source].push_back(track.id);
+        addRoute(track.id, track.audioOutputDevice);
+
+        const auto& sends = track.id == changedTrackId ? changedSends : track.sends;
+        for (const auto& send : sends)
+            if (send.enabled && known.contains(send.destTrackId))
+                edges[track.id].push_back(send.destTrackId);
+    }
+
+    std::unordered_map<TrackId, int> colour;
+    const std::function<bool(TrackId)> visit = [&](TrackId id) {
+        if (colour[id] == 1)
+            return true;
+        if (colour[id] == 2)
+            return false;
+        colour[id] = 1;
+        for (const auto next : edges[id])
+            if (visit(next))
+                return true;
+        colour[id] = 2;
+        return false;
+    };
+    for (const auto id : known)
+        if (visit(id))
+            return true;
+    return false;
+}
+
+bool trackCanSendAudio(TrackType type) {
+    return type == TrackType::Media || type == TrackType::Group || type == TrackType::Aux ||
+           type == TrackType::MultiOut;
+}
+
+void ensureSendIds(TrackId sourceTrackId, std::vector<SendInfo>& sends) {
+    for (auto& send : sends)
+        if (send.id.isEmpty())
+            send.id = trackSendId(sourceTrackId, send);
+}
+
+TrackSendView makeSendView(TrackId sourceTrackId, const SendInfo& send) {
+    return {trackSendId(sourceTrackId, send),
+            sourceTrackId,
+            routingEndpointId(RoutingMedia::Audio, RoutingDirection::Input,
+                              "track:" + juce::String(send.destTrackId)),
+            send.level,
+            send.enabled,
+            send.preFader};
+}
+
+bool sendHasDurableReferences(TrackId sourceTrackId, int busIndex) {
+    auto& tracks = TrackManager::getInstance();
+    const auto bound = boundControlReferences();
+    const auto inventory =
+        inventoryReferences({tracks.getTracks(), tracks.getTrack(MASTER_TRACK_ID),
+                             AutomationManager::getInstance().getLanes(), bound});
+    return std::ranges::any_of(inventory, [&](const auto& reference) {
+        return reference.kind != ReferenceKind::Routing &&
+               reference.target.kind == ReferenceAddressKind::Routing &&
+               reference.target.trackId == sourceTrackId &&
+               reference.target.route == ReferenceRouteKind::Send &&
+               reference.target.routeIndex == busIndex;
+    });
+}
+
+std::optional<TrackId> resolveSendDestination(const std::vector<RoutingEndpoint>& endpoints,
+                                              const juce::String& endpointId) {
+    const auto found = std::ranges::find_if(endpoints, [&](const auto& endpoint) {
+        return endpoint.id == endpointId && endpoint.media == RoutingMedia::Audio &&
+               endpoint.direction == RoutingDirection::Input &&
+               endpoint.kind == RoutingEndpointKind::Track && endpoint.available &&
+               endpoint.trackId.has_value();
+    });
+    return found == endpoints.end() ? std::nullopt : found->trackId;
 }
 
 struct DeviceAtPath {
@@ -659,6 +759,181 @@ SetTrackRoutingResult TrackApiLive::setRouting(TrackId trackId, const TrackRouti
     UndoManager::getInstance().executeCommand(std::move(command));
     return {raw->didApply() ? SetTrackRoutingStatus::Applied : SetTrackRoutingStatus::ApplyFailed,
             std::move(dropped)};
+}
+
+std::vector<TrackSendView> TrackApiLive::getSends(TrackId trackId) const {
+    const auto* track = TrackManager::getInstance().getTrack(trackId);
+    if (track == nullptr)
+        return {};
+    std::vector<TrackSendView> result;
+    result.reserve(track->sends.size());
+    for (const auto& send : track->sends)
+        result.push_back(makeSendView(trackId, send));
+    return result;
+}
+
+TrackSendMutationResult TrackApiLive::createSend(TrackId trackId, const TrackSendPatch& patch) {
+    auto& tracks = TrackManager::getInstance();
+    const auto* source = tracks.getTrack(trackId);
+    if (source == nullptr)
+        return {TrackSendMutationStatus::TrackNotFound, std::nullopt, {}};
+    if (!trackCanSendAudio(source->type))
+        return {TrackSendMutationStatus::Incompatible, std::nullopt, {}};
+    if (!patch.destinationEndpointId)
+        return {TrackSendMutationStatus::EndpointNotFound, std::nullopt, {}};
+    if (patch.level && (!std::isfinite(*patch.level) || *patch.level < 0.0f || *patch.level > 1.0f))
+        return {TrackSendMutationStatus::Incompatible, std::nullopt, {}};
+
+    const auto destination =
+        resolveSendDestination(getRoutingEndpoints(), *patch.destinationEndpointId);
+    if (!destination)
+        return {TrackSendMutationStatus::EndpointNotFound, std::nullopt, {}};
+    if (*destination == trackId)
+        return {TrackSendMutationStatus::FeedbackCycle, std::nullopt, {}};
+    if (std::ranges::contains(source->sends, *destination, &SendInfo::destTrackId))
+        return {TrackSendMutationStatus::Duplicate, std::nullopt, {}};
+    if (static_cast<int>(source->sends.size()) >= TrackManager::MAX_SENDS_PER_TRACK)
+        return {TrackSendMutationStatus::LimitReached, std::nullopt, {}};
+
+    auto before = source->sends;
+    ensureSendIds(trackId, before);
+    auto after = before;
+    SendInfo created;
+    created.busIndex = -1;
+    created.level = patch.level.value_or(1.0f);
+    created.preFader = patch.preFader.value_or(false);
+    created.destTrackId = *destination;
+    created.enabled = patch.enabled.value_or(true);
+    created.id = "send:" + juce::Uuid().toString();
+    after.push_back(created);
+    if (sendGraphHasCycle(tracks.getTracks(), trackId, after))
+        return {TrackSendMutationStatus::FeedbackCycle, std::nullopt, {}};
+
+    auto command =
+        std::make_unique<SetTrackSendsCommand>(trackId, std::move(before), std::move(after));
+    auto* raw = command.get();
+    UndoManager::getInstance().executeCommand(std::move(command));
+    if (!raw->didApply())
+        return {TrackSendMutationStatus::ApplyFailed, std::nullopt, {}};
+    const auto sends = getSends(trackId);
+    const auto result = std::ranges::find(sends, created.id, &TrackSendView::id);
+    if (result == sends.end())
+        return {TrackSendMutationStatus::ApplyFailed, std::nullopt, {}};
+    return {TrackSendMutationStatus::Applied, *result, {}};
+}
+
+TrackSendMutationResult TrackApiLive::updateSend(const juce::String& sendId,
+                                                 const TrackSendPatch& patch) {
+    auto& tracks = TrackManager::getInstance();
+    TrackId sourceTrackId = INVALID_TRACK_ID;
+    std::size_t sendIndex = 0;
+    for (const auto& track : tracks.getTracks()) {
+        for (std::size_t index = 0; index < track.sends.size(); ++index) {
+            if (trackSendId(track.id, track.sends[index]) == sendId) {
+                sourceTrackId = track.id;
+                sendIndex = index;
+                break;
+            }
+        }
+        if (sourceTrackId != INVALID_TRACK_ID)
+            break;
+    }
+    if (sourceTrackId == INVALID_TRACK_ID)
+        return {TrackSendMutationStatus::SendNotFound, std::nullopt, {}};
+    if (patch.level && (!std::isfinite(*patch.level) || *patch.level < 0.0f || *patch.level > 1.0f))
+        return {TrackSendMutationStatus::Incompatible, std::nullopt, {}};
+
+    const auto* source = tracks.getTrack(sourceTrackId);
+    if (source == nullptr)
+        return {TrackSendMutationStatus::TrackNotFound, std::nullopt, {}};
+    auto before = source->sends;
+    ensureSendIds(sourceTrackId, before);
+    auto after = before;
+    auto& edited = after[sendIndex];
+    const auto previous = edited;
+
+    if (patch.destinationEndpointId) {
+        const auto destination =
+            resolveSendDestination(getRoutingEndpoints(), *patch.destinationEndpointId);
+        if (!destination)
+            return {TrackSendMutationStatus::EndpointNotFound, std::nullopt, {}};
+        if (*destination == sourceTrackId)
+            return {TrackSendMutationStatus::FeedbackCycle, std::nullopt, {}};
+        for (std::size_t index = 0; index < after.size(); ++index)
+            if (index != sendIndex && after[index].destTrackId == *destination)
+                return {TrackSendMutationStatus::Duplicate, std::nullopt, {}};
+        edited.destTrackId = *destination;
+        edited.busIndex = -1;
+    }
+    if (patch.level)
+        edited.level = *patch.level;
+    if (patch.enabled)
+        edited.enabled = *patch.enabled;
+    if (patch.preFader)
+        edited.preFader = *patch.preFader;
+
+    if (edited.destTrackId == previous.destTrackId && edited.level == previous.level &&
+        edited.enabled == previous.enabled && edited.preFader == previous.preFader)
+        return {TrackSendMutationStatus::Unchanged, makeSendView(sourceTrackId, previous), {}};
+    if (sendGraphHasCycle(tracks.getTracks(), sourceTrackId, after))
+        return {TrackSendMutationStatus::FeedbackCycle, std::nullopt, {}};
+
+    std::vector<InvalidatedSendConnection> invalidated;
+    if (edited.destTrackId != previous.destTrackId)
+        invalidated.push_back({sendId, makeSendView(sourceTrackId, previous).destinationEndpointId,
+                               "destination_replaced"});
+
+    auto command =
+        std::make_unique<SetTrackSendsCommand>(sourceTrackId, std::move(before), std::move(after));
+    auto* raw = command.get();
+    UndoManager::getInstance().executeCommand(std::move(command));
+    if (!raw->didApply())
+        return {TrackSendMutationStatus::ApplyFailed, std::nullopt, {}};
+    const auto sends = getSends(sourceTrackId);
+    const auto result = std::ranges::find(sends, sendId, &TrackSendView::id);
+    if (result == sends.end())
+        return {TrackSendMutationStatus::ApplyFailed, std::nullopt, {}};
+    return {TrackSendMutationStatus::Applied, *result, std::move(invalidated)};
+}
+
+TrackSendMutationResult TrackApiLive::removeSend(const juce::String& sendId) {
+    auto& tracks = TrackManager::getInstance();
+    TrackId sourceTrackId = INVALID_TRACK_ID;
+    std::size_t sendIndex = 0;
+    for (const auto& track : tracks.getTracks()) {
+        for (std::size_t index = 0; index < track.sends.size(); ++index) {
+            if (trackSendId(track.id, track.sends[index]) == sendId) {
+                sourceTrackId = track.id;
+                sendIndex = index;
+                break;
+            }
+        }
+        if (sourceTrackId != INVALID_TRACK_ID)
+            break;
+    }
+    if (sourceTrackId == INVALID_TRACK_ID)
+        return {TrackSendMutationStatus::SendNotFound, std::nullopt, {}};
+
+    const auto* source = tracks.getTrack(sourceTrackId);
+    if (source == nullptr)
+        return {TrackSendMutationStatus::TrackNotFound, std::nullopt, {}};
+    auto before = source->sends;
+    ensureSendIds(sourceTrackId, before);
+    const auto removed = before[sendIndex];
+    if (sendHasDurableReferences(sourceTrackId, removed.busIndex))
+        return {TrackSendMutationStatus::Referenced, std::nullopt, {}};
+    auto after = before;
+    after.erase(after.begin() + static_cast<std::ptrdiff_t>(sendIndex));
+    std::vector<InvalidatedSendConnection> invalidated{
+        {sendId, makeSendView(sourceTrackId, removed).destinationEndpointId, "send_removed"}};
+
+    auto command =
+        std::make_unique<SetTrackSendsCommand>(sourceTrackId, std::move(before), std::move(after));
+    auto* raw = command.get();
+    UndoManager::getInstance().executeCommand(std::move(command));
+    if (!raw->didApply())
+        return {TrackSendMutationStatus::ApplyFailed, std::nullopt, {}};
+    return {TrackSendMutationStatus::Applied, std::nullopt, std::move(invalidated)};
 }
 
 ApplyTrackPresetResult TrackApiLive::applyPreset(TrackId trackId, const juce::String& presetId) {

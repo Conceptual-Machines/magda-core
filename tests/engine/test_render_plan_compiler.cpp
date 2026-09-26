@@ -646,6 +646,19 @@ TEST_CASE("A pre-fader send taps the signal before the fader", "[engine][plan][c
     CHECK(inputOp(plan, sendTap, 0) == trackInput);
 }
 
+TEST_CASE("A disabled send emits no render-plan connection", "[engine][plan][compiler][2837]") {
+    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2, TrackType::Aux)};
+    tracks[1].auxBusIndex = 0;
+    SendInfo send{0, 1.0f, false, 2};
+    send.enabled = false;
+    send.id = "send:disabled";
+    tracks[0].sends.push_back(send);
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+    CHECK(countRole(plan, OpRole::SendTap) == 0);
+}
+
 TEST_CASE("Group children are summed into the group track", "[engine][plan][compiler]") {
     std::vector<TrackInfo> tracks{makeTrack(5, TrackType::Group), makeTrack(1), makeTrack(2)};
     tracks[0].childIds = {1, 2};

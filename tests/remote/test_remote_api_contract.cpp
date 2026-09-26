@@ -93,6 +93,10 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(registry.find("routing.endpoints.list") != nullptr);
     REQUIRE(registry.find("routing.get") != nullptr);
     REQUIRE(registry.find("routing.set") != nullptr);
+    REQUIRE(registry.find("sends.list") != nullptr);
+    REQUIRE(registry.find("sends.create") != nullptr);
+    REQUIRE(registry.find("sends.update") != nullptr);
+    REQUIRE(registry.find("sends.remove") != nullptr);
     REQUIRE(registry.find("sidechains.list") != nullptr);
     REQUIRE(registry.find("sidechains.get") != nullptr);
     REQUIRE(registry.find("sidechains.set") != nullptr);
@@ -198,6 +202,52 @@ TEST_CASE("Routing endpoint and track routing DTOs round-trip without backend id
     routingJson.getDynamicObject()->setProperty("backendHandle", "secret");
     Error error;
     CHECK_FALSE(trackRoutingFromJson(routingJson, error).has_value());
+}
+
+TEST_CASE("Send operations use closed safe schemas and edit scope",
+          "[remote-api][contract][sends][2837]") {
+    const auto& registry = OperationRegistry::instance();
+    const auto* list = registry.find("sends.list");
+    const auto* create = registry.find("sends.create");
+    const auto* update = registry.find("sends.update");
+    const auto* remove = registry.find("sends.remove");
+    REQUIRE(list != nullptr);
+    REQUIRE(create != nullptr);
+    REQUIRE(update != nullptr);
+    REQUIRE(remove != nullptr);
+    CHECK(list->access == OperationAccess::Read);
+    CHECK(list->requiredScope == Scope::Read);
+    for (const auto* operation : {create, update, remove}) {
+        CHECK(operation->access == OperationAccess::Write);
+        CHECK(operation->requiredScope == Scope::Edit);
+    }
+
+    CHECK_FALSE(validateOperationInput(
+                    *create, object({{"trackId", 3}, {"destinationEndpointId", "track:2"}}))
+                    .has_value());
+    CHECK(validateOperationInput(
+              *create,
+              object({{"trackId", 3}, {"destinationEndpointId", "track:2"}, {"busIndex", 7}}))
+              .has_value());
+    CHECK(validateOperationInput(*create, object({{"trackId", 3}, {"destinationTrackId", 2}}))
+              .has_value());
+    CHECK(validateOperationInput(*update, object({{"sendId", "send:1"}, {"level", 1.1}}))
+              .has_value());
+    CHECK(validateOperationInput(*update, object({{"sendId", "send:1"}, {"position", "mid_fader"}}))
+              .has_value());
+}
+
+TEST_CASE("Send DTO round-trips without physical routing fields",
+          "[remote-api][contract][sends][2837]") {
+    const TrackSendDto send{"send:stable", 3, "track:2", 0.5, false, "pre_fader"};
+    requireRoundTrip(send, trackSendFromJson);
+
+    auto json = toJson(send);
+    CHECK_FALSE(json.getDynamicObject()->hasProperty("busIndex"));
+    CHECK_FALSE(json.getDynamicObject()->hasProperty("destinationTrackId"));
+    json.getDynamicObject()->setProperty("backendHandle", "secret");
+    Error error;
+    CHECK_FALSE(trackSendFromJson(json, error).has_value());
 }
 
 TEST_CASE("Reference impact inventory covers every replacement-sensitive reference class",

@@ -84,9 +84,54 @@ struct TrackRoutingView {
     InputMonitorMode inputMonitor = InputMonitorMode::Off;
 };
 
+struct TrackSendView {
+    juce::String id;
+    TrackId sourceTrackId = INVALID_TRACK_ID;
+    juce::String destinationEndpointId;
+    float level = 1.0f;
+    bool enabled = true;
+    bool preFader = false;
+
+    bool operator==(const TrackSendView&) const = default;
+};
+
+struct TrackSendPatch {
+    std::optional<juce::String> destinationEndpointId;
+    std::optional<float> level;
+    std::optional<bool> enabled;
+    std::optional<bool> preFader;
+};
+
+struct InvalidatedSendConnection {
+    juce::String sendId;
+    juce::String destinationEndpointId;
+    juce::String reason;
+};
+
+enum class TrackSendMutationStatus {
+    Applied,
+    Unchanged,
+    TrackNotFound,
+    SendNotFound,
+    EndpointNotFound,
+    Incompatible,
+    Duplicate,
+    LimitReached,
+    FeedbackCycle,
+    Referenced,
+    ApplyFailed,
+};
+
+struct TrackSendMutationResult {
+    TrackSendMutationStatus status = TrackSendMutationStatus::ApplyFailed;
+    std::optional<TrackSendView> send;
+    std::vector<InvalidatedSendConnection> invalidatedConnections;
+};
+
 /** Public token for a stored route; hashes backend-specific identifiers. */
 juce::String routingEndpointId(RoutingMedia media, RoutingDirection direction,
                                const juce::String& internalId);
+juce::String trackSendId(TrackId sourceTrackId, const SendInfo& send);
 
 /**
  * Abstract view onto TrackManager — the track-level surface the agent
@@ -112,6 +157,11 @@ class TrackApi {
     virtual std::vector<RoutingEndpoint> getRoutingEndpoints() const = 0;
     virtual std::optional<TrackRoutingView> getRouting(TrackId trackId) const = 0;
     virtual SetTrackRoutingResult setRouting(TrackId trackId, const TrackRoutingPatch& patch) = 0;
+    virtual std::vector<TrackSendView> getSends(TrackId trackId) const = 0;
+    virtual TrackSendMutationResult createSend(TrackId trackId, const TrackSendPatch& patch) = 0;
+    virtual TrackSendMutationResult updateSend(const juce::String& sendId,
+                                               const TrackSendPatch& patch) = 0;
+    virtual TrackSendMutationResult removeSend(const juce::String& sendId) = 0;
 
     virtual void setTrackName(TrackId trackId, const juce::String& name) = 0;
     virtual void setTrackColour(TrackId trackId, juce::Colour colour) = 0;

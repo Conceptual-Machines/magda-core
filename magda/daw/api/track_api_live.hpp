@@ -20,6 +20,11 @@ class TrackApiLive : public TrackApi {
     std::vector<RoutingEndpoint> getRoutingEndpoints() const override;
     std::optional<TrackRoutingView> getRouting(TrackId trackId) const override;
     SetTrackRoutingResult setRouting(TrackId trackId, const TrackRoutingPatch& patch) override;
+    std::vector<TrackSendView> getSends(TrackId trackId) const override;
+    TrackSendMutationResult createSend(TrackId trackId, const TrackSendPatch& patch) override;
+    TrackSendMutationResult updateSend(const juce::String& sendId,
+                                       const TrackSendPatch& patch) override;
+    TrackSendMutationResult removeSend(const juce::String& sendId) override;
 
     void setTrackName(TrackId trackId, const juce::String& name) override;
     void setTrackColour(TrackId trackId, juce::Colour colour) override;

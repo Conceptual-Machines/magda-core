@@ -1138,12 +1138,19 @@ TEST_CASE("DawProjectXmlAdapter imports effect tracks as aux returns with send r
     REQUIRE(fx.type == TrackType::Aux);
     REQUIRE(fx.auxBusIndex >= 0);
 
-    // The enabled send wires onto the aux bus; the disabled one is dropped.
-    REQUIRE(source.sends.size() == 1);
+    // Enabled and disabled sends remain first-class connections so their state
+    // and identity survive a project round trip.
+    REQUIRE(source.sends.size() == 2);
     REQUIRE(source.sends[0].busIndex == fx.auxBusIndex);
     REQUIRE(source.sends[0].level == Catch::Approx(0.5f));
+    REQUIRE(source.sends[0].enabled);
+    REQUIRE(source.sends[0].id == "s1");
     REQUIRE_FALSE(source.sends[0].preFader);
     REQUIRE(source.sends[0].destTrackId == fx.id);
+    REQUIRE(source.sends[1].busIndex == fx.auxBusIndex);
+    REQUIRE(source.sends[1].level == Catch::Approx(0.0f));
+    REQUIRE_FALSE(source.sends[1].enabled);
+    REQUIRE(source.sends[1].id == "s2");
 }
 
 TEST_CASE("DawProjectXmlAdapter exports master role and send routing and roundtrips",
@@ -1174,6 +1181,8 @@ TEST_CASE("DawProjectXmlAdapter exports master role and send routing and roundtr
     send.level = 0.5f;
     send.preFader = false;
     send.destTrackId = aux.id;
+    send.enabled = false;
+    send.id = "send:test-roundtrip";
     audio.sends.push_back(send);
 
     document.tracks.push_back(audio);
@@ -1216,6 +1225,8 @@ TEST_CASE("DawProjectXmlAdapter exports master role and send routing and roundtr
     REQUIRE(audioBack->sends[0].busIndex == auxBack->auxBusIndex);
     REQUIRE(audioBack->sends[0].level == Catch::Approx(0.5f));
     REQUIRE(audioBack->sends[0].destTrackId == auxBack->id);
+    REQUIRE_FALSE(audioBack->sends[0].enabled);
+    REQUIRE(audioBack->sends[0].id == "send:test-roundtrip");
 }
 
 namespace {

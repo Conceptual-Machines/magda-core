@@ -1455,6 +1455,55 @@ TEST_CASE("Clip enabled state roundtrips and missing property defaults to enable
     REQUIRE(restored->enabled);
 }
 
+TEST_CASE("Send identity and enabled state roundtrip with legacy defaults",
+          "[project][serialization][sends][2837]") {
+    ProjectTestFixture fixture;
+    auto& tracks = TrackManager::getInstance();
+    const auto sourceId = tracks.createTrack("Source", TrackType::Media);
+    const auto destinationId = tracks.createTrack("Destination", TrackType::Aux);
+
+    SendInfo send;
+    send.busIndex = 4;
+    send.level = 0.35f;
+    send.preFader = true;
+    send.destTrackId = destinationId;
+    send.enabled = false;
+    send.id = "send:stable-native-id";
+    tracks.getTrack(sourceId)->sends.push_back(send);
+
+    ProjectInfo info;
+    info.name = "Send persistence";
+    auto json = ProjectSerializer::serializeProject(info);
+    auto* trackArray = json["tracks"].getArray();
+    REQUIRE(trackArray != nullptr);
+    auto source = std::ranges::find_if(*trackArray, [&](const auto& candidate) {
+        return static_cast<TrackId>(static_cast<int>(candidate["id"])) == sourceId;
+    });
+    REQUIRE(source != trackArray->end());
+    auto* sends = (*source)["sends"].getArray();
+    REQUIRE(sends != nullptr);
+    REQUIRE(sends->size() == 1);
+    auto* sendObject = sends->getReference(0).getDynamicObject();
+    REQUIRE(sendObject != nullptr);
+
+    ProjectInfo restoredInfo;
+    REQUIRE(ProjectSerializer::deserializeProject(json, restoredInfo));
+    const auto* restoredSource = tracks.getTrack(sourceId);
+    REQUIRE(restoredSource != nullptr);
+    REQUIRE(restoredSource->sends.size() == 1);
+    CHECK(restoredSource->sends.front() == send);
+
+    sendObject->removeProperty("enabled");
+    sendObject->removeProperty("id");
+    ProjectInfo legacyInfo;
+    REQUIRE(ProjectSerializer::deserializeProject(json, legacyInfo));
+    const auto* legacySource = tracks.getTrack(sourceId);
+    REQUIRE(legacySource != nullptr);
+    REQUIRE(legacySource->sends.size() == 1);
+    CHECK(legacySource->sends.front().enabled);
+    CHECK(legacySource->sends.front().id.isEmpty());
+}
+
 TEST_CASE("Looped MIDI clip serialization preserves loop region separate from placement",
           "[project][serialization][midi][loop]") {
     ProjectTestFixture fixture;

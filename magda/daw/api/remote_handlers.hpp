@@ -55,6 +55,12 @@ HandlerResult routingListEndpoints(MagdaApi&, const juce::var&, const RequestCon
 HandlerResult routingGet(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult routingSet(MagdaApi&, const juce::var&, const RequestContext&);
 
+// Track sends
+HandlerResult sendsList(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult sendsCreate(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult sendsUpdate(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult sendsRemove(MagdaApi&, const juce::var&, const RequestContext&);
+
 // Device/rack sidechains
 HandlerResult sidechainsList(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult sidechainsGet(MagdaApi&, const juce::var&, const RequestContext&);
