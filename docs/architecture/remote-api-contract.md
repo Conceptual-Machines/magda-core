@@ -348,6 +348,21 @@ the existing snapshot without changing the revision when the singleton already
 exists. Generic `tracks.create` rejects the `chord` type with a conflict so a
 caller cannot create a second chord track or bypass the singleton contract.
 
+`chordTrack.detect` reads an explicit clip-relative beat range using a bounded
+scan window. It is revision-neutral and returns structured root/quality data,
+confidence, and closed warning codes rather than internal chord-group IDs.
+`chordTrack.extract` applies that detection to the singleton track at an
+explicit arrangement beat. Its `populatedPolicy` is `fail`, `replace`, or
+non-overlapping `merge`; a successful extraction is one undo action and returns
+both the new clip ID and the resulting chord-track snapshot.
+
+`chordTrack.sendToTrack` addresses one chord-track clip and bakes its source
+voicing into a plain MIDI clip on a regular track. The caller must select an
+occupied-range policy (`fail` or `replace`) and an instrument policy
+(`preserve_target` or `require_existing`). Chord annotations and internal group
+links do not follow the baked notes. Detection, extraction, and send use the
+same registry schemas and handlers over WebSocket and MCP.
+
 ### Nested racks and chains
 
 `devices.list` gives every rack and rack chain a canonical `nodePath`, using the

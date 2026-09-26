@@ -61,6 +61,9 @@ TEST_CASE("agent surface registry has distinct bounded capabilities", "[console_
     REQUIRE(containsTool(piano, "grooves.upsert"));
     REQUIRE(containsTool(piano, "chordTrack.get"));
     REQUIRE_FALSE(containsTool(piano, "chordTrack.ensure"));
+    REQUIRE(containsTool(piano, "chordTrack.detect"));
+    REQUIRE(containsTool(piano, "chordTrack.extract"));
+    REQUIRE(containsTool(piano, "chordTrack.sendToTrack"));
     REQUIRE(containsTool(piano, "chordTrack.replaceProgression"));
     REQUIRE_FALSE(containsTool(piano, "tracks.delete"));
 
