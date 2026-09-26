@@ -919,8 +919,8 @@ class ClipManager {
      * outermost suspension ends, a single clipPropertiesChanged(ids) is
      * fired covering everything that changed during the batch.
      *
-     * Notes about clipsChanged() (structural changes) are NOT coalesced and
-     * still fire immediately.
+     * Structural clipsChanged() notifications are coalesced too, so callers
+     * can publish an all-or-nothing grid mutation after every slot is ready.
      *
      * Intended for bulk mutations like AI-driven note generation where
      * firing per-note would cause O(n) full TE sequence rebuilds plus
@@ -1072,6 +1072,7 @@ class ClipManager {
     // Batch notification state (see beginBatch/endBatch).
     int batchDepth_ = 0;
     std::vector<ClipId> batchedClipIds_;  // kept in insertion order, deduped
+    bool batchedStructuralChange_ = false;
 
     int nextClipId_ = 1;
     int nextLinkGroupId_ = 1;

@@ -262,6 +262,50 @@ TEST_CASE("A committed write advances the revision by exactly one", "[remote][se
     REQUIRE(service.currentRevision() == INITIAL_REVISION + 2);
 }
 
+TEST_CASE("Session scene edits are one revision and scene no-ops are revision neutral",
+          "[remote][service][session][scenes][2842]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.project_.info.scenes = {{10, "Intro", 0}, {20, "Drop", 0}};
+    api.project_.info.nextSceneId = 21;
+    api.session_.sceneState = {api.project_.info.scenes, 21, {}};
+    RemoteApiService service(api);
+
+    const auto noOp = run(service, "session.moveScene", object({{"sceneId", 10}, {"toIndex", 0}}));
+    REQUIRE(noOp.ok);
+    CHECK(noOp.revision == INITIAL_REVISION);
+    CHECK(api.undo_.executeCalls == 0);
+
+    const auto changed =
+        run(service, "session.updateScene", object({{"sceneId", 10}, {"name", "Count In"}}));
+    REQUIRE(changed.ok);
+    CHECK(changed.revision == INITIAL_REVISION + 1);
+    CHECK(api.undo_.executeCalls == 1);
+    CHECK(api.undo_.compoundDescriptions.size() == 2);
+    CHECK(api.undo_.compoundDepth == 0);
+}
+
+TEST_CASE("Deleting a populated scene with fail policy changes nothing",
+          "[remote][service][session][scenes][2842]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.project_.info.scenes = {{10, "Intro", 0}, {20, "Drop", 0}};
+    ClipInfo clip;
+    clip.id = 50;
+    clip.trackId = 7;
+    clip.view = ClipView::Session;
+    clip.sceneIndex = 0;
+    api.session_.sceneState = {api.project_.info.scenes, 21, {clip}};
+    RemoteApiService service(api);
+
+    const auto response =
+        run(service, "session.deleteScene", object({{"sceneId", 10}, {"populatedPolicy", "fail"}}));
+    REQUIRE_FALSE(response.ok);
+    CHECK(errorCodeOf(response) == "conflict");
+    CHECK(response.revision == INITIAL_REVISION);
+    CHECK(api.undo_.executeCalls == 0);
+}
+
 TEST_CASE("A failed write does not advance the revision", "[remote][service]") {
     const MessageThreadRelaxation relaxation;
     MockMagdaApi api;

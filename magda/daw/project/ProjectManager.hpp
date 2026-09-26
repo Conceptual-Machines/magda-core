@@ -249,6 +249,9 @@ class ProjectManager {
     /** Remove the final Session scene metadata. Callers own occupied-slot policy. */
     bool removeLastSessionScene();
 
+    /** Atomically replace ordered scene metadata for lifecycle commands/undo. */
+    void replaceSessionScenes(std::vector<ProjectScene> scenes, SceneId nextSceneId);
+
     /**
      * @brief Check if the project has unsaved changes
      */

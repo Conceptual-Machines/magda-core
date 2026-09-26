@@ -56,6 +56,9 @@ std::vector<Topic> topicsFor(const juce::String& operationName) {
         return {Topic::Selection};
     if (operationName.startsWith("transport."))
         return {Topic::Transport};
+    if (operationName == "session.createScene" || operationName == "session.moveScene" ||
+        operationName == "session.duplicateScene" || operationName == "session.deleteScene")
+        return {Topic::Clips, Topic::Session};
     if (operationName.startsWith("session."))
         return {Topic::Session};
     if (operationName.startsWith("automation."))

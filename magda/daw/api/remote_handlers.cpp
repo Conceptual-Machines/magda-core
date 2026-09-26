@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
@@ -135,6 +136,45 @@ class SetProjectLoopRangeCommand final : public UndoableCommand {
     double oldEndBeats_ = 0.0;
     double newStartBeats_;
     double newEndBeats_;
+};
+
+class SessionSceneCommand final : public UndoableCommand {
+  public:
+    SessionSceneCommand(SessionApi& session, std::function<bool(SessionApi&)> action,
+                        juce::String description)
+        : session_(session), action_(std::move(action)), description_(std::move(description)) {}
+
+    void execute() override {
+        if (captured_) {
+            session_.restoreSceneState(after_);
+            mutated_ = true;
+            return;
+        }
+        before_ = session_.captureSceneState();
+        mutated_ = action_(session_);
+        if (mutated_)
+            after_ = session_.captureSceneState();
+        captured_ = true;
+    }
+    void undo() override {
+        if (mutated_)
+            session_.restoreSceneState(before_);
+    }
+    bool didMutate() const override {
+        return mutated_;
+    }
+    juce::String getDescription() const override {
+        return description_;
+    }
+
+  private:
+    SessionApi& session_;
+    std::function<bool(SessionApi&)> action_;
+    juce::String description_;
+    SessionSceneState before_;
+    SessionSceneState after_;
+    bool captured_ = false;
+    bool mutated_ = false;
 };
 
 juce::var acceptedResult() {
@@ -2752,6 +2792,131 @@ HandlerResult sessionLaunchScene(MagdaApi& api, const juce::var& input, const Re
         return HandlerResult::fail(ErrorCode::ValidationFailed,
                                    "sceneIndex does not identify a durable scene");
     api.session().launchScene(sceneIndex);
+    return HandlerResult::ok(toJson(makeSessionDto(api)));
+}
+
+HandlerResult sessionCreateScene(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto& scenes = api.project().getCurrentProjectInfo().scenes;
+    const auto index = readInt(input, "index", static_cast<int>(scenes.size()));
+    if (index < 0 || index > static_cast<int>(scenes.size()))
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "index is outside the scene list");
+    const auto name =
+        has(input, "name") ? input["name"].toString() : "Scene " + juce::String(index + 1);
+    const auto colour =
+        has(input, "colourArgb")
+            ? static_cast<std::uint32_t>(static_cast<juce::int64>(input["colourArgb"]))
+            : 0U;
+    runCommand<SessionSceneCommand>(
+        api, api.session(),
+        [index, name, colour](SessionApi& session) {
+            return session.createScene(index, name, colour) != INVALID_SCENE_ID;
+        },
+        "Create Session Scene");
+    return HandlerResult::ok(toJson(makeSessionDto(api)));
+}
+
+HandlerResult sessionUpdateScene(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto id = static_cast<SceneId>(readInt(input, "sceneId"));
+    const auto& scenes = api.project().getCurrentProjectInfo().scenes;
+    const auto found = std::ranges::find(scenes, id, &ProjectScene::id);
+    if (found == scenes.end())
+        return notFound("scene", id);
+    const auto name = has(input, "name") ? input["name"].toString() : found->name;
+    const auto colour =
+        has(input, "colourArgb")
+            ? static_cast<std::uint32_t>(static_cast<juce::int64>(input["colourArgb"]))
+            : found->colourArgb;
+    if (name == found->name && colour == found->colourArgb)
+        return HandlerResult::unchanged(toJson(makeSessionDto(api)));
+    runCommand<SessionSceneCommand>(
+        api, api.session(),
+        [id, name, colour](SessionApi& session) { return session.updateScene(id, name, colour); },
+        "Update Session Scene");
+    return HandlerResult::ok(toJson(makeSessionDto(api)));
+}
+
+HandlerResult sessionMoveScene(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto id = static_cast<SceneId>(readInt(input, "sceneId"));
+    const auto toIndex = readInt(input, "toIndex");
+    const auto& scenes = api.project().getCurrentProjectInfo().scenes;
+    const auto found = std::ranges::find(scenes, id, &ProjectScene::id);
+    if (found == scenes.end())
+        return notFound("scene", id);
+    if (toIndex < 0 || toIndex >= static_cast<int>(scenes.size()))
+        return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                   "toIndex is outside the scene list");
+    if (static_cast<int>(found - scenes.begin()) == toIndex)
+        return HandlerResult::unchanged(toJson(makeSessionDto(api)));
+    runCommand<SessionSceneCommand>(
+        api, api.session(),
+        [id, toIndex](SessionApi& session) { return session.moveScene(id, toIndex); },
+        "Move Session Scene");
+    return HandlerResult::ok(toJson(makeSessionDto(api)));
+}
+
+HandlerResult sessionDuplicateScene(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto id = static_cast<SceneId>(readInt(input, "sceneId"));
+    const auto& scenes = api.project().getCurrentProjectInfo().scenes;
+    if (std::ranges::find(scenes, id, &ProjectScene::id) == scenes.end())
+        return notFound("scene", id);
+    const auto copyClips = static_cast<bool>(input["copyClips"]);
+    runCommand<SessionSceneCommand>(
+        api, api.session(),
+        [id, copyClips](SessionApi& session) {
+            return session.duplicateScene(id, copyClips) != INVALID_SCENE_ID;
+        },
+        "Duplicate Session Scene");
+    return HandlerResult::ok(toJson(makeSessionDto(api)));
+}
+
+HandlerResult sessionDeleteScene(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto id = static_cast<SceneId>(readInt(input, "sceneId"));
+    const auto& scenes = api.project().getCurrentProjectInfo().scenes;
+    const auto found = std::ranges::find(scenes, id, &ProjectScene::id);
+    if (found == scenes.end())
+        return notFound("scene", id);
+    if (scenes.size() <= 1)
+        return HandlerResult::fail(ErrorCode::Conflict,
+                                   "the final session scene cannot be deleted");
+
+    const auto sourceIndex = static_cast<int>(found - scenes.begin());
+    std::vector<ClipInfo> occupants;
+    for (const auto& clip : api.session().captureSceneState().clips) {
+        if (clip.sceneIndex == sourceIndex)
+            occupants.push_back(clip);
+    }
+
+    const auto policyName = input["populatedPolicy"].toString();
+    auto policy = PopulatedScenePolicy::Fail;
+    SceneId destinationId = INVALID_SCENE_ID;
+    if (policyName == "deleteClips") {
+        policy = PopulatedScenePolicy::DeleteClips;
+    } else if (policyName == "moveClips") {
+        policy = PopulatedScenePolicy::MoveClips;
+        destinationId = static_cast<SceneId>(readInt(input, "destinationSceneId"));
+        const auto destination = std::ranges::find(scenes, destinationId, &ProjectScene::id);
+        if (destination == scenes.end())
+            return notFound("destination scene", destinationId);
+        if (destinationId == id)
+            return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                       "destination scene must differ from deleted scene");
+        const auto destinationIndex = static_cast<int>(destination - scenes.begin());
+        for (const auto& clip : occupants) {
+            if (api.session().getClipInSlot(clip.trackId, destinationIndex) != INVALID_CLIP_ID)
+                return HandlerResult::fail(ErrorCode::Conflict,
+                                           "destination scene has an occupied track slot");
+        }
+    }
+    if (!occupants.empty() && policy == PopulatedScenePolicy::Fail)
+        return HandlerResult::fail(ErrorCode::Conflict,
+                                   "scene is populated; choose deleteClips or moveClips");
+
+    runCommand<SessionSceneCommand>(
+        api, api.session(),
+        [id, policy, destinationId](SessionApi& session) {
+            return session.deleteScene(id, policy, destinationId);
+        },
+        "Delete Session Scene");
     return HandlerResult::ok(toJson(makeSessionDto(api)));
 }
 

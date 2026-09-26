@@ -3353,6 +3353,11 @@ void ClipManager::notifyClipsChanged() {
     // listeners query it.
     rebuildLinkGroupIndex();
 
+    if (batchDepth_ > 0) {
+        batchedStructuralChange_ = true;
+        return;
+    }
+
     // Make a copy because listeners may be removed during iteration
     // (e.g., ClipComponent destroyed when TrackContentPanel rebuilds)
     auto listenersCopy = listeners_;
@@ -3414,16 +3419,20 @@ void ClipManager::endBatch() {
     if (--batchDepth_ > 0)
         return;
 
-    if (batchedClipIds_.empty())
-        return;
-
     auto ids = std::move(batchedClipIds_);
     batchedClipIds_.clear();
+    const auto structuralChange = std::exchange(batchedStructuralChange_, false);
+
+    if (ids.empty() && !structuralChange)
+        return;
 
     auto listenersCopy = listeners_;
     for (auto* listener : listenersCopy) {
         if (std::ranges::find(listeners_, listener) != listeners_.end()) {
-            listener->clipPropertiesChanged(ids);
+            if (structuralChange)
+                listener->clipsChanged();
+            else
+                listener->clipPropertiesChanged(ids);
         }
     }
 }

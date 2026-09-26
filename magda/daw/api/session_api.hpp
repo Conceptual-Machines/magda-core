@@ -2,21 +2,26 @@
 
 #include <juce_core/juce_core.h>
 
+#include <cstdint>
+#include <vector>
+
+#include "../core/ClipInfo.hpp"
 #include "../core/ClipTypes.hpp"
 #include "../core/TypeIds.hpp"
+#include "../project/ProjectInfo.hpp"
 
 namespace magda {
 
+struct SessionSceneState {
+    std::vector<ProjectScene> scenes;
+    SceneId nextSceneId = 1;
+    std::vector<ClipInfo> clips;
+};
+
+enum class PopulatedScenePolicy { Fail, DeleteClips, MoveClips };
+
 /**
- * Abstract view onto session-view playback — clip launching, stopping,
- * scene-launch helpers.
- *
- * v1 surface is action-only: scripts can trigger clips and stop tracks,
- * but state queries (play state, playhead position) are not exposed yet.
- * Adding those requires routing through SessionClipScheduler, which is
- * owned by the live audio engine (not a singleton) and is null in
- * headless test mode. The v1 actions go through ClipManager, which is a
- * singleton and works in headless.
+ * Abstract view onto Session playback and durable scene structure.
  *
  * NOTE: Behaviour matches the UI's "trigger" buttons — calls flow through
  * the same clipPlaybackRequested → SessionClipScheduler → TE LaunchHandle
@@ -63,6 +68,18 @@ class SessionApi {
     /// no live engine is attached (for example in a headless project reader).
     virtual bool isSlotRecordArmed(TrackId trackId, int sceneIndex) const = 0;
     virtual bool isSlotRecording(TrackId trackId, int sceneIndex) const = 0;
+
+    /// Snapshot/restore boundary used by one-step scene lifecycle commands.
+    virtual SessionSceneState captureSceneState() const = 0;
+    virtual void restoreSceneState(const SessionSceneState& state) = 0;
+
+    virtual SceneId createScene(int index, const juce::String& name, std::uint32_t colourArgb) = 0;
+    virtual bool updateScene(SceneId sceneId, const juce::String& name,
+                             std::uint32_t colourArgb) = 0;
+    virtual bool moveScene(SceneId sceneId, int toIndex) = 0;
+    virtual SceneId duplicateScene(SceneId sceneId, bool copyClips) = 0;
+    virtual bool deleteScene(SceneId sceneId, PopulatedScenePolicy policy,
+                             SceneId destinationSceneId) = 0;
 };
 
 }  // namespace magda
