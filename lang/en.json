@@ -14,6 +14,7 @@
     "help": "Help",
     "file.new_project": "New Project",
     "file.open_project": "Open Project",
+    "file.recover_project": "Recover Unsaved Project",
     "file.open_recent": "Open Recent",
     "file.no_recent": "(No Recent Projects)",
     "file.clear_recent": "Clear Recent Projects",

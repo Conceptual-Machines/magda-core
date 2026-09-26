@@ -51,7 +51,7 @@ static const char* const kMediaMovesFile = ".magda-media-moves.json";
 static const char* const kTempRootDir = "MAGDA";
 static const char* const kTempPrefix = "UnsavedProject_";
 static constexpr int kStaleTempDays = 7;
-static const char* const kAutosaveExtension = ".autosave";
+static constexpr int kRecoveryRetentionDays = 30;
 static constexpr int kDefaultAutoSaveIntervalMs = 60000;
 static const char* const kProjectChangedWhileLoading =
     "The current project changed while the new project was loading. "
@@ -491,8 +491,6 @@ bool ProjectManager::saveProject() {
 }
 
 bool ProjectManager::saveProjectAs(const juce::File& file, MediaTransfer transfer) {
-    const bool wasUntitled = currentFile_.getFullPathName().isEmpty();
-
     // Ensure the .mgd file lives inside a wrapper folder named after the project.
     // If the user picked /path/to/MyProject.mgd, wrap it as /path/to/MyProject/MyProject.mgd.
     // If it's already inside a matching folder, use it as-is.
@@ -533,7 +531,7 @@ bool ProjectManager::saveProjectAs(const juce::File& file, MediaTransfer transfe
     // Which engine wrote it, so opening it under the other one knows whether
     // this project has been through that engine's migration (#2437).
     newProject.savedWithEngine = settingWordFor(chosenAudioEngine());
-    newProject.touch();
+    newProject.version = MAGDA_VERSION;
 
     // Save to file
     if (!ProjectSerializer::saveToFile(actualFile, newProject)) {
@@ -554,8 +552,6 @@ bool ProjectManager::saveProjectAs(const juce::File& file, MediaTransfer transfe
 
     clearDirty();
     deleteAutosaveFile();
-    if (wasUntitled)
-        discardUntitledAutosave();
 
     if (!wasOpen) {
         notifyProjectOpened();
@@ -587,14 +583,19 @@ bool ProjectManager::loadProject(const juce::File& file,
         return false;
     }
 
-    // Check for autosave recovery
     auto fileToLoad = file;
-    auto autosaveFile = getAutosaveFile(file);
-    if (autosaveFile.existsAsFile()) {
-        if (promptAutosaveRecovery(file)) {
-            fileToLoad = autosaveFile;
-        } else {
-            autosaveFile.deleteFile();
+    const auto recovery = recoverySession().projectCandidate(file);
+    if (recovery.snapshot.existsAsFile() && markRecoveryOffered(recovery)) {
+        switch (promptRecovery(recovery)) {
+            case RecoveryChoice::Recover:
+                fileToLoad = recovery.snapshot;
+                break;
+            case RecoveryChoice::Discard:
+                discardRecovery(recovery);
+                break;
+            case RecoveryChoice::Cancel:
+                lastError_.clear();
+                return false;
         }
     }
 
@@ -607,7 +608,9 @@ bool ProjectManager::loadProject(const juce::File& file,
         return false;
     }
 
-    commitStagedProject(staged, file, fileToLoad != file, onBeforeCommit);
+    if (fileToLoad != file)
+        return commitRecovery(recovery, staged, onBeforeCommit);
+    commitStagedProject(staged, file, false, onBeforeCommit);
 
     return true;
 }
@@ -616,7 +619,8 @@ void ProjectManager::commitStagedProject(
     StagedProjectData& staged, const juce::File& file, bool recoveredFromAutosave,
     const std::function<void(const ProjectInfo&)>& onBeforeCommit, bool allowInteractiveRecovery) {
     beginProjectTeardown();
-    deleteAutosaveFile();
+    if (!recoveredFromAutosave)
+        deleteAutosaveFile();
 
     // Set tempo/time sig/loop on the audio engine BEFORE committing tracks & clips,
     // so that audio engine clip sync uses the correct BPM.
@@ -644,10 +648,11 @@ void ProjectManager::commitStagedProject(
     // Runs after clearDirty() so the dirty flag it raises survives.
     foldLegacyMediaDirectories(mediaDirectory_);
 
-    if (recoveredFromAutosave)
+    if (recoveredFromAutosave) {
         markDirty();
+        currentProject_.lastModified = staged.info.lastModified;
+    }
 
-    deleteAutosaveFile();
     notifyProjectOpened();
 
     if (onAfterLoad)
@@ -775,16 +780,22 @@ void ProjectManager::loadProjectAsync(
         return;
     }
 
-    // Check for autosave recovery (modal dialog on message thread)
     auto fileToLoad = file;
-    auto autosaveFile = getAutosaveFile(file);
+    const auto recovery = recoverySession().projectCandidate(file);
     bool recoveredFromAutosave = false;
-    if (autosaveFile.existsAsFile()) {
-        if (promptAutosaveRecovery(file)) {
-            fileToLoad = std::move(autosaveFile);
-            recoveredFromAutosave = true;
-        } else {
-            autosaveFile.deleteFile();
+    if (recovery.snapshot.existsAsFile() && markRecoveryOffered(recovery)) {
+        switch (promptRecovery(recovery)) {
+            case RecoveryChoice::Recover:
+                fileToLoad = recovery.snapshot;
+                recoveredFromAutosave = true;
+                break;
+            case RecoveryChoice::Discard:
+                discardRecovery(recovery);
+                break;
+            case RecoveryChoice::Cancel:
+                if (onComplete)
+                    onComplete(false, {});
+                return;
         }
     }
 
@@ -801,35 +812,42 @@ void ProjectManager::loadProjectAsync(
     const auto& originalFile = file;
 
     // Launch background thread for I/O + parse + staging
-    loadThread_ = std::thread([fileCopy, originalFile, recoveredFromAutosave, creationSettings,
-                               onBeforeCommit, onComplete, startingRevision, this]() {
-        auto staged = std::make_shared<StagedProjectData>();
-        bool ok = ProjectSerializer::loadAndStage(fileCopy, *staged, creationSettings);
-        juce::String error;
-        if (!ok) {
-            DBG("Failed to load project: " + ProjectSerializer::getLastError());
-            error = "The project file could not be opened. It may be corrupted or from an "
-                    "incompatible version.";
-        }
-
-        // Bounce back to the message thread for commit + notification
-        juce::MessageManager::callAsync([this, staged, ok, error, originalFile,
-                                         recoveredFromAutosave, startingRevision, onBeforeCommit,
-                                         onComplete]() {
-            if (ok) {
-                if (mutationRevision_ != startingRevision) {
-                    if (onComplete)
-                        onComplete(false, kProjectChangedWhileLoading);
-                    return;
-                }
-
-                commitStagedProject(*staged, originalFile, recoveredFromAutosave, onBeforeCommit);
+    loadThread_ =
+        std::thread([fileCopy, originalFile, recoveredFromAutosave, recovery, creationSettings,
+                     onBeforeCommit, onComplete, startingRevision, this]() {
+            auto staged = std::make_shared<StagedProjectData>();
+            bool ok = ProjectSerializer::loadAndStage(fileCopy, *staged, creationSettings);
+            juce::String error;
+            if (!ok) {
+                DBG("Failed to load project: " + ProjectSerializer::getLastError());
+                error = "The project file could not be opened. It may be corrupted or from an "
+                        "incompatible version.";
             }
 
-            if (onComplete)
-                onComplete(ok, error);
+            // Bounce back to the message thread for commit + notification
+            juce::MessageManager::callAsync([this, staged, ok, error, originalFile,
+                                             recoveredFromAutosave, recovery, startingRevision,
+                                             onBeforeCommit, onComplete]() {
+                if (ok) {
+                    if (mutationRevision_ != startingRevision) {
+                        if (onComplete)
+                            onComplete(false, kProjectChangedWhileLoading);
+                        return;
+                    }
+
+                    if (recoveredFromAutosave) {
+                        const bool recovered = commitRecovery(recovery, *staged, onBeforeCommit);
+                        if (onComplete)
+                            onComplete(recovered, recovered ? juce::String() : lastError_);
+                        return;
+                    }
+                    commitStagedProject(*staged, originalFile, false, onBeforeCommit);
+                }
+
+                if (onComplete)
+                    onComplete(ok, error);
+            });
         });
-    });
 }
 
 void ProjectManager::loadProjectAsyncControlled(
@@ -858,7 +876,10 @@ void ProjectManager::loadProjectAsyncControlled(
     }
 
     auto fileToLoad = file;
-    const auto autosaveFile = getAutosaveFile(file);
+    auto recovery = recoverySession().projectCandidate(file, true);
+    if (!recovery.snapshot.existsAsFile())
+        recovery = inspectLegacyRecovery(file.getSiblingFile(file.getFileName() + ".autosave"));
+    const auto autosaveFile = recovery.snapshot;
     bool recoveredFromAutosave = false;
     if (autosaveFile.existsAsFile()) {
         if (options.autosaveRecovery == AutosaveRecoveryPolicy::Fail) {
@@ -874,9 +895,9 @@ void ProjectManager::loadProjectAsyncControlled(
     joinBackgroundThread();
     const auto creationSettings = captureCreationSettingsFromConfig();
     const auto startingRevision = mutationRevision_;
-    loadThread_ = std::thread([this, fileToLoad, file, recoveredFromAutosave, creationSettings,
-                               options = std::move(options), onBeforeCommit, finish,
-                               startingRevision]() mutable {
+    loadThread_ = std::thread([this, fileToLoad, file, recoveredFromAutosave, recovery,
+                               creationSettings, options = std::move(options), onBeforeCommit,
+                               finish, startingRevision]() mutable {
         auto staged = std::make_shared<StagedProjectData>();
         if (!ProjectSerializer::loadAndStage(fileToLoad, *staged, creationSettings)) {
             juce::MessageManager::callAsync([finish] {
@@ -900,7 +921,7 @@ void ProjectManager::loadProjectAsyncControlled(
             return;
         }
 
-        juce::MessageManager::callAsync([this, staged, file, recoveredFromAutosave,
+        juce::MessageManager::callAsync([this, staged, file, recoveredFromAutosave, recovery,
                                          startingRevision, shouldCancel = options.shouldCancel,
                                          inspection, onBeforeCommit, finish]() mutable {
             if (shouldCancel && shouldCancel()) {
@@ -911,7 +932,14 @@ void ProjectManager::loadProjectAsyncControlled(
                 finish({ControlledLoadStatus::Conflict, false, inspection});
                 return;
             }
-            commitStagedProject(*staged, file, recoveredFromAutosave, onBeforeCommit, false);
+            if (recoveredFromAutosave) {
+                if (!commitRecovery(recovery, *staged, onBeforeCommit, false)) {
+                    finish({ControlledLoadStatus::Failed, false, inspection});
+                    return;
+                }
+            } else {
+                commitStagedProject(*staged, file, false, onBeforeCommit, false);
+            }
             finish({ControlledLoadStatus::Succeeded, recoveredFromAutosave, inspection});
         });
     });
@@ -1026,6 +1054,7 @@ void ProjectManager::replaceSessionScenes(std::vector<ProjectScene> scenes, Scen
 
 void ProjectManager::markDirty() {
     ++mutationRevision_;
+    currentProject_.touch();
     if (undoableMutationDepth_ == 0)
         externalDirty_ = true;
     refreshDirtyState();
@@ -1050,6 +1079,7 @@ void ProjectManager::endUndoableMutation() {
     // markDirty() themselves, so the revision has to move here or an in-flight
     // background load would not notice edits made while it was parsing.
     ++mutationRevision_;
+    currentProject_.touch();
 }
 
 void ProjectManager::setUndoHistoryDirty(bool dirty) {
@@ -1057,6 +1087,8 @@ void ProjectManager::setUndoHistoryDirty(bool dirty) {
     // bookkeeping, which clearDirty() drives on every save, so counting it as a
     // mutation would make saving during a background load abandon that load
     // and report that the project changed underneath it.
+    if (dirty)
+        currentProject_.touch();
     undoHistoryDirty_ = dirty;
     refreshDirtyState();
 }
@@ -1423,10 +1455,19 @@ void ProjectManager::foldLegacyMediaDirectories(const juce::File& mediaRoot) {
         markDirty();
 }
 
-void ProjectManager::cleanupStaleTempDirectories(const juce::File& protectedDirectory) {
+void ProjectManager::cleanupStaleTempDirectories(const juce::File& protectedDirectory,
+                                                 const juce::File& tempRootOverride) {
     auto cutoff = juce::Time::getCurrentTime() - juce::RelativeTime::days(kStaleTempDays);
+    auto& manager = getInstance();
+    std::set<juce::String> retainedMedia;
+    for (const auto& entry : manager.recoverySession().entries(true))
+        retainedMedia.insert(entry.mediaDirectory);
+    for (const auto& entry : manager.getRecoveryEntries())
+        retainedMedia.insert(entry.mediaDirectory);
 
-    for (const auto& root : getTempRoots()) {
+    const auto roots = tempRootOverride == juce::File() ? getTempRoots()
+                                                        : std::vector<juce::File>{tempRootOverride};
+    for (const auto& root : roots) {
         const auto tempRoot = root.getChildFile(kTempRootDir);
         if (!tempRoot.isDirectory())
             continue;
@@ -1437,6 +1478,8 @@ void ProjectManager::cleanupStaleTempDirectories(const juce::File& protectedDire
             if (!dir.getFileName().startsWith(kTempPrefix))
                 continue;
             if (protectedDirectory != juce::File() && dir == protectedDirectory)
+                continue;
+            if (retainedMedia.contains(dir.getFullPathName()))
                 continue;
             if (dir.getLastModificationTime() < cutoff)
                 dir.deleteRecursively();
@@ -1461,173 +1504,242 @@ void ProjectManager::autoSaveTick() {
     performAutosave();
 }
 
+RecoverySession& ProjectManager::recoverySession() {
+    const auto root = paths::dataDir().getChildFile("autosave").getChildFile("sessions");
+    if (!recoverySession_ || recoverySession_->root() != root) {
+        const auto executable = juce::File::getSpecialLocation(juce::File::currentExecutableFile);
+        const auto build = executable.getFullPathName() + " | " + MAGDA_VERSION +
+#if JUCE_DEBUG
+                           " | Debug";
+#else
+                           " | Release";
+#endif
+        recoverySession_ = std::make_unique<RecoverySession>(root, build);
+    }
+    return *recoverySession_;
+}
+
+void ProjectManager::startRecoverySession() {
+    recoverySession();
+    cleanupRecovery();
+}
+
+juce::File ProjectManager::getAutosaveFile() {
+    return recoverySession().snapshot();
+}
+
 bool ProjectManager::performAutosave() {
     if (!autoSaveEnabled_ || !isDirty_)
         return false;
-
-    // Capture live plugin state before serializing
     if (onBeforeSave)
         onBeforeSave();
 
-    const bool isUntitled = currentFile_.getFullPathName().isEmpty();
-    auto autosaveFile = isUntitled ? getUntitledAutosaveFile()
-                                   : currentFile_.getParentDirectory().getChildFile(
-                                         currentFile_.getFileName() + kAutosaveExtension);
-
-    ProjectInfo autosaveInfo = currentProject_;
-    autosaveInfo.autosaveMediaDirectory =
-        isUntitled ? mediaDirectory_.getFullPathName() : juce::String();
-    autosaveInfo.touch();
-
-    return ProjectSerializer::saveToFile(autosaveFile, autosaveInfo);
+    ProjectInfo info = currentProject_;
+    info.version = MAGDA_VERSION;
+    info.autosaveMediaDirectory =
+        currentFile_ == juce::File() ? mediaDirectory_.getFullPathName() : juce::String();
+    RecoveryEntry entry;
+    entry.name = info.name;
+    entry.version = MAGDA_VERSION;
+    entry.originalFile = currentFile_.getFullPathName();
+    entry.mediaDirectory = info.autosaveMediaDirectory;
+    entry.created = info.createdAt;
+    entry.edited = info.lastModified;
+    entry.saved = juce::Time::getCurrentTime();
+    entry.tracks = static_cast<int>(TrackManager::getInstance().getTracks().size());
+    entry.clips = static_cast<int>(ClipManager::getInstance().getClips().size());
+    return recoverySession().write(
+        entry, [&](const juce::File& file) { return ProjectSerializer::saveToFile(file, info); });
 }
 
 void ProjectManager::deleteAutosaveFile() {
-    if (currentFile_.getFullPathName().isEmpty()) {
-        discardUntitledAutosave();
-        if (isManagedTempMediaDirectory(mediaDirectory_))
-            mediaDirectory_.deleteRecursively();
-        return;
+    if (recoverySession_) {
+        recoverySession_->clear();
+        if (recoverySession_->snapshot().existsAsFile())
+            return;
     }
-
-    auto autosaveFile = getAutosaveFile(currentFile_);
-    if (autosaveFile.existsAsFile())
-        autosaveFile.deleteFile();
-}
-
-juce::File ProjectManager::getUntitledAutosaveFile() {
-    return paths::dataDir().getChildFile("autosave").getChildFile("Untitled.autosave");
-}
-
-bool ProjectManager::hasUntitledAutosave() {
-    return getUntitledAutosaveFile().existsAsFile();
-}
-
-void ProjectManager::discardUntitledAutosave() {
-    const auto autosaveFile = getUntitledAutosaveFile();
-    StagedProjectData staged;
-    const bool hasRecoverableMedia =
-        autosaveFile.existsAsFile() && ProjectSerializer::loadAndStage(autosaveFile, staged);
-
-    if (autosaveFile.existsAsFile())
-        autosaveFile.deleteFile();
-
-    if (hasRecoverableMedia) {
-        const juce::File mediaDirectory(staged.info.autosaveMediaDirectory);
-        if (isManagedTempMediaDirectory(mediaDirectory))
-            mediaDirectory.deleteRecursively();
-    }
-}
-
-void ProjectManager::prepareForCleanShutdown() {
-    autoSaveEnabled_ = false;
-    autoSaveTimer_.reset();
-    discardUntitledAutosave();
-    if (currentFile_.getFullPathName().isEmpty() && isManagedTempMediaDirectory(mediaDirectory_))
+    if (currentFile_ == juce::File() && isManagedTempMediaDirectory(mediaDirectory_))
         mediaDirectory_.deleteRecursively();
 }
 
-bool ProjectManager::promptUntitledAutosaveRecovery() {
-    const auto autosaveFile = getUntitledAutosaveFile();
-    if (!autosaveFile.existsAsFile())
-        return false;
-
-    return juce::AlertWindow::showOkCancelBox(
-        juce::AlertWindow::QuestionIcon, "Recover Unsaved Project",
-        "MAGDA found an autosave from an untitled project that did not close cleanly.\n\n"
-        "Autosave saved: " +
-            autosaveFile.getLastModificationTime().toString(true, true) +
-            "\n\nWould you like to recover it?",
-        "Recover", "Discard");
+RecoveryEntry ProjectManager::inspectLegacyRecovery(const juce::File& file) {
+    RecoveryEntry entry;
+    if (!file.existsAsFile() || !file.hasFileExtension("autosave"))
+        return entry;
+    if (file.getParentDirectory().getChildFile("session.json").existsAsFile()) {
+        for (const auto& candidate : getInstance().recoverySession().entries())
+            if (candidate.snapshot == file)
+                return candidate;
+        return entry;
+    }
+    entry.snapshot = file;
+    entry.saved = file.getLastModificationTime();
+    entry.name = file.getFileNameWithoutExtension();
+    if (file.getFileName().endsWithIgnoreCase(".mgd.autosave"))
+        entry.originalFile =
+            file.getSiblingFile(file.getFileNameWithoutExtension()).getFullPathName();
+    StagedProjectData staged;
+    if (ProjectSerializer::loadAndStage(file, staged)) {
+        entry.name = staged.info.name;
+        entry.version = staged.info.version;
+        entry.created = staged.info.createdAt;
+        entry.edited = staged.info.lastModified;
+        entry.mediaDirectory = staged.info.autosaveMediaDirectory;
+        entry.tracks = static_cast<int>(staged.tracks.size());
+        entry.clips = static_cast<int>(staged.clips.size());
+    }
+    return entry;
 }
 
-bool ProjectManager::recoverUntitledAutosave(
-    const std::function<void(const ProjectInfo&)>& onBeforeCommit) {
-    const auto autosaveFile = getUntitledAutosaveFile();
-    if (!autosaveFile.existsAsFile()) {
-        lastError_ = "No untitled autosave was found.";
+std::vector<RecoveryEntry> ProjectManager::getRecoveryEntries() {
+    auto entries = recoverySession().entries();
+    const auto legacy = inspectLegacyRecovery(
+        paths::dataDir().getChildFile("autosave").getChildFile("Untitled.autosave"));
+    if (legacy.snapshot.existsAsFile())
+        entries.push_back(legacy);
+    return entries;
+}
+
+RecoveryEntry ProjectManager::getStartupRecovery() {
+    return recoverySession().startupCandidate();
+}
+
+bool ProjectManager::markRecoveryOffered(const RecoveryEntry& entry) {
+    return recoverySession().markOffered(entry);
+}
+
+bool ProjectManager::discardRecovery(const RecoveryEntry& entry) {
+    const bool legacy =
+        entry.directory == juce::File() && entry.snapshot.hasFileExtension("autosave");
+    const bool removed = legacy ? entry.snapshot.deleteFile() : recoverySession().discard(entry);
+    if (!removed)
         return false;
-    }
-
-    StagedProjectData staged;
-    if (!ProjectSerializer::loadAndStage(autosaveFile, staged)) {
-        lastError_ = "The untitled autosave could not be recovered. It may be corrupted or from "
-                     "an incompatible version.";
-        return false;
-    }
-
-    const auto previousMediaDirectory = mediaDirectory_;
-    beginProjectTeardown();
-
-    if (onBeforeCommit)
-        onBeforeCommit(staged.info);
-
-    ProjectSerializer::commitStaged(staged);
-
-    const juce::File recoveredMediaDirectory(staged.info.autosaveMediaDirectory);
-    const bool canReclaimMedia = isManagedTempMediaDirectory(recoveredMediaDirectory);
-    if (previousMediaDirectory != recoveredMediaDirectory &&
-        isManagedTempMediaDirectory(previousMediaDirectory))
-        previousMediaDirectory.deleteRecursively();
-
-    currentProject_ = staged.info;
-    currentProject_.filePath.clear();
-    currentProject_.autosaveMediaDirectory.clear();
-    currentFile_ = juce::File();
-    isProjectOpen_ = true;
-    interactiveRecoveryAllowedForCurrentOpen_ = true;
-
-    if (canReclaimMedia) {
-        mediaDirectory_ = recoveredMediaDirectory;
-    } else {
-        createTempMediaDirectory();
-    }
-    ensureMediaSubdirectories(mediaDirectory_);
-
-    UndoManager::getInstance().clearHistory();
-    clearDirty();
-    markDirty();
-    notifyProjectOpened();
-
-    if (onAfterLoad)
-        onAfterLoad(currentProject_);
-
+    const juce::File media(entry.mediaDirectory);
+    bool referenced = media == mediaDirectory_;
+    for (const auto& retained : recoverySession().entries(true))
+        referenced |= retained.mediaDirectory == entry.mediaDirectory;
+    if (!referenced && isManagedTempMediaDirectory(media))
+        media.deleteRecursively();
     return true;
 }
 
-juce::File ProjectManager::getAutosaveFile(const juce::File& projectFile) {
-    auto f = projectFile.getParentDirectory().getChildFile(projectFile.getFileName() +
-                                                           kAutosaveExtension);
-    return f.existsAsFile() ? f : juce::File();
+void ProjectManager::cleanupRecovery() {
+    const auto cutoff =
+        juce::Time::getCurrentTime() - juce::RelativeTime::days(kRecoveryRetentionDays);
+    for (const auto& entry : getRecoveryEntries())
+        if (entry.saved < cutoff)
+            discardRecovery(entry);
+    recoverySession().pruneEmptySessions(cutoff);
 }
 
-bool ProjectManager::promptAutosaveRecovery(const juce::File& projectFile) {
-    auto autosaveFile = projectFile.getParentDirectory().getChildFile(projectFile.getFileName() +
-                                                                      kAutosaveExtension);
+void ProjectManager::prepareForCleanShutdown(const juce::File& copiedDataDirectory) {
+    autoSaveEnabled_ = false;
+    autoSaveTimer_.reset();
+    bool retainedSnapshot = false;
+    if (recoverySession_) {
+        recoverySession_->finish(
+            copiedDataDirectory == juce::File()
+                ? juce::File()
+                : copiedDataDirectory.getChildFile("autosave").getChildFile("sessions"));
+        retainedSnapshot = recoverySession_->snapshot().existsAsFile();
+        recoverySession_.reset();
+    }
+    if (!retainedSnapshot && currentFile_ == juce::File() &&
+        isManagedTempMediaDirectory(mediaDirectory_))
+        mediaDirectory_.deleteRecursively();
+}
 
-    if (!autosaveFile.existsAsFile())
+juce::String ProjectManager::describeRecovery(const RecoveryEntry& entry) {
+    const auto date = [](juce::Time time) {
+        return time.toMilliseconds() == 0 ? juce::String("Unknown") : time.toString(true, true);
+    };
+    return "Project: " + entry.name + "\nCreated: " + date(entry.created) +
+           "\nLast edited: " + date(entry.edited) + "\nAutosaved: " + date(entry.saved) +
+           "\nTracks: " + juce::String(entry.tracks) + "   Clips: " + juce::String(entry.clips) +
+           "\nMAGDA version: " + (entry.version.isEmpty() ? "Unknown" : entry.version) +
+           (entry.originalFile.isEmpty() ? juce::String() : "\nFile: " + entry.originalFile) +
+           (entry.build.isEmpty() ? juce::String() : "\nBuild: " + entry.build);
+}
+
+ProjectManager::RecoveryChoice ProjectManager::promptRecovery(const RecoveryEntry& entry,
+                                                              bool atStartup) {
+    const auto message =
+        describeRecovery(entry) +
+        (atStartup ? "\n\nThe previous session did not close cleanly. You can recover this project "
+                     "now, or find it later under File > Recover Unsaved Project."
+                   : "\n\nWould you like to recover this project?");
+    const int result = juce::AlertWindow::showYesNoCancelBox(
+        juce::AlertWindow::QuestionIcon, "Recover Unsaved Project", message, "Recover", "Discard",
+        atStartup ? "Later" : "Cancel");
+    return result == 1   ? RecoveryChoice::Recover
+           : result == 2 ? RecoveryChoice::Discard
+                         : RecoveryChoice::Cancel;
+}
+
+bool ProjectManager::recoverProject(const RecoveryEntry& entry,
+                                    const std::function<void(const ProjectInfo&)>& onBeforeCommit,
+                                    UnsavedChangesPolicy policy) {
+    StagedProjectData staged;
+    if (!ProjectSerializer::loadAndStage(entry.snapshot, staged)) {
+        lastError_ = "The autosave could not be recovered. It has been kept so you can try again.";
         return false;
-
-    auto autosaveTime = autosaveFile.getLastModificationTime();
-    auto projectTime = projectFile.getLastModificationTime();
-
-    // Only offer recovery if the autosave is newer
-    if (autosaveTime <= projectTime)
+    }
+    if (isDirty_ && (policy == UnsavedChangesPolicy::Refuse ||
+                     (policy == UnsavedChangesPolicy::AskUser && !showUnsavedChangesDialog())))
         return false;
+    return commitRecovery(entry, staged, onBeforeCommit);
+}
 
-    int result = juce::AlertWindow::showYesNoCancelBox(
-        juce::AlertWindow::QuestionIcon, "Recover Autosaved Changes",
-        "An autosave file was found that is newer than the project file.\n\n"
-        "Project saved: " +
-            projectTime.toString(true, true) +
-            "\n"
-            "Autosave saved: " +
-            autosaveTime.toString(true, true) +
-            "\n\n"
-            "Would you like to recover the autosaved version?",
-        "Recover", "Discard", "Cancel");
+bool ProjectManager::commitRecovery(const RecoveryEntry& entry, StagedProjectData& staged,
+                                    const std::function<void(const ProjectInfo&)>& onBeforeCommit,
+                                    bool allowInteractiveRecovery) {
+    // Publish an owned copy before consuming the source, including when autosave
+    // is disabled. A second crash must still have a recoverable snapshot.
+    const auto previousMedia = mediaDirectory_;
+    const bool legacy =
+        entry.directory == juce::File() && entry.snapshot.hasFileExtension("autosave");
+    const bool adopted =
+        legacy ? recoverySession().write(
+                     entry, [&](const juce::File& file) { return entry.snapshot.copyFileTo(file); })
+               : recoverySession().adopt(entry);
+    if (!adopted) {
+        lastError_ = "Could not claim the autosave. The original recovery file has been kept.";
+        return false;
+    }
+    if (legacy)
+        entry.snapshot.deleteFile();
 
-    return result == 1;
+    if (entry.originalFile.isNotEmpty()) {
+        commitStagedProject(staged, juce::File(entry.originalFile), true, onBeforeCommit,
+                            allowInteractiveRecovery);
+    } else {
+        beginProjectTeardown();
+        if (onBeforeCommit)
+            onBeforeCommit(staged.info);
+        ProjectSerializer::commitStaged(staged);
+        currentProject_ = staged.info;
+        currentProject_.filePath.clear();
+        currentProject_.autosaveMediaDirectory.clear();
+        currentFile_ = juce::File();
+        isProjectOpen_ = true;
+        interactiveRecoveryAllowedForCurrentOpen_ = allowInteractiveRecovery;
+        const juce::File recoveredMedia(entry.mediaDirectory);
+        if (isManagedTempMediaDirectory(recoveredMedia))
+            mediaDirectory_ = recoveredMedia;
+        else
+            createTempMediaDirectory();
+        ensureMediaSubdirectories(mediaDirectory_);
+        UndoManager::getInstance().clearHistory();
+        clearDirty();
+        markDirty();
+        currentProject_.lastModified = staged.info.lastModified;
+        notifyProjectOpened();
+        if (onAfterLoad)
+            onAfterLoad(currentProject_);
+    }
+    if (previousMedia != mediaDirectory_ && isManagedTempMediaDirectory(previousMedia))
+        previousMedia.deleteRecursively();
+    return true;
 }
 
 bool ProjectManager::showUnsavedChangesDialog() {

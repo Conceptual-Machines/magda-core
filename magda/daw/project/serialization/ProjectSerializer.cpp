@@ -377,6 +377,8 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
             return false;
         }
 
+        outData.info.createdAt = juce::Time::fromISO8601(obj->getProperty("createdAt").toString());
+
         // Parse timestamp
         juce::String timeStr = obj->getProperty("lastModified").toString();
         if (timeStr.isNotEmpty()) {
@@ -621,6 +623,7 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
     obj->setProperty("magdaVersion", info.version);
     obj->setProperty("schemaVersion", kProjectSchemaVersion);
     obj->setProperty("lastModified", info.lastModified.toISO8601(true));
+    obj->setProperty("createdAt", info.createdAt.toISO8601(true));
     if (info.autosaveMediaDirectory.isNotEmpty())
         obj->setProperty("autosaveMediaDirectory", info.autosaveMediaDirectory);
 
@@ -777,6 +780,8 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
         lastError_ = "Missing magdaVersion field";
         return false;
     }
+
+    outInfo.createdAt = juce::Time::fromISO8601(obj->getProperty("createdAt").toString());
 
     // Parse timestamp
     juce::String timeStr = obj->getProperty("lastModified").toString();

@@ -450,10 +450,10 @@ void MainWindow::openProjectFile(const juce::File& file) {
         });
 }
 
-bool MainWindow::recoverUntitledAutosave() {
+bool MainWindow::recoverProject(const RecoveryEntry& entry) {
     auto safeThis = juce::Component::SafePointer<MainWindow>(this);
     const bool recovered =
-        ProjectManager::getInstance().recoverUntitledAutosave([safeThis](const ProjectInfo& info) {
+        ProjectManager::getInstance().recoverProject(entry, [safeThis](const ProjectInfo& info) {
             if (!safeThis || !safeThis->mainComponent || !safeThis->mainComponent->mainView)
                 return;
             auto& tc = safeThis->mainComponent->mainView->getTimelineController();
@@ -472,6 +472,68 @@ bool MainWindow::recoverUntitledAutosave() {
         mainComponent->mainView->getTimelineController().dispatch(ClearTimeSelectionEvent{});
     }
     return true;
+}
+
+void MainWindow::offerRecovery(const RecoveryEntry& entry) {
+    auto& manager = ProjectManager::getInstance();
+    manager.markRecoveryOffered(entry);
+    switch (ProjectManager::promptRecovery(entry)) {
+        case ProjectManager::RecoveryChoice::Recover:
+            if (!recoverProject(entry) && manager.getLastError().isNotEmpty())
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                       "Recovery Failed", manager.getLastError());
+            break;
+        case ProjectManager::RecoveryChoice::Discard:
+            if (!manager.discardRecovery(entry))
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                       "Could Not Discard",
+                                                       "The recovery file could not be removed.");
+            break;
+        case ProjectManager::RecoveryChoice::Cancel:
+            break;
+    }
+}
+
+void MainWindow::showRecoveryBrowser() {
+    const auto entries = ProjectManager::getInstance().getRecoveryEntries();
+    juce::PopupMenu menu;
+    menu.addSectionHeader(entries.empty() ? "No unsaved projects found"
+                                          : "Unsaved projects (kept for 30 days)");
+    for (size_t i = 0; i < entries.size(); ++i)
+        menu.addItem(static_cast<int>(i + 1), entries[i].name + juce::String::fromUTF8(" — ") +
+                                                  entries[i].saved.toString(true, true) +
+                                                  juce::String::fromUTF8(" — MAGDA ") +
+                                                  entries[i].version);
+    const int browseId = static_cast<int>(entries.size() + 1);
+    menu.addSeparator();
+    menu.addItem(browseId, "Open Older Autosave...");
+    auto safeThis = juce::Component::SafePointer<MainWindow>(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this), [safeThis, entries,
+                                                                              browseId](
+                                                                                 int result) {
+        if (!safeThis || result <= 0)
+            return;
+        if (result == browseId) {
+            if (safeThis->fileChooser_)
+                return;
+            safeThis->fileChooser_ = std::make_unique<juce::FileChooser>(
+                "Open Older Autosave",
+                juce::File::getSpecialLocation(juce::File::userDocumentsDirectory), "*.autosave");
+            safeThis->fileChooser_->launchAsync(
+                juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                [safeThis](const juce::FileChooser& chooser) {
+                    if (!safeThis)
+                        return;
+                    const auto file = chooser.getResult();
+                    safeThis->fileChooser_.reset();
+                    const auto entry = ProjectManager::inspectLegacyRecovery(file);
+                    if (entry.snapshot.existsAsFile())
+                        safeThis->offerRecovery(entry);
+                });
+        } else if (result <= static_cast<int>(entries.size())) {
+            safeThis->offerRecovery(entries[static_cast<size_t>(result - 1)]);
+        }
+    });
 }
 
 void MainWindow::importDawProjectFile(const juce::File& file) {
@@ -551,6 +613,7 @@ void MainWindow::setupMenuCallbacks() {
         }
     };
 
+    callbacks.onRecoverProject = [this]() { showRecoveryBrowser(); };
     callbacks.onOpenProject = [this]() {
         // Prevent re-entry while a file chooser is already open
         if (fileChooser_ != nullptr)

@@ -479,17 +479,22 @@ class MagdaDAWApplication : public JUCEApplication {
         // restored project with the command-line file would defeat recovery.
         bool untitledRecoverySucceeded = false;
         auto& projectManager = magda::ProjectManager::getInstance();
-        if (projectManager.hasUntitledAutosave()) {
-            if (projectManager.promptUntitledAutosaveRecovery()) {
-                untitledRecoverySucceeded = mainWindow_->recoverUntitledAutosave();
-                if (!untitledRecoverySucceeded) {
-                    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                                                           "Recovery Failed",
-                                                           projectManager.getLastError());
-                    projectManager.discardUntitledAutosave();
-                }
-            } else {
-                projectManager.discardUntitledAutosave();
+        projectManager.startRecoverySession();
+        const auto recovery = projectManager.getStartupRecovery();
+        if (recovery.snapshot.existsAsFile() && projectManager.markRecoveryOffered(recovery)) {
+            switch (projectManager.promptRecovery(recovery, true)) {
+                case magda::ProjectManager::RecoveryChoice::Recover:
+                    untitledRecoverySucceeded = mainWindow_->recoverProject(recovery);
+                    if (!untitledRecoverySucceeded)
+                        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                               "Recovery Failed",
+                                                               projectManager.getLastError());
+                    break;
+                case magda::ProjectManager::RecoveryChoice::Discard:
+                    projectManager.discardRecovery(recovery);
+                    break;
+                case magda::ProjectManager::RecoveryChoice::Cancel:
+                    break;
             }
         }
 
