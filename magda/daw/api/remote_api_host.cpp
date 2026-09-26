@@ -216,6 +216,10 @@ RemoteApiHost::RemoteApiHost(MagdaApi& api, AudioEngine* engine)
     // them does not immediately write them back out again.
     clients_->loadGrantsFromJson(Config::getInstance().getRemoteApiClients());
     clients_->setChangeHandler([this] { persistGrants(); });
+    audit_->setDeniedHandler([this](const AuditEntry& entry) {
+        if (const auto scope = scopeFromName(entry.detail))
+            clients_->notePermissionDenied(entry.client, entry.transport, *scope);
+    });
 
     activeHostInstance = this;
 }
@@ -229,6 +233,8 @@ RemoteApiHost::~RemoteApiHost() {
     // joined the transports, so nothing can be mid-notification here.
     if (clients_ != nullptr)
         clients_->setChangeHandler(nullptr);
+    if (audit_ != nullptr)
+        audit_->setDeniedHandler(nullptr);
     if (service_ != nullptr)
         service_->setAuditLog(nullptr);
 

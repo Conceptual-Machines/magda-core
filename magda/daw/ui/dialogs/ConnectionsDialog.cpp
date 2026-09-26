@@ -1320,8 +1320,10 @@ class SelfClosingDialogWindow : public juce::DialogWindow {
 };
 }  // namespace
 
-void ConnectionsDialog::showDialog(juce::Component* /*parent*/) {
+void ConnectionsDialog::showDialog(juce::Component* /*parent*/, bool showClientsTab) {
     auto* dialog = new ConnectionsDialog();
+    if (showClientsTab)
+        dialog->tabbedComponent_.setCurrentTabIndex(3);
     auto bg = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
 
     auto* window = new SelfClosingDialogWindow(tr("connections.title"), bg);

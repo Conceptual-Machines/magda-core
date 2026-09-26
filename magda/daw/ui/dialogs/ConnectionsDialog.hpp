@@ -53,7 +53,7 @@ class ConnectionsDialog : public juce::Component {
     void resized() override;
     void paint(juce::Graphics& g) override;
 
-    static void showDialog(juce::Component* parent);
+    static void showDialog(juce::Component* parent, bool showClientsTab = false);
 
   private:
     juce::TabbedComponent tabbedComponent_{juce::TabbedButtonBar::TabsAtTop};

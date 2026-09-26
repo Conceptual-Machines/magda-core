@@ -3,6 +3,8 @@
 #include <vector>
 
 #include "../../api/magda_api_live.hpp"
+#include "../../api/remote_api_host.hpp"
+#include "../../api/remote_clients.hpp"
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
 #include "../../core/SelectionManager.hpp"
@@ -12,6 +14,7 @@
 #include "../debug/DebugSettings.hpp"
 #include "../dialogs/AISettingsDialog.hpp"
 #include "../dialogs/AudioSettingsDialog.hpp"
+#include "../dialogs/ConnectionsDialog.hpp"
 #include "../dialogs/ControllersDialog.hpp"
 #include "../dialogs/ExportAudioDialog.hpp"
 #include "../dialogs/PreferencesDialog.hpp"
@@ -287,10 +290,12 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
 
     // Start modulation engine at 60 FPS (updates LFO values in background)
     magda::ModulatorEngine::getInstance().startTimer(16);
+    startTimer(500);
 }
 
 MainWindow::~MainWindow() {
     DBG("  [5a] MainWindow::~MainWindow start");
+    stopTimer();
 
     // Remove QWERTY keyboard listener from this window before content is destroyed
     if (mainComponent) {
@@ -323,6 +328,53 @@ MainWindow::~MainWindow() {
 
     removeKeyListener(mainComponent->getCommandManager().getKeyMappings());
     DBG("  [5c] MainWindow::~MainWindow - about to destroy content");
+}
+
+void MainWindow::timerCallback() {
+    if (permissionPromptActive_)
+        return;
+    auto* host = remote::activeHost();
+    if (host == nullptr)
+        return;
+    const auto request = host->clients().nextPermissionRequest();
+    if (!request)
+        return;
+
+    permissionPromptActive_ = true;
+    juce::StringArray requested;
+    for (const auto& name : remote::scopeNames(request->scopes))
+        requested.add(name);
+    const auto transport = request->transports.isEmpty() ? juce::String("remote connection")
+                                                         : request->transports.joinIntoString(", ");
+    const auto message = request->client + " via " + transport + " requested " +
+                         requested.joinIntoString(", ") +
+                         " access. The current request was "
+                         "denied; any grant applies to future requests.";
+    const auto keepLabel =
+        host->clients().peekScopes(request->client).value_or(remote::defaultClientScopes()) ==
+                remote::defaultClientScopes()
+            ? "Keep read-only"
+            : "Keep current access";
+    const auto safeThis = juce::Component::SafePointer<MainWindow>(this);
+    juce::AlertWindow::showAsync(juce::MessageBoxOptions{}
+                                     .withIconType(juce::MessageBoxIconType::QuestionIcon)
+                                     .withTitle("Remote client permissions")
+                                     .withMessage(message)
+                                     .withButton("Allow requested & remember")
+                                     .withButton(keepLabel)
+                                     .withButton("Review permissions")
+                                     .withAssociatedComponent(this),
+                                 [safeThis, host, request = *request](int result) {
+                                     if (safeThis == nullptr)
+                                         return;
+                                     if (remote::activeHost() == host)
+                                         host->clients().resolvePermissionRequest(
+                                             request.client, request.scopes, result == 1);
+                                     safeThis->permissionPromptActive_ = false;
+                                     if (result == 3)
+                                         ConnectionsDialog::showDialog(safeThis.getComponent(),
+                                                                       true);
+                                 });
 }
 
 void MainWindow::configChanged() {

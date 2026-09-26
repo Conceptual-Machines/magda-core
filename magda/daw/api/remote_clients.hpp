@@ -25,12 +25,21 @@ struct ClientGrant {
     /// Normalised — see `normaliseClientName`. The key, not a display field.
     juce::String name;
     ScopeSet scopes = defaultClientScopes();
+    /// Scopes for which the user chose to keep this client read-only.
+    ScopeSet dismissedPrompts;
     /// Wall-clock milliseconds, for the settings table. Zero when unknown,
     /// which is what a grant restored from an older config looks like.
     juce::int64 firstSeenMs = 0;
     juce::int64 lastSeenMs = 0;
 
     bool operator==(const ClientGrant&) const = default;
+};
+
+/// A first-use permission request assembled from denied operations.
+struct PermissionRequest {
+    juce::String client;
+    juce::StringArray transports;
+    ScopeSet scopes;
 };
 
 /// One live connection. Not persisted: this is gone when MAGDA stops.
@@ -129,6 +138,15 @@ class RemoteClientRegistry {
     /// Every grant, by name.
     std::vector<ClientGrant> grants() const;
 
+    /// Record a denied request without changing the grant or blocking its caller.
+    void notePermissionDenied(const juce::String& clientName, const juce::String& transport,
+                              Scope scope);
+    /// Claim one pending request for presentation on the message thread.
+    std::optional<PermissionRequest> nextPermissionRequest();
+    /// Grant only the presented scopes, or suppress those prompts after refusal.
+    void resolvePermissionRequest(const juce::String& clientName, ScopeSet presentedScopes,
+                                  bool allow);
+
     // -----------------------------------------------------------------------
     // Live connections
     // -----------------------------------------------------------------------
@@ -172,12 +190,19 @@ class RemoteClientRegistry {
     void setChangeHandler(std::function<void()> onChanged);
 
   private:
+    struct PendingPermissionRequest {
+        ScopeSet scopes;
+        juce::StringArray transports;
+        bool presenting = false;
+    };
+
     void notifyChanged();
 
     mutable std::mutex mutex_;
     /// Ordered so the settings table and the config file are both stable
     /// between runs rather than reordered by hash seeding.
     std::map<std::string, ClientGrant> grants_;
+    std::map<std::string, PendingPermissionRequest> pendingPermissions_;
     std::vector<ConnectedClient> connections_;
     std::map<std::string, DisconnectHandler> disconnectHandlers_;
 

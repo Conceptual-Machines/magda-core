@@ -133,6 +133,16 @@ about two processes presenting the same token.
 first asks for anything, so it appears in the settings list — read-only —
 straight away rather than only once the user goes looking.
 
+When a client first attempts an operation outside that grant, the request is
+denied immediately. MAGDA then shows a non-blocking permission sheet with the
+normalised client name, its transport, and only the scopes it attempted to use.
+The user can grant those scopes for future requests, keep the client read-only,
+or open the Clients page to review every scope. Granting never retries the
+denied operation. Several denied scopes arriving together are shown in one
+sheet; unrelated scopes are never preselected. A refusal suppresses further
+prompts for those scopes, including after restart. The Clients page remains the
+place to change or revoke a grant later.
+
 **Grants persist**, in `config.json` under `remoteApi.clients`:
 
 ```json
@@ -149,6 +159,10 @@ file being copied between machines or committed by accident grants nothing that
 is not already the user's decision. Unknown scope names are dropped on load
 rather than rejected, so a config from a newer MAGDA downgrades to the scopes
 this build understands.
+
+A row may also contain `dismissedPrompts` as scope names after the user chooses
+to keep a requested permission read-only. This only suppresses repeat sheets;
+it grants nothing, and forgetting the client clears it.
 
 ### Revocation is immediate
 
