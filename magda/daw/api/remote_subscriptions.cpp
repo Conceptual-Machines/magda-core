@@ -660,9 +660,9 @@ bool SubscriptionHub::owesSnapshotLocked(Topic topic) const {
     return std::ranges::any_of(clients_, owesSnapshot);
 }
 
-void SubscriptionHub::publishTopicLocked(Topic topic, Revision revision) {
+void SubscriptionHub::publishTopicLocked(Topic topic, Revision revision, bool reset) {
     if (topic == Topic::Jobs) {
-        publishJobsLocked(revision);
+        publishJobsLocked(revision, reset);
         return;
     }
     const auto index = indexOf(topic);
@@ -677,7 +677,9 @@ void SubscriptionHub::publishTopicLocked(Topic topic, Revision revision) {
 
     auto current = projectTopic(topic);
     auto& state = topics_[index];
-    const bool hadBaseline = state.hasBaseline;
+    // A project boundary invalidates the meaning of every cached ID. Even an
+    // identical-looking empty project needs a fresh snapshot at the new revision.
+    const bool hadBaseline = state.hasBaseline && !reset;
 
     SubscriptionEvent delta{topic, SubscriptionEvent::Type::Delta, revision, {}};
     bool changed = !hadBaseline;
@@ -727,17 +729,18 @@ void SubscriptionHub::publishTopicLocked(Topic topic, Revision revision) {
     }
 }
 
-void SubscriptionHub::publishJobsLocked(Revision revision) {
+void SubscriptionHub::publishJobsLocked(Revision revision, bool reset) {
     const auto index = indexOf(Topic::Jobs);
     for (auto& client : clients_) {
         if (!client.subscribed[index])
             continue;
         const auto current = projectTopic(Topic::Jobs, client.ownerClientId,
                                           client.scopes ? client.scopes() : ScopeSet{});
-        const bool changed = !client.hasJobsBaseline || !deepEquals(client.jobsBaseline, current);
+        const bool changed =
+            reset || !client.hasJobsBaseline || !deepEquals(client.jobsBaseline, current);
         if (!changed && !client.needsSnapshot[index])
             continue;
-        const auto type = client.needsSnapshot[index] || !client.hasJobsBaseline
+        const auto type = reset || client.needsSnapshot[index] || !client.hasJobsBaseline
                               ? SubscriptionEvent::Type::Snapshot
                               : SubscriptionEvent::Type::Delta;
         deliverLocked(client, {Topic::Jobs, type, revision, current});
@@ -770,7 +773,7 @@ void SubscriptionHub::publish(const std::vector<ChangeSource::Change>& changes) 
                 continue;
             if (!anySubscriberLocked(change.topic))
                 continue;
-            publishTopicLocked(change.topic, change.revision);
+            publishTopicLocked(change.topic, change.revision, change.reset);
         }
 
         // Once per client per flush, after every topic has had its turn, so the

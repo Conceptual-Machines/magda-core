@@ -227,6 +227,7 @@ const juce::var& projectSchema() {
     static const auto value = parseSchema(R"json({
         "type":"object",
         "properties":{
+            "open":{"type":"boolean"},
             "name":{"type":"string"},
             "tempo":{"type":"number","minimum":20,"maximum":400},
             "timeSignatureNumerator":{"type":"integer","minimum":1,"maximum":32},
@@ -241,7 +242,7 @@ const juce::var& projectSchema() {
             "dirty":{"type":"boolean"},
             "hasSaveTarget":{"type":"boolean"}
         },
-        "required":["name","tempo","timeSignatureNumerator","timeSignatureDenominator",
+        "required":["open","name","tempo","timeSignatureNumerator","timeSignatureDenominator",
                     "sampleRate","timelineLengthBars","keyRoot","keyQuality","loopEnabled",
                     "loopStartBeats","loopEndBeats","dirty","hasSaveTarget"],
         "additionalProperties":false
@@ -1761,6 +1762,7 @@ juce::var toJson(const MidiEventDto& dto) {
 
 juce::var toJson(const ProjectDto& dto) {
     auto* object = new juce::DynamicObject();
+    object->setProperty("open", dto.open);
     object->setProperty("name", dto.name);
     object->setProperty("tempo", dto.tempo);
     object->setProperty("timeSignatureNumerator", dto.timeSignatureNumerator);
@@ -2291,6 +2293,7 @@ std::optional<ProjectDto> projectFromJson(const juce::var& json, Error& error) {
     if (!prepareDecode(json, projectSchema(), error))
         return std::nullopt;
     ProjectDto dto;
+    dto.open = static_cast<bool>(json["open"]);
     dto.name = json["name"].toString();
     dto.tempo = static_cast<double>(json["tempo"]);
     dto.timeSignatureNumerator = readInt(json, "timeSignatureNumerator");
@@ -2844,6 +2847,15 @@ OperationRegistry::OperationRegistry() {
 
     add("project.get", "Get safe project metadata", OperationAccess::Read, &handlers::projectGet,
         emptyObjectSchema(), projectSchema());
+    const auto projectTransitionInput = operationInputSchema(R"json({
+        "type":"object",
+        "properties":{"discardUnsavedChanges":{"type":"boolean"}},
+        "additionalProperties":false
+    })json");
+    add("project.new", "Create an untitled project", OperationAccess::Write, &handlers::projectNew,
+        projectTransitionInput, projectSchema());
+    add("project.close", "Close the current project", OperationAccess::Write,
+        &handlers::projectClose, projectTransitionInput, projectSchema());
     add("project.save", "Save the project to its existing target", OperationAccess::Write,
         &handlers::projectSave, emptyObjectSchema(), projectSchema());
     add("project.setTempo", "Set the project tempo", OperationAccess::Write,
@@ -4249,6 +4261,8 @@ OperationRegistry::OperationRegistry() {
         {"project.setTempo", Scope::Edit},
         {"project.setTimeSignature", Scope::Edit},
         {"project.setLoopRange", Scope::Edit},
+        {"project.new", Scope::Edit},
+        {"project.close", Scope::Edit},
         {"project.save", Scope::Edit},
         {"chordTrack.ensure", Scope::Edit},
         {"chordTrack.replaceProgression", Scope::Edit},

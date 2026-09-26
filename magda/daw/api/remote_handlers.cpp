@@ -730,10 +730,37 @@ HandlerResult jobsCancel(MagdaApi&, const juce::var& input, const RequestContext
 // Project
 // ===========================================================================
 
+static juce::var projectStatus(ProjectApi& project) {
+    return toJson(makeProjectDto(project.getCurrentProjectInfo(), project.hasOpenProject(),
+                                 project.isDirty(), project.hasSaveTarget()));
+}
+
 HandlerResult projectGet(MagdaApi& api, const juce::var&, const RequestContext&) {
-    return HandlerResult::ok(
-        toJson(makeProjectDto(api.project().getCurrentProjectInfo(), api.project().isDirty(),
-                              api.project().hasSaveTarget())));
+    return HandlerResult::ok(projectStatus(api.project()));
+}
+
+HandlerResult projectNew(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    auto& project = api.project();
+    const bool discard = readBool(input, "discardUnsavedChanges");
+    if (project.hasOpenProject() && project.isDirty() && !discard)
+        return HandlerResult::fail(ErrorCode::Conflict,
+                                   "project has unsaved changes; explicitly allow discard");
+    if (!project.newProject(discard))
+        return HandlerResult::fail(ErrorCode::InternalError, "project creation failed");
+    return HandlerResult::ok(projectStatus(project));
+}
+
+HandlerResult projectClose(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    auto& project = api.project();
+    if (!project.hasOpenProject())
+        return HandlerResult::unchanged(projectStatus(project));
+    const bool discard = readBool(input, "discardUnsavedChanges");
+    if (project.isDirty() && !discard)
+        return HandlerResult::fail(ErrorCode::Conflict,
+                                   "project has unsaved changes; explicitly allow discard");
+    if (!project.closeProject(discard))
+        return HandlerResult::fail(ErrorCode::InternalError, "project close failed");
+    return HandlerResult::ok(projectStatus(project));
 }
 
 HandlerResult projectSave(MagdaApi& api, const juce::var&, const RequestContext&) {
@@ -742,25 +769,19 @@ HandlerResult projectSave(MagdaApi& api, const juce::var&, const RequestContext&
                                    "project has no save target; use Save As in MAGDA first");
     if (!api.project().saveProject())
         return HandlerResult::fail(ErrorCode::InternalError, "project save failed");
-    return HandlerResult::unchanged(
-        toJson(makeProjectDto(api.project().getCurrentProjectInfo(), api.project().isDirty(),
-                              api.project().hasSaveTarget())));
+    return HandlerResult::unchanged(projectStatus(api.project()));
 }
 
 HandlerResult projectSetTempo(MagdaApi& api, const juce::var& input, const RequestContext&) {
     api.project().setTempo(static_cast<double>(input["tempo"]));
-    return HandlerResult::ok(
-        toJson(makeProjectDto(api.project().getCurrentProjectInfo(), api.project().isDirty(),
-                              api.project().hasSaveTarget())));
+    return HandlerResult::ok(projectStatus(api.project()));
 }
 
 HandlerResult projectSetTimeSignature(MagdaApi& api, const juce::var& input,
                                       const RequestContext&) {
     api.project().setTimeSignature(static_cast<int>(input["numerator"]),
                                    static_cast<int>(input["denominator"]));
-    return HandlerResult::ok(
-        toJson(makeProjectDto(api.project().getCurrentProjectInfo(), api.project().isDirty(),
-                              api.project().hasSaveTarget())));
+    return HandlerResult::ok(projectStatus(api.project()));
 }
 
 HandlerResult projectSetLoopRange(MagdaApi& api, const juce::var& input, const RequestContext&) {
@@ -773,12 +794,10 @@ HandlerResult projectSetLoopRange(MagdaApi& api, const juce::var& input, const R
     auto& project = api.project();
     const auto& current = project.getCurrentProjectInfo();
     if (current.loopStartBeats == startBeats && current.loopEndBeats == endBeats)
-        return HandlerResult::unchanged(
-            toJson(makeProjectDto(current, project.isDirty(), project.hasSaveTarget())));
+        return HandlerResult::unchanged(projectStatus(project));
 
     runCommand<SetProjectLoopRangeCommand>(api, project, startBeats, endBeats);
-    return HandlerResult::ok(toJson(makeProjectDto(project.getCurrentProjectInfo(),
-                                                   project.isDirty(), project.hasSaveTarget())));
+    return HandlerResult::ok(projectStatus(project));
 }
 
 // ===========================================================================

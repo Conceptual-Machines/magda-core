@@ -255,17 +255,12 @@ void RemoteApiService::dispatch(const juce::String& operationName, const juce::v
         return;
     }
 
-    // Replay a completed retry before queuing, so a client that lost the
-    // response to a network fault does not re-apply the mutation.
-    const auto key = idempotencyKey(context);
-    if (operation->access != OperationAccess::Read && key.isNotEmpty()) {
-        if (auto cached = cachedResponse(key)) {
-            onComplete(*cached);
-            return;
-        }
-    }
-
-    if (deadlinePassed(context)) {
+    // A completed retry may still replay after its original deadline. Let
+    // commands with an id reach the serialized cache lookup; a miss is
+    // rejected there before the handler runs.
+    const bool mayReplay =
+        operation->access != OperationAccess::Read && idempotencyKey(context).isNotEmpty();
+    if (deadlinePassed(context) && !mayReplay) {
         onComplete(
             Response::failure(ErrorCode::Timeout, "deadline passed before dispatch", revision));
         return;
@@ -353,14 +348,14 @@ Response RemoteApiService::execute(const OperationDescriptor& operation, const j
     auto revision = currentRevision();
     const bool isWrite = operation.access == OperationAccess::Write;
     const bool isCommand = operation.access != OperationAccess::Read;
+    const bool isProjectLifecycle =
+        operation.name == "project.new" || operation.name == "project.close";
     const auto key = idempotencyKey(context);
 
-    // Re-checked here and not only before queuing. Two retries of the same
-    // request can both miss the pre-queue lookup while the first is still in
-    // flight; this runs under the serialized execution lock, so by now the
-    // first has completed and cached its response. Without it the duplicate
-    // would apply the mutation twice, or fail with a spurious conflict when the
-    // client sent an expectedRevision.
+    // Cache lookup must happen under the execution lock. An earlier lookup on
+    // the caller's thread could replay an outgoing project's response while a
+    // lifecycle handler was clearing that project's cache. Serializing it here
+    // also makes two concurrent retries observe the first completed result.
     if (isCommand && key.isNotEmpty()) {
         if (auto cached = cachedResponse(key))
             return *cached;
@@ -398,12 +393,17 @@ Response RemoteApiService::execute(const OperationDescriptor& operation, const j
         // those re-entrant callbacks apart from a genuine concurrent UI edit,
         // so one request produces one revision instead of one per notification.
         const ScopedExecutingThread marker(executingThread_);
-        if (isWrite) {
+        if (isWrite && !isProjectLifecycle) {
             const ScopedUndoStep step(api_.undo(), operation.summary);
             result = operation.handler(api_, input, handlerContext);
         } else {
             result = operation.handler(api_, input, handlerContext);
         }
+        // A lifecycle transition clears the outgoing project's undo, queued
+        // requests, and idempotency state. The model callback defers this to us
+        // because the handler already owns the execution lock.
+        if (isProjectLifecycle && !result.failed() && result.mutated)
+            projectReplaced();
     }
 
     if (result.failed())
@@ -413,12 +413,14 @@ Response RemoteApiService::execute(const OperationDescriptor& operation, const j
     // validation inside the handler, and a write the handler resolved to a
     // no-op all leave it where it was — otherwise a request that changed
     // nothing would invalidate every other client's expectedRevision.
-    const bool committed = isWrite && result.mutated;
+    const bool committed = isWrite && result.mutated && !isProjectLifecycle;
     if (committed) {
         revision = revision_.fetch_add(1, std::memory_order_acq_rel) + 1;
         for (const auto topic : topicsFor(operation.name))
             changes_.markChanged(topic, revision);
     }
+    if (isProjectLifecycle)
+        revision = currentRevision();
 
     auto response = Response::success(result.value, revision);
     // Every successful command is cached, including a project write that
@@ -429,6 +431,16 @@ Response RemoteApiService::execute(const OperationDescriptor& operation, const j
     // delete them instead of replaying the original response.
     if (isCommand && key.isNotEmpty())
         cacheResponse(key, response);
+    if (isProjectLifecycle && result.mutated) {
+        // The old state stays retired until its response is cached. Publishing
+        // the new state earlier would let a concurrent retry execute the same
+        // lifecycle request again before it could see this response.
+        const std::scoped_lock lock(stateMutex_);
+        if (!shutdown_.load(std::memory_order_acquire)) {
+            state_ = std::make_shared<ExecutionState>();
+            state_->service = this;
+        }
+    }
     return response;
 }
 
@@ -459,18 +471,24 @@ bool RemoteApiService::isShutdown() const {
 void RemoteApiService::projectReplaced() {
     if (shutdown_.load(std::memory_order_acquire))
         return;
+    const bool fromHandler = isExecutingOnThisThread();
     if (diagnostics_)
         diagnostics_->projectReplaced();
     jobs_.projectReplaced();
 
-    // Retire the outgoing state, then install a fresh one so requests arriving
-    // after the swap are not cancelled by the retirement of the old project's
-    // queued work.
-    retireState();
-    {
+    // Retire the outgoing state. Install the new one only after the revision,
+    // notifications, and idempotency cache have crossed the boundary, so a
+    // headless caller cannot execute on the new project with the old revision.
+    if (fromHandler) {
+        // The current handler already holds the outgoing execution lock.
+        // Taking it again in retireState() would deadlock.
         const std::scoped_lock lock(stateMutex_);
-        state_ = std::make_shared<ExecutionState>();
-        state_->service = this;
+        if (state_) {
+            state_->revisionAtRetirement = currentRevision() + 1;
+            state_->service = nullptr;
+        }
+    } else {
+        retireState();
     }
 
     // Every outstanding expectedRevision refers to the old project, so move the
@@ -491,12 +509,19 @@ void RemoteApiService::projectReplaced() {
     for (std::size_t index = 0; index < TOPIC_COUNT; ++index) {
         const auto topic = static_cast<Topic>(index);
         if (!isContinuousTopic(topic))
-            changes_.markChanged(topic, revision);
+            changes_.markChanged(topic, revision, true);
     }
 
     {
         const std::scoped_lock lock(cacheMutex_);
         cache_.clear();
+    }
+    if (!fromHandler) {
+        const std::scoped_lock lock(stateMutex_);
+        if (!shutdown_.load(std::memory_order_acquire)) {
+            state_ = std::make_shared<ExecutionState>();
+            state_->service = this;
+        }
     }
 }
 

@@ -8,6 +8,10 @@ const ProjectInfo& ProjectApiLive::getCurrentProjectInfo() const {
     return ProjectManager::getInstance().getCurrentProjectInfo();
 }
 
+bool ProjectApiLive::hasOpenProject() const {
+    return ProjectManager::getInstance().hasOpenProject();
+}
+
 bool ProjectApiLive::isDirty() const {
     return ProjectManager::getInstance().isDirty();
 }
@@ -20,6 +24,18 @@ bool ProjectApiLive::hasSaveTarget() const {
 
 bool ProjectApiLive::saveProject() {
     return ProjectManager::getInstance().saveProject();
+}
+
+bool ProjectApiLive::newProject(bool discardUnsavedChanges) {
+    return ProjectManager::getInstance().newProject(
+        discardUnsavedChanges ? ProjectManager::UnsavedChangesPolicy::Discard
+                              : ProjectManager::UnsavedChangesPolicy::Refuse);
+}
+
+bool ProjectApiLive::closeProject(bool discardUnsavedChanges) {
+    return ProjectManager::getInstance().closeProject(
+        discardUnsavedChanges ? ProjectManager::UnsavedChangesPolicy::Discard
+                              : ProjectManager::UnsavedChangesPolicy::Refuse);
 }
 
 void ProjectApiLive::setTempo(double bpm) {

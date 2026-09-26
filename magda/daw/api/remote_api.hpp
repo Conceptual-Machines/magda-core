@@ -132,6 +132,7 @@ struct MidiEventDto {
 };
 
 struct ProjectDto {
+    bool open = false;
     juce::String name;
     double tempo = 120.0;
     int timeSignatureNumerator = 4;
@@ -915,7 +916,7 @@ std::optional<AutomationClipDto> automationClipFromJson(const juce::var& json, E
 std::optional<ReferenceImpactResultDto> referenceImpactResultFromJson(const juce::var& json,
                                                                       Error& error);
 
-ProjectDto makeProjectDto(const ProjectInfo& project, bool dirty, bool hasSaveTarget);
+ProjectDto makeProjectDto(const ProjectInfo& project, bool open, bool dirty, bool hasSaveTarget);
 TrackDto makeTrackDto(const TrackInfo& track);
 RoutingEndpointDto makeRoutingEndpointDto(const RoutingEndpoint& endpoint);
 TrackRoutingDto makeTrackRoutingDto(const TrackRoutingView& routing);

@@ -109,7 +109,7 @@ void ChangeSource::removeListener(int token) {
     stopPumpIfIdle();
 }
 
-void ChangeSource::markChanged(Topic topic, Revision revision) {
+void ChangeSource::markChanged(Topic topic, Revision revision, bool reset) {
     const auto index = static_cast<std::size_t>(topic);
 
     // Latest-value-wins. A compare-exchange loop rather than a plain store: two
@@ -122,6 +122,8 @@ void ChangeSource::markChanged(Topic topic, Revision revision) {
         // `current` is refreshed by the failed exchange; retry.
     }
 
+    if (reset)
+        resetMask_.fetch_or(bitFor(topic), std::memory_order_release);
     dirtyMask_.fetch_or(bitFor(topic), std::memory_order_release);
 }
 
@@ -129,12 +131,14 @@ void ChangeSource::flush() {
     const auto mask = dirtyMask_.exchange(0, std::memory_order_acquire);
     if (mask == 0)
         return;
+    const auto resetMask = resetMask_.fetch_and(~mask, std::memory_order_acq_rel) & mask;
 
     std::vector<Change> changes;
     for (std::size_t index = 0; index < TOPIC_COUNT; ++index) {
         const auto topic = static_cast<Topic>(index);
         if ((mask & bitFor(topic)) != 0)
-            changes.push_back({topic, revisions_[index].load(std::memory_order_relaxed)});
+            changes.push_back({topic, revisions_[index].load(std::memory_order_relaxed),
+                               (resetMask & bitFor(topic)) != 0});
     }
     if (changes.empty())
         return;
@@ -155,6 +159,7 @@ void ChangeSource::flush() {
 
 void ChangeSource::discardPending() {
     dirtyMask_.store(0, std::memory_order_release);
+    resetMask_.store(0, std::memory_order_release);
 }
 
 void ChangeSource::setFlushIntervalMs(int intervalMs) {
