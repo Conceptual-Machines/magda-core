@@ -351,6 +351,10 @@ class ClipManager {
      */
     void moveClipToTrack(ClipId clipId, TrackId newTrackId);
 
+    /** Place an arrangement clip at its final track/time before resolving overlaps. */
+    bool placeArrangementClip(ClipId clipId, TrackId newTrackId, double newStartBeat,
+                              double tempo = 0.0);
+
     /** @brief Resize clip to a new beat length. */
     void resizeClipBeats(ClipId clipId, double newLengthBeats, bool fromStart = false,
                          double tempo = 0.0);
@@ -727,6 +731,15 @@ class ClipManager {
      * @brief Get all clips (both arrangement and session)
      */
     std::vector<ClipInfo> getClips() const;
+
+    /**
+     * @brief Restore the complete clip collection captured by an atomic edit.
+     *
+     * IDs and clip contents are restored verbatim while allocation counters
+     * remain monotonic. One structural notification is emitted after indexes
+     * have been rebuilt.
+     */
+    void restoreClipCollection(const std::vector<ClipInfo>& clips);
 
     ClipInfo* getClip(ClipId clipId);
     const ClipInfo* getClip(ClipId clipId) const;

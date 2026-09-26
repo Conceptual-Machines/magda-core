@@ -459,6 +459,7 @@ const juce::var& clipSchema() {
 
 const juce::var& clipDestinationSchema() {
     static const auto value = parseSchema(R"json({
+        "type":"object",
         "oneOf":[
             {
                 "type":"object",
@@ -475,9 +476,10 @@ const juce::var& clipDestinationSchema() {
                 "properties":{
                     "view":{"type":"string","const":"session"},
                     "trackId":{"type":"integer","minimum":0},
-                    "sceneIndex":{"type":"integer","minimum":0}
+                    "sceneId":{"type":"integer","minimum":0},
+                    "occupiedPolicy":{"type":"string","enum":["fail","swap","replace"]}
                 },
-                "required":["view","trackId","sceneIndex"],
+                "required":["view","trackId","sceneId","occupiedPolicy"],
                 "additionalProperties":false
             }
         ]
@@ -2986,15 +2988,15 @@ OperationRegistry::OperationRegistry() {
         &handlers::clipsCreateMidi, operationInputSchema(R"json({
             "type":"object",
             "properties":{
-                "trackId":{"type":"integer","minimum":0},
-                "startBeat":{"type":"number","minimum":0},
                 "lengthBeats":{"type":"number","exclusiveMinimum":0},
-                "view":{"type":"string","enum":["arrangement","session"]}
+                "placement":{}
             },
-            "required":["trackId","startBeat","lengthBeats","view"],
+            "required":["lengthBeats","placement"],
             "additionalProperties":false
         })json"),
         idResult);
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "placement", clipDestinationSchema());
     add("clips.addMidiNote", "Add a note to a MIDI clip", OperationAccess::Write,
         &handlers::clipsAddMidiNote, operationInputSchema(R"json({
             "type":"object",

@@ -1433,6 +1433,29 @@ void ClipManager::moveClipToTrack(ClipId clipId, TrackId newTrackId) {
     }
 }
 
+bool ClipManager::placeArrangementClip(ClipId clipId, TrackId newTrackId, double newStartBeat,
+                                       double tempo) {
+    auto* clip = getClip(clipId);
+    if (clip == nullptr || clip->view != ClipView::Arrangement || newTrackId == INVALID_TRACK_ID ||
+        newStartBeat < 0.0)
+        return false;
+
+    const bool trackChanged = clip->trackId != newTrackId;
+    const bool beatChanged = clip->placement.startBeat != newStartBeat;
+    if (!trackChanged && !beatChanged)
+        return false;
+
+    clip->trackId = newTrackId;
+    const double bpm = isValidBpm(tempo) ? tempo : currentProjectTempoOrDefault();
+    ClipOperations::moveContainerBeats(*clip, newStartBeat, bpm);
+    resolveOverlaps(clipId);
+    if (trackChanged)
+        notifyClipsChanged();
+    else
+        notifyClipPropertyChanged(clipId);
+    return true;
+}
+
 void ClipManager::resizeClipBeats(ClipId clipId, double newLengthBeats, bool fromStart,
                                   double tempo) {
     if (auto* clip = getClip(clipId)) {
@@ -3107,6 +3130,29 @@ std::vector<ClipInfo> ClipManager::getSessionClips() const {
 
 std::vector<ClipInfo> ClipManager::getClips() const {
     return clips_ | std::views::values | toStd<std::vector<ClipInfo>>();
+}
+
+void ClipManager::restoreClipCollection(const std::vector<ClipInfo>& clips) {
+    BatchScope notificationBatch;
+    clips_.clear();
+    sessionSlotIndex_.clear();
+    linkGroupMembers_.clear();
+    indexedGroupOf_.clear();
+
+    for (const auto& clip : clips) {
+        clips_[clip.id] = clip;
+        addToSessionSlotIndex(clips_[clip.id]);
+        indexClipGroup(clip.id, clip.linkGroupId);
+        nextClipId_ = std::max(nextClipId_, clip.id + 1);
+        nextLinkGroupId_ = std::max(nextLinkGroupId_, clip.linkGroupId + 1);
+        nextStackOrder_ = std::max(nextStackOrder_, clip.stackOrder + 1);
+    }
+
+    if (!clips_.contains(selectedClipId_))
+        selectedClipId_ = INVALID_CLIP_ID;
+    if (!clips_.contains(lastTriggeredSessionClipId_))
+        lastTriggeredSessionClipId_ = INVALID_CLIP_ID;
+    notifyClipsChanged();
 }
 
 std::vector<ClipId> ClipManager::getClipsOnTrack(TrackId trackId) const {

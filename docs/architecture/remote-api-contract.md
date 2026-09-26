@@ -318,18 +318,24 @@ subtree, and a property patch that restates current values is revision-neutral.
 
 ### Clip placement and duplication
 
-`clips.move` and `clips.duplicate` require an explicit, view-specific
-`destination`. Arrangement destinations contain `view: "arrangement"`,
-`trackId`, and `startBeat`; session destinations contain `view: "session"`,
-`trackId`, and `sceneIndex`. The destination view must match the source clip's
-current view. Moving between arrangement and session is a separate conversion,
-not an implicit side effect of placement.
+`clips.createMidi` requires a discriminated `placement`; `clips.move` and
+`clips.duplicate` use the same shape as `destination`. Arrangement placement
+contains `view: "arrangement"`, `trackId`, and `startBeat`. Session placement
+contains `view: "session"`, `trackId`, durable `sceneId`, and an explicit
+`occupiedPolicy` of `fail`, `swap`, or `replace`. The old top-level `view` and
+unplaced session clips are rejected. The destination view must match an
+existing source clip's current view; moving between arrangement and session is
+a separate conversion, not an implicit side effect of placement.
 
 `clips.resize` takes `lengthBeats` and an `edge` of `start` or `end`. All three
 operations are edit-scoped and commit as one undo action. A move that restates
 the current destination and a resize that restates the current length are
-successful no-ops and do not advance the revision. A session destination must
-be empty, except that moving a clip to its own current slot is a no-op.
+successful no-ops and do not advance the revision. For an occupied session
+destination, `fail` leaves both slots unchanged, `replace` deletes the occupant,
+and `swap` exchanges the two placed clips. `swap` is only meaningful for move;
+create and duplicate reject it. Clearing a slot is therefore the same model
+operation as deleting its clip or relocating it. Undo/redo restores the full
+source/destination plan and preserves allocated clip IDs.
 
 ### Automation lane writes
 
