@@ -281,6 +281,7 @@ void ClipVoicePool::fillNow() {
             return;
 }
 
+// Notice publication, retry and cancellation: specs/tla/hand_back_notices.
 void ClipVoicePool::announceHandBacks(const TrackSectionTable* sections, const BlockInfo& block) {
     if (sections == nullptr)
         return;
@@ -466,6 +467,7 @@ void ClipVoicePool::prepareLoopDestination(Reader& reader, const AudioClipPlayba
     }
 }
 
+// Adoption versus withdrawal and table retirement: specs/tla/hand_back_standby.
 void ClipVoicePool::settleStandby(Reader& reader) {
     if (reader.standby == nullptr)
         return;

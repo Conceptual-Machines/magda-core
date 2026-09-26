@@ -70,6 +70,7 @@ struct StandbyStretcher {
     std::atomic<bool> claimed{false};
 
     bool claim() {
+        // Modelled with the voice/pool race in specs/tla/hand_back_standby.
         auto unclaimed = false;
         return claimed.compare_exchange_strong(unclaimed, true, std::memory_order_acq_rel);
     }
@@ -136,6 +137,7 @@ class ClipStreamFeed {
      * with it, which is why a caller retiring one drops its own handle first.
      */
     void publish(std::shared_ptr<const ClipStreamTable> table) {
+        // The block pin is the lifetime boundary in specs/tla/hand_back_standby.
         published_.nonRealtimeReplace(std::move(table));
     }
 
