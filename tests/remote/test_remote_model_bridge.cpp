@@ -177,3 +177,15 @@ TEST_CASE("Clip and track notifications also invalidate the session grid", "[rem
     // every multi-topic edit look like several to an optimistic writer.
     REQUIRE(fixture.service.currentRevision() == before + 2);
 }
+
+TEST_CASE("Empty-slot recording state reaches session subscribers without advancing revision",
+          "[remote][bridge][session]") {
+    BridgeFixture fixture;
+    const auto before = fixture.service.currentRevision();
+
+    ClipManager::getInstance().notifySessionRuntimeStateChanged();
+    fixture.service.changes().flush();
+
+    REQUIRE(fixture.sawTopic(Topic::Session));
+    REQUIRE(fixture.service.currentRevision() == before);
+}

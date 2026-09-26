@@ -367,6 +367,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// The meters, and the audio thread's side of the trace.
     void timerCallback() override {
         reconcileFinishedSessionTakes();
+        publishSessionRecordingStateIfChanged();
         if (sessionCapture_.update())
             publishClips();
         if (sessionCapture_.armed())
@@ -1422,6 +1423,18 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         engine::RecordTap::Reading reading;
         return tap->read(reading) && reading.recording && reading.pass > 0 &&
                reading.target == engine::RecordTarget::slot && reading.scene == sceneIndex;
+    }
+
+    void publishSessionRecordingStateIfChanged() {
+        std::vector<std::pair<TrackId, int>> recordingSlots;
+        for (const auto& [trackId, target] : sessionSlotTargets_)
+            if (isSessionSlotRecording(trackId, target.scene))
+                recordingSlots.emplace_back(trackId, target.scene);
+
+        if (recordingSlots == publishedSessionRecordingSlots_)
+            return;
+        publishedSessionRecordingSlots_ = std::move(recordingSlots);
+        ClipManager::getInstance().notifySessionRuntimeStateChanged();
     }
 
     bool stopSessionSlotRecording(TrackId trackId) {
@@ -3326,6 +3339,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     std::map<TrackId, ClosingTake> closingAudioTakes_;
     std::map<TrackId, ClosingTake> closingMidiTakes_;
     std::map<TrackId, SessionSlotTarget> sessionSlotTargets_;
+    std::vector<std::pair<TrackId, int>> publishedSessionRecordingSlots_;
     std::set<engine::TakeKey> publishedTakeKeys_;
     bool recording_ = false;
     bool arrangementRecording_ = false;

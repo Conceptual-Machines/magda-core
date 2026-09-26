@@ -43,6 +43,7 @@ struct StagedProjectData {
  *   playback fields.
  * 2: the clip hosts a list of events referencing pooled sources (#1901). Read
  *   support for 1 is permanent.
+ * 3: ordered Session scenes carry stable ids, names and colours (#2835).
  *
  * There is no version gate on the way in. Already-shipped builds validate only
  * that magdaVersion is a non-empty string and ignore keys they do not know, so
@@ -50,7 +51,7 @@ struct StagedProjectData {
  * its source, and saving from there writes that loss back. Nothing this writer
  * can emit changes that, so treat it as a one-way upgrade rather than a gate.
  */
-constexpr int kProjectSchemaVersion = 2;
+constexpr int kProjectSchemaVersion = 3;
 
 /**
  * @brief Main serialization class for Magda projects

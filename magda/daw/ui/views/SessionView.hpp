@@ -14,6 +14,7 @@
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
+#include "project/ProjectManager.hpp"
 
 namespace magda {
 
@@ -39,6 +40,7 @@ class SessionView : public juce::Component,
                     public juce::Timer,
                     public TrackManagerListener,
                     public ClipManagerListener,
+                    public ProjectManagerListener,
                     public SelectionManagerListener,
                     public ViewModeListener,
                     public MidiBridge::Listener,
@@ -71,6 +73,10 @@ class SessionView : public juce::Component,
     void clipPropertyChanged(ClipId clipId) override;
     void clipSelectionChanged(ClipId clipId) override;
     void clipPlaybackStateChanged(ClipId clipId) override;
+
+    // ProjectManagerListener
+    void projectOpened(const ProjectInfo& info) override;
+    void projectPropertiesChanged() override;
 
     // SelectionManagerListener
     void selectionTypeChanged(SelectionType newType) override;
@@ -235,6 +241,7 @@ class SessionView : public juce::Component,
     void rebuildTracks();
     void applyThemeColours();
     void setupSceneButtons();
+    void syncScenesFromProject(const ProjectInfo& info);
     void addScene();
     void removeScene();
     void removeSceneAsync(int sceneIndex);

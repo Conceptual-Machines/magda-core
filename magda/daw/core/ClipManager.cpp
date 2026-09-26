@@ -3457,6 +3457,14 @@ void ClipManager::notifyClipPlaybackStateChanged(ClipId clipId) {
     }
 }
 
+void ClipManager::notifySessionRuntimeStateChanged() {
+    auto listenersCopy = listeners_;
+    for (auto* listener : listenersCopy) {
+        if (std::ranges::find(listeners_, listener) != listeners_.end())
+            listener->sessionRuntimeStateChanged();
+    }
+}
+
 void ClipManager::notifyClipPlaybackRequested(ClipId clipId, ClipPlaybackRequest request) {
     auto listenersCopy = listeners_;
     for (auto* listener : listenersCopy) {

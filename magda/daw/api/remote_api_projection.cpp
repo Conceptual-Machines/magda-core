@@ -654,19 +654,41 @@ SessionDto makeSessionDto(MagdaApi& api) {
     assertMessageThread();
 
     SessionDto dto;
-    for (const auto& track : api.tracks().getTracks()) {
-        for (const auto clipId : api.clips().getClipsOnTrack(track.id)) {
-            const auto* clip = api.clips().getClip(clipId);
-            if (clip == nullptr || clip->view != ClipView::Session || clip->sceneIndex < 0)
-                continue;
-            dto.slots.push_back({track.id, clip->sceneIndex, clip->id,
-                                 sessionStateName(api.session().getClipPlayState(clip->id))});
+    const auto& scenes = api.project().getCurrentProjectInfo().scenes;
+    dto.scenes.reserve(scenes.size());
+    for (std::size_t index = 0; index < scenes.size(); ++index) {
+        const auto& scene = scenes[index];
+        dto.scenes.push_back({scene.id, static_cast<int>(index), static_cast<int>(index) + 1,
+                              scene.name, scene.colourArgb});
+    }
+
+    const auto& tracks = api.tracks().getTracks();
+    dto.tracks.reserve(tracks.size());
+    dto.slots.reserve(tracks.size() * scenes.size());
+    for (const auto& track : tracks) {
+        std::optional<ClipId> activeClipId;
+        if (track.activeSessionClipId != INVALID_CLIP_ID)
+            activeClipId = track.activeSessionClipId;
+        dto.tracks.push_back(
+            {track.id, activeClipId,
+             track.playbackMode == TrackPlaybackMode::Session ? "session" : "arrangement"});
+    }
+
+    for (std::size_t sceneIndex = 0; sceneIndex < scenes.size(); ++sceneIndex) {
+        for (const auto& track : tracks) {
+            const auto index = static_cast<int>(sceneIndex);
+            const auto clipId = api.session().getClipInSlot(track.id, index);
+            std::optional<ClipId> occupiedClip;
+            auto state = juce::String("empty");
+            if (clipId != INVALID_CLIP_ID) {
+                occupiedClip = clipId;
+                state = sessionStateName(api.session().getClipPlayState(clipId));
+            }
+            dto.slots.push_back({track.id, scenes[sceneIndex].id, index, occupiedClip, state,
+                                 api.session().isSlotRecordArmed(track.id, index),
+                                 api.session().isSlotRecording(track.id, index)});
         }
     }
-    const auto sceneThenTrack = [](const auto& slot) {
-        return std::tuple{slot.sceneIndex, slot.trackId};
-    };
-    std::ranges::sort(dto.slots, {}, sceneThenTrack);
     return dto;
 }
 

@@ -27,6 +27,11 @@ using TrackId = int;
 constexpr TrackId INVALID_TRACK_ID = -1;
 constexpr TrackId MASTER_TRACK_ID = -2;  // Well-known ID for master track selection
 
+// Session scene identifiers. Unlike sceneIndex (an ordered, zero-based UI/API
+// position), a SceneId follows the scene when it is reordered.
+using SceneId = int;
+constexpr SceneId INVALID_SCENE_ID = -1;
+
 // Rack identifiers
 using RackId = int;
 constexpr RackId INVALID_RACK_ID = -1;

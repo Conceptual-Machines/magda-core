@@ -535,16 +535,39 @@ struct TransportDto {
     bool operator==(const TransportDto&) const = default;
 };
 
+struct SessionSceneDto {
+    SceneId id = INVALID_SCENE_ID;
+    int sceneIndex = -1;   // zero-based model/API position
+    int displayIndex = 0;  // one-based label position
+    juce::String name;
+    std::uint32_t colourArgb = 0;
+
+    bool operator==(const SessionSceneDto&) const = default;
+};
+
+struct SessionTrackDto {
+    TrackId trackId = INVALID_TRACK_ID;
+    std::optional<ClipId> activeClipId;
+    juce::String playbackMode;
+
+    bool operator==(const SessionTrackDto&) const = default;
+};
+
 struct SessionSlotDto {
     TrackId trackId = INVALID_TRACK_ID;
+    SceneId sceneId = INVALID_SCENE_ID;
     int sceneIndex = -1;
-    ClipId clipId = INVALID_CLIP_ID;
+    std::optional<ClipId> clipId;
     juce::String state;
+    bool recordArmed = false;
+    bool recording = false;
 
     bool operator==(const SessionSlotDto&) const = default;
 };
 
 struct SessionDto {
+    std::vector<SessionSceneDto> scenes;
+    std::vector<SessionTrackDto> tracks;
     std::vector<SessionSlotDto> slots;
 
     bool operator==(const SessionDto&) const = default;
@@ -815,6 +838,8 @@ juce::var toJson(const DevicePresetDto& dto);
 juce::var toJson(const DeviceParameterDto& dto);
 juce::var toJson(const SelectionDto& dto);
 juce::var toJson(const TransportDto& dto);
+juce::var toJson(const SessionSceneDto& dto);
+juce::var toJson(const SessionTrackDto& dto);
 juce::var toJson(const SessionSlotDto& dto);
 juce::var toJson(const SessionDto& dto);
 juce::var toJson(const AutomationPointDto& dto);

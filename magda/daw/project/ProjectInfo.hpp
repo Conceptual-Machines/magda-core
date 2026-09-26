@@ -2,12 +2,14 @@
 
 #include <juce_core/juce_core.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <vector>
 
 #include "../core/DefaultColourPalette.hpp"
 #include "../core/TempoUtils.hpp"
+#include "../core/TypeIds.hpp"
 #include "version.hpp"
 
 namespace magda {
@@ -18,6 +20,26 @@ struct ProjectTimelineMarker {
     juce::String name;
     std::uint32_t colourArgb = 0xFFFFC857;
 };
+
+inline constexpr int kDefaultSessionSceneCount = 8;
+
+/** Durable metadata for one ordered Session row. */
+struct ProjectScene {
+    SceneId id = INVALID_SCENE_ID;
+    juce::String name;
+    std::uint32_t colourArgb = 0;
+
+    bool operator==(const ProjectScene&) const = default;
+};
+
+inline ProjectScene makeDefaultProjectScene(SceneId id, int zeroBasedIndex) {
+    return {id, "Scene " + juce::String(zeroBasedIndex + 1),
+            kDefaultColourPalette[static_cast<std::size_t>(zeroBasedIndex) %
+                                  kDefaultColourPalette.size()]
+                .colour};
+}
+
+inline void ensureProjectSceneCount(struct ProjectInfo& info, int count);
 
 /**
  * @brief Author-facing project metadata (title, credits, rights).
@@ -196,6 +218,11 @@ struct ProjectInfo {
     // Named timeline markers (positions are stored in beats)
     std::vector<ProjectTimelineMarker> markers;
 
+    // Session rows. Vector order is the zero-based sceneIndex presented at API
+    // and engine boundaries; id is the durable identity used by clients.
+    std::vector<ProjectScene> scenes;
+    SceneId nextSceneId = 1;
+
     // Zoom/scroll state
     double horizontalZoom = -1.0;  // Pixels per beat (-1 = use default)
     double verticalZoom = 1.0;     // Track height multiplier
@@ -216,12 +243,24 @@ struct ProjectInfo {
     juce::var projectBindings;
 
     // Default constructor
-    ProjectInfo() : lastModified(juce::Time::getCurrentTime()) {}
+    ProjectInfo() : lastModified(juce::Time::getCurrentTime()) {
+        scenes.reserve(kDefaultSessionSceneCount);
+        for (int index = 0; index < kDefaultSessionSceneCount; ++index)
+            scenes.push_back(makeDefaultProjectScene(nextSceneId++, index));
+    }
 
     // Helper to update modification time
     void touch() {
         lastModified = juce::Time::getCurrentTime();
     }
 };
+
+inline void ensureProjectSceneCount(ProjectInfo& info, int count) {
+    count = std::max(0, count);
+    while (static_cast<int>(info.scenes.size()) < count) {
+        const auto index = static_cast<int>(info.scenes.size());
+        info.scenes.push_back(makeDefaultProjectScene(info.nextSceneId++, index));
+    }
+}
 
 }  // namespace magda

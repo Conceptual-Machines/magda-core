@@ -963,16 +963,50 @@ const juce::var& transportSchema() {
     return value;
 }
 
+const juce::var& sessionSceneSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "id":{"type":"integer","minimum":0},
+            "sceneIndex":{"type":"integer","minimum":0},
+            "displayIndex":{"type":"integer","minimum":1},
+            "name":{"type":"string"},
+            "colourArgb":{"type":"integer","minimum":0,"maximum":4294967295}
+        },
+        "required":["id","sceneIndex","displayIndex","name","colourArgb"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
+const juce::var& sessionTrackSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "trackId":{"type":"integer","minimum":0},
+            "activeClipId":{"type":["integer","null"],"minimum":0},
+            "playbackMode":{"type":"string","enum":["arrangement","session"]}
+        },
+        "required":["trackId","activeClipId","playbackMode"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
 const juce::var& sessionSlotSchema() {
     static const auto value = parseSchema(R"json({
         "type":"object",
         "properties":{
             "trackId":{"type":"integer","minimum":0},
+            "sceneId":{"type":"integer","minimum":0},
             "sceneIndex":{"type":"integer","minimum":0},
-            "clipId":{"type":"integer","minimum":0},
-            "state":{"type":"string","enum":["stopped","queued","playing"]}
+            "clipId":{"type":["integer","null"],"minimum":0},
+            "state":{"type":"string","enum":["empty","stopped","queued","playing"]},
+            "recordArmed":{"type":"boolean"},
+            "recording":{"type":"boolean"}
         },
-        "required":["trackId","sceneIndex","clipId","state"],
+        "required":["trackId","sceneId","sceneIndex","clipId","state","recordArmed",
+                    "recording"],
         "additionalProperties":false
     })json");
     return value;
@@ -981,9 +1015,19 @@ const juce::var& sessionSlotSchema() {
 const juce::var& sessionSchema() {
     static auto value = [] {
         auto schema = parseSchema(R"json({
-            "type":"object","properties":{"slots":{"type":"array"}},"required":["slots"],
+            "type":"object",
+            "properties":{
+                "scenes":{"type":"array"},
+                "tracks":{"type":"array"},
+                "slots":{"type":"array"}
+            },
+            "required":["scenes","tracks","slots"],
             "additionalProperties":false
         })json");
+        schema["properties"]["scenes"].getDynamicObject()->setProperty("items",
+                                                                       sessionSceneSchema());
+        schema["properties"]["tracks"].getDynamicObject()->setProperty("items",
+                                                                       sessionTrackSchema());
         schema["properties"]["slots"].getDynamicObject()->setProperty("items", sessionSlotSchema());
         return schema;
     }();
@@ -1912,17 +1956,46 @@ juce::var toJson(const TransportDto& dto) {
     return object;
 }
 
+juce::var toJson(const SessionSceneDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("id", dto.id);
+    object->setProperty("sceneIndex", dto.sceneIndex);
+    object->setProperty("displayIndex", dto.displayIndex);
+    object->setProperty("name", dto.name);
+    object->setProperty("colourArgb", static_cast<juce::int64>(dto.colourArgb));
+    return object;
+}
+
+juce::var toJson(const SessionTrackDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("trackId", dto.trackId);
+    object->setProperty("activeClipId", nullableId(dto.activeClipId));
+    object->setProperty("playbackMode", dto.playbackMode);
+    return object;
+}
+
 juce::var toJson(const SessionSlotDto& dto) {
     auto* object = new juce::DynamicObject();
     object->setProperty("trackId", dto.trackId);
+    object->setProperty("sceneId", dto.sceneId);
     object->setProperty("sceneIndex", dto.sceneIndex);
-    object->setProperty("clipId", dto.clipId);
+    object->setProperty("clipId", nullableId(dto.clipId));
     object->setProperty("state", dto.state);
+    object->setProperty("recordArmed", dto.recordArmed);
+    object->setProperty("recording", dto.recording);
     return object;
 }
 
 juce::var toJson(const SessionDto& dto) {
     auto* object = new juce::DynamicObject();
+    juce::Array<juce::var> scenes;
+    for (const auto& scene : dto.scenes)
+        scenes.add(toJson(scene));
+    object->setProperty("scenes", scenes);
+    juce::Array<juce::var> tracks;
+    for (const auto& track : dto.tracks)
+        tracks.add(toJson(track));
+    object->setProperty("tracks", tracks);
     juce::Array<juce::var> slots;
     for (const auto& slot : dto.slots)
         slots.add(toJson(slot));
@@ -2405,12 +2478,31 @@ std::optional<SessionDto> sessionFromJson(const juce::var& json, Error& error) {
     if (!prepareDecode(json, sessionSchema(), error))
         return std::nullopt;
     SessionDto dto;
+    for (const auto& item : *json["scenes"].getArray()) {
+        SessionSceneDto scene;
+        scene.id = readInt(item, "id");
+        scene.sceneIndex = readInt(item, "sceneIndex");
+        scene.displayIndex = readInt(item, "displayIndex");
+        scene.name = item["name"].toString();
+        scene.colourArgb = decodeBoundedInt<std::uint32_t>(item["colourArgb"]);
+        dto.scenes.push_back(std::move(scene));
+    }
+    for (const auto& item : *json["tracks"].getArray()) {
+        SessionTrackDto track;
+        track.trackId = readInt(item, "trackId");
+        track.activeClipId = readNullableId<ClipId>(item, "activeClipId");
+        track.playbackMode = item["playbackMode"].toString();
+        dto.tracks.push_back(std::move(track));
+    }
     for (const auto& item : *json["slots"].getArray()) {
         SessionSlotDto slot;
         slot.trackId = readInt(item, "trackId");
+        slot.sceneId = readInt(item, "sceneId");
         slot.sceneIndex = readInt(item, "sceneIndex");
-        slot.clipId = readInt(item, "clipId");
+        slot.clipId = readNullableId<ClipId>(item, "clipId");
         slot.state = item["state"].toString();
+        slot.recordArmed = static_cast<bool>(item["recordArmed"]);
+        slot.recording = static_cast<bool>(item["recording"]);
         dto.slots.push_back(std::move(slot));
     }
     return dto;
@@ -3537,7 +3629,7 @@ OperationRegistry::OperationRegistry() {
         })json"),
         transportSchema());
 
-    add("session.get", "Get occupied session slots and play states", OperationAccess::Read,
+    add("session.get", "Get scenes, tracks, and every session slot state", OperationAccess::Read,
         &handlers::sessionGet, emptyObjectSchema(), sessionSchema());
     add("session.launchClip", "Launch a session clip", OperationAccess::Write,
         &handlers::sessionLaunchClip, operationInputSchema(R"json({

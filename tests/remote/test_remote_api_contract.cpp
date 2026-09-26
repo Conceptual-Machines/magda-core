@@ -1060,7 +1060,10 @@ TEST_CASE("Remote API DTOs round-trip through JSON", "[remote-api][contract][dto
     const TransportDto transport{true, false, true, 16.5};
     requireRoundTrip(transport, transportFromJson);
 
-    const SessionDto session{{{3, 2, 9, "playing"}, {4, 2, 12, "queued"}}};
+    const SessionDto session{
+        {{7, 0, 1, "Verse", 0xFF336699}},
+        {{3, 9, "session"}, {4, std::nullopt, "arrangement"}},
+        {{3, 7, 0, 9, "playing", false, false}, {4, 7, 0, 12, "queued", true, false}}};
     requireRoundTrip(session, sessionFromJson);
 
     const AutomationLaneDto lane{
@@ -1690,10 +1693,20 @@ TEST_CASE("Remote session and automation projections use MagdaApi values",
     sessionClip.sceneIndex = 3;
     api.clips_.clips.emplace(50, sessionClip);
     api.clips_.clipsOnTrack[1] = {50};
+    api.session_.slots[{1, 3}] = 50;
     api.session_.clipStates[50] = SessionClipPlayState::Queued;
+    api.session_.recordingSlots.insert({1, 4});
+    api.tracks_.tracks[0].activeSessionClipId = 50;
+    api.tracks_.tracks[0].playbackMode = TrackPlaybackMode::Session;
 
     const auto session = makeSessionDto(api);
-    REQUIRE(session.slots == std::vector<SessionSlotDto>{{1, 3, 50, "queued"}});
+    REQUIRE(session.scenes.size() == kDefaultSessionSceneCount);
+    REQUIRE(session.tracks == std::vector<SessionTrackDto>{{1, 50, "session"}});
+    REQUIRE(session.slots.size() == kDefaultSessionSceneCount);
+    REQUIRE((session.slots[3] ==
+             SessionSlotDto{1, session.scenes[3].id, 3, 50, "queued", false, false}));
+    REQUIRE(session.slots[4].state == "empty");
+    REQUIRE(session.slots[4].recording);
 
     AutomationLaneInfo lane;
     lane.id = 60;

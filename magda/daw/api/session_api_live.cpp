@@ -47,4 +47,14 @@ SessionClipPlayState SessionApiLive::getClipPlayState(ClipId clipId) const {
     return engine->getSessionClipPlayState(clipId);
 }
 
+bool SessionApiLive::isSlotRecordArmed(TrackId trackId, int sceneIndex) const {
+    auto* engine = TrackManager::getInstance().getAudioEngine();
+    return engine != nullptr && engine->isSessionSlotRecordArmed(trackId, sceneIndex);
+}
+
+bool SessionApiLive::isSlotRecording(TrackId trackId, int sceneIndex) const {
+    auto* engine = TrackManager::getInstance().getAudioEngine();
+    return engine != nullptr && engine->isSessionSlotRecording(trackId, sceneIndex);
+}
+
 }  // namespace magda

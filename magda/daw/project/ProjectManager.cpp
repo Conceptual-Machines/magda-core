@@ -900,6 +900,26 @@ void ProjectManager::setLoopSettings(bool enabled, double startBeats, double end
     }
 }
 
+SceneId ProjectManager::appendSessionScene() {
+    const auto index = static_cast<int>(currentProject_.scenes.size());
+    const auto id = currentProject_.nextSceneId++;
+    currentProject_.scenes.push_back(makeDefaultProjectScene(id, index));
+    markDirty();
+    for (auto* listener : listeners_)
+        listener->projectPropertiesChanged();
+    return id;
+}
+
+bool ProjectManager::removeLastSessionScene() {
+    if (currentProject_.scenes.size() <= 1)
+        return false;
+    currentProject_.scenes.pop_back();
+    markDirty();
+    for (auto* listener : listeners_)
+        listener->projectPropertiesChanged();
+    return true;
+}
+
 void ProjectManager::markDirty() {
     ++mutationRevision_;
     if (undoableMutationDepth_ == 0)
