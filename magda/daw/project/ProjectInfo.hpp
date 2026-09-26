@@ -234,6 +234,7 @@ struct ProjectInfo {
 
     // Version tracking
     juce::String version = MAGDA_VERSION;  // Magda version
+    juce::Time createdAt = juce::Time::getCurrentTime();
     juce::Time lastModified;
 
     // Parameter aliases (UserProject layer, opaque JSON blob managed by AliasRegistry)

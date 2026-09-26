@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "ProjectInfo.hpp"
+#include "RecoverySession.hpp"
 
 namespace magda {
 
@@ -316,43 +317,24 @@ class ProjectManager {
     /** Run the same dirty/enabled check and save used by the autosave timer. */
     bool performAutosave();
 
-    /** The single recovery slot used while the project has never been saved. */
-    static juce::File getUntitledAutosaveFile();
+    void startRecoverySession();
+    juce::File getAutosaveFile();
+    RecoveryEntry getStartupRecovery();
+    std::vector<RecoveryEntry> getRecoveryEntries();
+    static RecoveryEntry inspectLegacyRecovery(const juce::File& file);
+    bool discardRecovery(const RecoveryEntry& entry);
+    void cleanupRecovery();
 
-    /** True when a previous session left a never-saved project to recover. */
-    static bool hasUntitledAutosave();
+    enum class RecoveryChoice { Recover, Discard, Cancel };
+    static RecoveryChoice promptRecovery(const RecoveryEntry& entry, bool atStartup = false);
+    static juce::String describeRecovery(const RecoveryEntry& entry);
+    bool markRecoveryOffered(const RecoveryEntry& entry);
+    bool recoverProject(const RecoveryEntry& entry,
+                        const std::function<void(const ProjectInfo&)>& onBeforeCommit = nullptr,
+                        UnsavedChangesPolicy policy = UnsavedChangesPolicy::AskUser);
 
-    /** Ask whether the never-saved recovery slot should be restored. */
-    static bool promptUntitledAutosaveRecovery();
-
-    /**
-     * Restore the never-saved recovery slot as an untitled, dirty project.
-     * The slot remains until the project is saved, discarded, or cleanly quit,
-     * protecting recovery if the app crashes again before the next autosave.
-     */
-    bool recoverUntitledAutosave(
-        const std::function<void(const ProjectInfo&)>& onBeforeCommit = nullptr);
-
-    /** Delete the recovery slot and any managed temp-media tree it references. */
-    static void discardUntitledAutosave();
-
-    /** Remove session-only recovery state after the user approves a clean quit. */
-    void prepareForCleanShutdown();
-
-    /**
-     * @brief Check if an autosave file exists for the given project file
-     * @param projectFile The .mgd project file
-     * @return The autosave file if it exists, or an invalid File
-     */
-    static juce::File getAutosaveFile(const juce::File& projectFile);
-
-    /**
-     * @brief Check for autosave recovery and prompt user
-     * @param projectFile The .mgd project file being opened
-     * @return true if the user chose to recover (caller should load the autosave),
-     *         false if the user declined (caller should load the original)
-     */
-    static bool promptAutosaveRecovery(const juce::File& projectFile);
+    /** Remove this session's recovery state after the user approves a clean quit. */
+    void prepareForCleanShutdown(const juce::File& copiedDataDirectory = {});
 
     // ========================================================================
     // Media Directories
@@ -450,7 +432,8 @@ class ProjectManager {
      * @brief Delete temp media directories older than 7 days.
      * Call once at app launch.
      */
-    static void cleanupStaleTempDirectories(const juce::File& protectedDirectory = {});
+    static void cleanupStaleTempDirectories(const juce::File& protectedDirectory = {},
+                                            const juce::File& tempRoot = {});
 
     /**
      * @brief Brackets an undoable command while it runs.
@@ -480,6 +463,10 @@ class ProjectManager {
     void startAutoSaveTimer(int intervalMs);
     void autoSaveTick();
     void deleteAutosaveFile();
+    RecoverySession& recoverySession();
+    bool commitRecovery(const RecoveryEntry& entry, StagedProjectData& staged,
+                        const std::function<void(const ProjectInfo&)>& onBeforeCommit);
+    std::unique_ptr<RecoverySession> recoverySession_;
 
     ProjectInfo currentProject_;
     juce::File currentFile_;

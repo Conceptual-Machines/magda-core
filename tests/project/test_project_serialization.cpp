@@ -476,7 +476,6 @@ TEST_CASE("Never-saved projects autosave and recover with their temp media",
     ProjectTestFixture fixture;
     auto& projects = ProjectManager::getInstance();
 
-    ProjectManager::discardUntitledAutosave();
     if (projects.isDirty())
         REQUIRE(projects.saveProjectAs(fixture.createTempProjectFile(".mgd")));
     REQUIRE(projects.newProject());
@@ -487,8 +486,8 @@ TEST_CASE("Never-saved projects autosave and recover with their temp media",
     REQUIRE(recording.replaceWithText("recorded audio"));
 
     REQUIRE(projects.performAutosave());
-    const auto autosave = ProjectManager::getUntitledAutosaveFile();
-    REQUIRE(autosave == dataDir.dir.getChildFile("autosave").getChildFile("Untitled.autosave"));
+    const auto autosave = projects.getAutosaveFile();
+    REQUIRE(autosave.isAChildOf(dataDir.dir.getChildFile("autosave/sessions")));
     REQUIRE(autosave.existsAsFile());
 
     StagedProjectData autosaved;
@@ -496,19 +495,28 @@ TEST_CASE("Never-saved projects autosave and recover with their temp media",
     REQUIRE(autosaved.info.tempo == Approx(137.0));
     REQUIRE(autosaved.info.autosaveMediaDirectory == crashedMediaDirectory.getFullPathName());
 
+    const auto legacy = dataDir.dir.getChildFile("autosave/Untitled.autosave");
+    REQUIRE(autosave.copyFileTo(legacy));
+    const auto entries = projects.getRecoveryEntries();
+    REQUIRE(entries.size() == 1);
     projects.setTempo(91.0);
-    REQUIRE(projects.recoverUntitledAutosave());
+    REQUIRE(projects.recoverProject(entries.front(), nullptr,
+                                    ProjectManager::UnsavedChangesPolicy::Discard));
+    REQUIRE_FALSE(legacy.existsAsFile());
     REQUIRE(projects.getCurrentProjectFile() == juce::File());
     REQUIRE(projects.getCurrentProjectInfo().tempo == Approx(137.0));
+    REQUIRE(projects.getCurrentProjectInfo().lastModified == autosaved.info.lastModified);
     REQUIRE(projects.getCurrentProjectInfo().autosaveMediaDirectory.isEmpty());
     REQUIRE(projects.getMediaDirectory() == crashedMediaDirectory);
     REQUIRE(projects.isDirty());
-    REQUIRE(autosave.existsAsFile());
+    REQUIRE(projects.getAutosaveFile().existsAsFile());
+    const auto recoveredSlot = projects.getAutosaveFile();
 
     const auto destination = fixture.createTempProjectFile(".mgd");
     const auto savedProject = ProjectTestFixture::wrappedPath(destination);
     REQUIRE(projects.saveProjectAs(destination));
     REQUIRE_FALSE(autosave.existsAsFile());
+    REQUIRE_FALSE(recoveredSlot.existsAsFile());
 
     const auto migratedRecording =
         savedProject.getParentDirectory()
@@ -532,9 +540,9 @@ TEST_CASE("Clean shutdown removes the never-saved recovery slot", "[project][aut
     REQUIRE(projects.newProject());
     projects.setTempo(129.0);
 
-    const auto autosave = ProjectManager::getUntitledAutosaveFile();
     const auto mediaDirectory = projects.getMediaDirectory();
     REQUIRE(projects.performAutosave());
+    const auto autosave = projects.getAutosaveFile();
 
     projects.prepareForCleanShutdown();
     const bool removed = !autosave.existsAsFile();
@@ -542,6 +550,92 @@ TEST_CASE("Clean shutdown removes the never-saved recovery slot", "[project][aut
     projects.setAutoSaveEnabled(true, 60);
     REQUIRE(removed);
     REQUIRE(removedMedia);
+}
+
+TEST_CASE("Failed recovery keeps the snapshot and its media", "[project][autosave][2785]") {
+    ScopedTestDataDir dataDir("magda-failed-recovery-test");
+    auto& projects = ProjectManager::getInstance();
+    const auto media =
+        testTempRoot().getChildFile("MAGDA/UnsavedProject_" + juce::Uuid().toString());
+    REQUIRE(media.createDirectory());
+    const auto recording = media.getChildFile("take.wav");
+    REQUIRE(recording.replaceWithText("recording"));
+    {
+        RecoverySession crashed(dataDir.dir.getChildFile("autosave/sessions"), "old build");
+        RecoveryEntry entry;
+        entry.name = "Damaged snapshot";
+        entry.saved = juce::Time::getCurrentTime();
+        entry.mediaDirectory = media.getFullPathName();
+        REQUIRE(crashed.write(
+            entry, [](const juce::File& file) { return file.replaceWithText("not a project"); }));
+    }
+    const auto entries = projects.getRecoveryEntries();
+    REQUIRE(entries.size() == 1);
+    REQUIRE_FALSE(projects.recoverProject(entries.front()));
+    REQUIRE(entries.front().snapshot.existsAsFile());
+    REQUIRE(recording.existsAsFile());
+    REQUIRE(projects.discardRecovery(entries.front()));
+    REQUIRE_FALSE(media.exists());
+}
+
+TEST_CASE("Recovery retention protects media until its snapshot expires",
+          "[project][autosave][2785]") {
+    ScopedTestDataDir dataDir("magda-recovery-retention-test");
+    auto& projects = ProjectManager::getInstance();
+    std::vector<juce::File> mediaDirectories;
+    for (const int age : {10, 31}) {
+        const auto media =
+            testTempRoot().getChildFile("MAGDA/UnsavedProject_" + juce::Uuid().toString());
+        REQUIRE(media.createDirectory());
+        REQUIRE(media.getChildFile("take.wav").replaceWithText("recording"));
+        const auto old =
+            std::filesystem::file_time_type::clock::now() - std::chrono::hours(24 * age);
+        std::filesystem::last_write_time(media.getFullPathName().toStdString(), old);
+        mediaDirectories.push_back(media);
+        RecoverySession crashed(dataDir.dir.getChildFile("autosave/sessions"), "old build");
+        RecoveryEntry entry;
+        entry.name = "Retained recording";
+        entry.saved = juce::Time::getCurrentTime() - juce::RelativeTime::days(age);
+        entry.mediaDirectory = media.getFullPathName();
+        REQUIRE(crashed.write(
+            entry, [](const juce::File& file) { return file.replaceWithText("snapshot"); }));
+    }
+    projects.cleanupRecovery();
+    ProjectManager::cleanupStaleTempDirectories({}, testTempRoot());
+    REQUIRE(mediaDirectories[0].getChildFile("take.wav").existsAsFile());
+    REQUIRE_FALSE(mediaDirectories[1].exists());
+    const auto retained = projects.getRecoveryEntries();
+    REQUIRE(retained.size() == 1);
+    REQUIRE(projects.discardRecovery(retained.front()));
+    REQUIRE_FALSE(mediaDirectories[0].exists());
+}
+
+TEST_CASE("Saved project autosave belongs to its session and is removed on clean quit",
+          "[project][autosave][2785]") {
+    ScopedTestDataDir dataDir("magda-saved-session-test");
+    ProjectTestFixture fixture;
+    auto& projects = ProjectManager::getInstance();
+    REQUIRE(projects.newProject(ProjectManager::UnsavedChangesPolicy::Discard));
+    REQUIRE(projects.saveProjectAs(fixture.createTempProjectFile(".mgd")));
+    const auto saved = projects.getCurrentProjectFile();
+    projects.setTempo(127.0);
+    const auto edited = projects.getCurrentProjectInfo().lastModified;
+    const auto created = projects.getCurrentProjectInfo().createdAt;
+    REQUIRE(projects.performAutosave());
+    const auto snapshot = projects.getAutosaveFile();
+    REQUIRE(snapshot.isAChildOf(dataDir.dir));
+    REQUIRE_FALSE(saved.getSiblingFile(saved.getFileName() + ".autosave").existsAsFile());
+    StagedProjectData staged;
+    REQUIRE(ProjectSerializer::loadAndStage(snapshot, staged));
+    REQUIRE(staged.info.lastModified == edited);
+    REQUIRE(staged.info.createdAt == created);
+    REQUIRE(staged.info.version == MAGDA_VERSION);
+    projects.prepareForCleanShutdown();
+    REQUIRE_FALSE(snapshot.existsAsFile());
+    projects.setAutoSaveEnabled(true);
+    projects.startRecoverySession();
+    REQUIRE_FALSE(projects.getStartupRecovery().snapshot.existsAsFile());
+    REQUIRE(projects.getRecoveryEntries().empty());
 }
 
 TEST_CASE("Temp media cleanup uses the writable temp root", "[project][autosave][1771]") {
@@ -560,7 +654,7 @@ TEST_CASE("Temp media cleanup uses the writable temp root", "[project][autosave]
     REQUIRE_FALSE(staleTimeError);
     REQUIRE_FALSE(protectedTimeError);
 
-    ProjectManager::cleanupStaleTempDirectories(protectedDirectory);
+    ProjectManager::cleanupStaleTempDirectories(protectedDirectory, testTempRoot());
     REQUIRE_FALSE(stale.exists());
     REQUIRE(protectedDirectory.isDirectory());
 

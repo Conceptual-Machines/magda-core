@@ -12,6 +12,21 @@ The dialog is organised into sections; each section is described below.
 - **Default View** — Default visible range when opening a project (in bars)
 - **Auto-Save** — Enable or disable automatic saving, and set the interval
 
+### Recovering unsaved work
+
+After a crash or forced stop, MAGDA offers the previous session's unsaved project once.
+The offer shows its name, creation and edit times, track and clip counts, and MAGDA version.
+Choose **Later** to keep it under **File > Recover Unsaved Project**, where you can recover or discard it.
+A normal quit, including **Don't Save**, retires that session's autosave.
+
+Saved projects offer a newer recovery snapshot when you reopen the project after an unclean exit.
+**Cancel** leaves both the current project and the snapshot intact.
+Recovery files are kept for 30 days, together with any temporary media they need.
+Snapshots from other builds are available in the recovery menu without a startup prompt.
+
+Use **Open Older Autosave** in the recovery menu to select an `.autosave` file from an older MAGDA version.
+Creation dates that were not recorded by older versions appear as **Unknown**.
+
 ## UI
 
 - **Panel visibility defaults** — Choose which panels are shown on startup

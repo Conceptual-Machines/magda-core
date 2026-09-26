@@ -3402,13 +3402,11 @@ void PreferencesDialog::applySettings() {
             return;  // Don't quit if the copy failed — let the user investigate.
         }
 
-        // Stop autosave and clear the slot in both locations. The data copy may
-        // have carried the old slot into the new root.
-        projectManager.prepareForCleanShutdown();
+        // Mark this session clean in both locations if the data was copied.
+        projectManager.prepareForCleanShutdown(copyData ? dataTo : juce::File());
         config.setDataDir(pathsPage->getNewDataPath());
         config.save();
         magda::paths::resolve();
-        projectManager.discardUntitledAutosave();
         juce::JUCEApplication::quit();
     }
 }
