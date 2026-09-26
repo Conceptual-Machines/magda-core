@@ -5,6 +5,9 @@ MCP, and future adapters consume `magda::remote::OperationRegistry`; they do
 not define their own operation names or schemas and do not serialize MAGDA
 core model objects.
 
+The decision against a generic `batch.execute` surface is recorded in
+[remote-api-batch-decision.md](remote-api-batch-decision.md).
+
 Version 1.0 uses stable, domain-qualified operation names such as
 `tracks.list`, `transport.seek`, and `session.launchClip`. Inputs are closed
 JSON objects: unknown fields are rejected. Numeric values must be finite and
