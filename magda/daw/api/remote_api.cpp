@@ -2733,6 +2733,26 @@ OperationRegistry::OperationRegistry() {
         OperationAccess::Read, &handlers::chordTrackGet, emptyObjectSchema(), chordTrackSchema());
     add("chordTrack.ensure", "Create the singleton chord track when absent", OperationAccess::Write,
         &handlers::chordTrackEnsure, emptyObjectSchema(), chordTrackSchema());
+    add("chordTrack.replaceProgression", "Replace the chord track's structured progression",
+        OperationAccess::Write, &handlers::chordTrackReplaceProgression,
+        operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "chords":{"type":"array","maxItems":256,"items":{
+                    "type":"object","properties":{
+                        "startBeat":{"type":"number","minimum":0,"maximum":1000000},
+                        "lengthBeats":{"type":"number","exclusiveMinimum":0,"maximum":1000000},
+                        "root":{"type":"string","enum":["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"]},
+                        "quality":{"type":"string","minLength":1,"maxLength":32}
+                    },"required":["startBeat","lengthBeats","root","quality"],
+                    "additionalProperties":false
+                }},
+                "voicing":{"type":"string","const":"root"},
+                "inversion":{"type":"integer","const":0},
+                "octave":{"type":"integer","minimum":0,"maximum":6}
+            },"required":["chords"],"additionalProperties":false
+        })json"),
+        chordTrackSchema());
 
     add("tracks.list", "List tracks", OperationAccess::Read, &handlers::tracksList,
         emptyObjectSchema(), arraySchema(trackSchema()));
@@ -3996,6 +4016,7 @@ OperationRegistry::OperationRegistry() {
         {"project.setLoopRange", Scope::Edit},
         {"project.save", Scope::Edit},
         {"chordTrack.ensure", Scope::Edit},
+        {"chordTrack.replaceProgression", Scope::Edit},
         {"tracks.create", Scope::Edit},
         {"tracks.createFromPreset", Scope::Edit},
         {"tracks.applyPreset", Scope::Edit},

@@ -45,7 +45,8 @@ TEST_CASE("agent surface registry has distinct bounded capabilities", "[console_
     REQUIRE(containsTool(arrangement, "project.save"));
     REQUIRE(containsTool(arrangement, "project.setLoopRange"));
     REQUIRE(containsTool(arrangement, "chordTrack.get"));
-    REQUIRE(containsTool(arrangement, "chordTrack.ensure"));
+    REQUIRE_FALSE(containsTool(arrangement, "chordTrack.ensure"));
+    REQUIRE(containsTool(arrangement, "chordTrack.replaceProgression"));
     REQUIRE(containsProvider(arrangement, magda::AgentContextProvider::ReferenceMidi));
 
     REQUIRE(containsTool(piano, "clips.addMidiNote"));
@@ -59,7 +60,8 @@ TEST_CASE("agent surface registry has distinct bounded capabilities", "[console_
     REQUIRE(containsTool(piano, "grooves.list"));
     REQUIRE(containsTool(piano, "grooves.upsert"));
     REQUIRE(containsTool(piano, "chordTrack.get"));
-    REQUIRE(containsTool(piano, "chordTrack.ensure"));
+    REQUIRE_FALSE(containsTool(piano, "chordTrack.ensure"));
+    REQUIRE(containsTool(piano, "chordTrack.replaceProgression"));
     REQUIRE_FALSE(containsTool(piano, "tracks.delete"));
 
     REQUIRE(containsTool(session, "session.launchScene"));
