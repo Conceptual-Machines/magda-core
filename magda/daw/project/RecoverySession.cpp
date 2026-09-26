@@ -180,9 +180,10 @@ RecoveryEntry RecoverySession::startupCandidate() const {
     return {};
 }
 
-RecoveryEntry RecoverySession::projectCandidate(const juce::File& project) const {
+RecoveryEntry RecoverySession::projectCandidate(const juce::File& project,
+                                                bool includeOffered) const {
     for (const auto& entry : entries())
-        if (entry.build == build_ && entry.running && !entry.offered &&
+        if (entry.build == build_ && entry.running && (includeOffered || !entry.offered) &&
             entry.originalFile == project.getFullPathName() &&
             entry.saved > project.getLastModificationTime())
             return entry;

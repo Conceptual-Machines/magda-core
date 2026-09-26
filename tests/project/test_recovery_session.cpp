@@ -193,6 +193,7 @@ TEST_CASE("Saved projects recover only newer snapshots from their build",
     REQUIRE(entry.snapshot.existsAsFile());
     REQUIRE(next.markOffered(entry));
     REQUIRE_FALSE(next.projectCandidate(project).snapshot.existsAsFile());
+    REQUIRE(next.projectCandidate(project, true).snapshot == entry.snapshot);
     REQUIRE(entry.snapshot.existsAsFile());
 }
 

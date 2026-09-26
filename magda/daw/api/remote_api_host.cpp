@@ -566,4 +566,8 @@ RemoteAuditLog& RemoteApiHost::audit() {
     return *audit_;
 }
 
+RemoteFileHandleRegistry& RemoteApiHost::fileHandles() {
+    return service_->fileHandles();
+}
+
 }  // namespace magda::remote

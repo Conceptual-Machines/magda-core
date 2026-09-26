@@ -200,6 +200,10 @@ class ModelChangeBridge::Impl final : public TrackManagerListener,
 
     // ---- ProjectManagerListener -----------------------------------------
 
+    void projectTeardown() override {
+        service_.projectReplacementStarted();
+    }
+
     void projectOpened(const ProjectInfo&) override {
         if (transport_ != nullptr)
             transport_->refreshStateSource();
@@ -216,7 +220,9 @@ class ModelChangeBridge::Impl final : public TrackManagerListener,
             service_.projectReplaced();
     }
     void projectSaved(const ProjectInfo&) override {
-        service_.noteModelChanged(Topic::Project);
+        // Saving changes persistence state, not project content. Async Save As
+        // therefore notifies subscribers without invalidating revisions.
+        service_.noteModelActivity(Topic::Project);
     }
     void projectPropertiesChanged() override {
         service_.noteModelChanged({Topic::Project, Topic::Session});

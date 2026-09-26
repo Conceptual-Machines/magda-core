@@ -16,6 +16,10 @@ class ProjectApiLive : public ProjectApi {
     bool saveProject() override;
     bool newProject(bool discardUnsavedChanges) override;
     bool closeProject(bool discardUnsavedChanges) override;
+    void openProjectAsync(const juce::File& source, ProjectOpenOptions options,
+                          ProjectFileOperationCallback onComplete) override;
+    void saveProjectAsAsync(const juce::File& destination, ProjectSaveAsOptions options,
+                            ProjectFileOperationCallback onComplete) override;
     void setTempo(double bpm) override;
     void setTimeSignature(int numerator, int denominator) override;
     void setLoopRange(double startBeats, double endBeats) override;

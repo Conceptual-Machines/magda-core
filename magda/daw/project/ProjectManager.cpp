@@ -458,6 +458,7 @@ bool ProjectManager::newProject(UnsavedChangesPolicy policy) {
     seedProjectFromConfig(currentProject_);
     currentFile_ = juce::File();
     isProjectOpen_ = true;
+    interactiveRecoveryAllowedForCurrentOpen_ = true;
 
     // Create temp media directory for unsaved project
     createTempMediaDirectory();
@@ -493,17 +494,12 @@ bool ProjectManager::saveProjectAs(const juce::File& file, MediaTransfer transfe
     // Ensure the .mgd file lives inside a wrapper folder named after the project.
     // If the user picked /path/to/MyProject.mgd, wrap it as /path/to/MyProject/MyProject.mgd.
     // If it's already inside a matching folder, use it as-is.
-    auto actualFile = file;
+    auto actualFile = saveTargetFor(file);
     auto projectName = file.getFileNameWithoutExtension();
-    auto parentDir = file.getParentDirectory();
-
-    if (parentDir.getFileName() != projectName) {
-        auto wrapperDir = parentDir.getChildFile(projectName);
-        if (!wrapperDir.createDirectory()) {
-            lastError_ = "Failed to create project directory: " + wrapperDir.getFullPathName();
-            return false;
-        }
-        actualFile = wrapperDir.getChildFile(file.getFileName());
+    if (!actualFile.getParentDirectory().createDirectory()) {
+        lastError_ = "Failed to create project directory: " +
+                     actualFile.getParentDirectory().getFullPathName();
+        return false;
     }
 
     // Set up the target media directory before serializing so any clips that
@@ -550,6 +546,8 @@ bool ProjectManager::saveProjectAs(const juce::File& file, MediaTransfer transfe
     currentProject_ = std::move(newProject);
     currentFile_ = std::move(actualFile);
     isProjectOpen_ = true;
+    if (!wasOpen)
+        interactiveRecoveryAllowedForCurrentOpen_ = true;
     mediaDirectory_ = std::move(targetMediaDir);
 
     clearDirty();
@@ -562,6 +560,14 @@ bool ProjectManager::saveProjectAs(const juce::File& file, MediaTransfer transfe
     }
 
     return true;
+}
+
+juce::File ProjectManager::saveTargetFor(const juce::File& file) {
+    const auto projectName = file.getFileNameWithoutExtension();
+    const auto parent = file.getParentDirectory();
+    if (parent.getFileName() == projectName)
+        return file;
+    return parent.getChildFile(projectName).getChildFile(file.getFileName());
 }
 
 bool ProjectManager::loadProject(const juce::File& file,
@@ -611,7 +617,7 @@ bool ProjectManager::loadProject(const juce::File& file,
 
 void ProjectManager::commitStagedProject(
     StagedProjectData& staged, const juce::File& file, bool recoveredFromAutosave,
-    const std::function<void(const ProjectInfo&)>& onBeforeCommit) {
+    const std::function<void(const ProjectInfo&)>& onBeforeCommit, bool allowInteractiveRecovery) {
     beginProjectTeardown();
     if (!recoveredFromAutosave)
         deleteAutosaveFile();
@@ -628,6 +634,7 @@ void ProjectManager::commitStagedProject(
     currentProject_.filePath = file.getFullPathName();
     currentFile_ = file;
     isProjectOpen_ = true;
+    interactiveRecoveryAllowedForCurrentOpen_ = allowInteractiveRecovery;
 
     juce::String mediaDirName = file.getFileNameWithoutExtension() + "_Media";
     mediaDirectory_ = file.getParentDirectory().getChildFile(mediaDirName);
@@ -736,6 +743,7 @@ void ProjectManager::importDawProjectAsync(
                 currentFile_ = juce::File();
                 mediaDirectory_ = importMediaDirectory;
                 isProjectOpen_ = true;
+                interactiveRecoveryAllowedForCurrentOpen_ = true;
 
                 // An import has never been saved as a .mgd, so it starts dirty
                 // — but the previous project's undo stack still has to go.
@@ -842,6 +850,101 @@ void ProjectManager::loadProjectAsync(
         });
 }
 
+void ProjectManager::loadProjectAsyncControlled(
+    const juce::File& file, ControlledLoadOptions options,
+    const std::function<void(const ProjectInfo&)>& onBeforeCommit,
+    const std::function<void(ControlledLoadResult)>& onComplete) {
+    const auto finish = [onComplete](ControlledLoadResult result) {
+        if (onComplete)
+            onComplete(std::move(result));
+    };
+    if (options.shouldCancel && options.shouldCancel()) {
+        finish({ControlledLoadStatus::Cancelled, false, {}});
+        return;
+    }
+    if (isDirty_ && options.unsavedChanges != UnsavedChangesPolicy::Discard) {
+        finish({ControlledLoadStatus::Conflict, false, {}});
+        return;
+    }
+    if (!file.hasFileExtension(".mgd")) {
+        finish({ControlledLoadStatus::InvalidFormat, false, {}});
+        return;
+    }
+    if (!file.existsAsFile()) {
+        finish({ControlledLoadStatus::NotFound, false, {}});
+        return;
+    }
+
+    auto fileToLoad = file;
+    auto recovery = recoverySession().projectCandidate(file, true);
+    if (!recovery.snapshot.existsAsFile())
+        recovery = inspectLegacyRecovery(file.getSiblingFile(file.getFileName() + ".autosave"));
+    const auto autosaveFile = recovery.snapshot;
+    bool recoveredFromAutosave = false;
+    if (autosaveFile.existsAsFile()) {
+        if (options.autosaveRecovery == AutosaveRecoveryPolicy::Fail) {
+            finish({ControlledLoadStatus::Conflict, false, {}});
+            return;
+        }
+        if (options.autosaveRecovery == AutosaveRecoveryPolicy::Recover) {
+            fileToLoad = autosaveFile;
+            recoveredFromAutosave = true;
+        }
+    }
+
+    joinBackgroundThread();
+    const auto creationSettings = captureCreationSettingsFromConfig();
+    const auto startingRevision = mutationRevision_;
+    loadThread_ = std::thread([this, fileToLoad, file, recoveredFromAutosave, recovery,
+                               creationSettings, options = std::move(options), onBeforeCommit,
+                               finish, startingRevision]() mutable {
+        auto staged = std::make_shared<StagedProjectData>();
+        if (!ProjectSerializer::loadAndStage(fileToLoad, *staged, creationSettings)) {
+            juce::MessageManager::callAsync([finish] {
+                finish({ControlledLoadStatus::Failed, false, {}});
+            });
+            return;
+        }
+        if (options.shouldCancel && options.shouldCancel()) {
+            juce::MessageManager::callAsync([finish] {
+                finish({ControlledLoadStatus::Cancelled, false, {}});
+            });
+            return;
+        }
+
+        const auto inspection = options.inspect ? options.inspect(*staged) : LoadInspection{};
+        if ((!options.allowMissingMedia && inspection.missingMediaCount > 0) ||
+            (!options.allowUnavailableDevices && inspection.unavailableDeviceCount > 0)) {
+            juce::MessageManager::callAsync([finish, inspection] {
+                finish({ControlledLoadStatus::Conflict, false, inspection});
+            });
+            return;
+        }
+
+        juce::MessageManager::callAsync([this, staged, file, recoveredFromAutosave, recovery,
+                                         startingRevision, shouldCancel = options.shouldCancel,
+                                         inspection, onBeforeCommit, finish]() mutable {
+            if (shouldCancel && shouldCancel()) {
+                finish({ControlledLoadStatus::Cancelled, false, inspection});
+                return;
+            }
+            if (mutationRevision_ != startingRevision) {
+                finish({ControlledLoadStatus::Conflict, false, inspection});
+                return;
+            }
+            if (recoveredFromAutosave) {
+                if (!commitRecovery(recovery, *staged, onBeforeCommit, false)) {
+                    finish({ControlledLoadStatus::Failed, false, inspection});
+                    return;
+                }
+            } else {
+                commitStagedProject(*staged, file, false, onBeforeCommit, false);
+            }
+            finish({ControlledLoadStatus::Succeeded, recoveredFromAutosave, inspection});
+        });
+    });
+}
+
 bool ProjectManager::closeProject(UnsavedChangesPolicy policy) {
     if (isDirty_ && (policy == UnsavedChangesPolicy::Refuse ||
                      (policy == UnsavedChangesPolicy::AskUser && !showUnsavedChangesDialog()))) {
@@ -862,6 +965,7 @@ bool ProjectManager::closeProject(UnsavedChangesPolicy policy) {
     // Reset state
     currentProject_ = ProjectInfo();
     isProjectOpen_ = false;
+    interactiveRecoveryAllowedForCurrentOpen_ = true;
     seedCurrentProjectFromConfig();
     currentFile_ = juce::File();
     mediaDirectory_ = juce::File();
@@ -1587,7 +1691,8 @@ bool ProjectManager::recoverProject(const RecoveryEntry& entry,
 }
 
 bool ProjectManager::commitRecovery(const RecoveryEntry& entry, StagedProjectData& staged,
-                                    const std::function<void(const ProjectInfo&)>& onBeforeCommit) {
+                                    const std::function<void(const ProjectInfo&)>& onBeforeCommit,
+                                    bool allowInteractiveRecovery) {
     // Publish an owned copy before consuming the source, including when autosave
     // is disabled. A second crash must still have a recoverable snapshot.
     const auto previousMedia = mediaDirectory_;
@@ -1605,7 +1710,8 @@ bool ProjectManager::commitRecovery(const RecoveryEntry& entry, StagedProjectDat
         entry.snapshot.deleteFile();
 
     if (entry.originalFile.isNotEmpty()) {
-        commitStagedProject(staged, juce::File(entry.originalFile), true, onBeforeCommit);
+        commitStagedProject(staged, juce::File(entry.originalFile), true, onBeforeCommit,
+                            allowInteractiveRecovery);
     } else {
         beginProjectTeardown();
         if (onBeforeCommit)
@@ -1616,6 +1722,7 @@ bool ProjectManager::commitRecovery(const RecoveryEntry& entry, StagedProjectDat
         currentProject_.autosaveMediaDirectory.clear();
         currentFile_ = juce::File();
         isProjectOpen_ = true;
+        interactiveRecoveryAllowedForCurrentOpen_ = allowInteractiveRecovery;
         const juce::File recoveredMedia(entry.mediaDirectory);
         if (isManagedTempMediaDirectory(recoveredMedia))
             mediaDirectory_ = recoveredMedia;

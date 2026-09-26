@@ -1248,6 +1248,24 @@ const juce::var& remoteJobSchema() {
     return value;
 }
 
+const juce::var& remoteFileHandleSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "id":{"type":"string","minLength":1},
+            "capability":{"type":"string","enum":["project_source","project_destination",
+                                                        "audio_destination"]},
+            "name":{"type":"string"},
+            "createdAtMs":{"type":"number","minimum":0},
+            "expiresAtMs":{"type":"number","minimum":0},
+            "overwriteApproved":{"type":"boolean"}
+        },
+        "required":["id","capability","name","createdAtMs","expiresAtMs","overwriteApproved"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
 // ---------------------------------------------------------------------------
 // Subscription schemas (#1857)
 // ---------------------------------------------------------------------------
@@ -2845,6 +2863,20 @@ OperationRegistry::OperationRegistry() {
     add("jobs.cancel", "Cancel one owned asynchronous job", OperationAccess::Control,
         &handlers::jobsCancel, jobIdInput, remoteJobSchema());
 
+    add("fileHandles.list", "List file capabilities approved for this connection",
+        OperationAccess::Read, &handlers::fileHandlesList, emptyObjectSchema(),
+        arraySchema(remoteFileHandleSchema()));
+    add("fileHandles.revoke", "Revoke one owned file capability", OperationAccess::Control,
+        &handlers::fileHandlesRevoke, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{"handleId":{"type":"string","minLength":1,"maxLength":128}},
+            "required":["handleId"],"additionalProperties":false
+        })json"),
+        parseSchema(R"json({
+            "type":"object","properties":{"revoked":{"type":"boolean"}},
+            "required":["revoked"],"additionalProperties":false
+        })json"));
+
     add("project.get", "Get safe project metadata", OperationAccess::Read, &handlers::projectGet,
         emptyObjectSchema(), projectSchema());
     const auto projectTransitionInput = operationInputSchema(R"json({
@@ -2856,8 +2888,35 @@ OperationRegistry::OperationRegistry() {
         projectTransitionInput, projectSchema());
     add("project.close", "Close the current project", OperationAccess::Write,
         &handlers::projectClose, projectTransitionInput, projectSchema());
+    add("project.open", "Open a project through an approved source handle",
+        OperationAccess::Control, &handlers::projectOpen, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "sourceHandle":{"type":"string","minLength":1,"maxLength":128},
+                "dirtyPolicy":{"type":"string","enum":["fail","discard"]},
+                "autosavePolicy":{"type":"string","enum":["fail","recover","ignore"]},
+                "missingMediaPolicy":{"type":"string","enum":["fail","allow"]},
+                "unavailableDevicePolicy":{"type":"string","enum":["fail","allow"]}
+            },
+            "required":["sourceHandle","dirtyPolicy","autosavePolicy","missingMediaPolicy",
+                        "unavailableDevicePolicy"],
+            "additionalProperties":false
+        })json"),
+        remoteJobSchema());
     add("project.save", "Save the project to its existing target", OperationAccess::Write,
         &handlers::projectSave, emptyObjectSchema(), projectSchema());
+    add("project.saveAs", "Save through an approved destination handle", OperationAccess::Control,
+        &handlers::projectSaveAs, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "destinationHandle":{"type":"string","minLength":1,"maxLength":128},
+                "overwritePolicy":{"type":"string","enum":["fail","replace"]},
+                "mediaPolicy":{"type":"string","enum":["copy","move"]}
+            },
+            "required":["destinationHandle","overwritePolicy","mediaPolicy"],
+            "additionalProperties":false
+        })json"),
+        remoteJobSchema());
     add("project.setTempo", "Set the project tempo", OperationAccess::Write,
         &handlers::projectSetTempo, operationInputSchema(R"json({
             "type":"object","properties":{"tempo":{"type":"number","minimum":20,"maximum":400}},
@@ -4263,7 +4322,10 @@ OperationRegistry::OperationRegistry() {
         {"project.setLoopRange", Scope::Edit},
         {"project.new", Scope::Edit},
         {"project.close", Scope::Edit},
+        {"project.open", Scope::Edit},
         {"project.save", Scope::Edit},
+        {"project.saveAs", Scope::Edit},
+        {"fileHandles.revoke", Scope::Edit},
         {"chordTrack.ensure", Scope::Edit},
         {"chordTrack.replaceProgression", Scope::Edit},
         {"chordTrack.extract", Scope::Edit},

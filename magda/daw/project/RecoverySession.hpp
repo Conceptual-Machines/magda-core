@@ -39,7 +39,7 @@ class RecoverySession {
     }
     juce::File snapshot() const;
     RecoveryEntry startupCandidate() const;
-    RecoveryEntry projectCandidate(const juce::File& project) const;
+    RecoveryEntry projectCandidate(const juce::File& project, bool includeOffered = false) const;
     std::vector<RecoveryEntry> entries(bool includeLive = false) const;
 
     bool write(RecoveryEntry entry, const std::function<bool(const juce::File&)>& writer);
