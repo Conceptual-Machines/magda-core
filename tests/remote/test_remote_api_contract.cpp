@@ -425,12 +425,16 @@ TEST_CASE("Chord track operations expose a singleton-safe progression projection
 
     const auto* get = registry.find("chordTrack.get");
     const auto* ensure = registry.find("chordTrack.ensure");
+    const auto* replace = registry.find("chordTrack.replaceProgression");
     REQUIRE(get != nullptr);
     REQUIRE(ensure != nullptr);
+    REQUIRE(replace != nullptr);
     CHECK(get->access == OperationAccess::Read);
     CHECK(get->requiredScope == Scope::Read);
     CHECK(ensure->access == OperationAccess::Write);
     CHECK(ensure->requiredScope == Scope::Edit);
+    CHECK(replace->access == OperationAccess::Write);
+    CHECK(replace->requiredScope == Scope::Edit);
 
     const auto absent = get->handler(api, object({}), {});
     REQUIRE_FALSE(absent.failed());

@@ -29,6 +29,8 @@ std::vector<Topic> topicsFor(const juce::String& operationName) {
     if (operationName == "tracks.create" || operationName == "tracks.createFromPreset" ||
         operationName == "tracks.delete" || operationName == "chordTrack.ensure")
         return {Topic::Tracks, Topic::Clips, Topic::Devices, Topic::Session};
+    if (operationName == "chordTrack.replaceProgression")
+        return {Topic::Tracks, Topic::Clips, Topic::Session};
     if (operationName == "tracks.applyPreset")
         return {Topic::Tracks, Topic::Devices, Topic::Automation};
     if (operationName == "devices.replace")

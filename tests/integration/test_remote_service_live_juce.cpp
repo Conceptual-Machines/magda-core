@@ -229,6 +229,94 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
             expect(tracks.getChordTrackId() == INVALID_TRACK_ID);
         }
 
+        beginTest("Chord progression replacement is atomic, undoable, and idempotent");
+        {
+            Fixture fixture;
+            auto& tracks = TrackManager::getInstance();
+            auto& clips = ClipManager::getInstance();
+            juce::Array<juce::var> progression;
+            progression.add(object(
+                {{"startBeat", 0.0}, {"lengthBeats", 4.0}, {"root", "C"}, {"quality", "maj"}}));
+            progression.add(object(
+                {{"startBeat", 4.0}, {"lengthBeats", 4.0}, {"root", "G"}, {"quality", "7"}}));
+            const auto input = object({{"chords", juce::var(progression)}});
+
+            const auto before = fixture.service.currentRevision();
+            const auto created = fixture.run("chordTrack.replaceProgression", input);
+            expect(created.ok, created.error.message);
+            expect(created.revision == before + 1);
+            const auto trackId = tracks.getChordTrackId();
+            expect(trackId != INVALID_TRACK_ID);
+            const auto* entries = created.result["chords"].getArray();
+            expect(entries != nullptr && entries->size() == 2);
+            const auto ids = clips.getClipsOnTrack(trackId);
+            expect(ids.size() == 1);
+            if (ids.size() == 1) {
+                const auto* clip = clips.getClip(ids.front());
+                expect(clip != nullptr && clip->chordAnnotations.size() == 2);
+                expect(clip != nullptr && clip->midiNotes.size() == 7);
+                if (clip != nullptr) {
+                    expect(clip->chordAnnotations[0].chordGroup == 1);
+                    expect(clip->midiNotes[0].chordGroup == 1);
+                    expect(clip->midiNotes[3].chordGroup == 2);
+                }
+            }
+
+            const auto same = fixture.run("chordTrack.replaceProgression", input);
+            expect(same.ok);
+            expect(same.revision == created.revision);
+
+            juce::Array<juce::var> invalid = progression;
+            invalid.add(object(
+                {{"startBeat", 3.0}, {"lengthBeats", 2.0}, {"root", "D"}, {"quality", "min"}}));
+            const auto rejected = fixture.run("chordTrack.replaceProgression",
+                                              object({{"chords", juce::var(invalid)}}));
+            expect(!rejected.ok);
+            expect(rejected.revision == created.revision);
+            expect(clips.getClipsOnTrack(trackId) == ids);
+
+            expect(UndoManager::getInstance().undo());
+            expect(tracks.getChordTrackId() == INVALID_TRACK_ID);
+            expect(UndoManager::getInstance().redo());
+            expect(tracks.getChordTrackId() == trackId);
+            expect(clips.getClipsOnTrack(trackId) == ids);
+
+            const auto cleared =
+                fixture.run("chordTrack.replaceProgression",
+                            object({{"chords", juce::var(juce::Array<juce::var>{})}}));
+            expect(cleared.ok);
+            expect(clips.getClipsOnTrack(trackId).empty());
+            expect(UndoManager::getInstance().undo());
+            expect(clips.getClipsOnTrack(trackId) == ids);
+        }
+
+        beginTest("Replacing an existing chord progression restores its clips on undo");
+        {
+            Fixture fixture;
+            auto& clips = ClipManager::getInstance();
+            const auto trackId = TrackManager::getInstance().ensureChordTrack();
+            const auto oldId = clips.createMidiClipBeats(trackId, 2.0, 4.0);
+            clips.addChordAnnotation(oldId, {0.0, 4.0, "Fmaj7", 9});
+            const auto oldClip = *clips.getClip(oldId);
+
+            juce::Array<juce::var> progression;
+            progression.add(object(
+                {{"startBeat", 0.0}, {"lengthBeats", 2.0}, {"root", "D"}, {"quality", "min"}}));
+            const auto replaced = fixture.run("chordTrack.replaceProgression",
+                                              object({{"chords", juce::var(progression)}}));
+            expect(replaced.ok, replaced.error.message);
+            expect(clips.getClip(oldId) == nullptr);
+            const auto replacementIds = clips.getClipsOnTrack(trackId);
+            expect(replacementIds.size() == 1 && replacementIds.front() != oldId);
+
+            expect(UndoManager::getInstance().undo());
+            const auto* restored = clips.getClip(oldId);
+            expect(restored != nullptr && restored->chordAnnotations == oldClip.chordAnnotations);
+            expect(clips.getClipsOnTrack(trackId) == std::vector<ClipId>{oldId});
+            expect(UndoManager::getInstance().redo());
+            expect(clips.getClipsOnTrack(trackId) == replacementIds);
+        }
+
         beginTest("A live write advances the revision exactly once");
         {
             Fixture fixture;
