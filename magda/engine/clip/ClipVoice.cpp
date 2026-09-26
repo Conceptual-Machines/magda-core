@@ -76,6 +76,7 @@ ClipStretcher* ClipVoice::adoptStandby(StandbyStretcher* standby, const AudioCli
                               snapshot};
 
     // Checked before claiming, so a standby for somewhere else is left for its own start.
+    // Key checking and the withdrawal race are modelled in specs/tla/hand_back_standby.
     if (standby->key != key || !standby->claim())
         return nullptr;
 

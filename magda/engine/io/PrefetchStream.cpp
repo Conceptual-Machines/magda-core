@@ -124,6 +124,7 @@ bool PrefetchStream::seekWithinResident(std::int64_t sourceStart, const Retained
 }
 
 void PrefetchStream::applyPendingCue() {
+    // Cue publication and deferral while sounding: specs/tla/hand_back_cue.
     // Whether anything played out of this stream since the last time it was
     // asked. Read here rather than in read(), so that what it answers is a
     // question about the block that just went by.
