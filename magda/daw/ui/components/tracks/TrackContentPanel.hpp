@@ -267,14 +267,16 @@ class TrackContentPanel : public juce::Component,
     }
 
     // Hit-tests against the active time selection (panel coords). ClipComponent
-    // uses these to forward a click that lands on the selection so the user can
-    // drag the selected portion to trim and move it, instead of moving the clip.
+    // uses these to route selection gestures through the panel.
     bool pointInTimeSelection(int x, int y) const {
         return isOnExistingSelection(x, y);
     }
     bool pointOnTimeSelectionEdge(int x, int y) const {
         bool isLeft = false;
         return isOnSelectionEdge(x, y, isLeft);
+    }
+    bool pointInUpperTrackZone(int y) const {
+        return isInUpperTrackZone(y);
     }
 
     bool duplicateSelectedArrangementClips(bool includeAutomation, bool asGhost = false);

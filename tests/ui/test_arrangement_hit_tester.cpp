@@ -84,11 +84,13 @@ TEST_CASE("Panel: a clip owns its point when no selection is active", "[hit-test
     REQUIRE(panelCursor(PanelZone::OverClip) == CursorKind::Normal);
 }
 
-TEST_CASE("Panel: selection body beats everything, including clips", "[hit-tester]") {
+TEST_CASE("Panel: an upper-zone clip remains draggable through a selection", "[hit-tester]") {
     auto s = makePanelWithSelection(100.0, 300.0);
     s.clipAtPoint = true;
 
-    REQUIRE(panelZone(200, 20, s) == PanelZone::SelectionBody);
+    REQUIRE(panelZone(200, 20, s) == PanelZone::OverClip);
+    REQUIRE(panelZone(200, 80, s) == PanelZone::SelectionBody);
+    REQUIRE(panelCursor(PanelZone::OverClip) == CursorKind::Normal);
     REQUIRE(panelCursor(PanelZone::SelectionBody) == CursorKind::DraggingHand);
 }
 

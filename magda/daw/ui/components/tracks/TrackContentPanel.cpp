@@ -1330,11 +1330,9 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
         }
     }
 
-    // A click on an active time selection grabs it for move/resize in EITHER
-    // track zone (and over clips, via ClipComponent forwarding), so the selected
-    // portion can be dragged to trim and move it. Must run before the zone
-    // branches below, which would otherwise treat an upper-zone grab as a clip
-    // operation / marquee.
+    // Empty space and the lower clip zone grab an active time selection for
+    // move/resize. Selection edges also pass through from either zone. This
+    // runs before the zone branches so those gestures stay panel-owned.
     if (tryBeginTimeSelectionGrab(event))
         return;
 
