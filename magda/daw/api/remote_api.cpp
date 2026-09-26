@@ -3657,6 +3657,7 @@ OperationRegistry::OperationRegistry() {
         sessionSchema());
     add("session.deleteScene", "Delete a scene with an explicit populated-slot policy",
         OperationAccess::Write, &handlers::sessionDeleteScene, operationInputSchema(R"json({
+            "type":"object",
             "oneOf":[
                 {
                     "type":"object",
