@@ -749,8 +749,11 @@ TEST_CASE("Media inside the project folder moves with it", "[project][serializat
 
     const auto trackId = TrackManager::getInstance().createTrack("Audio", TrackType::Media);
     auto& clips = ClipManager::getInstance();
-    REQUIRE(clips.createAudioClipBeats(trackId, 0.0, 4.0, inside.getFullPathName()) !=
-            INVALID_CLIP_ID);
+    const auto insideClip = clips.createAudioClipBeats(trackId, 0.0, 4.0, inside.getFullPathName());
+    REQUIRE(insideClip != INVALID_CLIP_ID);
+    const auto take =
+        projectDir.getChildFile("song_Media").getChildFile("recordings").getChildFile("take-1.wav");
+    clips.getClip(insideClip)->audio().takes.push_back({take.getFullPathName(), 1.0});
     REQUIRE(clips.createAudioClipBeats(trackId, 8.0, 4.0, outside.getFullPathName()) !=
             INVALID_CLIP_ID);
     REQUIRE(ProjectSerializer::saveToFile(projectFile,
@@ -771,6 +774,14 @@ TEST_CASE("Media inside the project folder moves with it", "[project][serializat
     std::vector<juce::String> expected{movedInside.getFullPathName(), outside.getFullPathName()};
     std::ranges::sort(expected);
     CHECK(paths == expected);
+
+    const auto movedTake =
+        moved.getChildFile("song_Media").getChildFile("recordings").getChildFile("take-1.wav");
+    const auto withTake = std::ranges::find_if(staged.clips, [](const ClipInfo& clip) {
+        return clip.isAudio() && !clip.audio().takes.empty();
+    });
+    REQUIRE(withTake != staged.clips.end());
+    CHECK(withTake->audio().takes[0].filePath == movedTake.getFullPathName());
 }
 
 TEST_CASE("Another platform's absolute media paths are not taken for relative ones",

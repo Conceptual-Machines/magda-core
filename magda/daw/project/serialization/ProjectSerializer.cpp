@@ -32,6 +32,44 @@ thread_local juce::String ProjectSerializer::lastError_;
 // File I/O with gzip compression
 // ============================================================================
 
+namespace {
+
+/// Written relative by this project, not an absolute path from another platform: a
+/// macOS "/Volumes/..." path is not absolute to Windows, and must not be re-rooted.
+bool isProjectRelative(const juce::String& path) {
+    return path.isNotEmpty() && !path.startsWithChar('/') && !path.startsWithChar('\\') &&
+           !path.startsWithChar('~') && !(path.length() > 1 && path[1] == ':');
+}
+
+/// @p path as saved in @p projectFile: relative when it is inside the project's folder.
+juce::String toProjectPath(const juce::File& projectFile, const juce::String& path) {
+    if (projectFile == juce::File() || !juce::File::isAbsolutePath(path))
+        return path;
+    const juce::File file(path);
+    if (!file.isAChildOf(projectFile.getParentDirectory()))
+        return path;
+    return file.getRelativePathFrom(projectFile.getParentDirectory()).replaceCharacter('\\', '/');
+}
+
+/// @p path as read from @p projectFile: a relative one resolves against its folder.
+juce::String fromProjectPath(const juce::File& projectFile, const juce::String& path) {
+    if (projectFile == juce::File() || !isProjectRelative(path))
+        return path;
+    return projectFile.getParentDirectory().getChildFile(path).getFullPathName();
+}
+
+/// Take paths are the clip serializer's to write; they follow the same rule as sources.
+void mapTakePaths(juce::var& clips, const std::function<juce::String(const juce::String&)>& map) {
+    for (auto& clip : clips.isArray() ? *clips.getArray() : juce::Array<juce::var>{}) {
+        const auto takes = clip["audio"]["takes"];
+        for (auto& take : takes.isArray() ? *takes.getArray() : juce::Array<juce::var>{})
+            if (auto* object = take.getDynamicObject())
+                object->setProperty("filePath", map(object->getProperty("filePath").toString()));
+    }
+}
+
+}  // namespace
+
 bool ProjectSerializer::saveToFile(const juce::File& file, const ProjectInfo& info) {
     try {
         auto parentDir = file.getParentDirectory();
@@ -494,7 +532,10 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
         // still-open project's clips are reading the live pool meanwhile.
         deserializeSourcesToStaging(obj->getProperty("sources"), outData.sources, file);
 
-        if (!deserializeClipsToStaging(obj->getProperty("clips"), outData.clips, outData.info.tempo,
+        auto clips = obj->getProperty("clips");
+        mapTakePaths(clips,
+                     [&file](const juce::String& path) { return fromProjectPath(file, path); });
+        if (!deserializeClipsToStaging(clips, outData.clips, outData.info.tempo,
                                        &outData.legacySources)) {
             return false;
         }
@@ -739,7 +780,11 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info,
 
     obj->setProperty("tracks", serializeTracks(addressed));
     obj->setProperty("sources", serializeSources(projectFile));
-    obj->setProperty("clips", serializeClips());
+    auto clips = serializeClips();
+    mapTakePaths(clips, [&projectFile](const juce::String& path) {
+        return toProjectPath(projectFile, path);
+    });
+    obj->setProperty("clips", clips);
     obj->setProperty("automation", serializeAutomation());
 
     // Serialize master track separately (its chain elements hold master bus plugins)
@@ -1092,14 +1137,7 @@ juce::var ProjectSerializer::serializeSources(const juce::File& projectFile) {
 
         auto* sourceObj = new juce::DynamicObject();
         sourceObj->setProperty("id", source.id);
-        const juce::File file = juce::File::isAbsolutePath(source.filePath)
-                                    ? juce::File(source.filePath)
-                                    : juce::File();
-        const bool inside = projectFile != juce::File() && file != juce::File() &&
-                            file.isAChildOf(projectFile.getParentDirectory());
-        sourceObj->setProperty(
-            "filePath", inside ? makeRelativePath(projectFile, file).replaceCharacter('\\', '/')
-                               : source.filePath);
+        sourceObj->setProperty("filePath", toProjectPath(projectFile, source.filePath));
         sourceObj->setProperty("durationSeconds", source.durationSeconds);
         sourceObj->setProperty("sampleRate", source.sampleRate);
         if (source.detectedBpm > 0.0)
@@ -1113,13 +1151,6 @@ juce::var ProjectSerializer::serializeSources(const juce::File& projectFile) {
     return {sourcesArray};
 }
 
-/// Written relative by this project, not an absolute path from another platform: a
-/// macOS "/Volumes/..." path is not absolute to Windows, and must not be re-rooted.
-static bool isProjectRelative(const juce::String& path) {
-    return path.isNotEmpty() && !path.startsWithChar('/') && !path.startsWithChar('\\') &&
-           !path.startsWithChar('~') && !(path.length() > 1 && path[1] == ':');
-}
-
 void ProjectSerializer::deserializeSourcesToStaging(const juce::var& json, std::vector<Source>& out,
                                                     const juce::File& projectFile) {
     if (!json.isArray())
@@ -1131,9 +1162,8 @@ void ProjectSerializer::deserializeSourcesToStaging(const juce::var& json, std::
             continue;
         Source source;
         source.id = sourceObj->getProperty("id");
-        source.filePath = sourceObj->getProperty("filePath").toString();
-        if (isProjectRelative(source.filePath) && projectFile != juce::File())
-            source.filePath = resolveRelativePath(projectFile, source.filePath).getFullPathName();
+        source.filePath =
+            fromProjectPath(projectFile, sourceObj->getProperty("filePath").toString());
         source.durationSeconds = sourceObj->getProperty("durationSeconds");
         source.sampleRate = sourceObj->getProperty("sampleRate");
         source.detectedBpm = sourceObj->getProperty("detectedBpm");
