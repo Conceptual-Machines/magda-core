@@ -967,11 +967,13 @@ HandlerResult engineMasterCaptureStart(MagdaApi& api, const juce::var& input,
     auto source = context.engineJobsOwner;
     auto jobIdHolder = std::make_shared<juce::String>();
     const auto jobId =
+        // A capture records what the output did while the project was played and
+        // edited, so edits during it do not void it (#2784).
         context.jobs->accept({.kind = "engine.masterCapture",
                               .ownerClientId = context.clientId,
                               .requiredScope = Scope::Edit,
                               .acceptedRevision = context.revision,
-                              .revisionPolicy = JobRevisionPolicy::StableUntilCompletion,
+                              .revisionPolicy = JobRevisionPolicy::CheckAtStartOnly,
                               .projectBound = true,
                               .cancellable = true},
                              [source, jobIdHolder] {
@@ -1011,24 +1013,15 @@ HandlerResult engineMasterCaptureStop(MagdaApi&, const juce::var& input,
         return HandlerResult::fail(std::move(error));
     if (job->kind != "engine.masterCapture" || job->state != RemoteJobState::Running)
         return HandlerResult::fail(ErrorCode::Conflict, "capture job is not running");
-    if (job->acceptedRevision != context.revision) {
-        context.engineJobs->cancelMasterCapture(jobId);
-        context.jobs->fail(
-            jobId,
-            {ErrorCode::Conflict, "project revision changed while the capture was running", {}},
-            context.revision);
+    const auto status = context.engineJobs->masterCaptureStatus();
+    const auto result = context.engineJobs->stopMasterCapture(jobId);
+    if (!result.success) {
+        context.jobs->fail(jobId, {ErrorCode::InternalError, "master capture failed", {}},
+                           context.revision);
     } else {
-        const auto status = context.engineJobs->masterCaptureStatus();
-        const auto result = context.engineJobs->stopMasterCapture(jobId);
-        if (!result.success) {
-            context.jobs->fail(jobId, {ErrorCode::InternalError, "master capture failed", {}},
-                               context.revision);
-        } else {
-            const auto format = status.format;
-            context.jobs->complete(jobId, engineArtifactResult("master_capture", format),
-                                   context.revision,
-                                   {{.kind = "audio", .mediaType = mediaType(format)}});
-        }
+        context.jobs->complete(jobId, engineArtifactResult("master_capture", status.format),
+                               context.revision,
+                               {{.kind = "audio", .mediaType = mediaType(status.format)}});
     }
     const auto stopped = currentJob(*context.jobs, jobId, context, error);
     return !stopped.isVoid() ? HandlerResult::unchanged(stopped)
