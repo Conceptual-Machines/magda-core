@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "project": "plugin-state.mgd",
+  "cluster": "hosted plugin state restore",
+  "range": { "startBeat": 0, "endBeat": 8 },
+  "requires": { "plugins": ["Dexed"], "hardware": [] },
+  "tracks": [
+    { "name": "Dexed", "sound": true, "peakDb": { "min": -48, "max": 0 } }
+  ],
+  "parameters": [
+    {
+      "track": "Dexed",
+      "device": "Dexed",
+      "normalized": {
+        "FEEDBACK": 0.0,
+        "LFO DELAY": 0.798,
+        "LFO PM DEPTH": 0.303,
+        "LFO WAVE": 0.6,
+        "OP1 EG RATE 1": 1.0,
+        "OP2 EG LEVEL 3": 1.0,
+        "OP2 F FINE": 0.2626,
+        "OP3 EG LEVEL 2": 0.0
+      }
+    }
+  ],
+  "listen": "Four C chords on the patch saved with the project, not Dexed's default init voice."
+}
