@@ -3448,6 +3448,24 @@ OperationRegistry::OperationRegistry() {
             "required":["clipId"],"additionalProperties":false
         })json"),
         clipSchema());
+    add("clips.updateAudio",
+        "Update an audio clip's playback mode, source tempo, stretch, reverse, and fades",
+        OperationAccess::Write, &handlers::clipsUpdateAudio, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "playback":{"type":"string","enum":["free","beat"]},
+                "sourceBpm":{"type":"number","minimum":20,"maximum":999},
+                "stretch":{"type":"string","enum":["off","signalsmith","soundtouch","soundtouch_hq"]},
+                "reversed":{"type":"boolean"},
+                "fadeInSeconds":{"type":"number","minimum":0,"maximum":600},
+                "fadeOutSeconds":{"type":"number","minimum":0,"maximum":600},
+                "fadeInCurve":{"type":"string","enum":["linear","convex","concave","s_curve"]},
+                "fadeOutCurve":{"type":"string","enum":["linear","convex","concave","s_curve"]}
+            },
+            "required":["clipId"],"additionalProperties":false
+        })json"),
+        clipSchema());
     add("clips.transpose", "Transpose every note in a MIDI clip by semitones",
         OperationAccess::Write, &handlers::clipsTranspose, operationInputSchema(R"json({
             "type":"object",
@@ -4450,6 +4468,7 @@ OperationRegistry::OperationRegistry() {
         {"sidechains.set", Scope::Edit},
         {"clips.createMidi", Scope::Edit},
         {"clips.loadSample", Scope::Edit},
+        {"clips.updateAudio", Scope::Edit},
         {"clips.addMidiNote", Scope::Edit},
         {"clips.addMidiEvents", Scope::Edit},
         {"clips.updateMidiEvents", Scope::Edit},

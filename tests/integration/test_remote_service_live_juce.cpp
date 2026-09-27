@@ -1124,6 +1124,67 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
             dir.deleteRecursively();
         }
 
+        beginTest("An audio clip's playback, stretch, reverse, and fades update as one patch");
+        {
+            Fixture fixture;
+            FlatTempoMap tempo(120.0);
+            fixture.api.setProjectTempoMap([&tempo] { return &tempo; });
+            const auto dir = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                                 .getChildFile("magda-update-audio-test");
+            dir.createDirectory();
+            const auto sample = writeSample(dir.getChildFile("loop.wav"), 2.0);
+            const auto trackId = static_cast<int>(
+                fixture.run("tracks.create", object({{"name", "Loop"}, {"type", "audio"}}))
+                    .result["id"]);
+            const auto clipId = static_cast<int>(
+                fixture
+                    .run("clips.loadSample",
+                         object({{"samplePath", sample.getFullPathName()},
+                                 {"placement", arrangementDestination(trackId, 0.0)}}))
+                    .result["id"]);
+
+            const auto patch = object({{"clipId", clipId},
+                                       {"sourceBpm", 90.0},
+                                       {"playback", "beat"},
+                                       {"stretch", "soundtouch_hq"},
+                                       {"reversed", true},
+                                       {"fadeInSeconds", 0.25},
+                                       {"fadeOutSeconds", 0.5},
+                                       {"fadeInCurve", "convex"},
+                                       {"fadeOutCurve", "s_curve"}});
+            const auto updated = fixture.run("clips.updateAudio", patch);
+            expect(updated.ok);
+            const auto* clip = ClipManager::getInstance().getClip(static_cast<ClipId>(clipId));
+            const auto* event = clip != nullptr ? clip->primaryEvent() : nullptr;
+            expect(event != nullptr);
+            if (event != nullptr) {
+                expectWithinAbsoluteError(event->interpBpm, 90.0, 1e-9);
+                expect(event->playbackIntent == PlaybackIntent::Beat);
+                expectEquals(event->timeStretchMode, 4);
+                expect(event->reversed);
+                expectWithinAbsoluteError(event->fadeInSeconds, 0.25, 1e-9);
+                expectWithinAbsoluteError(event->fadeOutSeconds, 0.5, 1e-9);
+                expectEquals(event->fadeInType, static_cast<int>(FadeCurve::Convex));
+                expectEquals(event->fadeOutType, static_cast<int>(FadeCurve::SCurve));
+            }
+
+            const auto revision = fixture.service.currentRevision();
+            expect(fixture.run("clips.updateAudio", patch).ok);
+            expect(fixture.service.currentRevision() == revision,
+                   "A patch restating current values changes nothing");
+
+            const auto midiId = static_cast<int>(
+                fixture
+                    .run("clips.createMidi",
+                         object({{"lengthBeats", 4.0},
+                                 {"placement", arrangementDestination(trackId, 8.0)}}))
+                    .result["id"]);
+            const auto refused =
+                fixture.run("clips.updateAudio", object({{"clipId", midiId}, {"reversed", true}}));
+            expect(!refused.ok && refused.error.code == ErrorCode::Conflict);
+            dir.deleteRecursively();
+        }
+
         beginTest("Arrangement clips move, resize, and duplicate through undoable operations");
         {
             Fixture fixture;

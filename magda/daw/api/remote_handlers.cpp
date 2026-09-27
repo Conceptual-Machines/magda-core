@@ -28,6 +28,7 @@
 #include "../core/PresetManager.hpp"
 #include "../core/SourcePool.hpp"
 #include "../core/TempoMap.hpp"
+#include "../core/TimeStretchModes.hpp"
 #include "../core/TrackCommands.hpp"
 #include "../core/TrackInfo.hpp"
 #include "../core/TrackPropertyCommands.hpp"
@@ -4859,6 +4860,108 @@ HandlerResult clipsUpdate(MagdaApi& api, const juce::var& input, const RequestCo
         runCommand<SetClipGrooveTemplateCommand>(api, clipId, input["grooveTemplate"].toString());
         mutated = true;
     }
+
+    const auto* updated = api.clips().getClip(clipId);
+    if (updated == nullptr)
+        return notFound("clip", clipId);
+    auto payload = toJson(makeClipDto(*updated));
+    return mutated ? HandlerResult::ok(std::move(payload))
+                   : HandlerResult::unchanged(std::move(payload));
+}
+
+namespace {
+
+std::optional<int> stretchModeFor(const juce::String& name) {
+    if (name == "off")
+        return time_stretch_mode::kDisabled;
+    if (name == "signalsmith")
+        return time_stretch_mode::kSignalsmith;
+    if (name == "soundtouch")
+        return time_stretch_mode::kSoundTouchNormal;
+    if (name == "soundtouch_hq")
+        return time_stretch_mode::kSoundTouchBetter;
+    return std::nullopt;
+}
+
+std::optional<int> fadeCurveFor(const juce::String& name) {
+    if (name == "linear")
+        return static_cast<int>(FadeCurve::Linear);
+    if (name == "convex")
+        return static_cast<int>(FadeCurve::Convex);
+    if (name == "concave")
+        return static_cast<int>(FadeCurve::Concave);
+    if (name == "s_curve")
+        return static_cast<int>(FadeCurve::SCurve);
+    return std::nullopt;
+}
+
+}  // namespace
+
+HandlerResult clipsUpdateAudio(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto clipId = static_cast<ClipId>(static_cast<int>(input["clipId"]));
+    const auto* current = api.clips().getClip(clipId);
+    if (current == nullptr)
+        return notFound("clip", clipId);
+    const auto* event = current->primaryEvent();
+    if (!current->isAudio() || event == nullptr)
+        return HandlerResult::fail(ErrorCode::Conflict,
+                                   "clip " + juce::String(clipId) + " is not audio");
+
+    // Validated whole before anything runs: a failed handler does not roll back.
+    const auto stretch = has(input, "stretch") ? stretchModeFor(input["stretch"].toString())
+                                               : std::optional<int>{event->timeStretchMode};
+    const auto fadeInCurve = has(input, "fadeInCurve")
+                                 ? fadeCurveFor(input["fadeInCurve"].toString())
+                                 : std::optional<int>{event->fadeInType};
+    const auto fadeOutCurve = has(input, "fadeOutCurve")
+                                  ? fadeCurveFor(input["fadeOutCurve"].toString())
+                                  : std::optional<int>{event->fadeOutType};
+    if (!stretch || !fadeInCurve || !fadeOutCurve)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "unknown stretch or fade curve");
+    const auto* tempo = api.project().tempoMap();
+    if (has(input, "playback") && tempo == nullptr)
+        return HandlerResult::fail(ErrorCode::Conflict, "the project tempo map is unavailable");
+    const auto intent = !has(input, "playback")                  ? event->playbackIntent
+                        : input["playback"].toString() == "beat" ? PlaybackIntent::Beat
+                                                                 : PlaybackIntent::Free;
+    // A free clip plays its file as tape, with no tempo to state.
+    if (has(input, "sourceBpm") && intent != PlaybackIntent::Beat)
+        return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                   "sourceBpm needs the clip in beat playback");
+
+    // Re-read after each command: one may restate the event it compared against.
+    const auto now = [&api, clipId] { return api.clips().getClip(clipId)->primaryEvent(); };
+    bool mutated = false;
+    const auto run = [&mutated](auto&& apply) {
+        apply();
+        mutated = true;
+    };
+    if (now()->playbackIntent != intent)
+        run([&] {
+            runCommand<SetPlaybackIntentCommand>(api, clipId, intent,
+                                                 tempo->bpmAt(current->placement.startBeat));
+        });
+    if (has(input, "sourceBpm") && now()->interpBpm != readDouble(input, "sourceBpm"))
+        run([&] {
+            runCommand<SetSourceTempoCommand>(api, clipId, readDouble(input, "sourceBpm"));
+        });
+    if (*stretch != now()->timeStretchMode)
+        run([&] { runCommand<SetClipStretchModeCommand>(api, clipId, *stretch); });
+    if (has(input, "reversed") && now()->reversed != readBool(input, "reversed"))
+        run([&] { runCommand<SetClipReversedCommand>(api, clipId, readBool(input, "reversed")); });
+    if (has(input, "fadeInSeconds") && now()->fadeInSeconds != readDouble(input, "fadeInSeconds"))
+        run([&] {
+            runCommand<SetClipFadeInCommand>(api, clipId, readDouble(input, "fadeInSeconds"));
+        });
+    if (has(input, "fadeOutSeconds") &&
+        now()->fadeOutSeconds != readDouble(input, "fadeOutSeconds"))
+        run([&] {
+            runCommand<SetClipFadeOutCommand>(api, clipId, readDouble(input, "fadeOutSeconds"));
+        });
+    if (*fadeInCurve != now()->fadeInType)
+        run([&] { runCommand<SetClipFadeInTypeCommand>(api, clipId, *fadeInCurve); });
+    if (*fadeOutCurve != now()->fadeOutType)
+        run([&] { runCommand<SetClipFadeOutTypeCommand>(api, clipId, *fadeOutCurve); });
 
     const auto* updated = api.clips().getClip(clipId);
     if (updated == nullptr)

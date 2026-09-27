@@ -445,6 +445,13 @@ does what dropping the file on the track does: an audio clip as long as the
 file, laid over the tempo map from its start beat. A path that is not readable
 audio is refused before anything is created.
 
+`clips.updateAudio` patches an audio clip: `playback` (`free` plays the file as
+tape, `beat` follows the project tempo), `sourceBpm` (refused unless the clip
+ends up in beat playback), `stretch` (`off`, `signalsmith`, `soundtouch`,
+`soundtouch_hq`), `reversed`, and each fade's seconds and curve. The patch is
+validated whole before anything changes, runs as one undo step, and a patch
+that restates current values does not advance the revision.
+
 `clips.resize` takes `lengthBeats` and an `edge` of `start` or `end`. All three
 operations are edit-scoped and commit as one undo action. A move that restates
 the current destination and a resize that restates the current length are
