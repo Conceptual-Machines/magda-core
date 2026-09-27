@@ -20,6 +20,7 @@ import json
 import math
 import os
 import platform
+import shutil
 import struct
 import subprocess
 import sys
@@ -533,11 +534,19 @@ def check_meters(spec, track_ids, peaks):
 def run_project(magda, name, mgd, spec, out_dir):
     result = {"project": name, "status": "pass", "failures": [], "listen": spec.get("listen", "")}
     started = time.monotonic()
+    # A copy, so a run never writes into the repository (a freeze render, an autosave),
+    # and every run proves the project's media moves with it.
+    copy = out_dir / "projects" / mgd.parent.name
+    shutil.copytree(mgd.parent, copy)
     magda.job(magda.call("project.open", {
-        "path": str(mgd.resolve()), "dirtyPolicy": "discard", "autosavePolicy": "ignore",
+        "path": str((copy / mgd.name).resolve()), "dirtyPolicy": "discard", "autosavePolicy": "ignore",
         "missingMediaPolicy": "fail", "unavailableDevicePolicy": "fail"}))
     result["loadSeconds"] = round(time.monotonic() - started, 2)
 
+    for step in spec.get("setup", []):
+        done = magda.call(step["call"], step.get("input", {}))
+        if isinstance(done, dict) and done.get("state") in ("accepted", "running"):
+            magda.job(done)
     track_ids = {t["name"]: t["id"] for t in items(magda.call("tracks.list"))}
     result["failures"] += check_parameters(magda, spec, track_ids)
     magda.call("transport.stop")
@@ -570,9 +579,11 @@ def run_project(magda, name, mgd, spec, out_dir):
     result["meanLoad"] = round(sum(loads) / len(loads), 3) if loads else None
     result["peakLoad"] = round(max(loads), 3) if loads else None
 
-    if spec.get("scenario"):
-        # An offline render plays the arrangement only; a launched scene is live-only.
-        result["compare"] = "skipped: the scenario plays session clips"
+    if spec.get("compare") is False:
+        result["compare"] = "skipped: live and offline differ by design here"
+    elif spec.get("scenario"):
+        # A scenario acts on live playback only: a launched scene, a bypass mid-range.
+        result["compare"] = "skipped: a scenario changes what plays live"
     else:
         rate, captured = read_wav(capture_path)
         render_path = out_dir / (name + ".render.wav")

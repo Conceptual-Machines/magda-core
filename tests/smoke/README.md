@@ -53,6 +53,8 @@ Each project is the folder MAGDA saves, `<name>/<name>.mgd`, with a
 | `tracks[].sound` | `true`: the track must sound in the range. `false`: it must stay silent. Meters read before a track's mute, so a muted track cannot be checked this way. |
 | `tracks[].peakDb` | Bounds on the track meter's peak over the range, in dBFS. Required when `sound` is `true`. A silent track's peak must stay below -90 dBFS unless it gives its own `max`. |
 | `parameters` | Optional. Each `{ "track", "device", "normalized": { name: value } }` names parameter values, 0..1, the device must come back with after the project opens: what proves a hosted plugin's saved state restored. |
+| `setup` | Optional. Remote API calls made after the project opens and before playback, each `{ "call", "input" }`; a call that starts a job is waited on. What a project needs that should not be committed, such as a freeze render. |
+| `compare` | Optional, default `true`. `false` skips comparing the live capture with the offline render, for a project whose live output differs from a render by design (a frozen track bypassed after its freeze). |
 | `scenario` | Optional. Remote API calls made during playback, each `{ "beat", "call", "input" }` with the beat inside `range`, such as launching a scene. |
 | `listen` | One line on what a listener would check, printed in the report. |
 
