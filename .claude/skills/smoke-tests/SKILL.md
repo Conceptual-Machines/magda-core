@@ -64,10 +64,14 @@ plugin or hardware goes in `requires` and becomes the optional tier.
   owning device's path.
 - Devices inside a rack chain are added with `parentPath` = the chain's `nodePath` from
   `devices.list`.
+- Audio goes in with `clips.loadSample`, then `clips.updateAudio` for playback, source BPM,
+  stretch, reverse and fades. Copy the file into `<name>/<name>_Media/imported/` first (see
+  `load_sample`): a source inside the project folder is saved relative, so the project moves.
+  Test audio is generated, not sampled, and lives in `tests/smoke/assets/`.
 - `project.saveAs` is a job; poll `jobs.get` until it completes. Save As wraps the file in a folder
   named after it, and the job result reports the path actually written.
 
 ## Not buildable yet
 
-Warp, reverse and fades (no audio clip creation), freeze (`tracks.freeze` not exposed), multi-out
-instruments, and the optional tier (hosted plugins, hardware inserts).
+Freeze (it renders behind a modal progress window; the API needs a job path for it), multi-out
+instruments, and hardware inserts in the optional tier.

@@ -12,6 +12,7 @@ granted to claude-code, then:
 """
 
 import pathlib
+import shutil
 import sys
 import time
 
@@ -186,6 +187,40 @@ def drum_grid(magda):
     midi_clip(magda, track, 8, pattern)
 
 
+LOOP = SMOKE_DIR / "assets" / "loop-100bpm.wav"
+
+
+def load_sample(magda, project, track, start=0.0):
+    """The test loop, copied into the project's own media first so the save points inside it."""
+    local = SMOKE_DIR / project / f"{project}_Media" / "imported" / LOOP.name
+    local.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(LOOP, local)
+    return magda.call("clips.loadSample", {"samplePath": str(local), "placement": {
+        "view": "arrangement", "trackId": track, "startBeat": start}})["id"]
+
+
+def warp(magda):
+    """A 100 BPM loop stretched to 120 BPM, once through each stretch engine."""
+    magda.call("project.setTempo", {"tempo": 120})
+    for name, stretch in (("Signalsmith", "signalsmith"), ("SoundTouch", "soundtouch")):
+        track = magda.call("tracks.create", {"name": name, "type": "audio"})["id"]
+        clip = load_sample(magda, "warp", track)
+        magda.call("clips.updateAudio", {"clipId": clip, "playback": "beat", "sourceBpm": 100,
+                                         "stretch": stretch})
+
+
+def reverse_fades(magda):
+    """The loop reversed on one track, faded in and out on another, both as tape."""
+    magda.call("project.setTempo", {"tempo": 100})
+    reversed_track = magda.call("tracks.create", {"name": "Reversed", "type": "audio"})["id"]
+    magda.call("clips.updateAudio", {"clipId": load_sample(magda, "reverse-fades", reversed_track),
+                                     "reversed": True})
+    faded = magda.call("tracks.create", {"name": "Faded", "type": "audio"})["id"]
+    magda.call("clips.updateAudio", {"clipId": load_sample(magda, "reverse-fades", faded), "fadeInSeconds": 1.0,
+                                     "fadeOutSeconds": 1.5, "fadeInCurve": "convex",
+                                     "fadeOutCurve": "s_curve"})
+
+
 PROJECTS = {
     "faust-devices": faust_devices,
     "tempo-automation": tempo_automation,
@@ -193,6 +228,8 @@ PROJECTS = {
     "rack-modulation": rack_modulation,
     "sidechain": sidechain,
     "drum-grid": drum_grid,
+    "warp": warp,
+    "reverse-fades": reverse_fades,
 }
 
 
