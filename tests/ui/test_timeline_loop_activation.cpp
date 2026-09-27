@@ -220,6 +220,24 @@ TEST_CASE("Enabling loop with no region seeds a 1-bar region at the playhead",
     controller.removeAudioEngineListener(&listener);
 }
 
+TEST_CASE("A loop range set without enabling survives the next toggle",
+          "[timeline][loop][regression]") {
+    magda::TimelineController controller;
+    TestAudioEngineListener listener;
+    controller.addAudioEngineListener(&listener);
+
+    controller.dispatch(magda::SetLoopRegionBeatsEvent{8.0, 16.0, false});
+    REQUIRE_FALSE(controller.getState().loop.enabled);
+
+    controller.dispatch(magda::SetLoopEnabledEvent{true});
+    const auto& loop = controller.getState().loop;
+    REQUIRE(loop.enabled);
+    REQUIRE(loop.startBeats == Catch::Approx(8.0));
+    REQUIRE(loop.endBeats == Catch::Approx(16.0));
+
+    controller.removeAudioEngineListener(&listener);
+}
+
 TEST_CASE("Timeline range state treats beats as authoritative", "[timeline][beats][regression]") {
     magda::LoopRegion loop;
     loop.setFromBeats(8.0, 16.0, 120.0);

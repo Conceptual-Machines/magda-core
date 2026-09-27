@@ -113,6 +113,9 @@ class MagdaApiLive : public MagdaApi {
     void setTransportLoopDispatcher(std::function<void(bool)> fn) {
         transport_.setLoopDispatcher(std::move(fn));
     }
+    void setProjectLoopRangeDispatcher(std::function<void(double, double)> fn) {
+        project_.setLoopRangeDispatcher(std::move(fn));
+    }
 
   private:
     SelectionApiLive selection_;
