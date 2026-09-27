@@ -9,6 +9,33 @@ The [device restart and native-host teardown models](LIFECYCLE.md) cover callbac
 removal, generation gating, and pending-update cancellation. That document also
 records why the JUCE test harness's timed drain is not a general shutdown proof.
 
+## Destructive level taps
+
+`level_tap` models one channel of `LevelTap`, where the audio thread folds a
+block peak into an atomic slot with compare-and-swap and the message thread
+destructively exchanges that slot to zero. Ghost state records which writes a
+larger peak represents. The safety configuration checks that every completed
+write is still represented or has been reported exactly once, and that a
+reported value is at least as loud as every write it represents. The liveness
+configuration checks that fair polling eventually reports every write after
+the writer stops.
+
+The model assumes the class's documented single-writer/single-reader contract.
+`clear()` is outside it because the real protocol calls it only after a plan
+swap removed the tap's writer. Peak values are a small ordered set and atomics
+are linearizable; this is not a C++ weak-memory model. The existing
+`[engine][tap]` stress test is the real-code reproduction seam.
+
+| Configuration | Bounds | Distinct states checked |
+| --- | --- | ---: |
+| Level tap Safety | 4 writes, 3 nonzero peak magnitudes | 13,548 |
+| Level tap Liveness | 3 writes, 2 nonzero peak magnitudes | 764 |
+
+Both configurations passed with `tla2tools` v1.7.4. A deliberately broken
+copy that split the reader's atomic exchange into separate read and reset steps
+violated `NoLostPeak`; the counterexample leaves a reported write in the slot
+between those two steps. This is a validation mutation, not a C++ defect.
+
 ## Session-held track hand-back
 
 Three small models cover the separate handoffs. They are **not a composed proof
