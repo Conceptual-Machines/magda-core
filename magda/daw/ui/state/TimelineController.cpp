@@ -565,8 +565,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopReg
 
     state.loop.setFromBeats(start, end, state.tempo.bpm);
 
-    // Enable loop if it wasn't valid before
-    if (!state.loop.enabled && state.loop.isValid()) {
+    if (e.enable && !state.loop.enabled && state.loop.isValid()) {
         state.loop.enabled = true;
     }
 

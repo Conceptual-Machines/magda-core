@@ -181,13 +181,14 @@ void TranscriptionService::transcribeAudioClip(ClipId sourceClipId, Completion o
     const juce::String sourceName = juce::File(filePath).getFileNameWithoutExtension();
     const TrackId sourceTrackId = clip->trackId;
     const ClipView view = clip->view;
+    const int sceneIndex = clip->sceneIndex;
     const double startBeat = clip->placement.startBeat;
     const double lengthBeats = clip->placement.lengthBeats;
     const double offsetSec = audioEventRef(*clip).anchorSeconds();
     const double bpm = projectBpm();
 
-    pool_->addJob([this, filePath, sourceName, sourceTrackId, view, startBeat, lengthBeats,
-                   offsetSec, bpm, completion]() {
+    pool_->addJob([this, filePath, sourceName, sourceTrackId, view, sceneIndex, startBeat,
+                   lengthBeats, offsetSec, bpm, completion]() {
         int sampleRate = 0;
         std::vector<float> mono = decodeMono(filePath, sampleRate);
 
@@ -199,7 +200,7 @@ void TranscriptionService::transcribeAudioClip(ClipId sourceClipId, Completion o
         }
 
         juce::MessageManager::callAsync([notes = std::move(notes), sourceName, sourceTrackId, view,
-                                         startBeat, lengthBeats, offsetSec, bpm,
+                                         sceneIndex, startBeat, lengthBeats, offsetSec, bpm,
                                          completion]() mutable {
             auto report = [&](ClipId id, const juce::String& err) {
                 if (completion && *completion)
@@ -273,7 +274,7 @@ void TranscriptionService::transcribeAudioClip(ClipId sourceClipId, Completion o
 
             auto createCmd = std::make_unique<magda::CreateClipCommand>(
                 ClipType::MIDI, newTrackId, BeatPosition{startBeat}, BeatDuration{lengthBeats},
-                juce::String(), view);
+                juce::String(), view, ClipOverlapPolicy::PreserveExisting, sceneIndex);
             auto* createPtr = createCmd.get();
             magda::UndoManager::getInstance().executeCommand(std::move(createCmd));
             const ClipId newClipId = createPtr->getCreatedClipId();

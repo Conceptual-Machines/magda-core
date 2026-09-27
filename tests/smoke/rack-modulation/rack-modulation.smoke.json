@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "project": "rack-modulation.mgd",
+  "cluster": "racks, macros and modulators",
+  "range": { "startBeat": 0, "endBeat": 8 },
+  "requires": { "plugins": [], "hardware": [] },
+  "tracks": [
+    { "name": "Rack", "sound": true, "peakDb": { "min": -48, "max": 0 } }
+  ],
+  "listen": "Poly Synth and FM0 layered in two rack chains; the synth's cutoff sweeps with a synced LFO and FM0's Op2 level sits where the macro puts it."
+}

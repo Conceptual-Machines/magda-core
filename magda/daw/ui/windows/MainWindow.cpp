@@ -1209,6 +1209,11 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
             // just because the user happens to have a time selection active.
             mainView->getTimelineController().dispatch(SetLoopEnabledEvent{enabled});
         });
+        // A range set behind the controller's back is lost on the next loop toggle.
+        live->setProjectLoopRangeDispatcher([this](double startBeats, double endBeats) {
+            mainView->getTimelineController().dispatch(
+                SetLoopRegionBeatsEvent{startBeats, endBeats, false});
+        });
     }
 
     // Wire transport callbacks - just dispatch events, TimelineController notifies audio engine

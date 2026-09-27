@@ -287,6 +287,8 @@ struct CreateLoopFromSelectionEvent {};
 struct SetLoopRegionBeatsEvent {
     double startBeats;
     double endBeats;
+    /// A gesture that draws a loop also turns it on; the Remote API leaves it as it was.
+    bool enable = true;
 };
 
 /**

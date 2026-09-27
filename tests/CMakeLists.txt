@@ -127,6 +127,9 @@ set(TEST_SOURCES
     # The v1 -> v2 device state conversion does, and lives in
     # project/test_legacy_corpus_migration_juce.cpp.
     project/test_legacy_corpus.cpp
+    # The smoke project set (#2782): each expectation file parses and matches
+    # the project beside it.
+    project/test_smoke_expectations.cpp
     devices/test_persisted_enum_pins.cpp
     devices/test_device_param_migrations.cpp
     project/test_project_document_adapters.cpp
@@ -672,6 +675,7 @@ target_compile_definitions(magda_tests
     # project reused or one saved for the render corpus, and where it lives is
     # part of what a manifest says.
     MAGDA_TEST_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/corpus"
+    MAGDA_SMOKE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/smoke"
     MAGDA_DEVICE_PARAM_SCHEMA_FILE="${CMAKE_CURRENT_SOURCE_DIR}/device_param_schema.txt"
     # Where the bundled runtime patches and the Faust standard library are, for
     # the test that compiles the default synth (#2237). Read from the source

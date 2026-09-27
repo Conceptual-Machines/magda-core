@@ -2973,18 +2973,15 @@ void SessionView::onCreateMidiClipClicked(int trackIndex, int sceneIndex) {
 
     // Create clip through command system for proper undo support
     auto cmd = std::make_unique<CreateClipCommand>(ClipType::MIDI, trackId, BeatPosition{0.0},
-                                                   BeatDuration{4.0}, "", ClipView::Session);
+                                                   BeatDuration{4.0}, "", ClipView::Session,
+                                                   ClipOverlapPolicy::PreserveExisting, sceneIndex);
 
     // Get raw pointer before moving to UndoManager
     auto* cmdPtr = cmd.get();
     UndoManager::getInstance().executeCommand(std::move(cmd));
 
-    // Get the created clip ID and set its scene index
-    ClipId clipId = cmdPtr->getCreatedClipId();
-    if (clipId != INVALID_CLIP_ID) {
-        ClipManager::getInstance().setClipSceneIndex(clipId, sceneIndex);
+    if (cmdPtr->getCreatedClipId() != INVALID_CLIP_ID)
         updateClipSlotAppearance(trackIndex, sceneIndex);
-    }
 }
 
 void SessionView::trackSelectionChanged(TrackId trackId) {

@@ -253,14 +253,16 @@ class DeleteClipCommand : public SnapshotCommand<ClipInfo> {
 /**
  * @brief Command for creating a new clip
  *
- * For undo, deletes the created clip.
+ * For undo, deletes the created clip. A Session clip is placed in sceneIndex,
+ * which must be an empty slot.
  */
 class CreateClipCommand : public ValidatedCommand {
   public:
     CreateClipCommand(ClipType type, TrackId trackId, BeatPosition startBeat,
                       BeatDuration lengthBeats, juce::String audioFilePath = {},
                       ClipView view = ClipView::Arrangement,
-                      ClipOverlapPolicy overlapPolicy = ClipOverlapPolicy::PreserveExisting);
+                      ClipOverlapPolicy overlapPolicy = ClipOverlapPolicy::PreserveExisting,
+                      int sceneIndex = -1);
 
     juce::String getDescription() const override {
         return type_ == ClipType::Audio ? "Create Audio Clip" : "Create MIDI Clip";
@@ -282,6 +284,7 @@ class CreateClipCommand : public ValidatedCommand {
     juce::String audioFilePath_;
     ClipView view_;
     ClipOverlapPolicy overlapPolicy_;
+    int sceneIndex_;
     ClipId createdClipId_ = INVALID_CLIP_ID;
     std::vector<ClipInfo> arrangementSnapshot_;
 };

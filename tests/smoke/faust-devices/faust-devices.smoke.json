@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "project": "faust-devices.mgd",
+  "cluster": "faust",
+  "range": { "startBeat": 0, "endBeat": 8 },
+  "requires": { "plugins": [], "hardware": [] },
+  "tracks": [
+    { "name": "FM Bass", "sound": true, "peakDb": { "min": -48, "max": 0 } },
+    { "name": "Pad", "sound": true, "peakDb": { "min": -48, "max": 0 } },
+    { "name": "Kick", "sound": true, "peakDb": { "min": -48, "max": 0 } },
+    { "name": "Snare", "sound": true, "peakDb": { "min": -48, "max": 0 } },
+    { "name": "Muted Marimba", "sound": false }
+  ],
+  "listen": "FM0 bass through Saturator, Poly Synth chords through Chorus, Delay and Reverb, Kick and Snare; the muted Marimba stays out."
+}

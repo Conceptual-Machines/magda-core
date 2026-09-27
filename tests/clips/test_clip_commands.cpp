@@ -1817,6 +1817,34 @@ TEST_CASE("CreateClipCommand - undo/redo", "[clip][command][create][undo]") {
     // Note: may have a different ID after redo
 }
 
+TEST_CASE("CreateClipCommand - a Session clip lands in its slot and undoes out of it",
+          "[clip][command][create][session]") {
+    resetState();
+    TrackId track = createTrack();
+    auto& clips = ClipManager::getInstance();
+
+    CreateClipCommand cmd(ClipType::MIDI, track, BeatPosition{0.0}, BeatDuration{4.0}, {},
+                          ClipView::Session, ClipOverlapPolicy::PreserveExisting, 2);
+    cmd.execute();
+    REQUIRE(clips.getClipInSlot(track, 2) == cmd.getCreatedClipId());
+
+    cmd.undo();
+    CHECK(clips.getClipInSlot(track, 2) == INVALID_CLIP_ID);
+    CHECK(clips.getClipsOnTrack(track).empty());
+
+    cmd.execute();
+    CHECK(clips.getClipInSlot(track, 2) == cmd.getCreatedClipId());
+
+    SECTION("An occupied slot or a missing scene is refused") {
+        CreateClipCommand occupied(ClipType::MIDI, track, BeatPosition{0.0}, BeatDuration{4.0}, {},
+                                   ClipView::Session, ClipOverlapPolicy::PreserveExisting, 2);
+        CHECK_FALSE(occupied.canExecute());
+        CreateClipCommand noScene(ClipType::MIDI, track, BeatPosition{0.0}, BeatDuration{4.0}, {},
+                                  ClipView::Session);
+        CHECK_FALSE(noScene.canExecute());
+    }
+}
+
 TEST_CASE("CreateClipCommand - validation", "[clip][command][create]") {
     resetState();
 
