@@ -35,6 +35,13 @@ class EngineJobSource {
                                              std::shared_ptr<std::atomic_bool> cancelled,
                                              ProgressCallback onProgress,
                                              CompletionCallback onComplete) = 0;
+    /// Render @p trackId's freeze off the message thread and adopt it on success;
+    /// @p refusal says why when the engine will not freeze it.
+    virtual EngineJobStartStatus freezeTrack(TrackId trackId,
+                                             std::shared_ptr<std::atomic_bool> cancelled,
+                                             ProgressCallback onProgress,
+                                             CompletionCallback onComplete,
+                                             juce::String& refusal) = 0;
     virtual EngineJobStartStatus startMasterCapture(const juce::String& jobId,
                                                     const juce::String& ownerClientId,
                                                     const MasterCaptureRequest& request) = 0;

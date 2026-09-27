@@ -181,6 +181,11 @@ while the project is played and edited, so its revision is checked only at
 start. An existing target is replaceable
 only when the request says `replace`.
 
+`tracks.freeze` renders a track offline as a job, without the progress window
+the track menu shows, and on completion the track plays the render in place of
+its devices. An engine that cannot plan the freeze reports the job
+`unsupported` with its reason. `tracks.unfreeze` is an immediate write.
+
 ### Project lifecycle
 
 `project.new` creates an untitled project; `project.close` closes the current

@@ -443,6 +443,25 @@ class AudioEngine : public AudioEngineListener {
      */
     virtual void setTrackFrozen(TrackId trackId, bool frozen) = 0;
 
+    /** @brief The render that freezes a track, or why there is none. */
+    struct TrackFreezePlan {
+        std::shared_ptr<OfflineRenderRequest> request;
+        juce::String refusal;
+    };
+
+    /**
+     * @brief What freezing @p trackId renders, for a caller that runs the render itself.
+     *
+     * Message thread. The default refuses: an engine that freezes only through
+     * setTrackFrozen offers no plan.
+     */
+    virtual TrackFreezePlan planTrackFreeze(TrackId /*trackId*/) {
+        return {.request = nullptr, .refusal = "this engine does not plan freezes"};
+    }
+
+    /** @brief Take a finished freeze render as what @p trackId plays, and mark it frozen. */
+    virtual void adoptTrackFreeze(TrackId /*trackId*/, const OfflineRenderRequest& /*request*/) {}
+
     // ===== MIDI Preview =====
     /**
      * @brief Preview a MIDI note on a track (for keyboard audition)
