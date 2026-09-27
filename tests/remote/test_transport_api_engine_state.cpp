@@ -66,3 +66,19 @@ TEST_CASE("An engine with no Edit reports transport changes to listeners",
     transport.notifyStateChanged();
     CHECK(notified == 1);
 }
+
+TEST_CASE("Bar seeks on an engine with no Edit follow its meter and clamp at the start",
+          "[remote][transport][2556]") {
+    FakeEngine engine;
+    engine.positionBeats = 7.5;
+    engine.beatsPerBar = 3.0;
+    magda::TransportApiLive transport;
+    transport.setEngineState(engine.state());
+    double seekedTo = -1.0;
+    transport.setSeekDispatcher([&](double beats) { seekedTo = beats; });
+
+    transport.seekBars(2);
+    CHECK(seekedTo == 13.5);
+    transport.seekBars(-5);
+    CHECK(seekedTo == 0.0);
+}
