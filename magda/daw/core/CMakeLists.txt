@@ -37,6 +37,7 @@ target_sources(magda_daw PRIVATE
     GestureRouter.cpp
     AutomationInfo.cpp
     AutomationManager.cpp
+    TempoLane.cpp
     LinkModeManager.cpp
     GainStagingManager.cpp
     UndoManager.cpp
