@@ -221,6 +221,19 @@ def reverse_fades(magda):
                                      "fadeOutCurve": "s_curve"})
 
 
+def multi_out(magda):
+    """A Drum Grid with the kick on its main mix and the snare on a bus of its own."""
+    track, (grid,) = add_track(magda, "Drums", "drumgrid")
+    notes = {}
+    for index, device in enumerate(("magda_kick", "magda_snare")):
+        pad = magda.call("pads.create", {"gridPath": grid, "padIndex": index})
+        magda.call("pads.setDevice", {"gridPath": grid, "padIndex": index, "catalogId": device})
+        notes[device] = pad["midiNote"]
+    magda.call("pads.update", {"gridPath": grid, "padIndex": 1, "outputBus": 1})
+    midi_clip(magda, track, 8, beats(8, 1, notes["magda_kick"], 115) +
+              [(notes["magda_snare"], 105, b, 0.25) for b in (1, 3, 5, 7)])
+
+
 PROJECTS = {
     "faust-devices": faust_devices,
     "tempo-automation": tempo_automation,
@@ -230,6 +243,7 @@ PROJECTS = {
     "drum-grid": drum_grid,
     "warp": warp,
     "reverse-fades": reverse_fades,
+    "multi-out": multi_out,
 }
 
 

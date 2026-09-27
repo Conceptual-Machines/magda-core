@@ -73,5 +73,5 @@ plugin or hardware goes in `requires` and becomes the optional tier.
 
 ## Not buildable yet
 
-Freeze (it renders behind a modal progress window; the API needs a job path for it), multi-out
-instruments, and hardware inserts in the optional tier.
+Freeze (it renders behind a modal progress window; the API needs a job path for it). Hardware
+inserts are left to the hands-on checklist: a loopback run is too fragile for a smoke project.
