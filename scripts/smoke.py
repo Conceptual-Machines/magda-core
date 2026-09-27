@@ -8,7 +8,7 @@ compares capture against render, and reads the engine's health. Standard library
 
 Usage:
   python3 scripts/smoke.py                          # the installed app, every project
-  python3 scripts/smoke.py --engine magda sidechain drum-grid
+  python3 scripts/smoke.py sidechain drum-grid
   python3 scripts/smoke.py --app path/to/MAGDA      # a specific build
   python3 scripts/smoke.py --attach                 # a MAGDA already running, left running
 """
@@ -35,7 +35,7 @@ from parity_bench import describe_machine, git_state  # noqa: E402
 
 CLIENT = "magda-smoke"
 SCOPES = ("edit", "transport", "session")
-ENGINE_NAMES = {"magda": "magda::engine", "tracktion": "Tracktion"}
+ENGINE = "magda::engine"
 SILENT_DB = -90.0
 SCHEMA = 1
 
@@ -216,9 +216,7 @@ def connect(args):
         return Magda(None, running, args.timeout)
 
     app = Path(args.app) if args.app else default_app()
-    env = dict(os.environ)
-    if args.engine:
-        env["MAGDA_AUDIO_ENGINE"] = args.engine
+    env = dict(os.environ, MAGDA_AUDIO_ENGINE="magda")
     try:
         process = subprocess.Popen([str(app)], env=env, stdout=subprocess.DEVNULL,
                                    stderr=subprocess.DEVNULL)
@@ -514,22 +512,19 @@ def run_project(magda, name, mgd, spec, out_dir):
     capture = magda.call("engine.masterCapture.start", {
         "path": str(capture_path), "format": "wav", "bitDepth": 32,
         "overwritePolicy": "replace"})
-    if capture["state"] == "unsupported":
-        capture = None
-        result["compare"] = "skipped: this engine has no master capture"
-    if capture is not None:
-        deadline = time.monotonic() + 5
-        while not magda.call("engine.masterCapture.status")["active"]:
-            if time.monotonic() > deadline:
-                raise SmokeError("master capture never became active")
-            time.sleep(0.05)
-        # The request is live; the audio thread picks it up on its next callback.
-        time.sleep(0.2)
+    if capture["state"] not in ("accepted", "running"):
+        raise SmokeError("master capture %s" % capture["state"])
+    deadline = time.monotonic() + 5
+    while not magda.call("engine.masterCapture.status")["active"]:
+        if time.monotonic() > deadline:
+            raise SmokeError("master capture never became active")
+        time.sleep(0.05)
+    # The request is live; the audio thread picks it up on its next callback.
+    time.sleep(0.2)
     try:
         peaks, loads = play_range(magda, spec, list(track_ids.values()))
     finally:
-        if capture is not None and capture["state"] in ("accepted", "running"):
-            capture = magda.job(magda.call("engine.masterCapture.stop", {"jobId": capture["id"]}))
+        magda.job(magda.call("engine.masterCapture.stop", {"jobId": capture["id"]}))
         magda.call("transport.stop")
     after = magda.call("engine.health")
 
@@ -540,11 +535,8 @@ def run_project(magda, name, mgd, spec, out_dir):
         result["failures"].append("%d xrun(s) during playback" % xruns)
     result["meanLoad"] = round(sum(loads) / len(loads), 3) if loads else None
     result["peakLoad"] = round(max(loads), 3) if loads else None
-    result["engine"] = after["engine"]
 
-    if capture is None:
-        pass
-    elif spec.get("scenario"):
+    if spec.get("scenario"):
         # An offline render plays the arrangement only; a launched scene is live-only.
         result["compare"] = "skipped: the scenario plays session clips"
     else:
@@ -581,19 +573,18 @@ def history_root(args, machine):
     return root / machine["id"]
 
 
-def previous_run(root, engine):
-    """This machine's last run on the same engine."""
+def previous_run(root):
     path = root / "history.jsonl"
     if not path.exists():
         return None
-    runs = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
-    return next((run for run in reversed(runs) if run["engine"] == engine), None)
+    lines = [line for line in path.read_text().splitlines() if line.strip()]
+    return json.loads(lines[-1]) if lines else None
 
 
 def print_report(run, earlier):
     print()
-    print("smoke run %s on %s, engine %s, %s" % (run["time"], run["machine"]["id"],
-                                                 run["engine"], run["commit"][:10] or "no git"))
+    print("smoke run %s on %s, %s" % (run["time"], run["machine"]["id"],
+                                      run["commit"][:10] or "no git"))
     print("%-18s %-7s %8s %8s %8s %6s" % ("project", "result", "load s", "mean cpu",
                                          "peak cpu", "xruns"))
     for r in run["results"]:
@@ -606,7 +597,7 @@ def print_report(run, earlier):
         for failure in r["failures"]:
             print("    - " + failure)
     if earlier is None:
-        print("\nfirst run of this engine on this machine")
+        print("\nfirst run on this machine")
         return
     print("\nsince %s:" % earlier["time"])
     before = {r["project"]: r for r in earlier["results"]}
@@ -639,7 +630,6 @@ def main():
     parser.add_argument("--attach", action="store_true",
                         help="use the MAGDA already running and leave it running")
     parser.add_argument("--set", default=str(ROOT / "tests" / "smoke"), dest="smoke_dir")
-    parser.add_argument("--engine", choices=sorted(ENGINE_NAMES))
     parser.add_argument("--hardware", default="",
                         help="hardware this machine has, comma separated: insert,loopback")
     parser.add_argument("--history-dir", help="default: $MAGDA_SMOKE_HISTORY or ~/.magda-smoke")
@@ -660,9 +650,9 @@ def main():
         out_dir = root / stamp
         out_dir.mkdir(parents=True, exist_ok=True)
         engine = magda.call("engine.health")["engine"]
-        if args.engine and engine != ENGINE_NAMES[args.engine]:
-            raise SmokeError("MAGDA is running %s, not %s: switch it in Settings -> Audio, "
-                             "or run without --attach" % (engine, ENGINE_NAMES[args.engine]))
+        if engine != ENGINE:
+            raise SmokeError("MAGDA is running %s: switch it to the magda engine in "
+                             "Settings -> Audio, or run without --attach" % engine)
         hardware = {h for h in args.hardware.split(",") if h}
         for name, mgd, spec in projects:
             reason = unmet_requirement(magda, spec, hardware)
@@ -678,9 +668,9 @@ def main():
     finally:
         magda.close(quit_app)
 
-    earlier = previous_run(root, engine)
+    earlier = previous_run(root)
     commit, dirty = git_state()
-    run = {"schema": SCHEMA, "time": stamp, "machine": machine, "engine": engine,
+    run = {"schema": SCHEMA, "time": stamp, "machine": machine,
            "commit": commit, "dirty": dirty, "results": results}
     (out_dir / "result.json").write_text(json.dumps(run, indent=2))
     with (root / "history.jsonl").open("a") as history:

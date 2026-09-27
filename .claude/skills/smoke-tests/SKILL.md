@@ -13,16 +13,16 @@ is manual, per OS, against the installed build, never in CI.
 ## Running the set
 
 ```
-python3 scripts/smoke.py --engine magda                 # launches the installed MAGDA
-python3 scripts/smoke.py --app <binary> --engine magda  # a dev build
-python3 scripts/smoke.py --attach sidechain             # the running MAGDA, left running
+python3 scripts/smoke.py                       # launches the installed MAGDA on the magda engine
+python3 scripts/smoke.py --app <binary>        # a dev build
+python3 scripts/smoke.py --attach sidechain    # the running MAGDA, left running
 ```
 
 The client is `magda-smoke`; its first run asks the user once for edit, transport and session.
 Results and audio land in `~/.magda-smoke/<machine>/<time>/`, compared with the last run of the
 same engine. Capture and render never null (free-running oscillators), so they are compared on
 energy envelopes: digital-silence runs, envelope drift, and the render's length against
-`range.seconds`. Tracktion has no master capture, so its comparison is skipped.
+`range.seconds`.
 
 ## Projects are built in code, never by hand
 
