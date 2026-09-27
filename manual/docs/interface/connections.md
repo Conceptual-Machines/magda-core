@@ -24,6 +24,10 @@ They are genuinely separate. Each has its own switch, its own port, and its own 
 
 What they *share* is everything past the socket: the same set of operations, and the same per-client permissions on the **Clients** tab. A client granted `edit` gets `edit` whichever transport it arrives over.
 
+See the [Remote API Reference](../reference/remote-api.md) for connection framing,
+schema discovery, revisions and retries, subscriptions, errors, and the complete
+operation catalogue.
+
 **OSC is not one of them.** It is a different protocol on a different stack, with no token, no client list, and no permissions — an OSC surface can do what OSC surfaces can do, and it will never appear on the Clients tab. It is in this dialog because it is another way into MAGDA from outside, not because it shares any of the above.
 
 ## MCP
@@ -33,7 +37,9 @@ What they *share* is everything past the socket: the same set of operations, and
 
 Below the toggle, MAGDA composes the exact JSON to paste into an MCP host's config, using this install's own paths, with a **Copy** button. It stays correct across restarts: the helper it names finds MAGDA's current port and token each time, so neither has to be written down.
 
-On Linux inside an AppImage there is no stable path to publish, so the page shows a placeholder and says so — download `magda-mcp` from the release, put it somewhere permanent, and use that path.
+On Linux inside an AppImage, MAGDA stages `magda-mcp` into its data directory
+the first time this page is opened and updates that stable copy when the
+AppImage changes.
 
 ## WebSocket
 
@@ -56,7 +62,7 @@ Each client MAGDA has heard from over **either** transport gets a row, listed by
 | `edit` | Change tempo, tracks, clips, notes, devices, and automation |
 | `transport` | Play, stop, record-arm, loop, and seek |
 | `session` | Launch and stop session clips and scenes |
-| `hardware-midi` | Reach physical MIDI ports. Nothing uses it yet. |
+| `hardware-midi` | Send channel messages and SysEx to physical MIDI outputs. |
 
 Changes apply to the client's next request. There is nothing to restart and no need to reconnect.
 

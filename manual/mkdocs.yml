@@ -103,6 +103,7 @@ nav:
   - Time Bend: time-bend.md
   - Transport: transport.md
   - Reference:
+      - Remote API: reference/remote-api.md
       - DSL Reference: reference/dsl.md
       - Controller Profile Format: reference/controller-profile-format.md
       - OSC Address Reference: reference/osc-addresses.md

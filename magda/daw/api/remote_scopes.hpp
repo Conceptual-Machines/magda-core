@@ -52,13 +52,6 @@ enum class Scope {
     Session,
     /**
      * Reach physical MIDI ports, including SysEx.
-     *
-     * No operation requires this today — the registry exposes no hardware MIDI
-     * surface yet. It is declared now because grants are persisted: a scope
-     * invented later would silently read as "not granted" on every existing
-     * client, which is the correct answer, but only if the word already exists
-     * when those grants are written. It also gives the settings UI a stable
-     * place to show the permission before there is anything behind it.
      */
     HardwareMidi,
 };
