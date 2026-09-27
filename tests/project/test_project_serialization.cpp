@@ -731,6 +731,48 @@ TEST_CASE("Missing project media is discovered, searched and relinked",
     REQUIRE(samplerMediaPath == samplerReplacement);
 }
 
+TEST_CASE("Media inside the project folder moves with it", "[project][serialization][2784]") {
+    ProjectTestFixture fixture;
+    const auto scratch = testTempRoot().getNonexistentChildFile("relative_media", "");
+    REQUIRE(scratch.createDirectory());
+    fixture.tempDirs.push_back(scratch);
+
+    const auto projectDir = scratch.getChildFile("song");
+    const auto projectFile = projectDir.getChildFile("song.mgd");
+    const auto inside =
+        projectDir.getChildFile("song_Media").getChildFile("imported").getChildFile("loop.wav");
+    const auto outside = scratch.getChildFile("library").getChildFile("kick.wav");
+    REQUIRE(inside.getParentDirectory().createDirectory());
+    REQUIRE(outside.getParentDirectory().createDirectory());
+    REQUIRE(inside.replaceWithText("inside"));
+    REQUIRE(outside.replaceWithText("outside"));
+
+    const auto trackId = TrackManager::getInstance().createTrack("Audio", TrackType::Media);
+    auto& clips = ClipManager::getInstance();
+    REQUIRE(clips.createAudioClipBeats(trackId, 0.0, 4.0, inside.getFullPathName()) !=
+            INVALID_CLIP_ID);
+    REQUIRE(clips.createAudioClipBeats(trackId, 8.0, 4.0, outside.getFullPathName()) !=
+            INVALID_CLIP_ID);
+    REQUIRE(ProjectSerializer::saveToFile(projectFile,
+                                          ProjectManager::getInstance().getCurrentProjectInfo()));
+
+    const auto moved = scratch.getChildFile("moved").getChildFile("song");
+    REQUIRE(projectDir.copyDirectoryTo(moved));
+    REQUIRE(projectDir.deleteRecursively());
+
+    StagedProjectData staged;
+    REQUIRE(ProjectSerializer::loadAndStage(moved.getChildFile("song.mgd"), staged));
+    std::vector<juce::String> paths;
+    for (const auto& source : staged.sources)
+        paths.push_back(source.filePath);
+    std::ranges::sort(paths);
+    const auto movedInside =
+        moved.getChildFile("song_Media").getChildFile("imported").getChildFile("loop.wav");
+    std::vector<juce::String> expected{movedInside.getFullPathName(), outside.getFullPathName()};
+    std::ranges::sort(expected);
+    CHECK(paths == expected);
+}
+
 TEST_CASE("Missing media search leaves ambiguous filenames for the user",
           "[project][missing-media][71]") {
     ProjectTestFixture fixture;
