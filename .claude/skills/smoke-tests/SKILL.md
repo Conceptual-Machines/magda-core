@@ -41,9 +41,10 @@ MCP must be on with the edit scope granted to `claude-code` (both persist in MAG
 script uses the repo's own client (`scripts/build_synthstack_session.py`), so it sees every
 operation the running build has, even when this session's MCP tool list is stale.
 
-The one exception is state only a plugin can set: `plugin-state` holds a Dexed patch chosen by
-hand in the plugin. Its `.mgd` is its own seed; the recipe opens it and rebuilds the clip, and
-the expectation's `parameters` block checks the patch comes back.
+The one exception is state only a plugin can set: `plugin-state` holds a Surge XT bass patch
+chosen by hand in the plugin (Surge runs on all three platforms; Dexed has no Linux build). Its
+`.mgd` is its own seed; the recipe opens it and rebuilds the clip, and the expectation's
+`parameters` block checks the patch comes back.
 
 ## Adding a project
 

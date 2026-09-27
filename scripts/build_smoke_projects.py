@@ -193,7 +193,7 @@ def drum_grid(magda):
 
 
 def plugin_state(magda):
-    """Dexed on a patch set by hand in the plugin: the API cannot write it, so the
+    """Surge XT on a patch chosen by hand in the plugin: the API cannot select one, so the
     saved project is its own seed and only the clip is built here."""
     seed = SMOKE_DIR / "plugin-state" / "plugin-state.mgd"
     wait_for_job(magda, magda.call("project.open", {
@@ -201,10 +201,12 @@ def plugin_state(magda):
         "missingMediaPolicy": "fail", "unavailableDevicePolicy": "fail"}))
     listing = magda.call("tracks.list")
     tracks = listing["items"] if isinstance(listing, dict) else listing
-    track = next(t["id"] for t in tracks if t["name"] == "Dexed")
+    track = next(t["id"] for t in tracks if t["name"] == "Surge")
     for clip in magda.call("clips.list", {"trackId": track, "view": "arrangement"})["items"]:
         magda.call("clips.delete", {"clipId": clip["id"]})
-    midi_clip(magda, track, 8, [(n, 100, b, 1.8) for b in (0, 2, 4, 6) for n in (48, 55, 64)])
+    # The patch is a bass: one note at a time, an eighth-note line.
+    line = [48, 48, 55, 48, 51, 48, 55, 58] * 2
+    midi_clip(magda, track, 8, [(n, 105, i * 0.5, 0.4) for i, n in enumerate(line)])
 
 
 LOOP = SMOKE_DIR / "assets" / "loop-100bpm.wav"
