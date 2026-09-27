@@ -187,6 +187,21 @@ def drum_grid(magda):
     midi_clip(magda, track, 8, pattern)
 
 
+def plugin_state(magda):
+    """Dexed on a patch set by hand in the plugin: the API cannot write it, so the
+    saved project is its own seed and only the clip is built here."""
+    seed = SMOKE_DIR / "plugin-state" / "plugin-state.mgd"
+    wait_for_job(magda, magda.call("project.open", {
+        "path": str(seed), "dirtyPolicy": "discard", "autosavePolicy": "ignore",
+        "missingMediaPolicy": "fail", "unavailableDevicePolicy": "fail"}))
+    listing = magda.call("tracks.list")
+    tracks = listing["items"] if isinstance(listing, dict) else listing
+    track = next(t["id"] for t in tracks if t["name"] == "Dexed")
+    for clip in magda.call("clips.list", {"trackId": track, "view": "arrangement"})["items"]:
+        magda.call("clips.delete", {"clipId": clip["id"]})
+    midi_clip(magda, track, 8, [(n, 100, b, 1.8) for b in (0, 2, 4, 6) for n in (48, 55, 64)])
+
+
 LOOP = SMOKE_DIR / "assets" / "loop-100bpm.wav"
 
 
@@ -241,6 +256,7 @@ PROJECTS = {
     "rack-modulation": rack_modulation,
     "sidechain": sidechain,
     "drum-grid": drum_grid,
+    "plugin-state": plugin_state,
     "warp": warp,
     "reverse-fades": reverse_fades,
     "multi-out": multi_out,

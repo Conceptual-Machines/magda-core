@@ -104,6 +104,23 @@ juce::StringArray problemsWith(const juce::File& expectationFile) {
         }
     }
 
+    const auto* parameterChecks = json["parameters"].getArray();
+    if (json.hasProperty("parameters") && parameterChecks == nullptr)
+        problems.add("parameters must be an array");
+    for (const auto& check :
+         parameterChecks != nullptr ? *parameterChecks : juce::Array<juce::var>{}) {
+        if (!check["track"].isString() || !check["device"].isString())
+            problems.add("parameters: each check needs a track and a device name");
+        const auto* values = check["normalized"].getDynamicObject();
+        if (values == nullptr || values->getProperties().isEmpty())
+            problems.add("parameters: normalized must name at least one parameter");
+        for (const auto& value :
+             values != nullptr ? values->getProperties() : juce::NamedValueSet{})
+            if (!isNumber(value.value) || static_cast<double>(value.value) < 0.0 ||
+                static_cast<double>(value.value) > 1.0)
+                problems.add("parameters: " + value.name.toString() + " must be within 0..1");
+    }
+
     const auto projectFile = expectationFile.getSiblingFile(json["project"].toString());
     if (!json["project"].isString() || !projectFile.existsAsFile()) {
         problems.add("project '" + json["project"].toString() + "' not found");
@@ -124,6 +141,20 @@ juce::StringArray problemsWith(const juce::File& expectationFile) {
             if (!found)
                 problems.add("track '" + name + "' is not in the project");
         }
+    }
+
+    for (const auto& check :
+         parameterChecks != nullptr ? *parameterChecks : juce::Array<juce::var>{}) {
+        const auto trackName = check["track"].toString();
+        const auto deviceName = check["device"].toString();
+        const auto track = std::ranges::find(staged.tracks, trackName, &TrackInfo::name);
+        bool found = false;
+        if (track != staged.tracks.end())
+            test::legacy_corpus::forEachDevice(*track, [&](const DeviceInfo& device) {
+                found = found || device.name == deviceName;
+            });
+        if (!found)
+            problems.add("parameters: no device '" + deviceName + "' on track '" + trackName + "'");
     }
 
     const bool core = requires_["plugins"].size() == 0 && requires_["hardware"].size() == 0;

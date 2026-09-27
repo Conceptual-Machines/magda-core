@@ -41,12 +41,17 @@ MCP must be on with the edit scope granted to `claude-code` (both persist in MAG
 script uses the repo's own client (`scripts/build_synthstack_session.py`), so it sees every
 operation the running build has, even when this session's MCP tool list is stale.
 
+The one exception is state only a plugin can set: `plugin-state` holds a Dexed patch chosen by
+hand in the plugin. Its `.mgd` is its own seed; the recipe opens it and rebuilds the clip, and
+the expectation's `parameters` block checks the patch comes back.
+
 ## Adding a project
 
 1. Add a recipe to `scripts/build_smoke_projects.py` and register it in `PROJECTS`.
 2. Run it for that project only, then decode the saved `.mgd` (zlib JSON) and check the feature
    actually landed: the link, the slot, the sidechain source. A save that succeeded is not proof.
 3. Write `<name>.smoke.json`: range in beats, tracks that must sound or stay silent, `requires`,
+   `parameters` for restored plugin state,
    one `listen` line, and a `scenario` if nothing sounds until something is launched.
 4. `make test-build`, then `./tests/magda_tests "[smoke]"` from `cmake-build-debug`.
 

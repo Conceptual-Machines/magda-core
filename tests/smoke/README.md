@@ -13,6 +13,10 @@ plays the same on macOS, Windows and Linux. A project that names a plugin or
 hardware is in the optional tier: it runs where the machine has what it needs
 and is reported as skipped where it does not.
 
+A plugin's own state cannot be set over the API, so a project that exists to
+restore one (`plugin-state`) is seeded by hand in the plugin; its recipe opens
+the seed and builds the rest.
+
 Unlike the legacy corpus, these files may be resaved: a smoke project is
 designed material, and one that needs another bar or another device gets it.
 
@@ -48,6 +52,7 @@ Each project is the folder MAGDA saves, `<name>/<name>.mgd`, with a
 | `tracks` | Tracks checked by name. A track not listed is not checked. |
 | `tracks[].sound` | `true`: the track must sound in the range. `false`: it must stay silent. Meters read before a track's mute, so a muted track cannot be checked this way. |
 | `tracks[].peakDb` | Bounds on the track meter's peak over the range, in dBFS. Required when `sound` is `true`. A silent track's peak must stay below -90 dBFS unless it gives its own `max`. |
+| `parameters` | Optional. Each `{ "track", "device", "normalized": { name: value } }` names parameter values, 0..1, the device must come back with after the project opens: what proves a hosted plugin's saved state restored. |
 | `scenario` | Optional. Remote API calls made during playback, each `{ "beat", "call", "input" }` with the beat inside `range`, such as launching a scene. |
 | `listen` | One line on what a listener would check, printed in the report. |
 
