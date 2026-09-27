@@ -648,9 +648,9 @@ target_compile_definitions(magda_tests
     # the compiler shows up as a reviewable diff rather than a rewritten
     # build artefact.
     MAGDA_PLAN_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/tests/goldens/plan"
-    # The shared test engine must NOT auto-wire the live Tempo lane sync: it
-    # attaches to the AutomationManager singleton and would perturb other tests.
-    # TempoLaneSync is tested directly in automation/test_tempo_lane_sync_juce.cpp instead.
+    # The Tracktion compatibility engine must NOT auto-wire the live Tempo lane
+    # sync: it attaches to the AutomationManager singleton and would perturb
+    # engine-neutral tests. Its fork-only suite was retired in #2556.
     MAGDA_NO_AUTO_TEMPO_LANE_SYNC=1
     # Friend access for agents/test_llama_model_manager.cpp. The define also happens to
     # arrive transitively via magda_daw's INTERFACE re-export of its own
@@ -724,20 +724,11 @@ target_sources(magda_juce_tests PRIVATE
     juce_tests_main.cpp
     windows_no_dialogs.cpp
     utilities/test_zoom_simple.cpp
-    ui/test_export_transport_stop_juce.cpp
-    engine/test_offline_render_device_power_juce.cpp
-    engine/test_tracktion_engine_wrapper_refactoring_juce.cpp
-    # engine/test_export_no_assertion_juce.cpp  # Disabled - see issue #611 (generator device export)
     engine/test_assertion_watch_juce.cpp
     midi/test_midi_recording_juce.cpp
-    clips/test_clip_sync_integration_juce.cpp
-    ui/test_signalsmith_loop_juce.cpp
-    ui/test_arranger_launcher_switching_juce.cpp
     ui/test_node_id_collision_juce.cpp
     ui/test_transport_seek_juce.cpp
-    midi/test_session_slot_recording_juce.cpp
     engine/test_time_signature_beats_juce.cpp
-    routing/test_input_monitor_track_routing_juce.cpp
     routing/test_remote_routing_engine_conformance_juce.cpp
     # Hardware output selections must reach the TE wave output devices (#2264)
     routing/test_hardware_output_routing_juce.cpp
@@ -747,13 +738,8 @@ target_sources(magda_juce_tests PRIVATE
     # OSC control surfaces (issue #1757): a live receive thread and real packets
     controllers/test_osc_service_juce.cpp
     devices/test_post_fx_fader_order_juce.cpp
-    midi/test_track_midi_recording_preview_juce.cpp
-    ui/test_timeline_loop_activation_juce.cpp
-    midi/test_midi_signal_routing_juce.cpp
-    devices/test_drum_grid_serialization_juce.cpp
     devices/test_sampler_relocate_juce.cpp
     devices/test_chord_audition_push_juce.cpp
-    devices/test_device_services_juce.cpp
     devices/test_insert_config_bridge_juce.cpp
     devices/test_device_param_schema_juce.cpp
     # pluginState v1 -> v2 over the legacy corpus (#2079). Here rather than in
@@ -768,9 +754,9 @@ target_sources(magda_juce_tests PRIVATE
     # The traffic the same device passes on rather than consumes (#2417).
     devices/test_device_midi_passthru_juce.cpp
     devices/test_mutable_add_not_replace_juce.cpp
-    devices/test_master_sidechain_juce.cpp
+    # The one suite from the old engine-level set that was already ported to
+    # an app-owned service. It exercises no Tracktion object (#2556).
     midi/test_midi_bridge_note_events_juce.cpp
-    devices/test_section_scoped_device_ids_juce.cpp
     integration/test_remote_service_live_juce.cpp
     # Path-addressed racks/chains against the real TrackManager (issue #1993)
     integration/test_track_api_nested_racks_live_juce.cpp
@@ -816,9 +802,6 @@ target_sources(magda_juce_tests PRIVATE
     # target, and nothing else in either suite paints a lane header.
     automation/test_automation_grid_ticks_juce.cpp
     ../magda/daw/ui/components/automation/AutomationLaneHeader.cpp
-    automation/test_tempo_map_juce.cpp
-    automation/test_tempo_lane_bridge_juce.cpp
-    automation/test_tempo_lane_sync_juce.cpp
     dsp/test_faust_sidechain_juce.cpp
     dsp/test_faust_instrument_tempo_juce.cpp
     dsp/test_faust_instrument_voice_modes_juce.cpp
@@ -866,9 +849,6 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/themes/FontManager.cpp
     ui/test_arrangement_row_alignment_juce.cpp
     ui/test_arrangement_vertical_scroll_juce.cpp
-    automation/test_automation_modes_juce.cpp
-    ui/test_arrangement_transport_loop_juce.cpp
-    devices/test_external_plugin_state_restore_juce.cpp
     agents/test_chord_progression_converter_juce.cpp
     ui/test_audio_driver_type_selection_juce.cpp
     # AudioIOService opening only the channels asked for (#2746)
@@ -877,7 +857,6 @@ target_sources(magda_juce_tests PRIVATE
     audio/test_active_midi_inputs_juce.cpp
     # Audio Settings driving Tracktion's interface through its wave devices (#2749)
     engine/test_tracktion_audio_io_juce.cpp
-    automation/test_tempo_sequence_ripple_juce.cpp
     ../magda/daw/ui/components/chain/slot/StepSequencerClipExport.cpp
 )
 
@@ -1039,9 +1018,6 @@ target_include_directories(magda_juce_tests
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-add_test(NAME arrangement_transport_loop_juce
-         COMMAND magda_juce_tests "Arrangement Transport Loop Tests")
-
 add_test(NAME multiband_curve_view_juce
          COMMAND magda_juce_tests "Multiband Curve View Tests")
 
@@ -1069,9 +1045,6 @@ add_test(NAME user_theme_juce
 add_test(NAME syntax_highlighting_juce
          COMMAND magda_juce_tests "Syntax Highlighting Tests")
 
-add_test(NAME tempo_map_juce
-         COMMAND magda_juce_tests "Tempo Map Tests")
-
 # The null-diff corpus (#2040): every case rendered through both engines. Two
 # entries because they fail for different reasons and one of them is much
 # cheaper: a mapping disagreement moves every clip in every project, so it is
@@ -1085,22 +1058,8 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
              COMMAND magda_juce_tests "Trimmed Session Launch")
 endif()
 
-add_test(NAME tempo_lane_bridge_juce
-         COMMAND magda_juce_tests "Tempo Lane Bridge Tests")
-
-add_test(NAME tempo_lane_sync_juce
-         COMMAND magda_juce_tests "Tempo Lane Sync Tests")
-
 add_test(NAME midi_bridge_note_events_juce
          COMMAND magda_juce_tests "MidiBridge Note Events Tests")
-add_test(NAME external_plugin_state_restore_juce
-         COMMAND magda_juce_tests "External Plugin State Restore Tests")
-
-add_test(NAME section_scoped_device_ids_juce
-         COMMAND magda_juce_tests "Section-Scoped Device IDs")
-
-add_test(NAME offline_render_device_power_juce
-         COMMAND magda_juce_tests "Offline Render Device Power Tests")
 
 add_test(NAME chord_progression_converter_juce
          COMMAND magda_juce_tests "Chord Progression Converter Tests")

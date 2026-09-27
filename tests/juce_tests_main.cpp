@@ -7,6 +7,7 @@
 #include "AssertionWatch.hpp"
 #include "JuceTestStateGuard.hpp"
 #include "magda/daw/audio/FaustResources.hpp"
+#include "magda/daw/engine/AudioEngineChoice.hpp"
 
 /**
  * @brief Main entry point for JUCE unit tests
@@ -17,6 +18,21 @@
  */
 
 int main(int argc, char* argv[]) {
+    // This is the native-engine suite (#2556). Keep the environment override so
+    // every construction site, including one hidden behind an app service,
+    // makes the same choice. The null-diff corpus owns its explicit incumbent
+    // leg and remains intentionally unaffected until #2557 removes it.
+#if JUCE_WINDOWS
+    _putenv_s("MAGDA_AUDIO_ENGINE", "magda");
+#else
+    setenv("MAGDA_AUDIO_ENGINE", "magda", 1);
+#endif
+
+    if (magda::chosenAudioEngine() != magda::AudioEngineChoice::Magda) {
+        std::cerr << "magda_juce_tests requires the native engine\n";
+        return 2;
+    }
+
     // Before anything else, and before anything can have started a thread.
     //
     // This installs the process-wide logger that lets a test read the engine's

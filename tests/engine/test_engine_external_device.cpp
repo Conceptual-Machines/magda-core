@@ -1799,7 +1799,7 @@ TEST_CASE("A stale saved parameter array is corrected rather than replayed", "[e
     // Every project MAGDA saved before the restore was fixed has this shape:
     // the chunk holds the voice the user heard, and the parameter array beside
     // it holds the defaults the host read at construction. The incumbent lets
-    // the chunk win and test_external_plugin_state_restore_juce.cpp pins that.
+    // the chunk win; this native adapter test preserves that project contract.
     //
     // Under the native engine the plan writes every parameter it resolves
     // before each block, and it resolves them from the model. So the chunk

@@ -30,8 +30,8 @@
  *    defaults with the project's own values unused in the model.
  * 2. **The chunk, over the top.** Where the two disagree the chunk is right and
  *    the array is stale, which is what every project saved by a MAGDA old
- *    enough to have written a stale array looks like
- *    (test_external_plugin_state_restore_juce.cpp).
+ *    enough to have written a stale array looks like. The native adapter suite
+ *    in test_engine_external_device.cpp pins that ordering.
  * 3. **A snapshot of what the plugin now holds**, handed back to whoever owns
  *    the model. That is the step the fork spends `valueChangedByPlugin` on, and
  *    the reason it exists is the same here: after a restore the model's array

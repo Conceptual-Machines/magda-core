@@ -9,9 +9,7 @@
 using namespace magda;
 
 // Pure-state unit tests for the AutomationManager API additions in #1039.
-// Tests that construct an AutomationRecordingEngine (which needs a te::Edit)
-// live in test_automation_modes_juce.cpp so they run inside magda_juce_tests
-// where the shared TE engine is properly managed.
+// Engine-side authority and baking are covered by the native engine tests.
 
 namespace {
 
