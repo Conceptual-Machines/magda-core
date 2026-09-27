@@ -66,7 +66,12 @@ def beats(count, step, note, velocity=100, length=None):
 def wait_for_job(magda, job):
     while job["state"] in ("accepted", "running"):
         time.sleep(0.1)
-        job = magda.call("jobs.get", {"jobId": job["id"]})
+        try:
+            job = magda.call("jobs.get", {"jobId": job["id"]})
+        except SystemExit as error:
+            # A project swap cancels requests queued across it; the job carries on.
+            if "cancelled before execution" not in str(error):
+                raise
     if job["state"] != "completed":
         raise SystemExit(f"job {job['kind']} ended {job['state']}: {job.get('error')}")
     return job
