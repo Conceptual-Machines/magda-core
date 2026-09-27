@@ -42,8 +42,9 @@ class MagdaApiLive;
  * output buffer is magda::engine and nothing else, and what the ruler converts
  * through is the map it renders with. Tempo automation is #2554.
  *
- * Recording and session launch are not wired yet (#2552, #2553) and say so
- * once in the log rather than answering silently.
+ * Session launch and recording are driven through EngineHost (#2552, #2553):
+ * live audio and MIDI inputs, monitoring, punch/count-in, Arrangement takes,
+ * Session slot takes and performance capture all share the device callback.
  *
  * No Tracktion object sits under it (#2761). What is not an engine question --
  * plugin lists, grooves, MIDI, the project save hooks -- belongs to the app's

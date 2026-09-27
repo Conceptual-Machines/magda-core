@@ -29,6 +29,15 @@ that can be asserted offline already is, in `test_take_recorder`,
 see the re-scoping argument on #2466 for why the two-engine corpus does not
 extend here.
 
+The app-facing half is asserted through the real native `EngineHost` and its
+`AudioIODeviceCallback` in `test_engine_host_audio_input_juce.cpp`,
+`test_engine_host_midi_recording_juce.cpp` and
+`test_engine_host_session_capture_juce.cpp`. Together those suites cover the
+arm/monitor topology, named hardware and MIDI inputs, recording previews,
+latency correction, count-in, punch, loop passes, Session slot takes and
+Session-to-Arrangement capture. The checklist below is therefore the remaining
+hardware pass for #2553, not a second implementation gate.
+
 **Setup**: an audio interface with a physical input, headphones, one audio
 track armed, one MIDI track with an instrument. Where a check says *both
 engines*, run it once per engine while #1897 ships dual-engine.

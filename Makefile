@@ -302,7 +302,7 @@ test-juce: test-juce-build
 		echo "❌ magda_juce_tests executable not found"; \
 		exit 1; \
 	fi; \
-	$(TEST_ENV) "$$JUCE_TEST_BIN" $(if $(JUCE_TEST),"$(JUCE_TEST)",)
+	MAGDA_AUDIO_ENGINE=magda $(TEST_ENV) "$$JUCE_TEST_BIN" $(if $(JUCE_TEST),"$(JUCE_TEST)",)
 
 # Run all tests
 .PHONY: test

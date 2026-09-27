@@ -442,14 +442,9 @@ std::vector<MgdFixture> build() {
         // is far below that and far above anything a dead leg produces.
         fixture.declaration.minPeakDb = -40.0;
 
-        // Retrospect is an LV2 plugin behind a VST3 shell and hands JUCE its own
-        // URI, "https://conceptualmachines.com/plugins/retrospect", where a path
-        // is expected. Once per instantiation, so twice here.
-        //
-        // Named rather than waived, and asserted in both directions: the day
-        // Retrospect stops doing it this line fails and comes out, which is what
-        // keeps it from quietly forgiving something else.
-        fixture.declaration.expectedHostedAssertions = {"juce_File.cpp:219"};
+        // Retrospect is an LV2 plugin behind a VST3 shell. Older JUCE builds
+        // asserted when its URI was presented where a path was expected; the
+        // pinned JUCE now accepts it, so the corpus expects no hosted assertion.
 
         fixture.declaration.mechanism =
             "two hosted Retrospect instances, which owe neither engine a sample";
