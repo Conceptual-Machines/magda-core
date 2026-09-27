@@ -2896,6 +2896,14 @@ OperationRegistry::OperationRegistry() {
             "additionalProperties":false
         })json"),
         remoteJobSchema());
+    const auto trackIdInput = operationInputSchema(R"json({
+        "type":"object","properties":{"trackId":{"type":"integer","minimum":0}},
+        "required":["trackId"],"additionalProperties":false
+    })json");
+    add("tracks.freeze", "Freeze a track: render it offline and play the render in its place",
+        OperationAccess::Control, &handlers::tracksFreeze, trackIdInput, remoteJobSchema());
+    add("tracks.unfreeze", "Unfreeze a track so its devices play live again",
+        OperationAccess::Write, &handlers::tracksUnfreeze, trackIdInput, trackSchema());
     const auto masterCaptureInput = operationInputSchema(R"json({
         "type":"object","properties":{
             "path":{"type":"string","minLength":1,"maxLength":4096},
@@ -4448,6 +4456,8 @@ OperationRegistry::OperationRegistry() {
         {"project.save", Scope::Edit},
         {"project.saveAs", Scope::Edit},
         {"engine.renderRange", Scope::Edit},
+        {"tracks.freeze", Scope::Edit},
+        {"tracks.unfreeze", Scope::Edit},
         {"engine.masterCapture.start", Scope::Edit},
         {"engine.masterCapture.stop", Scope::Edit},
         {"chordTrack.ensure", Scope::Edit},

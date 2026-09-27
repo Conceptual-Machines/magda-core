@@ -89,6 +89,20 @@ class MockEngineJobs final : public EngineJobSource {
         return renderStart;
     }
 
+    EngineJobStartStatus freezeTrack(TrackId trackId, std::shared_ptr<std::atomic_bool>,
+                                     ProgressCallback, CompletionCallback onComplete,
+                                     juce::String& refusal) override {
+        ++freezeCalls;
+        lastFreezeTrack = trackId;
+        if (freezeStart != EngineJobStartStatus::Started) {
+            refusal = freezeRefusal;
+            return freezeStart;
+        }
+        if (onComplete)
+            onComplete(freezeResult);
+        return freezeStart;
+    }
+
     EngineJobStartStatus startMasterCapture(const juce::String& jobId,
                                             const juce::String& ownerClientId,
                                             const MasterCaptureRequest& request) override {
@@ -131,6 +145,11 @@ class MockEngineJobs final : public EngineJobSource {
         shutdownCalled = true;
     }
 
+    EngineJobStartStatus freezeStart = EngineJobStartStatus::Started;
+    EngineJobResult freezeResult{EngineJobResultStatus::Succeeded};
+    juce::String freezeRefusal;
+    int freezeCalls = 0;
+    TrackId lastFreezeTrack = INVALID_TRACK_ID;
     EngineJobStartStatus renderStart = EngineJobStartStatus::Started;
     EngineJobResult renderResult{EngineJobResultStatus::Succeeded};
     bool deferRender = false;
@@ -449,4 +468,37 @@ TEST_CASE("Master capture survives project edits made while it runs",
     CHECK(fixture.engineJobs->captureCancelCalls == 0);
     CHECK(output.existsAsFile());
     output.deleteFile();
+}
+
+TEST_CASE("Freezing a track is an owned job that reports the engine's refusal",
+          "[remote][engine-jobs][2784]") {
+    Fixture fixture;
+    auto& tracks = static_cast<magda::test::MockTrackApi&>(fixture.api.tracks());
+    TrackInfo track;
+    track.id = 7;
+    track.name = "Synth";
+    tracks.tracks.push_back(track);
+
+    const auto frozen = run(fixture.service, "tracks.freeze", object({{"trackId", 7}}));
+    REQUIRE(frozen.ok);
+    CHECK(frozen.result["kind"].toString() == "tracks.freeze");
+    CHECK(frozen.result["state"].toString() == "completed");
+    CHECK(fixture.engineJobs->lastFreezeTrack == 7);
+
+    fixture.engineJobs->freezeStart = EngineJobStartStatus::Unsupported;
+    fixture.engineJobs->freezeRefusal = "nothing on the track renders";
+    const auto refused = run(fixture.service, "tracks.freeze", object({{"trackId", 7}}));
+    REQUIRE(refused.ok);
+    CHECK(refused.result["state"].toString() == "unsupported");
+    CHECK(refused.result["error"]["message"].toString() == "nothing on the track renders");
+
+    tracks.tracks.back().frozen = true;
+    const auto again = run(fixture.service, "tracks.freeze", object({{"trackId", 7}}));
+    CHECK_FALSE(again.ok);
+    CHECK(again.error.code == ErrorCode::Conflict);
+    CHECK(fixture.engineJobs->freezeCalls == 2);
+
+    const auto missing = run(fixture.service, "tracks.freeze", object({{"trackId", 99}}));
+    CHECK_FALSE(missing.ok);
+    CHECK(missing.error.code == ErrorCode::NotFound);
 }

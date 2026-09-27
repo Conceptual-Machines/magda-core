@@ -73,10 +73,14 @@ plugin or hardware goes in `requires` and becomes the optional tier.
   stretch, reverse and fades. Copy the file into `<name>/<name>_Media/imported/` first (see
   `load_sample`): a source inside the project folder is saved relative, so the project moves.
   Test audio is generated, not sampled, and lives in `tests/smoke/assets/`.
+- `tracks.freeze` is a job, and its render is too large to commit: the freeze project is saved
+  unfrozen and freezes in its `setup`, then bypasses the frozen devices so only a real freeze
+  sounds. Offline renders play a frozen track's live chain, hence `"compare": false` there.
+- The smoke run opens a copy of each project under the run's history folder, never the repo's.
 - `project.saveAs` is a job; poll `jobs.get` until it completes. Save As wraps the file in a folder
   named after it, and the job result reports the path actually written.
 
 ## Not buildable yet
 
-Freeze (it renders behind a modal progress window; the API needs a job path for it). Hardware
-inserts are left to the hands-on checklist: a loopback run is too fragile for a smoke project.
+Hardware inserts are left to the hands-on checklist: a loopback run is too fragile for a smoke
+project.

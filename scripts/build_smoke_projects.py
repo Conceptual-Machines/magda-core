@@ -254,6 +254,16 @@ def multi_out(magda):
               [(notes["magda_snare"], 105, b, 0.25) for b in (1, 3, 5, 7)])
 
 
+def freeze(magda):
+    """A Poly Synth track to freeze beside the same part left live. Saved unfrozen: the
+    smoke run's setup freezes it, which keeps the render out of the repository."""
+    part = [(n, 100, b, 1.8) for b in (0, 2, 4, 6) for n in (57, 60, 64)]
+    frozen, _ = add_track(magda, "Frozen", "magda_polysynth", "magda_chorus")
+    midi_clip(magda, frozen, 8, part)
+    live, _ = add_track(magda, "Live", "magda_polysynth")
+    midi_clip(magda, live, 8, [(n - 12, v, b, l) for n, v, b, l in part])
+
+
 PROJECTS = {
     "faust-devices": faust_devices,
     "tempo-automation": tempo_automation,
@@ -265,6 +275,7 @@ PROJECTS = {
     "warp": warp,
     "reverse-fades": reverse_fades,
     "multi-out": multi_out,
+    "freeze": freeze,
 }
 
 

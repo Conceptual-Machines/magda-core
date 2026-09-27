@@ -148,6 +148,29 @@ class LiveEngineJobSource final : public EngineJobSource,
         return EngineJobStartStatus::Started;
     }
 
+    EngineJobStartStatus freezeTrack(TrackId trackId, std::shared_ptr<std::atomic_bool> cancelled,
+                                     ProgressCallback onProgress, CompletionCallback onComplete,
+                                     juce::String& refusal) override {
+        const auto plan = engine_.planTrackFreeze(trackId);
+        if (plan.request == nullptr) {
+            refusal = plan.refusal;
+            return EngineJobStartStatus::Unsupported;
+        }
+        auto* engine = &engine_;
+        const auto request = plan.request;
+        return renderRange(
+            *request, std::move(cancelled), std::move(onProgress),
+            [engine, trackId, request, onComplete = std::move(onComplete)](EngineJobResult result) {
+                // Delivered on the message thread, where the model is written.
+                if (result.status == EngineJobResultStatus::Succeeded)
+                    engine->adoptTrackFreeze(trackId, *request);
+                else
+                    request->destination.deleteFile();
+                if (onComplete)
+                    onComplete(result);
+            });
+    }
+
     EngineJobStartStatus startMasterCapture(const juce::String& jobId,
                                             const juce::String& ownerClientId,
                                             const MasterCaptureRequest& request) override {

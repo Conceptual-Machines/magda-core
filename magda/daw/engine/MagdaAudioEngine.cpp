@@ -509,6 +509,23 @@ MasterCaptureState MagdaAudioEngine::masterCaptureState() const {
     return host_->masterCaptureState();
 }
 
+AudioEngine::TrackFreezePlan MagdaAudioEngine::planTrackFreeze(TrackId trackId) {
+    const auto* track = TrackManager::getInstance().getTrack(trackId);
+    if (track == nullptr)
+        return {.request = nullptr, .refusal = "no such track"};
+    if (track->frozen)
+        return {.request = nullptr, .refusal = "the track is already frozen"};
+    auto freeze = host_->planFreeze(trackId);
+    if (freeze.request != nullptr)
+        freeze.request->destination.getParentDirectory().createDirectory();
+    return {.request = std::move(freeze.request), .refusal = freeze.refusal};
+}
+
+void MagdaAudioEngine::adoptTrackFreeze(TrackId trackId, const OfflineRenderRequest& request) {
+    host_->adoptFreeze(request);
+    TrackManager::getInstance().setTrackFrozen(trackId, true);
+}
+
 void MagdaAudioEngine::setTrackFrozen(TrackId trackId, bool frozen) {
     auto& tracks = TrackManager::getInstance();
     const auto* track = tracks.getTrack(trackId);
@@ -520,15 +537,12 @@ void MagdaAudioEngine::setTrackFrozen(TrackId trackId, bool frozen) {
         return;
     }
 
-    const auto freeze = host_->planFreeze(trackId);
+    const auto freeze = planTrackFreeze(trackId);
     if (freeze.request == nullptr) {
         juce::Logger::writeToLog("[engine] freeze of track " + juce::String(trackId) + ": " +
                                  freeze.refusal);
         return;
     }
-
-    const auto& file = freeze.request->destination;
-    file.getParentDirectory().createDirectory();
 
     auto rendered = false;
     {
@@ -542,12 +556,11 @@ void MagdaAudioEngine::setTrackFrozen(TrackId trackId, bool frozen) {
     }
 
     if (!rendered) {
-        file.deleteFile();
+        freeze.request->destination.deleteFile();
         return;
     }
 
-    host_->adoptFreeze(*freeze.request);
-    tracks.setTrackFrozen(trackId, true);
+    adoptTrackFreeze(trackId, *freeze.request);
 }
 
 void MagdaAudioEngine::previewNoteOnTrack(const std::string& track_id, int noteNumber, int velocity,

@@ -950,6 +950,90 @@ HandlerResult engineRenderRange(MagdaApi& api, const juce::var& input,
     return !job.isVoid() ? HandlerResult::unchanged(job) : HandlerResult::fail(std::move(error));
 }
 
+HandlerResult tracksFreeze(MagdaApi& api, const juce::var& input, const RequestContext& context) {
+    if (context.jobs == nullptr || context.engineJobs == nullptr)
+        return HandlerResult::fail(ErrorCode::InternalError,
+                                   "engine file services are unavailable");
+    const auto trackId = static_cast<TrackId>(static_cast<int>(input["trackId"]));
+    const auto* track = api.tracks().getTrack(trackId);
+    if (track == nullptr)
+        return notFound("track", trackId);
+    if (track->frozen)
+        return HandlerResult::fail(ErrorCode::Conflict, "track is already frozen");
+
+    auto cancelled = std::make_shared<std::atomic_bool>(false);
+    const auto jobId =
+        context.jobs->accept({.kind = "tracks.freeze",
+                              .ownerClientId = context.clientId,
+                              .requiredScope = Scope::Edit,
+                              .acceptedRevision = context.revision,
+                              .revisionPolicy = JobRevisionPolicy::CheckAtStartOnly,
+                              .projectBound = true,
+                              .cancellable = true},
+                             [cancelled] { cancelled->store(true, std::memory_order_release); });
+    if (jobId.isEmpty())
+        return HandlerResult::fail(ErrorCode::InternalError, "freeze job was not accepted");
+
+    auto jobs = context.jobsOwner;
+    auto revision = context.revisionOwner;
+    juce::String refusal;
+    const auto started = context.engineJobs->freezeTrack(
+        trackId, cancelled,
+        [jobs, jobId](double progress) {
+            if (jobs)
+                jobs->reportProgress(jobId, std::clamp(progress, 0.0, 1.0));
+        },
+        [jobs, revision, jobId](EngineJobResult result) {
+            if (!jobs)
+                return;
+            const auto currentRevision =
+                revision ? revision->load(std::memory_order_acquire) : INITIAL_REVISION;
+            if (result.status == EngineJobResultStatus::Succeeded) {
+                auto* object = new juce::DynamicObject();
+                object->setProperty("frozen", true);
+                jobs->complete(jobId, juce::var(object), currentRevision);
+            } else {
+                jobs->fail(
+                    jobId,
+                    {result.status == EngineJobResultStatus::Cancelled ? ErrorCode::Cancelled
+                                                                       : ErrorCode::InternalError,
+                     result.status == EngineJobResultStatus::Cancelled ? "freeze was cancelled"
+                                                                       : "freeze render failed",
+                     {}},
+                    currentRevision);
+            }
+        },
+        refusal);
+
+    if (started == EngineJobStartStatus::Started) {
+        context.jobs->markRunning(jobId);
+    } else if (started == EngineJobStartStatus::Unsupported) {
+        context.jobs->unsupported(
+            jobId, refusal.isNotEmpty() ? refusal : engineStartError(started).message,
+            context.revision);
+    } else {
+        context.jobs->fail(jobId, engineStartError(started), context.revision);
+    }
+    Error error;
+    const auto job = currentJob(*context.jobs, jobId, context, error);
+    return !job.isVoid() ? HandlerResult::unchanged(job) : HandlerResult::fail(std::move(error));
+}
+
+HandlerResult tracksUnfreeze(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto trackId = static_cast<TrackId>(static_cast<int>(input["trackId"]));
+    const auto* track = api.tracks().getTrack(trackId);
+    if (track == nullptr)
+        return notFound("track", trackId);
+    if (!track->frozen)
+        return HandlerResult::unchanged(toJson(makeTrackDto(*track)));
+    // Through the engine, as the track menu does: an engine may hold state to drop.
+    if (auto* engine = TrackManager::getInstance().getAudioEngine())
+        engine->setTrackFrozen(trackId, false);
+    else
+        TrackManager::getInstance().setTrackFrozen(trackId, false);
+    return HandlerResult::ok(toJson(makeTrackDto(*api.tracks().getTrack(trackId))));
+}
+
 HandlerResult engineMasterCaptureStart(MagdaApi& api, const juce::var& input,
                                        const RequestContext& context) {
     if (context.jobs == nullptr || context.engineJobs == nullptr)

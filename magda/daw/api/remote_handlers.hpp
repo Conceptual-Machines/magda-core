@@ -34,6 +34,8 @@ HandlerResult jobsList(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult jobsGet(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult jobsCancel(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult engineRenderRange(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult tracksFreeze(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult tracksUnfreeze(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult engineMasterCaptureStart(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult engineMasterCaptureStop(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult engineMasterCaptureStatus(MagdaApi&, const juce::var&, const RequestContext&);

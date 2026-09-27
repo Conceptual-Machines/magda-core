@@ -104,6 +104,22 @@ juce::StringArray problemsWith(const juce::File& expectationFile) {
         }
     }
 
+    if (json.hasProperty("compare") && !json["compare"].isBool())
+        problems.add("compare must be a boolean");
+    if (json.hasProperty("setup")) {
+        const auto* steps = json["setup"].getArray();
+        if (steps == nullptr)
+            problems.add("setup must be an array");
+        for (const auto& step : steps != nullptr ? *steps : juce::Array<juce::var>{}) {
+            const auto call = step["call"].toString();
+            const auto* operation = remote::OperationRegistry::instance().find(call);
+            if (operation == nullptr)
+                problems.add("setup: no operation '" + call + "'");
+            else if (!remote::validateJson(step["input"], operation->inputSchema).empty())
+                problems.add("setup: " + call + " input does not match its schema");
+        }
+    }
+
     const auto* parameterChecks = json["parameters"].getArray();
     if (json.hasProperty("parameters") && parameterChecks == nullptr)
         problems.add("parameters must be an array");
