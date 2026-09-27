@@ -1380,21 +1380,18 @@ bool ClipComponent::hitTest(int x, int y) {
     if (x < 0 || x >= getWidth() || y < 0 || y >= getHeight())
         return false;
 
-    // Be transparent to a plain (unmodified, non-edge) click that lands on an
-    // active time selection covering this clip, so the gesture goes straight to
-    // the panel's time-selection machinery and the panel owns the drag. Routing
-    // it through this component instead breaks mid-drag: splitting at the
-    // selection boundaries rebuilds (destroys) every ClipComponent, killing the
-    // drag (you had to drag twice). Clip resize edges and modified clicks
-    // (copy/select/blade/erase/context menu) still hit the clip.
+    // Selection edges remain draggable across the lane. Inside the selection,
+    // only the lower time-selection zone passes through to the panel; the upper
+    // zone must still be able to start an ordinary clip drag after a trim.
     if (parentPanel_ != nullptr) {
         const auto mods = juce::ModifierKeys::getCurrentModifiers();
         if (!mods.isAnyModifierKeyDown() && !mods.isPopupMenu() && !isOnLeftEdge(x) &&
             !isOnRightEdge(x)) {
             const int panelX = getX() + x;
             const int panelY = getY() + y;
-            if (parentPanel_->pointInTimeSelection(panelX, panelY) ||
-                parentPanel_->pointOnTimeSelectionEdge(panelX, panelY)) {
+            if (parentPanel_->pointOnTimeSelectionEdge(panelX, panelY) ||
+                (!parentPanel_->pointInUpperTrackZone(panelY) &&
+                 parentPanel_->pointInTimeSelection(panelX, panelY))) {
                 return false;
             }
         }

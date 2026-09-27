@@ -21,10 +21,9 @@ namespace magda::interaction {
 //
 // Two surfaces, matching the two components that own pointer events:
 //
-//   panelZone()  — TrackContentPanel space: time-selection edges/body take
-//                  priority over everything (clips are hit-transparent under
-//                  a selection), then clip passthrough, then the upper
-//                  (clip/marquee) vs lower (time-selection) lane zones.
+//   panelZone()  — TrackContentPanel space: time-selection edges take priority;
+//                  the selection body owns empty space and the lower zone,
+//                  while an upper-zone clip remains draggable.
 //   clipHit()    — ClipComponent-local space: fade handles, volume handle,
 //                  lower-half time-selection band, resize edges, body.
 //
@@ -136,9 +135,7 @@ struct PanelHit {
 
 PanelHit panelHit(int x, int y, const PanelSnapshot& s);
 
-/** The winning zone for a point, using the same priority order as the
- *  panel's historical cursor logic: selection edge > selection body >
- *  clip > upper/lower lane zones. Convenience for panelHit(...).zone. */
+/** The winning zone for a point. Convenience for panelHit(...).zone. */
 PanelZone panelZone(int x, int y, const PanelSnapshot& s);
 
 /** Cursor for a panel zone. The hover cursor is modifier-independent: the

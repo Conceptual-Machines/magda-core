@@ -95,13 +95,13 @@ PanelHit panelHit(int x, int y, const PanelSnapshot& s) {
     hit.onSelectionEdge = onSelectionEdge(x, y, s, hit.selectionEdgeIsLeft);
     hit.insideSelection = onExistingSelection(x, y, s);
 
-    // Priority mirrors the panel's historical cursor logic: an active time
-    // selection wins over everything (clips are hit-transparent under it),
-    // then clip passthrough, then the lane zones.
+    // Selection edges win across the lane. A selection body wins over empty
+    // space and the lower time-selection zone, while an upper-zone clip keeps
+    // ownership so it can be dragged normally after trimming the selection.
     if (hit.onSelectionEdge)
         hit.zone =
             hit.selectionEdgeIsLeft ? PanelZone::SelectionEdgeLeft : PanelZone::SelectionEdgeRight;
-    else if (hit.insideSelection)
+    else if (hit.insideSelection && (!s.clipAtPoint || !hit.inUpperZone))
         hit.zone = PanelZone::SelectionBody;
     else if (s.clipAtPoint)
         hit.zone = PanelZone::OverClip;
