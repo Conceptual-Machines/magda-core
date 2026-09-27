@@ -18,6 +18,8 @@
 #include "magda/daw/core/ChainWalk.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/Config.hpp"
+#include "magda/daw/core/DeviceState.hpp"
+#include "magda/daw/core/DrumGridPads.hpp"
 #include "magda/daw/core/MidiFileWriter.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/core/TrackPropertyCommands.hpp"
@@ -754,6 +756,9 @@ TEST_CASE("Media inside the project folder moves with it", "[project][serializat
     const auto take =
         projectDir.getChildFile("song_Media").getChildFile("recordings").getChildFile("take-1.wav");
     clips.getClip(insideClip)->audio().takes.push_back({take.getFullPathName(), 1.0});
+    const auto samplerTrack = TrackManager::getInstance().createTrack("Sampler");
+    TrackManager::getInstance().addDeviceToTrack(samplerTrack,
+                                                 padSamplerDevice(inside.getFullPathName(), 60));
     REQUIRE(clips.createAudioClipBeats(trackId, 8.0, 4.0, outside.getFullPathName()) !=
             INVALID_CLIP_ID);
     REQUIRE(ProjectSerializer::saveToFile(projectFile,
@@ -782,6 +787,15 @@ TEST_CASE("Media inside the project folder moves with it", "[project][serializat
     });
     REQUIRE(withTake != staged.clips.end());
     CHECK(withTake->audio().takes[0].filePath == movedTake.getFullPathName());
+
+    std::optional<juce::String> samplerSource;
+    for (const auto& track : staged.tracks)
+        for (const auto& element : track.chain.fxChainElements)
+            if (isDevice(element) && getDevice(element).pluginId == "magdasampler")
+                if (const auto doc = device_state::decode(getDevice(element).pluginState))
+                    samplerSource = doc->root.props["source"].toString();
+    REQUIRE(samplerSource.has_value());
+    CHECK(*samplerSource == movedInside.getFullPathName());
 }
 
 TEST_CASE("Another platform's absolute media paths are not taken for relative ones",

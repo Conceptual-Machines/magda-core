@@ -68,6 +68,31 @@ void mapTakePaths(juce::var& clips, const std::function<juce::String(const juce:
     }
 }
 
+/// A Sampler's file is the `source` of its device state, at any depth of the chain.
+void mapSamplerSources(const juce::var& tree,
+                       const std::function<juce::String(const juce::String&)>& map) {
+    if (const auto* array = tree.getArray()) {
+        for (const auto& item : *array)
+            mapSamplerSources(item, map);
+        return;
+    }
+    auto* object = tree.getDynamicObject();
+    if (object == nullptr)
+        return;
+    if (object->getProperty("pluginId").toString() == "magdasampler") {
+        if (auto doc = device_state::decode(object->getProperty("pluginState").toString())) {
+            const auto path = doc->root.props["source"].toString();
+            const auto mapped = map(path);
+            if (path.isNotEmpty() && mapped != path) {
+                doc->root.props.set("source", mapped);
+                object->setProperty("pluginState", device_state::encode(*doc));
+            }
+        }
+    }
+    for (const auto& property : object->getProperties())
+        mapSamplerSources(property.value, map);
+}
+
 }  // namespace
 
 bool ProjectSerializer::saveToFile(const juce::File& file, const ProjectInfo& info) {
@@ -523,6 +548,11 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
         }
 
         // Stage tracks, clips, and automation
+        const auto fromProject = [&file](const juce::String& path) {
+            return fromProjectPath(file, path);
+        };
+        mapSamplerSources(obj->getProperty("tracks"), fromProject);
+        mapSamplerSources(obj->getProperty("masterTrack"), fromProject);
         if (!deserializeTracksToStaging(obj->getProperty("tracks"), outData.tracks)) {
             return false;
         }
@@ -778,12 +808,17 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info,
     // carries the rest (#2636).
     const auto addressed = addressedInOpenProject();
 
-    obj->setProperty("tracks", serializeTracks(addressed));
-    obj->setProperty("sources", serializeSources(projectFile));
-    auto clips = serializeClips();
-    mapTakePaths(clips, [&projectFile](const juce::String& path) {
+    const auto tracks = serializeTracks(addressed);
+    mapSamplerSources(tracks, [&projectFile](const juce::String& path) {
         return toProjectPath(projectFile, path);
     });
+    obj->setProperty("tracks", tracks);
+    obj->setProperty("sources", serializeSources(projectFile));
+    const auto toProject = [&projectFile](const juce::String& path) {
+        return toProjectPath(projectFile, path);
+    };
+    auto clips = serializeClips();
+    mapTakePaths(clips, toProject);
     obj->setProperty("clips", clips);
     obj->setProperty("automation", serializeAutomation());
 
@@ -794,7 +829,11 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info,
                         !masterTrack->chain.mixerAnalysisElements.empty())) {
         auto saved = *masterTrack;
         dropUnaddressedHostedParameters(saved, addressed);
-        obj->setProperty("masterTrack", serializeTrackInfo(saved));
+        auto master = serializeTrackInfo(saved);
+        mapSamplerSources(master, [&projectFile](const juce::String& path) {
+            return toProjectPath(projectFile, path);
+        });
+        obj->setProperty("masterTrack", master);
     }
 
     // Parameter aliases (UserProject layer -- opaque pass-through)
