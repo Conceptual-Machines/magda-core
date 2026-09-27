@@ -813,7 +813,7 @@ std::optional<juce::File> resolveAudioDestination(const juce::var& input,
         return std::nullopt;
     }
     if (!destination->getParentDirectory().createDirectory()) {
-        error = Error{ErrorCode::ValidationFailed, "destination folder could not be created", {}};
+        error = Error{ErrorCode::InternalError, "destination folder could not be created", {}};
         return std::nullopt;
     }
     const bool overwrite = input["overwritePolicy"].toString() == "replace";
