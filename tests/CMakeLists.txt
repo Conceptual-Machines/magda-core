@@ -581,6 +581,9 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     # adapter. The engine's half alone -- what the two hosts do with one device
     # is the corpus's question, in magda_juce_tests.
     list(APPEND TEST_SOURCES engine/test_engine_device_layer.cpp)
+    list(APPEND TEST_SOURCES engine/test_device_state_native.cpp)
+    list(APPEND TEST_SOURCES devices/test_convolution_device.cpp)
+    list(APPEND TEST_SOURCES devices/test_device_param_schema_native.cpp)
 
     # An external plugin under a Device op (#2241): the adapter over
     # juce::AudioPluginInstance, against a plugin written in the test rather
