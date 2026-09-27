@@ -209,6 +209,16 @@ def plugin_state(magda):
     midi_clip(magda, track, 8, [(n, 105, i * 0.5, 0.4) for i, n in enumerate(line)])
 
 
+def midi_thru(magda):
+    """Stochas driving Surge XT on one track with no clip: the synth only sounds if the
+    sequencer's MIDI reaches it (#1558). The pattern is drawn by hand in Stochas, so the
+    saved project is its own seed."""
+    seed = SMOKE_DIR / "midi-thru" / "midi-thru.mgd"
+    wait_for_job(magda, magda.call("project.open", {
+        "path": str(seed), "dirtyPolicy": "discard", "autosavePolicy": "ignore",
+        "missingMediaPolicy": "fail", "unavailableDevicePolicy": "fail"}))
+
+
 LOOP = SMOKE_DIR / "assets" / "loop-100bpm.wav"
 
 
@@ -278,6 +288,7 @@ PROJECTS = {
     "reverse-fades": reverse_fades,
     "multi-out": multi_out,
     "freeze": freeze,
+    "midi-thru": midi_thru,
 }
 
 

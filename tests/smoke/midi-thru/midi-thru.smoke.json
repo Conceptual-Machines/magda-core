@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "project": "midi-thru.mgd",
+  "cluster": "MIDI from a hosted sequencer",
+  "range": { "startBeat": 0, "endBeat": 8 },
+  "requires": { "plugins": ["Stochas", "Surge XT"], "hardware": [] },
+  "compare": false,
+  "tracks": [
+    { "name": "Stochas", "sound": true, "peakDb": { "min": -48, "max": 0 } }
+  ],
+  "listen": "Surge XT's init patch playing the pattern drawn in Stochas; the track has no clip, so every note comes through the sequencer's MIDI output."
+}

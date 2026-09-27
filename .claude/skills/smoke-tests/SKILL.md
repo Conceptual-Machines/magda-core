@@ -46,6 +46,10 @@ chosen by hand in the plugin (Surge runs on all three platforms; Dexed has no Li
 `.mgd` is its own seed; the recipe opens it and rebuilds the clip, and the expectation's
 `parameters` block checks the patch comes back.
 
+`midi-thru` is seeded the same way: Stochas driving Surge XT on one track with no clip, its
+pattern drawn by hand in Stochas (#1558). The track only sounds if the sequencer's MIDI
+reaches the synth. Stochas varies each pass slightly, so it sets `"compare": false`.
+
 ## Adding a project
 
 1. Add a recipe to `scripts/build_smoke_projects.py` and register it in `PROJECTS`.
