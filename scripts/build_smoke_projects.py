@@ -117,9 +117,11 @@ def session_launcher(magda):
     bass, _ = add_track(magda, "Bass", "magda_fm")
     drums, _ = add_track(magda, "Drums", "magda_kick")
     keys, _ = add_track(magda, "Keys", "magda_polysynth")
+    # Follow actions are per slot, so Keys needs a (silent) clip in scene 1 to follow on.
     parts = {
         (bass, 0): [(33, 100, b, 0.9) for b in range(4)],
         (drums, 0): beats(4, 1, 36, 110),
+        (keys, 0): [],
         (bass, 1): [(31, 100, b, 0.9) for b in range(4)],
         (keys, 1): [(n, 90, 0, 3.9) for n in (55, 59, 62)],
         (keys, 2): [(n, 90, 0, 3.9) for n in (57, 60, 64)],

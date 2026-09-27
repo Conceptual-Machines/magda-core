@@ -42,10 +42,11 @@ Each project is the folder MAGDA saves, `<name>/<name>.mgd`, with a
 | `project` | The `.mgd` beside this file. |
 | `cluster` | The feature cluster the project exercises. |
 | `range` | The beats to play, `startBeat` < `endBeat`. |
+| `range.seconds` | Optional. How long the range takes to render, within 1%; what catches a tempo map that ignores its automation. |
 | `requires.plugins` | Plugin names the machine must have scanned. Empty for the core set. |
 | `requires.hardware` | Hardware the run needs: `insert` (an external insert with a loopback cable) or `loopback`. Empty for the core set. |
 | `tracks` | Tracks checked by name. A track not listed is not checked. |
-| `tracks[].sound` | `true`: the track must sound in the range. `false`: it must stay silent. |
+| `tracks[].sound` | `true`: the track must sound in the range. `false`: it must stay silent. Meters read before a track's mute, so a muted track cannot be checked this way. |
 | `tracks[].peakDb` | Bounds on the track meter's peak over the range, in dBFS. Required when `sound` is `true`. A silent track's peak must stay below -90 dBFS unless it gives its own `max`. |
 | `scenario` | Optional. Remote API calls made during playback, each `{ "beat", "call", "input" }` with the beat inside `range`, such as launching a scene. |
 | `listen` | One line on what a listener would check, printed in the report. |
