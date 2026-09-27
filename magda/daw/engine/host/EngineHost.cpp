@@ -2156,11 +2156,84 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     void tracksChanged() override {
         wantPlan();
     }
-    void trackDevicesChanged(TrackId) override {
+    void trackDevicesChanged(TrackId trackId) override {
+        followDrumGridBuses(trackId);
         wantPlan();
     }
-    void deviceAdded(const ChainNodePath&, const DeviceInfo&) override {
+    void deviceAdded(const ChainNodePath& path, const DeviceInfo&) override {
+        followDrumGridBuses(path.trackId);
         wantPlan();
+    }
+
+    /**
+     * @brief Give each pad bus in use a multi-out track to play into, and close the unused ones.
+     *
+     * The fork does this in PluginManager::syncDrumGridMultiOutTracks; without it a
+     * pad sent to a bus reaches no track and the plan leaves it silent.
+     */
+    void followDrumGridBuses(TrackId trackId) {
+        if (followingBuses_)
+            return;
+        const juce::ScopedValueSetter<bool> guard(followingBuses_, true);
+        auto& tracks = TrackManager::getInstance();
+        auto* track = tracks.getTrack(trackId);
+        if (track == nullptr)
+            return;
+
+        // Decided first and applied after: opening a track reallocates the track list.
+        struct Grid {
+            DeviceId id;
+            juce::String name;
+            std::map<int, juce::String> buses;
+        };
+        std::vector<Grid> grids;
+        for (auto& element : track->chain.fxChainElements) {
+            if (!isDevice(element))
+                continue;
+            auto& device = getDevice(element);
+            if (!device.pads ||
+                !TrackManager::padBusesAvailable(ChainNodePath::topLevelDevice(trackId, device.id)))
+                continue;
+            declareDrumGridBuses(device);
+            Grid grid{device.id, device.name, {}};
+            for (std::size_t i = 0; i < device.pads->chains.size(); ++i) {
+                const auto& pad = device.pads->chains[i];
+                if (pad.outputIndex > 0 && !pad.elements.empty())
+                    grid.buses.emplace(pad.outputIndex, pad.name.isNotEmpty()
+                                                            ? pad.name
+                                                            : "Pad " + juce::String(i + 1));
+            }
+            grids.push_back(std::move(grid));
+        }
+
+        for (const auto& grid : grids) {
+            for (int bus = 1; bus < kPadBusCount; ++bus) {
+                const auto active = tracks.multiOutPairIsActive(trackId, grid.id, bus);
+                const auto wanted = grid.buses.find(bus);
+                if (active && wanted == grid.buses.end()) {
+                    tracks.deactivateMultiOutPair(trackId, grid.id, bus);
+                } else if (!active && wanted != grid.buses.end()) {
+                    const auto child = tracks.activateMultiOutPair(trackId, grid.id, bus);
+                    if (child != INVALID_TRACK_ID)
+                        tracks.setTrackName(child, grid.name + ": " + wanted->second);
+                }
+            }
+        }
+    }
+
+    /** @brief The grid's bus pairs, as the fork reads them off DrumGridPlugin's outputs. */
+    static void declareDrumGridBuses(DeviceInfo& grid) {
+        if (grid.multiOut.isMultiOut)
+            return;
+        grid.multiOut.isMultiOut = true;
+        grid.multiOut.totalOutputChannels = kPadBusCount * 2;
+        grid.multiOut.outputPairs.clear();
+        for (int pair = 0; pair < kPadBusCount; ++pair)
+            grid.multiOut.outputPairs.push_back(
+                {.outputIndex = pair,
+                 .name = pair == 0 ? juce::String("Main") : "Bus " + juce::String(pair),
+                 .firstPin = pair * 2 + 1,
+                 .numChannels = 2});
     }
     // A property is the kind of edit that can move the plan's shape -- a
     // bypass takes the device out of it, a route moves an edge -- so these say
@@ -3492,6 +3565,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     /// The three above, baked. Cached rather than rebuilt per read: everything
     /// published with a tempo reads it, and so does the app through @ref view_.
+    /// Set while followDrumGridBuses opens and closes tracks, whose notifications land back here.
+    bool followingBuses_ = false;
     /// The tempo lane's curve; empty leaves bpm_ in charge.
     std::vector<engine::TempoChange> laneChanges_;
     engine::TempoMap map_ = tempoMapAt(bpm_, numerator_, denominator_);

@@ -916,6 +916,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         engine/test_engine_host_publish_juce.cpp
         engine/test_engine_host_audio_input_juce.cpp
         engine/test_engine_host_hardware_outputs_juce.cpp
+        engine/test_engine_host_drum_grid_buses_juce.cpp
         # The native pass that records hardware inserts for a render (#2279)
         engine/test_engine_insert_capture_juce.cpp
         engine/test_groove_entries_juce.cpp
