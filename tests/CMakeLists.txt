@@ -151,6 +151,7 @@ set(TEST_SOURCES
     devices/test_plugin_service_teardown.cpp
     devices/test_scan_report.cpp
     devices/test_drum_grid_plugin.cpp
+    devices/test_sampler_media_model.cpp
     # The sampler's one cross-thread boundary (#2384): what the audio thread may
     # read about the loaded sound, with the installed sound itself immutable.
     devices/test_sampler_playback.cpp
