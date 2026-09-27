@@ -41,6 +41,9 @@ juce::StringArray problemsWith(const juce::File& expectationFile) {
         static_cast<double>(range["startBeat"]) < 0.0 ||
         static_cast<double>(range["startBeat"]) >= static_cast<double>(range["endBeat"]))
         problems.add("range must hold startBeat >= 0 and endBeat > startBeat");
+    if (range.hasProperty("seconds") &&
+        (!isNumber(range["seconds"]) || static_cast<double>(range["seconds"]) <= 0.0))
+        problems.add("range.seconds must be a positive number");
 
     const auto& requires_ = json["requires"];
     for (const char* key : {"plugins", "hardware"}) {

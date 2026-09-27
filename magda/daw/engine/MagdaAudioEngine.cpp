@@ -63,6 +63,18 @@ MagdaAudioEngine::MagdaAudioEngine(AudioEngineOptions options) : headless_(optio
         setLoopRegionBeats({{start}, {end}});
     });
     api_->setProjectTempoMap([this] { return tempoMap(); });
+    api_->setTransportEngineState({
+        .playing = [this] { return isPlaying(); },
+        .recording = [this] { return isRecording(); },
+        .looping = [this] { return isLooping(); },
+        .positionBeats = [this] { return tempoMap()->timeToBeat(getCurrentPosition()); },
+        .beatsPerBar =
+            [this] {
+                int numerator = 4, denominator = 4;
+                getTimeSignature(numerator, denominator);
+                return numerator * 4.0 / denominator;
+            },
+    });
 }
 
 /**
@@ -308,7 +320,7 @@ void MagdaAudioEngine::deactivateAllSessionClips() {
 }
 // Tempo, time signature and loop are the host's: there is no Edit to hold a
 // second copy of them, and what the ruler converts through is the same map the
-// engine renders with. Tempo automation reaching it is #2554.
+// engine renders with; the tempo lane drives the host's map when it has a curve.
 void MagdaAudioEngine::setTempo(double bpm) {
     host_->setTempo(bpm);
 }
@@ -563,13 +575,16 @@ void MagdaAudioEngine::audition(TrackId trackId, const juce::MidiMessage& messag
 void MagdaAudioEngine::onTransportPlay(double positionSeconds) {
     locate(positionSeconds);
     play();
+    api_->notifyTransportStateChanged();
 }
 void MagdaAudioEngine::onTransportStop(double returnPositionSeconds) {
     stop();
     locate(returnPositionSeconds);
+    api_->notifyTransportStateChanged();
 }
 void MagdaAudioEngine::onTransportPause() {
     pause();
+    api_->notifyTransportStateChanged();
 }
 void MagdaAudioEngine::onTransportRecord(double positionSeconds) {
     const auto punch = host_->punch();
@@ -580,13 +595,15 @@ void MagdaAudioEngine::onTransportRecord(double positionSeconds) {
                              host_->tempoMap()->timeToBeat(positionSeconds) < punch.startBeat;
         host_->startPunchRecording(positionSeconds,
                                    waiting ? std::optional<double>{punch.startBeat} : std::nullopt);
-        return;
+    } else {
+        host_->beginArmedSessionSlotRecordings(positionSeconds);
+        host_->startMidiRecording(positionSeconds);
     }
-    host_->beginArmedSessionSlotRecordings(positionSeconds);
-    host_->startMidiRecording(positionSeconds);
+    api_->notifyTransportStateChanged();
 }
 void MagdaAudioEngine::onTransportStopRecording() {
     host_->stopMidiRecording();
+    api_->notifyTransportStateChanged();
 }
 void MagdaAudioEngine::onEditPositionChanged(double positionSeconds) {
     // Only while stopped, which is the fork's rule and the right one: this
@@ -606,9 +623,11 @@ void MagdaAudioEngine::onLoopRegionChanged(double startSeconds, double endSecond
     // The UI sends a loop in seconds; the transport is published in beats.
     const auto* map = host_->tempoMap();
     host_->setLoop(enabled, map->timeToBeat(startSeconds), map->timeToBeat(endSeconds));
+    api_->notifyTransportStateChanged();
 }
 void MagdaAudioEngine::onLoopEnabledChanged(bool enabled) {
     setLooping(enabled);
+    api_->notifyTransportStateChanged();
 }
 
 // --- the bases' defaulted virtuals -------------------------------------------

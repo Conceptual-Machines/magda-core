@@ -10,6 +10,20 @@ The expectation format is documented in `tests/smoke/README.md`;
 `tests/project/test_smoke_expectations.cpp` (tag `[smoke]`) validates every file. The run itself
 is manual, per OS, against the installed build, never in CI.
 
+## Running the set
+
+```
+python3 scripts/smoke.py                       # launches the installed MAGDA on the magda engine
+python3 scripts/smoke.py --app <binary>        # a dev build
+python3 scripts/smoke.py --attach sidechain    # the running MAGDA, left running
+```
+
+The client is `magda-smoke`; its first run asks the user once for edit, transport and session.
+Results and audio land in `~/.magda-smoke/<machine>/<time>/`, compared with the last run of the
+same engine. Capture and render never null (free-running oscillators), so they are compared on
+energy envelopes: digital-silence runs, envelope drift, and the render's length against
+`range.seconds`.
+
 ## Projects are built in code, never by hand
 
 `scripts/build_smoke_projects.py` builds each project in a running MAGDA over its MCP endpoint and

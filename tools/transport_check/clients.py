@@ -163,6 +163,10 @@ class WsClient:
             message = json.loads(self._ws.recv(remaining))
             if message.get("id") == request_id:
                 return Reply(message)
+            # Admission refuses before parsing, so a throttled request is answered
+            # with a null id; one request is outstanding here, so it is this one.
+            if "error" in message and message.get("id") is None:
+                return Reply(message)
             if "method" in message:
                 self.pending_notifications.append(message)
 

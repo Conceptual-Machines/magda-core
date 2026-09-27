@@ -396,7 +396,7 @@ TEST_CASE("Master capture is an owned long-running job with explicit capability"
     CHECK_FALSE(unsupportedOutput.existsAsFile());
 }
 
-TEST_CASE("Master capture cancellation, failure, and revision conflict publish no artifact",
+TEST_CASE("Master capture cancellation and failure publish no artifact",
           "[remote][engine-jobs][2846]") {
     SECTION("owner cancellation") {
         Fixture fixture;
@@ -429,23 +429,24 @@ TEST_CASE("Master capture cancellation, failure, and revision conflict publish n
         CHECK_FALSE(juce::JSON::toString(stopped.toEnvelope(), true).contains("plugin detail"));
         CHECK_FALSE(output.existsAsFile());
     }
+}
 
-    SECTION("project revision changes") {
-        Fixture fixture;
-        const auto output = destination(".wav");
-        const auto started =
-            run(fixture.service, "engine.masterCapture.start", captureInput(Fixture::path(output)));
-        REQUIRE(started.ok);
-        const auto jobId = started.result["id"].toString();
-        fixture.service.noteModelChanged(Topic::Tracks);
+TEST_CASE("Master capture survives project edits made while it runs",
+          "[remote][engine-jobs][2784]") {
+    Fixture fixture;
+    const auto output = destination(".wav");
+    const auto started =
+        run(fixture.service, "engine.masterCapture.start", captureInput(Fixture::path(output)));
+    REQUIRE(started.ok);
+    CHECK(started.result["revisionPolicy"].toString() == "check_at_start_only");
+    fixture.service.noteModelChanged(Topic::Tracks);
 
-        const auto stopped =
-            run(fixture.service, "engine.masterCapture.stop", object({{"jobId", jobId}}));
-        REQUIRE(stopped.ok);
-        CHECK(stopped.result["state"].toString() == "failed");
-        CHECK(stopped.result["error"]["code"].toString() == "conflict");
-        CHECK(stopped.result["artifacts"].size() == 0);
-        CHECK(fixture.engineJobs->captureCancelCalls == 1);
-        CHECK_FALSE(output.existsAsFile());
-    }
+    const auto stopped = run(fixture.service, "engine.masterCapture.stop",
+                             object({{"jobId", started.result["id"].toString()}}));
+    REQUIRE(stopped.ok);
+    CHECK(stopped.result["state"].toString() == "completed");
+    CHECK(stopped.result["artifacts"].size() == 1);
+    CHECK(fixture.engineJobs->captureCancelCalls == 0);
+    CHECK(output.existsAsFile());
+    output.deleteFile();
 }

@@ -2,7 +2,7 @@
   "version": 1,
   "project": "tempo-automation.mgd",
   "cluster": "tempo automation and the transport loop",
-  "range": { "startBeat": 0, "endBeat": 16 },
+  "range": { "startBeat": 0, "endBeat": 16, "seconds": 7.47 },
   "requires": { "plugins": [], "hardware": [] },
   "tracks": [
     { "name": "Hat", "sound": true, "peakDb": { "min": -48, "max": 0 } },

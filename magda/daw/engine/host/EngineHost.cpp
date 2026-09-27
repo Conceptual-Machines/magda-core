@@ -2188,12 +2188,14 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// Lanes are read where the table is compiled, and drawing one is what
     /// makes its parameter one the table carries.
     void automationLanesChanged() override {
+        followTempoLane();
         wantValues(Shape::MayHaveMoved);
     }
     void automationLanePropertyChanged(AutomationLaneId) override {
         wantValues(Shape::MayHaveMoved);
     }
     void automationPointsChanged(AutomationLaneId) override {
+        followTempoLane();
         wantValues(Shape::Unchanged);
     }
     void automationClipsChanged(AutomationLaneId) override {
@@ -2950,7 +2952,26 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     /** @brief Bake the map again, after anything it is baked from moves. */
     void refreshTempoMap() {
-        map_ = tempoMapAt(bpm_, numerator_, denominator_);
+        map_ = tempoMapFor(laneChanges_, bpm_, numerator_, denominator_);
+    }
+
+    /** @brief Follow the tempo lane, re-placing clips when its curve moved. */
+    void followTempoLane() {
+        auto changes = tempoLaneChanges();
+        const auto same = [](const engine::TempoChange& a, const engine::TempoChange& b) {
+            return a.startBeat == b.startBeat && a.bpm == b.bpm && a.tension == b.tension;
+        };
+        if (std::ranges::equal(changes, laneChanges_, same))
+            return;
+
+        const auto resume = arrangementRecording_;
+        stopRecording();
+        laneChanges_ = std::move(changes);
+        refreshTempoMap();
+        publishTransport();
+        publishClips();
+        if (resume)
+            resumeRecording();
     }
 
     std::vector<std::string> resolveValues(const engine::RenderPlan& plan,
@@ -3471,6 +3492,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     /// The three above, baked. Cached rather than rebuilt per read: everything
     /// published with a tempo reads it, and so does the app through @ref view_.
+    /// The tempo lane's curve; empty leaves bpm_ in charge.
+    std::vector<engine::TempoChange> laneChanges_;
     engine::TempoMap map_ = tempoMapAt(bpm_, numerator_, denominator_);
     TempoMapView view_{map_};
 

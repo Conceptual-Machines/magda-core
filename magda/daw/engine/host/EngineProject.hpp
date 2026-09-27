@@ -30,10 +30,16 @@ std::vector<engine::ClipLane> clipLanesFor(const std::vector<TrackInfo>& tracks)
 /// compiled during playback would open one on the publishing thread.
 std::vector<engine::ClipSourceInfo> clipSources();
 
-/// A flat map at @p bpm. Flat because the model is: tempo curves live in the
-/// fork's tempo sequence and the app has no tempo track of its own to bake
-/// (#2554 moves that).
+/// A flat map at @p bpm.
 engine::TempoMap tempoMapAt(double bpm, int numerator, int denominator);
+
+/// The tempo lane's points as tempo changes, the first anchored at beat 0; empty when
+/// the lane has fewer than two points, which leaves the project tempo in charge.
+std::vector<engine::TempoChange> tempoLaneChanges();
+
+/// A map through @p changes, or flat at @p bpm when there are none.
+engine::TempoMap tempoMapFor(const std::vector<engine::TempoChange>& changes, double bpm,
+                             int numerator, int denominator);
 
 /// Where the last arrangement clip ends, in beats, or zero when there are none.
 /// What the length of a project is with no Edit to ask (#2579).

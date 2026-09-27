@@ -129,6 +129,10 @@ void TransportApiLive::stop() {
 }
 
 void TransportApiLive::setRecording(bool recording) {
+    if (recordDispatch_) {
+        recordDispatch_(recording);
+        return;
+    }
     auto* e = edit();
     if (!e)
         return;
@@ -143,16 +147,22 @@ void TransportApiLive::setRecording(bool recording) {
 }
 
 bool TransportApiLive::isPlaying() const {
+    if (engineState_.playing)
+        return engineState_.playing();
     auto* e = edit();
     return e != nullptr && e->getTransport().isPlaying();
 }
 
 bool TransportApiLive::isRecording() const {
+    if (engineState_.recording)
+        return engineState_.recording();
     auto* e = edit();
     return e != nullptr && e->getTransport().isRecording();
 }
 
 bool TransportApiLive::isLoopEnabled() const {
+    if (engineState_.looping)
+        return engineState_.looping();
     auto* e = edit();
     return e != nullptr && e->getTransport().looping.get();
 }
@@ -168,6 +178,8 @@ void TransportApiLive::setLoopEnabled(bool enabled) {
 }
 
 double TransportApiLive::getPositionBeats() const {
+    if (engineState_.positionBeats)
+        return engineState_.positionBeats();
     auto* e = edit();
     if (!e)
         return 0.0;
@@ -176,6 +188,10 @@ double TransportApiLive::getPositionBeats() const {
 }
 
 void TransportApiLive::setPositionBeats(double beats) {
+    if (seekDispatch_) {
+        seekDispatch_(beats);
+        return;
+    }
     auto* e = edit();
     if (!e)
         return;
@@ -184,6 +200,9 @@ void TransportApiLive::setPositionBeats(double beats) {
 }
 
 double TransportApiLive::beatsAtBarOffset(double beats, int deltaBars) const {
+    // An engine without an Edit has one meter for the whole timeline.
+    if (engineState_.beatsPerBar)
+        return beats + static_cast<double>(deltaBars) * engineState_.beatsPerBar();
     auto* e = edit();
     if (!e || deltaBars == 0)
         return beats;
