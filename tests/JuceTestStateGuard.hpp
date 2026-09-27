@@ -12,6 +12,7 @@
 namespace magda::test {
 
 inline void drainJuceAsyncWork() {
+    // Timed best-effort isolation, not a shutdown barrier; see specs/tla/LIFECYCLE.md.
     if (auto* engine = getSharedEngineIfInitialized()) {
         if (auto* teEngine = engine->getEngine())
             teEngine->getBackgroundJobs().getPool().removeAllJobs(false, 10000);

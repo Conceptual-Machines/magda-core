@@ -653,6 +653,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (devices_ == nullptr)
             return;
 
+        // Callback drain and pending-update cancellation: specs/tla/host_teardown.
         // The callback first: what follows destroys the session it renders
         // through, and removeAudioCallback returns only once the audio thread
         // is out of here.
@@ -2298,6 +2299,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// resolves values on its way through, so the two are alternatives; clips
     /// travel on their own and are published beside either.
     void handleAsyncUpdate() override {
+        // Restart/rebuild interleavings and the ready-generation gate: specs/tla/device_restart.
         // Held rather than dropped: the flags stay set, and the end of the render asks again.
         if (offlineRenders_ > 0)
             return;
@@ -2506,6 +2508,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
      * destroyed is the one the callback renders through.
      */
     void rebuild(const engine::RenderContext& context) {
+        // Removing the callback protects session retirement: specs/tla/device_restart.
         devices_->removeAudioCallback(this);
 
         const auto resumeAfterRebuild = arrangementRecording_;
@@ -2855,6 +2858,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             if (output[channel] != nullptr)
                 juce::FloatVectorOperations::clear(output[channel], numSamples);
 
+        // A restarted device stays silent until its generation is prepared
+        // (specs/tla/device_restart).
         const auto outputGeneration = hardwareOutputGeneration_.load(std::memory_order_acquire);
         if (outputGeneration == 0 ||
             hardwareOutputReadyGeneration_.load(std::memory_order_acquire) != outputGeneration)
