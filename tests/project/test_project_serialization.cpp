@@ -773,6 +773,29 @@ TEST_CASE("Media inside the project folder moves with it", "[project][serializat
     CHECK(paths == expected);
 }
 
+TEST_CASE("Another platform's absolute media paths are not taken for relative ones",
+          "[project][serialization][2784]") {
+    const auto projectFile = testTempRoot().getChildFile("song").getChildFile("song.mgd");
+    juce::Array<juce::var> sources;
+    for (const auto* path : {"/Volumes/Samples/kick.wav", "C:\\Samples\\snare.wav",
+                             "\\\\server\\share\\hat.wav", "song_Media/imported/loop.wav"}) {
+        auto* source = new juce::DynamicObject();
+        source->setProperty("id", sources.size() + 1);
+        source->setProperty("filePath", juce::String(path));
+        sources.add(juce::var(source));
+    }
+
+    std::vector<Source> staged;
+    ProjectSerializer::deserializeSourcesToStaging(sources, staged, projectFile);
+    REQUIRE(staged.size() == 4);
+    CHECK(staged[0].filePath == "/Volumes/Samples/kick.wav");
+    CHECK(staged[1].filePath == "C:\\Samples\\snare.wav");
+    CHECK(staged[2].filePath == "\\\\server\\share\\hat.wav");
+    CHECK(staged[3].filePath == projectFile.getParentDirectory()
+                                    .getChildFile("song_Media/imported/loop.wav")
+                                    .getFullPathName());
+}
+
 TEST_CASE("Missing media search leaves ambiguous filenames for the user",
           "[project][missing-media][71]") {
     ProjectTestFixture fixture;

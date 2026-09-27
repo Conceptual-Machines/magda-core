@@ -1113,6 +1113,13 @@ juce::var ProjectSerializer::serializeSources(const juce::File& projectFile) {
     return {sourcesArray};
 }
 
+/// Written relative by this project, not an absolute path from another platform: a
+/// macOS "/Volumes/..." path is not absolute to Windows, and must not be re-rooted.
+static bool isProjectRelative(const juce::String& path) {
+    return path.isNotEmpty() && !path.startsWithChar('/') && !path.startsWithChar('\\') &&
+           !path.startsWithChar('~') && !(path.length() > 1 && path[1] == ':');
+}
+
 void ProjectSerializer::deserializeSourcesToStaging(const juce::var& json, std::vector<Source>& out,
                                                     const juce::File& projectFile) {
     if (!json.isArray())
@@ -1125,8 +1132,7 @@ void ProjectSerializer::deserializeSourcesToStaging(const juce::var& json, std::
         Source source;
         source.id = sourceObj->getProperty("id");
         source.filePath = sourceObj->getProperty("filePath").toString();
-        if (source.filePath.isNotEmpty() && !juce::File::isAbsolutePath(source.filePath) &&
-            projectFile != juce::File())
+        if (isProjectRelative(source.filePath) && projectFile != juce::File())
             source.filePath = resolveRelativePath(projectFile, source.filePath).getFullPathName();
         source.durationSeconds = sourceObj->getProperty("durationSeconds");
         source.sampleRate = sourceObj->getProperty("sampleRate");
