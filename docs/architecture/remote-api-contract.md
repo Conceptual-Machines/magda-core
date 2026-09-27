@@ -173,10 +173,11 @@ instead of substituting an offline render. Status reveals an active job id only
 to its owning connection.
 
 Both forms use the shared asynchronous job contract. Output is staged and
-published to the resolved destination only after successful completion. A
-cancelled or failed operation, or one whose project revision changed while it
-ran, has no artifact and cannot replace the destination. An existing target is
-replaceable only when the request says `replace`.
+published to the resolved destination only after successful completion. Missing
+destination directories are created before the job is accepted. A cancelled or
+failed operation, or one whose project revision changed while it ran, has no
+artifact and cannot replace the destination. An existing target is replaceable
+only when the request says `replace`.
 
 ### Project lifecycle
 

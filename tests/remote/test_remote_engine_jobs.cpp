@@ -204,6 +204,20 @@ TEST_CASE("Render-range jobs use absolute audio destination paths", "[remote][en
     output.deleteFile();
 }
 
+TEST_CASE("Render-range creates a missing destination folder", "[remote][engine-jobs][2886]") {
+    Fixture fixture;
+    const auto root = destination("-render-parent");
+    const auto output = root.getChildFile("nested").getChildFile("output.wav");
+    REQUIRE_FALSE(output.getParentDirectory().exists());
+
+    const auto response =
+        run(fixture.service, "engine.renderRange", renderInput(Fixture::path(output)));
+    REQUIRE(response.ok);
+    CHECK(response.result["state"].toString() == "completed");
+    CHECK(output.loadFileAsString() == "rendered audio");
+    root.deleteRecursively();
+}
+
 TEST_CASE("Engine output paths must be absolute", "[remote][engine-jobs][2886]") {
     Fixture fixture;
     const auto render = run(fixture.service, "engine.renderRange", renderInput("relative.wav"));
