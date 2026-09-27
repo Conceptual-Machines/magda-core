@@ -26,6 +26,7 @@
 #include "../core/MidiNoteCommands.hpp"
 #include "../core/PluginParameterConfigStore.hpp"
 #include "../core/PresetManager.hpp"
+#include "../core/SourcePool.hpp"
 #include "../core/TempoMap.hpp"
 #include "../core/TrackCommands.hpp"
 #include "../core/TrackInfo.hpp"
@@ -2443,6 +2444,71 @@ HandlerResult clipsCreateMidi(MagdaApi& api, const juce::var& input, const Reque
             return created;
         },
         "Create MIDI Clip");
+    if (id == INVALID_CLIP_ID)
+        return HandlerResult::fail(ErrorCode::InternalError, "clip creation failed");
+    return HandlerResult::ok(idResult(id));
+}
+
+HandlerResult clipsLoadSample(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    Error error;
+    const auto sample = resolveAbsolutePath(input["samplePath"].toString(), error);
+    if (!sample)
+        return HandlerResult::fail(std::move(error));
+    if (!sample->existsAsFile())
+        return HandlerResult::fail(ErrorCode::NotFound, "sample file is unavailable");
+
+    // Before the clip exists, so a file that is not audio leaves no undo step.
+    const auto durationSeconds =
+        SourcePool::getInstance().probeDurationSeconds(sample->getFullPathName());
+    if (durationSeconds <= 0.0)
+        return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                   "sample is not a readable audio file");
+
+    ResolvedClipPlacement placement;
+    if (const auto failure = resolveClipPlacement(api, input["placement"], placement))
+        return *failure;
+    const auto* track = api.tracks().getTrack(placement.trackId);
+    if (track == nullptr)
+        return notFound("track", placement.trackId);
+    ClipInfo candidate;
+    candidate.setAudioContent();
+    candidate.view = placement.view;
+    if (!trackAcceptsClip(*track, candidate))
+        return HandlerResult::fail(ErrorCode::Conflict, "destination track does not accept audio");
+
+    ClipId occupant = INVALID_CLIP_ID;
+    if (placement.view == ClipView::Session) {
+        occupant = api.session().getClipInSlot(placement.trackId, placement.sceneIndex);
+        if (occupant != INVALID_CLIP_ID && placement.occupiedPolicy == SlotOccupiedPolicy::Fail)
+            return HandlerResult::fail(ErrorCode::Conflict, "destination session slot is occupied");
+        if (placement.occupiedPolicy == SlotOccupiedPolicy::Swap)
+            return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                       "swap requires moving a placed session clip");
+    }
+
+    // The file's own duration, laid over the tempo map from where the clip starts.
+    const auto* tempo = api.project().tempoMap();
+    if (tempo == nullptr)
+        return HandlerResult::fail(ErrorCode::Conflict, "the project tempo map is unavailable");
+    const auto startSeconds = tempo->beatToTime(placement.startBeat);
+    const auto lengthBeats =
+        tempo->timeToBeat(startSeconds + durationSeconds) - placement.startBeat;
+
+    const auto path = sample->getFullPathName();
+    const auto id = runCommandAndRead<AtomicClipPlacementCommand>(
+        api, [](const AtomicClipPlacementCommand& command) { return command.resultClipId(); },
+        [placement, lengthBeats, occupant, path](ClipManager& clips) {
+            ClipManager::BatchScope notificationBatch;
+            if (occupant != INVALID_CLIP_ID)
+                clips.deleteClip(occupant);
+            const auto created = clips.createAudioClipBeats(placement.trackId, placement.startBeat,
+                                                            lengthBeats, path, placement.view,
+                                                            ClipOverlapPolicy::ResolveOverlaps);
+            if (created != INVALID_CLIP_ID && placement.view == ClipView::Session)
+                clips.setClipSceneIndex(created, placement.sceneIndex);
+            return created;
+        },
+        "Load Sample");
     if (id == INVALID_CLIP_ID)
         return HandlerResult::fail(ErrorCode::InternalError, "clip creation failed");
     return HandlerResult::ok(idResult(id));

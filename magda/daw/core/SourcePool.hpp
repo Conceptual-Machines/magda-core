@@ -39,6 +39,10 @@ class SourcePool {
      */
     SourceId acquire(const juce::String& filePath);
 
+    /** @brief On-disk duration of an audio file in seconds, 0 when it is not readable audio; pools
+     * nothing. */
+    double probeDurationSeconds(const juce::String& filePath) const;
+
     /// Pooled id for a path that is already known, or INVALID_SOURCE_ID.
     SourceId findByPath(const juce::String& filePath) const;
 

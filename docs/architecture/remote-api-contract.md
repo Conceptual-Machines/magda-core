@@ -440,6 +440,11 @@ unplaced session clips are rejected. The destination view must match an
 existing source clip's current view; moving between arrangement and session is
 a separate conversion, not an implicit side effect of placement.
 
+`clips.loadSample` takes the same `placement` and an absolute `samplePath`, and
+does what dropping the file on the track does: an audio clip as long as the
+file, laid over the tempo map from its start beat. A path that is not readable
+audio is refused before anything is created.
+
 `clips.resize` takes `lengthBeats` and an `edge` of `start` or `end`. All three
 operations are edit-scoped and commit as one undo action. A move that restates
 the current destination and a resize that restates the current length are

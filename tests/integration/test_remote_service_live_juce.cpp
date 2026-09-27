@@ -1,3 +1,4 @@
+#include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_core/juce_core.h>
 
 #include <algorithm>
@@ -11,6 +12,7 @@
 #include "magda/daw/core/AutomationManager.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/SelectionManager.hpp"
+#include "magda/daw/core/TempoMap.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/core/UndoManager.hpp"
 #include "magda/daw/project/ProjectManager.hpp"
@@ -57,6 +59,37 @@ juce::var sessionDestination(TrackId trackId, SceneId sceneId,
                    {"trackId", static_cast<int>(trackId)},
                    {"sceneId", static_cast<int>(sceneId)},
                    {"occupiedPolicy", occupiedPolicy}});
+}
+
+class FlatTempoMap final : public TempoMap {
+  public:
+    explicit FlatTempoMap(double bpm) : bpm_(bpm) {}
+    double beatToTime(double beat) const override {
+        return beat * 60.0 / bpm_;
+    }
+    double timeToBeat(double seconds) const override {
+        return seconds * bpm_ / 60.0;
+    }
+    double bpmAt(double) const override {
+        return bpm_;
+    }
+
+  private:
+    double bpm_;
+};
+
+/// A mono WAV of @p seconds of quiet noise at 48 kHz, written for the test.
+juce::File writeSample(const juce::File& file, double seconds) {
+    file.deleteFile();
+    juce::WavAudioFormat wav;
+    std::unique_ptr<juce::AudioFormatWriter> writer(
+        wav.createWriterFor(new juce::FileOutputStream(file), 48000.0, 1, 16, {}, 0));
+    juce::AudioBuffer<float> buffer(1, static_cast<int>(seconds * 48000.0));
+    juce::Random random(7);
+    for (int i = 0; i < buffer.getNumSamples(); ++i)
+        buffer.setSample(0, i, random.nextFloat() * 0.1f);
+    writer->writeFromAudioSampleBuffer(buffer, 0, buffer.getNumSamples());
+    return file;
 }
 
 SceneId sceneIdAt(int index) {
@@ -1046,6 +1079,49 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
 
             expect(fixture.service.currentRevision() == 3);
             expect(UndoManager::getInstance().canUndo());
+        }
+
+        beginTest("Loading a sample places an audio clip as long as the file");
+        {
+            Fixture fixture;
+            FlatTempoMap tempo(120.0);
+            fixture.api.setProjectTempoMap([&tempo] { return &tempo; });
+            const auto dir = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                                 .getChildFile("magda-load-sample-test");
+            dir.createDirectory();
+            const auto sample = writeSample(dir.getChildFile("loop.wav"), 2.0);
+            const auto track =
+                fixture.run("tracks.create", object({{"name", "Loop"}, {"type", "audio"}}));
+            const auto trackId = static_cast<int>(track.result["id"]);
+
+            const auto loaded = fixture.run(
+                "clips.loadSample", object({{"samplePath", sample.getFullPathName()},
+                                            {"placement", arrangementDestination(trackId, 4.0)}}));
+            expect(loaded.ok);
+            const auto* clip = ClipManager::getInstance().getClip(
+                static_cast<ClipId>(static_cast<int>(loaded.result["id"])));
+            expect(clip != nullptr && clip->isAudio());
+            if (clip != nullptr) {
+                expectWithinAbsoluteError(clip->placement.startBeat, 4.0, 1e-9);
+                // Two seconds at 120 BPM.
+                expectWithinAbsoluteError(clip->placement.lengthBeats, 4.0, 1e-6);
+            }
+
+            const auto notAudio = dir.getChildFile("notes.txt");
+            notAudio.replaceWithText("not a sample");
+            const auto lastUndo = UndoManager::getInstance().getUndoDescription();
+            const auto refused = fixture.run(
+                "clips.loadSample", object({{"samplePath", notAudio.getFullPathName()},
+                                            {"placement", arrangementDestination(trackId, 12.0)}}));
+            expect(!refused.ok);
+            expect(refused.error.code == ErrorCode::ValidationFailed);
+            expectEquals(static_cast<int>(ClipManager::getInstance()
+                                              .getClipsOnTrack(static_cast<TrackId>(trackId),
+                                                               ClipView::Arrangement)
+                                              .size()),
+                         1);
+            expectEquals(UndoManager::getInstance().getUndoDescription(), lastUndo);
+            dir.deleteRecursively();
         }
 
         beginTest("Arrangement clips move, resize, and duplicate through undoable operations");

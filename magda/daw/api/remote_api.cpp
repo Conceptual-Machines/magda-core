@@ -3342,6 +3342,19 @@ OperationRegistry::OperationRegistry() {
         idResult);
     operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
         "placement", clipDestinationSchema());
+    add("clips.loadSample", "Load an audio file as a clip, as a drop onto a track does",
+        OperationAccess::Write, &handlers::clipsLoadSample, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "samplePath":{"type":"string","minLength":1,"maxLength":4096},
+                "placement":{}
+            },
+            "required":["samplePath","placement"],
+            "additionalProperties":false
+        })json"),
+        idResult);
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "placement", clipDestinationSchema());
     add("clips.addMidiNote", "Add a note to a MIDI clip", OperationAccess::Write,
         &handlers::clipsAddMidiNote, operationInputSchema(R"json({
             "type":"object",
@@ -4436,6 +4449,7 @@ OperationRegistry::OperationRegistry() {
         {"sends.remove", Scope::Edit},
         {"sidechains.set", Scope::Edit},
         {"clips.createMidi", Scope::Edit},
+        {"clips.loadSample", Scope::Edit},
         {"clips.addMidiNote", Scope::Edit},
         {"clips.addMidiEvents", Scope::Edit},
         {"clips.updateMidiEvents", Scope::Edit},
