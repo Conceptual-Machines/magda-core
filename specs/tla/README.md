@@ -5,6 +5,10 @@ run with `make tla ARGS="hand_back_notices"`, or add a config name such as
 `make tla ARGS="hand_back_standby Safety"`. Java is required. These checks are
 not part of CI. See issue #2863; `plan_swap` is the first model, added in #2866.
 
+The [device restart and native-host teardown models](LIFECYCLE.md) cover callback
+removal, generation gating, and pending-update cancellation. That document also
+records why the JUCE test harness's timed drain is not a general shutdown proof.
+
 ## Session-held track hand-back
 
 Three small models cover the separate handoffs. They are **not a composed proof
@@ -93,10 +97,13 @@ Edit the PlusCal algorithm above the generated translation, then regenerate
 with the same cached jar used by `scripts/tla.sh`, for example:
 
 ```sh
-java -cp "${XDG_CACHE_HOME:-$HOME/.cache}/magda/tla2tools-v1.7.4.jar" \
-    pcal.trans specs/tla/hand_back_notices/HandBackNotices.tla
+python3 scripts/tla_translate.py \
+    --jar "${XDG_CACHE_HOME:-$HOME/.cache}/magda/tla2tools-v1.7.4.jar" \
+    specs/tla/hand_back_notices/HandBackNotices.tla
 ```
 
-Keep the generated translation in the `.tla` file. Remove the translator's
-`.old` backup and default module-named `.cfg`; the checked-in named configs
-contain the intended bounds and properties. The runner checks every `.cfg`.
+Keep the generated translation in the `.tla` file. The helper runs the translator
+in a temporary directory, normalizes trailing whitespace, and updates the
+translation checksum so formatting hooks do not cause a spurious TLC warning.
+It leaves the named configs alone; they contain the intended bounds and
+properties. The runner checks every `.cfg`.
