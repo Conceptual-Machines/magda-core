@@ -4,6 +4,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "LegacyCorpus.hpp"
+#include "magda/daw/api/remote_api.hpp"
 #include "magda/daw/project/serialization/ProjectSerializer.hpp"
 
 // The smoke project set (#2782): every expectation file in tests/smoke is well
@@ -56,6 +57,27 @@ juce::StringArray problemsWith(const juce::File& expectationFile) {
         for (const auto& item : *hardware)
             if (item.toString() != "insert" && item.toString() != "loopback")
                 problems.add("requires.hardware: unknown '" + item.toString() + "'");
+
+    if (json.hasProperty("scenario")) {
+        const auto* steps = json["scenario"].getArray();
+        if (steps == nullptr)
+            problems.add("scenario must be an array");
+        for (const auto& step : steps != nullptr ? *steps : juce::Array<juce::var>{}) {
+            const auto call = step["call"].toString();
+            const auto* operation = remote::OperationRegistry::instance().find(call);
+            if (operation == nullptr) {
+                problems.add("scenario: no operation '" + call + "'");
+                continue;
+            }
+            const auto beat = step["beat"];
+            if (!isNumber(beat) ||
+                static_cast<double>(beat) < static_cast<double>(range["startBeat"]) ||
+                static_cast<double>(beat) >= static_cast<double>(range["endBeat"]))
+                problems.add("scenario: " + call + " is not at a beat inside the range");
+            if (!remote::validateJson(step["input"], operation->inputSchema).empty())
+                problems.add("scenario: " + call + " input does not match its schema");
+        }
+    }
 
     const auto* tracks = json["tracks"].getArray();
     if (tracks == nullptr || tracks->isEmpty()) {

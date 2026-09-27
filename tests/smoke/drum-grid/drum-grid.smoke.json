@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "project": "drum-grid.mgd",
+  "cluster": "Drum Grid",
+  "range": { "startBeat": 0, "endBeat": 8 },
+  "requires": { "plugins": [], "hardware": [] },
+  "tracks": [
+    { "name": "Drum Grid", "sound": true, "peakDb": { "min": -48, "max": 0 } }
+  ],
+  "listen": "Kick, snare, 8th-note hats and a clap on the last off-beat of each bar, each pad its own drum device."
+}

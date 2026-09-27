@@ -47,6 +47,7 @@ Each project is the folder MAGDA saves, `<name>/<name>.mgd`, with a
 | `tracks` | Tracks checked by name. A track not listed is not checked. |
 | `tracks[].sound` | `true`: the track must sound in the range. `false`: it must stay silent. |
 | `tracks[].peakDb` | Bounds on the track meter's peak over the range, in dBFS. Required when `sound` is `true`. A silent track's peak must stay below -90 dBFS unless it gives its own `max`. |
+| `scenario` | Optional. Remote API calls made during playback, each `{ "beat", "call", "input" }` with the beat inside `range`, such as launching a scene. |
 | `listen` | One line on what a listener would check, printed in the report. |
 
 `tests/project/test_smoke_expectations.cpp` loads every expectation file and
