@@ -584,6 +584,11 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES engine/test_device_state_native.cpp)
     list(APPEND TEST_SOURCES devices/test_convolution_device.cpp)
     list(APPEND TEST_SOURCES devices/test_device_param_schema_native.cpp)
+    list(APPEND TEST_SOURCES dsp/test_faust_instrument_voice_modes.cpp)
+    list(APPEND TEST_SOURCES dsp/test_faust_instrument_tempo.cpp)
+    list(APPEND TEST_SOURCES dsp/test_faust_sidechain.cpp)
+    list(APPEND TEST_SOURCES devices/test_mutable_add_not_replace.cpp)
+    list(APPEND TEST_SOURCES devices/test_sampler_relocate.cpp)
 
     # An external plugin under a Device op (#2241): the adapter over
     # juce::AudioPluginInstance, against a plugin written in the test rather
