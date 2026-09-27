@@ -87,6 +87,13 @@ SourceId SourcePool::acquire(const juce::String& filePath) {
     return idByPathKey_[key];
 }
 
+double SourcePool::probeDurationSeconds(const juce::String& filePath) const {
+    Source source;
+    source.filePath = filePath;
+    probe(source);
+    return source.sampleRate > 0.0 ? source.durationSeconds : 0.0;
+}
+
 SourceId SourcePool::findByPath(const juce::String& filePath) const {
     if (filePath.isEmpty())
         return INVALID_SOURCE_ID;

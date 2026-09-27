@@ -41,7 +41,7 @@ bool ProjectSerializer::saveToFile(const juce::File& file, const ProjectInfo& in
         }
 
         // Serialize to JSON
-        auto json = serializeProject(info);
+        auto json = serializeProject(info, file);
 
         // Convert to pretty-printed string
         juce::String jsonString = juce::JSON::toString(json, true);
@@ -492,7 +492,7 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
         // Parsed only. Installing them is a commit-phase job: this runs on a
         // background thread, the staging steps below can still fail, and the
         // still-open project's clips are reading the live pool meanwhile.
-        deserializeSourcesToStaging(obj->getProperty("sources"), outData.sources);
+        deserializeSourcesToStaging(obj->getProperty("sources"), outData.sources, file);
 
         if (!deserializeClipsToStaging(obj->getProperty("clips"), outData.clips, outData.info.tempo,
                                        &outData.legacySources)) {
@@ -616,7 +616,8 @@ void ProjectSerializer::commitStaged(StagedProjectData& data) {
 // Project-level serialization
 // ============================================================================
 
-juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
+juce::var ProjectSerializer::serializeProject(const ProjectInfo& info,
+                                              const juce::File& projectFile) {
     auto* obj = new juce::DynamicObject();
 
     // Version and metadata
@@ -737,7 +738,7 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
     const auto addressed = addressedInOpenProject();
 
     obj->setProperty("tracks", serializeTracks(addressed));
-    obj->setProperty("sources", serializeSources());
+    obj->setProperty("sources", serializeSources(projectFile));
     obj->setProperty("clips", serializeClips());
     obj->setProperty("automation", serializeAutomation());
 
@@ -1070,7 +1071,7 @@ juce::var ProjectSerializer::serializeTracks(const AddressedParameters& addresse
     return {tracksArray};
 }
 
-juce::var ProjectSerializer::serializeSources() {
+juce::var ProjectSerializer::serializeSources(const juce::File& projectFile) {
     // Only sources some clip still references are written. This filters the
     // emitted snapshot and deliberately does NOT prune the live pool: the pool
     // is additive within a session precisely so an undone delete, or a paste
@@ -1091,7 +1092,14 @@ juce::var ProjectSerializer::serializeSources() {
 
         auto* sourceObj = new juce::DynamicObject();
         sourceObj->setProperty("id", source.id);
-        sourceObj->setProperty("filePath", source.filePath);
+        const juce::File file = juce::File::isAbsolutePath(source.filePath)
+                                    ? juce::File(source.filePath)
+                                    : juce::File();
+        const bool inside = projectFile != juce::File() && file != juce::File() &&
+                            file.isAChildOf(projectFile.getParentDirectory());
+        sourceObj->setProperty(
+            "filePath", inside ? makeRelativePath(projectFile, file).replaceCharacter('\\', '/')
+                               : source.filePath);
         sourceObj->setProperty("durationSeconds", source.durationSeconds);
         sourceObj->setProperty("sampleRate", source.sampleRate);
         if (source.detectedBpm > 0.0)
@@ -1105,8 +1113,15 @@ juce::var ProjectSerializer::serializeSources() {
     return {sourcesArray};
 }
 
-void ProjectSerializer::deserializeSourcesToStaging(const juce::var& json,
-                                                    std::vector<Source>& out) {
+/// Written relative by this project, not an absolute path from another platform: a
+/// macOS "/Volumes/..." path is not absolute to Windows, and must not be re-rooted.
+static bool isProjectRelative(const juce::String& path) {
+    return path.isNotEmpty() && !path.startsWithChar('/') && !path.startsWithChar('\\') &&
+           !path.startsWithChar('~') && !(path.length() > 1 && path[1] == ':');
+}
+
+void ProjectSerializer::deserializeSourcesToStaging(const juce::var& json, std::vector<Source>& out,
+                                                    const juce::File& projectFile) {
     if (!json.isArray())
         return;
 
@@ -1117,6 +1132,8 @@ void ProjectSerializer::deserializeSourcesToStaging(const juce::var& json,
         Source source;
         source.id = sourceObj->getProperty("id");
         source.filePath = sourceObj->getProperty("filePath").toString();
+        if (isProjectRelative(source.filePath) && projectFile != juce::File())
+            source.filePath = resolveRelativePath(projectFile, source.filePath).getFullPathName();
         source.durationSeconds = sourceObj->getProperty("durationSeconds");
         source.sampleRate = sourceObj->getProperty("sampleRate");
         source.detectedBpm = sourceObj->getProperty("detectedBpm");

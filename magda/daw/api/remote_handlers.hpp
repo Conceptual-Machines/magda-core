@@ -91,6 +91,8 @@ HandlerResult chordTrackSendToTrack(MagdaApi&, const juce::var&, const RequestCo
 HandlerResult clipsList(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult clipsGet(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult clipsCreateMidi(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult clipsLoadSample(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult clipsUpdateAudio(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult clipsAddMidiNote(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult clipsListMidiEvents(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult clipsAddMidiEvents(MagdaApi&, const juce::var&, const RequestContext&);

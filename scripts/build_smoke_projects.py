@@ -12,6 +12,7 @@ granted to claude-code, then:
 """
 
 import pathlib
+import shutil
 import sys
 import time
 
@@ -201,6 +202,53 @@ def plugin_state(magda):
     midi_clip(magda, track, 8, [(n, 100, b, 1.8) for b in (0, 2, 4, 6) for n in (48, 55, 64)])
 
 
+LOOP = SMOKE_DIR / "assets" / "loop-100bpm.wav"
+
+
+def load_sample(magda, project, track, start=0.0):
+    """The test loop, copied into the project's own media first so the save points inside it."""
+    local = SMOKE_DIR / project / f"{project}_Media" / "imported" / LOOP.name
+    local.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(LOOP, local)
+    return magda.call("clips.loadSample", {"samplePath": str(local), "placement": {
+        "view": "arrangement", "trackId": track, "startBeat": start}})["id"]
+
+
+def warp(magda):
+    """A 100 BPM loop stretched to 120 BPM, once through each stretch engine."""
+    magda.call("project.setTempo", {"tempo": 120})
+    for name, stretch in (("Signalsmith", "signalsmith"), ("SoundTouch", "soundtouch")):
+        track = magda.call("tracks.create", {"name": name, "type": "audio"})["id"]
+        clip = load_sample(magda, "warp", track)
+        magda.call("clips.updateAudio", {"clipId": clip, "playback": "beat", "sourceBpm": 100,
+                                         "stretch": stretch})
+
+
+def reverse_fades(magda):
+    """The loop reversed on one track, faded in and out on another, both as tape."""
+    magda.call("project.setTempo", {"tempo": 100})
+    reversed_track = magda.call("tracks.create", {"name": "Reversed", "type": "audio"})["id"]
+    magda.call("clips.updateAudio", {"clipId": load_sample(magda, "reverse-fades", reversed_track),
+                                     "reversed": True})
+    faded = magda.call("tracks.create", {"name": "Faded", "type": "audio"})["id"]
+    magda.call("clips.updateAudio", {"clipId": load_sample(magda, "reverse-fades", faded), "fadeInSeconds": 1.0,
+                                     "fadeOutSeconds": 1.5, "fadeInCurve": "convex",
+                                     "fadeOutCurve": "s_curve"})
+
+
+def multi_out(magda):
+    """A Drum Grid with the kick on its main mix and the snare on a bus of its own."""
+    track, (grid,) = add_track(magda, "Drums", "drumgrid")
+    notes = {}
+    for index, device in enumerate(("magda_kick", "magda_snare")):
+        pad = magda.call("pads.create", {"gridPath": grid, "padIndex": index})
+        magda.call("pads.setDevice", {"gridPath": grid, "padIndex": index, "catalogId": device})
+        notes[device] = pad["midiNote"]
+    magda.call("pads.update", {"gridPath": grid, "padIndex": 1, "outputBus": 1})
+    midi_clip(magda, track, 8, beats(8, 1, notes["magda_kick"], 115) +
+              [(notes["magda_snare"], 105, b, 0.25) for b in (1, 3, 5, 7)])
+
+
 PROJECTS = {
     "faust-devices": faust_devices,
     "tempo-automation": tempo_automation,
@@ -209,6 +257,9 @@ PROJECTS = {
     "sidechain": sidechain,
     "drum-grid": drum_grid,
     "plugin-state": plugin_state,
+    "warp": warp,
+    "reverse-fades": reverse_fades,
+    "multi-out": multi_out,
 }
 
 

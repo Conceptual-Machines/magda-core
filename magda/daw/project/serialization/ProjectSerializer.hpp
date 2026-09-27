@@ -136,7 +136,7 @@ class ProjectSerializer {
      * @param info Project metadata
      * @return JSON var containing complete project state
      */
-    static juce::var serializeProject(const ProjectInfo& info);
+    static juce::var serializeProject(const ProjectInfo& info, const juce::File& projectFile = {});
 
     /**
      * @brief Deserialize JSON to project
@@ -192,16 +192,19 @@ class ProjectSerializer {
      * @brief Serialize the pooled media sources to a JSON array (#1901).
      *
      * Garbage-collects the pool first: only sources a clip still references are
-     * written.
+     * written. A source inside @p projectFile's folder is written relative to it,
+     * so the project folder can move.
      */
-    static juce::var serializeSources();
+    static juce::var serializeSources(const juce::File& projectFile = {});
 
     /**
      * @brief Restore pooled media sources. Must run before clips, whose events
      * reference sources by id.
      */
-    /// Parse the sources array into @p out without touching the live pool.
-    static void deserializeSourcesToStaging(const juce::var& json, std::vector<Source>& out);
+    /// Parse the sources array into @p out without touching the live pool; a relative
+    /// path resolves against @p projectFile's folder.
+    static void deserializeSourcesToStaging(const juce::var& json, std::vector<Source>& out,
+                                            const juce::File& projectFile = {});
 
     /// Replace the pool with @p sources, carrying across any entry that
     /// @p stagedClips still reference. Message thread, commit phase only.

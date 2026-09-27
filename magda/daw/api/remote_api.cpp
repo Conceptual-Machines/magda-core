@@ -3342,6 +3342,19 @@ OperationRegistry::OperationRegistry() {
         idResult);
     operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
         "placement", clipDestinationSchema());
+    add("clips.loadSample", "Load an audio file as a clip, as a drop onto a track does",
+        OperationAccess::Write, &handlers::clipsLoadSample, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "samplePath":{"type":"string","minLength":1,"maxLength":4096},
+                "placement":{}
+            },
+            "required":["samplePath","placement"],
+            "additionalProperties":false
+        })json"),
+        idResult);
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "placement", clipDestinationSchema());
     add("clips.addMidiNote", "Add a note to a MIDI clip", OperationAccess::Write,
         &handlers::clipsAddMidiNote, operationInputSchema(R"json({
             "type":"object",
@@ -3431,6 +3444,24 @@ OperationRegistry::OperationRegistry() {
                 "name":{"type":"string"},
                 "enabled":{"type":"boolean"},
                 "grooveTemplate":{"type":"string"}
+            },
+            "required":["clipId"],"additionalProperties":false
+        })json"),
+        clipSchema());
+    add("clips.updateAudio",
+        "Update an audio clip's playback mode, source tempo, stretch, reverse, and fades",
+        OperationAccess::Write, &handlers::clipsUpdateAudio, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "playback":{"type":"string","enum":["free","beat"]},
+                "sourceBpm":{"type":"number","minimum":20,"maximum":999},
+                "stretch":{"type":"string","enum":["off","signalsmith","soundtouch","soundtouch_hq"]},
+                "reversed":{"type":"boolean"},
+                "fadeInSeconds":{"type":"number","minimum":0,"maximum":600},
+                "fadeOutSeconds":{"type":"number","minimum":0,"maximum":600},
+                "fadeInCurve":{"type":"string","enum":["linear","convex","concave","s_curve"]},
+                "fadeOutCurve":{"type":"string","enum":["linear","convex","concave","s_curve"]}
             },
             "required":["clipId"],"additionalProperties":false
         })json"),
@@ -4436,6 +4467,8 @@ OperationRegistry::OperationRegistry() {
         {"sends.remove", Scope::Edit},
         {"sidechains.set", Scope::Edit},
         {"clips.createMidi", Scope::Edit},
+        {"clips.loadSample", Scope::Edit},
+        {"clips.updateAudio", Scope::Edit},
         {"clips.addMidiNote", Scope::Edit},
         {"clips.addMidiEvents", Scope::Edit},
         {"clips.updateMidiEvents", Scope::Edit},
