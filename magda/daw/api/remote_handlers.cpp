@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <unordered_map>
@@ -41,7 +42,6 @@
 #include "project_api.hpp"
 #include "remote_diagnostics.hpp"
 #include "remote_engine_jobs.hpp"
-#include "remote_file_handles.hpp"
 #include "remote_jobs.hpp"
 #include "remote_session_recordings.hpp"
 #include "selection_api.hpp"
@@ -76,6 +76,29 @@ double readDouble(const juce::var& input, const char* key, double fallback = 0.0
 
 bool readBool(const juce::var& input, const char* key, bool fallback = false) {
     return has(input, key) ? static_cast<bool>(input[key]) : fallback;
+}
+
+std::optional<juce::File> resolveAbsolutePath(const juce::String& path, Error& error) {
+    // Constructing juce::File from a relative path asserts in debug builds, so
+    // this check must remain before any juce::File construction.
+    if (!juce::File::isAbsolutePath(path)) {
+        error = {ErrorCode::ValidationFailed, "path must be absolute", {}};
+        return std::nullopt;
+    }
+
+    const auto utf8 = path.toUTF8();
+    const std::u8string bytes(reinterpret_cast<const char8_t*>(utf8.getAddress()),
+                              static_cast<std::size_t>(utf8.sizeInBytes() - 1));
+    std::error_code ec;
+    const auto resolved = std::filesystem::weakly_canonical(std::filesystem::path(bytes), ec);
+    if (ec) {
+        error = {ErrorCode::ValidationFailed, "path could not be resolved", {}};
+        return std::nullopt;
+    }
+
+    const auto resolvedUtf8 = resolved.u8string();
+    return juce::File(juce::String::fromUTF8(reinterpret_cast<const char*>(resolvedUtf8.data()),
+                                             static_cast<int>(resolvedUtf8.size())));
 }
 
 InputMonitorMode readInputMonitorMode(const juce::var& input) {
@@ -731,26 +754,6 @@ HandlerResult jobsCancel(MagdaApi&, const juce::var& input, const RequestContext
     return job ? HandlerResult::ok(toJson(*job)) : HandlerResult::fail(std::move(error));
 }
 
-HandlerResult fileHandlesList(MagdaApi&, const juce::var&, const RequestContext& context) {
-    if (context.fileHandles == nullptr)
-        return HandlerResult::fail(ErrorCode::InternalError, "file handle service is unavailable");
-    juce::Array<juce::var> result;
-    for (const auto& handle : context.fileHandles->list(context.clientId))
-        result.add(toJson(handle));
-    return HandlerResult::ok(result);
-}
-
-HandlerResult fileHandlesRevoke(MagdaApi&, const juce::var& input, const RequestContext& context) {
-    if (context.fileHandles == nullptr)
-        return HandlerResult::fail(ErrorCode::InternalError, "file handle service is unavailable");
-    Error error;
-    if (!context.fileHandles->revoke(input["handleId"].toString(), context.clientId, error))
-        return HandlerResult::fail(std::move(error));
-    auto* result = new juce::DynamicObject();
-    result->setProperty("revoked", true);
-    return HandlerResult::unchanged(result);
-}
-
 namespace {
 
 OfflineRenderFormat renderFormat(const juce::var& input) {
@@ -798,30 +801,24 @@ bool destinationMatches(OfflineRenderFormat format, const juce::File& destinatio
                                                : destination.hasFileExtension(".wav");
 }
 
-std::optional<ResolvedRemoteFileHandle> resolveAudioDestination(const juce::var& input,
-                                                                const RequestContext& context,
-                                                                OfflineRenderFormat format,
-                                                                Error& error) {
-    auto destination =
-        context.fileHandles->resolve(input["destinationHandle"].toString(), context.clientId,
-                                     RemoteFileCapability::AudioDestination, error);
+std::optional<juce::File> resolveAudioDestination(const juce::var& input,
+                                                  OfflineRenderFormat format, Error& error) {
+    auto destination = resolveAbsolutePath(input["path"].toString(), error);
     if (!destination)
         return std::nullopt;
-    if (!destinationMatches(format, destination->file)) {
+    if (!destinationMatches(format, *destination)) {
         error = Error{ErrorCode::ValidationFailed,
-                      "approved destination extension does not match the requested format",
+                      "destination extension does not match the requested format",
                       {}};
+        return std::nullopt;
+    }
+    if (!destination->getParentDirectory().createDirectory()) {
+        error = Error{ErrorCode::ValidationFailed, "destination folder could not be created", {}};
         return std::nullopt;
     }
     const bool overwrite = input["overwritePolicy"].toString() == "replace";
-    if (destination->file.existsAsFile() && !overwrite) {
+    if (destination->existsAsFile() && !overwrite) {
         error = Error{ErrorCode::Conflict, "destination already exists", {}};
-        return std::nullopt;
-    }
-    if (destination->file.existsAsFile() && !destination->overwriteApproved) {
-        error = Error{ErrorCode::PermissionDenied,
-                      "overwriting this destination was not approved locally",
-                      {}};
         return std::nullopt;
     }
     return destination;
@@ -837,7 +834,7 @@ juce::var currentJob(RemoteJobManager& jobs, const juce::String& jobId,
 
 HandlerResult engineRenderRange(MagdaApi& api, const juce::var& input,
                                 const RequestContext& context) {
-    if (context.jobs == nullptr || context.fileHandles == nullptr || context.engineJobs == nullptr)
+    if (context.jobs == nullptr || context.engineJobs == nullptr)
         return HandlerResult::fail(ErrorCode::InternalError,
                                    "engine file services are unavailable");
     if (!api.project().hasOpenProject())
@@ -848,7 +845,7 @@ HandlerResult engineRenderRange(MagdaApi& api, const juce::var& input,
         return HandlerResult::fail(ErrorCode::ValidationFailed,
                                    "FLAC output does not support 32-bit samples");
     Error error;
-    const auto destination = resolveAudioDestination(input, context, format, error);
+    const auto destination = resolveAudioDestination(input, format, error);
     if (!destination)
         return HandlerResult::fail(std::move(error));
 
@@ -882,8 +879,8 @@ HandlerResult engineRenderRange(MagdaApi& api, const juce::var& input,
         return HandlerResult::fail(ErrorCode::InternalError, "render job was not accepted");
 
     OfflineRenderRequest request;
-    auto temporary = std::make_shared<juce::TemporaryFile>(destination->file);
-    const auto overwriteExisting = destination->file.existsAsFile();
+    auto temporary = std::make_shared<juce::TemporaryFile>(*destination);
+    const auto overwriteExisting = destination->existsAsFile();
     request.destination = temporary->getFile();
     request.format = format;
     request.bitDepth = static_cast<int>(input["bitDepth"]);
@@ -953,7 +950,7 @@ HandlerResult engineRenderRange(MagdaApi& api, const juce::var& input,
 
 HandlerResult engineMasterCaptureStart(MagdaApi& api, const juce::var& input,
                                        const RequestContext& context) {
-    if (context.jobs == nullptr || context.fileHandles == nullptr || context.engineJobs == nullptr)
+    if (context.jobs == nullptr || context.engineJobs == nullptr)
         return HandlerResult::fail(ErrorCode::InternalError,
                                    "engine file services are unavailable");
     if (!api.project().hasOpenProject())
@@ -963,7 +960,7 @@ HandlerResult engineMasterCaptureStart(MagdaApi& api, const juce::var& input,
         return HandlerResult::fail(ErrorCode::ValidationFailed,
                                    "FLAC output does not support 32-bit samples");
     Error error;
-    const auto destination = resolveAudioDestination(input, context, format, error);
+    const auto destination = resolveAudioDestination(input, format, error);
     if (!destination)
         return HandlerResult::fail(std::move(error));
 
@@ -985,12 +982,12 @@ HandlerResult engineMasterCaptureStart(MagdaApi& api, const juce::var& input,
         return HandlerResult::fail(ErrorCode::InternalError, "capture job was not accepted");
     *jobIdHolder = jobId;
 
-    const auto started = context.engineJobs->startMasterCapture(
-        jobId, context.clientId,
-        {.destination = destination->file,
-         .format = format,
-         .bitDepth = static_cast<int>(input["bitDepth"]),
-         .overwriteExisting = destination->file.existsAsFile()});
+    const auto started =
+        context.engineJobs->startMasterCapture(jobId, context.clientId,
+                                               {.destination = *destination,
+                                                .format = format,
+                                                .bitDepth = static_cast<int>(input["bitDepth"]),
+                                                .overwriteExisting = destination->existsAsFile()});
     if (started == EngineJobStartStatus::Started) {
         context.jobs->markRunning(jobId);
     } else if (started == EngineJobStartStatus::Unsupported) {
@@ -1060,7 +1057,8 @@ HandlerResult engineMasterCaptureStatus(MagdaApi&, const juce::var&,
 
 static juce::var projectStatus(ProjectApi& project) {
     return toJson(makeProjectDto(project.getCurrentProjectInfo(), project.hasOpenProject(),
-                                 project.isDirty(), project.hasSaveTarget()));
+                                 project.isDirty(), project.hasSaveTarget(),
+                                 project.getCurrentProjectPath()));
 }
 
 HandlerResult projectGet(MagdaApi& api, const juce::var&, const RequestContext&) {
@@ -1093,9 +1091,9 @@ HandlerResult projectClose(MagdaApi& api, const juce::var& input, const RequestC
 
 static juce::var projectFileJobResult(const ProjectFileOperationResult& operation) {
     auto* result = new juce::DynamicObject();
-    result->setProperty("project",
-                        toJson(makeProjectDto(operation.project, operation.projectOpen,
-                                              operation.projectDirty, operation.hasSaveTarget)));
+    result->setProperty("project", toJson(makeProjectDto(operation.project, operation.projectOpen,
+                                                         operation.projectDirty,
+                                                         operation.hasSaveTarget, operation.path)));
     result->setProperty("recoveredAutosave", operation.recoveredAutosave);
     juce::Array<juce::var> problems;
     if (operation.missingMediaCount > 0) {
@@ -1128,12 +1126,10 @@ static Error projectFileError(ProjectFileOperationStatus status,
                     {},
                     details};
         case ProjectFileOperationStatus::NotFound:
-            return {ErrorCode::NotFound, "approved project source is unavailable", {}, details};
+            return {ErrorCode::NotFound, "project source is unavailable", {}, details};
         case ProjectFileOperationStatus::InvalidFormat:
-            return {ErrorCode::ValidationFailed,
-                    "approved file is not a supported project format",
-                    {},
-                    details};
+            return {
+                ErrorCode::ValidationFailed, "file is not a supported project format", {}, details};
         case ProjectFileOperationStatus::Failed:
         case ProjectFileOperationStatus::Succeeded:
             return {ErrorCode::InternalError, "project file operation failed", {}, details};
@@ -1142,17 +1138,14 @@ static Error projectFileError(ProjectFileOperationStatus status,
 }
 
 HandlerResult projectOpen(MagdaApi& api, const juce::var& input, const RequestContext& context) {
-    if (context.jobs == nullptr || context.fileHandles == nullptr)
-        return HandlerResult::fail(ErrorCode::InternalError,
-                                   "project file services are unavailable");
+    if (context.jobs == nullptr)
+        return HandlerResult::fail(ErrorCode::InternalError, "project job service is unavailable");
     Error error;
-    const auto source =
-        context.fileHandles->resolve(input["sourceHandle"].toString(), context.clientId,
-                                     RemoteFileCapability::ProjectSource, error);
+    const auto source = resolveAbsolutePath(input["path"].toString(), error);
     if (!source)
         return HandlerResult::fail(std::move(error));
-    if (!source->file.existsAsFile())
-        return HandlerResult::fail(ErrorCode::NotFound, "approved project source is unavailable");
+    if (!source->existsAsFile())
+        return HandlerResult::fail(ErrorCode::NotFound, "project source is unavailable");
 
     auto& project = api.project();
     const bool discard = input["dirtyPolicy"].toString() == "discard";
@@ -1189,8 +1182,7 @@ HandlerResult projectOpen(MagdaApi& api, const juce::var& input, const RequestCo
     auto jobs = context.jobsOwner;
     auto revision = context.revisionOwner;
     project.openProjectAsync(
-        source->file, std::move(options),
-        [jobs, revision, jobId](ProjectFileOperationResult result) {
+        *source, std::move(options), [jobs, revision, jobId](ProjectFileOperationResult result) {
             if (!jobs)
                 return;
             const auto currentRevision =
@@ -1207,24 +1199,23 @@ HandlerResult projectOpen(MagdaApi& api, const juce::var& input, const RequestCo
 }
 
 HandlerResult projectSaveAs(MagdaApi& api, const juce::var& input, const RequestContext& context) {
-    if (context.jobs == nullptr || context.fileHandles == nullptr)
-        return HandlerResult::fail(ErrorCode::InternalError,
-                                   "project file services are unavailable");
+    if (context.jobs == nullptr)
+        return HandlerResult::fail(ErrorCode::InternalError, "project job service is unavailable");
     Error error;
+    const auto requested = resolveAbsolutePath(input["path"].toString(), error);
+    if (!requested)
+        return HandlerResult::fail(std::move(error));
+    auto& project = api.project();
     const auto destination =
-        context.fileHandles->resolve(input["destinationHandle"].toString(), context.clientId,
-                                     RemoteFileCapability::ProjectDestination, error);
+        resolveAbsolutePath(project.saveTargetFor(*requested).getFullPathName(), error);
     if (!destination)
         return HandlerResult::fail(std::move(error));
-    if (!api.project().hasOpenProject())
+    if (!project.hasOpenProject())
         return HandlerResult::fail(ErrorCode::Conflict, "no project is open");
 
     const bool overwrite = input["overwritePolicy"].toString() == "replace";
-    if (destination->file.existsAsFile() && !overwrite)
+    if (destination->existsAsFile() && !overwrite)
         return HandlerResult::fail(ErrorCode::Conflict, "destination already exists");
-    if (destination->file.existsAsFile() && !destination->overwriteApproved)
-        return HandlerResult::fail(ErrorCode::PermissionDenied,
-                                   "overwriting this destination was not approved locally");
 
     auto cancelled = std::make_shared<std::atomic_bool>(false);
     const auto jobId =
@@ -1243,14 +1234,13 @@ HandlerResult projectSaveAs(MagdaApi& api, const juce::var& input, const Request
 
     ProjectSaveAsOptions options;
     options.overwrite = overwrite;
-    options.overwriteApproved = destination->overwriteApproved;
     options.copyMedia = input["mediaPolicy"].toString() == "copy";
     options.cancelled = cancelled;
     auto jobs = context.jobsOwner;
     auto revision = context.revisionOwner;
-    auto* project = &api.project();
-    project->saveProjectAsAsync(
-        destination->file, std::move(options),
+    auto* projectApi = &project;
+    projectApi->saveProjectAsAsync(
+        *destination, std::move(options),
         [jobs, revision, jobId](ProjectFileOperationResult result) {
             if (!jobs)
                 return;

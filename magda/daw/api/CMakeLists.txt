@@ -25,7 +25,6 @@ target_sources(magda_daw PRIVATE
     remote_audit.cpp
     remote_jobs.cpp
     remote_session_recordings.cpp
-    remote_file_handles.cpp
     remote_engine_jobs.cpp
     remote_service.cpp
     remote_changes.cpp
@@ -71,7 +70,6 @@ target_sources(magda_daw PRIVATE
     remote_clients.hpp
     remote_audit.hpp
     remote_jobs.hpp
-    remote_file_handles.hpp
     remote_engine_jobs.hpp
     remote_diagnostics.hpp
     remote_service.hpp

@@ -133,6 +133,7 @@ struct MidiEventDto {
 
 struct ProjectDto {
     bool open = false;
+    std::optional<juce::String> path;
     juce::String name;
     double tempo = 120.0;
     int timeSignatureNumerator = 4;
@@ -659,9 +660,6 @@ struct RequestContext {
     std::shared_ptr<class RemoteJobManager> jobsOwner;
     class RemoteSessionRecordings* sessionRecordings = nullptr;
     std::shared_ptr<class RemoteSessionRecordings> sessionRecordingsOwner;
-    // Installed by RemoteApiService. Paths never enter request or response
-    // values; handlers resolve only capabilities approved in the native UI.
-    class RemoteFileHandleRegistry* fileHandles = nullptr;
     class EngineJobSource* engineJobs = nullptr;
     std::shared_ptr<class EngineJobSource> engineJobsOwner;
     // The validated project revision at handler entry. Future job-producing
@@ -929,7 +927,8 @@ std::optional<AutomationClipDto> automationClipFromJson(const juce::var& json, E
 std::optional<ReferenceImpactResultDto> referenceImpactResultFromJson(const juce::var& json,
                                                                       Error& error);
 
-ProjectDto makeProjectDto(const ProjectInfo& project, bool open, bool dirty, bool hasSaveTarget);
+ProjectDto makeProjectDto(const ProjectInfo& project, bool open, bool dirty, bool hasSaveTarget,
+                          juce::String path = {});
 TrackDto makeTrackDto(const TrackInfo& track);
 RoutingEndpointDto makeRoutingEndpointDto(const RoutingEndpoint& endpoint);
 TrackRoutingDto makeTrackRoutingDto(const TrackRoutingView& routing);

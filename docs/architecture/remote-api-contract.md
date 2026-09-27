@@ -125,48 +125,46 @@ projects the same list as `magda://jobs`.
 
 ### Current-project save
 
-`project.get` reports `open`, `dirty`, and `hasSaveTarget` without exposing the target's
-path. `project.save` is edit-scoped and writes only to that existing target. It
-never opens a chooser; an untitled project fails with `conflict`, leaving Save
-As an explicit in-app action. Saving changes persistence state rather than
+`project.get` reports `open`, `dirty`, `hasSaveTarget`, and the canonical
+absolute `path` of a saved project (`null` for an untitled or closed project).
+`project.save` is edit-scoped and writes only to that existing target. It never
+opens a chooser; an untitled project fails with `conflict`, leaving Save As an
+explicit `project.saveAs` request. Saving changes persistence state rather than
 project content, so a successful save does not advance the Remote API revision
 or create an undo command.
 
-### Approved project files
+### Project files
 
-Remote clients never send or receive filesystem paths. A user chooses a project
-source or Save As destination in MAGDA's native Connections UI, which issues an
-opaque `file_…` capability to each live connection for that named client.
-`fileHandles.list` returns only the handle, capability, basename, expiry, and
-whether overwriting that exact destination was approved; `fileHandles.revoke`
-invalidates one owned handle. Handles are scoped to one transport connection,
-expire after 30 minutes, disappear on disconnect, and are held only in memory.
-A source handle cannot be used as a destination or by another connection.
+`project.open` and `project.saveAs` take an absolute filesystem `path` plus
+their explicit dirty/autosave/media/device or overwrite/copy policies. Neither
+operation opens a chooser, warning, recovery sheet, or plugin dialog. Relative
+paths are rejected before a `juce::File` is constructed. `..` components and
+symbolic links are resolved before use and before checking whether a
+destination exists.
 
-`project.open` requires a `project_source` handle and explicit policies for a
-dirty current project, autosave recovery, missing media, and unavailable
-devices. `project.saveAs` requires a `project_destination` handle plus explicit
-overwrite and media copy/move policies. Neither operation opens a chooser,
-warning, recovery sheet, or plugin dialog. An overwrite is permitted only when
-the resolved target is the exact existing file the native chooser approved;
-the wrapper-directory target used by MAGDA is resolved before this check.
+Save As resolves MAGDA's wrapper-directory convention first: requesting
+`/x/Foo.mgd` writes `/x/Foo/Foo.mgd`. Its completed job and subsequent
+`project.get` report that actual canonical path. `overwritePolicy: fail` refuses
+an existing resolved target; `replace` is the only policy that permits replacing
+one.
 
 Both operations return an asynchronous job. Cancellation is terminal even if
 late I/O finishes, and a failed or cancelled open leaves the active project
 untouched because parsing and policy inspection happen before commit. A
 successful open commits once, clears project-scoped undo and pending work,
 advances the revision once, and publishes fresh snapshots for all discrete
-topics. Job results report safe project metadata and counts for allowed missing
-media or unavailable devices, never their paths or plugin state.
+topics. Job results report project metadata, including the current project path,
+and counts for allowed missing media or unavailable devices. They do not expose
+media paths or plugin state.
 
-### Approved audio outputs
+### Audio outputs
 
-`engine.renderRange` renders one explicit beat or time range to a locally
-approved `audio_destination` handle. The request closes over the output format,
+`engine.renderRange` renders one explicit beat or time range to an absolute
+filesystem `path`. The request closes over the output format,
 sample rate, bit depth, dither, normalisation, effect inclusion, real-time mode,
 tail, and overwrite policy. A time range is converted through the current
-project tempo map before the job starts. The API never accepts or returns the
-destination path.
+project tempo map before the job starts. `engine.masterCapture.start` uses the
+same path and overwrite rules.
 
 `engine.masterCapture.start`, `.stop`, and `.status` expose true master-output
 capture. The native engine writes the stereo buffer produced by its audio-device
@@ -175,11 +173,11 @@ instead of substituting an offline render. Status reveals an active job id only
 to its owning connection.
 
 Both forms use the shared asynchronous job contract. Output is staged and
-published to the approved destination only after successful completion. A
-cancelled or failed operation, or one whose project revision changed while it
-ran, has no artifact and cannot replace the destination. An existing target is
-replaceable only when the request says `replace` and the native chooser approved
-overwriting that exact file.
+published to the resolved destination only after successful completion. Missing
+destination directories are created before the job is accepted. A cancelled or
+failed operation, or one whose project revision changed while it ran, has no
+artifact and cannot replace the destination. An existing target is replaceable
+only when the request says `replace`.
 
 ### Project lifecycle
 
@@ -189,7 +187,7 @@ project. Both require the `edit` scope. A dirty project is refused with
 These operations never open a dialog or file picker. Closing an already closed
 project succeeds without changing the revision. Creating a project while none
 is open succeeds. Both return the same safe status as `project.get`; when closed,
-`open` is false and no project file path is exposed.
+`open` is false and `path` is `null`.
 
 A successful transition clears project undo history and old idempotency entries,
 cancels queued requests and project-bound jobs, advances the revision once,

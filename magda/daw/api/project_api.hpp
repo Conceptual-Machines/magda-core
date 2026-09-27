@@ -32,7 +32,6 @@ struct ProjectOpenOptions {
 
 struct ProjectSaveAsOptions {
     bool overwrite = false;
-    bool overwriteApproved = false;
     bool copyMedia = true;
     std::shared_ptr<std::atomic_bool> cancelled;
 };
@@ -46,6 +45,7 @@ struct ProjectFileOperationResult {
     bool projectOpen = false;
     bool projectDirty = false;
     bool hasSaveTarget = false;
+    juce::String path;
 };
 
 using ProjectFileOperationCallback = std::function<void(ProjectFileOperationResult)>;
@@ -60,16 +60,20 @@ class ProjectApi {
     virtual bool isDirty() const = 0;
     /** Whether Save can write without asking the user to choose a path. */
     virtual bool hasSaveTarget() const = 0;
+    /** Absolute path of the current project file, or empty for an untitled project. */
+    virtual juce::String getCurrentProjectPath() const = 0;
+    /** Resolve the wrapper-folder file that Save As will actually write. */
+    virtual juce::File saveTargetFor(const juce::File& requested) const = 0;
     /** Save to the existing target. Never opens a file chooser. */
     virtual bool saveProject() = 0;
     /** Never opens a dialog; dirty projects require explicit discard. */
     virtual bool newProject(bool discardUnsavedChanges) = 0;
     /** Never opens a dialog; dirty projects require explicit discard. */
     virtual bool closeProject(bool discardUnsavedChanges) = 0;
-    /** Resolve and load only an already-approved path; never opens a dialog. */
+    /** Load the supplied absolute path; never opens a dialog. */
     virtual void openProjectAsync(const juce::File& source, ProjectOpenOptions options,
                                   ProjectFileOperationCallback onComplete) = 0;
-    /** Save only to an already-approved path; never opens a dialog. */
+    /** Save to the supplied absolute path; never opens a dialog. */
     virtual void saveProjectAsAsync(const juce::File& destination, ProjectSaveAsOptions options,
                                     ProjectFileOperationCallback onComplete) = 0;
     virtual void setTempo(double bpm) = 0;

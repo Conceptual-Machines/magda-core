@@ -1,8 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
+#include <filesystem>
 
 #include "MockMagdaApi.hpp"
 #include "magda/daw/api/remote_engine_jobs.hpp"
-#include "magda/daw/api/remote_file_handles.hpp"
 #include "magda/daw/api/remote_service.hpp"
 
 namespace {
@@ -39,9 +39,9 @@ Response run(RemoteApiService& service, const char* operation, juce::var input,
     return response;
 }
 
-juce::var renderInput(const juce::String& handle) {
+juce::var renderInput(const juce::String& path) {
     return object({
-        {"destinationHandle", handle},
+        {"path", path},
         {"range", object({{"unit", "beats"}, {"start", 0.0}, {"end", 4.0}})},
         {"format", "wav"},
         {"sampleRate", 48000},
@@ -57,11 +57,9 @@ juce::var renderInput(const juce::String& handle) {
     });
 }
 
-juce::var captureInput(const juce::String& handle) {
-    return object({{"destinationHandle", handle},
-                   {"format", "wav"},
-                   {"bitDepth", 24},
-                   {"overwritePolicy", "fail"}});
+juce::var captureInput(const juce::String& path) {
+    return object(
+        {{"path", path}, {"format", "wav"}, {"bitDepth", 24}, {"overwritePolicy", "fail"}});
 }
 
 juce::File destination(const juce::String& suffix) {
@@ -156,10 +154,8 @@ struct Fixture {
         service.setEngineJobSource(engineJobs);
     }
 
-    juce::String approve(const juce::File& file, bool overwrite = false,
-                         const juce::String& clientId = "engine-client") {
-        return service.fileHandles().approve(
-            clientId, "engine-test", RemoteFileCapability::AudioDestination, file, overwrite);
+    static juce::String path(const juce::File& file) {
+        return file.getFullPathName();
     }
 
     MockMagdaApi api;
@@ -182,20 +178,20 @@ TEST_CASE("Engine file operations publish closed scoped contracts",
     CHECK(registry.find("engine.masterCapture.start")->requiredScope == Scope::Edit);
     CHECK(registry.find("engine.masterCapture.stop")->requiredScope == Scope::Edit);
     CHECK(registry.find("engine.masterCapture.status")->requiredScope == Scope::Read);
-    CHECK_FALSE(validateOperationInput(*registry.find("engine.renderRange"), renderInput("file_ok"))
-                    .has_value());
-    auto unsafe = renderInput("file_ok");
-    unsafe.getDynamicObject()->setProperty("path", "/tmp/output.wav");
-    CHECK(validateOperationInput(*registry.find("engine.renderRange"), unsafe).has_value());
+    CHECK_FALSE(
+        validateOperationInput(*registry.find("engine.renderRange"), renderInput("/tmp/output.wav"))
+            .has_value());
+    auto obsolete = renderInput("/tmp/output.wav");
+    obsolete.getDynamicObject()->setProperty("destinationHandle", "file_old");
+    CHECK(validateOperationInput(*registry.find("engine.renderRange"), obsolete).has_value());
 }
 
-TEST_CASE("Render-range jobs use approved audio destinations and publish no paths",
-          "[remote][engine-jobs][2846]") {
+TEST_CASE("Render-range jobs use absolute audio destination paths", "[remote][engine-jobs][2886]") {
     Fixture fixture;
     const auto output = destination(".wav");
-    const auto handle = fixture.approve(output);
 
-    const auto response = run(fixture.service, "engine.renderRange", renderInput(handle));
+    const auto response =
+        run(fixture.service, "engine.renderRange", renderInput(Fixture::path(output)));
     REQUIRE(response.ok);
     CHECK(response.result["state"].toString() == "completed");
     CHECK(static_cast<double>(response.result["progress"]) == 1.0);
@@ -205,22 +201,65 @@ TEST_CASE("Render-range jobs use approved audio destinations and publish no path
     CHECK(fixture.engineJobs->lastRender.range.end.value == 4.0);
     CHECK(output.existsAsFile());
     CHECK(output.loadFileAsString() == "rendered audio");
-    const auto wire = juce::JSON::toString(response.toEnvelope(), true);
-    CHECK_FALSE(wire.contains(output.getParentDirectory().getFullPathName()));
     output.deleteFile();
-
-    const auto wrongOwner = run(fixture.service, "engine.renderRange", renderInput(handle),
-                                context("different-connection"));
-    CHECK_FALSE(wrongOwner.ok);
-    CHECK(wrongOwner.error.code == ErrorCode::NotFound);
 }
+
+TEST_CASE("Render-range creates a missing destination folder", "[remote][engine-jobs][2886]") {
+    Fixture fixture;
+    const auto root = destination("-render-parent");
+    const auto output = root.getChildFile("nested").getChildFile("output.wav");
+    REQUIRE_FALSE(output.getParentDirectory().exists());
+
+    const auto response =
+        run(fixture.service, "engine.renderRange", renderInput(Fixture::path(output)));
+    REQUIRE(response.ok);
+    CHECK(response.result["state"].toString() == "completed");
+    CHECK(output.loadFileAsString() == "rendered audio");
+    root.deleteRecursively();
+}
+
+TEST_CASE("Engine output paths must be absolute", "[remote][engine-jobs][2886]") {
+    Fixture fixture;
+    const auto render = run(fixture.service, "engine.renderRange", renderInput("relative.wav"));
+    CHECK_FALSE(render.ok);
+    CHECK(render.error.code == ErrorCode::ValidationFailed);
+    CHECK(fixture.engineJobs->renderCalls == 0);
+
+    const auto capture =
+        run(fixture.service, "engine.masterCapture.start", captureInput("relative.wav"));
+    CHECK_FALSE(capture.ok);
+    CHECK(capture.error.code == ErrorCode::ValidationFailed);
+    CHECK(fixture.engineJobs->captureStartCalls == 0);
+}
+
+#if !JUCE_WINDOWS
+TEST_CASE("Render overwrite checks resolve symbolic links", "[remote][engine-jobs][2886]") {
+    Fixture fixture;
+    const auto output = destination(".wav");
+    const auto link = destination(".wav");
+    REQUIRE(output.replaceWithText("keep me"));
+    std::error_code ec;
+    std::filesystem::create_symlink(output.getFullPathName().toStdString(),
+                                    link.getFullPathName().toStdString(), ec);
+    REQUIRE_FALSE(ec);
+
+    const auto refused =
+        run(fixture.service, "engine.renderRange", renderInput(link.getFullPathName()));
+    CHECK_FALSE(refused.ok);
+    CHECK(refused.error.code == ErrorCode::Conflict);
+    CHECK(fixture.engineJobs->renderCalls == 0);
+    CHECK(output.loadFileAsString() == "keep me");
+    link.deleteFile();
+    output.deleteFile();
+}
+#endif
 
 TEST_CASE("Cancelled renders cannot leave a completed artifact", "[remote][engine-jobs][2846]") {
     Fixture fixture;
     fixture.engineJobs->deferRender = true;
     const auto output = destination(".wav");
-    const auto handle = fixture.approve(output);
-    const auto accepted = run(fixture.service, "engine.renderRange", renderInput(handle));
+    const auto accepted =
+        run(fixture.service, "engine.renderRange", renderInput(Fixture::path(output)));
     REQUIRE(accepted.ok);
     REQUIRE(accepted.result["state"].toString() == "running");
     const auto jobId = accepted.result["id"].toString();
@@ -244,43 +283,34 @@ TEST_CASE("Render-range validates authority, range, overwrite, and failure clean
           "[remote][engine-jobs][2846]") {
     Fixture fixture;
     const auto output = destination(".wav");
-    const auto handle = fixture.approve(output);
 
-    auto invalidRange = renderInput(handle);
+    auto invalidRange = renderInput(Fixture::path(output));
     invalidRange["range"].getDynamicObject()->setProperty("end", 0.0);
     const auto invalid = run(fixture.service, "engine.renderRange", invalidRange);
     CHECK_FALSE(invalid.ok);
     CHECK(invalid.error.code == ErrorCode::ValidationFailed);
     CHECK(fixture.engineJobs->renderCalls == 0);
 
-    const auto wrongCapability = fixture.service.fileHandles().approve(
-        "engine-client", "engine-test", RemoteFileCapability::ProjectDestination, output);
-    const auto wrongHandle =
-        run(fixture.service, "engine.renderRange", renderInput(wrongCapability));
-    CHECK_FALSE(wrongHandle.ok);
-    CHECK(fixture.engineJobs->renderCalls == 0);
-
     auto readOnly = context();
     readOnly.scopes = ScopeSet{Scope::Read};
-    const auto denied = run(fixture.service, "engine.renderRange", renderInput(handle), readOnly);
+    const auto denied =
+        run(fixture.service, "engine.renderRange", renderInput(Fixture::path(output)), readOnly);
     CHECK_FALSE(denied.ok);
     CHECK(denied.error.code == ErrorCode::PermissionDenied);
     CHECK(fixture.engineJobs->renderCalls == 0);
 
     REQUIRE(output.replaceWithText("keep me"));
-    const auto unapprovedHandle = fixture.approve(output, false);
-    auto replace = renderInput(unapprovedHandle);
-    replace.getDynamicObject()->setProperty("overwritePolicy", "replace");
-    const auto unapproved = run(fixture.service, "engine.renderRange", replace);
-    CHECK_FALSE(unapproved.ok);
-    CHECK(unapproved.error.code == ErrorCode::PermissionDenied);
+    const auto refused =
+        run(fixture.service, "engine.renderRange", renderInput(Fixture::path(output)));
+    CHECK_FALSE(refused.ok);
+    CHECK(refused.error.code == ErrorCode::Conflict);
     CHECK(output.loadFileAsString() == "keep me");
     output.deleteFile();
 
     fixture.engineJobs->renderResult = {EngineJobResultStatus::Failed};
     const auto failedOutput = destination(".wav");
-    const auto failedHandle = fixture.approve(failedOutput);
-    const auto failed = run(fixture.service, "engine.renderRange", renderInput(failedHandle));
+    const auto failed =
+        run(fixture.service, "engine.renderRange", renderInput(Fixture::path(failedOutput)));
     REQUIRE(failed.ok);
     CHECK(failed.result["state"].toString() == "failed");
     CHECK(failed.result["error"]["code"].toString() == "internal_error");
@@ -290,9 +320,8 @@ TEST_CASE("Render-range validates authority, range, overwrite, and failure clean
     Fixture lateDestination;
     lateDestination.engineJobs->deferRender = true;
     const auto lateOutput = destination(".wav");
-    const auto lateHandle = lateDestination.approve(lateOutput);
     const auto accepted =
-        run(lateDestination.service, "engine.renderRange", renderInput(lateHandle));
+        run(lateDestination.service, "engine.renderRange", renderInput(Fixture::path(lateOutput)));
     REQUIRE(accepted.ok);
     REQUIRE(lateOutput.replaceWithText("created while rendering"));
     REQUIRE(lateDestination.engineJobs->pendingRender != nullptr);
@@ -312,8 +341,8 @@ TEST_CASE("A changed project invalidates a late render and removes its artifact"
     Fixture fixture;
     fixture.engineJobs->deferRender = true;
     const auto output = destination(".wav");
-    const auto handle = fixture.approve(output);
-    const auto accepted = run(fixture.service, "engine.renderRange", renderInput(handle));
+    const auto accepted =
+        run(fixture.service, "engine.renderRange", renderInput(Fixture::path(output)));
     REQUIRE(accepted.ok);
     const auto jobId = accepted.result["id"].toString();
 
@@ -333,8 +362,8 @@ TEST_CASE("Master capture is an owned long-running job with explicit capability"
           "[remote][engine-jobs][2846]") {
     Fixture fixture;
     const auto output = destination(".wav");
-    const auto handle = fixture.approve(output);
-    const auto started = run(fixture.service, "engine.masterCapture.start", captureInput(handle));
+    const auto started =
+        run(fixture.service, "engine.masterCapture.start", captureInput(Fixture::path(output)));
     REQUIRE(started.ok);
     CHECK(started.result["state"].toString() == "running");
     const auto jobId = started.result["id"].toString();
@@ -360,9 +389,8 @@ TEST_CASE("Master capture is an owned long-running job with explicit capability"
     Fixture unsupported;
     unsupported.engineJobs->captureStart = EngineJobStartStatus::Unsupported;
     const auto unsupportedOutput = destination(".wav");
-    const auto unsupportedHandle = unsupported.approve(unsupportedOutput);
-    const auto rejected =
-        run(unsupported.service, "engine.masterCapture.start", captureInput(unsupportedHandle));
+    const auto rejected = run(unsupported.service, "engine.masterCapture.start",
+                              captureInput(Fixture::path(unsupportedOutput)));
     REQUIRE(rejected.ok);
     CHECK(rejected.result["state"].toString() == "unsupported");
     CHECK_FALSE(unsupportedOutput.existsAsFile());
@@ -373,9 +401,8 @@ TEST_CASE("Master capture cancellation, failure, and revision conflict publish n
     SECTION("owner cancellation") {
         Fixture fixture;
         const auto output = destination(".wav");
-        const auto handle = fixture.approve(output);
         const auto started =
-            run(fixture.service, "engine.masterCapture.start", captureInput(handle));
+            run(fixture.service, "engine.masterCapture.start", captureInput(Fixture::path(output)));
         REQUIRE(started.ok);
         const auto jobId = started.result["id"].toString();
 
@@ -391,9 +418,8 @@ TEST_CASE("Master capture cancellation, failure, and revision conflict publish n
         Fixture fixture;
         fixture.engineJobs->captureStopResult = {false, "plugin detail must stay private"};
         const auto output = destination(".wav");
-        const auto handle = fixture.approve(output);
         const auto started =
-            run(fixture.service, "engine.masterCapture.start", captureInput(handle));
+            run(fixture.service, "engine.masterCapture.start", captureInput(Fixture::path(output)));
         REQUIRE(started.ok);
         const auto stopped = run(fixture.service, "engine.masterCapture.stop",
                                  object({{"jobId", started.result["id"].toString()}}));
@@ -407,9 +433,8 @@ TEST_CASE("Master capture cancellation, failure, and revision conflict publish n
     SECTION("project revision changes") {
         Fixture fixture;
         const auto output = destination(".wav");
-        const auto handle = fixture.approve(output);
         const auto started =
-            run(fixture.service, "engine.masterCapture.start", captureInput(handle));
+            run(fixture.service, "engine.masterCapture.start", captureInput(Fixture::path(output)));
         REQUIRE(started.ok);
         const auto jobId = started.result["id"].toString();
         fixture.service.noteModelChanged(Topic::Tracks);

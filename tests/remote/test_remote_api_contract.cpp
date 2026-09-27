@@ -1181,8 +1181,14 @@ TEST_CASE("Remote API input validation returns structured issues",
 }
 
 TEST_CASE("Remote API DTOs round-trip through JSON", "[remote-api][contract][dto]") {
-    const ProjectDto project{true, "Demo",  128.0, 7,   8,    48000.0, 128,
-                             9,    "minor", true,  4.0, 12.0, true,    true};
+    const ProjectDto project{true,    juce::String("/tmp/Demo/Demo.mgd"),
+                             "Demo",  128.0,
+                             7,       8,
+                             48000.0, 128,
+                             9,       "minor",
+                             true,    4.0,
+                             12.0,    true,
+                             true};
     requireRoundTrip(project, projectFromJson);
 
     const TrackDto track{3,         "audio",  "Bass", 0xff102030, std::nullopt, {4, 5}, 0.8,

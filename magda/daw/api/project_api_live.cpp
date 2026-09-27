@@ -26,6 +26,16 @@ bool ProjectApiLive::hasSaveTarget() const {
            projects.getCurrentProjectFile().getFullPathName().isNotEmpty();
 }
 
+juce::String ProjectApiLive::getCurrentProjectPath() const {
+    const auto& projects = ProjectManager::getInstance();
+    return projects.hasOpenProject() ? projects.getCurrentProjectFile().getFullPathName()
+                                     : juce::String{};
+}
+
+juce::File ProjectApiLive::saveTargetFor(const juce::File& requested) const {
+    return ProjectManager::saveTargetFor(requested);
+}
+
 bool ProjectApiLive::saveProject() {
     return ProjectManager::getInstance().saveProject();
 }
@@ -170,6 +180,7 @@ void ProjectApiLive::openProjectAsync(const juce::File& source, ProjectOpenOptio
                 operation.projectDirty = projects.isDirty();
                 operation.hasSaveTarget =
                     projects.getCurrentProjectFile().getFullPathName().isNotEmpty();
+                operation.path = projects.getCurrentProjectFile().getFullPathName();
             }
             onComplete(std::move(operation));
         });
@@ -187,8 +198,6 @@ void ProjectApiLive::saveProjectAsAsync(const juce::File& destination, ProjectSa
             result.status = ProjectFileOperationStatus::InvalidFormat;
         } else if (!options.overwrite && target.existsAsFile()) {
             result.status = ProjectFileOperationStatus::Conflict;
-        } else if (target.existsAsFile() && !options.overwriteApproved) {
-            result.status = ProjectFileOperationStatus::Conflict;
         } else {
             const auto transfer = options.copyMedia ? ProjectManager::MediaTransfer::Copy
                                                     : ProjectManager::MediaTransfer::Move;
@@ -202,6 +211,7 @@ void ProjectApiLive::saveProjectAsAsync(const juce::File& destination, ProjectSa
             result.projectOpen = projects.hasOpenProject();
             result.projectDirty = projects.isDirty();
             result.hasSaveTarget = projects.getCurrentProjectFile().getFullPathName().isNotEmpty();
+            result.path = projects.getCurrentProjectFile().getFullPathName();
         }
         if (onComplete)
             onComplete(result);
