@@ -50,4 +50,13 @@ class SamplerMedia {
     Provider provider_;
 };
 
+/**
+ * @brief Every Sampler in the model, pads and racks included, with how to repoint it.
+ *
+ * What an engine with no live sampler objects registers: the file is the `source` of
+ * each Sampler's device state, and repointing patches only that, keeping the root
+ * note and markers.
+ */
+std::vector<SamplerMediaReference> modelSamplerMedia();
+
 }  // namespace magda

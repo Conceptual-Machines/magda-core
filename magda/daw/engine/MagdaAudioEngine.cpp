@@ -10,6 +10,7 @@
 #include "../audio/DeviceParameterDisplayTextProvider.hpp"
 #include "../audio/controllers/ControllerRouter.hpp"
 #include "../audio/io/TracktionAudioSettings.hpp"
+#include "../audio/sampling/SamplerMedia.hpp"
 #include "../core/Config.hpp"
 #include "../core/DeviceStateCommands.hpp"
 #include "../core/GrooveStore.hpp"
@@ -63,6 +64,7 @@ MagdaAudioEngine::MagdaAudioEngine(AudioEngineOptions options) : headless_(optio
         setLoopRegionBeats({{start}, {end}});
     });
     api_->setProjectTempoMap([this] { return tempoMap(); });
+    SamplerMedia::getInstance().setProvider(modelSamplerMedia);
     api_->setTransportEngineState({
         .playing = [this] { return isPlaying(); },
         .recording = [this] { return isRecording(); },
@@ -211,6 +213,7 @@ bool MagdaAudioEngine::initialize() {
 void MagdaAudioEngine::shutdown() {
     // Stop the service reaching the host before it is stopped or destroyed.
     PluginService::getInstance().forgetStateProvider(*this);
+    SamplerMedia::getInstance().forgetProvider();
 
     // The sink has to be gone before the host's queue behind it is. clearLiveSink returns
     // only once any in-flight MIDI callback has left, which is what forgetEngine() then
