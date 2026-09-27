@@ -12,7 +12,6 @@
 #include "remote_api.hpp"
 #include "remote_audit.hpp"
 #include "remote_changes.hpp"
-#include "remote_file_handles.hpp"
 #include "remote_jobs.hpp"
 
 namespace magda {
@@ -175,9 +174,6 @@ class RemoteApiService {
     const RemoteJobManager& jobs() const;
     void pollSessionRecordings();
 
-    RemoteFileHandleRegistry& fileHandles();
-    const RemoteFileHandleRegistry& fileHandles() const;
-
     /// Release owner-scoped jobs when a transport identity goes away.
     void clientDisconnected(const juce::String& clientId);
 
@@ -272,8 +268,6 @@ class RemoteApiService {
     ChangeSource changes_;
     std::shared_ptr<RemoteJobManager> jobs_ = std::make_shared<RemoteJobManager>();
     std::shared_ptr<class RemoteSessionRecordings> sessionRecordings_;
-    RemoteFileHandleRegistry fileHandles_;
-
     std::shared_ptr<std::atomic<Revision>> revision_ =
         std::make_shared<std::atomic<Revision>>(INITIAL_REVISION);
     std::atomic<bool> shutdown_{false};

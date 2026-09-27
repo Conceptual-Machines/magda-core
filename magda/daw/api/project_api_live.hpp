@@ -13,6 +13,8 @@ class ProjectApiLive : public ProjectApi {
     bool hasOpenProject() const override;
     bool isDirty() const override;
     bool hasSaveTarget() const override;
+    juce::String getCurrentProjectPath() const override;
+    juce::File saveTargetFor(const juce::File& requested) const override;
     bool saveProject() override;
     bool newProject(bool discardUnsavedChanges) override;
     bool closeProject(bool discardUnsavedChanges) override;

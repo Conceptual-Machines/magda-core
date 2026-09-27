@@ -322,7 +322,7 @@ set(TEST_SOURCES
     remote/test_remote_permission_conformance.cpp
     remote/test_remote_service.cpp
     remote/test_remote_jobs.cpp
-    remote/test_remote_file_handles.cpp
+    remote/test_remote_paths.cpp
     remote/test_remote_engine_jobs.cpp
     remote/test_remote_changes.cpp
     remote/test_remote_subscriptions.cpp

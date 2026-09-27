@@ -11,7 +11,7 @@ purpose-built contracts:
 | Chord progression replacement and extraction | `chordTrack.replaceProgression` (#2831) and the addressed detect/extract/send contract (#2843) |
 | Scene and slot editing | Session scene commands (#2842), explicit clip placement (#2844), and slot recording (#2841) |
 | Device, chain, routing, and sidechain changes | Device replacement/preset and chain preset commands (#2814, #2836, #2839), routing (#2832), sends (#2837), and sidechains (#2838) |
-| Project, render, and capture lifecycle | Project transitions (#2833), opaque file handles (#2847), and asynchronous jobs (#2834, #2846) |
+| Project, render, and capture lifecycle | Project transitions (#2833), absolute file paths (#2886), and asynchronous jobs (#2834, #2846) |
 
 The still-open slices above have defined destinations and failure policies. A
 generic batch would not make them atomic: project loading, recording, rendering,

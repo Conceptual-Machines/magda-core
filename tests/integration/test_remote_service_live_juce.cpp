@@ -152,10 +152,8 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
             auto request = fullyGrantedContext();
             request.clientId = "live-file-client";
             request.clientName = "live-file-client";
-            const auto handle = fixture.service.fileHandles().approve(
-                request.clientId, request.clientName, RemoteFileCapability::ProjectSource, source);
             const auto accepted = fixture.run("project.open",
-                                              object({{"sourceHandle", handle},
+                                              object({{"path", source.getFullPathName()},
                                                       {"dirtyPolicy", "discard"},
                                                       {"autosavePolicy", "ignore"},
                                                       {"missingMediaPolicy", "fail"},
@@ -195,10 +193,8 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
             auto request = fullyGrantedContext();
             request.clientId = "live-file-client";
             request.clientName = "live-file-client";
-            const auto handle = fixture.service.fileHandles().approve(
-                request.clientId, request.clientName, RemoteFileCapability::ProjectSource, source);
             const auto accepted = fixture.run("project.open",
-                                              object({{"sourceHandle", handle},
+                                              object({{"path", source.getFullPathName()},
                                                       {"dirtyPolicy", "discard"},
                                                       {"autosavePolicy", "ignore"},
                                                       {"missingMediaPolicy", "fail"},
@@ -216,7 +212,7 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
             source.deleteFile();
         }
 
-        beginTest("Project save-as writes only to an approved resolved destination");
+        beginTest("Project save-as writes to the resolved absolute destination");
         {
             Fixture fixture;
             auto& projects = ProjectManager::getInstance();
@@ -228,12 +224,9 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
             auto request = fullyGrantedContext();
             request.clientId = "live-file-client";
             request.clientName = "live-file-client";
-            const auto handle = fixture.service.fileHandles().approve(
-                request.clientId, request.clientName, RemoteFileCapability::ProjectDestination,
-                destination);
             const auto before = fixture.service.currentRevision();
             const auto accepted = fixture.run("project.saveAs",
-                                              object({{"destinationHandle", handle},
+                                              object({{"path", destination.getFullPathName()},
                                                       {"overwritePolicy", "fail"},
                                                       {"mediaPolicy", "copy"}}),
                                               request);
@@ -242,18 +235,18 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
             expect(completed.has_value() && completed->state == RemoteJobState::Completed);
             expect(target.existsAsFile());
             expect(fixture.service.currentRevision() == before);
+            if (completed)
+                expectEquals(completed->result["project"]["path"].toString(),
+                             projects.getCurrentProjectFile().getFullPathName());
 
-            const auto unapprovedOverwrite = fixture.service.fileHandles().approve(
-                request.clientId, request.clientName, RemoteFileCapability::ProjectDestination,
-                destination);
             const auto overwrite = fixture.run("project.saveAs",
-                                               object({{"destinationHandle", unapprovedOverwrite},
+                                               object({{"path", destination.getFullPathName()},
                                                        {"overwritePolicy", "replace"},
                                                        {"mediaPolicy", "copy"}}),
                                                request);
             expect(overwrite.ok);
-            const auto refused = fixture.waitForJob(overwrite.result["id"].toString(), request);
-            expect(refused.has_value() && refused->state == RemoteJobState::Failed);
+            const auto replaced = fixture.waitForJob(overwrite.result["id"].toString(), request);
+            expect(replaced.has_value() && replaced->state == RemoteJobState::Completed);
 
             expect(projects.newProject(ProjectManager::UnsavedChangesPolicy::Discard));
             target.getParentDirectory().deleteRecursively();

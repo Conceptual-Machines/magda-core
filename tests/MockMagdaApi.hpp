@@ -1192,6 +1192,7 @@ class MockProjectApi : public ProjectApi {
     ProjectFileOperationCallback pendingSaveAsCallback;
     juce::File lastOpenSource;
     juce::File lastSaveAsDestination;
+    juce::String currentPath;
     const TempoMap* map = nullptr;
     static ProjectFileOperationResult succeededFileOperation() {
         ProjectFileOperationResult result;
@@ -1213,6 +1214,16 @@ class MockProjectApi : public ProjectApi {
     bool hasSaveTarget() const override {
         return saveTarget;
     }
+    juce::String getCurrentProjectPath() const override {
+        return currentPath;
+    }
+    juce::File saveTargetFor(const juce::File& requested) const override {
+        const auto projectName = requested.getFileNameWithoutExtension();
+        const auto parent = requested.getParentDirectory();
+        return parent.getFileName() == projectName
+                   ? requested
+                   : parent.getChildFile(projectName).getChildFile(requested.getFileName());
+    }
     bool saveProject() override {
         ++saveCalls;
         if (!saveSucceeds)
@@ -1229,6 +1240,7 @@ class MockProjectApi : public ProjectApi {
         open = true;
         dirty = false;
         saveTarget = false;
+        currentPath.clear();
         return true;
     }
     bool closeProject(bool discardUnsavedChanges) override {
@@ -1239,6 +1251,7 @@ class MockProjectApi : public ProjectApi {
         open = false;
         dirty = false;
         saveTarget = false;
+        currentPath.clear();
         return true;
     }
     void openProjectAsync(const juce::File& source, ProjectOpenOptions options,
@@ -1254,10 +1267,12 @@ class MockProjectApi : public ProjectApi {
             open = true;
             dirty = openAsyncResult.recoveredAutosave;
             saveTarget = true;
+            currentPath = source.getFullPathName();
             openAsyncResult.project = info;
             openAsyncResult.projectOpen = open;
             openAsyncResult.projectDirty = dirty;
             openAsyncResult.hasSaveTarget = saveTarget;
+            openAsyncResult.path = currentPath;
         }
         onComplete(openAsyncResult);
     }
@@ -1273,10 +1288,12 @@ class MockProjectApi : public ProjectApi {
         if (saveAsAsyncResult.status == ProjectFileOperationStatus::Succeeded) {
             dirty = false;
             saveTarget = true;
+            currentPath = destination.getFullPathName();
             saveAsAsyncResult.project = info;
             saveAsAsyncResult.projectOpen = open;
             saveAsAsyncResult.projectDirty = dirty;
             saveAsAsyncResult.hasSaveTarget = saveTarget;
+            saveAsAsyncResult.path = currentPath;
         }
         onComplete(saveAsAsyncResult);
     }

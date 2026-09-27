@@ -210,6 +210,7 @@ TEST_CASE("A read executes and leaves the revision alone", "[remote][service]") 
     api.project_.info.tempo = 128.0;
     api.project_.dirty = true;
     api.project_.saveTarget = true;
+    api.project_.currentPath = "/tmp/Demo/Demo.mgd";
     RemoteApiService service(api);
 
     const auto response = run(service, "project.get", emptyInput());
@@ -219,6 +220,7 @@ TEST_CASE("A read executes and leaves the revision alone", "[remote][service]") 
     REQUIRE(static_cast<double>(response.result["tempo"]) == 128.0);
     REQUIRE(static_cast<bool>(response.result["dirty"]));
     REQUIRE(static_cast<bool>(response.result["hasSaveTarget"]));
+    REQUIRE(response.result["path"].toString() == api.project_.currentPath);
     REQUIRE(response.revision == INITIAL_REVISION);
     // A read must not open an undo step.
     REQUIRE(api.undo_.compoundDescriptions.empty());

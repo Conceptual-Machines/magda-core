@@ -328,9 +328,12 @@ ScopedMessageThreadAssertionDisabler::~ScopedMessageThreadAssertionDisabler() {
     setMessageThreadAssertionEnabled(previous_);
 }
 
-ProjectDto makeProjectDto(const ProjectInfo& project, bool open, bool dirty, bool hasSaveTarget) {
+ProjectDto makeProjectDto(const ProjectInfo& project, bool open, bool dirty, bool hasSaveTarget,
+                          juce::String path) {
     ProjectDto dto;
     dto.open = open;
+    if (path.isNotEmpty())
+        dto.path = std::move(path);
     dto.name = project.name;
     dto.tempo = project.tempo;
     dto.timeSignatureNumerator = project.timeSignatureNumerator;

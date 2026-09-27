@@ -13,8 +13,6 @@
 #include "../../api/remote_api_host.hpp"
 #include "../../api/remote_audit.hpp"
 #include "../../api/remote_clients.hpp"
-#include "../../api/remote_file_handles.hpp"
-#include "../../project/ProjectManager.hpp"
 #include "../themes/ActiveTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
@@ -708,7 +706,7 @@ class RemoteClientsPage : public juce::Component, private juce::Timer {
     /// One client: its name, whether it is connected, and a checkbox per scope.
     class ClientRow : public juce::Component {
       public:
-        static constexpr int HEIGHT = 70;
+        static constexpr int HEIGHT = 48;
 
         explicit ClientRow(juce::String clientName) : name_(std::move(clientName)) {
             nameLabel_.setText(name_, juce::dontSendNotification);
@@ -757,30 +755,10 @@ class RemoteClientsPage : public juce::Component, private juce::Timer {
 
             forgetButton_.setButtonText(tr("connections.clients.forget"));
             forgetButton_.onClick = [this]() {
-                if (auto* host = magda::remote::activeHost()) {
-                    host->fileHandles().revokeClient(name_);
+                if (auto* host = magda::remote::activeHost())
                     host->clients().forget(name_);
-                }
             };
             addAndMakeVisible(forgetButton_);
-
-            openHandleButton_.setButtonText(tr("connections.clients.allow_open"));
-            openHandleButton_.onClick = [this] { chooseProjectSource(); };
-            addAndMakeVisible(openHandleButton_);
-
-            saveHandleButton_.setButtonText(tr("connections.clients.allow_save_as"));
-            saveHandleButton_.onClick = [this] { chooseProjectDestination(); };
-            addAndMakeVisible(saveHandleButton_);
-
-            audioHandleButton_.setButtonText(tr("connections.clients.allow_audio"));
-            audioHandleButton_.onClick = [this] { chooseAudioDestination(); };
-            addAndMakeVisible(audioHandleButton_);
-
-            revokeHandlesButton_.onClick = [this] {
-                if (auto* host = magda::remote::activeHost())
-                    host->fileHandles().revokeClient(name_);
-            };
-            addAndMakeVisible(revokeHandlesButton_);
         }
 
         const juce::String& clientName() const {
@@ -789,8 +767,8 @@ class RemoteClientsPage : public juce::Component, private juce::Timer {
 
         /// Push current state in. Called every tick, so it must not fight the
         /// user: a toggle is only written when it actually differs.
-        void update(magda::remote::ScopeSet scopes, int connections, const juce::String& transports,
-                    int fileHandles) {
+        void update(magda::remote::ScopeSet scopes, int connections,
+                    const juce::String& transports) {
             const auto& values = magda::remote::allScopeValues();
             for (std::size_t index = 0; index < toggles_.size() && index < values.size(); ++index) {
                 const auto granted = scopes.has(values[index]);
@@ -807,12 +785,6 @@ class RemoteClientsPage : public juce::Component, private juce::Timer {
                                    connected ? ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)
                                              : ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
             disconnectButton_.setEnabled(connected);
-            openHandleButton_.setEnabled(connected);
-            saveHandleButton_.setEnabled(connected);
-            audioHandleButton_.setEnabled(connected);
-            revokeHandlesButton_.setEnabled(fileHandles > 0);
-            revokeHandlesButton_.setButtonText(
-                tr("connections.clients.revoke_files").replace("{0}", juce::String(fileHandles)));
         }
 
         void resized() override {
@@ -832,14 +804,6 @@ class RemoteClientsPage : public juce::Component, private juce::Timer {
                 toggles_.empty() ? 0 : row.getWidth() / static_cast<int>(toggles_.size());
             for (auto& toggle : toggles_)
                 toggle->setBounds(row.removeFromLeft(each));
-
-            bounds.removeFromTop(2);
-            auto files = bounds.removeFromTop(18);
-            const auto fileButtonWidth = files.getWidth() / 4;
-            openHandleButton_.setBounds(files.removeFromLeft(fileButtonWidth).reduced(1, 0));
-            saveHandleButton_.setBounds(files.removeFromLeft(fileButtonWidth).reduced(1, 0));
-            audioHandleButton_.setBounds(files.removeFromLeft(fileButtonWidth).reduced(1, 0));
-            revokeHandlesButton_.setBounds(files.reduced(1, 0));
         }
 
         void paint(juce::Graphics& g) override {
@@ -856,86 +820,6 @@ class RemoteClientsPage : public juce::Component, private juce::Timer {
         }
 
       private:
-        void approveForConnections(magda::remote::RemoteFileCapability capability,
-                                   const juce::File& file, bool overwriteApproved) {
-            auto* host = magda::remote::activeHost();
-            if (host == nullptr)
-                return;
-            for (const auto& connection : host->clients().connections())
-                if (connection.name == name_)
-                    host->fileHandles().approve(connection.connectionId, name_, capability, file,
-                                                overwriteApproved);
-        }
-
-        void chooseProjectSource() {
-            if (fileChooser_ != nullptr)
-                return;
-            fileChooser_ = std::make_unique<juce::FileChooser>(
-                tr("connections.clients.choose_open"), juce::File(), "*.mgd", true);
-            const auto flags =
-                juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles;
-            juce::Component::SafePointer<ClientRow> safeThis(this);
-            fileChooser_->launchAsync(flags, [safeThis](const juce::FileChooser& chooser) {
-                if (safeThis == nullptr)
-                    return;
-                const auto file = chooser.getResult();
-                safeThis->fileChooser_.reset();
-                if (file.existsAsFile() && file.hasFileExtension(".mgd"))
-                    safeThis->approveForConnections(
-                        magda::remote::RemoteFileCapability::ProjectSource, file, false);
-            });
-        }
-
-        void chooseProjectDestination() {
-            if (fileChooser_ != nullptr)
-                return;
-            fileChooser_ = std::make_unique<juce::FileChooser>(
-                tr("connections.clients.choose_save_as"), juce::File(), "*.mgd", true);
-            const auto flags = juce::FileBrowserComponent::saveMode |
-                               juce::FileBrowserComponent::canSelectFiles |
-                               juce::FileBrowserComponent::warnAboutOverwriting;
-            juce::Component::SafePointer<ClientRow> safeThis(this);
-            fileChooser_->launchAsync(flags, [safeThis](const juce::FileChooser& chooser) {
-                if (safeThis == nullptr)
-                    return;
-                auto file = chooser.getResult();
-                safeThis->fileChooser_.reset();
-                if (file.getFullPathName().isEmpty())
-                    return;
-                if (!file.hasFileExtension(".mgd"))
-                    file = file.withFileExtension(".mgd");
-                const auto target = ProjectManager::saveTargetFor(file);
-                const bool overwriteApproved = target == file && target.existsAsFile();
-                safeThis->approveForConnections(
-                    magda::remote::RemoteFileCapability::ProjectDestination, target,
-                    overwriteApproved);
-            });
-        }
-
-        void chooseAudioDestination() {
-            if (fileChooser_ != nullptr)
-                return;
-            fileChooser_ = std::make_unique<juce::FileChooser>(
-                tr("connections.clients.choose_audio"), juce::File(), "*.wav;*.flac", true);
-            const auto flags = juce::FileBrowserComponent::saveMode |
-                               juce::FileBrowserComponent::canSelectFiles |
-                               juce::FileBrowserComponent::warnAboutOverwriting;
-            juce::Component::SafePointer<ClientRow> safeThis(this);
-            fileChooser_->launchAsync(flags, [safeThis](const juce::FileChooser& chooser) {
-                if (safeThis == nullptr)
-                    return;
-                auto file = chooser.getResult();
-                safeThis->fileChooser_.reset();
-                if (file.getFullPathName().isEmpty())
-                    return;
-                if (!file.hasFileExtension(".wav;.flac"))
-                    file = file.withFileExtension(".wav");
-                safeThis->approveForConnections(
-                    magda::remote::RemoteFileCapability::AudioDestination, file,
-                    file.existsAsFile());
-            });
-        }
-
         void commitScopes() {
             auto* host = magda::remote::activeHost();
             if (host == nullptr)
@@ -957,11 +841,6 @@ class RemoteClientsPage : public juce::Component, private juce::Timer {
         std::vector<std::unique_ptr<juce::ToggleButton>> toggles_;
         juce::TextButton disconnectButton_;
         juce::TextButton forgetButton_;
-        juce::TextButton openHandleButton_;
-        juce::TextButton saveHandleButton_;
-        juce::TextButton audioHandleButton_;
-        juce::TextButton revokeHandlesButton_;
-        std::unique_ptr<juce::FileChooser> fileChooser_;
     };
 
     void timerCallback() override {
@@ -1044,8 +923,7 @@ class RemoteClientsPage : public juce::Component, private juce::Timer {
                 ++count;
                 transports.addIfNotAlreadyThere(connection.transport);
             }
-            row->update(scopes, count, transports.joinIntoString(", "),
-                        host->fileHandles().countForClient(name));
+            row->update(scopes, count, transports.joinIntoString(", "));
         }
 
         refreshActivity(host->audit());

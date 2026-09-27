@@ -391,7 +391,6 @@ Response RemoteApiService::execute(const OperationDescriptor& operation, const j
     handlerContext.jobsOwner = jobs_;
     handlerContext.sessionRecordings = sessionRecordings_.get();
     handlerContext.sessionRecordingsOwner = sessionRecordings_;
-    handlerContext.fileHandles = &fileHandles_;
     handlerContext.engineJobs = engineJobs_.get();
     handlerContext.engineJobsOwner = engineJobs_;
     handlerContext.revision = revision;
@@ -475,7 +474,6 @@ void RemoteApiService::shutdown() {
     jobs_->shutdown();
     if (engineJobs_)
         engineJobs_->shutdown();
-    fileHandles_.shutdown();
     changes_.discardPending();
 }
 
@@ -600,19 +598,9 @@ void RemoteApiService::pollSessionRecordings() {
         sessionRecordings_->poll();
 }
 
-RemoteFileHandleRegistry& RemoteApiService::fileHandles() {
-    return fileHandles_;
-}
-
-const RemoteFileHandleRegistry& RemoteApiService::fileHandles() const {
-    return fileHandles_;
-}
-
 void RemoteApiService::clientDisconnected(const juce::String& clientId) {
-    if (clientId.isNotEmpty()) {
+    if (clientId.isNotEmpty())
         jobs_->ownerDisconnected(clientId);
-        fileHandles_.ownerDisconnected(clientId);
-    }
 }
 
 void RemoteApiService::setAuditLog(std::shared_ptr<RemoteAuditLog> log) {
