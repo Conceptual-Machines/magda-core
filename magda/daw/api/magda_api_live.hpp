@@ -113,6 +113,18 @@ class MagdaApiLive : public MagdaApi {
     void setTransportLoopDispatcher(std::function<void(bool)> fn) {
         transport_.setLoopDispatcher(std::move(fn));
     }
+    void setTransportSeekDispatcher(std::function<void(double)> fn) {
+        transport_.setSeekDispatcher(std::move(fn));
+    }
+    void setTransportRecordDispatcher(std::function<void(bool)> fn) {
+        transport_.setRecordDispatcher(std::move(fn));
+    }
+    void setTransportEngineState(TransportApiLive::EngineState state) {
+        transport_.setEngineState(std::move(state));
+    }
+    void notifyTransportStateChanged() {
+        transport_.notifyStateChanged();
+    }
     void setProjectLoopRangeDispatcher(std::function<void(double, double)> fn) {
         project_.setLoopRangeDispatcher(std::move(fn));
     }

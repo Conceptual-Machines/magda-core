@@ -1209,6 +1209,17 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
             // just because the user happens to have a time selection active.
             mainView->getTimelineController().dispatch(SetLoopEnabledEvent{enabled});
         });
+        // While playing, the edit position is only the return point, so the engine moves too.
+        live->setTransportSeekDispatcher([this, engine](double beats) {
+            auto& timeline = mainView->getTimelineController();
+            timeline.dispatch(SetEditPositionBeatsEvent{beats});
+            if (engine->isPlaying())
+                engine->locate(timeline.getState().beatsToSeconds(beats));
+        });
+        live->setTransportRecordDispatcher([this, engine](bool recording) {
+            if (recording != engine->isRecording())
+                mainView->getTimelineController().dispatch(StartRecordEvent{});
+        });
         // A range set behind the controller's back is lost on the next loop toggle.
         live->setProjectLoopRangeDispatcher([this](double startBeats, double endBeats) {
             mainView->getTimelineController().dispatch(

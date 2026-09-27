@@ -254,6 +254,7 @@ set(TEST_SOURCES
     automation/test_automation_modes.cpp
     automation/test_automation_stepped_targets.cpp
     automation/test_automation_singleton.cpp
+    automation/test_tempo_lane_native.cpp
     agents/test_instruction_executor_context.cpp
     # Faust pool refactor (Phase 1: metadata parser)
     dsp/test_block_math.cpp
@@ -324,6 +325,7 @@ set(TEST_SOURCES
     remote/test_remote_permissions.cpp
     remote/test_remote_permission_conformance.cpp
     remote/test_remote_service.cpp
+    remote/test_transport_api_engine_state.cpp
     remote/test_remote_jobs.cpp
     remote/test_remote_paths.cpp
     remote/test_remote_engine_jobs.cpp
