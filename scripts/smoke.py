@@ -54,11 +54,17 @@ MIN_MATCH = 0.95
 MIN_SILENT_RUN = 32
 SILENCE_MARGIN = 64
 DURATION_TOLERANCE = 0.01
+PARAMETER_TOLERANCE = 0.005
 POLL_SECONDS = 0.08
 
 
 class SmokeError(Exception):
     pass
+
+
+def items(result):
+    """A listing's entries: MCP wraps them in `items`, the WebSocket returns them bare."""
+    return result["items"] if isinstance(result, dict) else result
 
 
 def db(linear):
@@ -130,7 +136,7 @@ class Magda:
         if not missing:
             return
         # Calls that change nothing even when allowed; a denied one raises MAGDA's grant sheet.
-        ghost = max([t["id"] for t in self.call("tracks.list")] + [0]) + 1000
+        ghost = max([t["id"] for t in items(self.call("tracks.list"))] + [0]) + 1000
         loop = self.call("transport.get")["loopEnabled"]
         probes = {"edit": ("tracks.delete", {"trackId": ghost}),
                   "transport": ("transport.setLoopEnabled", {"enabled": loop}),
@@ -437,11 +443,38 @@ def unmet_requirement(magda, spec, hardware):
         return "needs hardware: " + ", ".join(lacking)
     plugins = requires.get("plugins", [])
     if plugins:
-        catalog = {d["name"] for d in magda.call("devices.catalog")["items"]}
+        catalog = {d["name"] for d in items(magda.call("devices.catalog"))}
         absent = [p for p in plugins if p not in catalog]
         if absent:
             return "needs plugins: " + ", ".join(absent)
     return None
+
+
+def check_parameters(magda, spec, track_ids):
+    """Parameters a restored plugin state must come back with, off the live instance."""
+    failures = []
+    for check in spec.get("parameters", []):
+        track_id = track_ids.get(check["track"])
+        devices = magda.call("devices.list", {"trackId": track_id})["devices"] if track_id else []
+        device = next((d for d in devices if d["name"] == check["device"]), None)
+        if device is None:
+            failures.append("%s: no device %s" % (check["track"], check["device"]))
+            continue
+        # A hosted plugin describes itself once its instance has loaded.
+        deadline = time.monotonic() + 15
+        described = []
+        while not described and time.monotonic() < deadline:
+            described = items(magda.call("devices.listParameters",
+                                         {"devicePath": device["devicePath"]}))
+            time.sleep(0.2)
+        values = {p["name"]: p["normalizedValue"] for p in described}
+        for name, wanted in check["normalized"].items():
+            got = values.get(name)
+            if got is None or abs(got - wanted) > PARAMETER_TOLERANCE:
+                failures.append("%s %s: %s is %s, the expectation wants %s" % (
+                    check["track"], check["device"], name,
+                    "missing" if got is None else "%.4f" % got, wanted))
+    return failures
 
 
 def play_range(magda, spec, track_ids):
@@ -505,7 +538,8 @@ def run_project(magda, name, mgd, spec, out_dir):
         "missingMediaPolicy": "fail", "unavailableDevicePolicy": "fail"}))
     result["loadSeconds"] = round(time.monotonic() - started, 2)
 
-    track_ids = {t["name"]: t["id"] for t in magda.call("tracks.list")}
+    track_ids = {t["name"]: t["id"] for t in items(magda.call("tracks.list"))}
+    result["failures"] += check_parameters(magda, spec, track_ids)
     magda.call("transport.stop")
     before = magda.call("engine.health")
     capture_path = out_dir / (name + ".capture.wav")
