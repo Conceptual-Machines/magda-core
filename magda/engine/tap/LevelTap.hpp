@@ -20,7 +20,7 @@
  * One writer (the audio thread) and one reader (whoever draws the meter). Two
  * readers would each take part of what the other was owed, because a read is
  * destructive; that is a property of metering rather than an oversight, see
- * read().
+ * read(). The writer/read interleavings are modelled in specs/tla/level_tap.
  */
 
 namespace magda::engine {
