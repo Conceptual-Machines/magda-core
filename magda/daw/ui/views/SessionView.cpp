@@ -1964,10 +1964,7 @@ void SessionView::rebuildTracks() {
             }
         };
 
-        header->onDeleteTrack = [trackId]() {
-            UndoManager::getInstance().executeCommand(
-                std::make_unique<DeleteTrackCommand>(trackId));
-        };
+        header->onDeleteTrack = [trackId]() { deleteTracksFromMenu(trackId); };
         header->canGroupSelectedTracks = [trackId]() {
             auto& sel = SelectionManager::getInstance();
             return sel.getSelectedTrackCount() >= 2 && sel.isTrackSelected(trackId);

@@ -1246,10 +1246,8 @@ void MainWindow::setupMenuCallbacks() {
             int selectedIndex = mainComponent->mixerView->getSelectedChannel();
             if (!mainComponent->mixerView->isSelectedMaster() && selectedIndex >= 0) {
                 const auto& tracks = TrackManager::getInstance().getTracks();
-                if (selectedIndex < static_cast<int>(tracks.size())) {
-                    auto cmd = std::make_unique<DeleteTrackCommand>(tracks[selectedIndex].id);
-                    UndoManager::getInstance().executeCommand(std::move(cmd));
-                }
+                if (selectedIndex < static_cast<int>(tracks.size()))
+                    deleteTracksFromMenu(tracks[selectedIndex].id);
             }
         }
     };

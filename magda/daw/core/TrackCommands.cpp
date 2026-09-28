@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <iterator>
 #include <limits>
 #include <ranges>
 #include <utility>
@@ -13,6 +14,7 @@
 #include "ChainWalk.hpp"
 #include "ClipManager.hpp"
 #include "RangesHelpers.hpp"
+#include "SelectionManager.hpp"
 #include "TempoUtils.hpp"
 #include "controllers/BindingRegistry.hpp"
 
@@ -650,6 +652,35 @@ void DeleteTrackCommand::undo() {
     trackManager.restoreExternalRouting(storedRouting_);
 
     DBG("UNDO: Restored track " << trackId_ << " and its descendants");
+}
+
+void deleteTracks(const std::vector<TrackId>& trackIds) {
+    std::vector<TrackId> deletable;
+    std::ranges::copy_if(trackIds, std::back_inserter(deletable),
+                         [](TrackId id) { return id != MASTER_TRACK_ID; });
+    if (deletable.empty())
+        return;
+
+    auto& undo = UndoManager::getInstance();
+    if (deletable.size() > 1)
+        undo.beginCompoundOperation("Delete Tracks");
+    for (auto id : deletable)
+        undo.executeCommand(std::make_unique<DeleteTrackCommand>(id));
+    if (deletable.size() > 1)
+        undo.endCompoundOperation();
+}
+
+void deleteTracksFromMenu(TrackId clicked) {
+    auto& selection = SelectionManager::getInstance();
+    if (!selection.isTrackSelected(clicked)) {
+        deleteTracks({clicked});
+        return;
+    }
+
+    const std::vector<TrackId> selected(selection.getSelectedTracks().begin(),
+                                        selection.getSelectedTracks().end());
+    deleteTracks(selected);
+    selection.clearSelection();
 }
 
 // ============================================================================

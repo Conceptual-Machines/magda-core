@@ -1127,27 +1127,12 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                         "Cancel", nullptr,
                         juce::ModalCallbackFunction::create([trackIds](int result) {
                             if (result == 1) {
-                                if (trackIds.size() > 1)
-                                    UndoManager::getInstance().beginCompoundOperation(
-                                        "Delete Tracks");
-                                for (auto id : trackIds) {
-                                    auto cmd = std::make_unique<DeleteTrackCommand>(id);
-                                    UndoManager::getInstance().executeCommand(std::move(cmd));
-                                }
-                                if (trackIds.size() > 1)
-                                    UndoManager::getInstance().endCompoundOperation();
+                                deleteTracks(trackIds);
                                 SelectionManager::getInstance().clearSelection();
                             }
                         }));
                 } else {
-                    if (selectedTracks.size() > 1)
-                        UndoManager::getInstance().beginCompoundOperation("Delete Tracks");
-                    for (auto trackId : selectedTracks) {
-                        auto cmd = std::make_unique<DeleteTrackCommand>(trackId);
-                        UndoManager::getInstance().executeCommand(std::move(cmd));
-                    }
-                    if (selectedTracks.size() > 1)
-                        UndoManager::getInstance().endCompoundOperation();
+                    deleteTracks(selectedTracks);
                     selectionManager.clearSelection();
                 }
                 return true;
