@@ -2968,8 +2968,7 @@ void MainView::AuxHeadersPanel::mouseDown(const juce::MouseEvent& event) {
             menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this),
                                [trackId](int result) {
                                    if (result == 1)
-                                       UndoManager::getInstance().executeCommand(
-                                           std::make_unique<DeleteTrackCommand>(trackId));
+                                       deleteTracksFromMenu(trackId);
                                });
         }
     }

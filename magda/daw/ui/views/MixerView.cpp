@@ -1820,8 +1820,7 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
                 if (groupId != INVALID_TRACK_ID)
                     selection.selectTrack(groupId);
             } else if (result == -101) {
-                UndoManager::getInstance().executeCommand(
-                    std::make_unique<DeleteTrackCommand>(trackId_));
+                deleteTracksFromMenu(trackId_);
             }
         });
     } else if (magda::isToggleSelectClick(event.mods)) {
