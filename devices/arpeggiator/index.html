@@ -1386,6 +1386,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#midi-pass-through" class="md-nav__link">
+    <span class="md-ellipsis">
+      MIDI pass-through
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#usage" class="md-nav__link">
     <span class="md-ellipsis">
       Usage
@@ -2019,6 +2028,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/remote-api/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Remote API
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/dsl/" class="md-nav__link">
         
   
@@ -2251,6 +2282,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#midi-pass-through" class="md-nav__link">
+    <span class="md-ellipsis">
+      MIDI pass-through
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#usage" class="md-nav__link">
     <span class="md-ellipsis">
       Usage
@@ -2378,6 +2418,9 @@
 </table>
 <p>The interactive curve display shows the timing transformation in real time. During playback, a green sweep animation tracks the current step position. Drag the handle to shape the curve, or double-click to reset.</p>
 <p>Depth, Skew, and Cycles can be linked to <a href="../../modulation/macros/">Macros</a> for automatable timing modulation — morph from straight to swung patterns in real time.</p>
+<h2 id="midi-pass-through">MIDI pass-through<a class="headerlink" href="#midi-pass-through" title="Permanent link">&para;</a></h2>
+<p>The Arpeggiator replaces the notes you play with its own pattern, and passes everything else on the channel to the instrument behind it — mod wheel, expression, sustain, pitch bend, aftertouch and program change all reach the synth unchanged. Sustain still holds the arpeggiated notes, and the wheel still bends them.</p>
+<p>Turn on <strong>MIDI thru</strong> in the device header only when you want the chord itself to play alongside the pattern: thru passes the raw input on, notes included.</p>
 <h2 id="usage">Usage<a class="headerlink" href="#usage" title="Permanent link">&para;</a></h2>
 <ol>
 <li>Place the Arpeggiator before an instrument on a track's device chain</li>

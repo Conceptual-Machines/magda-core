@@ -1916,6 +1916,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../remote-api/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Remote API
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../dsl/" class="md-nav__link">
         
   
@@ -2293,6 +2315,7 @@
 </ul>
 <h2 id="dawproject-interchange">DAWproject Interchange<a class="headerlink" href="#dawproject-interchange" title="Permanent link">&para;</a></h2>
 <p>MAGDA can import and export the <strong>DAWproject</strong> format (<code>.dawproject</code>), an open interchange format for moving a project between different DAWs. Use <strong>File → Import DAWproject...</strong> to open one, or <strong>File → Export DAWproject...</strong> to write the current project out. It carries tracks, clips, and basic plugin/automation data — use it to hand a session to another DAW that supports the format, and use the native <code>.tracktionedit</code> for full-fidelity MAGDA projects.</p>
+<p>The archive's <code>metadata.xml</code> carries the song's title and credits, and MAGDA maps the whole set both ways: Title, Artist, Album, Original artist, Composer, Songwriter, Producer, Arranger, Year, Genre, Copyright, Website and Comment. Edit them under <strong>File → Project Settings</strong>. A project with no title of its own exports its project name as the Title, which is what other DAWs look for.</p>
 <p>On import, MAGDA reads each track's output routing, so tracks feeding a group or an aux land on the right destination rather than all defaulting to the master. Track groups are preserved as groups: Bitwig writes group channels with the same role it uses for the project master, and MAGDA distinguishes the two from the project structure instead of turning every group into a master track.</p>
 <h2 id="audio-formats">Audio Formats<a class="headerlink" href="#audio-formats" title="Permanent link">&para;</a></h2>
 <p>MAGDA supports the following audio formats:</p>

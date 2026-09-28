@@ -2017,6 +2017,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/remote-api/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Remote API
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/dsl/" class="md-nav__link">
         
   
@@ -2314,6 +2336,9 @@
 </ul>
 <p>They are genuinely separate. Each has its own switch, its own port, and its own token. Turning one on does not turn on the other, and neither needs the other to work — if you only ever use an AI host, leave the WebSocket off; if you drive MAGDA from a Python script and use no AI host, leave MCP off.</p>
 <p>What they <em>share</em> is everything past the socket: the same set of operations, and the same per-client permissions on the <strong>Clients</strong> tab. A client granted <code>edit</code> gets <code>edit</code> whichever transport it arrives over.</p>
+<p>See the <a href="../../reference/remote-api/">Remote API Reference</a> for connection framing,
+schema discovery, revisions and retries, subscriptions, errors, and the complete
+operation catalogue.</p>
 <p><strong>OSC is not one of them.</strong> It is a different protocol on a different stack, with no token, no client list, and no permissions — an OSC surface can do what OSC surfaces can do, and it will never appear on the Clients tab. It is in this dialog because it is another way into MAGDA from outside, not because it shares any of the above.</p>
 <h2 id="mcp">MCP<a class="headerlink" href="#mcp" title="Permanent link">&para;</a></h2>
 <ul>
@@ -2321,7 +2346,9 @@
 <li><strong>Rotate token</strong> — Throws this endpoint's credential away and mints a new one, disconnecting every MCP client. WebSocket clients are unaffected. Clients that read the token file find the new one by themselves.</li>
 </ul>
 <p>Below the toggle, MAGDA composes the exact JSON to paste into an MCP host's config, using this install's own paths, with a <strong>Copy</strong> button. It stays correct across restarts: the helper it names finds MAGDA's current port and token each time, so neither has to be written down.</p>
-<p>On Linux inside an AppImage there is no stable path to publish, so the page shows a placeholder and says so — download <code>magda-mcp</code> from the release, put it somewhere permanent, and use that path.</p>
+<p>On Linux inside an AppImage, MAGDA stages <code>magda-mcp</code> into its data directory
+the first time this page is opened and updates that stable copy when the
+AppImage changes.</p>
 <h2 id="websocket">WebSocket<a class="headerlink" href="#websocket" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Enable the WebSocket API</strong> — Same immediate effect, on its own listener.</li>
@@ -2358,7 +2385,7 @@
 </tr>
 <tr>
 <td><code>hardware-midi</code></td>
-<td>Reach physical MIDI ports. Nothing uses it yet.</td>
+<td>Send channel messages and SysEx to physical MIDI outputs.</td>
 </tr>
 </tbody>
 </table>

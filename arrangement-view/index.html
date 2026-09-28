@@ -1027,6 +1027,30 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Project Settings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#general" class="md-nav__link">
+    <span class="md-ellipsis">
+      General
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      Metadata
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
     </ul>
@@ -2195,6 +2219,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../reference/remote-api/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Remote API
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../reference/dsl/" class="md-nav__link">
         
   
@@ -2613,6 +2659,30 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Project Settings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#general" class="md-nav__link">
+    <span class="md-ellipsis">
+      General
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      Metadata
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
     </ul>
@@ -2850,7 +2920,8 @@
 </tbody>
 </table>
 <h2 id="project-settings">Project Settings<a class="headerlink" href="#project-settings" title="Permanent link">&para;</a></h2>
-<p>Open <strong>File → Project Settings</strong> to set options that belong to the project itself rather than the application:</p>
+<p>Open <strong>File → Project Settings</strong> to set options that belong to the project itself rather than the application. It has two tabs.</p>
+<h3 id="general">General<a class="headerlink" href="#general" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
@@ -2877,7 +2948,11 @@
 </tr>
 </tbody>
 </table>
-<p>Tick <strong>Save as default for new projects</strong> to apply the same values to new projects from now on. These settings are stored per project, so different songs can carry different lengths and render formats.</p>
+<p>These are stored per project, so different songs can carry different lengths and render formats. The values a <em>new</em> project starts with are set in <a href="../interface/preferences/#defaults">Preferences</a>. <strong>Apply</strong> commits your changes; <strong>Cancel</strong> closes the dialog, discarding anything you have not applied.</p>
+<h3 id="metadata">Metadata<a class="headerlink" href="#metadata" title="Permanent link">&para;</a></h3>
+<p>The <strong>Metadata</strong> tab holds the song's title and credits: Title, Artist, Album, Original artist, Composer, Songwriter, Producer, Arranger, Year, Genre, Copyright, Website and Comment. All of them are free text and all of them are optional. The credits that describe <em>you</em> rather than the song — Artist, Composer, Songwriter, Producer, Arranger, Genre, Copyright, Website — are filled in for a new project from <a href="../interface/preferences/#defaults">Preferences → Defaults</a>, so you only type them once.</p>
+<p>Title is left empty by default and shows the project's name in grey. That name is what gets used, so there is nothing to fill in unless the song is called something other than the file — a song called <em>Blue</em> can live in <code>blue_v7.mgd</code>. Type a title only when you want one that differs from the name; leave it alone and renaming the project keeps carrying through.</p>
+<p>These are the fields the DAWproject format defines, so they survive a round trip through <strong>File → Export DAWproject...</strong> and back, and credits written in another DAW come through on import.</p>
 
 
 

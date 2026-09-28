@@ -1,0 +1,4067 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="User manual for MAGDA — a free, open-source digital audio workstation">
+      
+      
+      
+        <link rel="canonical" href="https://Conceptual-Machines.github.io/magda-core/reference/remote-api/">
+      
+      
+        <link rel="prev" href="../../transport/">
+      
+      
+        <link rel="next" href="../dsl/">
+      
+      
+      <link rel="icon" href="../../assets/images/magda-lisa.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.7">
+    
+    
+      
+        <title>Remote API - MAGDA Manual</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.8608ea7d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#remote-api" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="https://magda.land" title="MAGDA Manual" class="md-header__button md-logo" aria-label="MAGDA Manual" data-md-component="logo">
+      
+  <img src="../../assets/images/magda-lisa.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            MAGDA Manual
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Remote API
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/Conceptual-Machines/magda-core" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    magda-core
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="https://magda.land" title="MAGDA Manual" class="md-nav__button md-logo" aria-label="MAGDA Manual" data-md-component="logo">
+      
+  <img src="../../assets/images/magda-lisa.svg" alt="logo">
+
+    </a>
+    MAGDA Manual
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/Conceptual-Machines/magda-core" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    magda-core
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Home
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../is-magda-right-for-you/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Is MAGDA Right for You?
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Getting Started
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Getting Started
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Installation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/first-session/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    First Session
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../localization/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Localization
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Interface Layout
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Interface Layout
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/overview/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/menus/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Menus
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/preferences/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Preferences
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/audio-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Audio Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/plugin-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Plugin Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/ai-settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    AI Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/controllers/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Controllers
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/connections/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Connections
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tracks/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Tracks
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clips/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Clips
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../stem-separation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Stem Separation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fx-chain/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    FX Chain & Racks
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../plugin-parameters/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Plugin Parameters
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../arrangement-view/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Arrangement View
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../session-view/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Session View
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mixer-view/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Mixer View
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../recording-comping/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Recording & Comping
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../chord-track/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Chord Track
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../working-with-ai/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Working with AI
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16" >
+        
+          
+          <label class="md-nav__link" for="__nav_16" id="__nav_16_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Panels
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_16_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_16">
+            <span class="md-nav__icon md-icon"></span>
+            Panels
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../panels/inspector/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Inspector
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../panels/browsers/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Plugin & Media Browser
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../panels/media-library/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Media Library
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../panels/ai-assistant/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    AI Assistant
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_16_5" id="__nav_16_5_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Editors
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_16_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_16_5">
+            <span class="md-nav__icon md-icon"></span>
+            Editors
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../panels/editors/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../panels/piano-roll/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Piano Roll
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../panels/drum-grid-editor/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Drum Grid Editor
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../panels/waveform-editor/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Waveform Editor
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../panels/track-chain/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Track Chain
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../panels/chord-panel/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Chord Panel
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17" >
+        
+          
+          <label class="md-nav__link" for="__nav_17" id="__nav_17_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Devices
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_17">
+            <span class="md-nav__icon md-icon"></span>
+            Devices
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/built-in/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_17_2" id="__nav_17_2_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    MIDI Devices
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_17_2">
+            <span class="md-nav__icon md-icon"></span>
+            MIDI Devices
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/arpeggiator/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Arpeggiator
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/chord-engine/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Chord Engine
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/step-sequencer/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Step Sequencer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/poly-sequencer/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Poly Sequencer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_17_3" id="__nav_17_3_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Instruments
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_17_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_17_3">
+            <span class="md-nav__icon md-icon"></span>
+            Instruments
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/poly-synth/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Poly Synth
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/fm0/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    FM0
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/drum-kit/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Drum Kit
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/physical-models/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Physical Models
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/mutable/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Mutable Ports
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/4osc/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    4OSC Synth
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/drum-grid/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Drum Grid
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/sampler/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Sampler
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/faust-instrument/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Faust Instrument
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/effects/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Effects
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../devices/analysis/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Analysis
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_18" >
+        
+          
+          <label class="md-nav__link" for="__nav_18" id="__nav_18_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Modulation
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18">
+            <span class="md-nav__icon md-icon"></span>
+            Modulation
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modulation/overview/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modulation/modulators/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Modulators
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modulation/macros/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Macros
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modulation/linking/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Linking Parameters
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../automation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Automation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../time-bend/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Time Bend
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../transport/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Transport
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_22" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_22" id="__nav_22_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Reference
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_22_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_22">
+            <span class="md-nav__icon md-icon"></span>
+            Reference
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Remote API
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    Remote API
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#enable-the-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      Enable the API
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#discovery-and-credentials" class="md-nav__link">
+    <span class="md-ellipsis">
+      Discovery and credentials
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#websocket-quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      WebSocket quick start
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="WebSocket quick start">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#discover-operations-and-schemas" class="md-nav__link">
+    <span class="md-ellipsis">
+      Discover operations and schemas
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#write-safely" class="md-nav__link">
+    <span class="md-ellipsis">
+      Write safely
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      Errors
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#subscriptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Subscriptions
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#asynchronous-jobs" class="md-nav__link">
+    <span class="md-ellipsis">
+      Asynchronous jobs
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#data-conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Data conventions
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mcp-clients" class="md-nav__link">
+    <span class="md-ellipsis">
+      MCP clients
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#operation-catalogue" class="md-nav__link">
+    <span class="md-ellipsis">
+      Operation catalogue
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Operation catalogue">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#system-diagnostics-jobs-and-rendering" class="md-nav__link">
+    <span class="md-ellipsis">
+      System, diagnostics, jobs, and rendering
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#project-and-chord-track" class="md-nav__link">
+    <span class="md-ellipsis">
+      Project and chord track
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tracks-routing-sends-and-sidechains" class="md-nav__link">
+    <span class="md-ellipsis">
+      Tracks, routing, sends, and sidechains
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clips-and-midi-events" class="md-nav__link">
+    <span class="md-ellipsis">
+      Clips and MIDI events
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#devices-pads-racks-and-modulation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Devices, pads, racks, and modulation
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#selection-transport-and-session" class="md-nav__link">
+    <span class="md-ellipsis">
+      Selection, transport, and Session
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#automation-and-grooves" class="md-nav__link">
+    <span class="md-ellipsis">
+      Automation and grooves
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#focused-device-and-hardware-midi" class="md-nav__link">
+    <span class="md-ellipsis">
+      Focused device and hardware MIDI
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#websocket-subscription-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      WebSocket subscription methods
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#limits-and-security-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      Limits and security model
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      Troubleshooting
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../dsl/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    DSL Reference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../controller-profile-format/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Controller Profile Format
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../osc-addresses/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    OSC Address Reference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../lua-scripting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Lua Scripting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../keyboard-shortcuts/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Keyboard Shortcuts
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../file-formats/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    File Formats
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../troubleshooting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Troubleshooting
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#enable-the-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      Enable the API
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#discovery-and-credentials" class="md-nav__link">
+    <span class="md-ellipsis">
+      Discovery and credentials
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#websocket-quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      WebSocket quick start
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="WebSocket quick start">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#discover-operations-and-schemas" class="md-nav__link">
+    <span class="md-ellipsis">
+      Discover operations and schemas
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#write-safely" class="md-nav__link">
+    <span class="md-ellipsis">
+      Write safely
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      Errors
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#subscriptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Subscriptions
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#asynchronous-jobs" class="md-nav__link">
+    <span class="md-ellipsis">
+      Asynchronous jobs
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#data-conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      Data conventions
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mcp-clients" class="md-nav__link">
+    <span class="md-ellipsis">
+      MCP clients
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#operation-catalogue" class="md-nav__link">
+    <span class="md-ellipsis">
+      Operation catalogue
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Operation catalogue">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#system-diagnostics-jobs-and-rendering" class="md-nav__link">
+    <span class="md-ellipsis">
+      System, diagnostics, jobs, and rendering
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#project-and-chord-track" class="md-nav__link">
+    <span class="md-ellipsis">
+      Project and chord track
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tracks-routing-sends-and-sidechains" class="md-nav__link">
+    <span class="md-ellipsis">
+      Tracks, routing, sends, and sidechains
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clips-and-midi-events" class="md-nav__link">
+    <span class="md-ellipsis">
+      Clips and MIDI events
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#devices-pads-racks-and-modulation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Devices, pads, racks, and modulation
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#selection-transport-and-session" class="md-nav__link">
+    <span class="md-ellipsis">
+      Selection, transport, and Session
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#automation-and-grooves" class="md-nav__link">
+    <span class="md-ellipsis">
+      Automation and grooves
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#focused-device-and-hardware-midi" class="md-nav__link">
+    <span class="md-ellipsis">
+      Focused device and hardware MIDI
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#websocket-subscription-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      WebSocket subscription methods
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#limits-and-security-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      Limits and security model
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      Troubleshooting
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="remote-api">Remote API<a class="headerlink" href="#remote-api" title="Permanent link">&para;</a></h1>
+<p>MAGDA's Remote API lets a local program inspect and control the project that is
+open in MAGDA. The same versioned operation contract is available through two
+transports:</p>
+<ul>
+<li><strong>WebSocket + JSON-RPC 2.0</strong> for scripts, integrations, and control surfaces.</li>
+<li><strong>MCP</strong> for AI hosts. Every ordinary Remote API operation is exposed as an MCP
+  tool, and common reads are also exposed as resources.</li>
+</ul>
+<p>This page documents API version <strong>1.0</strong>. Do not hard-code the catalogue or copy
+JSON schemas from this page: call <code>system.describe</code> over WebSocket, or use MCP's
+<code>tools/list</code>, to obtain the exact schemas implemented by the running build.</p>
+<h2 id="enable-the-api">Enable the API<a class="headerlink" href="#enable-the-api" title="Permanent link">&para;</a></h2>
+<p>Open <strong>Settings &gt; Connections</strong> and enable the transport you need. Each
+transport has its own listener, port, and per-run bearer token. Enabling MCP does
+not enable WebSocket, and enabling WebSocket does not enable MCP.</p>
+<p>New clients have the <code>read</code> permission only. Open the <strong>Clients</strong> tab after the
+client first connects and grant any additional permissions it needs:</p>
+<table>
+<thead>
+<tr>
+<th>Permission</th>
+<th>Capability</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>read</code></td>
+<td>Inspect the project and subscribe to projected state. Always granted.</td>
+</tr>
+<tr>
+<td><code>edit</code></td>
+<td>Change project content, selection, devices, and automation.</td>
+</tr>
+<tr>
+<td><code>transport</code></td>
+<td>Play, stop, record-arm, loop, and seek.</td>
+</tr>
+<tr>
+<td><code>session</code></td>
+<td>Launch, stop, and record Session clips and performances.</td>
+</tr>
+<tr>
+<td><code>hardware-midi</code></td>
+<td>Send channel messages and SysEx to physical MIDI outputs.</td>
+</tr>
+</tbody>
+</table>
+<p>Permission changes apply to the next request. A reconnect or restart is not
+required. Client names are self-declared labels used to remember grants; they
+are not credentials.</p>
+<h2 id="discovery-and-credentials">Discovery and credentials<a class="headerlink" href="#discovery-and-credentials" title="Permanent link">&para;</a></h2>
+<p>While either listener is running, MAGDA writes an owner-only discovery record
+named <code>remote-api-&lt;pid&gt;.json</code> in its data directory. The WebSocket page in the
+Connections dialog displays the exact path. One record describes one running
+MAGDA process, so more than one record can legitimately exist.</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"port"</span><span class="p">:</span><span class="w"> </span><span class="mi">51734</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"url"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ws://127.0.0.1:51734/rpc"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"token"</span><span class="p">:</span><span class="w"> </span><span class="s2">"..."</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"mcpPort"</span><span class="p">:</span><span class="w"> </span><span class="mi">51735</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"mcpUrl"</span><span class="p">:</span><span class="w"> </span><span class="s2">"http://127.0.0.1:51735/mcp"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"mcpToken"</span><span class="p">:</span><span class="w"> </span><span class="s2">"..."</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"pid"</span><span class="p">:</span><span class="w"> </span><span class="mi">4021</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Only enabled listeners appear in the record. Use <code>url</code> and <code>token</code> for
+WebSocket, or <code>mcpUrl</code> and <code>mcpToken</code> for MCP. Ports and tokens may change when
+MAGDA restarts. Re-read the record whenever reconnecting instead of persisting
+either value.</p>
+<p>Tokens authenticate access to a local MAGDA instance. Keep the discovery record
+private and never write its contents to logs. <strong>Rotate token</strong> in the Connections
+dialog invalidates that transport's token and disconnects its clients.</p>
+<h2 id="websocket-quick-start">WebSocket quick start<a class="headerlink" href="#websocket-quick-start" title="Permanent link">&para;</a></h2>
+<p>Connect to the record's <code>url</code>, add a stable client name, and authenticate with
+the record's token:</p>
+<div class="highlight"><pre><span></span><code>ws://127.0.0.1:51734/rpc?client=my-integration
+Authorization: Bearer &lt;token&gt;
+</code></pre></div>
+<p>Native WebSocket clients should use the <code>Authorization</code> header. Browser
+WebSocket APIs cannot set that header, so an allowed browser origin may instead
+use <code>?client=my-integration&amp;token=&lt;token&gt;</code>. Browser origins must also be listed
+in <code>config.json</code> under <code>remoteApi.allowedOrigins</code>; an empty list permits no
+browser origins. Never put the token in a URL outside this loopback-only use
+case.</p>
+<p>For a command-line probe, substitute the URL and token from the discovery
+record:</p>
+<div class="highlight"><pre><span></span><code>websocat<span class="w"> </span>-H<span class="o">=</span><span class="s1">'Authorization: Bearer &lt;token&gt;'</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="s1">'ws://127.0.0.1:51734/rpc?client=api-docs'</span>
+</code></pre></div>
+<p>Then send a JSON-RPC request. Every request must have a string or numeric <code>id</code>;
+client-to-server notifications are rejected because every response carries a
+revision needed by later writes.</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"jsonrpc"</span><span class="p">:</span><span class="s2">"2.0"</span><span class="p">,</span><span class="nt">"id"</span><span class="p">:</span><span class="mi">1</span><span class="p">,</span><span class="nt">"method"</span><span class="p">:</span><span class="s2">"project.get"</span><span class="p">,</span><span class="nt">"params"</span><span class="p">:{}}</span>
+</code></pre></div>
+<p>A successful response returns the operation result unchanged. Transport
+metadata is a sibling of <code>result</code>, so array-valued operations stay arrays:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"jsonrpc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2.0"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"result"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"open"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"My Project"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"tempo"</span><span class="p">:</span><span class="w"> </span><span class="mf">120.0</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"meta"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"revision"</span><span class="p">:</span><span class="w"> </span><span class="mi">42</span><span class="p">,</span><span class="w"> </span><span class="nt">"apiVersion"</span><span class="p">:</span><span class="w"> </span><span class="s2">"1.0"</span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>The abbreviated <code>result</code> above is illustrative. The operation's <code>outputSchema</code>
+is authoritative.</p>
+<h3 id="discover-operations-and-schemas">Discover operations and schemas<a class="headerlink" href="#discover-operations-and-schemas" title="Permanent link">&para;</a></h3>
+<p><code>system.describe</code> returns the API version and every available operation. Each
+descriptor contains:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>The JSON-RPC method and MCP tool name.</td>
+</tr>
+<tr>
+<td><code>summary</code></td>
+<td>A human-readable description.</td>
+</tr>
+<tr>
+<td><code>access</code></td>
+<td><code>read</code> or <code>write</code>; control operations are reported as writes.</td>
+</tr>
+<tr>
+<td><code>requiredScope</code></td>
+<td>The permission the named client needs.</td>
+</tr>
+<tr>
+<td><code>inputSchema</code></td>
+<td>Closed JSON Schema for <code>params</code>.</td>
+</tr>
+<tr>
+<td><code>outputSchema</code></td>
+<td>JSON Schema for <code>result</code>.</td>
+</tr>
+<tr>
+<td><code>transportScoped</code></td>
+<td><code>true</code> for connection-local subscription methods.</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"jsonrpc"</span><span class="p">:</span><span class="s2">"2.0"</span><span class="p">,</span><span class="nt">"id"</span><span class="p">:</span><span class="mi">2</span><span class="p">,</span><span class="nt">"method"</span><span class="p">:</span><span class="s2">"system.describe"</span><span class="p">,</span><span class="nt">"params"</span><span class="p">:{}}</span>
+</code></pre></div>
+<p>Inputs are closed objects: unknown fields are errors. Required fields, numeric
+ranges, enums, array limits, and string limits in <code>inputSchema</code> are enforced
+before an operation runs. Numbers must be finite.</p>
+<h3 id="write-safely">Write safely<a class="headerlink" href="#write-safely" title="Permanent link">&para;</a></h3>
+<p>Optional request metadata belongs in top-level <code>meta</code>, not in <code>params</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"jsonrpc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2.0"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"method"</span><span class="p">:</span><span class="w"> </span><span class="s2">"project.setTempo"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"params"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"tempo"</span><span class="p">:</span><span class="w"> </span><span class="mf">128.0</span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"meta"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"expectedRevision"</span><span class="p">:</span><span class="w"> </span><span class="mi">42</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"deadlineMs"</span><span class="p">:</span><span class="w"> </span><span class="mi">5000</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"idempotencyKey"</span><span class="p">:</span><span class="w"> </span><span class="s2">"&lt;uuid&gt;"</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<ul>
+<li><code>expectedRevision</code> applies optimistic concurrency. A write fails with
+  <code>conflict</code> if another committed mutation advanced the project first.</li>
+<li><code>deadlineMs</code> may shorten the server deadline, never extend it. It must be a
+  positive whole number.</li>
+<li><code>idempotencyKey</code> makes a completed write safe to retry on the same connection.
+  Use a unique value such as a UUID. JSON-RPC <code>id</code> only correlates a response and
+  is not an idempotency key.</li>
+</ul>
+<p>Successful mutations normally advance the revision by one. Reads, continuous
+samples, control operations, and writes that make no change do not. Use the
+<code>meta.revision</code> returned by every response as the basis for the next guarded
+write.</p>
+<h3 id="errors">Errors<a class="headerlink" href="#errors" title="Permanent link">&para;</a></h3>
+<p>Failures use JSON-RPC's <code>error</code> member. <code>error.data.code</code> is the stable MAGDA
+error name, <code>revision</code> is the current project revision, and validation failures
+include field-level <code>issues</code>.</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"jsonrpc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2.0"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"error"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"code"</span><span class="p">:</span><span class="w"> </span><span class="mi">-32602</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"message"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Operation input validation failed"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"data"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"code"</span><span class="p">:</span><span class="w"> </span><span class="s2">"validation_failed"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"message"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Operation input validation failed"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"issues"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">        </span><span class="p">{</span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"$.tempo"</span><span class="p">,</span><span class="w"> </span><span class="nt">"code"</span><span class="p">:</span><span class="w"> </span><span class="s2">"minimum"</span><span class="p">,</span><span class="w"> </span><span class="nt">"message"</span><span class="p">:</span><span class="w"> </span><span class="s2">"..."</span><span class="p">}</span>
+<span class="w">      </span><span class="p">],</span>
+<span class="w">      </span><span class="nt">"revision"</span><span class="p">:</span><span class="w"> </span><span class="mi">43</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>JSON-RPC code</th>
+<th>MAGDA code</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-32700</code></td>
+<td>—</td>
+<td>Malformed JSON.</td>
+</tr>
+<tr>
+<td><code>-32600</code></td>
+<td><code>invalid_request</code></td>
+<td>Invalid JSON-RPC framing or unsupported route.</td>
+</tr>
+<tr>
+<td><code>-32601</code></td>
+<td><code>unknown_operation</code></td>
+<td>Unknown method.</td>
+</tr>
+<tr>
+<td><code>-32602</code></td>
+<td><code>validation_failed</code></td>
+<td><code>params</code> did not satisfy the input schema.</td>
+</tr>
+<tr>
+<td><code>-32603</code></td>
+<td><code>internal_error</code></td>
+<td>Unexpected server failure.</td>
+</tr>
+<tr>
+<td><code>-32001</code></td>
+<td><code>not_found</code></td>
+<td>A referenced project entity does not exist.</td>
+</tr>
+<tr>
+<td><code>-32002</code></td>
+<td><code>conflict</code></td>
+<td>State or revision conflicts with the request.</td>
+</tr>
+<tr>
+<td><code>-32003</code></td>
+<td><code>timeout</code></td>
+<td>The request missed its deadline.</td>
+</tr>
+<tr>
+<td><code>-32004</code></td>
+<td><code>cancelled</code></td>
+<td>Work was cancelled.</td>
+</tr>
+<tr>
+<td><code>-32005</code></td>
+<td>—</td>
+<td>Connection request rate or in-flight limit exceeded.</td>
+</tr>
+<tr>
+<td><code>-32006</code></td>
+<td><code>permission_denied</code></td>
+<td>Grant the named client the reported scope.</td>
+</tr>
+</tbody>
+</table>
+<p>Do not branch only on the numeric code. Prefer <code>error.data.code</code> when present;
+it is shared by every transport.</p>
+<h2 id="subscriptions">Subscriptions<a class="headerlink" href="#subscriptions" title="Permanent link">&para;</a></h2>
+<p>WebSocket clients can subscribe to these topics:</p>
+<p><code>project</code>, <code>tracks</code>, <code>clips</code>, <code>devices</code>, <code>selection</code>, <code>transport</code>, <code>session</code>,
+<code>automation</code>, <code>jobs</code>, <code>meters</code>, and <code>playhead</code>.</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"jsonrpc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2.0"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"method"</span><span class="p">:</span><span class="w"> </span><span class="s2">"subscriptions.subscribe"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"params"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"topics"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"tracks"</span><span class="p">,</span><span class="w"> </span><span class="s2">"clips"</span><span class="p">,</span><span class="w"> </span><span class="s2">"transport"</span><span class="p">],</span><span class="w"> </span><span class="nt">"snapshot"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>The response includes the accepted topics, current revision, and initial
+snapshots unless <code>snapshot</code> is <code>false</code>. Later changes arrive as JSON-RPC
+server-to-client notifications:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"jsonrpc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2.0"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"method"</span><span class="p">:</span><span class="w"> </span><span class="s2">"subscriptions.event"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"params"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"topic"</span><span class="p">:</span><span class="w"> </span><span class="s2">"tracks"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"delta"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"revision"</span><span class="p">:</span><span class="w"> </span><span class="mi">57</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"payload"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"added"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span><span class="w"> </span><span class="nt">"updated"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span><span class="w"> </span><span class="nt">"removed"</span><span class="p">:</span><span class="w"> </span><span class="p">[]}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Event <code>type</code> is:</p>
+<ul>
+<li><code>snapshot</code> — complete topic state. Treat it as replacement state.</li>
+<li><code>delta</code> — an upsert/remove set for tracks, clips, automation, and Session
+  slots, or the complete current value for the other discrete topics.</li>
+<li><code>sample</code> — a latest-value reading for <code>meters</code> or <code>playhead</code>.</li>
+</ul>
+<p>Apply <code>added</code> and <code>updated</code> as idempotent upserts. A client that falls behind is
+sent a fresh snapshot instead of an incomplete delta history. There is no
+resume-from-revision protocol: call <code>subscriptions.resync</code> after any uncertainty.</p>
+<p><code>subscriptions.unsubscribe</code> accepts an optional <code>topics</code> array; omitting it
+unsubscribes from everything. <code>subscriptions.list</code> reports the current set.
+All four methods require <code>read</code> and are connection-local.</p>
+<p>Keep reading the socket even when not sending requests. The server uses ping and
+pong traffic to detect dead clients, and subscription delivery is deliberately
+bounded rather than buffered without limit.</p>
+<p>MCP subscriptions use resource notifications rather than these WebSocket
+methods. MCP does not expose <code>meters</code> or <code>playhead</code> resources; use WebSocket for
+continuous samples.</p>
+<h2 id="asynchronous-jobs">Asynchronous jobs<a class="headerlink" href="#asynchronous-jobs" title="Permanent link">&para;</a></h2>
+<p>Project open/save-as, rendering, master capture, and Session recording can
+return a <code>job_...</code> record instead of completing the work inline. Job states are
+<code>accepted</code>, <code>running</code>, <code>completed</code>, <code>cancelled</code>, <code>failed</code>, or <code>unsupported</code>.
+Progress is monotonic from <code>0</code> to <code>1</code>.</p>
+<p>Use <code>jobs.get</code> or <code>jobs.list</code>, or subscribe to <code>jobs</code>. Use <code>jobs.cancel</code> to
+cancel work. Jobs belong to the connection that created them: another
+connection receives <code>not_found</code>, and disconnecting cancels active jobs and
+forgets their records. Completed records are retained for at most ten minutes,
+up to the newest 128 records.</p>
+<p>Artifacts are opaque <code>artifact_...</code> handles with a kind and media type. The API
+does not expose internal filesystem or engine objects through job results.</p>
+<h2 id="data-conventions">Data conventions<a class="headerlink" href="#data-conventions" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Timeline positions and durations are in <strong>beats</strong> unless a field or schema
+  explicitly says seconds.</li>
+<li>Track, clip, scene, lane, device, rack, chain, modulator, and job identifiers
+  are opaque. Obtain them from list/get operations; do not invent or persist
+  them across projects.</li>
+<li>The master track uses track id <code>-2</code> where an operation accepts it.</li>
+<li><code>tracks.move</code> uses a one-based destination position; most collection indices
+  and Session scene indices are zero-based. Follow each operation's schema.</li>
+<li>Colours are unsigned 32-bit ARGB values.</li>
+<li>Device parameter writes use real units, such as Hz or dB. Read
+  <code>devices.listParameters</code> first. Automation values remain normalized <code>0..1</code>.</li>
+<li>External plugin parameter writes and modulation links are restricted to
+  parameters the user enabled for AI/agent control.</li>
+<li>File-taking operations use absolute paths on the computer running MAGDA.
+  Reads avoid exposing media paths, plugin state, or native engine objects.</li>
+<li>A device id is not globally unique. Address devices and nested racks with the
+  complete <code>devicePath</code> returned by <code>devices.list</code>.</li>
+</ul>
+<p>A device path has this stable wire shape:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"trackId"</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"section"</span><span class="p">:</span><span class="w"> </span><span class="s2">"fx"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"trackLevel"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"topLevelDeviceId"</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"steps"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"device"</span><span class="p">,</span><span class="w"> </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">}]</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Nested paths add <code>rack</code>, <code>chain</code>, <code>pad_rack</code>, <code>pad_chain</code>, and <code>device</code> steps.
+Always round-trip the path returned by MAGDA rather than reconstructing it from
+individual ids.</p>
+<h2 id="mcp-clients">MCP clients<a class="headerlink" href="#mcp-clients" title="Permanent link">&para;</a></h2>
+<p>For normal use, enable MCP and copy the configuration shown in <strong>Settings &gt;
+Connections &gt; MCP</strong>. It launches the stable <code>magda-mcp</code> helper, which locates a
+running MAGDA instance and re-reads its current URL and token. Do not paste the
+ephemeral <code>mcpUrl</code> or <code>mcpToken</code> into a permanent host configuration.</p>
+<p>MCP tool names are identical to the operation names below. Inputs use the same
+schemas. Successful results are returned as structured content; because MCP
+requires structured tool content to be an object, an array-valued tool result is
+wrapped as <code>{"items": [...]}</code>. WebSocket and MCP resources return that array
+bare.</p>
+<p>Common MCP resources include:</p>
+<table>
+<thead>
+<tr>
+<th>URI</th>
+<th>Backing operation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>magda://project/current</code></td>
+<td><code>project.get</code></td>
+</tr>
+<tr>
+<td><code>magda://tracks</code></td>
+<td><code>tracks.list</code></td>
+</tr>
+<tr>
+<td><code>magda://tracks/{track_id}</code></td>
+<td><code>tracks.get</code></td>
+</tr>
+<tr>
+<td><code>magda://tracks/{track_id}/clips</code></td>
+<td><code>clips.list</code></td>
+</tr>
+<tr>
+<td><code>magda://tracks/{track_id}/devices</code></td>
+<td><code>devices.list</code></td>
+</tr>
+<tr>
+<td><code>magda://clips/{clip_id}</code></td>
+<td><code>clips.get</code></td>
+</tr>
+<tr>
+<td><code>magda://devices</code></td>
+<td><code>devices.list</code></td>
+</tr>
+<tr>
+<td><code>magda://devices/catalog</code></td>
+<td><code>devices.catalog</code></td>
+</tr>
+<tr>
+<td><code>magda://selection</code></td>
+<td><code>selection.get</code></td>
+</tr>
+<tr>
+<td><code>magda://transport</code></td>
+<td><code>transport.get</code></td>
+</tr>
+<tr>
+<td><code>magda://session</code></td>
+<td><code>session.get</code></td>
+</tr>
+<tr>
+<td><code>magda://jobs</code></td>
+<td><code>jobs.list</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="operation-catalogue">Operation catalogue<a class="headerlink" href="#operation-catalogue" title="Permanent link">&para;</a></h2>
+<p>The tables below are an index, not a substitute for the runtime JSON schemas.
+Unless stated otherwise, list/get/status operations require <code>read</code> and mutation
+operations require <code>edit</code>.</p>
+<h3 id="system-diagnostics-jobs-and-rendering">System, diagnostics, jobs, and rendering<a class="headerlink" href="#system-diagnostics-jobs-and-rendering" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Scope</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>system.describe</code></td>
+<td><code>read</code></td>
+<td>Return the API version and complete operation/schema catalogue.</td>
+</tr>
+<tr>
+<td><code>engine.health</code></td>
+<td><code>read</code></td>
+<td>Read engine binding, callback load, xruns, and recent problems.</td>
+</tr>
+<tr>
+<td><code>meters.read</code></td>
+<td><code>read</code></td>
+<td>Read a bounded latest track/master peak snapshot.</td>
+</tr>
+<tr>
+<td><code>jobs.list</code></td>
+<td><code>read</code></td>
+<td>List asynchronous jobs owned by this connection.</td>
+</tr>
+<tr>
+<td><code>jobs.get</code></td>
+<td><code>read</code></td>
+<td>Inspect one owned job.</td>
+</tr>
+<tr>
+<td><code>jobs.cancel</code></td>
+<td>producing operation's scope</td>
+<td>Cancel one owned job.</td>
+</tr>
+<tr>
+<td><code>engine.renderRange</code></td>
+<td><code>edit</code></td>
+<td>Render a beat/second range to an absolute WAV or FLAC path.</td>
+</tr>
+<tr>
+<td><code>engine.masterCapture.start</code></td>
+<td><code>edit</code></td>
+<td>Start capturing the true master callback output.</td>
+</tr>
+<tr>
+<td><code>engine.masterCapture.stop</code></td>
+<td><code>edit</code></td>
+<td>Stop and finalize an owned master capture.</td>
+</tr>
+<tr>
+<td><code>engine.masterCapture.status</code></td>
+<td><code>read</code></td>
+<td>Read capture capability and current activity.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="project-and-chord-track">Project and chord track<a class="headerlink" href="#project-and-chord-track" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Scope</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>project.get</code></td>
+<td><code>read</code></td>
+<td>Read safe current-project metadata.</td>
+</tr>
+<tr>
+<td><code>project.new</code></td>
+<td><code>edit</code></td>
+<td>Create an untitled project.</td>
+</tr>
+<tr>
+<td><code>project.close</code></td>
+<td><code>edit</code></td>
+<td>Close the current project with an explicit dirty policy.</td>
+</tr>
+<tr>
+<td><code>project.open</code></td>
+<td><code>edit</code></td>
+<td>Open an absolute path as an asynchronous job.</td>
+</tr>
+<tr>
+<td><code>project.save</code></td>
+<td><code>edit</code></td>
+<td>Save to the existing target.</td>
+</tr>
+<tr>
+<td><code>project.saveAs</code></td>
+<td><code>edit</code></td>
+<td>Save to an absolute path as an asynchronous job.</td>
+</tr>
+<tr>
+<td><code>project.setTempo</code></td>
+<td><code>edit</code></td>
+<td>Set tempo from 20 to 400 BPM.</td>
+</tr>
+<tr>
+<td><code>project.setTimeSignature</code></td>
+<td><code>edit</code></td>
+<td>Set numerator and denominator.</td>
+</tr>
+<tr>
+<td><code>project.setLoopRange</code></td>
+<td><code>edit</code></td>
+<td>Set the project loop range in beats.</td>
+</tr>
+<tr>
+<td><code>chordTrack.get</code></td>
+<td><code>read</code></td>
+<td>Read the singleton chord track and ordered progression.</td>
+</tr>
+<tr>
+<td><code>chordTrack.detect</code></td>
+<td><code>read</code></td>
+<td>Detect a structured progression in a MIDI clip range.</td>
+</tr>
+<tr>
+<td><code>chordTrack.ensure</code></td>
+<td><code>edit</code></td>
+<td>Create the singleton chord track if absent.</td>
+</tr>
+<tr>
+<td><code>chordTrack.replaceProgression</code></td>
+<td><code>edit</code></td>
+<td>Replace its structured progression.</td>
+</tr>
+<tr>
+<td><code>chordTrack.extract</code></td>
+<td><code>edit</code></td>
+<td>Detect and materialize a progression atomically.</td>
+</tr>
+<tr>
+<td><code>chordTrack.sendToTrack</code></td>
+<td><code>edit</code></td>
+<td>Bake a progression to a normal MIDI track.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="tracks-routing-sends-and-sidechains">Tracks, routing, sends, and sidechains<a class="headerlink" href="#tracks-routing-sends-and-sidechains" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Scope</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>trackPresets.list</code></td>
+<td><code>read</code></td>
+<td>List saved track-chain presets by opaque id.</td>
+</tr>
+<tr>
+<td><code>tracks.list</code></td>
+<td><code>read</code></td>
+<td>List tracks.</td>
+</tr>
+<tr>
+<td><code>tracks.get</code></td>
+<td><code>read</code></td>
+<td>Read one track.</td>
+</tr>
+<tr>
+<td><code>tracks.create</code></td>
+<td><code>edit</code></td>
+<td>Create a track.</td>
+</tr>
+<tr>
+<td><code>tracks.createFromPreset</code></td>
+<td><code>edit</code></td>
+<td>Create a track from a saved chain preset.</td>
+</tr>
+<tr>
+<td><code>tracks.applyPreset</code></td>
+<td><code>edit</code></td>
+<td>Apply a saved chain preset to an existing track.</td>
+</tr>
+<tr>
+<td><code>tracks.update</code></td>
+<td><code>edit</code></td>
+<td>Update mixer, display, arm, monitor, or input state.</td>
+</tr>
+<tr>
+<td><code>tracks.delete</code></td>
+<td><code>edit</code></td>
+<td>Delete a track after reference-impact policy checks.</td>
+</tr>
+<tr>
+<td><code>tracks.group</code></td>
+<td><code>edit</code></td>
+<td>Group tracks under a new group track.</td>
+</tr>
+<tr>
+<td><code>tracks.move</code></td>
+<td><code>edit</code></td>
+<td>Move a track to a one-based list position.</td>
+</tr>
+<tr>
+<td><code>routing.endpoints.list</code></td>
+<td><code>read</code></td>
+<td>List safe logical audio and MIDI endpoints.</td>
+</tr>
+<tr>
+<td><code>routing.get</code></td>
+<td><code>read</code></td>
+<td>Read one track's audio and MIDI routes.</td>
+</tr>
+<tr>
+<td><code>routing.set</code></td>
+<td><code>edit</code></td>
+<td>Atomically set a track's routes.</td>
+</tr>
+<tr>
+<td><code>sends.list</code></td>
+<td><code>read</code></td>
+<td>List one track's sends.</td>
+</tr>
+<tr>
+<td><code>sends.create</code></td>
+<td><code>edit</code></td>
+<td>Create a send.</td>
+</tr>
+<tr>
+<td><code>sends.update</code></td>
+<td><code>edit</code></td>
+<td>Update a send.</td>
+</tr>
+<tr>
+<td><code>sends.remove</code></td>
+<td><code>edit</code></td>
+<td>Remove a send.</td>
+</tr>
+<tr>
+<td><code>sidechains.list</code></td>
+<td><code>read</code></td>
+<td>List device/rack sidechains and capabilities.</td>
+</tr>
+<tr>
+<td><code>sidechains.get</code></td>
+<td><code>read</code></td>
+<td>Inspect one sidechain.</td>
+</tr>
+<tr>
+<td><code>sidechains.set</code></td>
+<td><code>edit</code></td>
+<td>Configure or clear one sidechain atomically.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="clips-and-midi-events">Clips and MIDI events<a class="headerlink" href="#clips-and-midi-events" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Scope</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>clips.list</code></td>
+<td><code>read</code></td>
+<td>List clips, optionally filtered by track and view.</td>
+</tr>
+<tr>
+<td><code>clips.get</code></td>
+<td><code>read</code></td>
+<td>Read one clip.</td>
+</tr>
+<tr>
+<td><code>clips.createMidi</code></td>
+<td><code>edit</code></td>
+<td>Create a MIDI clip.</td>
+</tr>
+<tr>
+<td><code>clips.loadSample</code></td>
+<td><code>edit</code></td>
+<td>Load a host-local audio file as a clip.</td>
+</tr>
+<tr>
+<td><code>clips.updateAudio</code></td>
+<td><code>edit</code></td>
+<td>Set playback mode, source tempo, stretch, reverse, and fades.</td>
+</tr>
+<tr>
+<td><code>clips.addMidiNote</code></td>
+<td><code>edit</code></td>
+<td>Add one note to a MIDI clip.</td>
+</tr>
+<tr>
+<td><code>clips.listMidiEvents</code></td>
+<td><code>read</code></td>
+<td>List notes, CC, pitch bend, channel pressure, and poly aftertouch.</td>
+</tr>
+<tr>
+<td><code>clips.addMidiEvents</code></td>
+<td><code>edit</code></td>
+<td>Atomically add expressive MIDI events.</td>
+</tr>
+<tr>
+<td><code>clips.updateMidiEvents</code></td>
+<td><code>edit</code></td>
+<td>Atomically update events by id.</td>
+</tr>
+<tr>
+<td><code>clips.replaceMidiEvents</code></td>
+<td><code>edit</code></td>
+<td>Atomically replace every event.</td>
+</tr>
+<tr>
+<td><code>clips.deleteMidiEvents</code></td>
+<td><code>edit</code></td>
+<td>Atomically delete events by id.</td>
+</tr>
+<tr>
+<td><code>clips.delete</code></td>
+<td><code>edit</code></td>
+<td>Delete a clip.</td>
+</tr>
+<tr>
+<td><code>clips.move</code></td>
+<td><code>edit</code></td>
+<td>Move a clip to an Arrangement position or Session slot.</td>
+</tr>
+<tr>
+<td><code>clips.resize</code></td>
+<td><code>edit</code></td>
+<td>Resize from the start or end edge.</td>
+</tr>
+<tr>
+<td><code>clips.duplicate</code></td>
+<td><code>edit</code></td>
+<td>Duplicate to an Arrangement position or Session slot.</td>
+</tr>
+<tr>
+<td><code>clips.update</code></td>
+<td><code>edit</code></td>
+<td>Change name, enabled state, or groove assignment.</td>
+</tr>
+<tr>
+<td><code>clips.transpose</code></td>
+<td><code>edit</code></td>
+<td>Transpose MIDI notes by semitones.</td>
+</tr>
+<tr>
+<td><code>clips.quantize</code></td>
+<td><code>edit</code></td>
+<td>Quantize selected or all MIDI notes.</td>
+</tr>
+<tr>
+<td><code>clips.sliceNotes</code></td>
+<td><code>edit</code></td>
+<td>Slice selected or all MIDI notes into subdivisions.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="devices-pads-racks-and-modulation">Devices, pads, racks, and modulation<a class="headerlink" href="#devices-pads-racks-and-modulation" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Scope</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>devices.list</code></td>
+<td><code>read</code></td>
+<td>List the safe flattened device/rack/chain graph.</td>
+</tr>
+<tr>
+<td><code>devices.catalog</code></td>
+<td><code>read</code></td>
+<td>List addable devices by catalogue id.</td>
+</tr>
+<tr>
+<td><code>devicePresets.list</code></td>
+<td><code>read</code></td>
+<td>List presets for an addressed device.</td>
+</tr>
+<tr>
+<td><code>devices.add</code></td>
+<td><code>edit</code></td>
+<td>Add a catalogue device to a track or rack chain.</td>
+</tr>
+<tr>
+<td><code>devices.applyPreset</code></td>
+<td><code>edit</code></td>
+<td>Apply an opaque preset to an existing device.</td>
+</tr>
+<tr>
+<td><code>devices.replace</code></td>
+<td><code>edit</code></td>
+<td>Replace a device while preserving its chain slot.</td>
+</tr>
+<tr>
+<td><code>devices.remove</code></td>
+<td><code>edit</code></td>
+<td>Remove a device.</td>
+</tr>
+<tr>
+<td><code>devices.move</code></td>
+<td><code>edit</code></td>
+<td>Move a device within its chain.</td>
+</tr>
+<tr>
+<td><code>devices.setBypassed</code></td>
+<td><code>edit</code></td>
+<td>Set bypass state.</td>
+</tr>
+<tr>
+<td><code>devices.listParameters</code></td>
+<td><code>read</code></td>
+<td>List real-unit parameter values and customization flags.</td>
+</tr>
+<tr>
+<td><code>devices.setParameter</code></td>
+<td><code>edit</code></td>
+<td>Set one AI-enabled parameter in real units.</td>
+</tr>
+<tr>
+<td><code>devices.setParameterConfig</code></td>
+<td><code>edit</code></td>
+<td>Configure visible, mini-mixer, and AI-agent parameters.</td>
+</tr>
+<tr>
+<td><code>devices.openEditor</code></td>
+<td><code>edit</code></td>
+<td>Open a plugin editor window.</td>
+</tr>
+<tr>
+<td><code>pads.list</code></td>
+<td><code>read</code></td>
+<td>List all 64 slots of an addressed Drum Grid.</td>
+</tr>
+<tr>
+<td><code>pads.create</code></td>
+<td><code>edit</code></td>
+<td>Create an empty pad chain.</td>
+</tr>
+<tr>
+<td><code>pads.setDevice</code></td>
+<td><code>edit</code></td>
+<td>Replace a pad voice with a catalogue device.</td>
+</tr>
+<tr>
+<td><code>pads.setSample</code></td>
+<td><code>edit</code></td>
+<td>Replace a pad voice with a host-local sample.</td>
+</tr>
+<tr>
+<td><code>pads.clear</code></td>
+<td><code>edit</code></td>
+<td>Clear a pad.</td>
+</tr>
+<tr>
+<td><code>pads.swap</code></td>
+<td><code>edit</code></td>
+<td>Swap two single-note pads.</td>
+</tr>
+<tr>
+<td><code>pads.update</code></td>
+<td><code>edit</code></td>
+<td>Update note range, level, pan, switches, and output bus.</td>
+</tr>
+<tr>
+<td><code>racks.create</code></td>
+<td><code>edit</code></td>
+<td>Create a rack on a track or in a nested chain.</td>
+</tr>
+<tr>
+<td><code>racks.remove</code></td>
+<td><code>edit</code></td>
+<td>Remove a rack at any nesting depth.</td>
+</tr>
+<tr>
+<td><code>racks.setBypassed</code></td>
+<td><code>edit</code></td>
+<td>Set rack bypass.</td>
+</tr>
+<tr>
+<td><code>racks.update</code></td>
+<td><code>edit</code></td>
+<td>Update a nested rack.</td>
+</tr>
+<tr>
+<td><code>chains.create</code></td>
+<td><code>edit</code></td>
+<td>Create a chain inside a rack.</td>
+</tr>
+<tr>
+<td><code>chains.remove</code></td>
+<td><code>edit</code></td>
+<td>Remove a nested rack chain.</td>
+</tr>
+<tr>
+<td><code>chains.update</code></td>
+<td><code>edit</code></td>
+<td>Update chain name, routing, mixer, or switch state.</td>
+</tr>
+<tr>
+<td><code>mods.list</code></td>
+<td><code>read</code></td>
+<td>List modulators on a device.</td>
+</tr>
+<tr>
+<td><code>mods.create</code></td>
+<td><code>edit</code></td>
+<td>Create an LFO, envelope, random, or follower modulator.</td>
+</tr>
+<tr>
+<td><code>mods.update</code></td>
+<td><code>edit</code></td>
+<td>Update a device modulator.</td>
+</tr>
+<tr>
+<td><code>mods.remove</code></td>
+<td><code>edit</code></td>
+<td>Remove a device modulator.</td>
+</tr>
+<tr>
+<td><code>mods.link</code></td>
+<td><code>edit</code></td>
+<td>Link a modulator to an AI-enabled parameter.</td>
+</tr>
+<tr>
+<td><code>mods.unlink</code></td>
+<td><code>edit</code></td>
+<td>Remove a modulator link.</td>
+</tr>
+<tr>
+<td><code>macros.list</code></td>
+<td><code>read</code></td>
+<td>List device macros and links.</td>
+</tr>
+<tr>
+<td><code>macros.setValue</code></td>
+<td><code>edit</code></td>
+<td>Set a normalized macro value.</td>
+</tr>
+<tr>
+<td><code>macros.link</code></td>
+<td><code>edit</code></td>
+<td>Link a macro to an AI-enabled parameter.</td>
+</tr>
+<tr>
+<td><code>macros.unlink</code></td>
+<td><code>edit</code></td>
+<td>Remove a macro link.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="selection-transport-and-session">Selection, transport, and Session<a class="headerlink" href="#selection-transport-and-session" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Scope</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>selection.get</code></td>
+<td><code>read</code></td>
+<td>Read the current track, clip, and note selection.</td>
+</tr>
+<tr>
+<td><code>selection.set</code></td>
+<td><code>edit</code></td>
+<td>Replace the current selection.</td>
+</tr>
+<tr>
+<td><code>transport.get</code></td>
+<td><code>read</code></td>
+<td>Read transport state.</td>
+</tr>
+<tr>
+<td><code>transport.play</code></td>
+<td><code>transport</code></td>
+<td>Start playback.</td>
+</tr>
+<tr>
+<td><code>transport.stop</code></td>
+<td><code>transport</code></td>
+<td>Stop playback.</td>
+</tr>
+<tr>
+<td><code>transport.setRecording</code></td>
+<td><code>transport</code></td>
+<td>Set recording state.</td>
+</tr>
+<tr>
+<td><code>transport.setLoopEnabled</code></td>
+<td><code>transport</code></td>
+<td>Enable or disable the transport loop.</td>
+</tr>
+<tr>
+<td><code>transport.seek</code></td>
+<td><code>transport</code></td>
+<td>Seek to an absolute beat.</td>
+</tr>
+<tr>
+<td><code>transport.seekRelative</code></td>
+<td><code>transport</code></td>
+<td>Move by beats or bars, clamped at zero.</td>
+</tr>
+<tr>
+<td><code>session.get</code></td>
+<td><code>read</code></td>
+<td>Read scenes, tracks, and every Session slot state.</td>
+</tr>
+<tr>
+<td><code>session.createScene</code></td>
+<td><code>edit</code></td>
+<td>Create a durable scene.</td>
+</tr>
+<tr>
+<td><code>session.updateScene</code></td>
+<td><code>edit</code></td>
+<td>Update scene metadata.</td>
+</tr>
+<tr>
+<td><code>session.moveScene</code></td>
+<td><code>edit</code></td>
+<td>Move a scene by stable id.</td>
+</tr>
+<tr>
+<td><code>session.duplicateScene</code></td>
+<td><code>edit</code></td>
+<td>Duplicate a scene with explicit clip-copy behavior.</td>
+</tr>
+<tr>
+<td><code>session.deleteScene</code></td>
+<td><code>edit</code></td>
+<td>Delete a scene using an explicit populated-slot policy.</td>
+</tr>
+<tr>
+<td><code>session.updateClipSettings</code></td>
+<td><code>edit</code></td>
+<td>Update clip launch mode, quantization, and follow action.</td>
+</tr>
+<tr>
+<td><code>session.launchClip</code></td>
+<td><code>session</code></td>
+<td>Launch a Session clip.</td>
+</tr>
+<tr>
+<td><code>session.stopClip</code></td>
+<td><code>session</code></td>
+<td>Stop a Session clip.</td>
+</tr>
+<tr>
+<td><code>session.stopTrack</code></td>
+<td><code>session</code></td>
+<td>Stop the active Session clip on one track.</td>
+</tr>
+<tr>
+<td><code>session.stopAll</code></td>
+<td><code>session</code></td>
+<td>Stop every Session clip.</td>
+</tr>
+<tr>
+<td><code>session.launchScene</code></td>
+<td><code>session</code></td>
+<td>Launch a scene.</td>
+</tr>
+<tr>
+<td><code>session.returnToArrangement</code></td>
+<td><code>session</code></td>
+<td>Return one or all tracks to Arrangement playback.</td>
+</tr>
+<tr>
+<td><code>session.recordingCapabilities</code></td>
+<td><code>read</code></td>
+<td>Read Session recording support and stop policy.</td>
+</tr>
+<tr>
+<td><code>session.armSlotRecording</code></td>
+<td><code>session</code></td>
+<td>Arm or unarm an empty addressed slot.</td>
+</tr>
+<tr>
+<td><code>session.beginSlotRecording</code></td>
+<td><code>session</code></td>
+<td>Begin a slot take as an asynchronous job.</td>
+</tr>
+<tr>
+<td><code>session.stopSlotRecording</code></td>
+<td><code>session</code></td>
+<td>Stop a slot take and complete its job.</td>
+</tr>
+<tr>
+<td><code>session.beginPerformanceCapture</code></td>
+<td><code>session</code></td>
+<td>Capture a performance into Arrangement as a job.</td>
+</tr>
+<tr>
+<td><code>session.stopPerformanceCapture</code></td>
+<td><code>session</code></td>
+<td>Stop and commit performance capture.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="automation-and-grooves">Automation and grooves<a class="headerlink" href="#automation-and-grooves" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Scope</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>automation.listLanes</code></td>
+<td><code>read</code></td>
+<td>List every automation lane.</td>
+</tr>
+<tr>
+<td><code>automation.getLane</code></td>
+<td><code>read</code></td>
+<td>Read one lane.</td>
+</tr>
+<tr>
+<td><code>automation.createLane</code></td>
+<td><code>edit</code></td>
+<td>Create an absolute or clip-based lane.</td>
+</tr>
+<tr>
+<td><code>automation.addPoint</code></td>
+<td><code>edit</code></td>
+<td>Add a normalized point.</td>
+</tr>
+<tr>
+<td><code>automation.setPoints</code></td>
+<td><code>edit</code></td>
+<td>Replace every point on an absolute lane.</td>
+</tr>
+<tr>
+<td><code>automation.clearLane</code></td>
+<td><code>edit</code></td>
+<td>Remove all points from a lane.</td>
+</tr>
+<tr>
+<td><code>automation.deleteLane</code></td>
+<td><code>edit</code></td>
+<td>Delete a lane and its clips.</td>
+</tr>
+<tr>
+<td><code>automation.listClips</code></td>
+<td><code>read</code></td>
+<td>List automation clips, optionally by lane.</td>
+</tr>
+<tr>
+<td><code>automation.getClip</code></td>
+<td><code>read</code></td>
+<td>Read one automation clip.</td>
+</tr>
+<tr>
+<td><code>automation.createClip</code></td>
+<td><code>edit</code></td>
+<td>Create a clip on a clip-based lane.</td>
+</tr>
+<tr>
+<td><code>automation.deleteClip</code></td>
+<td><code>edit</code></td>
+<td>Delete an automation clip.</td>
+</tr>
+<tr>
+<td><code>automation.moveClip</code></td>
+<td><code>edit</code></td>
+<td>Move an automation clip.</td>
+</tr>
+<tr>
+<td><code>automation.resizeClip</code></td>
+<td><code>edit</code></td>
+<td>Resize an automation clip from either edge.</td>
+</tr>
+<tr>
+<td><code>automation.duplicateClip</code></td>
+<td><code>edit</code></td>
+<td>Duplicate an automation clip after its source.</td>
+</tr>
+<tr>
+<td><code>automation.updateClip</code></td>
+<td><code>edit</code></td>
+<td>Update metadata, looping, or points.</td>
+</tr>
+<tr>
+<td><code>grooves.list</code></td>
+<td><code>read</code></td>
+<td>List groove template names.</td>
+</tr>
+<tr>
+<td><code>grooves.upsert</code></td>
+<td><code>edit</code></td>
+<td>Create or replace a groove template.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="focused-device-and-hardware-midi">Focused device and hardware MIDI<a class="headerlink" href="#focused-device-and-hardware-midi" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Scope</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>focused.get</code></td>
+<td><code>read</code></td>
+<td>Read the focused device/rack and its macro page.</td>
+</tr>
+<tr>
+<td><code>focused.setMacro</code></td>
+<td><code>edit</code></td>
+<td>Set a normalized macro on the focused device.</td>
+</tr>
+<tr>
+<td><code>focused.cycleDevice</code></td>
+<td><code>edit</code></td>
+<td>Move focus to the previous or next top-level node.</td>
+</tr>
+<tr>
+<td><code>midi.listOutputPorts</code></td>
+<td><code>read</code></td>
+<td>List physical MIDI output names.</td>
+</tr>
+<tr>
+<td><code>midi.send</code></td>
+<td><code>hardware-midi</code></td>
+<td>Send one status-first channel message.</td>
+</tr>
+<tr>
+<td><code>midi.sendSysEx</code></td>
+<td><code>hardware-midi</code></td>
+<td>Send a SysEx payload; MAGDA adds <code>F0</code>/<code>F7</code>.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="websocket-subscription-methods">WebSocket subscription methods<a class="headerlink" href="#websocket-subscription-methods" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Scope</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>subscriptions.subscribe</code></td>
+<td><code>read</code></td>
+<td>Subscribe to topics and optionally receive snapshots.</td>
+</tr>
+<tr>
+<td><code>subscriptions.unsubscribe</code></td>
+<td><code>read</code></td>
+<td>Stop selected subscriptions, or all when omitted.</td>
+</tr>
+<tr>
+<td><code>subscriptions.list</code></td>
+<td><code>read</code></td>
+<td>List this connection's subscribed topics.</td>
+</tr>
+<tr>
+<td><code>subscriptions.resync</code></td>
+<td><code>read</code></td>
+<td>Request complete snapshots for subscribed topics.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="limits-and-security-model">Limits and security model<a class="headerlink" href="#limits-and-security-model" title="Permanent link">&para;</a></h2>
+<p>The Remote API binds to loopback by default and uses cleartext <code>ws://</code> and
+<code>http://</code> because it is a local control surface, not a network service. Do not
+expose either listener to another machine or tunnel it without adding transport
+security appropriate to that environment.</p>
+<p>The bearer token prevents accidental or cross-user access to the listener. The
+per-client permission checkboxes prevent a well-behaved named client from doing
+more than the user intended. They are not a sandbox against hostile software
+running as the same OS user: such software can read the discovery record and can
+claim another client's name.</p>
+<p>Connections, frame/body size, in-flight requests, queued replies/events,
+request rate, MCP streams, and job history are bounded. Handle <code>503</code>, <code>-32005</code>,
+timeouts, disconnects, and snapshots after backpressure as normal recoverable
+conditions.</p>
+<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Check</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Connection refused</td>
+<td>Enable the correct listener and re-read the current discovery record.</td>
+</tr>
+<tr>
+<td>HTTP <code>401</code> during upgrade/POST</td>
+<td>The token is absent, stale, or belongs to the other transport.</td>
+</tr>
+<tr>
+<td>HTTP <code>403</code> from a browser</td>
+<td>Add the exact browser origin in Connections; native clients should omit <code>Origin</code>.</td>
+</tr>
+<tr>
+<td><code>permission_denied</code></td>
+<td>Grant the reported scope to the exact normalized client name on the Clients tab.</td>
+</tr>
+<tr>
+<td><code>validation_failed</code></td>
+<td>Read <code>error.data.issues</code> and the operation's current <code>inputSchema</code>.</td>
+</tr>
+<tr>
+<td><code>conflict</code></td>
+<td>Refresh state, use the returned revision, and decide whether the write is still valid.</td>
+</tr>
+<tr>
+<td>Missing events</td>
+<td>Keep reading continuously and call <code>subscriptions.resync</code>; accept snapshots as replacement state.</td>
+</tr>
+<tr>
+<td>MCP config stops working after restart</td>
+<td>Configure the <code>magda-mcp</code> helper, not an ephemeral URL/token.</td>
+</tr>
+<tr>
+<td>Operation absent</td>
+<td>Check <code>apiVersion</code> and <code>system.describe</code>; do not assume all MAGDA builds expose the same catalogue.</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        <div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/Conceptual-Machines/magda-core" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://magda.land" target="_blank" rel="noopener" title="MAGDA Website" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M352 256c0 22.2-1.2 43.6-3.3 64H163.4c-2.2-20.4-3.3-41.8-3.3-64s1.2-43.6 3.3-64h185.3c2.2 20.4 3.3 41.8 3.3 64m28.8-64h123.1c5.3 20.5 8.1 41.9 8.1 64s-2.8 43.5-8.1 64H380.8c2.1-20.6 3.2-42 3.2-64s-1.1-43.4-3.2-64m112.6-32H376.7c-10-63.9-29.8-117.4-55.3-151.6 78.3 20.7 142 77.5 171.9 151.6zm-149.1 0H167.7c6.1-36.4 15.5-68.6 27-94.7 10.5-23.6 22.2-40.7 33.5-51.5C239.4 3.2 248.7 0 256 0s16.6 3.2 27.8 13.8c11.3 10.8 23 27.9 33.5 51.5 11.6 26 20.9 58.2 27 94.7m-209 0H18.6c30-74.1 93.6-130.9 172-151.6-25.5 34.2-45.3 87.7-55.3 151.6M8.1 192h123.1c-2.1 20.6-3.2 42-3.2 64s1.1 43.4 3.2 64H8.1C2.8 299.5 0 278.1 0 256s2.8-43.5 8.1-64m186.6 254.6c-11.6-26-20.9-58.2-27-94.6h176.6c-6.1 36.4-15.5 68.6-27 94.6-10.5 23.6-22.2 40.7-33.5 51.5-11.2 10.7-20.5 13.9-27.8 13.9s-16.6-3.2-27.8-13.8c-11.3-10.8-23-27.9-33.5-51.5zM135.3 352c10 63.9 29.8 117.4 55.3 151.6-78.4-20.7-142-77.5-172-151.6zm358.1 0c-30 74.1-93.6 130.9-171.9 151.6 25.5-34.2 45.2-87.7 55.3-151.6h116.7z"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.f8cc74c7.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.c8b220af.min.js"></script>
+      
+    
+  </body>
+</html>
