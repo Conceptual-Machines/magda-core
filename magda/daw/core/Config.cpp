@@ -120,6 +120,7 @@ void Config::save() {
     // Transport
     root->setProperty("openPluginWindowOnDrop", openPluginWindowOnDrop);
     root->setProperty("skipFourOscConversionPrompt", skipFourOscConversionPrompt);
+    root->setProperty("skipMagdaEnginePrompt", skipMagdaEnginePrompt);
     root->setProperty("transportShowBothFormats", transportShowBothFormats);
     root->setProperty("transportDefaultBarsBeats", transportDefaultBarsBeats);
 
@@ -538,6 +539,7 @@ void Config::load() {
     openPluginWindowOnDrop = getBool("openPluginWindowOnDrop", openPluginWindowOnDrop);
     skipFourOscConversionPrompt =
         getBool("skipFourOscConversionPrompt", skipFourOscConversionPrompt);
+    skipMagdaEnginePrompt = getBool("skipMagdaEnginePrompt", skipMagdaEnginePrompt);
     transportShowBothFormats = getBool("transportShowBothFormats", transportShowBothFormats);
     transportDefaultBarsBeats = getBool("transportDefaultBarsBeats", transportDefaultBarsBeats);
 
