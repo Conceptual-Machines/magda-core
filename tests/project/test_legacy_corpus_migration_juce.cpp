@@ -5,6 +5,7 @@
 
 #include "LegacyCorpus.hpp"
 #include "SharedTestEngine.hpp"
+#include "audio/plugins/SavedDeviceState.hpp"
 #include "magda/daw/audio/plugins/DeviceServices.hpp"
 #include "magda/daw/audio/plugins/InternalPluginRegistry.hpp"
 #include "magda/daw/audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
@@ -149,7 +150,7 @@ class LegacyDeviceStateMigrationTest final : public juce::UnitTest {
             const auto where =
                 legacy.fixture + " / " + legacy.trackName + " / " + legacy.device.pluginId;
 
-            auto tree = bridge::devicePluginTreeFromState(legacy.device.pluginState);
+            auto tree = magda::daw::audio::savedDeviceStateTree(legacy.device.pluginState);
             if (!tree.isValid()) {
                 expect(false, "legacy state produced no plugin tree: " + where);
                 continue;
@@ -189,7 +190,7 @@ class LegacyDeviceStateMigrationTest final : public juce::UnitTest {
 
             // Restore from the v2 document into a fresh plugin: the authored
             // state round-trips and a second save does not change the file.
-            auto restoredTree = bridge::devicePluginTreeFromState(captured);
+            auto restoredTree = magda::daw::audio::savedDeviceStateTree(captured);
             expect(restoredTree.isValid(), "v2 document produced no plugin tree: " + where);
             if (restoredTree.isValid()) {
                 if (auto restored = edit->getPluginCache().createNewPlugin(restoredTree)) {

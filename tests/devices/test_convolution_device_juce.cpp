@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "SharedTestEngine.hpp"
+#include "audio/plugins/SavedDeviceState.hpp"
 #include "magda/daw/audio/plugins/MagdaConvolutionPlugin.hpp"
 #include "magda/daw/audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "magda/daw/audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
@@ -341,7 +342,7 @@ class ConvolutionDeviceTest final : public juce::UnitTest {
         expect(doc->params.empty(), "capture wrote a duplicate parameter record");
 
         // What loading a project does: rebuild the plugin from the document.
-        auto tree = ta::devicePluginTreeFromState(captured);
+        auto tree = magda::daw::audio::savedDeviceStateTree(captured);
         expect(tree.isValid());
         auto restoredHolder = edit.getPluginCache().createNewPlugin(tree);
 

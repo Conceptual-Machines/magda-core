@@ -3,6 +3,7 @@
 
 #include "PadSyncTestSupport.hpp"
 #include "SharedTestEngine.hpp"
+#include "audio/plugins/SavedDeviceState.hpp"
 #include "magda/daw/audio/plugins/ArpeggiatorPlugin.hpp"
 #include "magda/daw/audio/plugins/DeviceServices.hpp"
 #include "magda/daw/audio/plugins/DrumGridPlugin.hpp"
@@ -142,7 +143,7 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
         const auto state = ta::captureInternalDeviceState(*source, {});
         source->deleteFromParent();
 
-        auto restoredTree = ta::devicePluginTreeFromState(state);
+        auto restoredTree = magda::daw::audio::savedDeviceStateTree(state);
         expect(restoredTree.isValid());
         expectEquals(restoredTree.getProperty(te::IDs::type).toString(),
                      juce::String(audio::ArpeggiatorPlugin::xmlTypeName));
@@ -278,7 +279,7 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
         ds::Doc doc;
         doc.deviceType = audio::StepSequencerPlugin::xmlTypeName;
         doc.root.props.set(audio::StepSequencerPlugin::SettingIDs::numSteps, 8);
-        auto tree = ta::devicePluginTreeFromState(ds::encode(doc));
+        auto tree = magda::daw::audio::savedDeviceStateTree(ds::encode(doc));
         expect(tree.isValid());
         plugin->restorePluginStateFromValueTree(tree);
 
@@ -388,7 +389,7 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
         if (captured != nullptr)
             expect(*captured == payload, "binary property changed through the round-trip");
 
-        auto restoredTree = ta::devicePluginTreeFromState(state);
+        auto restoredTree = magda::daw::audio::savedDeviceStateTree(state);
         expect(restoredTree.isValid());
         const auto* restoredBlock =
             restoredTree.getProperty(juce::Identifier("testBinaryBlob")).getBinaryData();
@@ -441,7 +442,7 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
                                     "value=\"0.5\"/></MODIFIERASSIGNMENTS>"
                                     "</PLUGIN>";
 
-        auto tree = ta::devicePluginTreeFromState(legacy);
+        auto tree = magda::daw::audio::savedDeviceStateTree(legacy);
         expect(tree.isValid(), "legacy state failed to parse");
         if (!tree.isValid())
             return;

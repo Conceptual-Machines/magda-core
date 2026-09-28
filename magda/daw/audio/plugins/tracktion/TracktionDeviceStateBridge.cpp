@@ -96,19 +96,6 @@ ds::Node captureNode(const juce::ValueTree& tree, bool isRoot,
     return node;
 }
 
-void applyNode(const ds::Node& node, juce::ValueTree& tree) {
-    for (int i = 0; i < node.props.size(); ++i)
-        tree.setProperty(node.props.getName(i), node.props.getValueAt(i), nullptr);
-
-    for (const auto& child : node.children) {
-        if (child.type.isEmpty())
-            continue;
-        juce::ValueTree childTree(child.type);
-        applyNode(child, childTree);
-        tree.appendChild(childTree, nullptr);
-    }
-}
-
 /// MAGDA's canonical device id for a plugin type. Internal device ids are the
 /// engine type names today, but a project may hold an older load alias, so the
 /// registry has the final say.
@@ -117,15 +104,6 @@ juce::String canonicalDeviceType(const juce::String& pluginType) {
         if (spec->pluginId != nullptr)
             return spec->pluginId;
     return pluginType;
-}
-
-juce::ValueTree legacyPluginTree(const juce::String& savedState) {
-    auto tree = ds::legacyEngineStateTree(savedState);
-    if (!tree.isValid())
-        return {};
-
-    adoptCanonicalPluginType(tree);
-    return tree;
 }
 
 }  // namespace
@@ -176,24 +154,6 @@ juce::String captureInternalDeviceState(te::Plugin& plugin, const juce::String& 
     doc.root.type = {};  // the root element name is the engine's, not the device's
 
     return ds::encode(doc);
-}
-
-juce::ValueTree devicePluginTreeFromState(const juce::String& savedState) {
-    if (savedState.isEmpty())
-        return {};
-
-    if (ds::looksLikeLegacyEngineState(savedState))
-        return legacyPluginTree(savedState);
-
-    const auto doc = ds::decode(savedState);
-    if (!doc)
-        return {};
-
-    juce::ValueTree tree(te::IDs::PLUGIN);
-    tree.setProperty(te::IDs::type, doc->deviceType, nullptr);
-    applyNode(doc->root, tree);
-    adoptCanonicalPluginType(tree);
-    return tree;
 }
 
 std::vector<magda::legacy_devices::RetiredSlotValue> adoptRetiredNestedPluginTree(

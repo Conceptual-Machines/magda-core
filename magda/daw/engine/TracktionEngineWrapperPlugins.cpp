@@ -13,6 +13,7 @@
 #include "../audio/plugins/tracktion/TracktionInternalPluginAdapter.hpp"
 #include "../audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "TracktionEngineWrapper.hpp"
+#include "audio/plugins/SavedDeviceState.hpp"
 #include "core/Config.hpp"
 
 namespace magda {
@@ -215,7 +216,7 @@ void TracktionEngineWrapper::applyPluginStateAt(const ChainNodePath& devicePath)
 
     if (dynamic_cast<tracktion::engine::ExternalPlugin*>(plugin.get()) == nullptr) {
         namespace ta = daw::audio::tracktion_adapter;
-        if (const auto savedState = ta::devicePluginTreeFromState(live->pluginState);
+        if (const auto savedState = magda::daw::audio::savedDeviceStateTree(live->pluginState);
             savedState.isValid())
             plugin->restorePluginStateFromValueTree(savedState);
 
@@ -240,7 +241,7 @@ void TracktionEngineWrapper::projectAuthoredStateAt(const ChainNodePath& deviceP
         return;
 
     // An empty snapshot is still a state, "nothing authored", as in projectAuthoredStateToDevice.
-    auto tree = daw::audio::tracktion_adapter::devicePluginTreeFromState(device->pluginState);
+    auto tree = daw::audio::savedDeviceStateTree(device->pluginState);
     if (!tree.isValid()) {
         tree = juce::ValueTree(tracktion::engine::IDs::PLUGIN);
         tree.setProperty(tracktion::engine::IDs::type, device->pluginId, nullptr);

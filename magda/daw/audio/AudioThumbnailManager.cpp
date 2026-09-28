@@ -6,7 +6,6 @@
 #include "media_db/BeatTracker.hpp"
 
 // clang-format off
-#include <tracktion_engine/tracktion_engine.h>
 
 #include <algorithm>
 // clang-format on

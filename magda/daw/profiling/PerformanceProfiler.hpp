@@ -1,6 +1,6 @@
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
+#include <juce_core/juce_core.h>
 
 #include <chrono>
 #include <limits>

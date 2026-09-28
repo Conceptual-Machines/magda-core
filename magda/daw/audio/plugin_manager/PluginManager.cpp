@@ -14,6 +14,7 @@
 #include "../TrackController.hpp"
 #include "../TracktionHelpers.hpp"
 #include "ExternalPluginState.hpp"
+#include "audio/plugins/SavedDeviceState.hpp"
 #include "modifiers/CurveSnapshot.hpp"
 #include "modifiers/ModifierHelpers.hpp"
 #include "modifiers/ModifierSync.hpp"
@@ -585,7 +586,7 @@ void PluginManager::restorePluginState(const ChainNodePath& devicePath,
         ext->state.setProperty(te::IDs::state, devInfo->pluginState, nullptr);
     } else if (plugin != nullptr) {
         namespace ta = daw::audio::tracktion_adapter;
-        auto savedState = ta::devicePluginTreeFromState(devInfo->pluginState);
+        auto savedState = magda::daw::audio::savedDeviceStateTree(devInfo->pluginState);
         if (savedState.isValid())
             plugin->restorePluginStateFromValueTree(savedState);
     }
