@@ -879,11 +879,11 @@ if(APPLE)
     target_link_options(magda_cli PRIVATE "-Wl,-exported_symbol,_main")
 endif()
 
-# On MSVC Release builds, generate a PDB for crash symbolization.
-# /Zi is applied here (not globally) so llama.cpp and other third-party targets
-# are not affected and don't hit parallel PDB write conflicts when using sccache.
+# On MSVC Release builds, generate a PDB for crash symbolization. /Z7 keeps debug
+# info in each .obj and /DEBUG links it into MAGDA.pdb; /Zi's shared compile-time
+# PDB fails with C1041 under sccache on the self-hosted runner.
 if(MSVC)
-    target_compile_options(magda_daw_app PRIVATE $<$<CONFIG:Release>:/Zi>)
+    target_compile_options(magda_daw_app PRIVATE $<$<CONFIG:Release>:/Z7>)
     target_link_options(magda_daw_app PRIVATE $<$<CONFIG:Release>:/DEBUG /OPT:REF /OPT:ICF>)
 endif()
 

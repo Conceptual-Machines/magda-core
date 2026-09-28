@@ -105,8 +105,7 @@ if(MSVC)
     #   - the .obj is self-contained, which is what makes ccache able to cache
     #     MSVC Debug builds. /Zi can't be cached (the PDB write is a side effect
     #     ccache can't replay) - that's what broke the earlier sccache attempt.
-    # Release still ships a real PDB for crash symbolication via per-target /Zi
-    # in magda/daw/CMakeLists.txt, so /FS is scoped to Release only.
+    # Release gets its shipped PDB from the linker (/Z7 + /DEBUG, magda/daw/CMakeLists.txt).
     # Override BOTH languages: C dependencies built via FetchContent (lua) still
     # default to /Zi, which reintroduces the shared compile-time PDB this switch
     # exists to remove. ccache can't replay the PDB side effect, so /Zi C objects
@@ -114,15 +113,11 @@ if(MSVC)
     set(CMAKE_C_FLAGS_DEBUG "/Z7 /Od /W3")
     set(CMAKE_CXX_FLAGS_DEBUG "/Z7 /Od /W3")
     set(CMAKE_CXX_FLAGS_RELEASE "/O2 /DNDEBUG")
-    # /FS serialises PDB writes across parallel cl.exe workers, required with the
-    # Release per-target /Zi. Added via add_compile_options so it composes with
-    # CMake's default MSVC init flags instead of replacing them.
-    add_compile_options($<$<CONFIG:Release>:/FS>)
     # NOMINMAX: stop <windows.h> defining min()/max() macros, which clobber
     # std::min/std::max. The Faust poly instruments (poly-dsp.h) transitively
     # pull in <windows.h>, so without this they fail to compile on MSVC.
     add_compile_definitions(NOMINMAX)
-    # /OPT:REF,ICF preserve release dead-stripping; /Zi + /DEBUG applied per-target (see magda/daw/CMakeLists.txt)
+    # /OPT:REF,ICF preserve release dead-stripping; /Z7 + /DEBUG applied per-target (see magda/daw/CMakeLists.txt)
     string(APPEND CMAKE_EXE_LINKER_FLAGS_RELEASE " /OPT:REF /OPT:ICF")
 else()
     set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -Wall -Wextra")

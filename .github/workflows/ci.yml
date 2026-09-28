@@ -1896,15 +1896,15 @@ jobs:
           exit 1
         }
 
-    # Release configure/build/verify only run on push to main, and only on the
-    # self-hosted runner (magda-luca). Feature-branch pushes get Debug coverage;
-    # the Release link check happens once per merge, before any tag is cut. We
+    # Release configure/build/verify run on PRs into main and pushes to main, and
+    # only on the self-hosted runner (magda-luca). Feature-branch pushes get Debug
+    # coverage; a PR into main proves the Release build before it merges. We
     # gate it off windows-latest because that fallback runner is much weaker - a
     # full Release build there would dominate the run. release.yml still does the
     # full Release build end-to-end on tag push, so nothing is lost when the
     # fallback skips it.
     - name: Configure CMake (Release)
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push' && runner.environment == 'self-hosted'
+      if: (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && github.event_name == 'push')) && runner.environment == 'self-hosted'
       run: |
         cmake -B build-release -G Ninja `
           -DCMAKE_BUILD_TYPE=Release `
@@ -1919,11 +1919,11 @@ jobs:
           ${{ steps.dsp-prebuilt-self.outputs.mutable_release_hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}', steps.dsp-prebuilt-self.outputs.mutable_release_dir) || '' }}
 
     - name: Build (Release)
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push' && runner.environment == 'self-hosted'
+      if: (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && github.event_name == 'push')) && runner.environment == 'self-hosted'
       run: cmake --build build-release --config Release
 
     - name: Populate prebuilt Faust/Mutable cache (Release, self-hosted)
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push' && runner.environment == 'self-hosted'
+      if: (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && github.event_name == 'push')) && runner.environment == 'self-hosted'
       shell: powershell
       run: |
         if ("${{ steps.dsp-prebuilt-self.outputs.faust_release_hit }}" -ne "true" -and (Test-Path "third_party\faust\build\bin") -and (Test-Path "third_party\faust\build\lib")) {
@@ -1937,7 +1937,7 @@ jobs:
         }
 
     - name: Verify executable
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push' && runner.environment == 'self-hosted'
+      if: (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && github.event_name == 'push')) && runner.environment == 'self-hosted'
       run: |
         $exe = Get-ChildItem -Path build-release -Recurse -Filter "MAGDA.exe" | Select-Object -First 1
         if ($exe) {
