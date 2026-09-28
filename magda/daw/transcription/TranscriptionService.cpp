@@ -98,15 +98,15 @@ double projectBpm() {
     return DEFAULT_BPM;
 }
 
-// The default instrument for a transcription's new track: the internal 4OSC
-// synth, built the same way the "add 4OSC" paths do (pluginId "4osc").
-magda::DeviceInfo makeFourOscDevice() {
+// The default instrument for a transcription's new track: the compiled Poly Synth,
+// which renders on both engines.
+magda::DeviceInfo makePolySynthDevice() {
     magda::DeviceInfo d;
-    d.name = "4OSC";
+    d.name = "Poly Synth";
     d.manufacturer = "MAGDA";
-    d.pluginId = "4osc";
-    d.uniqueId = "4osc";
-    d.fileOrIdentifier = "4osc";
+    d.pluginId = "magda_polysynth";
+    d.uniqueId = "magda_polysynth";
+    d.fileOrIdentifier = "magda_polysynth";
     d.isInstrument = true;
     d.deviceType = magda::DeviceType::Instrument;
     d.format = magda::PluginFormat::Internal;
@@ -254,7 +254,7 @@ void TranscriptionService::transcribeAudioClip(ClipId sourceClipId, Completion o
 
             auto trackCmd = std::make_unique<magda::CreateTrackWithDeviceCommand>(
                 sourceName.isNotEmpty() ? sourceName : juce::String("Transcription"),
-                TrackType::Media, makeFourOscDevice());
+                TrackType::Media, makePolySynthDevice());
             auto* trackPtr = trackCmd.get();
             magda::UndoManager::getInstance().executeCommand(std::move(trackCmd));
             const TrackId newTrackId = trackPtr->getCreatedTrackId();

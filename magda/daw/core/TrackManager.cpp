@@ -401,11 +401,11 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
         addDeviceToTrack(trackId, engine);
 
         DeviceInfo instrument;
-        instrument.name = "4OSC";
+        instrument.name = "Poly Synth";
         instrument.manufacturer = "MAGDA";
-        instrument.pluginId = "4osc";
-        instrument.uniqueId = "4osc";
-        instrument.fileOrIdentifier = "4osc";
+        instrument.pluginId = "magda_polysynth";
+        instrument.uniqueId = "magda_polysynth";
+        instrument.fileOrIdentifier = "magda_polysynth";
         instrument.isInstrument = true;
         instrument.deviceType = DeviceType::Instrument;
         instrument.format = PluginFormat::Internal;

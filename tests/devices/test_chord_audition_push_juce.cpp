@@ -1,5 +1,7 @@
 #include <juce_core/juce_core.h>
 
+#include <algorithm>
+
 #include "JuceTestStateGuard.hpp"
 #include "SharedTestEngine.hpp"
 #include "magda/daw/audio/AudioBridge.hpp"
@@ -108,6 +110,19 @@ class ChordAuditionPushTests : public juce::UnitTest {
 
         if (track == nullptr || engine == nullptr)
             return;
+
+        // An instrument sits inside its wrapper rack, so look one level in.
+        const auto isOrWrapsPolySynth = [](te::Plugin* plugin) {
+            const auto isPolySynth = [](te::Plugin* p) {
+                return p->getPluginType() == "magda_polysynth";
+            };
+            if (auto* rackInstance = dynamic_cast<te::RackInstance*>(plugin))
+                return rackInstance->type != nullptr &&
+                       std::ranges::any_of(rackInstance->type->getPlugins(), isPolySynth);
+            return isPolySynth(plugin);
+        };
+        expect(std::ranges::any_of(bridge->getAudioTrack(trackId)->pluginList, isOrWrapsPolySynth),
+               "the chord track's default instrument must be a loaded Poly Synth");
 
         // Muted first, then the device sync, which is the order the report
         // describes: adding a Chord Engine to a chord track whose audition is
