@@ -152,6 +152,14 @@ class Config {
         skipFourOscConversionPrompt = skip;
     }
 
+    /// Whether the first-launch offer of the MAGDA engine has been answered.
+    bool getMagdaEnginePromptShown() const {
+        return magdaEnginePromptShown;
+    }
+    void setMagdaEnginePromptShown(bool shown) {
+        magdaEnginePromptShown = shown;
+    }
+
     bool getOpenPluginWindowOnDrop() const {
         return openPluginWindowOnDrop;
     }
@@ -1421,6 +1429,7 @@ class Config {
     // Open a device's editor window automatically when it is dropped into a chain
     bool openPluginWindowOnDrop = false;
     bool skipFourOscConversionPrompt = false;
+    bool magdaEnginePromptShown = false;
     bool transportDefaultBarsBeats = true;  // Default to bars/beats (false = seconds)
 
     // Panel visibility settings

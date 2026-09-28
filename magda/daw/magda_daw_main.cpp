@@ -43,6 +43,7 @@
 #include "osc_app.hpp"
 #include "project/ProjectManager.hpp"
 #include "scripting_app.hpp"
+#include "ui/dialogs/MagdaEnginePrompt.hpp"
 #include "ui/dialogs/SplashScreen.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -284,13 +285,17 @@ class MagdaDAWApplication : public JUCEApplication {
         juce::Desktop::getInstance().setGlobalScaleFactor(static_cast<float>(uiScale));
         juce::Logger::writeToLog("UI scale: " + juce::String(uiScale, 2) + "x");
 
-        // 2b. Show splash screen
-        splashScreen_ = magda::SplashScreen::create();
+        // Before the splash, which sits on top of every window, and before the
+        // engine is built, so a yes renders through the MAGDA engine this launch.
+        magda::daw::ui::offerMagdaEngineOnFirstLaunch([this] {
+            // 2b. Show splash screen
+            splashScreen_ = magda::SplashScreen::create();
 
-        // Defer heavy initialization so the message loop can paint the splash.
-        // A short timer delay gives macOS time to composite the window.
-        initTimer_ = std::make_unique<InitTimer>(*this);
-        initTimer_->startTimer(100);
+            // Defer heavy initialization so the message loop can paint the splash.
+            // A short timer delay gives macOS time to composite the window.
+            initTimer_ = std::make_unique<InitTimer>(*this);
+            initTimer_->startTimer(100);
+        });
     }
 
     void finishInitialisation() {
