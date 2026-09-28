@@ -149,7 +149,7 @@ Optional request metadata belongs in top-level `meta`, not in `params`:
   "meta": {
     "expectedRevision": 42,
     "deadlineMs": 5000,
-    "idempotencyKey": "9be29bd9-33f3-4d97-9921-75565a74a31a"
+    "idempotencyKey": "<uuid>"
   }
 }
 ```
