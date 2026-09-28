@@ -3076,8 +3076,7 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
                     SelectionManager::getInstance().selectTracks(selectedChildren);
                 }
             } else if (result == DeleteTrack) {
-                auto cmd = std::make_unique<DeleteTrackCommand>(trackId);
-                UndoManager::getInstance().executeCommand(std::move(cmd));
+                deleteTracksFromMenu(trackId);
             } else if (result == AddAudioTrack) {
                 UndoManager::getInstance().executeCommand(
                     std::make_unique<CreateTrackCommand>(TrackType::Media));

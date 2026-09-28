@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include "ClipInfo.hpp"
 #include "ReferenceImpact.hpp"
 #include "TrackManager.hpp"
@@ -121,6 +123,17 @@ class CreateTrackFromPresetCommand : public UndoableCommand {
     bool hasMaterialisedTrack_ = false;
     bool executed_ = false;
 };
+
+/// Delete @p trackIds as one undo step. The master is skipped.
+void deleteTracks(const std::vector<TrackId>& trackIds);
+
+/**
+ * @brief Delete Track from a context menu opened on @p clicked.
+ *
+ * Deletes the whole selection when @p clicked is part of it (#2904), otherwise
+ * @p clicked alone.
+ */
+void deleteTracksFromMenu(TrackId clicked);
 
 /**
  * @brief Command for deleting a track

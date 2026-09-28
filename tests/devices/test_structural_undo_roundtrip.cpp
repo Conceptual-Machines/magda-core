@@ -3,6 +3,7 @@
 #include "StructuralRoundTrip.hpp"
 #include "magda/daw/core/DrumGridPads.hpp"
 #include "magda/daw/core/RackInfo.hpp"
+#include "magda/daw/core/SelectionManager.hpp"
 #include "magda/daw/core/TrackCommands.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/core/UndoManager.hpp"
@@ -664,4 +665,46 @@ TEST_CASE("Removing a rack drops a selection standing inside it", "[structural][
     UndoManager::getInstance().executeCommand(std::make_unique<RemoveRackByPathCommand>(rackPath));
 
     CHECK_FALSE(selection.getSelectedChainNode().isValid());
+}
+
+TEST_CASE("Delete Track from a menu on a selected track deletes the selection as one undo step",
+          "[structural][undo][roundtrip]") {
+    resetState();
+    auto& tm = TrackManager::getInstance();
+    auto& selection = SelectionManager::getInstance();
+    auto& undo = UndoManager::getInstance();
+
+    const auto first = tm.createTrack("First");
+    const auto second = tm.createTrack("Second");
+    const auto kept = tm.createTrack("Kept");
+    selection.selectTracks({first, second});
+
+    const auto before = snapshot();
+    deleteTracksFromMenu(second);
+
+    CHECK(tm.getTrack(first) == nullptr);
+    CHECK(tm.getTrack(second) == nullptr);
+    CHECK(tm.getTrack(kept) != nullptr);
+    CHECK(selection.getSelectedTracks().empty());
+
+    REQUIRE(undo.undo());
+    CHECK(snapshot() == before);
+}
+
+TEST_CASE("Delete Track from a menu on an unselected track deletes only that track",
+          "[structural][undo][roundtrip]") {
+    resetState();
+    auto& tm = TrackManager::getInstance();
+    auto& selection = SelectionManager::getInstance();
+
+    const auto first = tm.createTrack("First");
+    const auto second = tm.createTrack("Second");
+    const auto clicked = tm.createTrack("Clicked");
+    selection.selectTracks({first, second});
+
+    deleteTracksFromMenu(clicked);
+
+    CHECK(tm.getTrack(clicked) == nullptr);
+    CHECK(tm.getTrack(first) != nullptr);
+    CHECK(tm.getTrack(second) != nullptr);
 }
