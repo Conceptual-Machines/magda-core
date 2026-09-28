@@ -20,6 +20,30 @@ The state-reader tests can be built with JUCE and Catch2 alone: compile
 are required. The same tests are registered in the normal Catch2 suite and in the standalone
 `magda_saved_state_tests` target (`ctest -R saved_device_state_native`).
 
+## v0 to v1 project copies
+
+In builds reporting a major version of 1 or later, opening a v0 project offers
+to save a new `(v1)` project. The old engine-prompt preference does not suppress
+this alert, including when the source already uses MAGDA Engine or has no 4OSC.
+The existing 4OSC-to-Poly-Synth translation and warnings remain in this flow.
+Poly Synth unison (#2924), filter types (#2925) and dual-filter routing (#2926)
+are separate features; unsupported settings continue to be reported.
+
+Deferring the alert routes Save and save-before-close through Save As. The save
+boundary rejects the source project folder and forces media copying for v0
+migration; successful save updates the source-version metadata to this build.
+A delayed alert cannot convert a different or reopened project. Migration-name,
+version and destination-policy tests join the standalone compatibility target.
+
+Build metadata comes from tags unless `MAGDA_FULL_VERSION` is supplied. Testing
+the v1 alert on a branch still described by v0 tags requires a v1 build version,
+for example `-DMAGDA_FULL_VERSION=1.0.0-dev`.
+
+Full application qualification still needs v0 fixtures from both engines,
+alert acceptance/deferral, failed saves, source/media preservation and reopening
+the v1 copy. In particular, the older load-time media-folder migration needs
+an audit under #2919; the save-copy guard does not change that existing loader.
+
 ## Remaining production consumers
 
 These are dependency groups observed in the baseline source/build files. A

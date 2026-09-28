@@ -23,6 +23,7 @@
 #include "../views/MixerView.hpp"
 #include "MainWindow.hpp"
 #include "MenuManager.hpp"
+#include "audio/FourOscMigration.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
 #include "core/TechnicalText.hpp"
@@ -684,12 +685,15 @@ void MainWindow::setupMenuCallbacks() {
         const auto currentProjectFile = projectManager.getCurrentProjectFile();
 
         // If no file path set (empty path), use Save As flow
-        if (currentProjectFile.getFullPathName().isEmpty()) {
+        if (currentProjectFile.getFullPathName().isEmpty() ||
+            projectManager.requiresV1ProjectCopy()) {
             // Prevent re-entry while a file chooser is already open
             if (fileChooser_ != nullptr)
                 return;
 
             auto initialDir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
+            if (projectManager.requiresV1ProjectCopy())
+                initialDir = daw::audio::convertedProjectFileFor(currentProjectFile, true);
 
             fileChooser_ = std::make_unique<juce::FileChooser>(tr("dialogs.save_project_as"),
                                                                initialDir, "*.mgd", true);

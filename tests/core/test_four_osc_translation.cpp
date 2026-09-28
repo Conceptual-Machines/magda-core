@@ -423,6 +423,22 @@ TEST_CASE("A project that was never saved has nowhere to sit beside", "[core][4o
     CHECK(magda::daw::audio::convertedProjectFileFor(juce::File{}) == juce::File{});
 }
 
+TEST_CASE("The v1 migration explains the separate copy even without 4OSC", "[core][4osc]") {
+    const auto text = magda::daw::audio::describeMigration({}, true);
+    CHECK(text.contains("MAGDA v0"));
+    CHECK(text.contains("new v1 project"));
+    CHECK(text.contains("copy of the media"));
+    CHECK(text.contains("original is left alone"));
+    CHECK_FALSE(text.contains("Tracktion Engine"));
+}
+
+TEST_CASE("The v1 copy keeps the 4OSC translation and its loss warning", "[core][4osc]") {
+    const auto text = magda::daw::audio::describeMigration(
+        {{.deviceName = "4OSC", .gaps = {{"Unison", "No equivalent"}}}}, true);
+    CHECK(text.contains("Poly Synth"));
+    CHECK(text.contains("Unison"));
+}
+
 TEST_CASE("The built-in effects become a rack of MAGDA devices", "[core][4osc]") {
     // 4OSC processes distortion, chorus, delay then reverb, and the rack has
     // to keep that order: a reverb before a delay is a different sound.

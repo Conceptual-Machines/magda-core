@@ -55,6 +55,7 @@ set(TEST_SOURCES
     agents/test_llm_tool_calls.cpp
     agents/test_generic_sound_design_parameters.cpp
     project/test_update_checker.cpp
+    project/test_project_version_migration.cpp
     devices/test_plugin_loading.cpp
     devices/test_plugin_format.cpp
     devices/test_device_authored_state.cpp
@@ -622,6 +623,7 @@ add_executable(magda_tests ${TEST_SOURCES})
 # This restore boundary must keep building without the Tracktion-linked DAW (#2919).
 add_executable(magda_saved_state_tests
     devices/test_saved_device_state.cpp
+    project/test_project_version_migration.cpp
     ../magda/daw/core/DeviceState.cpp
     ../magda/daw/audio/plugins/InternalPluginRegistry.cpp
     ../magda/daw/audio/plugins/SavedDeviceState.cpp

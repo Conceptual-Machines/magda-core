@@ -38,9 +38,11 @@ struct Prompt {
 /// engine.
 void convertAndSave() {
     auto& projects = ProjectManager::getInstance();
-    const auto destination = audio::convertedProjectFileFor(projects.getCurrentProjectFile());
+    const auto destination = audio::convertedProjectFileFor(projects.getCurrentProjectFile(),
+                                                            projects.requiresV1ProjectCopy());
 
-    audio::convertFourOscDevices(TrackManager::getInstance());
+    if (chosenAudioEngine() == AudioEngineChoice::Magda)
+        audio::convertFourOscDevices(TrackManager::getInstance());
 
     // The conversion writes the model directly. Without this a failed save
     // below leaves it in the session with nothing to say it is unsaved, and
@@ -68,19 +70,17 @@ void convertAndSave() {
 }  // namespace
 
 void offerFourOscConversion() {
-    if (chosenAudioEngine() != AudioEngineChoice::Magda)
-        return;
-
-    if (Config::getInstance().getSkipFourOscConversionPrompt())
-        return;
-
     auto& projects = ProjectManager::getInstance();
+    const auto v1Copy = projects.requiresV1ProjectCopy();
+    const auto nativeEngine = chosenAudioEngine() == AudioEngineChoice::Magda;
+    if (!v1Copy && (!nativeEngine || Config::getInstance().getSkipFourOscConversionPrompt()))
+        return;
 
     // Already through this engine's migration, so there is nothing to offer.
     // An empty word is a project saved before the field existed, which is a
     // Tracktion project.
-    if (projects.getCurrentProjectInfo().savedWithEngine ==
-        settingWordFor(AudioEngineChoice::Magda))
+    if (!v1Copy && projects.getCurrentProjectInfo().savedWithEngine ==
+                       settingWordFor(AudioEngineChoice::Magda))
         return;
 
     if (projects.getCurrentProjectFile() == juce::File{})
@@ -91,17 +91,24 @@ void offerFourOscConversion() {
     if (master == nullptr)
         return;
 
-    const auto candidates = audio::findFourOscDevices(tracks.getTracks(), *master);
+    const auto candidates = nativeEngine ? audio::findFourOscDevices(tracks.getTracks(), *master)
+                                         : std::vector<audio::FourOscCandidate>{};
 
-    auto prompt = std::make_shared<Prompt>("Open as a MAGDA Engine project?",
-                                           audio::describeMigration(candidates));
+    auto prompt = std::make_shared<Prompt>(v1Copy ? "Save as a new v1 project?"
+                                                  : "Open as a MAGDA Engine project?",
+                                           audio::describeMigration(candidates, v1Copy));
 
-    prompt->dontAskAgain.setSize(200, 24);
-    prompt->alert.addCustomComponent(&prompt->dontAskAgain);
-    prompt->alert.addButton("Create it", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    if (!v1Copy) {
+        prompt->dontAskAgain.setSize(200, 24);
+        prompt->alert.addCustomComponent(&prompt->dontAskAgain);
+    }
+    prompt->alert.addButton(v1Copy ? "Save v1 copy" : "Create it", 1,
+                            juce::KeyPress(juce::KeyPress::returnKey));
     prompt->alert.addButton("Not now", 0, juce::KeyPress(juce::KeyPress::escapeKey));
 
-    const auto onDismissed = [prompt](int result) {
+    const auto source = projects.getCurrentProjectFile();
+    const auto generation = projects.getProjectGeneration();
+    const auto onDismissed = [prompt, source, generation, nativeEngine](int result) {
         // Remembered whichever button was pressed: somebody who ticks it and
         // converts this project does not want asking about the next.
         if (prompt->dontAskAgain.getToggleState())
@@ -112,7 +119,14 @@ void offerFourOscConversion() {
 
         // Off the modal callback, so the alert is gone before a save dialog or
         // an error of its own can appear behind it.
-        juce::MessageManager::callAsync([] { convertAndSave(); });
+        juce::MessageManager::callAsync([source, generation, nativeEngine] {
+            auto& projects = ProjectManager::getInstance();
+            if (projects.getProjectGeneration() != generation ||
+                projects.getCurrentProjectFile() != source ||
+                (chosenAudioEngine() == AudioEngineChoice::Magda) != nativeEngine)
+                return;
+            convertAndSave();
+        });
     };
 
     prompt->alert.enterModalState(true, juce::ModalCallbackFunction::create(onDismissed), false);

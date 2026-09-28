@@ -39,17 +39,18 @@ std::vector<FourOscCandidate> findFourOscDevices(const std::vector<TrackInfo>& t
  * ProjectManager::saveProjectAs(), which builds the folder. Nothing for a
  * project that has never been saved and so has nowhere to sit beside.
  */
-juce::File convertedProjectFileFor(const juce::File& project);
+juce::File convertedProjectFileFor(const juce::File& project, bool v1Copy = false);
 
 /// What the dialog says. @p candidates may be empty: a project with no 4OSC
 /// in it is still worth copying, because the engines do not render every
 /// device identically.
-juce::String describeMigration(const std::vector<FourOscCandidate>& candidates);
+juce::String describeMigration(const std::vector<FourOscCandidate>& candidates,
+                               bool v1Copy = false);
 
 /**
  * @brief Convert every 4OSC in the project, in place.
  *
- * Write @ref backupFileFor first: this does not keep the old devices.
+ * Save into a separate project: this does not keep the old devices in the session.
  *
  * @return how many devices changed. Message thread.
  */

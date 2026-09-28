@@ -9,6 +9,7 @@
 #include "../core/TrackManager.hpp"
 #include "../core/aliases/AliasRegistry.hpp"
 #include "../core/controllers/BindingRegistry.hpp"
+#include "../project/ProjectVersionMigration.hpp"
 
 namespace magda::daw::audio {
 
@@ -172,31 +173,20 @@ std::vector<FourOscCandidate> findFourOscDevices(const std::vector<TrackInfo>& t
     return found;
 }
 
-juce::File convertedProjectFileFor(const juce::File& project) {
-    if (project == juce::File{})
-        return {};
-
-    // Up out of the project's own folder, so the new one is its neighbour
-    // rather than a stray .mgd inside it.
-    const auto projects = project.getParentDirectory().getParentDirectory();
-    if (!projects.isDirectory())
-        return {};
-
-    // Unwrapped, and deliberately: saveProjectAs() builds the folder itself,
-    // and only when the file is not already sitting in one of its own name.
-    // Handing it the wrapped path meant it created nothing and wrote into a
-    // directory that was not there.
-    const auto folder =
-        projects.getChildFile(project.getFileNameWithoutExtension() + " (MAGDA Engine)")
-            .getNonexistentSibling();
-
-    return projects.getChildFile(folder.getFileName() + project.getFileExtension());
+juce::File convertedProjectFileFor(const juce::File& project, bool v1Copy) {
+    return project_version::newProjectFileFor(project, v1Copy ? " (v1)" : " (MAGDA Engine)");
 }
 
-juce::String describeMigration(const std::vector<FourOscCandidate>& candidates) {
-    juce::String text =
-        "This project was made with Tracktion Engine. MAGDA Engine does not render every device "
-        "the same way, so it opens as a copy and the original is left alone.";
+juce::String describeMigration(const std::vector<FourOscCandidate>& candidates, bool v1Copy) {
+    juce::String text = v1Copy
+                            ? "This project was saved with MAGDA v0. Save it as a new v1 project "
+                              "before continuing. "
+                              "The new project gets a copy of the media and the original is left "
+                              "alone for use in v0. "
+                              "Projects saved with v1 may not open correctly in v0."
+                            : "This project was made with Tracktion Engine. MAGDA Engine does not "
+                              "render every device "
+                              "the same way, so it opens as a copy and the original is left alone.";
 
     if (!candidates.empty()) {
         text += " Any 4OSC in it becomes a Poly Synth, carrying the oscillators, the filter, "
