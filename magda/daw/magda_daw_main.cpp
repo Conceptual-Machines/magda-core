@@ -18,8 +18,8 @@
 #include "api/remote_api_host.hpp"
 #include "api/remote_audit.hpp"
 #include "api/remote_service.hpp"
-#include "audio/AudioBridge.hpp"
 #include "audio/AudioThumbnailManager.hpp"
+#include "audio/MidiBridge.hpp"
 #include "audio/controllers/ControllerParamReader.hpp"
 #include "audio/controllers/ControllerParamWriter.hpp"
 #include "audio/controllers/ControllerRouter.hpp"
@@ -35,6 +35,7 @@
 #include "core/UpdateChecker.hpp"
 #include "core/controllers/ControllerActivation.hpp"
 #include "core/controllers/ControllerProfileRegistry.hpp"
+#include "engine/PluginService.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "magda/scripting/LuaController.hpp"
 #include "magda/scripting/LuaScriptStore.hpp"
@@ -42,8 +43,9 @@
 #include "osc_app.hpp"
 #include "project/ProjectManager.hpp"
 #include "scripting_app.hpp"
+#include "ui/dialogs/MagdaEnginePrompt.hpp"
 #include "ui/dialogs/SplashScreen.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/MainLookAndFeel.hpp"
 #include "ui/themes/UserTheme.hpp"
@@ -91,7 +93,7 @@ void magdaTerminateHandler() noexcept {
 class MagdaDAWApplication : public JUCEApplication {
   private:
     std::unique_ptr<juce::FileLogger> fileLogger_;
-    std::unique_ptr<magda::TracktionEngineWrapper> daw_engine_;
+    std::unique_ptr<magda::AudioEngine> daw_engine_;
     // Lua-driven MIDI controller scripts (issue #592). Lives in the app
     // layer rather than inside TracktionEngineWrapper so the engine library
     // (magda_daw) doesn't pull magda_scripting into its link line.
@@ -134,7 +136,7 @@ class MagdaDAWApplication : public JUCEApplication {
     bool loadLuaScript(const juce::File& file);
     void unloadLuaScript();
     juce::String activeLuaScriptName() const;
-    void revealLuaScriptsFolder();
+    static void revealLuaScriptsFolder();
 
     /// Handles for the OSC section of ControllersDialog (osc_app.hpp), which
     /// only reads through them. Null before deferred init has run, and after
@@ -273,7 +275,7 @@ class MagdaDAWApplication : public JUCEApplication {
         // dark internally if the id is unknown or the file is invalid.
         magda::applyThemeById(magda::Config::getInstance().getTheme());
         lookAndFeel_ = std::make_unique<magda::MainLookAndFeel>();
-        magda::DarkTheme::applyToLookAndFeel(*lookAndFeel_);
+        magda::ActiveTheme::applyToLookAndFeel(*lookAndFeel_);
         juce::LookAndFeel::setDefaultLookAndFeel(lookAndFeel_.get());
 
         // 5. Apply HiDPI scale before any window is created.
@@ -283,26 +285,43 @@ class MagdaDAWApplication : public JUCEApplication {
         juce::Desktop::getInstance().setGlobalScaleFactor(static_cast<float>(uiScale));
         juce::Logger::writeToLog("UI scale: " + juce::String(uiScale, 2) + "x");
 
-        // 2b. Show splash screen
-        splashScreen_ = magda::SplashScreen::create();
+        // Before the splash, which sits on top of every window, and before the
+        // engine is built, so a yes renders through the MAGDA engine this launch.
+        magda::daw::ui::offerMagdaEngineAtLaunch([this] {
+            // 2b. Show splash screen
+            splashScreen_ = magda::SplashScreen::create();
 
-        // Defer heavy initialization so the message loop can paint the splash.
-        // A short timer delay gives macOS time to composite the window.
-        initTimer_ = std::make_unique<InitTimer>(*this);
-        initTimer_->startTimer(100);
+            // Defer heavy initialization so the message loop can paint the splash.
+            // A short timer delay gives macOS time to composite the window.
+            initTimer_ = std::make_unique<InitTimer>(*this);
+            initTimer_->startTimer(100);
+        });
     }
 
     void finishInitialisation() {
         juce::Logger::writeToLog("finishInitialisation() entered");
 
         // 3. Initialize audio engine
-        daw_engine_ = std::make_unique<magda::TracktionEngineWrapper>();
+        //
+        // Through the factory, which is where the choice of engine is made
+        // (#2551). Naming an implementation here is what made that choice
+        // unreachable from the running app while every other site looked
+        // wired: this is the site the app actually takes.
+        daw_engine_ = magda::createDefaultAudioEngine();
 
-        // Show plugin scan status on splash screen
-        daw_engine_->onPluginScanStatus = [this](const juce::String& status) {
-            if (splashScreen_)
-                splashScreen_->setStatus(status);
-        };
+        // Named on the splash as soon as there is one, from the engine itself
+        // rather than from the setting, which takes a restart to mean anything
+        // (#2559).
+        if (splashScreen_ && daw_engine_)
+            splashScreen_->setEngine(daw_engine_->engineName());
+
+        // Show plugin scan status on splash screen. Before initialize(), which is where
+        // the startup detect runs.
+        magda::PluginService::getInstance().setScanStatusCallback(
+            [this](const juce::String& status) {
+                if (splashScreen_)
+                    splashScreen_->setStatus(status);
+            });
 
         if (splashScreen_)
             splashScreen_->setStatus("Initializing audio engine...");
@@ -317,55 +336,44 @@ class MagdaDAWApplication : public JUCEApplication {
         juce::Logger::writeToLog("Audio engine initialized");
 
         // 3a. Wire the Lua controller scripts (issue #592). Owned here so
-        // magda_daw stays free of magda_scripting symbols. attach() is
-        // skipped if the engine has no MidiBridge yet (headless / failure).
-        if (auto* bridge = daw_engine_->getMidiBridge()) {
-            juce::Logger::writeToLog("[lua-debug] startup: MidiBridge available, "
-                                     "constructing LuaController + attaching");
-            luaController_ =
-                std::make_unique<magda::scripting::LuaController>(daw_engine_->getMagdaApi());
-            luaController_->attach(*bridge);
-            // Defer the script load until JUCE has opened the MIDI output ports.
-            // Loading on_load before that means SysEx sends (DAW-mode handshake,
-            // LED priming) get dropped silently and the device behaves as if no
-            // script were loaded. Hook fires on first MIDI device-list change
-            // after engine init, then on every subsequent change. We only want
-            // the auto-load to fire once.
-            daw_engine_->onMidiDevicesReady = [this]() {
-                if (scriptAutoLoaded_)
-                    return;
-                scriptAutoLoaded_ = true;
-                juce::Logger::writeToLog("[lua-debug] onMidiDevicesReady fired - "
-                                         "running deferred reloadActiveLuaScript");
-                const bool ok = reloadActiveLuaScript();
-                juce::Logger::writeToLog(
-                    "[lua-debug] deferred reloadActiveLuaScript -> " +
-                    juce::String(ok ? "true" : "false") + " active='" +
-                    (luaController_ ? luaController_->currentScriptName() : juce::String{}) + "'");
-                if (!ok)
-                    juce::Logger::writeToLog("[lua] No controller script loaded");
-            };
-            juce::MessageManager::callAsync([this]() {
-                if (scriptAutoLoaded_ || luaController_ == nullptr)
-                    return;
-                scriptAutoLoaded_ = true;
-                juce::Logger::writeToLog("[lua-debug] startup fallback - "
-                                         "running reloadActiveLuaScript");
-                const bool ok = reloadActiveLuaScript();
-                juce::Logger::writeToLog(
-                    "[lua-debug] startup fallback reloadActiveLuaScript -> " +
-                    juce::String(ok ? "true" : "false") + " active='" +
-                    (luaController_ ? luaController_->currentScriptName() : juce::String{}) + "'");
-                if (!ok)
-                    juce::Logger::writeToLog("[lua] No controller script loaded");
-            });
-        } else {
-            juce::Logger::writeToLog("[lua-debug] startup: MidiBridge null, "
-                                     "LuaController NOT created");
-        }
-
-        // 3b. Clean up stale temp media directories from previous sessions
-        magda::ProjectManager::cleanupStaleTempDirectories();
+        // magda_daw stays free of magda_scripting symbols.
+        luaController_ =
+            std::make_unique<magda::scripting::LuaController>(daw_engine_->getMagdaApi());
+        luaController_->attach(magda::MidiBridge::getInstance());
+        // Defer the script load until JUCE has opened the MIDI output ports.
+        // Loading on_load before that means SysEx sends (DAW-mode handshake,
+        // LED priming) get dropped silently and the device behaves as if no
+        // script were loaded. Hook fires on first MIDI device-list change
+        // after engine init, then on every subsequent change. We only want
+        // the auto-load to fire once.
+        daw_engine_->setMidiDevicesReadyCallback([this]() {
+            if (scriptAutoLoaded_)
+                return;
+            scriptAutoLoaded_ = true;
+            juce::Logger::writeToLog("[lua-debug] onMidiDevicesReady fired - "
+                                     "running deferred reloadActiveLuaScript");
+            const bool ok = reloadActiveLuaScript();
+            juce::Logger::writeToLog(
+                "[lua-debug] deferred reloadActiveLuaScript -> " +
+                juce::String(ok ? "true" : "false") + " active='" +
+                (luaController_ ? luaController_->currentScriptName() : juce::String{}) + "'");
+            if (!ok)
+                juce::Logger::writeToLog("[lua] No controller script loaded");
+        });
+        juce::MessageManager::callAsync([this]() {
+            if (scriptAutoLoaded_ || luaController_ == nullptr)
+                return;
+            scriptAutoLoaded_ = true;
+            juce::Logger::writeToLog("[lua-debug] startup fallback - "
+                                     "running reloadActiveLuaScript");
+            const bool ok = reloadActiveLuaScript();
+            juce::Logger::writeToLog(
+                "[lua-debug] startup fallback reloadActiveLuaScript -> " +
+                juce::String(ok ? "true" : "false") + " active='" +
+                (luaController_ ? luaController_->currentScriptName() : juce::String{}) + "'");
+            if (!ok)
+                juce::Logger::writeToLog("[lua] No controller script loaded");
+        });
 
         // 4. Create main window with full UI (pass the audio engine)
         juce::Logger::writeToLog("Creating MainWindow...");
@@ -389,18 +397,17 @@ class MagdaDAWApplication : public JUCEApplication {
         }
 
         // 4c. OSC control surfaces (#1757). Also off unless configuration says
-        // otherwise. Needs the AudioBridge for the parameter writer, which is
-        // what makes an OSC fader land exactly where a MIDI one does — so it is
-        // built here rather than earlier, once the engine has one.
-        if (auto* audioBridge = daw_engine_->getAudioBridge()) {
+        // otherwise. Parameter control goes through the engine-neutral model
+        // seam, so OSC is available under both audio engines.
+        {
             auto sink = std::make_unique<magda::OscCommandSinkLive>(
                 daw_engine_->getMagdaApi(),
-                std::make_unique<magda::DefaultControllerParamWriter>(*audioBridge));
+                std::make_unique<magda::DefaultControllerParamWriter>());
             auto router = std::make_unique<magda::osc::OscRouter>(std::move(sink));
             // Bound addresses go through the same writer, so a parameter driven
             // from an OSC fader lands exactly where a MIDI knob would.
             router->setBindingSink(std::make_unique<magda::OscBindingSinkLive>(
-                std::make_unique<magda::DefaultControllerParamWriter>(*audioBridge)));
+                std::make_unique<magda::DefaultControllerParamWriter>()));
             oscService_ = std::make_unique<magda::osc::OscService>(std::move(router));
             if (oscService_->applyConfig())
                 juce::Logger::writeToLog("OSC listening on " + oscService_->boundAddress() + ":" +
@@ -413,7 +420,7 @@ class MagdaDAWApplication : public JUCEApplication {
             // from MAGDA with the WebSocket transport switched off.
             oscFeedback_ = std::make_unique<magda::OscFeedbackProjector>(
                 daw_engine_->getMagdaApi(), remoteApi_->service().changes(), oscService_->router(),
-                std::make_unique<magda::DefaultControllerParamReader>(*audioBridge));
+                std::make_unique<magda::DefaultControllerParamReader>());
             if (oscFeedback_->applyConfig())
                 juce::Logger::writeToLog(
                     "OSC feedback will answer surfaces on port " +
@@ -472,9 +479,46 @@ class MagdaDAWApplication : public JUCEApplication {
             }
         }
 
+        // Recover a never-saved project before honoring a command-line open.
+        // A successful recovery owns this startup: immediately replacing the
+        // restored project with the command-line file would defeat recovery.
+        bool untitledRecoverySucceeded = false;
+        auto& projectManager = magda::ProjectManager::getInstance();
+        projectManager.startRecoverySession();
+        const auto recovery = projectManager.getStartupRecovery();
+        if (recovery.snapshot.existsAsFile() && projectManager.markRecoveryOffered(recovery)) {
+            switch (projectManager.promptRecovery(recovery, true)) {
+                case magda::ProjectManager::RecoveryChoice::Recover:
+                    untitledRecoverySucceeded = mainWindow_->recoverProject(recovery);
+                    if (!untitledRecoverySucceeded)
+                        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                               "Recovery Failed",
+                                                               projectManager.getLastError());
+                    break;
+                case magda::ProjectManager::RecoveryChoice::Discard:
+                    projectManager.discardRecovery(recovery);
+                    break;
+                case magda::ProjectManager::RecoveryChoice::Cancel:
+                    break;
+            }
+        }
+
+        // The normal startup state is a real untitled project, not merely the
+        // ProjectManager's pre-UI placeholder. This also enables the regular
+        // autosave tick before the user has visited File > New.
+        if (!untitledRecoverySucceeded)
+            projectManager.newProject();
+
+        // Never sweep the media tree backing a recovered project.
+        if (untitledRecoverySucceeded) {
+            magda::ProjectManager::cleanupStaleTempDirectories(projectManager.getMediaDirectory());
+        } else {
+            magda::ProjectManager::cleanupStaleTempDirectories();
+        }
+
         // Open project file if passed on command line (e.g. double-click .mgd in file manager)
         auto cmdLine = getCommandLineParameters();
-        if (cmdLine.isNotEmpty()) {
+        if (!untitledRecoverySucceeded && cmdLine.isNotEmpty()) {
             auto filePath = cmdLine.unquoted().trim();
             juce::File projectFile(filePath);
             if (projectFile.existsAsFile() && projectFile.hasFileExtension("mgd")) {
@@ -644,6 +688,7 @@ class MagdaDAWApplication : public JUCEApplication {
             if (!pm.showUnsavedChangesDialog())
                 return;  // User cancelled
         }
+        pm.prepareForCleanShutdown();
         quit();
     }
 };
@@ -737,8 +782,7 @@ bool MagdaDAWApplication::reloadActiveLuaScript() {
     if (scripts.empty()) {
         juce::Logger::writeToLog("[lua-debug] reloadActiveLuaScript: no scripts, unloading");
         luaController_->unloadScript();
-        if (auto* audioBridge = daw_engine_->getAudioBridge())
-            audioBridge->clearSurfaceOnlyMidiInputPorts();
+        magda::MidiBridge::getInstance().setSurfaceOnlyInput({});
         return false;
     }
 
@@ -762,8 +806,7 @@ bool MagdaDAWApplication::loadLuaScript(const juce::File& file) {
 
     const auto ports = getLuaScriptPortsFromConfig(file.getFileName());
     luaController_->setDawInputPort(ports.dawInputPort);
-    if (auto* audioBridge = daw_engine_->getAudioBridge())
-        audioBridge->setSurfaceOnlyMidiInputPort(ports.dawInputPort);
+    magda::MidiBridge::getInstance().setSurfaceOnlyInput(ports.dawInputPort);
     if (auto* liveApi = dynamic_cast<magda::MagdaApiLive*>(&daw_engine_->getMagdaApi()))
         liveApi->setDefaultMidiOutputPort(ports.midiOutputPort);
 
@@ -774,8 +817,7 @@ bool MagdaDAWApplication::loadLuaScript(const juce::File& file) {
         cfg.save();
         return true;
     }
-    if (auto* audioBridge = daw_engine_->getAudioBridge())
-        audioBridge->clearSurfaceOnlyMidiInputPorts();
+    magda::MidiBridge::getInstance().setSurfaceOnlyInput({});
     juce::Logger::writeToLog("[lua] Failed to load " + file.getFileName() + ": " +
                              luaController_->lastError());
     return false;
@@ -784,10 +826,7 @@ bool MagdaDAWApplication::loadLuaScript(const juce::File& file) {
 void MagdaDAWApplication::unloadLuaScript() {
     if (luaController_ != nullptr)
         luaController_->unloadScript();
-    if (daw_engine_ != nullptr) {
-        if (auto* audioBridge = daw_engine_->getAudioBridge())
-            audioBridge->clearSurfaceOnlyMidiInputPorts();
-    }
+    magda::MidiBridge::getInstance().setSurfaceOnlyInput({});
     auto& cfg = magda::Config::getInstance();
     cfg.setActiveLuaScript(std::string{});
     cfg.save();

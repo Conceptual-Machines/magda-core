@@ -132,7 +132,7 @@ bool applyFaustAnnotation(const juce::String& key, const juce::String& value,
         auto v = value.trim();
         if (v.length() >= 2 && v.startsWithChar('"') && v.endsWithChar('"'))
             v = v.substring(1, v.length() - 1);
-        metadata.tooltip = v;
+        metadata.tooltip = std::move(v);
         return true;
     }
     if (key == "role") {

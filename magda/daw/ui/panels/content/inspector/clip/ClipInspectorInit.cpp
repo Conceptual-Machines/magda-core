@@ -1,7 +1,7 @@
 #include <cmath>
 
 #include "../../../../state/TimelineController.hpp"
-#include "../../../../themes/DarkTheme.hpp"
+#include "../../../../themes/ActiveTheme.hpp"
 #include "../../../../themes/FontManager.hpp"
 #include "../../../../themes/InspectorComboBoxLookAndFeel.hpp"
 #include "../../../../themes/SmallButtonLookAndFeel.hpp"
@@ -15,7 +15,7 @@ namespace magda::daw::ui {
 ClipInspector::ClipInspector() {
     // Multi-clip count label (shown when multiple clips selected)
     clipCountLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
-    clipCountLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    clipCountLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     addChildComponent(clipCountLabel_);
 
     initClipPropertiesSection();

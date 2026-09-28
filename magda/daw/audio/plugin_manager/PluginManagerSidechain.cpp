@@ -109,7 +109,7 @@ void PluginManager::syncSidechains(TrackId trackId, te::AudioTrack* teTrack) {
 // Sidechain Monitor Lifecycle
 // =============================================================================
 
-bool PluginManager::trackNeedsSidechainMonitor(TrackId trackId) const {
+bool PluginManager::trackNeedsSidechainMonitor(TrackId trackId) {
     // The master owns modifiers but has no AudioTrack/plugin list to host a
     // MIDI monitor. It can be a sidechain destination, never a source.
     if (trackId == MASTER_TRACK_ID)
@@ -145,10 +145,7 @@ bool PluginManager::trackNeedsSidechainMonitor(TrackId trackId) const {
                                          SidechainConfig::Type::MIDI))
             usedAsSource = true;
     });
-    if (usedAsSource)
-        return true;
-
-    return false;
+    return usedAsSource;
 }
 
 void PluginManager::checkSidechainMonitor(TrackId trackId) {
@@ -174,12 +171,12 @@ void PluginManager::ensureSidechainMonitor(TrackId sourceTrackId) {
     }
 
     // Check if a SidechainMonitorPlugin already exists on the track
-    for (int i = 0; i < teTrack->pluginList.size(); ++i) {
-        if (dynamic_cast<SidechainMonitorPlugin*>(teTrack->pluginList[i])) {
+    for (auto* i : teTrack->pluginList) {
+        if (dynamic_cast<SidechainMonitorPlugin*>(i)) {
             DBG("PluginManager::ensureSidechainMonitor - track "
                 << sourceTrackId << " found existing monitor plugin on TE track");
-            sidechainMonitors_[sourceTrackId] = teTrack->pluginList[i];
-            auto* mon = dynamic_cast<SidechainMonitorPlugin*>(teTrack->pluginList[i]);
+            sidechainMonitors_[sourceTrackId] = i;
+            auto* mon = dynamic_cast<SidechainMonitorPlugin*>(i);
             mon->setSourceTrackId(sourceTrackId);
             mon->setRealtimeContext(this);
             return;

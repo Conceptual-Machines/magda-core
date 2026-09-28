@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "core/ChainRoutingModel.hpp"
+#include "core/DrumGridPads.hpp"
 #include "core/RackInfo.hpp"
 #include "core/TrackChain.hpp"
 #include "core/TrackInfo.hpp"
@@ -36,22 +37,6 @@ struct ChainSite {
     ChainSegment segment = ChainSegment::Fx;
 };
 
-/// Analysis devices are transparent passthroughs with no gain trim and no
-/// meter of their own, so they compile to the process op alone.
-bool isTransparentTap(const DeviceInfo& device) {
-    return device.deviceType == DeviceType::Analysis;
-}
-
-bool consumesMidi(const DeviceInfo& device) {
-    return device.isInstrument || device.canReceiveMidi || device.deviceType == DeviceType::MIDI;
-}
-
-/// True when a chain inside a rack will be compiled at all. Aux-routed chains
-/// are not wired yet, and bypassed ones contribute nothing.
-bool chainIsActive(const ChainInfo& chain) {
-    return !chain.bypassed && chain.outputIndex == 0;
-}
-
 /// Whether anything the compiler will actually emit consumes MIDI. Walks only
 /// the live elements, so a bypassed instrument does not keep the track's MIDI
 /// source ops in the plan with nothing to read them, and neither does anything
@@ -60,7 +45,7 @@ bool elementsConsumeMidi(const std::vector<ChainElement>& elements, RackNesting&
     return std::ranges::any_of(elements, [&](const ChainElement& element) {
         if (isDevice(element)) {
             const auto& device = getDevice(element);
-            return !device.bypassed && consumesMidi(device);
+            return !device.bypassed && device.consumesMidi();
         }
         if (isRack(element)) {
             const auto& rack = getRack(element);
@@ -69,7 +54,7 @@ bool elementsConsumeMidi(const std::vector<ChainElement>& elements, RackNesting&
 
             const RackNesting::Scope scope{nesting, rack.id};
             return std::ranges::any_of(rack.chains, [&](const ChainInfo& chain) {
-                return chainIsActive(chain) && elementsConsumeMidi(chain.elements, nesting);
+                return chain.isActive() && elementsConsumeMidi(chain.elements, nesting);
             });
         }
         return false;
@@ -89,7 +74,7 @@ bool rackHasInstrument(const RackInfo& rack, RackNesting& nesting) {
 
     const RackNesting::Scope scope{nesting, rack.id};
     return std::ranges::any_of(rack.chains, [&](const ChainInfo& chain) {
-        if (!chainIsActive(chain))
+        if (!chain.isActive())
             return false;
         return std::ranges::any_of(chain.elements, [&](const ChainElement& element) {
             if (isDevice(element)) {
@@ -107,7 +92,7 @@ bool rackHasInstrument(const RackInfo& rack, RackNesting& nesting) {
 
 bool sectionConsumesMidi(const std::vector<PostFxChainElement>& section) {
     return std::ranges::any_of(section, [](const PostFxChainElement& element) {
-        return !element.device.bypassed && consumesMidi(element.device);
+        return !element.device.bypassed && element.device.consumesMidi();
     });
 }
 
@@ -140,7 +125,7 @@ void collectSidechainSources(const std::vector<ChainElement>& elements,
 
             const RackNesting::Scope scope{nesting, rack.id};
             for (const auto& chain : rack.chains)
-                if (chainIsActive(chain))
+                if (chain.isActive())
                     collectSidechainSources(chain.elements, type, out, nesting);
         }
     }
@@ -167,19 +152,6 @@ void collectSidechainSources(const TrackInfo& track, std::optional<SidechainConf
 
     collectSidechainSources(track.chain.postFxChainElements, type, out);
     collectSidechainSources(track.chain.mixerAnalysisElements, type, out);
-}
-
-/// Whether input reaches the track at all, for either audio or MIDI.
-///
-/// Auto is deliberately not enough on its own: automatic monitoring passes
-/// input only while the track is armed. Including it
-/// unarmed would emit a live input op the current engine keeps silent, and
-/// would mark the whole downstream chain Live, pessimising the anticipative
-/// executor for a track that cannot sound. This is why the compiler does not
-/// use TrackInfo::receivesLiveMidiInput, which answers a broader question for
-/// the UI's input-activity light.
-bool monitorsInput(const TrackInfo& track) {
-    return track.recordArmed || track.inputMonitor == InputMonitorMode::In;
 }
 
 class Compiler {
@@ -216,18 +188,64 @@ class Compiler {
     /// and Master tracks only pass on what reaches them from elsewhere.
     bool carriesClips(const TrackInfo& track) const;
 
-    /// The routing each input field resolves to, already gated on whether the
-    /// track will actually read it. Ordering discovery and emission both go
-    /// through these, so a route can never be a dependency without also being
-    /// a connection: an ungated edge can invent a cycle, and breaking that
-    /// cycle costs a real connection elsewhere.
-    TrackRoute activeAudioInputRoute(const TrackInfo& track) const;
-    TrackRoute activeMidiInputRoute(const TrackInfo& track) const;
+    /**
+     * @brief The routing each input field resolves to.
+     *
+     * Resolved whether or not the track is monitoring, so the switch never
+     * decides what exists: it lands on the gate an input from another track
+     * arrives through, or on the live routing snapshot for a MIDI device, and
+     * flipping it publishes values (#2612). A route from another track is still
+     * an ordering dependency as well as a connection, and one that closes a
+     * cycle is cut and carried instead (see carriedRoutes_).
+     */
+    TrackRoute audioInputRoute(const TrackInfo& track) const;
+    TrackRoute midiInputRoute(const TrackInfo& track) const;
+
+    /**
+     * @brief The op the live audio input reaches @p trackId's chain through.
+     *
+     * Where the monitor switch lands: silent while the track is not listening,
+     * so flipping it publishes values and rebuilds nothing (#2612).
+     */
+    PortRef emitLiveInputGate(TrackId trackId, PortRef source);
+
+    /**
+     * @brief One input route the ordering pass could not give an edge to.
+     *
+     * The record, not the two ops: everything the carry needs to be emitted,
+     * paired and identified is decided once here and lowered into a
+     * FeedbackSend and a FeedbackReturn, rather than inferred later from key
+     * fields at each site that touches one.
+     */
+    struct CarriedRoute {
+        TrackId destination = INVALID_TRACK_ID;  ///< the track that reads it
+        TrackId source = INVALID_TRACK_ID;       ///< the track it reads
+        PortRef returnPort;                      ///< what the destination reads, once emitted
+        OpId sendOp = INVALID_OP_ID;             ///< what fills the carry, once emitted
+    };
+
+    /// The same switch on a route from another track. @p signal is 0 for audio
+    /// and 1 for MIDI, which is also what tells the two gates apart.
+    PortRef emitInputRouteGate(TrackId trackId, int signal, PortRef source);
+
+    /// The read half of a cut route: what the send left last block.
+    PortRef emitFeedbackReturn(CarriedRoute& carried);
+
+    /// The write half of every cut route, emitted once every track has.
+    void emitFeedbackSends();
+
+    /// Settle the liveness a carry passes on, once both halves exist.
+    void settleCarryLiveness();
 
     /// The track this track's audio output feeds; the master by default.
-    TrackId resolveAudioDestination(const TrackInfo& track) const;
+    static TrackId resolveAudioDestination(const TrackInfo& track);
 
     void emitTrack(const TrackInfo& track);
+
+    /// The track's live MIDI input op, whether it is routed to a device or
+    /// only auditioned. One per track either way, since the store keys inputs
+    /// by TrackId.
+    PortRef emitLiveMidiInput(TrackId trackId);
 
     /// One op per track any modifier listens to, after every track has been
     /// emitted so that every tap exists to read.
@@ -236,7 +254,9 @@ class Compiler {
     ChainSignal emitElements(const std::vector<ChainElement>& elements, const ChainSite& site,
                              ChainSignal signal);
     ChainSignal emitDevice(const DeviceInfo& device, const ChainSite& site, ChainSignal signal);
+    ChainSignal emitInsert(const DeviceInfo& device, const ChainSite& site, ChainSignal signal);
     ChainSignal emitRack(const RackInfo& rack, const ChainSite& site, ChainSignal signal);
+    ChainSignal emitPadRack(const DeviceInfo& device, const ChainSite& site, ChainSignal signal);
 
     /// Delta solo: @p wet minus @p dry, which is what the device or rack the
     /// key names added to the signal. Both sides go through alignInputs, so
@@ -261,6 +281,7 @@ class Compiler {
     /// with no chains still has an output of its own to measure: its fader is
     /// applied on the wet path whether or not there are chains under it.
     PortRef emitRackDelta(const ChainSite& site, RackId rackId, PortRef wet, PortRef dry);
+    PortRef emitRackMeter(const ChainSite& site, RackId rackId, PortRef source);
 
     /// Sums `sources` into one audio port, always through an op so the op's
     /// identity survives sources appearing and disappearing.
@@ -325,6 +346,19 @@ class Compiler {
     /// internal MIDI route. Their MIDI clips have to be compiled even when
     /// their own chain has nothing that consumes MIDI.
     std::set<TrackId> midiSourceTracks_;
+
+    /// Audio routes on a cycle, by the track that reads them. What the
+    /// destination hears is the source's previous block.
+    std::map<TrackId, CarriedRoute> carriedRoutes_;
+
+    /// Tracks whose MIDI input route lies on a cycle. Reported where the cycle
+    /// is found and left unconnected: see the ordering pass for why.
+    std::set<TrackId> refusedMidiRoutes_;
+
+    /// Settle one input route that lies on a cycle: carry it when it is audio,
+    /// refuse it when it is MIDI.
+    void resolveCyclicRoute(std::size_t destination, std::size_t source, int signal);
+
     /// Every point a modifier somewhere in the project reads (ModSources.hpp),
     /// and every track one of them reads for notes. One op each at the end.
     std::set<ModTap> modulationTaps_;
@@ -399,21 +433,27 @@ bool Compiler::carriesClips(const TrackInfo& track) const {
            track.type != TrackType::Group && track.type != TrackType::MultiOut;
 }
 
-TrackRoute Compiler::activeAudioInputRoute(const TrackInfo& track) const {
-    if (!carriesClips(track) || !monitorsInput(track) || track.audioInputDevice.isEmpty())
+TrackRoute Compiler::audioInputRoute(const TrackInfo& track) const {
+    if (!carriesClips(track) || track.audioInputDevice.isEmpty())
         return {RouteKind::None, INVALID_TRACK_ID};
     return parseTrackRoute(track.audioInputDevice);
 }
 
-TrackRoute Compiler::activeMidiInputRoute(const TrackInfo& track) const {
-    if (!carriesClips(track) || !monitorsInput(track) || track.midiInputDevice.isEmpty())
+TrackRoute Compiler::midiInputRoute(const TrackInfo& track) const {
+    if (!carriesClips(track) || track.midiInputDevice.isEmpty())
         return {RouteKind::None, INVALID_TRACK_ID};
     return parseTrackRoute(track.midiInputDevice);
 }
 
-TrackId Compiler::resolveAudioDestination(const TrackInfo& track) const {
+TrackId Compiler::resolveAudioDestination(const TrackInfo& track) {
     const auto route = parseTrackRoute(track.audioOutputDevice);
-    return route.namesTrack() ? route.trackId : MASTER_TRACK_ID;
+    if (route.namesTrack())
+        return route.trackId;
+    if (route.kind == RouteKind::Malformed || track.audioOutputDevice.isEmpty() ||
+        track.audioOutputDevice == "master") {
+        return MASTER_TRACK_ID;
+    }
+    return INVALID_TRACK_ID;
 }
 
 TrackId Compiler::resolveSendDestination(const SendInfo& send) const {
@@ -427,26 +467,54 @@ TrackId Compiler::resolveSendDestination(const SendInfo& send) const {
     return found == tracks_.end() ? INVALID_TRACK_ID : found->id;
 }
 
+void Compiler::resolveCyclicRoute(std::size_t destination, std::size_t source, int signal) {
+    const auto destId = tracks_[destination].id;
+    const auto sourceId = tracks_[source].id;
+
+    // Audio is carried and MIDI is refused. A block of delay renders an audio
+    // loop because whatever gain is in the loop scales what goes round, so it
+    // dies away. A note has no gain: every event that came back would be sent
+    // round again, and the carry would grow for as long as the transport ran.
+    if (signal == 0) {
+        carriedRoutes_[destId] = {destId, sourceId, PortRef{}};
+        return;
+    }
+
+    refusedMidiRoutes_.insert(destId);
+    diagnose("track " + std::to_string(destId) + ": MIDI input track " + std::to_string(sourceId) +
+             (destination == source ? " is the track itself" : " is downstream of it") +
+             ", and a MIDI loop repeats every note it carries, so the input is not connected");
+}
+
 std::vector<const TrackInfo*> Compiler::computeTrackOrder() {
     const auto numTracks = tracks_.size();
     std::map<TrackId, std::size_t> indexById;
     for (std::size_t i = 0; i < numTracks; ++i)
         indexById[tracks_[i].id] = i;
 
-    // The chord track is a monitor-only progression lane and never renders.
+    // The chord track is a monitor lane: it sounds while somebody is listening
+    // and never reaches a file (CompileOptions::monitorTracks, #2446).
     std::vector<bool> skipped(numTracks, false);
     for (std::size_t i = 0; i < numTracks; ++i)
-        skipped[i] = tracks_[i].type == TrackType::Chord;
+        skipped[i] = !options_.monitorTracks && tracks_[i].type == TrackType::Chord;
 
-    std::vector<std::vector<std::size_t>> successors(numTracks);
-    std::vector<int> indegree(numTracks, 0);
-    auto addEdge = [&](std::size_t from, std::size_t to) {
+    // One ordering constraint. Held as a list rather than adjacency because a
+    // cycle is resolved by withdrawing a particular edge, and an edge has to be
+    // findable, classifiable and removable to be withdrawn.
+    struct Edge {
+        std::size_t from = 0;  ///< compiles first
+        std::size_t to = 0;
+        int routeSignal = -1;  ///< -1 not an input route, else 0 audio, 1 MIDI
+        bool active = true;
+    };
+    std::vector<Edge> edges;
+
+    const auto addEdge = [&](std::size_t from, std::size_t to, int routeSignal = -1) {
         if (from == to || skipped[from] || skipped[to])
             return;
-        successors[from].push_back(to);
-        ++indegree[to];
+        edges.push_back({from, to, routeSignal, true});
     };
-    auto indexOf = [&](TrackId id) -> long {
+    const auto indexOf = [&](TrackId id) -> long {
         const auto it = indexById.find(id);
         return it == indexById.end() ? -1 : static_cast<long>(it->second);
     };
@@ -461,21 +529,45 @@ std::vector<const TrackInfo*> Compiler::computeTrackOrder() {
             addEdge(i, static_cast<std::size_t>(destination));
 
         for (const auto& send : track.sends)
-            if (const auto destination = indexOf(resolveSendDestination(send)); destination >= 0)
-                addEdge(i, static_cast<std::size_t>(destination));
+            if (send.enabled)
+                if (const auto destination = indexOf(resolveSendDestination(send));
+                    destination >= 0)
+                    addEdge(i, static_cast<std::size_t>(destination));
 
         // Sidechains, internal input routes and multi-out pairs read another
         // track, so that track comes first. Every edge here has to correspond
         // to a connection emission will actually make, which is why the
         // multi-out edge asks the same question emission does rather than
         // reading the link's numbers. An edge for a pair nothing will carry can
-        // invent a cycle, and the breaker resolves a cycle by dropping a
-        // connection: a real one would go so that an imaginary one could have
-        // its ordering.
+        // invent a cycle, and resolving a cycle costs a connection: a real one
+        // would go so that an imaginary one could have its ordering.
         std::set<TrackId> upstream;
         collectSidechainSources(track, std::nullopt, upstream);
         if (track.multiOutLink && multiOutPairIsConnected(*track.multiOutLink, track.id))
             upstream.insert(track.multiOutLink->sourceTrackId);
+
+        // An input route is an edge like the rest, marked as one because it is
+        // the only kind a cycle may withdraw. It is kept out of the set above so
+        // that withdrawing it cannot take a sidechain from the same track with
+        // it.
+        const auto addRouteEdge = [&](const TrackRoute& route, int signal) {
+            if (!route.namesTrack())
+                return;
+            const auto source = indexOf(route.trackId);
+            if (source < 0 || skipped[static_cast<std::size_t>(source)])
+                return;
+
+            // A track routed from itself is a loop of one, which no ordering can
+            // satisfy, so it is settled here rather than found as a component.
+            if (static_cast<std::size_t>(source) == i) {
+                resolveCyclicRoute(i, i, signal);
+                return;
+            }
+
+            addEdge(static_cast<std::size_t>(source), i, signal);
+        };
+        addRouteEdge(audioInputRoute(track), 0);
+        addRouteEdge(midiInputRoute(track), 1);
 
         // Deliberately not the modulation sources. A modifier listening to
         // another track needs that track's tap to exist, and it does: the taps
@@ -488,21 +580,148 @@ std::vector<const TrackInfo*> Compiler::computeTrackOrder() {
         //
         // Making it an ordering edge costs real routing. A track routed into
         // the very track its own modifiers listen to is an ordinary project and
-        // a cycle here, and the breaker resolves a cycle by dropping a
-        // connection: the audio edge would go so that a modulation feed which
-        // did not need ordering could have it.
-        if (const auto route = activeAudioInputRoute(track); route.namesTrack())
-            upstream.insert(route.trackId);
-        if (const auto route = activeMidiInputRoute(track); route.namesTrack())
-            upstream.insert(route.trackId);
-
+        // a cycle here, and a cycle costs an edge: the audio edge would go so
+        // that a modulation feed which did not need ordering could have it.
         for (const auto sourceId : upstream)
             if (const auto source = indexOf(sourceId); source >= 0)
                 addEdge(static_cast<std::size_t>(source), i);
     }
 
+    // Strongly connected components of the active graph. Every cycle lies
+    // wholly inside one, and nothing else does: that is what separates a track
+    // on a cycle from one merely waiting behind it, which is the distinction a
+    // stalled topological sort cannot make (Tarjan, iterative to keep a deep
+    // project off the C++ stack).
+    const auto componentsOf = [&] {
+        std::vector<int> component(numTracks, -1);
+        std::vector<int> index(numTracks, -1);
+        std::vector<int> lowlink(numTracks, 0);
+        std::vector<bool> onStack(numTracks, false);
+        std::vector<std::size_t> stack;
+        std::vector<std::vector<std::size_t>> adjacency(numTracks);
+
+        for (const auto& edge : edges)
+            if (edge.active)
+                adjacency[edge.from].push_back(edge.to);
+
+        int nextIndex = 0;
+        int nextComponent = 0;
+
+        for (std::size_t root = 0; root < numTracks; ++root) {
+            if (skipped[root] || index[root] >= 0)
+                continue;
+
+            // Each frame is a node and how far its successors have been walked.
+            std::vector<std::pair<std::size_t, std::size_t>> frames{{root, 0}};
+            index[root] = lowlink[root] = nextIndex++;
+            stack.push_back(root);
+            onStack[root] = true;
+
+            while (!frames.empty()) {
+                auto& [node, cursor] = frames.back();
+                if (cursor < adjacency[node].size()) {
+                    const auto next = adjacency[node][cursor++];
+                    if (index[next] < 0) {
+                        index[next] = lowlink[next] = nextIndex++;
+                        stack.push_back(next);
+                        onStack[next] = true;
+                        frames.emplace_back(next, 0);
+                    } else if (onStack[next]) {
+                        lowlink[node] = std::min(lowlink[node], index[next]);
+                    }
+                    continue;
+                }
+
+                if (lowlink[node] == index[node]) {
+                    while (true) {
+                        const auto member = stack.back();
+                        stack.pop_back();
+                        onStack[member] = false;
+                        component[member] = nextComponent;
+                        if (member == node)
+                            break;
+                    }
+                    ++nextComponent;
+                }
+
+                const auto finished = node;
+                frames.pop_back();
+                if (!frames.empty())
+                    lowlink[frames.back().first] =
+                        std::min(lowlink[frames.back().first], lowlink[finished]);
+            }
+        }
+
+        return component;
+    };
+
+    // Resolve one edge inside each cyclic component until none is left. An
+    // audio route is carried, a MIDI route is refused, and a component made of
+    // nothing but sends, outputs and sidechains has nowhere to put a block of
+    // delay, so a connection is lost and said so.
+    //
+    // Recomputed after every resolution: a component may hold more than one
+    // cycle, and withdrawing an edge from one says nothing about the rest.
+    while (true) {
+        const auto component = componentsOf();
+        std::vector<int> size(numTracks, 0);
+        for (std::size_t i = 0; i < numTracks; ++i)
+            if (!skipped[i])
+                ++size[static_cast<std::size_t>(component[i])];
+
+        Edge* audio = nullptr;
+        Edge* midi = nullptr;
+        Edge* any = nullptr;
+        for (auto& edge : edges) {
+            if (!edge.active || component[edge.from] != component[edge.to] ||
+                size[static_cast<std::size_t>(component[edge.from])] < 2)
+                continue;
+
+            if (edge.routeSignal == 0 && audio == nullptr)
+                audio = &edge;
+            else if (edge.routeSignal == 1 && midi == nullptr)
+                midi = &edge;
+            if (any == nullptr)
+                any = &edge;
+        }
+
+        if (audio != nullptr) {
+            audio->active = false;
+            resolveCyclicRoute(audio->to, audio->from, 0);
+            continue;
+        }
+        if (midi != nullptr) {
+            midi->active = false;
+            resolveCyclicRoute(midi->to, midi->from, 1);
+            continue;
+        }
+        if (any == nullptr)
+            break;
+
+        // Says that the cycle exists and that an ordering was forced, not what
+        // that costs. Withdrawing an edge is not the same as losing the
+        // connection it ordered: another edge between the same two tracks can
+        // still order them the right way round, and then emission connects it.
+        // What is actually lost is reported where it is discovered, by the
+        // track that finds its source uncompiled and by the sweep over what
+        // arrived too late.
+        any->active = false;
+        diagnose("routing cycle: track " + std::to_string(tracks_[any->from].id) + " and track " +
+                 std::to_string(tracks_[any->to].id) +
+                 " each have to compile first, and neither is joined by an input route that could "
+                 "carry a block, so one is compiled before its sources");
+    }
+
+    std::vector<std::vector<std::size_t>> successors(numTracks);
+    std::vector<int> indegree(numTracks, 0);
+    for (const auto& edge : edges) {
+        if (!edge.active)
+            continue;
+        successors[edge.from].push_back(edge.to);
+        ++indegree[edge.to];
+    }
+
     std::set<std::size_t> ready;
-    std::vector<bool> emitted(numTracks, false);
     std::size_t remaining = 0;
     for (std::size_t i = 0; i < numTracks; ++i) {
         if (skipped[i])
@@ -512,36 +731,27 @@ std::vector<const TrackInfo*> Compiler::computeTrackOrder() {
             ready.insert(i);
     }
 
+    // No stall is possible: the graph is acyclic by here.
     std::vector<const TrackInfo*> order;
     order.reserve(remaining);
-    while (order.size() < remaining) {
-        if (ready.empty()) {
-            // Every remaining track waits on another remaining track. Force the
-            // lowest-numbered one. It is not necessarily on the cycle itself,
-            // only blocked by it, so this can also cost connections that were
-            // merely downstream of one; each loss is reported separately when
-            // it arrives too late to connect.
-            for (std::size_t i = 0; i < numTracks; ++i) {
-                if (skipped[i] || emitted[i])
-                    continue;
-                diagnose("routing cycle: track " + std::to_string(tracks_[i].id) +
-                         " compiled ahead of its sources to break it");
-                indegree[i] = 0;
-                ready.insert(i);
-                break;
-            }
-        }
-
+    while (!ready.empty()) {
         const auto next = *ready.begin();
         ready.erase(ready.begin());
-        emitted[next] = true;
         order.push_back(&tracks_[next]);
         for (const auto successor : successors[next])
-            if (--indegree[successor] == 0 && !emitted[successor])
+            if (--indegree[successor] == 0)
                 ready.insert(successor);
     }
 
     return order;
+}
+
+PortRef Compiler::emitLiveMidiInput(TrackId trackId) {
+    const OpKey key{trackId,           INVALID_RACK_ID,       INVALID_CHAIN_ID,
+                    INVALID_DEVICE_ID, OpRole::LiveMidiInput, 0};
+    const auto op = addOp(OpKind::MidiInput, key, {}, {SignalKind::Midi});
+    plan_.ops[static_cast<std::size_t>(op)].liveness = LivenessDomain::Live;
+    return PortRef{op, 0};
 }
 
 PortRef Compiler::emitMix(const OpKey& key, const std::vector<PortRef>& sources) {
@@ -550,8 +760,125 @@ PortRef Compiler::emitMix(const OpKey& key, const std::vector<PortRef>& sources)
                    0};
 }
 
+PortRef Compiler::emitLiveInputGate(TrackId trackId, PortRef source) {
+    const OpKey key{trackId,           INVALID_RACK_ID,       INVALID_CHAIN_ID,
+                    INVALID_DEVICE_ID, OpRole::LiveInputGate, 0};
+    return PortRef{addOp(OpKind::Gain, key, {source}, {SignalKind::Audio}), 0};
+}
+
+PortRef Compiler::emitInputRouteGate(TrackId trackId, int signal, PortRef source) {
+    const OpKey key{trackId,           INVALID_RACK_ID,        INVALID_CHAIN_ID,
+                    INVALID_DEVICE_ID, OpRole::InputRouteGate, signal};
+
+    // The MIDI gate is a note gate at its identity range: everything through,
+    // or nothing when the value says silent. That is exactly what the switch
+    // has to do to a MIDI route, and the op already does it.
+    if (signal == 1)
+        return PortRef{addOp(OpKind::MidiNoteGate, key, {source}, {SignalKind::Midi}), 0};
+    return PortRef{addOp(OpKind::Gain, key, {source}, {SignalKind::Audio}), 0};
+}
+
+PortRef Compiler::emitFeedbackReturn(CarriedRoute& carried) {
+    const OpKey key{carried.destination, INVALID_RACK_ID,        INVALID_CHAIN_ID,
+                    INVALID_DEVICE_ID,   OpRole::FeedbackReturn, carried.source};
+    // Liveness is settled afterwards, by settleCarryLiveness: what reaches the
+    // carry is the source track's output, and the source has not compiled yet.
+    const auto op = addOp(OpKind::FeedbackReturn, key, {}, {SignalKind::Audio});
+    carried.returnPort = PortRef{op, 0};
+    return carried.returnPort;
+}
+
+void Compiler::settleCarryLiveness() {
+    // Liveness runs forward along the inputs, and addOp settles each op as it is
+    // emitted. A carry is the one edge that runs the other way: the return is
+    // emitted before the send that fills it, so when its loop turns out to carry
+    // a hardware input there is nothing to propagate from yet.
+    //
+    // So it is settled here, by running the carry edges and a forward pass until
+    // neither changes anything. It terminates because liveness only ever turns
+    // on, and there are finitely many ops. Exact rather than conservative: a
+    // loop of clips stays deterministic and an anticipative executor may still
+    // render it ahead.
+    const auto live = [this](OpId op) {
+        return op != INVALID_OP_ID &&
+               plan_.ops[static_cast<std::size_t>(op)].liveness == LivenessDomain::Live;
+    };
+
+    for (bool changed = true; changed;) {
+        changed = false;
+
+        for (const auto& [destId, carried] : carriedRoutes_) {
+            if (carried.sendOp == INVALID_OP_ID || !carried.returnPort.valid())
+                continue;
+
+            const auto& send = plan_.ops[static_cast<std::size_t>(carried.sendOp)];
+            if (!send.inputs.empty() && live(send.inputs.front().op) &&
+                !live(carried.returnPort.op)) {
+                plan_.ops[static_cast<std::size_t>(carried.returnPort.op)].liveness =
+                    LivenessDomain::Live;
+                changed = true;
+            }
+        }
+
+        for (auto& op : plan_.ops) {
+            if (op.liveness == LivenessDomain::Live)
+                continue;
+
+            if (std::ranges::any_of(op.inputs, [&](const PortRef& input) {
+                    return input.valid() && live(input.op);
+                })) {
+                op.liveness = LivenessDomain::Live;
+                changed = true;
+            }
+        }
+    }
+}
+
+void Compiler::emitFeedbackSends() {
+    // After every track, because a send reads the source's own output and the
+    // source is the track that compiles last: that is what put the route on a
+    // cycle. Nothing reads a send, so where it lands in the plan does not
+    // matter.
+    for (const auto& [destId, carried] : std::map<TrackId, CarriedRoute>(carriedRoutes_)) {
+        if (!carried.returnPort.valid())
+            continue;
+
+        const auto source = trackRoutedOutput_.find(carried.source);
+        if (source == trackRoutedOutput_.end()) {
+            diagnose("track " + std::to_string(destId) + ": audio input track " +
+                     std::to_string(carried.source) +
+                     " is not compiled, its carried route is silent");
+            continue;
+        }
+
+        const OpKey key{destId,
+                        INVALID_RACK_ID,
+                        INVALID_CHAIN_ID,
+                        INVALID_DEVICE_ID,
+                        OpRole::FeedbackSend,
+                        carried.source};
+
+        // The return is the second input and is never read: it is the edge that
+        // makes every schedule read the carry before this block overwrites it.
+        carriedRoutes_[destId].sendOp =
+            addOp(OpKind::FeedbackSend, key, {source->second, carried.returnPort}, {});
+    }
+}
+
 PortRef Compiler::emitDelta(const OpKey& key, PortRef wet, PortRef dry) {
     return PortRef{addOp(OpKind::Subtract, key, alignInputs(key, OpKind::Subtract, {wet, dry}),
+                         {SignalKind::Audio}),
+                   0};
+}
+
+/// The level a rack strip draws: what leaves the rack, its own volume and pan
+/// applied and its delta taken, which is the same place a device slot's meter
+/// stands in its own chain of four (#2649).
+PortRef Compiler::emitRackMeter(const ChainSite& site, RackId rackId, PortRef source) {
+    if (!options_.deviceMeters)
+        return source;
+
+    return PortRef{addOp(OpKind::Meter, rackMeterKey(site.trackId, rackId, site.segment), {source},
                          {SignalKind::Audio}),
                    0};
 }
@@ -620,8 +947,116 @@ std::vector<PortRef> Compiler::alignInputs(const OpKey& key, OpKind kind,
     return inputs;
 }
 
+/**
+ * @brief A hardware insert: a send op, a return op, and the outside world
+ *        between them (#2245).
+ *
+ * Two ops rather than a device with special cases, which is the difference
+ * #1893 asked for. The incumbent recognises an insert by where it sits in a
+ * chain and wires it accordingly; the plan already has ops that consume a
+ * signal and ops that produce one, and an insert is one of each.
+ *
+ * What that buys is the alignment. The return op declares the round trip when
+ * the plan is prepared, exactly as a device declares its latency, and the same
+ * pass compensates it: a chain with an insert in it lines up with a chain
+ * without one because nothing here knows what an insert is. There is no
+ * insert-shaped code in the latency pass and there is not meant to be.
+ *
+ * A half configured insert is reported rather than guessed at. An end with a
+ * type and no device named it is an insert somebody started and did not finish,
+ * and an end with no type at all is a signal that carries on past it untouched:
+ * either way the diagnostic is what makes the difference visible instead of the
+ * chain quietly going somewhere or quietly going nowhere.
+ */
+ChainSignal Compiler::emitInsert(const DeviceInfo& device, const ChainSite& site,
+                                 ChainSignal signal) {
+    const auto& config = device.insert;
+
+    const auto where = [&] {
+        return "insert " + std::to_string(device.id) + " on track " + std::to_string(site.trackId);
+    };
+
+    const auto named = [&](InsertConfig::Endpoint type, const juce::String& name, const char* end) {
+        if (type == InsertConfig::Endpoint::None || name.isNotEmpty())
+            return;
+
+        diagnose(where() + ": the " + end + " names no hardware device, so nothing " +
+                 (std::string(end) == "send" ? "leaves the machine" : "comes back"));
+    };
+
+    named(config.sendType, config.sendDevice, "send");
+    named(config.returnType, config.returnDevice, "return");
+
+    OpKey key{site.trackId,       site.rackId, site.chainId, device.id,
+              OpRole::InsertSend, 0,           site.segment};
+
+    // The send, which is a sink: what it writes leaves the machine, so it
+    // declares no output and nothing downstream reads it. Both inputs are
+    // always present as slots and either may be unconnected, because the two
+    // configurations that matter differ in exactly that -- an external effect
+    // sends audio and no MIDI, an external instrument the reverse -- and a
+    // variadic arity would make which slot is which a question about the
+    // configuration rather than about the op.
+    const auto audioOut =
+        config.sendType == InsertConfig::Endpoint::Audio ? signal.audio : noInput();
+    const auto midiOut = config.sendType == InsertConfig::Endpoint::MIDI ? signal.midi : noInput();
+    addOp(OpKind::InsertSend, key, alignInputs(key, OpKind::InsertSend, {audioOut, midiOut}), {});
+
+    // And the return, which is a source. Its ports are declared from what the
+    // insert says comes back rather than from what it was sent: an external
+    // instrument is fed MIDI and answers with audio, so the two ends are not
+    // the same shape and never were.
+    ChainSignal out = signal;
+
+    if (config.returnType == InsertConfig::Endpoint::None) {
+        // A send with nothing coming back. The chain carries on with what it
+        // had, which is the failure that leaves a person still hearing their
+        // track, and the diagnostic is what stops that reading as an insert
+        // that worked.
+        if (config.sendType != InsertConfig::Endpoint::None)
+            diagnose(where() +
+                     ": sends but declares no return, so the chain carries on with the signal it "
+                     "already had and nothing the hardware did is heard");
+
+        return out;
+    }
+
+    std::vector<PortDesc> outputs;
+    const bool returnsAudio = config.returnType == InsertConfig::Endpoint::Audio;
+    outputs.push_back(returnsAudio ? PortDesc{SignalKind::Audio, 2} : PortDesc{SignalKind::Midi});
+
+    key.role = OpRole::InsertReturn;
+    const auto returnOp = addOp(OpKind::InsertReturn, key, {}, std::move(outputs));
+
+    // What comes back replaces what went out, for the end it came back on. The
+    // other end of the chain is untouched: an external instrument is handed the
+    // chain's MIDI and answers with audio, and the MIDI carries on past it the
+    // way it carries on past any instrument.
+    //
+    // Audio that never left carries on too, beside the return, the way an
+    // instrument's output is added to the bus: a clip bounced in place on an
+    // external instrument's track is heard (#2279).
+    const PortRef returned{returnOp, 0};
+    if (returnsAudio && config.sendType != InsertConfig::Endpoint::Audio && signal.audio.valid()) {
+        key.role = OpRole::DeviceInject;
+        out.audio = emitMix(key, {signal.audio, returned});
+    } else if (returnsAudio) {
+        out.audio = returned;
+    } else {
+        out.midi = returned;
+    }
+
+    return out;
+}
+
 ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site,
                                  ChainSignal signal) {
+    // An insert is not a device in the plan (#2245). Ahead of the bypass check
+    // below because bypass means the same thing for both and is handled the
+    // same way: the pair is simply not emitted, and the chain flows past.
+    if (device.insert.isActive() && !device.bypassed)
+        return emitInsert(device, site, signal);
+
     // A multi-out instrument declares a port for every pair it has past the
     // main one, opened or not, so that a port's position is its pair number and
     // the device never has to ask what is being listened to. Which of them a
@@ -687,13 +1122,27 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
 
     PortRef sidechainIn;
     if (device.sidechain.type == SidechainConfig::Type::Audio && device.sidechain.isActive()) {
-        const auto source = trackSidechainTap_.find(device.sidechain.sourceTrackId);
-        if (source != trackSidechainTap_.end())
-            sidechainIn = source->second;
-        else
+        // Two points on the source track, the same two a modifier chooses
+        // between: pre-FX is what the track played, post-fader is what it
+        // sends, and riding the source fader is the whole difference. The
+        // compiler keeps them apart already (#2329).
+        const auto preFx = device.sidechain.tapPoint == ModTapPoint::PreFx;
+        const auto& points = preFx ? trackTriggerTap_ : trackSidechainTap_;
+        const auto source = points.find(device.sidechain.sourceTrackId);
+        if (source != points.end()) {
+            // The key's trim, on the edge rather than inside the device.
+            // Emitted wherever a key is connected, so moving it is a value and
+            // never a recompile.
+            const OpKey gainKey{
+                site.trackId, site.rackId, site.chainId, device.id, OpRole::DeviceSidechainGain, 0,
+                site.segment};
+            sidechainIn =
+                PortRef{addOp(OpKind::Gain, gainKey, {source->second}, {SignalKind::Audio}), 0};
+        } else {
             diagnose("device " + std::to_string(device.id) + " on track " +
                      std::to_string(site.trackId) + ": audio sidechain source track " +
                      std::to_string(device.sidechain.sourceTrackId) + " is not routed");
+        }
     }
 
     const auto producesMidi = node.outputsPluginMidi();
@@ -701,17 +1150,37 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
     // Channel widths, read off the plugin the way RackSyncManager reads them.
     // A transparent tap keeps full stereo: its output is its input, so
     // narrowing it would narrow the chain rather than the device.
-    const bool transparent = isTransparentTap(device);
+    const bool transparent = device.isTransparentTap();
     const bool injector = !transparent && node.injectsAudio();
-    const auto inputWidth = transparent ? 2
-                            : injector  ? 0
-                                        : std::clamp(device.audioInputChannels, 0, 2);
-    const auto outputWidth = transparent ? 2 : std::clamp(device.audioOutputChannels, 0, 2);
+
+    // An external plugin is handed the bus and adapts its own channels, and
+    // that is not a width the plan gets an opinion about (#2246).
+    //
+    // The adaptation is arithmetic rather than routing, and it is the fork's:
+    // a stereo bus into a mono plugin is averaged, a mono bus into a stereo one
+    // is duplicated, and a mono plugin's output is spread back over both sides.
+    // EngineExternalDevice reproduces every step of it, because every project
+    // hosting a plugin that is not stereo was mixed against it.
+    //
+    // Narrowing the port first defeats that. The device would be handed the
+    // left channel of the bus and the average would never be taken -- the
+    // arithmetic would still be in the adapter, unreachable, and a mono plugin
+    // would render one side of a project the fork renders both sides of.
+    const bool adaptsItsOwnChannels = device.format != PluginFormat::Internal;
+
+    // The injector test still comes first: an instrument reads no bus in either
+    // engine, and being external does not give it one to adapt.
+    const auto inputWidth = transparent            ? 2
+                            : injector             ? 0
+                            : adaptsItsOwnChannels ? 2
+                                                   : std::clamp(device.audioInputChannels, 0, 2);
+    const auto outputWidth =
+        transparent || adaptsItsOwnChannels ? 2 : std::clamp(device.audioOutputChannels, 0, 2);
 
     std::vector<PortDesc> outputs{
         PortDesc{SignalKind::Audio, static_cast<std::uint8_t>(outputWidth)}};
     if (producesMidi)
-        outputs.push_back(SignalKind::Midi);
+        outputs.emplace_back(SignalKind::Midi);
 
     // The further pairs are ports on the same op, after the main audio and any
     // MIDI. They carry the device's raw output: the slot's gain trim and meter
@@ -720,9 +1189,9 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
     // width is what pair p + 1 declares; pair 0 is the main output.
     const auto firstMultiOutPort = static_cast<int>(outputs.size());
     for (int pair = 0; pair < multiOutPairCount; ++pair) {
-        const auto& declared = device.multiOut.outputPairs[static_cast<std::size_t>(pair + 1)];
-        outputs.push_back(
-            {SignalKind::Audio, static_cast<std::uint8_t>(std::clamp(declared.numChannels, 0, 2))});
+        const auto& declared = device.multiOut.outputPairs[static_cast<std::size_t>(pair) + 1];
+        outputs.emplace_back(SignalKind::Audio,
+                             static_cast<std::uint8_t>(std::clamp(declared.numChannels, 0, 2)));
     }
 
     // Only a device that reads the bus is connected to it.
@@ -870,7 +1339,8 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
                              OpRole::RackFader, 0,       site.segment};
         const PortRef faded{
             addOp(OpKind::Fader, faderKey, {signal.audio, noInput()}, {SignalKind::Audio}), 0};
-        return {emitRackDelta(site, rack.id, faded, signal.audio), signal.midi};
+        return {emitRackMeter(site, rack.id, emitRackDelta(site, rack.id, faded, signal.audio)),
+                signal.midi};
     }
 
     std::vector<PortRef> chainAudio;
@@ -913,7 +1383,7 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
                              OpRole::RackChainFader, 0,       site.segment};
         std::vector<PortDesc> faderOutputs{SignalKind::Audio};
         if (generatesMidi)
-            faderOutputs.push_back(SignalKind::Midi);
+            faderOutputs.emplace_back(SignalKind::Midi);
 
         const auto faderOp =
             addOp(OpKind::Fader, faderKey,
@@ -935,6 +1405,7 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
                          OpRole::RackFader, 0,       site.segment};
     out.audio = PortRef{addOp(OpKind::Fader, faderKey, {mixed, noInput()}, {SignalKind::Audio}), 0};
     out.audio = emitRackDelta(site, rack.id, out.audio, signal.audio);
+    out.audio = emitRackMeter(site, rack.id, out.audio);
 
     if (chainMidi.empty()) {
         out.midi = signal.midi;
@@ -947,6 +1418,154 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
             PortRef{addOp(OpKind::MergeMidi, midiKey,
                           alignInputs(midiKey, OpKind::MergeMidi, chainMidi), {SignalKind::Midi}),
                     0};
+    }
+
+    return out;
+}
+
+/// A pad-per-chain device, expanded the way a rack is.
+///
+/// The device itself never becomes an op. Its pads are chains, and each one is
+/// an instrument chain: it reads no audio, takes the notes its range claims, and
+/// what it makes is summed with its siblings. That is what lets a Drum Grid
+/// render under an engine that cannot host one.
+ChainSignal Compiler::emitPadRack(const DeviceInfo& device, const ChainSite& site,
+                                  ChainSignal signal) {
+    const auto& pads = *device.pads.get();
+
+    if (device.bypassed)
+        return signal;
+
+    // Keyed by the bus each pad plays out of. Bus 0 is the device's own output
+    // and flows on down the chain; the rest are output pairs a multi-out track
+    // reads, the way an instrument's further pairs are.
+    std::map<int, std::vector<PortRef>> busAudio;
+
+    for (const auto& pad : pads.chains) {
+        if (pad.bypassed)
+            continue;
+
+        const ChainSite padSite{site.trackId, pads.id, pad.id, site.segment};
+
+        // A pad plugin's DeviceId arrives when the Drum Grid restores it, so a
+        // project that has not been opened since carries none. Two such devices
+        // in one pad would key the same op, and a plan that does not validate
+        // costs the whole project rather than the pad.
+        const auto unkeyable = std::ranges::find_if(pad.elements, [](const ChainElement& element) {
+            return isDevice(element) && getDevice(element).id == INVALID_DEVICE_ID;
+        });
+        if (unkeyable != pad.elements.end()) {
+            diagnose("device " + std::to_string(device.id) + " on track " +
+                     std::to_string(site.trackId) + " pad " + std::to_string(pad.id) +
+                     ": a plugin has no device id, so the pad is not compiled");
+            continue;
+        }
+
+        // The pad's own notes, transposed onto its root. A pad with no range
+        // takes everything, which is what a plain parallel chain does.
+        PortRef padMidi = signal.midi;
+        if (padMidi.valid() && !pad.answersToEveryNote()) {
+            const OpKey gateKey{site.trackId,        pads.id, pad.id,      device.id,
+                                OpRole::PadNoteGate, 0,       site.segment};
+            const auto gateOp = addOp(OpKind::MidiNoteGate, gateKey, {padMidi}, {SignalKind::Midi});
+            auto& gate = plan_.ops[static_cast<std::size_t>(gateOp)];
+            gate.noteGateLow = static_cast<std::uint8_t>(std::clamp(pad.lowNote, 0, 127));
+            gate.noteGateHigh = static_cast<std::uint8_t>(std::clamp(pad.highNote, 0, 127));
+            gate.noteGateTranspose =
+                static_cast<std::int8_t>(std::clamp(pad.rootNote - pad.lowNote, -127, 127));
+            padMidi = PortRef{gateOp, 0};
+        }
+
+        // No audio in: a pad generates rather than processes, so the bus flows
+        // past it the way it flows past an instrument.
+        const auto padOut = emitElements(pad.elements, padSite, ChainSignal{noInput(), padMidi});
+
+        // Keyed with the device that owns the pad, so the executor can reach its
+        // parameters. A rack's own chain faders carry no device id, so the two
+        // never collide.
+        const OpKey faderKey{site.trackId,           pads.id, pad.id,      device.id,
+                             OpRole::RackChainFader, 0,       site.segment};
+        const auto faderOp = addOp(OpKind::Fader, faderKey,
+                                   alignInputs(faderKey, OpKind::Fader, {padOut.audio, noInput()}),
+                                   {SignalKind::Audio});
+
+        // A pad's level and pan are the Drum Grid's own parameters, so a lane, a
+        // macro or a modifier over them has to reach this fader.
+        //
+        // By the pad's slot, which is its bottom note, and NOT by its chain id:
+        // the device reaches these parameters the same way, and the two differ
+        // whenever pads were not made in note order. Resolved by stable id from
+        // there, so a device that declares none binds nothing and keeps the
+        // published value.
+        if (const auto slot = padParameterSlot(pad); slot >= 0) {
+            auto& fader = plan_.ops[static_cast<std::size_t>(faderOp)];
+            fader.padLevelParam = device.paramIndexFor("padLevel" + std::to_string(slot));
+            fader.padPanParam = device.paramIndexFor("padPan" + std::to_string(slot));
+        }
+
+        busAudio[pad.outputIndex].push_back(PortRef{faderOp, 0});
+    }
+
+    // The pairs a multi-out track claimed from this device, the same map an
+    // instrument's further outputs are read through.
+    const auto targets = multiOutTargets_.find({site.trackId, device.id});
+
+    for (const auto& [bus, audio] : busAudio) {
+        if (bus == 0 || audio.empty())
+            continue;
+
+        // Mixed per bus, and keyed on the bus so two of them are two ops.
+        const OpKey busKey{site.trackId,    pads.id, INVALID_CHAIN_ID, INVALID_DEVICE_ID,
+                           OpRole::RackMix, bus,     site.segment};
+        const auto mixed = emitMix(busKey, audio);
+
+        const auto* claimed = targets == multiOutTargets_.end() ? nullptr : &targets->second;
+        const auto target =
+            claimed == nullptr ? std::map<int, TrackId>::const_iterator{} : claimed->find(bus);
+        if (claimed == nullptr || target == claimed->end()) {
+            // No track opened this pair, which is what the current engine does
+            // with a pin no RackInstance was made for. Reported rather than
+            // folded into the main mix: the model says these pads play
+            // somewhere else, and mixing them into the device's own output
+            // would render a project nobody saved.
+            diagnose("device " + std::to_string(device.id) + " on track " +
+                     std::to_string(site.trackId) + ": bus " + std::to_string(bus) +
+                     " reaches no track, the pads on it are silent");
+            continue;
+        }
+
+        pendingInputs_[target->second].push_back(mixed);
+    }
+
+    const auto main = busAudio.find(0);
+    if (main == busAudio.end() || main->second.empty())
+        return signal;
+
+    const OpKey mixKey{site.trackId,    pads.id, INVALID_CHAIN_ID, INVALID_DEVICE_ID,
+                       OpRole::RackMix, 0,       site.segment};
+    auto wet = emitMix(mixKey, main->second);
+
+    // The device's own slot controls. An expanded Drum Grid is still a device in
+    // the chain, so the gain and meter its slot carries have to sit where every
+    // other instrument's do: on what the device made, before it reaches the bus.
+    // Keyed where the device is, not where its pads are: these belong to the
+    // Drum Grid's own slot, and the value layer resolves a device id against the
+    // chain the device sits in.
+    OpKey slotKey{site.trackId,       site.rackId, site.chainId, device.id,
+                  OpRole::DeviceGain, 0,           site.segment};
+    wet = PortRef{addOp(OpKind::Gain, slotKey, {wet}, {SignalKind::Audio}), 0};
+
+    if (options_.deviceMeters) {
+        slotKey.role = OpRole::DeviceMeter;
+        wet = PortRef{addOp(OpKind::Meter, slotKey, {wet}, {SignalKind::Audio}), 0};
+    }
+
+    ChainSignal out = signal;
+    if (signal.audio.valid()) {
+        slotKey.role = OpRole::DeviceInject;
+        out.audio = emitMix(slotKey, {signal.audio, wet});
+    } else {
+        out.audio = wet;
     }
 
     return out;
@@ -967,7 +1586,8 @@ ChainSignal Compiler::emitElements(const std::vector<ChainElement>& elements, co
         if (isDevice(element)) {
             const auto& device = getDevice(element);
             endsTheSearch = !device.bypassed && device.isInstrument;
-            signal = emitDevice(device, site, signal);
+            signal =
+                device.pads ? emitPadRack(device, site, signal) : emitDevice(device, site, signal);
         } else if (isRack(element)) {
             const auto& rack = getRack(element);
             endsTheSearch = !rack.bypassed && rackHasInstrument(rack, nesting_);
@@ -1000,39 +1620,36 @@ void Compiler::emitTrack(const TrackInfo& track) {
     // track has its insert chain powered off, is silent for the same reason
     // everything else on that chain is.
 
-    // Freeze is structural: the current engine renders the track, disables its
-    // plugins and plays the render back. Compiling the live chain both diverges
-    // from that output and throws away the CPU saving that is the whole point.
-    // Named rather than half-implemented, because the real shape (a source op
-    // reading the freeze file, device ops skipped) needs its op key decided
-    // first so unfreezing carries state sanely.
-    if (track.frozen)
-        diagnose("track " + std::to_string(track.id) +
-                 ": freeze is not compiled yet, the live chain is planned instead of the "
-                 "rendered freeze file");
-
+    // The frozen flag is not read here: live playback hands in a frozen track
+    // already cut to its file (TrackFreeze.hpp), and a render wants the live chain.
     std::vector<PortRef> audioSources;
     if (carriesClips(track)) {
         const OpKey key{track.id,          INVALID_RACK_ID,   INVALID_CHAIN_ID,
                         INVALID_DEVICE_ID, OpRole::ClipAudio, 0};
+        // The session plays through the same op, so putting a clip in a scene no more
+        // recompiles a plan than dropping one on the timeline does (#2301).
         audioSources.push_back(PortRef{addOp(OpKind::ClipAudio, key, {}, {SignalKind::Audio}), 0});
     }
 
-    // Input reaches a track only while it is monitoring or armed, whether it
-    // comes from hardware or from another track. Both forms go through the
-    // input path in the current engine, so both are gated the same way, and
-    // the gate lives in activeAudioInputRoute so ordering agrees with this.
-    switch (const auto route = activeAudioInputRoute(track); route.kind) {
+    // Every input a track names is compiled, and the monitor switch is a value
+    // on the gate it arrives through rather than a shape: flipping it publishes
+    // values and rebuilds nothing (#2612).
+    switch (const auto route = audioInputRoute(track); route.kind) {
         case RouteKind::Track: {
             // An internal route carries the source track's post-mute output.
             // Nothing about it is live, so liveness is left to propagate from
             // the source rather than asserted here.
-            if (const auto source = trackRoutedOutput_.find(route.trackId);
-                source != trackRoutedOutput_.end())
-                audioSources.push_back(source->second);
-            else
+            if (const auto carried = carriedRoutes_.find(track.id);
+                carried != carriedRoutes_.end()) {
+                audioSources.push_back(
+                    emitInputRouteGate(track.id, 0, emitFeedbackReturn(carried->second)));
+            } else if (const auto source = trackRoutedOutput_.find(route.trackId);
+                       source != trackRoutedOutput_.end()) {
+                audioSources.push_back(emitInputRouteGate(track.id, 0, source->second));
+            } else {
                 diagnose("track " + std::to_string(track.id) + ": audio input track " +
                          std::to_string(route.trackId) + " is not compiled, input not connected");
+            }
             break;
         }
         case RouteKind::Malformed:
@@ -1045,7 +1662,16 @@ void Compiler::emitTrack(const TrackInfo& track) {
                             INVALID_DEVICE_ID, OpRole::LiveAudioInput, 0};
             const auto op = addOp(OpKind::AudioInput, key, {}, {SignalKind::Audio});
             plan_.ops[static_cast<std::size_t>(op)].liveness = LivenessDomain::Live;
-            audioSources.push_back(PortRef{op, 0});
+
+            // What the track is hearing, which the incumbent reads off the
+            // input device rather than off the signal (#2463). Here it is the
+            // input op's own output, ahead of the gate, so a track that is
+            // recording without monitoring still meters what it records.
+            const auto meter = addOp(OpKind::Meter, liveInputMeterKey(track.id), {PortRef{op, 0}},
+                                     {SignalKind::Audio});
+            plan_.ops[static_cast<std::size_t>(meter)].liveness = LivenessDomain::Live;
+
+            audioSources.push_back(emitLiveInputGate(track.id, PortRef{meter, 0}));
             break;
         }
         case RouteKind::None:
@@ -1070,21 +1696,41 @@ void Compiler::emitTrack(const TrackInfo& track) {
     triggerTapFound_ = false;
 
     std::vector<PortRef> midiSources;
-    if (carriesClips(track) && (chainConsumesMidi(track) || midiSourceTracks_.contains(track.id))) {
+    const auto readsMidi =
+        carriesClips(track) && (chainConsumesMidi(track) || midiSourceTracks_.contains(track.id));
+    if (readsMidi) {
         const OpKey key{track.id,          INVALID_RACK_ID,  INVALID_CHAIN_ID,
                         INVALID_DEVICE_ID, OpRole::ClipMidi, 0};
         midiSources.push_back(PortRef{addOp(OpKind::ClipMidi, key, {}, {SignalKind::Midi}), 0});
+
+        const OpKey sessionKey{track.id,          INVALID_RACK_ID,     INVALID_CHAIN_ID,
+                               INVALID_DEVICE_ID, OpRole::SessionMidi, 0};
+        midiSources.push_back(
+            PortRef{addOp(OpKind::SessionMidi, sessionKey, {}, {SignalKind::Midi}), 0});
     }
-    switch (const auto route = activeMidiInputRoute(track); route.kind) {
+    // One live input op per track, whatever else is routed to it: a preview is
+    // queued under the track's own audition source, and the store keys live
+    // inputs by TrackId, so a second op here would be a second binding to one
+    // object (CompileOptions::auditionMidi, #2579). A named device compiles one
+    // whether or not the track monitors it; the live routing snapshot decides
+    // what it reads (#2612).
+    const auto route = midiInputRoute(track);
+    if (route.kind == RouteKind::External || (options_.auditionMidi && readsMidi))
+        midiSources.push_back(emitLiveMidiInput(track.id));
+
+    switch (route.kind) {
         case RouteKind::Track: {
             // An internal MIDI route delivers the source track's incoming MIDI,
             // not what its own chain made of it.
-            if (const auto source = trackMidiInput_.find(route.trackId);
-                source != trackMidiInput_.end())
-                midiSources.push_back(source->second);
-            else
+            if (refusedMidiRoutes_.contains(track.id)) {
+                // Reported where the loop was found.
+            } else if (const auto source = trackMidiInput_.find(route.trackId);
+                       source != trackMidiInput_.end()) {
+                midiSources.push_back(emitInputRouteGate(track.id, 1, source->second));
+            } else {
                 diagnose("track " + std::to_string(track.id) + ": MIDI input track " +
                          std::to_string(route.trackId) + " produces no MIDI, input not connected");
+            }
             break;
         }
         case RouteKind::Malformed:
@@ -1092,14 +1738,7 @@ void Compiler::emitTrack(const TrackInfo& track) {
                      track.midiInputDevice.toStdString() +
                      "' does not name a track, input not connected");
             break;
-        case RouteKind::External: {
-            const OpKey key{track.id,          INVALID_RACK_ID,       INVALID_CHAIN_ID,
-                            INVALID_DEVICE_ID, OpRole::LiveMidiInput, 0};
-            const auto op = addOp(OpKind::MidiInput, key, {}, {SignalKind::Midi});
-            plan_.ops[static_cast<std::size_t>(op)].liveness = LivenessDomain::Live;
-            midiSources.push_back(PortRef{op, 0});
-            break;
-        }
+        case RouteKind::External:
         case RouteKind::None:
             break;
     }
@@ -1159,7 +1798,7 @@ void Compiler::emitTrack(const TrackInfo& track) {
     auto emitSends = [&](bool preFader, PortRef source) {
         for (std::size_t slot = 0; slot < track.sends.size(); ++slot) {
             const auto& send = track.sends[slot];
-            if (send.preFader != preFader)
+            if (!send.enabled || send.preFader != preFader)
                 continue;
 
             const auto destination = resolveSendDestination(send);
@@ -1205,9 +1844,7 @@ void Compiler::emitTrack(const TrackInfo& track) {
 
     emitSends(false, out);
 
-    const OpKey meterKey{track.id,          INVALID_RACK_ID,    INVALID_CHAIN_ID,
-                         INVALID_DEVICE_ID, OpRole::TrackMeter, 0};
-    out = PortRef{addOp(OpKind::Meter, meterKey, {out}, {SignalKind::Audio}), 0};
+    out = PortRef{addOp(OpKind::Meter, trackMeterKey(track.id), {out}, {SignalKind::Audio}), 0};
     trackSidechainTap_[track.id] = out;
 
     const OpKey muteKey{track.id,          INVALID_RACK_ID,   INVALID_CHAIN_ID,
@@ -1232,6 +1869,30 @@ void Compiler::emitTrack(const TrackInfo& track) {
                  track.audioOutputDevice.toStdString() +
                  "' does not name a track, summed into the master instead");
         pendingInputs_[master_.id].push_back(out);
+        return;
+    }
+
+    const auto outputRoute = parseTrackRoute(track.audioOutputDevice);
+    if (outputRoute.kind == RouteKind::External && track.audioOutputDevice.isNotEmpty() &&
+        track.audioOutputDevice != "master") {
+        const auto name = track.audioOutputDevice.toStdString();
+        const auto found = options_.hardwareOutputs.find(name);
+        if (found == options_.hardwareOutputs.end()) {
+            diagnose("track " + std::to_string(track.id) + ": hardware output '" + name +
+                     "' is unavailable, output is silent");
+            return;
+        }
+        if (!found->second.valid()) {
+            diagnose("track " + std::to_string(track.id) + ": hardware output '" + name +
+                     "' has invalid callback channels, output is silent");
+            return;
+        }
+
+        const OpKey outputKey{track.id,          INVALID_RACK_ID,        INVALID_CHAIN_ID,
+                              INVALID_DEVICE_ID, OpRole::HardwareOutput, 0};
+        const auto output = addOp(OpKind::Output, outputKey, {out}, {});
+        plan_.ops[static_cast<std::size_t>(output)].hardwareOutput = found->second;
+        plan_.outputOps.push_back(output);
         return;
     }
 
@@ -1300,10 +1961,10 @@ RenderPlan Compiler::run() {
     // nothing in its own chain consumes it, so this is collected up front.
     for (const auto& track : tracks_) {
         collectSidechainSources(track, SidechainConfig::Type::MIDI, midiSourceTracks_);
-        // Gated the same way the route itself is: an unmonitored route reads
-        // nothing, so making its source compile MIDI ops would leave ops in the
-        // plan that no one reads.
-        if (const auto route = activeMidiInputRoute(track); route.namesTrack())
+        // Ungated on purpose: reading the monitor here would let one track's
+        // switch decide whether another track compiles MIDI ops at all (#2612).
+        // A MIDI sidechain and a note-triggered modifier already work this way.
+        if (const auto route = midiInputRoute(track); route.namesTrack())
             midiSourceTracks_.insert(route.trackId);
     }
     collectSidechainSources(master_, SidechainConfig::Type::MIDI, midiSourceTracks_);
@@ -1377,7 +2038,9 @@ RenderPlan Compiler::run() {
         emitTrack(*track);
     emitTrack(master_);
 
+    emitFeedbackSends();
     emitModulationTaps();
+    settleCarryLiveness();
 
     // Anything still queued belongs to a track that was compiled before its
     // source, which only happens when a routing cycle was broken above.

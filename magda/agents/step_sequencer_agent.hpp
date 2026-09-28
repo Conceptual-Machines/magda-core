@@ -73,7 +73,7 @@ class StepSequencerAgent {
     /** Parse a JSON string into a Preset. Returns empty Preset + sets
      *  outError on malformed input. Tolerant of LLM markdown fences
      *  ("```json ... ```") around the payload. */
-    Preset parseJson(const juce::String& text, std::string& outError);
+    static Preset parseJson(const juce::String& text, std::string& outError);
 
     std::atomic<bool> shouldStop_{false};
 };

@@ -4,7 +4,7 @@
 
 #include "audio/plugins/compiled/MagdaUtilityCompiledPlugin.hpp"
 #include "ui/components/mixer/LevelMeterScale.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui {
@@ -35,7 +35,7 @@ juce::String formatGainDb(double value) {
 void styleNameLabel(juce::Label& label, const juce::String& text) {
     label.setText(text, juce::dontSendNotification);
     label.setFont(juce::Font(juce::FontOptions{9.0f}));
-    label.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    label.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     label.setJustificationType(juce::Justification::centred);
     label.setMinimumHorizontalScale(0.72f);
     label.setInterceptsMouseClicks(false, false);
@@ -43,7 +43,7 @@ void styleNameLabel(juce::Label& label, const juce::String& text) {
 
 void styleReadoutLabel(juce::Label& label) {
     label.setFont(juce::Font(juce::FontOptions{10.0f}));
-    label.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    label.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     label.setJustificationType(juce::Justification::centred);
     label.setMinimumHorizontalScale(0.72f);
     label.setInterceptsMouseClicks(false, false);
@@ -53,7 +53,7 @@ void styleReadoutLabel(juce::Label& label) {
 CompiledUtilityView::CompiledUtilityView(juce::String /*pluginId*/) {
     using Util = magda::daw::audio::compiled::MagdaUtilityCompiledPlugin;
 
-    const auto fillColour = DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL);
+    const auto fillColour = ActiveTheme::getColour(ActiveTheme::CONTROL_VALUE_FILL);
 
     gainFader_.setRange(-60.0, 12.0, 0.0);
     gainFader_.setValue(0.0, juce::dontSendNotification);
@@ -115,10 +115,10 @@ CompiledUtilityView::CompiledUtilityView(juce::String /*pluginId*/) {
     addAndMakeVisible(widthName_);
     addAndMakeVisible(xoverName_);
 
-    const auto surface = DarkTheme::getColour(DarkTheme::SURFACE);
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION);
-    const auto inactive = DarkTheme::getSecondaryTextColour();
-    const auto bg = DarkTheme::getColour(DarkTheme::BACKGROUND);
+    const auto surface = ActiveTheme::getColour(ActiveTheme::SURFACE);
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION);
+    const auto inactive = ActiveTheme::getSecondaryTextColour();
+    const auto bg = ActiveTheme::getColour(ActiveTheme::BACKGROUND);
 
     for (int i = 0; i < 4; ++i) {
         auto& btn = btns_[static_cast<size_t>(i)];
@@ -166,14 +166,10 @@ void CompiledUtilityView::updateFromDevice(const magda::DeviceInfo& device,
 }
 
 void CompiledUtilityView::writeParameter(int slotIndex, float displayValue) {
-    if (compiledPlugin_ != nullptr) {
-        if (auto* param = compiledPlugin_->getSlotParameter(slotIndex)) {
-            const float normalized =
-                compiledPlugin_->displayValueToNativeValue(slotIndex, displayValue);
-            param->setParameterFromHost(normalized, juce::sendNotificationSync);
-        }
-    }
-
+    // Through the model, like every other parameter edit in the chain. The
+    // device's own value is a mirror the host pushes into before each block, so
+    // writing it here would be overwritten by the next one and would skip
+    // automation, undo and the macro links on the way (#2192).
     if (onParameterChanged)
         onParameterChanged(slotIndex, displayValue);
 }
@@ -206,23 +202,24 @@ void CompiledUtilityView::configureLinkSlots() {
         slot.setParamIndex(slotIndex);
         slot.setParamName(name);
 
-        slot.onModLinkedWithAmount = [this](int, magda::ControlTarget target, float amount) {
+        slot.onModLinkedWithAmount = [this](int, const magda::ControlTarget& target, float amount) {
             if (onLinkRequested)
                 onLinkRequested(target.paramIndex, amount);
         };
-        slot.onModAmountChanged = [this](int, magda::ControlTarget target, float amount) {
+        slot.onModAmountChanged = [this](int, const magda::ControlTarget& target, float amount) {
             if (onLinkAmountChanged)
                 onLinkAmountChanged(target.paramIndex, amount);
         };
-        slot.onMacroLinked = [this](int, magda::ControlTarget target) {
+        slot.onMacroLinked = [this](int, const magda::ControlTarget& target) {
             if (onLinkRequested)
                 onLinkRequested(target.paramIndex, 0.3f);
         };
-        slot.onMacroLinkedWithAmount = [this](int, magda::ControlTarget target, float amount) {
+        slot.onMacroLinkedWithAmount = [this](int, const magda::ControlTarget& target,
+                                              float amount) {
             if (onLinkRequested)
                 onLinkRequested(target.paramIndex, amount);
         };
-        slot.onMacroAmountChanged = [this](int, magda::ControlTarget target, float amount) {
+        slot.onMacroAmountChanged = [this](int, const magda::ControlTarget& target, float amount) {
             if (onLinkAmountChanged)
                 onLinkAmountChanged(target.paramIndex, amount);
         };
@@ -289,7 +286,7 @@ void CompiledUtilityView::updateLinkSlotValues() {
 
     auto update = [this](ParamSlotComponent& slot, int slotIndex, float fallback, bool& infoSet) {
         if (!infoSet) {
-            if (auto* param = parameterForSlot(deviceSnapshot_, slotIndex)) {
+            if (const auto* param = parameterForSlot(deviceSnapshot_, slotIndex)) {
                 infoSet = true;
                 slot.setParameterInfo(*param);
             }
@@ -386,9 +383,10 @@ void CompiledUtilityView::resized() {
     panLinkSlot_.toFront(false);
 }
 
-void CompiledUtilityView::bindPlugin(te::Plugin* plugin) {
+void CompiledUtilityView::bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) {
     compiledPlugin_ =
-        dynamic_cast<magda::daw::audio::compiled::MagdaUtilityCompiledPlugin*>(plugin);
+        std::dynamic_pointer_cast<magda::daw::audio::compiled::MagdaUtilityCompiledPlugin>(
+            std::move(device));
 }
 
 const CompiledPresentationSpec& getMagdaUtilityPresentation() {

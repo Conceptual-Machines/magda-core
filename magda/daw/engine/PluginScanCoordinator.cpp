@@ -35,11 +35,11 @@ PluginScanCoordinator::~PluginScanCoordinator() {
     workers_.clear();
 }
 
-juce::File PluginScanCoordinator::getScannerExecutable() const {
+juce::File PluginScanCoordinator::getScannerExecutable() {
     auto appBundle = juce::File::getSpecialLocation(juce::File::currentApplicationFile);
 
     juce::StringArray triedPaths;
-    auto tryCandidate = [&triedPaths](juce::File candidate) -> juce::File {
+    auto tryCandidate = [&triedPaths](const juce::File& candidate) -> juce::File {
         triedPaths.add(candidate.getFullPathName());
         return candidate.existsAsFile() ? candidate : juce::File();
     };
@@ -523,7 +523,7 @@ void PluginScanCoordinator::saveExclusions() {
     }
 }
 
-juce::File PluginScanCoordinator::getScanReportFile() const {
+juce::File PluginScanCoordinator::getScanReportFile() {
     return magda::paths::lastScanReportFile();
 }
 

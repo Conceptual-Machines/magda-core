@@ -41,7 +41,7 @@ TransformOutput applyMode(BindingMode mode, TransformInput input);
  * Exp:    y = expm1(x) / (e - 1)
  * SCurve: y = x * x * (3 - 2 * x)  (smoothstep)
  */
-float applyCurve(BindingCurve curve, float normalized);
+float applyCurve(BindingCurve curve, float x);
 
 /**
  * @brief Map a normalized-after-curve value into a BindingRange.
@@ -65,7 +65,7 @@ float applyRange(const BindingRange& range, float normalizedAfterCurve);
  * Every curve here is monotonic on [0,1], so each has one inverse and this is
  * total rather than a best effort.
  */
-float invertCurve(BindingCurve curve, float curved);
+float invertCurve(BindingCurve curve, float y);
 
 /**
  * @brief Recover the normalized-after-curve value that `applyRange` produced.

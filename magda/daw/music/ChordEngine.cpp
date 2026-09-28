@@ -1,9 +1,7 @@
 #include "ChordEngine.hpp"
 
 #include <algorithm>
-#include <cmath>
 #include <mutex>
-#include <set>
 
 namespace magda::music {
 
@@ -33,14 +31,14 @@ ChordEngine* ChordEngine::instance = nullptr;
 std::mutex ChordEngine::instanceMutex;
 
 ChordEngine& ChordEngine::getInstance() {
-    std::lock_guard<std::mutex> lock(instanceMutex);
+    std::scoped_lock lock(instanceMutex);
     if (instance == nullptr)
         instance = new ChordEngine();
     return *instance;
 }
 
 void ChordEngine::cleanup() {
-    std::lock_guard<std::mutex> lock(instanceMutex);
+    std::scoped_lock lock(instanceMutex);
     if (instance != nullptr) {
         delete instance;
         instance = nullptr;
@@ -92,8 +90,8 @@ ChordEngine::ChordEngine()
                   for (int& pitch : negativePitchClasses)
                       pitch = (pitch + 36) % 36;
 
-                  std::sort(positivePitchClasses.begin(), positivePitchClasses.end());
-                  std::sort(negativePitchClasses.begin(), negativePitchClasses.end());
+                  std::ranges::sort(positivePitchClasses);
+                  std::ranges::sort(negativePitchClasses);
 
                   allShapes.emplace(positivePitchClasses, ChordSpec(ChordRoot::C, quality, inv));
                   allShapes.emplace(negativePitchClasses, ChordSpec(ChordRoot::C, quality, inv));
@@ -107,9 +105,9 @@ ChordEngine::~ChordEngine() = default;
 
 // === CHORD DETECTION ===
 
-Chord ChordEngine::detect(const std::vector<ChordNote>& heldNotes) const {
+Chord ChordEngine::detect(const std::vector<ChordNote>& heldNotes) {
     if (heldNotes.empty())
-        return Chord("none");
+        return {"none"};
 
     if (heldNotes.size() < 2) {
         Chord chord("");
@@ -119,20 +117,19 @@ Chord ChordEngine::detect(const std::vector<ChordNote>& heldNotes) const {
 
     int actualBassNote = heldNotes[0].noteNumber;
     for (const auto& note : heldNotes)
-        if (note.noteNumber < actualBassNote)
-            actualBassNote = note.noteNumber;
+        actualBassNote = std::min(actualBassNote, note.noteNumber);
 
     std::vector<int> pitchClasses;
     for (const auto& note : heldNotes) {
         int pitchClass = note.noteNumber % 12;
-        if (std::find(pitchClasses.begin(), pitchClasses.end(), pitchClass) == pitchClasses.end())
+        if (!std::ranges::contains(pitchClasses, pitchClass))
             pitchClasses.push_back(pitchClass);
     }
 
     if (pitchClasses.size() < 2)
-        return Chord("unknown");
+        return {"unknown"};
 
-    std::sort(pitchClasses.begin(), pitchClasses.end());
+    std::ranges::sort(pitchClasses);
 
     if (pitchClasses.size() == 2) {
         int a = pitchClasses[0];
@@ -156,7 +153,7 @@ Chord ChordEngine::detect(const std::vector<ChordNote>& heldNotes) const {
     std::vector<ChordCandidate> candidates;
 
     for (int rootOffset = 0; rootOffset < 12; rootOffset++) {
-        ChordRoot candidateRoot = static_cast<ChordRoot>(rootOffset);
+        auto candidateRoot = static_cast<ChordRoot>(rootOffset);
 
         std::vector<ChordQuality> qualities = {
             ChordQuality::Major,     ChordQuality::Minor,     ChordQuality::Diminished,
@@ -169,21 +166,12 @@ Chord ChordEngine::detect(const std::vector<ChordNote>& heldNotes) const {
             auto intervals = ChordUtils::getChordIntervals(quality);
 
             std::vector<int> chordPitches;
+            chordPitches.reserve(intervals.size());
             for (int interval : intervals)
                 chordPitches.push_back((rootOffset + interval) % 12);
-            std::sort(chordPitches.begin(), chordPitches.end());
+            std::ranges::sort(chordPitches);
 
-            bool isExactMatch = false;
-            if (chordPitches.size() == pitchClasses.size()) {
-                bool matches = true;
-                for (size_t i = 0; i < chordPitches.size(); i++) {
-                    if (chordPitches[i] != pitchClasses[i]) {
-                        matches = false;
-                        break;
-                    }
-                }
-                isExactMatch = matches;
-            }
+            const bool isExactMatch = std::ranges::equal(chordPitches, pitchClasses);
 
             if (isExactMatch || !chordPitches.empty()) {
                 std::vector<int> intersection;
@@ -220,9 +208,7 @@ Chord ChordEngine::detect(const std::vector<ChordNote>& heldNotes) const {
                     } else {
                         for (size_t i = 0; i < intervals.size(); ++i) {
                             int chordTone = (rootOffset + intervals[i]) % 12;
-                            bool found = std::find(pitchClasses.begin(), pitchClasses.end(),
-                                                   chordTone) != pitchClasses.end();
-                            if (found) {
+                            if (std::ranges::contains(pitchClasses, chordTone)) {
                                 if (i == 0)
                                     weightedScore += 300;  // root
                                 else if (i == 1)
@@ -254,10 +240,7 @@ Chord ChordEngine::detect(const std::vector<ChordNote>& heldNotes) const {
         return chord;
     }
 
-    std::sort(candidates.begin(), candidates.end(),
-              [](const ChordCandidate& a, const ChordCandidate& b) {
-                  return a.matchScore > b.matchScore;
-              });
+    std::ranges::sort(candidates, std::ranges::greater{}, &ChordCandidate::matchScore);
 
     ChordCandidate best = candidates[0];
 
@@ -274,15 +257,13 @@ Chord ChordEngine::detect(const std::vector<ChordNote>& heldNotes) const {
         for (int interval : intervals) {
             int chordTone = (rootOffset + interval) % 12;
             idealPitchClasses.push_back(chordTone);
-            if (std::find(pitchClasses.begin(), pitchClasses.end(), chordTone) ==
-                pitchClasses.end())
+            if (!std::ranges::contains(pitchClasses, chordTone))
                 chord.missingIntervals.push_back(interval);
         }
 
         // Which input notes are not in the ideal chord?
         for (int pc : pitchClasses) {
-            if (std::find(idealPitchClasses.begin(), idealPitchClasses.end(), pc) ==
-                idealPitchClasses.end())
+            if (!std::ranges::contains(idealPitchClasses, pc))
                 chord.extraPitchClasses.push_back(pc);
         }
     }
@@ -366,7 +347,7 @@ Chord ChordEngine::detectPolychord(const std::vector<ChordNote>& notes) const {
                     Chord chord(label);
                     chord.notes = notes;
                     chord.name = label;
-                    chord.displayName = label;
+                    chord.displayName = std::move(label);
                     chord.root = static_cast<ChordRoot>(lowerPc);
                     chord.quality = lowerMinor ? ChordQuality::Minor : ChordQuality::Major;
                     chord.inversion = 0;
@@ -379,19 +360,19 @@ Chord ChordEngine::detectPolychord(const std::vector<ChordNote>& notes) const {
     return detect(notes);
 }
 
-bool ChordEngine::isPolychordCandidate(const std::vector<ChordNote>& notes) const {
+bool ChordEngine::isPolychordCandidate(const std::vector<ChordNote>& notes) {
     return notes.size() >= 6;
 }
 
 // === CHORD CREATION ===
 
-Chord ChordEngine::buildChordInRootPosition(ChordRoot root, ChordQuality quality,
-                                            int octave) const {
+Chord ChordEngine::buildChordInRootPosition(ChordRoot root, ChordQuality quality, int octave) {
     std::vector<int> intervals = ChordUtils::getChordIntervals(quality);
     std::vector<ChordNote> notes;
 
     int rootMidiNote = static_cast<int>(root) + ((octave + 1) * 12);
 
+    notes.reserve(intervals.size());
     for (int interval : intervals)
         notes.emplace_back(rootMidiNote + interval, 100);
 
@@ -399,7 +380,7 @@ Chord ChordEngine::buildChordInRootPosition(ChordRoot root, ChordQuality quality
     juce::String chordName = chordSpecToString(spec);
 
     Chord chord(chordName);
-    chord.notes = notes;
+    chord.notes = std::move(notes);
     return chord;
 }
 
@@ -407,39 +388,37 @@ std::vector<Chord> ChordEngine::buildChordInversions(ChordRoot root, ChordQualit
                                                      int octave) const {
     std::vector<Chord> inversions;
     int maxInv = getMaxInversions(quality);
+    inversions.reserve(maxInv);
     for (int inv = 0; inv < maxInv; ++inv)
         inversions.push_back(buildChordInversion(root, quality, inv, octave));
     return inversions;
 }
 
 Chord ChordEngine::buildChordInversion(ChordRoot root, ChordQuality quality, int inversion,
-                                       int octave) const {
+                                       int octave) {
     std::vector<int> intervals = ChordUtils::getChordIntervals(quality);
     std::vector<ChordNote> notes;
 
     const int rootMidiNote = static_cast<int>(root) + ((octave + 1) * 12);
 
-    for (size_t i = 0; i < intervals.size(); ++i)
-        notes.emplace_back(rootMidiNote + intervals[i], 100);
+    notes.reserve(intervals.size());
+    for (int interval : intervals)
+        notes.emplace_back(rootMidiNote + interval, 100);
 
     const int k = std::max(0, inversion);
     if (k > 0) {
-        std::sort(notes.begin(), notes.end(), [](const ChordNote& a, const ChordNote& b) {
-            return a.noteNumber < b.noteNumber;
-        });
+        std::ranges::sort(notes, {}, &ChordNote::noteNumber);
         const int limit = std::min(k, static_cast<int>(notes.size()) - 1);
         for (int i = 0; i < limit; ++i)
             notes[static_cast<size_t>(i)].noteNumber += 12;
-        std::sort(notes.begin(), notes.end(), [](const ChordNote& a, const ChordNote& b) {
-            return a.noteNumber < b.noteNumber;
-        });
+        std::ranges::sort(notes, {}, &ChordNote::noteNumber);
     }
 
     ChordSpec spec(root, quality, inversion);
     juce::String chordName = chordSpecToString(spec);
 
     Chord chord(chordName);
-    chord.notes = notes;
+    chord.notes = std::move(notes);
     return chord;
 }
 
@@ -466,13 +445,13 @@ juce::String ChordEngine::chordSpecToString(const ChordSpec& spec, bool includeI
 }
 
 std::vector<std::pair<juce::String, float>> ChordEngine::findChordsFromNotes(
-    const std::vector<int>& pitchClasses) const {
+    const std::vector<int>& pitchClasses) {
     std::vector<std::pair<juce::String, float>> results;
     if (pitchClasses.empty())
         return results;
 
     std::vector<int> sortedPitchClasses = pitchClasses;
-    std::sort(sortedPitchClasses.begin(), sortedPitchClasses.end());
+    std::ranges::sort(sortedPitchClasses);
 
     for (int rootOffset = 0; rootOffset < 12; rootOffset++) {
         std::vector<ChordQuality> qualities = {
@@ -485,9 +464,10 @@ std::vector<std::pair<juce::String, float>> ChordEngine::findChordsFromNotes(
         for (ChordQuality quality : qualities) {
             auto intervals = ChordUtils::getChordIntervals(quality);
             std::vector<int> chordPitches;
+            chordPitches.reserve(intervals.size());
             for (int interval : intervals)
                 chordPitches.push_back((rootOffset + interval) % 12);
-            std::sort(chordPitches.begin(), chordPitches.end());
+            std::ranges::sort(chordPitches);
 
             std::vector<int> intersection;
             std::set_intersection(chordPitches.begin(), chordPitches.end(),
@@ -502,7 +482,7 @@ std::vector<std::pair<juce::String, float>> ChordEngine::findChordsFromNotes(
                 unionSet.empty() ? 0.0 : static_cast<double>(intersection.size()) / unionSet.size();
 
             if (similarity >= 0.5) {
-                ChordRoot candidateRoot = static_cast<ChordRoot>(rootOffset);
+                auto candidateRoot = static_cast<ChordRoot>(rootOffset);
                 ChordSpec spec(candidateRoot, quality, 0);
                 juce::String chordName = chordSpecToString(spec, false);
                 results.emplace_back(chordName, static_cast<float>(similarity));
@@ -510,17 +490,14 @@ std::vector<std::pair<juce::String, float>> ChordEngine::findChordsFromNotes(
         }
     }
 
-    std::sort(results.begin(), results.end(),
-              [](const std::pair<juce::String, float>& a, const std::pair<juce::String, float>& b) {
-                  return a.second > b.second;
-              });
+    const auto similarityOf = [](const auto& result) { return result.second; };
+    std::ranges::sort(results, std::ranges::greater{}, similarityOf);
 
     return results;
 }
 
 void ChordEngine::finalizeChord(Chord& c) {
-    std::sort(c.notes.begin(), c.notes.end(),
-              [](const ChordNote& a, const ChordNote& b) { return a.noteNumber < b.noteNumber; });
+    std::ranges::sort(c.notes, {}, &ChordNote::noteNumber);
     if (c.notes.empty())
         return;
 

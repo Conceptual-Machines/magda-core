@@ -83,19 +83,18 @@ juce::var snapshotToVar(const PluginCapabilitySnapshot& snapshot) {
     setBool(*obj, "tracktionTakesAudioInput", snapshot.tracktionTakesAudioInput);
     setBool(*obj, "tracktionProducesAudioWhenNoAudioInput",
             snapshot.tracktionProducesAudioWhenNoAudioInput);
-    return juce::var(obj);
+    return {obj};
 }
 
 DeviceMidiCapabilities fallbackCapabilitiesForDevice(const DeviceInfo& device) {
     DeviceMidiCapabilities capabilities;
-    const bool midiInputOverride = hasMidiInputOverride(device);
-    const bool midiOutputOverride = hasMidiOutputOverride(device);
-    capabilities.hasMidiInput = device.isInstrument || device.canReceiveMidi || midiInputOverride;
-    capabilities.hasMidiOutput = device.producesMidi || midiOutputOverride;
-    capabilities.hasAudioInput = device.deviceType == DeviceType::Effect || device.canSidechain;
+    capabilities.hasMidiInput = device.consumesMidi();
+    capabilities.hasMidiOutput = device.emitsMidi();
+    capabilities.hasAudioInput =
+        device.deviceType == DeviceType::Effect || device.sidechainPort.takesAudio();
     capabilities.hasAudioOutput = device.isInstrument || device.deviceType == DeviceType::Effect;
     capabilities.supportsMidiInputThruToggle =
-        capabilities.hasMidiInput && capabilities.hasMidiOutput;
+        capabilities.hasMidiInput && capabilities.hasMidiOutput && !device.forwardsMidiInput;
     capabilities.supportsExternalMidiInputRouting = device.canReceiveMidi;
     return capabilities;
 }
@@ -108,7 +107,7 @@ DeviceMidiCapabilities mergeSnapshotWithDevice(const PluginCapabilitySnapshot& s
     capabilities.hasAudioInput = snapshot.hasAudioInput;
     capabilities.hasAudioOutput = snapshot.hasAudioOutput;
     capabilities.supportsMidiInputThruToggle =
-        capabilities.hasMidiInput && capabilities.hasMidiOutput;
+        capabilities.hasMidiInput && capabilities.hasMidiOutput && !device.forwardsMidiInput;
     capabilities.supportsExternalMidiInputRouting = !device.isInstrument && snapshot.hasMidiInput;
     return capabilities;
 }
@@ -153,7 +152,7 @@ std::optional<PluginCapabilitySnapshot> PluginCapabilityCache::find(
     if (pluginIdentifier.isEmpty())
         return std::nullopt;
 
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     auto it = snapshots_.find(pluginIdentifier);
     if (it == snapshots_.end())
         return std::nullopt;
@@ -164,7 +163,7 @@ void PluginCapabilityCache::update(const PluginCapabilitySnapshot& snapshot) {
     if (snapshot.pluginIdentifier.isEmpty())
         return;
 
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     if (auto it = snapshots_.find(snapshot.pluginIdentifier);
         it != snapshots_.end() && snapshotsEqual(it->second, snapshot)) {
         return;
@@ -265,15 +264,29 @@ bool supportsMidiSidechainSource(const DeviceInfo& device) {
 }
 
 bool supportsSidechainRoutingMenu(const DeviceInfo& device) {
-    return device.canSidechain || supportsMidiSidechainSource(device);
+    return device.sidechainPort.takesAudio() || supportsMidiSidechainSource(device);
 }
 
 void applyCachedCapabilitiesToDevice(DeviceInfo& device) {
-    const auto identifier = PluginCapabilityCache::identifierForDevice(device);
-    auto snapshot = PluginCapabilityCache::getInstance().find(identifier);
+    applyCachedCapabilitiesToDevice(device, PluginCapabilityCache::identifierForDevice(device));
+}
+
+void applyCachedCapabilitiesToDevice(DeviceInfo& device, const juce::String& pluginIdentifier) {
+    auto snapshot = PluginCapabilityCache::getInstance().find(pluginIdentifier);
     if (!snapshot)
         return;
 
+    // These two are not written the same way, and the difference is the one
+    // PluginManagerSync::updateDeviceCapabilityFlags makes from the same
+    // snapshot. Two paths writing one model field by different rules would
+    // flip it on alternate loads.
+    //
+    // canReceiveMidi promotes only. A project's saved true can be true for
+    // reasons one scan of the installed plugin cannot see -- a MIDI-typed
+    // device, a plugin whose MIDI input the incumbent engine takes even though
+    // its AudioProcessor does not advertise it -- and PlanCompiler gates MIDI
+    // delivery on it, so assigning a scan's false over the model is a device
+    // that silently stops receiving MIDI.
     device.producesMidi = snapshot->hasMidiOutput;
     if (!device.isInstrument && snapshot->hasMidiInput)
         device.canReceiveMidi = true;

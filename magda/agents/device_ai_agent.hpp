@@ -43,7 +43,7 @@ class DeviceAIAgent {
     /// don't support multi-turn may ignore it.
     virtual juce::String generateAndApply(const juce::String& prompt, const ChainNodePath& path,
                                           llm::Conversation& conversation,
-                                          TokenCallback onToken = {}) = 0;
+                                          TokenCallback onToken) = 0;
 
     /// Best-effort cancel; safe to call from any thread.
     virtual void requestCancel() {}

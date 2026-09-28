@@ -1,15 +1,15 @@
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
-
 #include <array>
+#include <atomic>
 #include <memory>
 
 #include "audio/analysis/AudioTapBuffer.hpp"
+#include "core/ParameterUtils.hpp"
+#include "plugins/AnalysisTelemetry.hpp"
+#include "plugins/MagdaDevice.hpp"
 
 namespace magda::daw::audio {
-
-namespace te = tracktion::engine;
 
 //==============================================================================
 /**
@@ -24,10 +24,15 @@ namespace te = tracktion::engine;
  *
  * This is an audio-in effect (not a synth) - it processes the track signal in
  * place.
+ *
+ * A MagdaDevice since #2299: one DSP hosted by whichever engine is running it.
+ * The slot ids, order and display ranges are the ones the retired host-native
+ * plugin used, because projects address the parameters by index and store
+ * their values in display units.
  */
-class MutableCloudsPlugin : public te::Plugin {
+class MutableCloudsPlugin : public MagdaDevice, public GrainEnvelopeTelemetry {
   public:
-    explicit MutableCloudsPlugin(const te::PluginCreationInfo&);
+    MutableCloudsPlugin();
     ~MutableCloudsPlugin() override;
 
     //==============================================================================
@@ -51,39 +56,58 @@ class MutableCloudsPlugin : public te::Plugin {
     }
     static const char* xmlTypeName;
 
-    juce::String getName() const override {
-        return getPluginName();
-    }
-    juce::String getPluginType() override {
-        return xmlTypeName;
-    }
-    juce::String getShortName(int) override {
-        return "Nimbus";
-    }
-    juce::String getSelectableDescription() override {
-        return getName();
-    }
+    /// The lowpass either side of the 32 kHz DSP. Its corner drops to stay
+    /// under Nyquist at low rates, so the .cpp designs it per rate.
+    static constexpr double kBandLimitHz = 15000.0;
+
+    /// Output lag: the grain block, the placed output cushion and both filters.
+    /// Measured, not derived: the filters' group delay is not the analog
+    /// prototype's sum(1/Q)/w0, since the bilinear transform collapses it as
+    /// the corner nears Nyquist, and it is not one number across the band
+    /// anyway. In seconds because properties() is a construction-time
+    /// snapshot; the dry path carries it too, since Clouds mixes dry itself.
+    static constexpr double kLatencySeconds = 1145.9e-6;
+
+    /// How far the delay moves across 22.05 kHz to 192 kHz, which is the
+    /// measured quantity rather than a tolerance picked to pass a test. What is
+    /// left is the input guard holding a fixed sample count, a shrinking
+    /// duration as the rate climbs; closing it needs a rate-aware declaration,
+    /// which construction-time properties() has no room for.
+    static constexpr double kLatencySpreadSeconds = 55.0e-6;
+
+    /// Past this the device sustains rather than decays: feedback from 0.75
+    /// recirculates indefinitely, and granular at full reverb rings for 32 s.
+    static constexpr double kMaxTailSeconds = 40.0;
 
     //==============================================================================
-    void initialise(const te::PluginInitialisationInfo&) override;
-    void deinitialise() override;
+    DeviceProperties properties() const override {
+        return {
+            .pluginId = xmlTypeName,
+            .name = getPluginName(),
+            .shortName = "Nimbus",
+            .latencySeconds = kLatencySeconds,
+            // Off the reverb, not a constant: the decay runs 60 ms to past 18 s
+            // across that parameter, and getTailLength() is read per render.
+            .tailLengthSeconds = tailSeconds_.load(std::memory_order_relaxed),
+        };
+    }
+
+    /// @brief The tail those parameters imply, in seconds. `position` because
+    ///        every mode replays the buffer from there, `mode` because spectral
+    ///        rings unpredictably.
+    static double tailSecondsFor(float reverb, float feedback, bool freeze, float position,
+                                 int mode);
+
+    void prepare(const DevicePrepareContext& context) override;
     void reset() override;
-    void applyToBuffer(const te::PluginRenderContext&) override;
+    void process(DeviceProcessContext& context) override;
 
-    bool takesMidiInput() override {
-        return false;
+    int parameterCount() const override {
+        return kNumParams;
     }
-    bool takesAudioInput() override {
-        return true;
-    }
-    bool isSynth() override {
-        return false;
-    }
-    double getTailLength() const override {
-        return 2.0;  // diffuser/reverb + grain tail
-    }
-
-    void restorePluginStateFromValueTree(const juce::ValueTree&) override;
+    ParameterInfo parameterInfo(int index) const override;
+    float parameterValue(int index) const override;
+    void setParameterValue(int index, float value) override;
 
     // Live input-envelope tap for the faceplate's grain-buffer view: one decimated
     // peak per bucket, ~8s of history across kEnvelopeBuckets buckets.
@@ -93,14 +117,44 @@ class MutableCloudsPlugin : public te::Plugin {
         return inputEnvelope_;
     }
 
+    // The envelope, as whatever draws it asks for it (#2585).
+    std::string_view telemetryKey() const override {
+        return kKey;
+    }
+
+    DeviceTelemetry* telemetry(std::string_view key) override {
+        return key == kKey ? this : nullptr;
+    }
+
+    const DeviceTelemetry* telemetry(std::string_view key) const override {
+        return key == kKey ? this : nullptr;
+    }
+
+    std::size_t writePosition() const override {
+        return inputEnvelope_.writePosition();
+    }
+
+    std::size_t readLatest(float* dest, int numSamples) const override {
+        return inputEnvelope_.readLatest(dest, numSamples);
+    }
+
   private:
+    /// The parameter's display-domain value, converted through the cached
+    /// domain rather than a freshly built ParameterInfo: this runs per block on
+    /// the audio thread, and a ParameterInfo carries strings that allocate.
+    float displayValue(int index) const;
+
     struct Impl;
     std::unique_ptr<Impl> impl_;
 
-    std::array<te::AutomatableParameter::Ptr, kNumParams> params_;
-    std::array<juce::CachedValue<float>, kNumParams> values_;
+    std::array<float, kNumParams> values_{};
+    std::array<ParameterUtils::ParameterDomain, kNumParams> domains_{};
 
     double sampleRate_ = 44100.0;
+
+    /// setParameterValue writes it, getTailLength() reads it off the message
+    /// thread.
+    std::atomic<double> tailSeconds_{tailSecondsFor(0.0f, 0.0f, false, 0.5f, 0)};
 
     // Input-envelope decimation state (audio thread).
     AudioTapBuffer inputEnvelope_{1024};

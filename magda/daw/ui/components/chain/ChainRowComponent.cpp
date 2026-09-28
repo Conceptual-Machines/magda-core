@@ -7,7 +7,8 @@
 #include "../../utils/SelectionPolicy.hpp"
 #include "RackComponent.hpp"
 #include "core/SelectionManager.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "core/TrackCommands.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
@@ -28,10 +29,10 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
     // never opens the editor.
     nameLabel_.setText(chain.name, juce::dontSendNotification);
     nameLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     nameLabel_.setColour(juce::Label::backgroundWhenEditingColourId,
-                         DarkTheme::getColour(DarkTheme::SURFACE));
-    nameLabel_.setColour(juce::Label::textWhenEditingColourId, DarkTheme::getTextColour());
+                         ActiveTheme::getColour(ActiveTheme::SURFACE));
+    nameLabel_.setColour(juce::Label::textWhenEditingColourId, ActiveTheme::getTextColour());
     nameLabel_.setJustificationType(juce::Justification::centredLeft);
     nameLabel_.setEditable(false, true, false);  // editOnDoubleClick only
     nameLabel_.onSelect = [this](const juce::MouseEvent& e) { applySelectionForClick(e.mods); };
@@ -50,7 +51,7 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
     gainLabel_.setRange(-60.0, 6.0, 0.0);
     gainLabel_.setValue(chain.volume, juce::dontSendNotification);
     gainLabel_.setFontSize(9.0f);
-    gainLabel_.setFillColour(DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
+    gainLabel_.setFillColour(ActiveTheme::getColour(ActiveTheme::CONTROL_VALUE_FILL));
     // Capture each target chain's base gain at drag start so a multi-chain drag
     // shifts every selected chain by the same dB delta from its own value.
     gainLabel_.onDragStart = [this]() {
@@ -80,7 +81,7 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
     panLabel_.setRange(-1.0, 1.0, 0.0);
     panLabel_.setValue(chain.pan, juce::dontSendNotification);
     panLabel_.setFontSize(9.0f);
-    panLabel_.setFillColour(DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
+    panLabel_.setFillColour(ActiveTheme::getColour(ActiveTheme::CONTROL_VALUE_FILL));
     panLabel_.onDragStart = [this]() {
         dragStartPan_ = panLabel_.getValue();
         dragBasePans_.clear();
@@ -105,12 +106,12 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
     // Mute button
     muteButton_.setButtonText("M");
     muteButton_.setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
+                          ActiveTheme::getColour(ActiveTheme::SURFACE));
     muteButton_.setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::STATUS_WARNING));
-    muteButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+                          ActiveTheme::getColour(ActiveTheme::STATUS_WARNING));
+    muteButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
     muteButton_.setColour(juce::TextButton::textColourOnId,
-                          DarkTheme::getColour(DarkTheme::BACKGROUND));
+                          ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     muteButton_.setClickingTogglesState(true);
     muteButton_.setToggleState(chain.muted, juce::dontSendNotification);
     muteButton_.onClick = [this]() { onMuteClicked(); };
@@ -120,12 +121,12 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
     // Solo button
     soloButton_.setButtonText("S");
     soloButton_.setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
+                          ActiveTheme::getColour(ActiveTheme::SURFACE));
     soloButton_.setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
-    soloButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+                          ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
+    soloButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
     soloButton_.setColour(juce::TextButton::textColourOnId,
-                          DarkTheme::getColour(DarkTheme::BACKGROUND));
+                          ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     soloButton_.setClickingTogglesState(true);
     soloButton_.setToggleState(chain.solo, juce::dontSendNotification);
     soloButton_.onClick = [this]() { onSoloClicked(); };
@@ -137,10 +138,10 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
                                                    BinaryData::power_svgSize);
     onButton_->setClickingTogglesState(true);
     onButton_->setToggleState(!chain.bypassed, juce::dontSendNotification);  // On = not bypassed
-    onButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+    onButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
     onButton_->setActiveColor(juce::Colours::white);
     onButton_->setActiveBackgroundColor(
-        DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).darker(0.3f));
+        ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).darker(0.3f));
     onButton_->setActive(!chain.bypassed);
     onButton_->onClick = [this]() {
         onButton_->setActive(onButton_->getToggleState());
@@ -152,8 +153,8 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
     deleteButton_.setButtonText(juce::String::fromUTF8("\xc3\x97"));  // × symbol
     deleteButton_.setColour(
         juce::TextButton::buttonColourId,
-        DarkTheme::getColour(DarkTheme::ACCENT_MODULATION)
-            .interpolatedWith(DarkTheme::getColour(DarkTheme::STATUS_ERROR), 0.5f)
+        ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION)
+            .interpolatedWith(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR), 0.5f)
             .darker(0.2f));
     deleteButton_.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     deleteButton_.onClick = [this]() { onDeleteClicked(); };
@@ -181,17 +182,17 @@ void ChainRowComponent::paint(juce::Graphics& g) {
 
     // Background - highlight if selected
     if (selected_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.2f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.2f));
     } else {
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.02f));
     }
     g.fillRoundedRectangle(bounds.toFloat(), 2.0f);
 
     // Border - accent color if selected
     if (selected_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     } else {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     }
     g.drawRoundedRectangle(bounds.toFloat(), 2.0f, 1.0f);
 }
@@ -343,7 +344,7 @@ void ChainRowComponent::resized() {
     panLabel_.setBounds(bounds.removeFromLeft(panWidth));
 }
 
-int ChainRowComponent::getPreferredHeight() const {
+int ChainRowComponent::getPreferredHeight() {
     return ROW_HEIGHT;
 }
 
@@ -389,13 +390,16 @@ void ChainRowComponent::onBypassClicked() {
 }
 
 void ChainRowComponent::onDeleteClicked() {
-    // Use path-based removal to support nested chains
-    if (nodePath_.isValid()) {
-        magda::TrackManager::getInstance().removeChainByPath(nodePath_);
-    } else {
-        // Fallback to flat ID removal for top-level chains
-        magda::TrackManager::getInstance().removeChainFromRack(trackId_, rackId_, chainId_);
-    }
+    // Deferred and undoable: the removal notifies synchronously and the rebuild
+    // it triggers destroys this row while its own click is still on the stack,
+    // and a chain carries every device in it (#2232).
+    const auto chainPath = nodePath_.isValid()
+                               ? nodePath_
+                               : magda::ChainNodePath::rack(trackId_, rackId_).withChain(chainId_);
+    juce::MessageManager::callAsync([chainPath]() {
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::RemoveChainByPathCommand>(chainPath));
+    });
 }
 
 }  // namespace magda::daw::ui

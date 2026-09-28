@@ -3,10 +3,11 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <ranges>
 #include <utility>
 
-#include "../../../audio/AudioBridge.hpp"
 #include "../../../audio/MidiBridge.hpp"
+#include "../../../audio/TrackMeters.hpp"
 #include "../../../core/AutomationCommands.hpp"
 #include "../../../core/Config.hpp"
 #include "../../../core/DeviceInfo.hpp"
@@ -21,8 +22,9 @@
 #include "../../../core/TrackPropertyCommands.hpp"
 #include "../../../core/UndoManager.hpp"
 #include "../../../engine/AudioEngine.hpp"
+#include "../../../project/ProjectManager.hpp"
 #include "../../layout/LayoutConfig.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallButtonLookAndFeel.hpp"
 #include "../../utils/SelectionPolicy.hpp"
@@ -114,6 +116,10 @@ constexpr int TH_MONITOR_W = 26;  // monitor button width, matching M/S/R
 // (no longer tied to the 0dB meter fraction, which the old colour bar used) so
 // the controls below get the rest of the track height at every size.
 constexpr int TH_NAME_STRIP_H = 24;
+// Sends per row once there are more than a row's worth. Four rather than the
+// five a narrow header fits, so the two rows are even and a track at the
+// maximum of eight reads as four and four (#2425).
+constexpr int kSendsPerRow = 4;
 
 float gainToDb(float gain) {
     return level_meter_scale::gainToDb(gain);
@@ -162,8 +168,8 @@ class MidiActivityIndicator : public juce::Component {
         // Inactive state: neutral dimmed dot (dark on the selected fill)
         g.setColour(
             onSelectedHeader_
-                ? DarkTheme::getColour(DarkTheme::TRACK_HEADER_SELECTED_TEXT).withAlpha(0.3f)
-                : DarkTheme::getColour(DarkTheme::TEXT_DIM).withAlpha(0.4f));
+                ? ActiveTheme::getColour(ActiveTheme::TRACK_HEADER_SELECTED_TEXT).withAlpha(0.3f)
+                : ActiveTheme::getColour(ActiveTheme::TEXT_DIM).withAlpha(0.4f));
         g.fillEllipse(dotBounds);
 
         // Active state: bright cyan glow
@@ -210,10 +216,10 @@ class SessionModeButton : public juce::Component {
             // draw time, matching the transport's SvgButton path.
             auto themedIcon = resumeDrawable_->createCopy();
             themedIcon->replaceColour(juce::Colour(0xFF1A1A1A),
-                                      DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+                                      ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
             themedIcon->replaceColour(juce::Colour(0xFFB3B3B3),
-                                      DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
-            DarkTheme::applyToSvgIcon(*themedIcon);
+                                      ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT));
+            ActiveTheme::applyToSvgIcon(*themedIcon);
             themedIcon->drawWithin(g, iconArea, juce::RectanglePlacement::centred, 1.0f);
         }
     }
@@ -243,19 +249,19 @@ class TrackNameLabel : public juce::Label {
   protected:
     juce::TextEditor* createEditorComponent() override {
         auto* editor = juce::Label::createEditorComponent();
-        editor->setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
+        editor->setColour(juce::TextEditor::textColourId, ActiveTheme::getTextColour());
         editor->setColour(juce::TextEditor::backgroundColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
+                          ActiveTheme::getColour(ActiveTheme::SURFACE));
         editor->setColour(juce::TextEditor::outlineColourId,
-                          DarkTheme::getColour(DarkTheme::BORDER));
+                          ActiveTheme::getColour(ActiveTheme::BORDER));
         editor->setColour(juce::TextEditor::focusedOutlineColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                          ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         editor->setColour(juce::CaretComponent::caretColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                          ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         editor->setColour(juce::TextEditor::highlightColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                          ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         editor->setColour(juce::TextEditor::highlightedTextColourId,
-                          DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
+                          ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT));
         return editor;
     }
 
@@ -274,8 +280,9 @@ void applyRoutingIconImage(juce::Component* component, const char* svgData, int 
     if (button == nullptr)
         return;
     if (auto svg = juce::Drawable::createFromImageData(svgData, svgSize)) {
-        svg->replaceColour(juce::Colour(0xFFB3B3B3), DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        DarkTheme::applyToSvgIcon(*svg);
+        svg->replaceColour(juce::Colour(0xFFB3B3B3),
+                           ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+        ActiveTheme::applyToSvgIcon(*svg);
         button->setImages(svg.get());
     }
 }
@@ -285,13 +292,14 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     // Create UI components
     nameLabel = std::make_unique<TrackNameLabel>("trackName", trackName);
     nameLabel->setEditable(false, true);
-    nameLabel->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    nameLabel->setColour(juce::Label::textColourId,
+                         ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     nameLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
-    nameLabel->setColour(juce::Label::textWhenEditingColourId, DarkTheme::getTextColour());
+    nameLabel->setColour(juce::Label::textWhenEditingColourId, ActiveTheme::getTextColour());
     nameLabel->setColour(juce::Label::backgroundWhenEditingColourId,
-                         DarkTheme::getColour(DarkTheme::SURFACE));
+                         ActiveTheme::getColour(ActiveTheme::SURFACE));
     nameLabel->setColour(juce::Label::outlineWhenEditingColourId,
-                         DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                         ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     nameLabel->setFont(FontManager::getInstance().getUIFontBold(12.0f));
 
     // Track mute: speaker toggle (matching the master/inspector speaker instead
@@ -317,11 +325,11 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     // amber chip.
     soloButton =
         std::make_unique<magda::SvgButton>("solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
-    soloButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    soloButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    soloButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
-    soloButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
-                                          DarkTheme::ICON_ON_ACCENT);
+    soloButton->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    soloButton->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+    soloButton->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
+    soloButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
+                                          ActiveTheme::ICON_ON_ACCENT);
     soloButton->setIconPadding(5.0f);
     soloButton->setTooltip(tr("tracks.solo.tooltip"));
     soloButton->setClickingTogglesState(true);
@@ -331,11 +339,11 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     // (track_record_on) on a red chip.
     recordButton = std::make_unique<magda::SvgButton>("record", BinaryData::track_record_svg,
                                                       BinaryData::track_record_svgSize);
-    recordButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    recordButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    recordButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
-    recordButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
-                                            DarkTheme::ICON_ON_ACCENT);
+    recordButton->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    recordButton->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+    recordButton->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
+    recordButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
+                                            ActiveTheme::ICON_ON_ACCENT);
     recordButton->setIconPadding(5.0f);
     recordButton->setTooltip(tr("tracks.record.tooltip"));
     recordButton->setClickingTogglesState(true);
@@ -352,14 +360,15 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     automationButton->setTooltip(tr("tracks.automation"));
     automationButton->setEnabled(true);
     automationButton->setColour(juce::TextButton::buttonColourId,
-                                DarkTheme::getColour(DarkTheme::SURFACE));
+                                ActiveTheme::getColour(ActiveTheme::SURFACE));
     automationButton->setColour(juce::TextButton::buttonOnColourId,
-                                DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
-    automationButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    automationButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    automationButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
-    automationButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
-                                                DarkTheme::TEXT_BRIGHT);
+                                ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+    automationButton->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    automationButton->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+    automationButton->setActiveBackgroundColor(
+        ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
+    automationButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
+                                                ActiveTheme::TEXT_BRIGHT);
     automationButton->setIconPadding(2.5f);
 
     // Volume label (shows dB, draggable)
@@ -370,7 +379,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
 
     masterPeakLabel = std::make_unique<juce::Label>("masterPeak", "-inf");
     masterPeakLabel->setColour(juce::Label::textColourId,
-                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                               ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     masterPeakLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     masterPeakLabel->setFont(FontManager::getInstance().getMonoFont(10.0f));
     masterPeakLabel->setJustificationType(juce::Justification::centredLeft);
@@ -429,13 +438,13 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     audioColumnLabel = std::make_unique<juce::Label>("audioCol", "Audio");
     audioColumnLabel->setFont(FontManager::getInstance().getUIFont(8.0f));
     audioColumnLabel->setColour(juce::Label::textColourId,
-                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     audioColumnLabel->setJustificationType(juce::Justification::centred);
 
     midiColumnLabel = std::make_unique<juce::Label>("midiCol", "MIDI");
     midiColumnLabel->setFont(FontManager::getInstance().getUIFont(8.0f));
     midiColumnLabel->setColour(juce::Label::textColourId,
-                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                               ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     midiColumnLabel->setJustificationType(juce::Justification::centred);
 
     // I/O routing icons (non-interactive visual indicators)
@@ -488,9 +497,10 @@ TrackHeadersPanel::TrackHeadersPanel(AudioEngine* audioEngine) : audioEngine_(au
     refreshInputSelectors();
 
     // Listen for MIDI device list changes (e.g. QWERTY keyboard toggled)
+    MidiBridge::getInstance().addMidiDeviceListListener(this);
     if (audioEngine_) {
-        if (auto* mb = audioEngine_->getMidiBridge())
-            mb->addMidiDeviceListListener(this);
+        if (auto* hardware = audioEngine_->getAudioIO())
+            hardware->addListener(this);
     }
 }
 
@@ -498,10 +508,18 @@ void TrackHeadersPanel::midiDeviceListChanged() {
     juce::MessageManager::callAsync([this]() { refreshInputSelectors(); });
 }
 
+void TrackHeadersPanel::hardwareChannelsChanged() {
+    const auto& trackManager = TrackManager::getInstance();
+    for (size_t i = 0; i < trackHeaders.size() && i < visibleTrackIds_.size(); ++i)
+        if (const auto* track = trackManager.getTrack(visibleTrackIds_[i]))
+            updateRoutingSelectorFromTrack(*trackHeaders[i], track);
+}
+
 TrackHeadersPanel::~TrackHeadersPanel() {
+    MidiBridge::getInstance().removeMidiDeviceListListener(this);
     if (audioEngine_) {
-        if (auto* mb = audioEngine_->getMidiBridge())
-            mb->removeMidiDeviceListListener(this);
+        if (auto* hardware = audioEngine_->getAudioIO())
+            hardware->removeListener(this);
     }
     stopTimer();
     TrackManager::getInstance().removeListener(this);
@@ -511,15 +529,12 @@ TrackHeadersPanel::~TrackHeadersPanel() {
 }
 
 void TrackHeadersPanel::timerCallback() {
-    // Get metering data from AudioBridge (30 FPS timer)
+    // Get metering data from the audio engine (30 FPS timer)
     if (!audioEngine_)
         return;
 
-    auto* bridge = audioEngine_->getAudioBridge();
-    if (!bridge)
-        return;
-
-    auto& meteringBuffer = bridge->getMeteringBuffer();
+    auto& meters = audioEngine_->meters();
+    auto& meteringBuffer = meters.mixer;
 
     // Decay rate for MIDI activity (fade out over time)
     const float midiDecayRate = 0.7f;  // Per frame decay (~100ms to near-zero at 30fps)
@@ -530,14 +545,11 @@ void TrackHeadersPanel::timerCallback() {
         midiDeviceCheckCounter = 0;
 
         // Check if MIDI device count has changed
-        auto* midiBridge = audioEngine_->getMidiBridge();
-        if (midiBridge) {
-            auto midiInputs = midiBridge->getAvailableMidiInputs();
-            static size_t lastMidiDeviceCount = 0;
-            if (midiInputs.size() != lastMidiDeviceCount) {
-                lastMidiDeviceCount = midiInputs.size();
-                refreshInputSelectors();
-            }
+        auto midiInputs = MidiBridge::getInstance().getAvailableMidiInputs();
+        static size_t lastMidiDeviceCount = 0;
+        if (midiInputs.size() != lastMidiDeviceCount) {
+            lastMidiDeviceCount = midiInputs.size();
+            refreshInputSelectors();
         }
     }
 
@@ -559,7 +571,7 @@ void TrackHeadersPanel::timerCallback() {
         }
 
         // Check for new MIDI note-on (counter comparison), gated by monitor mode
-        auto counter = bridge->getMidiActivityCounter(header->trackId);
+        auto counter = meters.midiActivity.getActivityCounter(header->trackId);
         if (counter != header->lastMidiCounter) {
             header->lastMidiCounter = counter;
 
@@ -574,7 +586,7 @@ void TrackHeadersPanel::timerCallback() {
                             showActivity = true;
                             break;
                         case InputMonitorMode::Auto:
-                            showActivity = !bridge->isTransportPlaying();
+                            showActivity = !audioEngine_->isPlaying();
                             break;
                         case InputMonitorMode::Off:
                             showActivity = false;
@@ -611,9 +623,6 @@ void TrackHeadersPanel::viewModeChanged(ViewMode mode, const AudioEngineProfile&
 void TrackHeadersPanel::populateAudioInputOptions(RoutingSelector* selector, TrackId trackId) {
     if (!selector || !audioEngine_)
         return;
-    auto* deviceManager = audioEngine_->getDeviceManager();
-    if (!deviceManager)
-        return;
     // If no trackId provided, find it from the existing trackHeaders
     if (trackId == INVALID_TRACK_ID) {
         for (const auto& h : trackHeaders) {
@@ -623,30 +632,20 @@ void TrackHeadersPanel::populateAudioInputOptions(RoutingSelector* selector, Tra
             }
         }
     }
-    juce::BigInteger enabledInputChannels;
-    std::map<int, juce::String> teInputDeviceNames;
-    if (auto* bridge = audioEngine_->getAudioBridge()) {
-        enabledInputChannels = bridge->getEnabledInputChannels();
-        teInputDeviceNames = bridge->getInputDeviceNamesByChannel();
-    }
-    RoutingSyncHelper::populateAudioInputOptions(selector, deviceManager->getCurrentAudioDevice(),
-                                                 trackId, &inputTrackMapping_, enabledInputChannels,
-                                                 &inputChannelMapping_, teInputDeviceNames);
+    selector->meterInputsFrom(audioEngine_->getAudioIO());
+    RoutingSyncHelper::populateAudioInputOptions(
+        selector, RoutingSyncHelper::openDirection(audioEngine_->getAudioIO(), true), trackId,
+        &inputTrackMapping_, &inputChannelMapping_);
 }
 
 void TrackHeadersPanel::populateAudioOutputOptions(RoutingSelector* selector,
                                                    TrackId currentTrackId) {
     if (!selector || !audioEngine_)
         return;
-    auto* deviceManager = audioEngine_->getDeviceManager();
-    if (!deviceManager)
-        return;
-    juce::BigInteger enabledOutputChannels;
-    if (auto* bridge = audioEngine_->getAudioBridge())
-        enabledOutputChannels = bridge->getEnabledOutputChannels();
-    RoutingSyncHelper::populateAudioOutputOptions(selector, currentTrackId,
-                                                  deviceManager->getCurrentAudioDevice(),
-                                                  outputTrackMapping_, enabledOutputChannels);
+    RoutingSyncHelper::populateAudioOutputOptions(
+        selector, currentTrackId,
+        RoutingSyncHelper::openDirection(audioEngine_->getAudioIO(), false), outputTrackMapping_,
+        &outputChannelMapping_);
 }
 
 void TrackHeadersPanel::populateMidiInputOptions(RoutingSelector* selector, TrackId trackId) {
@@ -661,8 +660,7 @@ void TrackHeadersPanel::populateMidiInputOptions(RoutingSelector* selector, Trac
             }
         }
     }
-    RoutingSyncHelper::populateMidiInputOptions(selector, audioEngine_->getMidiBridge(), trackId,
-                                                &midiInputTrackMapping_);
+    RoutingSyncHelper::populateMidiInputOptions(selector, trackId, &midiInputTrackMapping_);
 }
 
 void TrackHeadersPanel::populateMidiOutputOptions(RoutingSelector* selector, TrackId trackId) {
@@ -677,8 +675,7 @@ void TrackHeadersPanel::populateMidiOutputOptions(RoutingSelector* selector, Tra
             }
         }
     }
-    RoutingSyncHelper::populateMidiOutputOptions(selector, audioEngine_->getMidiBridge(),
-                                                 midiOutputTrackMapping_, trackId);
+    RoutingSyncHelper::populateMidiOutputOptions(selector, midiOutputTrackMapping_, trackId);
 }
 
 void TrackHeadersPanel::refreshInputSelectors() {
@@ -695,8 +692,6 @@ void TrackHeadersPanel::refreshInputSelectors() {
 void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId trackId) {
     if (!audioEngine_)
         return;
-
-    auto* midiBridge = audioEngine_->getMidiBridge();
 
     // Audio input selector callbacks (mutually exclusive with MIDI input)
     header.audioInputSelector->onEnabledChanged = [this, trackId](bool enabled) {
@@ -745,7 +740,7 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
     // Capture midiInputTrackMapping_ by value so each header has its own snapshot
     // (the shared member is rebuilt per-header in populateMidiInputOptions)
     header.inputSelector->onEnabledChanged =
-        [this, trackId, midiBridge, midiInMapping = midiInputTrackMapping_](bool enabled) {
+        [this, trackId, midiInMapping = midiInputTrackMapping_](bool enabled) {
             if (enabled) {
                 // Disable audio input (mutually exclusive) — find header by trackId
                 int selectedId = 1;
@@ -768,8 +763,8 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
                     } else {
                         TrackManager::getInstance().setTrackMidiInput(trackId, "all");
                     }
-                } else if (selectedId >= 10 && midiBridge) {
-                    auto midiInputs = midiBridge->getAvailableMidiInputs();
+                } else if (selectedId >= 10) {
+                    auto midiInputs = MidiBridge::getInstance().getAvailableMidiInputs();
                     int deviceIndex = selectedId - 10;
                     if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiInputs.size())) {
                         TrackManager::getInstance().setTrackMidiInput(trackId,
@@ -785,9 +780,8 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
             }
         };
 
-    header.inputSelector->onSelectionChanged = [trackId, midiBridge,
-                                                midiInMapping =
-                                                    midiInputTrackMapping_](int selectedId) {
+    header.inputSelector->onSelectionChanged = [trackId, midiInMapping = midiInputTrackMapping_](
+                                                   int selectedId) {
         if (selectedId == 2) {
             TrackManager::getInstance().setTrackMidiInput(trackId, "");
         } else if (selectedId == 1) {
@@ -799,8 +793,8 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
                 TrackManager::getInstance().setTrackMidiInput(trackId,
                                                               "track:" + juce::String(it->second));
             }
-        } else if (selectedId >= 10 && midiBridge) {
-            auto midiInputs = midiBridge->getAvailableMidiInputs();
+        } else if (selectedId >= 10) {
+            auto midiInputs = MidiBridge::getInstance().getAvailableMidiInputs();
             int deviceIndex = selectedId - 10;
             if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiInputs.size())) {
                 TrackManager::getInstance().setTrackMidiInput(trackId, midiInputs[deviceIndex].id);
@@ -819,7 +813,7 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
 
     // Capture outputTrackMapping_ by value so each header has its own snapshot
     // (the shared member is rebuilt per-header in populateAudioOutputOptions)
-    header.outputSelector->onSelectionChanged = [trackId,
+    header.outputSelector->onSelectionChanged = [this, trackId,
                                                  mapping = outputTrackMapping_](int selectedId) {
         if (selectedId == 1) {
             // Master
@@ -835,9 +829,14 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
                     trackId, "track:" + juce::String(it->second));
             }
         } else if (selectedId >= 10) {
-            // Hardware output device (existing behavior — use device ID)
-            // For now, hardware channels route via device ID
-            TrackManager::getInstance().setTrackAudioOutput(trackId, "master");
+            // Hardware output — route to the mapped wave output device. Read
+            // the shared member (rebuilt whenever options are, and identical
+            // for every header) and copy the string — setTrackAudioOutput can
+            // trigger a re-population that invalidates the iterator.
+            auto it = outputChannelMapping_.find(selectedId);
+            juce::String dest =
+                it != outputChannelMapping_.end() ? it->second : juce::String("master");
+            TrackManager::getInstance().setTrackAudioOutput(trackId, dest);
         }
     };
 
@@ -852,7 +851,7 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
     // Capture midiOutputTrackMapping_ by value so each header has its own snapshot
     // (the shared member is rebuilt per-header in populateMidiOutputOptions)
     header.midiOutputSelector->onSelectionChanged =
-        [trackId, midiBridge, midiOutMapping = midiOutputTrackMapping_](int selectedId) {
+        [trackId, midiOutMapping = midiOutputTrackMapping_](int selectedId) {
             if (selectedId == 1) {
                 // None
                 TrackManager::getInstance().setTrackMidiOutput(trackId, "");
@@ -862,8 +861,8 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
                 if (it != midiOutMapping.end()) {
                     TrackManager::getInstance().routeMidiOutputToTrack(trackId, it->second);
                 }
-            } else if (selectedId >= 10 && midiBridge) {
-                auto midiOutputs = midiBridge->getAvailableMidiOutputs();
+            } else if (selectedId >= 10) {
+                auto midiOutputs = MidiBridge::getAvailableMidiOutputs();
                 int deviceIndex = selectedId - 10;
                 if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiOutputs.size())) {
                     TrackManager::getInstance().setTrackMidiOutput(trackId,
@@ -1105,10 +1104,8 @@ void TrackHeadersPanel::trackPropertyChanged(int trackId) {
         // Update send labels from track data
         if (track->sends.size() == header.sendLabels.size()) {
             // Same count — update levels in-place (avoids destroying labels mid-drag)
-            for (size_t i = 0; i < header.sendLabels.size(); ++i) {
-                float levelDb = gainToDb(track->sends[i].level);
-                header.sendLabels[i]->setValue(levelDb, juce::dontSendNotification);
-            }
+            for (const auto& [label, send] : std::views::zip(header.sendLabels, track->sends))
+                label->setValue(gainToDb(send.level), juce::dontSendNotification);
         } else {
             // Send count changed — full rebuild
             rebuildSendLabels(header, trackId);
@@ -1157,27 +1154,18 @@ void TrackHeadersPanel::updateRoutingSelectorFromTrack(TrackHeader& header,
                                                        const TrackInfo* track) {
     if (!track || !audioEngine_)
         return;
-    auto* deviceManager = audioEngine_->getDeviceManager();
-    auto* device = deviceManager ? deviceManager->getCurrentAudioDevice() : nullptr;
-    juce::BigInteger enabledIn, enabledOut;
-    std::map<int, juce::String> teInputDeviceNames;
-    if (auto* bridge = audioEngine_->getAudioBridge()) {
-        enabledIn = bridge->getEnabledInputChannels();
-        enabledOut = bridge->getEnabledOutputChannels();
-        teInputDeviceNames = bridge->getInputDeviceNamesByChannel();
-    }
     RoutingSyncHelper::syncSelectorsFromTrack(
         *track, header.audioInputSelector.get(), header.inputSelector.get(),
-        header.outputSelector.get(), header.midiOutputSelector.get(), audioEngine_->getMidiBridge(),
-        device, header.trackId, outputTrackMapping_, midiOutputTrackMapping_, &inputTrackMapping_,
-        enabledIn, enabledOut, &inputChannelMapping_, teInputDeviceNames, &midiInputTrackMapping_);
+        header.outputSelector.get(), header.midiOutputSelector.get(), audioEngine_->getAudioIO(),
+        header.trackId, outputTrackMapping_, midiOutputTrackMapping_, &inputTrackMapping_,
+        &inputChannelMapping_, &midiInputTrackMapping_, &outputChannelMapping_);
 }
 
 void TrackHeadersPanel::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
 
     // Draw border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(getLocalBounds(), 1);
 
     // Draw track headers and automation lane headers
@@ -1200,9 +1188,11 @@ void TrackHeadersPanel::paint(juce::Graphics& g) {
     paintDragFeedback(g);
 
     // Ghost-header preview (drag-to-create flows — files or devices).
-    // Colours match what TrackManager::createTrack will assign (Config palette
+    // Colours match what TrackManager::createTrack will assign (project palette
     // indexed by track count), so the preview is a faithful prediction.
     if (!ghostHeaderLabels_.isEmpty()) {
+        const auto& projectDefaults =
+            ProjectManager::getInstance().getCurrentProjectInfo().defaults;
         int topY = 0;
         for (int i = static_cast<int>(trackHeaders.size()) - 1; i >= 0; --i) {
             if (!trackHeaders[i]->isMaster) {
@@ -1219,7 +1209,7 @@ void TrackHeadersPanel::paint(juce::Graphics& g) {
 
         for (int i = 0; i < ghostHeaderLabels_.size(); ++i) {
             const int y0 = topY + i * ghostHeight;
-            const auto tint = juce::Colour(Config::getDefaultColour(baseIndex + i));
+            const auto tint = juce::Colour(projectDefaults.colourForIndex(baseIndex + i));
             const bool isNewTrackDropTarget = pluginDragActive_ && pluginDropTrackIndex_ < 0;
             const auto outlineColour =
                 isNewTrackDropTarget ? juce::Colours::deepskyblue : tint.withAlpha(0.7f);
@@ -1337,14 +1327,14 @@ void TrackHeadersPanel::updateHeaderSelectionColours() {
         const bool sel = selectedTrackIndices_.count(static_cast<int>(i)) > 0;
         trackHeaders[i]->nameLabel->setColour(
             juce::Label::textColourId,
-            DarkTheme::getColour(sel ? DarkTheme::TRACK_HEADER_SELECTED_TEXT
-                                     : DarkTheme::TEXT_PRIMARY));
+            ActiveTheme::getColour(sel ? ActiveTheme::TRACK_HEADER_SELECTED_TEXT
+                                       : ActiveTheme::TEXT_PRIMARY));
         trackHeaders[i]->nameLabel->setColour(juce::Label::textWhenEditingColourId,
-                                              DarkTheme::getTextColour());
+                                              ActiveTheme::getTextColour());
         trackHeaders[i]->nameLabel->setColour(juce::Label::backgroundWhenEditingColourId,
-                                              DarkTheme::getColour(DarkTheme::SURFACE));
+                                              ActiveTheme::getColour(ActiveTheme::SURFACE));
         trackHeaders[i]->nameLabel->setColour(juce::Label::outlineWhenEditingColourId,
-                                              DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                                              ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         static_cast<MidiActivityIndicator*>(trackHeaders[i]->midiIndicator.get())
             ->setOnSelectedHeader(sel);
     }
@@ -1357,7 +1347,7 @@ void TrackHeadersPanel::lookAndFeelChanged() {
     // (handled by updateHeaderSelectionColours); the compact peak and column
     // labels are plain secondary-text labels.
     updateHeaderSelectionColours();
-    const auto secondary = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+    const auto secondary = ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY);
     for (auto& header : trackHeaders) {
         if (!header)
             continue;
@@ -1705,7 +1695,7 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
 
     // Right-click the volume / pan readouts to show (or create) their
     // automation lane, mirroring the send-label menu in the inspector.
-    auto showAutomationLaneMenu = [](AutomationTarget target) {
+    auto showAutomationLaneMenu = [](const AutomationTarget& target) {
         auto& autoMgr = AutomationManager::getInstance();
         const bool hasLane = autoMgr.getLaneForTarget(target) != magda::INVALID_AUTOMATION_LANE_ID;
         juce::PopupMenu menu;
@@ -1750,7 +1740,7 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
         auto& sel = SelectionManager::getInstance();
         if (sel.isTrackSelected(clickedId) && sel.getSelectedTrackCount() > 1) {
             const auto& set = sel.getSelectedTracks();
-            return std::vector<TrackId>(set.begin(), set.end());
+            return {set.begin(), set.end()};
         }
         return {clickedId};
     };
@@ -1995,9 +1985,9 @@ void TrackHeadersPanel::rebuildSendLabels(TrackHeader& header, TrackId trackId) 
             const auto* track = TrackManager::getInstance().getTrack(trackId);
             if (!track)
                 return;
-            for (size_t i = 0; i < header.sendLabels.size() && i < track->sends.size(); ++i) {
-                if (track->sends[i].busIndex == busIndex) {
-                    float newLevel = dbToGain(static_cast<float>(header.sendLabels[i]->getValue()));
+            for (const auto& [label, send] : std::views::zip(header.sendLabels, track->sends)) {
+                if (send.busIndex == busIndex) {
+                    const float newLevel = dbToGain(static_cast<float>(label->getValue()));
                     UndoManager::getInstance().executeCommand(
                         std::make_unique<SetSendLevelCommand>(trackId, busIndex, newLevel));
                     break;
@@ -2030,7 +2020,7 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
 
     // Draw indent guide lines for nested tracks on outer side
     if (header.depth > 0) {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.5f));
         for (int d = 0; d < header.depth; ++d) {
             int x = headersOnRight_ ? area.getRight() - d * INDENT_WIDTH - INDENT_WIDTH / 2
                                     : area.getX() + d * INDENT_WIDTH + INDENT_WIDTH / 2;
@@ -2044,17 +2034,18 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
     // tracks. The timeline content lane keeps its softer TRACK_SELECTED tint
     // so the clip area doesn't brighten with it.
     auto bgArea = outer.trimmed(area, indent);
-    const auto selectedBg = DarkTheme::getColour(DarkTheme::TRACK_HEADER_SELECTED);
+    const auto selectedBg = ActiveTheme::getColour(ActiveTheme::TRACK_HEADER_SELECTED);
     if (header.isGroup) {
         g.setColour(isSelected ? selectedBg
-                               : DarkTheme::getColour(DarkTheme::SURFACE).brighter(0.05f));
+                               : ActiveTheme::getColour(ActiveTheme::SURFACE).brighter(0.05f));
     } else {
-        g.setColour(isSelected ? selectedBg : DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND));
+        g.setColour(isSelected ? selectedBg
+                               : ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND));
     }
     g.fillRect(bgArea);
 
     // Border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(bgArea, 1);
 
     // Group indicator colour strip on the outer edge, full header height. Same
@@ -2075,7 +2066,7 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
         // Dark elevated header band behind the name. On a selected header the
         // band matches the lifted body so the whole header reads as one slab.
         auto nameBandArea = bgArea.withHeight(nameBandHeight);
-        g.setColour(isSelected ? selectedBg : DarkTheme::getColour(DarkTheme::SURFACE_HOVER));
+        g.setColour(isSelected ? selectedBg : ActiveTheme::getColour(ActiveTheme::SURFACE_HOVER));
         g.fillRect(nameBandArea);
 
         // Colour spine on the outer (left, or right when swapped) edge,
@@ -2097,7 +2088,7 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
     }
 
     // Separator line at the bottom of the name strip
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.5f));
     g.drawHorizontalLine(bgArea.getY() + nameBandHeight, static_cast<float>(bgArea.getX()),
                          static_cast<float>(bgArea.getRight()));
 
@@ -2120,7 +2111,7 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
 }
 
 void TrackHeadersPanel::paintResizeHandle(juce::Graphics& g, juce::Rectangle<int> area) {
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.fillRect(area);
 }
 
@@ -2132,7 +2123,7 @@ juce::Rectangle<int> TrackHeadersPanel::getTrackHeaderArea(int trackIndex) const
     int yPosition = getTrackYPosition(trackIndex);
     int height = static_cast<int>(trackHeaders[trackIndex]->height * verticalZoom);
 
-    return juce::Rectangle<int>(0, yPosition, getWidth(), height - RESIZE_HANDLE_HEIGHT);
+    return {0, yPosition, getWidth(), height - RESIZE_HANDLE_HEIGHT};
 }
 
 juce::Rectangle<int> TrackHeadersPanel::getResizeHandleArea(int trackIndex) const {
@@ -2143,18 +2134,19 @@ juce::Rectangle<int> TrackHeadersPanel::getResizeHandleArea(int trackIndex) cons
     int yPosition = getTrackYPosition(trackIndex);
     int height = static_cast<int>(trackHeaders[trackIndex]->height * verticalZoom);
 
-    return juce::Rectangle<int>(0, yPosition + height - RESIZE_HANDLE_HEIGHT, getWidth(),
-                                RESIZE_HANDLE_HEIGHT);
+    return {0, yPosition + height - RESIZE_HANDLE_HEIGHT, getWidth(), RESIZE_HANDLE_HEIGHT};
 }
 
 bool TrackHeadersPanel::isResizeHandleArea(const juce::Point<int>& point, int& trackIndex) const {
-    for (int i = 0; i < static_cast<int>(trackHeaders.size()); ++i) {
-        if (getResizeHandleArea(i).contains(point)) {
-            trackIndex = i;
-            return true;
-        }
-    }
-    return false;
+    const auto handleContainsPoint = [this, point](int i) {
+        return getResizeHandleArea(i).contains(point);
+    };
+    const auto indices = std::views::iota(0, static_cast<int>(trackHeaders.size()));
+    const auto match = std::ranges::find_if(indices, handleContainsPoint);
+    if (match == indices.end())
+        return false;
+    trackIndex = *match;
+    return true;
 }
 
 void TrackHeadersPanel::layoutMeterColumn(TrackHeader& header, juce::Rectangle<int>& workArea,
@@ -2231,7 +2223,7 @@ void TrackHeadersPanel::hideControlAreaComponents(TrackHeader& header) {
         sendLabel->setVisible(false);
 }
 
-track_controls::MixControls TrackHeadersPanel::mixControlsFor(TrackHeader& header) const {
+track_controls::MixControls TrackHeadersPanel::mixControlsFor(TrackHeader& header) {
     const auto& p = header.policy;
     track_controls::MixControls c;
     if (p.gain)
@@ -2347,6 +2339,13 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
     const bool showIn = reserveRow(wantIn);
     const bool showSends = reserveRow(wantSends);
 
+    // Sends past the fourth go on a second row. A single row fits five at the
+    // narrowest header and silently dropped the rest, which is what made a
+    // track with eight sends show five (#2425). The second row is reserved
+    // like any other: it shows iff it fits.
+    const auto sendCount = static_cast<int>(header.sendLabels.size());
+    const bool showSecondSendRow = showSends && sendCount > kSendsPerRow && reserveRow(true);
+
     if (showButtons) {
         tcpArea.removeFromTop(m.rowGap);
         track_controls::layoutButtonRow(paddedRow(tcpArea.removeFromTop(m.rowH)), mix, m);
@@ -2354,15 +2353,25 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
 
     if (showSends) {
         constexpr int sendLabelWidth = 28;
-        tcpArea.removeFromTop(m.rowGap);
-        auto sendRow = paddedRow(tcpArea.removeFromTop(m.rowH));
-        for (auto& sendLabel : header.sendLabels) {
-            if (sendRow.getWidth() >= sendLabelWidth) {
-                sendLabel->setBounds(sendRow.removeFromLeft(sendLabelWidth));
-                sendLabel->setVisible(true);
+        const auto perRow = showSecondSendRow ? kSendsPerRow : sendCount;
+
+        auto placeRow = [&](int from, int to) {
+            tcpArea.removeFromTop(m.rowGap);
+            auto sendRow = paddedRow(tcpArea.removeFromTop(m.rowH));
+            for (auto index = from; index < to; ++index) {
+                if (sendRow.getWidth() < sendLabelWidth)
+                    return;
+
+                header.sendLabels[static_cast<std::size_t>(index)]->setBounds(
+                    sendRow.removeFromLeft(sendLabelWidth));
+                header.sendLabels[static_cast<std::size_t>(index)]->setVisible(true);
                 sendRow.removeFromLeft(2);
             }
-        }
+        };
+
+        placeRow(0, std::min(perRow, sendCount));
+        if (showSecondSendRow)
+            placeRow(perRow, std::min(2 * perRow, sendCount));
     }
 
     // I/O routing rows — pinned to the bottom (output lowest, input above it).
@@ -2542,7 +2551,7 @@ void TrackHeadersPanel::mouseDown(const juce::MouseEvent& event) {
     }
 
     // Handle vertical track height resizing and track selection
-    int trackIndex;
+    int trackIndex = 0;
     if (isResizeHandleArea(pos, trackIndex)) {
         // Start resizing
         isResizing = true;
@@ -2747,7 +2756,7 @@ void TrackHeadersPanel::mouseMove(const juce::MouseEvent& event) {
     }
 
     // Handle vertical track height resizing
-    int trackIndex;
+    int trackIndex = 0;
     if (isResizeHandleArea(event.getPosition(), trackIndex)) {
         setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
     } else {
@@ -2808,18 +2817,18 @@ int TrackHeadersPanel::getVisibleHeaderIndex(TrackId trackId) const {
 }
 
 void TrackHeadersPanel::updateCollapseButtonIcon(TrackHeader& header) {
-    auto colour = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
+    auto colour = ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY);
     if (header.isCollapsed) {
         auto icon = juce::Drawable::createFromImageData(BinaryData::chevron_right_svg,
                                                         BinaryData::chevron_right_svgSize);
         icon->replaceColour(juce::Colour(0xFFB3B3B3), colour);
-        DarkTheme::applyToSvgIcon(*icon);
+        ActiveTheme::applyToSvgIcon(*icon);
         header.collapseButton->setImages(icon.get());
     } else {
         auto icon = juce::Drawable::createFromImageData(BinaryData::chevron_down_svg,
                                                         BinaryData::chevron_down_svgSize);
         icon->replaceColour(juce::Colour(0xFFB3B3B3), colour);
-        DarkTheme::applyToSvgIcon(*icon);
+        ActiveTheme::applyToSvgIcon(*icon);
         header.collapseButton->setImages(icon.get());
     }
 }
@@ -2904,7 +2913,7 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
             // Don't allow moving a group into its own descendants
             if (track->isGroup()) {
                 auto descendants = trackManager.getAllDescendants(header.trackId);
-                if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
+                if (std::ranges::contains(descendants, t.id))
                     continue;
             }
             moveToGroupMenu.addItem(MoveToGroupBase + t.id, t.name);
@@ -2947,7 +2956,7 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
             for (const auto& t : allTracks) {
                 if (t.type != type || t.id == track->id || t.type == TrackType::Master)
                     continue;
-                if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
+                if (std::ranges::contains(descendants, t.id))
                     continue;
 
                 bool alreadyConnected = false;
@@ -2971,7 +2980,7 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
 
         addSendTargets(TrackType::Aux);
         addSendTargets(TrackType::Group);
-        addSendTargets(TrackType::Audio);
+        addSendTargets(TrackType::Media);
 
         if (hasOptions) {
             menu.addSubMenu(tr("tracks.add_send"), sendMenu);
@@ -2990,7 +2999,7 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
     }
 
     // Freeze/Unfreeze (for regular tracks only)
-    if (track->type == TrackType::Audio) {
+    if (track->type == TrackType::Media) {
         menu.addSeparator();
         menu.addItem(ToggleFreeze, track->frozen ? tr("tracks.unfreeze") : tr("tracks.freeze"));
     }
@@ -3071,7 +3080,7 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
                 UndoManager::getInstance().executeCommand(std::move(cmd));
             } else if (result == AddAudioTrack) {
                 UndoManager::getInstance().executeCommand(
-                    std::make_unique<CreateTrackCommand>(TrackType::Audio));
+                    std::make_unique<CreateTrackCommand>(TrackType::Media));
             } else if (result == AddGroupTrack) {
                 UndoManager::getInstance().executeCommand(
                     std::make_unique<CreateTrackCommand>(TrackType::Group));
@@ -3098,9 +3107,8 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
                 }
             } else if (result == ToggleFreeze) {
                 auto* t = TrackManager::getInstance().getTrack(trackId);
-                if (t) {
-                    TrackManager::getInstance().setTrackFrozen(trackId, !t->frozen);
-                }
+                if (t && audioEngine_ != nullptr)
+                    audioEngine_->setTrackFrozen(trackId, !t->frozen);
             } else if (result == PreferDrumGrid) {
                 if (auto* instrument = TrackManager::getInstance().getPrimaryInstrument(trackId)) {
                     auto& prefs = magda::PluginPreferences::getInstance();
@@ -3138,7 +3146,7 @@ void TrackHeadersPanel::showAddTrackContextMenu(juce::Point<int> position) {
                            localAreaToGlobal(juce::Rectangle<int>(position.x, position.y, 1, 1))),
                        [](int result) {
                            juce::PopupMenu::dismissAllActiveMenus();
-                           TrackType type = TrackType::Audio;
+                           TrackType type = TrackType::Media;
                            if (result == AddGroup)
                                type = TrackType::Group;
                            else if (result == AddAux)
@@ -3258,7 +3266,7 @@ bool TrackHeadersPanel::canDropIntoGroup(int draggedIndex, int targetGroupIndex)
         auto& trackManager = TrackManager::getInstance();
         auto descendants = trackManager.getAllDescendants(draggedHeader.trackId);
         TrackId targetId = trackHeaders[targetGroupIndex]->trackId;
-        if (std::find(descendants.begin(), descendants.end(), targetId) != descendants.end()) {
+        if (std::ranges::contains(descendants, targetId)) {
             return false;
         }
     }
@@ -3281,7 +3289,7 @@ void TrackHeadersPanel::executeDrop() {
     if (isMultiDrag) {
         // Collect selected track IDs in display order (ascending index)
         std::vector<int> sortedIndices(selectedTrackIndices_.begin(), selectedTrackIndices_.end());
-        std::sort(sortedIndices.begin(), sortedIndices.end());
+        std::ranges::sort(sortedIndices);
         for (int idx : sortedIndices) {
             if (idx >= 0 && idx < static_cast<int>(trackHeaders.size()))
                 tracksToMove.push_back(trackHeaders[idx]->trackId);
@@ -3324,7 +3332,7 @@ void TrackHeadersPanel::executeDrop() {
         }
 
         // Calculate the initial target position in TrackManager order
-        int baseTargetIndex;
+        int baseTargetIndex = 0;
         if (dropTargetIndex_ >= static_cast<int>(visibleTrackIds_.size())) {
             baseTargetIndex = trackManager.getNumTracks();
         } else {
@@ -3353,9 +3361,9 @@ void TrackHeadersPanel::executeDrop() {
                 // moving selection, the drop lands inside the block being moved.
                 // Reordering relative to a sibling that is also about to move
                 // scrambles the order, so treat it as a no-op.
-                const bool dropInsideSelection = dropBeforeTrackId != INVALID_TRACK_ID &&
-                                                 std::find(tracksToMove.begin(), tracksToMove.end(),
-                                                           dropBeforeTrackId) != tracksToMove.end();
+                const bool dropInsideSelection =
+                    dropBeforeTrackId != INVALID_TRACK_ID &&
+                    std::ranges::contains(tracksToMove, dropBeforeTrackId);
                 if (dropInsideSelection)
                     continue;
 
@@ -3420,7 +3428,7 @@ void TrackHeadersPanel::paintDragFeedback(juce::Graphics& g) {
         return;
 
     // Draw semi-transparent overlay on all dragged tracks
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
     bool isMultiDrag =
         selectedTrackIndices_.size() > 1 && selectedTrackIndices_.count(draggedTrackIndex_) > 0;
     if (isMultiDrag) {
@@ -3443,7 +3451,7 @@ void TrackHeadersPanel::paintDropIndicatorLine(juce::Graphics& g) {
     if (dropTargetIndex_ < 0)
         return;
 
-    int indicatorY;
+    int indicatorY = 0;
     if (dropTargetIndex_ >= static_cast<int>(trackHeaders.size())) {
         // At the end
         indicatorY = getTotalTracksHeight();
@@ -3452,7 +3460,7 @@ void TrackHeadersPanel::paintDropIndicatorLine(juce::Graphics& g) {
     }
 
     // Draw cyan line with arrow indicators
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
 
     // Main line
     g.fillRect(0, indicatorY - 2, getWidth(), 4);
@@ -3476,11 +3484,11 @@ void TrackHeadersPanel::paintDropTargetGroupHighlight(juce::Graphics& g) {
     auto targetArea = getTrackHeaderArea(dropTargetIndex_);
 
     // Draw orange border around the group
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
     g.drawRect(targetArea, 3);
 
     // Draw subtle fill
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.15f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.15f));
     g.fillRect(targetArea);
 }
 
@@ -3550,12 +3558,9 @@ void TrackHeadersPanel::rebuildLaneHeaderButtons() {
     }
 
     // Drop orphans — lanes that no longer exist or are hidden.
-    laneHeaderButtons_.erase(
-        std::remove_if(laneHeaderButtons_.begin(), laneHeaderButtons_.end(),
-                       [&](const std::unique_ptr<AutoLaneHeaderButtons>& entry) {
-                           return wantedIds.find(entry->laneId) == wantedIds.end();
-                       }),
-        laneHeaderButtons_.end());
+    std::erase_if(laneHeaderButtons_, [&](const std::unique_ptr<AutoLaneHeaderButtons>& entry) {
+        return wantedIds.find(entry->laneId) == wantedIds.end();
+    });
 
     auto& manager = AutomationManager::getInstance();
 
@@ -3631,17 +3636,20 @@ bool TrackHeadersPanel::isInterestedInDragSource(const SourceDetails& details) {
     return false;
 }
 
+int TrackHeadersPanel::droppableHeaderIndexAt(juce::Point<int> point) const {
+    // Master is skipped: a drop there creates a new track, like empty space.
+    const auto acceptsDropAt = [this, point](int i) {
+        return !trackHeaders[static_cast<size_t>(i)]->isMaster &&
+               getTrackHeaderArea(i).contains(point);
+    };
+    const auto indices = std::views::iota(0, static_cast<int>(trackHeaders.size()));
+    const auto match = std::ranges::find_if(indices, acceptsDropAt);
+    return match == indices.end() ? -1 : *match;
+}
+
 void TrackHeadersPanel::itemDragEnter(const SourceDetails& details) {
     pluginDragActive_ = true;
-    pluginDropTrackIndex_ = -1;
-    for (int i = 0; i < static_cast<int>(trackHeaders.size()); ++i) {
-        if (trackHeaders[i]->isMaster)
-            continue;
-        if (getTrackHeaderArea(i).contains(details.localPosition)) {
-            pluginDropTrackIndex_ = i;
-            break;
-        }
-    }
+    pluginDropTrackIndex_ = droppableHeaderIndexAt(details.localPosition);
 
     // Ghost header for the new track that a drop on empty area would create.
     if (pluginDropTrackIndex_ < 0) {
@@ -3660,15 +3668,7 @@ void TrackHeadersPanel::itemDragEnter(const SourceDetails& details) {
 
 void TrackHeadersPanel::itemDragMove(const SourceDetails& details) {
     int prev = pluginDropTrackIndex_;
-    pluginDropTrackIndex_ = -1;
-    for (int i = 0; i < static_cast<int>(trackHeaders.size()); ++i) {
-        if (trackHeaders[i]->isMaster)
-            continue;
-        if (getTrackHeaderArea(i).contains(details.localPosition)) {
-            pluginDropTrackIndex_ = i;
-            break;
-        }
-    }
+    pluginDropTrackIndex_ = droppableHeaderIndexAt(details.localPosition);
 
     if (pluginDropTrackIndex_ < 0) {
         if (auto* obj = details.description.getDynamicObject()) {
@@ -3704,15 +3704,7 @@ void TrackHeadersPanel::itemDropped(const SourceDetails& details) {
 
     // Determine which track header was dropped on (skip master — dropping
     // on master area creates a new track, same as empty space)
-    int targetIndex = -1;
-    for (int i = 0; i < static_cast<int>(trackHeaders.size()); ++i) {
-        if (trackHeaders[i]->isMaster)
-            continue;
-        if (getTrackHeaderArea(i).contains(details.localPosition)) {
-            targetIndex = i;
-            break;
-        }
-    }
+    const int targetIndex = droppableHeaderIndexAt(details.localPosition);
 
     const auto type = obj->getProperty("type").toString();
     if (type == "chainElement" || type == "chainElements") {
@@ -3728,7 +3720,7 @@ void TrackHeadersPanel::itemDropped(const SourceDetails& details) {
             } else {
                 compoundScope = std::make_unique<CompoundOperationScope>(
                     copy ? "Copy Devices to New Track" : "Move Devices to New Track");
-                auto create = std::make_unique<CreateTrackCommand>(TrackType::Audio, "Track");
+                auto create = std::make_unique<CreateTrackCommand>(TrackType::Media, "Track");
                 auto* createPtr = create.get();
                 UndoManager::getInstance().executeCommand(std::move(create));
                 targetTrackId = createPtr->getCreatedTrackId();
@@ -3771,7 +3763,7 @@ void TrackHeadersPanel::itemDropped(const SourceDetails& details) {
                                                << trackId);
     } else {
         // Dropped on empty area → create new track with plugin
-        TrackType trackType = TrackType::Audio;
+        TrackType trackType = TrackType::Media;
         juce::String pluginName = obj->getProperty("name").toString();
         auto cmd = std::make_unique<CreateTrackWithDeviceCommand>(pluginName, trackType, device);
         UndoManager::getInstance().executeCommand(std::move(cmd));
@@ -3784,7 +3776,7 @@ void TrackHeadersPanel::itemDropped(const SourceDetails& details) {
 bool TrackHeadersPanel::isIORoutingVisible() const {
     if (trackHeaders.empty())
         return showIORouting_;
-    for (auto& h : trackHeaders) {
+    for (const auto& h : trackHeaders) {
         if (h->showIORouting)
             return true;
     }
@@ -3793,16 +3785,10 @@ bool TrackHeadersPanel::isIORoutingVisible() const {
 
 void TrackHeadersPanel::toggleIORouting() {
     // If any track has I/O visible, hide all; otherwise show all
-    bool anyVisible = false;
-    for (auto& h : trackHeaders) {
-        if (h->showIORouting) {
-            anyVisible = true;
-            break;
-        }
-    }
-    for (auto& h : trackHeaders) {
+    const auto showsIORouting = [](const auto& h) { return h->showIORouting; };
+    const bool anyVisible = std::ranges::any_of(trackHeaders, showsIORouting);
+    for (auto& h : trackHeaders)
         h->showIORouting = !anyVisible;
-    }
     showIORouting_ = !anyVisible;
     resized();
 }

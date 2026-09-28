@@ -82,10 +82,42 @@ either transport, by the name it gave. Tick what you want it to be able to do:
 | Permission | Lets the client |
 |---|---|
 | `read` | Inspect the project. Always on. |
-| `edit` | Change tempo, tracks, clips, notes, devices, and automation. |
+| `edit` | Change tempo, tracks, clips, notes, devices, device mods/macros, and automation. |
 | `transport` | Play, stop, record-arm, loop, and seek. |
 | `session` | Launch and stop session clips and scenes. |
 | `hardware-midi` | Reach physical MIDI ports. Nothing uses it yet. |
+
+Device sound design uses the same operations over MCP and WebSocket. Call
+`devices.listParameters` to find a device's parameter indices and its
+`aiAgentEnabled` flags, then `mods.list` or `macros.list` with that device's
+`devicePath`. An edit-scoped client can create an LFO with `mods.create`
+(`type: "lfo"`, optional `waveform`, `rate`, `parameterIndex`, and `amount`),
+change it with `mods.update`, and use `mods.link` / `mods.unlink` or
+`macros.link` / `macros.unlink` to manage parameter targets. `mods.remove`
+deletes a mod; macros are fixed slots, so `macros.setValue` controls one.
+Links to external plugin parameters require the same AI Agent opt-in as
+`devices.setParameter`. Reads need only `read`; all writes need `edit`.
+
+### Building a Drum Grid kit
+
+Find the Drum Grid's `devicePath` in `devices.list`, then call `pads.list` with
+`gridPath` set to it. The response always has 64 slots, numbered 0–63 and
+mapped to MIDI notes 24–87. A populated slot reports its pad-chain path and
+the paths of its devices. `devices.list` also includes devices inside pad
+chains, so their parameter and mod/macro operations use those same paths.
+
+An edit-scoped client can call `pads.create`, `pads.setDevice` (with a
+`devices.catalog` id), or `pads.setSample` to populate a slot. `pads.setSample`
+accepts an explicit absolute path to an audio file **on the MAGDA host** as a
+write input. Reads return the sample's display name and device path, never its
+filesystem path or plugin state. Use `devices.add` with the returned
+`chainPath` to append an effect; `devices.remove` and `devices.move` also
+accept pad-device paths. `pads.update` edits note range and root, level, pan,
+mute, solo, bypass, and output bus in one undo step. `pads.swap` exchanges two
+single-note slots, and `pads.clear` removes one. Note overlaps and multi-out
+buses on nested Drum Grids are rejected before any edit is applied. The
+`devices` subscription includes pad slots so these changes appear in its
+revisions.
 
 Changes apply to the client's next request — there is nothing to restart and no
 need to reconnect. The same page shows what each client has been doing, so a
@@ -287,6 +319,7 @@ Something no argument could fix — an unknown tool, a malformed request — is 
 | `magda://selection` | `selection.get` |
 | `magda://transport` | `transport.get` |
 | `magda://session` | `session.get` |
+| `magda://jobs` | `jobs.list` |
 | `magda://devices` | `devices.list` |
 | `magda://devices/catalog` | `devices.catalog` |
 

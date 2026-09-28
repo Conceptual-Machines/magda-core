@@ -18,7 +18,7 @@ namespace magda::daw::ui {
 void setupDeviceSlotGainMeterControls(
     juce::Component& parent, magda::DraggableValueLabel& gainLabel, magda::LevelMeter& levelMeter,
     std::unique_ptr<juce::Slider>& gainSlider, std::unique_ptr<juce::Slider>& mixKnob,
-    const magda::DeviceInfo& device, std::function<magda::ChainNodePath()> getNodePath);
+    const magda::DeviceInfo& device, const std::function<magda::ChainNodePath()>& getNodePath);
 
 void syncDeviceSlotGainControlsFromDevice(magda::DraggableValueLabel& gainLabel,
                                           juce::Slider* gainSlider,
@@ -29,6 +29,6 @@ double currentMixPosition(const magda::DeviceInfo& device);
 void syncDeviceSlotMixKnobFromDevice(juce::Slider* mixKnob, const magda::DeviceInfo& device);
 void refreshDeviceSlotMixKnobFromDevice(juce::Slider* mixKnob, const magda::DeviceInfo& device,
                                         bool relayoutOnVisibilityChange,
-                                        std::function<void()> relayout);
+                                        const std::function<void()>& relayout);
 
 }  // namespace magda::daw::ui

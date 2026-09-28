@@ -50,6 +50,22 @@ struct ClickSettings {
     bool operator==(const ClickSettings&) const = default;
 };
 
+/** The Arrangement recording window, in beats. */
+struct PunchRange {
+    double startBeat = 0.0;
+    double endBeat = 0.0;
+    bool punchInEnabled = false;
+    bool punchOutEnabled = false;
+    bool recordingRequested = false;
+    std::uint64_t recordingGeneration = 0;
+
+    bool valid() const {
+        return endBeat > startBeat;
+    }
+
+    bool operator==(const PunchRange&) const = default;
+};
+
 /**
  * @brief Where the transport has been asked to be.
  *
@@ -82,6 +98,11 @@ struct TransportRequest {
     bool locate = true;
     double positionBeat = 0.0;
 
+    /// Which locate this is. A later request that carries a locate forward keeps its id, and the
+    /// clock moves the cursor once per id, so a locate taken just before the carry is not taken
+    /// again. Zero has no identity and is applied whenever it arrives.
+    std::uint64_t locateId = 0;
+
     /**
      * @brief Beats of count-in before @ref positionBeat.
      *
@@ -101,6 +122,7 @@ struct TransportRequest {
 struct TransportSnapshot {
     TempoMap tempo;
     LoopRange loop;
+    PunchRange punch;
     ClickSettings click;
     TransportRequest request;
 };

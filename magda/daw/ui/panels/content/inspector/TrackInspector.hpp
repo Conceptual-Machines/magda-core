@@ -13,6 +13,7 @@
 #include "../../mixer/RoutingSelector.hpp"
 #include "BaseInspector.hpp"
 #include "audio/MidiBridge.hpp"
+#include "audio/io/AudioIOControl.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/TrackManager.hpp"
 
@@ -33,6 +34,7 @@ class TrackInspector : public BaseInspector,
                        public magda::TrackManagerListener,
                        public magda::AutomationManagerListener,
                        public magda::MidiBridge::Listener,
+                       private magda::HardwareChannels::Listener,
                        public juce::Timer {
   public:
     TrackInspector();
@@ -130,7 +132,6 @@ class TrackInspector : public BaseInspector,
     std::vector<std::unique_ptr<magda::DraggableValueLabel>> sendLevelLabels_;
     std::vector<std::unique_ptr<juce::TextButton>> sendDeleteButtons_;
     juce::Label noSendsLabel_;
-    juce::Label receivesLabel_;
 
     // Clips section
     juce::Label clipsSectionLabel_;
@@ -151,6 +152,10 @@ class TrackInspector : public BaseInspector,
     void updateAutomatedParametersSummary();
     void showTrackControls(bool show);
     void rebuildSendsUI();
+
+    /// Greys the add-send button on a track that is already at the aux limit.
+    void updateAddSendEnabled();
+
     void showAddSendMenu();
     void populateRoutingSelectors();
     void populateAudioInputOptions();
@@ -159,6 +164,9 @@ class TrackInspector : public BaseInspector,
 
     // MidiBridge::Listener
     void midiDeviceListChanged() override;
+
+    /** @brief Rebuild the routing menus against what is open now (#2748). */
+    void hardwareChannelsChanged() override;
     void populateMidiOutputOptions();
     void updateRoutingSelectorsFromTrack();
 
@@ -168,6 +176,7 @@ class TrackInspector : public BaseInspector,
     std::map<int, magda::TrackId> inputTrackMapping_;
     std::map<int, magda::TrackId> midiInputTrackMapping_;
     std::map<int, juce::String> inputChannelMapping_;
+    std::map<int, juce::String> outputChannelMapping_;
 
     // MIDI device change detection
     size_t lastMidiInputCount_ = 0;

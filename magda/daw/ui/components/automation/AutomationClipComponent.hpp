@@ -82,7 +82,7 @@ class AutomationClipComponent : public juce::Component,
   private:
     class AutomationLaneComponent* getLane() const;
     /// True while the copy-on-drag gesture (default Alt) is held.
-    bool copyGestureHeld() const;
+    static bool copyGestureHeld();
 
     AutomationClipId clipId_;
     double pixelsPerBeat_ = 10.0;
@@ -112,7 +112,7 @@ class AutomationClipComponent : public juce::Component,
     // Helpers
     void showContextMenu();
     void updateCursor(int x);
-    bool isOnLeftEdge(int x) const {
+    static bool isOnLeftEdge(int x) {
         return x < RESIZE_EDGE_WIDTH;
     }
     bool isOnRightEdge(int x) const {

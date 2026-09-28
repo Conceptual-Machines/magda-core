@@ -3,12 +3,17 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <vector>
 
+#include "ChainIdRemap.hpp"
 #include "ChainNode.hpp"
+#include "ChainPlacement.hpp"
+#include "DeviceState.hpp"
+#include "HostedParameterEdit.hpp"
 #include "SelectionManager.hpp"
 #include "TrackInfo.hpp"
 #include "TrackTypes.hpp"
@@ -50,12 +55,35 @@ class TrackManagerListener {
         juce::ignoreUnused(trackId);
     }
 
+    // Runtime handoff between arrangement and Session playback. The default
+    // preserves existing listeners; remote observers override it to keep this
+    // live state revision-neutral.
+    virtual void trackPlaybackModeChanged(TrackId trackId) {
+        trackPropertyChanged(trackId);
+    }
+
+    // Called when a track's audio input changes, just before its trackPropertyChanged
+    virtual void trackAudioInputChanged(TrackId trackId) {
+        juce::ignoreUnused(trackId);
+    }
+
+    // Called when a track's MIDI input changes, just before its trackPropertyChanged
+    virtual void trackMidiInputChanged(TrackId trackId) {
+        juce::ignoreUnused(trackId);
+    }
+
     // Called when master channel properties change
     virtual void masterChannelChanged() {}
 
     // Called when track selection changes
     virtual void trackSelectionChanged(TrackId trackId) {
         juce::ignoreUnused(trackId);
+    }
+
+    // Called just before the element at sourcePath moves into destinationChain
+    virtual void chainElementMoving(const ChainNodePath& sourcePath,
+                                    const ChainNodePath& destinationChain) {
+        juce::ignoreUnused(sourcePath, destinationChain);
     }
 
     // Called when devices on a track change (added, removed, reordered, bypassed)
@@ -98,6 +126,23 @@ class TrackManagerListener {
         juce::ignoreUnused(devicePath, paramIndex, newValue);
     }
 
+    /**
+     * @brief What a hosted plugin reports one of its parameters now holds.
+     *
+     * For drawing only, and deliberately not deviceParameterChanged: that one
+     * also commands the engine, and an observation answered with a write is
+     * how a knob ends up fighting the plugin
+     * (docs/specs/hosted-plugin-parameter-control.md). @p normalised is a
+     * position; a surface showing real units converts it.
+     *
+     * Carries no requirement that the document hold the parameter, which for
+     * a plugin's own parameters it does not.
+     */
+    virtual void deviceParameterObserved(const ChainNodePath& devicePath, int paramIndex,
+                                         float normalised, ObservationSource source) {
+        juce::ignoreUnused(devicePath, paramIndex, normalised, source);
+    }
+
     // Called when a macro knob value changes (for audio engine sync).
     // `scope` tells the receiver how to interpret `ownerId`:
     //   ChainScope::Track  → ownerId is the TrackId
@@ -118,6 +163,52 @@ class TrackManagerListener {
     virtual void modParameterChanged(TrackId trackId, const ChainNodePath& devicePath, ModId modId,
                                      int paramIndex, float value) {
         juce::ignoreUnused(trackId, devicePath, modId, paramIndex, value);
+    }
+};
+
+/**
+ * @brief Where a restored track belongs: its place in the project's track
+ * order, and its place among its parent group's children when it has one.
+ *
+ * A track belongs to two orders and a restore has to put it back in both. Either
+ * index left unset means the end of that order (#2229).
+ */
+struct TrackRestorePosition {
+    int trackIndex = -1;
+    int siblingIndex = -1;
+};
+
+/**
+ * @brief What a track deletion clears on the tracks that outlive it.
+ *
+ * `deleteTrack()` reaches outside the track it removes: it erases every send
+ * aimed at it, clears the input of anything listening to it, and clears every
+ * device and rack sidechained to it, the master track included. None of that
+ * lives inside the deleted subtree, so an undo that restores only the subtree
+ * gives back a project that has permanently lost them (#2229).
+ */
+struct ExternalTrackRouting {
+    /// One surviving track's routing, whole rather than by difference: the
+    /// deletion only ever removes from these, so putting the recorded state
+    /// back is exact, order and send levels included.
+    struct Routing {
+        TrackId trackId = INVALID_TRACK_ID;
+        std::vector<SendInfo> sends;
+        juce::String audioInputDevice;
+        juce::String midiInputDevice;
+    };
+
+    /// One device or rack that was sidechained to a deleted track.
+    struct Sidechain {
+        ChainNodePath nodePath;
+        SidechainConfig config;
+    };
+
+    std::vector<Routing> tracks;
+    std::vector<Sidechain> sidechains;
+
+    bool empty() const {
+        return tracks.empty() && sidechains.empty();
     }
 };
 
@@ -170,7 +261,7 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void shutdown() {
         tracks_.clear();  // Clear JUCE::String objects before JUCE cleanup
         listeners_.clear();
-        audioEngine_ = nullptr;
+        setAudioEngine(nullptr);
     }
 
     /**
@@ -200,8 +291,14 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     static TrackId createTrackWithPlugin(const juce::DynamicObject& pluginObj);
 
     // Track operations
-    TrackId createTrack(const juce::String& name = "", TrackType type = TrackType::Audio);
+    TrackId createTrack(const juce::String& name = "", TrackType type = TrackType::Media);
     TrackId createGroupTrack(const juce::String& name = "");
+
+    /**
+     * Materialise a saved track-chain preset as a new media track. All runtime
+     * ids and links are re-keyed into the current project before publication.
+     */
+    TrackId createTrackFromPreset(TrackInfo presetTrack, const juce::String& name);
 
     // Chord track is a strict singleton (TrackType::Chord). It lives in the
     // normal track list so it gets clip hosting / arrangement rendering for
@@ -223,7 +320,23 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
      * slate for workflows that want content-only duplication.
      */
     TrackId duplicateTrack(TrackId trackId, bool includeDevices = true);
-    void restoreTrack(const TrackInfo& trackInfo);  // Used by undo system
+    /// Put a track back. Both orders matter: a track deleted from the middle of
+    /// a project and restored at the end has moved, and a child restored at the
+    /// end of its group's `childIds` has changed the group's order even when its
+    /// place in the project is right (#2229).
+    void restoreTrack(const TrackInfo& trackInfo, TrackRestorePosition position = {});
+
+    /// Where @p trackId stands now, so a later restore can put it back there.
+    TrackRestorePosition restorePositionOf(TrackId trackId) const;
+
+    /// Everything outside @p trackIds that deleting all of them would clear.
+    ///
+    /// Asked before the deletion, so undo can put back what the cleanup swept
+    /// up. Only tracks that actually route into the doomed set are recorded.
+    ExternalTrackRouting externalRoutingInto(const std::vector<TrackId>& trackIds) const;
+
+    /// Put back what @p routing recorded.
+    void restoreExternalRouting(const ExternalTrackRouting& routing);
     void moveTrack(TrackId trackId, int newIndex);
 
     // Hierarchy operations
@@ -243,7 +356,7 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     // 1-based position of a track among its siblings (0 if not found).
     int getTrackSiblingPosition(TrackId trackId) const;
     TrackId createTrackInGroup(TrackId groupId, const juce::String& name = "",
-                               TrackType type = TrackType::Audio);
+                               TrackType type = TrackType::Media);
     std::vector<TrackId> getChildTracks(TrackId groupId) const;
     std::vector<TrackId> getTopLevelTracks() const;
     std::vector<TrackId> getAllDescendants(TrackId trackId) const;
@@ -263,7 +376,57 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
      */
     void previewNote(TrackId trackId, int noteNumber, int velocity, bool isNoteOn);
 
+    // ========================================================================
+    // ========================================================================
+    // Structural re-keying (#2221)
+    // ========================================================================
+
+    /// Whether @p request may be carried out, and why not when it may not.
+    ///
+    /// The one placement question. Move, paste, wrap, unwrap and duplication all
+    /// ask it, and used to answer it with their own subset of the rules: the
+    /// move path checked four, wrap checked one, insert checked none. Every rule
+    /// examines the complete subtree and is independent of whether the
+    /// destination is a track's own list, a rack chain or a pad chain (#2221).
+    ///
+    /// Asked before anything is mutated. A refused operation leaves the model
+    /// as it was and notifies nothing.
+    PlacementRefusal checkPlacement(const PlacementRequest& request) const;
+
+    /// Give every device, rack and chain in @p elements a fresh id, recording
+    /// what moved where in @p remap.
+    ///
+    /// The one recursive re-key. Duplication, preset import, rack presets and
+    /// chain presets each grew their own, and they drifted: two of the four did
+    /// not descend into a device's pads, so a preset carrying a Drum Grid
+    /// brought the preset's pad DeviceIds into a live project, and only one of
+    /// the four recorded the synthetic pad rack id so a link naming it could be
+    /// followed. Anything with the same job calls this instead of writing a
+    /// fifth (#2221).
+    ///
+    /// Ids only. Links inside the subtree are followed afterwards from @p remap,
+    /// because who owns them differs by caller.
+    void reassignChainElementIds(std::vector<ChainElement>& elements, ChainIdRemap& remap);
+
     // Multi-output management
+    //
+    // A pair's child track is owned by the child track: `TrackInfo::multiOutLink`
+    // names the source track, the source device and the pair, and it is the only
+    // record of the assignment. The device's `MultiOutOutputPair` carries the
+    // pair's declarative description and nothing about where it goes, so a
+    // device copied by duplication, preset import or paste cannot inherit the
+    // original's child tracks (#2220).
+    // ========================================================================
+
+    /// The child track pair @p pairIndex of @p deviceId drives, or
+    /// INVALID_TRACK_ID when it drives none.
+    TrackId multiOutChildTrack(TrackId parentTrackId, DeviceId deviceId, int pairIndex) const;
+
+    /// Whether that pair drives a child track. Derived, never stored.
+    bool multiOutPairIsActive(TrackId parentTrackId, DeviceId deviceId, int pairIndex) const {
+        return multiOutChildTrack(parentTrackId, deviceId, pairIndex) != INVALID_TRACK_ID;
+    }
+
     TrackId activateMultiOutPair(TrackId parentTrackId, DeviceId deviceId, int pairIndex);
     void deactivateMultiOutPair(TrackId parentTrackId, DeviceId deviceId, int pairIndex);
     void deactivateAllMultiOutPairs(TrackId parentTrackId, DeviceId deviceId);
@@ -321,11 +484,16 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void setTrackAudioInput(TrackId trackId, const juce::String& deviceId);
     void setTrackAudioOutput(TrackId trackId, const juce::String& routing);
 
+    /** Replace several tracks' routing after resolving every target up front. */
+    bool applyTrackRoutingStates(const std::vector<TrackRoutingState>& states);
+
     // Send management (track → any track)
     void addSend(TrackId sourceTrackId, TrackId destTrackId);
     void removeSend(TrackId sourceTrackId, int busIndex);
     void setSendLevel(TrackId sourceTrackId, int busIndex, float level,
                       bool fromAutomation = false);
+    /** Atomically replace one track's preflighted sends, resolving destination buses on commit. */
+    bool applyTrackSends(TrackId sourceTrackId, std::vector<SendInfo>& sends);
 
     // View settings
     void setTrackVisible(TrackId trackId, ViewMode mode, bool visible);
@@ -425,12 +593,176 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     static void seedSidechainModIfMissing(DeviceInfo& dev, const ChainNodePath& devicePath);
 
     // Common prep for the FX-chain and rack-chain add paths: assign a fresh
-    // DeviceId from nextFxDeviceId_, stamp the default kit, and tag analysis
-    // devices. Returns the prepared copy; callers insert it, then fire
-    // notifyDeviceAdded. Centralised so these steps can't drift per call site.
-    // Post-fx and mixer-analysis keep their own ID spaces (nextPostFxDeviceId_,
-    // nextMixerAnalysisDeviceId_) and so do their own prep.
-    DeviceInfo prepareNewDevice(const DeviceInfo& device);
+    // DeviceId from nextFxDeviceId_, re-key and retarget its pads, stamp the
+    // default kit, and tag analysis devices. Returns the prepared copy; callers
+    // insert it into @p trackId, then fire notifyDeviceAdded. Centralised so
+    // these steps can't drift per call site. Post-fx and mixer-analysis keep
+    // their own ID spaces (nextPostFxDeviceId_, nextMixerAnalysisDeviceId_) and
+    // so do their own prep.
+    //
+    // The track is taken because a pad path is rooted at one: a link inside a
+    // Drum Grid's pads names the track the grid is on, and the copy is about to
+    // be on a different one.
+    DeviceInfo prepareNewDevice(TrackId trackId, const DeviceInfo& device);
+
+    // Re-derive a pad-per-chain device's rack id and re-key its pad devices,
+    // for a copy that arrived carrying the ids of the device it came from.
+    // Both ids are DeviceIds in disguise, so a copy that kept them would key
+    // the original's ops (#2207). A pad's contents are chain elements like any
+    // other, nested racks included, so the whole subtree is re-keyed rather
+    // than the direct pad devices alone. `remap` collects the old-to-new ids so
+    // the caller can follow the paths that named them.
+    void rekeyPads(DeviceInfo& device, ChainIdRemap& remap);
+
+    // The pad chain answering to a pad, mutable. Private because a pad property
+    // is set through the setters above, which notify.
+    ChainInfo* mutablePad(const ChainNodePath& gridPath, int padIndex);
+
+    // ========================================================================
+    // Pad-per-chain devices (#2207)
+    //
+    // A Drum Grid's pads are a rack the device owns, so a pad is an ordinary
+    // chain: `padChainPath()` addresses one, and adding, removing, reordering,
+    // muting, soloing and fading a pad go through the same calls a rack chain
+    // does. Only what is particular to a pad lives here.
+    // ========================================================================
+
+    /// The path addressing one of @p gridPath's pad chains.
+    static ChainNodePath padChainPath(const ChainNodePath& gridPath, ChainId padChainId);
+
+    /// The pads @p gridPath's device owns, or null when it has none.
+    RackInfo* getPads(const ChainNodePath& gridPath);
+    const RackInfo* getPads(const ChainNodePath& gridPath) const;
+
+    /// The first pad device on @p trackId, or null.
+    const DeviceInfo* findPadDevice(TrackId trackId) const;
+
+    /// The first pad device @p devicePath's signal reaches after it, or null.
+    const DeviceInfo* findPadDeviceDownstreamOf(const ChainNodePath& devicePath) const;
+
+    /// The pad device @p devicePath names, or null when it names none.
+    ///
+    /// `getDeviceInChainByPath()` falls back to this, so a pad path resolves
+    /// through the generic lookup like any other device path (#2211).
+    DeviceInfo* getDeviceInPadByPath(const ChainNodePath& devicePath);
+
+    /// The pad chain @p chainPath names, or null when it names none.
+    ///
+    /// `getChainByPath()` dispatches to this for a pad-owned address, so a pad
+    /// chain is looked up through the generic call like any other chain (#2219).
+    ChainInfo* getChainInPadByPath(const ChainNodePath& chainPath);
+
+    /// The rack a pad-owned @p rackPath names, or null when it names none.
+    ///
+    /// `getRackByPath()` dispatches to this for a pad-owned address, the way
+    /// `getChainByPath()` already dispatched chains. The rack walk cannot
+    /// answer one: a `PadRack` step carries the owning grid's DeviceId and the
+    /// rack it names is `DeviceInfo::pads`, which is not a chain element. Until
+    /// this existed every path-based rack call failed silently inside a pad, so
+    /// wrapping a device there made a rack whose chain could not be found
+    /// again and the wrap could not be undone (#2229).
+    RackInfo* getRackInPadByPath(const ChainNodePath& rackPath);
+
+    /// Replace those pads wholesale. Undo's counterpart to every pad edit
+    /// below, which is why it lives with them rather than on the command
+    /// (`EditPadsCommand`, #2211).
+    void setPads(const ChainNodePath& gridPath, const PadRack& pads);
+
+    /// The pad chain answering to pad @p padIndex, or null.
+    const ChainInfo* getPad(const ChainNodePath& gridPath, int padIndex) const;
+
+    /// The pad chain carrying @p padChainId, or null.
+    ChainInfo* getPadChain(const ChainNodePath& gridPath, ChainId padChainId);
+
+    /// Add @p device to a pad's chain, at @p insertIndex (-1 appends).
+    DeviceId addDeviceToPad(const ChainNodePath& gridPath, ChainId padChainId,
+                            const DeviceInfo& device, int insertIndex = -1);
+
+    /// Take a device off a pad's chain.
+    void removeDeviceFromPad(const ChainNodePath& gridPath, ChainId padChainId, DeviceId deviceId);
+
+    /// Reorder a pad's chain.
+    void moveDeviceInPad(const ChainNodePath& gridPath, ChainId padChainId, int fromIndex,
+                         int toIndex);
+
+    /// Power a device on a pad's chain off or on.
+    void setPadDeviceBypassed(const ChainNodePath& gridPath, ChainId padChainId, DeviceId deviceId,
+                              bool bypassed);
+
+    /// Set the gain of a device on a pad's chain, in dB.
+    void setPadDeviceGainDb(const ChainNodePath& gridPath, ChainId padChainId, DeviceId deviceId,
+                            float gainDb);
+
+    /// A pad's fader, pan and switches.
+    void setPadVolume(const ChainNodePath& gridPath, int padIndex, float volume);
+    void setPadPan(const ChainNodePath& gridPath, int padIndex, float pan);
+    void setPadMuted(const ChainNodePath& gridPath, int padIndex, bool muted);
+    void setPadSolo(const ChainNodePath& gridPath, int padIndex, bool solo);
+    void setPadBypassed(const ChainNodePath& gridPath, int padIndex, bool bypassed);
+
+    /// Which output a pad plays out of: 0 is the grid's own mix, 1+ a multi-out
+    /// bus. `ChainInfo::outputIndex`, the same field a rack chain routes with.
+    ///
+    /// False, and refused, for a bus on a grid that is not a top-level device.
+    /// A multi-out child track is fed by an output instance the instrument rack
+    /// manager makes for a wrapped top-level instrument; a grid inside a MAGDA
+    /// rack is loaded by RackSyncManager and has no such entry, so the bus
+    /// would name a track nothing reaches (#2211).
+    bool setPadOutput(const ChainNodePath& gridPath, int padIndex, int outputIndex);
+
+    /// Whether a bus can be assigned to @p gridPath's pads at all.
+    static bool padBusesAvailable(const ChainNodePath& gridPath);
+
+    /// Put every pad back on the grid's own mix. True when any of them moved.
+    ///
+    /// A grid can cross into a placement where buses do not work after the
+    /// assignment was made -- `wrapDeviceInRack()` moves it into a rack and
+    /// keeps its pads -- and a project can be loaded already in that state. The
+    /// device sync calls this so a pad never stays pointed at a bus nothing
+    /// carries (#2211).
+    bool resetPadBuses(const ChainNodePath& gridPath);
+
+    /// Whether @p padIndex's chain could take this range: inside the grid's own
+    /// notes, and clear of every other pad chain's. Asked before the edit so a
+    /// refused range does not become an undo step that changed nothing.
+    bool padNoteRangeIsFree(const ChainNodePath& gridPath, int padIndex, int lowNote,
+                            int highNote) const;
+
+    /// The notes a pad answers to, and the one its sampler is rooted on.
+    ///
+    /// A pad is keyed by pitch, so this is the one pad property with no rack
+    /// equivalent: a plain chain answers to everything.
+    ///
+    /// Refused, and false, when the range would reach a note another pad chain
+    /// already answers to. A note has one owner: the grid plays every chain
+    /// whose range covers an incoming note, and the rows, the faders and the
+    /// switches all address a pad by finding the chain covering its note, so a
+    /// second claimant would leave a row editing a chain other than the one it
+    /// shows (#2211).
+    bool setPadNoteRange(const ChainNodePath& gridPath, int padIndex, int lowNote, int highNote,
+                         int rootNote);
+
+    /// Take a pad chain off the grid by id, whatever range it answers to.
+    ///
+    /// `clearPad()` is the pad's own delete and leaves a chain shared with
+    /// neighbouring pads alone. This is the chain's: a row stands for a chain,
+    /// so its delete has to be able to remove one that answers to more than a
+    /// single note.
+    void removePadChain(const ChainNodePath& gridPath, ChainId padChainId);
+
+    /// The pad chain answering to pad @p padIndex, made if it is not there yet.
+    /// INVALID_CHAIN_ID when the device does not keep its chains as pads.
+    ChainId ensurePad(const ChainNodePath& gridPath, int padIndex);
+
+    /// Put @p device on pad @p padIndex on its own, replacing whatever it held.
+    DeviceId setPadDevice(const ChainNodePath& gridPath, int padIndex, const DeviceInfo& device);
+
+    /// Take pad @p padIndex off the grid. A chain shared with neighbouring pads
+    /// is left alone: it is their sound too.
+    void clearPad(const ChainNodePath& gridPath, int padIndex);
+
+    /// Trade what two pads answer to, so a sound moves between them.
+    void swapPads(const ChainNodePath& gridPath, int padA, int padB);
 
     // Wrap a device in a new rack (device moves into the rack's first chain)
     RackId wrapDeviceInRack(TrackId trackId, DeviceId deviceId,
@@ -456,6 +788,15 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     ChainId addChainToRack(const ChainNodePath& rackPath, const juce::String& name = "Chain");
     void removeChainFromRack(TrackId trackId, RackId rackId, ChainId chainId);
     void removeChainByPath(const ChainNodePath& chainPath);  // Path-based removal for nested chains
+    /// Put @p chain back into the rack at @p rackPath, at @p index, under the id
+    /// it already carries.
+    ///
+    /// `addChainToRack()` appends and stamps a fresh ChainId, so it cannot undo
+    /// a removal: the chain would come back last and under a different identity
+    /// from the one every link, lane and alias naming it was made against, the
+    /// same reason the device and rack removals restore ids rather than
+    /// reallocate them (#2232).
+    bool insertChainIntoRackByPath(const ChainNodePath& rackPath, ChainInfo chain, int index);
     ChainInfo* getChain(TrackId trackId, RackId rackId, ChainId chainId);
     const ChainInfo* getChain(TrackId trackId, RackId rackId, ChainId chainId) const;
     ChainInfo* getChainByPath(const ChainNodePath& chainPath);  // Nested-chain lookup
@@ -519,8 +860,34 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     bool insertChainElementsByPath(const ChainNodePath& destinationChainPath,
                                    std::vector<ChainElement> elements, int insertIndex,
                                    bool reassignIds = true);
+    /// Put @p device back into the flat section @p devicePath addresses, at
+    /// @p index, under the id it already carries.
+    ///
+    /// `addDeviceToPostFx()` and `addDeviceToMixerAnalysis()` stamp a fresh
+    /// DeviceId and re-run the section's admission rules, so neither can undo a
+    /// removal: the device would come back under an identity no existing link
+    /// names. The chain tree has `insertChainElementsByPath(reassignIds=false)`
+    /// for this; the flat sections had nothing (#2232).
+    bool insertFlatSectionDeviceByPath(const ChainNodePath& devicePath, DeviceInfo device,
+                                       int index);
+    /**
+     * Stage a fresh device beside @p incumbentPath in the same flat section.
+     * Uniqueness checks ignore only the incumbent, allowing an atomic same-kind
+     * replacement without first deleting the live device.
+     */
+    DeviceId stageFlatSectionReplacement(const ChainNodePath& incumbentPath,
+                                         const DeviceInfo& device, int index);
+    /// Wrap @p paths in a new rack.
+    ///
+    /// @p presetRackId and @p presetChainId let a redo reuse the ids its first
+    /// run allocated. Re-deriving them would give the rack a different identity
+    /// each time, so every link, automation lane and alias naming it would be
+    /// orphaned by an undo followed by a redo -- the same reason the removal
+    /// commands restore a device under the id it had (#2221).
     RackId wrapChainElementsInRack(const std::vector<ChainNodePath>& paths,
-                                   const juce::String& rackName = "Rack");
+                                   const juce::String& rackName = "Rack",
+                                   RackId presetRackId = INVALID_RACK_ID,
+                                   ChainId presetChainId = INVALID_CHAIN_ID);
     int getChainElementIndex(const ChainNodePath& elementPath);
     DeviceInfo* getDeviceInChain(TrackId trackId, RackId rackId, ChainId chainId,
                                  DeviceId deviceId);
@@ -535,7 +902,16 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
 
     // Sidechain configuration (device-level)
     void setSidechainSource(DeviceId targetDevice, TrackId sourceTrack, SidechainConfig::Type type);
+    /// Which point on the source track the key is taken at (#2329).
+    void setSidechainTapPoint(DeviceId targetDevice, ModTapPoint tapPoint);
+    /// Trim on the key, applied on the edge feeding the device.
+    void setSidechainGainDb(DeviceId targetDevice, float gainDb);
+    /// Monitor the key in place of the device's own output.
+    void setSidechainListen(DeviceId targetDevice, bool listen);
     void clearSidechain(DeviceId targetDevice);
+
+    /** Replace one device or rack sidechain by its unambiguous hierarchy path. */
+    bool setSidechainConfigByPath(const ChainNodePath& ownerPath, const SidechainConfig& sidechain);
 
     // Sidechain configuration (rack-level)
     void setRackSidechainSource(const ChainNodePath& rackPath, TrackId sourceTrack,
@@ -546,7 +922,19 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void setDeviceGainDb(const ChainNodePath& devicePath, float gainDb);
     void setDeviceLevel(const ChainNodePath& devicePath, float level);  // 0-1 linear
 
-    // Find the ChainNodePath for a device by its ID (searches all tracks recursively)
+    /**
+     * @brief The path of the device @p deviceId names in @p segment.
+     *
+     * A DeviceId is section-local (#1899), so the id alone names up to three
+     * devices and the segment is the half that makes it an identity. Fx
+     * descends racks and pads; the two flat sections are one level deep.
+     *
+     * Invalid for a device that section does not hold.
+     */
+    ChainNodePath findDevicePath(DeviceId deviceId, ChainSegment segment) const;
+
+    /// @overload The main FX tree, which is what an unqualified id has always
+    /// meant here.
     ChainNodePath findDevicePath(DeviceId deviceId) const;
 
     // Update device parameters (called by AudioBridge when processor is created)
@@ -574,6 +962,23 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     }
 
     /**
+     * @brief Set the parameter @p described names, in model units.
+     *
+     * For a hosted plugin's ordinary parameter the model holds no value and
+     * this is a command to the plugin, converted to a position through
+     * @p described's own range
+     * (docs/specs/hosted-plugin-parameter-control.md). @p described is the
+     * caller's, which is what saves the engine being asked to enumerate the
+     * plugin again on every step of a drag.
+     */
+    void setDeviceParameterValue(const ChainNodePath& devicePath, const ParameterInfo& described,
+                                 ParameterModelValue value);
+
+    /** Build the normalized replacement state without mutating the live device. */
+    std::optional<DeviceInfo> prepareDevicePresetState(const ChainNodePath& devicePath,
+                                                       const DeviceInfo& presetDevice) const;
+
+    /**
      * @brief Apply a deserialized DeviceInfo (from a .mps preset) to a live device.
      *
      * Copies the state-y fields (parameters, macros, mods, gainDb, pluginState)
@@ -585,6 +990,32 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
      * plugin identity doesn't match the live device.
      */
     bool applyDevicePreset(const ChainNodePath& devicePath, const DeviceInfo& presetDevice);
+
+    /**
+     * @brief Edit an internal device's authored (non-parameter) state on the
+     *        model, then project it into the running engine (#2317).
+     *
+     * The one write direction for authored state: @p patch edits the device's
+     * state document (`device_state::Doc`) IN THE MODEL - decoded from
+     * `DeviceInfo::pluginState`, or a fresh document when the device has none
+     * - and the result is encoded back and pushed into the live plugin, never
+     * the other way around. Never touches `Doc::params`, which no longer
+     * exists in new documents; parameters go through setDeviceParameterValue.
+     *
+     * Returns false if the path doesn't resolve to an internal device or the
+     * saved state is from a future schema (which must not be edited blind).
+     */
+    bool updateDeviceAuthoredState(const ChainNodePath& devicePath,
+                                   const std::function<void(device_state::Doc&)>& patch);
+
+    /**
+     * @brief Replace an internal device's saved state document verbatim and
+     *        project it into the running engine.
+     *
+     * The undo half of updateDeviceAuthoredState: a command snapshots
+     * `DeviceInfo::pluginState`, and this puts a snapshot back.
+     */
+    bool setDeviceAuthoredState(const ChainNodePath& devicePath, const juce::String& docText);
 
     /**
      * @brief Apply a loaded rack preset to a live rack at the given path.
@@ -614,6 +1045,12 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
      */
     bool applyChainPreset(TrackId trackId, std::vector<ChainElement> presetElements);
 
+    /** Build a re-keyed chain replacement while preserving all non-chain track state. */
+    std::optional<TrackInfo> prepareTrackPresetState(TrackId trackId, const TrackInfo& presetTrack);
+
+    /** Install a state returned by prepareTrackPresetState(). */
+    bool applyPreparedTrackPreset(TrackId trackId, const TrackInfo& preparedTrack);
+
     /**
      * @brief Set a device parameter value from the plugin's native UI
      *
@@ -625,7 +1062,6 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void setDeviceParameterValueFromPlugin(const ChainNodePath& devicePath, int paramIndex,
                                            float value);
     void setDeviceParameterValueFromPlugin(DeviceId deviceId, int paramIndex, float value) override;
-    bool isChordTrackMuted() const override;
 
     /**
      * @brief Get plugin latency for a device by querying the audio engine
@@ -645,8 +1081,6 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     RackId addRackToChain(TrackId trackId, RackId parentRackId, ChainId chainId,
                           const juce::String& name = "Rack");
     RackId addRackToChainByPath(const ChainNodePath& chainPath, const juce::String& name = "Rack");
-    void removeRackFromChain(TrackId trackId, RackId parentRackId, ChainId chainId,
-                             RackId nestedRackId);
     void removeRackFromChainByPath(const ChainNodePath& rackPath);
 
     // ========================================================================
@@ -673,13 +1107,13 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
 
     // Unified macro management — works for Track, Rack, and Device scopes.
     void setMacroValue(const ChainNodePath& path, int macroIndex, float value);
-    void setMacroTarget(const ChainNodePath& path, int macroIndex, ControlTarget target);
-    void setMacroLinkAmount(const ChainNodePath& path, int macroIndex, ControlTarget target,
+    void setMacroTarget(const ChainNodePath& path, int macroIndex, const ControlTarget& target);
+    void setMacroLinkAmount(const ChainNodePath& path, int macroIndex, const ControlTarget& target,
                             float amount);
-    void setMacroLinkBipolar(const ChainNodePath& path, int macroIndex, ControlTarget target,
+    void setMacroLinkBipolar(const ChainNodePath& path, int macroIndex, const ControlTarget& target,
                              bool bipolar);
     void setMacroName(const ChainNodePath& path, int macroIndex, const juce::String& name);
-    void removeMacroLink(const ChainNodePath& path, int macroIndex, ControlTarget target);
+    void removeMacroLink(const ChainNodePath& path, int macroIndex, const ControlTarget& target);
     void clearAllMacroLinks(const ChainNodePath& path, int macroIndex);
     void addMacroPage(const ChainNodePath& path);
     void removeMacroPage(const ChainNodePath& path);
@@ -688,12 +1122,12 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void addMod(const ChainNodePath& path, int slotIndex, ModType type,
                 LFOWaveform waveform = LFOWaveform::Sine);
     void removeMod(const ChainNodePath& path, int modIndex);
-    void setModTarget(const ChainNodePath& path, int modIndex, ControlTarget target);
-    void setModLinkAmount(const ChainNodePath& path, int modIndex, ControlTarget target,
+    void setModTarget(const ChainNodePath& path, int modIndex, const ControlTarget& target);
+    void setModLinkAmount(const ChainNodePath& path, int modIndex, const ControlTarget& target,
                           float amount);
-    void setModLinkBipolar(const ChainNodePath& path, int modIndex, ControlTarget target,
+    void setModLinkBipolar(const ChainNodePath& path, int modIndex, const ControlTarget& target,
                            bool bipolar);
-    void setModLinkEnabled(const ChainNodePath& path, int modIndex, ControlTarget target,
+    void setModLinkEnabled(const ChainNodePath& path, int modIndex, const ControlTarget& target,
                            bool enabled);
     void setModName(const ChainNodePath& path, int modIndex, const juce::String& name);
     void setModType(const ChainNodePath& path, int modIndex, ModType type);
@@ -723,7 +1157,7 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     // Copies the envelope follower fields (gain/attack/hold/release) from `src`
     // into the stored mod and re-syncs the TE modifier.
     void setModFollower(const ChainNodePath& path, int modIndex, const ModInfo& src);
-    void removeModLink(const ChainNodePath& path, int modIndex, ControlTarget target);
+    void removeModLink(const ChainNodePath& path, int modIndex, const ControlTarget& target);
     void clearAllModLinks(const ChainNodePath& path, int modIndex);
     void setModEnabled(const ChainNodePath& path, int modIndex, bool enabled);
     void addModPage(const ChainNodePath& path);
@@ -919,18 +1353,34 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
 
   private:
     TrackManager();
-    ~TrackManager() = default;
+    ~TrackManager() override = default;
 
     // Register a track with MidiBridge for input monitoring. No-op when no audio
     // engine is attached or the track takes no external input (Aux, Group).
     // Single place for the create/restore/duplicate/engine-attach wiring.
     void startMidiMonitoring(const TrackInfo& track, const juce::String& deviceId);
 
+    /// Find @p targetDevice anywhere in any track, change its sidechain source,
+    /// then notify. The one walk every sidechain edit shares (#2329).
+    void editSidechain(DeviceId targetDevice, const std::function<void(SidechainConfig&)>& edit);
+
     // Mutable resolver — used only by the unified setters in
     // TrackManagerModulation.cpp. Kept private so external callers can't
     // reach in and mutate macros/mods without going through the setter
     // notification path.
     ChainNode resolveChainNode(const ChainNodePath& path);
+
+    // Drop any selection standing on something that is about to be erased.
+    //
+    // `SelectionManager::clearSelectionForDeletedChainNode()` matches an exact
+    // path or a device id rather than an ancestor, so removing a container
+    // leaves a selection below it pointing at freed model. Every removal of a
+    // subtree goes through these two, which walk it (#2232).
+    static void clearSelectionsUnderDevice(const DeviceInfo& device,
+                                           const ChainNodePath& devicePath);
+    static void clearSelectionsUnderChain(const std::vector<ChainElement>& elements,
+                                          const ChainNodePath& chainPath);
+    static void clearSelectionsUnderRack(const RackInfo& rack, const ChainNodePath& rackPath);
 
     std::vector<TrackInfo> tracks_;
     std::vector<TrackManagerListener*> listeners_;
@@ -999,12 +1449,29 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     std::array<uint64_t, kMaxBusTracks> lastBusNoteOff_{};
 
     void notifyTrackPropertyChanged(int trackId);
+    void notifyTrackPlaybackModeChanged(TrackId trackId);
+    void notifyTrackAudioInputChanged(TrackId trackId);
+    void notifyTrackMidiInputChanged(TrackId trackId);
+    void notifyChainElementMoving(const ChainNodePath& sourcePath,
+                                  const ChainNodePath& destinationChain);
     void notifyMasterChannelChanged();
     void notifyTrackSelectionChanged(TrackId trackId);
     void notifyDeviceModifiersChanged(TrackId trackId);
     void notifyAudioSidechainTriggered(TrackId sourceTrackId);
     void notifyDeviceParameterChanged(const ChainNodePath& devicePath, int paramIndex,
                                       float newValue);
+
+  public:
+    /**
+     * @brief Tell the UI what a plugin says its parameter now holds.
+     *
+     * Public because the engine host is what hears the plugin. Nothing is
+     * written and nothing is published: only a knob is redrawn.
+     */
+    void notifyDeviceParameterObserved(const ChainNodePath& devicePath, int paramIndex,
+                                       float normalised, ObservationSource source);
+
+  private:
     void notifyMacroValueChanged(TrackId trackId, ChainScope scope, int ownerId, int macroIndex,
                                  float value);
     void notifyModParameterChanged(TrackId trackId, const ChainNodePath& devicePath, ModId modId,
@@ -1013,7 +1480,7 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void syncMultiOutChildOutputsForSource(TrackId sourceTrackId);
 
     // Helper for recursive mod updates
-    void updateRackMods(const RackInfo& rack, double deltaTime);
+    static void updateRackMods(const RackInfo& rack, double deltaTime);
 
     juce::String generateTrackName() const;
 };

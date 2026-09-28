@@ -70,6 +70,30 @@ struct ChainInfo {
     float volume = 0.0f;  // Chain volume in dB (0 = unity)
     float pan = 0.0f;     // Chain pan (-1 to 1)
 
+    /**
+     * The MIDI notes this chain answers to, for a rack whose chains are keyed
+     * by pitch rather than run in parallel: a Drum Grid's pads (#2192).
+     *
+     * `lowNote` > `highNote` means the chain takes everything, which is what a
+     * plain parallel rack chain does and what every chain built before pads
+     * lived in the model reads as. `rootNote` is the pitch the range is
+     * transposed onto before the chain sees it, so a sampler mapped at C0
+     * plays from whichever pad triggered it.
+     */
+    int lowNote = 0;
+    int highNote = -1;
+    int rootNote = 0;
+
+    bool answersToEveryNote() const {
+        return lowNote > highNote;
+    }
+
+    /// Compiled at all: not bypassed, and on the main output. Aux-routed chains
+    /// are not wired yet.
+    bool isActive() const {
+        return !bypassed && outputIndex == 0;
+    }
+
     // UI state
     bool expanded = true;
 
@@ -80,43 +104,11 @@ struct ChainInfo {
     ChainInfo(ChainInfo&&) = default;
     ChainInfo& operator=(ChainInfo&&) = default;
 
-    // Copy constructor - deep copies elements
-    ChainInfo(const ChainInfo& other)
-        : id(other.id),
-          name(other.name),
-          outputIndex(other.outputIndex),
-          muted(other.muted),
-          solo(other.solo),
-          bypassed(other.bypassed),
-          volume(other.volume),
-          pan(other.pan),
-          expanded(other.expanded) {
-        elements.reserve(other.elements.size());
-        for (const auto& element : other.elements) {
-            elements.push_back(deepCopyElement(element));
-        }
-    }
-
-    // Copy assignment - deep copies elements
-    ChainInfo& operator=(const ChainInfo& other) {
-        if (this != &other) {
-            id = other.id;
-            name = other.name;
-            outputIndex = other.outputIndex;
-            muted = other.muted;
-            solo = other.solo;
-            bypassed = other.bypassed;
-            volume = other.volume;
-            pan = other.pan;
-            expanded = other.expanded;
-            elements.clear();
-            elements.reserve(other.elements.size());
-            for (const auto& element : other.elements) {
-                elements.push_back(deepCopyElement(element));
-            }
-        }
-        return *this;
-    }
+    // Copy operations deep-copy the elements. Declared here and defined after
+    // RackInfo: both clear the element vector, and destroying one destroys a
+    // unique_ptr<RackInfo>, which needs the complete type.
+    ChainInfo(const ChainInfo& other);
+    ChainInfo& operator=(const ChainInfo& other);
 
     // Convenience methods for backward compatibility
     std::vector<DeviceInfo*> getDevices() {
@@ -168,7 +160,9 @@ struct RackInfo {
     // Modulators for rack-wide modulation
     ModArray mods = createDefaultMods(0);
 
-    // Sidechain config for rack-level MIDI/Audio triggering (cross-track source)
+    // The source a rack's own triggers and followers listen to (cross-track).
+    // Only `type`, `sourceTrackId`, and `enabled` apply: a rack has no sidechain edge for
+    // the tap point, trim and listen a device's key carries (#2329).
     SidechainConfig sidechain;
 
     // Default constructor
@@ -178,21 +172,8 @@ struct RackInfo {
     RackInfo(RackInfo&&) = default;
     RackInfo& operator=(RackInfo&&) = default;
 
-    // Copy constructor
-    RackInfo(const RackInfo& other)
-        : id(other.id),
-          name(other.name),
-          chains(other.chains),  // ChainInfo has its own deep copy
-          bypassed(other.bypassed),
-          deltaSolo(other.deltaSolo),
-          expanded(other.expanded),
-          volume(other.volume),
-          pan(other.pan),
-          modPanelOpen(other.modPanelOpen),
-          paramPanelOpen(other.paramPanelOpen),
-          macros(other.macros),
-          mods(other.mods),
-          sidechain(other.sidechain) {}
+    // Copy constructor. chains deep-copies via ChainInfo's own copy constructor.
+    RackInfo(const RackInfo& other) = default;
 
     // Copy assignment
     RackInfo& operator=(const RackInfo& other) {
@@ -223,6 +204,48 @@ inline ChainElement deepCopyElement(const ChainElement& element) {
         // Deep copy the nested rack
         return std::make_unique<RackInfo>(getRack(element));
     }
+}
+
+inline ChainInfo::ChainInfo(const ChainInfo& other)
+    : id(other.id),
+      name(other.name),
+      outputIndex(other.outputIndex),
+      muted(other.muted),
+      solo(other.solo),
+      bypassed(other.bypassed),
+      volume(other.volume),
+      pan(other.pan),
+      lowNote(other.lowNote),
+      highNote(other.highNote),
+      rootNote(other.rootNote),
+      expanded(other.expanded) {
+    elements.reserve(other.elements.size());
+    for (const auto& element : other.elements) {
+        elements.push_back(deepCopyElement(element));
+    }
+}
+
+inline ChainInfo& ChainInfo::operator=(const ChainInfo& other) {
+    if (this != &other) {
+        id = other.id;
+        name = other.name;
+        outputIndex = other.outputIndex;
+        muted = other.muted;
+        solo = other.solo;
+        bypassed = other.bypassed;
+        volume = other.volume;
+        pan = other.pan;
+        lowNote = other.lowNote;
+        highNote = other.highNote;
+        rootNote = other.rootNote;
+        expanded = other.expanded;
+        elements.clear();
+        elements.reserve(other.elements.size());
+        for (const auto& element : other.elements) {
+            elements.push_back(deepCopyElement(element));
+        }
+    }
+    return *this;
 }
 
 // Factory function to create a ChainElement from a RackInfo

@@ -19,6 +19,7 @@ add_library(magda_engine STATIC
     clip/ClipStreamFeed.cpp
     clip/ClipStretcher.cpp
     clip/ClipVoice.cpp
+    trace/PlaybackTrace.cpp
     clip/ClipVoicePool.cpp
     clip/EventPlacement.cpp
     clip/FadeCurves.cpp
@@ -29,6 +30,7 @@ add_library(magda_engine STATIC
     clip/ClipSnapshotFeed.hpp
     clip/ClipAudioSource.hpp
     clip/ClipMidiSource.hpp
+    clip/SessionPlayback.hpp
     clip/ActiveNoteList.hpp
     clip/GrooveTemplate.hpp
     clip/MidiClipCompiler.hpp
@@ -57,6 +59,7 @@ add_library(magda_engine STATIC
     plan/TrackRouting.hpp
     exec/PlanExecutor.cpp
     exec/ParallelPlanExecutor.cpp
+    exec/BlockProfile.cpp
     exec/RenderThreadPool.cpp
     exec/PlanLayout.cpp
     exec/PlanLayoutDump.cpp
@@ -70,6 +73,7 @@ add_library(magda_engine STATIC
     exec/PlanValues.hpp
     exec/PlanBindings.hpp
     exec/EngineDevice.hpp
+    exec/NoteFractions.hpp
     exec/RenderContext.hpp
     exec/RuntimeStateStore.hpp
     exec/EngineSession.hpp
@@ -101,22 +105,58 @@ add_library(magda_engine STATIC
     param/ModSources.hpp
     param/ModRuntime.hpp
     tap/LevelTap.hpp
+    tap/NoteOnTap.hpp
+    tap/RecordTap.cpp
+    tap/RecordTap.hpp
     tap/SampleRing.hpp
     tap/ValueTap.hpp
+    launch/FollowActions.cpp
+    launch/FollowActions.hpp
+    launch/LaunchHandle.cpp
+    launch/LaunchHandle.hpp
+    launch/LaunchRequests.hpp
+    launch/SlotRuns.hpp
+    tap/LaunchTap.hpp
+    launch/SessionCapture.cpp
+    launch/SessionCapture.hpp
+    launch/SessionLauncher.cpp
+    launch/SessionLauncher.hpp
     transport/TempoMap.cpp
     transport/TransportClock.cpp
     transport/ClickGenerator.cpp
     transport/TempoMap.hpp
     transport/TransportState.hpp
+    transport/TimeDomains.hpp
     transport/TransportClock.hpp
     transport/ClickGenerator.hpp
     analysis/TransientDetector.cpp
     analysis/TransientDetector.hpp
+    insert/InsertCaptureSession.cpp
+    insert/InsertCapturePlayback.cpp
+    insert/InsertCapture.hpp
+    insert/InsertCaptureSession.hpp
+    insert/InsertCapturePlayback.hpp
     io/AudioFileReader.cpp
+    io/AudioFileMetadata.hpp
+    io/AudioFileSink.cpp
+    io/AudioFileSink.hpp
+    io/LiveInput.cpp
+    io/LiveInput.hpp
+    io/LiveInsert.cpp
+    io/LiveInsert.hpp
+    io/LiveOutput.hpp
+    io/LiveRouting.hpp
+    io/PcmQuantiser.cpp
+    io/PcmQuantiser.hpp
     io/SourceLoopInfo.cpp
     io/SourceLoopInfo.hpp
     io/PrefetchStream.cpp
     io/PrefetchThread.cpp
+    io/MidiTakeRecorder.cpp
+    io/RecordStream.cpp
+    io/RecordThread.cpp
+    io/TakeFileSink.cpp
+    io/TakeRecorder.cpp
     io/SourceReaders.cpp
     io/StreamingAudioSource.cpp
     io/FileAudioSource.cpp
@@ -124,13 +164,21 @@ add_library(magda_engine STATIC
     io/ClipPlacement.hpp
     io/PrefetchStream.hpp
     io/PrefetchThread.hpp
+    io/MidiTakeRecorder.hpp
+    io/RecordStream.hpp
+    io/RecordThread.hpp
+    io/RecordingFeed.hpp
+    io/TakeFileSink.hpp
+    io/TakeNotes.hpp
+    io/TakePasses.hpp
+    io/TakeRecorder.hpp
     io/SourceReaders.hpp
     io/StreamingAudioSource.hpp
     io/FileAudioSource.hpp
 )
 add_library(magda::engine ALIAS magda_engine)
 
-target_compile_features(magda_engine PUBLIC cxx_std_20)
+target_compile_features(magda_engine PUBLIC cxx_std_23)
 
 # magda_types carries the model-layer headers and publishes magda/daw as its
 # include root, so engine sources resolve "core/<model>.hpp".
@@ -143,6 +191,12 @@ target_include_directories(magda_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 #
 # Standing rule for the engine: nothing real-time-concurrent is hand-rolled.
 target_include_directories(magda_engine PUBLIC ${CMAKE_SOURCE_DIR}/third_party/farbot/include)
+
+# The render pool's ready queue and worker semaphore, the ones Tracktion's
+# lock-free player schedules with (#2786): rigtorp MPMCQueue (MIT) and
+# moodycamel LightweightSemaphore (Simplified BSD / zlib). Header-only.
+target_include_directories(magda_engine PUBLIC ${CMAKE_SOURCE_DIR}/third_party/rigtorp/include
+                                               ${CMAKE_SOURCE_DIR}/third_party/moodycamel/include)
 
 # The two stretch engines (#2037). Signalsmith Stretch is header-only and MIT;
 # SoundTouch is LGPL-2.1 and its own static target, which is what keeps it
@@ -186,7 +240,8 @@ endforeach()
 # engine's own headers.
 
 set(MAGDA_ENGINE_ALLOWED_QUOTED_PREFIXES
-    "core/" "clip/" "param/" "plan/" "exec/" "transport/" "io/" "tap/" "analysis/")
+    "core/" "clip/" "param/" "plan/" "exec/" "transport/" "io/" "tap/" "analysis/"
+    "launch/" "insert/" "trace/")
 
 file(GLOB_RECURSE MAGDA_ENGINE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"

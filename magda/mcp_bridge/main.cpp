@@ -32,6 +32,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdlib>
 #include <iostream>
 #include <map>
@@ -64,7 +65,7 @@ constexpr const char* kRecordPattern = "remote-api-*.json";
 constexpr int kInternalError = -32603;
 
 juce::var makeObject() {
-    return juce::var(new juce::DynamicObject());
+    return {new juce::DynamicObject()};
 }
 
 void setProperty(juce::var& object, const char* name, const juce::var& value) {
@@ -106,7 +107,7 @@ juce::String envVar(const char* name) {
  */
 juce::File dataDir() {
     if (const auto fromEnv = envVar("MAGDA_DATA_DIR"); fromEnv.isNotEmpty())
-        return juce::File(fromEnv);
+        return {fromEnv};
 
     const auto osDefault = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
                                .getChildFile("MAGDA");
@@ -115,7 +116,7 @@ juce::File dataDir() {
         juce::var parsed;
         if (juce::JSON::parse(config.loadFileAsString(), parsed).wasOk()) {
             if (const auto configured = parsed["dataDir"].toString(); configured.isNotEmpty())
-                return juce::File(configured);
+                return {configured};
         }
     }
     return osDefault;
@@ -239,7 +240,7 @@ class Bridge {
         }
 
         auto finished = std::make_shared<std::atomic<bool>>(false);
-        std::lock_guard<std::mutex> lock(threadsMutex_);
+        std::scoped_lock lock(threadsMutex_);
 
         // Reap before adding. A thread handle is a native resource, and a host
         // that stays open for hours sends thousands of requests — without this
@@ -266,7 +267,7 @@ class Bridge {
     }
 
     void forward(const juce::var& message) {
-        const auto id = message["id"];
+        const auto& id = message["id"];
         const auto method = message["method"].toString();
         const auto body = juce::JSON::toString(message, true).toStdString();
 
@@ -364,6 +365,19 @@ class Bridge {
 
         auto result = client->Post(endpoint.path, headers, body, "application/json");
 
+        // The endpoint admits requests from a token bucket, so a legitimate
+        // burst — an agent sweeping a dozen parameters — sees HTTP 429 partway
+        // through. That refusal is retryable by construction (tokens return
+        // with wall-clock, ~50/s), and most stdio hosts treat any error as
+        // terminal, so absorb it here with a bounded backoff. The bound keeps a
+        // genuinely saturated server visible instead of hidden forever.
+        for (int delayMs = 100;
+             result && result->status == httplib::StatusCode::TooManyRequests_429 && delayMs <= 800;
+             delayMs *= 2) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
+            result = client->Post(endpoint.path, headers, body, "application/json");
+        }
+
         if (!result) {
             // Connection refused or reset: MAGDA is gone or was restarted. Worth
             // one re-resolve, which is what returning false asks for.
@@ -412,7 +426,7 @@ class Bridge {
     /// Whether this stream was stopped on purpose, which is the difference
     /// between "the host closed it" and "the connection broke".
     bool isCancelled(const juce::var& id) {
-        std::lock_guard<std::mutex> lock(streamMutex_);
+        std::scoped_lock lock(streamMutex_);
         return cancelled_.erase(juce::JSON::toString(id, true).toStdString()) > 0;
     }
 
@@ -493,7 +507,7 @@ class Bridge {
                 ? juce::JSON::toString(parsed, true).toStdString()
                 : json;
 
-        std::lock_guard<std::mutex> lock(outputMutex_);
+        std::scoped_lock lock(outputMutex_);
         std::cout << text << '\n' << std::flush;
     }
 
@@ -514,7 +528,7 @@ class Bridge {
         setProperty(reply, "id", id);
         setProperty(reply, "error", error);
 
-        std::lock_guard<std::mutex> lock(outputMutex_);
+        std::scoped_lock lock(outputMutex_);
         std::cout << juce::JSON::toString(reply, true).toStdString() << '\n' << std::flush;
     }
 
@@ -551,7 +565,7 @@ class Bridge {
     // -----------------------------------------------------------------------
 
     std::optional<Endpoint> currentEndpoint(bool forceRefresh) {
-        std::lock_guard<std::mutex> lock(endpointMutex_);
+        std::scoped_lock lock(endpointMutex_);
         if (forceRefresh || !endpoint_)
             endpoint_ = resolveEndpoint();
         return endpoint_;
@@ -560,29 +574,29 @@ class Bridge {
     void rememberSession(const httplib::Response& response) {
         if (!response.has_header("Mcp-Session-Id"))
             return;
-        std::lock_guard<std::mutex> lock(sessionMutex_);
+        std::scoped_lock lock(sessionMutex_);
         session_ = response.get_header_value("Mcp-Session-Id");
     }
 
     std::string currentSession() const {
-        std::lock_guard<std::mutex> lock(sessionMutex_);
+        std::scoped_lock lock(sessionMutex_);
         return session_;
     }
 
     void clearSession() {
-        std::lock_guard<std::mutex> lock(sessionMutex_);
+        std::scoped_lock lock(sessionMutex_);
         session_.clear();
     }
 
     /// The `initialize` the host sent, kept so a session can be rebuilt without
     /// it. Empty when the host speaks the modern era and never sent one.
     void rememberHandshake(const std::string& body) {
-        std::lock_guard<std::mutex> lock(sessionMutex_);
+        std::scoped_lock lock(sessionMutex_);
         handshake_ = body;
     }
 
     std::string currentHandshake() const {
-        std::lock_guard<std::mutex> lock(sessionMutex_);
+        std::scoped_lock lock(sessionMutex_);
         return handshake_;
     }
 
@@ -606,19 +620,19 @@ class Bridge {
     }
 
     void registerStream(const juce::var& id, std::shared_ptr<httplib::Client> client) {
-        std::lock_guard<std::mutex> lock(streamMutex_);
+        std::scoped_lock lock(streamMutex_);
         streams_[juce::JSON::toString(id, true).toStdString()] = std::move(client);
     }
 
     void unregisterStream(const juce::var& id) {
-        std::lock_guard<std::mutex> lock(streamMutex_);
+        std::scoped_lock lock(streamMutex_);
         streams_.erase(juce::JSON::toString(id, true).toStdString());
     }
 
     void cancel(const juce::var& requestId) {
         std::shared_ptr<httplib::Client> client;
         {
-            std::lock_guard<std::mutex> lock(streamMutex_);
+            std::scoped_lock lock(streamMutex_);
             const auto key = juce::JSON::toString(requestId, true).toStdString();
             const auto it = streams_.find(key);
             if (it == streams_.end())
@@ -634,13 +648,13 @@ class Bridge {
 
     void shutdown() {
         {
-            std::lock_guard<std::mutex> lock(streamMutex_);
+            std::scoped_lock lock(streamMutex_);
             for (auto& [id, client] : streams_) {
                 cancelled_.insert(id);
                 client->stop();
             }
         }
-        std::lock_guard<std::mutex> lock(threadsMutex_);
+        std::scoped_lock lock(threadsMutex_);
         for (auto& [thread, finished] : threads_)
             if (thread.joinable())
                 thread.join();
@@ -669,31 +683,40 @@ class Bridge {
 }  // namespace
 
 int main(int argc, char** argv) {
-    for (int i = 1; i < argc; ++i) {
-        const juce::String argument(argv[i]);
-        if (argument == "--help" || argument == "-h") {
-            std::cout
-                // Written straight to std::cout, so the bytes reach the
-                // terminal as authored, never through juce::String. utf8-ok
-                << "magda-mcp — bridges an MCP host's stdio transport to the MAGDA MCP "
-                   "endpoint.\n\n"
-                   "Takes no options. It finds a running MAGDA through the discovery record it\n"
-                   "writes on startup, so the port and token it uses are whatever that instance\n"
-                   "currently advertises, and restarting MAGDA needs no reconfiguration here.\n\n"
-                   "MAGDA must be running with the remote API enabled.\n\n"
-                   "Register it with a host, for example:\n"
-                   "  claude mcp add magda -- magda-mcp\n\n"
-                   "Environment:\n"
-                   "  MAGDA_DATA_DIR   where to look for discovery records, overriding config\n";
-            return 0;
+    try {
+        for (int i = 1; i < argc; ++i) {
+            const juce::String argument(argv[i]);
+            if (argument == "--help" || argument == "-h") {
+                std::cout
+                    // Written straight to std::cout, so the bytes reach the
+                    // terminal as authored, never through juce::String. utf8-ok
+                    << "magda-mcp — bridges an MCP host's stdio transport to the MAGDA MCP "
+                       "endpoint.\n\n"
+                       "Takes no options. It finds a running MAGDA through the discovery record "
+                       "it\n"
+                       "writes on startup, so the port and token it uses are whatever that "
+                       "instance\n"
+                       "currently advertises, and restarting MAGDA needs no reconfiguration "
+                       "here.\n\n"
+                       "MAGDA must be running with the remote API enabled.\n\n"
+                       "Register it with a host, for example:\n"
+                       "  claude mcp add magda -- magda-mcp\n\n"
+                       "Environment:\n"
+                       "  MAGDA_DATA_DIR   where to look for discovery records, overriding "
+                       "config\n";
+                return 0;
+            }
+            std::cerr << "magda-mcp: unrecognised argument '" << argument << "'; try --help\n";
+            return 2;
         }
-        std::cerr << "magda-mcp: unrecognised argument '" << argument << "'; try --help\n";
-        return 2;
-    }
 
-    // The stdio transport is a byte protocol on stdout. Anything JUCE or a
-    // library writes there would land inside a JSON-RPC message; diagnostics go
-    // to stderr, which the host is explicitly told may carry them.
-    Bridge bridge;
-    return bridge.run();
+        // The stdio transport is a byte protocol on stdout. Anything JUCE or a
+        // library writes there would land inside a JSON-RPC message; diagnostics go
+        // to stderr, which the host is explicitly told may carry them.
+        Bridge bridge;
+        return bridge.run();
+    } catch (const std::exception& e) {
+        std::cerr << "magda-mcp: fatal error: " << e.what() << "\n";
+        return 1;
+    }
 }

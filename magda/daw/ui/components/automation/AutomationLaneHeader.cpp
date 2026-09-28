@@ -2,16 +2,18 @@
 
 #include <algorithm>
 #include <cmath>
+#include <ranges>
 #include <utility>
 #include <vector>
 
 #include "../../../core/AutomationCommands.hpp"
 #include "../../../core/AutomationManager.hpp"
 #include "../../../core/ParameterUtils.hpp"
+#include "../../../core/RangesHelpers.hpp"
 #include "../../../core/TrackManager.hpp"
 #include "../../../core/UndoManager.hpp"
 #include "../../state/TimelineController.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "AutomationLaneComponent.hpp"
 #include "BinaryData.h"
@@ -36,7 +38,7 @@ class LaneHeaderButton : public juce::Button {
         constexpr float corner = 3.0f;
 
         const bool on = getToggleState();
-        const auto surface = DarkTheme::getColour(DarkTheme::SURFACE);
+        const auto surface = ActiveTheme::getColour(ActiveTheme::SURFACE);
         // Blended scheme: the active state is a muted accent (mixed well toward
         // the panel surface) rather than a saturated fill, so the buttons sit
         // quietly in the header instead of standing out against the dark bg.
@@ -54,7 +56,7 @@ class LaneHeaderButton : public juce::Button {
         // Glyph: a soft accent tint when on (reads as active without a loud
         // fill), neutral grey when off.
         juce::Colour glyph =
-            on ? activeColour_.brighter(0.5f) : DarkTheme::getColour(DarkTheme::ICON_NEUTRAL);
+            on ? activeColour_.brighter(0.5f) : ActiveTheme::getColour(ActiveTheme::ICON_NEUTRAL);
         paintGlyph(g, glyph);
     }
 
@@ -70,7 +72,7 @@ class LaneHeaderButton : public juce::Button {
 class SnapIconLaneButton : public LaneHeaderButton {
   public:
     SnapIconLaneButton(const juce::String& name, const void* svgData, int svgSize)
-        : LaneHeaderButton(name, DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)) {
+        : LaneHeaderButton(name, ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)) {
         setClickingTogglesState(true);
         drawable_ = juce::Drawable::createFromImageData(svgData, svgSize);
     }
@@ -80,7 +82,7 @@ class SnapIconLaneButton : public LaneHeaderButton {
             return;
         auto copy = drawable_->createCopy();
         copy->replaceColour(juce::Colour(0xFFB3B3B3), colour);
-        DarkTheme::applyToSvgIcon(*copy);
+        ActiveTheme::applyToSvgIcon(*copy);
         copy->drawWithin(g, getLocalBounds().toFloat().reduced(1.0f),
                          juce::RectanglePlacement::centred, 1.0f);
     }
@@ -96,9 +98,10 @@ class DeleteLaneButton : public LaneHeaderButton {
   public:
     DeleteLaneButton()
         : LaneHeaderButton(
-              "Delete", DarkTheme::getColour(DarkTheme::ACCENT_MODULATION)
-                            .interpolatedWith(DarkTheme::getColour(DarkTheme::STATUS_ERROR), 0.5f)
-                            .darker(0.2f)) {}
+              "Delete",
+              ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION)
+                  .interpolatedWith(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR), 0.5f)
+                  .darker(0.2f)) {}
 
     void paintButton(juce::Graphics& g, bool isMouseOver, bool isButtonDown) override {
         auto bounds = getLocalBounds().toFloat().reduced(0.5f);
@@ -107,10 +110,10 @@ class DeleteLaneButton : public LaneHeaderButton {
         // Blended scheme: sit on the panel surface like the toggles; the X
         // glyph carries a muted purple/red tint so it still reads as the
         // destructive action without a loud fill.
-        const auto surface = DarkTheme::getColour(DarkTheme::SURFACE);
+        const auto surface = ActiveTheme::getColour(ActiveTheme::SURFACE);
         const auto accent =
-            DarkTheme::getColour(DarkTheme::ACCENT_MODULATION)
-                .interpolatedWith(DarkTheme::getColour(DarkTheme::STATUS_ERROR), 0.5f);
+            ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION)
+                .interpolatedWith(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR), 0.5f);
         juce::Colour bg = surface;
         if (isButtonDown)
             bg = accent.interpolatedWith(surface, 0.62f);
@@ -139,7 +142,7 @@ class DeleteLaneButton : public LaneHeaderButton {
 class PowerGlyphButton : public LaneHeaderButton {
   public:
     PowerGlyphButton()
-        : LaneHeaderButton("Bypass", DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)) {
+        : LaneHeaderButton("Bypass", ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)) {
         setClickingTogglesState(true);
     }
 
@@ -181,7 +184,7 @@ class PowerGlyphButton : public LaneHeaderButton {
 class LaneModeButton : public LaneHeaderButton {
   public:
     LaneModeButton()
-        : LaneHeaderButton("laneMode", DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)) {}
+        : LaneHeaderButton("laneMode", ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)) {}
 
     // Not an on/off toggle — both modes are first-class states with their
     // own hue: clips = blue (the arrangement-object language), free-drawn
@@ -190,9 +193,10 @@ class LaneModeButton : public LaneHeaderButton {
     void paintButton(juce::Graphics& g, bool isMouseOver, bool isButtonDown) override {
         auto bounds = getLocalBounds().toFloat().reduced(0.5f);
         constexpr float corner = 3.0f;
-        const auto surface = DarkTheme::getColour(DarkTheme::SURFACE);
-        const auto accent = getToggleState() ? DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)
-                                             : DarkTheme::getColour(DarkTheme::ACCENT_MODULATION);
+        const auto surface = ActiveTheme::getColour(ActiveTheme::SURFACE);
+        const auto accent = getToggleState()
+                                ? ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)
+                                : ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION);
         juce::Colour bg = accent.interpolatedWith(surface, 0.62f);
         if (isButtonDown)
             bg = bg.darker(0.2f);
@@ -290,7 +294,7 @@ std::unique_ptr<AutoLaneHeaderButtons> makeAutoLaneHeaderButtons(AutomationLaneI
         // point) converts into a one-bar clip, per the time signature.
         double barBeats = 4.0;
         if (auto* tc = TimelineController::getCurrent())
-            barBeats = juce::jmax(1, tc->getState().tempo.timeSignatureNumerator);
+            barBeats = tc->getState().tempo.beatsPerBar();
         UndoManager::getInstance().executeCommand(
             std::make_unique<ConvertAutomationLaneTypeCommand>(id, barBeats));
     };
@@ -356,6 +360,144 @@ void layoutAutoLaneHeaderButtons(AutoLaneHeaderButtons& buttons, const Automatio
                                kModeBtnSize, kModeBtnSize);
 }
 
+std::vector<AutomationGridTick> automationGridTicks(const AutomationTarget& target,
+                                                    const ParameterInfo& paramInfo) {
+    const auto tickAt = [&paramInfo](double realValue) {
+        return static_cast<double>(
+            ParameterUtils::realToNormalized(static_cast<float>(realValue), paramInfo));
+    };
+    const auto asLabelledTick = [&tickAt](const auto& tick) {
+        return std::pair{tickAt(tick.first), juce::String(tick.second)};
+    };
+
+    static constexpr double kQuarterNorms[] = {0.0, 0.25, 0.5, 0.75, 1.0};
+
+    std::vector<AutomationGridTick> gridValues;
+    if (paramInfo.scale == ParameterScale::FaderDB) {
+        static constexpr std::pair<double, const char*> kDbTicks[] = {
+            {6.0, "6"},     {3.0, "3"},     {0.0, "0"},     {-6.0, "-6"},  {-12.0, "-12"},
+            {-18.0, "-18"}, {-24.0, "-24"}, {-36.0, "-36"}, {-48.0, "-48"}};
+        gridValues = kDbTicks | std::views::transform(asLabelledTick) |
+                     toStd<std::vector<AutomationGridTick>>();
+    } else if (target.kind == ControlTarget::Kind::TrackPan) {
+        static constexpr std::pair<double, const char*> kPanTicks[] = {
+            {1.0, "R"}, {0.5, "50R"}, {0.0, "C"}, {-0.5, "50L"}, {-1.0, "L"}};
+        gridValues = kPanTicks | std::views::transform(asLabelledTick) |
+                     toStd<std::vector<AutomationGridTick>>();
+    } else if (paramInfo.scale == ParameterScale::Boolean) {
+        // A switch has exactly two meaningful positions. Without
+        // this it falls through to the 10% grid at the bottom of
+        // the chain and reads as a continuous percentage.
+        gridValues.emplace_back(1.0, "On");
+        gridValues.emplace_back(0.0, "Off");
+    } else if (paramInfo.isBipolar()) {
+        // Bipolar params (EQ gain, pitch, etc): symmetric labels
+        // around zero so the 0 line lands mid-lane. Use the larger
+        // |bound| so extremes land on both ends regardless of
+        // asymmetry.
+        const float absMax = std::max(std::abs(paramInfo.minValue), std::abs(paramInfo.maxValue));
+        const double realTicks[] = {absMax, absMax * 0.5, 0.0, -absMax * 0.5, -absMax};
+        const auto asSignedTick = [&](double real) {
+            const int rounded = static_cast<int>(std::round(real));
+            const juce::String label =
+                rounded > 0 ? "+" + juce::String(rounded) : juce::String(rounded);
+            return std::pair{tickAt(real), label + paramInfo.unit};
+        };
+        gridValues = realTicks | std::views::transform(asSignedTick) |
+                     toStd<std::vector<AutomationGridTick>>();
+    } else if (paramInfo.scale == ParameterScale::Discrete && !paramInfo.choices.empty()) {
+        // Discrete: use the choices array as label source. Each
+        // index maps to a real value (0..N-1) — sample evenly so
+        // the lane shows musical labels (e.g. "1 Bar", "1/4",
+        // "1/8") instead of falling through to the 10% fallback.
+        // If the parameter curated a sparse labelTicks set (e.g.
+        // sync division skipping the triplet/dotted entries that
+        // snap on playback), use it directly so the thinner can't
+        // re-introduce the labels we deliberately excluded.
+        if (!paramInfo.labelTicks.empty()) {
+            gridValues = paramInfo.labelTicks | std::views::transform(asLabelledTick) |
+                         toStd<std::vector<AutomationGridTick>>();
+        } else {
+            const auto asChoiceTick = [&](int index) {
+                return std::pair{tickAt(index), paramInfo.choices[static_cast<size_t>(index)]};
+            };
+            gridValues = std::views::iota(0, static_cast<int>(paramInfo.choices.size())) |
+                         std::views::transform(asChoiceTick) |
+                         toStd<std::vector<AutomationGridTick>>();
+        }
+    } else if (paramInfo.unit.isNotEmpty()) {
+        // Unipolar with unit: evenly spaced in normalized space,
+        // labelled with the real value in the parameter's own unit.
+        const auto asUnitTick = [&](double norm) {
+            const float real =
+                ParameterUtils::normalizedToReal(static_cast<float>(norm), paramInfo);
+            return std::pair{norm,
+                             juce::String(static_cast<int>(std::round(real))) + paramInfo.unit};
+        };
+        gridValues = kQuarterNorms | std::views::transform(asUnitTick) |
+                     toStd<std::vector<AutomationGridTick>>();
+    } else if (paramInfo.displayText) {
+        // displayText wraps TE's valueToString, which expects a
+        // plugin-native value — NOT normalized [0,1]. Sample the
+        // REAL value at each visual position so any scaleAnchor
+        // skew is honoured, then project from info-range onto the
+        // TE-native range so the provider sees what it expects.
+        const float teSpan = paramInfo.teMaxValue - paramInfo.teMinValue;
+        const float infoSpan = paramInfo.maxValue - paramInfo.minValue;
+        const auto asDisplayTick = [&](double norm) {
+            float teRaw = NAN;
+            if (infoSpan > 0.0f) {
+                const float real =
+                    ParameterUtils::normalizedToReal(static_cast<float>(norm), paramInfo);
+                const float normInInfo = (real - paramInfo.minValue) / infoSpan;
+                teRaw = paramInfo.teMinValue + normInInfo * teSpan;
+            } else {
+                teRaw = paramInfo.teMinValue + static_cast<float>(norm) * teSpan;
+            }
+            const auto text = paramInfo.displayText->format(teRaw);
+            return std::pair{
+                norm, text.isNotEmpty() ? text : juce::String(static_cast<int>(norm * 100)) + "%"};
+        };
+        gridValues = kQuarterNorms | std::views::transform(asDisplayTick) |
+                     toStd<std::vector<AutomationGridTick>>();
+    } else if (!paramInfo.valueTable.empty()) {
+        const auto asTableTick = [&](double norm) {
+            const int idx = juce::jlimit(
+                0, static_cast<int>(paramInfo.valueTable.size()) - 1,
+                static_cast<int>(std::round(norm * (paramInfo.valueTable.size() - 1))));
+            return std::pair{norm, paramInfo.valueTable[static_cast<size_t>(idx)].trim()};
+        };
+        gridValues = kQuarterNorms | std::views::transform(asTableTick) |
+                     toStd<std::vector<AutomationGridTick>>();
+    } else {
+        const auto asPercentTick = [](int step) {
+            return std::pair{step / 10.0, juce::String(step * 10) + "%"};
+        };
+        gridValues = std::views::iota(1, 10) | std::views::transform(asPercentTick) |
+                     toStd<std::vector<AutomationGridTick>>();
+    }
+
+    return gridValues;
+}
+
+std::vector<AutomationGridTick> thinAutomationGridTicks(std::vector<AutomationGridTick> ticks,
+                                                        int maxLabels) {
+    if (maxLabels >= static_cast<int>(ticks.size()))
+        return ticks;
+    if (maxLabels == 1)
+        return {ticks[ticks.size() / 2]};
+
+    const auto srcMax = static_cast<double>(ticks.size() - 1);
+    const auto sampleAt = [&](int i) {
+        const auto srcIdx =
+            static_cast<size_t>(std::round(static_cast<double>(i) * srcMax / (maxLabels - 1)));
+        return ticks[srcIdx];
+    };
+
+    return std::views::iota(0, maxLabels) | std::views::transform(sampleAt) |
+           toStd<std::vector<AutomationGridTick>>();
+}
+
 void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane, int laneTopY,
                                int width, int laneHeight, int topInset) {
     const int y = laneTopY + topInset;
@@ -364,11 +506,11 @@ void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane
     auto headerArea = juce::Rectangle<int>(0, y, width, AutomationLaneComponent::HEADER_HEIGHT);
 
     // Header background
-    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_LANE_HEADER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_LANE_HEADER));
     g.fillRect(headerArea);
 
     // Header border
-    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_DIVIDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_DIVIDER));
     g.drawHorizontalLine(headerArea.getBottom() - 1, static_cast<float>(headerArea.getX()),
                          static_cast<float>(headerArea.getRight()));
 
@@ -376,12 +518,12 @@ void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane
     // from the name/watermark with a vertical divider.
     auto nameArea = headerArea.reduced(4, 2);
     nameArea.removeFromRight(kModeSlotWidth);
-    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_GUIDE));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_GUIDE));
     g.drawVerticalLine(width - kModeSlotWidth, static_cast<float>(headerArea.getY() + 3),
                        static_cast<float>(headerArea.getBottom() - 3));
 
     // Parameter name
-    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_TEXT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_TEXT));
     g.setFont(FontManager::getInstance().getUIFont(11.0f));
     g.drawText(lane.getDisplayName(), nameArea, juce::Justification::centredLeft);
 
@@ -390,7 +532,7 @@ void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane
     // param name. Faint so it sits behind the active content.
     if (const auto* track = TrackManager::getInstance().getTrack(lane.target.devicePath.trackId)) {
         if (track->name.isNotEmpty()) {
-            g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_TEXT).withAlpha(0.32f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_TEXT).withAlpha(0.32f));
             g.setFont(FontManager::getInstance().getUIFont(10.0f));
             g.drawText(track->name, nameArea, juce::Justification::centredRight);
         }
@@ -404,130 +546,11 @@ void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane
         int contentBottom =
             y + laneHeight - AutomationLaneComponent::RESIZE_HANDLE_HEIGHT - curvePadding;
         int contentHeight = contentBottom - contentTop;
-        float rightEdge = static_cast<float>(width);
+        auto rightEdge = static_cast<float>(width);
         constexpr float tickLen = 5.0f;
 
         if (contentHeight > 20) {
-            auto paramInfo = getParameterInfoForTarget(lane.target);
-
-            // Build grid values: pairs of (normalized, label)
-            std::vector<std::pair<double, juce::String>> gridValues;
-            if (paramInfo.scale == ParameterScale::FaderDB) {
-                const std::pair<double, const char*> dbValues[] = {
-                    {6.0, "6"},     {3.0, "3"},     {0.0, "0"},     {-6.0, "-6"},  {-12.0, "-12"},
-                    {-18.0, "-18"}, {-24.0, "-24"}, {-36.0, "-36"}, {-48.0, "-48"}};
-                for (const auto& [db, label] : dbValues) {
-                    float norm =
-                        ParameterUtils::realToNormalized(static_cast<float>(db), paramInfo);
-                    gridValues.push_back({static_cast<double>(norm), label});
-                }
-            } else if (lane.target.kind == ControlTarget::Kind::TrackPan) {
-                gridValues.push_back(
-                    {static_cast<double>(ParameterUtils::realToNormalized(1.0f, paramInfo)), "R"});
-                gridValues.push_back(
-                    {static_cast<double>(ParameterUtils::realToNormalized(0.5f, paramInfo)),
-                     "50R"});
-                gridValues.push_back(
-                    {static_cast<double>(ParameterUtils::realToNormalized(0.0f, paramInfo)), "C"});
-                gridValues.push_back(
-                    {static_cast<double>(ParameterUtils::realToNormalized(-0.5f, paramInfo)),
-                     "50L"});
-                gridValues.push_back(
-                    {static_cast<double>(ParameterUtils::realToNormalized(-1.0f, paramInfo)), "L"});
-            } else if (paramInfo.scale == ParameterScale::Boolean) {
-                // A switch has exactly two meaningful positions. Without
-                // this it falls through to the 10% grid at the bottom of
-                // the chain and reads as a continuous percentage.
-                gridValues.push_back({1.0, "On"});
-                gridValues.push_back({0.0, "Off"});
-            } else if (paramInfo.isBipolar()) {
-                // Bipolar params (EQ gain, pitch, etc): symmetric labels
-                // around zero so the 0 line lands mid-lane. Use the larger
-                // |bound| so extremes land on both ends regardless of
-                // asymmetry.
-                float absMax = std::max(std::abs(paramInfo.minValue), std::abs(paramInfo.maxValue));
-                const double realTicks[] = {absMax, absMax * 0.5, 0.0, -absMax * 0.5, -absMax};
-                for (double real : realTicks) {
-                    float norm =
-                        ParameterUtils::realToNormalized(static_cast<float>(real), paramInfo);
-                    juce::String label;
-                    int rounded = static_cast<int>(std::round(real));
-                    if (rounded > 0)
-                        label = "+" + juce::String(rounded);
-                    else
-                        label = juce::String(rounded);
-                    label += paramInfo.unit;
-                    gridValues.push_back({static_cast<double>(norm), label});
-                }
-            } else if (paramInfo.scale == ParameterScale::Discrete && !paramInfo.choices.empty()) {
-                // Discrete: use the choices array as label source. Each
-                // index maps to a real value (0..N-1) — sample evenly so
-                // the lane shows musical labels (e.g. "1 Bar", "1/4",
-                // "1/8") instead of falling through to the 10% fallback.
-                // If the parameter curated a sparse labelTicks set (e.g.
-                // sync division skipping the triplet/dotted entries that
-                // snap on playback), use it directly so the thinner can't
-                // re-introduce the labels we deliberately excluded.
-                if (!paramInfo.labelTicks.empty()) {
-                    for (const auto& [realValue, label] : paramInfo.labelTicks) {
-                        float norm = ParameterUtils::realToNormalized(realValue, paramInfo);
-                        gridValues.push_back({static_cast<double>(norm), label});
-                    }
-                } else {
-                    int numChoices = static_cast<int>(paramInfo.choices.size());
-                    for (int i = 0; i < numChoices; ++i) {
-                        float norm =
-                            ParameterUtils::realToNormalized(static_cast<float>(i), paramInfo);
-                        gridValues.push_back(
-                            {static_cast<double>(norm), paramInfo.choices[static_cast<size_t>(i)]});
-                    }
-                }
-            } else if (paramInfo.unit.isNotEmpty()) {
-                // Unipolar with unit: evenly spaced in normalized space,
-                // labelled with the real value in the parameter's own unit.
-                for (double norm : {0.0, 0.25, 0.5, 0.75, 1.0}) {
-                    float real =
-                        ParameterUtils::normalizedToReal(static_cast<float>(norm), paramInfo);
-                    juce::String label =
-                        juce::String(static_cast<int>(std::round(real))) + paramInfo.unit;
-                    gridValues.push_back({norm, label});
-                }
-            } else if (paramInfo.displayText) {
-                // displayText wraps TE's valueToString, which expects a
-                // plugin-native value — NOT normalized [0,1]. Sample the
-                // REAL value at each visual position so any scaleAnchor
-                // skew is honoured, then project from info-range onto the
-                // TE-native range so the provider sees what it expects.
-                const float teSpan = paramInfo.teMaxValue - paramInfo.teMinValue;
-                const float infoSpan = paramInfo.maxValue - paramInfo.minValue;
-                for (double norm : {0.0, 0.25, 0.5, 0.75, 1.0}) {
-                    float teRaw;
-                    if (infoSpan > 0.0f) {
-                        float real =
-                            ParameterUtils::normalizedToReal(static_cast<float>(norm), paramInfo);
-                        float normInInfo = (real - paramInfo.minValue) / infoSpan;
-                        teRaw = paramInfo.teMinValue + normInInfo * teSpan;
-                    } else {
-                        teRaw = paramInfo.teMinValue + static_cast<float>(norm) * teSpan;
-                    }
-                    auto text = paramInfo.displayText->format(teRaw);
-                    gridValues.push_back(
-                        {norm, text.isNotEmpty()
-                                   ? text
-                                   : juce::String(static_cast<int>(norm * 100)) + "%"});
-                }
-            } else if (!paramInfo.valueTable.empty()) {
-                for (double norm : {0.0, 0.25, 0.5, 0.75, 1.0}) {
-                    int idx = juce::jlimit(
-                        0, static_cast<int>(paramInfo.valueTable.size()) - 1,
-                        static_cast<int>(std::round(norm * (paramInfo.valueTable.size() - 1))));
-                    gridValues.push_back(
-                        {norm, paramInfo.valueTable[static_cast<size_t>(idx)].trim()});
-                }
-            } else {
-                for (int i = 1; i < 10; ++i)
-                    gridValues.push_back({i / 10.0, juce::String(i * 10) + "%"});
-            }
+            const auto paramInfo = getParameterInfoForTarget(lane.target);
 
             g.setFont(FontManager::getInstance().getUIFont(8.0f));
             constexpr int labelH = 10;
@@ -536,31 +559,20 @@ void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane
             // across the range (endpoints included whenever at least two labels
             // fit), while tall lanes show every sample.
             constexpr int labelSpacing = labelH + 6;
-            int maxLabels = juce::jmax(1, contentHeight / labelSpacing);
-            if (maxLabels < static_cast<int>(gridValues.size())) {
-                std::vector<std::pair<double, juce::String>> thinned;
-                thinned.reserve(static_cast<size_t>(maxLabels));
-                if (maxLabels == 1) {
-                    thinned.push_back(gridValues[gridValues.size() / 2]);
-                } else {
-                    const double srcMax = static_cast<double>(gridValues.size() - 1);
-                    for (int i = 0; i < maxLabels; ++i) {
-                        int srcIdx = static_cast<int>(
-                            std::round(static_cast<double>(i) * srcMax / (maxLabels - 1)));
-                        thinned.push_back(gridValues[static_cast<size_t>(srcIdx)]);
-                    }
-                }
-                gridValues = std::move(thinned);
-            }
+            const int maxLabels = juce::jmax(1, contentHeight / labelSpacing);
+            const auto gridValues =
+                thinAutomationGridTicks(automationGridTicks(lane.target, paramInfo), maxLabels);
+
             for (const auto& [norm, label] : gridValues) {
                 int tickY = contentTop + static_cast<int>((1.0 - norm) * contentHeight);
                 // Tick
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0x66 / 255.0f));
+                g.setColour(
+                    ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0x66 / 255.0f));
                 g.drawHorizontalLine(tickY, rightEdge - tickLen, rightEdge);
                 // Label — clamp vertically so min/max labels flush against the
                 // lane edges instead of clipping against the header / resize
                 // handle.
-                g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_SCALE_LABEL));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_SCALE_LABEL));
                 int labelTop = juce::jlimit(contentTop, contentBottom - labelH, tickY - 5);
                 auto labelBounds = juce::Rectangle<int>(2, labelTop, width - 10, labelH);
                 g.drawText(label, labelBounds, juce::Justification::centredRight);
@@ -570,9 +582,9 @@ void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane
 
     // Bottom border — matches the resize handle area on the content side
     int borderY = y + laneHeight - AutomationLaneComponent::RESIZE_HANDLE_HEIGHT;
-    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_DIVIDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_DIVIDER));
     g.fillRect(0, borderY, width, AutomationLaneComponent::RESIZE_HANDLE_HEIGHT);
-    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_DIVIDER_LIGHT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_DIVIDER_LIGHT));
     g.drawHorizontalLine(borderY, 0.0f, static_cast<float>(width));
 }
 

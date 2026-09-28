@@ -2,12 +2,12 @@
 
 #include <cmath>
 
-#include "../themes/DarkTheme.hpp"
+#include "../components/common/Toast.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "../themes/InspectorComboBoxLookAndFeel.hpp"
 #include "../themes/SmallButtonLookAndFeel.hpp"
 #include "BinaryData.h"
-#include "audio/AudioBridge.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/AudioClipSourceDisplay.hpp"
 #include "core/ClipManager.hpp"
@@ -16,7 +16,7 @@
 #include "core/TempoUtils.hpp"
 #include "core/TimeStretchModes.hpp"
 #include "core/UndoManager.hpp"
-#include "engine/AudioEngine.hpp"
+#include "engine/TracktionFork.hpp"
 #include "project/ProjectManager.hpp"
 #include "state/TimelineController.hpp"
 
@@ -134,7 +134,7 @@ void AudioClipPropertiesContent::createControls() {
         auto label = std::make_unique<juce::Label>("", text);
         label->setFont(sectionFont);
         label->setColour(juce::Label::textColourId,
-                         DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                         ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         label->setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(*label);
         return label;
@@ -145,7 +145,7 @@ void AudioClipPropertiesContent::createControls() {
         auto label = std::make_unique<juce::Label>("", text);
         label->setFont(labelFont);
         label->setColour(juce::Label::textColourId,
-                         DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                         ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         label->setJustificationType(juce::Justification::centredRight);
         addAndMakeVisible(*label);
         return label;
@@ -155,12 +155,13 @@ void AudioClipPropertiesContent::createControls() {
     auto makeToggle = [&](const juce::String& text) {
         auto btn = std::make_unique<juce::TextButton>(text);
         btn->setLookAndFeel(&smallLF);
-        btn->setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
+        btn->setColour(juce::TextButton::buttonColourId,
+                       ActiveTheme::getColour(ActiveTheme::SURFACE));
         btn->setColour(juce::TextButton::buttonOnColourId,
-                       DarkTheme::getAccentColour().withAlpha(0.3f));
+                       ActiveTheme::getAccentColour().withAlpha(0.3f));
         btn->setColour(juce::TextButton::textColourOffId,
-                       DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        btn->setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+                       ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        btn->setColour(juce::TextButton::textColourOnId, ActiveTheme::getAccentColour());
         btn->setClickingTogglesState(false);
         btn->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
                                juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
@@ -194,37 +195,40 @@ void AudioClipPropertiesContent::createControls() {
         if (!clip)
             return;
 
-        bool enable = !magda::audioEventRef(*clip).autoTempo;
-
+        const bool enable = !magda::audioEventRef(*clip).autoTempo;
         const double bpm = getProjectBpmForProperties();
-
-        const bool sourceInterpretationBpmLooksDefaulted =
-            magda::audioEventRef(*clip).interpBpm <= 0.0 ||
-            std::abs(magda::audioEventRef(*clip).interpBpm - bpm) < 0.1;
-        if (enable && clip->isAudio() && sourceInterpretationBpmLooksDefaulted) {
-            // Issue #1157: only seed from AudioThumbnailManager when the
-            // file didn't carry tempo metadata. setSourceMetadata (from TE's
-            // loopInfo) is authoritative when present.
-            auto& thumbs = magda::AudioThumbnailManager::getInstance();
-            auto* event = clip->primaryEvent();
-            double cached = event != nullptr ? thumbs.getCachedBPM(event->sourceFilePath()) : 0.0;
-            if (event != nullptr && cached > 0.0) {
-                event->interpBpm = cached;
-                if (auto* thumb = thumbs.getThumbnail(event->sourceFilePath())) {
-                    double fileDuration = thumb->getTotalLength();
-                    if (fileDuration > 0.0) {
-                        if (auto* src =
-                                magda::SourcePool::getInstance().getMutable(event->sourceId);
-                            src != nullptr && src->durationSeconds <= 0.0) {
-                            src->durationSeconds = fileDuration;
-                        }
-                        event->interpTotalBeats = fileDuration * cached / 60.0;
-                    }
-                }
-            }
+        if (!enable) {
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetPlaybackIntentCommand>(
+                    clipId_, magda::PlaybackIntent::Free, bpm));
+            return;
         }
 
-        magda::ClipManager::getInstance().setAutoTempo(clipId_, enable, bpm);
+        // Beat mode needs a tempo the file may not have said yet, so ask for it
+        // first, then toggle (#2674).
+        autoTempoToggle_->setEnabled(false);
+        juce::Component::SafePointer<juce::TextButton> button(autoTempoToggle_.get());
+        const auto clipId = clipId_;
+        magda::ClipManager::getInstance().detectMissingTempo(
+            {clipId}, bpm, [button, clipId, bpm]() {
+                if (button == nullptr)
+                    return;
+                button->setEnabled(true);
+                if (magda::ClipManager::getInstance().getClip(clipId) == nullptr)
+                    return;
+
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetPlaybackIntentCommand>(
+                        clipId, magda::PlaybackIntent::Beat, bpm));
+
+                const auto* after = magda::ClipManager::getInstance().getClip(clipId);
+                if (after && after->isAudio() && !magda::audioEventRef(*after).autoTempo) {
+                    magda::daw::ui::Toast::showGlobal(
+                        "No tempo found for " +
+                        juce::File(magda::audioEventRef(*after).sourceFilePath()).getFileName() +
+                        ". Set the source BPM to use beat mode.");
+                }
+            });
     };
 
     reverseToggle_ = makeToggle("REV");
@@ -264,10 +268,10 @@ void AudioClipPropertiesContent::createControls() {
     modeLabel_ = makeLabel("Mode");
     stretchModeCombo_ = std::make_unique<juce::ComboBox>();
     stretchModeCombo_->setColour(juce::ComboBox::backgroundColourId,
-                                 DarkTheme::getColour(DarkTheme::SURFACE));
-    stretchModeCombo_->setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+                                 ActiveTheme::getColour(ActiveTheme::SURFACE));
+    stretchModeCombo_->setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
     stretchModeCombo_->setColour(juce::ComboBox::outlineColourId,
-                                 DarkTheme::getColour(DarkTheme::BORDER));
+                                 ActiveTheme::getColour(ActiveTheme::BORDER));
     // Combo IDs are persisted mode values plus one because JUCE reserves ID 0.
     stretchModeCombo_->addItem("Off", time_stretch_mode::kDisabled + 1);
     stretchModeCombo_->addItem("Signalsmith", time_stretch_mode::kSignalsmith + 1);
@@ -300,51 +304,9 @@ void AudioClipPropertiesContent::createControls() {
         if (!clip)
             return;
 
-        double newBPM = bpmValue_->getValue();
-
-        // BPM and Beats are two editable views of the same fixed-duration source
-        // interpretation. Editing either one must keep the other coherent.
-        if (magda::audioEventRef(*clip).autoTempo) {
-            double bpm = 120.0;
-            if (auto* tc = magda::TimelineController::getCurrent())
-                bpm = tc->getState().tempo.bpm;
-            magda::ClipManager::AudioClipBeatsUpdate u;
-            u.interpretationBpm = newBPM;
-            double durationSeconds = magda::audioEventRef(*clip).sourceDurationSeconds();
-            if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
-                    magda::audioEventRef(*clip).sourceFilePath())) {
-                double fileDuration = thumb->getTotalLength();
-                if (fileDuration > 0.0)
-                    durationSeconds = fileDuration;
-                if (fileDuration > 0.0 &&
-                    magda::audioEventRef(*clip).sourceDurationSeconds() <= 0.0)
-                    u.sourceDurationSeconds = fileDuration;
-            }
-            if (durationSeconds > 0.0) {
-                u.interpretationTotalBeats = durationSeconds * newBPM / 60.0;
-                u.lockInterpretationTotalBeats = true;
-            }
-            auto& mgr = magda::ClipManager::getInstance();
-            mgr.applyAudioClipBeats(clipId_, u, bpm);
-        } else {
-            // Non-autoTempo audio: source interpretation BPM is just stored metadata.
-            auto* event = clip->primaryEvent();
-            if (event != nullptr)
-                event->interpBpm = newBPM;
-            if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
-                    magda::audioEventRef(*clip).sourceFilePath())) {
-                double fileDuration = thumb->getTotalLength();
-                if (fileDuration > 0.0) {
-                    if (auto* src = magda::SourcePool::getInstance().getMutable(
-                            magda::audioEventRef(*clip).sourceId);
-                        src != nullptr && src->durationSeconds <= 0.0) {
-                        src->durationSeconds = fileDuration;
-                    }
-                }
-            }
-            auto& mgr = magda::ClipManager::getInstance();
-            mgr.forceNotifyClipPropertyChanged(clipId_);
-        }
+        const double newBPM = bpmValue_->getValue();
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::SetSourceTempoCommand>(clipId_, newBPM));
     };
     addAndMakeVisible(*bpmValue_);
 
@@ -367,27 +329,8 @@ void AudioClipPropertiesContent::createControls() {
             return;
 
         const double newSourceBeats = beatsValue_->getValue();
-        double projectBpm = 120.0;
-        if (auto* tc = magda::TimelineController::getCurrent())
-            projectBpm = tc->getState().tempo.bpm;
-
-        double durationSeconds = magda::audioEventRef(*clip).sourceDurationSeconds();
-        if (durationSeconds <= 0.0) {
-            if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
-                    magda::audioEventRef(*clip).sourceFilePath())) {
-                durationSeconds = thumb->getTotalLength();
-            }
-        }
-
-        magda::ClipManager::AudioClipBeatsUpdate u;
-        u.interpretationTotalBeats = newSourceBeats;
-        u.lockInterpretationTotalBeats = true;
-        if (durationSeconds > 0.0)
-            u.interpretationBpm = newSourceBeats * 60.0 / durationSeconds;
-        if (durationSeconds > 0.0 && magda::audioEventRef(*clip).sourceDurationSeconds() <= 0.0)
-            u.sourceDurationSeconds = durationSeconds;
-
-        magda::ClipManager::getInstance().applyAudioClipBeats(clipId_, u, projectBpm);
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::SetSourceBeatCountCommand>(clipId_, newSourceBeats));
     };
     addAndMakeVisible(*beatsValue_);
 
@@ -395,10 +338,10 @@ void AudioClipPropertiesContent::createControls() {
     keyLabel_ = makeLabel("Key");
     keyRootCombo_ = std::make_unique<juce::ComboBox>();
     keyRootCombo_->setColour(juce::ComboBox::backgroundColourId,
-                             DarkTheme::getColour(DarkTheme::SURFACE));
-    keyRootCombo_->setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+                             ActiveTheme::getColour(ActiveTheme::SURFACE));
+    keyRootCombo_->setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
     keyRootCombo_->setColour(juce::ComboBox::outlineColourId,
-                             DarkTheme::getColour(DarkTheme::BORDER));
+                             ActiveTheme::getColour(ActiveTheme::BORDER));
     static constexpr const char* kKeyRoots[] = {"C",  "C#", "D",  "D#", "E",  "F",
                                                 "F#", "G",  "G#", "A",  "A#", "B"};
     keyRootCombo_->addItem("--", 1);
@@ -435,33 +378,20 @@ void AudioClipPropertiesContent::createControls() {
         if (clip == nullptr || !clip->isAudio()) {
             return;
         }
+        // Edits are already in the model; the widgets may show placeholders. Only a
+        // tempo-less event takes the cached detection it has been showing as a hint.
         auto* event = clip->primaryEvent();
-        const double displayedBpm = bpmValue_ ? bpmValue_->getValue() : 0.0;
-        if (event != nullptr && magda::isValidBpm(displayedBpm)) {
-            event->interpBpm = displayedBpm;
-        }
-        const double displayedBeats = beatsValue_ ? beatsValue_->getValue() : 0.0;
-        if (event != nullptr && displayedBeats > 0.0) {
-            event->interpTotalBeats = displayedBeats;
-            event->interpTotalBeatsLocked = true;
+        if (event != nullptr && !event->hasInterpretedBpm()) {
+            const auto display = resolveSourceDisplay(*clip);
+            if (display.bpm > 0.0) {
+                magda::ClipManager::getInstance().adoptAnalysis(clipId_, event->sourceFilePath(),
+                                                                display.bpm);
+            }
         }
 
         std::optional<std::vector<magda::WarpMarker>> markers;
-        if (magda::audioEventRef(*clip).warpEnabled) {
-            markers = std::vector<magda::WarpMarker>{};
-            if (auto* engine = magda::TrackManager::getInstance().getAudioEngine()) {
-                if (auto* bridge = engine->getAudioBridge()) {
-                    const auto liveMarkers = bridge->getWarpMarkers(clipId_);
-                    markers->reserve(liveMarkers.size());
-                    for (const auto& marker : liveMarkers) {
-                        markers->push_back({marker.sourceTime, marker.warpTime});
-                    }
-                }
-            }
-            if (markers->empty()) {
-                *markers = magda::audioEventRef(*clip).warpMarkers;
-            }
-        }
+        if (magda::audioEventRef(*clip).warpEnabled)
+            markers = magda::audioEventRef(*clip).warpMarkers;
 
         const bool saved =
             magda::ClipManager::getInstance().saveClipToLibrary(clipId_, std::move(markers));
@@ -534,14 +464,8 @@ void AudioClipPropertiesContent::createControls() {
     transientSensValue_->onValueChange = [this]() {
         if (clipId_ == magda::INVALID_CLIP_ID)
             return;
-        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-        if (!audioEngine)
-            return;
-        auto* bridge = audioEngine->getAudioBridge();
-        if (!bridge)
-            return;
-        bridge->setTransientSensitivity(clipId_,
-                                        static_cast<float>(transientSensValue_->getValue()));
+        magda::tracktion_fork::setTransientSensitivity(
+            clipId_, static_cast<float>(transientSensValue_->getValue()));
     };
     addAndMakeVisible(*transientSensValue_);
 
@@ -620,10 +544,12 @@ void AudioClipPropertiesContent::updateFromClip() {
                                              1,
                                          juce::dontSendNotification);
         const auto sourceDisplay = resolveSourceDisplay(*clip);
-        bpmValue_->setValue(sourceDisplay.bpm > 0.0 ? sourceDisplay.bpm : magda::DEFAULT_BPM,
-                            juce::dontSendNotification);
-        beatsValue_->setValue(sourceDisplay.totalBeats > 0.0 ? sourceDisplay.totalBeats : 4.0,
-                              juce::dontSendNotification);
+        if (!bpmValue_->isEditing())
+            bpmValue_->setValue(sourceDisplay.bpm > 0.0 ? sourceDisplay.bpm : magda::DEFAULT_BPM,
+                                juce::dontSendNotification);
+        if (!beatsValue_->isEditing())
+            beatsValue_->setValue(sourceDisplay.totalBeats > 0.0 ? sourceDisplay.totalBeats : 4.0,
+                                  juce::dontSendNotification);
         // Mirror the clip's source key root into the combo (-- when unknown).
         {
             const auto& root = magda::audioEventRef(*clip).keyRoot;
@@ -654,13 +580,14 @@ void AudioClipPropertiesContent::updateFromClip() {
 
     bool enabled = hasClip;
     bool isAutoTempo = hasClip && magda::audioEventRef(*clip).autoTempo;
-    // Speed is live in time-based mode; Source BPM / Beats are live only in beat
-    // mode (autoTempo) — they're inert otherwise, so grey them out. Mirrors the
-    // right-panel clip inspector.
+    // Speed is live in time-based mode only. Source BPM / Beats are live once
+    // beat mode is asked for, granted or waiting on a tempo (#2676); a raw
+    // clip has none to state (#2791). Mirrors the right-panel clip inspector.
+    const bool tempoLive = hasClip && magda::audioEventRef(*clip).wantsBeatMode();
     stretchValue_->setEnabled(enabled && !isAutoTempo);
     stretchModeCombo_->setEnabled(enabled);
-    bpmValue_->setEnabled(enabled && isAutoTempo);
-    beatsValue_->setEnabled(enabled && isAutoTempo);
+    bpmValue_->setEnabled(tempoLive);
+    beatsValue_->setEnabled(tempoLive);
     pitchValue_->setEnabled(enabled);
     analogPitchToggle_->setEnabled(enabled && !isAutoTempo &&
                                    !(hasClip && magda::audioEventRef(*clip).warpEnabled));
@@ -680,17 +607,17 @@ void AudioClipPropertiesContent::updateFromClip() {
 }
 
 void AudioClipPropertiesContent::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getPanelBackgroundColour());
+    g.fillAll(ActiveTheme::getPanelBackgroundColour());
 
     if (clipId_ == magda::INVALID_CLIP_ID && multiClipIds_.empty()) {
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.5f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.5f));
         g.setFont(FontManager::getInstance().getUIFont(13.0f));
         g.drawText("No audio clip selected", getLocalBounds(), juce::Justification::centred);
         return;
     }
 
     // Vertical divider between columns
-    g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
     int divX = getWidth() / 2;
     g.drawVerticalLine(divX, static_cast<float>(V_PAD), static_cast<float>(getHeight() - V_PAD));
 }

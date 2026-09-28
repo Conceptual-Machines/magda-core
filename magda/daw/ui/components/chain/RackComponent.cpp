@@ -2,35 +2,53 @@
 
 #include <BinaryData.h>
 
+#include <algorithm>
+#include <functional>
+#include <ranges>
+
 #include "ChainPanel.hpp"
 #include "ChainRowComponent.hpp"
-#include "audio/AudioBridge.hpp"
+#include "audio/DeviceMeters.hpp"
 #include "core/Config.hpp"
 #include "core/PresetManager.hpp"
+#include "core/RangesHelpers.hpp"
 #include "core/TrackCommands.hpp"
 #include "engine/AudioEngine.hpp"
 #include "layout/NodeHeaderStyles.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui {
 
+namespace {
+
+/// Delete the rack at @p rackPath, undoably and after this component has gone.
+///
+/// Deferred because removing the rack notifies synchronously, and the rebuild
+/// that follows destroys the button whose click is still on the stack; the path
+/// is taken by value for the same reason. Both constructors below share this,
+/// so the top-level and nested X do the same thing (#2232).
+void requestRackDeletion(const magda::ChainNodePath& rackPath) {
+    juce::MessageManager::callAsync([rackPath]() {
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::RemoveRackByPathCommand>(rackPath));
+    });
+}
+
+}  // namespace
+
 // Constructor for top-level rack (in track)
 RackComponent::RackComponent(magda::TrackId trackId, const magda::RackInfo& rack)
     : rackPath_(magda::ChainNodePath::rack(trackId, rack.id)), trackId_(trackId), rackId_(rack.id) {
-    onDeleteClicked = [this]() {
-        magda::TrackManager::getInstance().removeRackFromTrack(trackId_, rackId_);
-    };
+    onDeleteClicked = [this]() { requestRackDeletion(rackPath_); };
     initializeCommon(rack);
 }
 
 // Constructor for nested rack (in chain) - with full path context
 RackComponent::RackComponent(const magda::ChainNodePath& rackPath, const magda::RackInfo& rack)
     : rackPath_(rackPath), trackId_(rackPath.trackId), rackId_(rack.id) {
-    onDeleteClicked = [this]() {
-        magda::TrackManager::getInstance().removeRackFromChainByPath(rackPath_);
-    };
+    onDeleteClicked = [this]() { requestRackDeletion(rackPath_); };
     initializeCommon(rack);
 }
 
@@ -77,8 +95,6 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
         childLayoutChanged();
     };
 
-    onLayoutChanged = [this]() { childLayoutChanged(); };
-
     // === HEADER EXTRA CONTROLS ===
 
     // MOD button (modulators toggle) - bare sine icon
@@ -86,7 +102,7 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
                                                     BinaryData::iconmodsboldm_svgSize);
     modButton_->setToggleState(modPanelVisible_, juce::dontSendNotification);
     node_header::applyHeaderIconStyle(*modButton_,
-                                      DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+                                      ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
     modButton_->setActive(modPanelVisible_);
     modButton_->onClick = [this]() {
         modButton_->setActive(modButton_->getToggleState());
@@ -99,7 +115,7 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
         std::make_unique<magda::SvgButton>("Macro", BinaryData::knob_svg, BinaryData::knob_svgSize);
     macroButton_->setToggleState(paramPanelVisible_, juce::dontSendNotification);
     node_header::applyHeaderIconStyle(*macroButton_,
-                                      DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+                                      ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
     macroButton_->setActive(paramPanelVisible_);
     macroButton_->onClick = [this]() {
         macroButton_->setActive(macroButton_->getToggleState());
@@ -113,10 +129,11 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     deltaButton_->setTooltip("Delta Solo: processed rack signal minus dry input");
     deltaButton_->setLookAndFeel(&node_header::getDeltaSoloButtonLookAndFeel());
     deltaButton_->setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE));
+                            ActiveTheme::getColour(ActiveTheme::SURFACE));
     deltaButton_->setColour(juce::TextButton::buttonOnColourId,
-                            DarkTheme::getColour(DarkTheme::ACCENT_INFO).darker(0.3f));
-    deltaButton_->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+                            ActiveTheme::getColour(ActiveTheme::ACCENT_INFO).darker(0.3f));
+    deltaButton_->setColour(juce::TextButton::textColourOffId,
+                            ActiveTheme::getSecondaryTextColour());
     deltaButton_->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
     deltaButton_->onClick = [this]() {
         const bool enabled = deltaButton_->getToggleState();
@@ -133,7 +150,7 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
         std::make_unique<magda::SvgButton>("Presets", BinaryData::iconpresetsroundboldm_svg,
                                            BinaryData::iconpresetsroundboldm_svgSize);
     node_header::applyHeaderIconStyle(*presetButton_,
-                                      DarkTheme::getColour(DarkTheme::PRESET_INDIGO),
+                                      ActiveTheme::getColour(ActiveTheme::PRESET_INDIGO),
                                       /*toggling*/ false);
     presetButton_->setActive(true);
     presetButton_->setIconPadding(4.5f);
@@ -170,7 +187,7 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     // "Chains:" label - clicks pass through for selection
     chainsLabel_.setText("Chains:", juce::dontSendNotification);
     chainsLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    chainsLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    chainsLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     chainsLabel_.setJustificationType(juce::Justification::centredLeft);
     chainsLabel_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(chainsLabel_);
@@ -178,9 +195,9 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     // Add chain button (in content area, next to Chains: label)
     addChainButton_.setButtonText("+");
     addChainButton_.setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::SURFACE));
+                              ActiveTheme::getColour(ActiveTheme::SURFACE));
     addChainButton_.setColour(juce::TextButton::textColourOffId,
-                              DarkTheme::getSecondaryTextColour());
+                              ActiveTheme::getSecondaryTextColour());
     addChainButton_.onClick = [this]() { onAddChainClicked(); };
     addChainButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     addAndMakeVisible(addChainButton_);
@@ -235,14 +252,12 @@ void RackComponent::timerCallback() {
     auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
     if (!audioEngine)
         return;
-    auto* bridge = audioEngine->getAudioBridge();
-    if (!bridge)
-        return;
 
-    magda::DeviceMeteringManager::DeviceMeterData data;
-    if (bridge->getDeviceMetering().getRackLatestLevels(rackId_, data)) {
-        levelMeter_.setLevels(data.peakL, data.peakR);
-    }
+    // The engine's own meters: the fork's bridge is null under the native
+    // engine, which reports no rack levels yet (#2570).
+    magda::DeviceMeters::Levels levels;
+    if (audioEngine->deviceMeters().rackPeak(rackId_, levels))
+        levelMeter_.setLevels(levels.peakL, levels.peakR);
 }
 
 void RackComponent::mouseDown(const juce::MouseEvent& e) {
@@ -262,7 +277,7 @@ void RackComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> content
     // Chains label separator (below "Chains:" label), stopping before the meter strip
     int chainsSeparatorY = contentArea.getY() + CHAINS_LABEL_HEIGHT;
     int lineRight = contentArea.getRight() - METER_STRIP_WIDTH - 4 - 2;
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawHorizontalLine(chainsSeparatorY, static_cast<float>(contentArea.getX() + 2),
                          static_cast<float>(lineRight));
 }
@@ -350,11 +365,7 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
     chainViewport_.setBounds(contentArea);
 
     // Calculate total height for chain rows container
-    int totalHeight = 0;
-    for (const auto& row : chainRows_) {
-        totalHeight += row->getPreferredHeight() + 2;
-    }
-    totalHeight = juce::jmax(totalHeight, contentArea.getHeight());
+    const int totalHeight = juce::jmax(stackedChainRowsHeight(), contentArea.getHeight());
 
     // Set container size and layout rows inside it
     chainRowsContainer_.setSize(
@@ -410,11 +421,15 @@ void RackComponent::resizedCollapsed(juce::Rectangle<int>& area) {
     deltaButton_->setVisible(true);
 }
 
+int RackComponent::stackedChainRowsHeight() const {
+    const auto rowAndGapHeight = [](const auto& row) { return row->getPreferredHeight() + 2; };
+
+    return std::ranges::fold_left(chainRows_ | std::views::transform(rowAndGapHeight), 0,
+                                  std::plus{});
+}
+
 int RackComponent::getPreferredHeight() const {
-    int height = HEADER_HEIGHT + CHAINS_LABEL_HEIGHT + 8;
-    for (const auto& row : chainRows_) {
-        height += row->getPreferredHeight() + 2;
-    }
+    const int height = HEADER_HEIGHT + CHAINS_LABEL_HEIGHT + 8 + stackedChainRowsHeight();
     return juce::jmax(height, HEADER_HEIGHT + CHAINS_LABEL_HEIGHT + MIN_CONTENT_HEIGHT);
 }
 
@@ -592,10 +607,6 @@ void RackComponent::chainNodeSelectionChanged(const magda::ChainNodePath& path) 
     // First let base class handle visual selection state
     NodeComponent::chainNodeSelectionChanged(path);
 
-    if (rackPath_.isValid() && path == rackPath_) {
-        openMacroPanelForSelectionIfNeeded();
-    }
-
     // Check if the selected path is one of our chains
     if (path.trackId != trackId_) {
         return;  // Not our track
@@ -628,25 +639,6 @@ void RackComponent::chainNodeSelectionChanged(const magda::ChainNodePath& path) 
     if (onChainSelected) {
         onChainSelected(trackId_, rackId_, chainId);
     }
-}
-
-void RackComponent::openMacroPanelForSelectionIfNeeded() {
-    // isCollapseGestureActive(): the selection came from a header-bar click,
-    // which is a collapse gesture — opening the macro panel on that click is
-    // the opposite of what the user asked for.
-    if (!magda::Config::getInstance().getOpenMacrosOnSelect() || paramPanelVisible_ ||
-        isCollapseGestureActive() || !macroButton_ || !rackPath_.isValid()) {
-        return;
-    }
-
-    const auto& selectedPath = magda::SelectionManager::getInstance().getSelectedChainNode();
-    if (selectedPath != rackPath_) {
-        return;
-    }
-
-    macroButton_->setToggleState(true, juce::dontSendNotification);
-    macroButton_->setActive(true);
-    setParamPanelVisible(true);
 }
 
 void RackComponent::onAddChainClicked() {
@@ -722,20 +714,14 @@ std::map<magda::DeviceId, std::vector<juce::String>> RackComponent::getDevicePar
     const auto* rack = magda::TrackManager::getInstance().getRackByPath(rackPath_);
     if (rack == nullptr)
         return result;
+    // One level, the same devices getAvailableDevices() offers: a nested rack's
+    // devices are picked from that rack's own component.
     for (const auto& chain : rack->chains) {
         for (const auto& element : chain.elements) {
             if (!magda::isDevice(element))
                 continue;
             const auto& device = magda::getDevice(element);
-            std::vector<juce::String> names;
-            for (const auto& param : device.parameters) {
-                if (param.paramIndex < 0)
-                    continue;
-                if (param.paramIndex >= static_cast<int>(names.size()))
-                    names.resize(static_cast<size_t>(param.paramIndex + 1));
-                names[static_cast<size_t>(param.paramIndex)] = param.name;
-            }
-            result[device.id] = std::move(names);
+            result[device.id] = device.paramNamesByIndex();
         }
     }
     return result;
@@ -981,7 +967,7 @@ void RackComponent::showSaveRackPresetDialog() {
 
     auto* aw = new juce::AlertWindow(
         "Save MAGDA Rack Preset",
-        "Enter a name for this rack preset (use \"/\" to nest, e.g. \"Drums/808 Stack\"):",
+        R"(Enter a name for this rack preset (use "/" to nest, e.g. "Drums/808 Stack"):)",
         juce::MessageBoxIconType::NoIcon);
     aw->addTextEditor("name", defaultName, "Name:");
     aw->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));

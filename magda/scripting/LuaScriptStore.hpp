@@ -27,7 +27,7 @@ class LuaScriptStore {
     LuaScriptStore();
 
     /** Test seam: redirect to a custom directory. */
-    explicit LuaScriptStore(const juce::File& root);
+    explicit LuaScriptStore(juce::File root);
 
     /** Filesystem root the store enumerates. Created on demand by ensureExists(). */
     const juce::File& root() const noexcept {

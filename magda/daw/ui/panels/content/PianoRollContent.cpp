@@ -1,13 +1,16 @@
 #include "PianoRollContent.hpp"
 
+#include <algorithm>
 #include <cmath>
-#include <limits>
+#include <iterator>
+#include <optional>
+#include <ranges>
 #include <set>
 
 #include "../../core/SelectionManager.hpp"
 #include "../../state/TimelineController.hpp"
 #include "../../state/TimelineEvents.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "BinaryData.h"
 #include "audio/MidiBridge.hpp"
@@ -36,6 +39,35 @@
 #include "ui/components/timeline/TimeRuler.hpp"
 
 namespace magda::daw::ui {
+
+namespace {
+
+struct SelectionSpan {
+    double startBeat;
+    double endBeat;
+};
+
+/** @brief The beat span of a multi-clip selection, empty when no clip resolves. */
+std::optional<SelectionSpan> selectionSpanBeats(const std::vector<magda::ClipId>& clipIds) {
+    auto& clipManager = magda::ClipManager::getInstance();
+    const auto clipFor = [&clipManager](magda::ClipId id) { return clipManager.getClip(id); };
+    const auto stillExists = [](const magda::ClipInfo* clip) { return clip != nullptr; };
+    const auto startBeat = [](const magda::ClipInfo* clip) { return clip->placement.startBeat; };
+    const auto endBeat = [](const magda::ClipInfo* clip) { return clip->placement.endBeat(); };
+
+    auto clips = clipIds | std::views::transform(clipFor) | std::views::filter(stillExists);
+    if (std::ranges::empty(clips))
+        return std::nullopt;
+
+    return SelectionSpan{std::ranges::min(clips | std::views::transform(startBeat)),
+                         std::ranges::max(clips | std::views::transform(endBeat))};
+}
+
+double noteEndBeat(const magda::MidiNote& note) {
+    return note.startBeat + note.lengthBeats;
+}
+
+}  // namespace
 
 bool PianoRollContent::showProgressionOverlay_ = false;
 
@@ -68,8 +100,8 @@ PianoRollContent::PianoRollContent() {
     previewToggle_ = std::make_unique<magda::SvgButton>("NotePreview", BinaryData::master_off_svg,
                                                         BinaryData::master_off_svgSize);
     previewToggle_->setTooltip("Preview notes (click a note to hear it)");
-    previewToggle_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    previewToggle_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    previewToggle_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    previewToggle_->setActiveColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     syncNotePreviewToggle(*previewToggle_, isNotePreviewEnabled());
     previewToggle_->onClick = [this]() {
         setNotePreviewEnabled(!isNotePreviewEnabled());
@@ -110,7 +142,7 @@ PianoRollContent::PianoRollContent() {
                                                          BinaryData::refresh_svgSize);
     chordDetectBtn_->setTooltip("Recalculate chords from notes");
     chordDetectBtn_->setOriginalColor(juce::Colour(0xFFE3E3E3));
-    chordDetectBtn_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    chordDetectBtn_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     chordDetectBtn_->onClick = [this]() { detectChordsFromNotes(); };
     chordDetectBtn_->setVisible(showChordRow_);
     addAndMakeVisible(chordDetectBtn_.get());
@@ -137,7 +169,7 @@ PianoRollContent::PianoRollContent() {
                                                         BinaryData::chevron_down_svgSize);
     gridToggleBtn_->setTooltip("Show / hide the piano roll");
     gridToggleBtn_->setOriginalColor(juce::Colour(0xFFE3E3E3));
-    gridToggleBtn_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    gridToggleBtn_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     gridToggleBtn_->onClick = [this]() { onGridToggleClicked(); };
     addChildComponent(gridToggleBtn_.get());
 
@@ -287,8 +319,9 @@ PianoRollContent::PianoRollContent() {
         setNoteHeightAnchored(noteHeight_ + heightDelta, anchorNote, anchorScreenY, true);
     };
     if (auto* controller = magda::TimelineController::getCurrent()) {
-        gridComponent_->setTimeSignatureNumerator(
-            controller->getState().tempo.timeSignatureNumerator);
+        const auto& tempo = controller->getState().tempo;
+        gridComponent_->setTimeSignature(tempo.timeSignatureNumerator,
+                                         tempo.timeSignatureDenominator);
     }
     viewport_->setViewedComponent(gridComponent_.get(), false);
 
@@ -350,6 +383,9 @@ PianoRollContent::PianoRollContent() {
         gridComponent_->setClip(editingClipId_);
         updateTimeRuler();
     }
+
+    // Deferred from the base constructor: needs gridComponent_ to exist (#2391).
+    applyClipGridSettings();
 }
 
 void PianoRollContent::applyOverlayTracks() {
@@ -393,7 +429,7 @@ std::vector<int> PianoRollContent::collectUsedPitches() const {
     } else if (editingClipId_ != magda::INVALID_CLIP_ID) {
         collect(editingClipId_);
     }
-    return std::vector<int>(usedPitches.begin(), usedPitches.end());
+    return {usedPitches.begin(), usedPitches.end()};
 }
 
 void PianoRollContent::onFoldMapChanged() {
@@ -654,7 +690,7 @@ void PianoRollContent::setupGridCallbacks() {
 
     // Handle batch note selection changes (lasso, deselect-all, Cmd+click toggle)
     gridComponent_->onNoteSelectionChanged = [this](magda::ClipId clipId,
-                                                    std::vector<size_t> noteIndices) {
+                                                    const std::vector<size_t>& noteIndices) {
         if (noteIndices.empty()) {
             // Clear note selection — preserve clip selection
             magda::SelectionManager::getInstance().clearNoteSelection();
@@ -689,7 +725,8 @@ void PianoRollContent::setupGridCallbacks() {
 
     // Handle legato from right-click context menu: stretch each selected note to
     // the next selected onset (one undo step via the batch resize command).
-    gridComponent_->onLegatoNotes = [](magda::ClipId clipId, std::vector<size_t> noteIndices) {
+    gridComponent_->onLegatoNotes = [](magda::ClipId clipId,
+                                       const std::vector<size_t>& noteIndices) {
         const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
         if (!clip || !clip->isMidi())
             return;
@@ -702,7 +739,7 @@ void PianoRollContent::setupGridCallbacks() {
     };
 
     // Handle copy from context menu
-    gridComponent_->onCopyNotes = [](magda::ClipId clipId, std::vector<size_t> noteIndices) {
+    gridComponent_->onCopyNotes = [](magda::ClipId clipId, const std::vector<size_t>& noteIndices) {
         magda::ClipManager::getInstance().copyNotesToClipboard(clipId, noteIndices);
     };
 
@@ -740,25 +777,26 @@ void PianoRollContent::setupGridCallbacks() {
 
     // Handle duplicate from context menu
     gridComponent_->onDuplicateNotes = [this](magda::ClipId clipId,
-                                              std::vector<size_t> noteIndices) {
+                                              const std::vector<size_t>& noteIndices) {
         auto& clipManager = magda::ClipManager::getInstance();
         const auto* clip = clipManager.getClip(clipId);
         if (!clip || !clip->isMidi())
             return;
 
-        double minStart = std::numeric_limits<double>::max();
-        double maxEnd = 0.0;
+        const auto isInClip = [&clip](size_t idx) { return idx < clip->midiNotes.size(); };
+        const auto noteAt = [&clip](size_t idx) { return clip->midiNotes[idx]; };
+
         std::vector<magda::MidiNote> notesToDuplicate;
-        for (size_t idx : noteIndices) {
-            if (idx < clip->midiNotes.size()) {
-                const auto& note = clip->midiNotes[idx];
-                notesToDuplicate.push_back(note);
-                minStart = std::min(minStart, note.startBeat);
-                maxEnd = std::max(maxEnd, note.startBeat + note.lengthBeats);
-            }
-        }
+        std::ranges::copy(noteIndices | std::views::filter(isInClip) |
+                              std::views::transform(noteAt),
+                          std::back_inserter(notesToDuplicate));
+
         if (!notesToDuplicate.empty()) {
-            double offset = maxEnd - minStart;
+            const auto starts =
+                notesToDuplicate | std::views::transform(&magda::MidiNote::startBeat);
+            const double offset =
+                std::ranges::max(notesToDuplicate | std::views::transform(noteEndBeat)) -
+                std::ranges::min(starts);
             for (auto& note : notesToDuplicate) {
                 note.startBeat += offset;
             }
@@ -802,7 +840,7 @@ void PianoRollContent::setupGridCallbacks() {
 
     // Handle chord block drops from the chord panel
     gridComponent_->onChordDropped = [](magda::ClipId clipId, double beat, double noteLength,
-                                        std::vector<std::pair<int, int>> notes,
+                                        const std::vector<std::pair<int, int>>& notes,
                                         juce::String chordName) {
         if (notes.empty())
             return;
@@ -834,7 +872,7 @@ void PianoRollContent::setupGridCallbacks() {
             magda::ClipInfo::ChordAnnotation annotation;
             annotation.beatPosition = beat;
             annotation.lengthBeats = noteLength;
-            annotation.chordName = chordName;
+            annotation.chordName = std::move(chordName);
             annotation.chordGroup = groupId;
             auto chordCmd = std::make_unique<magda::AddChordAnnotationCommand>(clipId, annotation);
             magda::UndoManager::getInstance().executeCommand(std::move(chordCmd));
@@ -855,9 +893,9 @@ void PianoRollContent::setGridPixelsPerBeat(double ppb) {
         repaint();
 }
 
-void PianoRollContent::setGridPlayheadPosition(double position) {
+void PianoRollContent::setGridPlayheadBeat(double timelineBeat) {
     if (gridComponent_)
-        gridComponent_->setPlayheadPosition(position);
+        gridComponent_->setPlayheadBeat(timelineBeat);
     // The chord-band playhead is painted by this component (over the chord row),
     // so repaint that strip to keep it in step with the grid's playhead.
     if (showChordRow_)
@@ -889,8 +927,9 @@ void PianoRollContent::onGridResolutionChanged() {
 
         // Sync time signature
         if (auto* controller = magda::TimelineController::getCurrent()) {
-            gridComponent_->setTimeSignatureNumerator(
-                controller->getState().tempo.timeSignatureNumerator);
+            const auto& tempo = controller->getState().tempo;
+            gridComponent_->setTimeSignature(tempo.timeSignatureNumerator,
+                                             tempo.timeSignatureDenominator);
         }
     }
     if (timeRuler_)
@@ -902,7 +941,7 @@ void PianoRollContent::onGridResolutionChanged() {
 // ============================================================================
 
 void PianoRollContent::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getPanelBackgroundColour());
+    g.fillAll(ActiveTheme::getPanelBackgroundColour());
 
     if (getWidth() <= 0 || getHeight() <= 0)
         return;
@@ -923,7 +962,7 @@ void PianoRollContent::paint(juce::Graphics& g) {
         drawChordRow(g, chordArea);
 
         // Horizontal separator at bottom of chord row — full width
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawHorizontalLine(chordRowTop() + chordRowHeight() - 1,
                              static_cast<float>(sidebarWidth()), static_cast<float>(getWidth()));
     }
@@ -942,7 +981,7 @@ void PianoRollContent::paintOverChildren(juce::Graphics& g) {
     // The ruler now sits at the very top; extend its tick-area border line
     // through the sidebar/keyboard corner.
     int tickLineY = RULER_HEIGHT - LayoutConfig::getInstance().rulerMajorTickHeight;
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.fillRect(sidebarWidth(), tickLineY, ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH,
                1);
 
@@ -954,7 +993,7 @@ void PianoRollContent::paintOverChildren(juce::Graphics& g) {
         if (gridComponent_->getPlayheadDisplayX(gridX)) {
             const int contentX = viewport_->getX() + gridX - viewport_->getViewPositionX();
             if (contentX >= chordLaneLeftX() && contentX <= getWidth()) {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
                 g.fillRect(contentX - 1, chordRowTop(), 2, chordRowHeight());
             }
         }
@@ -1301,17 +1340,10 @@ void PianoRollContent::updateGridSize() {
     // When multiple clips are selected, compute the combined range
     const auto& selectedClipIds = gridComponent_->getSelectedClipIds();
     if (selectedClipIds.size() > 1) {
-        double earliestStartBeat = std::numeric_limits<double>::max();
-        double latestEndBeat = 0.0;
-        for (magda::ClipId id : selectedClipIds) {
-            const auto* c = clipManager.getClip(id);
-            if (!c)
-                continue;
-            earliestStartBeat = juce::jmin(earliestStartBeat, c->placement.startBeat);
-            latestEndBeat = juce::jmax(latestEndBeat, c->placement.endBeat());
+        if (const auto span = selectionSpanBeats(selectedClipIds)) {
+            clipStartBeats = span->startBeat;
+            clipLengthBeats = span->endBeat - span->startBeat;
         }
-        clipStartBeats = earliestStartBeat;
-        clipLengthBeats = latestEndBeat - earliestStartBeat;
     } else if (clip) {
         if (clip->loopEnabled || clip->view == magda::ClipView::Session) {
             // Looped clips and session clips: show content from bar 1
@@ -1816,11 +1848,11 @@ void PianoRollContent::setClip(magda::ClipId clipId) {
 
 void PianoRollContent::drawSidebar(juce::Graphics& g, juce::Rectangle<int> area) {
     // Draw sidebar background
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND_ALT));
     g.fillRect(area);
 
     // Draw right separator line
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawVerticalLine(area.getRight() - 1, static_cast<float>(area.getY()),
                        static_cast<float>(area.getBottom()));
 
@@ -1842,8 +1874,8 @@ void PianoRollContent::drawSidebar(juce::Graphics& g, juce::Rectangle<int> area)
     const int topDividerY = topClusterBottom + padding / 2;
     const int bottomDividerY = bottomClusterTop - padding / 2;
 
-    const float x1 = static_cast<float>(area.getX() + 5);
-    const float x2 = static_cast<float>(area.getRight() - 5);
+    const auto x1 = static_cast<float>(area.getX() + 5);
+    const auto x2 = static_cast<float>(area.getRight() - 5);
     if (bottomDividerY - topDividerY > padding) {
         g.drawHorizontalLine(topDividerY, x1, x2);
         g.drawHorizontalLine(bottomDividerY, x1, x2);
@@ -1852,11 +1884,11 @@ void PianoRollContent::drawSidebar(juce::Graphics& g, juce::Rectangle<int> area)
 
 void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area) {
     // Draw chord row background
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND_ALT));
     g.fillRect(area);
 
     // Draw bottom border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawLine(static_cast<float>(area.getX()), static_cast<float>(area.getBottom() - 1),
                static_cast<float>(area.getRight()), static_cast<float>(area.getBottom() - 1), 1.0f);
 
@@ -1884,7 +1916,7 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
         // Empty-state hint. The chord lane is populated by chord detection, so
         // say how to get chords here: the chord-track editor adds them on click;
         // a normal track detects them from its own notes via the scan button.
-        g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.4f));
+        g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(0.4f));
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
         const juce::String hint = chordFocusMode()
                                       ? "Click the lane to add a chord"
@@ -1907,7 +1939,7 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
     // The accent spine takes its colour from the chord track (the chord that
     // owns the spine always belongs to the chord track, whether shown on its
     // own lane or as an overlay on a MIDI track).
-    juce::Colour chordTrackColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
+    juce::Colour chordTrackColour = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
     if (auto* chordTrackInfo = magda::TrackManager::getInstance().getTrack(
             magda::TrackManager::getInstance().getChordTrackId()))
         chordTrackColour = chordTrackInfo->colour;
@@ -1939,7 +1971,7 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
             selectedChordGroup() != 0 && annotation.chordGroup == selectedChordGroup();
         const bool previewing =
             previewChordGroup() != 0 && annotation.chordGroup == previewChordGroup();
-        const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
+        const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
 
         // The intended chord-track chord shown alongside this track's chord.
         // (Agreement/disagreement signalling is deferred — see follow-up issue.)
@@ -1948,7 +1980,7 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
 
         // A playing block glows green; otherwise the accent-blue card.
         const auto fillColour =
-            previewing ? DarkTheme::getColour(DarkTheme::STATUS_SUCCESS) : accent;
+            previewing ? ActiveTheme::getColour(ActiveTheme::STATUS_SUCCESS) : accent;
         const float fillAlpha = previewing ? 0.40f : selected ? 0.22f : 0.13f;
 
         // Slate card fill.
@@ -1973,19 +2005,19 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
             g.setFont(FontManager::getInstance().getUIFontMedium(13.0f));
             if (isChordTrackLane) {
                 // Chord track's own chord: left, with spine.
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
                 g.drawText(notation.format(annotation.chordName),
                            blockBounds.withTrimmedLeft(12).withTrimmedRight(4),
                            juce::Justification::centredLeft, true);
             } else {
                 // MIDI track chord: always right, no decoration.
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
                 g.drawText(notation.format(annotation.chordName),
                            blockBounds.withTrimmedLeft(8).withTrimmedRight(8),
                            juce::Justification::centredRight, true);
                 // Intended chord-track chord (overlay only): left, with spine.
                 if (comparing) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
                     g.drawText(notation.format(intendedName),
                                blockBounds.withTrimmedLeft(12).withTrimmedRight(4),
                                juce::Justification::centredLeft, true);
@@ -2052,7 +2084,7 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
             }
             if (blockBounds.getWidth() > 14) {
                 g.setFont(FontManager::getInstance().getUIFontMedium(13.0f));
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
                 g.drawText(notation.format(mc.name),
                            blockBounds.withTrimmedLeft(12).withTrimmedRight(4),
                            juce::Justification::centredLeft, true);
@@ -2081,28 +2113,29 @@ void PianoRollContent::syncChordAnnotations(magda::ClipId clipId) {
             continue;  // Skip unlinked annotations
         }
 
-        // Find all notes in this chord group
-        std::vector<magda::music::ChordNote> chordNotes;
-        double minBeat = std::numeric_limits<double>::max();
-        double maxEnd = 0.0;
+        const auto isInThisGroup = [group = it->chordGroup](const magda::MidiNote& note) {
+            return note.chordGroup == group;
+        };
+        const auto asChordNote = [](const magda::MidiNote& note) {
+            return magda::music::ChordNote(note.noteNumber, note.velocity);
+        };
+        auto groupNotes = clip->midiNotes | std::views::filter(isInThisGroup);
 
-        for (const auto& note : clip->midiNotes) {
-            if (note.chordGroup == it->chordGroup) {
-                chordNotes.push_back({note.noteNumber, note.velocity});
-                minBeat = std::min(minBeat, note.startBeat);
-                maxEnd = std::max(maxEnd, note.startBeat + note.lengthBeats);
-            }
-        }
-
-        if (chordNotes.empty()) {
+        if (std::ranges::empty(groupNotes)) {
             // All notes in group deleted — remove annotation
             it = clip->chordAnnotations.erase(it);
             continue;
         }
 
-        // Update position and length from note extents
+        std::vector<magda::music::ChordNote> chordNotes;
+        std::ranges::copy(groupNotes | std::views::transform(asChordNote),
+                          std::back_inserter(chordNotes));
+
+        const double minBeat =
+            std::ranges::min(groupNotes | std::views::transform(&magda::MidiNote::startBeat));
         it->beatPosition = minBeat;
-        it->lengthBeats = maxEnd - minBeat;
+        it->lengthBeats =
+            std::ranges::max(groupNotes | std::views::transform(noteEndBeat)) - minBeat;
 
         // Re-detect chord name if pitches changed
         if (chordNotes.size() >= 2) {
@@ -2148,9 +2181,9 @@ void PianoRollContent::detectChordsFromNotes() {
     if (!clip || clip->midiNotes.empty())
         return;
 
-    int beatsPerBar = magda::DEFAULT_TIME_SIGNATURE_NUMERATOR;
+    double beatsPerBar = 4.0;
     if (auto* controller = magda::TimelineController::getCurrent())
-        beatsPerBar = controller->getState().tempo.timeSignatureNumerator;
+        beatsPerBar = controller->getState().tempo.beatsPerBar();
 
     // Bar-by-bar detection lives in the shared converter so this and the
     // "extract to chord track" feature stay in sync.
@@ -2196,17 +2229,17 @@ void PianoRollContent::detectChordsFromNotes() {
 
 void PianoRollContent::drawVelocityHeader(juce::Graphics& g, juce::Rectangle<int> area) {
     // Draw header background
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND_ALT));
     g.fillRect(area);
 
     // Draw top border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawHorizontalLine(area.getY(), static_cast<float>(area.getX()),
                          static_cast<float>(area.getRight()));
 
     // Draw lane label in keyboard area (legacy path only, without MidiDrawer)
     auto labelArea = area.removeFromLeft(KEYBOARD_WIDTH);
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     g.setFont(magda::FontManager::getInstance().getUIFont(11.0f));
     g.drawText("Velocity", labelArea.reduced(4, 0), juce::Justification::centredLeft, true);
 }
@@ -2225,17 +2258,8 @@ void PianoRollContent::updateVelocityLane() {
         const auto& selectedClipIds =
             gridComponent_ ? gridComponent_->getSelectedClipIds() : std::vector<magda::ClipId>{};
         if (selectedClipIds.size() > 1) {
-            double earliestStart = std::numeric_limits<double>::max();
-            auto& clipManager = magda::ClipManager::getInstance();
-            for (magda::ClipId id : selectedClipIds) {
-                const auto* c = clipManager.getClip(id);
-                if (c) {
-                    earliestStart = juce::jmin(earliestStart, c->placement.startBeat);
-                }
-            }
-            if (earliestStart < std::numeric_limits<double>::max()) {
-                midiDrawer_->setClipStartBeats(earliestStart);
-            }
+            if (const auto span = selectionSpanBeats(selectedClipIds))
+                midiDrawer_->setClipStartBeats(span->startBeat);
         }
 
         // Sync loop region and clip length
@@ -2263,17 +2287,8 @@ void PianoRollContent::updateVelocityLane() {
     const auto& selectedClipIds =
         gridComponent_ ? gridComponent_->getSelectedClipIds() : std::vector<magda::ClipId>{};
     if (selectedClipIds.size() > 1) {
-        double earliestStart = std::numeric_limits<double>::max();
-        auto& clipManager = magda::ClipManager::getInstance();
-        for (magda::ClipId id : selectedClipIds) {
-            const auto* c = clipManager.getClip(id);
-            if (c) {
-                earliestStart = juce::jmin(earliestStart, c->placement.startBeat);
-            }
-        }
-        if (earliestStart < std::numeric_limits<double>::max()) {
-            velocityLane_->setClipStartBeats(earliestStart);
-        }
+        if (const auto span = selectionSpanBeats(selectedClipIds))
+            velocityLane_->setClipStartBeats(span->startBeat);
     }
 
     if (gridComponent_) {
@@ -2354,17 +2369,9 @@ void PianoRollContent::centerOnNotes() {
         return;
     }
 
-    // Find note range
-    int minNote = 127;
-    int maxNote = 0;
-    for (const auto& note : clip->midiNotes) {
-        minNote = juce::jmin(minNote, note.noteNumber);
-        maxNote = juce::jmax(maxNote, note.noteNumber);
-    }
-
-    // Center on the midpoint of the note range
-    int midNote = (minNote + maxNote) / 2;
-    centerOnNote(midNote);
+    const auto [lowest, highest] =
+        std::ranges::minmax(clip->midiNotes, {}, &magda::MidiNote::noteNumber);
+    centerOnNote((lowest.noteNumber + highest.noteNumber) / 2);
 }
 
 }  // namespace magda::daw::ui

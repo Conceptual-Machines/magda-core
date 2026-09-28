@@ -4,7 +4,7 @@
 #include <cmath>
 #include <set>
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "VelocityLaneUtils.hpp"
 #include "core/ClipManager.hpp"
@@ -120,7 +120,7 @@ void MidiTakeLanesComponent::paint(juce::Graphics& g) {
     const auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
     const int n = laneCount();
     if (clip == nullptr || n <= 0) {
-        g.fillAll(DarkTheme::getPanelBackgroundColour());
+        g.fillAll(ActiveTheme::getPanelBackgroundColour());
         return;
     }
 
@@ -135,8 +135,8 @@ void MidiTakeLanesComponent::paint(juce::Graphics& g) {
 
     // Neutral lane backgrounds (greys), so the clip colour is reserved for the
     // notes themselves — keeps the strip from reading as a wall of blue.
-    const auto activeBg = DarkTheme::getColour(DarkTheme::PIANO_ROLL_TAKE_LANE_ACTIVE);
-    const auto inactiveBg = DarkTheme::getColour(DarkTheme::PIANO_ROLL_TAKE_LANE_INACTIVE);
+    const auto activeBg = ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_TAKE_LANE_ACTIVE);
+    const auto inactiveBg = ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_TAKE_LANE_INACTIVE);
 
     for (int i = 0; i < n; ++i) {
         const int laneY = i * laneH;
@@ -185,7 +185,7 @@ void MidiTakeLanesComponent::paint(juce::Graphics& g) {
                     const int sx0 = beatToPixel(displayBeat(sec.startBeat));
                     const int sx1 = beatToPixel(displayBeat(sec.endBeat));
                     juce::Rectangle<int> band(sx0, laneY, std::max(1, sx1 - sx0), laneH);
-                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0.05f));
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0.05f));
                     g.fillRect(band);
                     g.setColour(base.withAlpha(0.7f));
                     g.drawRect(band, 1);
@@ -201,12 +201,12 @@ void MidiTakeLanesComponent::paint(juce::Graphics& g) {
 
         // Take name in the fixed left gutter.
         g.setColour(
-            DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(isActive ? 0.85f : 0.5f));
+            ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(isActive ? 0.85f : 0.5f));
         g.drawText("Take " + juce::String(i + 1), 6, laneY, juce::jmax(0, labelGutter_ - 8), laneH,
                    juce::Justification::centredLeft, false);
 
         // Gutter divider + separator.
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         if (labelGutter_ > 0)
             g.drawVerticalLine(labelGutter_, static_cast<float>(laneY),
                                static_cast<float>(laneY + laneH));
@@ -219,9 +219,9 @@ void MidiTakeLanesComponent::paint(juce::Graphics& g) {
         const int sx0 = std::min(swipeStartX_, swipeCurrentX_);
         const int sx1 = std::max(swipeStartX_, swipeCurrentX_);
         juce::Rectangle<int> band(sx0, laneY, std::max(1, sx1 - sx0), laneH);
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0.25f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0.25f));
         g.fillRect(band);
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0.7f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0.7f));
         g.drawRect(band, 1);
     }
 }

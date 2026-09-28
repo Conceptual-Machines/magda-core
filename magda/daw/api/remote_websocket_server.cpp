@@ -39,8 +39,7 @@
 #include "remote_service.hpp"
 #include "remote_subscriptions.hpp"
 
-namespace magda {
-namespace remote {
+namespace magda::remote {
 
 namespace {
 
@@ -135,7 +134,7 @@ int jsonRpcCodeFor(ErrorCode code) {
 }
 
 juce::var makeObject() {
-    return juce::var(new juce::DynamicObject());
+    return {new juce::DynamicObject()};
 }
 
 void setProperty(juce::var& object, const char* name, const juce::var& value) {
@@ -185,7 +184,7 @@ std::string replyFor(const juce::var& id, const Response& response) {
 
     auto meta = makeObject();
     setProperty(meta, "revision", static_cast<juce::int64>(response.revision));
-    setProperty(meta, "apiVersion", juce::String(API_VERSION.data()));
+    setProperty(meta, "apiVersion", juce::String(API_VERSION.data(), API_VERSION.size()));
 
     auto reply = makeObject();
     setProperty(reply, "jsonrpc", "2.0");
@@ -324,7 +323,7 @@ struct Connection {
      */
     bool enqueue(std::string payload, bool ownsSlot) {
         {
-            const std::lock_guard<std::mutex> lock(mutex);
+            const std::scoped_lock lock(mutex);
             if (closed || queuedReplies >= maxQueuedReplies) {
                 if (ownsSlot)
                     releaseLocked();
@@ -349,7 +348,7 @@ struct Connection {
      */
     bool enqueueEvent(std::string payload) {
         {
-            const std::lock_guard<std::mutex> lock(mutex);
+            const std::scoped_lock lock(mutex);
             if (closed || queuedEvents >= maxQueuedEvents)
                 return false;
             ++queuedEvents;
@@ -373,7 +372,7 @@ struct Connection {
 
     void release() {
         {
-            const std::lock_guard<std::mutex> lock(mutex);
+            const std::scoped_lock lock(mutex);
             releaseLocked();
         }
         ready.notify_one();
@@ -391,14 +390,14 @@ struct Connection {
      * executed, mutations and all, and only its replies are thrown away.
      */
     bool isClosed() const {
-        const std::lock_guard<std::mutex> lock(mutex);
+        const std::scoped_lock lock(mutex);
         return closed;
     }
 
     void markClosed() {
         std::deque<Outgoing> abandoned;
         {
-            const std::lock_guard<std::mutex> lock(mutex);
+            const std::scoped_lock lock(mutex);
             closed = true;
             abandoned.swap(outbox);
             queuedReplies = 0;
@@ -428,7 +427,7 @@ struct Connection {
      * Returns an empty string when the request may proceed.
      */
     juce::String admit(int maxInFlight, double ratePerSecond, double burst) {
-        const std::lock_guard<std::mutex> lock(mutex);
+        const std::scoped_lock lock(mutex);
 
         const auto now = std::chrono::steady_clock::now();
         const auto elapsed = std::chrono::duration<double>(now - lastRefill).count();
@@ -511,7 +510,7 @@ struct RemoteWebSocketServer::Impl {
     std::vector<std::shared_ptr<Connection>> live;
 
     int connectionCount() const {
-        const std::lock_guard<std::mutex> lock(liveMutex);
+        const std::scoped_lock lock(liveMutex);
         return static_cast<int>(live.size());
     }
 
@@ -545,10 +544,11 @@ struct RemoteWebSocketServer::Impl {
      * immediately before that WebSocket is destroyed.
      */
     bool disconnectByHandle(const juce::String& handle) {
-        const std::lock_guard<std::mutex> lock(liveMutex);
-        const auto found =
-            std::find_if(live.begin(), live.end(),
-                         [&](const std::shared_ptr<Connection>& c) { return c->handle == handle; });
+        const std::scoped_lock lock(liveMutex);
+        const auto hasHandle = [&handle](const std::shared_ptr<Connection>& connection) {
+            return connection->handle == handle;
+        };
+        const auto found = std::ranges::find_if(live, hasHandle);
         if (found == live.end())
             return false;
         (*found)->shutdown();
@@ -573,7 +573,7 @@ struct RemoteWebSocketServer::Impl {
      * the same function that removes one.
      */
     bool registerConnection(const std::shared_ptr<Connection>& connection) {
-        const std::lock_guard<std::mutex> lock(liveMutex);
+        const std::scoped_lock lock(liveMutex);
         if (static_cast<int>(live.size()) >= options.maxConnections)
             return false;
         live.push_back(connection);
@@ -754,7 +754,7 @@ struct RemoteWebSocketServer::Impl {
             // connections are live. Everything else it needs is copied.
             subscriptions->handle(
                 connection->subscriber, method, params,
-                [log = options.audit, connection, id, method, idKey](Response response) {
+                [log = options.audit, connection, id, method, idKey](const Response& response) {
                     recordAudit(log, connection, method, idKey,
                                 response.ok ? AuditOutcome::Ok : AuditOutcome::Failed,
                                 response.ok ? juce::String() : toString(response.error.code));
@@ -774,7 +774,7 @@ struct RemoteWebSocketServer::Impl {
         const auto meta = parsed["meta"];
         auto deadlineMs = options.defaultDeadlineMs;
         if (meta.getDynamicObject() != nullptr) {
-            if (const auto key = meta["idempotencyKey"]; !key.isVoid()) {
+            if (const auto& key = meta["idempotencyKey"]; !key.isVoid()) {
                 if (!key.isString() || key.toString().isEmpty() || key.toString().length() > 256) {
                     refuse(connection, id, kInvalidRequest,
                            "meta.idempotencyKey must be a non-empty string of at most 256 "
@@ -785,7 +785,7 @@ struct RemoteWebSocketServer::Impl {
                 // reused and therefore cannot safely double as retry keys.
                 context.requestId = key.toString();
             }
-            if (const auto expected = meta["expectedRevision"]; !expected.isVoid()) {
+            if (const auto& expected = meta["expectedRevision"]; !expected.isVoid()) {
                 const auto revision =
                     jsonInteger(expected, 0, std::numeric_limits<juce::int64>::max());
                 if (!revision.has_value()) {
@@ -800,7 +800,7 @@ struct RemoteWebSocketServer::Impl {
             // more — and never for none. Taking the minimum without checking the
             // sign lets -1 win it, after which a non-positive deadline is read as
             // "no deadline" and the request outlives every bound there is.
-            if (const auto requested = meta["deadlineMs"]; !requested.isVoid()) {
+            if (const auto& requested = meta["deadlineMs"]; !requested.isVoid()) {
                 const auto milliseconds =
                     jsonInteger(requested, 1, std::numeric_limits<int>::max());
                 if (!milliseconds.has_value()) {
@@ -813,7 +813,7 @@ struct RemoteWebSocketServer::Impl {
         }
         context.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(deadlineMs);
 
-        service.dispatch(method, params, context, [connection, id](Response response) {
+        service.dispatch(method, params, context, [connection, id](const Response& response) {
             connection->complete(replyFor(id, response));
         });
     }
@@ -865,7 +865,10 @@ struct RemoteWebSocketServer::Impl {
                 [connection](const SubscriptionEvent& event) {
                     return connection->enqueueEvent(notificationFor(event));
                 },
-                [connection](const juce::String&) { connection->shutdown(); });
+                [connection](const juce::String&) { connection->shutdown(); }, connection->handle,
+                [clients = options.clients, name = connection->clientName] {
+                    return clients != nullptr ? clients->scopesFor(name) : ScopeSet{};
+                });
         }
 
         std::thread writer([connection] {
@@ -925,10 +928,11 @@ struct RemoteWebSocketServer::Impl {
         writer.join();
 
         {
-            const std::lock_guard<std::mutex> lock(liveMutex);
+            const std::scoped_lock lock(liveMutex);
             live.erase(std::remove(live.begin(), live.end(), connection), live.end());
         }
 
+        service.clientDisconnected(connection->handle);
         if (options.clients != nullptr)
             options.clients->noteDisconnected(connection->handle);
         audit(connection, AUDIT_CONNECTION_CLOSE, {}, AuditOutcome::Disconnected);
@@ -1031,7 +1035,7 @@ void RemoteWebSocketServer::stop() {
     // OS shutdown is safe across threads and wakes the one framed reader; unlike
     // WebSocket::close(), it does not start a competing read for a Close echo.
     {
-        const std::lock_guard<std::mutex> lock(impl_->liveMutex);
+        const std::scoped_lock lock(impl_->liveMutex);
         for (const auto& connection : impl_->live)
             connection->shutdown();
     }
@@ -1056,5 +1060,4 @@ int RemoteWebSocketServer::connectionCount() const {
     return impl_->connectionCount();
 }
 
-}  // namespace remote
-}  // namespace magda
+}  // namespace magda::remote

@@ -6,7 +6,11 @@
 #include <cmath>
 #include <vector>
 
+#include "audio/RenderFileMetadata.hpp"
+#include "core/StringTable.hpp"
+#include "core/UserAlert.hpp"
 #include "plugins/InsertCapturePlugin.hpp"
+#include "project/ProjectManager.hpp"
 
 namespace magda {
 
@@ -24,7 +28,7 @@ constexpr int kProgressTimerHz = 10;
 // the ones whose returns the offline render cannot produce.
 std::vector<te::InsertPlugin*> routedInserts(te::Edit& edit) {
     std::vector<te::InsertPlugin*> result;
-    for (auto plugin : te::getAllPlugins(edit, false)) {
+    for (auto* plugin : te::getAllPlugins(edit, false)) {
         auto* insert = dynamic_cast<te::InsertPlugin*>(plugin);
         if (insert != nullptr && insert->isEnabled() && insert->outputDevice.get().isNotEmpty() &&
             insert->inputDevice.get().isNotEmpty())
@@ -49,18 +53,24 @@ bool resampleCaptureFile(const juce::File& file, double targetRate) {
     if (reader->sampleRate == targetRate)
         return true;
 
-    const auto tempFile = file.getSiblingFile(file.getFileNameWithoutExtension() + "_rs.wav");
-    tempFile.deleteFile();
+    const juce::TemporaryFile temporary(file);
+    const auto tempFile = temporary.getFile();
+    juce::int64 outLength = 0;
     {
         std::unique_ptr<juce::OutputStream> outStream = tempFile.createOutputStream();
         if (outStream == nullptr)
             return false;
+        std::unordered_map<juce::String, juce::String> metadata;
+        for (int i = 0; i < reader->metadataValues.size(); ++i)
+            metadata.emplace(reader->metadataValues.getAllKeys()[i],
+                             reader->metadataValues.getAllValues()[i]);
         auto writerOptions =
             juce::AudioFormatWriterOptions()
                 .withSampleRate(targetRate)
                 .withNumChannels(static_cast<int>(reader->numChannels))
                 .withBitsPerSample(32)
-                .withSampleFormat(juce::AudioFormatWriterOptions::SampleFormat::floatingPoint);
+                .withSampleFormat(juce::AudioFormatWriterOptions::SampleFormat::floatingPoint)
+                .withMetadataValues(metadata);
         auto writer = format.createWriterFor(outStream, writerOptions);
         if (writer == nullptr)
             return false;
@@ -71,18 +81,24 @@ bool resampleCaptureFile(const juce::File& file, double targetRate) {
         resampler.setResamplingRatio(reader->sampleRate / targetRate);
         constexpr int blockSize = 4096;
         resampler.prepareToPlay(blockSize, targetRate);
-        const auto outLength = std::llround(static_cast<double>(reader->lengthInSamples) *
-                                            targetRate / reader->sampleRate);
+        outLength = std::llround(static_cast<double>(reader->lengthInSamples) * targetRate /
+                                 reader->sampleRate);
         const bool ok =
             writer->writeFromAudioSource(resampler, static_cast<int>(outLength), blockSize);
         resampler.releaseResources();
-        if (!ok) {
-            tempFile.deleteFile();
+        if (!ok)
             return false;
-        }
     }
     reader.reset();
-    return file.deleteFile() && tempFile.moveFileTo(file);
+    auto checkStream = tempFile.createInputStream();
+    if (checkStream == nullptr)
+        return false;
+    std::unique_ptr<juce::AudioFormatReader> check(
+        format.createReaderFor(checkStream.release(), true));
+    if (check == nullptr || check->lengthInSamples != outLength)
+        return false;
+    check.reset();
+    return temporary.overwriteTargetFileWithTemporary();
 }
 
 }  // namespace
@@ -95,9 +111,32 @@ struct InsertRenderCaptureService::Taps {
 InsertRenderCaptureService::InsertRenderCaptureService(te::Edit& edit) : edit_(edit) {}
 
 InsertRenderCaptureService::~InsertRenderCaptureService() {
-    if (pass_ != nullptr)
-        finishPass(false);
-    cleanupAfterRender();
+    try {
+        if (pass_ != nullptr)
+            finishPass(false);
+    } catch (const std::exception& e) {
+        juce::Logger::writeToLog(juce::String("[InsertRenderCaptureService] ") + e.what());
+        juce::MessageManager::callAsync(
+            [] { magda::notifyUserAlert(magda::tr("export.capture.cleanup_failed")); });
+    } catch (...) {
+        juce::Logger::writeToLog("[InsertRenderCaptureService] unknown exception during teardown");
+        juce::MessageManager::callAsync(
+            [] { magda::notifyUserAlert(magda::tr("export.capture.cleanup_failed")); });
+    }
+
+    // Must run even if finishPass() above threw: removeTaps() releases the
+    // capture plugins and temp files, which would otherwise leak.
+    try {
+        cleanupAfterRender();
+    } catch (const std::exception& e) {
+        juce::Logger::writeToLog(juce::String("[InsertRenderCaptureService] ") + e.what());
+        juce::MessageManager::callAsync(
+            [] { magda::notifyUserAlert(magda::tr("export.capture.cleanup_failed")); });
+    } catch (...) {
+        juce::Logger::writeToLog("[InsertRenderCaptureService] unknown exception during teardown");
+        juce::MessageManager::callAsync(
+            [] { magda::notifyUserAlert(magda::tr("export.capture.cleanup_failed")); });
+    }
 }
 
 bool InsertRenderCaptureService::exportNeedsCapturePass() const {
@@ -133,6 +172,9 @@ bool InsertRenderCaptureService::startCapturePass(double startSec, double endSec
     // the whole pass.
     auto taps = std::make_unique<Taps>();
     bool armFailed = false;
+    const auto metadata = engine::wavMetadataFor(
+        renderFileMetadata(ProjectManager::getInstance().getCurrentProjectInfo(), endSec - startSec,
+                           "MAGDA insert capture"));
     for (auto* insert : inserts) {
         auto* ownerList = insert->getOwnerList();
         if (ownerList == nullptr) {
@@ -153,7 +195,7 @@ bool InsertRenderCaptureService::startCapturePass(double startSec, double endSec
                                          juce::String(insert->itemID.getRawID()) + ".wav");
         ownerList->insertPlugin(tapPlugin, ownerList->indexOf(insert) + 1, nullptr);
 
-        if (!tap->startCapture(file, startSec, endSec, sampleRate)) {
+        if (!tap->startCapture(file, startSec, endSec, sampleRate, metadata)) {
             tapPlugin->deleteFromParent();
             armFailed = true;
             break;

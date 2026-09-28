@@ -84,6 +84,11 @@ class PrefetchThread final : private juce::Thread {
     /// an idle project is not a thread spinning.
     static constexpr int kIdleMilliseconds = 5;
 
+    /// Chunks one stream is served before the round moves on. One, because the
+    /// worst case that matters is the wait for a first chunk: a stream that has
+    /// none is silent, and a stream topping up its pool is not.
+    static constexpr int kChunksPerVisit = 1;
+
     mutable std::mutex lock_;
     std::vector<PrefetchStream*> streams_;
     bool runsInBackground_ = true;

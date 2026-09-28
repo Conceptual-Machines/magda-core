@@ -16,10 +16,10 @@ CommandResponse TracktionEngineWrapper::processCommand(const Command& command) {
     try {
         if (type == "play") {
             play();
-            return CommandResponse(CommandResponse::Status::Success, "Playback started");
+            return {CommandResponse::Status::Success, "Playback started"};
         } else if (type == "stop") {
             stop();
-            return CommandResponse(CommandResponse::Status::Success, "Playback stopped");
+            return {CommandResponse::Status::Success, "Playback stopped"};
         } else if (type == "createTrack") {
             // Simple parameter parsing - in a real implementation you'd parse JSON
             auto trackId = createMidiTrack("New Track");
@@ -32,21 +32,16 @@ CommandResponse TracktionEngineWrapper::processCommand(const Command& command) {
             response.setData(responseData);
             return response;
         } else {
-            return CommandResponse(CommandResponse::Status::Error, "Unknown command");
+            return {CommandResponse::Status::Error, "Unknown command"};
         }
     } catch (const std::exception& e) {
-        return CommandResponse(CommandResponse::Status::Error,
-                               "Command execution failed: " + std::string(e.what()));
+        return {CommandResponse::Status::Error,
+                "Command execution failed: " + std::string(e.what())};
     }
 }
 
 // TransportInterface implementation
 void TracktionEngineWrapper::play() {
-    // Block playback while devices are loading to prevent audio glitches
-    if (devicesLoading_) {
-        return;
-    }
-
     // Block playback while an offline render owns the edit -- playing now would
     // rebuild the playback context against the in-flight render and corrupt the
     // node graph (NodeRenderContext asserts).
@@ -69,13 +64,18 @@ void TracktionEngineWrapper::play() {
                     ++zeroCount;
             }
             if (zeroCount >= AUDIO_DEVICE_CHECK_THRESHOLD) {
+                // The empty callback is what keeps this asynchronous. Given a null
+                // one, showUnmanaged() takes runSync() wherever modal loops are
+                // permitted, so "Async" runs a modal loop on the message thread --
+                // which in a headless test binary waits forever for an OK nobody
+                // can press.
                 juce::AlertWindow::showMessageBoxAsync(
                     juce::MessageBoxIconType::WarningIcon, "Audio Device Not Responding",
                     "The audio device '" + device->getName() +
                         "' is not processing audio.\n\n"
                         "Try disconnecting and reconnecting your audio interface, "
                         "or restarting the audio driver.",
-                    "OK");
+                    "OK", nullptr, juce::ModalCallbackFunction::create([](int) {}));
             }
         }
 
@@ -111,7 +111,7 @@ void TracktionEngineWrapper::sendAllNotesOffToExternalInserts() {
 
     // Deliberately not gated on isEnabled(): a just-disabled insert may
     // still have a note-on in flight on its hardware synth.
-    for (auto plugin : tracktion::getAllPlugins(*currentEdit_, false)) {
+    for (auto* plugin : tracktion::getAllPlugins(*currentEdit_, false)) {
         auto* insert = dynamic_cast<tracktion::InsertPlugin*>(plugin);
         if (insert == nullptr)
             continue;
@@ -137,12 +137,6 @@ void TracktionEngineWrapper::pause() {
 }
 
 void TracktionEngineWrapper::record() {
-    // Block recording while devices are loading
-    if (devicesLoading_) {
-        juce::Logger::writeToLog("[Record] blocked - devices still loading");
-        return;
-    }
-
     if (currentEdit_) {
         // Push TrackInfo::recordArmed onto TE's destinations right before asking
         // TE to record. Covers the project-load case where a persisted armed
@@ -273,7 +267,7 @@ void TracktionEngineWrapper::setTempo(double bpm) {
     if (currentEdit_) {
         auto& tempoSeq = currentEdit_->tempoSequence;
         if (tempoSeq.getNumTempos() > 0) {
-            auto tempo = tempoSeq.getTempo(0);
+            auto* tempo = tempoSeq.getTempo(0);
             if (tempo) {
                 tempo->setBpm(bpm);
             }
@@ -420,6 +414,8 @@ void TracktionEngineWrapper::updateTriggerState() {
 // Metronome/click track methods
 void TracktionEngineWrapper::setMetronomeEnabled(bool enabled) {
     if (currentEdit_) {
+        // Accent the downbeat like native's click; Tracktion leaves every tick the same by default
+        currentEdit_->clickTrackEmphasiseBars = true;
         currentEdit_->clickTrackEnabled = enabled;
     }
 }

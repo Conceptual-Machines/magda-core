@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "project": "freeze.mgd",
+  "cluster": "freeze",
+  "range": { "startBeat": 0, "endBeat": 8 },
+  "requires": { "plugins": [], "hardware": [] },
+  "setup": [
+    { "call": "tracks.freeze", "input": { "trackId": 1 } },
+    { "call": "devices.setBypassed", "input": { "devicePath": { "trackId": 1, "section": "fx", "trackLevel": false, "topLevelDeviceId": 1, "steps": [] }, "bypassed": true } },
+    { "call": "devices.setBypassed", "input": { "devicePath": { "trackId": 1, "section": "fx", "trackLevel": false, "topLevelDeviceId": 2, "steps": [] }, "bypassed": true } }
+  ],
+  "compare": false,
+  "tracks": [
+    { "name": "Frozen", "sound": true, "peakDb": { "min": -48, "max": 0 } },
+    { "name": "Live", "sound": true, "peakDb": { "min": -48, "max": 0 } }
+  ],
+  "listen": "The same A minor chords, the Frozen track an octave up with chorus, sounding with its devices bypassed because it plays its freeze render, in step with the Live track below it."
+}

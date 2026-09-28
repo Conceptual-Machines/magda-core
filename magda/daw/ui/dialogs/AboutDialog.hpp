@@ -6,13 +6,19 @@ namespace magda {
 
 class AboutDialog : public juce::DialogWindow {
   public:
-    AboutDialog();
+    /// @param engineName what the running engine calls itself, shown beside the
+    ///        version only where it is not the default one (#2559).
+    explicit AboutDialog(juce::String engineName = {});
 
     void closeButtonPressed() override;
-    static void show();
+    static void show(juce::String engineName = {});
 
   private:
     class ContentComponent;
+
+    /// The open window, so asking again brings it forward rather than opening
+    /// another (#2724).
+    static juce::Component::SafePointer<AboutDialog> currentInstance_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AboutDialog)
 };

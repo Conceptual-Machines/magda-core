@@ -11,12 +11,13 @@
     #include <unistd.h>
 
     #include <cerrno>
+    #include <utility>
 #endif
 
 namespace magda {
 
-MCPClient::MCPClient(const juce::String& command, const juce::StringArray& args)
-    : command_(command), args_(args) {}
+MCPClient::MCPClient(juce::String command, juce::StringArray args)
+    : command_(std::move(command)), args_(std::move(args)) {}
 
 MCPClient::~MCPClient() {
     stop();
@@ -70,6 +71,7 @@ bool MCPClient::start() {
             argStrings.push_back(a.toStdString());
 
         std::vector<char*> argv;
+        argv.reserve(argStrings.size());
         for (auto& s : argStrings)
             argv.push_back(s.data());
         argv.push_back(nullptr);
@@ -122,7 +124,7 @@ void MCPClient::stop() {
             stdinWrite_ = -1;
         }
 
-        int status;
+        int status = 0;
         if (waitpid(childPid_, &status, WNOHANG) == 0) {
             kill(childPid_, SIGTERM);
             waitpid(childPid_, &status, 0);
@@ -143,7 +145,7 @@ void MCPClient::stop() {
 bool MCPClient::isRunning() const {
     if (childPid_ <= 0)
         return false;
-    int status;
+    int status = 0;
     return waitpid(childPid_, &status, WNOHANG) == 0;
 }
 
@@ -276,10 +278,10 @@ MCPClient::ToolResult MCPClient::callTool(const juce::String& toolName,
     }
 
     if (isError) {
-        result.error = combinedText;
+        result.error = std::move(combinedText);
     } else {
         result.success = true;
-        result.content = combinedText;
+        result.content = std::move(combinedText);
     }
     return result;
 }

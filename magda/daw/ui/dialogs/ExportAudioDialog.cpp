@@ -2,7 +2,7 @@
 
 #include "../../core/Config.hpp"
 #include "../../project/ProjectManager.hpp"
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
 #include "core/StringTable.hpp"
@@ -65,6 +65,17 @@ ExportAudioDialog::ExportAudioDialog() {
 
     bitDepthValueLabel_.setFont(FontManager::getInstance().getUIFont(14.0f));
     addAndMakeVisible(bitDepthValueLabel_);
+
+    ditherLabel_.setText(tr("export_audio.label.dither"), juce::dontSendNotification);
+    ditherLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
+    addAndMakeVisible(ditherLabel_);
+
+    ditherComboBox_.addItem(tr("export_audio.dither.off"), 1);
+    ditherComboBox_.addItem("TPDF", 2);  // Technical designator, not translated.
+    ditherComboBox_.addItem(tr("export_audio.dither.shaped"), 3);
+    ditherComboBox_.setSelectedId(2, juce::dontSendNotification);
+    addAndMakeVisible(ditherComboBox_);
+
     updateBitDepthOptions();  // Set label based on restored format
 
     // Normalization option
@@ -142,7 +153,7 @@ ExportAudioDialog::ExportAudioDialog() {
     addAndMakeVisible(cancelButton_);
 
     // Set preferred size
-    setSize(500, 450);
+    setSize(500, 488);
 }
 
 ExportAudioDialog::~ExportAudioDialog() {
@@ -150,7 +161,7 @@ ExportAudioDialog::~ExportAudioDialog() {
 }
 
 void ExportAudioDialog::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
 }
 
 void ExportAudioDialog::lookAndFeelChanged() {
@@ -179,6 +190,12 @@ void ExportAudioDialog::resized() {
     bitDepthLabel_.setBounds(bitDepthArea.removeFromLeft(120));
     bitDepthArea.removeFromLeft(10);
     bitDepthValueLabel_.setBounds(bitDepthArea);
+    bounds.removeFromTop(10);
+
+    auto ditherArea = bounds.removeFromTop(28);
+    ditherLabel_.setBounds(ditherArea.removeFromLeft(120));
+    ditherArea.removeFromLeft(10);
+    ditherComboBox_.setBounds(ditherArea);
     bounds.removeFromTop(15);
 
     // Normalization checkbox
@@ -262,6 +279,22 @@ ExportAudioDialog::Settings ExportAudioDialog::getSettings() const {
             break;
     }
 
+    if (formatId == 3) {
+        settings.dither = OfflineRenderDither::None;
+    } else {
+        switch (ditherComboBox_.getSelectedId()) {
+            case 1:
+                settings.dither = OfflineRenderDither::None;
+                break;
+            case 3:
+                settings.dither = OfflineRenderDither::Shaped;
+                break;
+            default:
+                settings.dither = OfflineRenderDither::Tpdf;
+                break;
+        }
+    }
+
     settings.normalize = normalizeCheckbox_.getToggleState();
     settings.realTimeRender = realTimeRenderCheckbox_.getToggleState();
 
@@ -323,6 +356,9 @@ void ExportAudioDialog::updateBitDepthOptions() {
     }
 
     bitDepthValueLabel_.setText(bitDepthText, juce::dontSendNotification);
+
+    // A float file has no grid to dither onto.
+    ditherComboBox_.setEnabled(formatId != 3);
 }
 
 void ExportAudioDialog::showDialog(juce::Component* parent,
@@ -331,11 +367,11 @@ void ExportAudioDialog::showDialog(juce::Component* parent,
     auto* dialog = new ExportAudioDialog();
     dialog->setTimeSelectionAvailable(hasTimeSelection);
     dialog->setLoopRegionAvailable(hasLoopRegion);
-    dialog->onExport = exportCallback;
+    dialog->onExport = std::move(exportCallback);
 
     juce::DialogWindow::LaunchOptions options;
     options.dialogTitle = tr("dialogs.export_audio");
-    options.dialogBackgroundColour = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+    options.dialogBackgroundColour = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
     options.content.setOwned(dialog);
     options.escapeKeyTriggersCloseButton = true;
     options.useNativeTitleBar = true;

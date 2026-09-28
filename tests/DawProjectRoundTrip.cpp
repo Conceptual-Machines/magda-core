@@ -1,6 +1,8 @@
 #include "DawProjectRoundTrip.hpp"
 
 #include <algorithm>
+#include <deque>
+#include <functional>
 #include <map>
 #include <optional>
 #include <set>
@@ -216,10 +218,10 @@ Loss takesAndComp() {
 }
 
 Loss controllers() {
-    return {.field = "ClipInfo::midiCCData, midiPitchBendData, MidiNote::pitchExpression",
+    return {.field = "expressive MIDI events, event ids, and keyswitch roles",
             .reason = "the format's <Notes> carries pitch, velocity and duration and nothing "
-                      "else. Continuous controllers, pitch bend and per-note expression have "
-                      "no element to go in",
+                      "else. Controllers, pressure, stable ids, keyswitch roles, and per-note "
+                      "expression have no element to go in",
             .restore = [](Case& imported, const Case& original) {
                 return forEachClip(imported, original, [](ClipInfo& clip, const ClipInfo& source) {
                     bool restored = false;
@@ -232,6 +234,19 @@ Loss controllers() {
                         clip.midiPitchBendData = source.midiPitchBendData;
                         restored = true;
                     }
+                    if (clip.midiChannelPressureData != source.midiChannelPressureData) {
+                        clip.midiChannelPressureData = source.midiChannelPressureData;
+                        restored = true;
+                    }
+                    if (clip.midiPolyAftertouchData != source.midiPolyAftertouchData) {
+                        clip.midiPolyAftertouchData = source.midiPolyAftertouchData;
+                        restored = true;
+                    }
+                    if (clip.isMidi() && source.isMidi() &&
+                        clip.midi().nextEventId != source.midi().nextEventId) {
+                        clip.midi().nextEventId = source.midi().nextEventId;
+                        restored = true;
+                    }
 
                     // Expression is per note, and the notes themselves did make
                     // the trip, so it goes back onto them in order rather than
@@ -240,10 +255,14 @@ Loss controllers() {
                     const auto notes = std::min(clip.midiNotes.size(), source.midiNotes.size());
                     for (std::size_t index = 0; index < notes; ++index) {
                         if (clip.midiNotes[index].pitchExpression ==
-                            source.midiNotes[index].pitchExpression)
+                                source.midiNotes[index].pitchExpression &&
+                            clip.midiNotes[index].keyswitch == source.midiNotes[index].keyswitch &&
+                            clip.midiNotes[index].id == source.midiNotes[index].id)
                             continue;
                         clip.midiNotes[index].pitchExpression =
                             source.midiNotes[index].pitchExpression;
+                        clip.midiNotes[index].keyswitch = source.midiNotes[index].keyswitch;
+                        clip.midiNotes[index].id = source.midiNotes[index].id;
                         restored = true;
                     }
 
@@ -371,6 +390,190 @@ Loss trackModulation() {
             }};
 }
 
+/// #2485: which of a track's two bodies is live is a MAGDA launcher concept,
+/// not a DAWproject one, so a track comes back in Arrangement mode whatever it
+/// went out in.
+Loss playbackMode() {
+    return {.field = "TrackInfo::playbackMode",
+            .reason = "the format has no attribute for session mode, which is player state "
+                      "rather than project data it was ever asked to carry",
+            .restore = [](Case& imported, const Case& original) {
+                bool restored = false;
+
+                for (auto& track : imported.tracks)
+                    for (const auto& source : original.tracks) {
+                        if (source.name != track.name || track.playbackMode == source.playbackMode)
+                            continue;
+
+                        track.playbackMode = source.playbackMode;
+                        restored = true;
+                    }
+
+                return restored;
+            }};
+}
+
+Loss multiOutRouting() {
+    return {.field = "TrackInfo::type, TrackInfo::multiOutLink",
+            .reason = "an instrument's further output pairs have no DAWproject representation, "
+                      "and neither does a track whose whole content is one of them. The format "
+                      "gives a channel one audio output and a destination; a MultiOut track is "
+                      "a second reader of a device that lives on another track, which is a "
+                      "relationship between a track and a device rather than between two "
+                      "channels. It comes back as an ordinary audio track with no link",
+            .restore = [](Case& imported, const Case& original) {
+                bool restored = false;
+
+                for (auto& track : imported.tracks)
+                    for (const auto& source : original.tracks) {
+                        if (source.name != track.name)
+                            continue;
+                        if (track.type == source.type &&
+                            track.multiOutLink.has_value() == source.multiOutLink.has_value())
+                            continue;
+
+                        track.type = source.type;
+                        track.multiOutLink = source.multiOutLink;
+                        restored = true;
+                    }
+
+                return restored;
+            }};
+}
+
+/// Every top-level device of @p track, paired with the one it went out as.
+/// What the two device-level losses below both need.
+///
+/// By id, which is exact and which these can rely on: the trip has already put
+/// the surviving devices back onto the ids they went out under, by portable
+/// identity and occurrence, before any loss is restored. Pairing by name here
+/// would reintroduce the ambiguity that mapping exists to avoid.
+void forEachPairedDevice(TrackInfo& track, const TrackInfo& source,
+                         const std::function<void(DeviceInfo&, const DeviceInfo&)>& visit) {
+    for (auto& element : track.chain.fxChainElements) {
+        if (!isDevice(element))
+            continue;
+
+        auto& device = getDevice(element);
+
+        for (const auto& candidate : source.chain.fxChainElements) {
+            if (!isDevice(candidate) || getDevice(candidate).id != device.id)
+                continue;
+
+            visit(device, getDevice(candidate));
+            break;
+        }
+    }
+}
+
+/// A device's key input, which is a relationship rather than a property (#2246).
+Loss deviceSidechain() {
+    return {.field = "DeviceInfo::sidechain",
+            .reason = "DAWproject has no cross-track key routing. A device arrives as a plugin "
+                      "identity and a state blob, and which track feeds its sidechain is neither "
+                      "of those: it is a reference from a device to a track, which the format "
+                      "has nowhere to put. It comes back unrouted",
+            .restore = [](Case& imported, const Case& original) {
+                bool restored = false;
+
+                for (auto& track : imported.tracks)
+                    for (const auto& source : original.tracks) {
+                        if (source.name != track.name)
+                            continue;
+
+                        forEachPairedDevice(
+                            track, source,
+                            [&restored](DeviceInfo& device, const DeviceInfo& saved) {
+                                if (device.sidechain.isActive() == saved.sidechain.isActive())
+                                    return;
+
+                                device.sidechain = saved.sidechain;
+                                restored = true;
+                            });
+                    }
+
+                return restored;
+            }};
+}
+
+/// The dry and wet levels in front of a hosted plugin, which are the host's own
+/// numbers and not the plugin's (#2246).
+Loss deviceWrapperMix() {
+    return {.field = "DeviceInfo::wrapperParameters",
+            .reason = "the pair of levels in front of an external plugin belongs to the host "
+                      "rather than to the plugin: the fork injects it, MAGDA persists it, and "
+                      "the plugin has never heard of it. DAWproject carries a device as an "
+                      "identity and a blob of its own state, and neither has anywhere to put a "
+                      "number the plugin did not author. It comes back empty, which the engine "
+                      "reads as the pair's own default of fully wet -- so a project saved at "
+                      "40% wet returns as one that is not",
+            .restore = [](Case& imported, const Case& original) {
+                const auto sameMix = [](const DeviceInfo& device, const DeviceInfo& saved) {
+                    if (device.wrapperParameters.size() != saved.wrapperParameters.size())
+                        return false;
+
+                    for (std::size_t index = 0; index < saved.wrapperParameters.size(); ++index)
+                        if (device.wrapperParameters[index].currentValue !=
+                            saved.wrapperParameters[index].currentValue)
+                            return false;
+
+                    return true;
+                };
+
+                bool restored = false;
+
+                for (auto& track : imported.tracks)
+                    for (const auto& source : original.tracks) {
+                        if (source.name != track.name)
+                            continue;
+
+                        forEachPairedDevice(
+                            track, source,
+                            [&restored, &sameMix](DeviceInfo& device, const DeviceInfo& saved) {
+                                if (sameMix(device, saved))
+                                    return;
+
+                                device.wrapperParameters = saved.wrapperParameters;
+                                restored = true;
+                            });
+                    }
+
+                return restored;
+            }};
+}
+
+/// What a device's MIDI ports do, which is read off a live plugin (#2246).
+Loss deviceMidiPorts() {
+    return {.field = "DeviceInfo::producesMidi, DeviceInfo::midiInThru",
+            .reason = "a device's MIDI capabilities are what the live plugin reported and what "
+                      "the user chose to do with them, and the format carries neither: it names "
+                      "a plugin and hands over its state. They come back at the defaults, which "
+                      "is a plugin that emits no MIDI and a chain that passes its own through",
+            .restore = [](Case& imported, const Case& original) {
+                bool restored = false;
+
+                for (auto& track : imported.tracks)
+                    for (const auto& source : original.tracks) {
+                        if (source.name != track.name)
+                            continue;
+
+                        forEachPairedDevice(
+                            track, source,
+                            [&restored](DeviceInfo& device, const DeviceInfo& saved) {
+                                if (device.producesMidi == saved.producesMidi &&
+                                    device.midiInThru == saved.midiInThru)
+                                    return;
+
+                                device.producesMidi = saved.producesMidi;
+                                device.midiInThru = saved.midiInThru;
+                                restored = true;
+                            });
+                    }
+
+                return restored;
+            }};
+}
+
 const std::map<std::string, std::vector<Loss>>& lossTable() {
     static const std::map<std::string, std::vector<Loss>> table{
         {"fades.curves", {fades()}},
@@ -393,12 +596,66 @@ const std::map<std::string, std::vector<Loss>>& lossTable() {
         {"param.hostwrite.modifier", {internalDevices(), trackModulation()}},
         {"macro.track", {internalDevices(), trackModulation()}},
         {"macro.device", {internalDevices()}},
+        // Rack-scope macros and a device-scope follower both ride inside the
+        // chain -- on RackInfo::macros and on DeviceInfo::mods -- so the one
+        // declaration that loses the chain loses them with it, and restoring
+        // the chain puts them back. Neither wants trackModulation() beside it:
+        // that covers what rides on TrackInfo, and a declared loss that finds
+        // nothing to restore fails here rather than sitting in the table.
+        //
+        // The three send cases are deliberately absent. DAWproject has sends
+        // and aux channels of its own, so they make the trip intact, and that
+        // is a result rather than an omission: the format carries the one piece
+        // of mixer topology the corpus has.
+        {"macro.rack", {internalDevices()}},
+        {"mod.follower", {internalDevices()}},
+        // The rack cases (#2139). A rack is chains of internal devices, and the
+        // format has nowhere to put either half, so the same declaration covers
+        // the whole of it: the chain comes back empty and is restored wholesale.
+        {"rack.parallel", {internalDevices()}},
+        {"rack.chain.fader", {internalDevices()}},
+        {"rack.fader", {internalDevices()}},
+        {"rack.chain.mute", {internalDevices()}},
+        {"rack.chain.solo", {internalDevices()}},
+        {"rack.deltasolo.device", {internalDevices()}},
+        {"rack.deltasolo.rack", {internalDevices()}},
+        {"rack.latency", {internalDevices()}},
+        {"rack.nested", {internalDevices()}},
+        {"rack.nested.latency", {internalDevices()}},
+        {"rack.aux", {internalDevices()}},
+        {"rack.mono", {internalDevices()}},
+        {"rack.instrument", {internalDevices()}},
+        // The one hosted case with a rack in it (#2246). The rack goes the way
+        // every other rack goes, and it takes the plugin inside it along:
+        // there is no chain to put a device back into once the container it
+        // sat in has no representation.
+        {"plugin.narrow.slot", {internalDevices()}},
+        {"plugin.wetdry", {deviceWrapperMix()}},
+        {"plugin.wetdry.dry", {deviceWrapperMix()}},
+        {"plugin.sidechain", {deviceSidechain()}},
+        {"plugin.instrument.midiout", {deviceMidiPorts()}},
+        {"plugin.instrument.midiout.thru", {deviceMidiPorts()}},
+        {"plugin.faust.instrument", {internalDevices()}},
+        {"plugin.sampler", {internalDevices()}},
+        {"plugin.compiled.instrument", {internalDevices()}},
+        {"multiout.pair", {internalDevices(), multiOutRouting()}},
         {"project.mixed", {internalDevices()}},
         {"midi.notes", {internalDevices()}},
         {"midi.cc", {internalDevices(), controllers()}},
         {"midi.mpe", {internalDevices(), controllers()}},
         {"midi.fold", {internalDevices(), groove()}},
         {"midi.offset", {internalDevices()}},
+        // The session cases (#2441). The slot itself makes the trip -- the
+        // format has scenes and clip slots, and the clip comes back in the
+        // right one with its notes and its length -- so the only declaration
+        // either of them needs is the one every instrument track in the corpus
+        // needs, and the audio one has no chain to lose.
+        {"session.launch.midi", {internalDevices()}},
+        // #2485: the first case with an audible arrangement clip on a
+        // Session-mode track, which is what exposes playbackMode as a loss --
+        // session.launch's track has none, so the mode never had anything to
+        // gate.
+        {"session.mode.holds.slot", {playbackMode()}},
     };
 
     return table;
@@ -684,6 +941,126 @@ bool takeClips(ProjectDocument& imported, const std::map<TrackId, TrackId>& trac
     return claims.allClaimed(refusal);
 }
 
+/**
+ * @brief The identity the format carries for a device, on either side of the
+ *        trip (#2246).
+ *
+ * The same preference the exporter writes its `deviceID` from -- a VST3's class
+ * id, then JUCE's own identifier string, then the file it was loaded from --
+ * which is what makes it comparable across the trip: the importer puts that one
+ * attribute back into all three fields, so a device asked this question before
+ * and after answers with the same string.
+ *
+ * Deliberately not the display name. A name is what a user typed and what a
+ * browser showed; two instances of one plugin on one chain share it, and a
+ * mapping keyed on it would have to refuse a project that is perfectly ordinary.
+ *
+ * Empty for a device the format could not identify at all, which is a device it
+ * did not carry either: nothing comes back for it, and the chain it sat in is
+ * restored from the original as a declared loss.
+ */
+juce::String portableIdentity(const DeviceInfo& device) {
+    if (device.vst3ClassId.isNotEmpty())
+        return device.vst3ClassId;
+    if (device.uniqueId.isNotEmpty())
+        return device.uniqueId;
+    return device.fileOrIdentifier;
+}
+
+/// Every top-level device of @p elements, in chain order.
+std::vector<const DeviceInfo*> topLevelDevices(const std::vector<ChainElement>& elements) {
+    std::vector<const DeviceInfo*> devices;
+
+    for (const auto& element : elements)
+        if (isDevice(element))
+            devices.push_back(&getDevice(element));
+
+    return devices;
+}
+
+/**
+ * @brief Put the devices that came back onto the ids they went out under
+ *        (#2246).
+ *
+ * The same rule tracks and clips live by, applied one level further in, and it
+ * arrived with the first case whose device survives the trip: a hosted plugin
+ * is carried by the format, so a case with one compiles a plan whose ops are
+ * keyed on a device id the importer chose. That is a renumbering rather than a
+ * loss, and the difference matters -- restoring the chain wholesale, the way a
+ * case of internal devices does, would put the exported plugin back too and
+ * stop comparing what the format actually carried.
+ *
+ * Matched by portable identity and occurrence rather than by name. Two copies of
+ * one plugin on one chain is an ordinary project, and a mapping that refused it
+ * would be writing a harness limitation into what the corpus is allowed to
+ * contain: so the nth device carrying an identity takes the id of the nth device
+ * that went out carrying it, in chain order, and the name is only ever printed.
+ *
+ * That keeps a reorder visible, which is the property this could have lost. Two
+ * instances of one plugin swapped are the same project and compile to the same
+ * plan; two different devices swapped keep their own ids and compile to a plan
+ * whose ops are in the other order, which the dump comparison reads straight
+ * off.
+ *
+ * Unlike a track or a clip, a device that did not come back is not a refusal
+ * here. Most of them do not: MAGDA's own devices and its racks have no
+ * representation at all, and that is declared as a loss and restored from the
+ * original. What is refused is a device that came back carrying an identity
+ * nothing went out under, or a further copy of one, which are the two ways a
+ * mapping could quietly put one device's id on another.
+ *
+ * Top-level chain devices only. It is where the corpus's hosted plugins sit,
+ * and the sections the format has no shape for arrive empty rather than
+ * renumbered.
+ */
+bool mapDeviceIds(Case& value, const Case& original, std::string& refusal) {
+    const auto mapTrack = [&refusal](TrackInfo& track, const TrackInfo& source) {
+        // The ids that went out, per identity, in chain order. A deque because
+        // matching is first come first served: the second instance of a plugin
+        // to come back is the second that went out.
+        std::map<juce::String, std::deque<DeviceId>> byIdentity;
+        for (const auto* device : topLevelDevices(source.chain.fxChainElements))
+            byIdentity[portableIdentity(*device)].push_back(device->id);
+
+        for (auto& element : track.chain.fxChainElements) {
+            if (!isDevice(element))
+                continue;
+
+            auto& device = getDevice(element);
+            const auto identity = portableIdentity(device);
+
+            const auto found = byIdentity.find(identity);
+            if (found == byIdentity.end() || found->second.empty()) {
+                refusal = "a device came back on track '" + track.name.toStdString() + "' as '" +
+                          device.name.toStdString() + "' (" + identity.toStdString() +
+                          "), which nothing went out as";
+                return false;
+            }
+
+            device.id = found->second.front();
+            found->second.pop_front();
+        }
+
+        return true;
+    };
+
+    for (auto& track : value.tracks) {
+        const auto source =
+            std::find_if(original.tracks.begin(), original.tracks.end(),
+                         [&track](const TrackInfo& candidate) { return candidate.id == track.id; });
+
+        if (source == original.tracks.end()) {
+            refusal = "a track came back that nothing went out as";
+            return false;
+        }
+
+        if (!mapTrack(track, *source))
+            return false;
+    }
+
+    return mapTrack(value.master, original.master);
+}
+
 }  // namespace
 
 RoundTrip exportAndReimport(const Case& original, const juce::File& scratchDirectory) {
@@ -732,6 +1109,9 @@ RoundTrip exportAndReimport(const Case& original, const juce::File& scratchDirec
     if (!takeTracks(imported, trackIds, result.value, result.refusal))
         return result;
     if (!takeClips(imported, trackIds, original, result.value, result.refusal))
+        return result;
+
+    if (!mapDeviceIds(result.value, original, result.refusal))
         return result;
 
     result.value.sources = pooledSourcesFor(result.value.clips, media, result.refusal);

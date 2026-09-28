@@ -1,5 +1,6 @@
 #include "../audio/AudioBridge.hpp"
 #include "TracktionEngineWrapper.hpp"
+#include "WaveDeviceChannels.hpp"
 
 namespace magda {
 
@@ -72,16 +73,10 @@ void TracktionEngineWrapper::handlePlaybackContextReallocation(tracktion::Device
             juce::MessageManager::getInstance()->runDispatchLoopUntil(0);
 
             int numInputChannels = device->getInputChannelNames().size();
-            for (auto* dev : dm.getWaveInputDevices()) {
-                bool shouldEnable = false;
-                for (const auto& ch : dev->getChannels()) {
-                    if (ch.indexInDevice < numInputChannels) {
-                        shouldEnable = true;
-                        break;
-                    }
-                }
-                dev->setEnabled(shouldEnable);
-            }
+            const auto withinDeviceInputs = [numInputChannels](int index) {
+                return index < numInputChannels;
+            };
+            enableDevicesForChannels(dm.getWaveInputDevices(), withinDeviceInputs);
 
             DBG("Reconfigured wave devices for " << currentDeviceName << " (" << numInputChannels
                                                  << " inputs)");
@@ -97,26 +92,7 @@ void TracktionEngineWrapper::handlePlaybackContextReallocation(tracktion::Device
 
     lastKnownDeviceCount_ = totalDevices;
     if (currentDeviceName.isNotEmpty())
-        lastKnownAudioDeviceName_ = currentDeviceName;
-}
-
-void TracktionEngineWrapper::notifyDeviceLoadingComplete(const juce::String& message) {
-    // If we were playing, stop and remember we need to resume
-    if (isPlaying() && devicesLoading_) {
-        wasPlayingBeforeDeviceChange_ = true;
-        stop();
-        DBG("Stopped playback during device initialization");
-    }
-
-    // Mark devices as no longer loading after first change notification
-    if (devicesLoading_) {
-        devicesLoading_ = false;
-        DBG("Device initialization complete: " << message);
-
-        if (onDevicesLoadingChanged) {
-            onDevicesLoadingChanged(false, message);
-        }
-    }
+        lastKnownAudioDeviceName_ = std::move(currentDeviceName);
 }
 
 void TracktionEngineWrapper::changeListenerCallback(juce::ChangeBroadcaster* source) {
@@ -132,36 +108,6 @@ void TracktionEngineWrapper::changeListenerCallback(juce::ChangeBroadcaster* sou
 
     // Reallocate playback context if devices were added
     handlePlaybackContextReallocation(dm);
-
-    // Build a description of currently enabled devices
-    juce::StringArray deviceNames;
-
-    // Get MIDI input devices (returns shared_ptr)
-    for (const auto& midiIn : dm.getMidiInDevices()) {
-        if (midiIn && midiIn->isEnabled()) {
-            deviceNames.add("MIDI: " + midiIn->getName());
-        }
-    }
-
-    // Get audio output device (returns raw pointers)
-    for (auto* waveOut : dm.getWaveOutputDevices()) {
-        if (waveOut && waveOut->isEnabled()) {
-            deviceNames.add("Audio: " + waveOut->getName());
-        }
-    }
-
-    juce::String message;
-    if (devicesLoading_) {
-        message = "Scanning devices...";
-        if (deviceNames.size() > 0) {
-            message = "Found: " + deviceNames.joinIntoString(", ");
-        }
-    } else {
-        message = "Devices ready";
-    }
-
-    // Notify completion and stop playback if needed
-    notifyDeviceLoadingComplete(message);
 }
 
 juce::AudioDeviceManager* TracktionEngineWrapper::getDeviceManager() {
@@ -171,68 +117,8 @@ juce::AudioDeviceManager* TracktionEngineWrapper::getDeviceManager() {
     return nullptr;
 }
 
-juce::BigInteger TracktionEngineWrapper::getEnabledWaveChannels(bool input) const {
-    juce::BigInteger channels;
-    if (engine_ == nullptr)
-        return channels;
-
-    const auto addEnabledChannels = [&channels](auto devices) {
-        for (auto* device : devices) {
-            if (device == nullptr || !device->isEnabled())
-                continue;
-            for (const auto& channel : device->getChannels())
-                channels.setBit(channel.indexInDevice);
-        }
-    };
-    if (input)
-        addEnabledChannels(engine_->getDeviceManager().getWaveInputDevices());
-    else
-        addEnabledChannels(engine_->getDeviceManager().getWaveOutputDevices());
-    return channels;
-}
-
-void TracktionEngineWrapper::setEnabledWaveChannels(bool input, const juce::BigInteger& channels) {
-    if (engine_ == nullptr)
-        return;
-
-    const auto applyChannels = [&channels](auto devices) {
-        for (auto* device : devices) {
-            if (device == nullptr)
-                continue;
-            bool shouldEnable = false;
-            for (const auto& channel : device->getChannels()) {
-                if (channels[channel.indexInDevice]) {
-                    shouldEnable = true;
-                    break;
-                }
-            }
-            if (device->isEnabled() != shouldEnable)
-                device->setEnabled(shouldEnable);
-        }
-    };
-    if (input)
-        applyChannels(engine_->getDeviceManager().getWaveInputDevices());
-    else
-        applyChannels(engine_->getDeviceManager().getWaveOutputDevices());
-}
-
-void TracktionEngineWrapper::rescanWaveDevices(bool enableInputs, bool enableOutputs) {
-    if (engine_ == nullptr)
-        return;
-
-    auto& deviceManager = engine_->getDeviceManager();
-    deviceManager.rescanWaveDeviceList();
-    juce::MessageManager::getInstance()->runDispatchLoopUntil(0);
-    if (enableInputs) {
-        for (auto* device : deviceManager.getWaveInputDevices())
-            if (device != nullptr && !device->isEnabled())
-                device->setEnabled(true);
-    }
-    if (enableOutputs) {
-        for (auto* device : deviceManager.getWaveOutputDevices())
-            if (device != nullptr && !device->isEnabled())
-                device->setEnabled(true);
-    }
+AudioIOControl* TracktionEngineWrapper::getAudioIO() {
+    return audioIO_.get();
 }
 
 }  // namespace magda

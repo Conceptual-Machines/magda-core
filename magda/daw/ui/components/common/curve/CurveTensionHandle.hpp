@@ -39,7 +39,7 @@ class CurveTensionHandle : public juce::Component {
         return tension_;
     }
 
-    void setSlopeGoesDown(bool goesDown) {
+    static void setSlopeGoesDown(bool goesDown) {
         juce::ignoreUnused(goesDown);
     }
 

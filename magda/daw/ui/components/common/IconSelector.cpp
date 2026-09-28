@@ -1,6 +1,6 @@
 #include "IconSelector.hpp"
 
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -27,9 +27,9 @@ void IconSelector::setSelectedIndex(int index, juce::NotificationType notificati
 }
 
 void IconSelector::paint(juce::Graphics& g) {
-    auto accent = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
-    auto textPrimary = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
-    auto textSecondary = DarkTheme::getSecondaryTextColour();
+    auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
+    auto textPrimary = ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY);
+    auto textSecondary = ActiveTheme::getSecondaryTextColour();
 
     for (int i = 0; i < static_cast<int>(options_.size()); ++i) {
         auto bounds = getOptionBounds(i);
@@ -55,7 +55,7 @@ void IconSelector::paint(juce::Graphics& g) {
             float opacity = selected ? 1.0f : (hovered ? 0.8f : 0.45f);
             auto copy = opt.icon->createCopy();
             copy->replaceColour(juce::Colours::black, selected ? textPrimary : textSecondary);
-            DarkTheme::applyToSvgIcon(*copy);
+            ActiveTheme::applyToSvgIcon(*copy);
             copy->drawWithin(g, iconArea, juce::RectanglePlacement::centred, opacity);
         } else if (opt.text.isNotEmpty()) {
             // Draw text option

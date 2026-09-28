@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -45,6 +46,10 @@ class ClipManagerListener {
         juce::ignoreUnused(clipId);
     }
 
+    // Called when Session runtime state changes without an associated clip,
+    // such as arming or beginning a recording in an empty slot.
+    virtual void sessionRuntimeStateChanged() {}
+
     // Called when a clip playback is requested (Play or Stop)
     virtual void clipPlaybackRequested(ClipId clipId, ClipPlaybackRequest request) {
         juce::ignoreUnused(clipId, request);
@@ -54,6 +59,29 @@ class ClipManagerListener {
     virtual void clipDragPreview(ClipId clipId, double previewStartTime, double previewLength) {
         juce::ignoreUnused(clipId, previewStartTime, previewLength);
     }
+};
+
+/**
+ * @brief A finished MIDI recording ready to become one Arrangement clip.
+ *
+ * Kept in the model layer so an engine host can translate its recorder result
+ * without making ClipManager depend on an engine implementation. `active` is
+ * the content that plays now; `takeModel` preserves every recorded pass and
+ * the take/comp selection that produced it.
+ */
+struct RecordedMidiClipData {
+    double startBeat = 0.0;
+    double lengthBeats = 0.0;
+    MidiTake active;
+    MidiClipModel takeModel;
+};
+
+/** @brief A finished audio recording ready to become one Arrangement clip. */
+struct RecordedAudioClipData {
+    double startBeat = 0.0;
+    double lengthBeats = 0.0;
+    juce::String filePath;
+    AudioClipModel takeModel;
 };
 
 /**
@@ -85,14 +113,24 @@ class ClipManager {
     /**
      * @brief Create an audio clip from a file — beats-authoritative API.
      *
-     * Source duration, offset, and loop fields remain source-domain seconds.
-     * Timeline placement is stored in beats and seconds are derived only for
-     * bridge/UI compatibility.
+     * Timeline placement is stored in beats; source positions stay in the
+     * source's own samples.
      */
     ClipId createAudioClipBeats(
         TrackId trackId, double startBeats, double lengthBeats, const juce::String& audioFilePath,
-        ClipView view = ClipView::Arrangement, double projectBPM = 0.0,
+        ClipView view = ClipView::Arrangement,
         ClipOverlapPolicy overlapPolicy = ClipOverlapPolicy::PreserveExisting);
+
+    /**
+     * @brief Insert a completed audio recording atomically (#2553).
+     *
+     * The active source, placement, Session slot and every loop pass are
+     * installed before the sole clipsChanged notification.
+     */
+    ClipId createRecordedAudioClip(
+        TrackId trackId, RecordedAudioClipData recording,
+        ClipOverlapPolicy overlapPolicy = ClipOverlapPolicy::ResolveOverlaps,
+        ClipView view = ClipView::Arrangement, int sceneIndex = -1);
 
     /**
      * @brief Create an audio clip from timeline seconds.
@@ -118,6 +156,31 @@ class ClipManager {
         TrackId trackId, double startBeats, double lengthBeats,
         ClipView view = ClipView::Arrangement,
         ClipOverlapPolicy overlapPolicy = ClipOverlapPolicy::PreserveExisting);
+
+    /**
+     * @brief Insert a completed Arrangement MIDI recording atomically (#2553).
+     *
+     * The clip's placement, active notes/controllers, takes and comp state are
+     * all installed before the sole clipsChanged notification. An empty active
+     * take is still a valid recorded clip.
+     */
+    ClipId createRecordedMidiClip(
+        TrackId trackId, RecordedMidiClipData recording,
+        ClipOverlapPolicy overlapPolicy = ClipOverlapPolicy::ResolveOverlaps,
+        ClipView view = ClipView::Arrangement, int sceneIndex = -1);
+
+    /**
+     * @brief Materialise one captured Session run as an Arrangement clip (#2726).
+     *
+     * `source` is the immutable slot snapshot taken when the run began. The
+     * complete copy, placement and heard source phase are installed before the
+     * sole clipsChanged notification. `sourceTempo` is the tempo that snapshot
+     * played under; zero falls back to the current project tempo.
+     */
+    ClipId createCapturedSessionClip(
+        const ClipInfo& source, double startBeat, double lengthBeats, double offsetBeats = 0.0,
+        ClipOverlapPolicy overlapPolicy = ClipOverlapPolicy::ResolveOverlaps,
+        double sourceTempo = 0.0);
 
     /**
      * @brief Create an empty MIDI clip from seconds.
@@ -186,12 +249,15 @@ class ClipManager {
      */
     void replaceClipState(const ClipInfo& clipInfo);
 
+    /** Replace only a MIDI clip's editable event collections and notify once. */
+    bool replaceMidiEventState(ClipId clipId, MidiEventState state);
+
     /**
      * @brief Push an undoable take/comp snapshot. `before` is the clip state
      * captured before the edit; the current (post-edit) state is the redo state.
      * Used by audio comp edits in CompService.
      */
-    void pushClipTakeUndo(const juce::String& desc, const ClipInfo& before);
+    static void pushClipTakeUndo(const juce::String& desc, const ClipInfo& before);
 
     /**
      * @brief Force a clips changed notification (used by undo system)
@@ -285,6 +351,10 @@ class ClipManager {
      */
     void moveClipToTrack(ClipId clipId, TrackId newTrackId);
 
+    /** Place an arrangement clip at its final track/time before resolving overlaps. */
+    bool placeArrangementClip(ClipId clipId, TrackId newTrackId, double newStartBeat,
+                              double tempo = 0.0);
+
     /** @brief Resize clip to a new beat length. */
     void resizeClipBeats(ClipId clipId, double newLengthBeats, bool fromStart = false,
                          double tempo = 0.0);
@@ -353,6 +423,21 @@ class ClipManager {
      *         touch offset / phase / loop start. */
     void setLoopLength(ClipId clipId, double loopLength, double bpm = 120.0);
 
+    /** @brief Set an audio loop length in interpreted source beats. */
+    void setAudioLoopLengthBeats(ClipId clipId, double loopLengthBeats);
+
+    /** @brief Undo of setLoopLength: put the region's samples and extent back
+     *         as they were, so an interpretation-sized region does not come
+     *         back as an explicit range. */
+    void restoreLoopLength(ClipId clipId, const LoopLengthState& state, double bpm = 120.0);
+    void restoreLoopLength(ClipId clipId, int64_t loopLengthSamples, RegionExtent extent,
+                           double bpm = 120.0);
+
+    /** @brief Restore an audio loop's complete sample-domain undo snapshot. */
+    void restoreAudioLoopRegion(ClipId clipId, int64_t loopStartSamples,
+                                const LoopLengthState& lengthState, int64_t sourceAnchorSamples,
+                                double snapshotSampleRate);
+
     /** @brief Set MIDI loop region start in beats. Does NOT touch offset / phase. */
     void setMidiLoopStartBeats(ClipId clipId, double loopStartBeats, double bpm = 120.0);
 
@@ -368,42 +453,40 @@ class ClipManager {
      *         narrower setLoopStart / setLoopLength setters for inspector
      *         spinner edits where phase must be preserved. */
     void relocateLoopRegion(ClipId clipId, double loopStart, double loopLength, double bpm = 120.0);
+
+    /** @brief Relocate an audio loop and author its length in source beats. */
+    void relocateMusicalLoopRegion(ClipId clipId, double loopStart, double loopLengthBeats);
+
+    /** @brief Move an audio loop region and its phase without changing its length intent. */
+    void relocateLoopStartPreservingLength(ClipId clipId, double loopStart);
     /** @brief Set the clip timeline length in beats (autoTempo mode only) */
     void setLengthBeats(ClipId clipId, double beats, double bpm);
 
-    // =====================================================================
-    // Session audio-clip canonical update path (issue #1157)
+    // -- Interpretation operations (#2674) --
     //
-    // For session/autoTempo audio clips, ClipInfo holds two roles:
-    //   - SOURCE INTERPRETATION — AudioClipModel::interpretation. The file's
-    //     musical reading, user-correctable and never clip placement.
-    //   - USER INTENT — lengthBeats (timeline beats the clip occupies on
-    //     the session/timeline), loopStartBeats / loopLengthBeats (sub-loop
-    //     region in source-beat domain), offsetBeats, startBeats. The beat
-    //     slider edits lengthBeats and never touches source interpretation.
-    //
-    // Time-domain fields (length, startTime, offset, loopStart, loopLength)
-    // are DERIVED inside applyAudioClipBeats and must not be set directly
-    // by callers in this path. speedRatio is forced to 1.0.
-    // =====================================================================
-    struct AudioClipBeatsUpdate {
-        std::optional<double> sourceDurationSeconds;
-        std::optional<double> interpretationBpm;
-        std::optional<double> interpretationTotalBeats;
-        bool lockInterpretationTotalBeats = false;
-        std::optional<double> lengthBeats;
-        std::optional<double> loopStartBeats;
-        std::optional<double> loopLengthBeats;
-        std::optional<double> offsetBeats;
-        std::optional<double> startBeats;
-    };
+    // Tempo and beat count are one fact in two units, tied by the file
+    // length: setting either restates the other, and the loop region stays
+    // where it is (an interpretation-sized one refits). Each write is refused
+    // over a value the user owns unless `from` is User. A clip in beat mode
+    // refits its beat length to the same audio (#2791); a user write to a
+    // clip that has not asked for beat mode is refused.
 
-    /** @brief Apply a partial canonical update to a session/autoTempo audio
-     *         clip and atomically recompute every derived field. Single
-     *         update path for inspector BPM edit, beat-length slider, and
-     *         BPM-detection callbacks. No-op for non-autoTempo / non-audio
-     *         clips. */
-    void applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate& update, double projectBPM);
+    /** @brief The source's tempo. Refused outside 20-999. */
+    void setSourceTempo(ClipId clipId, double bpm, Provenance from = Provenance::User);
+
+    /** @brief The source's beat count. Refused when it implies a tempo outside 20-999. */
+    void setSourceBeatCount(ClipId clipId, double beats, Provenance from = Provenance::User);
+
+    /** @brief A detection result for @p sourcePath lands as Analysis. Ignored
+     *         when the clip's source is no longer that file or the user owns
+     *         the tempo. A looping whole-source region becomes its beat count.
+     *         Never grants beat mode by itself. */
+    void adoptAnalysis(ClipId clipId, const juce::String& sourcePath, double bpm);
+
+    /** @brief What the user asks of beat mode; whether it is active follows
+     *         from the interpretation. Entering beat mode loops the clip, pins
+     *         speed to 1 and picks a stretch engine. */
+    void setPlaybackIntent(ClipId clipId, PlaybackIntent intent, double projectBPM);
 
     /** @brief Persist a user-asserted BPM for the clip's source file back
      *         to the media DB. Prefer saveClipToLibrary for UI entry points
@@ -420,16 +503,14 @@ class ClipManager {
     [[nodiscard]] bool saveClipToLibrary(
         ClipId clipId, std::optional<std::vector<WarpMarker>> warpMarkers = std::nullopt);
 
-    /** @brief Refresh the seconds-domain cache (length, startTime, offset,
-     *         loopStart, loopLength) on a beat-authoritative clip from its
-     *         canonical beat fields. No-op for time-authoritative clips.
-     *
-     *  Called by applyAudioClipBeats and by TimelineController on project-BPM
-     *  change. Does NOT notify listeners — caller's responsibility. */
-    void refreshDerivedSeconds(ClipId clipId, double projectBPM);
-
-    /** @brief Enable/disable auto-tempo (beat-locked) mode for an audio clip */
+    /** @brief The BEAT toggle: setPlaybackIntent with Beat or Free. */
     void setAutoTempo(ClipId clipId, bool enabled, double bpm);
+    /** @brief Detect a tempo for every clip in @p clipIds that has no
+     *  interpreted tempo, then call @p onReady on the message thread. Each
+     *  answer lands on its clip through adoptAnalysis. onReady may fire before
+     *  this returns when nothing needs detecting. */
+    void detectMissingTempo(const std::vector<ClipId>& clipIds, double projectBPM,
+                            std::function<void()> onReady);
     /** @brief Set the playback speed ratio (1.0 = original, 2.0 = double speed) - TE:
      * Clip::speedRatio */
     void setSpeedRatio(ClipId clipId, double speedRatio);
@@ -651,6 +732,15 @@ class ClipManager {
      */
     std::vector<ClipInfo> getClips() const;
 
+    /**
+     * @brief Restore the complete clip collection captured by an atomic edit.
+     *
+     * IDs and clip contents are restored verbatim while allocation counters
+     * remain monotonic. One structural notification is emitted after indexes
+     * have been rebuilt.
+     */
+    void restoreClipCollection(const std::vector<ClipInfo>& clips);
+
     ClipInfo* getClip(ClipId clipId);
     const ClipInfo* getClip(ClipId clipId) const;
 
@@ -842,8 +932,8 @@ class ClipManager {
      * outermost suspension ends, a single clipPropertiesChanged(ids) is
      * fired covering everything that changed during the batch.
      *
-     * Notes about clipsChanged() (structural changes) are NOT coalesced and
-     * still fire immediately.
+     * Structural clipsChanged() notifications are coalesced too, so callers
+     * can publish an all-or-nothing grid mutation after every slot is ready.
      *
      * Intended for bulk mutations like AI-driven note generation where
      * firing per-note would cause O(n) full TE sequence rebuilds plus
@@ -859,7 +949,13 @@ class ClipManager {
             ClipManager::getInstance().beginBatch();
         }
         ~BatchScope() {
-            ClipManager::getInstance().endBatch();
+            try {
+                ClipManager::getInstance().endBatch();
+            } catch (const std::exception& e) {
+                juce::Logger::writeToLog(juce::String("[ClipManager::BatchScope] ") + e.what());
+            } catch (...) {
+                juce::Logger::writeToLog("[ClipManager::BatchScope] unknown exception");
+            }
         }
         BatchScope(const BatchScope&) = delete;
         BatchScope& operator=(const BatchScope&) = delete;
@@ -912,7 +1008,7 @@ class ClipManager {
     void resolveOverlaps(ClipId dominantClipId);
 
     /// Reset a looped clip's length to its base loop length and disable looping
-    void resetLoopedClipLength(ClipInfo& clip);
+    static void resetLoopedClipLength(ClipInfo& clip);
 
     /// Move every event off @p from and onto @p to. Used when a relink target
     /// turns out to be pooled already, so one file keeps one source.
@@ -937,13 +1033,17 @@ class ClipManager {
     double findNonOverlappingStartBeats(TrackId trackId, double desiredStartBeats,
                                         double lengthBeats, ClipView view) const;
 
+    /// Arrangement order: a lane reads left to right, so its ids come back
+    /// that way. Ids with no clip behind them sort as equivalent.
+    void sortByTimelineStart(std::vector<ClipId>& clipIds) const;
+
     // How far (in timeline beats) an audio clip's edge can extend before it
     // runs out of source material. Left = earlier than its current start
     // (bounded by the source read offset), right = past its current end
     // (bounded by the source duration). Unbounded (infinity) for looping
     // clips and when the source duration is unknown.
-    double availableLeftExtensionBeats(const ClipInfo& clip, double bpm) const;
-    double availableRightExtensionBeats(const ClipInfo& clip, double bpm) const;
+    static double availableLeftExtensionBeats(const ClipInfo& clip, double bpm);
+    static double availableRightExtensionBeats(const ClipInfo& clip, double bpm);
 
     // Unified clip storage — ClipView is a property, not storage identity
     std::unordered_map<ClipId, ClipInfo> clips_;
@@ -985,6 +1085,7 @@ class ClipManager {
     // Batch notification state (see beginBatch/endBatch).
     int batchDepth_ = 0;
     std::vector<ClipId> batchedClipIds_;  // kept in insertion order, deduped
+    bool batchedStructuralChange_ = false;
 
     int nextClipId_ = 1;
     int nextLinkGroupId_ = 1;
@@ -1027,6 +1128,7 @@ class ClipManager {
     // Notification helpers (public so scheduler can emit state changes)
   public:
     void notifyClipPlaybackStateChanged(ClipId clipId);
+    void notifySessionRuntimeStateChanged();
 
   private:
     void notifyClipsChanged();
@@ -1035,7 +1137,7 @@ class ClipManager {
     void notifyClipPlaybackRequested(ClipId clipId, ClipPlaybackRequest request);
 
     // Clamp audio clip properties (offset, loopStart, loopLength) to file bounds
-    void sanitizeAudioClip(ClipInfo& clip);
+    static void sanitizeAudioClip(ClipInfo& clip);
 
     // Helper to generate unique clip name
     juce::String generateClipName(ClipType type) const;

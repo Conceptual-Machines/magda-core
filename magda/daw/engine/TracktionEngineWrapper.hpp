@@ -3,31 +3,39 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include <functional>
+#include <map>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
 
+#include "../audio/DeviceMeters.hpp"
+#include "../audio/TrackMeters.hpp"
 #include "../audio/midi/RecordingNoteQueue.hpp"
+#include "../audio/sampling/SamplerMedia.hpp"
 #include "../command.hpp"
 #include "../interfaces/clip_interface.hpp"
 #include "../interfaces/mixer_interface.hpp"
 #include "../interfaces/track_interface.hpp"
 #include "../interfaces/transport_interface.hpp"
+#include "../music/GrooveLibrary.hpp"
 #include "AudioEngine.hpp"
+#include "PluginService.hpp"
+#include "TempoSequenceRipple.hpp"
+#include "TracktionAudioIO.hpp"
 
 namespace magda {
 
 // Forward declarations
 class AudioBridge;
+class InsertRenderCapture;
 class InsertRenderCaptureService;
 class MagdaApi;
-class MidiBridge;
-class PluginScanCoordinator;
 class PluginWindowManager;
 class SessionClipScheduler;
 class SessionRecorder;
 class TracktionTempoMap;
 class TempoLaneSync;
+struct ProjectInfo;
 
 /**
  * @brief Tracktion Engine implementation of AudioEngine
@@ -40,6 +48,7 @@ class TempoLaneSync;
  * - Receive state change notifications from TimelineController
  */
 class TracktionEngineWrapper : public AudioEngine,
+                               public PluginStateProvider,
                                public TransportInterface,
                                public TrackInterface,
                                public ClipInterface,
@@ -58,7 +67,7 @@ class TracktionEngineWrapper : public AudioEngine,
     static constexpr int AUDIO_DEVICE_CHECK_THRESHOLD = 3;
 
     TracktionEngineWrapper();
-    ~TracktionEngineWrapper();
+    ~TracktionEngineWrapper() override;
 
     /**
      * @brief Force the wrapper to skip UI/timer-backed runtime helpers.
@@ -74,7 +83,23 @@ class TracktionEngineWrapper : public AudioEngine,
 
     // Initialize the engine
     bool initialize() override;
-    void shutdown() override;
+
+    /**
+     * @brief Bring up the half that is not playback: the engine, plugin formats,
+     *        devices, the MIDI service and the project save hooks (#2579).
+     * @return Whether the Tracktion engine was created.
+     */
+    bool initialiseServices();
+
+    /**
+     * @brief Bring up the Edit and everything that renders through it (#2579).
+     *
+     * Never called under the magda engine, which renders for itself.
+     * @return Whether an Edit was created.
+     */
+    bool initialisePlayback();
+
+    void shutdown() final;
     bool hasActiveEdit() const override {
         return currentEdit_ != nullptr;
     }
@@ -96,7 +121,7 @@ class TracktionEngineWrapper : public AudioEngine,
      */
     void sendAllNotesOffToExternalInserts();
     void locate(double position_seconds) override;
-    void locateMusical(int bar, int beat, int tick = 0) override;
+    void locateMusical(int bar, int beat, int tick) override;
     double getCurrentPosition() const override;
     void getCurrentMusicalPosition(int& bar, int& beat, int& tick) const override;
     bool isPlaying() const override;
@@ -109,10 +134,13 @@ class TracktionEngineWrapper : public AudioEngine,
     bool isSessionTrackStopPending(TrackId trackId) const override;
     double getAudioThreadTransportSeconds() const override;
     void deactivateAllSessionClips() override;
+    void launchSessionScene(const std::vector<TrackId>& trackIds, int sceneIndex) override;
     void armSessionSlotRecording(TrackId trackId, int sceneIndex) override;
     void beginArmedSessionSlotRecordings() override;
     bool isSessionSlotRecordArmed(TrackId trackId, int sceneIndex) const override;
     bool isSessionSlotRecording(TrackId trackId, int sceneIndex) const override;
+    SessionRecordingCapabilities sessionRecordingCapabilities() const override;
+    bool stopSessionSlotRecording(TrackId trackId, bool commit) override;
 #ifdef MAGDA_ENABLE_TEST_HOOKS
     void testSetSessionSlotRecordingActive(TrackId trackId, int sceneIndex) {
         SessionSlotRecordingTarget target;
@@ -134,10 +162,18 @@ class TracktionEngineWrapper : public AudioEngine,
     void testFinishSessionSlotRecordings() {
         finishSessionSlotRecordings();
     }
+
+    void testFinalizeArrangementMidiRecording(TrackId trackId, tracktion::MidiClip::Ptr midiClip) {
+        pendingMidiRecordings_[trackId] = std::move(midiClip);
+        finalizeMidiRecording(trackId);
+    }
 #endif
     void setTempo(double bpm) override;
     double getTempo() const override;
     const TempoMap* tempoMap() const override;
+    void setMidiDevicesReadyCallback(std::function<void()> callback) override {
+        onMidiDevicesReady = std::move(callback);
+    }
     void setTimeSignature(int numerator, int denominator) override;
     void getTimeSignature(int& numerator, int& denominator) const override;
     void setLooping(bool enabled) override;
@@ -162,17 +198,8 @@ class TracktionEngineWrapper : public AudioEngine,
     int getCountInMode() const override;
 
     // Device management
-    juce::AudioDeviceManager* getDeviceManager() override;
-    juce::BigInteger getEnabledWaveChannels(bool input) const override;
-    void setEnabledWaveChannels(bool input, const juce::BigInteger& channels) override;
-    void rescanWaveDevices(bool enableInputs, bool enableOutputs) override;
-    bool isDevicesLoading() const override {
-        return devicesLoading_;
-    }
-    void setDevicesLoadingCallback(
-        std::function<void(bool, const juce::String&)> callback) override {
-        onDevicesLoadingChanged = std::move(callback);
-    }
+    juce::AudioDeviceManager* getDeviceManager();
+    AudioIOControl* getAudioIO() override;
 
     // AudioEngineListener implementation (receives state changes from UI)
     void onTransportPlay(double position) override;
@@ -252,34 +279,67 @@ class TracktionEngineWrapper : public AudioEngine,
     // =========================================================================
 
     /**
-     * @brief Get the AudioBridge for TrackManager-to-Tracktion synchronization
-     * @return Pointer to AudioBridge, or nullptr if not initialized
+     * @brief The fork's model-to-Tracktion sync, or null before an edit exists.
+     *
+     * The fork's own surface, not the engine interface's (#2760): the app reaches
+     * what only the fork has through TracktionFork.hpp.
      */
-    AudioBridge* getAudioBridge() override {
+    AudioBridge* getAudioBridge() {
         return audioBridge_.get();
     }
-    const AudioBridge* getAudioBridge() const override {
+    const AudioBridge* getAudioBridge() const {
         return audioBridge_.get();
     }
+
+    TrackMeters& meters() override {
+        return meters_;
+    }
+    const TrackMeters& meters() const override {
+        return meters_;
+    }
+
+    DeviceMeters& deviceMeters() override {
+        return deviceMeters_;
+    }
+    const DeviceMeters& deviceMeters() const override {
+        return deviceMeters_;
+    }
+
+    void captureAllPluginStates() override;
+    void capturePluginStateAt(const ChainNodePath& devicePath) override;
+    void applyPluginStateAt(const ChainNodePath& devicePath) override;
+    void projectAuthoredStateAt(const ChainNodePath& devicePath) override;
+
+    /** @brief The windows onto those same plugins (#2580). */
+    std::optional<PluginPrograms> getPluginPrograms(const ChainNodePath& devicePath) override;
+    bool setPluginCurrentProgram(const ChainNodePath& devicePath, int programIndex) override;
+    bool loadPluginPresetFile(const ChainNodePath& devicePath, const juce::File& file) override;
+    bool savePluginPresetFile(const ChainNodePath& devicePath, const juce::File& file) override;
+
+    bool showDeviceEditor(const ChainNodePath& devicePath) override;
+    bool hideDeviceEditor(const ChainNodePath& devicePath) override;
+    bool toggleDeviceEditor(const ChainNodePath& devicePath) override;
+    bool isDeviceEditorOpen(const ChainNodePath& devicePath) const override;
+
+    /** @brief The fork's processor formats the value (#2600). */
+    juce::String formatDeviceParameter(const ChainNodePath& devicePath, int paramIndex,
+                                       float normalised) const;
+
+    /** @brief The MAGDA device inside the fork's plugin at @p devicePath (#2585). */
+    std::shared_ptr<daw::audio::MagdaDevice> renderedDevice(
+        const ChainNodePath& devicePath) const override;
+
+    double deviceLatencySeconds(const ChainNodePath& devicePath) const override;
+
+    daw::audio::TrackMeasurementTap* ensureTrackMeasurementTap(TrackId trackId) override;
+    daw::audio::TrackMeasurementTap* trackMeasurementTap(TrackId trackId) const override;
+    void removeTrackMeasurementTap(TrackId trackId) override;
 
     /**
      * @brief Export capture pass for External FX / Instrument devices (#1623)
      * @return Pointer to the service, or nullptr when unavailable (headless)
      */
-    InsertRenderCaptureService* getInsertRenderCaptureService() override {
-        return insertRenderCapture_.get();
-    }
-
-    /**
-     * @brief Get the MidiBridge for MIDI device management and routing
-     * @return Pointer to MidiBridge, or nullptr if not initialized
-     */
-    MidiBridge* getMidiBridge() override {
-        return midiBridge_.get();
-    }
-    const MidiBridge* getMidiBridge() const override {
-        return midiBridge_.get();
-    }
+    InsertRenderCapture* getInsertRenderCapture() override;
 
     /**
      * @brief Get active recording previews for real-time MIDI display
@@ -293,10 +353,10 @@ class TracktionEngineWrapper : public AudioEngine,
      * @brief Get the PluginWindowManager for safe plugin window lifecycle management
      * @return Pointer to PluginWindowManager, or nullptr if not initialized
      */
-    PluginWindowManager* getPluginWindowManager() override {
+    PluginWindowManager* getPluginWindowManager() {
         return pluginWindowManager_.get();
     }
-    const PluginWindowManager* getPluginWindowManager() const override {
+    const PluginWindowManager* getPluginWindowManager() const {
         return pluginWindowManager_.get();
     }
 
@@ -324,6 +384,7 @@ class TracktionEngineWrapper : public AudioEngine,
      *  shared across consumers (AI Chat panel, Lua controller, future CLI).
      *  The reference is valid for the lifetime of the wrapper. */
     MagdaApi& getMagdaApi() override {
+        jassert(magdaApi_ != nullptr);
         return *magdaApi_;
     }
 
@@ -343,179 +404,38 @@ class TracktionEngineWrapper : public AudioEngine,
         return offlineRenderActive_;
     }
 
-    /**
-     * @brief Callback when device loading state changes
-     * Called with (isLoading, message) - message describes what's happening
-     */
-    std::function<void(bool, const juce::String&)> onDevicesLoadingChanged;
-
     // =========================================================================
-    // Plugin Scanning
+    // Plugins
     // =========================================================================
 
     /**
-     * @brief Start scanning for VST3/AU plugins on the system
-     * @param progressCallback Called with (progress 0-1, current plugin name) during scan
-     *
-     * NOTE: Plugin scanning happens in-process. If a plugin crashes during scanning,
-     * it will crash the application. The "dead man's pedal" file tracks which plugin
-     * was being scanned, so it will be skipped on the next scan attempt.
-     *
-     * Crash files are stored in: ~/Library/Application Support/MAGDA/
-     * Call clearPluginExclusions() to retry scanning problematic plugins.
-     */
-    void startPluginScan(
-        std::function<void(float, const juce::String&)> progressCallback = nullptr) override;
-
-    /**
-     * @brief Abort an in-progress plugin scan
-     */
-    void abortPluginScan() override;
-
-    /**
-     * @brief Clear the plugin exclusion list to retry scanning problematic plugins
-     *
-     * Call this if you want to give previously-excluded plugins another chance.
-     * After clearing, the next scan will attempt all plugins again.
-     */
-    void clearPluginExclusions();
-
-    /**
-     * @brief Get the plugin scan coordinator for accessing exclusion data
-     */
-    PluginScanCoordinator* getPluginScanCoordinator();
-    const PluginScanCoordinator* getPluginScanCoordinator() const;
-
-    /**
-     * @brief Check if a plugin scan is currently in progress
-     */
-    bool isScanning() const {
-        return isScanning_;
-    }
-
-    /**
-     * @brief Get the list of known/discovered plugins
-     * @return Reference to the KnownPluginList
+     * @brief The pair Tracktion's own hosting reads, which PluginService answers off
+     * until the fork goes (#2557), and magda::engine creates a plan's plugins with (#2566).
      */
     juce::KnownPluginList& getKnownPluginList();
     const juce::KnownPluginList& getKnownPluginList() const;
-    juce::Array<juce::PluginDescription> getKnownPluginTypes() const override;
-    void addPluginListChangeListener(juce::ChangeListener* listener) override;
-    void removePluginListChangeListener(juce::ChangeListener* listener) override;
+    juce::AudioPluginFormatManager& getPluginFormatManager();
 
     /**
-     * @brief Get plugins for browser/menu presentation, honoring user format
-     * preference on macOS while leaving exact KnownPluginList lookup available
-     * through getKnownPluginList().
-     */
-    juce::Array<juce::PluginDescription> getPreferredPluginTypes() const override;
-
-    /**
-     * @brief Save the plugin list to persistent storage
-     * Called after plugin scanning completes
-     */
-    void savePluginList();
-
-    /**
-     * @brief Load the plugin list from persistent storage
-     * Called on startup to restore previously scanned plugins
-     */
-    void loadPluginList();
-
-    /**
-     * @brief Phases reported by detectNewPlugins's status callback. Callers
-     * format their own user-facing strings so the engine doesn't bake in
-     * English text that bypasses localization.
-     */
-    /**
-     * @brief Detect and scan newly installed plugins.
+     * @brief Every parameter a Tracktion internal plugin declares, built in the current Edit.
      *
-     * Compares plugin directories against the cached list and incrementally
-     * scans any new files not already known. Skips plugins on the exclusion
-     * list (use startPluginScan for an exhaustive rescan).
-     *
-     * @param statusCallback Optional progress reporter; receives a phase enum
-     * and the plugin path being scanned (empty for non-Scanning phases).
-     * @param completionCallback Optional one-shot callback fired when the
-     * operation finishes. addedCount is the number of new plugins added
-     * this run (zero in the up-to-date case); totalCount is the size of the
-     * known plugin list after the run.
+     * Installed on PluginService as the fallback for a plugin its catalog does not know:
+     * 4OSC and the rest of Tracktion's own need an Edit to exist in (#2601).
      */
-    void detectNewPlugins(
-        std::function<void(PluginScanPhase phase, const juce::String& currentPlugin)>
-            statusCallback = nullptr,
-        std::function<void(bool success, int addedCount, int totalCount,
-                           const juce::StringArray& failedPlugins)>
-            completionCallback = nullptr) override;
-    void setPluginScanCompletionCallback(
-        std::function<void(bool, int, const juce::StringArray&)> callback) override {
-        onPluginScanComplete = std::move(callback);
-    }
-    bool isPluginScanRunning() const override;
-    std::vector<ExcludedPlugin> getExcludedPlugins() const override;
-    void setExcludedPlugins(const std::vector<ExcludedPlugin>& excludedPlugins) override;
-    juce::File getPluginScanReportFile() const override;
-    std::vector<std::string> getSystemPluginSearchPaths() const override;
-    std::vector<ScannedPluginParameter> scanPluginParameters(const juce::String& pluginId,
-                                                             bool internalPlugin) override;
-    bool upsertGrooveTemplate(const GrooveTemplateData& groove) override;
-    juce::StringArray getGrooveTemplateNames() const override;
+    std::vector<ScannedPluginParameter> scanInternalParametersInEdit(const juce::String& pluginId);
+
+    bool upsertGrooveTemplate(const GrooveTemplateData& data);
+    juce::StringArray getGrooveTemplateNames() const;
+
+    /// Tracktion's manager is where the shipped grooves are seeded and where the list
+    /// persists, so it is what fills GrooveLibrary at startup (#2757).
+    std::vector<GrooveTemplateData> readGrooveTemplates();
     std::unique_ptr<OfflineRenderSession> createOfflineRenderSession(
         bool resumePlaybackWhenFinished) override;
-    std::vector<SamplerMediaReference> getSamplerMediaReferences() override;
-    std::unique_ptr<UndoableCommand> createTempoSequenceRippleCommand(TempoSequenceRippleMode mode,
-                                                                      BeatPosition start,
-                                                                      BeatPosition end) override;
-
-    /**
-     * @brief Remove entries from the given known-plugin list whose plugins
-     * are no longer installed. Delegates per-entry to
-     * AudioPluginFormatManager::doesPluginStillExist so each format decides
-     * correctly — VST3 checks the bundle path, AU queries AudioComponentFindNext
-     * on the identifier (a plain File::exists() skips every AU entry because
-     * their fileOrIdentifier is "AudioUnit:..." and not an absolute path).
-     * Missing file-based plugins on an unavailable external volume are retained:
-     * the missing path does not prove that the plugin was uninstalled.
-     *
-     * @param volumeIsMounted Optional test seam. Receives the external-volume
-     * root inferred from a plugin path and returns whether that root is mounted.
-     * Production callers omit it and use the native mount table.
-     * Returns the number of entries removed.
-     */
-    static int pruneMissingPlugins(juce::KnownPluginList& knownPlugins,
-                                   juce::AudioPluginFormatManager& formatManager,
-                                   std::function<bool(const juce::String&)> volumeIsMounted = {});
-
-    /**
-     * @brief Remove entries that share (path, format) with a freshly-scanned
-     * descriptor but whose uid is not in the fresh scan's results.
-     *
-     * Vendors bump VST3 uniqueIds across major versions; JUCE keys
-     * KnownPluginList by (path, deprecatedUid, uniqueId) so the old and new
-     * entries coexist on the same .vst3 file and the user sees a duplicate
-     * row even though only one binary is installed (#1005). Multi-component
-     * VST3s (Vital, Kontakt, MeldaProduction bundles) legitimately expose
-     * several uids per path, so we keep every uid the current scan returned
-     * and only drop ones that didn't.
-     *
-     * Entries whose (path, format) wasn't seen this scan (excluded plugins,
-     * formats not enabled this run) are left untouched. Returns the number
-     * of entries removed.
-     */
-    static int removeSupersededEntries(juce::KnownPluginList& knownPlugins,
-                                       const juce::Array<juce::PluginDescription>& freshScan);
-
-    /**
-     * @brief Clear scanned plugins while preserving user metadata
-     * Use this before a fresh rescan
-     */
-    void clearPluginList();
-
-    /**
-     * @brief Get the database path where plugin metadata is stored
-     * @return Path to plugin_metadata.db
-     */
-    juce::File getPluginListFile() const;
+    void setTrackFrozen(TrackId trackId, bool frozen) override;
+    std::vector<SamplerMediaReference> getSamplerMediaReferences();
+    std::unique_ptr<UndoableCommand> buildTempoSequenceRipple(TempoSequenceRippleMode mode,
+                                                              BeatPosition start, BeatPosition end);
 
     // =========================================================================
     // PDC (Plugin Delay Compensation) Query
@@ -526,7 +446,7 @@ class TracktionEngineWrapper : public AudioEngine,
      * @param effect_id The effect/plugin ID
      * @return Latency in seconds, or 0 if plugin not found
      */
-    double getPluginLatencySeconds(const std::string& effect_id) const;
+    static double getPluginLatencySeconds(const std::string& effect_id);
 
     /**
      * @brief Get the maximum latency across all tracks in the playback graph
@@ -534,15 +454,6 @@ class TracktionEngineWrapper : public AudioEngine,
      * @return Maximum latency in seconds
      */
     double getGlobalLatencySeconds() const;
-
-    /**
-     * @brief Callback when plugin scan completes
-     * Called with (success, number of plugins found, failed plugins)
-     */
-    std::function<void(bool, int, const juce::StringArray&)> onPluginScanComplete;
-
-    /** Callback for startup plugin detection status (shown on splash screen). */
-    std::function<void(const juce::String&)> onPluginScanStatus;
 
     /** Fires the first time MIDI devices become available (and on subsequent
      *  device-list changes). Use this to defer work that needs MIDI output
@@ -566,18 +477,21 @@ class TracktionEngineWrapper : public AudioEngine,
 
     // Initialization helper methods
     void initializePluginFormats();
+    void useNativeClickSounds();
     void initializeDeviceManager();
     void configureAudioDevices();
     void setupMidiDevices();
-    void createEditAndBridges();
+
+    /** @brief Lend the services what this engine answers for (#2757). */
+    void lendEngineServices();
 
     // Change listener helper methods
     void handleMidiDeviceChanges(tracktion::DeviceManager& dm);
     void handlePlaybackContextReallocation(tracktion::DeviceManager& dm);
-    void notifyDeviceLoadingComplete(const juce::String& message);
 
     // Tracktion Engine components
     std::unique_ptr<tracktion::Engine> engine_;
+    std::unique_ptr<TracktionAudioIO> audioIO_;
     std::unique_ptr<tracktion::Edit> currentEdit_;
 
     // Position-aware beats<->seconds facade over currentEdit_->tempoSequence.
@@ -587,6 +501,11 @@ class TracktionEngineWrapper : public AudioEngine,
     // Keeps the edit-scoped Tempo automation lane in sync with
     // currentEdit_->tempoSequence (both directions). Recreated per Edit.
     std::unique_ptr<TempoLaneSync> tempoLaneSync_;
+
+    // Declared before audioBridge_ so they outlive it: AudioBridge holds a
+    // reference to both (#2579, #2570).
+    TrackMeters meters_;
+    DeviceMeters deviceMeters_;
 
     // Audio bridge for TrackManager synchronization
     std::unique_ptr<AudioBridge> audioBridge_;
@@ -599,9 +518,6 @@ class TracktionEngineWrapper : public AudioEngine,
 
     // Export capture pass for External FX / Instrument devices (#1623)
     std::unique_ptr<InsertRenderCaptureService> insertRenderCapture_;
-
-    // MIDI bridge for MIDI device management and routing
-    std::unique_ptr<MidiBridge> midiBridge_;
 
     // Programmatic facade onto MAGDA's DAW state. Owned here and shared
     // with consumers (AI Chat, Lua controller, future CLI) via getMagdaApi().
@@ -682,18 +598,7 @@ class TracktionEngineWrapper : public AudioEngine,
     // Creates the transient active-recording-pass preview for a session slot.
     void createSessionSlotPreview(TrackId trackId, int sceneIndex);
 
-    // Device loading state
-    bool devicesLoading_ = true;                    // Start as loading until first scan completes
     std::atomic<bool> offlineRenderActive_{false};  // an offline render owns the edit
-    bool wasPlayingBeforeDeviceChange_ = false;
-
-    // Plugin scanning state
-    bool isScanning_ = false;
-    bool pluginMetadataLoaded_ = false;
-    std::function<void(float, const juce::String&)> scanProgressCallback_;
-    mutable std::unique_ptr<PluginScanCoordinator> pluginScanCoordinator_;
-    std::thread pluginDiscoveryThread_;
-    std::shared_ptr<std::atomic<bool>> aliveFlag_ = std::make_shared<std::atomic<bool>>(true);
 
     JUCE_DECLARE_WEAK_REFERENCEABLE(TracktionEngineWrapper)
 };

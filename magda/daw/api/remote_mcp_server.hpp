@@ -6,8 +6,7 @@
 
 #include "remote_mcp.hpp"
 
-namespace magda {
-namespace remote {
+namespace magda::remote {
 
 class RemoteApiService;
 class RemoteAuditLog;
@@ -230,5 +229,4 @@ class RemoteMcpServer {
     std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace remote
-}  // namespace magda
+}  // namespace magda::remote

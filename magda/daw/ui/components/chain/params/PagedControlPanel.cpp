@@ -1,7 +1,7 @@
 #include "params/PagedControlPanel.hpp"
 
 #include "ui/components/chain/layout/DeviceSlotHeaderLayout.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
@@ -19,16 +19,16 @@ PagedControlPanel::PagedControlPanel(int itemsPerPage) : itemsPerPage_(itemsPerP
 
     // Page indicator label
     pageLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    pageLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    pageLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     pageLabel_.setJustificationType(juce::Justification::centred);
     addChildComponent(pageLabel_);
 
     // Add page button
     addPageButton_.setButtonText("+");
     addPageButton_.setColour(juce::TextButton::buttonColourId,
-                             DarkTheme::getColour(DarkTheme::SURFACE));
+                             ActiveTheme::getColour(ActiveTheme::SURFACE));
     addPageButton_.setColour(juce::TextButton::textColourOffId,
-                             DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+                             ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
     addPageButton_.onClick = [this]() {
         onAddPage();
         if (onAddPageRequested) {
@@ -41,9 +41,9 @@ PagedControlPanel::PagedControlPanel(int itemsPerPage) : itemsPerPage_(itemsPerP
     // Remove page button
     removePageButton_.setButtonText("-");
     removePageButton_.setColour(juce::TextButton::buttonColourId,
-                                DarkTheme::getColour(DarkTheme::SURFACE));
+                                ActiveTheme::getColour(ActiveTheme::SURFACE));
     removePageButton_.setColour(juce::TextButton::textColourOffId,
-                                DarkTheme::getColour(DarkTheme::ACCENT_RED));
+                                ActiveTheme::getColour(ActiveTheme::ACCENT_RED));
     removePageButton_.onClick = [this]() {
         if (onRemovePageRequested) {
             onRemovePageRequested(itemsPerPage_);
@@ -163,12 +163,12 @@ void PagedControlPanel::updateNavButtons() {
 
 void PagedControlPanel::paint(juce::Graphics& g) {
     // Background
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.02f));
     g.fillRect(getLocalBounds());
 
     // Show empty state message if no items
     if (getTotalItemCount() == 0 && canAddPage_) {
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
         auto bounds = getLocalBounds().reduced(4);
         // Skip nav area if it exists

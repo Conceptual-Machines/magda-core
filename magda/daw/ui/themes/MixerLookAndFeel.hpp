@@ -39,7 +39,7 @@ class MixerLookAndFeel : public juce::LookAndFeel_V4 {
     void positionComboBoxText(juce::ComboBox& box, juce::Label& label) override;
 
     // Smaller arrow button for ComboBox
-    void drawComboBoxArrow(juce::Graphics& g, juce::Rectangle<int> arrowZone);
+    static void drawComboBoxArrow(juce::Graphics& g, juce::Rectangle<int> arrowZone);
 
   private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixerLookAndFeel)

@@ -1,6 +1,6 @@
 #include "ZoomScrollBar.hpp"
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 
 namespace magda {
@@ -21,16 +21,16 @@ void ZoomScrollBar::paint(juce::Graphics& g) {
     // Draw track background. The horizontal bar sits in a parent-painted row
     // matching the master/content backgrounds, so avoid adding a dark gutter fill.
     if (orientation == Orientation::Vertical) {
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
         g.fillRoundedRectangle(trackBounds.toFloat(), 3.0f);
     }
 
     // Draw track border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRoundedRectangle(trackBounds.toFloat(), 3.0f, 1.0f);
 
     // Draw thumb
-    auto thumbColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
+    auto thumbColour = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
     if (dragMode != DragMode::None) {
         thumbColour = thumbColour.brighter(0.2f);
     }
@@ -43,7 +43,7 @@ void ZoomScrollBar::paint(juce::Graphics& g) {
 
     // Draw label if set (fixed position on right/bottom)
     if (label.isNotEmpty()) {
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
 
         if (orientation == Orientation::Horizontal) {
@@ -120,7 +120,7 @@ void ZoomScrollBar::mouseDown(const juce::MouseEvent& event) {
 void ZoomScrollBar::mouseDrag(const juce::MouseEvent& event) {
     reveal();
     auto trackBounds = getTrackBounds();
-    double trackPrimarySize = static_cast<double>(getPrimarySize(trackBounds));
+    auto trackPrimarySize = static_cast<double>(getPrimarySize(trackBounds));
 
     if (trackPrimarySize <= 0)
         return;
@@ -260,13 +260,11 @@ juce::Rectangle<int> ZoomScrollBar::getTrackBounds() const {
     if (orientation == Orientation::Horizontal) {
         int height = bounds.getHeight() - 8;
         int yOffset = (bounds.getHeight() - height) / 2;
-        return juce::Rectangle<int>(bounds.getX() + 2, bounds.getY() + yOffset,
-                                    bounds.getWidth() - 4, height);
+        return {bounds.getX() + 2, bounds.getY() + yOffset, bounds.getWidth() - 4, height};
     } else {
         int width = bounds.getWidth() - 8;
         int xOffset = (bounds.getWidth() - width) / 2;
-        return juce::Rectangle<int>(bounds.getX() + xOffset, bounds.getY() + 2, width,
-                                    bounds.getHeight() - 4);
+        return {bounds.getX() + xOffset, bounds.getY() + 2, width, bounds.getHeight() - 4};
     }
 }
 
@@ -278,15 +276,13 @@ juce::Rectangle<int> ZoomScrollBar::getThumbBounds() const {
         int thumbWidth = static_cast<int>((visibleEnd - visibleStart) * trackBounds.getWidth());
         thumbWidth = juce::jmax(thumbWidth, MIN_THUMB_SIZE);
 
-        return juce::Rectangle<int>(thumbX, trackBounds.getY(), thumbWidth,
-                                    trackBounds.getHeight());
+        return {thumbX, trackBounds.getY(), thumbWidth, trackBounds.getHeight()};
     } else {
         int thumbY = trackBounds.getY() + static_cast<int>(visibleStart * trackBounds.getHeight());
         int thumbHeight = static_cast<int>((visibleEnd - visibleStart) * trackBounds.getHeight());
         thumbHeight = juce::jmax(thumbHeight, MIN_THUMB_SIZE);
 
-        return juce::Rectangle<int>(trackBounds.getX(), thumbY, trackBounds.getWidth(),
-                                    thumbHeight);
+        return {trackBounds.getX(), thumbY, trackBounds.getWidth(), thumbHeight};
     }
 }
 
@@ -294,7 +290,7 @@ ZoomScrollBar::DragMode ZoomScrollBar::getDragModeForPosition(int pos) const {
     auto thumbBounds = getThumbBounds();
 
     // Check if position is within thumb bounds (using the perpendicular center for hit test)
-    bool inThumb;
+    bool inThumb = false;
     if (orientation == Orientation::Horizontal) {
         inThumb = thumbBounds.contains(pos, thumbBounds.getCentreY());
     } else {

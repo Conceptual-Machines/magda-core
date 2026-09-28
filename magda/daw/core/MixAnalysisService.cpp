@@ -110,7 +110,7 @@ void MixAnalysisService::runOffline() {
             progressText_ = msg;
             listeners_.call(&Listener::mixAnalysisChanged);
         },
-        [this, runId](mix::OfflineMixAnalysis::Result result) {
+        [this, runId](const mix::OfflineMixAnalysis::Result& result) {
             if (runId != runId_)
                 return;  // cancelled / superseded
             if (result.hasError)
@@ -174,7 +174,7 @@ void MixAnalysisService::restoreCaptureState() {
     captureAddedGlobal_ = false;
 }
 
-MixAnalysisData MixAnalysisService::buildLiveInput() const {
+MixAnalysisData MixAnalysisService::buildLiveInput() {
     auto& tmm = TrackMeasurementManager::getInstance();
     auto& tmgr = TrackManager::getInstance();
     auto trackName = [&tmgr](TrackId id) -> juce::String {
@@ -235,7 +235,7 @@ void MixAnalysisService::stopLiveCapture() {
     listeners_.call(&Listener::mixAnalysisChanged);
 }
 
-juce::String MixAnalysisService::scopeDescription() const {
+juce::String MixAnalysisService::scopeDescription() {
     const auto n = selectedTrackSet().size();
     if (n == 0)
         return "the full mix";
@@ -243,7 +243,7 @@ juce::String MixAnalysisService::scopeDescription() const {
            (n == 1 ? " selected channel" : " selected channels");
 }
 
-juce::String MixAnalysisService::rangeDescription() const {
+juce::String MixAnalysisService::rangeDescription() {
     auto* engine = TrackManager::getInstance().getAudioEngine();
     return (engine != nullptr && engine->isLooping()) ? "loop region" : "whole song";
 }

@@ -4,10 +4,13 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <string>
 #include <thread>
+#include <tuple>
 
+#include "../../../../agents/agent_tool_bridge.hpp"
 #include "../../../../agents/automation_agent.hpp"
 #include "../../../../agents/command_agent.hpp"
 #include "../../../../agents/console_agent_orchestrator.hpp"
@@ -19,11 +22,14 @@
 #include "../../../../agents/internal_plugins.hpp"
 #include "../../../../agents/llama_model_manager.hpp"
 #include "../../../../agents/llm_presets.hpp"
+#include "../../../../agents/llm_tool_model.hpp"
 #include "../../../../agents/midi_context.hpp"
 #include "../../../../agents/mixing_agent.hpp"
 #include "../../../../agents/music_agent.hpp"
 #include "../../../../agents/theme_agent.hpp"
 #include "../../../api/magda_api_live.hpp"
+#include "../../../api/remote_api_host.hpp"
+#include "../../../api/remote_service.hpp"
 #include "../../../audio/analysis/OfflineMixAnalysis.hpp"
 #include "../../../core/AppPaths.hpp"
 #include "../../../core/ClipManager.hpp"
@@ -44,13 +50,12 @@
 #include "../../components/common/SvgButton.hpp"
 #include "../../dialogs/AISettingsDialog.hpp"
 #include "../../state/TimelineController.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallButtonLookAndFeel.hpp"
 #include "../../themes/ThemePrompt.hpp"
 #include "BinaryData.h"
 #include "PluginBrowserContent.hpp"
-#include "audio/AudioBridge.hpp"
 #include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/DrumGridRoles.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
@@ -65,6 +70,97 @@ namespace {
 // next to isDrummerTrack().
 juce::String formatClipAsDrummerContext(magda::ClipId clipId);
 juce::String formatSelectedClipsAsDrummerContext();
+
+/**
+ * The tool-calling console path (#2295): the surface's agent runs the bounded
+ * observe-act runtime, and every call executes through RemoteApiService — the
+ * same schema validation, scope enforcement, revision tracking, and audit an
+ * MCP client gets, with the ConsoleRouting allowlist as its tool set.
+ *
+ * Preflight rather than commitment: returns nullopt when the loop is switched
+ * off in config, no remote host exists, or the configured provider cannot
+ * carry tool calls — and the caller falls through to the DSL workflows. Once
+ * the run starts, its outcome is the response, success or not: mutations have
+ * gone through the service, so falling back to a second execution path would
+ * apply the request twice.
+ */
+std::optional<std::string> runAgentToolLoop(magda::AgentSurfaceId surfaceId,
+                                            const std::string& message,
+                                            const std::string& priorConversation,
+                                            const magda::agent::CancellationToken& cancellation) {
+    auto& config = magda::Config::getInstance();
+    if (!config.getAgentToolLoopEnabled())
+        return std::nullopt;
+    // Read from the request thread: safe because the host outlives every
+    // console request thread — it is created at startup and destroyed at
+    // shutdown, after this panel (and its RequestThread) are gone.
+    auto* host = magda::remote::activeHost();
+    if (host == nullptr)
+        return std::nullopt;
+
+    const auto llmConfig = config.getAgentLLMConfig(magda::role::COMMAND);
+    // The on-device command model is an intent tagger, not a tool-calling
+    // model; the DSL path is the one that knows how to drive it. The embedded
+    // llama client likewise refuses any request that carries tools, so
+    // starting the loop with it could only end in a model error — preflight
+    // both and let the DSL workflows take the request instead.
+    if (llmConfig.provider == magda::provider::FAST_INFERENCE ||
+        llmConfig.provider == magda::provider::LLAMA_LOCAL)
+        return std::nullopt;
+    auto client = magda::createLLMClient(llmConfig, "tool-loop");
+    if (client == nullptr)
+        return std::nullopt;
+
+    const auto& surface = magda::agentSurface(surfaceId);
+    auto tools = magda::agent::agentToolsForSurface(surface);
+    if (tools.empty())
+        return std::nullopt;
+
+    magda::agent::LlmToolModel model(*client);
+    magda::agent::RemoteAgentToolExecutor executor(host->service(), surface);
+    // Approving here matches what the DSL executors do today — they apply
+    // mutations without a per-step prompt. The hook is the seam where a real
+    // approval UI lands; the surface's `approveMutations` policy is what it
+    // will read.
+    magda::agent::AgentRuntime runtime(model, executor, [](const magda::agent::ApprovalRequest&) {
+        return magda::agent::ApprovalDecision{};
+    });
+
+    magda::agent::AgentDefinition definition;
+    definition.id = "console-" + juce::String(surface.name);
+    definition.systemPrompt = "You are MAGDA's " + juce::String(surface.name) + " agent. " +
+                              juce::String(surface.responsibility);
+    for (const auto& fragment : surface.promptFragments)
+        definition.systemPrompt += "\n" + juce::String(fragment);
+    definition.systemPrompt +=
+        "\nAct by calling tools; inspect state before mutating it. When the work is done, "
+        "reply with a short summary and no further tool calls.";
+    definition.tools = std::move(tools);
+    definition.budget.maxSteps = surface.runPolicy.maxSteps;
+    definition.budget.maxMutations = surface.runPolicy.maxMutations;
+
+    magda::agent::AgentRunInput input;
+    input.userMessage = priorConversation.empty()
+                            ? juce::String(message)
+                            : juce::String(priorConversation) + "\nUser request: " + message;
+    input.projectRevision = host->service().currentRevision();
+
+    const auto result = runtime.run(definition, input, cancellation);
+
+    std::string response = result.finalText.toStdString();
+    if (result.state != magda::agent::RunState::Completed) {
+        if (!response.empty())
+            response += "\n";
+        response += "[agent stopped: " + std::string(magda::agent::toString(result.reason));
+        if (result.detail.isNotEmpty())
+            response += ": " + result.detail.toStdString();
+        response += "]";
+    }
+    if (result.mutations > 0)
+        response += "\n[" + std::to_string(result.mutations) + " change(s) applied in " +
+                    std::to_string(result.steps) + " step(s)]";
+    return response;
+}
 }  // namespace
 
 // ============================================================================
@@ -77,8 +173,8 @@ class AIChatConsoleContent::AutocompletePopup : public juce::Component, public j
         listBox_.setModel(this);
         listBox_.setRowHeight(22);
         listBox_.setColour(juce::ListBox::backgroundColourId,
-                           DarkTheme::getColour(DarkTheme::SURFACE));
-        listBox_.setColour(juce::ListBox::outlineColourId, DarkTheme::getBorderColour());
+                           ActiveTheme::getColour(ActiveTheme::SURFACE));
+        listBox_.setColour(juce::ListBox::outlineColourId, ActiveTheme::getBorderColour());
         addAndMakeVisible(listBox_);
     }
 
@@ -224,36 +320,36 @@ class AIChatConsoleContent::AutocompletePopup : public juce::Component, public j
             return;
 
         if (rowIsSelected) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
             g.fillRect(0, 0, width, height);
         }
 
         if (mode_ == Mode::Alias) {
             const auto& entry = *filtered_[static_cast<size_t>(rowNumber)];
-            g.setColour(DarkTheme::getAccentColour());
+            g.setColour(ActiveTheme::getAccentColour());
             g.setFont(FontManager::getInstance().getMonoFont(11.0f));
             g.drawText("@" + entry.alias, 6, 0, width / 2, height,
                        juce::Justification::centredLeft);
-            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.setColour(ActiveTheme::getSecondaryTextColour());
             g.setFont(FontManager::getInstance().getUIFont(10.0f));
             g.drawText(entry.pluginName, width / 2, 0, width / 2 - 6, height,
                        juce::Justification::centredRight);
         } else if (mode_ == Mode::SlashCommand) {
             const auto& cmd = *filteredCommands_[static_cast<size_t>(rowNumber)];
-            g.setColour(DarkTheme::getAccentColour());
+            g.setColour(ActiveTheme::getAccentColour());
             g.setFont(FontManager::getInstance().getMonoFont(11.0f));
             g.drawText("/" + cmd.name, 6, 0, width / 3, height, juce::Justification::centredLeft);
-            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.setColour(ActiveTheme::getSecondaryTextColour());
             g.setFont(FontManager::getInstance().getUIFont(10.0f));
             g.drawText(cmd.description, width / 3, 0, width * 2 / 3 - 6, height,
                        juce::Justification::centredLeft);
         } else {
             const auto& entry = *filteredParams_[static_cast<size_t>(rowNumber)];
-            g.setColour(DarkTheme::getAccentColour());
+            g.setColour(ActiveTheme::getAccentColour());
             g.setFont(FontManager::getInstance().getMonoFont(11.0f));
             g.drawText("@" + entry.pluginAlias + "." + entry.paramAlias, 6, 0, width / 2, height,
                        juce::Justification::centredLeft);
-            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.setColour(ActiveTheme::getSecondaryTextColour());
             g.setFont(FontManager::getInstance().getUIFont(10.0f));
             const auto& displayName =
                 entry.paramName.isNotEmpty() ? entry.paramName : juce::String("parameter");
@@ -302,10 +398,10 @@ class AIChatConsoleContent::MidiContextPopup : public juce::Component, private j
         clearButton_.setButtonText("Clear");
         for (auto* button : {&useSelectionButton_, &clearButton_}) {
             button->setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                              ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
             button->setColour(juce::TextButton::buttonOnColourId,
-                              DarkTheme::getColour(DarkTheme::SURFACE_HOVER));
-            button->setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+                              ActiveTheme::getColour(ActiveTheme::SURFACE_HOVER));
+            button->setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
             addAndMakeVisible(*button);
         }
 
@@ -324,8 +420,8 @@ class AIChatConsoleContent::MidiContextPopup : public juce::Component, private j
         listBox_.setRowHeight(kRowHeight);
         listBox_.setOutlineThickness(0);
         listBox_.setColour(juce::ListBox::backgroundColourId,
-                           DarkTheme::getColour(DarkTheme::SURFACE));
-        listBox_.setColour(juce::ListBox::outlineColourId, DarkTheme::getBorderColour());
+                           ActiveTheme::getColour(ActiveTheme::SURFACE));
+        listBox_.setColour(juce::ListBox::outlineColourId, ActiveTheme::getBorderColour());
         addAndMakeVisible(listBox_);
 
         buildRows();
@@ -335,8 +431,8 @@ class AIChatConsoleContent::MidiContextPopup : public juce::Component, private j
     }
 
     void paint(juce::Graphics& g) override {
-        g.fillAll(DarkTheme::getColour(DarkTheme::SURFACE));
-        g.setColour(DarkTheme::getBorderColour());
+        g.fillAll(ActiveTheme::getColour(ActiveTheme::SURFACE));
+        g.setColour(ActiveTheme::getBorderColour());
         g.drawRect(getLocalBounds(), 1);
     }
 
@@ -375,10 +471,10 @@ class AIChatConsoleContent::MidiContextPopup : public juce::Component, private j
         const auto& row = rows_[static_cast<std::size_t>(rowNumber)];
 
         if (rowIsSelected)
-            g.fillAll(DarkTheme::getColour(DarkTheme::SURFACE_HOVER));
+            g.fillAll(ActiveTheme::getColour(ActiveTheme::SURFACE_HOVER));
 
         if (row.kind == Row::Kind::Empty) {
-            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.setColour(ActiveTheme::getSecondaryTextColour());
             g.setFont(FontManager::getInstance().getMonoFont(11.0f));
             g.drawText(row.label, 8, 0, width - 16, height, juce::Justification::centredLeft);
             return;
@@ -400,11 +496,11 @@ class AIChatConsoleContent::MidiContextPopup : public juce::Component, private j
 
         const int indent = row.kind == Row::Kind::Clip ? 24 : 8;
         auto tick = juce::Rectangle<float>(static_cast<float>(indent),
-                                           static_cast<float>((height - 13) / 2), 13.0f, 13.0f);
-        g.setColour(DarkTheme::getBorderColour());
+                                           static_cast<float>(height - 13) / 2.0f, 13.0f, 13.0f);
+        g.setColour(ActiveTheme::getBorderColour());
         g.drawRoundedRectangle(tick, 2.0f, 1.0f);
         if (checked || partial) {
-            g.setColour(DarkTheme::getAccentColour());
+            g.setColour(ActiveTheme::getAccentColour());
             if (partial) {
                 g.fillRect(tick.reduced(3.0f).withHeight(2.0f).withCentre(tick.getCentre()));
             } else {
@@ -418,8 +514,8 @@ class AIChatConsoleContent::MidiContextPopup : public juce::Component, private j
 
         const int textX = indent + 20;
         const int textRightPadding = row.detail.isNotEmpty() ? 92 : 8;
-        g.setColour(row.kind == Row::Kind::Track ? DarkTheme::getTextColour()
-                                                 : DarkTheme::getSecondaryTextColour());
+        g.setColour(row.kind == Row::Kind::Track ? ActiveTheme::getTextColour()
+                                                 : ActiveTheme::getSecondaryTextColour());
         g.setFont(row.kind == Row::Kind::Track
                       ? FontManager::getInstance().getMonoFont(11.0f).boldened()
                       : FontManager::getInstance().getMonoFont(11.0f));
@@ -427,7 +523,7 @@ class AIChatConsoleContent::MidiContextPopup : public juce::Component, private j
                    juce::Justification::centredLeft, true);
 
         if (row.detail.isNotEmpty()) {
-            g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.65f));
+            g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(0.65f));
             g.setFont(FontManager::getInstance().getMonoFont(9.5f));
             const int detailWidth = 82;
             g.drawText(row.detail, width - detailWidth - 8, 0, detailWidth, height,
@@ -611,7 +707,7 @@ void AIChatConsoleContent::RequestThread::run() {
 
     auto appendToken = [safeThis, singleState](const juce::String& token) {
         {
-            std::lock_guard<std::mutex> lk(singleState->mu);
+            std::scoped_lock lk(singleState->mu);
             singleState->pending += token;
         }
         bool expected = false;
@@ -623,7 +719,7 @@ void AIChatConsoleContent::RequestThread::run() {
                 return;
             juce::String chunk;
             {
-                std::lock_guard<std::mutex> lk(singleState->mu);
+                std::scoped_lock lk(singleState->mu);
                 chunk = std::move(singleState->pending);
                 singleState->pending.clear();
             }
@@ -667,29 +763,41 @@ void AIChatConsoleContent::RequestThread::run() {
 
     auto agentStart = std::chrono::steady_clock::now();
 
-    magda::agent::ConsoleRunRequest request{
-        .surface = surfaceDecision.surface,
-        .userMessage = message,
-        .priorConversation = priorContext,
-        .midiContext = midiContext_.toStdString(),
-        .drummerContext = drummerContext_.toStdString(),
-        .reviseTargetClipId = reviseTargetClipId_,
-    };
-    auto output = owner_.agentOrchestrator_->run(
-        request,
-        [&](const magda::agent::ConsoleRunEvent& event) {
-            if (event.type == magda::agent::ConsoleRunEventType::Token)
-                onToken(event.text);
-        },
-        magda::agent::CancellationToken([this] { return threadShouldExit(); }));
-    if (output.cancelled || threadShouldExit())
-        return;
-    dslCode = std::move(output.dslCode);
-    musicInstructions = std::move(output.musicInstructions);
-    musicDescription = std::move(output.musicDescription);
-    autoInstructions = std::move(output.automationInstructions);
-    mixAnalysis = std::move(output.prose);
-    error = std::move(output.error);
+    // Tool-calling path first (#2295): when enabled, the agent acts through
+    // RemoteApiService with the surface allowlist as its tool set, and its
+    // summary flows through the same prose channel the mix agent uses. A
+    // nullopt is a preflight refusal, and the DSL workflows below run instead.
+    if (auto toolLoopResponse = runAgentToolLoop(
+            surfaceDecision.surface, message, priorContext,
+            magda::agent::CancellationToken([this] { return threadShouldExit(); }))) {
+        if (threadShouldExit())
+            return;
+        mixAnalysis = std::move(*toolLoopResponse);
+    } else {
+        magda::agent::ConsoleRunRequest request{
+            .surface = surfaceDecision.surface,
+            .userMessage = message,
+            .priorConversation = priorContext,
+            .midiContext = midiContext_.toStdString(),
+            .drummerContext = drummerContext_.toStdString(),
+            .reviseTargetClipId = reviseTargetClipId_,
+        };
+        auto output = owner_.agentOrchestrator_->run(
+            request,
+            [&](const magda::agent::ConsoleRunEvent& event) {
+                if (event.type == magda::agent::ConsoleRunEventType::Token)
+                    onToken(event.text);
+            },
+            magda::agent::CancellationToken([this] { return threadShouldExit(); }));
+        if (output.cancelled || threadShouldExit())
+            return;
+        dslCode = std::move(output.dslCode);
+        musicInstructions = std::move(output.musicInstructions);
+        musicDescription = std::move(output.musicDescription);
+        autoInstructions = std::move(output.automationInstructions);
+        mixAnalysis = std::move(output.prose);
+        error = std::move(output.error);
+    }
 
     agentMs =
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - agentStart)
@@ -721,13 +829,17 @@ void AIChatConsoleContent::RequestThread::run() {
             // even while the thread is occupied (a spinner couldn't animate).
             juce::MouseCursor::showWaitCursor();
 
+            // Read before the move below; the caveat check further down used to
+            // test `error` after it had been moved into `output`.
+            const bool hadError = !error.empty();
+
             magda::agent::ConsoleRunOutput output{
-                .dslCode = std::move(dsl),
-                .musicInstructions = std::move(musicIR),
-                .musicDescription = std::move(musicDesc),
-                .automationInstructions = std::move(autoIR),
+                .dslCode = dsl,
+                .musicInstructions = musicIR,
+                .musicDescription = musicDesc,
+                .automationInstructions = autoIR,
                 .prose = mixAnalysis,
-                .error = std::move(error),
+                .error = error,
             };
             magda::agent::ConsoleAgentResultExecutor executor(*safeThis->magdaApi_);
             auto execution = executor.execute(std::move(output), reviseTargetClipId);
@@ -780,15 +892,15 @@ void AIChatConsoleContent::RequestThread::run() {
             // Append the mixing-agent caveat in a dim secondary colour after the
             // main response. Inserted after setText so it does not enter the plain
             // text that gets stored in conversation history (display-only).
-            if (!mixAnalysis.empty() && error.empty()) {
+            if (!mixAnalysis.empty() && !hadError) {
                 safeThis->chatHistory_.moveCaretToEnd();
                 safeThis->chatHistory_.setColour(
                     juce::TextEditor::textColourId,
-                    DarkTheme::getSecondaryTextColour().withAlpha(0.5f));
+                    ActiveTheme::getSecondaryTextColour().withAlpha(0.5f));
                 safeThis->chatHistory_.insertTextAtCaret(
                     juce::String(magda::MixAnalysisAgent::getUserCaveat()) + "\n\n");
                 safeThis->chatHistory_.setColour(juce::TextEditor::textColourId,
-                                                 DarkTheme::getSecondaryTextColour());
+                                                 ActiveTheme::getSecondaryTextColour());
             }
 
             safeThis->chatHistory_.moveCaretToEnd();
@@ -813,7 +925,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
     chatHistory_.setReadOnly(true);
     chatHistory_.setFont(monoFont);
     chatHistory_.setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
-    chatHistory_.setColour(juce::TextEditor::textColourId, DarkTheme::getSecondaryTextColour());
+    chatHistory_.setColour(juce::TextEditor::textColourId, ActiveTheme::getSecondaryTextColour());
     chatHistory_.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
     chatHistory_.setColour(juce::TextEditor::focusedOutlineColourId,
                            juce::Colours::transparentBlack);
@@ -821,8 +933,8 @@ AIChatConsoleContent::AIChatConsoleContent() {
     // highlightedTextColourId to BLACK, which is invisible on a dark
     // background, so dragging over the transcript made the text vanish.
     chatHistory_.setColour(juce::TextEditor::highlightColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
-    chatHistory_.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
+                           ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+    chatHistory_.setColour(juce::TextEditor::highlightedTextColourId, ActiveTheme::getTextColour());
     chatHistory_.setText(juce::String::charToString(0x25C6) + " MAGDA\n\n");
     addAndMakeVisible(chatHistory_);
 
@@ -842,14 +954,14 @@ AIChatConsoleContent::AIChatConsoleContent() {
     // the same solid colour as the panel drawn behind it in paint() instead
     // of relying on transparency — matches dslEditor_'s approach below.
     inputBox_->setColour(juce::CodeEditorComponent::backgroundColourId,
-                         DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                         ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
     inputBox_->setColour(juce::CodeEditorComponent::defaultTextColourId,
-                         DarkTheme::getTextColour());
+                         ActiveTheme::getTextColour());
     inputBox_->setColour(juce::CodeEditorComponent::lineNumberBackgroundId,
                          juce::Colours::transparentBlack);
     inputBox_->setColour(juce::CodeEditorComponent::highlightColourId,
-                         DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
-    inputBox_->setColour(juce::CaretComponent::caretColourId, DarkTheme::getTextColour());
+                         ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+    inputBox_->setColour(juce::CaretComponent::caretColourId, ActiveTheme::getTextColour());
     inputDocument_.addListener(this);
     addAndMakeVisible(*inputBox_);
 
@@ -875,7 +987,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
 
     // Context label (always visible, inside bottom bar)
     contextLabel_.setFont(FontManager::getInstance().getMonoFont(11.0f));
-    contextLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    contextLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     contextLabel_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     contextLabel_.setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
     contextLabel_.setBorderSize(juce::BorderSize<int>(0, 2, 0, 4));
@@ -887,12 +999,12 @@ AIChatConsoleContent::AIChatConsoleContent() {
 
     outputModeButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     outputModeButton_.setColour(juce::TextButton::buttonColourId,
-                                DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                                ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
     outputModeButton_.setColour(juce::TextButton::buttonOnColourId,
-                                DarkTheme::getAccentColour().withAlpha(0.28f));
+                                ActiveTheme::getAccentColour().withAlpha(0.28f));
     outputModeButton_.setColour(juce::TextButton::textColourOffId,
-                                DarkTheme::getSecondaryTextColour());
-    outputModeButton_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+                                ActiveTheme::getSecondaryTextColour());
+    outputModeButton_.setColour(juce::TextButton::textColourOnId, ActiveTheme::getAccentColour());
     outputModeButton_.setMouseCursor(juce::MouseCursor::PointingHandCursor);
     outputModeButton_.onClick = [this]() {
         if (midiOutputMode_ == MidiOutputMode::ReviseLast) {
@@ -913,7 +1025,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
     analysisChip_.setJustificationType(juce::Justification::centredLeft);
     analysisChip_.setFont(juce::Font(11.0f));
     analysisChip_.setColour(juce::Label::textColourId,
-                            DarkTheme::getColour(DarkTheme::ACCENT_INFO));
+                            ActiveTheme::getColour(ActiveTheme::ACCENT_INFO));
     analysisChip_.setInterceptsMouseClicks(false, false);
     addChildComponent(analysisChip_);
     magda::MixAnalysisService::getInstance().addListener(this);
@@ -980,12 +1092,12 @@ AIChatConsoleContent::AIChatConsoleContent() {
     dslOutput_.setFont(FontManager::getInstance().getMonoFont(12.0f));
     dslOutput_.setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     dslOutput_.setColour(juce::TextEditor::textColourId,
-                         DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_PROMPT));
+                         ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_PROMPT));
     dslOutput_.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
     dslOutput_.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
     dslOutput_.setColour(juce::TextEditor::highlightColourId,
-                         DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
-    dslOutput_.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
+                         ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+    dslOutput_.setColour(juce::TextEditor::highlightedTextColourId, ActiveTheme::getTextColour());
     dslOutput_.setText("MAGDA DSL Console\nCtrl+Enter to execute.\n\n");
 
     // DSL code editor. Surface and token colours both come from the theme's
@@ -995,7 +1107,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
     dslEditor_->setFont(FontManager::getInstance().getMonoFont(13.0f));
     applyCodeEditorTheme(*dslEditor_, dslTokeniser_, CodeEditorSurface::DslConsole);
     dslEditor_->setColour(juce::CodeEditorComponent::backgroundColourId,
-                          DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                          ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
     dslEditor_->setLineNumbersShown(true);
     dslEditor_->setTabSize(2, true);
     dslEditor_->setScrollbarThickness(8);
@@ -1003,10 +1115,11 @@ AIChatConsoleContent::AIChatConsoleContent() {
 
     // DSL status bar
     dslStatusLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    dslStatusLabel_.setColour(juce::Label::backgroundColourId,
-                              DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_STATUS_BACKGROUND));
+    dslStatusLabel_.setColour(
+        juce::Label::backgroundColourId,
+        ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_STATUS_BACKGROUND));
     dslStatusLabel_.setColour(juce::Label::textColourId,
-                              DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_STATUS_TEXT));
+                              ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_STATUS_TEXT));
 #if JUCE_MAC
     dslStatusLabel_.setText("  MAGDA DSL  |  Cmd+Enter: Run  |  Cmd+L: Clear",
                             juce::dontSendNotification);
@@ -1026,7 +1139,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
     // Config status bar
     configStatusLabel_.setFont(FontManager::getInstance().getMonoFont(10.0f));
     configStatusLabel_.setColour(juce::Label::textColourId,
-                                 DarkTheme::getSecondaryTextColour().withAlpha(0.6f));
+                                 ActiveTheme::getSecondaryTextColour().withAlpha(0.6f));
     configStatusLabel_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     configStatusLabel_.setJustificationType(juce::Justification::centredLeft);
     // Clickable: opens AI Settings so the footer both reports and edits config.
@@ -1181,8 +1294,8 @@ juce::String AIChatConsoleContent::resolveAliases(const juce::String& text) {
     // Sort by alias length descending to avoid prefix collisions
     // (e.g. @pro matching inside @pro_q_3)
     auto sorted = allAliases_;
-    std::sort(sorted.begin(), sorted.end(),
-              [](const auto& a, const auto& b) { return a.alias.length() > b.alias.length(); });
+    const auto aliasLength = [](const AliasEntry& entry) { return entry.alias.length(); };
+    std::ranges::sort(sorted, std::ranges::greater{}, aliasLength);
 
     // Convert @alias to <alias> token format for the LLM — resolved at DSL execution time
     auto resolved = text;
@@ -1351,7 +1464,7 @@ void AIChatConsoleContent::setThemedButtonIcon(juce::DrawableButton& button, con
                                                std::size_t svgDataSize) {
     auto icon = juce::Drawable::createFromImageData(svgData, svgDataSize);
     if (icon)
-        DarkTheme::applyToSvgIcon(*icon);
+        ActiveTheme::applyToSvgIcon(*icon);
     button.setImages(icon.get());
 }
 
@@ -1368,21 +1481,21 @@ void AIChatConsoleContent::lookAndFeelChanged() {
     // juce::Colour at construction, so re-apply them here or they keep the old
     // palette after a live theme change. updateConfigStatus() re-applies
     // configStatusLabel_'s state colour.
-    chatHistory_.setColour(juce::TextEditor::textColourId, DarkTheme::getSecondaryTextColour());
+    chatHistory_.setColour(juce::TextEditor::textColourId, ActiveTheme::getSecondaryTextColour());
     chatHistory_.setColour(juce::TextEditor::highlightColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
-    chatHistory_.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
+                           ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+    chatHistory_.setColour(juce::TextEditor::highlightedTextColourId, ActiveTheme::getTextColour());
     dslOutput_.setColour(juce::TextEditor::highlightColourId,
-                         DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
-    dslOutput_.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
+                         ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+    dslOutput_.setColour(juce::TextEditor::highlightedTextColourId, ActiveTheme::getTextColour());
     if (inputBox_ != nullptr) {
         inputBox_->setColour(juce::CodeEditorComponent::backgroundColourId,
-                             DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                             ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
         inputBox_->setColour(juce::CodeEditorComponent::defaultTextColourId,
-                             DarkTheme::getTextColour());
+                             ActiveTheme::getTextColour());
         inputBox_->setColour(juce::CodeEditorComponent::highlightColourId,
-                             DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
-        inputBox_->setColour(juce::CaretComponent::caretColourId, DarkTheme::getTextColour());
+                             ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+        inputBox_->setColour(juce::CaretComponent::caretColourId, ActiveTheme::getTextColour());
         // A CodeEditorComponent caches the scheme it got from its tokeniser at
         // construction, so the @plugin / /command colours need re-installing.
         inputBox_->setColourScheme(inputTokeniser_.getDefaultColourScheme());
@@ -1390,15 +1503,16 @@ void AIChatConsoleContent::lookAndFeelChanged() {
     if (dslEditor_ != nullptr) {
         applyCodeEditorTheme(*dslEditor_, dslTokeniser_, CodeEditorSurface::DslConsole);
         dslEditor_->setColour(juce::CodeEditorComponent::backgroundColourId,
-                              DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                              ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
     }
-    dslStatusLabel_.setColour(juce::Label::backgroundColourId,
-                              DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_STATUS_BACKGROUND));
+    dslStatusLabel_.setColour(
+        juce::Label::backgroundColourId,
+        ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_STATUS_BACKGROUND));
     dslStatusLabel_.setColour(juce::Label::textColourId,
-                              DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_STATUS_TEXT));
-    contextLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+                              ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_STATUS_TEXT));
+    contextLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     analysisChip_.setColour(juce::Label::textColourId,
-                            DarkTheme::getColour(DarkTheme::ACCENT_INFO));
+                            ActiveTheme::getColour(ActiveTheme::ACCENT_INFO));
     updateConfigStatus();
 
     repaint();
@@ -1435,16 +1549,16 @@ void AIChatConsoleContent::appendToChat(const juce::String& text) {
 }
 
 void AIChatConsoleContent::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getPanelBackgroundColour());
+    g.fillAll(ActiveTheme::getPanelBackgroundColour());
 
     if (activeTab_ == ConsoleTab::AI) {
         // Draw chat history + status footer as one rounded panel
         auto chatBounds = chatHistory_.getBounds().toFloat();
         auto statusBounds = configStatusLabel_.getBounds().toFloat();
         auto chatPanel = chatBounds.getUnion(statusBounds);
-        g.setColour(DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
         g.fillRoundedRectangle(chatPanel, 4.0f);
-        g.setColour(DarkTheme::getBorderColour());
+        g.setColour(ActiveTheme::getBorderColour());
         g.drawRoundedRectangle(chatPanel, 4.0f, 1.0f);
 
         // Separator between chat and status footer
@@ -1457,13 +1571,13 @@ void AIChatConsoleContent::paint(juce::Graphics& g) {
         auto barBounds = bottomBarBounds_;
         auto combined = inputBounds.getUnion(barBounds).toFloat();
 
-        g.setColour(DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
         g.fillRoundedRectangle(combined, 4.0f);
-        g.setColour(DarkTheme::getBorderColour());
+        g.setColour(ActiveTheme::getBorderColour());
         g.drawRoundedRectangle(combined, 4.0f, 1.0f);
 
         // Thin horizontal border between input and bottom bar
-        float separatorY = static_cast<float>(inputBounds.getBottom());
+        auto separatorY = static_cast<float>(inputBounds.getBottom());
         g.drawHorizontalLine(static_cast<int>(separatorY), combined.getX() + 1.0f,
                              combined.getRight() - 1.0f);
 
@@ -1486,8 +1600,9 @@ void AIChatConsoleContent::paint(juce::Graphics& g) {
 
             if (icon) {
                 auto iconBounds = contextIconBounds_.toFloat().reduced(6.0f);
-                auto colour = contextEnabled_ ? DarkTheme::getAccentColour()
-                                              : DarkTheme::getSecondaryTextColour().withAlpha(0.3f);
+                auto colour = contextEnabled_
+                                  ? ActiveTheme::getAccentColour()
+                                  : ActiveTheme::getSecondaryTextColour().withAlpha(0.3f);
                 static const auto svgGrey = juce::Colour(0xFFB3B3B3);
                 static const auto svgWhite = juce::Colours::white;
                 auto iconCopy = icon->createCopy();
@@ -1505,9 +1620,9 @@ void AIChatConsoleContent::paint(juce::Graphics& g) {
     } else {
         // Draw DSL output area as rounded panel
         auto outputBounds = dslOutput_.getBounds().toFloat();
-        g.setColour(DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
         g.fillRoundedRectangle(outputBounds, 4.0f);
-        g.setColour(DarkTheme::getBorderColour());
+        g.setColour(ActiveTheme::getBorderColour());
         g.drawRoundedRectangle(outputBounds, 4.0f, 1.0f);
     }
 }
@@ -1615,9 +1730,9 @@ void AIChatConsoleContent::setupTabButtons() {
     // ICON_ON_ACCENT keeps the active glyph legible on the accent chip in
     // every theme; a literal white got funnelled to TEXT_BRIGHT and vanished
     // on themes whose bright text sits near the accent.
-    aiTabButton_->setActiveColor(DarkTheme::ICON_ON_ACCENT);
-    aiTabButton_->setNormalBackgroundColor(DarkTheme::SURFACE);
-    aiTabButton_->setActiveBackgroundColor(DarkTheme::ACCENT_PRIMARY);
+    aiTabButton_->setActiveColor(ActiveTheme::ICON_ON_ACCENT);
+    aiTabButton_->setNormalBackgroundColor(ActiveTheme::SURFACE);
+    aiTabButton_->setActiveBackgroundColor(ActiveTheme::ACCENT_PRIMARY);
     aiTabButton_->setClickingTogglesState(true);
     aiTabButton_->setRadioGroupId(9001);
     aiTabButton_->setToggleState(true, juce::dontSendNotification);
@@ -1628,9 +1743,9 @@ void AIChatConsoleContent::setupTabButtons() {
     dslTabButton_ = std::make_unique<magda::SvgButton>("DSLTab", BinaryData::script_svg,
                                                        BinaryData::script_svgSize);
     dslTabButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    dslTabButton_->setActiveColor(DarkTheme::ICON_ON_ACCENT);
-    dslTabButton_->setNormalBackgroundColor(DarkTheme::SURFACE);
-    dslTabButton_->setActiveBackgroundColor(DarkTheme::ACCENT_PRIMARY);
+    dslTabButton_->setActiveColor(ActiveTheme::ICON_ON_ACCENT);
+    dslTabButton_->setNormalBackgroundColor(ActiveTheme::SURFACE);
+    dslTabButton_->setActiveBackgroundColor(ActiveTheme::ACCENT_PRIMARY);
     dslTabButton_->setClickingTogglesState(true);
     dslTabButton_->setRadioGroupId(9001);
     dslTabButton_->setTooltip("DSL Console");
@@ -1681,7 +1796,7 @@ void AIChatConsoleContent::executeDSL() {
 
     // Echo
     appendDSLOutput("> " + code + "\n",
-                    DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_PROMPT));
+                    ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_PROMPT));
 
     // Built-in commands
     if (code == "help") {
@@ -1693,7 +1808,7 @@ void AIChatConsoleContent::executeDSL() {
                         "  .notes.add(pitch=C4, beat=0) - Add note\n"
                         "  .notes.add_chord(root=C4, quality=major)\n"
                         "  filter(tracks, ...).delete()  - Bulk operations\n\n",
-                        DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_INFO));
+                        ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_INFO));
         dslDocument_.replaceAllContent({});
         return;
     }
@@ -1713,10 +1828,10 @@ void AIChatConsoleContent::executeDSL() {
         if (results.isEmpty())
             results = "OK";
         appendDSLOutput(results + "\n\n",
-                        DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_TEXT));
+                        ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_TEXT));
     } else {
         appendDSLOutput("Error: " + juce::String(interpreter.getError()) + "\n\n",
-                        DarkTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_ERROR));
+                        ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_ERROR));
     }
 
     dslDocument_.replaceAllContent({});
@@ -1734,6 +1849,14 @@ void AIChatConsoleContent::appendDSLOutput(const juce::String& text, juce::Colou
 // ============================================================================
 
 void AIChatConsoleContent::projectOpened(const magda::ProjectInfo& /*info*/) {
+    resetForProjectBoundary();
+}
+
+void AIChatConsoleContent::projectClosed() {
+    resetForProjectBoundary();
+}
+
+void AIChatConsoleContent::resetForProjectBoundary() {
     // Reset chat history
     chatHistory_.setText(juce::String::charToString(0x25C6) + " MAGDA\n\n");
 
@@ -1820,11 +1943,8 @@ bool isDrummerTrack(magda::TrackId trackId) {
     const auto* device = magda::TrackManager::getInstance().getPrimaryInstrument(trackId);
     if (device == nullptr)
         return false;
-    for (const auto& row : device->kitRows) {
-        if (row.role.isNotEmpty())
-            return true;
-    }
-    return false;
+    constexpr auto hasRole = [](const auto& row) { return row.role.isNotEmpty(); };
+    return std::ranges::any_of(device->kitRows, hasRole);
 }
 
 // Format an existing drum clip's notes back into the grid grammar the agent
@@ -1848,7 +1968,7 @@ juce::String formatClipAsDrummerContext(magda::ClipId clipId) {
     double tempo = 120.0;
     if (auto* controller = magda::TimelineController::getCurrent())
         tempo = controller->getState().tempo.bpm;
-    const double lengthBeats = clip->getLengthInBeats(tempo);
+    const double lengthBeats = clip->getLengthInBeats();
 
     constexpr double kBarBeats = 4.0;
     constexpr int kCellsPerBar = 16;
@@ -1894,7 +2014,7 @@ juce::String formatClipAsDrummerContext(magda::ClipId clipId) {
                 if (i > 0)
                     line += " ";
                 line +=
-                    juce::String::charToString(cells[static_cast<size_t>(bar * kCellsPerBar + i)]);
+                    juce::String::charToString(cells[static_cast<size_t>(bar) * kCellsPerBar + i]);
             }
         }
         line += "\n";
@@ -1925,17 +2045,15 @@ std::vector<magda::ClipId> getSelectedDrummerContextClipIds() {
             ids.push_back(clipId);
     }
 
-    std::sort(ids.begin(), ids.end(), [](auto a, auto b) {
+    const auto inArrangementOrder = [](magda::ClipId a, magda::ClipId b) {
         const auto* clipA = magda::ClipManager::getInstance().getClip(a);
         const auto* clipB = magda::ClipManager::getInstance().getClip(b);
         if (clipA == nullptr || clipB == nullptr)
             return a < b;
-        if (clipA->trackId != clipB->trackId)
-            return clipA->trackId < clipB->trackId;
-        if (clipA->placement.startBeat != clipB->placement.startBeat)
-            return clipA->placement.startBeat < clipB->placement.startBeat;
-        return a < b;
-    });
+        return std::tuple{clipA->trackId, clipA->placement.startBeat, a} <
+               std::tuple{clipB->trackId, clipB->placement.startBeat, b};
+    };
+    std::ranges::sort(ids, inArrangementOrder);
 
     return ids;
 }
@@ -1972,7 +2090,7 @@ void AIChatConsoleContent::trackSelectionChanged(magda::TrackId trackId) {
         contextText_ = juce::String::fromUTF8("Drummer \xc2\xb7 ") + trackName;
         contextIcon_ = ContextIcon::Drummer;
     } else {
-        contextText_ = trackName;
+        contextText_ = std::move(trackName);
         contextIcon_ = ContextIcon::Track;
     }
     updateContextBar();
@@ -2046,7 +2164,7 @@ void AIChatConsoleContent::chainNodeSelectionChanged(const magda::ChainNodePath&
         else
             contextText_ = trackName + " > " + juce::String(deviceId);
     } else {
-        contextText_ = trackName;
+        contextText_ = std::move(trackName);
     }
     contextIcon_ = ContextIcon::Device;
     updateContextBar();
@@ -2087,9 +2205,10 @@ void AIChatConsoleContent::toggleMidiContextTrack(magda::TrackId trackId) {
     if (midiClipIds.empty())
         return;
 
-    const bool allSelected =
-        std::all_of(midiClipIds.begin(), midiClipIds.end(),
-                    [this](auto clipId) { return midiContextClipIds_.contains(clipId); });
+    const auto isInMidiContext = [this](magda::ClipId clipId) {
+        return midiContextClipIds_.contains(clipId);
+    };
+    const bool allSelected = std::ranges::all_of(midiClipIds, isInMidiContext);
     for (auto clipId : midiClipIds) {
         if (allSelected)
             midiContextClipIds_.erase(clipId);
@@ -2247,8 +2366,9 @@ void AIChatConsoleContent::updateContextBar() {
     displayText += "  " + juce::String::charToString(0x25BE);
     contextLabel_.setText(displayText, juce::dontSendNotification);
     contextLabel_.setColour(juce::Label::textColourId,
-                            contextEnabled_ ? DarkTheme::getAccentColour()
-                                            : DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
+                            contextEnabled_
+                                ? ActiveTheme::getAccentColour()
+                                : ActiveTheme::getSecondaryTextColour().withAlpha(0.3f));
     updateOutputModeButton();
     resized();
     repaint();
@@ -2299,25 +2419,25 @@ void AIChatConsoleContent::updateConfigStatus() {
             status += " | No model loaded";
             serverToggleButton_->updateSvgData(BinaryData::server_play_svg,
                                                BinaryData::server_play_svgSize);
-            serverToggleButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-            serverToggleButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+            serverToggleButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
+            serverToggleButton_->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
             serverToggleButton_->setVisible(true);
             configStatusLabel_.setColour(juce::Label::textColourId,
-                                         DarkTheme::getSecondaryTextColour());
+                                         ActiveTheme::getSecondaryTextColour());
         }
         serverToggleButton_->repaint();
     } else {
         if (serverToggleButton_)
             serverToggleButton_->setVisible(false);
         configStatusLabel_.setColour(juce::Label::textColourId,
-                                     DarkTheme::getSecondaryTextColour());
+                                     ActiveTheme::getSecondaryTextColour());
     }
 
     configStatusLabel_.setText(status, juce::dontSendNotification);
     resized();
 }
 
-bool AIChatConsoleContent::isLocalPreset() const {
+bool AIChatConsoleContent::isLocalPreset() {
     auto& config = magda::Config::getInstance();
     auto preset = config.getAIPreset();
     auto commandCfg = config.getAgentLLMConfig(magda::role::COMMAND);
@@ -2376,9 +2496,7 @@ void AIChatConsoleContent::buildAliasList() {
         DBG("AIChatConsole: failed to load plugin aliases: " << e.what());
     }
 
-    // Sort by alias
-    std::sort(allAliases_.begin(), allAliases_.end(),
-              [](const AliasEntry& a, const AliasEntry& b) { return a.alias < b.alias; });
+    std::ranges::sort(allAliases_, {}, &AliasEntry::alias);
 }
 
 void AIChatConsoleContent::showAutocomplete(const juce::String& filter) {
@@ -2417,7 +2535,7 @@ void AIChatConsoleContent::hideAutocomplete() {
 }
 
 std::vector<AIChatConsoleContent::ParamAliasEntry> AIChatConsoleContent::collectParamAliases(
-    const juce::String& pluginAlias) const {
+    const juce::String& pluginAlias) {
     std::vector<ParamAliasEntry> out;
     if (pluginAlias.isEmpty())
         return out;
@@ -2443,9 +2561,7 @@ std::vector<AIChatConsoleContent::ParamAliasEntry> AIChatConsoleContent::collect
     walk(magda::AliasLayer::Curated);
     walk(magda::AliasLayer::AutoGen);
 
-    std::sort(out.begin(), out.end(), [](const ParamAliasEntry& a, const ParamAliasEntry& b) {
-        return a.paramAlias < b.paramAlias;
-    });
+    std::ranges::sort(out, {}, &ParamAliasEntry::paramAlias);
     return out;
 }
 
@@ -2504,8 +2620,7 @@ void AIChatConsoleContent::insertParamAlias(const juce::String& pluginAlias,
         auto newText = before + inserted + " " + after;
         inputDocument_.replaceAllContent(newText);
         inputBox_->moveCaretTo(
-            juce::CodeDocument::Position(inputDocument_, atPos + (int)inserted.length() + 1),
-            false);
+            juce::CodeDocument::Position(inputDocument_, atPos + inserted.length() + 1), false);
     }
 
     suppressAutocompleteForContent_ = inputDocument_.getAllContent();
@@ -2538,7 +2653,7 @@ void AIChatConsoleContent::insertAlias(const juce::String& alias) {
         auto newText = before + "@" + alias + after;
         inputDocument_.replaceAllContent(newText);
         inputBox_->moveCaretTo(
-            juce::CodeDocument::Position(inputDocument_, atPos + 1 + (int)alias.length()), false);
+            juce::CodeDocument::Position(inputDocument_, atPos + 1 + alias.length()), false);
     }
 
     suppressAutocompleteForContent_ = inputDocument_.getAllContent();
@@ -2582,19 +2697,19 @@ bool AIChatConsoleContent::keyPressed(const juce::KeyPress& key, juce::Component
         if (popupVisible) {
             switch (autocompletePopup_->getMode()) {
                 case AutocompletePopup::Mode::SlashCommand:
-                    if (auto* cmd = autocompletePopup_->getSelectedCommand()) {
+                    if (const auto* cmd = autocompletePopup_->getSelectedCommand()) {
                         insertSlashCommand(cmd->name);
                         return true;
                     }
                     break;
                 case AutocompletePopup::Mode::Param:
-                    if (auto* entry = autocompletePopup_->getSelectedParamEntry()) {
+                    if (const auto* entry = autocompletePopup_->getSelectedParamEntry()) {
                         insertParamAlias(entry->pluginAlias, entry->paramAlias);
                         return true;
                     }
                     break;
                 case AutocompletePopup::Mode::Alias:
-                    if (auto* entry = autocompletePopup_->getSelectedEntry()) {
+                    if (const auto* entry = autocompletePopup_->getSelectedEntry()) {
                         insertAlias(entry->alias);
                         return true;
                     }
@@ -2621,19 +2736,19 @@ bool AIChatConsoleContent::keyPressed(const juce::KeyPress& key, juce::Component
     if (key == juce::KeyPress::tabKey) {
         switch (autocompletePopup_->getMode()) {
             case AutocompletePopup::Mode::SlashCommand:
-                if (auto* cmd = autocompletePopup_->getSelectedCommand()) {
+                if (const auto* cmd = autocompletePopup_->getSelectedCommand()) {
                     insertSlashCommand(cmd->name);
                     return true;
                 }
                 break;
             case AutocompletePopup::Mode::Param:
-                if (auto* entry = autocompletePopup_->getSelectedParamEntry()) {
+                if (const auto* entry = autocompletePopup_->getSelectedParamEntry()) {
                     insertParamAlias(entry->pluginAlias, entry->paramAlias);
                     return true;
                 }
                 break;
             case AutocompletePopup::Mode::Alias:
-                if (auto* entry = autocompletePopup_->getSelectedEntry()) {
+                if (const auto* entry = autocompletePopup_->getSelectedEntry()) {
                     insertAlias(entry->alias);
                     return true;
                 }
@@ -3149,9 +3264,9 @@ void AIChatConsoleContent::finishControllerGeneration(bool success, const juce::
         menu.addSeparator();
         menu.addItem(9999, "Cancel");
 
-        auto rawJson = errorOrJson;  // contains the JSON when success == true
-        auto baseId = profileId;
-        auto displayName = profileName;
+        const auto& rawJson = errorOrJson;  // contains the JSON when success == true
+        const auto& baseId = profileId;
+        const auto& displayName = profileName;
 
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(inputBox_.get()),
                            [safeThis, writeAndPromptPort, rawJson, baseId, displayName](int r) {
@@ -3286,7 +3401,7 @@ void AIChatConsoleContent::ThemeRequestThread::run() {
         if (threadShouldExit())
             return false;
         {
-            std::lock_guard<std::mutex> lk(buf->mu);
+            std::scoped_lock lk(buf->mu);
             buf->pending += token;
         }
         bool expected = false;
@@ -3298,7 +3413,7 @@ void AIChatConsoleContent::ThemeRequestThread::run() {
                 return;
             juce::String chunk;
             {
-                std::lock_guard<std::mutex> lk(buf->mu);
+                std::scoped_lock lk(buf->mu);
                 chunk = std::move(buf->pending);
                 buf->pending.clear();
             }
@@ -3441,9 +3556,9 @@ void AIChatConsoleContent::finishThemeGeneration(bool success, const juce::Strin
 
 // Format a seconds value as a compact human-readable string ("5ms",
 // "150ms", "1.2s", "12s"). Used for ADSR display in the pretty-print.
-static juce::String formatSeconds(float s) {
-    if (s < 0.0f)
-        s = 0.0f;
+namespace {
+juce::String formatSeconds(float s) {
+    s = std::max(s, 0.0f);
     if (s < 1.0f)
         return juce::String(static_cast<int>(std::round(s * 1000.0f))) + "ms";
     if (s < 10.0f)
@@ -3452,14 +3567,14 @@ static juce::String formatSeconds(float s) {
 }
 
 // Format a normalized 0..1 value as 2-decimal text.
-static juce::String formatNorm(float v) {
-    return juce::String(juce::jlimit(0.0f, 1.0f, v), 2);
+juce::String formatNorm(float v) {
+    return {juce::jlimit(0.0f, 1.0f, v), 2};
 }
 
 // Render a parsed preset as a categorized multi-line summary suitable
 // for the chat. Hides empty/zero categories. Time params (ADSR) are
 // formatted as ms/s; everything else as 2-decimal normalized values.
-static juce::String prettyPrintPreset(const magda::FourOscAgent::Preset& preset) {
+juce::String prettyPrintPreset(const magda::FourOscAgent::Preset& preset) {
     // Lookup helper: preset.params is keyed on the alias suffix
     // ("amp_attack", "tune_1", …). Returns a sentinel when absent so
     // callers can decide whether to print or skip.
@@ -3620,8 +3735,8 @@ static juce::String prettyPrintPreset(const magda::FourOscAgent::Preset& preset)
 // instance and apply there — wasting the LLM's output to "no device
 // focused" was just bad UX. Returns a one-line status string for the
 // chat. Delegates the actual write to magda::applyFourOscPresetToPath.
-static juce::String applyFourOscPresetToFocusedDevice(magda::MagdaApi& api,
-                                                      const magda::FourOscAgent::Preset& preset) {
+juce::String applyFourOscPresetToFocusedDevice(magda::MagdaApi& api,
+                                               const magda::FourOscAgent::Preset& preset) {
     auto& sel = magda::SelectionManager::getInstance();
     auto& tm = magda::TrackManager::getInstance();
 
@@ -3648,7 +3763,7 @@ static juce::String applyFourOscPresetToFocusedDevice(magda::MagdaApi& api,
         newDevice.deviceType = magda::DeviceType::Instrument;
         newDevice.format = magda::PluginFormat::Internal;
 
-        const auto trackId = tm.createTrack(trackName, magda::TrackType::Audio);
+        const auto trackId = tm.createTrack(trackName, magda::TrackType::Media);
         if (trackId == magda::INVALID_TRACK_ID)
             return "(could not create track for preset)";
         const auto deviceId = tm.addDeviceToTrack(trackId, newDevice);
@@ -3668,6 +3783,7 @@ static juce::String applyFourOscPresetToFocusedDevice(magda::MagdaApi& api,
 
     return preamble + magda::applyFourOscPresetToPath(api.plugins(), preset, path);
 }
+}  // namespace
 
 void AIChatConsoleContent::finishPresetGeneration(bool success, const juce::String& errorOrPretty,
                                                   juce::String presetName) {

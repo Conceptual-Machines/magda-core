@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include "DarkTheme.hpp"
+#include "ActiveTheme.hpp"
 
 // User-authored JSON themes (#88). A theme file is a role->colour map layered
 // over a built-in base, so users only override the roles they care about:
@@ -33,8 +33,8 @@ struct LoadedTheme {
     std::string id;    // stable identifier (source file stem)
     std::string name;  // display name from the file; falls back to id
     std::string base;  // resolved base id ("dark" / "light")
-    DarkTheme::Palette palette{};
-    DarkTheme::SyntaxPalette syntaxPalette{};
+    ActiveTheme::Palette palette{};
+    ActiveTheme::SyntaxPalette syntaxPalette{};
     std::vector<std::string> warnings;  // non-fatal issues, for logging/UI
 };
 
@@ -79,7 +79,7 @@ bool writeThemeTemplate(const juce::File& dest, const std::string& baseId,
 // vocabulary (a code editor needs its own contrast hierarchy), but this gives
 // any palette a coherent starting point - used to complete a generated theme
 // so it never ships an editor that clashes with its own colours.
-DarkTheme::SyntaxPalette deriveSyntaxPalette(const DarkTheme::Palette& palette);
+ActiveTheme::SyntaxPalette deriveSyntaxPalette(const ActiveTheme::Palette& palette);
 
 struct ThemeApplyResult {
     bool ok = false;           // a palette was installed (built-in or user)
@@ -91,7 +91,7 @@ struct ThemeApplyResult {
     std::vector<std::string> warnings;
 };
 
-// Installs the palette for `themeId` into DarkTheme's active tables. Built-in
+// Installs the palette for `themeId` into ActiveTheme's active tables. Built-in
 // ids (dark/light/high-contrast) go through ThemeManager; any other id is
 // treated as a user theme whose file is `themeId`.json in paths::themesDir().
 // On an unknown id or an unreadable/invalid file the active palette resets to

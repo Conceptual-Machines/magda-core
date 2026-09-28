@@ -68,6 +68,15 @@ TIDY_SYSROOT := $(shell if [ "$$(uname)" = "Darwin" ]; then \
 		[ -n "$$SDK" ] && echo "--extra-arg=-isysroot --extra-arg=$$SDK"; \
 	fi)
 
+# clang-tidy analyses one file per process on one thread, so the lint targets run
+# a process per core. Each file's report is buffered and printed whole, so two
+# files' diagnostics never interleave. Override with `make lint TIDY_JOBS=n`.
+TIDY_JOBS ?= $(shell sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
+TIDY_PARALLEL = xargs -0 -n 1 -P $(TIDY_JOBS) sh -c \
+	'out=$$("$$@" 2>&1); [ -z "$$out" ] || printf "%s\n" "$$out"' tidy \
+	$(CLANG_TIDY) --config-file=.clang-tidy --format-style=file \
+	-p=$(BUILD_DIR) $(TIDY_SYSROOT) --quiet
+
 # Default target
 .PHONY: all
 all: debug
@@ -194,6 +203,15 @@ run-console: debug
 	@echo "🎵 Running MAGDA DAW (console mode)..."
 	"$(APP_BINARY_DEBUG)"
 
+# Every note reaching a device and every publish, printed in one stream
+# (#2568), for pinning down an edit-during-playback bug by ear. Which engine
+# runs is the setting in the audio dialog (#2559) and this does not override
+# it; the trace comes from the native engine, so it prints nothing on the fork.
+.PHONY: run-trace
+run-trace: debug
+	@echo "🎵 Running MAGDA DAW with the MIDI trace on..."
+	MAGDA_ENGINE_TRACE_MIDI=1 "$(APP_BINARY_DEBUG)"
+
 .PHONY: cli
 cli:
 	@echo "🔨 Building magda-cli (Debug)..."
@@ -284,7 +302,7 @@ test-juce: test-juce-build
 		echo "❌ magda_juce_tests executable not found"; \
 		exit 1; \
 	fi; \
-	$(TEST_ENV) "$$JUCE_TEST_BIN" $(if $(JUCE_TEST),"$(JUCE_TEST)",)
+	MAGDA_AUDIO_ENGINE=magda $(TEST_ENV) "$$JUCE_TEST_BIN" $(if $(JUCE_TEST),"$(JUCE_TEST)",)
 
 # Run all tests
 .PHONY: test
@@ -292,6 +310,23 @@ test: test-build
 	@echo "🧪 Running all tests..."
 	@mkdir -p $(CACHE_ROOT)/home $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	cd $(BUILD_DIR) && $(TEST_ENV) ./tests/magda_tests
+
+# The parity envelope bench (#2082): native against Tracktion on the real-project corpus. Its own
+# Release tree with tests off, so both engines are compiled as they ship. PARITY_ARGS go to
+# scripts/parity_bench.py, e.g. PARITY_ARGS="--block-sizes 256".
+BUILD_DIR_PARITY = cmake-build-parity
+
+.PHONY: parity-bench-build
+parity-bench-build:
+	@echo "Building the parity bench (Release, tests off)..."
+	@mkdir -p $(BUILD_DIR_PARITY) $(CACHE_ROOT)/ccache $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	cd $(BUILD_DIR_PARITY) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Release \
+		-DMAGDA_BUILD_TESTS=OFF -DMAGDA_BUILD_PARITY_BENCH=ON $(FETCHCONTENT_SOURCE_ARGS) ..
+	cd $(BUILD_DIR_PARITY) && $(BUILD_ENV) ninja magda_parity_bench
+
+.PHONY: parity-bench
+parity-bench: parity-bench-build
+	python3 scripts/parity_bench.py --bench-dir $(BUILD_DIR_PARITY) $(PARITY_ARGS)
 
 # Build and run the Catch2 tests under ThreadSanitizer. The native engine's
 # parallel executor is lock-free, so "it passed" from an ordinary build says
@@ -394,6 +429,13 @@ test-transport-mutations:
 		python3 tools/transport_check/mutation_test.py; \
 	fi
 
+# Model-check the thread handoff specs in specs/tla (#2863). Local only, needs
+# Java; minutes per model. ARGS narrows it, e.g. `make tla ARGS="plan_swap Safety"`.
+.PHONY: tla
+tla:
+	@echo "🔍 Model-checking specs/tla with TLC..."
+	scripts/tla.sh $(ARGS)
+
 # Clean build artifacts
 .PHONY: clean
 clean:
@@ -453,14 +495,8 @@ lint:
 		echo "              apt install clang-tidy   (Debian/Ubuntu)"; \
 		exit 1; \
 	fi
-	@echo "📋 Analyzing magda/daw sources..."
-	@find magda/daw -name "*.cpp" -type f -exec \
-		$(CLANG_TIDY) \
-		{} \
-		--config-file=.clang-tidy \
-		--format-style=file \
-		-p=$(BUILD_DIR) $(TIDY_SYSROOT) \
-		--quiet \;
+	@echo "📋 Analyzing magda sources (tests are out of scope)..."
+	@find magda -name "*.cpp" -type f -print0 | $(TIDY_PARALLEL)
 	@echo "✅ Code analysis complete"
 
 # Lint recently modified files only
@@ -480,14 +516,7 @@ lint-changed:
 		echo "No modified .cpp files found"; \
 	else \
 		echo "Analyzing: $$CHANGED_FILES"; \
-		for file in $$CHANGED_FILES; do \
-			$(CLANG_TIDY) \
-				$$file \
-				--config-file=.clang-tidy \
-				--format-style=file \
-				-p=$(BUILD_DIR) $(TIDY_SYSROOT) \
-				--quiet; \
-		done; \
+		printf "%s\0" $$CHANGED_FILES | $(TIDY_PARALLEL); \
 	fi
 	@echo "✅ Analysis complete"
 
@@ -508,7 +537,7 @@ lint-fix:
 	read REPLY; \
 	case "$$REPLY" in \
 		[Yy]*) \
-			find magda/daw -name "*.cpp" -type f -exec \
+			find magda -name "*.cpp" -type f -exec \
 				$(CLANG_TIDY) \
 				{} \
 				--config-file=.clang-tidy \
@@ -557,6 +586,7 @@ help:
 	@echo "Run targets:"
 	@echo "  run            - Build and run the application"
 	@echo "  run-console    - Run with console output visible"
+	@echo "  run-trace      - Run with the MIDI trace on (native engine only)"
 	@echo "  run-console-cpu - Run debug analyzer CPU baseline with console output"
 	@echo "  run-console-webgpu - Run debug Dawn/WebGPU analyzer POC with console output"
 	@echo "  run-console-cpu-log - Run CPU baseline and write app output to $(CPU_RUN_LOG)"
@@ -578,6 +608,8 @@ help:
 	@echo "  test-shutdown  - Run shutdown sequence tests only"
 	@echo "  test-threading - Run thread safety tests only"
 	@echo "  test-list      - List all available tests"
+	@echo "  parity-bench   - Measure native against Tracktion on the project corpus (Release)"
+	@echo "  tla            - Model-check the thread handoff specs in specs/tla (needs Java)"
 	@echo ""
 	@echo "Code Quality targets:"
 	@echo "  format         - Format code with clang-format"

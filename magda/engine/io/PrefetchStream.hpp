@@ -6,6 +6,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_dsp/juce_dsp.h>
 
+#include <array>
 #include <atomic>
 #include <cassert>
 #include <cstdint>
@@ -22,16 +23,16 @@
  * @file PrefetchStream.hpp
  * @brief One file, read ahead of the callback that plays it.
  *
- * The audio thread cannot wait for a disk, so it never touches one: a thread
- * that is allowed to block reads whole chunks ahead of where playback is, and
- * the callback copies out of what is already in memory. What arrives on the
- * audio thread is therefore a pointer swap and a copy, and nothing else.
+ * The audio thread can't wait for a disk, so it never touches one: a thread
+ * allowed to block reads whole chunks ahead of where playback is, and the
+ * callback copies out of what's already in memory -- a pointer swap and a
+ * copy, nothing else.
  *
- * Chunks rather than a ring of samples, because a chunk can be stamped. A seek
- * makes everything already read wrong, and the stamp is how the callback knows
- * that without the reader having to reach into a buffer the callback is using:
- * stale chunks are recognised on the way out and dropped, which is the same
- * epoch discipline the plan swap uses.
+ * Chunks rather than a ring of samples, because a chunk can be stamped. A
+ * seek makes everything already read wrong, and the stamp lets the callback
+ * recognise and drop stale chunks on the way out without the reader having
+ * to reach into a buffer the callback is using -- the same epoch discipline
+ * the plan swap uses.
  *
  * Threading: read() on the audio thread, fill() on the prefetch thread,
  * everything else before either is running. One stream is one reader and is
@@ -53,8 +54,17 @@ struct PrefetchSettings {
     int chunkCount = 8;
 };
 
+/// What a read is for, so missing frames can be attributed (#2700).
+enum class ReadPurpose { playback, priming };
+
 class PrefetchStream {
   public:
+    struct RetainedRegion {
+        juce::AudioBuffer<float> audio;
+        std::int64_t startSample = 0;
+        int count = 0;
+    };
+
     PrefetchStream(std::unique_ptr<AudioFileReader> reader, const RenderContext& context,
                    const PrefetchSettings& settings = {});
 
@@ -64,99 +74,145 @@ class PrefetchStream {
      * On the audio thread. Returns how many samples were there to give; the
      * rest of the destination is silent.
      *
-     * A start that is not where the last read left off is a seek: what has been
-     * read ahead is for somewhere else, so it is dropped and the reader is
-     * pointed at the new position. Nothing plays until it has caught up, which
-     * is what @ref underruns counts.
+     * A start that isn't where the last read left off is a seek. One the
+     * read-ahead already holds is served from it: a jump forward within
+     * buffered audio, or back into the chunk in hand, costs nothing. A seek
+     * into the retained opening plays immediately while the worker fills its
+     * continuation. Anywhere else what was read ahead is for somewhere else,
+     * so it's dropped, the reader is pointed at the new position, and the
+     * block waits for it -- which is what @ref underruns counts.
      */
-    int read(std::int64_t sourceStart, juce::dsp::AudioBlock<float> destination, int numSamples);
+    int read(std::int64_t sourceStart, juce::dsp::AudioBlock<float> destination, int numSamples,
+             ReadPurpose purpose = ReadPurpose::playback);
 
     /**
      * @brief Read ahead. On the prefetch thread.
      *
      * Returns true if it did anything, so a caller servicing several streams
      * can tell a busy round from an idle one and sleep on the difference.
+     *
+     * @p maxChunks bounds what one visit reads, so a stream with a whole pool
+     * to refill cannot hold a worker away from the streams behind it in the
+     * round (#2705). Zero is as much as the pool has room for, which is what a
+     * caller driving a single stream to completion wants.
      */
-    bool fill();
+    bool fill(int maxChunks = 0);
 
     /**
      * @brief Point the reader before anything is reading it at all.
      *
      * Before the stream is registered with a prefetch thread and before any
-     * block has read from it, on the thread that made it. Not a seek and not a
-     * cue: it moves both cursors while there is nobody to disagree with, so
-     * there is no generation to bump, nothing in flight to throw away, and no
-     * block to wait for.
+     * block has read from it, on the thread that made it. Not a seek and
+     * not a cue: it moves both cursors while there's nobody to disagree
+     * with, so there's no generation to bump and nothing in flight to
+     * throw away.
      *
-     * What it is for is that a stream is made for a clip, and a clip starts
-     * somewhere. Without this a new stream spends its first reads on the
-     * material at sample zero, which is not what it was opened for, and the
-     * cue that redirects it cannot be taken up until a callback has run
-     * (@ref applyPendingCue). Every one of those reads would then be thrown
-     * away, and the reader would start again from behind.
+     * Without this, a new stream spends its first reads on the material at
+     * sample zero -- not what it was opened for -- and a cue can't be taken
+     * up until a callback has run (@ref applyPendingCue), so those reads
+     * would be thrown away and the reader would start again from behind.
      */
-    void startAt(std::int64_t sourceStart);
+    // Optionally retain the opening samples for repeated session launches.
+    // Reads and allocates here, before registration with the reader thread;
+    // the cache is immutable during playback.
+    void startAt(std::int64_t sourceStart, int cacheSamples = 0);
+
+    /// Publish a prepared loop destination. The replaced region is destroyed
+    /// here, after any callback reading it has left.
+    bool retain(std::shared_ptr<const RetainedRegion> region) {
+        auto idle = 0;
+        if (!retainedUse_.compare_exchange_strong(idle, -1, std::memory_order_acq_rel))
+            return false;
+        retained_.nonRealtimeReplace(std::move(region));
+        retainedUse_.store(0, std::memory_order_release);
+        return true;
+    }
+
+    bool canRetain() const {
+        return retainedUse_.load(std::memory_order_acquire) == 0;
+    }
 
     /**
      * @brief Point the reader at a position before anything asks for it.
      *
      * From any thread that is not the audio thread, at any time: whoever
-     * schedules material knows where playback will be before the callback does,
-     * and a stream told in advance is one that does not have to seek in the
-     * block that needs the samples.
+     * schedules material knows where playback will be before the callback
+     * does, so a stream told in advance doesn't have to seek in the block
+     * that needs the samples.
      *
-     * Nothing here touches what the callback owns. It publishes a cue, and the
-     * callback picks it up at the top of its next block through
-     * @ref applyPendingCue, so the seek itself happens where every other seek
-     * happens. That is a block's delay before the reader starts moving, which
-     * is nothing against the reason to cue at all: a clip scheduled a moment
-     * ahead is read ahead long before it plays.
+     * Nothing here touches what the callback owns. It publishes a cue, and
+     * the callback picks it up at the top of its next block through
+     * @ref applyPendingCue, so the seek happens where every other seek
+     * does -- a block's delay, which is nothing against the reason to cue
+     * at all.
      *
-     * A cue points a stream that is not sounding. One that is keeps playing and
-     * takes the cue up when it stops, because a single reader cannot be in two
-     * places: pointing it somewhere else would abandon the material still
-     * playing and hand back the pool holding it, for a position the next read
-     * would immediately override.
+     * A cue points a stream that isn't sounding. One that is keeps playing
+     * and takes the cue up when it stops, since a single reader can't be in
+     * two places: pointing it elsewhere would abandon the material still
+     * playing for a position the next read would immediately override.
      *
-     * A clip's loop does not come through here at all, which is what it took to
-     * make its return seamless. Reading the top of a loop through a cue would
-     * mean holding two positions at once, a second fill cursor and a second
-     * pool; instead the tiling happens below this, in what the stream reads
-     * (io/SourceReaders.hpp), so a wrap is a discontinuity in the material and
-     * a position like any other to everything here.
+     * A clip's loop doesn't come through here: reading the top of a loop
+     * through a cue would mean holding two positions at once. Instead
+     * tiling happens below this, in what the stream reads
+     * (io/SourceReaders.hpp), so a wrap is just a discontinuity in the
+     * material and a position like any other to everything here.
      */
     void seek(std::int64_t sourceStart);
+
+    /// On the audio thread while playback is stopped: prepare the next read
+    /// without consuming it. Repeating the same cue leaves prefetched data in
+    /// place. This gives the worker time to fill before Play needs its samples.
+    void prepareRead(std::int64_t sourceStart);
 
     /**
      * @brief Take up a cue, if one is waiting. On the audio thread.
      *
-     * Once per block, at the top of it, by whoever drives the stream. Not done
-     * inside read(), and the difference matters: what decides whether a cue is
-     * taken up now or waits is whether this stream is sounding, and that
-     * question is only answerable at a block boundary. Asked again halfway
-     * through, a stream that simply has not reached its read yet looks exactly
-     * like one that is silent.
+     * Once per block, at the top of it, by whoever drives the stream. Not
+     * done inside read(): whether a cue is taken up now or waits depends on
+     * whether this stream is sounding, and that's only answerable at a
+     * block boundary -- asked mid-block, a stream that simply hasn't
+     * reached its read yet looks exactly like a silent one.
      *
-     * It has to be a separate call for the same reason. The stream a cue is
-     * most useful to is one nobody is reading from: a clip that has not started
-     * would otherwise not hear about it until the material was already due.
+     * It's a separate call for the same reason: the stream a cue is most
+     * useful to is one nobody is reading from, and a clip that hasn't
+     * started would otherwise not hear about it until the material was
+     * already due.
      */
     void applyPendingCue();
 
     /**
      * @brief Blocks the callback could not be given the samples for.
      *
-     * A seek costs at least one, because a disk cannot be read inside a
-     * callback. Anything beyond that is the reader failing to keep up, which is
-     * a property of the machine rather than of the music, and it has to be
-     * visible: silence that nobody counted is indistinguishable from a gap in
-     * the material.
+     * A seek outside the retained opening costs at least one, since a disk
+     * can't be read inside a callback. Anything beyond that is the reader failing to keep up -- a
+     * property of the machine rather than the music -- and has to be
+     * visible, since silence nobody counted is indistinguishable from a gap
+     * in the material.
      *
-     * The end of the file is not an underrun. There is nothing late about
+     * The end of the file is not an underrun; there's nothing late about
      * silence past the last sample.
      */
     int underruns() const {
         return underruns_.load(std::memory_order_relaxed);
+    }
+
+    /// Source frames a short read of @p purpose did not deliver. Frames past
+    /// the end, and before sample zero of a bounded reading, are padding and
+    /// not counted.
+    std::int64_t missingFrames(ReadPurpose purpose) const {
+        return missingFrames_[static_cast<std::size_t>(purpose)].load(std::memory_order_relaxed);
+    }
+
+    /**
+     * @brief Frames the worker read that playback had already gone past.
+     *
+     * The cost of catching up rather than of falling behind, and a separate
+     * number from @ref missingFrames because it is paid after the reader is
+     * working again: every one of these is a disk read standing between the
+     * callback and the audio it is waiting for (#2704).
+     */
+    std::int64_t obsoleteFrames() const {
+        return obsoleteFrames_.load(std::memory_order_relaxed);
     }
 
     /// Samples in the file. The one thing the audio thread reads from the
@@ -200,13 +256,31 @@ class PrefetchStream {
     /// Hand a spent chunk back to the reader. Audio thread.
     void releaseCurrent();
 
-    void requestSeek(std::int64_t sourceStart);
+    /// Point the cursor at a position, keeping what was read ahead if it
+    /// already holds that position. Audio thread.
+    void moveTo(std::int64_t sourceStart, const RetainedRegion* retained = nullptr);
+
+    /// Take the cursor to a position the read-ahead holds, without changing
+    /// generation or disturbing the reader. False if it does not hold it.
+    bool seekWithinResident(std::int64_t sourceStart, const RetainedRegion* retained);
+
+    void requestSeek(std::int64_t sourceStart, const RetainedRegion* retained);
 
     std::unique_ptr<AudioFileReader> reader_;
     std::int64_t length_ = 0;
     double sourceSampleRate_ = 0.0;
     int numChannels_ = 2;
     int chunkSamples_ = 0;
+
+    juce::AudioBuffer<float> startCache_;
+    std::int64_t cacheStart_ = 0;
+    int cacheCount_ = 0;
+
+    using PublishedRetained =
+        farbot::RealtimeObject<std::shared_ptr<const RetainedRegion>,
+                               farbot::RealtimeObjectOptions::nonRealtimeMutatable>;
+    PublishedRetained retained_;
+    std::atomic<int> retainedUse_{0};  // -1 publisher, 0 idle, 1 callback crossing it
 
     std::vector<std::unique_ptr<Chunk>> pool_;
     ChunkFifo filled_;
@@ -231,6 +305,8 @@ class PrefetchStream {
     std::int64_t nextSample_ = 0;
     std::uint32_t generation_ = 0;
     std::uint32_t appliedCue_ = 0;
+    bool retainedActive_ = false;
+    std::int64_t retainedEnd_ = 0;
 
     /// Whether anything could have played out of this stream since the last
     /// cue check. What separates a stream waiting to be given somewhere to go
@@ -249,6 +325,8 @@ class PrefetchStream {
     bool stalled_ = false;
 
     std::atomic<int> underruns_{0};
+    std::array<std::atomic<std::int64_t>, 2> missingFrames_{};
+    std::atomic<std::int64_t> obsoleteFrames_{0};
 };
 
 }  // namespace magda::engine

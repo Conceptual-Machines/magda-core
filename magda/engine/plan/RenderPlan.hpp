@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -70,6 +71,18 @@ struct PortDesc {
     bool operator==(const PortDesc&) const = default;
 };
 
+/** Packed callback channels driven by one hardware Output op. */
+struct HardwareOutputRoute {
+    int leftChannel = 0;
+    int rightChannel = 1;
+
+    bool valid() const {
+        return leftChannel >= 0 &&
+               (rightChannel == -1 || (rightChannel >= 0 && rightChannel != leftChannel));
+    }
+    bool operator==(const HardwareOutputRoute&) const = default;
+};
+
 // Output ports of a Device op, in order. Port 0 is the device's audio output,
 // and it is the one the chain carries on from. A device that writes MIDI has it
 // at port 1. Anything after that is a multi-out instrument's further output
@@ -104,22 +117,50 @@ constexpr int kMaxMultiOutPairs = 64;
  * cheap ops is a later back-end pass over the same flat list.
  */
 enum class OpKind : std::uint8_t {
-    ClipAudio,   ///< audio clip playback for one track (reads the clip snapshot)
-    ClipMidi,    ///< MIDI clip playback for one track
+    /// A track's audio clips: the arrangement, and whichever session slot a launch handle has
+    /// playing (#2301). One op, because outside a hand-over only one of them sounds.
+    ClipAudio,
+    ClipMidi,  ///< MIDI clip playback for one track
+
+    /// The session's MIDI for one track: whichever slot a launch handle currently has playing
+    /// (#2301). One op per track rather than per slot, so adding a scene does not reshape
+    /// the plan.
+    SessionMidi,
     AudioInput,  ///< live hardware audio input
     MidiInput,   ///< live MIDI input
     Device,      ///< a device instance (instrument, effect, MIDI or analysis)
     MixAudio,   ///< ordered sum of audio inputs (summing order is compiled, never scheduling order)
     MergeMidi,  ///< ordered merge of MIDI inputs
-    Subtract,   ///< one audio input minus another: what a delta solo hears
-    Delay,      ///< latency compensation on one edge; the sample count is bound at prepare time
-    Crossfade,  ///< an edge as it was and as it is, ramped from one to the other
-    Gain,       ///< scalar gain
-    Fader,      ///< volume + pan, and the MIDI its stage passes on
-    SendTap,    ///< pre/post-fader tap feeding another track
-    Meter,      ///< level tap read by the UI
-    ModSource,  ///< a track's signal as the modulation system reads it
-    Output,     ///< hardware output
+    MidiNoteGate,  ///< passes a note range through, transposed onto a root
+    Subtract,      ///< one audio input minus another: what a delta solo hears
+    Delay,         ///< latency compensation on one edge; the sample count is bound at prepare time
+    Crossfade,     ///< an edge as it was and as it is, ramped from one to the other
+    Gain,          ///< scalar gain
+    Fader,         ///< volume + pan, and the MIDI its stage passes on
+    SendTap,       ///< pre/post-fader tap feeding another track
+    Meter,         ///< level tap read by the UI
+    ModSource,     ///< a track's signal as the modulation system reads it
+    Output,        ///< hardware output
+
+    // A hardware insert, which is these two with the outside world between them
+    // (#2245). Not a device with special cases: the incumbent recognises an
+    // insert by where it sits in a chain, and the plan already has ops for
+    // things that consume a signal and things that produce one.
+    InsertSend,    ///< audio or MIDI leaving the machine; consumes, produces nothing
+    InsertReturn,  ///< what comes back, and where the round trip's latency is declared
+
+    // A routing loop's one-block carry, in the same two halves. An internal
+    // input route that closes a cycle cannot be an ordering edge, and every
+    // plan input references an earlier op, so the edge is cut and rejoined
+    // through storage: the return hands on what the send wrote last block
+    // (#2612). Which of the two a track gets is decided by topology alone, so
+    // the monitor switch never moves it.
+    /// The source's signal into the carry; consumes, produces nothing. Its
+    /// second input is the paired return, which it does not read: the carry is
+    /// read before it is written, and on a parallel schedule only an edge says
+    /// so.
+    FeedbackSend,
+    FeedbackReturn,  ///< last block's carry, read a block before the send fills it
 };
 
 /**
@@ -130,29 +171,51 @@ enum class OpKind : std::uint8_t {
  * second half of the differ's identity key.
  */
 enum class OpRole : std::uint8_t {
-    ClipAudio,        ///< the track's audio clip source
-    ClipMidi,         ///< the track's MIDI clip source
-    LiveAudioInput,   ///< the track's live audio input
-    LiveMidiInput,    ///< the track's live MIDI input
-    TrackAudioInput,  ///< sum of everything feeding the track's chain head
-    TrackMidiInput,   ///< merge of everything feeding the track's chain head
-    DeviceProcess,    ///< the device itself
-    DeviceInject,     ///< an instrument's output summing into the bus flowing past it
-    DeviceDelta,      ///< the device's output minus the dry input it was handed
-    DeviceGain,       ///< the device slot's gain trim
-    DeviceMeter,      ///< the device slot's level tap
-    ChainMidiMerge,   ///< raw chain MIDI merged with a device's MIDI output
-    RackChainFader,   ///< one rack chain's volume + pan
-    RackMix,          ///< sum of a rack's chains
-    RackMidiMix,      ///< merge of a rack's chain MIDI outputs
-    RackFader,        ///< the rack's output volume + pan
-    RackDelta,        ///< the rack's output minus the dry input it was handed
-    TrackFader,       ///< the track fader
-    TrackMeter,       ///< the track's post-fader, pre-mute level tap
-    TrackMute,        ///< mute and solo, applied after the meter and sidechain tap
-    SendTap,          ///< one send slot
-    ModulationTap,    ///< one track's signal, read by the modifiers listening to it
-    HardwareOutput,   ///< the master's hardware output
+    ClipAudio,            ///< the track's audio clips, arrangement and session
+    ClipMidi,             ///< the track's MIDI clip source
+    LiveAudioInput,       ///< the track's live audio input
+    LiveInputMeter,       ///< the live audio input's level tap, ahead of the monitor gate
+    LiveMidiInput,        ///< the track's live MIDI input
+    LiveInputGate,        ///< whether the track hears its live audio input
+    SessionMidi,          ///< the track's session MIDI
+    TrackAudioInput,      ///< sum of everything feeding the track's chain head
+    TrackMidiInput,       ///< merge of everything feeding the track's chain head
+    DeviceProcess,        ///< the device itself
+    DeviceInject,         ///< an instrument's output summing into the bus flowing past it
+    DeviceDelta,          ///< the device's output minus the dry input it was handed
+    DeviceGain,           ///< the device slot's gain trim
+    DeviceSidechainGain,  ///< the trim on the key feeding the device's sidechain slot
+    DeviceMeter,          ///< the device slot's level tap
+    ChainMidiMerge,       ///< raw chain MIDI merged with a device's MIDI output
+    PadNoteGate,          ///< one pad chain's note range and transposition
+    RackChainFader,       ///< one rack chain's volume + pan
+    RackMix,              ///< sum of a rack's chains
+    RackMidiMix,          ///< merge of a rack's chain MIDI outputs
+    RackFader,            ///< the rack's output volume + pan
+    RackDelta,            ///< the rack's output minus the dry input it was handed
+    RackMeter,            ///< the rack's own level tap, at what leaves it
+    TrackFader,           ///< the track fader
+    TrackMeter,           ///< the track's post-fader, pre-mute level tap
+    TrackMute,            ///< mute and solo, applied after the meter and sidechain tap
+    SendTap,              ///< one send slot
+    ModulationTap,        ///< one track's signal, read by the modifiers listening to it
+    HardwareOutput,       ///< one track or master hardware output
+    InsertSend,           ///< one insert's send
+    InsertReturn,         ///< one insert's return
+
+    // Both halves of a cut input route, keyed to the track that reads it, with
+    // OpKey::index naming the track it reads from. The source is in the
+    // identity because nothing else about the carry carries it: the return's
+    // inputs are empty, so a route moved between sources would otherwise
+    // compile to the same ops and the differ would hand the new route the old
+    // one's carry.
+    FeedbackSend,    ///< the source's signal into the track's carry
+    FeedbackReturn,  ///< the carry, as the track's input mix reads it
+
+    /// Where the monitor switch lands on a route from another track, the way
+    /// LiveInputGate carries it for a hardware input (#2612). Keyed the same
+    /// way: index 0 audio, 1 MIDI.
+    InputRouteGate,
 
     // Latency compensation. A delay sits on one edge, so its identity is the
     // op it feeds plus the input slot it fills: the role says which op that is,
@@ -319,6 +382,27 @@ struct OpKey {
     bool operator<(const OpKey& o) const;
 };
 
+/// The key of the Meter op at @p trackId's output. One definition, because a
+/// host looking a meter up under a key one field out reads nothing (#2570).
+inline OpKey trackMeterKey(TrackId trackId) {
+    return OpKey{trackId,           INVALID_RACK_ID,    INVALID_CHAIN_ID,
+                 INVALID_DEVICE_ID, OpRole::TrackMeter, 0};
+}
+
+/// The key of @p trackId's live audio input meter, ahead of its monitor gate.
+inline OpKey liveInputMeterKey(TrackId trackId) {
+    return OpKey{trackId,           INVALID_RACK_ID,        INVALID_CHAIN_ID,
+                 INVALID_DEVICE_ID, OpRole::LiveInputMeter, 0};
+}
+
+/// The key of the Meter op at @p rackId's output, for the same reason (#2649).
+/// A rack id is the project's, so the segment is what the rack stands in
+/// rather than part of its identity -- one rack, one meter.
+inline OpKey rackMeterKey(TrackId trackId, RackId rackId, ChainSegment segment) {
+    return OpKey{trackId,           rackId, INVALID_CHAIN_ID, INVALID_DEVICE_ID,
+                 OpRole::RackMeter, 0,      segment};
+}
+
 /** A reference to one output port of an earlier op. */
 struct PortRef {
     OpId op = INVALID_OP_ID;
@@ -353,13 +437,51 @@ struct PlanOp {
     std::vector<PortRef> inputs;
     std::vector<PortDesc> outputs;
 
+    /// Callback channels for an Output op. Right channel -1 is mono.
+    HardwareOutputRoute hardwareOutput;
+
     /// Channels of audio a Device op reads from its first input port. The port
     /// belongs to the chain and stays stereo; a device declaring one input
     /// channel gets only the first. That matches the current engine, which
     /// wires pin 1 and leaves pin 2 unconnected. It is not a downmix. Zero for
     /// every other op kind, and for a device not connected to the bus at all.
     std::uint8_t audioInputChannels = 0;
+
+    /// The notes a MidiNoteGate passes, inclusive, and the semitone shift it
+    /// applies to what it passes.
+    ///
+    /// Topology rather than a value: a note range is not something a mixer move
+    /// can touch, so it belongs here beside audioInputChannels rather than in
+    /// the value table, and editing a pad's range recompiles the way adding a
+    /// device does. `noteGateTranspose` is `rootNote - lowNote`, resolved at
+    /// compile time so the audio thread adds one number instead of doing the
+    /// arithmetic per event. Zero for every other op kind.
+    std::uint8_t noteGateLow = 0;
+    std::uint8_t noteGateHigh = 127;
+    std::int8_t noteGateTranspose = 0;
+
+    /// A pad fader's level and pan, as parameter indices of the device that
+    /// owns the pad (OpKey::deviceId).
+    ///
+    /// A rack chain's fader is not addressable in the model and keeps whatever
+    /// the value table published. A Drum Grid's pads are the exception: their
+    /// level and pan are real automatable parameters of the Drum Grid, so a lane,
+    /// a macro or a modifier can play over them and the fader has to read the
+    /// table like a track's does. -1 for every other fader.
+    int padLevelParam = -1;
+    int padPanParam = -1;
 };
+
+/** @brief Producer ops an op waits on, each counted once however many slots it feeds. */
+inline std::vector<OpId> distinctProducers(const PlanOp& op) {
+    std::vector<OpId> producers;
+    producers.reserve(op.inputs.size());
+    for (const auto& input : op.inputs) {
+        if (input.valid() && !std::ranges::contains(producers, input.op))
+            producers.push_back(input.op);
+    }
+    return producers;
+}
 
 /**
  * @brief A compiled, immutable render plan.

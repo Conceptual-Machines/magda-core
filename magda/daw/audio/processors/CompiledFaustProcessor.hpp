@@ -17,7 +17,7 @@ class CompiledFaustProcessor : public DeviceProcessor {
 
     int getParameterCount() const override;
     ParameterInfo getParameterInfo(int index) const override;
-    void populateParameters(DeviceInfo& info) const override;
+    void populateParametersFromEngine(DeviceInfo& info) const override;
     void setParameterByIndex(int paramIndex, float value) override;
     float getParameterByIndex(int paramIndex) const;
 };

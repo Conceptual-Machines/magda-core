@@ -2,8 +2,10 @@
 
 #include <tracktion_engine/tracktion_engine.h>
 
-#include "audio/plugins/MagdaSamplerPlugin.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include <algorithm>
+
+#include "core/TrackManager.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
@@ -23,8 +25,8 @@ juce::String yesNo(bool value) {
 
 PadChainPanel::PadChainPanel() {
     addButton_.setColour(juce::TextButton::buttonColourId,
-                         DarkTheme::getColour(DarkTheme::SURFACE));
-    addButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+                         ActiveTheme::getColour(ActiveTheme::SURFACE));
+    addButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
     addButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     addButton_.onClick = [this]() {
         if (onAddDeviceClicked && currentPadIndex_ >= 0)
@@ -61,36 +63,6 @@ void PadChainPanel::refresh() {
         rebuildSlots();
 }
 
-std::vector<tracktion::engine::Plugin*> PadChainPanel::getCollapsedPlugins() const {
-    std::vector<tracktion::engine::Plugin*> result;
-    for (auto& slot : slots_) {
-        if (slot->isCollapsed() && slot->getPlugin())
-            result.push_back(slot->getPlugin());
-    }
-    return result;
-}
-
-void PadChainPanel::setCollapsedPlugins(const std::vector<tracktion::engine::Plugin*>& plugins) {
-    if (plugins.empty())
-        return;
-    for (auto& slot : slots_) {
-        if (slot->getPlugin() &&
-            std::find(plugins.begin(), plugins.end(), slot->getPlugin()) != plugins.end()) {
-            if (!slot->isCollapsed()) {
-                // Temporarily detach callback to avoid per-slot layout cascade
-                auto saved = std::move(slot->onLayoutChanged);
-                slot->setCollapsed(true);
-                slot->onLayoutChanged = std::move(saved);
-            }
-        }
-    }
-    // Single layout update after all collapses
-    resized();
-    repaint();
-    if (onLayoutChanged)
-        onLayoutChanged();
-}
-
 void PadChainPanel::setLinkContext(const magda::ChainNodePath& devicePath,
                                    const magda::MacroArray* macros, const magda::ModArray* mods,
                                    const magda::MacroArray* trackMacros,
@@ -122,7 +94,15 @@ void PadChainPanel::updateLinkContext() {
 
 void PadChainPanel::applyLinkContextToSlot(PadDeviceSlot& slot, const PluginSlotInfo& info) {
     if (info.deviceId != magda::INVALID_DEVICE_ID) {
-        auto pluginPath = magda::ChainNodePath::topLevelDevice(devicePath_.trackId, info.deviceId);
+        // The address the pad device actually has, asked of the model rather
+        // than manufactured. ParamTableCompiler keys a pad device under the
+        // owning grid's DeviceId, and so does every link a project has saved,
+        // so a link made from a top-level path would name a parameter the
+        // table does not carry (#2211). The manufactured path is kept as the
+        // fallback for a slot whose device is not in the model yet.
+        auto pluginPath = magda::TrackManager::getInstance().findDevicePath(info.deviceId);
+        if (!pluginPath.isValid())
+            pluginPath = magda::ChainNodePath::topLevelDevice(devicePath_.trackId, info.deviceId);
         DBG("[PadChainLink] apply pad=" << currentPadIndex_ << " pluginDevice=" << info.deviceId
                                         << " sampler=" << yesNo(info.isSampler)
                                         << " target=" << linkPathString(pluginPath)
@@ -136,7 +116,7 @@ int PadChainPanel::getContentWidth() const {
     // Must match resized() calculation: 2px left padding + slots + arrows + 2px right padding
     // plus DROP_ZONE_WIDTH (reserved outside the viewport)
     int width = 2;
-    for (auto& slot : slots_) {
+    for (const auto& slot : slots_) {
         if (width > 2)
             width += ARROW_WIDTH;
         width += slot->getPreferredWidth();
@@ -147,13 +127,6 @@ int PadChainPanel::getContentWidth() const {
 }
 
 void PadChainPanel::rebuildSlots() {
-    // Preserve collapsed state across rebuild (keyed by plugin pointer)
-    std::vector<tracktion::engine::Plugin*> collapsedPlugins;
-    for (auto& slot : slots_) {
-        if (slot->isCollapsed() && slot->getPlugin())
-            collapsedPlugins.push_back(slot->getPlugin());
-    }
-
     slots_.clear();
     container_.removeAllChildren();
     container_.addAndMakeVisible(addButton_);
@@ -208,13 +181,10 @@ void PadChainPanel::rebuildSlots() {
                     auto slotInfos = getPluginSlots ? getPluginSlots(currentPadIndex_)
                                                     : std::vector<PluginSlotInfo>{};
                     if (pluginIndex < static_cast<int>(slotInfos.size())) {
-                        const auto& info = slotInfos[static_cast<size_t>(pluginIndex)];
-                        auto* plugin = info.plugin;
-                        if (plugin) {
-                            name = info.device.name.isNotEmpty() ? info.device.name
-                                                                 : plugin->getName();
-                            type = info.device.getFormatString() + " Plugin";
-                        }
+                        const auto& device =
+                            slotInfos[static_cast<size_t>(pluginIndex)].binding.device;
+                        name = device.name;
+                        type = device.getFormatString() + " Plugin";
                     }
                 }
                 onDeviceClicked(name, type);
@@ -225,13 +195,10 @@ void PadChainPanel::rebuildSlots() {
         slot->getMeterLevels = info.getMeterLevels;
         slot->onGainDbChanged = info.onGainDbChanged;
         slot->setGainDb(info.gainDb);
+        slot->onPowerChanged = info.onPowerChanged;
+        slot->setPowered(!info.bypassed);
 
-        // Set plugin content
-        if (info.isSampler) {
-            slot->setSampler(dynamic_cast<daw::audio::MagdaSamplerPlugin*>(info.plugin));
-        } else if (info.plugin) {
-            slot->setPlugin(info.plugin, info.device, info.livePlugin);
-        }
+        slot->setDevice(info.binding);
 
         // Apply link mode context (deviceId, macros, mods)
         applyLinkContextToSlot(*slot, info);
@@ -239,12 +206,6 @@ void PadChainPanel::rebuildSlots() {
         // Let DeviceSlotComponent wire link callbacks on param slots
         if (onSlotSetup)
             onSlotSetup(*slot, info);
-
-        // Restore collapsed state from before rebuild
-        if (info.plugin && std::find(collapsedPlugins.begin(), collapsedPlugins.end(),
-                                     info.plugin) != collapsedPlugins.end()) {
-            slot->setCollapsed(true);
-        }
 
         container_.addAndMakeVisible(*slot);
         slots_.push_back(std::move(slot));
@@ -316,7 +277,7 @@ void PadChainPanel::itemDropped(const SourceDetails& details) {
 
 void PadChainPanel::paint(juce::Graphics& g) {
     // Background
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     g.fillRect(getLocalBounds());
 
     // Draw drop insertion indicator
@@ -333,7 +294,7 @@ void PadChainPanel::paint(juce::Graphics& g) {
                       ARROW_WIDTH / 2;
         }
 
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         g.fillRect(insertX, 4, 2, getHeight() - 8);
     }
 }
@@ -391,7 +352,7 @@ int PadChainPanel::calculateInsertIndex(int mouseX) const {
     int containerX = mouseX + viewport_.getViewPositionX() - viewport_.getX();
 
     for (size_t i = 0; i < slots_.size(); ++i) {
-        auto& slot = slots_[i];
+        const auto& slot = slots_[i];
         int slotMid = slot->getX() + slot->getWidth() / 2;
         if (containerX < slotMid)
             return static_cast<int>(i);

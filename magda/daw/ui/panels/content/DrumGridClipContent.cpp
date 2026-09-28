@@ -5,21 +5,19 @@
 #include <set>
 
 #include "../../components/pianoroll/PhaseMarker.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/CursorManager.hpp"
-#include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../utils/SelectionPolicy.hpp"
-#include "AudioBridge.hpp"
-#include "AudioEngine.hpp"
 #include "BinaryData.h"
-#include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/DrumGridRoles.hpp"
 #include "audio/plugins/DrumGridTemplates.hpp"
-#include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "core/ClipOperations.hpp"
+#include "core/DrumGridPads.hpp"
 #include "core/DrumkitManager.hpp"
 #include "core/GestureRouter.hpp"
 #include "core/MidiNoteCommands.hpp"
+#include "core/RackInfo.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
@@ -36,11 +34,7 @@
 
 namespace magda::daw::ui {
 
-//==============================================================================
-// Helper: find DrumGridPlugin for a track
-//==============================================================================
 namespace {
-namespace te = tracktion::engine;
 
 // Lookup the (track, device) of the primary instrument plugin for the editing
 // clip. Returns {INVALID_TRACK_ID, INVALID_DEVICE_ID} if there's no clip or no
@@ -67,38 +61,8 @@ PrimaryInstance primaryInstanceForClip(magda::ClipId clipId) {
 }
 
 const magda::KitRow* findKitRow(const std::vector<magda::KitRow>& rows, int noteNumber) {
-    auto it = std::find_if(rows.begin(), rows.end(), [noteNumber](const magda::KitRow& r) {
-        return r.noteNumber == noteNumber;
-    });
+    const auto it = std::ranges::find(rows, noteNumber, &magda::KitRow::noteNumber);
     return it == rows.end() ? nullptr : &(*it);
-}
-
-daw::audio::DrumGridPlugin* findDrumGridForTrack(magda::TrackId trackId) {
-    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-    if (!audioEngine)
-        return nullptr;
-    auto* bridge = audioEngine->getAudioBridge();
-    if (!bridge)
-        return nullptr;
-
-    auto* teTrack = bridge->getAudioTrack(trackId);
-    if (!teTrack)
-        return nullptr;
-
-    for (auto* plugin : teTrack->pluginList) {
-        if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(plugin))
-            return dg;
-
-        if (auto* rackInstance = dynamic_cast<te::RackInstance*>(plugin)) {
-            if (rackInstance->type != nullptr) {
-                for (auto* innerPlugin : rackInstance->type->getPlugins()) {
-                    if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(innerPlugin))
-                        return dg;
-                }
-            }
-        }
-    }
-    return nullptr;
 }
 
 }  // namespace
@@ -158,8 +122,8 @@ class DrumGridClipGrid : public juce::Component,
             repaint();
         }
     }
-    void setPlayheadPosition(double pos) {
-        playheadPosition_ = pos;
+    void setPlayheadBeat(double timelineBeat) {
+        playheadBeat_ = timelineBeat;
         repaint();
     }
     void setGridResolutionBeats(double beats) {
@@ -175,17 +139,12 @@ class DrumGridClipGrid : public juce::Component,
         overlayTrackIds_ = std::move(trackIds);
         repaint();
     }
-    void setTimeSignatureNumerator(int n) {
-        if (timeSigNumerator_ != n) {
-            timeSigNumerator_ = n;
+    void setTimeSignature(int numerator, int denominator) {
+        if (timeSigNumerator_ != numerator || timeSigDenominator_ != denominator) {
+            timeSigNumerator_ = numerator;
+            timeSigDenominator_ = denominator;
             repaint();
         }
-    }
-    void setLoopRegion(double offsetBeats, double lengthBeats, bool enabled) {
-        loopOffsetBeats_ = offsetBeats;
-        loopLengthBeats_ = lengthBeats;
-        loopEnabled_ = enabled;
-        repaint();
     }
     void setPhasePreview(double beats, bool active) {
         phasePreviewBeats_ = beats;
@@ -499,8 +458,7 @@ class DrumGridClipGrid : public juce::Component,
         // overlay track's clip changes
         if (!overlayTrackIds_.empty()) {
             const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
-            if (clip && std::find(overlayTrackIds_.begin(), overlayTrackIds_.end(),
-                                  clip->trackId) != overlayTrackIds_.end()) {
+            if (clip && std::ranges::contains(overlayTrackIds_, clip->trackId)) {
                 repaint();
             }
         }
@@ -513,7 +471,7 @@ class DrumGridClipGrid : public juce::Component,
         auto bounds = getLocalBounds();
 
         // Background
-        g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
+        g.fillAll(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
 
         if (!padRows_ || padRows_->empty())
             return;
@@ -521,7 +479,7 @@ class DrumGridClipGrid : public juce::Component,
         int numRows = static_cast<int>(padRows_->size());
 
         // Draw horizontal row lines
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.5f));
         for (int i = 0; i <= numRows; ++i) {
             int y = i * rowHeight_;
             g.drawHorizontalLine(y, 0.0f, static_cast<float>(bounds.getWidth()));
@@ -531,20 +489,21 @@ class DrumGridClipGrid : public juce::Component,
         {
             double beatsVisible =
                 static_cast<double>(bounds.getWidth() - GRID_LEFT_PADDING) / pixelsPerBeat_;
-            float gridBottom = static_cast<float>(numRows * rowHeight_);
+            auto gridBottom = static_cast<float>(numRows * rowHeight_);
             int maxX = bounds.getWidth();
-            int tsNum = timeSigNumerator_;
+            const double barBeats = magda::beatsPerBar(timeSigNumerator_, timeSigDenominator_);
+            const double sigBeat = magda::signatureBeatLength(timeSigDenominator_);
 
             // Pass 1: Subdivision lines at grid resolution (finest, drawn first)
             if (gridResolutionBeats_ > 0.0) {
-                g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.45f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.45f));
                 int numLines =
                     static_cast<int>(std::ceil((beatsVisible + 1.0) / gridResolutionBeats_));
                 for (int i = 0; i <= numLines; i++) {
                     double beat = i * gridResolutionBeats_;
                     if (beat > beatsVisible + 1.0)
                         break;
-                    if (std::abs(beat - std::round(beat)) < 0.001)
+                    if (std::abs(beat - std::round(beat / sigBeat) * sigBeat) < 0.001)
                         continue;
                     int x = static_cast<int>(beat * pixelsPerBeat_) + GRID_LEFT_PADDING;
                     if (x > maxX)
@@ -554,22 +513,21 @@ class DrumGridClipGrid : public juce::Component,
             }
 
             // Pass 2: Beat lines
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.55f));
-            for (int b = 1; b <= static_cast<int>(beatsVisible) + 1; b++) {
-                if (b % tsNum == 0)
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.55f));
+            for (int b = 1; b * sigBeat <= beatsVisible + 1.0; b++) {
+                const double barRemainder = std::fmod(b * sigBeat, barBeats);
+                if (barRemainder < 0.001 || barRemainder > barBeats - 0.001)
                     continue;
-                int x =
-                    static_cast<int>(static_cast<double>(b) * pixelsPerBeat_) + GRID_LEFT_PADDING;
+                int x = static_cast<int>(b * sigBeat * pixelsPerBeat_) + GRID_LEFT_PADDING;
                 if (x > maxX)
                     break;
                 g.drawVerticalLine(x, 0.0f, gridBottom);
             }
 
             // Pass 3: Bar lines
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.85f));
-            for (int bar = 0; bar * tsNum <= static_cast<int>(beatsVisible) + 1; bar++) {
-                int x = static_cast<int>(static_cast<double>(bar * tsNum) * pixelsPerBeat_) +
-                        GRID_LEFT_PADDING;
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.85f));
+            for (int bar = 0; bar * barBeats <= beatsVisible + 1.0; bar++) {
+                int x = static_cast<int>(bar * barBeats * pixelsPerBeat_) + GRID_LEFT_PADDING;
                 if (x > maxX)
                     break;
                 g.drawVerticalLine(x, 0.0f, gridBottom);
@@ -649,30 +607,24 @@ class DrumGridClipGrid : public juce::Component,
             }
         }
 
-        // Draw playhead — only when within the clip's time range
-        if (playheadPosition_ >= 0.0 && clipLengthBeats_ > 0.0) {
+        // Draw playhead where the note being heard is drawn
+        const auto* playheadClip =
+            playheadBeat_ >= 0.0 ? magda::ClipManager::getInstance().getClip(clipId_) : nullptr;
+        if (playheadClip) {
             double tempo = 120.0;
             if (auto* controller = magda::TimelineController::getCurrent()) {
                 tempo = controller->getState().tempo.bpm;
             }
-            double playheadBeat = playheadPosition_ * (tempo / 60.0);
-            double relBeat = playheadBeat - clipStartBeats_;
-
-            if (relBeat >= 0.0 && relBeat <= clipLengthBeats_) {
-                double displayBeat = relativeMode_ ? relBeat : playheadBeat;
-
-                // Wrap playhead within loop region when looping is enabled
-                if (loopEnabled_ && loopLengthBeats_ > 0.0) {
-                    double beatPos = std::fmod(relBeat - loopOffsetBeats_, loopLengthBeats_);
-                    if (beatPos < 0.0)
-                        beatPos += loopLengthBeats_;
-                    displayBeat = clipBeatToDisplayBeat(loopOffsetBeats_ + beatPos);
-                }
-
-                int playheadX = beatToPixel(displayBeat);
-
+            const auto contentBeat =
+                playheadClip->view == magda::ClipView::Session
+                    ? magda::ClipOperations::contentBeatAtSessionBeat(
+                          *playheadClip, playheadClip->sessionPlayheadPos * tempo / 60.0, tempo)
+                    : magda::ClipOperations::contentBeatAtTimelineBeat(*playheadClip, playheadBeat_,
+                                                                       tempo);
+            if (contentBeat) {
+                int playheadX = beatToPixel(clipBeatToDisplayBeat(*contentBeat));
                 if (playheadX >= 0 && playheadX <= bounds.getWidth()) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
                     g.fillRect(playheadX - 1, 0, 2, numRows * rowHeight_);
                 }
             }
@@ -735,7 +687,7 @@ class DrumGridClipGrid : public juce::Component,
     // an unselected note is edited alone.
     void adjustVelocityForNote(size_t noteIndex, int velocityDelta) {
         std::vector<size_t> targets = selectedNoteIndices();
-        if (std::find(targets.begin(), targets.end(), noteIndex) == targets.end())
+        if (!std::ranges::contains(targets, noteIndex))
             targets = {noteIndex};
         magda::adjustMidiNoteVelocities(clipId_, targets, velocityDelta);
         flashVelocityReadout(noteIndex);
@@ -896,8 +848,7 @@ class DrumGridClipGrid : public juce::Component,
         if (row >= 0 && row < static_cast<int>(padRows_->size())) {
             emptyClickRow_ = row;
             double rawBeat = displayBeatToClipBeat(pixelToBeat(e.x));
-            if (rawBeat < 0.0)
-                rawBeat = 0.0;
+            rawBeat = std::max(rawBeat, 0.0);
             emptyClickBeat_ = rawBeat;
             if (e.mods.isShiftDown()) {
                 isRepeatStamping_ = true;
@@ -1178,18 +1129,15 @@ class DrumGridClipGrid : public juce::Component,
     double clipStartBeats_ = 0.0;
     double clipLengthBeats_ = 0.0;
     double timelineLengthBeats_ = 0.0;
-    double playheadPosition_ = -1.0;
+    double playheadBeat_ = -1.0;
     double editCursorPosition_ = -1.0;  // seconds, -1 = hidden
     bool editCursorVisible_ = true;     // blink state
     double gridResolutionBeats_ = 0.25;
     bool snapEnabled_ = true;
     int timeSigNumerator_ = 4;
+    int timeSigDenominator_ = 4;
     bool relativeMode_ = true;
 
-    // Loop region
-    double loopOffsetBeats_ = 0.0;
-    double loopLengthBeats_ = 0.0;
-    bool loopEnabled_ = false;
     bool nearPhaseMarker_ = false;
 
     // Phase preview during drag
@@ -1382,11 +1330,10 @@ class DrumGridClipGrid : public juce::Component,
         if (!clip)
             return false;
 
-        for (const auto& note : clip->midiNotes) {
-            if (note.noteNumber == noteNumber && std::abs(note.startBeat - beat) < 0.000001)
-                return true;
-        }
-        return false;
+        const auto isNoteAtBeat = [&](const auto& note) {
+            return note.noteNumber == noteNumber && std::abs(note.startBeat - beat) < 0.000001;
+        };
+        return std::ranges::any_of(clip->midiNotes, isNoteAtBeat);
     }
 
     void stampRepeatedNotes() {
@@ -1422,7 +1369,7 @@ class DrumGridClipGrid : public juce::Component,
         const int width =
             juce::jmax(4, static_cast<int>(getDefaultNoteLengthBeats() * pixelsPerBeat_));
         const int height = rowHeight_ - 2;
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.35f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.35f));
         for (double beat : repeatStampBeats()) {
             const int x = beatToPixel(clipBeatToDisplayBeat(beat));
             g.fillRoundedRectangle(static_cast<float>(x), static_cast<float>(y + 1),
@@ -1784,13 +1731,13 @@ class DrumGridRowLabels : public juce::Component {
         rowEditor_->setBorder({1, 2, 1, 2});
         rowEditor_->setIndents(4, 1);
         rowEditor_->setColour(juce::TextEditor::backgroundColourId,
-                              DarkTheme::getColour(DarkTheme::BACKGROUND));
+                              ActiveTheme::getColour(ActiveTheme::BACKGROUND));
         rowEditor_->setColour(juce::TextEditor::textColourId,
-                              DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                              ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         rowEditor_->setColour(juce::TextEditor::outlineColourId,
-                              DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                              ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         rowEditor_->setColour(juce::TextEditor::focusedOutlineColourId,
-                              DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                              ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         juce::String seed;
         if (getRowLabel)
             seed = getRowLabel(noteNumber);
@@ -1814,7 +1761,7 @@ class DrumGridRowLabels : public juce::Component {
         auto bounds = getLocalBounds();
 
         // Background
-        g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
+        g.fillAll(ActiveTheme::getColour(ActiveTheme::BACKGROUND_ALT));
 
         if (!padRows_ || padRows_->empty())
             return;
@@ -1831,19 +1778,19 @@ class DrumGridRowLabels : public juce::Component {
 
             // Alternating row background
             if (i % 2 == 0) {
-                g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.08f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.08f));
                 g.fillRect(0, y, bounds.getWidth(), rowHeight_);
             }
 
             // Row separator
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.3f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.3f));
             g.drawHorizontalLine(y + rowHeight_, 0.0f, static_cast<float>(bounds.getWidth()));
 
             const auto& padRow = (*padRows_)[i];
 
             // Live-input highlight for monitored notes currently held.
             if (pressedNotes_.count(padRow.noteNumber) != 0) {
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.35f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.35f));
                 g.fillRect(0, y, bounds.getWidth(), rowHeight_);
             }
 
@@ -1860,12 +1807,12 @@ class DrumGridRowLabels : public juce::Component {
                         const int pillW = juce::jmax(18, shortTag.length() * 8 + 8);
                         juce::Rectangle<float> pill(
                             static_cast<float>(textX),
-                            static_cast<float>(y + (rowHeight_ - pillH) / 2),
+                            static_cast<float>(y) + static_cast<float>(rowHeight_ - pillH) / 2.0f,
                             static_cast<float>(pillW), static_cast<float>(pillH));
                         g.setColour(
-                            DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.85f));
+                            ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.85f));
                         g.fillRoundedRectangle(pill, 3.0f);
-                        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+                        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
                         g.drawText(shortTag, pill.toNearestInt(), juce::Justification::centred,
                                    false);
                         textX += pillW + 4;
@@ -1873,8 +1820,8 @@ class DrumGridRowLabels : public juce::Component {
                 }
 
                 // Pad name (after the role pill)
-                g.setColour(padRow.hasChain ? DarkTheme::getColour(DarkTheme::TEXT_PRIMARY)
-                                            : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                g.setColour(padRow.hasChain ? ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY)
+                                            : ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
                 g.drawText(padRow.name,
                            juce::Rectangle<int>(textX, y + 1, juce::jmax(0, textRight - textX),
                                                 rowHeight_ - 2),
@@ -1887,11 +1834,11 @@ class DrumGridRowLabels : public juce::Component {
             bool isHovered = (hoverRow_ == i);
 
             if (isPlaying) {
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
             } else if (isHovered) {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.7f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.7f));
             } else {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.3f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.3f));
             }
 
             // Draw play triangle
@@ -1903,7 +1850,7 @@ class DrumGridRowLabels : public juce::Component {
         }
 
         // Right border
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawVerticalLine(bounds.getWidth() - 1, 0.0f, static_cast<float>(bounds.getHeight()));
     }
 
@@ -2046,7 +1993,7 @@ class DrumGridLabelDivider : public juce::Component {
         // Idle: invisible (inherits the parent's bg). Hover/drag: subtle accent
         // so the user can see the hit zone they grabbed.
         if (isMouseOverOrDragging()) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.5f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.5f));
             g.fillRect(getLocalBounds());
         }
     }
@@ -2111,8 +2058,8 @@ DrumGridClipContent::DrumGridClipContent() {
     previewToggle_ = std::make_unique<magda::SvgButton>("NotePreview", BinaryData::master_off_svg,
                                                         BinaryData::master_off_svgSize);
     previewToggle_->setTooltip("Preview notes (click a note to hear it)");
-    previewToggle_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    previewToggle_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    previewToggle_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    previewToggle_->setActiveColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     syncNotePreviewToggle(*previewToggle_, isNotePreviewEnabled());
     previewToggle_->onClick = [this]() {
         setNotePreviewEnabled(!isNotePreviewEnabled());
@@ -2210,8 +2157,9 @@ DrumGridClipContent::DrumGridClipContent() {
         setRowHeightAnchored(rowHeight_ + heightDelta, anchorRow, anchorScreenY, true);
     };
     if (auto* controller = magda::TimelineController::getCurrent()) {
-        gridComponent_->setTimeSignatureNumerator(
-            controller->getState().tempo.timeSignatureNumerator);
+        const auto& tempo = controller->getState().tempo;
+        gridComponent_->setTimeSignature(tempo.timeSignatureNumerator,
+                                         tempo.timeSignatureDenominator);
     }
 
     // Set up callbacks
@@ -2271,7 +2219,7 @@ DrumGridClipContent::DrumGridClipContent() {
     };
 
     gridComponent_->onNoteSelectionChanged = [this](magda::ClipId clipId,
-                                                    std::vector<size_t> noteIndices) {
+                                                    const std::vector<size_t>& noteIndices) {
         if (noteIndices.empty()) {
             magda::SelectionManager::getInstance().clearNoteSelection();
         } else {
@@ -2289,7 +2237,7 @@ DrumGridClipContent::DrumGridClipContent() {
     };
 
     // Handle copy from context menu
-    gridComponent_->onCopyNotes = [](magda::ClipId clipId, std::vector<size_t> noteIndices) {
+    gridComponent_->onCopyNotes = [](magda::ClipId clipId, const std::vector<size_t>& noteIndices) {
         magda::ClipManager::getInstance().copyNotesToClipboard(clipId, noteIndices);
     };
 
@@ -2327,7 +2275,7 @@ DrumGridClipContent::DrumGridClipContent() {
 
     // Handle duplicate from context menu
     gridComponent_->onDuplicateNotes = [this](magda::ClipId clipId,
-                                              std::vector<size_t> noteIndices) {
+                                              const std::vector<size_t>& noteIndices) {
         auto& clipManager = magda::ClipManager::getInstance();
         const auto* clip = clipManager.getClip(clipId);
         if (!clip || !clip->isMidi())
@@ -2385,6 +2333,9 @@ DrumGridClipContent::DrumGridClipContent() {
     if (editingClipId_ != magda::INVALID_CLIP_ID) {
         setClip(editingClipId_);
     }
+
+    // Deferred from the base constructor: needs gridComponent_ to exist (#2391).
+    applyClipGridSettings();
 }
 
 DrumGridClipContent::~DrumGridClipContent() {
@@ -2462,9 +2413,9 @@ void DrumGridClipContent::setGridPixelsPerBeat(double ppb) {
         gridComponent_->setPixelsPerBeat(ppb);
 }
 
-void DrumGridClipContent::setGridPlayheadPosition(double position) {
+void DrumGridClipContent::setGridPlayheadBeat(double timelineBeat) {
     if (gridComponent_)
-        gridComponent_->setPlayheadPosition(position);
+        gridComponent_->setPlayheadBeat(timelineBeat);
 }
 
 void DrumGridClipContent::setGridEditCursorPosition(double pos, bool visible) {
@@ -2485,8 +2436,9 @@ void DrumGridClipContent::onGridResolutionChanged() {
         gridComponent_->setSnapEnabled(snapEnabled_);
 
         if (auto* controller = magda::TimelineController::getCurrent()) {
-            gridComponent_->setTimeSignatureNumerator(
-                controller->getState().tempo.timeSignatureNumerator);
+            const auto& tempo = controller->getState().tempo;
+            gridComponent_->setTimeSignature(tempo.timeSignatureNumerator,
+                                             tempo.timeSignatureDenominator);
         }
     }
     if (timeRuler_)
@@ -2498,7 +2450,7 @@ void DrumGridClipContent::onGridResolutionChanged() {
 // ============================================================================
 
 void DrumGridClipContent::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getPanelBackgroundColour());
+    g.fillAll(ActiveTheme::getPanelBackgroundColour());
 
     if (getWidth() <= 0 || getHeight() <= 0)
         return;
@@ -2712,7 +2664,7 @@ void DrumGridClipContent::clipsChanged() {
 void DrumGridClipContent::clipSelectionChanged(magda::ClipId clipId) {
     if (clipId == magda::INVALID_CLIP_ID) {
         editingClipId_ = magda::INVALID_CLIP_ID;
-        drumGrid_ = nullptr;
+        hasPadDevice_ = false;
         gridComponent_->setClipId(magda::INVALID_CLIP_ID);
         padRows_.clear();
         updateGridSize();
@@ -2733,7 +2685,7 @@ void DrumGridClipContent::clipSelectionChanged(magda::ClipId clipId) {
 // ============================================================================
 
 void DrumGridClipContent::setClip(magda::ClipId clipId) {
-    if (editingClipId_ == clipId && drumGrid_ != nullptr)
+    if (editingClipId_ == clipId && hasPadDevice_)
         return;
 
     editingClipId_ = clipId;
@@ -2765,14 +2717,10 @@ void DrumGridClipContent::centerOnNotes() {
 
     int targetRow = -1;
     if (clip && !clip->midiNotes.empty()) {
-        // Find note range and center on midpoint
-        int minNote = 127;
-        int maxNote = 0;
-        for (const auto& note : clip->midiNotes) {
-            minNote = juce::jmin(minNote, note.noteNumber);
-            maxNote = juce::jmax(maxNote, note.noteNumber);
-        }
-        int midNote = (minNote + maxNote) / 2;
+        // Centre on the midpoint of the note range.
+        const auto [lowest, highest] =
+            std::ranges::minmax(clip->midiNotes, {}, &magda::MidiNote::noteNumber);
+        const int midNote = (lowest.noteNumber + highest.noteNumber) / 2;
 
         // Find the row index for this note (rows are reversed: high notes at top)
         for (int i = 0; i < static_cast<int>(padRows_.size()); ++i) {
@@ -2837,25 +2785,7 @@ void DrumGridClipContent::updateGridSize() {
     gridComponent_->setClipLengthBeats(clipLengthBeats);
     gridComponent_->setTimelineLengthBeats(displayLengthBeats);
 
-    // Pass loop region data to grid
-    if (clip) {
-        // Both values are timeline beats, which is what the grid draws in. A
-        // MIDI clip keeps them on the container; an audio clip's loop is a
-        // source region that has to come back through the project tempo.
-        const double loopOffsetBeats = clip->loopStartInBeats(tempo);
-        const double sourceLengthBeats = clip->loopLengthInBeats(tempo);
-        gridComponent_->setLoopRegion(loopOffsetBeats, sourceLengthBeats, clip->loopEnabled);
-    } else {
-        gridComponent_->setLoopRegion(0.0, 0.0, false);
-    }
-
     clampViewportVerticalScroll();
-}
-
-void DrumGridClipContent::updateGridLoopRegion() {
-    if (draggingLoopRegion_) {
-        gridComponent_->setLoopRegion(previewLoopStartBeats_, previewLoopLengthBeats_, true);
-    }
 }
 
 void DrumGridClipContent::setGridPhasePreview(double beats, bool active) {
@@ -2872,10 +2802,10 @@ void DrumGridClipContent::applyOverlayTracks() {
 // ============================================================================
 
 void DrumGridClipContent::drawSidebar(juce::Graphics& g, juce::Rectangle<int> area) {
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND_ALT));
     g.fillRect(area);
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawVerticalLine(area.getRight() - 1, static_cast<float>(area.getY()),
                        static_cast<float>(area.getBottom()));
 
@@ -2890,8 +2820,8 @@ void DrumGridClipContent::drawSidebar(juce::Graphics& g, juce::Rectangle<int> ar
     const int topDividerY = topClusterBottom + padding / 2;
     const int bottomDividerY = bottomClusterTop - padding / 2;
 
-    const float x1 = static_cast<float>(area.getX() + 5);
-    const float x2 = static_cast<float>(area.getRight() - 5);
+    const auto x1 = static_cast<float>(area.getX() + 5);
+    const auto x2 = static_cast<float>(area.getRight() - 5);
     if (foldToggle_ && bottomDividerY - topDividerY > padding) {
         g.drawHorizontalLine(topDividerY, x1, x2);
         g.drawHorizontalLine(bottomDividerY, x1, x2);
@@ -2919,7 +2849,7 @@ void DrumGridClipContent::updateVelocityLane() {
         if (auto* controller = magda::TimelineController::getCurrent()) {
             tempo = controller->getState().tempo.bpm;
         }
-        double clipLengthBeats = clip->getLengthInBeats(tempo);
+        double clipLengthBeats = clip->getLengthInBeats();
         midiDrawer_->setClipLengthBeats(clipLengthBeats);
     }
 
@@ -2930,20 +2860,23 @@ void DrumGridClipContent::updateVelocityLane() {
 // DrumGrid-specific helpers
 // ============================================================================
 
-void DrumGridClipContent::findDrumGrid() {
-    drumGrid_ = nullptr;
-    if (editingClipId_ == magda::INVALID_CLIP_ID)
-        return;
-
+const magda::DeviceInfo* DrumGridClipContent::padDevice() const {
     const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
-    if (!clip)
-        return;
+    return clip != nullptr ? magda::TrackManager::getInstance().findPadDevice(clip->trackId)
+                           : nullptr;
+}
 
-    drumGrid_ = findDrumGridForTrack(clip->trackId);
-    if (drumGrid_) {
-        baseNote_ = daw::audio::DrumGridPlugin::baseNote;
-        numPads_ = daw::audio::DrumGridPlugin::maxPads;
-    }
+const magda::ChainInfo* DrumGridClipContent::padForNote(int noteNumber) const {
+    const auto* device = padDevice();
+    if (device == nullptr || !device->pads)
+        return nullptr;
+    return magda::findPadChain(*device->pads.get(), noteNumber - magda::kPadBaseNote);
+}
+
+void DrumGridClipContent::findDrumGrid() {
+    hasPadDevice_ = padDevice() != nullptr;
+    baseNote_ = hasPadDevice_ ? magda::kPadBaseNote : 0;
+    numPads_ = hasPadDevice_ ? magda::kPadCount : 128;
 }
 
 juce::String DrumGridClipContent::resolvePadName(int padIndex) const {
@@ -2959,29 +2892,13 @@ juce::String DrumGridClipContent::resolvePadName(int padIndex) const {
         }
     }
 
-    if (drumGrid_) {
-        const auto* chain = drumGrid_->getChainForNote(noteNumber);
-        if (chain) {
-            // Check if chain has a custom name
-            if (chain->name.isNotEmpty())
-                return chain->name;
-
-            // Check for MagdaSamplerPlugin with loaded sample
-            for (const auto& plugin : chain->plugins) {
-                if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
-                    auto sampleFile = sampler->getSampleFile();
-                    if (sampleFile.existsAsFile())
-                        return sampleFile.getFileNameWithoutExtension();
-                }
-            }
-
-            // Has chain but no sample - show first plugin name
-            if (!chain->plugins.empty())
-                return chain->plugins[0]->getName();
-        }
+    if (const auto* pad = padForNote(noteNumber)) {
+        if (pad->name.isNotEmpty())
+            return pad->name;
+        if (auto voice = magda::padVoiceName(*pad); voice.isNotEmpty())
+            return voice;
     }
 
-    // Fallback: MIDI note name
     return juce::MidiMessage::getMidiNoteName(noteNumber, true, true, 3);
 }
 
@@ -3027,18 +2944,12 @@ void DrumGridClipContent::buildPadRows() {
 
     for (int i = 0; i < numPads_; ++i) {
         int noteNumber = baseNote_ + i;
-        if (filterToUsed &&
-            std::find(usedNotes.begin(), usedNotes.end(), noteNumber) == usedNotes.end())
+        if (filterToUsed && !std::ranges::contains(usedNotes, noteNumber))
             continue;
-        bool hasChain = false;
-        if (drumGrid_) {
-            hasChain = (drumGrid_->getChainForNote(noteNumber) != nullptr);
-        }
-
         PadRow row;
         row.noteNumber = noteNumber;
         row.name = resolvePadName(i);
-        row.hasChain = hasChain;
+        row.hasChain = padForNote(noteNumber) != nullptr;
         if (inst.valid()) {
             if (const auto* kitRow = findKitRow(inst.device->kitRows, noteNumber))
                 row.role = kitRow->role;
@@ -3059,9 +2970,7 @@ void DrumGridClipContent::refreshPadRowNames() {
             continue;
 
         juce::String newName = resolvePadName(padIndex);
-        bool newHasChain = false;
-        if (drumGrid_)
-            newHasChain = (drumGrid_->getChainForNote(row.noteNumber) != nullptr);
+        const bool newHasChain = padForNote(row.noteNumber) != nullptr;
         juce::String newRole;
         if (inst.valid()) {
             if (const auto* kitRow = findKitRow(inst.device->kitRows, row.noteNumber))

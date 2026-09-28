@@ -2,6 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <optional>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -16,28 +19,7 @@ namespace {
 /// Whether a span reaches into the window at all. Half-open, like every other
 /// span comparison here: a clip ending exactly where the window starts is over.
 bool reachesInto(const SnapshotSpan& span, double windowStart, double windowEnd) {
-    return span.startSeconds < windowEnd && span.endSeconds > windowStart;
-}
-
-/**
- * @brief The beat face of a moment inside @p event's span.
- *
- * The pool works in seconds, because that is what the transport hands it, and an
- * auto tempo event's position is a question about beats (EventPlacement.hpp).
- * Both faces of the span are already resolved, so a moment inside it can be
- * placed on the beat axis without a tempo map: linear between the ends, which is
- * exact at the ends themselves and that is the case that has to be exact. A cue
- * for a clip that has not started is worked out at its own first sample, and a
- * cue for one the transport is already inside is corrected by the first read
- * either way.
- */
-double beatNear(const AudioEventPlayback& event, double seconds) {
-    const auto span = event.span.lengthSeconds();
-    if (!(span > 0.0))
-        return event.span.startBeat;
-
-    const auto through = (seconds - event.span.startSeconds) / span;
-    return event.span.startBeat + through * event.span.lengthBeats();
+    return span.seconds.start < windowEnd && span.seconds.end > windowStart;
 }
 
 /// One entry that wants a stream, and what decides whether it gets one.
@@ -46,14 +28,22 @@ struct Candidate {
     EventId eventId = INVALID_EVENT_ID;
     const AudioClipPlayback* clip = nullptr;
     const AudioEventPlayback* event = nullptr;
-    double startSeconds = 0.0;
-    double endSeconds = 0.0;
+    SecondsRange seconds;
 
     /// Whether the transport is inside it right now. A clip that is sounding
     /// keeps its reader ahead of one that has not started, because taking a
     /// stream off a clip mid-note is the one thing worse than not having
     /// pointed it at the next one yet.
     bool sounding = false;
+
+    /// Where the reader is pointed: the entry's own first sample, or where the
+    /// cursor already is for a clip the transport is standing inside.
+    double cueSeconds = 0.0;
+    bool session = false;
+    bool loopDestination = false;
+
+    /// Where a queued hand-back picks it up mid-material, for a held track (#2787).
+    std::optional<double> resumesAt;
 };
 
 /**
@@ -81,8 +71,8 @@ int peakConcurrent(const std::vector<Candidate>& candidates, double windowStart,
     edges.reserve(candidates.size() * 2);
 
     for (const auto& candidate : candidates) {
-        const auto from = std::max(candidate.startSeconds, windowStart);
-        const auto to = std::min(candidate.endSeconds, windowEnd);
+        const auto from = std::max(candidate.seconds.start, windowStart);
+        const auto to = std::min(candidate.seconds.end, windowEnd);
         if (to <= from)
             continue;
 
@@ -141,7 +131,7 @@ int unbridgedAmong(const std::vector<Candidate>& candidates, int kept, double wi
     std::vector<double> keptEnds;
     keptEnds.reserve(static_cast<std::size_t>(kept));
     for (auto index = 0; index < kept; ++index)
-        keptEnds.push_back(candidates[static_cast<std::size_t>(index)].endSeconds + blockSeconds);
+        keptEnds.push_back(candidates[static_cast<std::size_t>(index)].seconds.end + blockSeconds);
 
     std::sort(keptEnds.begin(), keptEnds.end());
 
@@ -156,15 +146,15 @@ int unbridgedAmong(const std::vector<Candidate>& candidates, int kept, double wi
         const auto& dropped = candidates[index];
 
         // Sorted by start, so the first one past the bridge ends the walk.
-        if (dropped.startSeconds >= bridgeEnd)
+        if (dropped.seconds.start >= bridgeEnd)
             break;
 
-        while (keptEnded < keptEnds.size() && keptEnds[keptEnded] <= dropped.startSeconds)
+        while (keptEnded < keptEnds.size() && keptEnds[keptEnded] <= dropped.seconds.start)
             ++keptEnded;
 
         countedEnds.erase(
             countedEnds.begin(),
-            std::upper_bound(countedEnds.begin(), countedEnds.end(), dropped.startSeconds));
+            std::upper_bound(countedEnds.begin(), countedEnds.end(), dropped.seconds.start));
 
         const auto live =
             static_cast<int>(keptEnds.size() - keptEnded) + static_cast<int>(countedEnds.size());
@@ -173,7 +163,7 @@ int unbridgedAmong(const std::vector<Candidate>& candidates, int kept, double wi
 
         ++unbridged;
 
-        const auto end = dropped.endSeconds + blockSeconds;
+        const auto end = dropped.seconds.end + blockSeconds;
         countedEnds.insert(std::upper_bound(countedEnds.begin(), countedEnds.end(), end), end);
     }
 
@@ -181,6 +171,49 @@ int unbridgedAmong(const std::vector<Candidate>& candidates, int kept, double wi
 }
 
 }  // namespace
+
+std::int64_t stretchCellOpening(const AudioEventPlayback& event, double seconds,
+                                double sampleRate) {
+    const auto eventStart = sampleAt(event.span.seconds.start * sampleRate);
+    const auto index = static_cast<std::int64_t>(
+        std::floor(static_cast<double>(sampleAt(seconds * sampleRate) - eventStart) /
+                   static_cast<double>(kStretchCellSamples)));
+    return eventStart + index * kStretchCellSamples;
+}
+
+StretchPrimeKey standbyKeyFor(const ClipStretcher& active, int preRoll,
+                              const AudioClipPlayback& clip, const AudioEventPlayback& event,
+                              std::int64_t cell, const TempoMap& tempo, std::uint64_t snapshot,
+                              double sampleRate) {
+    const auto prime = cellPrimeAt(active, preRoll, cell, sampleRate, [&](double seconds) {
+        return readingPositionAt(clip, event, seconds, tempo.timeToBeat(seconds), sampleRate);
+    });
+    return {cell, prime.readFrom, prime.preRoll, prime.step, tempo.fingerprint(), snapshot};
+}
+
+std::shared_ptr<StandbyStretcher> primeStandby(const StretchPrimeKey& key,
+                                               const StretchSetup& setup, AudioFileReader& source,
+                                               const RenderContext& context) {
+    std::shared_ptr<ClipStretcher> stretcher = makeStretcher(setup);
+    if (stretcher == nullptr || !stretcher->canPrimeFromWindow())
+        return nullptr;
+
+    // What the voice's priming read takes: as much of the window as fits, from its far end.
+    const auto count = std::min(key.preRoll, stretcher->preRollCapacity());
+    juce::AudioBuffer<float> window(std::max(1, context.numChannels), std::max(0, count));
+    window.clear();
+    if (count > 0)
+        source.read(window, 0, key.readFrom - count, count);
+
+    if (!stretcher->primeFromWindow(juce::dsp::AudioBlock<const float>(window), key.step))
+        return nullptr;
+
+    auto standby = std::make_shared<StandbyStretcher>();
+    standby->stretcher = std::move(stretcher);
+    standby->key = key;
+    standby->setup = setup;
+    return standby;
+}
 
 ClipVoicePool::ClipVoicePool(AudioFileReaderFactory& files, PrefetchThread& reader,
                              const RenderContext& context, const PrefetchSettings& settings)
@@ -191,23 +224,43 @@ ClipVoicePool::~ClipVoicePool() {
     // nothing may be in the prefetch thread's round either. An empty table
     // published first is what takes care of the callback; removal takes care of
     // the reader, and waits for it.
-    feed_.publish(std::make_shared<const ClipStreamTable>());
+    try {
+        feed_.publish(std::make_shared<const ClipStreamTable>());
+    } catch (const std::exception& e) {
+        std::fprintf(stderr, "[ClipVoicePool] publish failed: %s\n", e.what());
+    } catch (...) {
+        std::fprintf(stderr, "[ClipVoicePool] publish failed: unknown exception\n");
+    }
 
-    const std::lock_guard<std::mutex> guard(streamsLock_);
-    for (auto& [key, reader] : streams_)
-        if (reader.stream != nullptr)
-            reader_.remove(*reader.stream);
+    // Must run even if publish() above threw: a stream still registered with
+    // the prefetch reader would otherwise dangle once this pool is gone.
+    try {
+        const std::scoped_lock guard(streamsLock_);
+        for (auto& [key, reader] : streams_)
+            if (reader.stream != nullptr)
+                reader_.remove(*reader.stream);
 
-    streams_.clear();
+        streams_.clear();
+    } catch (const std::exception& e) {
+        std::fprintf(stderr, "[ClipVoicePool] teardown failed: %s\n", e.what());
+    } catch (...) {
+        std::fprintf(stderr, "[ClipVoicePool] teardown failed: unknown exception\n");
+    }
 }
 
 void ClipVoicePool::setSnapshot(std::shared_ptr<const ClipSnapshot> snapshot) {
-    const std::lock_guard<std::mutex> guard(snapshotLock_);
+    const std::scoped_lock guard(snapshotLock_);
     snapshot_ = std::move(snapshot);
 }
 
+void ClipVoicePool::setTransport(const LoopRange& loop, const TempoMap& tempo) {
+    const std::scoped_lock guard(snapshotLock_);
+    loop_ = loop;
+    tempo_ = tempo;
+}
+
 std::size_t ClipVoicePool::streamCount() const {
-    const std::lock_guard<std::mutex> guard(streamsLock_);
+    const std::scoped_lock guard(streamsLock_);
     return streams_.size();
 }
 
@@ -228,18 +281,82 @@ void ClipVoicePool::fillNow() {
             return;
 }
 
+// Notice publication, retry and cancellation: specs/tla/hand_back_notices.
+void ClipVoicePool::announceHandBacks(const TrackSectionTable* sections, const BlockInfo& block) {
+    if (sections == nullptr)
+        return;
+
+    for (const auto& entry : sections->entries) {
+        auto& state = *entry.state;
+        if (state.handBackBeat == state.announcedHandBack)
+            continue;
+
+        const auto written = noticesWritten_.load(std::memory_order_relaxed);
+        if (written - noticesRead_.load(std::memory_order_acquire) >= kHandBackNotices)
+            return;
+
+        // Monotonic and timeline beats advance together between wraps, so the release's
+        // timeline beat is this block's plus the distance to it; the pool wraps it into the loop.
+        notices_[written % kHandBackNotices] = HandBackNotice{
+            entry.trackId, state.handBackBeat ? block.beats.start + (*state.handBackBeat -
+                                                                     block.monotonicBeats.start)
+                                              : std::numeric_limits<double>::quiet_NaN()};
+        noticesWritten_.store(written + 1, std::memory_order_release);
+        state.announcedHandBack = state.handBackBeat;
+    }
+}
+
+void ClipVoicePool::drainHandBacks() {
+    const auto written = noticesWritten_.load(std::memory_order_acquire);
+    auto read = noticesRead_.load(std::memory_order_relaxed);
+
+    for (; read != written; ++read) {
+        const auto& notice = notices_[read % kHandBackNotices];
+        if (std::isnan(notice.timelineBeat))
+            handBacks_.erase(notice.trackId);
+        else
+            handBacks_[notice.trackId] = notice.timelineBeat;
+    }
+
+    noticesRead_.store(read, std::memory_order_release);
+}
+
+std::optional<double> ClipVoicePool::handBackFor(TrackId trackId, double windowStart,
+                                                 const LoopRange& loop,
+                                                 const TempoMap& tempo) const {
+    const auto found = handBacks_.find(trackId);
+    if (found == handBacks_.end())
+        return std::nullopt;
+
+    auto beat = found->second;
+    if (loop.valid() && beat >= loop.endBeat)
+        beat = loop.startBeat + std::fmod(beat - loop.startBeat, loop.endBeat - loop.startBeat);
+
+    const auto seconds = tempo.beatToTime(beat);
+    return seconds >= windowStart ? std::optional{seconds} : std::nullopt;
+}
+
 std::int64_t ClipVoicePool::cueFor(const AudioClipPlayback& clip, const AudioEventPlayback& event,
                                    double seconds, const Reader& reader) const {
-    const auto position =
-        readingPositionAt(clip, event, seconds, beatNear(event, seconds), context_.sampleRate);
+    const auto positionAt = [&](double at) {
+        return readingPositionAt(clip, event, at, beatAlongSpan(event, at), context_.sampleRate);
+    };
 
-    const auto ahead = reader.stretcher != nullptr ? reader.stretcher->readAheadSamples() : 0;
+    if (reader.stretcher == nullptr)
+        return firstSampleFrom(positionAt(seconds));
 
-    return static_cast<std::int64_t>(std::llround(position)) + ahead - reader.preRoll;
+    // From the cell the voice opens on, which is where its prime reads back from.
+    const auto opens =
+        static_cast<double>(stretchCellOpening(event, seconds, context_.sampleRate)) /
+        context_.sampleRate;
+    const auto read =
+        stretchReadAt(*reader.stretcher, reader.preRoll, opens, context_.sampleRate, positionAt);
+    return read.from - read.preRoll;
 }
 
 ClipVoicePool::Reader ClipVoicePool::open(const AudioClipPlayback& clip,
-                                          const AudioEventPlayback& event, double cueSeconds) {
+                                          const AudioEventPlayback& event, double cueSeconds,
+                                          bool session) {
     // What this event asks of its file, and how what comes back is turned into
     // playback. Both from EventPlacement.hpp, which is also where the voice
     // asks: a reversed event is read in a mirrored file's coordinates and a
@@ -247,6 +364,7 @@ ClipVoicePool::Reader ClipVoicePool::open(const AudioClipPlayback& clip,
     // and read by another would play a clip's material from somewhere neither of
     // them named.
     Reader reader;
+    reader.session = session;
     reader.path = event.filePath;
     reader.read = sourceReadFor(event, context_.sampleRate);
     reader.setup = stretchSetupFor(clip, event, context_);
@@ -256,14 +374,14 @@ ClipVoicePool::Reader ClipVoicePool::open(const AudioClipPlayback& clip,
     // none and pays for none, the same rule the reading chain follows.
     reader.stretcher = makeStretcher(reader.setup);
     if (reader.stretcher != nullptr)
-        reader.preRoll = reader.stretcher->preRollSamples(reader.setup.nominalRate);
+        reader.preRoll = reader.stretcher->preRollSamples(reader.setup.peakRate);
 
     // The event's own first sample, which is what this is compared against next
     // round: an identity rather than a position. Where the stream is actually
     // pointed is below and depends on where the transport is, so storing that
     // instead would make a clip the transport is moving through look different
     // on every round and republish a table for it every ten milliseconds.
-    reader.cueSamples = cueFor(clip, event, event.span.startSeconds, reader);
+    reader.cueSamples = cueFor(clip, event, event.span.seconds.start, reader);
 
     auto file = files_.open(event.filePath);
     if (file == nullptr)
@@ -285,21 +403,158 @@ ClipVoicePool::Reader ClipVoicePool::open(const AudioClipPlayback& clip,
     //
     // Where playback will pick it up rather than where the event begins: a clip
     // the transport is already standing inside is read from where the cursor is.
-    reader.stream->startAt(cueFor(clip, event, cueSeconds, reader));
+    // Keep the priming window and 100 ms of playback in memory. Each session
+    // wrap can then restart immediately while the worker refills beyond it.
+    const auto cacheSamples =
+        session
+            ? reader.preRoll +
+                  static_cast<int>(std::ceil(context_.sampleRate * 0.1 * reader.setup.peakRate)) +
+                  maxReadingSamples(context_.maxBlockSize)
+            : 0;
+    reader.stream->startAt(cueFor(clip, event, cueSeconds, reader), cacheSamples);
 
     reader_.add(*reader.stream);
     return reader;
 }
 
-void ClipVoicePool::service() {
-    std::shared_ptr<const ClipSnapshot> snapshot;
-    {
-        const std::lock_guard<std::mutex> guard(snapshotLock_);
-        snapshot = snapshot_;
+void ClipVoicePool::prepareLoopDestination(Reader& reader, const AudioClipPlayback& clip,
+                                           const AudioEventPlayback& event, double loopSeconds,
+                                           const TempoMap& tempo) {
+    if (reader.stream == nullptr)
+        return;
+
+    const auto cueSeconds =
+        reader.stretcher != nullptr
+            ? static_cast<double>(stretchCellOpening(event, loopSeconds, context_.sampleRate)) /
+                  context_.sampleRate
+            : loopSeconds;
+    const auto readingAt = [&](double seconds) {
+        return readingPositionAt(clip, event, seconds, tempo.timeToBeat(seconds),
+                                 context_.sampleRate);
+    };
+    auto start = firstSampleFrom(readingAt(cueSeconds));
+    if (reader.stretcher != nullptr) {
+        const auto read = stretchReadAt(*reader.stretcher, reader.preRoll, cueSeconds,
+                                        context_.sampleRate, readingAt);
+        start = read.from - read.preRoll;
+    }
+    const auto maxRetainedReading = maxReadingSamples(
+        static_cast<int>(std::ceil(context_.sampleRate * kReadAheadBridgeSeconds)));
+    const auto retainedReading = static_cast<int>(
+        std::clamp(std::ceil(std::abs(readingAt(cueSeconds + kReadAheadBridgeSeconds) -
+                                      readingAt(cueSeconds))),
+                   0.0, static_cast<double>(maxRetainedReading)));
+    const auto count = reader.preRoll + retainedReading + maxReadingSamples(context_.maxBlockSize);
+
+    if (reader.retainedStart == start && reader.retainedCount == count)
+        return;
+    if (!reader.stream->canRetain())
+        return;
+
+    auto source = files_.open(event.filePath);
+    if (source == nullptr)
+        return;
+    source = readThrough(std::move(source), reader.read);
+
+    auto retained = std::make_shared<PrefetchStream::RetainedRegion>();
+    retained->startSample = start;
+    retained->audio.setSize(context_.numChannels, count);
+    retained->audio.clear();
+    retained->count = std::clamp(source->read(retained->audio, 0, start, count), 0, count);
+    if (reader.stream->retain(std::move(retained))) {
+        reader.retainedStart = start;
+        reader.retainedCount = count;
+    }
+}
+
+// Adoption versus withdrawal and table retirement: specs/tla/hand_back_standby.
+void ClipVoicePool::settleStandby(Reader& reader) {
+    if (reader.standby == nullptr)
+        return;
+
+    if (!reader.standby->claim() && reader.standby->setup == reader.setup) {
+        reader.stretcher = reader.standby->stretcher;
+        standbysTaken_.fetch_add(1, std::memory_order_relaxed);
+    }
+    reader.standby.reset();
+}
+
+void ClipVoicePool::prepareStandby(Reader& reader, const AudioClipPlayback& clip,
+                                   const AudioEventPlayback& event, bool loopDestination,
+                                   double windowStart, bool playing, double loopSeconds,
+                                   const TempoMap& tempo, std::uint64_t snapshot,
+                                   std::optional<double> resumesAt) {
+    // Taken, so a voice renders from it now: it becomes the entry's own stretcher, and the one it
+    // replaces dies with the last table that named it, which no block reaches once published.
+    if (reader.standby != nullptr && reader.standby->claimed.load(std::memory_order_acquire))
+        settleStandby(reader);
+
+    if (reader.session || reader.stream == nullptr || reader.stretcher == nullptr ||
+        !reader.stretcher->canPrimeFromWindow() ||
+        !primesStandbys_.load(std::memory_order_relaxed)) {
+        settleStandby(reader);
+        return;
     }
 
+    // Kept while the start it was primed for may be the one playing now, whatever comes next:
+    // play can begin in the callback that takes it, and withdrawing it first leaves that start
+    // to prime.
+    if (const auto* standby = reader.standby.get(); playing && standby != nullptr && !resumesAt) {
+        const auto cell = static_cast<double>(standby->key.cell) / context_.sampleRate;
+        if (cell <= windowStart && windowStart < cell + kReadAheadBridgeSeconds)
+            return;
+    }
+
+    // Where the voice's first block of the next start opens. A queued hand-back is that start
+    // for a held track. Otherwise, stopped, that is wherever play lands:
+    // the cursor, inside the clip or at its start. Rolling, it is the event's own start while
+    // that is still ahead, and otherwise the loop's return into it.
+    const auto starts = std::max(clip.span.seconds.start, event.span.seconds.start);
+    const auto ends = std::min(clip.span.seconds.end, event.span.seconds.end);
+    const auto opens = resumesAt ? resumesAt
+                       : !playing && starts <= windowStart && windowStart < ends
+                           ? std::optional<double>{windowStart}
+                       : starts > windowStart ? std::optional<double>{starts}
+                       : loopDestination      ? std::optional<double>{std::max(loopSeconds, starts)}
+                                              : std::nullopt;
+    if (!opens) {
+        settleStandby(reader);
+        return;
+    }
+
+    const auto key = standbyKeyFor(*reader.stretcher, reader.preRoll, clip, event,
+                                   stretchCellOpening(event, *opens, context_.sampleRate), tempo,
+                                   snapshot, context_.sampleRate);
+    if (reader.standby != nullptr && reader.standby->key == key &&
+        reader.standby->setup == reader.setup)
+        return;
+
+    // Read here through the chain the stream is filled through, and never through the stream:
+    // its cursor is the voice's.
+    settleStandby(reader);
+    if (auto file = files_.open(event.filePath); file != nullptr)
+        reader.standby =
+            primeStandby(key, reader.setup, *readThrough(std::move(file), reader.read), context_);
+}
+
+void ClipVoicePool::service() {
+    std::shared_ptr<const ClipSnapshot> snapshot;
+    LoopRange loop;
+    TempoMap tempo;
+    {
+        const std::scoped_lock guard(snapshotLock_);
+        snapshot = snapshot_;
+        loop = loop_;
+        tempo = tempo_;
+    }
+
+    drainHandBacks();
+
+    const auto snapshotSerial = snapshot != nullptr ? snapshot->serial : 0;
     const auto windowStart = position_.load(std::memory_order_relaxed);
+    const auto playing = playing_.load(std::memory_order_relaxed);
     const auto windowEnd = windowStart + kCueAheadSeconds;
+    const auto loopSeconds = loop.valid() ? tempo.beatToTime(loop.startBeat) : -1.0;
 
     // The largest callback the plan was prepared for, which is the resolution
     // voices are claimed and released at.
@@ -308,16 +563,19 @@ void ClipVoicePool::service() {
     auto overSubscribed = 0;
     auto unbridged = 0;
     auto unreadable = 0;
+    auto unprovisioned = 0;
 
     Streams wanted;
     std::vector<Candidate> candidates;
+    std::vector<Candidate> slots;
 
     {
-        const std::lock_guard<std::mutex> guard(streamsLock_);
+        const std::scoped_lock guard(streamsLock_);
 
         if (snapshot != nullptr) {
             for (const auto& track : snapshot->tracks) {
                 candidates.clear();
+                const auto handBack = handBackFor(track.trackId, windowStart, loop, tempo);
 
                 for (const auto& clip : track.audio) {
                     if (!reachesInto(clip.span, windowStart, windowEnd))
@@ -327,11 +585,50 @@ void ClipVoicePool::service() {
                         if (!reachesInto(event.span, windowStart, windowEnd))
                             continue;
 
+                        // A held track renders nothing, so a hand-back inside the event is
+                        // a start mid-material rather than the stream carrying on.
+                        const auto resumes =
+                            handBack &&
+                            std::max(clip.span.seconds.start, event.span.seconds.start) <
+                                *handBack &&
+                            *handBack < std::min(clip.span.seconds.end, event.span.seconds.end);
+
                         candidates.push_back(Candidate{
-                            clip.clipId, event.eventId, &clip, &event, event.span.startSeconds,
-                            event.span.endSeconds, event.span.startSeconds <= windowStart});
+                            clip.clipId, event.eventId, &clip, &event, event.span.seconds,
+                            event.span.seconds.start <= windowStart,
+                            resumes ? *handBack : std::max(windowStart, event.span.seconds.start),
+                            false, false, resumes ? handBack : std::nullopt});
                     }
                 }
+
+                // The destination is retained independently of the moving
+                // window. A short clip at the top must still own its reader
+                // when a long loop reaches the far end.
+                if (loop.valid())
+                    for (const auto& clip : track.audio) {
+                        if (!reachesInto(clip.span, loopSeconds,
+                                         loopSeconds + kReadAheadBridgeSeconds))
+                            continue;
+                        for (const auto& event : clip.events) {
+                            if (!reachesInto(event.span, loopSeconds,
+                                             loopSeconds + kReadAheadBridgeSeconds))
+                                continue;
+                            const auto already =
+                                std::ranges::any_of(candidates, [&](const Candidate& candidate) {
+                                    return candidate.clipId == clip.clipId &&
+                                           candidate.eventId == event.eventId;
+                                });
+                            if (!already)
+                                candidates.push_back(Candidate{
+                                    clip.clipId, event.eventId, &clip, &event, event.span.seconds,
+                                    false, event.span.seconds.start, false, true});
+                            else
+                                for (auto& candidate : candidates)
+                                    if (candidate.clipId == clip.clipId &&
+                                        candidate.eventId == event.eventId)
+                                        candidate.loopDestination = true;
+                        }
+                    }
 
                 // What this track is being asked to sound at once, which is the
                 // only count worth reporting. How many clips are in the window
@@ -350,8 +647,10 @@ void ClipVoicePool::service() {
                           [](const Candidate& a, const Candidate& b) {
                               if (a.sounding != b.sounding)
                                   return a.sounding;
-                              if (a.startSeconds != b.startSeconds)
-                                  return a.startSeconds < b.startSeconds;
+                              if (a.loopDestination != b.loopDestination)
+                                  return a.loopDestination;
+                              if (a.seconds.start != b.seconds.start)
+                                  return a.seconds.start < b.seconds.start;
                               if (a.clipId != b.clipId)
                                   return a.clipId < b.clipId;
                               return a.eventId < b.eventId;
@@ -362,6 +661,32 @@ void ClipVoicePool::service() {
                         unbridgedAmong(candidates, kMaxReadersPerTrack, windowStart, blockSeconds);
                     candidates.resize(static_cast<std::size_t>(kMaxReadersPerTrack));
                 }
+
+                // Every slot, every round: a slot has no position, so there is
+                // no window it comes into and a launch can arrive on any block
+                // (#2301). Its retained opening covers launches and re-triggers
+                // while the worker returns to the continuation of that opening.
+                //
+                // Its own budget, taken after the arrangement's rather than out
+                // of it (kMaxSessionReadersPerTrack).
+                slots.clear();
+
+                for (const auto& slot : track.session)
+                    for (const auto& clip : slot.audio)
+                        for (const auto& event : clip.events)
+                            slots.push_back(Candidate{clip.clipId, event.eventId, &clip, &event,
+                                                      SecondsRange{windowStart, windowStart}, true,
+                                                      event.span.seconds.start, true});
+
+                // In scene order, so which slots a project past the budget
+                // keeps is a property of the project. The rest are counted: a
+                // slot with no reader is a launch that plays nothing.
+                if (slots.size() > static_cast<std::size_t>(kMaxSessionReadersPerTrack)) {
+                    unprovisioned += static_cast<int>(slots.size()) - kMaxSessionReadersPerTrack;
+                    slots.resize(static_cast<std::size_t>(kMaxSessionReadersPerTrack));
+                }
+
+                candidates.insert(candidates.end(), slots.begin(), slots.end());
 
                 for (const auto& candidate : candidates) {
                     const Key key{track.trackId, candidate.clipId, candidate.eventId};
@@ -379,12 +704,19 @@ void ClipVoicePool::service() {
                     // same path (io/SourceReaders.hpp), and that is built into
                     // the reader rather than asked of it per block, so the
                     // reader has to be built again.
+                    // A session's retained opening also depends on its cue and
+                    // priming length; replace it rather than keeping stale audio.
                     const auto how = sourceReadFor(event, context_.sampleRate);
                     const auto setup = stretchSetupFor(*candidate.clip, event, context_);
 
                     if (const auto found = streams_.find(key);
                         found != streams_.end() && found->second.path == event.filePath &&
-                        found->second.read == how) {
+                        found->second.read == how && found->second.session == candidate.session &&
+                        (!candidate.session ||
+                         (found->second.setup == setup &&
+                          found->second.cueSamples == cueFor(*candidate.clip, event,
+                                                             event.span.seconds.start,
+                                                             found->second)))) {
                         auto reuse = found->second;
 
                         // A stretch setting changed, which the file did not.
@@ -397,7 +729,7 @@ void ClipVoicePool::service() {
                             reuse.setup = setup;
                             reuse.stretcher = makeStretcher(setup);
                             reuse.preRoll = reuse.stretcher != nullptr
-                                                ? reuse.stretcher->preRollSamples(setup.nominalRate)
+                                                ? reuse.stretcher->preRollSamples(setup.peakRate)
                                                 : 0;
                         }
 
@@ -408,7 +740,7 @@ void ClipVoicePool::service() {
                         // playing cannot be pointed elsewhere and the next read
                         // corrects it anyway, at the cost of a seek.
                         if (const auto cue =
-                                cueFor(*candidate.clip, event, event.span.startSeconds, reuse);
+                                cueFor(*candidate.clip, event, event.span.seconds.start, reuse);
                             reuse.cueSamples != cue) {
                             if (reuse.stream != nullptr && !candidate.sounding)
                                 reuse.stream->seek(cue);
@@ -419,22 +751,69 @@ void ClipVoicePool::service() {
                         if (reuse.stream == nullptr)
                             ++unreadable;
 
+                        if (reuse.stream != nullptr) {
+                            if (!candidate.loopDestination) {
+                                if (reuse.retainedCount > 0) {
+                                    if (reuse.stream->retain({})) {
+                                        reuse.retainedStart =
+                                            std::numeric_limits<std::int64_t>::min();
+                                        reuse.retainedCount = 0;
+                                    }
+                                }
+                            } else {
+                                prepareLoopDestination(
+                                    reuse, *candidate.clip, event,
+                                    std::max(loopSeconds, event.span.seconds.start), tempo);
+                            }
+                        }
+
+                        // Sought once per hand-back. Safe on a held track: nothing reads it
+                        // until the hand-back, and the cue is taken up at a block's top.
+                        const auto resumeCue =
+                            candidate.resumesAt
+                                ? cueFor(*candidate.clip, event, *candidate.resumesAt, reuse)
+                                : std::numeric_limits<std::int64_t>::min();
+                        if (reuse.stream != nullptr && candidate.resumesAt &&
+                            reuse.resumeCue != resumeCue)
+                            reuse.stream->seek(resumeCue);
+                        reuse.resumeCue = resumeCue;
+
+                        prepareStandby(reuse, *candidate.clip, event, candidate.loopDestination,
+                                       windowStart, playing, loopSeconds, tempo, snapshotSerial,
+                                       candidate.resumesAt);
                         wanted.emplace(key, std::move(reuse));
                         continue;
                     }
 
-                    // From where playback will pick it up: its own first sample
-                    // for a clip that has not started, and where the cursor
-                    // already is for one the transport is standing inside.
-                    const auto cueSeconds = std::max(windowStart, event.span.startSeconds);
-
-                    auto reader = open(*candidate.clip, event, cueSeconds);
+                    auto reader =
+                        open(*candidate.clip, event, candidate.cueSeconds, candidate.session);
+                    if (candidate.loopDestination)
+                        prepareLoopDestination(reader, *candidate.clip, event,
+                                               std::max(loopSeconds, event.span.seconds.start),
+                                               tempo);
                     if (reader.stream == nullptr)
                         ++unreadable;
 
+                    if (candidate.resumesAt)
+                        reader.resumeCue =
+                            cueFor(*candidate.clip, event, *candidate.resumesAt, reader);
+
+                    prepareStandby(reader, *candidate.clip, event, candidate.loopDestination,
+                                   windowStart, playing, loopSeconds, tempo, snapshotSerial,
+                                   candidate.resumesAt);
                     wanted.emplace(key, std::move(reader));
                 }
             }
+        }
+
+        // An edit that landed while this round primed makes what it primed stale: a voice would
+        // refuse it by its key, and it is dropped here rather than published to be refused.
+        {
+            const std::scoped_lock guard(snapshotLock_);
+            const auto latest = snapshot_ != nullptr ? snapshot_->serial : 0;
+            if (latest != snapshotSerial)
+                for (auto& [key, reader] : wanted)
+                    settleStandby(reader);
         }
 
         // Nothing opened, nothing retired, nothing moved. Publishing anyway
@@ -447,7 +826,7 @@ void ClipVoicePool::service() {
                 if (reader.stream != nullptr)
                     table->entries.push_back(
                         ClipStreamTable::Entry{key.trackId, key.clipId, key.eventId, reader.stream,
-                                               reader.stretcher, reader.preRoll});
+                                               reader.stretcher, reader.preRoll, reader.standby});
 
             // Published before anything is retired, and it waits for the block
             // the callback is in: after this returns, nothing the audio thread
@@ -475,6 +854,7 @@ void ClipVoicePool::service() {
     overSubscribed_.store(overSubscribed, std::memory_order_relaxed);
     unbridged_.store(unbridged, std::memory_order_relaxed);
     unreadableFiles_.store(unreadable, std::memory_order_relaxed);
+    unprovisionedSlots_.store(unprovisioned, std::memory_order_relaxed);
 }
 
 ClipVoiceThread::ClipVoiceThread(ClipVoicePool& pool)

@@ -10,7 +10,7 @@ namespace {
 /// counts as not written: a writer that emitted the key and left it blank said
 /// no more than one that left it out.
 std::optional<juce::String> valueOf(const juce::StringPairArray& metadata, const char* key) {
-    const auto value = metadata[key];
+    const auto& value = metadata[key];
     return value.isNotEmpty() ? std::optional<juce::String>(value) : std::nullopt;
 }
 

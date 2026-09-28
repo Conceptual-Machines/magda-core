@@ -16,10 +16,8 @@ std::vector<const CurvePoint*> getCurveRenderOrder(const std::vector<CurvePoint>
         ordered.push_back(&point);
 
     if (previewActive) {
-        std::stable_sort(ordered.begin(), ordered.end(),
-                         [&effectiveX](const auto* a, const auto* b) {
-                             return effectiveX(*a) < effectiveX(*b);
-                         });
+        const auto xOf = [&effectiveX](const CurvePoint* point) { return effectiveX(*point); };
+        std::ranges::stable_sort(ordered, {}, xOf);
     }
 
     return ordered;

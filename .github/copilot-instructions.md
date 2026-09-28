@@ -30,7 +30,7 @@ This document defines code review guidelines for the Magda project, a JUCE/C++ a
 - **Magic Numbers**: Suggest named constants for literal values, except obvious cases (0, 1, 2)
 - **Clear Intent**: Ensure code is self-documenting; suggest refactoring when intent is unclear
 - **JUCE Idioms**: Verify proper use of JUCE patterns (e.g., MessageManager, ValueTree, listeners)
-- **Modern C++20**: Encourage use of C++20 features where appropriate (concepts, ranges, coroutines if applicable)
+- **Modern C++23**: Encourage use of C++23 features where appropriate (concepts, ranges, coroutines if applicable)
 - **Error Handling**: Verify appropriate error handling strategies
 - **Documentation**: Check that complex algorithms or non-obvious code have explanatory comments
 - **TODO Comments**: Read and respect TODO comments in the code being reviewed. If a TODO indicates planned work or known limitations, consider this context when reviewing related changes. Don't request changes that conflict with or duplicate TODO items.
@@ -89,7 +89,7 @@ Files under 300 lines, header files with only declarations, and test files shoul
 ### Key Technologies
 - **JUCE**: Cross-platform C++ framework for audio applications
 - **Tracktion Engine**: Professional DAW audio engine
-- **C++20**: Modern C++ standard with all features enabled
+- **C++23**: Modern C++ standard with all features enabled
 - **CMake**: Build system with Ninja generator
 - **Catch2**: Testing framework
 

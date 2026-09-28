@@ -2,6 +2,8 @@
 
 #include <juce_core/juce_core.h>
 
+#include <algorithm>
+#include <ranges>
 #include <vector>
 
 #include "../daw/audio/plugins/InternalPluginRegistry.hpp"
@@ -207,11 +209,10 @@ inline void makePrimaryAliasesUnique(std::vector<InternalPluginInfo>& entries) {
     for (size_t i = 0; i < entries.size(); ++i) {
         auto& entry = entries[i];
         const auto isTaken = [&](const juce::String& alias) {
-            for (size_t previous = 0; previous < i; ++previous) {
-                if (entries[previous].primaryAlias.equalsIgnoreCase(alias))
-                    return true;
-            }
-            return false;
+            const auto matchesAlias = [&alias](const InternalPluginInfo& earlier) {
+                return earlier.primaryAlias.equalsIgnoreCase(alias);
+            };
+            return std::ranges::any_of(entries | std::views::take(i), matchesAlias);
         };
 
         if (!isTaken(entry.primaryAlias))

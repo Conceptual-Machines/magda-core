@@ -35,6 +35,11 @@ class AudioEngineListener {
     virtual void onPunchEnabledChanged(bool punchInEnabled, bool punchOutEnabled) {
         juce::ignoreUnused(punchInEnabled, punchOutEnabled);
     }
+
+    /** Whether Record may be armed now and bounded by this engine's audio clock. */
+    virtual bool hasSampleAccuratePunch() const {
+        return false;
+    }
 };
 
 using TransportStateListener = AudioEngineListener;

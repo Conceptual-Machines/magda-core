@@ -1,10 +1,13 @@
 #include "param/ParamTableCompiler.hpp"
 
 #include <algorithm>
+#include <atomic>
+#include <map>
 #include <queue>
 #include <set>
 
 #include "core/AutomationCurve.hpp"
+#include "core/ChainWalk.hpp"
 #include "core/ClipLaneFlattener.hpp"
 #include "core/RackInfo.hpp"
 #include "core/TrackInfo.hpp"
@@ -261,9 +264,6 @@ class Builder {
     ParamId add(const ParamKey& key, const ParamSpec& spec, float base);
 
     void walkTrack(const magda::TrackInfo& track);
-    void walkRack(const magda::RackInfo& rack, magda::TrackId trackId);
-    void walkElements(const std::vector<magda::ChainElement>& elements, magda::TrackId trackId,
-                      magda::RackId rackId);
     void walkFlat(const std::vector<magda::PostFxChainElement>& elements, magda::TrackId trackId,
                   ChainSegment segment);
 
@@ -285,6 +285,8 @@ class Builder {
     void resolveLinks();
     void orderAndBreakCycles();
     void flattenLinks();
+    void markDriven();
+    void orderMoving();
 
     void diagnose(const std::string& what) {
         table_.diagnostics.push_back(what);
@@ -332,6 +334,8 @@ ParamId Builder::add(const ParamKey& key, const ParamSpec& spec, float base) {
     table_.keys.push_back(key);
     table_.specs.push_back(spec);
     table_.base.push_back(base);
+    table_.slots.push_back(key.kind == ParamKey::Kind::DeviceParam ? key.index : -1);
+    table_.driven.push_back(0);
     perParam_.emplace_back();
     perParamCurve_.emplace_back();
     table_.byKey.emplace(key, id);
@@ -468,8 +472,8 @@ void Builder::allocateDevice(const Node& node) {
     const auto& scope = node.scope;
 
     // A device's parameters are one index space: its own, plus whatever its
-    // wrapper injected, which addresses the same slots.
-    int highest = -1;
+    // wrapper injected. Ascending, because the window is searched by slot.
+    std::map<int, const magda::ParameterInfo*> declared;
     const auto scan = [&](const std::vector<magda::ParameterInfo>& list) {
         for (const auto& info : list) {
             if (info.paramIndex < 0 || info.paramIndex > kMaxDeviceParamIndex) {
@@ -477,73 +481,38 @@ void Builder::allocateDevice(const Node& node) {
                          " is out of range and is ignored");
                 continue;
             }
-            highest = std::max(highest, info.paramIndex);
+            declared.emplace(info.paramIndex, &info);
         }
     };
     scan(device.parameters);
     scan(device.wrapperParameters);
 
-    const auto find = [&](int index) -> const magda::ParameterInfo* {
-        for (const auto* list : {&device.parameters, &device.wrapperParameters})
-            for (const auto& info : *list)
-                if (info.paramIndex == index)
-                    return &info;
-        return nullptr;
-    };
-
-    // Every index from zero, so a device reads its own parameters by the index
-    // it declared them at rather than by where they landed in the table. A gap
-    // is a slot nothing declared and nothing reads.
+    // One entry per parameter the device declared, and none for an index it did
+    // not: a device reads its parameters by slot (ParamTable::slots).
     const auto first = static_cast<ParamId>(table_.keys.size());
-    int gaps = 0;
-    for (int index = 0; index <= highest; ++index) {
+    for (const auto& [index, info] : declared) {
         ParamKey key = scope;
         key.kind = ParamKey::Kind::DeviceParam;
         key.index = index;
 
-        const auto* info = find(index);
-        if (info == nullptr) {
-            ++gaps;
-            add(key, ParamSpec{}, 0.0f);
-            continue;
-        }
-
-        // The model's own inverse, rather than a straight read of the range:
-        // an external plugin's stored value and its display range are not the
-        // same number, and only ParameterUtils knows which parameters those
-        // are.
         const auto normalised = magda::ParameterUtils::modelToNormalizedValue(
-            magda::ParameterModelValue{info->currentValue}, *info);
-        add(key, paramSpecFrom(*info), normalised.value);
+                                    magda::ParameterModelValue{info->currentValue}, *info)
+                                    .value;
+        add(key, paramSpecFrom(*info), normalised);
     }
 
-    if (gaps > 0)
+    if (declared.empty())
+        return;
+
+    // Internal devices only: a hosted plugin's array skips its non-automatable
+    // parameters, so gaps in it are normal (#2175).
+    const auto count = static_cast<int>(declared.size());
+    if (const auto gaps = declared.rbegin()->first + 1 - count;
+        gaps > 0 && device.format == magda::PluginFormat::Internal)
         diagnose(toString(scope) + ": parameter indices are not contiguous, so " +
-                 std::to_string(gaps) + " slot(s) of the window belong to no parameter");
+                 std::to_string(gaps) + " index(es) below the highest stand for no parameter");
 
-    if (highest >= 0)
-        table_.deviceWindows.emplace(scope.device, ParamTable::DeviceWindow{first, highest + 1});
-}
-
-void Builder::walkElements(const std::vector<magda::ChainElement>& elements, magda::TrackId trackId,
-                           magda::RackId rackId) {
-    for (const auto& element : elements) {
-        if (magda::isDevice(element)) {
-            const auto& device = magda::getDevice(element);
-            Node node;
-            node.scope.scope = ParamKey::Scope::Device;
-            node.scope.trackId = trackId;
-            node.scope.rackId = rackId;
-            node.scope.device = DeviceKey{ChainSegment::Fx, device.id};
-            node.macros = &device.macros;
-            node.mods = &device.mods;
-            node.device = &device;
-            node.sidechainSource = sidechainSourceOf(device.sidechain);
-            nodes_.push_back(node);
-        } else if (magda::isRack(element)) {
-            walkRack(magda::getRack(element), trackId);
-        }
-    }
+    table_.deviceWindows.emplace(scope.device, ParamTable::DeviceWindow{first, count});
 }
 
 void Builder::walkFlat(const std::vector<magda::PostFxChainElement>& elements,
@@ -559,31 +528,6 @@ void Builder::walkFlat(const std::vector<magda::PostFxChainElement>& elements,
         node.sidechainSource = sidechainSourceOf(element.device.sidechain);
         nodes_.push_back(node);
     }
-}
-
-void Builder::walkRack(const magda::RackInfo& rack, magda::TrackId trackId) {
-    // The same instance the plan compiler passes over. Walking it would report
-    // every address in the subtree as claimed twice, with nothing naming the
-    // cause.
-    if (nesting_.encloses(rack.id)) {
-        diagnose(nesting_.cycle(rack.id) +
-                 ", its parameters and everything under it are not carried");
-        return;
-    }
-
-    const RackNesting::Scope scope{nesting_, rack.id};
-
-    Node node;
-    node.scope.scope = ParamKey::Scope::Rack;
-    node.scope.trackId = trackId;
-    node.scope.rackId = rack.id;
-    node.macros = &rack.macros;
-    node.mods = &rack.mods;
-    node.sidechainSource = sidechainSourceOf(rack.sidechain);
-    nodes_.push_back(node);
-
-    for (const auto& chain : rack.chains)
-        walkElements(chain.elements, trackId, rack.id);
 }
 
 /// The mixer values a track has, allocated only when something reaches them: a
@@ -633,7 +577,56 @@ void Builder::walkTrack(const magda::TrackInfo& track) {
     node.track = &track;
     nodes_.push_back(node);
 
-    walkElements(track.chain.fxChainElements, track.id, INVALID_RACK_ID);
+    // Pads entered: a pad rack's chains hold devices like any other rack's, and
+    // the plan compiles them, so their parameters, macros and mods need
+    // addresses or nothing consumes them.
+    //
+    // A device's own id comes from the walk's `owningRackId`, which answers the
+    // Drum Grid for a pad device rather than the synthetic pad rack: a stored
+    // link to one names the grid -- see the chainDevice path
+    // syncDrumGridPadPlugins and the ADSR macro links are built with -- and
+    // ParamKey carries the rack id, so addressing these under the pad rack's
+    // own id would put them where no link can find them. The pad rack itself
+    // gets no node: it is synthesized, so it owns no macros or modifiers.
+    chain_walk::forEachNode(
+        track.chain.fxChainElements, magda::ChainNodePath::trackLevel(track.id),
+        chain_walk::Pads::Enter,
+        [this, &track](const magda::DeviceInfo& device, const magda::ChainNodePath& path) {
+            Node deviceNode;
+            deviceNode.scope.scope = ParamKey::Scope::Device;
+            deviceNode.scope.trackId = track.id;
+            deviceNode.scope.rackId = chain_walk::owningRackId(path);
+            deviceNode.scope.device = DeviceKey{ChainSegment::Fx, device.id};
+            deviceNode.macros = &device.macros;
+            deviceNode.mods = &device.mods;
+            deviceNode.device = &device;
+            deviceNode.sidechainSource = sidechainSourceOf(device.sidechain);
+            nodes_.push_back(deviceNode);
+        },
+        [this, &track](const magda::RackInfo& rack, const magda::ChainNodePath&) {
+            // The same instance the plan compiler passes over. Walking it would
+            // report every address in the subtree as claimed twice, with
+            // nothing naming the cause.
+            if (nesting_.encloses(rack.id)) {
+                diagnose(nesting_.cycle(rack.id) +
+                         ", its parameters and everything under it are not carried");
+                return chain_walk::Descend::Skip;
+            }
+            nesting_.open(rack.id);
+
+            Node rackNode;
+            rackNode.scope.scope = ParamKey::Scope::Rack;
+            rackNode.scope.trackId = track.id;
+            rackNode.scope.rackId = rack.id;
+            rackNode.macros = &rack.macros;
+            rackNode.mods = &rack.mods;
+            rackNode.sidechainSource = sidechainSourceOf(rack.sidechain);
+            nodes_.push_back(rackNode);
+            return chain_walk::Descend::Into;
+        },
+        [this](const magda::RackInfo& rack, const magda::ChainNodePath&) {
+            nesting_.close(rack.id);
+        });
     walkFlat(track.chain.postFxChainElements, track.id, ChainSegment::PostFx);
     walkFlat(track.chain.mixerAnalysisElements, track.id, ChainSegment::MixerAnalysis);
 }
@@ -812,7 +805,7 @@ std::vector<int> stronglyConnectedComponents(const std::vector<std::vector<int>>
         if (index[root] >= 0)
             continue;
 
-        work.push_back({root, 0});
+        work.emplace_back(root, 0);
         while (!work.empty()) {
             auto& [node, edge] = work.back();
 
@@ -829,7 +822,7 @@ std::vector<int> stronglyConnectedComponents(const std::vector<std::vector<int>>
                 ++edge;
 
                 if (index[next] < 0) {
-                    work.push_back({next, 0});
+                    work.emplace_back(next, 0);
                 } else if (onStack[next] != 0) {
                     lowlink[node] = std::min(lowlink[node], index[next]);
                 }
@@ -934,7 +927,7 @@ void Builder::orderAndBreakCycles() {
 
     for (std::size_t target = 0; target < params; ++target) {
         auto& links = perParam_[target];
-        const auto removed = std::remove_if(links.begin(), links.end(), [&](const ParamLink& link) {
+        const auto dropped = std::erase_if(links, [&](const ParamLink& link) {
             const auto source = static_cast<std::size_t>(link.source.index);
             switch (link.source.kind) {
                 case ParamSourceRef::Kind::Parameter:
@@ -945,12 +938,11 @@ void Builder::orderAndBreakCycles() {
             return false;
         });
 
-        if (removed == links.end())
+        if (dropped == 0)
             continue;
 
         diagnose(toString(table_.keys[target]) +
                  ": part of a modulation cycle; the links inside it are dropped");
-        links.erase(removed, links.end());
     }
 
     // A modifier whose own rate is inside the cycle stops reading it and runs
@@ -1026,6 +1018,21 @@ void Builder::flattenLinks() {
     }
 }
 
+/// After the lanes and links are flattened, since it is read off both (#2629).
+void Builder::markDriven() {
+    for (ParamId param = 0; param < static_cast<ParamId>(table_.keys.size()); ++param)
+        table_.driven[static_cast<std::size_t>(param)] = static_cast<std::uint8_t>(
+            !table_.curveFor(param).empty() || !table_.linksFor(param).empty());
+}
+
+/// After markDriven(), whose flags it filters by.
+void Builder::orderMoving() {
+    for (const auto& step : table_.order)
+        if (step.kind == ParamStep::Kind::Modifier ||
+            table_.driven[static_cast<std::size_t>(step.index)] != 0)
+            table_.movingOrder.push_back(step);
+}
+
 ParamTable Builder::run(const RenderPlan& plan, const std::vector<magda::TrackInfo>& tracks,
                         const magda::TrackInfo& master,
                         std::span<const magda::AutomationLaneInfo> lanes,
@@ -1046,7 +1053,11 @@ ParamTable Builder::run(const RenderPlan& plan, const std::vector<magda::TrackIn
     orderAndBreakCycles();
     flattenLinks();
     flattenCurves();
+    markDriven();
+    orderMoving();
 
+    static std::atomic<std::uint64_t> serials{0};
+    table_.serial = serials.fetch_add(1, std::memory_order_relaxed) + 1;
     table_.layoutFingerprint = paramLayoutFingerprint(table_.keys);
     table_.modifierFingerprint = paramModifierFingerprint(table_.modifiers);
 

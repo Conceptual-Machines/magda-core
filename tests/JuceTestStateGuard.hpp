@@ -12,6 +12,7 @@
 namespace magda::test {
 
 inline void drainJuceAsyncWork() {
+    // Timed best-effort isolation, not a shutdown barrier; see specs/tla/LIFECYCLE.md.
     if (auto* engine = getSharedEngineIfInitialized()) {
         if (auto* teEngine = engine->getEngine())
             teEngine->getBackgroundJobs().getPool().removeAllJobs(false, 10000);
@@ -29,6 +30,7 @@ inline void resetJuceProjectState() {
     SelectionManager::getInstance().clearSelection();
     UndoManager::getInstance().clearHistory();
     AutomationManager::getInstance().clearAll();
+    AutomationManager::getInstance().setAutomationMode(AutomationMode::Off);
 
     auto& clipManager = ClipManager::getInstance();
     clipManager.clearClipboard();
@@ -39,11 +41,11 @@ inline void resetJuceProjectState() {
     trackManager.clearAllTracks();
     trackManager.setAudioEngine(nullptr);
 
+    MidiBridge::getInstance().resetTestState();
+
     if (engine) {
         if (auto* audioBridge = engine->getAudioBridge())
             audioBridge->resetTestState();
-        if (auto* midiBridge = engine->getMidiBridge())
-            midiBridge->resetTestState();
         if (auto* edit = engine->getEdit()) {
             if (auto* ctx = edit->getCurrentPlaybackContext();
                 ctx && ctx->isPlaybackGraphAllocated())

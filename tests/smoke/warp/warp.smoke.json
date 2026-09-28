@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "project": "warp.mgd",
+  "cluster": "warp and the stretch engines",
+  "range": { "startBeat": 0, "endBeat": 8, "seconds": 4.0 },
+  "requires": { "plugins": [], "hardware": [] },
+  "tracks": [
+    { "name": "Signalsmith", "sound": true, "peakDb": { "min": -48, "max": 0 } },
+    { "name": "SoundTouch", "sound": true, "peakDb": { "min": -48, "max": 0 } }
+  ],
+  "listen": "The 100 BPM blip loop plays at 120 through Signalsmith and SoundTouch together, both locked to the grid, pitch unchanged, no flam between them."
+}

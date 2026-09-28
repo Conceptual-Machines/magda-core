@@ -70,7 +70,7 @@ std::shared_ptr<const std::vector<float>> cachedMelFilterbank(const MelConfig& c
     static std::vector<CachedFilterbank> cache;
 
     const auto key = keyFor(cfg);
-    std::lock_guard lock(cacheMutex);
+    std::scoped_lock lock(cacheMutex);
     for (const auto& entry : cache) {
         if (entry.key == key) {
             return entry.filterbank;

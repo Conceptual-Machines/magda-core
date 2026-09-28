@@ -9,7 +9,7 @@ const char* MidiReceivePlugin::xmlTypeName = "midireceive";
 MidiReceivePlugin::MidiReceivePlugin(const te::PluginCreationInfo& info,
                                      const daw::audio::DevicePluginDefaults::MidiReceive& defaults)
     : te::Plugin(info) {
-    auto um = getUndoManager();
+    auto* um = getUndoManager();
     sourceTrackIdValue.referTo(state, juce::Identifier("sourceTrackId"), um,
                                defaults.sourceTrackId);
     replaceExistingMidiValue.referTo(state, juce::Identifier("replaceExistingMidi"), um,

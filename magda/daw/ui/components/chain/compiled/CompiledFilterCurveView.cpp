@@ -6,7 +6,7 @@
 
 #include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
 #include "core/ParameterUtils.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -44,8 +44,8 @@ float modulatedValueForSlot(const magda::DeviceInfo& device, int slotIndex, floa
                             const ParamLinkContext* linkContext,
                             magda::daw::audio::compiled::MagdaFilterCompiledPlugin* plugin) {
     if (plugin != nullptr) {
-        if (auto* param = plugin->getSlotParameter(slotIndex))
-            return plugin->nativeValueToDisplayValue(slotIndex, param->getCurrentValue());
+        if (auto param = plugin->getSlotParameter(slotIndex))
+            return plugin->nativeValueToDisplayValue(slotIndex, param.currentValue());
     }
 
     const auto* param = paramForSlot(device, slotIndex);
@@ -118,8 +118,8 @@ CompiledFilterCurveView::CompiledFilterCurveView(juce::String pluginId) {
 }
 
 void CompiledFilterCurveView::setCompiledPlugin(
-    magda::daw::audio::compiled::MagdaFilterCompiledPlugin* plugin) {
-    compiledPlugin_ = plugin;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaFilterCompiledPlugin> plugin) {
+    compiledPlugin_ = std::move(plugin);
 }
 
 void CompiledFilterCurveView::setRawState(int engine, int modeIndex, float cutoffHz,
@@ -197,11 +197,11 @@ void CompiledFilterCurveView::updateTargetValues() {
     using FilterFamily = CompiledFilterCurveView::FilterFamily;
     const ParamLinkContext* linkContext = hasLinkContext_ ? &linkContext_ : nullptr;
     const float cutoff =
-        modulatedValueForSlot(deviceSnapshot_, 0, cutoffHz_, linkContext, compiledPlugin_);
+        modulatedValueForSlot(deviceSnapshot_, 0, cutoffHz_, linkContext, compiledPlugin_.get());
     const float resonance =
-        modulatedValueForSlot(deviceSnapshot_, 1, resonance_, linkContext, compiledPlugin_);
+        modulatedValueForSlot(deviceSnapshot_, 1, resonance_, linkContext, compiledPlugin_.get());
     const float drive =
-        modulatedValueForSlot(deviceSnapshot_, 2, drive_, linkContext, compiledPlugin_);
+        modulatedValueForSlot(deviceSnapshot_, 2, drive_, linkContext, compiledPlugin_.get());
 
     using Filter = magda::daw::audio::compiled::MagdaFilterCompiledPlugin;
     const int engine = static_cast<int>(std::round(valueForSlot(
@@ -329,14 +329,14 @@ float CompiledFilterCurveView::responseDbAt(float frequencyHz) const {
 
 void CompiledFilterCurveView::paint(juce::Graphics& g) {
     const auto bounds = getLocalBounds();
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).darker(0.06f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).darker(0.06f));
     g.fillRect(bounds);
 
     auto plot = bounds.toFloat().reduced(kPlotPadX, kPlotPadY);
     if (plot.getWidth() < 8.0f || plot.getHeight() < 8.0f)
         return;
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.55f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.55f));
     g.drawRect(plot, 1.0f);
 
     auto font = FontManager::getInstance().getUIFont(7.0f);
@@ -351,10 +351,11 @@ void CompiledFilterCurveView::paint(juce::Graphics& g) {
 
     for (const auto& line : freqLines) {
         const float x = plot.getX() + freqToX(line.freq, plot.getWidth(), minPlotFrequencyHz_);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(line.label ? 0.27f : 0.14f));
+        g.setColour(
+            ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(line.label ? 0.27f : 0.14f));
         g.drawVerticalLine(static_cast<int>(std::round(x)), plot.getY(), plot.getBottom());
         if (line.label != nullptr) {
-            g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.45f));
+            g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(0.45f));
             g.drawText(line.label, static_cast<int>(x) - 14,
                        static_cast<int>(plot.getBottom()) - 11, 28, 10,
                        juce::Justification::centred);
@@ -377,7 +378,8 @@ void CompiledFilterCurveView::paint(juce::Graphics& g) {
 
     for (float db : {-24.0f, -12.0f, 0.0f, 12.0f}) {
         const float y = plot.getY() + dbToY(db, plot.getHeight(), maxDb);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(db == 0.0f ? 0.46f : 0.16f));
+        g.setColour(
+            ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(db == 0.0f ? 0.46f : 0.16f));
         g.drawHorizontalLine(static_cast<int>(std::round(y)), plot.getX(), plot.getRight());
     }
 
@@ -404,7 +406,7 @@ void CompiledFilterCurveView::paint(juce::Graphics& g) {
     fillPath.closeSubPath();
 
     const auto accent =
-        hasCurveColour_ ? curveColour_ : DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE);
+        hasCurveColour_ ? curveColour_ : ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE);
     g.setColour(accent.withAlpha(0.13f + drive_ * 0.08f));
     g.fillPath(fillPath);
     g.setColour(accent.withAlpha(0.9f));
@@ -428,9 +430,10 @@ const CompiledPresentationSpec& getMagdaFilterPresentation() {
     return kSpec;
 }
 
-void CompiledFilterCurveView::bindPlugin(te::Plugin* plugin) {
+void CompiledFilterCurveView::bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) {
     setCompiledPlugin(
-        dynamic_cast<magda::daw::audio::compiled::MagdaFilterCompiledPlugin*>(plugin));
+        std::dynamic_pointer_cast<magda::daw::audio::compiled::MagdaFilterCompiledPlugin>(
+            std::move(device)));
 }
 
 }  // namespace magda::daw::ui

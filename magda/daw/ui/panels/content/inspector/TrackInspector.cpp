@@ -4,9 +4,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
+#include <ranges>
 #include <vector>
 
-#include "../../../audio/AudioBridge.hpp"
 #include "../../../audio/MidiBridge.hpp"
 #include "../../../components/common/MasterSpeakerButton.hpp"
 #include "../../../components/mixer/LevelMeterScale.hpp"
@@ -14,17 +15,17 @@
 #include "../../components/common/ColourSwatch.hpp"
 #include "../../components/mixer/RoutingSyncHelper.hpp"
 #include "../../state/TimelineController.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/DialogLookAndFeel.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallButtonLookAndFeel.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/ClipManager.hpp"
-#include "core/Config.hpp"
 #include "core/StringTable.hpp"
 #include "core/TechnicalText.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
+#include "project/ProjectManager.hpp"
 
 namespace magda::daw::ui {
 namespace {
@@ -93,63 +94,41 @@ TrackInspector::TrackInspector() {
             return drawable;
         };
 
-        // Default colours (always available)
-        for (size_t i = 0; i < magda::Config::defaultColourPalette.size(); ++i) {
-            auto colour = juce::Colour(magda::Config::defaultColourPalette[i].colour);
-            menu.addItem(static_cast<int>(i + 2), magda::Config::defaultColourPalette[i].name, true,
-                         false, makeChip(colour));
+        const auto palette =
+            magda::ProjectManager::getInstance().getCurrentProjectInfo().defaults.colourPalette;
+        for (size_t i = 0; i < palette.size(); ++i) {
+            const auto colour = juce::Colour(palette[i].colour);
+            menu.addItem(static_cast<int>(i + 2), palette[i].name, true, false, makeChip(colour));
         }
 
-        // Custom colours from Config (user-defined)
-        const auto customPalette = magda::Config::getInstance().getTrackColourPalette();
-        const int customOffset = static_cast<int>(magda::Config::defaultColourPalette.size()) + 2;
-        if (!customPalette.empty()) {
-            menu.addSeparator();
-            for (size_t i = 0; i < customPalette.size(); ++i) {
-                auto colour = juce::Colour(customPalette[i].colour);
-                menu.addItem(customOffset + static_cast<int>(i),
-                             juce::String(customPalette[i].name), true, false, makeChip(colour));
-            }
-        }
-
-        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(swatch), [this, swatch,
-                                                                                    customPalette](
-                                                                                       int result) {
-            if (result == 0)
-                return;
-            const int customOff = static_cast<int>(magda::Config::defaultColourPalette.size()) + 2;
-            auto trackIds = selectedTrackIds_.empty()
-                                ? std::unordered_set<magda::TrackId>{selectedTrackId_}
-                                : selectedTrackIds_;
-            if (result == 1) {
-                // "None"
-                swatch->clearColour();
-                for (auto tid : trackIds) {
-                    magda::UndoManager::getInstance().executeCommand(
-                        std::make_unique<magda::SetTrackColourCommand>(tid,
-                                                                       juce::Colour(0xFF444444)));
-                }
-            } else if (result >= 2 && result < customOff) {
-                // Default colour
-                auto colour = juce::Colour(magda::Config::getDefaultColour(result - 2));
-                swatch->setColour(colour);
-                for (auto tid : trackIds) {
-                    magda::UndoManager::getInstance().executeCommand(
-                        std::make_unique<magda::SetTrackColourCommand>(tid, colour));
-                }
-            } else {
-                // Custom colour
-                auto idx = static_cast<size_t>(result - customOff);
-                if (idx < customPalette.size()) {
-                    auto colour = juce::Colour(customPalette[idx].colour);
-                    swatch->setColour(colour);
+        menu.showMenuAsync(
+            juce::PopupMenu::Options().withTargetComponent(swatch),
+            [this, swatch, palette](int result) {
+                if (result == 0)
+                    return;
+                auto trackIds = selectedTrackIds_.empty()
+                                    ? std::unordered_set<magda::TrackId>{selectedTrackId_}
+                                    : selectedTrackIds_;
+                if (result == 1) {
+                    // "None"
+                    swatch->clearColour();
                     for (auto tid : trackIds) {
                         magda::UndoManager::getInstance().executeCommand(
-                            std::make_unique<magda::SetTrackColourCommand>(tid, colour));
+                            std::make_unique<magda::SetTrackColourCommand>(
+                                tid, juce::Colour(0xFF444444)));
+                    }
+                } else {
+                    const auto idx = static_cast<size_t>(result - 2);
+                    if (idx < palette.size()) {
+                        const auto colour = juce::Colour(palette[idx].colour);
+                        swatch->setColour(colour);
+                        for (auto tid : trackIds) {
+                            magda::UndoManager::getInstance().executeCommand(
+                                std::make_unique<magda::SetTrackColourCommand>(tid, colour));
+                        }
                     }
                 }
-            }
-        });
+            });
     };
     addAndMakeVisible(*colourSwatch_);
 
@@ -160,7 +139,7 @@ TrackInspector::TrackInspector() {
         auto glyph = juce::Drawable::createFromImageData(BinaryData::BoldMGlyph_svg,
                                                          BinaryData::BoldMGlyph_svgSize);
         if (glyph)
-            glyph->replaceColour(juce::Colour(0xFF0A0A0A), DarkTheme::getSecondaryTextColour());
+            glyph->replaceColour(juce::Colour(0xFF0A0A0A), ActiveTheme::getSecondaryTextColour());
         masterGlyph_->setImages(glyph.get());
     }
     masterGlyph_->setEdgeIndent(0);
@@ -205,11 +184,11 @@ TrackInspector::TrackInspector() {
     // Solo button (arrange track-header style)
     soloButton_ =
         std::make_unique<SvgButton>("solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
-    soloButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    soloButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    soloButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
-    soloButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
-                                           DarkTheme::ICON_ON_ACCENT);
+    soloButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    soloButton_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+    soloButton_->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
+    soloButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
+                                           ActiveTheme::ICON_ON_ACCENT);
     soloButton_->setIconPadding(5.0f);  // match the arrange track-header solo glyph
     soloButton_->setInactiveIconOpacity(0.58f);
     soloButton_->setClickingTogglesState(true);
@@ -225,11 +204,11 @@ TrackInspector::TrackInspector() {
     // Record button (arrange track-header style)
     recordButton_ = std::make_unique<SvgButton>("record", BinaryData::track_record_svg,
                                                 BinaryData::track_record_svgSize);
-    recordButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    recordButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    recordButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
-    recordButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
-                                             DarkTheme::ICON_ON_ACCENT);
+    recordButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    recordButton_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+    recordButton_->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
+    recordButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
+                                             ActiveTheme::ICON_ON_ACCENT);
     recordButton_->setIconPadding(5.0f);  // match the arrange track-header record glyph
     recordButton_->setInactiveIconOpacity(0.58f);
     recordButton_->setClickingTogglesState(true);
@@ -249,12 +228,12 @@ TrackInspector::TrackInspector() {
     enableButton_ = std::make_unique<SvgButton>(
         "enable", BinaryData::toggle_off_svg, BinaryData::toggle_off_svgSize,
         BinaryData::toggle_on_svg, BinaryData::toggle_on_svgSize);
-    enableButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    enableButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    enableButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
-                                             DarkTheme::ICON_NEUTRAL);
-    enableButton_->setStateColourReplacement(juce::Colour(0xFF1E1E1E), DarkTheme::ICON_ON_ACCENT,
-                                             DarkTheme::ICON_ON_ACCENT);
+    enableButton_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+    enableButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    enableButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
+                                             ActiveTheme::ICON_NEUTRAL);
+    enableButton_->setStateColourReplacement(juce::Colour(0xFF1E1E1E), ActiveTheme::ICON_ON_ACCENT,
+                                             ActiveTheme::ICON_ON_ACCENT);
     enableButton_->setBorderThickness(1.0f);
     enableButton_->setIconPadding(2.0f);
     enableButton_->setTooltip(tr("tracks.enable.tooltip"));
@@ -288,12 +267,12 @@ TrackInspector::TrackInspector() {
     // expands the "Automated" section below.
     automationIndicator_ = std::make_unique<SvgButton>("Automation", BinaryData::automation_svg,
                                                        BinaryData::automation_svgSize);
-    automationIndicator_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    automationIndicator_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    automationIndicator_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    automationIndicator_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
     automationIndicator_->setActiveBackgroundColor(
-        DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+        ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
     automationIndicator_->setStateColourReplacement(
-        juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL, DarkTheme::TEXT_BRIGHT);
+        juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL, ActiveTheme::TEXT_BRIGHT);
     automationIndicator_->setIconPadding(2.5f);
     automationIndicator_->onClick = [this]() {
         automatedSectionExpanded_ = !automatedSectionExpanded_;
@@ -329,7 +308,7 @@ TrackInspector::TrackInspector() {
     panLabel_->onValueChange = [this]() {
         if (selectedTrackId_ == magda::INVALID_TRACK_ID)
             return;
-        float pan = static_cast<float>(panLabel_->getValue());
+        auto pan = static_cast<float>(panLabel_->getValue());
         if (panLabel_->isDragging()) {
             // Apply directly during drag (no undo command per pixel)
             if (selectedTrackId_ == magda::MASTER_TRACK_ID)
@@ -349,8 +328,8 @@ TrackInspector::TrackInspector() {
     panLabel_->onDragEnd = [this](double startValue) {
         if (selectedTrackId_ == magda::INVALID_TRACK_ID)
             return;
-        float oldPan = static_cast<float>(startValue);
-        float newPan = static_cast<float>(panLabel_->getValue());
+        auto oldPan = static_cast<float>(startValue);
+        auto newPan = static_cast<float>(panLabel_->getValue());
         if (selectedTrackId_ == magda::MASTER_TRACK_ID)
             magda::UndoManager::getInstance().executeCommand(
                 std::make_unique<magda::SetMasterPanCommand>(oldPan, newPan));
@@ -363,18 +342,19 @@ TrackInspector::TrackInspector() {
     automatedSectionLabel_.setText(tr("inspector.automated"), juce::dontSendNotification);
     automatedSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     automatedSectionLabel_.setColour(juce::Label::textColourId,
-                                     DarkTheme::getSecondaryTextColour());
+                                     ActiveTheme::getSecondaryTextColour());
     addAndMakeVisible(automatedSectionLabel_);
 
     automatedParamsLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
-    automatedParamsLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    automatedParamsLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     automatedParamsLabel_.setJustificationType(juce::Justification::topLeft);
     addAndMakeVisible(automatedParamsLabel_);
 
     // Routing section
     routingSectionLabel_.setText(tr("inspector.routing"), juce::dontSendNotification);
     routingSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    routingSectionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    routingSectionLabel_.setColour(juce::Label::textColourId,
+                                   ActiveTheme::getSecondaryTextColour());
     addAndMakeVisible(routingSectionLabel_);
 
     // Input type selector (hidden, kept for internal state)
@@ -410,14 +390,14 @@ TrackInspector::TrackInspector() {
     audioColumnLabel_.setText(magda::technicalText(magda::TechnicalTextToken::Audio),
                               juce::dontSendNotification);
     audioColumnLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    audioColumnLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    audioColumnLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     audioColumnLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(audioColumnLabel_);
 
     midiColumnLabel_.setText(magda::technicalText(magda::TechnicalTextToken::Midi),
                              juce::dontSendNotification);
     midiColumnLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    midiColumnLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    midiColumnLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     midiColumnLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(midiColumnLabel_);
 
@@ -439,54 +419,49 @@ TrackInspector::TrackInspector() {
     sendReceiveSectionLabel_.setText(tr("inspector.sends"), juce::dontSendNotification);
     sendReceiveSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     sendReceiveSectionLabel_.setColour(juce::Label::textColourId,
-                                       DarkTheme::getSecondaryTextColour());
+                                       ActiveTheme::getSecondaryTextColour());
     addAndMakeVisible(sendReceiveSectionLabel_);
 
     addSendButton_ =
         std::make_unique<SvgButton>("AddSend", BinaryData::add_svg, BinaryData::add_svgSize);
     addSendButton_->setTooltip(tr("inspector.add_send"));
     addSendButton_->setIconPadding(4.0f);
-    addSendButton_->setOriginalColor(DarkTheme::getSecondaryTextColour());
+    addSendButton_->setOriginalColor(ActiveTheme::getSecondaryTextColour());
     addSendButton_->onClick = [this]() { showAddSendMenu(); };
     addAndMakeVisible(*addSendButton_);
 
     noSendsLabel_.setText(tr("inspector.no_sends"), juce::dontSendNotification);
     noSendsLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
-    noSendsLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    noSendsLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     addAndMakeVisible(noSendsLabel_);
-
-    receivesLabel_.setText(tr("inspector.no_receives"), juce::dontSendNotification);
-    receivesLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
-    receivesLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    addAndMakeVisible(receivesLabel_);
 
     // Clips section
     clipsSectionLabel_.setText(tr("inspector.clips"), juce::dontSendNotification);
     clipsSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipsSectionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipsSectionLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     addAndMakeVisible(clipsSectionLabel_);
 
     clipCountLabel_.setText(tr("inspector.clip_count.other").replace("{0}", "0"),
                             juce::dontSendNotification);
     clipCountLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
-    clipCountLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    clipCountLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     addAndMakeVisible(clipCountLabel_);
 
     // Latency display
     latencyLabel_.setText(tr("inspector.latency"), juce::dontSendNotification);
     latencyLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    latencyLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    latencyLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     addAndMakeVisible(latencyLabel_);
 
     latencyValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
-    latencyValue_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    latencyValue_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     addAndMakeVisible(latencyValue_);
 
     for (auto* label :
          {&trackNameLabel_, &trackNameValue_, &routingSectionLabel_, &audioColumnLabel_,
-          &midiColumnLabel_, &sendReceiveSectionLabel_, &noSendsLabel_, &receivesLabel_,
-          &clipsSectionLabel_, &clipCountLabel_, &automatedSectionLabel_, &automatedParamsLabel_,
-          &latencyLabel_, &latencyValue_}) {
+          &midiColumnLabel_, &sendReceiveSectionLabel_, &noSendsLabel_, &clipsSectionLabel_,
+          &clipCountLabel_, &automatedSectionLabel_, &automatedParamsLabel_, &latencyLabel_,
+          &latencyValue_}) {
         useLocalizedLabelPainter(*label);
     }
 
@@ -494,15 +469,14 @@ TrackInspector::TrackInspector() {
 }
 
 void TrackInspector::applyThemeColours() {
-    const auto primary = DarkTheme::getTextColour();
-    const auto secondary = DarkTheme::getSecondaryTextColour();
-    const auto surface = DarkTheme::getColour(DarkTheme::SURFACE);
-    const auto border = DarkTheme::getBorderColour();
+    const auto primary = ActiveTheme::getTextColour();
+    const auto secondary = ActiveTheme::getSecondaryTextColour();
+    const auto surface = ActiveTheme::getColour(ActiveTheme::SURFACE);
+    const auto border = ActiveTheme::getBorderColour();
 
-    for (auto* label :
-         {&trackNameLabel_, &routingSectionLabel_, &audioColumnLabel_, &midiColumnLabel_,
-          &sendReceiveSectionLabel_, &noSendsLabel_, &receivesLabel_, &clipsSectionLabel_,
-          &automatedSectionLabel_, &latencyLabel_})
+    for (auto* label : {&trackNameLabel_, &routingSectionLabel_, &audioColumnLabel_,
+                        &midiColumnLabel_, &sendReceiveSectionLabel_, &noSendsLabel_,
+                        &clipsSectionLabel_, &automatedSectionLabel_, &latencyLabel_})
         label->setColour(juce::Label::textColourId, secondary);
 
     for (auto* label : {&automatedParamsLabel_, &clipCountLabel_, &latencyValue_})
@@ -514,13 +488,13 @@ void TrackInspector::applyThemeColours() {
     trackNameValue_.setColour(juce::Label::textWhenEditingColourId, primary);
     trackNameValue_.setColour(juce::Label::backgroundWhenEditingColourId, surface);
     trackNameValue_.setColour(juce::Label::outlineWhenEditingColourId,
-                              DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                              ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
 
     for (auto& label : sendDestLabels_)
         label->setColour(juce::Label::textColourId, primary);
     for (auto& button : sendDeleteButtons_) {
         button->setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                          ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
         button->setColour(juce::TextButton::textColourOffId, secondary);
     }
 
@@ -548,7 +522,7 @@ void TrackInspector::rebuildRoutingIcons() {
         if (button == nullptr)
             return;
         if (auto svg = juce::Drawable::createFromImageData(svgData, svgSize)) {
-            DarkTheme::applyToSvgIcon(*svg);
+            ActiveTheme::applyToSvgIcon(*svg);
             button->setImages(svg.get());
         }
     };
@@ -565,20 +539,25 @@ void TrackInspector::midiDeviceListChanged() {
     juce::MessageManager::callAsync([this]() { populateMidiInputOptions(); });
 }
 
+void TrackInspector::hardwareChannelsChanged() {
+    updateRoutingSelectorsFromTrack();
+}
+
 TrackInspector::~TrackInspector() {
     for (auto* label :
          {&trackNameLabel_, &trackNameValue_, &routingSectionLabel_, &audioColumnLabel_,
-          &midiColumnLabel_, &sendReceiveSectionLabel_, &noSendsLabel_, &receivesLabel_,
-          &clipsSectionLabel_, &clipCountLabel_, &automatedSectionLabel_, &automatedParamsLabel_,
-          &latencyLabel_, &latencyValue_}) {
+          &midiColumnLabel_, &sendReceiveSectionLabel_, &noSendsLabel_, &clipsSectionLabel_,
+          &clipCountLabel_, &automatedSectionLabel_, &automatedParamsLabel_, &latencyLabel_,
+          &latencyValue_}) {
         clearLocalizedLabelPainter(*label);
     }
     for (auto& label : sendDestLabels_)
         clearLocalizedLabelPainter(*label);
 
+    magda::MidiBridge::getInstance().removeMidiDeviceListListener(this);
     if (audioEngine_) {
-        if (auto* mb = audioEngine_->getMidiBridge())
-            mb->removeMidiDeviceListListener(this);
+        if (auto* hardware = audioEngine_->getAudioIO())
+            hardware->removeListener(this);
     }
     stopTimer();
     magda::AutomationManager::getInstance().removeListener(this);
@@ -589,19 +568,16 @@ void TrackInspector::timerCallback() {
     if (!audioEngine_)
         return;
 
-    auto* midiBridge = audioEngine_->getMidiBridge();
-    if (midiBridge) {
-        size_t inputCount = midiBridge->getAvailableMidiInputs().size();
-        size_t outputCount = midiBridge->getAvailableMidiOutputs().size();
+    size_t inputCount = magda::MidiBridge::getInstance().getAvailableMidiInputs().size();
+    size_t outputCount = magda::MidiBridge::getAvailableMidiOutputs().size();
 
-        if (inputCount != lastMidiInputCount_ || outputCount != lastMidiOutputCount_) {
-            lastMidiInputCount_ = inputCount;
-            lastMidiOutputCount_ = outputCount;
-            populateMidiInputOptions();
-            populateMidiOutputOptions();
-            if (selectedTrackId_ != magda::INVALID_TRACK_ID)
-                updateRoutingSelectorsFromTrack();
-        }
+    if (inputCount != lastMidiInputCount_ || outputCount != lastMidiOutputCount_) {
+        lastMidiInputCount_ = inputCount;
+        lastMidiOutputCount_ = outputCount;
+        populateMidiInputOptions();
+        populateMidiOutputOptions();
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
+            updateRoutingSelectorsFromTrack();
     }
 }
 
@@ -621,10 +597,10 @@ void TrackInspector::onDeactivated() {
 }
 
 void TrackInspector::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
 
     // Draw section separators
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     auto area = getLocalBounds().reduced(8);
     for (int y : sectionSeparatorYs_) {
         g.drawHorizontalLine(y, static_cast<float>(area.getX()),
@@ -762,18 +738,45 @@ void TrackInspector::resized() {
             noSendsLabel_.setVisible(true);
         } else {
             noSendsLabel_.setVisible(false);
-            for (size_t i = 0; i < sendDestLabels_.size(); ++i) {
+
+            // Two columns rather than one long one. A track is capped at
+            // MAX_SENDS_PER_TRACK, so this is four rows at worst and cannot
+            // grow past the panel (#2425). One column where two will not fit,
+            // because the name is the part that pays for the second.
+            constexpr int columnGap = 8;
+            constexpr int levelWidth = 44;
+            constexpr int deleteWidth = 18;
+            constexpr int leastName = 40;
+            constexpr int entryLeast = leastName + levelWidth + deleteWidth + 8;
+
+            const auto columns = bounds.getWidth() >= 2 * entryLeast + columnGap ? 2 : 1;
+            const auto entryWidth = (bounds.getWidth() - (columns - 1) * columnGap) / columns;
+
+            for (size_t i = 0; i < sendDestLabels_.size(); i += static_cast<size_t>(columns)) {
                 auto sendRow = bounds.removeFromTop(18);
-                sendDestLabels_[i]->setBounds(sendRow.removeFromLeft(60));
-                sendRow.removeFromLeft(4);
-                sendLevelLabels_[i]->setBounds(sendRow.removeFromLeft(50));
-                sendRow.removeFromLeft(4);
-                sendDeleteButtons_[i]->setBounds(sendRow.removeFromLeft(18));
+
+                for (auto column = 0; column < columns; ++column) {
+                    const auto index = i + static_cast<size_t>(column);
+                    if (index >= sendDestLabels_.size())
+                        break;
+
+                    auto entry = sendRow.removeFromLeft(entryWidth);
+                    sendRow.removeFromLeft(columnGap);
+
+                    // Right to left: the delete button and the level keep their
+                    // widths and the name takes what is left, so a long track
+                    // name elides instead of pushing the controls off the edge.
+                    sendDeleteButtons_[index]->setBounds(entry.removeFromRight(deleteWidth));
+                    entry.removeFromRight(4);
+                    sendLevelLabels_[index]->setBounds(entry.removeFromRight(levelWidth));
+                    entry.removeFromRight(4);
+                    sendDestLabels_[index]->setBounds(entry);
+                }
+
                 bounds.removeFromTop(2);
             }
         }
 
-        receivesLabel_.setBounds(bounds.removeFromTop(16));
         bounds.removeFromTop(separatorPadding);
         sectionSeparatorYs_.push_back(bounds.getY());
         bounds.removeFromTop(separatorPadding);
@@ -868,7 +871,7 @@ void TrackInspector::setSelectedTrack(magda::TrackId trackId) {
         panLabel_->onValueChange = [this]() {
             if (selectedTrackId_ == magda::INVALID_TRACK_ID)
                 return;
-            float pan = static_cast<float>(panLabel_->getValue());
+            auto pan = static_cast<float>(panLabel_->getValue());
             if (panLabel_->isDragging()) {
                 if (selectedTrackId_ == magda::MASTER_TRACK_ID)
                     magda::TrackManager::getInstance().setMasterPan(pan);
@@ -886,8 +889,8 @@ void TrackInspector::setSelectedTrack(magda::TrackId trackId) {
         panLabel_->onDragEnd = [this](double startValue) {
             if (selectedTrackId_ == magda::INVALID_TRACK_ID)
                 return;
-            float oldPan = static_cast<float>(startValue);
-            float newPan = static_cast<float>(panLabel_->getValue());
+            auto oldPan = static_cast<float>(startValue);
+            auto newPan = static_cast<float>(panLabel_->getValue());
             if (selectedTrackId_ == magda::MASTER_TRACK_ID)
                 magda::UndoManager::getInstance().executeCommand(
                     std::make_unique<magda::SetMasterPanCommand>(oldPan, newPan));
@@ -1194,23 +1197,21 @@ void TrackInspector::updateFromMultiTrackSelection() {
     trackNameValue_.setEditable(false);
 
     // Check button states: "on" only if ALL selected tracks share that state
-    bool allMuted = true;
-    bool allSoloed = true;
-    bool allRecordArmed = true;
-    bool allEnabled = true;
-    for (auto tid : selectedTrackIds_) {
-        const auto* track = tm.getTrack(tid);
-        if (!track)
-            continue;
-        if (!track->muted)
-            allMuted = false;
-        if (!track->soloed)
-            allSoloed = false;
-        if (!track->recordArmed)
-            allRecordArmed = false;
-        if (!tm.isChainEnabled(tid))
-            allEnabled = false;
-    }
+    const auto trackFor = [&tm](magda::TrackId tid) { return tm.getTrack(tid); };
+    const auto stillExists = [](const magda::TrackInfo* track) { return track != nullptr; };
+    const auto chainEnabled = [&tm](const magda::TrackInfo* track) {
+        return tm.isChainEnabled(track->id);
+    };
+
+    std::vector<const magda::TrackInfo*> tracks;
+    std::ranges::copy(selectedTrackIds_ | std::views::transform(trackFor) |
+                          std::views::filter(stillExists),
+                      std::back_inserter(tracks));
+
+    const bool allMuted = std::ranges::all_of(tracks, &magda::TrackInfo::muted);
+    const bool allSoloed = std::ranges::all_of(tracks, &magda::TrackInfo::soloed);
+    const bool allRecordArmed = std::ranges::all_of(tracks, &magda::TrackInfo::recordArmed);
+    const bool allEnabled = std::ranges::all_of(tracks, chainEnabled);
 
     muteButton_->setToggleState(allMuted, juce::dontSendNotification);
     soloButton_->setToggleState(allSoloed, juce::dontSendNotification);
@@ -1412,8 +1413,8 @@ void TrackInspector::showTrackControls(bool show) {
 
     sendReceiveSectionLabel_.setVisible(p.sends);
     addSendButton_->setVisible(p.sends);
+    updateAddSendEnabled();
     noSendsLabel_.setVisible(p.sends);
-    receivesLabel_.setVisible(p.sends);
     for (auto& l : sendDestLabels_)
         l->setVisible(p.sends);
     for (auto& l : sendLevelLabels_)
@@ -1430,9 +1431,35 @@ void TrackInspector::showTrackControls(bool show) {
         automatedSectionLabel_.setVisible(false);
         automatedParamsLabel_.setVisible(false);
     }
+
+    // Every section above decides its own visibility, and resized() lays out
+    // only the sections that are visible -- so the bounds this just invalidated
+    // have to be worked out again here. Without it a section that has become
+    // visible keeps whatever bounds it last had, and the ones after it are
+    // still placed for the height it used to take: sends landed on top of the
+    // receives and clips text, and stayed there until the panel was resized by
+    // hand, which is what ran the layout again.
+    resized();
+}
+
+void TrackInspector::updateAddSendEnabled() {
+    if (addSendButton_ == nullptr)
+        return;
+
+    // TrackManager::addSend refuses past the aux limit, so a full track's
+    // button says so rather than being pressed for nothing.
+    const auto* track = selectedTrackId_ == magda::INVALID_TRACK_ID
+                            ? nullptr
+                            : magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+
+    const auto full = track != nullptr && static_cast<int>(track->sends.size()) >=
+                                              magda::TrackManager::MAX_SENDS_PER_TRACK;
+    addSendButton_->setEnabled(!full);
 }
 
 void TrackInspector::rebuildSendsUI() {
+    updateAddSendEnabled();
+
     // Remove existing send UI components
     for (auto& l : sendDestLabels_) {
         clearLocalizedLabelPainter(*l);
@@ -1446,16 +1473,30 @@ void TrackInspector::rebuildSendsUI() {
     sendLevelLabels_.clear();
     sendDeleteButtons_.clear();
 
-    if (selectedTrackId_ == magda::INVALID_TRACK_ID)
+    // The rows above are gone whichever way this returns, and the sections
+    // below them move up, so the layout runs on every path rather than only
+    // the one that rebuilds something.
+    const auto relayout = [this] {
+        resized();
+        repaint();
+    };
+
+    if (selectedTrackId_ == magda::INVALID_TRACK_ID) {
+        relayout();
         return;
+    }
 
     const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
-    if (!track)
+    if (!track) {
+        relayout();
         return;
+    }
 
     // Aux tracks don't have sends
-    if (track->type == magda::TrackType::Aux)
+    if (track->type == magda::TrackType::Aux) {
+        relayout();
         return;
+    }
 
     for (const auto& send : track->sends) {
         // Destination name label
@@ -1463,7 +1504,7 @@ void TrackInspector::rebuildSendsUI() {
         const auto* destTrack = magda::TrackManager::getInstance().getTrack(send.destTrackId);
         destLabel->setText(destTrack ? destTrack->name : "?", juce::dontSendNotification);
         destLabel->setFont(FontManager::getInstance().getUIFont(10.0f));
-        destLabel->setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        destLabel->setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
         useLocalizedLabelPainter(*destLabel);
         addAndMakeVisible(*destLabel);
         sendDestLabels_.push_back(std::move(destLabel));
@@ -1528,9 +1569,9 @@ void TrackInspector::rebuildSendsUI() {
                                      juce::Button::ConnectedOnRight | juce::Button::ConnectedOnTop |
                                      juce::Button::ConnectedOnBottom);
         deleteBtn->setColour(juce::TextButton::buttonColourId,
-                             DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                             ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
         deleteBtn->setColour(juce::TextButton::textColourOffId,
-                             DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                             ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         deleteBtn->onClick = [srcId, busIndex]() {
             magda::UndoManager::getInstance().executeCommand(
                 std::make_unique<magda::RemoveSendCommand>(srcId, busIndex));
@@ -1539,8 +1580,7 @@ void TrackInspector::rebuildSendsUI() {
         sendDeleteButtons_.push_back(std::move(deleteBtn));
     }
 
-    resized();
-    repaint();
+    relayout();
 }
 
 void TrackInspector::showAddSendMenu() {
@@ -1573,7 +1613,7 @@ void TrackInspector::showAddSendMenu() {
                 continue;
             if (track.type == magda::TrackType::Master)
                 continue;
-            if (std::find(descendants.begin(), descendants.end(), track.id) != descendants.end())
+            if (std::ranges::contains(descendants, track.id))
                 continue;
 
             // Filter out tracks that already have a send from this track
@@ -1603,7 +1643,7 @@ void TrackInspector::showAddSendMenu() {
 
     addTracksOfType(magda::TrackType::Aux);
     addTracksOfType(magda::TrackType::Group);
-    addTracksOfType(magda::TrackType::Audio);
+    addTracksOfType(magda::TrackType::Media);
 
     if (menu.getNumItems() == 0) {
         menu.addItem(-1, "(No available tracks)", false);
@@ -1627,16 +1667,15 @@ void TrackInspector::populateRoutingSelectors() {
         return;
 
     // Register for device list changes (QWERTY keyboard toggle, etc.)
-    if (auto* mb = audioEngine_->getMidiBridge())
-        mb->addMidiDeviceListListener(this);
+    magda::MidiBridge::getInstance().addMidiDeviceListListener(this);
+    if (auto* hardware = audioEngine_->getAudioIO())
+        hardware->addListener(this);
 
     // Populate all routing selectors
     populateAudioInputOptions();
     populateMidiInputOptions();
     populateAudioOutputOptions();
     populateMidiOutputOptions();
-
-    auto* midiBridge = audioEngine_->getMidiBridge();
 
     // Audio input selector callbacks (mutually exclusive with MIDI input)
     audioInputSelector_->onEnabledChanged = [this](bool enabled) {
@@ -1691,7 +1730,7 @@ void TrackInspector::populateRoutingSelectors() {
     };
 
     // MIDI input selector callbacks (mutually exclusive with audio input)
-    inputSelector_->onEnabledChanged = [this, midiBridge](bool enabled) {
+    inputSelector_->onEnabledChanged = [this](bool enabled) {
         if (selectedTrackId_ == magda::INVALID_TRACK_ID)
             return;
 
@@ -1711,8 +1750,8 @@ void TrackInspector::populateRoutingSelectors() {
                 } else {
                     magda::TrackManager::getInstance().setTrackMidiInput(selectedTrackId_, "all");
                 }
-            } else if (selectedId >= 10 && midiBridge) {
-                auto midiInputs = midiBridge->getAvailableMidiInputs();
+            } else if (selectedId >= 10) {
+                auto midiInputs = magda::MidiBridge::getInstance().getAvailableMidiInputs();
                 int deviceIndex = selectedId - 10;
                 if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiInputs.size())) {
                     magda::TrackManager::getInstance().setTrackMidiInput(
@@ -1728,7 +1767,7 @@ void TrackInspector::populateRoutingSelectors() {
         }
     };
 
-    inputSelector_->onSelectionChanged = [this, midiBridge](int selectedId) {
+    inputSelector_->onSelectionChanged = [this](int selectedId) {
         if (selectedTrackId_ == magda::INVALID_TRACK_ID)
             return;
 
@@ -1743,8 +1782,8 @@ void TrackInspector::populateRoutingSelectors() {
                 magda::TrackManager::getInstance().setTrackMidiInput(
                     selectedTrackId_, "track:" + juce::String(it->second));
             }
-        } else if (selectedId >= 10 && midiBridge) {
-            auto midiInputs = midiBridge->getAvailableMidiInputs();
+        } else if (selectedId >= 10) {
+            auto midiInputs = magda::MidiBridge::getInstance().getAvailableMidiInputs();
             int deviceIndex = selectedId - 10;
             if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiInputs.size())) {
                 magda::TrackManager::getInstance().setTrackMidiInput(selectedTrackId_,
@@ -1783,8 +1822,13 @@ void TrackInspector::populateRoutingSelectors() {
                     selectedTrackId_, "track:" + juce::String(it->second));
             }
         } else if (selectedId >= 10) {
-            // Hardware output
-            magda::TrackManager::getInstance().setTrackAudioOutput(selectedTrackId_, "master");
+            // Hardware output — route to the mapped wave output device.
+            // Copy the string — the map can be repopulated during setTrackAudioOutput
+            // (via notifyTrackPropertyChanged → updateRoutingSelectorsFromTrack)
+            auto it = outputChannelMapping_.find(selectedId);
+            juce::String dest =
+                it != outputChannelMapping_.end() ? it->second : juce::String("master");
+            magda::TrackManager::getInstance().setTrackAudioOutput(selectedTrackId_, dest);
         }
     };
 
@@ -1799,7 +1843,7 @@ void TrackInspector::populateRoutingSelectors() {
         // When enabling, don't set anything yet — user picks a device from dropdown
     };
 
-    midiOutputSelector_->onSelectionChanged = [this, midiBridge](int selectedId) {
+    midiOutputSelector_->onSelectionChanged = [this](int selectedId) {
         if (selectedTrackId_ == magda::INVALID_TRACK_ID)
             return;
 
@@ -1812,8 +1856,8 @@ void TrackInspector::populateRoutingSelectors() {
                 magda::TrackManager::getInstance().routeMidiOutputToTrack(selectedTrackId_,
                                                                           it->second);
             }
-        } else if (selectedId >= 10 && midiBridge) {
-            auto midiOutputs = midiBridge->getAvailableMidiOutputs();
+        } else if (selectedId >= 10) {
+            auto midiOutputs = magda::MidiBridge::getAvailableMidiOutputs();
             int deviceIndex = selectedId - 10;
             if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiOutputs.size())) {
                 magda::TrackManager::getInstance().setTrackMidiOutput(selectedTrackId_,
@@ -1826,47 +1870,33 @@ void TrackInspector::populateRoutingSelectors() {
 void TrackInspector::populateAudioInputOptions() {
     if (!audioInputSelector_ || !audioEngine_)
         return;
-    auto* deviceManager = audioEngine_->getDeviceManager();
-    if (!deviceManager)
-        return;
-    juce::BigInteger enabledInputChannels;
-    std::map<int, juce::String> teInputDeviceNames;
-    if (auto* bridge = audioEngine_->getAudioBridge()) {
-        enabledInputChannels = bridge->getEnabledInputChannels();
-        teInputDeviceNames = bridge->getInputDeviceNamesByChannel();
-    }
+    audioInputSelector_->meterInputsFrom(audioEngine_->getAudioIO());
     magda::RoutingSyncHelper::populateAudioInputOptions(
-        audioInputSelector_.get(), deviceManager->getCurrentAudioDevice(), selectedTrackId_,
-        &inputTrackMapping_, enabledInputChannels, &inputChannelMapping_, teInputDeviceNames);
+        audioInputSelector_.get(),
+        magda::RoutingSyncHelper::openDirection(audioEngine_->getAudioIO(), true), selectedTrackId_,
+        &inputTrackMapping_, &inputChannelMapping_);
 }
 
 void TrackInspector::populateAudioOutputOptions() {
     if (!outputSelector_ || !audioEngine_)
         return;
-    auto* deviceManager = audioEngine_->getDeviceManager();
-    if (!deviceManager)
-        return;
-    juce::BigInteger enabledOutputChannels;
-    if (auto* bridge = audioEngine_->getAudioBridge())
-        enabledOutputChannels = bridge->getEnabledOutputChannels();
     magda::RoutingSyncHelper::populateAudioOutputOptions(
-        outputSelector_.get(), selectedTrackId_, deviceManager->getCurrentAudioDevice(),
-        outputTrackMapping_, enabledOutputChannels);
+        outputSelector_.get(), selectedTrackId_,
+        magda::RoutingSyncHelper::openDirection(audioEngine_->getAudioIO(), false),
+        outputTrackMapping_, &outputChannelMapping_);
 }
 
 void TrackInspector::populateMidiInputOptions() {
     if (!inputSelector_ || !audioEngine_)
         return;
-    magda::RoutingSyncHelper::populateMidiInputOptions(inputSelector_.get(),
-                                                       audioEngine_->getMidiBridge(),
-                                                       selectedTrackId_, &midiInputTrackMapping_);
+    magda::RoutingSyncHelper::populateMidiInputOptions(inputSelector_.get(), selectedTrackId_,
+                                                       &midiInputTrackMapping_);
 }
 
 void TrackInspector::populateMidiOutputOptions() {
     if (!midiOutputSelector_ || !audioEngine_)
         return;
     magda::RoutingSyncHelper::populateMidiOutputOptions(midiOutputSelector_.get(),
-                                                        audioEngine_->getMidiBridge(),
                                                         midiOutputTrackMapping_, selectedTrackId_);
 }
 
@@ -1881,20 +1911,11 @@ void TrackInspector::updateRoutingSelectorsFromTrack() {
     // Always re-populate audio input options so track-as-input entries are current
     populateAudioInputOptions();
 
-    auto* deviceManager = audioEngine_->getDeviceManager();
-    auto* device = deviceManager ? deviceManager->getCurrentAudioDevice() : nullptr;
-    juce::BigInteger enabledIn, enabledOut;
-    std::map<int, juce::String> teInputDeviceNames;
-    if (auto* bridge = audioEngine_->getAudioBridge()) {
-        enabledIn = bridge->getEnabledInputChannels();
-        enabledOut = bridge->getEnabledOutputChannels();
-        teInputDeviceNames = bridge->getInputDeviceNamesByChannel();
-    }
     magda::RoutingSyncHelper::syncSelectorsFromTrack(
         *track, audioInputSelector_.get(), inputSelector_.get(), outputSelector_.get(),
-        midiOutputSelector_.get(), audioEngine_->getMidiBridge(), device, selectedTrackId_,
-        outputTrackMapping_, midiOutputTrackMapping_, &inputTrackMapping_, enabledIn, enabledOut,
-        &inputChannelMapping_, teInputDeviceNames, &midiInputTrackMapping_);
+        midiOutputSelector_.get(), audioEngine_->getAudioIO(), selectedTrackId_,
+        outputTrackMapping_, midiOutputTrackMapping_, &inputTrackMapping_, &inputChannelMapping_,
+        &midiInputTrackMapping_, &outputChannelMapping_);
 }
 
 }  // namespace magda::daw::ui

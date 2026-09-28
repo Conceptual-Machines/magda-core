@@ -243,7 +243,7 @@ ChordAgent::Result ChordAgent::parseResponse(const juce::String& dsl) {
 }
 
 ChordAgent::Result ChordAgent::generate(const Input& input, TokenCallback onToken,
-                                        CancelCallback shouldCancel) const {
+                                        CancelCallback shouldCancel) {
     const auto cancelled = [&] { return shouldCancel && shouldCancel(); };
     if (cancelled())
         return {{}, {}, "Cancelled", true, true};

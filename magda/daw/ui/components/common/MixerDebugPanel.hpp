@@ -56,8 +56,8 @@ class MixerDebugPanel : public juce::Component {
     int dragStartHeight_ = 0;
     int contentHeight_ = 0;
 
-    bool isInResizeZone(const juce::Point<int>& pos) const;
-    bool isInDragZone(const juce::Point<int>& pos) const;
+    static bool isInResizeZone(const juce::Point<int>& pos);
+    static bool isInDragZone(const juce::Point<int>& pos);
 
     void addIntSlider(const juce::String& name, int* valuePtr, int min, int max);
     void addFloatSlider(const juce::String& name, float* valuePtr, float min, float max,

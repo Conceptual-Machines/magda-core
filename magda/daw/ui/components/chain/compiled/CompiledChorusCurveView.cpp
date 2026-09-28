@@ -4,7 +4,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaChorusCompiledPlugin.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -41,13 +41,14 @@ CompiledChorusCurveView::CompiledChorusCurveView(juce::String /*pluginId*/) {
 }
 
 void CompiledChorusCurveView::setCompiledPlugin(
-    magda::daw::audio::compiled::MagdaChorusCompiledPlugin* plugin) {
-    compiledPlugin_ = plugin;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaChorusCompiledPlugin> plugin) {
+    compiledPlugin_ = std::move(plugin);
 }
 
-void CompiledChorusCurveView::bindPlugin(te::Plugin* plugin) {
+void CompiledChorusCurveView::bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) {
     setCompiledPlugin(
-        dynamic_cast<magda::daw::audio::compiled::MagdaChorusCompiledPlugin*>(plugin));
+        std::dynamic_pointer_cast<magda::daw::audio::compiled::MagdaChorusCompiledPlugin>(
+            std::move(device)));
 }
 
 void CompiledChorusCurveView::updateFromDevice(const magda::DeviceInfo& device) {
@@ -74,8 +75,8 @@ void CompiledChorusCurveView::timerCallback() {
     auto readPluginSlot = [this](int slot, float fallback) {
         if (compiledPlugin_ == nullptr)
             return fallback;
-        if (auto* p = compiledPlugin_->getSlotParameter(slot))
-            return compiledPlugin_->nativeValueToDisplayValue(slot, p->getCurrentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(slot))
+            return compiledPlugin_->nativeValueToDisplayValue(slot, p.currentValue());
         return fallback;
     };
 
@@ -94,8 +95,8 @@ void CompiledChorusCurveView::timerCallback() {
         rateHz = readPluginSlot(Chorus::kRateSlot, rateHz);
         depth = readPluginSlot(Chorus::kDepthSlot, depth);
         width = readPluginSlot(Chorus::kWidthSlot, width);
-        if (auto* p = compiledPlugin_->getSlotParameter(Chorus::kDivisionSlot)) {
-            const float norm = p->getCurrentValue();
+        if (auto p = compiledPlugin_->getSlotParameter(Chorus::kDivisionSlot)) {
+            const float norm = p.currentValue();
             const auto& info = compiledPlugin_->getSlotInfo(Chorus::kDivisionSlot);
             const int count = static_cast<int>(info.choices.size());
             const int idx =
@@ -143,7 +144,7 @@ void CompiledChorusCurveView::resampleFromPlugin() {
 
 void CompiledChorusCurveView::paint(juce::Graphics& g) {
     const auto bounds = getLocalBounds();
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).darker(0.06f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).darker(0.06f));
     g.fillRect(bounds);
 
     auto plot = bounds.toFloat().reduced(kPlotPadX, kPlotPadY);
@@ -151,7 +152,7 @@ void CompiledChorusCurveView::paint(juce::Graphics& g) {
     if (plot.getWidth() < 8.0f || plot.getHeight() < 8.0f)
         return;
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.55f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.55f));
     g.drawRect(plot, 1.0f);
 
     juce::Graphics::ScopedSaveState clipGuard(g);
@@ -159,7 +160,7 @@ void CompiledChorusCurveView::paint(juce::Graphics& g) {
 
     // Centre delay line at 18 ms — gives the eye a reference for "how
     // much the voices are swinging".
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.30f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.30f));
     const float centerY = msToY(kCenterMs, plot);
     g.drawHorizontalLine(static_cast<int>(std::round(centerY)), plot.getX(), plot.getRight());
 
@@ -167,9 +168,9 @@ void CompiledChorusCurveView::paint(juce::Graphics& g) {
     // depth scales the swing magnitude. Mirrors the DSP's lfoAt(...)
     // formula in magda_chorus.dsp.
     const juce::Colour voiceColours[3] = {
-        DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY_SOFT),
-        DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE),
-        DarkTheme::getColour(DarkTheme::ACCENT_MODULATION),
+        ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY_SOFT),
+        ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE),
+        ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION),
     };
 
     for (int v = 0; v < voices_; ++v) {
@@ -201,7 +202,7 @@ void CompiledChorusCurveView::paint(juce::Graphics& g) {
     // Voice-count badge.
     const juce::String voiceLabel = juce::String(voices_) + (voices_ == 1 ? " VOICE" : " VOICES");
     g.setFont(11.0f);
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.75f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.75f));
     g.drawText(
         voiceLabel,
         juce::Rectangle<float>(plot.getX() + 6.0f, plot.getY() + 4.0f, 80.0f, 14.0f).toNearestInt(),
@@ -213,9 +214,9 @@ void CompiledChorusCurveView::paint(juce::Graphics& g) {
         if (compiledPlugin_ != nullptr) {
             const auto& info = compiledPlugin_->getSlotInfo(
                 magda::daw::audio::compiled::MagdaChorusCompiledPlugin::kDivisionSlot);
-            if (auto* p = compiledPlugin_->getSlotParameter(
+            if (auto p = compiledPlugin_->getSlotParameter(
                     magda::daw::audio::compiled::MagdaChorusCompiledPlugin::kDivisionSlot)) {
-                const float norm = p->getCurrentValue();
+                const float norm = p.currentValue();
                 const int count = static_cast<int>(info.choices.size());
                 if (count > 0) {
                     const int idx = juce::jlimit(
@@ -231,7 +232,7 @@ void CompiledChorusCurveView::paint(juce::Graphics& g) {
         rateLabel =
             rateHz_ >= 10.0f ? juce::String(rateHz_, 1) + " Hz" : juce::String(rateHz_, 2) + " Hz";
     }
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.6f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.6f));
     g.drawText(
         rateLabel,
         juce::Rectangle<float>(plot.getRight() - 80.0f - 6.0f, plot.getY() + 4.0f, 80.0f, 14.0f)

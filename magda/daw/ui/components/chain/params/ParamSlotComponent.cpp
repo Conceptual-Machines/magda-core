@@ -1,14 +1,18 @@
 #include "params/ParamSlotComponent.hpp"
 
 #include <cmath>
+#include <optional>
+#include <utility>
 
 #include "core/LinkModeManager.hpp"
 #include "core/ParameterUtils.hpp"
+#include "core/TrackManager.hpp"
+#include "engine/AudioEngine.hpp"
 #include "params/ParamLinkMenu.hpp"
 #include "params/ParamLinkResolver.hpp"
 #include "params/ParamModulationPainter.hpp"
 #include "params/ParamWidgetSetup.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -26,20 +30,25 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
     setInterceptsMouseClicks(true, true);
 
     nameLabel_.setJustificationType(juce::Justification::centredLeft);
-    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     nameLabel_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(nameLabel_);
 
     valueSlider_.setRange(0.0, 1.0, 0.01);
     valueSlider_.setValue(0.5, juce::dontSendNotification);
-    valueSlider_.setTextColour(DarkTheme::getTextColour());
+    valueSlider_.setTextColour(ActiveTheme::getTextColour());
     valueSlider_.setBackgroundColour(juce::Colours::transparentBlack);
     valueSlider_.setShowFillIndicator(false);
     valueSlider_.onValueChanged = [this](double value) {
         if (onValueChanged) {
-            onValueChanged(value);
+            // The slider reads in the parameter's display units and everything
+            // downstream speaks model ones, as the discrete widgets already do.
+            onValueChanged(
+                magda::ParameterUtils::realToModelValue(static_cast<float>(value), paramInfo_)
+                    .value);
         }
     };
+    valueSlider_.onHoldEnd = [this]() { releaseHeldObservation(); };
     valueSlider_.onClicked = [this]() {
         if (devicePath_.isValid()) {
             magda::SelectionManager::getInstance().selectParam(devicePath_, paramIndex_);
@@ -68,7 +77,7 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
     amountLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
     amountLabel_.setColour(juce::Label::textColourId, juce::Colours::white);
     amountLabel_.setColour(juce::Label::backgroundColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.95f));
+                           ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.95f));
     amountLabel_.setJustificationType(juce::Justification::centred);
     amountLabel_.setVisible(false);
     amountLabel_.setAlwaysOnTop(true);
@@ -158,12 +167,12 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
     addAndMakeVisible(valueSlider_);
 
     // Default MIDI Learn wiring: delegate to MidiLearnCoordinator singleton
-    onMidiLearn = [this](magda::ChainNodePath path, int paramIdx, juce::String paramName) {
+    onMidiLearn = [this](const magda::ChainNodePath& path, int paramIdx, juce::String paramName) {
         juce::String displayName = paramName.isNotEmpty() ? paramName : nameLabel_.getText();
         magda::MidiLearnCoordinator::getInstance().beginLearn(
             magda::ControlTarget::pluginParam(path, paramIdx), displayName);
     };
-    onMidiClear = [](magda::ChainNodePath path, int paramIdx) {
+    onMidiClear = [](const magda::ChainNodePath& path, int paramIdx) {
         magda::MidiLearnCoordinator::getInstance().clearMappings(
             magda::ControlTarget::pluginParam(path, paramIdx));
     };
@@ -174,25 +183,40 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
 ParamSlotComponent::~ParamSlotComponent() {
     stopTimer();
 
-    if (momentaryButton_)
-        momentaryButton_->release();
+    try {
+        if (momentaryButton_)
+            momentaryButton_->release();
 
-    // Detach the shared LookAndFeel before the buttons die.
-    for (auto& button : choiceButtons_) {
-        if (button)
-            button->setLookAndFeel(nullptr);
+        // Detach the shared LookAndFeel before the buttons die.
+        for (auto& button : choiceButtons_) {
+            if (button)
+                button->setLookAndFeel(nullptr);
+        }
+
+        if (amountLabel_.isOnDesktop()) {
+            amountLabel_.removeFromDesktop();
+        }
+        if (isInMidiLearnMode_) {
+            magda::MidiLearnCoordinator::getInstance().cancelLearn();
+        }
+    } catch (const std::exception& e) {
+        juce::Logger::writeToLog(juce::String("[ParamSlotComponent] ") + e.what());
+    } catch (...) {
+        juce::Logger::writeToLog("[ParamSlotComponent] unknown exception during teardown");
     }
 
-    if (amountLabel_.isOnDesktop()) {
-        amountLabel_.removeFromDesktop();
+    // Must run even if the best-effort teardown above threw: these
+    // singletons hold a raw `this` pointer that would otherwise dangle.
+    try {
+        magda::MidiLearnCoordinator::getInstance().removeListener(this);
+        magda::BindingRegistry::getInstance().removeListener(this);
+        magda::ControllerRegistry::getInstance().removeListener(this);
+        magda::LinkModeManager::getInstance().removeListener(this);
+    } catch (const std::exception& e) {
+        juce::Logger::writeToLog(juce::String("[ParamSlotComponent removeListener] ") + e.what());
+    } catch (...) {
+        juce::Logger::writeToLog("[ParamSlotComponent removeListener] unknown exception");
     }
-    if (isInMidiLearnMode_) {
-        magda::MidiLearnCoordinator::getInstance().cancelLearn();
-    }
-    magda::MidiLearnCoordinator::getInstance().removeListener(this);
-    magda::BindingRegistry::getInstance().removeListener(this);
-    magda::ControllerRegistry::getInstance().removeListener(this);
-    magda::LinkModeManager::getInstance().removeListener(this);
 }
 
 // ============================================================================
@@ -384,14 +408,14 @@ void ParamSlotComponent::showLinkModeSlider(bool /*isNewLink*/, float initialAmo
         linkModeSlider_->setRange(0.0, 100.0, 1.0);
         linkModeSlider_->setTextValueSuffix("%");
         linkModeSlider_->setColour(juce::Slider::backgroundColourId,
-                                   DarkTheme::getColour(DarkTheme::SURFACE));
+                                   ActiveTheme::getColour(ActiveTheme::SURFACE));
 
         auto safeThis = juce::Component::SafePointer<ParamSlotComponent>(this);
         linkModeSlider_->onValueChange = [safeThis]() {
             if (safeThis == nullptr || !safeThis->linkModeSlider_) {
                 return;
             }
-            float amount = static_cast<float>(safeThis->linkModeSlider_->getValue() / 100.0);
+            auto amount = static_cast<float>(safeThis->linkModeSlider_->getValue() / 100.0);
 
             if (safeThis->activeMod_.isValid() && safeThis->onModAmountChanged) {
                 magda::ControlTarget thisTarget =
@@ -419,8 +443,9 @@ void ParamSlotComponent::showLinkModeSlider(bool /*isNewLink*/, float initialAmo
         linkModeSlider_->setTextBoxStyle(juce::Slider::TextBoxRight, false, 52, 18);
     }
 
-    auto accentColor = activeMod_.isValid() ? DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION)
-                                            : DarkTheme::getColour(DarkTheme::ACCENT_MODULATION);
+    auto accentColor = activeMod_.isValid()
+                           ? ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION)
+                           : ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION);
     linkModeSlider_->setColour(juce::Slider::thumbColourId, accentColor);
     linkModeSlider_->setColour(juce::Slider::trackColourId, accentColor.withAlpha(0.5f));
 
@@ -447,7 +472,12 @@ void ParamSlotComponent::setParamName(const juce::String& name) {
     nameLabel_.setText(name, juce::dontSendNotification);
 }
 
-void ParamSlotComponent::setParamValue(double value) {
+void ParamSlotComponent::setParamValue(double modelValue) {
+    // In, as out: model units. The slider is the only widget here drawn in
+    // display ones, and it is converted on the way to it.
+    const auto value = static_cast<double>(magda::ParameterUtils::modelToRealValue(
+        magda::ParameterModelValue{static_cast<float>(modelValue)}, paramInfo_));
+
     // Bypass the slider's configured step interval (0.01) — that interval is
     // there to give drags a pleasant coarse feel, but automation echoes push
     // arbitrary continuous values and snapping them visibly quantizes the
@@ -462,8 +492,8 @@ void ParamSlotComponent::setParamValue(double value) {
     // dropdown (or the segmented row, which cannot self-toggle because
     // selection is driven explicitly) showing a stale choice until the whole
     // parameter list is rebuilt.
-    syncDiscreteSelection(value);
-    syncBooleanToggle(value);
+    syncDiscreteSelection(modelValue);
+    syncBooleanToggle(modelValue);
 }
 
 void ParamSlotComponent::syncBooleanToggle(double value) {
@@ -502,6 +532,30 @@ bool ParamSlotComponent::isBeingDragged() const {
     return valueSlider_.isBeingDragged();
 }
 
+void ParamSlotComponent::setObservedValue(double modelValue) {
+    if (isBeingDragged()) {
+        heldObservation_ = modelValue;
+        return;
+    }
+
+    heldObservation_.reset();
+    setParamValue(modelValue);
+}
+
+void ParamSlotComponent::releaseHeldObservation() {
+    const auto held = std::exchange(heldObservation_, std::nullopt);
+    if (!held.has_value())
+        return;
+
+    // An edit still on its way publishes its own reading when it lands, and
+    // what was held is older than that.
+    auto* engine = magda::TrackManager::getInstance().getAudioEngine();
+    if (engine != nullptr && engine->hostedEditPending(devicePath_, paramInfo_.paramIndex))
+        return;
+
+    setParamValue(*held);
+}
+
 void ParamSlotComponent::setOverlayOnly(bool overlayOnly) {
     overlayOnly_ = overlayOnly;
     if (overlayOnly && momentaryButton_)
@@ -526,6 +580,9 @@ void ParamSlotComponent::refreshLinkModeState() {
 }
 
 void ParamSlotComponent::cancelGesture() {
+    // Dropped, not shown: a cancelled slot is repopulated from the cache, which
+    // already holds the observation.
+    heldObservation_.reset();
     valueSlider_.cancelGesture();
     if (momentaryButton_)
         momentaryButton_->release();
@@ -664,25 +721,25 @@ void ParamSlotComponent::applyTooltip(const juce::String& tooltip) {
 void ParamSlotComponent::setFonts(const juce::Font& labelFont, const juce::Font& valueFont) {
     nameLabel_.setFont(labelFont);
     valueSlider_.setFont(valueFont);
-    valueSlider_.setTextColour(DarkTheme::getTextColour());
+    valueSlider_.setTextColour(ActiveTheme::getTextColour());
     valueSlider_.setBackgroundColour(juce::Colours::transparentBlack);
 }
 
 void ParamSlotComponent::lookAndFeelChanged() {
-    const auto primaryText = DarkTheme::getTextColour();
+    const auto primaryText = ActiveTheme::getTextColour();
 
-    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     valueSlider_.setTextColour(primaryText);
 
     if (boolToggle_) {
         boolToggle_->setColour(juce::ToggleButton::textColourId, primaryText);
         boolToggle_->setColour(juce::ToggleButton::tickColourId,
-                               DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                               ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     }
 
     if (momentaryButton_) {
         momentaryButton_->setColour(juce::TextButton::buttonColourId,
-                                    DarkTheme::getColour(DarkTheme::SURFACE));
+                                    ActiveTheme::getColour(ActiveTheme::SURFACE));
         momentaryButton_->setColour(juce::TextButton::textColourOffId, primaryText);
     }
 
@@ -715,9 +772,9 @@ void ParamSlotComponent::paint(juce::Graphics& g) {
         auto bounds = getLocalBounds();
         int labelHeight = juce::jmin(12, getHeight() / 3);
         auto valueBounds = bounds.withTrimmedTop(labelHeight);
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
         g.fillRect(valueBounds);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRect(valueBounds);
     }
 }
@@ -725,7 +782,7 @@ void ParamSlotComponent::paint(juce::Graphics& g) {
 void ParamSlotComponent::paintOverChildren(juce::Graphics& g) {
     // Disabled overlay
     if (!isEnabled()) {
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).withAlpha(0.6f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).withAlpha(0.6f));
         g.fillRect(getLocalBounds());
         return;
     }
@@ -733,15 +790,15 @@ void ParamSlotComponent::paintOverChildren(juce::Graphics& g) {
     // Draw link mode / drag-over / selection highlight
     if (isInLinkMode_) {
         auto color = activeMod_.isValid()
-                         ? DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.15f)
-                         : DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).withAlpha(0.15f);
+                         ? ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.15f)
+                         : ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).withAlpha(0.15f);
         g.setColour(color);
         g.fillRoundedRectangle(getLocalBounds().toFloat(), 2.0f);
     } else if (isDragOver_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.15f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.15f));
         g.fillRoundedRectangle(getLocalBounds().toFloat(), 2.0f);
     } else if (selected_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_SCALE_TEXT));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_SCALE_TEXT));
         g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(0.5f), 2.0f, 2.0f);
     }
 
@@ -757,7 +814,7 @@ void ParamSlotComponent::paintOverChildren(juce::Graphics& g) {
         auto slider = valueSlider_.getBounds().toFloat();
         juce::Rectangle<float> dot(slider.getRight() - margin - dotSize, slider.getY() + margin,
                                    dotSize, dotSize);
-        g.setColour(DarkTheme::getColour(DarkTheme::MIDI_LEARN).withAlpha(0.85f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_LEARN).withAlpha(0.85f));
         g.fillEllipse(dot);
     }
 
@@ -767,7 +824,7 @@ void ParamSlotComponent::paintOverChildren(juce::Graphics& g) {
             std::fmod(static_cast<float>(juce::Time::getMillisecondCounterHiRes() * 0.003), 1.0f);
         // 0.7 + 0.3*sin keeps alpha in [0.4, 1.0]; 0.4 + 0.6*sin went negative.
         float alpha = 0.7f + 0.3f * std::sin(phase * juce::MathConstants<float>::twoPi);
-        g.setColour(DarkTheme::getColour(DarkTheme::MIDI_LEARN).withAlpha(alpha));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_LEARN).withAlpha(alpha));
         g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 2.0f, 2.0f);
     }
 
@@ -921,7 +978,7 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
             amountLabel_.setText(juce::String(percent) + "%", juce::dontSendNotification);
             amountLabel_.setColour(
                 juce::Label::backgroundColourId,
-                DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.95f));
+                ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.95f));
 
             if (!amountLabel_.isOnDesktop()) {
                 amountLabel_.addToDesktop(juce::ComponentPeer::windowIsTemporary |
@@ -964,7 +1021,7 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
             amountLabel_.setText(juce::String(percent) + "%", juce::dontSendNotification);
             amountLabel_.setColour(
                 juce::Label::backgroundColourId,
-                DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).withAlpha(0.95f));
+                ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).withAlpha(0.95f));
 
             if (!amountLabel_.isOnDesktop()) {
                 amountLabel_.addToDesktop(juce::ComponentPeer::windowIsTemporary |

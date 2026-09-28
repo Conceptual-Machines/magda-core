@@ -29,17 +29,18 @@ class CompiledEqCurveView final : public juce::Component,
   public:
     explicit CompiledEqCurveView(juce::String pluginId);
 
-    int getPreferredHeight() const {
+    static int getPreferredHeight() {
         return 90;
     }
 
-    void setCompiledPlugin(magda::daw::audio::compiled::MagdaEqCompiledPlugin* plugin);
+    void setCompiledPlugin(
+        std::shared_ptr<magda::daw::audio::compiled::MagdaEqCompiledPlugin> plugin);
     void updateFromDevice(const magda::DeviceInfo& device) override;
 
     juce::Component& component() override {
         return *this;
     }
-    void bindPlugin(te::Plugin* plugin) override;
+    void bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) override;
     void setOnParameterChanged(std::function<void(int, float)> cb) override {
         onParameterChanged = std::move(cb);
     }
@@ -104,7 +105,7 @@ class CompiledEqCurveView final : public juce::Component,
 
     std::function<void()> onLayoutChanged_;
 
-    magda::daw::audio::compiled::MagdaEqCompiledPlugin* compiledPlugin_ = nullptr;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaEqCompiledPlugin> compiledPlugin_;
     magda::DeviceInfo deviceSnapshot_;
 
     juce::Rectangle<float> plotArea_;

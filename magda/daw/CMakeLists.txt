@@ -242,6 +242,9 @@ juce_add_binary_data(MagdaAssets
     # plugin packs; MAGDA-internal plugin aliases live in
     # core/aliases/InternalPluginAliases.cpp).
     ../../assets/aliases/curated_index.json
+    # Tracktion's default grooves, which GrooveStore seeds an empty list with
+    ../../assets/grooves/groove_templates.xml
+    ../../assets/grooves/groove_templates_parameterized.xml
     # Factory themes - embedded JSON palettes listed between the built-in
     # themes and the user's own files (see UserTheme.cpp).
     ../../assets/themes/concrete_warehouse.json
@@ -276,12 +279,17 @@ add_library(magda_types STATIC
     # the engine links a leaf instead of the whole DAW.
     core/ClipOcclusion.cpp
     core/ClipFades.cpp
+    # Which of a device's parameters something addresses (#2630). Model-only,
+    # so the table compiler and the save path ask the same question.
+    core/AddressedParameters.cpp
+    core/HostedParameterEdit.cpp
     # value-type headers (listed to document the leaf's surface)
     core/TypeIds.hpp
     core/ClipInfo.hpp
     core/ClipOcclusion.hpp
     core/ClipFades.hpp
     core/TechnicalText.hpp
+    core/AddressedParameters.hpp
     core/ChainNodePath.hpp
     core/ControlTarget.hpp
     core/ParameterInfo.hpp
@@ -296,7 +304,7 @@ add_library(magda_types STATIC
     core/ModInfo.hpp
     core/TempoUtils.hpp
 )
-target_compile_features(magda_types PUBLIC cxx_std_20)
+target_compile_features(magda_types PUBLIC cxx_std_23)
 # juce_graphics as well as juce_core: ClipInfo names juce::Colour. Headers and
 # defines only, on the same terms as juce_core above.
 target_include_directories(magda_types
@@ -562,7 +570,7 @@ target_link_libraries(magda_daw
 # The frozen SDK target carries only compile usage and link requirements. It
 # deliberately does not own concrete device sources, so in-tree and private
 # packs build under the same contract.
-target_compile_features(magda_device_sdk INTERFACE cxx_std_20)
+target_compile_features(magda_device_sdk INTERFACE cxx_std_23)
 target_include_directories(magda_device_sdk
     INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -584,7 +592,7 @@ target_link_libraries(magda_device_sdk
 # magda_devices owns the SDK runtime. The base pack is a separate static
 # library compiled against magda::device_sdk, exactly like an out-of-tree pack.
 # WHOLE_ARCHIVE above retains its public-hook registration anchor.
-target_compile_features(magda_devices PUBLIC cxx_std_20)
+target_compile_features(magda_devices PUBLIC cxx_std_23)
 target_include_directories(magda_devices PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/third_party/faust/architecture
@@ -597,7 +605,7 @@ target_link_libraries(magda_devices
     magda::mutable
     faust::libfaust
 )
-target_compile_features(magda_base_devices PRIVATE cxx_std_20)
+target_compile_features(magda_base_devices PRIVATE cxx_std_23)
 target_include_directories(magda_base_devices PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/third_party/faust/architecture
@@ -606,9 +614,10 @@ target_link_libraries(magda_base_devices
     PRIVATE
     magda_device_sdk
     MagdaAssets
+    magda::mutable
     faust::libfaust
 )
-target_compile_features(magda_tracktion_compat_devices PRIVATE cxx_std_20)
+target_compile_features(magda_tracktion_compat_devices PRIVATE cxx_std_23)
 target_include_directories(magda_tracktion_compat_devices PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/third_party/faust/architecture
@@ -616,6 +625,9 @@ target_include_directories(magda_tracktion_compat_devices PRIVATE
 )
 target_compile_definitions(magda_tracktion_compat_devices PRIVATE
     $<TARGET_PROPERTY:tracktion::tracktion_engine,INTERFACE_COMPILE_DEFINITIONS>
+    # JUCE_LOG_ASSERTIONS changes Tracktion Plugin's layout. Keep this pack's
+    # derived Plugin classes ABI-compatible with the Plugin compiled in magda_daw.
+    $<$<BOOL:${MAGDA_BUILD_TESTS}>:JUCE_LOG_ASSERTIONS=1>
 )
 target_link_libraries(magda_tracktion_compat_devices
     PRIVATE
@@ -684,6 +696,11 @@ target_compile_definitions(magda_daw
     TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH=1
     MAGDA_DAWPROJECT_SCHEMA_DIR="${CMAKE_SOURCE_DIR}/third_party/dawproject"
     $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
+    # Whether there is a second engine to choose at all (#2551). MagdaAudioEngine
+    # is compiled here whatever the answer, so it is the one place that has to
+    # ask: without the host below linked, choosing that engine is a link error
+    # rather than a quiet fallback.
+    $<$<BOOL:${MAGDA_BUILD_NATIVE_ENGINE}>:MAGDA_HAS_NATIVE_ENGINE=1>
     PRIVATE
     # Tracktion Engine carries a MAGDA test hook (magdaTestEvaluateLoopSessionDecision,
     # in tracktion_TransportControl.cpp) gated on MAGDA_ENABLE_TEST_HOOKS. TE now
@@ -712,6 +729,10 @@ target_link_libraries(magda_daw_app
     magda_agents
     magda_scripting
     MagdaAssets
+    # magda::engine and the app's end of it (#2551). Here rather than on
+    # magda_daw because magda_daw only names the host through a pimpl'd header:
+    # the engine's own includes never reach it.
+    $<$<BOOL:${MAGDA_BUILD_NATIVE_ENGINE}>:magda_engine_host>
     # JUCE/TE come transitively from magda_daw: its re-exported INTERFACE gives
     # the headers + defines to compile this target's own sources, and its
     # $<LINK_ONLY:...> forwards the modules' frameworks + the objects already in
@@ -826,6 +847,7 @@ target_include_directories(magda_plugin_scanner
 target_link_libraries(magda_cli
     PRIVATE
     magda_daw
+    $<$<BOOL:${MAGDA_BUILD_NATIVE_ENGINE}>:magda_engine_host>
     juce::juce_core
     juce::juce_events
     juce::juce_audio_devices

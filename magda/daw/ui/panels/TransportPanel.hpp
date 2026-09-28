@@ -4,7 +4,7 @@
 
 #include <memory>
 
-#include "../../audio/automation/AutomationRecordingEngine.hpp"  // for AutomationMode
+#include "../../core/AutomationTypes.hpp"
 #include "../components/common/BarsBeatsTicksLabel.hpp"
 #include "../components/common/DraggableValueLabel.hpp"
 #include "../components/common/GridDivisionMenu.hpp"
@@ -207,8 +207,8 @@ class TransportPanel : public juce::Component, public MixAnalysisService::Listen
     daw::ui::transport::Layout layout_;
 
     // Button styling
-    void styleTransportButton(SvgButton& button, ColourRole accentRole,
-                              bool activeGlyphUsesAccent = false);
+    static void styleTransportButton(SvgButton& button, ColourRole accentRole,
+                                     bool activeGlyphUsesAccent = false);
     void setupTransportButtons();
     void setupTimeDisplayBoxes();
     void setupTempoAndQuantize();

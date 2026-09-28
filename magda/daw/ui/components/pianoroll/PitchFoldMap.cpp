@@ -17,7 +17,7 @@ void PitchFoldMap::rebuild(const std::vector<int>& usedPitches) {
         if (p >= kMinNote && p <= kMaxNote)
             rowsDescending_.push_back(p);
     }
-    std::sort(rowsDescending_.begin(), rowsDescending_.end(), std::greater<>());
+    std::ranges::sort(rowsDescending_, std::ranges::greater{});
     rowsDescending_.erase(std::unique(rowsDescending_.begin(), rowsDescending_.end()),
                           rowsDescending_.end());
 

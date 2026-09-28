@@ -107,7 +107,7 @@ class PluginScanCoordinator : private juce::Timer {
         return pluginTimeoutMs_;
     }
 
-    juce::File getScanReportFile() const;
+    static juce::File getScanReportFile();
 
   private:
     static constexpr int NUM_WORKERS = 4;
@@ -128,10 +128,10 @@ class PluginScanCoordinator : private juce::Timer {
     void writeScanReport();
 
     // Find the scanner executable
-    juce::File getScannerExecutable() const;
+    static juce::File getScannerExecutable();
 
     // Orphan process cleanup
-    void killOrphanScannerProcesses();
+    static void killOrphanScannerProcesses();
 
     // Exclusion management
     void loadExclusions();

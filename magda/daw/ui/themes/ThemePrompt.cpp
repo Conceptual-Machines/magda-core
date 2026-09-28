@@ -1,6 +1,6 @@
 #include "ThemePrompt.hpp"
 
-#include "DarkTheme.hpp"
+#include "ActiveTheme.hpp"
 #include "ThemeSerialization.hpp"
 #include "UserTheme.hpp"
 
@@ -158,7 +158,7 @@ juce::var buildThemeSchema() {
     schema->setProperty("required", rootRequired);
     schema->setProperty("additionalProperties", false);
 
-    return juce::var(schema);
+    return {schema};
 }
 
 std::optional<GeneratedTheme> validateGeneratedTheme(const juce::String& llmText,

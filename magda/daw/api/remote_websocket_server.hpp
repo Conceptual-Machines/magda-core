@@ -6,8 +6,7 @@
 
 #include "remote_api.hpp"
 
-namespace magda {
-namespace remote {
+namespace magda::remote {
 
 class RemoteApiService;
 class RemoteAuditLog;
@@ -288,5 +287,4 @@ class RemoteWebSocketServer {
     std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace remote
-}  // namespace magda
+}  // namespace magda::remote

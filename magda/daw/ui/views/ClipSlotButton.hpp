@@ -4,7 +4,7 @@
 
 #include <cmath>
 
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "core/ClipManager.hpp"
 
@@ -33,6 +33,8 @@ class ClipSlotButton : public juce::TextButton {
     bool hasClip = false;
     bool clipIsPlaying = false;
     bool clipIsQueued = false;
+    bool clipHasLaunchIntent = false;  // Remembered active slot, including while transport stopped
+    bool transportIsPlaying = false;   // Visual state supplied by SessionView
     bool stopIsQueued = false;  // Empty slot blinks its stop icon while a row-stop is pending
     bool blinkOn = false;       // Toggled by SessionView timer for queued blink
     bool isSelected = false;
@@ -135,6 +137,12 @@ class ClipSlotButton : public juce::TextButton {
             return;
         }
 
+        if (!hasClip && slotIsRecording) {
+            if (onEmptySlotRecordClick)
+                onEmptySlotRecordClick();
+            return;
+        }
+
         const bool inStripArea = event.getPosition().getX() < PLAY_BUTTON_WIDTH;
 
         if (clicks >= 2) {
@@ -207,7 +215,7 @@ class ClipSlotButton : public juce::TextButton {
         if (isGroupSlot) {
             if (hasChildClips) {
                 auto centre = getLocalBounds().getCentre().toFloat();
-                if (childClipIsPlaying) {
+                if (transportIsPlaying && childClipIsPlaying) {
                     // Stop square
                     float size = 5.0f;
                     g.setColour(juce::Colours::white.withAlpha(0.9f));
@@ -235,13 +243,16 @@ class ClipSlotButton : public juce::TextButton {
             auto playArea = getLocalBounds().removeFromLeft(PLAY_BUTTON_WIDTH);
             auto centre = playArea.getCentre().toFloat();
 
-            // Cyan when selected OR when the clip is actually running —
-            // launching from the scene button should light the track's play
-            // icon the same way as a direct click. Idle non-selected slots
-            // stay black against the grey strip for contrast.
-            const auto iconColour = (isSelected || clipIsPlaying || clipIsQueued)
-                                        ? DarkTheme::getColour(DarkTheme::ACCENT_INFO)
-                                        : juce::Colours::black;
+            // Blue is live transport state. Selection and a remembered launch intent remain
+            // visible while stopped, but in neutral grey so they cannot read as sounding.
+            const bool running =
+                transportIsPlaying && (isSelected || clipIsPlaying || clipIsQueued);
+            const bool stoppedCue =
+                isSelected || clipHasLaunchIntent || clipIsPlaying || clipIsQueued;
+            const auto iconColour =
+                running      ? ActiveTheme::getColour(ActiveTheme::ACCENT_INFO)
+                : stoppedCue ? (isSelected ? juce::Colour(0xFFA0A0A0) : juce::Colour(0xFF505050))
+                             : juce::Colours::black;
 
             juce::Path triangle;
             float size = 6.0f;
@@ -249,7 +260,7 @@ class ClipSlotButton : public juce::TextButton {
                                  centre.getX() - size * 0.7f, centre.getY() + size,
                                  centre.getX() + size, centre.getY());
             auto playColour = iconColour;
-            if (clipIsQueued && !blinkOn)
+            if (transportIsPlaying && clipIsQueued && !blinkOn)
                 playColour = playColour.withAlpha(0.15f);
             g.setColour(playColour);
             g.fillPath(triangle);
@@ -260,7 +271,7 @@ class ClipSlotButton : public juce::TextButton {
 
             // Draw progress bar for playing clips
             if (clipIsPlaying && clipLength > 0.0 && sessionPlayheadPos >= 0.0) {
-                float progress = static_cast<float>(sessionPlayheadPos / clipLength);
+                auto progress = static_cast<float>(sessionPlayheadPos / clipLength);
                 progress = juce::jlimit(0.0f, 1.0f, progress);
 
                 auto progressBar = contentArea.toFloat();
@@ -290,7 +301,7 @@ class ClipSlotButton : public juce::TextButton {
 
             if (trackIsRecordArmed) {
                 float radius = 5.0f;
-                auto recordColour = DarkTheme::getColour(DarkTheme::STATUS_DANGER);
+                auto recordColour = ActiveTheme::getColour(ActiveTheme::STATUS_DANGER);
 
                 if (slotIsRecording) {
                     auto contentArea = getLocalBounds().withTrimmedLeft(PLAY_BUTTON_WIDTH);
@@ -371,7 +382,7 @@ class SceneButton : public juce::TextButton {
             triangle.addTriangle(centre.getX() - size * 0.7f, centre.getY() - size,
                                  centre.getX() - size * 0.7f, centre.getY() + size,
                                  centre.getX() + size, centre.getY());
-            g.setColour(hasAnyPlaying ? DarkTheme::getColour(DarkTheme::ACCENT_INFO)
+            g.setColour(hasAnyPlaying ? ActiveTheme::getColour(ActiveTheme::ACCENT_INFO)
                                       : juce::Colours::white);
             g.fillPath(triangle);
         } else {
@@ -482,7 +493,7 @@ class MiniDbScale : public juce::Component {
 
         static constexpr float PADDING = 4.0f;
         float height = static_cast<float>(bounds.getHeight()) - 2.0f * PADDING;
-        float width = static_cast<float>(bounds.getWidth());
+        auto width = static_cast<float>(bounds.getWidth());
 
         if (height <= 0.0f)
             return;
@@ -500,14 +511,14 @@ class MiniDbScale : public juce::Component {
                 continue;
             lastDrawnY = y;
 
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
             g.fillRect(0.0f, y - 0.5f, 2.0f, 1.0f);
             g.fillRect(width - 2.0f, y - 0.5f, 2.0f, 1.0f);
 
             int dbInt = static_cast<int>(db);
             juce::String text = juce::String(std::abs(dbInt));
 
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
             g.drawText(text, 0, static_cast<int>(y - labelH / 2.0f), static_cast<int>(width),
                        static_cast<int>(labelH), juce::Justification::centred, false);
         }

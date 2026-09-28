@@ -4,6 +4,7 @@
 
 #include <cstring>
 
+#include "MediaDbMetadata.hpp"
 #include "Schema.hpp"
 
 namespace magda::media {
@@ -219,6 +220,10 @@ void migrate(sqlite3* db, int fromVersion) {
     // every column the copy expects.
     if (fromVersion < 9) {
         rebuildMediaFileTable(db);
+    }
+    // v10: paths stored before libraryPath (#2687), and the duplicate rows they left.
+    if (fromVersion < 10) {
+        canonicalizeLibraryPaths(db);
     }
 }
 

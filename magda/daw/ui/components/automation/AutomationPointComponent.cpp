@@ -1,6 +1,6 @@
 #include "AutomationPointComponent.hpp"
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "AutomationCurveEditor.hpp"
 
 namespace magda {
@@ -25,7 +25,7 @@ void AutomationPointComponent::paint(juce::Graphics& g) {
 
     // Draw connection lines to handles if visible
     if (handlesVisible_ && isSelected_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0x88 / 255.0f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0x88 / 255.0f));
 
         if (inHandle_ && inHandle_->isVisible()) {
             auto handleCenter = inHandle_->getBounds().getCentre().toFloat();
@@ -45,11 +45,11 @@ void AutomationPointComponent::paint(juce::Graphics& g) {
     // Point fill color based on state
     juce::Colour fillColour;
     if (isSelected_) {
-        fillColour = DarkTheme::getColour(DarkTheme::TEXT_BRIGHT);
+        fillColour = ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT);
     } else if (isHovered_) {
-        fillColour = DarkTheme::getColour(DarkTheme::AUTOMATION_POINT_HOVER);
+        fillColour = ActiveTheme::getColour(ActiveTheme::AUTOMATION_POINT_HOVER);
     } else {
-        fillColour = DarkTheme::getColour(DarkTheme::AUTOMATION_POINT);
+        fillColour = ActiveTheme::getColour(ActiveTheme::AUTOMATION_POINT);
     }
 
     // Draw point
@@ -57,12 +57,12 @@ void AutomationPointComponent::paint(juce::Graphics& g) {
     g.fillEllipse(centerX - radius, centerY - radius, pointSize, pointSize);
 
     // Outline
-    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_DIVIDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_DIVIDER));
     g.drawEllipse(centerX - radius, centerY - radius, pointSize, pointSize, 1.5f);
 
     // Curve type indicator for bezier
     if (point_.curveType == AutomationCurveType::Bezier && isSelected_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_BEZIER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_BEZIER));
         g.fillEllipse(centerX - 2, centerY - 2, 4, 4);
     }
 }

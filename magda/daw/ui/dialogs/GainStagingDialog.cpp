@@ -1,6 +1,6 @@
 #include "GainStagingDialog.hpp"
 
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
 #include "core/StringTable.hpp"
@@ -12,7 +12,7 @@ GainStagingDialog::GainStagingDialog(float initialTargetDb, bool initialUseAi) {
 
     descriptionLabel_.setText(tr("gain_staging.description"), juce::dontSendNotification);
     descriptionLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
-    descriptionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    descriptionLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     descriptionLabel_.setJustificationType(juce::Justification::topLeft);
     addAndMakeVisible(descriptionLabel_);
 
@@ -33,7 +33,7 @@ GainStagingDialog::GainStagingDialog(float initialTargetDb, bool initialUseAi) {
 
     aiHintLabel_.setText(tr("gain_staging.hint.use_ai"), juce::dontSendNotification);
     aiHintLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    aiHintLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    aiHintLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     aiHintLabel_.setJustificationType(juce::Justification::topLeft);
     addAndMakeVisible(aiHintLabel_);
 
@@ -61,7 +61,7 @@ GainStagingDialog::~GainStagingDialog() {
 }
 
 void GainStagingDialog::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
 }
 
 void GainStagingDialog::lookAndFeelChanged() {
@@ -108,7 +108,7 @@ void GainStagingDialog::showDialog(juce::Component* parent, float initialTargetD
 
     juce::DialogWindow::LaunchOptions options;
     options.dialogTitle = tr("gain_staging.dialog.title");
-    options.dialogBackgroundColour = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+    options.dialogBackgroundColour = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
     options.content.setOwned(dialog);
     options.escapeKeyTriggersCloseButton = true;
     options.useNativeTitleBar = true;

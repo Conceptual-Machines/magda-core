@@ -2,7 +2,9 @@
 
 #include <juce_core/juce_core.h>
 
+#include <algorithm>
 #include <atomic>
+#include <cstring>
 #include <vector>
 
 namespace magda::daw::audio {
@@ -38,24 +40,50 @@ class AudioTapBuffer {
 
     /** Audio thread. Append mono samples to the ring. */
     void write(const float* samples, int numSamples) noexcept {
+        if (samples == nullptr || numSamples <= 0)
+            return;
+
         const size_t w = writePos_.load(std::memory_order_relaxed);
-        for (int i = 0; i < numSamples; ++i)
-            buffer_[(w + static_cast<size_t>(i)) & mask_] = samples[i];
-        writePos_.store(w + static_cast<size_t>(numSamples), std::memory_order_release);
+
+        const auto total = static_cast<size_t>(numSamples);
+        const auto capacity = static_cast<size_t>(capacity_);
+        const size_t kept = std::min(total, capacity);  // a longer block overwrites its own head
+        const float* src = samples + (total - kept);
+
+        const size_t start = (w + (total - kept)) & mask_;
+        const size_t firstRun = std::min(kept, capacity - start);
+        std::memcpy(buffer_.data() + start, src, firstRun * sizeof(float));
+        if (kept > firstRun)
+            std::memcpy(buffer_.data(), src + firstRun, (kept - firstRun) * sizeof(float));
+
+        writePos_.store(w + total, std::memory_order_release);
     }
 
     /**
-     * Message thread. Copy the most recent numSamples into dest (zero-padded at
-     * the front while the ring is still filling). Returns the running sample
-     * count at the moment of the read so callers can detect whether new audio
-     * arrived since last poll.
+     * Message thread. Copy the most recent numSamples into dest, zero-padded at
+     * the front for whatever the ring cannot supply: it is still filling, or the
+     * request is longer than the capacity. Returns the running sample count at
+     * the moment of the read so callers can detect whether new audio arrived
+     * since last poll.
      */
     size_t readLatest(float* dest, int numSamples) const noexcept {
         const size_t w = writePos_.load(std::memory_order_acquire);
-        for (int i = 0; i < numSamples; ++i) {
-            const long long idx = static_cast<long long>(w) - numSamples + i;
-            dest[i] = (idx < 0) ? 0.0f : buffer_[static_cast<size_t>(idx) & mask_];
-        }
+        if (dest == nullptr || numSamples <= 0)
+            return w;
+
+        const auto wanted = static_cast<size_t>(numSamples);
+        const auto capacity = static_cast<size_t>(capacity_);
+        const size_t available = std::min({w, wanted, capacity});
+        const size_t pad = wanted - available;
+        std::fill(dest, dest + pad, 0.0f);
+
+        const size_t start = (w - available) & mask_;
+        const size_t firstRun = std::min(available, capacity - start);
+        std::memcpy(dest + pad, buffer_.data() + start, firstRun * sizeof(float));
+        if (available > firstRun)
+            std::memcpy(dest + pad + firstRun, buffer_.data(),
+                        (available - firstRun) * sizeof(float));
+
         return w;
     }
 

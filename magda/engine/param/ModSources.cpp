@@ -14,6 +14,21 @@ void collectModulationTaps(const std::vector<magda::ChainElement>& elements,
             const auto source = sidechainSourceOf(device.sidechain);
             collectModulationTaps(device.mods, source, ownTrack, out);
             collectNoteSources(device.mods, source, ownTrack, notes);
+
+            // A pad-per-chain device's pads hold devices like any other rack's
+            // chains, and each of those is an ordinary DeviceInfo that can own
+            // macros and modifiers since #2207. Not collecting them dropped
+            // nothing while a pad device had no DeviceInfo at all; now it
+            // would drop a modifier the parameter table has an address for
+            // (#2211).
+            //
+            // Under `ownTrack`, not the grid's sidechain source: a device
+            // inside a rack hears its own sidechain and the rack's is the
+            // rack's, which is the rule the chain descent below follows. The
+            // pad rack itself is synthesized and owns no modifiers.
+            if (device.pads)
+                for (const auto& pad : device.pads->chains)
+                    collectModulationTaps(pad.elements, ownTrack, out, notes, nesting);
         } else if (magda::isRack(element)) {
             const auto& rack = magda::getRack(element);
 

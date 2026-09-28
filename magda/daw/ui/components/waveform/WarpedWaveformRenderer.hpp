@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "audio/AudioThumbnailManager.hpp"
-#include "audio/WarpMarkerManager.hpp"  // magda::WarpMarkerInfo
+#include "core/ClipInfo.hpp"
 
 namespace magda::daw::ui {
 
@@ -44,13 +44,12 @@ struct WarpedWaveformSpec {
 };
 
 inline void drawWarpedWaveform(juce::Graphics& g, magda::AudioThumbnailManager& thumbs,
-                               const juce::String& file, std::vector<magda::WarpMarkerInfo> markers,
+                               const juce::String& file, std::vector<magda::WarpMarker> markers,
                                const WarpedWaveformSpec& spec) {
     if (markers.size() < 2 || !spec.warpToPixelX || spec.clipArea.isEmpty())
         return;
 
-    std::sort(markers.begin(), markers.end(),
-              [](const auto& a, const auto& b) { return a.warpTime < b.warpTime; });
+    std::ranges::sort(markers, {}, &magda::WarpMarker::warpTime);
 
     const double leftX = spec.clipArea.getX();
     const double rightX = spec.clipArea.getRight();
@@ -89,8 +88,8 @@ inline void drawWarpedWaveform(juce::Graphics& g, magda::AudioThumbnailManager& 
             if (ce <= cs)
                 continue;
 
-            const int px = (int)std::lround(visX0);
-            const int pw = (int)std::lround(visX1) - px;
+            const int px = static_cast<int>(std::lround(visX0));
+            const int pw = static_cast<int>(std::lround(visX1)) - px;
             if (pw <= 0)
                 continue;
 
@@ -130,7 +129,8 @@ inline void drawWarpedWaveform(juce::Graphics& g, magda::AudioThumbnailManager& 
     // so no arbitrary cap is needed (or wanted).
     const double frontWarp = markers.front().warpTime;
     const double backWarp = markers.back().warpTime;
-    const int kStart = (int)std::floor((leftX - spec.warpToPixelX(backWarp)) / cyclePx);
+    const int kStart =
+        static_cast<int>(std::floor((leftX - spec.warpToPixelX(backWarp)) / cyclePx));
     for (int k = kStart; spec.warpToPixelX(frontWarp + k * spec.cycleWarp) <= rightX; ++k)
         drawPass(k * spec.cycleWarp);
 }

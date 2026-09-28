@@ -25,7 +25,7 @@ class AudioEngineOptimizer final : public ViewModeListener {
     /**
      * Apply an audio profile to the engine
      */
-    void applyProfile(const AudioEngineProfile& profile);
+    static void applyProfile(const AudioEngineProfile& profile);
 
   private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioEngineOptimizer)

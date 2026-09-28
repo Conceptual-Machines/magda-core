@@ -43,6 +43,9 @@ class TransportClock {
         /// metronome sounds through a count-in whether or not it is switched
         /// on, which is the only thing that reads this.
         bool countingIn = false;
+
+        /// Whether Arrangement takes may consume this segment.
+        bool insidePunch = true;
     };
 
     /**
@@ -76,6 +79,43 @@ class TransportClock {
         return playingPublic_.load(std::memory_order_relaxed);
     }
 
+    /// The generation of the last request the clock applied. Any thread: a publisher reads it to
+    /// tell a request still waiting from one already taken.
+    std::uint64_t appliedGeneration() const {
+        return appliedGeneration_.load(std::memory_order_acquire);
+    }
+
+    /**
+     * @brief The cursor and the monotonic count as one block left them. Any
+     *        thread.
+     *
+     * What a launch is quantized against off the audio thread: the boundary is
+     * a timeline beat and the request names a monotonic one (#2305). Both faces
+     * come from one block, which is the whole point -- a wrap moves the cursor
+     * back and leaves the monotonic beat where it was, so a pair taken from two
+     * blocks is a whole loop out.
+     */
+    SyncPoint syncPoint() const;
+
+    /// Musical time the transport has rolled through since the clock began,
+    /// in beats that never go backwards. Audio thread, and the domain a
+    /// queued launch names its position in (#2300).
+    double monotonicBeat() const {
+        return monotonicBeat_;
+    }
+
+    /// Wall-clock time rolled through since the clock began, in seconds that
+    /// never go backwards. Audio thread. The domain a run's length is in (#2324).
+    double monotonicSeconds() const {
+        return monotonicSeconds_;
+    }
+
+    /// Where the transport has rolled to on its own sample count. Never goes
+    /// back, and is not re-anchored by anything that moves the cursor.
+    SamplePosition monotonicSamples() const {
+        return monotonicSamples_;
+    }
+
     /**
      * @brief Callbacks in which a loop was too short to be honoured.
      *
@@ -107,10 +147,17 @@ class TransportClock {
     double secondsAfter(std::int64_t samples) const;
     double beatAfter(const TempoMap& tempo, std::int64_t samples) const;
 
-    /// Samples from the cursor until the timeline reaches @p beat, rounded up
-    /// so the answer is the first sample at or past it. Negative when it is
-    /// already behind.
+    /// Whole samples from the cursor until the timeline reaches @p beat, so a
+    /// cut at the answer lands on or before the beat, never past it. Negative
+    /// when it is already behind.
     std::int64_t samplesUntil(const TempoMap& tempo, double beat) const;
+
+    /// Samples through a boundary, so the next segment opens on its far side.
+    std::int64_t samplesThrough(const TempoMap& tempo, double beat) const;
+
+    /// @brief Publish @p beat beside the monotonic count as one reading.
+    ///        Audio thread, wherever the cursor is stored.
+    void publishSyncPoint(double beat);
 
     void applyRequest(const TransportSnapshot& snapshot);
     void followTempo(const TempoMap& tempo);
@@ -123,6 +170,7 @@ class TransportClock {
     /// The request that put the cursor where it is. A snapshot carrying this
     /// same generation is a republication, not a new instruction.
     std::uint64_t generation_ = 0;
+    std::uint64_t appliedLocateId_ = 0;
 
     bool playing_ = false;
     double anchorSeconds_ = 0.0;
@@ -143,9 +191,38 @@ class TransportClock {
     /// Whether the next block continues the last one.
     bool continuous_ = false;
 
+    /// Musical time rolled through since the clock began, never decreasing.
+    /// Accumulated from what each playing segment covered rather than derived
+    /// from the cursor, which is the only way it survives the wraps and
+    /// locates that move the cursor backwards.
+    double monotonicBeat_ = 0.0;
+
+    /// The same for wall-clock time, accumulated from the samples. What it
+    /// buys is what it refuses: two monotonic beats and a tempo map cannot
+    /// produce elapsed seconds, because a map answers where a beat is.
+    double monotonicSeconds_ = 0.0;
+
+    /// Samples rolled since the clock began. What the two monotonic faces above
+    /// are counted from, and the one coordinate a locate, a wrap, a tempo edit
+    /// and a re-anchor all leave alone (#2332).
+    SamplePosition monotonicSamples_;
+
     std::atomic<double> positionBeats_{0.0};
     std::atomic<bool> playingPublic_{false};
+    std::atomic<std::uint64_t> appliedGeneration_{0};
     std::atomic<int> loopWrapOverflows_{0};
+
+    /// The pair @ref syncPoint answers, published under @ref syncSequence_.
+    /// Two words rather than one packed like LaunchTap's, because a monotonic
+    /// beat accumulates for the life of the session and neither face can be
+    /// given up to fixed point.
+    std::atomic<double> syncBeat_{0.0};
+    std::atomic<double> syncMonotonicBeat_{0.0};
+
+    /// Odd while the pair above is being written. The reader retries rather
+    /// than the writer waiting, which is what keeps the audio thread's side of
+    /// this to two stores.
+    std::atomic<std::uint64_t> syncSequence_{0};
 };
 
 }  // namespace magda::engine

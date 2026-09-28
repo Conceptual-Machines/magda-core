@@ -4,8 +4,10 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <array>
+#include <atomic>
 #include <functional>
 #include <memory>
+#include <optional>
 
 #include "custom_ui/SamplerUI.hpp"
 #include "drum_grid/PadChainPanel.hpp"
@@ -14,14 +16,11 @@
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TextSlider.hpp"
 
-namespace tracktion {
-inline namespace engine {
+namespace tracktion::inline engine {
 class Plugin;
 }
-}  // namespace tracktion
 
 namespace magda::daw::audio {
-class DrumGridPlugin;
 class MagdaSamplerPlugin;
 }  // namespace magda::daw::audio
 
@@ -95,6 +94,13 @@ class DrumGridUI : public juce::Component,
     /** Called when pad pan changes. (padIndex, pan -1..1) */
     std::function<void(int, float)> onPadPanChanged;
 
+    /** Which fader drag the level and pan callbacks currently belong to.
+        Bumped when a drag ends, so consecutive gestures on the same fader are
+        separate undo steps rather than one merged run (#2211). */
+    int getFaderGesture() const {
+        return faderGesture_;
+    }
+
     /** Called when pad mute changes. (padIndex, muted) */
     std::function<void(int, bool)> onPadMuteChanged;
 
@@ -122,18 +128,27 @@ class DrumGridUI : public juce::Component,
     /** Called when play button is pressed/released on a pad. (padIndex, isNoteOn) */
     std::function<void(int, bool)> onNotePreview;
 
-    /** Query note range for a pad. Returns {lowNote, highNote, rootNote}. (padIndex) */
-    std::function<std::tuple<int, int, int>(int)> getNoteRange;
+    /** @brief A pad's switches, faders and output as the model holds them. */
+    struct PadMix {
+        float level = 0.0f;
+        float pan = 0.0f;
+        bool mute = false;
+        bool solo = false;
+        int busOutput = 0;
+    };
 
-    /** Called when the user changes note range for a pad. (padIndex, lowNote, highNote, rootNote)
-     */
-    std::function<void(int, int, int, int)> onPadRangeChanged;
+    /// Read at the poll rate, so a pad fader moved elsewhere (a mixer
+    /// sub-channel) shows here. Nothing for a pad with no chain.
+    std::function<std::optional<PadMix>(int padIndex)> getPadMix;
 
-    /** Set the DrumGridPlugin pointer for trigger polling. Starts timer. */
-    void setDrumGridPlugin(daw::audio::DrumGridPlugin* plugin);
-    daw::audio::DrumGridPlugin* getDrumGridPlugin() const {
-        return drumGridPlugin_;
-    }
+    /// Whether a pad has sounded since it was last asked. Read at the poll rate.
+    std::function<bool(int padIndex)> consumePadTrigger;
+
+    /// Where a change to the detail panel's collapsed state is kept.
+    std::function<void(bool collapsed)> onDetailCollapsedChanged;
+
+    /** @brief Show the detail panel as the model keeps it, without reporting a change. */
+    void restoreDetailCollapsed(bool collapsed);
 
     /** Called when layout changes (e.g., chains panel toggled) so parent can resize. */
     std::function<void()> onLayoutChanged;
@@ -237,6 +252,15 @@ class DrumGridUI : public juce::Component,
     };
 
     std::array<PadInfo, kTotalPads> padInfos_;
+
+    // Process-wide and monotonic. A token local to one DrumGridUI restarts at
+    // zero every time the component is rebuilt -- reopening the device UI,
+    // switching tracks -- and none of that is an undoable action, so the last
+    // fader command can still be on top of the undo stack when the first drag
+    // in the new UI arrives. Reusing the token would fold two sessions into
+    // one step (#2211).
+    static std::atomic<int> nextFaderGesture_;
+    int faderGesture_ = nextFaderGesture_.fetch_add(1);
     int selectedPad_ = 0;
     int currentPage_ = 0;
 
@@ -296,12 +320,12 @@ class DrumGridUI : public juce::Component,
     int fileDropStartPad_ = -1;
     int fileDropCount_ = 0;
 
-    // DrumGridPlugin pointer for trigger polling
-    daw::audio::DrumGridPlugin* drumGridPlugin_ = nullptr;
-
     //==============================================================================
     void setDetailCollapsed(bool collapsed);
     void refreshPadButtons();
+
+    /// Close the current fader gesture, so the next edit is a new undo step.
+    void endFaderGesture();
     void refreshDetailPanel();
     void goToPrevPage();
     void goToNextPage();
@@ -313,7 +337,7 @@ class DrumGridUI : public juce::Component,
     int padButtonIndexAtPoint(juce::Point<int> point) const;
 
     void setupLabel(juce::Label& label, const juce::String& text, float fontSize);
-    void setupButton(juce::TextButton& button);
+    static void setupButton(juce::TextButton& button);
     void showPadContextMenu(int padIndex, juce::Point<int> screenPos);
     void showChainContextMenu(int padIndex, juce::Point<int> screenPos);
 

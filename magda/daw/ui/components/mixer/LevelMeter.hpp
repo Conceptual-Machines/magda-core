@@ -7,7 +7,7 @@
 
 #include "LevelMeterBallistics.hpp"
 #include "LevelMeterScale.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda {
 
@@ -97,7 +97,7 @@ class LevelMeter : public juce::Component, private juce::Timer {
     void paint(juce::Graphics& g) override {
         // Opaque backing so container fills (e.g. the light selected track
         // header) don't bleed through the bar gap and rounded corners.
-        g.fillAll(DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND));
+        g.fillAll(ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND));
 
         auto effectiveBounds = getLocalBounds().toFloat();
 
@@ -113,7 +113,7 @@ class LevelMeter : public juce::Component, private juce::Timer {
 
             float zeroDbPos = meterPositionForDb(0.0f);
             float tickX = getLocalBounds().toFloat().getWidth() * zeroDbPos;
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.5f));
             g.drawVerticalLine(static_cast<int>(tickX), 0.0f, static_cast<float>(getHeight()));
             return;
         }
@@ -128,7 +128,7 @@ class LevelMeter : public juce::Component, private juce::Timer {
 
         float zeroDbPos = meterPositionForDb(0.0f);
         float tickY = effectiveBounds.getBottom() - effectiveBounds.getHeight() * zeroDbPos;
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.5f));
         g.drawHorizontalLine(static_cast<int>(tickY), effectiveBounds.getX(),
                              effectiveBounds.getRight());
     }
@@ -190,7 +190,7 @@ class LevelMeter : public juce::Component, private juce::Timer {
     }
 
     void drawMeterBar(juce::Graphics& g, juce::Rectangle<float> bounds, float level, float peakDb) {
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
         g.fillRoundedRectangle(bounds, 1.0f);
 
         float displayLevel = meterPositionForDb(gainToDb(level));
@@ -254,11 +254,11 @@ class LevelMeter : public juce::Component, private juce::Timer {
                                         : juce::ColourGradient(green, 0.0f, bounds.getBottom(), red,
                                                                0.0f, bounds.getY(), false);
         // Green solid, then short fade to yellow around -12dB
-        grad.addColour(std::max(0.0, (double)yellowPos - fade), green);
-        grad.addColour(std::min(1.0, (double)yellowPos + fade), yellow);
+        grad.addColour(std::max(0.0, static_cast<double>(yellowPos) - fade), green);
+        grad.addColour(std::min(1.0, static_cast<double>(yellowPos) + fade), yellow);
         // Yellow solid, then short fade to red around 0dB
-        grad.addColour(std::max(0.0, (double)redPos - fade), yellow);
-        grad.addColour(std::min(1.0, (double)redPos + fade), red);
+        grad.addColour(std::max(0.0, static_cast<double>(redPos) - fade), yellow);
+        grad.addColour(std::min(1.0, static_cast<double>(redPos) + fade), red);
         return grad;
     }
 

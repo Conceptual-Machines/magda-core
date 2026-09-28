@@ -80,9 +80,7 @@ std::vector<float> getInferredOnsets(const std::vector<float>& onsets,
 
     // Clamp negatives to 0 and zero the first nDiff rows.
     for (float& v : frameDiff) {
-        if (v < 0.0F) {
-            v = 0.0F;
-        }
+        v = std::max(v, 0.0F);
     }
     for (int t = 0; t < std::min(nDiff, nFrames); ++t) {
         for (int f = 0; f < kNoteFreqBins; ++f) {
@@ -150,7 +148,7 @@ std::vector<int> pitchBendsForNote(const std::vector<float>& contour, int startF
         for (int c = 0; c < nCols; ++c) {
             const int gIdx = gStart + c;
             const double g = (gIdx >= 0 && gIdx < gEnd) ? gaussian[static_cast<size_t>(gIdx)] : 0.0;
-            const float val = static_cast<float>(static_cast<double>(row[freqStartIdx + c]) * g);
+            const auto val = static_cast<float>(static_cast<double>(row[freqStartIdx + c]) * g);
             if (val > bestVal) {
                 bestVal = val;
                 bestCol = c;

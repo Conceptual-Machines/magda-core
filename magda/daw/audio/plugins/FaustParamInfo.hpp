@@ -28,6 +28,11 @@ namespace magda::daw::audio {
  * slots too (returns an empty-name placeholder so the index slot
  * stays addressable for automation lane lookups).
  */
+/// Full pitch-bend range, in semitones either side. The reserved bend-range
+/// control is normalized against it, so the parameter description and the
+/// instrument that reads the wheel have to agree on one number.
+constexpr float kMaxBendSemitones = 24.0f;
+
 magda::ParameterInfo paramInfoFromSlot(const FaustParamSlot& slot);
 
 /**

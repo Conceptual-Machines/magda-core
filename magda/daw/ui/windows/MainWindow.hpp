@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -38,7 +39,8 @@ class KeyMappingStore;
 
 class MainWindow : public juce::DocumentWindow,
                    public ProjectManagerListener,
-                   private ConfigListener {
+                   private ConfigListener,
+                   private juce::Timer {
   public:
     MainWindow(AudioEngine* audioEngine = nullptr);
     ~MainWindow() override;
@@ -55,8 +57,15 @@ class MainWindow : public juce::DocumentWindow,
     // ConfigListener
     void configChanged() override;
 
+    void timerCallback() override;
+
     /** Open a .mgd project file (used by menu, command line, and OS file association). */
     void openProjectFile(const juce::File& file);
+
+    /** Restore a selected recovery snapshot as the current project. */
+    bool recoverProject(const RecoveryEntry& entry);
+    void showRecoveryBrowser();
+    void offerRecovery(const RecoveryEntry& entry);
 
     /** Import a .dawproject interchange archive as a new unsaved project. */
     void importDawProjectFile(const juce::File& file);
@@ -86,6 +95,21 @@ class MainWindow : public juce::DocumentWindow,
     void refreshThemedLookAndFeels();
     // Hot-reload callback: the active user theme file changed on disk.
     void onActiveThemeFileChanged();
+    // Offered after load when clip/take/sampler paths no longer exist. The
+    // individual steps are asynchronous so file choosers never block audio or
+    // the message thread.
+    void offerMissingMediaRecovery(std::vector<ProjectManager::MissingMediaFile> missing,
+                                   std::uint64_t generation);
+    void chooseMissingMediaSearchFolder(std::vector<ProjectManager::MissingMediaFile> missing,
+                                        std::uint64_t generation);
+    void locateMissingMediaFiles(std::vector<ProjectManager::MissingMediaFile> missing,
+                                 size_t index, std::uint64_t generation, int repairedCount);
+    void completeMissingMediaSearch(std::uint64_t generation,
+                                    std::vector<ProjectManager::MissingMediaFile> missing,
+                                    std::vector<ProjectManager::MissingMediaReplacement> matches,
+                                    bool cancelled);
+    void finishMissingMediaRecovery(const juce::String& message, std::uint64_t generation);
+    bool isCurrentProjectGeneration(std::uint64_t generation) const;
     class MainComponent;
     MainComponent* mainComponent = nullptr;       // Raw pointer - owned by DocumentWindow
     AudioEngine* externalAudioEngine_ = nullptr;  // Non-owning pointer to external engine
@@ -93,10 +117,12 @@ class MainWindow : public juce::DocumentWindow,
     // File chooser for async file import
     std::unique_ptr<juce::FileChooser> fileChooser_;
     std::string appliedTheme_;
+    std::uint64_t projectOpenGeneration_ = 0;
     // Last-applied density multiplier; -1 forces the first apply to run.
     float appliedDensityScale_ = -1.0f;
     std::string appliedFontFamily_;
     double appliedFontScale_ = 1.0;
+    bool permissionPromptActive_ = false;
 
     // Hot-reload for user JSON themes: armed while a user theme is active,
     // idle for built-ins. activeThemeFile_ is the file currently watched.
@@ -111,8 +137,8 @@ class MainWindow : public juce::DocumentWindow,
     // The actual chooser + render flow, after performExport's pre-checks pass.
     void launchAudioExport(const ExportAudioDialog::Settings& settings, AudioEngine* engine);
     void performMidiExport(const ExportMidiDialog::Settings& settings);
-    juce::String getFileExtensionForFormat(const juce::String& format) const;
-    int getBitDepthForFormat(const juce::String& format) const;
+    static juce::String getFileExtensionForFormat(const juce::String& format);
+    static int getBitDepthForFormat(const juce::String& format);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainWindow)
 };
@@ -148,7 +174,7 @@ class MainWindow::MainComponent : public juce::Component,
 
     // TrackManagerListener
     void tracksChanged() override;
-    void trackPropertyChanged(int trackId) override;
+    void trackPropertyChanged(int trackId) final;
 
     // MidiLearnCoordinatorListener
     void midiLearnStateChanged(const magda::ChainNodePath& path, int paramIndex,
@@ -259,7 +285,7 @@ class MainWindow::MainComponent : public juce::Component,
     void setupResizeHandles();
     void setupViewModeListener();
     void setupAudioEngineCallbacks(AudioEngine* engine);
-    void setupDeviceLoadingCallback();
+    void setupLoadingOverlay();
 
     // Layout helpers
     void layoutTransportArea(juce::Rectangle<int>& bounds);

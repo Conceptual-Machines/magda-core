@@ -5,6 +5,7 @@
 #include <juce_dsp/juce_dsp.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cstddef>
 #include <vector>
@@ -67,23 +68,30 @@ class SampleRing {
             return;
 
         const auto position = writePosition_.load(std::memory_order_relaxed);
-        for (auto i = 0; i < numSamples; ++i)
-            samples_[(position + static_cast<std::size_t>(i)) & mask_].store(
-                samples[i], std::memory_order_relaxed);
+        const auto total = static_cast<std::size_t>(numSamples);
+        const auto capacity = static_cast<std::size_t>(capacity_);
 
-        writePosition_.store(position + static_cast<std::size_t>(numSamples),
-                             std::memory_order_release);
+        // A block longer than the ring overwrites its own head, so only its tail
+        // is ever visible; writing it once is the same ring and one lap less.
+        const auto kept = std::min(total, capacity);
+        const float* source = samples + (total - kept);
+
+        const auto start = (position + (total - kept)) & mask_;
+        const auto firstRun = std::min(kept, capacity - start);
+        storeRun(start, source, firstRun);
+        storeRun(0, source + firstRun, kept - firstRun);
+
+        writePosition_.store(position + total, std::memory_order_release);
     }
 
     /**
      * @brief Audio thread. Append the mean of @p block's channels.
      *
-     * Summed straight into the ring rather than through scratch, which is what
-     * lets this have no maximum block size. A tap that had to be prepared for a
-     * block size would have to do something when handed a longer one, and the
-     * only quiet options are to allocate or to drop the block: one is forbidden
-     * here and the other is a display that goes blank exactly when a host
-     * changes its buffer size.
+     * Through a fixed stack chunk, so this still has no maximum block size. A
+     * tap that had to be prepared for a block size would have to do something
+     * when handed a longer one, and the only quiet options are to allocate or to
+     * drop the block: one is forbidden here and the other is a display that goes
+     * blank exactly when a host changes its buffer size.
      */
     void writeDownmix(juce::dsp::AudioBlock<const float> block, int numSamples) {
         const auto channels = static_cast<int>(block.getNumChannels());
@@ -91,18 +99,23 @@ class SampleRing {
             return;
 
         const auto scale = 1.0f / static_cast<float>(channels);
-        const auto position = writePosition_.load(std::memory_order_relaxed);
 
-        for (auto i = 0; i < numSamples; ++i) {
-            auto sum = 0.0f;
-            for (auto channel = 0; channel < channels; ++channel)
-                sum += block.getSample(channel, i);
-            samples_[(position + static_cast<std::size_t>(i)) & mask_].store(
-                sum * scale, std::memory_order_relaxed);
+        // The mean is built in a fixed stack chunk and written through write(),
+        // which is what keeps the sum vectorised without giving the tap a
+        // maximum block size: a longer block simply takes more passes.
+        constexpr int kChunkSamples = 256;
+        std::array<float, kChunkSamples> mono{};
+
+        for (auto done = 0; done < numSamples; done += kChunkSamples) {
+            const auto count = std::min(kChunkSamples, numSamples - done);
+            juce::FloatVectorOperations::copyWithMultiply(
+                mono.data(), block.getChannelPointer(0) + done, scale, count);
+            for (auto channel = 1; channel < channels; ++channel)
+                juce::FloatVectorOperations::addWithMultiply(
+                    mono.data(), block.getChannelPointer(static_cast<std::size_t>(channel)) + done,
+                    scale, count);
+            write(mono.data(), count);
         }
-
-        writePosition_.store(position + static_cast<std::size_t>(numSamples),
-                             std::memory_order_release);
     }
 
     /**
@@ -123,18 +136,21 @@ class SampleRing {
      */
     std::size_t readLatest(float* destination, int numSamples) const {
         const auto position = writePosition_.load(std::memory_order_acquire);
+        if (destination == nullptr || numSamples <= 0)
+            return position;
 
-        // The oldest position still in the ring. Below it the slot has been
-        // overwritten by a later lap and answers for a different sample.
-        const auto oldest = static_cast<long long>(position) - capacity_;
+        // What the ring can answer for: never more than it is deep, and never
+        // more than has been written. The rest is the zero pad at the front.
+        const auto wanted = static_cast<std::size_t>(numSamples);
+        const auto capacity = static_cast<std::size_t>(capacity_);
+        const auto available = std::min({position, wanted, capacity});
+        const auto pad = wanted - available;
+        std::fill(destination, destination + pad, 0.0f);
 
-        for (auto i = 0; i < numSamples; ++i) {
-            const auto index = static_cast<long long>(position) - numSamples + i;
-            destination[i] = index < 0 || index < oldest
-                                 ? 0.0f
-                                 : samples_[static_cast<std::size_t>(index) & mask_].load(
-                                       std::memory_order_relaxed);
-        }
+        const auto start = (position - available) & mask_;
+        const auto firstRun = std::min(available, capacity - start);
+        loadRun(start, destination + pad, firstRun);
+        loadRun(0, destination + pad + firstRun, available - firstRun);
 
         return position;
     }
@@ -145,6 +161,17 @@ class SampleRing {
     }
 
   private:
+    /// One run of slots, which by construction does not wrap the ring.
+    void storeRun(std::size_t start, const float* source, std::size_t count) {
+        for (std::size_t i = 0; i < count; ++i)
+            samples_[start + i].store(source[i], std::memory_order_relaxed);
+    }
+
+    void loadRun(std::size_t start, float* destination, std::size_t count) const {
+        for (std::size_t i = 0; i < count; ++i)
+            destination[i] = samples_[start + i].load(std::memory_order_relaxed);
+    }
+
     const int capacity_;
     const std::size_t mask_;
     /// Value-initialised, which for an atomic is zero: a ring that has not been

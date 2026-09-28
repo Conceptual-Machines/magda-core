@@ -2,8 +2,11 @@
 
 #include <BinaryData.h>
 
+#include <algorithm>
 #include <cmath>
+#include <ranges>
 #include <set>
+#include <utility>
 
 #include "../components/automation/AutomationMenu.hpp"
 #include "../components/automation/MasterAutomationLanes.hpp"
@@ -13,10 +16,11 @@
 #include "../components/mixer/LevelMeter.hpp"
 #include "../components/mixer/LevelMeterScale.hpp"
 #include "../components/navigation/SongNavigatorPanel.hpp"
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/FontManager.hpp"
+#include "ArrangementViewportPolicy.hpp"
 #include "Config.hpp"
-#include "audio/AudioBridge.hpp"
+#include "audio/TrackMeters.hpp"
 #include "audio/controllers/ControllerParamWriter.hpp"
 #include "audio/controllers/ControllerRouter.hpp"
 #include "core/ClipCommands.hpp"
@@ -60,7 +64,7 @@ juce::String formatDbValue(float db) {
         return "-inf";
     if (std::abs(db) < 0.05f)
         db = 0.0f;
-    return juce::String(db, 1);
+    return {db, 1};
 }
 
 // Route through the position-aware tempo facade when wired (message thread);
@@ -79,14 +83,15 @@ double timelineEndSeconds(const ClipInfo& clip, double bpm) {
 
 }  // namespace
 
-MainView::MainView(AudioEngine* audioEngine)
-    : horizontalZoom(10.0),
-      playheadPosition(0.0),
-      initialZoomSet(false),
-      audioEngine_(audioEngine) {
+MainView::MainView(AudioEngine* audioEngine) : horizontalZoom(10.0), audioEngine_(audioEngine) {
     // Load configuration
     auto& config = magda::Config::getInstance();
     config.load();
+
+    // ProjectManager exists before Config is loaded. Snapshot the real
+    // new-project preferences before any timeline/controller component reads
+    // the initial untitled ProjectInfo.
+    magda::ProjectManager::getInstance().seedCurrentProjectFromConfig();
 
     // Load parameter alias layers
     CuratedAliasLoader::loadFromBinary();
@@ -108,15 +113,15 @@ MainView::MainView(AudioEngine* audioEngine)
         auto rows = cReg.all();
         std::set<juce::String> portWithEnabled;
         bool changed = false;
-        for (auto it = rows.rbegin(); it != rows.rend(); ++it) {
-            if (it->inputPort.isEmpty())
+        for (auto& row : std::views::reverse(rows)) {
+            if (row.inputPort.isEmpty())
                 continue;
-            const bool hasBindings = bReg.hasAnyBindingForController(it->id);
+            const bool hasBindings = bReg.hasAnyBindingForController(row.id);
             if (!hasBindings)
                 continue;
-            if (!portWithEnabled.insert(it->inputPort).second) {
-                bReg.removeAllForController(BindingScope::Global, it->id);
-                bReg.removeAllForController(BindingScope::Project, it->id);
+            if (!portWithEnabled.insert(row.inputPort).second) {
+                bReg.removeAllForController(BindingScope::Global, row.id);
+                bReg.removeAllForController(BindingScope::Project, row.id);
                 changed = true;
             }
         }
@@ -127,11 +132,9 @@ MainView::MainView(AudioEngine* audioEngine)
     }
 
     ControllerRouter::getInstance().reconfigure();
-    if (auto* audioBridge = audioEngine_->getAudioBridge())
-        ControllerRouter::getInstance().setParamWriter(
-            std::make_unique<DefaultControllerParamWriter>(*audioBridge));
-    if (auto* midiBridge = audioEngine_->getMidiBridge())
-        ControllerRouter::getInstance().setMidiBridge(midiBridge);
+    ControllerRouter::getInstance().setParamWriter(
+        std::make_unique<DefaultControllerParamWriter>());
+    ControllerRouter::getInstance().setMidiBridge(&MidiBridge::getInstance());
 
     // Attach MIDI Learn coordinator to the router and seed scope from config
     magda::MidiLearnCoordinator::getInstance().attach(ControllerRouter::getInstance());
@@ -358,17 +361,26 @@ void MainView::setupComponents() {
                 trackContentPanel->setVerticalZoom(verticalZoom);
                 trackHeadersPanel->setVerticalZoom(verticalZoom);
 
-                // getTotalTracksHeight already incorporates verticalZoom per track,
-                // so no extra multiplication here. No jmax with viewport height —
-                // the two panels must end up at the exact same content size to
-                // stay in scroll sync (otherwise one viewport can scroll past the
-                // other and they visually drift on first scroll-down).
-                int scaledHeight = trackHeadersPanel->getTotalTracksHeight();
-                int scrollY = static_cast<int>(start * scaledHeight);
+                // getTotalTracksHeight already incorporates verticalZoom per track.
+                // Both viewed components must still cover the viewport when the
+                // rows are shorter; the header panel owns the empty-area context
+                // menu, so shrinking it to the raw row height makes that area
+                // non-interactive (#2809).
+                const int scaledHeight = trackHeadersPanel->getTotalTracksHeight();
+                const int viewportHeight = trackContentViewport->getHeight();
+                const int panelHeight =
+                    arrangement_viewport::panelHeight(scaledHeight, viewportHeight);
+
+                // updateVerticalZoomScrollBar maps the scroll fraction into the
+                // thumb's available travel (1 - rangeHeight); invert that mapping
+                // here and clamp to the viewport's real scrollable extent.
+                const int scrollY = arrangement_viewport::scrollOffset(
+                    start, rangeHeight, scaledHeight, viewportHeight);
 
                 int contentWidth = trackContentPanel->getWidth();
-                trackContentPanel->setSize(contentWidth, scaledHeight);
-                trackHeadersPanel->setSize(trackHeaderWidth, scaledHeight);
+                trackContentPanel->setMinHeight(viewportHeight);
+                trackContentPanel->setSize(contentWidth, panelHeight);
+                trackHeadersPanel->setSize(trackHeaderWidth, panelHeight);
 
                 trackContentViewport->setViewPosition(trackContentViewport->getViewPositionX(),
                                                       scrollY);
@@ -376,6 +388,7 @@ void MainView::setupComponents() {
                 playheadComponent->repaint();
 
                 isUpdatingFromVerticalZoomScrollBar = false;
+                updateVerticalZoomScrollBar();
             }
         });
     // Corner toolbar buttons (above track headers)
@@ -384,10 +397,10 @@ void MainView::setupComponents() {
                                     const char* svgData, size_t svgSize) {
         btn = std::make_unique<SvgButton>(name, svgData, svgSize);
         btn->setOriginalColor(juce::Colour(0xFFB3B3B3));
-        btn->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        btn->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
-        btn->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+        btn->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        btn->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+        btn->setPressedColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+        btn->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
         btn->setBorderThickness(1.0f);
         btn->setWantsKeyboardFocus(false);
         addAndMakeVisible(*btn);
@@ -462,23 +475,23 @@ void MainView::setupComponents() {
         trackHeadersPanel->toggleIORouting();
         // Update button appearance to reflect state
         if (trackHeadersPanel->isIORoutingVisible()) {
-            ioToggleButton->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+            ioToggleButton->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         } else {
             ioToggleButton->setNormalColor(
-                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.3f));
+                ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.3f));
         }
         updateContentSizes();
     };
     ioToggleButton->setTooltip("Toggle I/O routing");
     if (!trackHeadersPanel->isIORoutingVisible()) {
         ioToggleButton->setNormalColor(
-            DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.3f));
+            ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.3f));
     }
 
     setupCornerButton(addTrackButton, "AddTrack", BinaryData::add_svg, BinaryData::add_svgSize);
     addTrackButton->onClick = []() {
         UndoManager::getInstance().executeCommand(
-            std::make_unique<CreateTrackCommand>(TrackType::Audio));
+            std::make_unique<CreateTrackCommand>(TrackType::Media));
     };
     addTrackButton->setTooltip("Add track");
 
@@ -500,14 +513,14 @@ void MainView::setupComponents() {
                       BinaryData::horizontal_svgSize);
     hAxisIcon->setInterceptsMouseClicks(false, false);
     // Faint watermark rather than a solid grey glyph.
-    hAxisIcon->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.28f));
-    hAxisIcon->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.28f));
+    hAxisIcon->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.28f));
+    hAxisIcon->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.28f));
     hAxisIcon->setBorderThickness(0.0f);
 
     setupCornerButton(vAxisIcon, "VAxis", BinaryData::vertical_svg, BinaryData::vertical_svgSize);
     vAxisIcon->setInterceptsMouseClicks(false, false);
-    vAxisIcon->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.28f));
-    vAxisIcon->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.28f));
+    vAxisIcon->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.28f));
+    vAxisIcon->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.28f));
     vAxisIcon->setBorderThickness(0.0f);
 
     // Set up scroll synchronization
@@ -636,13 +649,10 @@ void MainView::applyVerticalZoom(double newVerticalZoom) {
     trackContentPanel->setVerticalZoom(verticalZoom);
     trackHeadersPanel->setVerticalZoom(verticalZoom);
 
-    // Both panels must end at the exact same content height to stay in scroll
-    // sync (see the vertical zoom scrollbar handler for the rationale).
-    const int scaledHeight = trackHeadersPanel->getTotalTracksHeight();
-    trackContentPanel->setSize(trackContentPanel->getWidth(), scaledHeight);
-    trackHeadersPanel->setSize(trackHeaderWidth, scaledHeight);
-
-    updateVerticalZoomScrollBar();
+    // Re-apply the viewport-height floor as well as the matching content size.
+    // Vertical zoom can make the rows shorter than the viewport, but the empty
+    // area must remain part of both panels for painting, drops, and context menus.
+    updateContentSizes();
     playheadComponent->repaint();
 }
 
@@ -671,13 +681,10 @@ void MainView::timerCallback() {
     if (!audioEngine_ || !masterHeaderPanel)
         return;
 
-    auto* bridge = audioEngine_->getAudioBridge();
-    if (!bridge)
-        return;
-
     // Update master header panel with real levels
-    float masterPeakL = bridge->getMasterPeakL();
-    float masterPeakR = bridge->getMasterPeakR();
+    auto& meters = audioEngine_->meters();
+    float masterPeakL = meters.getMasterPeakL();
+    float masterPeakR = meters.getMasterPeakR();
     masterHeaderPanel->setPeakLevels(masterPeakL, masterPeakR);
 
     // Update aux section metering
@@ -904,27 +911,27 @@ void MainView::viewModeChanged(ViewMode mode, const AudioEngineProfile& /*profil
 }
 
 void MainView::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
 
     // Draw top border for visual separation from transport above
-    g.setColour(DarkTheme::getBorderColour());
+    g.setColour(ActiveTheme::getBorderColour());
     g.fillRect(0, 0, getWidth(), 1);
 
     // Draw corner toolbar separator lines
     if (!markerLaneSeparatorLine.isEmpty()) {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.fillRect(markerLaneSeparatorLine);
     }
     if (!cornerSeparatorLine.isEmpty()) {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.fillRect(cornerSeparatorLine);
     }
     if (!cornerBottomBorderLine.isEmpty()) {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.fillRect(cornerBottomBorderLine);
     }
     if (!markerCornerRightBorderLine.isEmpty()) {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.fillRect(markerCornerRightBorderLine);
     }
 
@@ -934,9 +941,9 @@ void MainView::paint(juce::Graphics& g) {
     auto headerArea = headerColumn.removeFrom(contentArea, trackHeaderWidth);
     headerColumn.removeSpacing(contentArea, LayoutConfig::getInstance().componentSpacing);
 
-    g.setColour(DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND));
     g.fillRect(contentArea);
-    g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
     g.fillRect(headerArea);
 
     // Draw resize handles
@@ -1046,7 +1053,10 @@ void MainView::resized() {
     scrollContainer_->setAxisLayout(MainViewScrollContainer::Axis::Horizontal,
                                     arrangementLayout.horizontalScrollBarArea, true);
     scrollContainer_->setAxisLayout(MainViewScrollContainer::Axis::Vertical,
-                                    arrangementLayout.verticalScrollBarArea, true);
+                                    arrangementLayout.verticalScrollBarArea,
+                                    arrangement_viewport::needsVerticalScrollBar(
+                                        trackHeadersPanel->getTotalTracksHeight(),
+                                        arrangementLayout.trackContentArea.getHeight()));
     scrollContainer_->toFront(false);
 
     if (masterVisible_) {
@@ -1210,35 +1220,35 @@ void MainView::resized() {
         timelineController->dispatch(ViewportResizedEvent{viewportWidth, viewportHeight});
         timeline->setViewportWidth(viewportWidth);
 
-        // Set initial zoom to show configurable duration on first resize
-        if (!initialZoomSet) {
-            int availableWidth = viewportWidth - LayoutConfig::TIMELINE_LEFT_PADDING;
-
-            if (availableWidth > 0) {
-                auto& config = magda::Config::getInstance();
-                int zoomViewBars = config.getDefaultZoomViewBars();
-                // horizontalZoom is ppb: convert bars to beats
-                const auto& st = timelineController->getState();
-                double viewBeats = zoomViewBars * st.tempo.timeSignatureNumerator;
-                double zoomForDefaultView =
-                    (viewBeats > 0) ? static_cast<double>(availableWidth) / viewBeats : 10.0;
-
-                // Ensure minimum zoom level for usability
-                zoomForDefaultView = juce::jmax(zoomForDefaultView, 0.5);
-
-                // Dispatch initial zoom via controller
-                timelineController->dispatch(SetZoomCenteredEvent{zoomForDefaultView, 0.0});
-
-                DBG("INITIAL ZOOM: showing " << zoomViewBars
-                                             << " bars, availableWidth=" << availableWidth
-                                             << ", zoomForDefaultView=" << zoomForDefaultView);
-
-                initialZoomSet = true;
-            }
-        }
+        if (!initialZoomSet)
+            applyInitialZoomForProject(ProjectManager::getInstance().getCurrentProjectInfo());
     }
 
     updateContentSizes();
+}
+
+void MainView::applyInitialZoomForProject(const ProjectInfo& info) {
+    // A saved project view is restored by ProjectManager::onAfterLoad. Mark it
+    // handled so a subsequent resize cannot replace it with the default view.
+    if (info.horizontalZoom > 0.0) {
+        initialZoomSet = true;
+        return;
+    }
+
+    initialZoomSet = false;
+    if (!timelineViewport || !timelineController)
+        return;
+
+    const int availableWidth = timelineViewport->getWidth() - LayoutConfig::TIMELINE_LEFT_PADDING;
+    if (availableWidth <= 0)
+        return;
+
+    const auto& state = timelineController->getState();
+    const double viewBeats = info.defaults.zoomViewBars * state.tempo.beatsPerBar();
+    const double zoom =
+        juce::jmax(viewBeats > 0.0 ? static_cast<double>(availableWidth) / viewBeats : 10.0, 0.5);
+    timelineController->dispatch(SetZoomCenteredEvent{zoom, 0.0});
+    initialZoomSet = true;
 }
 
 void MainView::setHorizontalZoom(double zoomFactor) {
@@ -1435,7 +1445,7 @@ void MainView::updateContentSizes() {
     // back to the viewport floor, not its own stale height.
     int contentHeight = trackHeadersPanel->getTotalTracksHeight();
     int viewportFloor = trackContentViewport->getHeight();
-    contentHeight = juce::jmax(contentHeight, viewportFloor);
+    contentHeight = arrangement_viewport::panelHeight(contentHeight, viewportFloor);
 
     // Tell the content panel the minimum height so its own resized() (which
     // re-computes content size from zoom/timeline) doesn't shrink below the
@@ -1599,10 +1609,21 @@ void MainView::updateHorizontalZoomScrollBar() {
 
 void MainView::updateVerticalZoomScrollBar() {
     int totalContentHeight = trackHeadersPanel->getTotalTracksHeight();
-    if (totalContentHeight <= 0)
-        return;
-
     int viewportHeight = trackContentViewport->getHeight();
+
+    const auto layout = computeArrangementLayout();
+    const bool needsScrollBar =
+        arrangement_viewport::needsVerticalScrollBar(totalContentHeight, viewportHeight);
+    scrollContainer_->setAxisLayout(MainViewScrollContainer::Axis::Vertical,
+                                    layout.verticalScrollBarArea, needsScrollBar);
+
+    if (!needsScrollBar) {
+        trackContentViewport->setViewPosition(trackContentViewport->getViewPositionX(), 0);
+        trackHeadersViewport->setViewPosition(0, 0);
+        scrollContainer_->setVisibleRange(MainViewScrollContainer::Axis::Vertical, 0.0, 1.0);
+        return;
+    }
+
     int scrollY = trackContentViewport->getViewPositionY();
 
     // Calculate rangeHeight from zoom using inverse of: zoom = 0.5 + rangeHeight * 2.5
@@ -1727,9 +1748,9 @@ void MainView::PlayheadComponent::paint(juce::Graphics& g) {
                 std::abs(editX - handleX(state.selection.endBeats)) <= 5)
                 triAlpha = 0.55f;
         }
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(triAlpha));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(triAlpha));
         // Fill the playhead row: top edge at y0, tip at the row bottom.
-        const float ph = static_cast<float>(LayoutConfig::getInstance().playheadRowHeight);
+        const auto ph = static_cast<float>(LayoutConfig::getInstance().playheadRowHeight);
         juce::Path triangle;
         triangle.addTriangle(editX - 6, 0.0f, editX + 6, 0.0f, editX, ph);
         g.fillPath(triangle);
@@ -1740,8 +1761,8 @@ void MainView::PlayheadComponent::paint(juce::Graphics& g) {
         playX < getWidth()) {
         // Draw thin vertical line extending the full track area, starting at the
         // top of the track content (just below the playhead/triangle row).
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.85f));
-        const float lineTop = static_cast<float>(LayoutConfig::getInstance().playheadRowHeight);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.85f));
+        const auto lineTop = static_cast<float>(LayoutConfig::getInstance().playheadRowHeight);
         g.drawLine(static_cast<float>(playX), lineTop, static_cast<float>(playX),
                    static_cast<float>(getHeight()), 1.5f);
     }
@@ -1936,7 +1957,7 @@ juce::Rectangle<int> MainView::getResizeHandleArea() const {
     int x = arrangementLayout.swapped
                 ? arrangementLayout.trackHeadersArea.getX() - layout.componentSpacing
                 : arrangementLayout.trackHeadersArea.getRight();
-    return juce::Rectangle<int>(x, top, layout.componentSpacing, getHeight() - top);
+    return {x, top, layout.componentSpacing, getHeight() - top};
 }
 
 void MainView::paintResizeHandle(juce::Graphics& g) {
@@ -1948,9 +1969,9 @@ void MainView::paintResizeHandle(juce::Graphics& g) {
 
     // Draw subtle resize handle with hover effect
     if (isHovered || isResizingHeaders) {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).brighter(0.3f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).brighter(0.3f));
     } else {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     }
 
     // Draw a thinner visual line in the center
@@ -1959,7 +1980,7 @@ void MainView::paintResizeHandle(juce::Graphics& g) {
 
     // Draw a subtle highlight line when hovered or resizing
     if (isHovered || isResizingHeaders) {
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.4f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.4f));
         g.fillRect(centerX, handleArea.getY() + 4, 1, handleArea.getHeight() - 8);
     }
 }
@@ -1977,7 +1998,7 @@ juce::Rectangle<int> MainView::getMasterResizeHandleArea() const {
     int horizontalScrollbarHeight = ARRANGEMENT_SCROLLBAR_SIZE;
     int resizeHandleY = getHeight() - horizontalScrollbarHeight - masterStripHeight -
                         MASTER_RESIZE_HANDLE_HEIGHT - effectiveAuxHeight;
-    return juce::Rectangle<int>(0, resizeHandleY, getWidth(), MASTER_RESIZE_HANDLE_HEIGHT);
+    return {0, resizeHandleY, getWidth(), MASTER_RESIZE_HANDLE_HEIGHT};
 }
 
 void MainView::paintMasterResizeHandle(juce::Graphics& g) {
@@ -1989,9 +2010,9 @@ void MainView::paintMasterResizeHandle(juce::Graphics& g) {
 
     // Draw subtle resize handle with hover effect
     if (isHovered || isResizingMasterStrip) {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).brighter(0.3f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).brighter(0.3f));
     } else {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     }
 
     // Draw a horizontal line
@@ -2000,7 +2021,7 @@ void MainView::paintMasterResizeHandle(juce::Graphics& g) {
 
     // Draw a subtle highlight line when hovered or resizing
     if (isHovered || isResizingMasterStrip) {
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.4f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.4f));
         g.fillRect(handleArea.getX() + 4, centerY, handleArea.getWidth() - 8, 1);
     }
 }
@@ -2147,7 +2168,7 @@ void MainView::setupSelectionCallbacks() {
             timelineController->dispatch(ClearTimeSelectionEvent{});
         } else {
             timelineController->dispatch(
-                SetTimeSelectionBeatsEvent{startBeats, endBeats, trackIndices});
+                SetTimeSelectionBeatsEvent{startBeats, endBeats, std::move(trackIndices)});
             // Move playhead to follow the left side of selection
             timelineController->dispatch(SetPlayheadPositionBeatsEvent{startBeats});
         }
@@ -2160,7 +2181,7 @@ void MainView::setupSelectionCallbacks() {
                 timelineController->dispatch(ClearTimeSelectionEvent{});
             } else {
                 timelineController->dispatch(SetTimeSelectionBeatsEvent{
-                    startBeats, endBeats, trackIndices, false, std::move(laneIds)});
+                    startBeats, endBeats, std::move(trackIndices), false, std::move(laneIds)});
                 timelineController->dispatch(SetPlayheadPositionBeatsEvent{startBeats});
             }
         };
@@ -2172,7 +2193,7 @@ void MainView::setupSelectionCallbacks() {
                 timelineController->dispatch(ClearTimeSelectionEvent{});
             } else {
                 timelineController->dispatch(SetTimeSelectionBeatsEvent{
-                    startBeats, endBeats, trackIndices, true, std::move(laneIds)});
+                    startBeats, endBeats, std::move(trackIndices), true, std::move(laneIds)});
                 timelineController->dispatch(SetPlayheadPositionBeatsEvent{startBeats});
             }
         };
@@ -2311,7 +2332,7 @@ void MainView::SelectionOverlayComponent::drawTimeSelection(juce::Graphics& g) {
     // Crisp accent-blue edges at the selection's vertical boundaries, matching
     // the blue range strip in the ruler and keeping the selection distinct from
     // the near-white playhead.
-    const auto edgeColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.9f);
+    const auto edgeColour = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.9f);
     g.setColour(edgeColour);
     for (const auto& r : litRects) {
         g.fillRect(r.getX(), r.getY(), 1, r.getHeight());
@@ -2354,7 +2375,7 @@ void MainView::SelectionOverlayComponent::drawLoopRegion(juce::Graphics& g) {
 
     // Use different colors based on enabled state
     bool enabled = state.loop.enabled;
-    juce::Colour regionColour = enabled ? DarkTheme::getColour(DarkTheme::LOOP_REGION)
+    juce::Colour regionColour = enabled ? ActiveTheme::getColour(ActiveTheme::LOOP_REGION)
                                         : juce::Colour(0x15808080);  // Light grey, very transparent
 
     // Draw the semi-transparent loop region fill only. The loop range is marked
@@ -2399,9 +2420,10 @@ void MainView::SelectionOverlayComponent::drawRecordingRegion(juce::Graphics& g)
     endX = juce::jmin(getWidth(), endX);
 
     int scrollY = owner.trackContentViewport->getViewPositionY();
-    auto& tracks = TrackManager::getInstance().getTracks();
+    const auto& tracks = TrackManager::getInstance().getTracks();
+    const auto& projectDefaults = ProjectManager::getInstance().getCurrentProjectInfo().defaults;
 
-    for (int trackIndex = 0; trackIndex < (int)tracks.size(); ++trackIndex) {
+    for (int trackIndex = 0; trackIndex < static_cast<int>(tracks.size()); ++trackIndex) {
         if (!tracks[trackIndex].recordArmed) {
             continue;
         }
@@ -2421,7 +2443,7 @@ void MainView::SelectionOverlayComponent::drawRecordingRegion(juce::Graphics& g)
 
         if (drawHeight > 0) {
             // Use the same style as a MIDI clip: darker fill of the default clip color
-            auto clipColour = juce::Colour(Config::getDefaultColour(
+            auto clipColour = juce::Colour(projectDefaults.colourForIndex(
                 static_cast<int>(ClipManager::getInstance().getArrangementClips().size())));
             g.setColour(clipColour.darker(0.3f));
             g.fillRoundedRectangle(startX, drawY, endX - startX, drawHeight, 3.0f);
@@ -2472,12 +2494,13 @@ void MainView::MasterHeaderPanel::setupControls() {
                                     BinaryData::automation_master_header_svgSize);
     automationButton->setTooltip(tr("tracks.automation"));
     automationButton->setColour(juce::TextButton::buttonColourId,
-                                DarkTheme::getColour(DarkTheme::SURFACE));
+                                ActiveTheme::getColour(ActiveTheme::SURFACE));
     automationButton->setColour(juce::TextButton::buttonOnColourId,
-                                DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
-    automationButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    automationButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    automationButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+                                ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+    automationButton->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    automationButton->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+    automationButton->setActiveBackgroundColor(
+        ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
     automationButton->setIconPadding(2.5f);
     automationButton->onClick = [this]() {
         // Alt/Option-click toggles global show/hide of all automation lanes.
@@ -2495,9 +2518,9 @@ void MainView::MasterHeaderPanel::setupControls() {
     hideButton->setTooltip("Hide master track");
     hideButton->setOriginalColor(juce::Colour(0xFFB3B3B3));
     hideButton->setNormalColor(juce::Colour(0xFFB3B3B3));
-    hideButton->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    hideButton->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
-    hideButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    hideButton->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+    hideButton->setPressedColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+    hideButton->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     hideButton->setBorderThickness(1.0f);
     hideButton->onClick = []() {
         TrackManager::getInstance().setMasterVisible(
@@ -2510,7 +2533,7 @@ void MainView::MasterHeaderPanel::setupControls() {
     volumeLabel->setFillProportionMapper(level_meter_scale::dbFillProportion);
     volumeLabel->setDoubleClickResetsValue(true);
     volumeLabel->onValueChange = [this]() {
-        const float db = static_cast<float>(volumeLabel->getValue());
+        const auto db = static_cast<float>(volumeLabel->getValue());
         UndoManager::getInstance().executeCommand(
             std::make_unique<SetMasterVolumeCommand>(dbToGain(db)));
     };
@@ -2525,7 +2548,7 @@ void MainView::MasterHeaderPanel::setupControls() {
     peakValueLabel->setJustificationType(juce::Justification::centredLeft);
     peakValueLabel->setFont(FontManager::getInstance().getMonoFont(9.0f));
     peakValueLabel->setColour(juce::Label::textColourId,
-                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                              ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     peakValueLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     peakValueLabel->setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
     peakValueLabel->setTooltip("Click to reset peak");
@@ -2540,16 +2563,16 @@ void MainView::MasterHeaderPanel::setupControls() {
 
 void MainView::MasterHeaderPanel::paint(juce::Graphics& g) {
     // Background
-    g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
 
     // Border
     auto bounds = getLocalBounds();
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(bounds, 1);
 
     // "Master" label at top
     auto labelArea = bounds.reduced(6, 2).removeFromTop(14);
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     g.setFont(FontManager::getInstance().getUIFont(11.0f));
     g.drawText(magda::technicalText(magda::TechnicalTextToken::Master), labelArea,
                juce::Justification::centredLeft);
@@ -2660,20 +2683,19 @@ void MainView::MasterHeaderPanel::setPeakLevels(float leftPeak, float rightPeak)
 
 // ===== MasterContentPanel Implementation =====
 
-MainView::MasterContentPanel::MasterContentPanel() {
-    // Empty for now - will show waveform later
-}
+// Empty for now - will show waveform later
+MainView::MasterContentPanel::MasterContentPanel() = default;
 
 void MainView::MasterContentPanel::paint(juce::Graphics& g) {
     // Background matching track content area
-    g.fillAll(DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND));
 
     // Border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(getLocalBounds(), 1);
 
     // Draw a subtle indicator that this is the master output area
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.3f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.3f));
     g.setFont(FontManager::getInstance().getUIFont(11.0f));
     g.drawText(tr("common.master_output"), getLocalBounds(), juce::Justification::centred);
 }
@@ -2726,26 +2748,22 @@ void MainView::calculateSmartGridNumeratorDenominator(int& outNum, int& outDen,
                                                       bool& outIsBars) const {
     const auto& state = timelineController->getState();
     double zoom = state.zoom.horizontalZoom;
-    int timeSigNumerator = state.tempo.timeSignatureNumerator;
+    const double barBeats = state.tempo.beatsPerBar();
     auto& layout = LayoutConfig::getInstance();
     int minPixelSpacing = layout.minGridPixelSpacing;
 
     outIsBars = false;
 
     // Try beat subdivisions (powers of 2)
-    double frac = GridConstants::findBeatSubdivision(zoom, minPixelSpacing);
+    double frac = GridConstants::findBeatSubdivision(zoom, state.tempo.signatureBeatLength(),
+                                                     minPixelSpacing);
     if (frac > 0) {
-        // Convert beat fraction to whole-note-relative num/den
-        // beatFraction = 2^p, denominator = 4 / beatFraction
-        outNum = 1;
-        outDen = static_cast<int>(4.0 / frac);
-        if (outDen < 1)
-            outDen = 1;  // For frac > 4 (shouldn't happen)
+        std::tie(outNum, outDen) = GridConstants::noteFraction(frac);
         return;
     }
 
     // Bar multiples
-    int mult = GridConstants::findBarMultiple(zoom, timeSigNumerator, minPixelSpacing);
+    int mult = GridConstants::findBarMultiple(zoom, barBeats, minPixelSpacing);
     outNum = mult;
     outDen = 0;
     outIsBars = true;
@@ -2772,6 +2790,10 @@ void MainView::updateGridDivisionDisplay() {
 // ===== AuxHeadersPanel Implementation =====
 
 MainView::AuxHeadersPanel::AuxHeadersPanel() {
+    // The row is composed almost entirely of child controls. Listen to their
+    // mouse-downs as well so clicking the name, fader, buttons, or meter selects
+    // the aux return just like clicking an ordinary track header.
+    addMouseListener(this, true);
     TrackManager::getInstance().addListener(this);
     rebuildAuxRows();
 }
@@ -2784,6 +2806,19 @@ void MainView::AuxHeadersPanel::tracksChanged() {
     rebuildAuxRows();
 }
 
+void MainView::AuxHeadersPanel::trackPropertyChanged(int trackId) {
+    const auto* track = TrackManager::getInstance().getTrack(trackId);
+    if (!track || track->type != TrackType::Aux)
+        return;
+
+    const auto row =
+        std::ranges::find(auxRows_, trackId, [](const auto& entry) { return entry->trackId; });
+    if (row == auxRows_.end())
+        return;
+
+    (*row)->nameLabel->setText(track->name, juce::dontSendNotification);
+}
+
 void MainView::AuxHeadersPanel::rebuildAuxRows() {
     // Remove all existing child components
     for (auto& row : auxRows_) {
@@ -2792,6 +2827,7 @@ void MainView::AuxHeadersPanel::rebuildAuxRows() {
         removeChildComponent(row->panLabel.get());
         removeChildComponent(row->muteButton.get());
         removeChildComponent(row->soloButton.get());
+        removeChildComponent(row->peakMeter.get());
     }
     auxRows_.clear();
 
@@ -2805,11 +2841,12 @@ void MainView::AuxHeadersPanel::rebuildAuxRows() {
         auto row = std::make_unique<AuxRow>();
         row->trackId = track.id;
 
-        // Name label - show "Aux N" based on bus index
-        juce::String auxName = "Aux " + juce::String(track.auxBusIndex + 1);
-        row->nameLabel = std::make_unique<juce::Label>("auxName", auxName);
+        // The model owns the name, just as it does for every other track.  In
+        // particular, renaming an aux in the inspector must also rename this
+        // strip instead of leaving a synthetic "Aux N" behind.
+        row->nameLabel = std::make_unique<juce::Label>("auxName", track.name);
         row->nameLabel->setColour(juce::Label::textColourId,
-                                  DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                                  ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         row->nameLabel->setFont(FontManager::getInstance().getUIFont(11.0f));
         addAndMakeVisible(*row->nameLabel);
 
@@ -2822,7 +2859,7 @@ void MainView::AuxHeadersPanel::rebuildAuxRows() {
         TrackId tid = track.id;
         auto* volLabelPtr = row->volumeLabel.get();
         row->volumeLabel->onValueChange = [tid, volLabelPtr]() {
-            float newDb = static_cast<float>(volLabelPtr->getValue());
+            auto newDb = static_cast<float>(volLabelPtr->getValue());
             float gain = dbToGain(newDb);
             UndoManager::getInstance().executeCommand(
                 std::make_unique<SetTrackVolumeCommand>(tid, gain));
@@ -2846,13 +2883,13 @@ void MainView::AuxHeadersPanel::rebuildAuxRows() {
             juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
             juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
         row->muteButton->setColour(juce::TextButton::buttonColourId,
-                                   DarkTheme::getColour(DarkTheme::SURFACE));
+                                   ActiveTheme::getColour(ActiveTheme::SURFACE));
         row->muteButton->setColour(juce::TextButton::buttonOnColourId,
-                                   DarkTheme::getColour(DarkTheme::STATUS_WARNING));
+                                   ActiveTheme::getColour(ActiveTheme::STATUS_WARNING));
         row->muteButton->setColour(juce::TextButton::textColourOffId,
-                                   DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                                   ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         row->muteButton->setColour(juce::TextButton::textColourOnId,
-                                   DarkTheme::getColour(DarkTheme::BACKGROUND));
+                                   ActiveTheme::getColour(ActiveTheme::BACKGROUND));
         row->muteButton->setClickingTogglesState(true);
         row->muteButton->setToggleState(track.muted, juce::dontSendNotification);
         auto* muteBtnPtr = row->muteButton.get();
@@ -2868,13 +2905,13 @@ void MainView::AuxHeadersPanel::rebuildAuxRows() {
             juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
             juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
         row->soloButton->setColour(juce::TextButton::buttonColourId,
-                                   DarkTheme::getColour(DarkTheme::SURFACE));
+                                   ActiveTheme::getColour(ActiveTheme::SURFACE));
         row->soloButton->setColour(juce::TextButton::buttonOnColourId,
-                                   DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+                                   ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
         row->soloButton->setColour(juce::TextButton::textColourOffId,
-                                   DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                                   ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         row->soloButton->setColour(juce::TextButton::textColourOnId,
-                                   DarkTheme::getColour(DarkTheme::BACKGROUND));
+                                   ActiveTheme::getColour(ActiveTheme::BACKGROUND));
         row->soloButton->setClickingTogglesState(true);
         row->soloButton->setToggleState(track.soloed, juce::dontSendNotification);
         auto* soloBtnPtr = row->soloButton.get();
@@ -2883,6 +2920,13 @@ void MainView::AuxHeadersPanel::rebuildAuxRows() {
                 std::make_unique<SetTrackSoloCommand>(tid, soloBtnPtr->getToggleState()));
         };
         addAndMakeVisible(*row->soloButton);
+
+        // Aux returns are excluded from the scrolling track headers, so their
+        // meter has to live here too.  It consumes the same per-track meter
+        // stream as an ordinary track header.
+        row->peakMeter = std::make_unique<LevelMeter>();
+        row->peakMeter->setOrientation(LevelMeter::Orientation::Horizontal);
+        addAndMakeVisible(*row->peakMeter);
 
         auxRows_.push_back(std::move(row));
     }
@@ -2893,11 +2937,11 @@ void MainView::AuxHeadersPanel::rebuildAuxRows() {
 
 void MainView::AuxHeadersPanel::paint(juce::Graphics& g) {
     // Slightly different background to distinguish from regular tracks
-    g.fillAll(DarkTheme::getColour(DarkTheme::SURFACE).darker(0.1f));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::SURFACE).darker(0.1f));
 
     // Draw borders between rows
     int rowHeight = getHeight() / juce::jmax(1, static_cast<int>(auxRows_.size()));
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(getLocalBounds(), 1);
 
     for (size_t i = 1; i < auxRows_.size(); ++i) {
@@ -2911,13 +2955,14 @@ void MainView::AuxHeadersPanel::mouseDown(const juce::MouseEvent& event) {
         return;
 
     int rowHeight = getHeight() / static_cast<int>(auxRows_.size());
-    int rowIndex = event.getPosition().getY() / rowHeight;
+    const auto localEvent = event.getEventRelativeTo(this);
+    int rowIndex = localEvent.getPosition().getY() / rowHeight;
 
     if (rowIndex >= 0 && rowIndex < static_cast<int>(auxRows_.size())) {
         const auto trackId = auxRows_[rowIndex]->trackId;
         SelectionManager::getInstance().selectTrack(trackId);
 
-        if (event.mods.isPopupMenu()) {
+        if (localEvent.mods.isPopupMenu()) {
             juce::PopupMenu menu;
             menu.addItem(1, "Delete Aux Track");
             menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this),
@@ -2937,14 +2982,17 @@ void MainView::AuxHeadersPanel::resized() {
     int rowHeight = getHeight() / static_cast<int>(auxRows_.size());
     auto bounds = getLocalBounds();
 
-    for (size_t i = 0; i < auxRows_.size(); ++i) {
-        auto& row = *auxRows_[i];
+    for (const auto& auxRow : auxRows_) {
+        auto& row = *auxRow;
         auto rowArea = bounds.removeFromTop(rowHeight);
         // Centre a fixed 18px-tall strip within the row (matching master header controls)
         auto controlArea = rowArea.withSizeKeepingCentre(rowArea.getWidth() - 8, 18);
 
-        // Layout: [Name 36px] [M 18px] [S 18px] [Vol 40px] [Pan 32px]
-        row.nameLabel->setBounds(controlArea.removeFromLeft(36));
+        // Layout: [Name] [M] [S] [Vol] [Pan] [stereo meter].  Reserve the
+        // controls from the right so a wider header benefits the track name.
+        constexpr int controlsWidth = 4 + 18 + 2 + 18 + 4 + 40 + 4 + 32 + 4 + 24;
+        row.nameLabel->setBounds(
+            controlArea.removeFromLeft(juce::jmax(24, controlArea.getWidth() - controlsWidth)));
         controlArea.removeFromLeft(4);
         row.muteButton->setBounds(controlArea.removeFromLeft(18).withSizeKeepingCentre(16, 16));
         controlArea.removeFromLeft(2);
@@ -2953,23 +3001,31 @@ void MainView::AuxHeadersPanel::resized() {
         row.volumeLabel->setBounds(controlArea.removeFromLeft(40));
         controlArea.removeFromLeft(4);
         row.panLabel->setBounds(controlArea.removeFromLeft(32));
+        controlArea.removeFromLeft(4);
+        row.peakMeter->setBounds(controlArea.removeFromLeft(24));
     }
 }
 
 void MainView::AuxHeadersPanel::updateMetering(AudioEngine* engine) {
-    // Aux metering could be added here in the future
-    // For now, aux tracks share the same metering infrastructure as regular tracks
-    (void)engine;
+    if (!engine)
+        return;
+
+    auto& meteringBuffer = engine->meters().mixer;
+    for (auto& row : auxRows_) {
+        MeterData data;
+        if (meteringBuffer.popLevels(row->trackId, data))
+            row->peakMeter->setLevels(data.peakL, data.peakR);
+    }
 }
 
 // ===== AuxContentPanel Implementation =====
 
 void MainView::AuxContentPanel::paint(juce::Graphics& g) {
     // Background matching track content but slightly different to distinguish aux
-    g.fillAll(DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND).darker(0.05f));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND).darker(0.05f));
 
     // Border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(getLocalBounds(), 1);
 
     if (auxTrackCount_ > 0) {

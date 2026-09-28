@@ -1,16 +1,14 @@
 #pragma once
-
 #include <juce_core/juce_core.h>
 
+#include <algorithm>
 #include <array>
-
-namespace magda::daw::audio {
 
 // Closed vocabulary of drum-row roles used by the drummer agent (#859) and the
 // Drum Grid templates. Role IDs are the canonical strings written to the
 // ValueTree and emitted by the agent as drum tokens. Display labels are for
 // menu UI; short tags are the small badge rendered next to the row label.
-namespace drum_grid_roles {
+namespace magda::daw::audio::drum_grid_roles {
 
 struct RoleInfo {
     const char* id;            // canonical ID, persisted + agent token
@@ -41,19 +39,14 @@ inline constexpr std::array<RoleInfo, 17> kRoles{{
 inline bool isValidRoleId(const juce::String& id) {
     if (id.isEmpty())
         return false;
-    for (const auto& r : kRoles) {
-        if (id == juce::String(r.id))
-            return true;
-    }
-    return false;
+    const auto hasThisId = [&id](const auto& role) { return id == juce::String(role.id); };
+    return std::ranges::any_of(kRoles, hasThisId);
 }
 
 inline juce::String displayLabelForRole(const juce::String& id) {
-    for (const auto& r : kRoles) {
-        if (id == juce::String(r.id))
-            return r.displayLabel;
-    }
-    return {};
+    const auto hasThisId = [&id](const auto& r) { return id == juce::String(r.id); };
+    const auto role = std::ranges::find_if(kRoles, hasThisId);
+    return role != std::ranges::end(kRoles) ? juce::String(role->displayLabel) : juce::String{};
 }
 
 inline juce::String shortTagForRole(const juce::String& id) {
@@ -82,5 +75,4 @@ inline juce::String roleIdForToken(const juce::String& token) {
     return {};
 }
 
-}  // namespace drum_grid_roles
-}  // namespace magda::daw::audio
+}  // namespace magda::daw::audio::drum_grid_roles

@@ -2,13 +2,14 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 
 #include "../../state/TimelineController.hpp"
 #include "../../state/TimelineState.hpp"  // GridConstants (shared adaptive grid interval)
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/CursorManager.hpp"
-#include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../timeline/TimeRuler.hpp"
 #include "WarpedWaveformRenderer.hpp"
@@ -97,7 +98,7 @@ void WaveformGridComponent::paint(juce::Graphics& g) {
     }
 
     // Background
-    g.fillAll(DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND));
 
     if (editingClipId_ != magda::INVALID_CLIP_ID) {
         const auto* clip = getClip();
@@ -365,7 +366,7 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
     }
 }
 
-int WaveformGridComponent::takeLaneAtY(int y, const WaveformLayout& layout, int takeCount) const {
+int WaveformGridComponent::takeLaneAtY(int y, const WaveformLayout& layout, int takeCount) {
     if (takeCount <= 0)
         return -1;
     const auto& rect = layout.rect;
@@ -499,13 +500,13 @@ void WaveformGridComponent::paintWaveformOverlays(juce::Graphics& g, const magda
     }
 
     // Center line — clipped to visible rect
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawHorizontalLine(visibleRect.getCentreY(), static_cast<float>(visibleRect.getX()),
                          static_cast<float>(visibleRect.getRight()));
 
     // Clip boundary indicator line at clip end
     if (layout.clipEndPixel > visibleRect.getX() && layout.clipEndPixel < visibleRect.getRight()) {
-        g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
+        g.setColour(ActiveTheme::getAccentColour().withAlpha(0.8f));
         g.fillRect(layout.clipEndPixel - 1, visibleRect.getY(), 2, visibleRect.getHeight());
     }
 
@@ -564,7 +565,8 @@ void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipIn
     if (bpm <= 0.0)
         return;
     double secondsPerBeat = 60.0 / bpm;
-    double beatsPerBar = static_cast<double>(timeRuler_->getTimeSigNumerator());
+    const double beatsPerBar = timeRuler_->getBeatsPerBar();
+    const double sigBeat = magda::signatureBeatLength(timeRuler_->getTimeSigDenominator());
 
     // Match the arrangement (GridConstants::computeGridInterval): never draw grid
     // lines or bar numbers denser than ~50px. The display interval grows to
@@ -574,16 +576,13 @@ void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipIn
     const double pixelsPerBeat = secondsPerBeat * horizontalZoom_;
     constexpr int kMinGridLinePx = 50;  // matches LayoutConfig::minGridPixelSpacing
     {
-        const int timeSigNum = juce::jmax(1, static_cast<int>(beatsPerBar));
         const double frac =
-            magda::GridConstants::findBeatSubdivision(pixelsPerBeat, kMinGridLinePx);
+            magda::GridConstants::findBeatSubdivision(pixelsPerBeat, sigBeat, kMinGridLinePx);
         const double adaptiveBeats =
-            (frac > 0.0)
-                ? frac
-                : static_cast<double>(timeSigNum) * magda::GridConstants::findBarMultiple(
-                                                        pixelsPerBeat, timeSigNum, kMinGridLinePx);
-        if (adaptiveBeats > gridBeats)
-            gridBeats = adaptiveBeats;
+            (frac > 0.0) ? frac
+                         : beatsPerBar * magda::GridConstants::findBarMultiple(
+                                             pixelsPerBeat, beatsPerBar, kMinGridLinePx);
+        gridBeats = std::max(gridBeats, adaptiveBeats);
     }
     double secondsPerGrid = gridBeats * secondsPerBeat;
 
@@ -623,7 +622,7 @@ void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipIn
         // Round to avoid floating-point drift
         double beatPosRounded = std::round(beatPos * 1000.0) / 1000.0;
         bool isBar = (std::fmod(std::abs(beatPosRounded), beatsPerBar) < 0.001);
-        bool isBeat = (std::fmod(std::abs(beatPosRounded), 1.0) < 0.001);
+        bool isBeat = (std::fmod(std::abs(beatPosRounded), sigBeat) < 0.001);
 
         if (isBar) {
             g.setColour(juce::Colour(0xFF707070));
@@ -662,7 +661,8 @@ void WaveformGridComponent::paintWarpedWaveform(juce::Graphics& g, const magda::
     WarpedWaveformSpec spec;
     spec.clipArea = waveformRect.getIntersection(getLocalBounds()).reduced(0, 4);
     spec.warpToPixelX = [this, displayStartTime](double warpSeconds) {
-        return (double)timeToPixel(displayInfo_.sourceToTimeline(warpSeconds) + displayStartTime);
+        return static_cast<double>(
+            timeToPixel(displayInfo_.sourceToTimeline(warpSeconds) + displayStartTime));
     };
     spec.fileDuration = fileDuration;
     spec.colour = waveColour;
@@ -687,7 +687,7 @@ void WaveformGridComponent::paintWarpedWaveform(juce::Graphics& g, const magda::
             const double mirroredPosition = displayInfo_.activeRegionStartPositionSeconds +
                                             displayInfo_.activeRegionEndPositionSeconds -
                                             forwardPosition;
-            return (double)timeToPixel(displayStartTime + mirroredPosition);
+            return static_cast<double>(timeToPixel(displayStartTime + mirroredPosition));
         };
         drawWarpedWaveform(g, thumbnailManager, audioEventRef(clip).sourceFilePath(), warpMarkers_,
                            spec);
@@ -718,7 +718,7 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
     // offset is represented by the phase marker inside the loop region.
     if (!isLooped) {
         int offsetX = timeToPixel(baseTime + offsetPosition);
-        auto offsetColour = DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION);
+        auto offsetColour = ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION);
         float offsetAlpha = 0.8f;
         g.setColour(offsetColour.withAlpha(offsetAlpha));
         g.fillRect(offsetX - 1, 0, 2, bounds.getHeight());
@@ -729,7 +729,7 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
     // Loop phase marker (orange) — only visible when looped, shows phase within loop region
     if (hasVisibleLoopPhase) {
         int phaseX = timeToPixel(baseTime + displayInfo_.loopPhasePositionSeconds);
-        auto phaseColour = DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION);
+        auto phaseColour = ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION);
         g.setColour(phaseColour.withAlpha(0.8f));
         g.fillRect(phaseX - 1, 0, 2, bounds.getHeight());
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
@@ -741,14 +741,14 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
     {
         float leftGhostAlpha = showPreLoop_ ? 0.7f : 1.0f;
         float rightGhostAlpha = showPostLoop_ ? 0.7f : 1.0f;
-        auto bgColour = DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND);
+        auto bgColour = ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND);
         int clipStartX = timeToPixel(baseTime + sampleStart);
 
         // In loop mode, the right boundary is the loop end.
         // In non-loop/non-beat mode, the right boundary is the active clip end
         // (offset + length), so the unselected source tail is greyed out while
         // the fixed source-file end marker remains visible.
-        int rightBoundaryX;
+        int rightBoundaryX = 0;
         if (isLooped) {
             rightBoundaryX = timeToPixel(baseTime + displayInfo_.loopEndPositionSeconds);
         } else if (canResizeClipEnd && clipLength_ > 0.0) {
@@ -764,7 +764,7 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
         // In loop mode: grey out before loop start (offset is phase, not trim)
         // In non-loop mode: grey out before clip start (offset)
         {
-            int leftBoundaryX;
+            int leftBoundaryX = 0;
             if (isLooped) {
                 leftBoundaryX = timeToPixel(baseTime + displayInfo_.loopStartPositionSeconds);
             } else if (canResizeClipEnd) {
@@ -819,7 +819,7 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
             if (activeClipEnd > offsetPosition &&
                 activeClipEnd < displayInfo_.fileExtentTimeline() - 0.0001) {
                 int activeClipEndX = timeToPixel(baseTime + activeClipEnd);
-                auto activeEndColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
+                auto activeEndColour = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
                 g.setColour(activeEndColour.withAlpha(0.9f));
                 g.fillRect(activeClipEndX - 1, 0, 2, bounds.getHeight());
             }
@@ -858,8 +858,8 @@ void WaveformGridComponent::paintTransientMarkers(juce::Graphics& g, const magda
     double firstDrawnTime = 0.0;
 
     auto drawMarkersForCycle = [&](double cycleOffset, double sourceStart, double sourceEnd) {
-        const float top = static_cast<float>(waveformRect.getY());
-        const float bottom = static_cast<float>(waveformRect.getBottom());
+        const auto top = static_cast<float>(waveformRect.getY());
+        const auto bottom = static_cast<float>(waveformRect.getBottom());
         for (double t : transientTimes_) {
             if (t < sourceStart || t >= sourceEnd)
                 continue;
@@ -882,7 +882,7 @@ void WaveformGridComponent::paintTransientMarkers(juce::Graphics& g, const magda
             g.drawVerticalLine(px, top, bottom);
 
             // Downward-pointing handle triangle flush with the top edge.
-            const float fx = static_cast<float>(px);
+            const auto fx = static_cast<float>(px);
             juce::Path handle;
             handle.addTriangle(fx - kHandleHalfW, top, fx + kHandleHalfW, top, fx, top + kHandleH);
             g.setColour(handleColour);
@@ -905,7 +905,7 @@ void WaveformGridComponent::paintTransientMarkers(juce::Graphics& g, const magda
 
 void WaveformGridComponent::paintNoClipMessage(juce::Graphics& g) {
     auto bounds = getLocalBounds();
-    g.setColour(DarkTheme::getSecondaryTextColour());
+    g.setColour(ActiveTheme::getSecondaryTextColour());
     g.setFont(FontManager::getInstance().getUIFont(14.0f));
     g.drawText("No audio clip selected", bounds, juce::Justification::centred, false);
 }
@@ -1018,9 +1018,10 @@ double WaveformGridComponent::getGridResolutionBeats() const {
         return customGridBeats_;
     switch (gridResolution_) {
         case GridResolution::Bar:
-            return timeRuler_ ? static_cast<double>(timeRuler_->getTimeSigNumerator()) : 4.0;
+            return timeRuler_ ? timeRuler_->getBeatsPerBar() : 4.0;
         case GridResolution::Beat:
-            return 1.0;
+            return timeRuler_ ? magda::signatureBeatLength(timeRuler_->getTimeSigDenominator())
+                              : 1.0;
         case GridResolution::Eighth:
             return 0.5;
         case GridResolution::Sixteenth:
@@ -1065,7 +1066,7 @@ void WaveformGridComponent::setWarpMode(bool enabled) {
     }
 }
 
-void WaveformGridComponent::setWarpMarkers(const std::vector<magda::WarpMarkerInfo>& markers) {
+void WaveformGridComponent::setWarpMarkers(const std::vector<magda::WarpMarker>& markers) {
     warpMarkers_ = markers;
     repaint();
 }
@@ -1155,7 +1156,7 @@ double WaveformGridComponent::getDrawableTimelineLength() const {
     return clipLength_;
 }
 
-void WaveformGridComponent::debugLogGeometry(const char* context) const {
+void WaveformGridComponent::debugLogGeometry(const char* context) {
     juce::ignoreUnused(context);
 }
 
@@ -1251,10 +1252,11 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
             if (warpMarkers_.size() >= 2) {
                 // Sort markers by warpTime to find the segment containing our click
                 std::vector<std::pair<double, double>> sorted;  // (warpTime, sourceTime)
+                sorted.reserve(warpMarkers_.size());
                 for (const auto& m : warpMarkers_) {
-                    sorted.push_back({m.warpTime, m.sourceTime});
+                    sorted.emplace_back(m.warpTime, m.sourceTime);
                 }
-                std::sort(sorted.begin(), sorted.end());
+                std::ranges::sort(sorted);
 
                 // Find the two markers that span our warpTime
                 for (size_t i = 0; i + 1 < sorted.size(); ++i) {
@@ -1406,8 +1408,7 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
         // Convert timeline delta to source time delta
         double sourceDelta = displayInfo_.displayDeltaToSourceDelta(timelineDelta);
         double newWarpTime = dragStartWarpTime_ + sourceDelta;
-        if (newWarpTime < 0.0)
-            newWarpTime = 0.0;
+        newWarpTime = std::max(newWarpTime, 0.0);
 
         // Snap to grid when snap is enabled and Alt is not held
         if (snapEnabled_ && !event.mods.isAltDown()) {
@@ -1435,10 +1436,8 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
         // This preserves the stretch relationship at this marker
         double newSourceTime = dragStartSourceTime_ + sourceDelta;
         double newWarpTime = dragStartWarpTime_ + sourceDelta;
-        if (newSourceTime < 0.0)
-            newSourceTime = 0.0;
-        if (newWarpTime < 0.0)
-            newWarpTime = 0.0;
+        newSourceTime = std::max(newSourceTime, 0.0);
+        newWarpTime = std::max(newWarpTime, 0.0);
 
         if (draggingMarkerIndex_ >= 0 && onWarpMarkerReposition) {
             onWarpMarkerReposition(draggingMarkerIndex_, newSourceTime, newWarpTime);
@@ -1832,8 +1831,8 @@ void WaveformGridComponent::paintWarpMarkers(juce::Graphics& g, const magda::Cli
 
         // Draw small triangle handle at top
         juce::Path triangle;
-        float fx = static_cast<float>(px);
-        float fy = static_cast<float>(waveformRect.getY());
+        auto fx = static_cast<float>(px);
+        auto fy = static_cast<float>(waveformRect.getY());
         triangle.addTriangle(fx - 4.0f, fy, fx + 4.0f, fy, fx, fy + 6.0f);
         g.fillPath(triangle);
     }

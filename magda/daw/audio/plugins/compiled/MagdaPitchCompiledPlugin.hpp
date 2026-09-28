@@ -1,15 +1,8 @@
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
-
-#include <array>
-#include <atomic>
-#include <memory>
 #include <vector>
 
-#include "../FaustParamPool.hpp"
-#include "core/ParameterInfo.hpp"
-#include "plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
+#include "plugins/compiled/MagdaCompiledEffect.hpp"
 
 class dsp;
 
@@ -36,43 +29,11 @@ namespace magda::daw::audio::compiled {
  * every engine every block so swapping engines preserves the user's
  * settings.
  */
-class MagdaPitchCompiledPlugin : public te::Plugin, public ICompiledFaustPlugin {
+class MagdaPitchCompiledPlugin : public MagdaCompiledEffect {
   public:
     static const char* xmlTypeName;
 
-    explicit MagdaPitchCompiledPlugin(const te::PluginCreationInfo& info);
-    ~MagdaPitchCompiledPlugin() override;
-
-    juce::String getName() const override;
-    juce::String getPluginType() override;
-    juce::String getShortName(int) override;
-    juce::String getSelectableDescription() override;
-
-    void initialise(const te::PluginInitialisationInfo& info) override;
-    void deinitialise() override;
-    void reset() override;
-    void applyToBuffer(const te::PluginRenderContext& fc) override;
-
-    bool takesMidiInput() override {
-        return false;
-    }
-    bool takesAudioInput() override {
-        return true;
-    }
-    bool isSynth() override {
-        return false;
-    }
-    int getNumOutputChannelsGivenInputs(int) override {
-        return 2;
-    }
-    bool producesAudioWhenNoAudioInput() override {
-        // The internal delay lines carry a short tail after dry input
-        // stops; let TE keep pumping so the trail doesn't clip.
-        return true;
-    }
-    double getTailLength() const override {
-        return 0.25;  // 200 ms max window + safety margin.
-    }
+    MagdaPitchCompiledPlugin();
 
     static constexpr int kEngineSlot = 0;
     static constexpr int kPitchSlot = 1;
@@ -81,61 +42,40 @@ class MagdaPitchCompiledPlugin : public te::Plugin, public ICompiledFaustPlugin 
     static constexpr int kMixSlot = 4;
     static constexpr int kOutputSlot = 5;
     static constexpr int kHostSlotCount = 6;
-
     enum class PitchEngine { Shifter = 0, Detuner = 1, Harmonizer = 2 };
     static constexpr int kEngineCount = 3;
 
-    te::AutomatableParameter* getSlotParameter(int slotIndex) const;
+    juce::String devicePluginId() const override {
+        return xmlTypeName;
+    }
+    juce::String deviceName() const override {
+        return "Pitch";
+    }
 
-    float displayValueToNativeValue(int slotIndex, float displayValue) const;
-    float nativeValueToDisplayValue(int slotIndex, float nativeValue) const;
-
-    int activeEngineIndex() const;
-
-    using HostSlotInfo = CompiledHostSlotInfo;
-    const HostSlotInfo& getSlotInfo(int slotIndex) const;
-
-    int hostSlotCount() const override {
-        return kHostSlotCount;
+  protected:
+    ::dsp* createEngineDsp(int engineIndex) const override;
+    std::vector<HostSlotInfo> slotInfos() const override;
+    const char* slotIdPrefix() const override {
+        return "magda_pitch_";
     }
-    const CompiledHostSlotInfo& hostSlotInfo(int slotIndex) const override {
-        return getSlotInfo(slotIndex);
+    int engineCount() const override {
+        return kEngineCount;
     }
-    DeviceParameterHandle hostSlotParameter(int slotIndex) const override {
-        return tracktion_adapter::parameterHandle(getSlotParameter(slotIndex));
+    int engineSlot() const override {
+        return kEngineSlot;
     }
-    float displayToNormalized(int slotIndex, float displayValue) const override {
-        return displayValueToNativeValue(slotIndex, displayValue);
+    int outputChannelCount() const override {
+        return 2;
     }
-    float normalizedToDisplay(int slotIndex, float normalizedValue) const override {
-        return nativeValueToDisplayValue(slotIndex, normalizedValue);
+    bool producesAudioWithoutInput() const override {
+        return true;
     }
-    bool isSlotHiddenForActiveEngine(int) const override {
-        return false;
+    double tailSeconds() const override {
+        // 200 ms max window, plus a safety margin.
+        return 0.25;
     }
 
   private:
-    void buildHostParameters();
-    void rebuildEngineState(int sampleRate);
-
-    struct EngineState {
-        std::unique_ptr<::dsp> dsp;
-        std::array<FAUSTFLOAT*, kHostSlotCount> zones{};
-        int numInputs = 0;
-        int numOutputs = 0;
-    };
-    std::array<EngineState, kEngineCount> engines_;
-    std::atomic<int> activeEngine_{0};
-
-    std::array<HostSlotInfo, kHostSlotCount> hostSlotInfo_;
-    std::array<te::AutomatableParameter::Ptr, kHostSlotCount> hostParams_;
-    std::array<juce::CachedValue<float>, kHostSlotCount> hostCached_;
-
-    juce::AudioBuffer<float> scratchIn_;
-    juce::AudioBuffer<float> scratchOut_;
-    std::vector<float*> inPtrs_;
-    std::vector<float*> outPtrs_;
-
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MagdaPitchCompiledPlugin)
 };
 

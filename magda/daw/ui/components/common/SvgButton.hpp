@@ -5,7 +5,7 @@
 #include <optional>
 #include <vector>
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../utils/ComponentManager.hpp"
 
 namespace magda {
@@ -37,63 +37,63 @@ class SvgButton : public juce::Button {
     // dynamic colours (track/modulator colours, alpha-blended chips) use the
     // juce::Colour overloads and intentionally stay literal.
     void setNormalColor(ColourRole role) {
-        normalColor = DarkTheme::getColour(role);
+        normalColor = ActiveTheme::getColour(role);
         normalColorRole_ = role;
         hasNormalColor_ = true;
     }
     void setNormalColor(juce::Colour color) {
         normalColor = color;
-        normalColorRole_ = DarkTheme::findDarkPaletteRole(color);
+        normalColorRole_ = ActiveTheme::findPaletteRole(color);
         hasNormalColor_ = true;
     }
     void setHoverColor(ColourRole role) {
-        hoverColor = DarkTheme::getColour(role);
+        hoverColor = ActiveTheme::getColour(role);
         hoverColorRole_ = role;
         hasHoverColor_ = true;
     }
     void setHoverColor(juce::Colour color) {
         hoverColor = color;
-        hoverColorRole_ = DarkTheme::findDarkPaletteRole(color);
+        hoverColorRole_ = ActiveTheme::findPaletteRole(color);
         hasHoverColor_ = true;
     }
     void setPressedColor(ColourRole role) {
-        pressedColor = DarkTheme::getColour(role);
+        pressedColor = ActiveTheme::getColour(role);
         pressedColorRole_ = role;
         hasPressedColor_ = true;
     }
     void setPressedColor(juce::Colour color) {
         pressedColor = color;
-        pressedColorRole_ = DarkTheme::findDarkPaletteRole(color);
+        pressedColorRole_ = ActiveTheme::findPaletteRole(color);
         hasPressedColor_ = true;
     }
     void setActiveColor(ColourRole role) {
-        activeColor = DarkTheme::getColour(role);
+        activeColor = ActiveTheme::getColour(role);
         activeColorRole_ = role;
         hasActiveColor_ = true;
     }
     void setActiveColor(juce::Colour color) {
         activeColor = color;
-        activeColorRole_ = DarkTheme::findDarkPaletteRole(color);
+        activeColorRole_ = ActiveTheme::findPaletteRole(color);
         hasActiveColor_ = true;
     }
     void setActiveBackgroundColor(ColourRole role) {
-        activeBackgroundColor = DarkTheme::getColour(role);
+        activeBackgroundColor = ActiveTheme::getColour(role);
         activeBackgroundColorRole_ = role;
         hasActiveBackgroundColor = true;
     }
     void setActiveBackgroundColor(juce::Colour color) {
         activeBackgroundColor = color;
-        activeBackgroundColorRole_ = DarkTheme::findDarkPaletteRole(color);
+        activeBackgroundColorRole_ = ActiveTheme::findPaletteRole(color);
         hasActiveBackgroundColor = true;
     }
     void setNormalBackgroundColor(ColourRole role) {
-        normalBackgroundColor = DarkTheme::getColour(role);
+        normalBackgroundColor = ActiveTheme::getColour(role);
         normalBackgroundColorRole_ = role;
         hasNormalBackgroundColor = true;
     }
     void setNormalBackgroundColor(juce::Colour color) {
         normalBackgroundColor = color;
-        normalBackgroundColorRole_ = DarkTheme::findDarkPaletteRole(color);
+        normalBackgroundColorRole_ = ActiveTheme::findPaletteRole(color);
         hasNormalBackgroundColor = true;
     }
     void setOriginalColor(juce::Colour color) {
@@ -118,25 +118,25 @@ class SvgButton : public juce::Button {
     }
 
     void setBorderColor(ColourRole role) {
-        borderColor = DarkTheme::getColour(role);
+        borderColor = ActiveTheme::getColour(role);
         borderColorRole_ = role;
         hasBorder = true;
     }
     void setBorderColor(juce::Colour color) {
         borderColor = color;
-        borderColorRole_ = DarkTheme::findDarkPaletteRole(color);
+        borderColorRole_ = ActiveTheme::findPaletteRole(color);
         hasBorder = true;
     }
     // Border colour used while active/engaged (falls back to borderColor).
     void setActiveBorderColor(ColourRole role) {
-        activeBorderColor = DarkTheme::getColour(role);
+        activeBorderColor = ActiveTheme::getColour(role);
         activeBorderColorRole_ = role;
         hasActiveBorderColor = true;
         hasBorder = true;
     }
     void setActiveBorderColor(juce::Colour color) {
         activeBorderColor = color;
-        activeBorderColorRole_ = DarkTheme::findDarkPaletteRole(color);
+        activeBorderColorRole_ = ActiveTheme::findPaletteRole(color);
         hasActiveBorderColor = true;
         hasBorder = true;
     }

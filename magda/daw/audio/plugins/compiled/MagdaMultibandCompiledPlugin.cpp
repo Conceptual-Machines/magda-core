@@ -1,11 +1,11 @@
 #include "plugins/compiled/MagdaMultibandCompiledPlugin.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
-#include "core/ParameterUtils.hpp"
+#include "core/ParameterInfo.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
-#include "plugins/tracktion/TracktionDeviceAdapters.hpp"
 
 namespace magda::daw::audio::compiled {
 
@@ -13,23 +13,14 @@ const char* MagdaMultibandCompiledPlugin::xmlTypeName = "magda_multiband";
 
 namespace {
 
+// The property the toggle was already saved under, kept so a project written
+// before the port still finds it.
+const juce::Identifier kCurveCollapsedProperty("magda_multiband_curve_collapsed");
+
 constexpr float kMinRatio = 0.05f;
 constexpr float kMaxRatio = 100.0f;
 constexpr float kMinLevelDb = -100.0f;
 constexpr double kBiquadQ = 0.7071067811865476;
-
-magda::ParameterInfo parameterInfoForSlot(const CompiledHostSlotInfo& s) {
-    magda::ParameterInfo info;
-    info.minValue = s.minValue;
-    info.maxValue = s.maxValue;
-    info.defaultValue = s.defaultValue;
-    info.unit = s.unit;
-    info.scale = s.scale;
-    if (std::isfinite(s.scaleAnchor))
-        info.scaleAnchor = s.scaleAnchor;
-    info.choices = s.choices;
-    return info;
-}
 
 float dbToGain(float db) {
     return std::pow(10.0f, db / 20.0f);
@@ -70,6 +61,145 @@ float dynamicsGainDb(float levelDb, float lowerThresholdDb, float upperThreshold
 }
 
 }  // namespace
+
+MagdaMultibandCompiledPlugin::MagdaMultibandCompiledPlugin() {
+    initEffect();
+}
+
+std::vector<MagdaMultibandCompiledPlugin::HostSlotInfo> MagdaMultibandCompiledPlugin::slotInfos()
+    const {
+    std::vector<HostSlotInfo> infos(kHostSlotCount);
+    infos[kAmountSlot] = {.name = "Amount",
+                          .scale = magda::ParameterScale::Linear,
+                          .minValue = 0.0f,
+                          .maxValue = 1.0f,
+                          .defaultValue = 0.8f};
+    infos[kAttackSlot] = {.name = "Attack",
+                          .unit = magda::technicalText(magda::TechnicalTextToken::Milliseconds),
+                          .scale = magda::ParameterScale::Logarithmic,
+                          .minValue = 0.1f,
+                          .maxValue = 100.0f,
+                          .defaultValue = 3.0f,
+                          .scaleAnchor = 10.0f};
+    infos[kReleaseSlot] = {.name = "Release",
+                           .unit = magda::technicalText(magda::TechnicalTextToken::Milliseconds),
+                           .scale = magda::ParameterScale::Logarithmic,
+                           .minValue = 5.0f,
+                           .maxValue = 1000.0f,
+                           .defaultValue = 120.0f,
+                           .scaleAnchor = 100.0f};
+    infos[kInputSlot] = {.name = "Input",
+                         .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
+                         .scale = magda::ParameterScale::Linear,
+                         .minValue = -24.0f,
+                         .maxValue = 24.0f,
+                         .defaultValue = 0.0f};
+    infos[kOutputSlot] = {.name = "Output",
+                          .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
+                          .scale = magda::ParameterScale::Linear,
+                          .minValue = -24.0f,
+                          .maxValue = 24.0f,
+                          .defaultValue = 0.0f};
+    infos[kMixSlot] = {.name = "Mix",
+                       .scale = magda::ParameterScale::Linear,
+                       .minValue = 0.0f,
+                       .maxValue = 1.0f,
+                       .defaultValue = 1.0f};
+    auto setGain = [&infos](int slot, juce::String name) {
+        infos[slot] = {.name = std::move(name),
+                       .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
+                       .scale = magda::ParameterScale::Linear,
+                       .minValue = -24.0f,
+                       .maxValue = 24.0f,
+                       .defaultValue = 0.0f};
+    };
+    setGain(kLowInputSlot, "Low Input");
+    setGain(kMidInputSlot, "Mid Input");
+    setGain(kHighInputSlot, "High Input");
+    setGain(kLowGainSlot, "Low Output");
+    setGain(kMidGainSlot, "Mid Output");
+    setGain(kHighGainSlot, "High Output");
+
+    auto setThreshold = [&infos](int slot, juce::String name, float defaultValue) {
+        infos[slot] = {.name = std::move(name),
+                       .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
+                       .scale = magda::ParameterScale::Linear,
+                       .minValue = -80.0f,
+                       .maxValue = 0.0f,
+                       .defaultValue = defaultValue};
+    };
+    auto setRatio = [&infos](int slot, juce::String name) {
+        infos[slot] = {.name = std::move(name),
+                       .scale = magda::ParameterScale::Linear,
+                       .minValue = 0.05f,
+                       .maxValue = kMaxRatio,
+                       .defaultValue = 8.0f};
+    };
+    auto setTiming = [&infos](int attackSlot, int releaseSlot, const juce::String& bandName) {
+        infos[attackSlot] = {.name = bandName + " Attack",
+                             .unit = magda::technicalText(magda::TechnicalTextToken::Milliseconds),
+                             .scale = magda::ParameterScale::Logarithmic,
+                             .minValue = 0.1f,
+                             .maxValue = 100.0f,
+                             .defaultValue = 3.0f,
+                             .scaleAnchor = 10.0f};
+        infos[releaseSlot] = {.name = bandName + " Release",
+                              .unit = magda::technicalText(magda::TechnicalTextToken::Milliseconds),
+                              .scale = magda::ParameterScale::Logarithmic,
+                              .minValue = 5.0f,
+                              .maxValue = 1000.0f,
+                              .defaultValue = 120.0f,
+                              .scaleAnchor = 100.0f};
+    };
+    auto setBand = [&infos, setThreshold,
+                    setRatio](int lowerThresholdSlot, int upperThresholdSlot, int belowRatioSlot,
+                              int aboveRatioSlot, int rangeSlot, int limitSlot,
+                              juce::String bandName, float lowerDefault, float upperDefault) {
+        setThreshold(lowerThresholdSlot, bandName + " Lower Threshold", lowerDefault);
+        setThreshold(upperThresholdSlot, bandName + " Upper Threshold", upperDefault);
+        setRatio(belowRatioSlot, bandName + " Below Ratio");
+        setRatio(aboveRatioSlot, bandName + " Above Ratio");
+        infos[rangeSlot] = {.name = bandName + " Range",
+                            .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
+                            .scale = magda::ParameterScale::Linear,
+                            .minValue = 0.0f,
+                            .maxValue = 48.0f,
+                            .defaultValue = 24.0f};
+        infos[limitSlot] = {.name = bandName + " Limit",
+                            .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
+                            .scale = magda::ParameterScale::Linear,
+                            .minValue = -24.0f,
+                            .maxValue = 12.0f,
+                            .defaultValue = 0.0f};
+    };
+
+    setBand(kLowLowerThresholdSlot, kLowUpperThresholdSlot, kLowBelowRatioSlot, kLowAboveRatioSlot,
+            kLowRangeSlot, kLowLimitSlot, "Low", -48.0f, -24.0f);
+    setTiming(kLowAttackSlot, kLowReleaseSlot, "Low");
+    setBand(kMidLowerThresholdSlot, kMidUpperThresholdSlot, kMidBelowRatioSlot, kMidAboveRatioSlot,
+            kMidRangeSlot, kMidLimitSlot, "Mid", -48.0f, -24.0f);
+    setTiming(kMidAttackSlot, kMidReleaseSlot, "Mid");
+    setBand(kHighLowerThresholdSlot, kHighUpperThresholdSlot, kHighBelowRatioSlot,
+            kHighAboveRatioSlot, kHighRangeSlot, kHighLimitSlot, "High", -48.0f, -24.0f);
+    setTiming(kHighAttackSlot, kHighReleaseSlot, "High");
+
+    infos[kLowXoSlot] = {.name = "Low XO",
+                         .unit = magda::technicalText(magda::TechnicalTextToken::Hertz),
+                         .scale = magda::ParameterScale::Logarithmic,
+                         .minValue = 40.0f,
+                         .maxValue = 500.0f,
+                         .defaultValue = 120.0f,
+                         .scaleAnchor = 200.0f};
+    infos[kHighXoSlot] = {.name = "High XO",
+                          .unit = magda::technicalText(magda::TechnicalTextToken::Hertz),
+                          .scale = magda::ParameterScale::Logarithmic,
+                          .minValue = 500.0f,
+                          .maxValue = 8000.0f,
+                          .defaultValue = 2500.0f,
+                          .scaleAnchor = 2000.0f};
+
+    return infos;
+}
 
 void MagdaMultibandCompiledPlugin::Biquad::setLowPass(double sampleRate, double frequency) {
     frequency = juce::jlimit(10.0, sampleRate * 0.45, frequency);
@@ -147,237 +277,40 @@ void MagdaMultibandCompiledPlugin::CrossoverState::split(float input, float& low
     high = highHp2.process(highHp1.process(aboveLow));
 }
 
-MagdaMultibandCompiledPlugin::MagdaMultibandCompiledPlugin(const te::PluginCreationInfo& info)
-    : te::Plugin(info) {
-    buildHostParameters();
-    updateCrossoverCoefficients(hostSlotInfo_[kLowXoSlot].defaultValue,
-                                hostSlotInfo_[kHighXoSlot].defaultValue);
+void MagdaMultibandCompiledPlugin::flushState(juce::ValueTree& state) {
+    state.setProperty(kCurveCollapsedProperty, curveCollapsed_, nullptr);
 }
 
-MagdaMultibandCompiledPlugin::~MagdaMultibandCompiledPlugin() {
-    notifyListenersOfDeletion();
-    for (auto& p : hostParams_)
-        if (p)
-            p->detachFromCurrentValue();
+void MagdaMultibandCompiledPlugin::restoreState(const juce::ValueTree& state) {
+    curveCollapsed_ = static_cast<bool>(state.getProperty(kCurveCollapsedProperty, true));
 }
 
-juce::String MagdaMultibandCompiledPlugin::getName() const {
-    return "Multiband Dynamics";
-}
-juce::String MagdaMultibandCompiledPlugin::getPluginType() {
-    return xmlTypeName;
-}
-juce::String MagdaMultibandCompiledPlugin::getShortName(int) {
-    return "Dynamics";
-}
-juce::String MagdaMultibandCompiledPlugin::getSelectableDescription() {
-    return "Multiband Dynamics";
-}
-
-void MagdaMultibandCompiledPlugin::buildHostParameters() {
-    hostSlotInfo_[kAmountSlot] = {.name = "Amount",
-                                  .scale = magda::ParameterScale::Linear,
-                                  .minValue = 0.0f,
-                                  .maxValue = 1.0f,
-                                  .defaultValue = 0.8f};
-    hostSlotInfo_[kAttackSlot] = {.name = "Attack",
-                                  .unit =
-                                      magda::technicalText(magda::TechnicalTextToken::Milliseconds),
-                                  .scale = magda::ParameterScale::Logarithmic,
-                                  .minValue = 0.1f,
-                                  .maxValue = 100.0f,
-                                  .defaultValue = 3.0f,
-                                  .scaleAnchor = 10.0f};
-    hostSlotInfo_[kReleaseSlot] = {
-        .name = "Release",
-        .unit = magda::technicalText(magda::TechnicalTextToken::Milliseconds),
-        .scale = magda::ParameterScale::Logarithmic,
-        .minValue = 5.0f,
-        .maxValue = 1000.0f,
-        .defaultValue = 120.0f,
-        .scaleAnchor = 100.0f};
-    hostSlotInfo_[kInputSlot] = {.name = "Input",
-                                 .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
-                                 .scale = magda::ParameterScale::Linear,
-                                 .minValue = -24.0f,
-                                 .maxValue = 24.0f,
-                                 .defaultValue = 0.0f};
-    hostSlotInfo_[kOutputSlot] = {.name = "Output",
-                                  .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
-                                  .scale = magda::ParameterScale::Linear,
-                                  .minValue = -24.0f,
-                                  .maxValue = 24.0f,
-                                  .defaultValue = 0.0f};
-    hostSlotInfo_[kMixSlot] = {.name = "Mix",
-                               .scale = magda::ParameterScale::Linear,
-                               .minValue = 0.0f,
-                               .maxValue = 1.0f,
-                               .defaultValue = 1.0f};
-    auto setGain = [this](int slot, juce::String name) {
-        hostSlotInfo_[slot] = {.name = std::move(name),
-                               .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
-                               .scale = magda::ParameterScale::Linear,
-                               .minValue = -24.0f,
-                               .maxValue = 24.0f,
-                               .defaultValue = 0.0f};
-    };
-    setGain(kLowInputSlot, "Low Input");
-    setGain(kMidInputSlot, "Mid Input");
-    setGain(kHighInputSlot, "High Input");
-    setGain(kLowGainSlot, "Low Output");
-    setGain(kMidGainSlot, "Mid Output");
-    setGain(kHighGainSlot, "High Output");
-
-    auto setThreshold = [this](int slot, juce::String name, float defaultValue) {
-        hostSlotInfo_[slot] = {.name = std::move(name),
-                               .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
-                               .scale = magda::ParameterScale::Linear,
-                               .minValue = -80.0f,
-                               .maxValue = 0.0f,
-                               .defaultValue = defaultValue};
-    };
-    auto setRatio = [this](int slot, juce::String name) {
-        hostSlotInfo_[slot] = {.name = std::move(name),
-                               .scale = magda::ParameterScale::Linear,
-                               .minValue = 0.05f,
-                               .maxValue = kMaxRatio,
-                               .defaultValue = 8.0f};
-    };
-    auto setTiming = [this](int attackSlot, int releaseSlot, const juce::String& bandName) {
-        hostSlotInfo_[attackSlot] = {
-            .name = bandName + " Attack",
-            .unit = magda::technicalText(magda::TechnicalTextToken::Milliseconds),
-            .scale = magda::ParameterScale::Logarithmic,
-            .minValue = 0.1f,
-            .maxValue = 100.0f,
-            .defaultValue = 3.0f,
-            .scaleAnchor = 10.0f};
-        hostSlotInfo_[releaseSlot] = {
-            .name = bandName + " Release",
-            .unit = magda::technicalText(magda::TechnicalTextToken::Milliseconds),
-            .scale = magda::ParameterScale::Logarithmic,
-            .minValue = 5.0f,
-            .maxValue = 1000.0f,
-            .defaultValue = 120.0f,
-            .scaleAnchor = 100.0f};
-    };
-    auto setBand = [this, setThreshold,
-                    setRatio](int lowerThresholdSlot, int upperThresholdSlot, int belowRatioSlot,
-                              int aboveRatioSlot, int rangeSlot, int limitSlot,
-                              juce::String bandName, float lowerDefault, float upperDefault) {
-        setThreshold(lowerThresholdSlot, bandName + " Lower Threshold", lowerDefault);
-        setThreshold(upperThresholdSlot, bandName + " Upper Threshold", upperDefault);
-        setRatio(belowRatioSlot, bandName + " Below Ratio");
-        setRatio(aboveRatioSlot, bandName + " Above Ratio");
-        hostSlotInfo_[rangeSlot] = {.name = bandName + " Range",
-                                    .unit =
-                                        magda::technicalText(magda::TechnicalTextToken::Decibels),
-                                    .scale = magda::ParameterScale::Linear,
-                                    .minValue = 0.0f,
-                                    .maxValue = 48.0f,
-                                    .defaultValue = 24.0f};
-        hostSlotInfo_[limitSlot] = {.name = bandName + " Limit",
-                                    .unit =
-                                        magda::technicalText(magda::TechnicalTextToken::Decibels),
-                                    .scale = magda::ParameterScale::Linear,
-                                    .minValue = -24.0f,
-                                    .maxValue = 12.0f,
-                                    .defaultValue = 0.0f};
-    };
-
-    setBand(kLowLowerThresholdSlot, kLowUpperThresholdSlot, kLowBelowRatioSlot, kLowAboveRatioSlot,
-            kLowRangeSlot, kLowLimitSlot, "Low", -48.0f, -24.0f);
-    setTiming(kLowAttackSlot, kLowReleaseSlot, "Low");
-    setBand(kMidLowerThresholdSlot, kMidUpperThresholdSlot, kMidBelowRatioSlot, kMidAboveRatioSlot,
-            kMidRangeSlot, kMidLimitSlot, "Mid", -48.0f, -24.0f);
-    setTiming(kMidAttackSlot, kMidReleaseSlot, "Mid");
-    setBand(kHighLowerThresholdSlot, kHighUpperThresholdSlot, kHighBelowRatioSlot,
-            kHighAboveRatioSlot, kHighRangeSlot, kHighLimitSlot, "High", -48.0f, -24.0f);
-    setTiming(kHighAttackSlot, kHighReleaseSlot, "High");
-
-    hostSlotInfo_[kLowXoSlot] = {.name = "Low XO",
-                                 .unit = magda::technicalText(magda::TechnicalTextToken::Hertz),
-                                 .scale = magda::ParameterScale::Logarithmic,
-                                 .minValue = 40.0f,
-                                 .maxValue = 500.0f,
-                                 .defaultValue = 120.0f,
-                                 .scaleAnchor = 200.0f};
-    hostSlotInfo_[kHighXoSlot] = {.name = "High XO",
-                                  .unit = magda::technicalText(magda::TechnicalTextToken::Hertz),
-                                  .scale = magda::ParameterScale::Logarithmic,
-                                  .minValue = 500.0f,
-                                  .maxValue = 8000.0f,
-                                  .defaultValue = 2500.0f,
-                                  .scaleAnchor = 2000.0f};
-
-    curveCollapsed_.referTo(state, juce::Identifier("magda_multiband_curve_collapsed"),
-                            getUndoManager(), true);
-
-    juce::NormalisableRange<float> normalisedRange{0.0f, 1.0f};
-    auto* undoManager = getUndoManager();
-
-    for (int i = 0; i < kHostSlotCount; ++i) {
-        const auto& slot = hostSlotInfo_[i];
-        const juce::String id = "magda_multiband_" + slot.name.toLowerCase().replace(" ", "_");
-        const auto info = parameterInfoForSlot(slot);
-        const float defaultNormalized =
-            magda::ParameterUtils::realToNormalized(slot.defaultValue, info);
-        hostCached_[i].referTo(state, juce::Identifier(id), undoManager, defaultNormalized);
-
-        auto param = addParam(
-            id, slot.name, normalisedRange,
-            [info](float normalized) {
-                const float real = magda::ParameterUtils::normalizedToReal(normalized, info);
-                return magda::ParameterUtils::formatValue(real, info);
-            },
-            [info](const juce::String& text) {
-                auto parsed = magda::ParameterUtils::parseValue(text, info);
-                if (parsed)
-                    return magda::ParameterUtils::realToNormalized(*parsed, info);
-                return 0.0f;
-            });
-        param->attachToCurrentValue(hostCached_[i]);
-        hostParams_[i] = param;
-    }
-}
-
-void MagdaMultibandCompiledPlugin::initialise(const te::PluginInitialisationInfo& info) {
-    sampleRate_ = info.sampleRate > 0.0 ? info.sampleRate : 44100.0;
+void MagdaMultibandCompiledPlugin::onPrepare(double, int) {
     updateCrossoverCoefficients(slotDisplayValue(kLowXoSlot), slotDisplayValue(kHighXoSlot));
-    reset();
+    onReset();
 }
 
-void MagdaMultibandCompiledPlugin::deinitialise() {}
-
-void MagdaMultibandCompiledPlugin::reset() {
-    for (auto& c : crossovers_)
-        c.reset();
+void MagdaMultibandCompiledPlugin::onReset() {
+    for (auto& crossover : crossovers_)
+        crossover.reset();
     for (auto& channel : envelopes_)
         channel.fill(0.0f);
     for (auto& channel : gainDb_)
         channel.fill(0.0f);
 }
 
-float MagdaMultibandCompiledPlugin::slotDisplayValue(int slotIndex) const {
-    if (slotIndex < 0 || slotIndex >= kHostSlotCount)
-        return 0.0f;
-    if (auto* p = hostParams_[static_cast<size_t>(slotIndex)].get())
-        return nativeValueToDisplayValue(slotIndex, p->getCurrentValue());
-    return hostSlotInfo_[static_cast<size_t>(slotIndex)].defaultValue;
-}
-
 void MagdaMultibandCompiledPlugin::updateCrossoverCoefficients(float lowXoHz, float highXoHz) {
     lowXoHz = juce::jlimit(40.0f, 500.0f, lowXoHz);
     highXoHz = juce::jlimit(std::max(500.0f, lowXoHz + 10.0f), 8000.0f, highXoHz);
-    for (auto& c : crossovers_)
-        c.setCoefficients(sampleRate_, lowXoHz, highXoHz);
+    for (auto& crossover : crossovers_)
+        crossover.setCoefficients(currentSampleRate(), lowXoHz, highXoHz);
 }
 
-void MagdaMultibandCompiledPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
-    if (!fc.destBuffer || fc.bufferNumSamples <= 0)
-        return;
+void MagdaMultibandCompiledPlugin::processAudio(DeviceProcessContext& context) {
+    // No Faust engine: the Linkwitz-Riley split and the three dynamics stages
+    // are MAGDA's own, so this is the whole block.
 
-    const int hostChannels = std::min(2, fc.destBuffer->getNumChannels());
+    const int hostChannels = std::min(2, context.audio->getNumChannels());
     if (hostChannels <= 0)
         return;
 
@@ -425,18 +358,19 @@ void MagdaMultibandCompiledPlugin::applyToBuffer(const te::PluginRenderContext& 
                                          dbToGain(slotDisplayValue(kMidGainSlot)),
                                          dbToGain(slotDisplayValue(kHighGainSlot))};
 
-    const std::array<float, 3> attackCoeffs{coefficientForMs(bandAttackMs[0], sampleRate_),
-                                            coefficientForMs(bandAttackMs[1], sampleRate_),
-                                            coefficientForMs(bandAttackMs[2], sampleRate_)};
-    const std::array<float, 3> releaseCoeffs{coefficientForMs(bandReleaseMs[0], sampleRate_),
-                                             coefficientForMs(bandReleaseMs[1], sampleRate_),
-                                             coefficientForMs(bandReleaseMs[2], sampleRate_)};
-    const float gainSmoothCoeff = coefficientForMs(5.0f, sampleRate_);
-    const int startSample = fc.bufferStartSample;
-    const int numSamples = fc.bufferNumSamples;
+    const std::array<float, 3> attackCoeffs{coefficientForMs(bandAttackMs[0], currentSampleRate()),
+                                            coefficientForMs(bandAttackMs[1], currentSampleRate()),
+                                            coefficientForMs(bandAttackMs[2], currentSampleRate())};
+    const std::array<float, 3> releaseCoeffs{
+        coefficientForMs(bandReleaseMs[0], currentSampleRate()),
+        coefficientForMs(bandReleaseMs[1], currentSampleRate()),
+        coefficientForMs(bandReleaseMs[2], currentSampleRate())};
+    const float gainSmoothCoeff = coefficientForMs(5.0f, currentSampleRate());
+    const int startSample = context.startSample;
+    const int numSamples = context.numSamples;
 
     for (int ch = 0; ch < hostChannels; ++ch) {
-        float* buffer = fc.destBuffer->getWritePointer(ch, startSample);
+        float* buffer = context.audio->getWritePointer(ch, startSample);
         auto& crossover = crossovers_[static_cast<size_t>(ch)];
         auto& env = envelopes_[static_cast<size_t>(ch)];
         auto& smoothedGainDb = gainDb_[static_cast<size_t>(ch)];
@@ -470,42 +404,12 @@ void MagdaMultibandCompiledPlugin::applyToBuffer(const te::PluginRenderContext& 
             }
 
             const float out = ((1.0f - mix) * splitDry + mix * wet) * outputGain;
-            buffer[i] = std::isfinite(out) ? juce::jlimit(-16.0f, 16.0f, out) : 0.0f;
+            buffer[i] = sanitise(out);
         }
     }
 
-    for (int ch = hostChannels; ch < fc.destBuffer->getNumChannels(); ++ch)
-        fc.destBuffer->clear(ch, startSample, numSamples);
-}
-
-te::AutomatableParameter* MagdaMultibandCompiledPlugin::getSlotParameter(int slotIndex) const {
-    if (slotIndex < 0 || slotIndex >= kHostSlotCount)
-        return nullptr;
-    return hostParams_[static_cast<size_t>(slotIndex)].get();
-}
-
-const MagdaMultibandCompiledPlugin::HostSlotInfo& MagdaMultibandCompiledPlugin::getSlotInfo(
-    int slotIndex) const {
-    static const HostSlotInfo kEmpty;
-    if (slotIndex < 0 || slotIndex >= kHostSlotCount)
-        return kEmpty;
-    return hostSlotInfo_[static_cast<size_t>(slotIndex)];
-}
-
-float MagdaMultibandCompiledPlugin::displayValueToNativeValue(int slotIndex,
-                                                              float displayValue) const {
-    if (slotIndex < 0 || slotIndex >= kHostSlotCount)
-        return displayValue;
-    const auto info = parameterInfoForSlot(hostSlotInfo_[static_cast<size_t>(slotIndex)]);
-    return magda::ParameterUtils::realToNormalized(displayValue, info);
-}
-
-float MagdaMultibandCompiledPlugin::nativeValueToDisplayValue(int slotIndex,
-                                                              float nativeValue) const {
-    if (slotIndex < 0 || slotIndex >= kHostSlotCount)
-        return nativeValue;
-    const auto info = parameterInfoForSlot(hostSlotInfo_[static_cast<size_t>(slotIndex)]);
-    return magda::ParameterUtils::normalizedToReal(nativeValue, info);
+    for (int ch = hostChannels; ch < context.audio->getNumChannels(); ++ch)
+        context.audio->clear(ch, startSample, numSamples);
 }
 
 constexpr AliasSpec kAliases[] = {
@@ -558,9 +462,8 @@ const CompiledPluginSpec& getMagdaMultibandSpec() {
             "Native 3-band dynamics processor with independent lower and upper threshold "
             "regions per band. Ratios above 1:1 compress toward the active threshold; "
             "ratios below 1:1 expand away from it.",
-        .createPlugin = [](const DevicePluginCreationContext& context) -> DevicePluginPtr {
-            return tracktion_adapter::pluginHandle(
-                new MagdaMultibandCompiledPlugin(tracktion_adapter::creationInfo(context)));
+        .createDevice = [](const DevicePluginCreationContext&) -> std::unique_ptr<MagdaDevice> {
+            return std::make_unique<MagdaMultibandCompiledPlugin>();
         },
         .aliases = kAliases,
         .aliasCount = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0])),

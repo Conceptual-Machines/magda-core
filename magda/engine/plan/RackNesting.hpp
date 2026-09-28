@@ -40,6 +40,18 @@ class RackNesting {
      */
     std::string cycle(RackId rack) const;
 
+    /**
+     * @brief Open @p rack, and close the innermost open one.
+     *
+     * The pair, for a walk that owns the descent and unwinds the pair itself:
+     * `chain_walk::forEachNode()` runs its rack exit from a destructor, so an
+     * early return out of the descent still closes what it opened. Anything
+     * descending under its own control wants `Scope` below instead, which
+     * cannot be got wrong (#2204).
+     */
+    void open(RackId rack);
+    void close(RackId rack);
+
     /// Opens a rack instance for as long as this lives. A guard rather than a
     /// push and a pop, because every walk that descends has somewhere it
     /// returns early from.
@@ -55,6 +67,7 @@ class RackNesting {
 
       private:
         RackNesting& nesting_;
+        RackId rack_;
     };
 
   private:

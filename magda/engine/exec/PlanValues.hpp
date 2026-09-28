@@ -52,6 +52,19 @@ struct OpValue {
     /// delta in the plan, which for a device that passes its input through is
     /// the whole track going quiet.
     bool subtractsDry = false;
+
+    /// Whether a Device op puts out the key it was handed instead of what it
+    /// made of its input (#2329). A value like the delta above, so monitoring a
+    /// sidechain rebuilds nothing; the device still runs, so its own metering
+    /// and smoothing carry on and switching back is not a click. Nothing to
+    /// listen to is silence, which is what a slot monitoring an unconnected key
+    /// should sound like.
+    bool listensToSidechain = false;
+
+    /// Whether this op contributes to an observable result or owns state that
+    /// must continue advancing. Resolved off the audio thread; true is the
+    /// conservative default for absent, stale and hand-built value tables.
+    bool required = true;
 };
 
 /**
@@ -125,6 +138,14 @@ std::vector<std::string> resolvePlanValues(const RenderPlan& plan,
                                            const TrackInfo& master, PlanValues& values,
                                            std::span<const magda::AutomationLaneInfo> lanes = {},
                                            std::span<const magda::AutomationClipInfo> clips = {});
+
+/**
+ * @brief Mark pure ops that no observable or stateful op needs.
+ *
+ * Runs off the audio thread. A malformed plan or a value table resolved for a
+ * different plan leaves every op required.
+ */
+void resolveRequiredOps(const RenderPlan& plan, PlanValues& values);
 
 /**
  * @brief Gain a volume fader applies, given a linear volume from the model.

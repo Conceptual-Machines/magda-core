@@ -2,7 +2,7 @@
 
 #include <BinaryData.h>
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "core/StringTable.hpp"
 #include "core/TrackManager.hpp"
 #include "core/TrackPropertyCommands.hpp"
@@ -16,11 +16,11 @@ constexpr int kSilent = 1, kAudible = 2, kSolo = 3;
 
 ChordAuditionControl::ChordAuditionControl()
     : SvgButton("ChordAudition", BinaryData::chord_svg, BinaryData::chord_svgSize) {
-    setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_INFO));
-    setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
-                              DarkTheme::ICON_ON_ACCENT);
+    setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+    setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_INFO));
+    setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
+                              ActiveTheme::ICON_ON_ACCENT);
     setIconPadding(3.5f);
     setTooltip(tr("tracks.chord_audition.tooltip"));
 
@@ -125,11 +125,11 @@ void ChordAuditionControl::updateVisual(State state) {
             setActive(false);
             break;
         case State::Audible:
-            setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_INFO));
+            setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_INFO));
             setActive(true);
             break;
         case State::Solo:
-            setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+            setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
             setActive(true);
             break;
     }

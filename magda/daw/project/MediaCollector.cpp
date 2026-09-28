@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "../audio/AudioThumbnailManager.hpp"
+#include "../audio/sampling/SamplerMedia.hpp"
 #include "../core/ClipInfo.hpp"
 #include "../core/ClipManager.hpp"
 #include "../core/TrackManager.hpp"
@@ -98,7 +99,7 @@ MediaCollector::Plan MediaCollector::scan() {
             return -1;
         }
 
-        const auto key = file.getFullPathName();
+        const auto& key = file.getFullPathName();
         auto it = indexByPath.find(key);
         if (it != indexByPath.end())
             return static_cast<long>(it->second);
@@ -120,13 +121,11 @@ MediaCollector::Plan MediaCollector::scan() {
                 continue;
 
             auto& item = plan.items[static_cast<size_t>(idx)];
-            if (std::find(item.clipRefs.begin(), item.clipRefs.end(), clip.id) ==
-                item.clipRefs.end()) {
+            if (!std::ranges::contains(item.clipRefs, clip.id)) {
                 item.clipRefs.push_back(clip.id);
             }
             if (event.sourceId != INVALID_SOURCE_ID &&
-                std::find(item.sourceRefs.begin(), item.sourceRefs.end(), event.sourceId) ==
-                    item.sourceRefs.end()) {
+                !std::ranges::contains(item.sourceRefs, event.sourceId)) {
                 item.sourceRefs.push_back(event.sourceId);
             }
         }
@@ -134,7 +133,7 @@ MediaCollector::Plan MediaCollector::scan() {
 
     // 2 + 3. Samplers (standalone, incl. inside instrument racks) and drum pads.
     if (auto* engine = TrackManager::getInstance().getAudioEngine()) {
-        for (auto& reference : engine->getSamplerMediaReferences()) {
+        for (auto& reference : magda::SamplerMedia::getInstance().references()) {
             const auto idx = resolve(reference.source.getFullPathName());
             if (idx >= 0)
                 plan.items[static_cast<size_t>(idx)].samplerRefs.push_back(

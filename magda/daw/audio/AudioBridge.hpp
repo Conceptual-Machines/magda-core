@@ -11,23 +11,23 @@
 #include "../core/DeviceInfo.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/TypeIds.hpp"
+#include "../project/ProjectManager.hpp"
 #include "AudioBridgeMixer.hpp"
 #include "DeviceMeteringManager.hpp"
+#include "DeviceMeters.hpp"
 #include "ExternalInsertDeviceEnablement.hpp"
-#include "MeteringBuffer.hpp"
 #include "PluginWindowBridge.hpp"
 #include "TrackController.hpp"
+#include "TrackMeters.hpp"
 #include "WarpMarkerManager.hpp"
 #include "automation/AutomationPlaybackEngine.hpp"
 #include "automation/AutomationRecordingEngine.hpp"
 #include "automation/ControlTargetResolver.hpp"
-#include "midi/MidiActivityMonitor.hpp"
 #include "midi/MidiInputRouter.hpp"
 #include "params/ParameterManager.hpp"
 #include "params/ParameterQueue.hpp"
 #include "plugin_manager/PluginManager.hpp"
 #include "processors/base/DeviceProcessor.hpp"
-#include "sampling/SamplerFileLoader.hpp"
 #include "session/ClipSynchronizer.hpp"
 #include "session/SessionClipAudioMonitor.hpp"
 #include "sidechain/SidechainRoutingManager.hpp"
@@ -56,17 +56,29 @@ class SessionMonitorPlugin;
  * - UI thread: Receives TrackManager/ClipManager notifications, updates mappings
  * - Audio thread: Reads mappings, processes parameter changes, pushes metering
  */
-class AudioBridge : public TrackManagerListener, public ClipManagerListener, public juce::Timer {
+class AudioBridge : public TrackManagerListener,
+                    public ClipManagerListener,
+                    public ProjectManagerListener,
+                    public juce::Timer {
   public:
     /**
      * @brief Construct AudioBridge with Tracktion Engine references
      * @param engine Reference to the Tracktion Engine instance
      * @param edit Reference to the current Edit (project)
+     * @param meters The engine-neutral object to push levels and MIDI activity into
+     * @param deviceMeters The same, for the per-slot device and rack levels (#2570)
      */
-    AudioBridge(te::Engine& engine, te::Edit& edit);
+    AudioBridge(te::Engine& engine, te::Edit& edit, TrackMeters& meters,
+                DeviceMeters& deviceMeters);
     ~AudioBridge() override;
 
     void resetTestState();
+
+    // =========================================================================
+    // ProjectManagerListener implementation
+    // =========================================================================
+
+    void projectTeardown() override;
 
     // =========================================================================
     // TrackManagerListener implementation
@@ -74,7 +86,11 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
 
     void tracksChanged() override;
     void trackPropertyChanged(int trackId) override;
+    void trackAudioInputChanged(TrackId trackId) override;
+    void trackMidiInputChanged(TrackId trackId) override;
     void trackSelectionChanged(TrackId trackId) override;
+    void chainElementMoving(const ChainNodePath& sourcePath,
+                            const ChainNodePath& destinationChain) override;
     void trackDevicesChanged(TrackId trackId) override;
     void deviceAdded(const ChainNodePath& devicePath, const DeviceInfo& device) override;
     void deviceModifiersChanged(TrackId trackId) override;
@@ -214,28 +230,6 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     bool getTransientTimes(ClipId clipId);
 
     // =========================================================================
-    // Warp Markers
-    // =========================================================================
-
-    /** Enable warping: populate WarpTimeManager with markers at detected transients */
-    void enableWarp(ClipId clipId);
-
-    /** Disable warping: remove all warp markers */
-    void disableWarp(ClipId clipId);
-
-    /** Get current warp marker positions for display */
-    std::vector<WarpMarkerInfo> getWarpMarkers(ClipId clipId);
-
-    /** Add a warp marker. Returns index of inserted marker. */
-    int addWarpMarker(ClipId clipId, double sourceTime, double warpTime);
-
-    /** Move a warp marker's warp time. Returns actual position (clamped by TE). */
-    double moveWarpMarker(ClipId clipId, int index, double newWarpTime);
-
-    /** Remove a warp marker at index. */
-    void removeWarpMarker(ClipId clipId, int index);
-
-    // =========================================================================
     // Plugin State Capture
     // =========================================================================
 
@@ -244,11 +238,6 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      * Call before saving a project to snapshot live plugin states.
      */
     void captureAllPluginStates();
-
-    /**
-     * @brief Capture warp marker positions from TE into ClipInfo for all warped clips.
-     */
-    void captureWarpMarkerStates();
 
     // =========================================================================
     // Plugin Loading
@@ -397,44 +386,6 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     void removeAudioTrack(TrackId trackId);
 
     // =========================================================================
-    // Metering
-    // =========================================================================
-
-    /**
-     * @brief Get the metering buffer for reading levels in UI
-     */
-    MeteringBuffer& getMeteringBuffer() {
-        return meteringBuffer_;
-    }
-    const MeteringBuffer& getMeteringBuffer() const {
-        return meteringBuffer_;
-    }
-
-    /**
-     * @brief Get the dedicated recording metering buffer
-     *
-     * Separate from the main metering buffer so that UI meter consumers
-     * (TrackHeadersPanel, MixerView) don't drain data before the recording
-     * preview can read it.
-     */
-    MeteringBuffer& getRecordingMeteringBuffer() {
-        return recordingMeteringBuffer_;
-    }
-
-    /**
-     * @brief Get the dedicated remote-API metering buffer (#1857)
-     *
-     * A third buffer for the same reason there is a second. A reader that pops
-     * takes data away from the others, and one that only peeks stops seeing new
-     * data once the ring fills — which it does within a second when no UI meter
-     * is on screen to drain it. A remote meter subscriber has to work with the
-     * mixer closed, so it gets its own ring and drains it to the latest value.
-     */
-    MeteringBuffer& getRemoteMeteringBuffer() {
-        return remoteMeteringBuffer_;
-    }
-
-    // =========================================================================
     // Parameter Queue
     // =========================================================================
 
@@ -538,52 +489,18 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // =========================================================================
 
     /**
-     * @brief Trigger MIDI activity for a track (MIDI thread safe)
-     * @param trackId The track that received MIDI
+     * @brief Feed the sidechain trigger bus for a track's live MIDI (MIDI thread safe).
+     *
+     * The activity light itself is TrackMeters::midiActivity, fed directly by
+     * MidiBridge (#2579).
      */
     void triggerMidiActivity(TrackId trackId) {
-        midiActivity_.triggerActivity(trackId);
-        // Write to sidechain trigger bus so updateAllMods() picks up live MIDI too.
-        sidechainRouting_.triggerMidiActivity(trackId);
         // LFO retrigger is handled on the audio thread by SidechainMonitorPlugin
         // (which calls PluginManager::triggerSidechainNoteOn). Calling it here
         // from the MIDI thread would double-trigger and race with the audio
         // thread's ramp state (non-atomic floats in TE's Ramp).
+        sidechainRouting_.triggerMidiActivity(trackId);
     }
-
-    /**
-     * @brief Get the monotonic MIDI activity counter for a track (UI thread)
-     * @param trackId The track to check
-     * @return Counter value — compare with previous to detect new activity
-     */
-    uint32_t getMidiActivityCounter(TrackId trackId) const {
-        return midiActivity_.getActivityCounter(trackId);
-    }
-
-    // =========================================================================
-    // Automation Recording
-    // =========================================================================
-
-    /**
-     * @brief Enable/disable global automation write mode
-     * @param enabled When true, parameter changes during playback are recorded to armed lanes
-     */
-    void setAutomationWriteEnabled(bool enabled);
-
-    /**
-     * @brief Check if automation write mode is enabled
-     */
-    bool isAutomationWriteEnabled() const;
-
-    /**
-     * @brief Set the active automation mode (Off / Write / Touch / Latch).
-     *
-     * Off disarms recording. Write records any user-driven change while transport
-     * rolls. Touch records only while a control is held. Latch records while held
-     * and continues writing the held value after release until the transport stops.
-     */
-    void setAutomationMode(AutomationMode mode);
-    AutomationMode getAutomationMode() const;
 
     // =========================================================================
     // Mixer Controls
@@ -642,7 +559,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     float getMasterPan() const;
 
     // =========================================================================
-    // Master Metering
+    // Device Metering
     // =========================================================================
 
     /**
@@ -655,45 +572,18 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
         return deviceMetering_;
     }
 
-    /**
-     * @brief Get master channel peak level (left)
-     * @return Peak level as linear gain
-     */
-    float getMasterPeakL() const {
-        return masterPeakL_.load(std::memory_order_relaxed);
-    }
-
-    /**
-     * @brief Get master channel peak level (right)
-     * @return Peak level as linear gain
-     */
-    float getMasterPeakR() const {
-        return masterPeakR_.load(std::memory_order_relaxed);
-    }
-
     // =========================================================================
     // Audio Routing
     // =========================================================================
-
-    /**
-     * @brief Get a bitmask of user-enabled input channels from TE WaveInputDevices
-     *
-     * JUCE device->getActiveInputChannels() always returns all channels (because
-     * the engine enables all at JUCE level). User preferences are applied
-     * at the TE WaveInputDevice level. This method reads those TE-level enabled states.
-     *
-     * @return BigInteger with bits set for each enabled input channel
-     */
-    juce::BigInteger getEnabledInputChannels() const;
-
-    /** Map from hardware channel index to TE WaveInputDevice name (e.g. "Input 1"). */
-    std::map<int, juce::String> getInputDeviceNamesByChannel() const;
 
     /**
      * @brief Get a bitmask of user-enabled output channels from TE WaveOutputDevices
      * @return BigInteger with bits set for each enabled output channel
      */
     juce::BigInteger getEnabledOutputChannels() const;
+
+    /** Map from hardware channel index to TE WaveOutputDevice name (e.g. "Out 1 + 2"). */
+    std::map<int, juce::String> getOutputDeviceNamesByChannel() const;
 
     /**
      * @brief Set audio output destination for a track
@@ -739,17 +629,6 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     void setTrackMidiInput(TrackId trackId, const juce::String& midiDeviceId);
 
     /**
-     * @brief Mark one MIDI input as control-surface-only.
-     *
-     * Surface-only inputs remain available to raw MIDI listeners (Lua scripts,
-     * controller routing, monitors) but are excluded from Tracktion Engine live
-     * track input routing, including "all" routing. Empty clears the current
-     * surface-only input.
-     */
-    void setSurfaceOnlyMidiInputPort(const juce::String& midiDeviceIdOrName);
-    void clearSurfaceOnlyMidiInputPorts();
-
-    /**
      * @brief Get current MIDI input source for a track
      * @param trackId The MAGDA track ID
      * @return MIDI device ID, or empty if none
@@ -789,6 +668,9 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      */
     void onMidiDevicesAvailable();
 
+    /** @brief Reroute every track after Audio Settings changed which MIDI inputs are active. */
+    void refreshActiveMidiInputs();
+
     /**
      * @brief Wires the recording-preview queue for track-routed MIDI input.
      *
@@ -818,15 +700,10 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // Plugin Editor Windows (delegates to PluginWindowManager)
     // =========================================================================
 
-    /**
-     * @brief Load a sample file into a MagdaSamplerPlugin device
-     * @param devicePath MAGDA device path of the sampler plugin
-     * @param file Audio file to load
-     * @return true if sample was loaded successfully
-     */
-    bool loadSamplerSample(const ChainNodePath& devicePath, const juce::File& file);
-
   private:
+    /// The graph taps, read on the timer and pushed to every meter ring.
+    void updateMetersFromGraph();
+
     // Timer callback for metering updates (runs on message thread)
     void timerCallback() override;
     void refreshInputMeterClients(const std::map<TrackId, te::AudioTrack*>& trackMapping);
@@ -841,19 +718,20 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     te::Engine& engine_;
     te::Edit& edit_;
 
+    // Where levels and MIDI activity go; owned by the wrapper (#2579).
+    TrackMeters& meters_;
+
+    // Where the per-slot levels go, read by the chain UI whichever engine
+    // rendered them (#2570). Also the wrapper's.
+    DeviceMeters& deviceMeters_;
+
     // Bidirectional mappings
     std::map<TrackId, std::string> trackIdToEngineId_;  // MAGDA TrackId → Engine string ID
 
     // (Session clips use ClipSlot-based mapping via trackId + sceneIndex — no ID maps needed)
 
-    // Lock-free communication buffers
-    MeteringBuffer meteringBuffer_;
-    MeteringBuffer recordingMeteringBuffer_;
-    MeteringBuffer remoteMeteringBuffer_;
-
     // Phase 1 refactoring: Pure data managers (extracted from AudioBridge)
     TransportStateManager transportState_;
-    MidiActivityMonitor midiActivity_;
     ParameterManager parameterManager_;
 
     // Phase 2 refactoring: Independent features (extracted from AudioBridge)
@@ -868,7 +746,6 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     ControlTargetResolver controlTargetResolver_;
     SidechainRoutingManager sidechainRouting_;
     ExternalInsertDeviceEnablement insertDeviceEnablement_;
-    SamplerFileLoader samplerFileLoader_;
     ClipSynchronizer clipSynchronizer_;
     SessionClipAudioMonitor sessionAudioMonitor_;
     SessionMonitorPlugin* sessionMonitorPlugin_ = nullptr;
@@ -882,9 +759,6 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // Per-device metering (LevelMeasurer per device, polled on timer)
     DeviceMeteringManager deviceMetering_;
 
-    // Master channel metering (lock-free atomics for thread safety)
-    std::atomic<float> masterPeakL_{0.0f};
-    std::atomic<float> masterPeakR_{0.0f};
     te::LevelMeasurer::Client masterMeterClient_;
     // The playback context the master meter client is registered on (nullptr =
     // not registered). Tracked as a pointer (not a bool) so we re-register when
@@ -908,7 +782,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      * @brief Derive external-insert hardware port enablement (#1623) and
      *        reallocate the playback graph when it changed.
      */
-    void refreshInsertDeviceEnablement();
+    bool refreshInsertDeviceEnablement();
     void resyncAllInputMonitors();
 
     void applyPendingMidiRoutes();

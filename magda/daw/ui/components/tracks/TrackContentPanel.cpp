@@ -3,24 +3,27 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <algorithm>
 #include <cmath>
 #include <functional>
+#include <tuple>
 
 #include "../../interaction/ArrangementHitTester.hpp"
 #include "../../panels/state/PanelController.hpp"
 #include "../../state/TimelineEvents.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/CursorManager.hpp"
-#include "../../themes/DarkTheme.hpp"
 #include "../../utils/SelectionPolicy.hpp"
 #include "../../utils/TimelineUtils.hpp"
 #include "../automation/AutomationLaneComponent.hpp"
 #include "../clips/ClipComponent.hpp"
 #include "../common/InternalFileDrag.hpp"
-#include "Config.hpp"
 #include "TrackControlsPolicy.hpp"
 #include "core/AppPaths.hpp"
 #include "core/AutomationCommands.hpp"
+#include "core/ChordProgressionConverter.hpp"
 #include "core/ClipCommands.hpp"
+#include "core/ClipPlacementPolicy.hpp"
 #include "core/MidiChordMarkers.hpp"
 #include "core/PasteTargetResolver.hpp"
 #include "core/SelectionManager.hpp"
@@ -28,20 +31,11 @@
 #include "core/TrackCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "project/ProjectManager.hpp"
+#include "ui/utils/AudioFileTypes.hpp"
 
 namespace magda {
 
 namespace {
-
-bool isDraggedAudioFile(const juce::String& path) {
-    return path.endsWithIgnoreCase(".wav") || path.endsWithIgnoreCase(".aiff") ||
-           path.endsWithIgnoreCase(".aif") || path.endsWithIgnoreCase(".mp3") ||
-           path.endsWithIgnoreCase(".ogg") || path.endsWithIgnoreCase(".flac");
-}
-
-bool isDraggedMidiFile(const juce::String& path) {
-    return path.endsWithIgnoreCase(".mid") || path.endsWithIgnoreCase(".midi");
-}
 
 // Point the bottom panel at the right editor for a newly selected clip. It
 // deliberately never touches the panel's collapsed state: selecting a clip is
@@ -94,9 +88,9 @@ std::vector<FileDropGhost> makeMidiDropGhosts(const juce::File& midiFile, double
     }
 
     const double tempo = isValidBpm(tempoBPM) ? tempoBPM : DEFAULT_BPM;
-    int beatsPerBar = 4;
-    if (!numerators.isEmpty() && numerators[0] > 0)
-        beatsPerBar = numerators[0];
+    double beatsPerBar = 4.0;
+    if (!numerators.isEmpty() && numerators[0] > 0 && !denominators.isEmpty())
+        beatsPerBar = magda::beatsPerBar(numerators[0], denominators[0]);
 
     for (int listIdx = 0; listIdx < lists.size(); ++listIdx) {
         auto* list = lists[listIdx];
@@ -129,10 +123,10 @@ std::vector<FileDropGhost> makeMidiDropGhosts(const juce::File& midiFile, double
 }  // namespace
 
 TrackContentPanel::TrackContentPanel() {
-    // Load configuration values, converting bars → seconds at default tempo
-    auto& config = magda::Config::getInstance();
+    // Load the project value, converting bars → seconds at default tempo.
     TempoState defaultTempo;
-    timelineLength = defaultTempo.barsToTime(config.getDefaultTimelineLengthBars());
+    timelineLength = defaultTempo.barsToTime(
+        ProjectManager::getInstance().getCurrentProjectInfo().timelineLengthBars);
 
     // Set up the component
     setSize(1000, 200);
@@ -196,13 +190,13 @@ void TrackContentPanel::viewModeChanged(ViewMode mode, const AudioEngineProfile&
 std::vector<ClipInfo> TrackContentPanel::previewLaneClips(TrackId trackId) const {
     auto& clipManager = ClipManager::getInstance();
 
-    const bool laneIsDragging =
-        std::any_of(clipComponents_.begin(), clipComponents_.end(), [&](const auto& comp) {
-            if (!comp->isCurrentlyDragging())
-                return false;
-            const auto* clip = clipManager.getClip(comp->getClipId());
-            return clip != nullptr && clip->trackId == trackId;
-        });
+    const auto isDraggingFromThisLane = [&](const auto& comp) {
+        if (!comp->isCurrentlyDragging())
+            return false;
+        const auto* clip = clipManager.getClip(comp->getClipId());
+        return clip != nullptr && clip->trackId == trackId;
+    };
+    const bool laneIsDragging = std::ranges::any_of(clipComponents_, isDraggingFromThisLane);
     if (!laneIsDragging)
         return {};
 
@@ -460,7 +454,7 @@ void TrackContentPanel::rebuildGroupExtentCache() {
 }
 
 void TrackContentPanel::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND));
 
     // Rebuild group extent cache if dirty (at most once per paint)
     if (groupExtentCacheDirty_)
@@ -486,6 +480,8 @@ void TrackContentPanel::paint(juce::Graphics& g) {
 }
 
 void TrackContentPanel::paintOverChildren(juce::Graphics& g) {
+    const auto& projectDefaults = ProjectManager::getInstance().getCurrentProjectInfo().defaults;
+
     // Draw marker guide lines above clips so cue points remain visible in the arrangement.
     paintMarkerGuides(g);
 
@@ -529,7 +525,7 @@ void TrackContentPanel::paintOverChildren(juce::Graphics& g) {
                 const int y0 = topY + i * ghostHeight;
                 const int y1 = y0 + ghostHeight;
 
-                const auto tint = juce::Colour(Config::getDefaultColour(baseIndex + i));
+                const auto tint = juce::Colour(projectDefaults.colourForIndex(baseIndex + i));
 
                 // Ghost clip: starts at dropX, width derived from file duration.
                 double duration = fileDropGhosts_[static_cast<size_t>(i)].durationSeconds;
@@ -731,8 +727,8 @@ void TrackContentPanel::paintTrackLane(juce::Graphics& g, const TrackLane& /*lan
         return;
 
     // Background (semi-transparent to let grid show through)
-    auto bgColour = isSelected ? DarkTheme::getColour(DarkTheme::TRACK_SELECTED)
-                               : DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND);
+    auto bgColour = isSelected ? ActiveTheme::getColour(ActiveTheme::TRACK_SELECTED)
+                               : ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND);
     g.setColour(bgColour.withAlpha(0.7f));
     g.fillRect(paintArea);
 
@@ -742,7 +738,7 @@ void TrackContentPanel::paintTrackLane(juce::Graphics& g, const TrackLane& /*lan
     // of around the lane. A clip moving away leaves its old bounds as the
     // damage, so that box stayed behind as a ghost outline (#2026). Fills are
     // uniform and can stay clipped; outlines cannot.
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(area, 1);
 
     // Frozen overlay
@@ -795,8 +791,7 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
     if (previews.empty())
         return;
 
-    static int paintCount = 0;
-    paintCount++;
+    const auto& projectDefaults = ProjectManager::getInstance().getCurrentProjectInfo().defaults;
 
     constexpr int HEADER_HEIGHT = 16;
     constexpr float CORNER_RADIUS = 4.0f;
@@ -832,14 +827,8 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
         juce::Rectangle<int> bounds(clipX, trackY, clipW, trackH);
 
         // Use the same colour the final clip will get (based on current clip count)
-        juce::Colour baseColour = juce::Colour(Config::getDefaultColour(
+        juce::Colour baseColour = juce::Colour(projectDefaults.colourForIndex(
             static_cast<int>(ClipManager::getInstance().getArrangementClips().size())));
-
-        if (paintCount % 60 == 1) {
-            DBG("RecPreview::paint: track=" << trackId << " bounds=" << bounds.toString()
-                                            << " notes=" << preview.notes.size()
-                                            << " lenBeats=" << preview.currentLengthBeats);
-        }
 
         // Background fill
         g.setColour(baseColour.darker(0.3f));
@@ -849,33 +838,39 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
         auto noteArea = bounds.reduced(2, HEADER_HEIGHT + 2);
 
         if (preview.isAudioRecording && !preview.audioPeaks.empty() && noteArea.getHeight() > 5) {
-            // Draw audio waveform (symmetric around vertical center)
+            // One lane per channel, each symmetric around its centre, as the clip the
+            // take becomes draws them.
             g.setColour(baseColour.brighter(0.3f));
 
-            float centerY = static_cast<float>(noteArea.getCentreY());
-            float halfHeight = noteArea.getHeight() * 0.5f;
+            const int lanes = juce::jlimit(1, 2, preview.numChannels);
+            const float laneHeight = static_cast<float>(noteArea.getHeight()) / lanes;
             int numPeaks = static_cast<int>(preview.audioPeaks.size());
 
             for (int px = noteArea.getX(); px < noteArea.getRight(); ++px) {
                 float frac = static_cast<float>(px - noteArea.getX()) /
                              static_cast<float>(noteArea.getWidth());
                 int peakIdx = juce::jlimit(0, numPeaks - 1, static_cast<int>(frac * numPeaks));
+                const auto& sample = preview.audioPeaks[static_cast<size_t>(peakIdx)];
 
-                float peak = juce::jmax(preview.audioPeaks[peakIdx].peakL,
-                                        preview.audioPeaks[peakIdx].peakR);
-                peak = juce::jmin(peak, 1.0f);
+                for (int lane = 0; lane < lanes; ++lane) {
+                    float peak = lanes == 1 ? juce::jmax(sample.peakL, sample.peakR)
+                                            : (lane == 0 ? sample.peakL : sample.peakR);
+                    peak = juce::jmin(peak, 1.0f);
 
-                float lineHalf = peak * halfHeight;
-                if (lineHalf < 0.5f)
-                    lineHalf = 0.5f;
-
-                g.drawVerticalLine(px, centerY - lineHalf, centerY + lineHalf);
+                    const float centreY = noteArea.getY() + laneHeight * (lane + 0.5f);
+                    const float lineHalf = std::max(peak * laneHeight * 0.5f, 0.5f);
+                    g.drawVerticalLine(px, centreY - lineHalf, centreY + lineHalf);
+                }
             }
-        } else if (!preview.notes.empty() && noteArea.getHeight() > 5) {
+        } else if (!preview.notes.empty() && preview.currentLengthBeats > 0.0 &&
+                   noteArea.getHeight() > 5) {
             g.setColour(baseColour.brighter(0.3f));
 
             double clipLengthInBeats = preview.currentLengthBeats;
-            double beatRange = juce::jmax(1.0, clipLengthInBeats);
+            // The preview's width already represents its captured duration,
+            // including during the first beat. A one-beat minimum would
+            // compress the notes until the pass had recorded a whole beat.
+            double beatRange = clipLengthInBeats;
 
             for (const auto& note : preview.notes) {
                 double displayStart = note.startBeat;
@@ -883,8 +878,7 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
                 if (noteLen < 0.0) {
                     // Open note (being held) — extend to clip end
                     noteLen = clipLengthInBeats - displayStart;
-                    if (noteLen < 0.05)
-                        noteLen = 0.05;
+                    noteLen = std::max(noteLen, 0.05);
                 }
                 double displayEnd = displayStart + noteLen;
 
@@ -895,8 +889,10 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
                 double visibleEnd = juce::jmin(clipLengthInBeats, displayEnd);
                 double visibleLength = visibleEnd - visibleStart;
 
-                float noteY = noteArea.getY() + (MIDI_MAX - note.noteNumber) *
-                                                    noteArea.getHeight() / (MIDI_RANGE + 1);
+                float noteY =
+                    static_cast<float>(noteArea.getY()) +
+                    static_cast<float>((MIDI_MAX - note.noteNumber) * noteArea.getHeight()) /
+                        static_cast<float>(MIDI_RANGE + 1);
                 float noteHeight =
                     juce::jmax(1.5f, static_cast<float>(noteArea.getHeight()) / (MIDI_RANGE + 1));
                 float noteX = noteArea.getX() +
@@ -1004,9 +1000,9 @@ void TrackContentPanel::paintEditCursor(juce::Graphics& g) {
     }
 
     // Draw edit cursor as a prominent white line
-    float top = static_cast<float>(trackArea.getY());
-    float bottom = static_cast<float>(trackArea.getBottom());
-    float x = static_cast<float>(cursorX);
+    auto top = static_cast<float>(trackArea.getY());
+    auto bottom = static_cast<float>(trackArea.getBottom());
+    auto x = static_cast<float>(cursorX);
 
     // Draw glow/shadow for visibility over grid lines
     g.setColour(juce::Colours::black.withAlpha(0.5f));
@@ -1055,7 +1051,7 @@ juce::Rectangle<int> TrackContentPanel::getTrackLaneArea(int trackIndex) const {
     int yPosition = getTrackYPosition(trackIndex);
     int height = static_cast<int>(trackLanes[trackIndex]->height * verticalZoom);
 
-    return juce::Rectangle<int>(0, yPosition, getWidth(), height);
+    return {0, yPosition, getWidth(), height};
 }
 
 bool TrackContentPanel::isInSelectableArea(int x, int y) const {
@@ -1149,7 +1145,7 @@ bool TrackContentPanel::tryBeginTimeSelectionGrab(const juce::MouseEvent& event)
         originalClipsInSelection_.clear();
         const auto& clips = ClipManager::getInstance().getArrangementClips();
         for (const auto& clip : clips) {
-            auto it = std::find(visibleTrackIds_.begin(), visibleTrackIds_.end(), clip.trackId);
+            auto it = std::ranges::find(visibleTrackIds_, clip.trackId);
             if (it == visibleTrackIds_.end())
                 continue;
 
@@ -1334,11 +1330,9 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
         }
     }
 
-    // A click on an active time selection grabs it for move/resize in EITHER
-    // track zone (and over clips, via ClipComponent forwarding), so the selected
-    // portion can be dragged to trim and move it. Must run before the zone
-    // branches below, which would otherwise treat an upper-zone grab as a clip
-    // operation / marquee.
+    // Empty space and the lower clip zone grab an active time selection for
+    // move/resize. Selection edges also pass through from either zone. This
+    // runs before the zone branches so those gestures stay panel-owned.
     if (tryBeginTimeSelectionGrab(event))
         return;
 
@@ -1919,11 +1913,9 @@ void TrackContentPanel::mouseDoubleClick(const juce::MouseEvent& event) {
 }
 
 void TrackContentPanel::createMidiClipAtPosition(TrackId trackId, double startTime) {
-    double barLength = (timeSignatureNumerator * 60.0) / tempoBPM;
-
-    auto cmd = std::make_unique<CreateClipCommand>(ClipType::MIDI, trackId,
-                                                   BeatPosition{startTime * tempoBPM / 60.0},
-                                                   BeatDuration{barLength * tempoBPM / 60.0});
+    auto cmd = std::make_unique<CreateClipCommand>(
+        ClipType::MIDI, trackId, BeatPosition{startTime * tempoBPM / 60.0},
+        BeatDuration{beatsPerBar(timeSignatureNumerator, timeSignatureDenominator)});
     UndoManager::getInstance().executeCommand(std::move(cmd));
 
     auto clipId = ClipManager::getInstance().getClipAtPosition(trackId, startTime);
@@ -1955,7 +1947,7 @@ void TrackContentPanel::createMidiClipFromBeatRange(TrackId trackId, double star
     double end = juce::jmax(startBeat, endBeat);
     double length = end - start;
 
-    const double oneBarBeats = juce::jmax(1.0, static_cast<double>(timeSignatureNumerator));
+    const double oneBarBeats = beatsPerBar(timeSignatureNumerator, timeSignatureDenominator);
     if (length <= 0.000001) {
         length = oneBarBeats;
     } else {
@@ -1981,11 +1973,13 @@ void TrackContentPanel::paintClipDrawPreview(juce::Graphics& g) {
         return;
     }
 
+    const auto& projectDefaults = ProjectManager::getInstance().getCurrentProjectInfo().defaults;
+
     const auto trackArea = getTrackLaneArea(drawingClipTrackIndex_);
     double start = juce::jmin(drawingClipStartBeat_, drawingClipEndBeat_);
     double end = juce::jmax(drawingClipStartBeat_, drawingClipEndBeat_);
     if (end - start <= 0.000001)
-        end = start + juce::jmax(1.0, static_cast<double>(timeSignatureNumerator));
+        end = start + beatsPerBar(timeSignatureNumerator, timeSignatureDenominator);
 
     const int x = beatsToPixel(start);
     const int right = beatsToPixel(end);
@@ -1993,7 +1987,7 @@ void TrackContentPanel::paintClipDrawPreview(juce::Graphics& g) {
     const auto rect =
         juce::Rectangle<int>(x, trackArea.getY() + 2, width, trackArea.getHeight() - 4);
 
-    const auto colour = juce::Colour(Config::getDefaultColour(drawingClipTrackIndex_));
+    const auto colour = juce::Colour(projectDefaults.colourForIndex(drawingClipTrackIndex_));
     g.setColour(colour.withAlpha(0.28f));
     g.fillRoundedRectangle(rect.toFloat(), 3.0f);
     g.setColour(colour.brighter(0.25f).withAlpha(0.9f));
@@ -2114,7 +2108,7 @@ void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event)
                 auto visibleTracks = TrackManager::getInstance().getVisibleTracks(
                     ViewModeController::getInstance().getViewMode());
                 if (sel.isAllTracks()) {
-                    trackIds = visibleTracks;
+                    trackIds = std::move(visibleTracks);
                 } else {
                     for (int idx : sel.trackIndices) {
                         if (idx >= 0 && idx < static_cast<int>(visibleTracks.size()))
@@ -2192,6 +2186,8 @@ void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event)
             case 18:  // Paste (Ripple)
                 if (safeThis && safeThis->onPasteRippleRequested)
                     safeThis->onPasteRippleRequested();
+                break;
+            default:  // menu dismissed
                 break;
         }
     });
@@ -2448,18 +2444,15 @@ void TrackContentPanel::rebuildClipComponents() {
     // level, which keeps a later clip above the one it crossfades into (#1499)
     // instead of following hash-map iteration order.
     auto clips = ClipManager::getInstance().getArrangementClips();
-    std::sort(clips.begin(), clips.end(), [](const ClipInfo& a, const ClipInfo& b) {
-        if (a.stackOrder != b.stackOrder)
-            return a.stackOrder < b.stackOrder;
-        if (a.placement.startBeat != b.placement.startBeat)
-            return a.placement.startBeat < b.placement.startBeat;
-        return a.id < b.id;
-    });
+    const auto stackThenStart = [](const ClipInfo& clip) {
+        return std::tuple{clip.stackOrder, clip.placement.startBeat, clip.id};
+    };
+    std::ranges::sort(clips, {}, stackThenStart);
 
     // Create a component for each clip that belongs to a visible track
     for (const auto& clip : clips) {
         // Check if clip's track is visible
-        auto it = std::find(visibleTrackIds_.begin(), visibleTrackIds_.end(), clip.trackId);
+        auto it = std::ranges::find(visibleTrackIds_, clip.trackId);
         if (it == visibleTrackIds_.end()) {
             continue;  // Track not visible
         }
@@ -2475,6 +2468,13 @@ void TrackContentPanel::rebuildClipComponents() {
         };
 
         clipComp->onClipMovedToTrack = [](ClipId id, TrackId newTrackId) {
+            // The same question the command asks, asked first so a refused move
+            // is not an undo step that does nothing.
+            const auto* target = TrackManager::getInstance().getTrack(newTrackId);
+            const auto* dragged = ClipManager::getInstance().getClip(id);
+            if (target == nullptr || dragged == nullptr || !trackAcceptsClip(*target, *dragged))
+                return;
+
             auto cmd = std::make_unique<MoveClipToTrackCommand>(id, newTrackId);
             UndoManager::getInstance().executeCommand(std::move(cmd));
         };
@@ -2653,7 +2653,7 @@ void TrackContentPanel::updateClipComponentPositions() {
         }
 
         // Find the track index
-        auto it = std::find(visibleTrackIds_.begin(), visibleTrackIds_.end(), clip->trackId);
+        auto it = std::ranges::find(visibleTrackIds_, clip->trackId);
         if (it == visibleTrackIds_.end()) {
             clipComp->setVisible(false);
             continue;
@@ -2795,7 +2795,7 @@ void TrackContentPanel::updateMarqueeHighlights() {
         clipComp->setMarqueeHighlighted(inMarquee);
     }
 
-    marqueePreviewClips_ = clipsInRect;
+    marqueePreviewClips_ = std::move(clipsInRect);
 }
 
 bool TrackContentPanel::checkIfMarqueeNeeded(const juce::Point<int>& currentPoint) const {
@@ -3103,7 +3103,7 @@ bool TrackContentPanel::isAutomationLaneVisible(TrackId trackId, AutomationLaneI
     auto it = visibleAutomationLanes_.find(trackId);
     if (it != visibleAutomationLanes_.end()) {
         const auto& lanes = it->second;
-        return std::find(lanes.begin(), lanes.end(), laneId) != lanes.end();
+        return std::ranges::contains(lanes, laneId);
     }
     return false;
 }
@@ -3129,7 +3129,7 @@ bool TrackContentPanel::getAutomationLaneStripAtY(int y, int& trackIndex,
         if (y < bounds.getY() || y >= bounds.getY() + AutomationLaneComponent::HEADER_HEIGHT)
             continue;
 
-        auto trackIt = std::find(visibleTrackIds_.begin(), visibleTrackIds_.end(), entry.trackId);
+        auto trackIt = std::ranges::find(visibleTrackIds_, entry.trackId);
         if (trackIt == visibleTrackIds_.end())
             return false;
 
@@ -3223,7 +3223,7 @@ void TrackContentPanel::rebuildAutomationLaneComponents() {
                 if (!onAutomationTimeSelectionBeatsChanged || tempoBPM <= 0.0)
                     return;
 
-                auto trackIt = std::find(visibleTrackIds_.begin(), visibleTrackIds_.end(), trackId);
+                auto trackIt = std::ranges::find(visibleTrackIds_, trackId);
                 if (trackIt == visibleTrackIds_.end())
                     return;
 
@@ -3285,12 +3285,10 @@ void TrackContentPanel::updateAutomationLanePositions() {
 // =============================================================================
 
 bool TrackContentPanel::isInterestedInFileDrag(const juce::StringArray& files) {
-    for (const auto& file : files) {
-        if (isDraggedAudioFile(file) || isDraggedMidiFile(file)) {
-            return true;
-        }
-    }
-    return false;
+    const auto isImportable = [](const auto& file) {
+        return isAudioFile(file) || isMidiFile(file);
+    };
+    return std::ranges::any_of(files, isImportable);
 }
 
 void TrackContentPanel::fileDragEnter(const juce::StringArray& files, int x, int y) {
@@ -3321,7 +3319,7 @@ void TrackContentPanel::beginFilesDropFeedback(const juce::StringArray& files, i
     juce::AudioFormatManager formatMgr;
     formatMgr.registerBasicFormats();
     for (const auto& f : files) {
-        if (isDraggedAudioFile(f)) {
+        if (isAudioFile(f)) {
             double duration = 4.0;
             juce::File audioFile(f);
             if (auto reader = std::unique_ptr<juce::AudioFormatReader>(
@@ -3330,7 +3328,7 @@ void TrackContentPanel::beginFilesDropFeedback(const juce::StringArray& files, i
                     duration = static_cast<double>(reader->lengthInSamples) / reader->sampleRate;
             }
             fileDropGhosts_.push_back({audioFile.getFileNameWithoutExtension(), duration});
-        } else if (isDraggedMidiFile(f)) {
+        } else if (isMidiFile(f)) {
             auto midiGhosts = makeMidiDropGhosts(juce::File(f), tempoBPM);
             fileDropGhosts_.insert(fileDropGhosts_.end(), midiGhosts.begin(), midiGhosts.end());
         }
@@ -3394,6 +3392,16 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
 
     TrackId targetTrackId = INVALID_TRACK_ID;
 
+    // Which kind each file is, worked out before the target is vetted: what a
+    // track accepts is per kind, so the check below needs to know what it has.
+    juce::StringArray audioFiles, midiFiles;
+    for (const auto& filePath : files) {
+        if (isMidiFile(filePath))
+            midiFiles.add(filePath);
+        else if (isAudioFile(filePath))
+            audioFiles.add(filePath);
+    }
+
     if (trackIndex >= 0 && trackIndex < static_cast<int>(visibleTrackIds_.size())) {
         // Dropped on an existing track
         targetTrackId = visibleTrackIds_[trackIndex];
@@ -3401,34 +3409,42 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
         if (!track)
             return;
 
-        // Block drops on group/aux tracks (no clip timeline)
-        if (track->type == TrackType::Group || track->type == TrackType::Aux) {
-            juce::AlertWindow::showMessageBoxAsync(
-                juce::AlertWindow::WarningIcon, "Drop Failed",
-                "Files cannot be dropped on group or aux tracks.");
-            return;
+        // What the target accepts, asked of the table every other path asks
+        // (TrackTypes.hpp). Nothing here is a question about the Drum Grid: a
+        // Media track is hybrid and takes both kinds, and a chain device used
+        // to refuse every dropped file here, which made the track likeliest to
+        // want a .mid the one that would not take one (#2172).
+        const auto refuse = [](const juce::String& why) {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Drop Failed",
+                                                   why);
+        };
+
+        if (!audioFiles.isEmpty() && !track->acceptsUserClip(ClipType::Audio)) {
+            if (midiFiles.isEmpty()) {
+                refuse("Audio clips cannot be placed on this track.");
+                return;
+            }
+
+            // A mixed drop still imports what the track does take, and says
+            // what it left. Refusing all of it because one file was the wrong
+            // kind is the shape of the bug this replaces.
+            refuse("Audio clips cannot be placed on this track, so only the MIDI was imported.");
+            audioFiles.clear();
         }
 
-        // Nothing else is asked of the target, and in particular nothing is
-        // asked about the file. A track is hybrid: TrackType::Audio is the
-        // regular track and holds audio clips and MIDI clips alike, which is
-        // why the importer below creates one for both. A Drum Grid on the
-        // chain used to refuse every dropped file here, so the track likeliest
-        // to want a .mid was the one that would not take one, while the same
-        // clip could be dragged onto it from a neighbour (#2172).
+        if (!midiFiles.isEmpty() && !track->acceptsUserClip(ClipType::MIDI)) {
+            if (audioFiles.isEmpty()) {
+                refuse("MIDI clips cannot be placed on this track.");
+                return;
+            }
+            refuse("MIDI clips cannot be placed on this track, so only the audio was imported.");
+            midiFiles.clear();
+        }
+
+        if (audioFiles.isEmpty() && midiFiles.isEmpty())
+            return;
     }
     // If targetTrackId is still INVALID, we'll create a new track below
-
-    // Separate audio and MIDI files
-    juce::StringArray audioFiles, midiFiles;
-    for (const auto& filePath : files) {
-        if (filePath.endsWithIgnoreCase(".mid") || filePath.endsWithIgnoreCase(".midi"))
-            midiFiles.add(filePath);
-        else if (filePath.endsWithIgnoreCase(".wav") || filePath.endsWithIgnoreCase(".aiff") ||
-                 filePath.endsWithIgnoreCase(".aif") || filePath.endsWithIgnoreCase(".mp3") ||
-                 filePath.endsWithIgnoreCase(".ogg") || filePath.endsWithIgnoreCase(".flac"))
-            audioFiles.add(filePath);
-    }
 
     int importedCount = 0;
 
@@ -3453,7 +3469,7 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
 
                 juce::String trackName = audioFile.getFileNameWithoutExtension();
                 auto createTrackCmd =
-                    std::make_unique<CreateTrackCommand>(TrackType::Audio, trackName, insertAfter);
+                    std::make_unique<CreateTrackCommand>(TrackType::Media, trackName, insertAfter);
                 auto* createTrackPtr = createTrackCmd.get();
                 UndoManager::getInstance().executeCommand(std::move(createTrackCmd));
                 TrackId clipTrackId = createTrackPtr->getCreatedTrackId();
@@ -3471,7 +3487,7 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
                 auto cmd = std::make_unique<CreateClipCommand>(
                     ClipType::Audio, clipTrackId, BeatPosition{dropTime * tempoBPM / 60.0},
                     BeatDuration{fileDuration * tempoBPM / 60.0}, filePath.toStdString(),
-                    ClipView::Arrangement, tempoBPM);
+                    ClipView::Arrangement);
                 UndoManager::getInstance().executeCommand(std::move(cmd));
                 importedCount++;
             }
@@ -3499,7 +3515,7 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
                 auto cmd = std::make_unique<CreateClipCommand>(
                     ClipType::Audio, targetTrackId, BeatPosition{currentTime * tempoBPM / 60.0},
                     BeatDuration{fileDuration * tempoBPM / 60.0}, filePath.toStdString(),
-                    ClipView::Arrangement, tempoBPM, ClipOverlapPolicy::ResolveOverlaps);
+                    ClipView::Arrangement, ClipOverlapPolicy::ResolveOverlaps);
                 UndoManager::getInstance().executeCommand(std::move(cmd));
 
                 currentTime += fileDuration + 0.5;
@@ -3559,9 +3575,9 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
                     lengthBeats = 4.0;
 
                 // Round up to whole bars
-                int beatsPerBar = 4;
-                if (!numerators.isEmpty() && numerators[0] > 0)
-                    beatsPerBar = numerators[0];
+                double beatsPerBar = 4.0;
+                if (!numerators.isEmpty() && numerators[0] > 0 && !denominators.isEmpty())
+                    beatsPerBar = magda::beatsPerBar(numerators[0], denominators[0]);
                 double bars = std::ceil(lengthBeats / beatsPerBar);
                 lengthBeats = bars * beatsPerBar;
 
@@ -3583,7 +3599,7 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
                         trackName += " " + juce::String(listIdx + 1);
 
                     auto createTrackCmd =
-                        std::make_unique<CreateTrackCommand>(TrackType::Audio, trackName);
+                        std::make_unique<CreateTrackCommand>(TrackType::Media, trackName);
                     auto* createTrackPtr = createTrackCmd.get();
                     UndoManager::getInstance().executeCommand(std::move(createTrackCmd));
                     clipTrackId = createTrackPtr->getCreatedTrackId();
@@ -3596,7 +3612,7 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
                 auto cmd = std::make_unique<CreateClipCommand>(
                     ClipType::MIDI, clipTrackId, BeatPosition{dropTime * projectTempo / 60.0},
                     BeatDuration{clipDuration * projectTempo / 60.0}, juce::String{},
-                    ClipView::Arrangement, 0.0, ClipOverlapPolicy::ResolveOverlaps);
+                    ClipView::Arrangement, ClipOverlapPolicy::ResolveOverlaps);
                 auto* cmdPtr = cmd.get();
                 UndoManager::getInstance().executeCommand(std::move(cmd));
 
@@ -3667,6 +3683,38 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
                     }
                     ann.chordGroup = linkedAny ? groupId : 0;
                     clip->chordAnnotations.push_back(ann);
+                }
+
+                // A .mid that carried no CHORD: markers still becomes chords
+                // when it lands on the chord track, because that is what the
+                // track is for and it is what a user dropping one there means.
+                // The same detection the piano roll's own button runs, from the
+                // same converter, so a dropped progression and a detected one
+                // are the same thing.
+                //
+                // Only on that track: detecting over every imported .mid would
+                // annotate parts that are not harmony and were never asked to
+                // be read as it.
+                if (clip->chordAnnotations.empty() && !clip->midiNotes.empty()) {
+                    if (const auto* clipTrack = TrackManager::getInstance().getTrack(clipTrackId);
+                        clipTrack != nullptr &&
+                        traitsOf(clipTrack->type).userClips == UserClipAcceptance::Progressions) {
+                        for (const auto& detected :
+                             extractChordsFromNotes(clip->midiNotes, beatsPerBar)) {
+                            ClipInfo::ChordAnnotation ann;
+                            ann.beatPosition = detected.startBeat;
+                            ann.lengthBeats = detected.lengthBeats;
+                            ann.chordName = detected.name;
+
+                            const int groupId = clip->nextChordGroupId++;
+                            for (const auto noteIndex : detected.noteIndices)
+                                if (noteIndex < clip->midiNotes.size())
+                                    clip->midiNotes[noteIndex].chordGroup = groupId;
+
+                            ann.chordGroup = detected.noteIndices.empty() ? 0 : groupId;
+                            clip->chordAnnotations.push_back(ann);
+                        }
+                    }
                 }
 
                 ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId);
@@ -3756,7 +3804,7 @@ void TrackContentPanel::itemDropped(const SourceDetails& details) {
 
     if (auto* obj = details.description.getDynamicObject()) {
         auto device = TrackManager::deviceInfoFromPluginObject(*obj);
-        TrackType trackType = TrackType::Audio;
+        TrackType trackType = TrackType::Media;
         juce::String pluginName = obj->getProperty("name").toString();
         auto cmd = std::make_unique<CreateTrackWithDeviceCommand>(pluginName, trackType, device);
         UndoManager::getInstance().executeCommand(std::move(cmd));

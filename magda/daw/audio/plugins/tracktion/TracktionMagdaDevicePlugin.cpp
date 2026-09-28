@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <optional>
+#include <ranges>
 #include <utility>
 
 #include "core/ParameterUtils.hpp"
@@ -15,9 +16,76 @@ DeviceProperties propertiesForRequiredDevice(const std::unique_ptr<MagdaDevice>&
     return device->properties();
 }
 
-class TracktionMidiBufferView final : public DeviceMidiBuffer {
+/**
+ * The edit's tempo sequence, read through the SDK's tempo contract.
+ *
+ * Queried on the audio thread, which is where the compiled devices that need a
+ * BPM have always queried it: the tempo-synced effects each called
+ * `edit.tempoSequence.getBpmAt()` from their own applyToBuffer() before they
+ * were ported (#2192). This changes who holds the reference, not when the call
+ * happens. A snapshot taken on the message thread would be the better contract
+ * and belongs with the state slice rather than with the device ports.
+ */
+class TracktionTempoMapView final : public DeviceTempoMap {
   public:
-    explicit TracktionMidiBufferView(te::MidiMessageArray& midi) : midi_(midi) {}
+    explicit TracktionTempoMapView(te::TempoSequence& tempoSequence)
+        : tempoSequence_(tempoSequence) {}
+
+    double beatsAtSeconds(double seconds) const override {
+        return tempoSequence_.toBeats(tracktion::TimePosition::fromSeconds(seconds)).inBeats();
+    }
+
+    double bpmAtSeconds(double seconds) const override {
+        return tempoSequence_.getBpmAt(tracktion::TimePosition::fromSeconds(seconds));
+    }
+
+  private:
+    te::TempoSequence& tempoSequence_;
+};
+
+/**
+ * A host parameter that asks the device what it is called.
+ *
+ * te::AutomatableParameter holds its name in a const member set at
+ * construction, which is right for a device whose parameters are fixed and
+ * wrong for one that rebinds them: the runtime Faust device recompiles and slot
+ * one stops being "(slot 1)" and starts being "Cutoff". getParameterName() is
+ * virtual, so the name follows the device the same way the value conversion
+ * does.
+ */
+class DeviceParameter final : public te::AutomatableParameter {
+  public:
+    DeviceParameter(const juce::String& paramID, const juce::String& name, te::Plugin& plugin,
+                    juce::NormalisableRange<float> range,
+                    std::shared_ptr<MagdaDevice*> deviceHandle, int index)
+        : te::AutomatableParameter(paramID, name, plugin, std::move(range)),
+          deviceHandle_(std::move(deviceHandle)),
+          index_(index) {}
+
+    juce::String getParameterName() const override {
+        const auto live = liveName();
+        return live.isNotEmpty() ? live : te::AutomatableParameter::getParameterName();
+    }
+
+    juce::String getParameterShortName(int suggestedLength) const override {
+        const auto live = liveName();
+        return live.isNotEmpty() ? live
+                                 : te::AutomatableParameter::getParameterShortName(suggestedLength);
+    }
+
+  private:
+    juce::String liveName() const {
+        auto* device = *deviceHandle_;
+        return device != nullptr ? device->parameterInfo(index_).name : juce::String();
+    }
+
+    std::shared_ptr<MagdaDevice*> deviceHandle_;
+    int index_ = 0;
+};
+
+class TracktionMidiInputView final : public DeviceMidiInput {
+  public:
+    explicit TracktionMidiInputView(const te::MidiMessageArray& midi) : midi_(midi) {}
 
     int size() const override {
         return midi_.size();
@@ -31,30 +99,21 @@ class TracktionMidiBufferView final : public DeviceMidiBuffer {
         return static_cast<std::uint32_t>(midi_[index].mpeSourceID);
     }
 
-    void setEvent(int index, DeviceMidiEvent event) override {
-        midi_[index] = te::MidiMessageWithSource(std::move(event.message),
-                                                 static_cast<te::MPESourceID>(event.sourceId));
+    bool isAllNotesOff() const override {
+        return midi_.isAllNotesOff;
     }
 
-    void removeEvent(int index) override {
-        midi_.remove(index);
-    }
+  private:
+    const te::MidiMessageArray& midi_;
+};
+
+class TracktionMidiOutputView final : public DeviceMidiOutput {
+  public:
+    explicit TracktionMidiOutputView(te::MidiMessageArray& midi) : midi_(midi) {}
 
     void addEvent(DeviceMidiEvent event) override {
         midi_.addMidiMessage(std::move(event.message),
                              static_cast<te::MPESourceID>(event.sourceId));
-    }
-
-    void clear() override {
-        midi_.clear();
-    }
-
-    void sortByTimestamp() override {
-        midi_.sortByTimestamp();
-    }
-
-    bool isAllNotesOff() const override {
-        return midi_.isAllNotesOff;
     }
 
     void setAllNotesOff(bool allNotesOff) override {
@@ -71,12 +130,16 @@ TracktionMagdaDevicePlugin::TracktionMagdaDevicePlugin(const te::PluginCreationI
                                                        std::unique_ptr<MagdaDevice> device)
     : te::Plugin(info),
       device_(std::move(device)),
-      properties_(propertiesForRequiredDevice(device_)) {
+      deviceHandle_(std::make_shared<MagdaDevice*>(device_.get())),
+      properties_(propertiesForRequiredDevice(device_)),
+      dspTimingName_(properties_.pluginId.toStdString() + " dsp") {
+    refreshChannelLayout();
     buildParameters();
     device_->restoreState(state);
 }
 
 TracktionMagdaDevicePlugin::~TracktionMagdaDevicePlugin() {
+    *deviceHandle_ = nullptr;
     notifyListenersOfDeletion();
     for (auto& parameter : parameters_)
         if (parameter)
@@ -100,10 +163,53 @@ juce::String TracktionMagdaDevicePlugin::getSelectableDescription() {
 }
 
 void TracktionMagdaDevicePlugin::initialise(const te::PluginInitialisationInfo& info) {
+    // Parameters first, same rule as reset(): a device that seeds smoothing
+    // state from its parameters in prepare() -- the convolution parks its
+    // wet/dry smoothers on the current mix -- would otherwise read whatever it
+    // was constructed with and audibly ramp to the real values over the first
+    // block.
+    syncParametersToDevice();
+    refreshLiveSourceIds();
+    refreshChannelLayout();
+    // So a normal block's output never allocates on the audio thread.
+    midiOut_.reserve(128);
     device_->prepare({
         .sampleRate = info.sampleRate,
         .maximumBlockSize = info.blockSizeSamples,
     });
+}
+
+void TracktionMagdaDevicePlugin::refreshChannelLayout() {
+    const auto live = device_->properties();
+    ownInputChannels_.store(live.inputChannelCount, std::memory_order_relaxed);
+    sidechainChannels_.store(live.sidechain.takesAudio() ? live.sidechain.channels : 0,
+                             std::memory_order_relaxed);
+}
+
+void TracktionMagdaDevicePlugin::refreshLiveSourceIds() {
+    // Every MIDI input device stamps what it plays with its own MPE source id
+    // (MidiInputDeviceNode), and nothing else in the graph uses those, so this
+    // is exactly the set a device can trust as a player's keys.
+    auto& deviceManager = engine.getDeviceManager();
+    const int numInputs = deviceManager.getNumMidiInDevices();
+    std::vector<std::uint32_t> block;
+    block.reserve(static_cast<size_t>(numInputs) + 1);
+    block.push_back(0);
+    for (int i = 0; i < numInputs; ++i) {
+        if (auto input = deviceManager.getMidiInDevice(i))
+            block.push_back(static_cast<std::uint32_t>(input->getMPESourceID()));
+    }
+    block[0] = static_cast<std::uint32_t>(block.size() - 1);
+
+    // Graphs are rebuilt for far more than a change of MIDI inputs, and an
+    // unchanged list publishes nothing and keeps no further block alive.
+    const auto* current = liveSources_.load(std::memory_order_relaxed);
+    if (current != nullptr && current[0] == block[0] &&
+        std::equal(block.begin() + 1, block.end(), current + 1))
+        return;
+
+    liveSourceBlocks_.push_back(std::move(block));
+    liveSources_.store(liveSourceBlocks_.back().data(), std::memory_order_release);
 }
 
 void TracktionMagdaDevicePlugin::deinitialise() {
@@ -111,23 +217,63 @@ void TracktionMagdaDevicePlugin::deinitialise() {
 }
 
 void TracktionMagdaDevicePlugin::reset() {
+    // Parameters first. A device that seeds smoothing state from one in reset()
+    // -- the sidechain sets its gain follower to wherever the duck currently
+    // sits -- would otherwise read whatever it was constructed with, because
+    // nothing has pushed the host's values into it yet.
+    syncParametersToDevice();
     device_->reset();
 }
 
 void TracktionMagdaDevicePlugin::applyToBuffer(const te::PluginRenderContext& context) {
+    const DeviceTimingScope adapter(properties_.pluginId.toRawUTF8());
     syncParametersToDevice();
 
-    std::optional<TracktionMidiBufferView> midi;
-    if (context.bufferForMidiMessages != nullptr)
-        midi.emplace(*context.bufferForMidiMessages);
+    std::optional<TracktionMidiInputView> midiIn;
+    std::optional<TracktionMidiOutputView> midiOut;
+    if (context.bufferForMidiMessages != nullptr) {
+        midiOut_.clear();
+        midiIn.emplace(*context.bufferForMidiMessages);
+        midiOut.emplace(midiOut_);
+    }
+
+    TracktionTempoMapView tempoMap{edit.tempoSequence};
+
+    // The fork appends the key after the plugin's own inputs, and widens the
+    // buffer only when a source is routed. So the key is whatever this buffer
+    // carries past the device's own width, up to what the device declared.
+    // Split off here, once, rather than told to the device as an offset into
+    // its own buffer (#2329).
+    //
+    // No buffer at all is a parameter-only call, which the fork makes; there is
+    // nothing to split and nothing to hand over.
+    const int totalChannels =
+        context.destBuffer != nullptr ? context.destBuffer->getNumChannels() : 0;
+    const int declaredKey = sidechainChannels_.load(std::memory_order_relaxed);
+    const int declaredOwn = ownInputChannels_.load(std::memory_order_relaxed);
+    const int ownWidth = declaredOwn > 0 ? declaredOwn : std::max(0, totalChannels - declaredKey);
+    const int keyChannels = std::clamp(totalChannels - ownWidth, 0, declaredKey);
+    const int ownChannels = totalChannels - keyChannels;
+
+    // Non-owning views over the same channels: nothing is copied.
+    juce::AudioBuffer<float> ownAudio;
+    const float* const* key = nullptr;
+    if (context.destBuffer != nullptr) {
+        ownAudio.setDataToReferTo(context.destBuffer->getArrayOfWritePointers(), ownChannels,
+                                  context.destBuffer->getNumSamples());
+        if (keyChannels > 0)
+            key = context.destBuffer->getArrayOfReadPointers() + ownChannels;
+    }
+
+    const auto* liveSources = liveSources_.load(std::memory_order_acquire);
 
     DeviceProcessContext deviceContext{
-        .audio = context.destBuffer,
-        .midi = midi ? &*midi : nullptr,
-        // TempoSequence queries are not guaranteed real-time safe. Leave the
-        // optional map absent until the adapter can supply an immutable
-        // message-thread snapshot.
-        .tempoMap = nullptr,
+        .audio = context.destBuffer != nullptr ? &ownAudio : nullptr,
+        .sidechain = key,
+        .numSidechainChannels = keyChannels,
+        .midiIn = midiIn ? &*midiIn : nullptr,
+        .midiOut = midiOut ? &*midiOut : nullptr,
+        .tempoMap = &tempoMap,
         .startSample = context.bufferStartSample,
         .numSamples = context.bufferNumSamples,
         .midiTimeOffsetSeconds = context.midiBufferOffset,
@@ -136,8 +282,28 @@ void TracktionMagdaDevicePlugin::applyToBuffer(const te::PluginRenderContext& co
         .isPlaying = context.isPlaying,
         .isScrubbing = context.isScrubbing,
         .isRendering = context.isRendering,
+        .liveSourceIds = liveSources != nullptr ? liveSources + 1 : nullptr,
+        .numLiveSourceIds = liveSources != nullptr ? static_cast<int>(liveSources[0]) : 0,
     };
-    device_->process(deviceContext);
+    {
+        const DeviceTimingScope dsp(dspTimingName_.c_str());
+        device_->process(deviceContext);
+    }
+
+    if (context.bufferForMidiMessages == nullptr)
+        return;
+
+    if (properties_.producesMidi) {
+        // The buffer leaves as the device's own output, panic flag included; the
+        // raw input reaches the next plugin only by the host's thru merge
+        // (#2345, #2347).
+        context.bufferForMidiMessages->swapWith(midiOut_);
+    } else {
+        // Left in place: that is how this engine carries the raw input past a
+        // device that emits no MIDI. Anything here is output the device never
+        // declared.
+        jassert(midiOut_.size() == 0);
+    }
 }
 
 bool TracktionMagdaDevicePlugin::takesMidiInput() {
@@ -157,7 +323,56 @@ bool TracktionMagdaDevicePlugin::producesAudioWhenNoAudioInput() {
 }
 
 bool TracktionMagdaDevicePlugin::canSidechain() {
-    return properties_.canSidechain;
+    // Live, not cached. Most devices' properties are fixed for their lifetime,
+    // but the runtime Faust device recompiles to a source that declares a
+    // different key, or none, and the host has to follow it. Withdrawing the
+    // declaration also drops the route that fed it, which nothing downstream
+    // would otherwise clear.
+    refreshChannelLayout();
+    const auto live = device_->properties();
+    if (!live.sidechain.takesAudio() && getSidechainSourceID().isValid())
+        setSidechainSourceID({});
+    return live.sidechain.takesAudio();
+}
+
+int TracktionMagdaDevicePlugin::getNumOutputChannelsGivenInputs(int numInputChannels) {
+    const auto outputs = device_->properties().outputChannelCount;
+    return outputs > 0 ? outputs : numInputChannels;
+}
+
+void TracktionMagdaDevicePlugin::getChannelNames(juce::StringArray* inputs,
+                                                 juce::StringArray* outputs) {
+    // The base answers first, and a declared width replaces that side and only
+    // that side. A device that names its inputs and not its outputs (or the
+    // other way round) still gets the host's answer for the half it left alone:
+    // reporting zero channels there would tell the model the device is not
+    // connected to the bus at all.
+    te::Plugin::getChannelNames(inputs, outputs);
+
+    refreshChannelLayout();
+    const auto live = device_->properties();
+
+    const auto sideName = [](int index) { return juce::String(index == 0 ? "Left" : "Right"); };
+
+    // The key is named after the device's own inputs, because that is where the
+    // fork appends it: guessSidechainRouting reads exactly this list to decide
+    // which channels the source lands on. A stereo key is named per side; a
+    // single one is just the key. Outputs never carry one.
+    const int keyChannels = live.sidechain.takesAudio() ? live.sidechain.channels : 0;
+
+    if (inputs != nullptr && live.inputChannelCount > 0) {
+        inputs->clear();
+        for (int index = 0; index < live.inputChannelCount; ++index)
+            inputs->add(sideName(index));
+        for (int key = 0; key < keyChannels; ++key)
+            inputs->add(keyChannels < 2 ? juce::String("Sidechain") : "Sidechain " + sideName(key));
+    }
+
+    if (outputs != nullptr && live.outputChannelCount > 0) {
+        outputs->clear();
+        for (int index = 0; index < live.outputChannelCount; ++index)
+            outputs->add(sideName(index));
+    }
 }
 
 double TracktionMagdaDevicePlugin::getLatencySeconds() {
@@ -165,7 +380,11 @@ double TracktionMagdaDevicePlugin::getLatencySeconds() {
 }
 
 double TracktionMagdaDevicePlugin::getTailLength() const {
-    return properties_.tailLengthSeconds;
+    // Live, not cached: most devices' tails are fixed for their lifetime, but
+    // the convolution's is the length of whatever impulse response is loaded,
+    // and a render that trusted the construction-time snapshot would cut the
+    // reverb at the last note.
+    return device_->properties().tailLengthSeconds;
 }
 
 te::AutomatableParameter* TracktionMagdaDevicePlugin::parameterForDeviceSlot(int slotIndex) const {
@@ -175,14 +394,37 @@ te::AutomatableParameter* TracktionMagdaDevicePlugin::parameterForDeviceSlot(int
 }
 
 void TracktionMagdaDevicePlugin::flushPluginStateToValueTree() {
+    // The host owns parameter values here and the device's copy is only as
+    // fresh as the last block: nothing has pushed into it since construction if
+    // the plugin has not rendered. Without this, flushState() writes those
+    // stale values over what the parameters actually hold (#2315).
+    syncParametersToDevice();
     device_->flushState(state);
     te::Plugin::flushPluginStateToValueTree();
 }
 
 void TracktionMagdaDevicePlugin::restorePluginStateFromValueTree(
     const juce::ValueTree& restoredState) {
-    for (auto& parameterValue : parameterValues_)
-        tracktion::copyPropertiesToCachedValues(restoredState, *parameterValue);
+    // Only the slots the state actually names. copyPropertiesToCachedValues()
+    // would reset every absent one to its factory default, and since #2317 the
+    // model owns parameter values - it pushes them itself - so an authored
+    // state projection carries none at all. Resetting here meant every pattern
+    // edit and every settings edit snapped Rate, Swing and Gate back to their
+    // defaults mid-play (#2335). A slot the state says nothing about keeps
+    // what the model last wrote.
+    for (std::size_t index = 0; index < parameterValues_.size(); ++index) {
+        auto& parameterValue = parameterValues_[index];
+        const auto* property = restoredState.getPropertyPointer(parameterValue->getPropertyID());
+        if (property == nullptr)
+            continue;
+
+        *parameterValue = static_cast<float>(*property);
+        // The parameter caches its value and does not watch the CachedValue, so
+        // without this the restore reached the tree and nothing else -- and the
+        // next syncParametersToDevice() pushed the stale one back (#2315).
+        if (auto& parameter = parameters_[index])
+            parameter->updateFromAttachedValue();
+    }
     syncParametersToDevice();
     device_->restoreState(restoredState);
 }
@@ -192,8 +434,7 @@ void TracktionMagdaDevicePlugin::buildParameters() {
     parameterValues_.reserve(static_cast<std::size_t>(count));
     parameters_.reserve(static_cast<std::size_t>(count));
 
-    for (int index = 0; index < count; ++index) {
-        auto info = device_->parameterInfo(index);
+    for (auto [index, info] : std::views::zip(std::views::iota(0), device_->parameters())) {
         const int stableIndex = info.paramIndex >= 0 ? info.paramIndex : index;
         const auto id = info.stableId.isNotEmpty()
                             ? info.stableId
@@ -203,16 +444,29 @@ void TracktionMagdaDevicePlugin::buildParameters() {
         auto cachedValue = std::make_unique<juce::CachedValue<float>>();
         cachedValue->referTo(state, juce::Identifier(id), getUndoManager(), defaultValue);
 
-        auto parameter = addParam(
-            id, info.name, {0.0f, 1.0f},
-            [info](float value) {
-                return ParameterUtils::formatValue(ParameterUtils::normalizedToReal(value, info),
-                                                   info);
-            },
-            [info](const juce::String& text) {
-                const auto value = ParameterUtils::parseValue(text, info);
-                return value ? ParameterUtils::realToNormalized(*value, info) : 0.0f;
-            });
+        // Read from the device rather than from a copy taken here. Almost every
+        // device's parameter metadata is fixed for its lifetime and the two are
+        // the same thing, but the runtime Faust device rebinds its pool on every
+        // compile: a captured copy would leave the host formatting, parsing and
+        // scaling the slot against a patch that is no longer loaded.
+        const auto live = [handle = deviceHandle_, index, info]() {
+            auto* device = *handle;
+            return device != nullptr ? device->parameterInfo(index) : info;
+        };
+
+        te::AutomatableParameter::Ptr parameter = new DeviceParameter(
+            id, info.name, *this, juce::NormalisableRange<float>{0.0f, 1.0f}, deviceHandle_, index);
+        parameter->valueToStringFunction = [live](float value) {
+            const auto current = live();
+            return ParameterUtils::formatValue(ParameterUtils::normalizedToReal(value, current),
+                                               current);
+        };
+        parameter->stringToValueFunction = [live](const juce::String& text) {
+            const auto current = live();
+            const auto value = ParameterUtils::parseValue(text, current);
+            return value ? ParameterUtils::realToNormalized(*value, current) : 0.0f;
+        };
+        addAutomatableParameter(parameter);
         parameter->attachToCurrentValue(*cachedValue);
 
         parameterValues_.push_back(std::move(cachedValue));
@@ -220,6 +474,18 @@ void TracktionMagdaDevicePlugin::buildParameters() {
     }
 
     syncParametersToDevice();
+}
+
+void TracktionMagdaDevicePlugin::pullParametersFromDevice() {
+    for (int index = 0; index < static_cast<int>(parameters_.size()); ++index) {
+        auto& parameter = parameters_[static_cast<std::size_t>(index)];
+        if (parameter == nullptr)
+            continue;
+
+        const auto value = device_->parameterValue(index);
+        if (parameter->getCurrentValue() != value)
+            parameter->setParameterFromHost(value, juce::sendNotificationSync);
+    }
 }
 
 void TracktionMagdaDevicePlugin::syncParametersToDevice() {

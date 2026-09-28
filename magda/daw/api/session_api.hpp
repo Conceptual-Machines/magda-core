@@ -2,21 +2,38 @@
 
 #include <juce_core/juce_core.h>
 
+#include <cstdint>
+#include <optional>
+#include <vector>
+
+#include "../core/ClipInfo.hpp"
 #include "../core/ClipTypes.hpp"
 #include "../core/TypeIds.hpp"
+#include "../engine/AudioEngine.hpp"
+#include "../project/ProjectInfo.hpp"
 
 namespace magda {
 
+struct SessionSceneState {
+    std::vector<ProjectScene> scenes;
+    SceneId nextSceneId = 1;
+    std::vector<ClipInfo> clips;
+};
+
+struct SessionClipLaunchSettings {
+    LaunchMode launchMode = LaunchMode::Trigger;
+    LaunchQuantize launchQuantize = LaunchQuantize::OneBar;
+    FollowAction followAction = FollowAction::None;
+    double followActionDelayBeats = 0.0;
+    int followActionLoopCount = 1;
+
+    bool operator==(const SessionClipLaunchSettings&) const = default;
+};
+
+enum class PopulatedScenePolicy { Fail, DeleteClips, MoveClips };
+
 /**
- * Abstract view onto session-view playback — clip launching, stopping,
- * scene-launch helpers.
- *
- * v1 surface is action-only: scripts can trigger clips and stop tracks,
- * but state queries (play state, playhead position) are not exposed yet.
- * Adding those requires routing through SessionClipScheduler, which is
- * owned by the live audio engine (not a singleton) and is null in
- * headless test mode. The v1 actions go through ClipManager, which is a
- * singleton and works in headless.
+ * Abstract view onto Session playback and durable scene structure.
  *
  * NOTE: Behaviour matches the UI's "trigger" buttons — calls flow through
  * the same clipPlaybackRequested → SessionClipScheduler → TE LaunchHandle
@@ -58,6 +75,45 @@ class SessionApi {
     /// the id is invalid, the clip isn't a session clip, or the engine
     /// is unavailable.
     virtual SessionClipPlayState getClipPlayState(ClipId clipId) const = 0;
+
+    /// Runtime recording state for an addressed slot. These remain false when
+    /// no live engine is attached (for example in a headless project reader).
+    virtual bool isSlotRecordArmed(TrackId trackId, int sceneIndex) const = 0;
+    virtual bool isSlotRecording(TrackId trackId, int sceneIndex) const = 0;
+
+    /// Engine recording support and transport interaction policy.
+    virtual SessionRecordingCapabilities recordingCapabilities() const = 0;
+
+    /// Set the queued state of an empty addressed slot without toggling it.
+    virtual bool setSlotRecordArmed(TrackId trackId, int sceneIndex, bool armed) = 0;
+
+    /// Ask the engine to begin an already-armed slot take.
+    virtual bool beginSlotRecording(TrackId trackId, int sceneIndex) = 0;
+
+    /// End one slot take. A false commit requests cancellation.
+    virtual bool stopSlotRecording(TrackId trackId, int sceneIndex, bool commit) = 0;
+
+    /// Atomically replace the launch behaviour of one session clip.
+    virtual bool setClipLaunchSettings(ClipId clipId,
+                                       const SessionClipLaunchSettings& settings) = 0;
+
+    /**
+     * Hand one track, or every track when absent, back to arrangement playback.
+     * This is live engine state rather than an undoable project edit.
+     */
+    virtual bool returnToArrangement(std::optional<TrackId> trackId) = 0;
+
+    /// Snapshot/restore boundary used by one-step scene lifecycle commands.
+    virtual SessionSceneState captureSceneState() const = 0;
+    virtual void restoreSceneState(const SessionSceneState& state) = 0;
+
+    virtual SceneId createScene(int index, const juce::String& name, std::uint32_t colourArgb) = 0;
+    virtual bool updateScene(SceneId sceneId, const juce::String& name,
+                             std::uint32_t colourArgb) = 0;
+    virtual bool moveScene(SceneId sceneId, int toIndex) = 0;
+    virtual SceneId duplicateScene(SceneId sceneId, bool copyClips) = 0;
+    virtual bool deleteScene(SceneId sceneId, PopulatedScenePolicy policy,
+                             SceneId destinationSceneId) = 0;
 };
 
 }  // namespace magda

@@ -5,6 +5,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "../../core/DrumGridPads.hpp"
 #include "../../core/RackInfo.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../core/aliases/AutoAliasGenerator.hpp"
@@ -12,7 +13,7 @@
 #include "../PluginWindowBridge.hpp"
 #include "../TrackController.hpp"
 #include "../TracktionHelpers.hpp"
-#include "../Vst3Preset.hpp"
+#include "ExternalPluginState.hpp"
 #include "modifiers/CurveSnapshot.hpp"
 #include "modifiers/ModifierHelpers.hpp"
 #include "modifiers/ModifierSync.hpp"
@@ -136,30 +137,15 @@ void collectValidDevicePaths(const TrackInfo& track, std::set<ChainNodePath>& va
 
 // Capture the VST3 .vstpreset for a device: the class id (stable, cached once)
 // and the current preset blob (refreshed each capture, since the patch changes).
-// One getPreset() call yields both - the class id lives in the preset header.
-// These feed the portable DAWproject deviceID + <State>.
+// These feed the portable DAWproject deviceID + <State>. What they are and how
+// they are read is the same under either engine, so it is stated once
+// (ExternalPluginState.hpp) and this is the incumbent's way in.
 void captureVst3Info(DeviceInfo& devInfo, te::ExternalPlugin* ext) {
     if (ext == nullptr)
         return;
-    auto* pi = ext->getAudioPluginInstance();
-    if (pi == nullptr)
-        return;
 
-    struct PresetVisitor : juce::ExtensionsVisitor {
-        juce::MemoryBlock data;
-        void visitVST3Client(const VST3Client& client) override {
-            data = client.getPreset();
-        }
-    };
-    PresetVisitor visitor;
-    pi->getExtensions(visitor);
-
-    const auto& preset = visitor.data;
-    if (preset.getSize() == 0)
-        return;  // not a VST3 / no preset
-    if (devInfo.vst3ClassId.isEmpty())
-        devInfo.vst3ClassId = vst3::classIdFromPreset(preset);
-    devInfo.vst3Preset = juce::Base64::toBase64(preset.getData(), preset.getSize());
+    if (auto* pi = ext->getAudioPluginInstance())
+        captureVst3Records(*pi, devInfo);
 }
 
 }  // namespace
@@ -179,12 +165,14 @@ PluginManager::PluginManager(te::Engine& engine, te::Edit& edit, TrackController
 
 PluginManager::SyncedDeviceMap::iterator PluginManager::findSyncedDevice(
     const ChainNodePath& devicePath) {
-    return syncedDevices_.find(devicePath);
+    // Entries are keyed by the canonical spelling; the model layer accepts
+    // both spellings of a top-level device, so lookups must too (#2288).
+    return syncedDevices_.find(devicePath.normalized());
 }
 
 PluginManager::SyncedDeviceMap::const_iterator PluginManager::findSyncedDevice(
     const ChainNodePath& devicePath) const {
-    return syncedDevices_.find(devicePath);
+    return syncedDevices_.find(devicePath.normalized());
 }
 
 void PluginManager::prepareForChainElementMove(const ChainNodePath& sourceElementPath,
@@ -245,7 +233,15 @@ te::Plugin::Ptr PluginManager::getPlugin(const ChainNodePath& devicePath) const 
 DeviceProcessor* PluginManager::getDeviceProcessor(const ChainNodePath& devicePath) const {
     juce::ScopedLock lock(pluginLock_);
     auto it = findSyncedDevice(devicePath);
-    return it != syncedDevices_.end() ? it->second.processor.get() : nullptr;
+    if (it == syncedDevices_.end())
+        return nullptr;
+    if (it->second.processor == nullptr) {
+        // The entry exists but async load failed or is still pending: every
+        // host parameter write to this device is currently being dropped.
+        DBG("PluginManager: device " << devicePath.getDeviceId()
+                                     << " has no processor (load failed or pending)");
+    }
+    return it->second.processor.get();
 }
 
 DeviceId PluginManager::getDeviceIdForPlugin(te::Plugin* plugin) const {
@@ -321,7 +317,8 @@ void PluginManager::ensureMidiReceive(const ChainNodePath& devicePath, TrackId s
         return plugin;
     };
 
-    auto configureSidechainDependency = [&](te::Plugin::Ptr plugin, TrackId midiSourceTrackId) {
+    auto configureSidechainDependency = [&](const te::Plugin::Ptr& plugin,
+                                            TrackId midiSourceTrackId) {
         if (!plugin || midiSourceTrackId == trackId)
             return;
 
@@ -450,10 +447,16 @@ void PluginManager::captureAllPluginStates() {
             }
 
             // Always overwrite pluginState (even if empty) to avoid stale state.
+            // A Drum Grid's captured state is its own properties only: its pads
+            // are model state and are not in the tree (#2207).
             devInfo->pluginState = stateStr;
+            if (auto* drumGrid = dynamic_cast<daw::audio::DrumGridPlugin*>(sd.plugin.get()))
+                captureDrumGridPads(devicePath, *drumGrid);
             captureVst3Info(*devInfo, capturedExt);
+            // Model-first: save never copies an internal device's parameter
+            // values back off the engine (#2317).
             if (sd.processor != nullptr)
-                sd.processor->populateParameters(*devInfo);
+                sd.processor->populateParameters(*devInfo, DeviceProcessor::ValueSource::Model);
         }
     }
 
@@ -487,10 +490,12 @@ void PluginManager::capturePluginState(const ChainNodePath& devicePath) {
                                                                              devInfo->pluginState);
     }
 
-    devInfo->pluginState = stateStr;
+    devInfo->pluginState = std::move(stateStr);
+    if (auto* drumGrid = dynamic_cast<daw::audio::DrumGridPlugin*>(plugin))
+        captureDrumGridPads(devicePath, *drumGrid);
     captureVst3Info(*devInfo, capturedExt);
     if (it->second.processor)
-        it->second.processor->populateParameters(*devInfo);
+        it->second.processor->populateParameters(*devInfo, DeviceProcessor::ValueSource::Model);
 }
 
 void PluginManager::removeDrumGridPadDevicesLocked(const ChainNodePath& drumGridPath) {
@@ -510,11 +515,10 @@ void PluginManager::removeDrumGridPadDevicesLocked(const ChainNodePath& drumGrid
 }
 
 bool PluginManager::isDrumGridPadPathLocked(const ChainNodePath& devicePath) const {
-    for (const auto& entry : drumGridPadDevices_) {
-        if (entry.second.find(devicePath) != entry.second.end())
-            return true;
-    }
-    return false;
+    const auto containsDevicePath = [&](const auto& entry) {
+        return entry.second.find(devicePath) != entry.second.end();
+    };
+    return std::ranges::any_of(drumGridPadDevices_, containsDevicePath);
 }
 
 void PluginManager::detachDeviceRuntimeForChainMove(const ChainNodePath& devicePath) {
@@ -569,10 +573,11 @@ void PluginManager::detachRackRuntimeForChainMove(RackId rackId) {
     rackSyncManager_.removeRackForMove(rackId);
 }
 
-void PluginManager::restorePluginState(const ChainNodePath& devicePath, te::Plugin::Ptr plugin) {
+void PluginManager::restorePluginState(const ChainNodePath& devicePath,
+                                       const te::Plugin::Ptr& plugin) {
     auto& tm = TrackManager::getInstance();
     auto* devInfo = tm.getDeviceInChainByPath(devicePath);
-    if (!devInfo || devInfo->pluginState.isEmpty()) {
+    if (!devInfo || !devInfo->hasPluginState()) {
         return;
     }
 
@@ -581,10 +586,8 @@ void PluginManager::restorePluginState(const ChainNodePath& devicePath, te::Plug
     } else if (plugin != nullptr) {
         namespace ta = daw::audio::tracktion_adapter;
         auto savedState = ta::devicePluginTreeFromState(devInfo->pluginState);
-        if (savedState.isValid()) {
+        if (savedState.isValid())
             plugin->restorePluginStateFromValueTree(savedState);
-            ta::applyDeviceStateParameters(*plugin, devInfo->pluginState);
-        }
     }
 }
 
@@ -689,24 +692,15 @@ void PluginManager::validateMappingConsistency() {
         if (owner) {
             if (devicePath.trackId == MASTER_TRACK_ID) {
                 const auto& masterList = edit_.getMasterPluginList();
-                bool foundOnMaster = false;
-                for (int i = 0; i < masterList.size(); ++i) {
-                    if (masterList[i] == sd.plugin.get()) {
-                        foundOnMaster = true;
-                        break;
-                    }
-                }
-                if (foundOnMaster)
+                const auto matchesPlugin = [&](auto i) { return i == sd.plugin.get(); };
+                if (std::ranges::any_of(masterList, matchesPlugin))
                     continue;
             }
 
-            bool found = false;
-            for (auto trackId : trackController_.getAllTrackIds()) {
-                if (trackController_.getAudioTrack(trackId) == owner) {
-                    found = true;
-                    break;
-                }
-            }
+            const auto matchesOwner = [&](auto trackId) {
+                return trackController_.getAudioTrack(trackId) == owner;
+            };
+            const bool found = std::ranges::any_of(trackController_.getAllTrackIds(), matchesOwner);
             if (!found) {
             }
         }
@@ -725,17 +719,13 @@ void PluginManager::validateMappingConsistency() {
     for (auto rackId : syncedRackIds) {
         // Can't easily check trackId without exposing internals, but we can check
         // the rack exists in TrackManager
-        bool found = false;
-        for (const auto& track : TrackManager::getInstance().getTracks()) {
-            for (const auto& element : track.chain.fxChainElements) {
-                if (isRack(element) && getRack(element).id == rackId) {
-                    found = true;
-                    break;
-                }
-            }
-            if (found)
-                break;
-        }
+        const auto rackExists = [rackId](const TrackInfo& track) {
+            const auto matchesRackId = [rackId](const ChainElement& element) {
+                return isRack(element) && getRack(element).id == rackId;
+            };
+            return std::ranges::any_of(track.chain.fxChainElements, matchesRackId);
+        };
+        const bool found = std::ranges::any_of(TrackManager::getInstance().getTracks(), rackExists);
         if (!found) {
         }
     }

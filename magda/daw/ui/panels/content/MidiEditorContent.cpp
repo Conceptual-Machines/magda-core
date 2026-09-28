@@ -4,9 +4,13 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
+#include <optional>
+#include <ranges>
 #include <set>
 
 #include "audio/MidiBridge.hpp"
+#include "core/ClipOperations.hpp"
 #include "core/ClipPropertyCommands.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/TrackManager.hpp"
@@ -19,10 +23,20 @@
 #include "ui/state/TimelineController.hpp"
 #include "ui/state/TimelineEvents.hpp"
 #include "ui/state/TimelineState.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/CursorManager.hpp"
-#include "ui/themes/DarkTheme.hpp"
 
 namespace magda::daw::ui {
+
+namespace {
+
+double projectSignatureBeat() {
+    if (auto* controller = magda::TimelineController::getCurrent())
+        return controller->getState().tempo.signatureBeatLength();
+    return 1.0;
+}
+
+}  // namespace
 
 // Static members — persist across editor switches
 bool MidiEditorContent::velocityDrawerOpen_ = false;
@@ -50,10 +64,10 @@ std::vector<int> MidiEditorContent::collectUsedPitches() const {
     std::set<int> used;
     if (editingClipId_ != magda::INVALID_CLIP_ID) {
         if (const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_))
-            for (const auto& note : clip->midiNotes)
-                used.insert(note.noteNumber);
+            std::ranges::copy(clip->midiNotes | std::views::transform(&magda::MidiNote::noteNumber),
+                              std::inserter(used, used.end()));
     }
-    return std::vector<int>(used.begin(), used.end());
+    return {used.begin(), used.end()};
 }
 
 void MidiEditorContent::rebuildFoldMap() {
@@ -82,79 +96,52 @@ double facadeTimelineLength(const magda::ClipInfo& c, double bpm) {
     return c.getTimelineLength(bpm);
 }
 
-double effectiveLoopLengthSeconds(const magda::ClipInfo& clip, double bpm) {
-    // Timeline beats for either content type, then into timeline seconds.
-    if (const double loopBeats = clip.loopLengthInBeats(bpm); loopBeats > 0.0 && isValidBpm(bpm)) {
-        return loopBeats * 60.0 / bpm;
-    }
-
-    return facadeTimelineLength(clip, bpm);
+// A looped or session clip's ruler shows its content from zero; otherwise it shows the timeline.
+bool rulerShowsTimeline(const magda::ClipInfo& clip, bool relativeMode) {
+    return !relativeMode && !clip.loopEnabled && clip.view != magda::ClipView::Session;
 }
 
-double effectiveLoopStartSeconds(const magda::ClipInfo& clip, double bpm) {
-    const double startBeats = clip.loopStartInBeats(bpm);
-    if (startBeats > 0.0 && isValidBpm(bpm))
-        return startBeats * 60.0 / bpm;
-
-    return 0.0;
+double rulerOriginBeats(const magda::ClipInfo& clip, bool relativeMode) {
+    const double timelineOrigin =
+        rulerShowsTimeline(clip, relativeMode) ? clip.placement.startBeat : 0.0;
+    return timelineOrigin - magda::ClipOperations::getMidiVisibleRange(clip).startBeat;
 }
 
-bool usesRelativeLoopPhaseView(bool relativeMode, const magda::ClipInfo* clip, double bpm) {
-    return relativeMode && clip && clip->loopEnabled &&
-           effectiveLoopLengthSeconds(*clip, bpm) > 0.0;
+// Where the ruler draws the content heard at a timeline beat; nullopt outside the clip.
+std::optional<double> rulerSecondsForTimelineBeat(double timelineBeat, const magda::ClipInfo& clip,
+                                                  double bpm, bool relativeMode) {
+    const auto contentBeat =
+        magda::ClipOperations::contentBeatAtTimelineBeat(clip, timelineBeat, bpm);
+    if (!contentBeat)
+        return std::nullopt;
+    return (rulerOriginBeats(clip, relativeMode) + *contentBeat) * 60.0 / bpm;
 }
 
-// Relative loop mode displays phase within the clip loop. Seeking from that display
-// phase preserves the current global loop cycle instead of jumping to the first cycle.
-double relativeDisplaySecondsForGlobalPlayhead(double globalSeconds, const magda::ClipInfo* clip,
-                                               double bpm, bool relativeMode) {
-    if (!clip || !relativeMode)
-        return globalSeconds;
-
-    const double clipStart = facadeTimelineStart(*clip, bpm);
-    const double clipLength = facadeTimelineLength(*clip, bpm);
-    const double clipEnd = clipStart + clipLength;
-    if (globalSeconds < clipStart || (clipLength > 0.0 && globalSeconds > clipEnd))
-        return -1.0;
-
-    if (!usesRelativeLoopPhaseView(relativeMode, clip, bpm))
-        return globalSeconds - clipStart;
-
-    const double loopStart = effectiveLoopStartSeconds(*clip, bpm);
-    const double loopLength = effectiveLoopLengthSeconds(*clip, bpm);
-    return loopStart + magda::wrapPhase(globalSeconds - clipStart - loopStart, loopLength);
+// Where the ruler draws the content heard at a Session clip-elapsed beat.
+std::optional<double> rulerSecondsForSessionBeat(double elapsedBeat, const magda::ClipInfo& clip,
+                                                 double bpm, bool relativeMode) {
+    const auto contentBeat =
+        magda::ClipOperations::contentBeatAtSessionBeat(clip, elapsedBeat, bpm);
+    if (!contentBeat)
+        return std::nullopt;
+    return (rulerOriginBeats(clip, relativeMode) + *contentBeat) * 60.0 / bpm;
 }
 
-double globalSecondsForRelativeDisplayClick(double displaySeconds, double currentGlobalSeconds,
-                                            const magda::ClipInfo* clip, double bpm,
-                                            bool relativeMode) {
-    if (!clip || !relativeMode)
-        return displaySeconds;
+double timelineBeatForRulerSeconds(double rulerSeconds, double nearTimelineBeat,
+                                   const magda::ClipInfo& clip, double bpm, bool relativeMode) {
+    const double contentBeat = rulerSeconds * bpm / 60.0 - rulerOriginBeats(clip, relativeMode);
+    return magda::ClipOperations::timelineBeatForContentBeat(clip, contentBeat, nearTimelineBeat,
+                                                             bpm);
+}
 
-    const double clipStart = facadeTimelineStart(*clip, bpm);
-    if (!usesRelativeLoopPhaseView(relativeMode, clip, bpm))
-        return clipStart + displaySeconds;
-
-    const double loopStart = effectiveLoopStartSeconds(*clip, bpm);
-    const double loopLength = effectiveLoopLengthSeconds(*clip, bpm);
-    const double phase = magda::wrapPhase(displaySeconds - loopStart, loopLength);
-    const double currentElapsed = currentGlobalSeconds - clipStart;
-    const double cycle =
-        currentElapsed >= loopStart ? std::floor((currentElapsed - loopStart) / loopLength) : 0.0;
-
-    double target = clipStart + loopStart + cycle * loopLength + phase;
-
-    const double clipLength = facadeTimelineLength(*clip, bpm);
-    if (clipLength <= 0.0)
-        return juce::jmax(0.0, target);
-
-    const double clipEnd = clipStart + clipLength;
-    while (target < clipStart)
-        target += loopLength;
-    while (target > clipEnd)
-        target -= loopLength;
-
-    return juce::jlimit(clipStart, clipEnd, target);
+// The edit-position handle stays on a timeline ruler outside the clip, and hides on a content one.
+double rulerHandleSeconds(double timelineBeat, const magda::ClipInfo* clip, double bpm,
+                          bool relativeMode) {
+    if (clip == nullptr)
+        return timelineBeat * 60.0 / bpm;
+    if (const auto seconds = rulerSecondsForTimelineBeat(timelineBeat, *clip, bpm, relativeMode))
+        return *seconds;
+    return rulerShowsTimeline(*clip, relativeMode) ? timelineBeat * 60.0 / bpm : -1.0;
 }
 }  // namespace
 
@@ -166,15 +153,15 @@ VerticalZoomStrip::VerticalZoomStrip(int minValue, int maxValue)
 
 void VerticalZoomStrip::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
-    g.fillAll(magda::DarkTheme::getColour(magda::DarkTheme::BACKGROUND_ALT));
+    g.fillAll(magda::ActiveTheme::getColour(magda::ActiveTheme::BACKGROUND_ALT));
 
-    g.setColour(magda::DarkTheme::getColour(magda::DarkTheme::SEPARATOR));
+    g.setColour(magda::ActiveTheme::getColour(magda::ActiveTheme::SEPARATOR));
     g.drawVerticalLine(bounds.getX(), 0.0f, static_cast<float>(bounds.getBottom()));
     g.drawVerticalLine(bounds.getRight() - 1, 0.0f, static_cast<float>(bounds.getBottom()));
 
     const int centreX = bounds.getCentreX();
     const int centreY = bounds.getCentreY();
-    g.setColour(magda::DarkTheme::getColour(magda::DarkTheme::TEXT_DIM));
+    g.setColour(magda::ActiveTheme::getColour(magda::ActiveTheme::TEXT_DIM));
     for (int y = centreY - 18; y <= centreY + 18; y += 9)
         g.fillEllipse(static_cast<float>(centreX - 1), static_cast<float>(y - 1), 2.0f, 2.0f);
 }
@@ -283,10 +270,11 @@ MidiEditorContent::MidiEditorContent() {
         const auto* clip = editingClipId_ != magda::INVALID_CLIP_ID
                                ? magda::ClipManager::getInstance().getClip(editingClipId_)
                                : nullptr;
-        const double absoluteSeconds = globalSecondsForRelativeDisplayClick(
-            time, state.playhead.getCurrentPosition(), clip, tempo, relativeTimeMode_);
-
-        double positionBeats = absoluteSeconds * tempo / 60.0;
+        double positionBeats =
+            clip ? timelineBeatForRulerSeconds(time, state.playhead.getCurrentPositionBeats(),
+                                               *clip, tempo, relativeTimeMode_)
+                 : time * tempo / 60.0;
+        positionBeats = juce::jmax(0.0, positionBeats);
         if (!bypassSnap)
             positionBeats = snapBeatToGrid(positionBeats);
         controller->dispatch(magda::SetPlayheadPositionBeatsEvent{positionBeats});
@@ -414,8 +402,9 @@ MidiEditorContent::MidiEditorContent() {
         }
     }
 
-    // Initialize grid from clip settings (or auto-compute from zoom)
-    applyClipGridSettings();
+    // Initial grid resolution is applied by each subclass, once its own grid
+    // component exists — onGridResolutionChanged() is virtual, and this base
+    // constructor can't reach a derived override yet (#2391).
 }
 
 MidiEditorContent::~MidiEditorContent() {
@@ -433,23 +422,16 @@ MidiEditorContent::~MidiEditorContent() {
 // ============================================================================
 
 void MidiEditorContent::installMidiNoteMonitor() {
-    auto* engine = magda::TrackManager::getInstance().getAudioEngine();
-    auto* midiBridge = engine != nullptr ? engine->getMidiBridge() : nullptr;
-    if (midiBridge == nullptr)
+    if (midiNoteMonitorInstalled_)
         return;
 
-    if (midiNoteMonitorInstalled_ && monitoredMidiBridge_ == midiBridge)
-        return;
-
-    uninstallMidiNoteMonitor();
-
-    monitoredMidiBridge_ = midiBridge;
-    previousMidiNoteCallback_ = midiBridge->onNoteEvent;
+    auto& midiBridge = magda::MidiBridge::getInstance();
+    previousMidiNoteCallback_ = midiBridge.onNoteEvent;
     juce::Component::SafePointer<MidiEditorContent> safeThis(this);
     auto previousCallback = previousMidiNoteCallback_;
 
-    midiBridge->onNoteEvent = [safeThis, previousCallback](magda::TrackId trackId,
-                                                           const magda::MidiNoteEvent& event) {
+    midiBridge.onNoteEvent = [safeThis, previousCallback](magda::TrackId trackId,
+                                                          const magda::MidiNoteEvent& event) {
         if (previousCallback)
             previousCallback(trackId, event);
 
@@ -462,11 +444,10 @@ void MidiEditorContent::installMidiNoteMonitor() {
 }
 
 void MidiEditorContent::uninstallMidiNoteMonitor() {
-    if (midiNoteMonitorInstalled_ && monitoredMidiBridge_ != nullptr)
-        monitoredMidiBridge_->onNoteEvent = previousMidiNoteCallback_;
+    if (midiNoteMonitorInstalled_)
+        magda::MidiBridge::getInstance().onNoteEvent = previousMidiNoteCallback_;
 
     midiNoteMonitorInstalled_ = false;
-    monitoredMidiBridge_ = nullptr;
     previousMidiNoteCallback_ = nullptr;
 }
 
@@ -689,10 +670,8 @@ void MidiEditorContent::updateTimeRuler() {
 
     if (auto* controller = magda::TimelineController::getCurrent()) {
         const auto& state = controller->getState();
-        double handlePosition = relativeDisplaySecondsForGlobalPlayhead(
-            state.playhead.editPosition, clip, tempo, relativeTimeMode_);
-
-        timeRuler_->setPlayheadHandlePosition(handlePosition);
+        timeRuler_->setPlayheadHandlePosition(
+            rulerHandleSeconds(state.playhead.editPositionBeats, clip, tempo, relativeTimeMode_));
     }
 }
 
@@ -791,21 +770,17 @@ void MidiEditorContent::showOverlayTracksMenu(juce::Component* anchor,
         if (track.id == activeTrackId)
             continue;
 
-        bool hasMidi = false;
-        for (magda::ClipId cid : clipManager.getClipsOnTrack(track.id)) {
+        const auto isMidiClip = [&clipManager](magda::ClipId cid) {
             const auto* clip = clipManager.getClip(cid);
-            if (clip && clip->isMidi()) {
-                hasMidi = true;
-                break;
-            }
-        }
-        if (!hasMidi)
+            return clip != nullptr && clip->isMidi();
+        };
+        const auto clipIds = clipManager.getClipsOnTrack(track.id);
+        if (!std::ranges::any_of(clipIds, isMidiClip))
             continue;
 
         juce::PopupMenu::Item item(track.name);
         item.itemID = static_cast<int>(menuTracks.size()) + 1;
-        item.isTicked = std::find(overlayTrackIds_.begin(), overlayTrackIds_.end(), track.id) !=
-                        overlayTrackIds_.end();
+        item.isTicked = std::ranges::contains(overlayTrackIds_, track.id);
         item.colour = track.colour;
         menu.addItem(item);
         menuTracks.push_back(track.id);
@@ -837,7 +812,7 @@ void MidiEditorContent::showOverlayTracksMenu(juce::Component* anchor,
                 overlayTrackIds_.clear();
             } else if (result >= 1 && result <= static_cast<int>(menuTracks.size())) {
                 const auto trackId = menuTracks[static_cast<size_t>(result - 1)];
-                auto it = std::find(overlayTrackIds_.begin(), overlayTrackIds_.end(), trackId);
+                const auto it = std::ranges::find(overlayTrackIds_, trackId);
                 if (it != overlayTrackIds_.end())
                     overlayTrackIds_.erase(it);
                 else
@@ -865,8 +840,6 @@ void MidiEditorContent::timelineStateChanged(const magda::TimelineState& state,
                                              magda::ChangeFlags changes) {
     // Playhead changes
     if (magda::hasFlag(changes, magda::ChangeFlags::Playhead)) {
-        double playPos = state.playhead.playbackPosition;
-
         // Auto-hide local edit cursor when playback starts
         if (state.playhead.isPlaying && localEditCursorPosition_ >= 0.0) {
             localEditCursorPosition_ = -1.0;
@@ -878,44 +851,35 @@ void MidiEditorContent::timelineStateChanged(const magda::TimelineState& state,
             }
         }
 
-        // Session mode: each clip owns its playhead via ClipInfo::sessionPlayheadPos
         const auto* editClip = (editingClipId_ != magda::INVALID_CLIP_ID)
                                    ? magda::ClipManager::getInstance().getClip(editingClipId_)
                                    : nullptr;
-        if (editClip && editClip->sessionPlayheadPos >= 0.0) {
-            double secondsPerBeat = 60.0 / state.tempo.bpm;
-            playPos = editClip->startTime + editClip->sessionPlayheadPos;
+        double bpm = state.tempo.bpm;
+        if (!isValidBpm(bpm))
+            bpm = DEFAULT_BPM;
 
-            if (editClip->midiOffset > 0.0) {
-                playPos += editClip->midiOffset * secondsPerBeat;
-            }
-        } else {
-            // Arrangement mode: offset playhead by midiOffset (beats → seconds)
-            if (editingClipId_ != magda::INVALID_CLIP_ID) {
-                const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
-                if (clip && clip->midiOffset > 0.0) {
-                    double secondsPerBeat = 60.0 / state.tempo.bpm;
-                    playPos += clip->midiOffset * secondsPerBeat;
+        // Grids receive the real transport beat. Session grids map each selected clip's own
+        // elapsed playhead below; they never fabricate a timeline position from it.
+        const double playheadBeat =
+            state.playhead.isPlaying ? state.playhead.playbackPositionBeats : -1.0;
+
+        setGridPlayheadBeat(playheadBeat);
+        if (timeRuler_) {
+            std::optional<double> rulerSeconds;
+            if (editClip && playheadBeat >= 0.0) {
+                if (editClip->view == magda::ClipView::Session) {
+                    if (editClip->sessionPlayheadPos >= 0.0)
+                        rulerSeconds =
+                            rulerSecondsForSessionBeat(editClip->sessionPlayheadPos * bpm / 60.0,
+                                                       *editClip, bpm, relativeTimeMode_);
+                } else {
+                    rulerSeconds = rulerSecondsForTimelineBeat(playheadBeat, *editClip, bpm,
+                                                               relativeTimeMode_);
                 }
             }
-        }
-
-        // Only show playhead during playback
-        double displayPos = state.playhead.isPlaying ? playPos : -1.0;
-        setGridPlayheadPosition(displayPos);
-        if (timeRuler_) {
-            timeRuler_->setPlayheadPosition(displayPos);
-
-            const auto* clip = editingClipId_ != magda::INVALID_CLIP_ID
-                                   ? magda::ClipManager::getInstance().getClip(editingClipId_)
-                                   : nullptr;
-            double bpm = state.tempo.bpm;
-            if (!isValidBpm(bpm))
-                bpm = DEFAULT_BPM;
-            double handlePosition = relativeDisplaySecondsForGlobalPlayhead(
-                state.playhead.editPosition, clip, bpm, relativeTimeMode_);
-
-            timeRuler_->setPlayheadHandlePosition(handlePosition);
+            timeRuler_->setPlayheadPosition(rulerSeconds.value_or(-1.0));
+            timeRuler_->setPlayheadHandlePosition(rulerHandleSeconds(
+                state.playhead.editPositionBeats, editClip, bpm, relativeTimeMode_));
         }
     }
 
@@ -959,8 +923,9 @@ void MidiEditorContent::updateGridResolution() {
     }
 
     constexpr int minPixelSpacing = 20;
-    double frac = magda::GridConstants::findBeatSubdivision(horizontalZoom_, minPixelSpacing);
-    double newResolution = (frac > 0.0) ? frac : 1.0;
+    double frac = magda::GridConstants::findBeatSubdivision(horizontalZoom_, projectSignatureBeat(),
+                                                            minPixelSpacing);
+    double newResolution = (frac > 0.0) ? frac : projectSignatureBeat();
 
     if (newResolution != gridResolutionBeats_) {
         gridResolutionBeats_ = newResolution;
@@ -968,10 +933,8 @@ void MidiEditorContent::updateGridResolution() {
 
         // Notify BottomPanel to update its num/den display
         if (onAutoGridDisplayChanged) {
-            int den = static_cast<int>(std::round(4.0 / gridResolutionBeats_));
-            if (den < 1)
-                den = 1;
-            onAutoGridDisplayChanged(1, den);
+            const auto [num, den] = magda::GridConstants::noteFraction(gridResolutionBeats_);
+            onAutoGridDisplayChanged(num, den);
         }
     }
 }
@@ -996,9 +959,9 @@ void MidiEditorContent::applyClipGridSettings() {
             if (clip->gridAutoGrid) {
                 // Auto-compute from zoom
                 constexpr int minPixelSpacing = 20;
-                double frac =
-                    magda::GridConstants::findBeatSubdivision(horizontalZoom_, minPixelSpacing);
-                gridResolutionBeats_ = (frac > 0.0) ? frac : 1.0;
+                double frac = magda::GridConstants::findBeatSubdivision(
+                    horizontalZoom_, projectSignatureBeat(), minPixelSpacing);
+                gridResolutionBeats_ = (frac > 0.0) ? frac : projectSignatureBeat();
             } else {
                 // Manual: compute from numerator/denominator
                 gridResolutionBeats_ =
@@ -1012,8 +975,9 @@ void MidiEditorContent::applyClipGridSettings() {
 
     // No clip — fall back to auto-compute from zoom
     constexpr int minPixelSpacing = 20;
-    double frac = magda::GridConstants::findBeatSubdivision(horizontalZoom_, minPixelSpacing);
-    gridResolutionBeats_ = (frac > 0.0) ? frac : 1.0;
+    double frac = magda::GridConstants::findBeatSubdivision(horizontalZoom_, projectSignatureBeat(),
+                                                            minPixelSpacing);
+    gridResolutionBeats_ = (frac > 0.0) ? frac : projectSignatureBeat();
     onGridResolutionChanged();
 }
 

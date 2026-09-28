@@ -188,7 +188,7 @@ class AutomationCurveEditor : public CurveEditorBase,
     // edges would overhang the clip borders into the pads — clip it out.
     void paintCurve(juce::Graphics& g) override;
     void syncSelectionState() override;
-    void rebuildPointComponents() override;
+    void rebuildPointComponents() final;
 
   private:
     AutomationLaneId laneId_;

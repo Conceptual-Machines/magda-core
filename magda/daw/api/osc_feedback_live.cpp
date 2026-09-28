@@ -240,22 +240,17 @@ void OscFeedbackProjector::syncSurfaces() {
     const auto peers = router_.peers().snapshot();
 
     const auto stillThere = [&peers](const Surface& surface) {
-        return std::any_of(peers.begin(), peers.end(), [&surface](const osc::OscPeers::Peer& peer) {
+        const auto answersForSurface = [&surface](const osc::OscPeers::Peer& peer) {
             return peer.answerable && peer.id == surface.peer && peer.host == surface.host;
-        });
+        };
+        return std::ranges::any_of(peers, answersForSurface);
     };
 
     // The host is compared as well as the id. The id alone is enough, since ids
     // are never reused, so this is the assertion that they are not: a surface
     // whose id still matches under a different host would mean the whole echo
     // story had come apart.
-    for (auto it = surfaces_.begin(); it != surfaces_.end();) {
-        if (stillThere(*it)) {
-            ++it;
-            continue;
-        }
-        it = surfaces_.erase(it);
-    }
+    std::erase_if(surfaces_, [&](const Surface& surface) { return !stillThere(surface); });
 
     for (const auto& peer : peers) {
         // A peer that has only ever sent noise is not answered. See `OscPeers`:
@@ -264,10 +259,10 @@ void OscFeedbackProjector::syncSurfaces() {
         if (!peer.answerable)
             continue;
 
-        auto known =
-            std::find_if(surfaces_.begin(), surfaces_.end(), [&peer](const Surface& surface) {
-                return surface.peer == peer.id && surface.host == peer.host;
-            });
+        const auto isPeerSurface = [&peer](const Surface& surface) {
+            return surface.peer == peer.id && surface.host == peer.host;
+        };
+        auto known = std::ranges::find_if(surfaces_, isPeerSurface);
         if (known != surfaces_.end()) {
             if (peer.resumptions != known->resumptions) {
                 known->feedback->requestSnapshot();
@@ -387,6 +382,7 @@ void OscFeedbackProjector::onChanges(const std::vector<remote::ChangeSource::Cha
                 // by the time this arrives.
             case remote::Topic::Clips:
             case remote::Topic::Session:
+            case remote::Topic::Jobs:
             case remote::Topic::Meters:
             case remote::Topic::Playhead:
                 break;
@@ -570,11 +566,7 @@ void OscFeedbackProjector::projectBindings() {
         if (!binding.source.isOsc() || binding.source.oscAddress.isEmpty())
             continue;
 
-        const bool seen = std::any_of(boundValues_.begin(), boundValues_.end(),
-                                      [&binding](const BoundValue& candidate) {
-                                          return candidate.address == binding.source.oscAddress;
-                                      });
-        if (seen)
+        if (std::ranges::contains(boundValues_, binding.source.oscAddress, &BoundValue::address))
             continue;
 
         const auto resolved = resolver.resolve(binding.target);

@@ -284,7 +284,7 @@ OscMessageView OscMessageView::fromOscMessage(const juce::String& address,
         }
     }
 
-    return OscMessageView(juce::StringRef(address), arguments.data(), count);
+    return {juce::StringRef(address), arguments.data(), count};
 }
 
 const OscArgument& OscMessageView::operator[](int index) const {

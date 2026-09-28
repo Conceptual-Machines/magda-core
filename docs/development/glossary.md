@@ -179,7 +179,7 @@ This comprehensive glossary defines all terminology used throughout the MAGDA pr
 - Handles mode state and visual feedback
 
 ### **Themes**
-- **DarkTheme**: Primary dark color scheme
+- **ActiveTheme**: Facade for colours from the active runtime palette
 - **FontManager**: Manages font loading and selection
 - **Colors**: Consistent color palette definition
 

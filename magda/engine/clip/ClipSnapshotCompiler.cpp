@@ -1,6 +1,8 @@
 #include "clip/ClipSnapshotCompiler.hpp"
 
 #include <algorithm>
+#include <atomic>
+#include <tuple>
 #include <unordered_map>
 
 #include "clip/ClipStretcher.hpp"
@@ -12,8 +14,39 @@ namespace magda::engine {
 
 namespace {
 
+/// The model's follow action at the launcher's altitude (#2304). The engine has
+/// no track groups to name, so the model's five actions map across whole.
+SlotFollow compileFollow(const ClipInfo& clip) {
+    const auto action = [&] {
+        switch (clip.followAction) {
+            case magda::FollowAction::None:
+                return SlotAction::none;
+            case magda::FollowAction::PlayNext:
+                return SlotAction::next;
+            case magda::FollowAction::PlayPrevious:
+                return SlotAction::previous;
+            case magda::FollowAction::PlayRandom:
+                return SlotAction::random;
+            case magda::FollowAction::Stop:
+                return SlotAction::stop;
+            case magda::FollowAction::PlayAgain:
+                return SlotAction::again;
+        }
+
+        return SlotAction::none;
+    }();
+
+    return SlotFollow{action, std::max(1, clip.followActionLoopCount),
+                      std::max(0.0, clip.followActionDelayBeats), clip.placement.lengthBeats};
+}
+
 std::string clipLabel(TrackId trackId, ClipId clipId) {
     return "track " + std::to_string(trackId) + " clip " + std::to_string(clipId) + ": ";
+}
+
+/// For what a track says about itself, where there is no clip to name.
+std::string trackLabel(TrackId trackId) {
+    return "track " + std::to_string(trackId) + ": ";
 }
 
 /// A fade curve is a pinned project-file integer, so a value outside the four
@@ -27,12 +60,10 @@ FadeCurve curveFrom(int stored, bool& valid) {
 
 SnapshotSpan spanFromBeats(double startBeat, double endBeat, const TempoMap& tempoMap) {
     SnapshotSpan span;
-    span.startBeat = startBeat;
-    span.endBeat = endBeat;
+    span.beats = {startBeat, endBeat};
     // Both ends converted, never a length scaled: a beat span occupies
     // different seconds depending on where it sits on the tempo curve.
-    span.startSeconds = tempoMap.beatToTime(startBeat);
-    span.endSeconds = tempoMap.beatToTime(endBeat);
+    span.seconds = {tempoMap.beatToTime(startBeat), tempoMap.beatToTime(endBeat)};
     return span;
 }
 
@@ -44,6 +75,9 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
     ClipSnapshot snapshot;
     snapshot.tempoFingerprint = tempoMap.fingerprint();
 
+    static std::atomic<std::uint64_t> serials{0};
+    snapshot.serial = serials.fetch_add(1, std::memory_order_relaxed) + 1;
+
     std::unordered_map<SourceId, const ClipSourceInfo*> sourceById;
     sourceById.reserve(sources.size());
     for (const auto& source : sources)
@@ -52,6 +86,7 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
     for (const auto& lane : lanes) {
         TrackClipPlayback track;
         track.trackId = lane.trackId;
+        track.playbackMode = lane.playbackMode;
 
         // Rejected before anything is resolved, not while resolving. Occlusion
         // and the crossfade queries take every clip in the lane they are given
@@ -147,6 +182,10 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
             audio.clipId = clip.id;
             audio.span = span;
             audio.silenced = std::move(silenced);
+            if (const auto& window = clip.audio().envelopeWindow) {
+                const auto start = clip.placement.startBeat + window->startBeat;
+                audio.envelope = spanFromBeats(start, start + window->lengthBeats, tempoMap);
+            }
 
             // The rule is the model's, the seconds are this map's. Which edge a
             // crossfade covers, and over which beats, comes from
@@ -170,8 +209,11 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
             double fadeIn = fades.xfIn ? crossfadeSeconds(*fades.xfIn) : primary.fadeInSeconds;
             double fadeOut = fades.xfOut ? crossfadeSeconds(*fades.xfOut) : primary.fadeOutSeconds;
 
-            const double clipSeconds = tempoMap.beatToTime(clip.placement.endBeat()) -
-                                       tempoMap.beatToTime(clip.placement.startBeat);
+            const auto& envelope = audio.envelopeSpan();
+            const double clipSeconds = audio.envelope
+                                           ? envelope.seconds.length()
+                                           : tempoMap.beatToTime(clip.placement.endBeat()) -
+                                                 tempoMap.beatToTime(clip.placement.startBeat);
             if (const double total = fadeIn + fadeOut; clipSeconds > 0.0 && total > clipSeconds) {
                 const double scale = clipSeconds / total;
                 fadeIn *= scale;
@@ -182,11 +224,12 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
             audio.fadeOutSeconds = fadeOut;
 
             // Both faces of the same two lengths, converted here because the
-            // audio thread has no tempo map to convert them with. Off the ends
-            // of the audible span rather than of the placement, because that is
-            // what a fade shapes (ClipVoice.hpp).
-            audio.fadeInBeats = tempoMap.timeToBeat(span.startSeconds + fadeIn) - span.startBeat;
-            audio.fadeOutBeats = span.endBeat - tempoMap.timeToBeat(span.endSeconds - fadeOut);
+            // audio thread has no tempo map. A captured window retains the
+            // source envelope, while an ordinary clip uses its audible span.
+            audio.fadeInBeats =
+                tempoMap.timeToBeat(envelope.seconds.start + fadeIn) - envelope.beats.start;
+            audio.fadeOutBeats =
+                envelope.beats.end - tempoMap.timeToBeat(envelope.seconds.end - fadeOut);
 
             // The clip's edges are the primary event's edges, so they carry its
             // curves. A curve that is not one is reported once, below, where
@@ -241,7 +284,8 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
 
                 playback.anchorSamples = event.sourceAnchorSamples;
                 playback.loopStartSamples = event.loopStartSamples;
-                playback.loopLengthSamples = event.loopLengthSamples;
+                playback.loopLengthSamples =
+                    event.resolvedLoopLengthSamples(source->second->sampleRate);
                 playback.loopEnabled = clip.loopEnabled;
 
                 playback.interpBpm = event.interpBpm;
@@ -340,23 +384,122 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
         // Sorted by where they start, ties by id: two compiles of one model
         // have to produce one snapshot, and a lane is held in whatever order
         // the model happens to keep it.
-        const auto byStart = [](const auto& a, const auto& b) {
-            if (a.span.startBeat != b.span.startBeat)
-                return a.span.startBeat < b.span.startBeat;
-            return a.clipId < b.clipId;
+        const auto startThenId = [](const auto& playback) {
+            return std::tuple{playback.span.beats.start, playback.clipId};
         };
-        std::sort(track.audio.begin(), track.audio.end(), byStart);
-        std::sort(track.midi.begin(), track.midi.end(), byStart);
+        std::ranges::sort(track.audio, {}, startThenId);
+        std::ranges::sort(track.midi, {}, startThenId);
 
-        if (!track.audio.empty() || !track.midi.empty())
+        // The slots, each compiled as its own single-clip lane at the origin.
+        //
+        // Recursing rather than repeating: a session clip and an arrangement clip
+        // are the same material and have to sound the same, so the one that is
+        // dragged from a slot onto the timeline cannot go through a second
+        // implementation of fades, warp and events. What a slot changes is where
+        // the material sits, which is nowhere, so the placement is normalised and
+        // everything else is asked of the same compile the arrangement uses.
+        //
+        // Off the audio thread, on the publishing side, so a compile per slot
+        // costs a publish rather than a block.
+        for (const auto& clip : lane.session) {
+            const auto label = clipLabel(lane.trackId, clip.id);
+
+            if (clip.trackId != lane.trackId) {
+                snapshot.diagnostics.push_back(label + "belongs to track " +
+                                               std::to_string(clip.trackId) +
+                                               ", it is not played on this lane");
+                continue;
+            }
+            if (clip.view != ClipView::Session) {
+                snapshot.diagnostics.push_back(
+                    label + "is an arrangement clip in a session lane, it is not played here");
+                continue;
+            }
+            if (clip.sceneIndex < 0) {
+                snapshot.diagnostics.push_back(label + "is a session clip in no scene");
+                continue;
+            }
+            if (!clip.enabled)
+                continue;
+
+            // Nothing writes a session clip's placement: the scene index is its
+            // position and the beat is leftover. Normalised rather than trusted,
+            // so a slot always compiles from the origin, and for one cycle: the
+            // loop region, which is what the launcher retriggers on (#2674).
+            auto normalised = clip;
+            normalised.view = ClipView::Arrangement;
+            normalised.setPlacementBeats(0.0, clip.sessionCycleBeats(tempoMap.bpmAt(0.0)));
+
+            ClipLane slotLane;
+            slotLane.trackId = lane.trackId;
+            slotLane.clips.push_back(normalised);
+
+            auto compiled = compileClipSnapshot({slotLane}, sources, tempoMap, grooves);
+
+            for (auto& diagnostic : compiled.diagnostics)
+                snapshot.diagnostics.push_back(std::move(diagnostic));
+
+            if (compiled.tracks.empty())
+                continue;
+
+            SessionSlotPlayback slot;
+            slot.sceneIndex = clip.sceneIndex;
+            slot.captureSource = {.clipId = clip.id,
+                                  .revision = lane.captureRevisions.contains(clip.id)
+                                                  ? lane.captureRevisions.at(clip.id)
+                                                  : 0};
+            slot.lengthBeats = clip.sessionCycleBeats(tempoMap.bpmAt(0.0));
+            if (clip.loopEnabled)
+                slot.loopBeats = slot.lengthBeats;
+            slot.follow = compileFollow(clip);
+            slot.audio = std::move(compiled.tracks.front().audio);
+            slot.midi = std::move(compiled.tracks.front().midi);
+
+            if (slot.audio.empty() && slot.midi.empty())
+                continue;
+
+            track.session.push_back(std::move(slot));
+        }
+
+        // The empty slots armed to record into (#2464). A slot needs an entry
+        // here to get a launch handle, and recording begins on the beat its
+        // launch fires; there is no clip, so there is nothing to compile.
+        for (const int scene : lane.recordSlots) {
+            const auto label = trackLabel(lane.trackId);
+
+            if (scene < 0) {
+                snapshot.diagnostics.push_back(label + "records into no scene");
+                continue;
+            }
+
+            const auto found =
+                std::ranges::find(track.session, scene, &SessionSlotPlayback::sceneIndex);
+
+            if (found != track.session.end()) {
+                // Already a target means the same scene was armed twice, which
+                // is one slot. A clip in it means the slot is not empty.
+                if (!found->recordTarget)
+                    snapshot.diagnostics.push_back(label + "records into scene " +
+                                                   std::to_string(scene) +
+                                                   ", which already holds a clip");
+                continue;
+            }
+
+            track.session.push_back(SessionSlotPlayback{.sceneIndex = scene, .recordTarget = true});
+        }
+
+        std::ranges::sort(track.session, {}, &SessionSlotPlayback::sceneIndex);
+
+        // A track earns an entry by having something to play, in either view. A
+        // session-only track is a real one: nothing is in its arrangement and
+        // its slots are still waiting to be launched. A record target counts:
+        // it is a slot the user is about to record into.
+        if (!track.audio.empty() || !track.midi.empty() || !track.session.empty())
             snapshot.tracks.push_back(std::move(track));
     }
 
     // ClipSnapshot::find binary searches this.
-    std::sort(snapshot.tracks.begin(), snapshot.tracks.end(),
-              [](const TrackClipPlayback& a, const TrackClipPlayback& b) {
-                  return a.trackId < b.trackId;
-              });
+    std::ranges::sort(snapshot.tracks, {}, &TrackClipPlayback::trackId);
 
     return snapshot;
 }

@@ -4,6 +4,7 @@ declare license "GPL-3.0";
 declare version "1.0";
 
 import("stdfaust.lib");
+msm = library("magda_smoothing.lib");
 
 // ============================================================================
 // User controls
@@ -13,7 +14,7 @@ import("stdfaust.lib");
 // range is 100 Hz to ~10 kHz; above 10 kHz the effect is subtle at typical
 // host rates.
 targetSR = hslider("Rate [unit:Hz] [scale:log] [scaleAnchor:4000] [idx:0]",
-                   8000, 100, 48000, 1) : si.smooth(ba.tau2pole(0.02));
+                   8000, 100, 48000, 1) : msm.smooth(ba.tau2pole(0.02));
 
 // Quantization bit depth. Integer 1..16. No smoothing - integer steps,
 // changes are deliberate.
@@ -23,19 +24,19 @@ bits = hslider("Bits [idx:1]", 8, 1, 16, 1);
 // quantization shifts where the bit boundaries land, giving a different
 // crushed character even at the same bit depth.
 driveDb = hslider("Drive [unit:dB] [idx:2]", 0.0, 0.0, 24.0, 0.1)
-          : si.smooth(ba.tau2pole(0.02));
+          : msm.smooth(ba.tau2pole(0.02));
 
 // Post-crush low-pass cutoff. Tames the aliasing and step harshness.
 // Default 20 kHz means essentially off; lowering it gives a smoother,
 // more "lo-fi cassette" character.
 toneHz = hslider("Tone [unit:Hz] [scale:log] [scaleAnchor:2000] [idx:3]",
-                 20000, 200, 20000, 1) : si.smooth(ba.tau2pole(0.02));
+                 20000, 200, 20000, 1) : msm.smooth(ba.tau2pole(0.02));
 
 mix = hslider("Mix [idx:4]", 1.0, 0.0, 1.0, 0.001)
-      : si.smooth(ba.tau2pole(0.02));
+      : msm.smooth(ba.tau2pole(0.02));
 
 outDb = hslider("Output [unit:dB] [idx:5]", 0.0, -24.0, 12.0, 0.1)
-        : si.smooth(ba.tau2pole(0.02));
+        : msm.smooth(ba.tau2pole(0.02));
 
 // ============================================================================
 // DSP

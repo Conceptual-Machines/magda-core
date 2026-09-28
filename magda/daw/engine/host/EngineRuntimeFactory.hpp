@@ -1,0 +1,199 @@
+#pragma once
+
+#include <juce_audio_formats/juce_audio_formats.h>
+
+#include <functional>
+#include <map>
+#include <memory>
+#include <optional>
+#include <set>
+#include <vector>
+
+#include "EngineTrace.hpp"
+#include "ExternalPluginLoader.hpp"
+#include "clip/ClipSnapshotFeed.hpp"
+#include "clip/ClipStreamFeed.hpp"
+#include "core/DeviceInfo.hpp"
+#include "core/TrackInfo.hpp"
+#include "exec/RuntimeStateStore.hpp"
+#include "io/AudioFileReader.hpp"
+#include "io/LiveInput.hpp"
+#include "io/LiveInsert.hpp"
+#include "launch/SessionLauncher.hpp"
+
+/**
+ * @file EngineRuntimeFactory.hpp
+ * @brief What the app answers when the engine asks for a runtime object.
+ *
+ * The engine knows a section-aware DeviceKey and a TrackId; which plugin that
+ * key is, and which formats this build can decode, are the host's business
+ * (RuntimeStateStore.hpp). This is the host's side of that split, and the only
+ * place in the app that knows both halves.
+ *
+ * Everything here runs on the publishing thread, inside a publish.
+ */
+
+namespace magda::daw::engine_host {
+
+/// Opens the files a snapshot names. The one thing the engine leaves entirely
+/// to the host: a snapshot carries paths because that is what the model has.
+class EngineFileReaders final : public engine::AudioFileReaderFactory {
+  public:
+    EngineFileReaders();
+
+    std::unique_ptr<engine::AudioFileReader> open(const std::string& path) override;
+
+  private:
+    juce::AudioFormatManager formats_;
+};
+
+/**
+ * @brief The runtime objects behind a live plan's leaf ops.
+ *
+ * Built before the session it serves, because the session takes it by
+ * reference, so the feeds it hands its sources arrive afterwards through
+ * @ref attach. Asking for a source before that returns null, which the executor
+ * reports as an unbound op rather than treating as silence.
+ */
+class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
+  public:
+    /**
+     * @brief Store the feeds that sources created here read from.
+     *
+     * Call once, before the first publish. Each feed outlives every source
+     * bound into a plan.
+     */
+    void attach(engine::ClipSnapshotFeed& clips, engine::ClipStreamFeed& streams,
+                engine::LaunchHandleFeed& handles, const engine::LiveInputFeed& liveInputs,
+                engine::LiveOutputFeed& liveOutputs);
+
+    /// Where a hardware insert's device names are on the open interface, or nothing
+    /// for an end this machine cannot resolve (#2279).
+    using InsertRouter = std::function<std::optional<engine::LiveInsertRoute>(const InsertConfig&)>;
+
+    /// What stands in for the live insert while something needs another in its place,
+    /// such as a capture pass. Handed the live one, which it may keep.
+    using InsertWrapper = std::function<std::unique_ptr<engine::EngineInsert>(
+        engine::DeviceKey, std::unique_ptr<engine::EngineInsert>)>;
+
+    void routeInsertsWith(InsertRouter router) {
+        routeInsert_ = std::move(router);
+    }
+
+    void wrapInsertsWith(InsertWrapper wrapper) {
+        wrapInsert_ = std::move(wrapper);
+    }
+
+    /// Build every insert again at the next publish: the interface, its latency, or
+    /// what wraps an insert has changed.
+    void rerouteInserts();
+
+    bool holdsInserts() const {
+        return !insertsBuilt_.empty();
+    }
+
+    /// Whether an insert the store holds was built from a config the model has since
+    /// changed. A name or a latency moves no op, so the plan alone cannot say.
+    bool insertsMoved(const std::vector<TrackInfo>& tracks, const TrackInfo& master) const;
+
+    /**
+     * @brief What the model holds now, for the publish about to happen.
+     *
+     * Devices are asked for by key during publish(), and the key alone says
+     * nothing about which plugin it is. Refreshed rather than looked up live so
+     * that every device a publish creates comes from one reading of the model.
+     */
+    void setModel(const std::vector<TrackInfo>& tracks, const TrackInfo& master);
+
+    /// Devices the model names that no catalog could build, by display name.
+    /// Read after a publish. External plugins are not among them: they are not
+    /// built from a catalog at all (#2566).
+    const std::vector<juce::String>& unbuilt() const {
+        return unbuilt_;
+    }
+
+    /// Where external plugins come from. Set before the first publish; without
+    /// one every external device in the project stays unbound, which the
+    /// executor renders as a pass-through.
+    void loadExternalsWith(ExternalPluginLoader& loader) {
+        externals_ = &loader;
+    }
+
+    /// External plugins this publish is still waiting on. A plan with unbound
+    /// device ops and none of these is a plan whose plugins are not coming.
+    std::size_t loadingExternals() const {
+        return externals_ != nullptr ? externals_->loading() : 0;
+    }
+
+    /// Record what reaches every device this makes from now on (#2568). Set
+    /// before the first publish, and only when the trace is switched on: a
+    /// device already made is not wrapped retrospectively.
+    void traceInto(EngineTrace& trace) {
+        trace_ = &trace;
+    }
+
+    /**
+     * @brief Every key in the model that names an external plugin, in key order.
+     *
+     * Read from the model @ref setModel was given, so it matches the devices
+     * this factory built (#2581).
+     */
+    std::vector<engine::DeviceKey> externalKeys() const;
+
+    /** @brief Whether @p key names an external plugin in the model. */
+    bool isExternalKey(engine::DeviceKey key) const;
+
+    /// Nothing the store holds belongs to the model any more: the project was
+    /// cleared and DeviceIds start from 1 again (#2572). Called at the
+    /// teardown, which the next publish is too late to see.
+    void forgetBuiltDevices();
+
+    std::unique_ptr<engine::EngineDevice> createDevice(engine::DeviceKey key) override;
+    std::set<engine::DeviceKey> devicesToRebuild() override;
+    std::unique_ptr<engine::LevelTap> createMeter(const engine::OpKey& key) override;
+    std::unique_ptr<engine::NoteOnTap> createNoteOnTap(const engine::OpKey& key) override;
+    std::unique_ptr<engine::EngineAudioSource> createClipAudioSource(TrackId trackId) override;
+    std::unique_ptr<engine::EngineMidiSource> createClipMidiSource(TrackId trackId) override;
+    std::unique_ptr<engine::EngineAudioSource> createSessionAudioSource(TrackId trackId) override;
+    std::unique_ptr<engine::EngineMidiSource> createSessionMidiSource(TrackId trackId) override;
+
+    /// The published routing supplies what the track hears (LiveRouting.hpp).
+    std::unique_ptr<engine::EngineAudioSource> createAudioInput(TrackId trackId) override;
+    std::unique_ptr<engine::EngineMidiSource> createMidiInput(TrackId trackId) override;
+
+    std::unique_ptr<engine::EngineInsert> createInsert(engine::DeviceKey key) override;
+
+  private:
+    std::unique_ptr<engine::EngineDevice> handOver(engine::DeviceKey key, const DeviceInfo& model,
+                                                   std::unique_ptr<engine::EngineDevice> device);
+    std::unique_ptr<engine::EngineAudioSource> audioSource(TrackId trackId,
+                                                           engine::Section section);
+    std::unique_ptr<engine::EngineMidiSource> midiSource(TrackId trackId, engine::Section section);
+
+    engine::ClipSnapshotFeed* clips_ = nullptr;
+    engine::ClipStreamFeed* streams_ = nullptr;
+    engine::LaunchHandleFeed* handles_ = nullptr;
+    const engine::LiveInputFeed* liveInputs_ = nullptr;
+    engine::LiveOutputFeed* liveOutputs_ = nullptr;
+    InsertRouter routeInsert_;
+    InsertWrapper wrapInsert_;
+
+    /// Which config each insert was built or last tried from, like @ref built_ for devices.
+    std::map<engine::DeviceKey, juce::String> insertsBuilt_;
+
+    std::map<engine::DeviceKey, DeviceInfo> devices_;
+
+    /// Which device each key's live instance was built from. Kept for a key
+    /// the model drops, since only a publish that succeeded evicts one; that
+    /// is an entry and a short string per DeviceKey ever realised.
+    std::map<engine::DeviceKey, juce::String> built_;
+
+    /// What the next publish must rebuild.
+    std::set<engine::DeviceKey> rebuild_;
+
+    std::vector<juce::String> unbuilt_;
+    EngineTrace* trace_ = nullptr;
+    ExternalPluginLoader* externals_ = nullptr;
+};
+
+}  // namespace magda::daw::engine_host

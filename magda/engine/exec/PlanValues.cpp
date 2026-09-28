@@ -5,6 +5,8 @@
 #include <set>
 #include <unordered_map>
 
+#include "core/ChainWalk.hpp"
+#include "core/DrumGridPads.hpp"
 #include "core/RackInfo.hpp"
 #include "core/TrackInfo.hpp"
 #include "param/ParamTableCompiler.hpp"
@@ -59,25 +61,6 @@ float faderPositionToGain(float position) {
 /// discover one.
 constexpr int kMaxTrackWalk = 64;
 
-const RackInfo* findRackIn(const std::vector<ChainElement>& elements, RackId rackId);
-
-const RackInfo* findRackIn(const RackInfo& rack, RackId rackId) {
-    if (rack.id == rackId)
-        return &rack;
-    for (const auto& chain : rack.chains)
-        if (const auto* found = findRackIn(chain.elements, rackId))
-            return found;
-    return nullptr;
-}
-
-const RackInfo* findRackIn(const std::vector<ChainElement>& elements, RackId rackId) {
-    for (const auto& element : elements)
-        if (isRack(element))
-            if (const auto* found = findRackIn(getRack(element), rackId))
-                return found;
-    return nullptr;
-}
-
 const ChainInfo* findChain(const RackInfo& rack, ChainId chainId) {
     const auto found = std::ranges::find_if(
         rack.chains, [chainId](const ChainInfo& chain) { return chain.id == chainId; });
@@ -100,12 +83,21 @@ const DeviceInfo* findDeviceIn(const std::vector<PostFxChainElement>& elements, 
 
 /// Whether a rack chain is in the mix. Solo is relative to its siblings, which
 /// is why chain activity cannot be answered from the chain alone.
+///
+/// A pad rack counts solo only on pads that have something to run. That is the
+/// Drum Grid's own rule, and it matters because removing a pad's last plugin
+/// leaves the chain behind: an empty soloed pad would otherwise silence every
+/// populated pad beside it, where the device plays them.
 bool isChainActive(const RackInfo& rack, const ChainInfo& chain) {
     if (chain.muted)
         return false;
-    const auto anySolo =
-        std::ranges::any_of(rack.chains, [](const ChainInfo& c) { return c.solo; });
-    return !anySolo || chain.solo;
+
+    const auto counts = [pads = isPadRackId(rack.id)](const ChainInfo& c) {
+        return c.solo && (!pads || !c.elements.empty());
+    };
+
+    const auto anySolo = std::ranges::any_of(rack.chains, counts);
+    return !anySolo || counts(chain);
 }
 
 class Resolver {
@@ -135,8 +127,14 @@ class Resolver {
     }
 
     /// The rack an op's key names, wherever it is nested.
-    const RackInfo* findRack(const TrackInfo& track, RackId rackId) const {
-        return findRackIn(track.chain.fxChainElements, rackId);
+    ///
+    /// Pads entered: a pad rack hangs off its device rather than sitting in the
+    /// chain, and its chains carry mute, solo and a fader like any other's.
+    static const RackInfo* findRack(const TrackInfo& track, RackId rackId) {
+        return chain_walk::findRack(
+            track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
+            chain_walk::Pads::Enter,
+            [rackId](const RackInfo& rack, const ChainNodePath&) { return rack.id == rackId; });
     }
 
     /// The device an op's key names: a track-level device sits in one of the
@@ -170,8 +168,22 @@ class Resolver {
     /// outer chain disconnected.
     void collectSilencedRacks(const std::vector<ChainElement>& elements, bool insideInactiveChain) {
         for (const auto& element : elements) {
-            if (!isRack(element))
+            if (!isRack(element)) {
+                // A pad rack hangs off its device rather than sitting in the
+                // chain, and an inactive chain silences its pads the same way it
+                // silences a nested rack's chains. Without this a Drum Grid in a
+                // muted chain keeps its pad devices running behind a silent
+                // fader, advancing tails and publishing meters.
+                if (const auto& device = getDevice(element); device.pads) {
+                    const auto& pads = *device.pads.get();
+                    if (insideInactiveChain)
+                        silencedRacks_.insert(pads.id);
+                    for (const auto& pad : pads.chains)
+                        collectSilencedRacks(pad.elements,
+                                             insideInactiveChain || !isChainActive(pads, pad));
+                }
                 continue;
+            }
 
             const auto& rack = getRack(element);
             if (insideInactiveChain)
@@ -377,6 +389,33 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
             break;
         }
 
+        case OpRole::DeviceSidechainGain: {
+            const auto* device = findDevice(*track, key);
+            if (device == nullptr) {
+                report(id, "no device " + std::to_string(key.deviceId) +
+                               " in the model, leaving its sidechain trim at unity");
+                break;
+            }
+            // A plain multiply on the key, like the slot's own gain trim: no
+            // fader curve and no clamp, because this is a trim rather than a
+            // fader position.
+            const auto gain = decibelsToGain(std::clamp(device->sidechain.gainDb, -60.0f, 24.0f));
+            value.gainLeft = gain;
+            value.gainRight = gain;
+            break;
+        }
+
+        case OpRole::DeviceProcess: {
+            const auto* device = findDevice(*track, key);
+            if (device == nullptr) {
+                report(id, "no device " + std::to_string(key.deviceId) +
+                               " in the model, monitoring its own output");
+                break;
+            }
+            value.listensToSidechain = device->sidechain.listensToKey();
+            break;
+        }
+
         // The two ops the model toggles rather than recompiles. The subtract
         // and the delay feeding it are in every plan, so turning delta solo on
         // is a value away and the dry line has been running all along; what
@@ -445,20 +484,42 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
             break;
         }
 
-        // Sources, sums, merges, differences, devices, meters and the output
-        // carry no value of their own: what they render comes from their
-        // bindings, and what they pass on is whatever reached them.
+        // Silent while the track is not listening to its live audio input. The
+        // input op and its meter are compiled either way, so this flag is the
+        // whole of what the monitor switch moves (#2612).
+        case OpRole::LiveInputGate:
+        // And the same for a route from another track, whether that route is
+        // an ordering edge or a carry: both compile whatever the switch says.
+        case OpRole::InputRouteGate:
+            if (!track->monitorsInput())
+                value.silent = true;
+            break;
+
+        // Sources, sums, merges, differences, meters and the output carry no
+        // value of their own: what they render comes from their bindings, and
+        // what they pass on is whatever reached them.
         case OpRole::ClipAudio:
         case OpRole::ClipMidi:
         case OpRole::LiveAudioInput:
         case OpRole::LiveMidiInput:
+        case OpRole::SessionMidi:
         case OpRole::TrackAudioInput:
         case OpRole::TrackMidiInput:
-        case OpRole::DeviceProcess:
+        // A carry passes its block on unchanged. Whether the track hears it is
+        // the gate's business, which is where the switch already lands.
+        case OpRole::FeedbackSend:
+        case OpRole::FeedbackReturn:
         case OpRole::DeviceMeter:
         case OpRole::ChainMidiMerge:
+        // A note gate's range and transposition are topology, compiled into the
+        // op. What it does read from here is the silence the block above sets
+        // for a chain taken out of the mix, so a muted pad passes no notes
+        // rather than passing them to a silenced fader.
+        case OpRole::PadNoteGate:
+        case OpRole::DeviceInject:
         case OpRole::RackMix:
         case OpRole::RackMidiMix:
+        case OpRole::RackMeter:
         case OpRole::TrackMeter:
         // A modulation tap reads what reached it and has no value of its own.
         // Not even a mute: a modifier following a track is following what that
@@ -510,6 +571,75 @@ void applyLinearPanLaw(float gain, float pan, float& left, float& right) {
     right = gain + panned;
 }
 
+void resolveRequiredOps(const RenderPlan& plan, PlanValues& values) {
+    for (auto& value : values.ops)
+        value.required = true;
+
+    if (values.planFingerprint != planFingerprint(plan) || values.ops.size() != plan.ops.size() ||
+        !validatePlan(plan).empty())
+        return;
+
+    const auto isPureCandidate = [](const PlanOp& op) {
+        switch (op.kind) {
+            case OpKind::Gain:
+            case OpKind::SendTap:
+            case OpKind::MixAudio:
+            case OpKind::Subtract:
+                return true;
+            case OpKind::Fader:
+                return std::ranges::none_of(op.outputs, [](const PortDesc& output) {
+                    return output.kind == SignalKind::Midi;
+                });
+            default:
+                return false;
+        }
+    };
+
+    for (std::size_t i = 0; i < plan.ops.size(); ++i)
+        values.ops[i].required = !isPureCandidate(plan.ops[i]);
+
+    // Walk backwards because a plan is dependency ordered. Stateful and
+    // externally observable ops are roots; pure ops become required only when
+    // an input the consumer actually reads reaches them.
+    for (std::size_t cursor = plan.ops.size(); cursor-- > 0;) {
+        if (!values.ops[cursor].required)
+            continue;
+
+        const auto& op = plan.ops[cursor];
+        const auto& value = values.ops[cursor];
+
+        auto readsInput = [&](std::size_t slot) {
+            if (value.silent) {
+                switch (op.kind) {
+                    case OpKind::MixAudio:
+                    case OpKind::MergeMidi:
+                    case OpKind::MidiNoteGate:
+                    case OpKind::Subtract:
+                    case OpKind::Device:
+                    case OpKind::Gain:
+                    case OpKind::Fader:
+                    case OpKind::SendTap:
+                    case OpKind::Meter:
+                    case OpKind::InsertSend:
+                    case OpKind::Output:
+                        return false;
+                    default:
+                        break;
+                }
+            }
+            if (op.kind == OpKind::Subtract && slot == 1)
+                return value.subtractsDry;
+            return true;
+        };
+
+        for (std::size_t slot = 0; slot < op.inputs.size(); ++slot) {
+            const auto input = op.inputs[slot];
+            if (input.valid() && readsInput(slot))
+                values.ops[static_cast<std::size_t>(input.op)].required = true;
+        }
+    }
+}
+
 std::vector<std::string> resolvePlanValues(const RenderPlan& plan,
                                            const std::vector<TrackInfo>& tracks,
                                            const TrackInfo& master, PlanValues& values,
@@ -531,6 +661,7 @@ std::vector<std::string> resolvePlanValues(const RenderPlan& plan,
     messages.insert(messages.end(), params->diagnostics.begin(), params->diagnostics.end());
 
     values.params = std::move(params);
+    resolveRequiredOps(plan, values);
     return messages;
 }
 

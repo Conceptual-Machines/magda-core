@@ -1,7 +1,9 @@
 #include "exec/RuntimeStateStore.hpp"
 
+#include <algorithm>
 #include <set>
 
+#include "core/ChainWalk.hpp"
 #include "core/RackInfo.hpp"
 #include "core/TrackInfo.hpp"
 #include "param/ParamTable.hpp"
@@ -36,25 +38,22 @@ template <typename Map> void prepareAll(Map& map, const RenderContext& context) 
         object->prepare(context);
 }
 
-void collectDeviceIds(const std::vector<ChainElement>& elements, ChainSegment segment,
-                      std::set<DeviceKey>& out);
-
 void collectDeviceIds(const std::vector<PostFxChainElement>& elements, ChainSegment segment,
                       std::set<DeviceKey>& out) {
     for (const auto& element : elements)
         out.emplace(segment, element.device.id);
 }
 
-void collectDeviceIds(const std::vector<ChainElement>& elements, ChainSegment segment,
-                      std::set<DeviceKey>& out) {
-    for (const auto& element : elements) {
-        if (isDevice(element)) {
-            out.emplace(segment, getDevice(element).id);
-        } else if (isRack(element)) {
-            for (const auto& chain : getRack(element).chains)
-                collectDeviceIds(chain.elements, segment, out);
-        }
-    }
+void collectDeviceIds(const std::vector<ChainElement>& elements, TrackId trackId,
+                      ChainSegment segment, std::set<DeviceKey>& out) {
+    // Pads entered: a pad rack's devices are the user's the same way a nested
+    // rack's are. Bypass and chain power take their ops out of the plan, and a
+    // device named by neither the plan nor this set has its runtime released:
+    // re-enabling would rebuild the plugins and lose their tails and state.
+    chain_walk::forEachDevice(elements, ChainNodePath::trackLevel(trackId), chain_walk::Pads::Enter,
+                              [segment, &out](const DeviceInfo& device, const ChainNodePath&) {
+                                  out.emplace(segment, device.id);
+                              });
 }
 
 /// Whether a Meter op's key still names something the model holds. A meter at a
@@ -99,21 +98,25 @@ bool carries(const ParamTable& table, const ParamKey& key) {
 
 /// Entries whose key nothing in `named` holds any more.
 template <typename Map, typename Ids> std::size_t eraseUnnamed(Map& map, const Ids& named) {
-    std::size_t removed = 0;
-    for (auto entry = map.begin(); entry != map.end();) {
-        if (named.contains(entry->first)) {
-            ++entry;
-            continue;
-        }
-        entry = map.erase(entry);
-        ++removed;
-    }
-    return removed;
+    return std::erase_if(map, [&](const auto& entry) { return !named.contains(entry.first); });
 }
 
 }  // namespace
 
 PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderContext& context) {
+    // Out before anything is realised, so realiseOne() asks the factory again;
+    // kept, because the plan still rendering names them (#2572).
+    for (const auto& key : factory_.devicesToRebuild()) {
+        if (const auto found = devices_.find(key); found != devices_.end()) {
+            retired_.push_back(std::move(found->second));
+            devices_.erase(found);
+        }
+        if (const auto found = inserts_.find(key); found != inserts_.end()) {
+            retiredInserts_.push_back(std::move(found->second));
+            inserts_.erase(found);
+        }
+    }
+
     // A context that has changed is the one case where something already
     // playing is touched, and it is only reachable with the audio device
     // stopped: nothing renders at a sample rate it was not prepared for.
@@ -121,8 +124,11 @@ PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderCont
         prepareAll(devices_, context);
         prepareAll(clipAudio_, context);
         prepareAll(clipMidi_, context);
+        prepareAll(sessionAudio_, context);
+        prepareAll(sessionMidi_, context);
         prepareAll(audioInputs_, context);
         prepareAll(midiInputs_, context);
+        prepareAll(inserts_, context);
     }
     context_ = context;
     hasContext_ = true;
@@ -136,8 +142,14 @@ PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderCont
             case OpKind::Device:
                 if (auto* device =
                         realiseOne(devices_, op.key.deviceKey(), context,
-                                   [this](DeviceKey key) { return factory_.createDevice(key); }))
+                                   [this](DeviceKey key) { return factory_.createDevice(key); })) {
                     bindings.devices[op.key.deviceKey()] = device;
+
+                    auto& owed = devicePanic_[op.key.deviceKey()];
+                    if (owed == nullptr)
+                        owed = std::make_unique<std::atomic<std::uint64_t>>(0);
+                    bindings.deviceMidiPanicEpoch[op.key.deviceKey()] = owed.get();
+                }
                 break;
 
             case OpKind::ClipAudio:
@@ -145,6 +157,10 @@ PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderCont
                         return factory_.createClipAudioSource(id);
                     }))
                     bindings.clipAudio[trackId] = source;
+                if (auto* source = realiseOne(sessionAudio_, trackId, context, [this](TrackId id) {
+                        return factory_.createSessionAudioSource(id);
+                    }))
+                    bindings.sessionAudio[trackId] = source;
                 break;
 
             case OpKind::ClipMidi:
@@ -152,6 +168,13 @@ PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderCont
                         return factory_.createClipMidiSource(id);
                     }))
                     bindings.clipMidi[trackId] = source;
+                break;
+
+            case OpKind::SessionMidi:
+                if (auto* source = realiseOne(sessionMidi_, trackId, context, [this](TrackId id) {
+                        return factory_.createSessionMidiSource(id);
+                    }))
+                    bindings.sessionMidi[trackId] = source;
                 break;
 
             case OpKind::AudioInput:
@@ -168,6 +191,14 @@ PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderCont
                     bindings.midiInputs[trackId] = source;
                 break;
 
+            case OpKind::InsertSend:
+            case OpKind::InsertReturn:
+                if (auto* insert =
+                        realiseOne(inserts_, op.key.deviceKey(), context,
+                                   [this](DeviceKey key) { return factory_.createInsert(key); }))
+                    bindings.inserts[op.key.deviceKey()] = insert;
+                break;
+
             case OpKind::Meter:
                 // Its own path rather than realiseOne's, because a tap has
                 // nothing to prepare: it holds two atomics, and what they mean
@@ -177,6 +208,12 @@ PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderCont
                 // a device switch instead of dropping to silence.
                 if (auto* tap = realiseMeter(op.key))
                     bindings.meters[op.key] = tap;
+                break;
+
+            case OpKind::MergeMidi:
+            case OpKind::MidiNoteGate:
+                if (auto* tap = realiseNoteOnTap(op.key))
+                    bindings.midiTaps[op.key] = tap;
                 break;
 
             default:
@@ -214,6 +251,17 @@ LevelTap* RuntimeStateStore::realiseMeter(const OpKey& key) {
     return meters_.emplace(key, std::move(created)).first->second.get();
 }
 
+NoteOnTap* RuntimeStateStore::realiseNoteOnTap(const OpKey& key) {
+    if (const auto found = noteOnTaps_.find(key); found != noteOnTaps_.end())
+        return found->second.get();
+
+    auto created = factory_.createNoteOnTap(key);
+    if (created == nullptr)
+        return nullptr;
+
+    return noteOnTaps_.emplace(key, std::move(created)).first->second.get();
+}
+
 std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
                                               const RuntimeStateIds& modelIds,
                                               const ParamTable* liveTable) {
@@ -224,12 +272,15 @@ std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
     for (const auto& op : livePlan.ops) {
         switch (op.kind) {
             case OpKind::Device:
+            case OpKind::InsertSend:
+            case OpKind::InsertReturn:
                 keep.devices.insert(op.key.deviceKey());
                 break;
             case OpKind::ClipAudio:
             case OpKind::ClipMidi:
             case OpKind::AudioInput:
             case OpKind::MidiInput:
+            case OpKind::SessionMidi:
                 keep.tracks.insert(op.key.trackId);
                 break;
             case OpKind::Meter:
@@ -248,17 +299,30 @@ std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
 
     std::size_t removed =
         eraseUnnamed(devices_, keep.devices) + eraseUnnamed(clipAudio_, keep.tracks) +
-        eraseUnnamed(clipMidi_, keep.tracks) + eraseUnnamed(audioInputs_, keep.tracks) +
-        eraseUnnamed(midiInputs_, keep.tracks);
+        eraseUnnamed(clipMidi_, keep.tracks) + eraseUnnamed(sessionAudio_, keep.tracks) +
+        eraseUnnamed(sessionMidi_, keep.tracks) + eraseUnnamed(audioInputs_, keep.tracks) +
+        eraseUnnamed(midiInputs_, keep.tracks) + eraseUnnamed(inserts_, keep.devices);
 
-    for (auto entry = meters_.begin(); entry != meters_.end();) {
-        if (isNamed(entry->first, keep)) {
-            ++entry;
-            continue;
-        }
-        entry = meters_.erase(entry);
-        ++removed;
+    // A meter is retained by the live plan naming its op, not by the track or
+    // device the op reads: the key carries where the meter stands, so a rack or
+    // a device that moved leaves a tap at the location it came from, which
+    // nothing writes and a host reading by rack or device id would take for the
+    // live one (#2649). Everything the plan still emits keeps the tap it had,
+    // which is the promise a plan swap makes.
+    std::set<OpKey> liveMeters;
+    std::set<OpKey> liveMidiOps;
+    for (const auto& op : livePlan.ops) {
+        if (op.kind == OpKind::Meter)
+            liveMeters.insert(op.key);
+        else if (op.kind == OpKind::MergeMidi || op.kind == OpKind::MidiNoteGate)
+            liveMidiOps.insert(op.key);
     }
+
+    removed += std::erase_if(
+        meters_, [&liveMeters](const auto& entry) { return !liveMeters.contains(entry.first); });
+    removed += std::erase_if(noteOnTaps_, [&liveMidiOps](const auto& entry) {
+        return !liveMidiOps.contains(entry.first);
+    });
 
     // The live table first and unconditionally, on the same reading the plan
     // gets above. A tap the table carries may be one the executor holds a
@@ -277,6 +341,24 @@ std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
                  isNamed(entry.first, keep));
     });
 
+    // Taps whose track is gone and whose take never started.
+    //
+    // A tap a take is still holding is kept whatever the model says, on the
+    // same reading the live plan gets above: the callback can reach that take
+    // until the caller publishes a set without it, and closing it writes to
+    // the tap. So the rule is the store's rather than an order the caller has
+    // to call in.
+    //
+    // No take is erased here either, for the same reason.
+    removed += std::erase_if(takeTaps_, [&](const auto& entry) {
+        return !keep.tracks.contains(entry.first.trackId) && !takes_.contains(entry.first);
+    });
+
+    // Not earlier: until the swap they were what the live plan named.
+    removed += retired_.size() + retiredInserts_.size();
+    retired_.clear();
+    retiredInserts_.clear();
+
     return removed;
 }
 
@@ -286,9 +368,21 @@ RuntimeStateIds collectRuntimeStateIds(const std::vector<TrackInfo>& tracks,
 
     const auto collectTrack = [&ids](const TrackInfo& track) {
         ids.tracks.insert(track.id);
+
+        // A take may run while the track is armed and has an input of that
+        // material. Arm, not monitorsInput(): a track that is only listening
+        // compiles the same input op, so the plan cannot say when a take ends
+        // (#2465).
+        if (track.takesExternalInput() && track.recordArmed) {
+            if (!track.audioInputDevice.isEmpty())
+                ids.takes.insert(TakeKey{track.id, RecordMaterial::audio});
+            if (!track.midiInputDevice.isEmpty())
+                ids.takes.insert(TakeKey{track.id, RecordMaterial::midi});
+        }
+
         // Every section, and bypass is not consulted anywhere here: a bypassed
         // device is still a device the user owns.
-        collectDeviceIds(track.chain.fxChainElements, ChainSegment::Fx, ids.devices);
+        collectDeviceIds(track.chain.fxChainElements, track.id, ChainSegment::Fx, ids.devices);
         collectDeviceIds(track.chain.postFxChainElements, ChainSegment::PostFx, ids.devices);
         collectDeviceIds(track.chain.mixerAnalysisElements, ChainSegment::MixerAnalysis,
                          ids.devices);
@@ -301,14 +395,179 @@ RuntimeStateIds collectRuntimeStateIds(const std::vector<TrackInfo>& tracks,
     return ids;
 }
 
+std::shared_ptr<const LaunchHandleTable> RuntimeStateStore::publishHandles(
+    const ClipSnapshot& clips, LaunchHandleFeed& feed, LaunchRequestQueue& requests,
+    std::vector<SlotRunEvent>* retired) {
+    auto table = std::make_shared<LaunchHandleTable>();
+
+    for (const auto& track : clips.tracks)
+        for (const auto& slot : track.session) {
+            const SlotKey key{track.trackId, slot.sceneIndex};
+
+            auto& made = handles_[key];
+            if (made.handle == nullptr) {
+                // Counted up rather than reused, so a request stamped against
+                // the handle that was here can never match its replacement.
+                made.handle = std::make_unique<LaunchHandle>();
+                made.incarnation = ++nextIncarnation_;
+                made.tap = std::make_unique<LaunchTap>();
+            }
+
+            table->entries.push_back(LaunchHandleTable::Entry{.key = key,
+                                                              .handle = made.handle.get(),
+                                                              .incarnation = made.incarnation,
+                                                              .tap = made.tap.get(),
+                                                              .runSource = &made.runSource,
+                                                              .follow = slot.follow});
+        }
+
+    // Sorted on arrival, since a snapshot holds tracks by id and slots by
+    // scene. Sorted here anyway: the audio thread's binary search depends on it.
+    std::sort(table->entries.begin(), table->entries.end(),
+              [](const auto& a, const auto& b) { return a.key < b.key; });
+
+    // A clip edit that did not touch the session. Swapping would cost the
+    // callback a wait and change nothing, and nothing was dropped to retire.
+    if (publishedHandles_ != nullptr && publishedHandles_->entries == table->entries)
+        return publishedHandles_;
+
+    publishedHandles_ = table;
+
+    // Before the swap, so a request made from here on carries the incarnation
+    // the table about to go live names, and one made before it is dropped when
+    // it arrives.
+    std::map<SlotKey, std::uint64_t> incarnations;
+    for (const auto& entry : table->entries)
+        incarnations[entry.key] = entry.incarnation;
+
+    requests.setIncarnations(std::move(incarnations));
+
+    // The swap waits for the block the callback is in, so afterwards a handle
+    // this table does not name is unreachable from the audio thread.
+    feed.publish(table);
+
+    // The runs those dropped handles were sounding. Their end is here, on this
+    // thread, because the handle goes before any block could report one; where
+    // it had been advanced to is the end it actually had (#2464).
+    if (retired != nullptr)
+        for (const auto& [key, made] : handles_) {
+            if (table->find(key) != nullptr || made.handle == nullptr)
+                continue;
+
+            const auto played = made.handle->playedMonotonicRange();
+            if (!played)
+                continue;
+
+            retired->push_back(SlotRunEvent{.key = key,
+                                            .kind = SlotRunEvent::Kind::ended,
+                                            .incarnation = made.incarnation,
+                                            .at = made.handle->playedSampleRange()->end,
+                                            .timelineBeat = made.handle->playedRange()->end,
+                                            .monotonicBeat = played->end});
+        }
+
+    // So it can go, here, on this thread. The only thing that knows a slot was
+    // emptied is the snapshot that stopped naming it; a plan publish would not
+    // do, because a clip edit does not compile a plan.
+    std::erase_if(handles_,
+                  [&table](const auto& entry) { return table->find(entry.first) == nullptr; });
+
+    return table;
+}
+
+std::optional<std::uint64_t> RuntimeStateStore::launchIncarnation(const SlotKey& key) const {
+    const auto found = handles_.find(key);
+    if (found == handles_.end() || found->second.handle == nullptr)
+        return std::nullopt;
+    return found->second.incarnation;
+}
+
+LaunchHandle* RuntimeStateStore::findHandle(const SlotKey& key) const {
+    const auto it = handles_.find(key);
+    return it == handles_.end() ? nullptr : it->second.handle.get();
+}
+
+const LaunchTap* RuntimeStateStore::launchTap(const SlotKey& key) const {
+    const auto it = handles_.find(key);
+    return it == handles_.end() ? nullptr : it->second.tap.get();
+}
+
+RecordTap& RuntimeStateStore::realiseTakeTap(const TakeKey& key,
+                                             const RecordTapSettings& settings) {
+    auto& tap = takeTaps_[key];
+    if (tap == nullptr)
+        tap = std::make_unique<RecordTap>(key.material, settings);
+    return *tap;
+}
+
+const RecordTap* RuntimeStateStore::takeTap(const TakeKey& key) const {
+    const auto found = takeTaps_.find(key);
+    return found == takeTaps_.end() ? nullptr : found->second.get();
+}
+
+void RuntimeStateStore::holdTake(const TakeKey& key, std::unique_ptr<TakeCapture> take) {
+    jassert(!takes_.contains(key));
+    takes_[key] = std::move(take);
+}
+
+RecordingTakes RuntimeStateStore::liveTakes() const {
+    RecordingTakes live;
+    live.reserve(takes_.size());
+    for (const auto& [key, take] : takes_)
+        live.push_back(RecordingTake{key, take.get()});
+    return live;
+}
+
+TakeCapture* RuntimeStateStore::take(const TakeKey& key) const {
+    const auto found = takes_.find(key);
+    return found == takes_.end() ? nullptr : found->second.get();
+}
+
+std::vector<TakeKey> RuntimeStateStore::unnamedTakes(const RuntimeStateIds& modelIds) const {
+    std::vector<TakeKey> unnamed;
+    for (const auto& [key, take] : takes_)
+        if (!modelIds.takes.contains(key))
+            unnamed.push_back(key);
+    return unnamed;
+}
+
+RuntimeStateStore::ReleasedTake RuntimeStateStore::releaseTake(const TakeKey& key) {
+    const auto found = takes_.find(key);
+    if (found == takes_.end())
+        return {};
+
+    ReleasedTake released;
+    released.take = std::move(found->second);
+    takes_.erase(found);
+
+    if (const auto tap = takeTaps_.find(key); tap != takeTaps_.end()) {
+        released.tap = std::move(tap->second);
+        takeTaps_.erase(tap);
+    }
+
+    return released;
+}
+
 ValueTap* RuntimeStateStore::valueTap(const ParamKey& key) const {
     const auto found = valueTaps_.find(key);
     return found == valueTaps_.end() ? nullptr : found->second.get();
 }
 
+LevelTap* RuntimeStateStore::meterTap(const OpKey& key) const {
+    const auto found = meters_.find(key);
+    return found == meters_.end() ? nullptr : found->second.get();
+}
+
+std::shared_ptr<EngineDevice> RuntimeStateStore::device(DeviceKey key) const {
+    const auto found = devices_.find(key);
+    return found == devices_.end() ? nullptr : found->second;
+}
+
 std::size_t RuntimeStateStore::size() const {
-    return devices_.size() + clipAudio_.size() + clipMidi_.size() + audioInputs_.size() +
-           midiInputs_.size() + meters_.size() + valueTaps_.size();
+    return devices_.size() + retired_.size() + clipAudio_.size() + clipMidi_.size() +
+           sessionAudio_.size() + sessionMidi_.size() + handles_.size() + audioInputs_.size() +
+           midiInputs_.size() + meters_.size() + noteOnTaps_.size() + valueTaps_.size() +
+           takes_.size() + takeTaps_.size() + inserts_.size() + retiredInserts_.size();
 }
 
 }  // namespace magda::engine

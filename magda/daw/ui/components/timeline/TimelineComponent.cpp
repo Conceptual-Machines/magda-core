@@ -3,13 +3,14 @@
 #include <algorithm>
 #include <cmath>
 
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/CursorManager.hpp"
-#include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "Config.hpp"
 #include "LoopStripRenderer.hpp"
 #include "core/GestureRouter.hpp"
 #include "core/TempoUtils.hpp"
+#include "project/ProjectManager.hpp"
 
 namespace magda {
 
@@ -42,10 +43,10 @@ bool isXVisible(const juce::Graphics& g, int componentWidth, int x) {
 }  // namespace
 
 TimelineComponent::TimelineComponent() {
-    // Load configuration, converting bars → seconds at default tempo
-    auto& config = magda::Config::getInstance();
+    // Load the project value, converting bars → seconds at default tempo.
     TempoState defaultTempo;
-    timelineLength = defaultTempo.barsToTime(config.getDefaultTimelineLengthBars());
+    timelineLength = defaultTempo.barsToTime(
+        ProjectManager::getInstance().getCurrentProjectInfo().timelineLengthBars);
 
     setMouseCursor(juce::MouseCursor::NormalCursor);
     setWantsKeyboardFocus(false);
@@ -173,7 +174,7 @@ void TimelineComponent::timelineStateChanged(const TimelineState& state, ChangeF
 }
 
 void TimelineComponent::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::TIMELINE_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::TIMELINE_BACKGROUND));
 
     // Get layout configuration
     auto& layout = LayoutConfig::getInstance();
@@ -182,13 +183,13 @@ void TimelineComponent::paint(juce::Graphics& g) {
     int arrangementTop = chordHeight;  // Arrangement starts below chord row
 
     auto visibleX = getVisibleXRange(g, getWidth());
-    const float visibleLeft = static_cast<float>(visibleX.getStart());
-    const float visibleRight = static_cast<float>(visibleX.getEnd());
+    const auto visibleLeft = static_cast<float>(visibleX.getStart());
+    const auto visibleRight = static_cast<float>(visibleX.getEnd());
 
     // Draw border for the visible slice only. At deep zoom the timeline component can be
     // millions of pixels wide, and sending that full rectangle to JUCE's software renderer
     // can build pathological edge tables on Linux.
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     if (visibleX.getLength() > 0) {
         g.drawLine(visibleLeft, 0.0f, visibleRight, 0.0f, 1.0f);
         g.drawLine(visibleLeft, static_cast<float>(getHeight() - 1), visibleRight,
@@ -197,14 +198,14 @@ void TimelineComponent::paint(juce::Graphics& g) {
     if (isXVisible(g, getWidth(), 0))
         g.drawLine(0.0f, 0.0f, 0.0f, static_cast<float>(getHeight()), 1.0f);
     if (isXVisible(g, getWidth(), getWidth() - 1)) {
-        float rightEdge = static_cast<float>(getWidth() - 1);
+        auto rightEdge = static_cast<float>(getWidth() - 1);
         g.drawLine(rightEdge, 0.0f, rightEdge, static_cast<float>(getHeight()), 1.0f);
     }
 
     // Show visual feedback when actively zooming
     if (isZooming) {
         // Slightly brighten the background when zooming
-        g.setColour(DarkTheme::getColour(DarkTheme::TIMELINE_BACKGROUND).brighter(0.1f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TIMELINE_BACKGROUND).brighter(0.1f));
         g.fillRect(g.getClipBounds());
     }
 
@@ -219,7 +220,7 @@ void TimelineComponent::paint(juce::Graphics& g) {
     // Draw separator line between arrangement and time ruler only when the
     // optional arrangement strip has visible height.
     if (arrangementHeight > 0) {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).brighter(0.3f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).brighter(0.3f));
         g.drawLine(visibleLeft, static_cast<float>(arrangementTop + arrangementHeight),
                    visibleRight, static_cast<float>(arrangementTop + arrangementHeight), 1.0f);
     }
@@ -286,13 +287,13 @@ double TimelineComponent::timeToBars(double timeInSeconds) const {
     // Calculate total beats
     double totalBeats = timeInSeconds * beatsPerSecond;
     // Convert to bars (considering time signature)
-    double bars = totalBeats / timeSignatureNumerator;
+    double bars = totalBeats / getBeatsPerBar();
     return bars;
 }
 
 double TimelineComponent::barsToTime(double bars) const {
     // Convert bars to beats
-    double totalBeats = bars * timeSignatureNumerator;
+    double totalBeats = bars * getBeatsPerBar();
     // Calculate seconds per beat
     double secondsPerBeat = 60.0 / tempoBPM;
     return totalBeats * secondsPerBeat;
@@ -315,12 +316,13 @@ juce::String TimelineComponent::formatTimePosition(double timeInSeconds) const {
         double beatsPerSecond = tempoBPM / 60.0;
         double totalBeats = timeInSeconds * beatsPerSecond;
 
-        int bar = static_cast<int>(totalBeats / timeSignatureNumerator) + 1;
-        int beatInBar = static_cast<int>(std::fmod(totalBeats, timeSignatureNumerator)) + 1;
+        const double sigBeat = getSignatureBeatLength();
+        int bar = static_cast<int>(totalBeats / getBeatsPerBar()) + 1;
+        int beatInBar = static_cast<int>(std::fmod(totalBeats, getBeatsPerBar()) / sigBeat) + 1;
 
-        // Subdivision (16th notes within the beat)
-        double beatFraction = std::fmod(totalBeats, 1.0);
-        int subdivision = static_cast<int>(beatFraction * 4) + 1;  // 1-4 for 16th notes
+        // Subdivision (16th notes within the signature's beat)
+        double beatFraction = std::fmod(totalBeats, sigBeat);
+        int subdivision = static_cast<int>(beatFraction * 4) + 1;
 
         return juce::String(bar) + "." + juce::String(beatInBar) + "." + juce::String(subdivision);
     }
@@ -442,7 +444,7 @@ void TimelineComponent::mouseDown(const juce::MouseEvent& event) {
             selectedSectionIndex = sectionIndex;
 
             // Check if clicking on section edge for resizing
-            bool isStartEdge;
+            bool isStartEdge = false;
             if (isOnSectionEdge(event.x, sectionIndex, isStartEdge)) {
                 isDraggingEdge = true;
                 isDraggingStart = isStartEdge;
@@ -476,7 +478,7 @@ void TimelineComponent::mouseMove(const juce::MouseEvent& event) {
         if (!arrangementLocked) {
             int sectionIndex = findSectionAtPosition(event.x, event.y);
             if (sectionIndex >= 0) {
-                bool isStartEdge;
+                bool isStartEdge = false;
                 if (isOnSectionEdge(event.x, sectionIndex, isStartEdge)) {
                     setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
                     return;
@@ -678,7 +680,7 @@ void TimelineComponent::mouseDoubleClick(const juce::MouseEvent& event) {
             // Edit section name (simplified - in real app would show text editor)
             auto& section = *sections[sectionIndex];
             juce::String newName = "Section " + juce::String(sectionIndex + 1);
-            section.name = newName;
+            section.name = std::move(newName);
 
             if (onSectionChanged) {
                 onSectionChanged(sectionIndex, section);
@@ -844,8 +846,8 @@ void TimelineComponent::drawMarkerGuides(juce::Graphics& g) {
 
     auto visibleX = getVisibleXRange(g, getWidth());
     // Span the bars ruler from the label row down to the ticks.
-    const float top = static_cast<float>(rulerTop);
-    const float bottom = static_cast<float>(rulerBottom);
+    const auto top = static_cast<float>(rulerTop);
+    const auto bottom = static_cast<float>(rulerBottom);
     const int selectedMarkerId =
         timelineListener_.get() ? timelineListener_.get()->getState().selectedMarkerId : 0;
 
@@ -887,7 +889,7 @@ void TimelineComponent::drawBarNumberLabel(juce::Graphics& g, const juce::String
         for (const auto& marker : markers_) {
             const int mx = beatsToPixel(marker.positionBeats) + LayoutConfig::TIMELINE_LEFT_PADDING;
             if (std::abs(mx - x) <= boxW / 2.0f + 1.0f) {
-                auto bg = DarkTheme::getColour(DarkTheme::TIMELINE_BACKGROUND);
+                auto bg = ActiveTheme::getColour(ActiveTheme::TIMELINE_BACKGROUND);
                 g.setColour(isZooming ? bg.brighter(0.1f) : bg);
                 g.fillRoundedRectangle(static_cast<float>(x) - boxW / 2.0f,
                                        static_cast<float>(labelY) - vPad, boxW, boxH, 3.0f);
@@ -896,7 +898,7 @@ void TimelineComponent::drawBarNumberLabel(juce::Graphics& g, const juce::String
         }
     }
 
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     g.drawText(text, x - 35, labelY, 70, labelHeight, juce::Justification::centredTop);
 }
 
@@ -932,7 +934,7 @@ void TimelineComponent::drawSecondsBandLabel(juce::Graphics& g, int x, const juc
                                              bool isFirstBar) {
     const auto rows = rulerRows();
 
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     g.setFont(FontManager::getInstance().getUIFont(9.0f));
 
     // Bar 1 is pinned at the left padding (you can't scroll past it), so its
@@ -973,7 +975,7 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
     // Faint grey separators between the rows.
     {
         const auto vx = getVisibleXRange(g, getWidth());
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.5f));
         auto sep = [&](int y) {
             g.drawLine(static_cast<float>(vx.getStart()), static_cast<float>(y),
                        static_cast<float>(vx.getEnd()), static_cast<float>(y), 1.0f);
@@ -987,7 +989,7 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
     // Loop edges are marked only by the triangular flags in the loop strip; the
     // ruler ticks are never recoloured at loop boundaries.
 
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     g.setFont(FontManager::getInstance().getUIFont(static_cast<float>(labelFontSize)));
 
     const int minPixelSpacing = layout.minGridPixelSpacing;
@@ -1041,8 +1043,8 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
 
                 int tickHeight = isMajor ? majorTickHeight : minorTickHeight;
 
-                g.setColour(DarkTheme::getColour(isMajor ? DarkTheme::TEXT_SECONDARY
-                                                         : DarkTheme::TEXT_DIM));
+                g.setColour(ActiveTheme::getColour(isMajor ? ActiveTheme::TEXT_SECONDARY
+                                                           : ActiveTheme::TEXT_DIM));
                 g.drawLine(static_cast<float>(x), static_cast<float>(tickBottom - tickHeight),
                            static_cast<float>(x), static_cast<float>(tickBottom), 1.0f);
 
@@ -1075,7 +1077,7 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                         }
                     }
 
-                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
                     g.drawText(timeStr, x - 35, labelY, 70, labelHeight,
                                juce::Justification::centredTop);
                 }
@@ -1084,19 +1086,19 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
     } else {
         // ===== BARS/BEATS MODE =====
         // Everything in beats — zoom is pixels per beat (ppb)
+        const double barLengthBeats = getBeatsPerBar();
+        const double sigBeat = getSignatureBeatLength();
         double markerIntervalBeats = GridConstants::computeGridInterval(
-            gridQuantize, pixelsPerBeat, timeSignatureNumerator, minPixelSpacing);
-
-        double barLengthBeats = static_cast<double>(timeSignatureNumerator);
+            gridQuantize, pixelsPerBeat, barLengthBeats, sigBeat, minPixelSpacing);
 
         // Check if grid interval aligns with bar and beat boundaries
         bool alignsWithBars =
             GridConstants::gridAlignsWithBars(markerIntervalBeats, barLengthBeats);
-        bool alignsWithBeats = GridConstants::gridAlignsWithBeats(markerIntervalBeats);
+        bool alignsWithBeats = GridConstants::gridAlignsWithBeats(markerIntervalBeats, sigBeat);
         bool gridAligned = alignsWithBars && alignsWithBeats;
 
         // Pixel spacings directly from zoom (no seconds conversion)
-        double beatPixelSpacing = pixelsPerBeat;
+        double beatPixelSpacing = pixelsPerBeat * sigBeat;
         double pixelsPerBar = pixelsPerBeat * barLengthBeats;
         double pixelsPerSubdiv = pixelsPerBeat * markerIntervalBeats;
 
@@ -1167,11 +1169,11 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                 double totalBeats = beat;
                 double beatInBarFractional = std::fmod(totalBeats, barLengthBeats);
 
-                auto [isBarStart, isBeatStart] =
-                    GridConstants::classifyBeatPosition(beatInBarFractional, barLengthBeats);
+                auto [isBarStart, isBeatStart] = GridConstants::classifyBeatPosition(
+                    beatInBarFractional, barLengthBeats, sigBeat);
 
-                int bar = static_cast<int>(totalBeats / timeSignatureNumerator) + 1;
-                int beatInBar = static_cast<int>(beatInBarFractional) + 1;
+                int bar = static_cast<int>(totalBeats / barLengthBeats) + 1;
+                int beatInBar = static_cast<int>(beatInBarFractional / sigBeat) + 1;
                 if (beatInBarFractional > (barLengthBeats - 0.001)) {
                     bar += 1;
                     beatInBar = 1;
@@ -1183,11 +1185,12 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                                          : (isMedium ? (majorTickHeight * 2 / 3) : minorTickHeight);
 
                 if (isMajor) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
                 } else if (isMedium) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.7f));
+                    g.setColour(
+                        ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.7f));
                 } else {
-                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
                 }
                 g.drawLine(static_cast<float>(x), static_cast<float>(tickBottom - tickHeight),
                            static_cast<float>(x), static_cast<float>(tickBottom), 1.0f);
@@ -1196,7 +1199,7 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                 // Only bars, beats, and 16th notes get labels. Finer ticks = no label.
                 constexpr double k16th = 0.25;
                 constexpr double eps = 0.001;
-                double subdivInBeat = std::fmod(beatInBarFractional, 1.0);
+                double subdivInBeat = std::fmod(beatInBarFractional, sigBeat);
 
                 // Check if this tick falls on a 16th-note boundary
                 double pos16th = subdivInBeat / k16th;
@@ -1208,12 +1211,12 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                     if (showSecondsRow)
                         drawSecondsBandLabel(g, x, secondsLabelFor(beat), bar == 1);
                 } else if (isBeatStart && !isBarStart && beatPixelSpacing >= 50) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
                     g.setFont(FontManager::getInstance().getUIFont(10.0f));
                     g.drawText(juce::String(bar) + "." + juce::String(beatInBar), x - 25, labelY,
                                50, labelHeight, juce::Justification::centredTop);
                 } else if (isOn16th && pixelsPerSubdiv >= 30) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
                     g.setFont(FontManager::getInstance().getUIFont(8.0f));
                     g.drawText(juce::String(bar) + "." + juce::String(beatInBar) + "." +
                                    juce::String(sixteenth + 1),
@@ -1223,7 +1226,7 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                 // Finer ticks (32nd, 64th, etc.) get tick marks but no labels
             } else {
                 // Grid doesn't align with bars/beats — draw minor ticks only
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
                 g.drawLine(static_cast<float>(x), static_cast<float>(tickBottom - minorTickHeight),
                            static_cast<float>(x), static_cast<float>(tickBottom), 1.0f);
             }
@@ -1231,25 +1234,26 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
 
         // Pass 2: For non-aligned grids, draw bar/beat reference ticks and labels on top
         if (!gridAligned) {
-            double refStartBeat = std::floor(visStartBeat);
+            double refStartBeat = std::floor(visStartBeat / sigBeat) * sigBeat;
             double refEndBeat = std::ceil(visEndBeat);
-            for (double beat = refStartBeat; beat <= refEndBeat; beat += 1.0) {
+            for (double beat = refStartBeat; beat <= refEndBeat; beat += sigBeat) {
                 int x = beatsToPixel(beat) + LayoutConfig::TIMELINE_LEFT_PADDING;
                 if (x < 0 || x >= getWidth())
                     continue;
 
                 double barRemainder = std::fmod(beat, barLengthBeats);
-                bool isBarStart = barRemainder < 0.001;
-                int bar = static_cast<int>(beat / timeSignatureNumerator) + 1;
-                int beatInBar = static_cast<int>(barRemainder) + 1;
+                bool isBarStart = barRemainder < 0.001 || barRemainder > barLengthBeats - 0.001;
+                int bar = static_cast<int>((beat + 0.001) / barLengthBeats) + 1;
+                int beatInBar = static_cast<int>(std::round(barRemainder / sigBeat)) + 1;
 
                 if (isBarStart) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
                     g.drawLine(static_cast<float>(x),
                                static_cast<float>(tickBottom - majorTickHeight),
                                static_cast<float>(x), static_cast<float>(tickBottom), 1.0f);
                 } else {
-                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.7f));
+                    g.setColour(
+                        ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.7f));
                     int mediumTickH = majorTickHeight * 2 / 3;
                     g.drawLine(static_cast<float>(x), static_cast<float>(tickBottom - mediumTickH),
                                static_cast<float>(x), static_cast<float>(tickBottom), 1.0f);
@@ -1262,8 +1266,8 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                             drawSecondsBandLabel(g, x, secondsLabelFor(beat), bar == 1);
                     }
                 } else {
-                    if (pixelsPerBeat >= 50) {
-                        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                    if (beatPixelSpacing >= 50) {
+                        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
                         g.setFont(FontManager::getInstance().getUIFont(10.0f));
                         g.drawText(juce::String(bar) + "." + juce::String(beatInBar), x - 25,
                                    labelY, 50, labelHeight, juce::Justification::centredTop);
@@ -1281,7 +1285,7 @@ void TimelineComponent::drawPlayhead(juce::Graphics& g) {
         g.setColour(juce::Colours::black.withAlpha(0.6f));
         g.drawLine(playheadX + 1, 0, playheadX + 1, getHeight(), 5.0f);
         // Draw main playhead line
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         g.drawLine(playheadX, 0, playheadX, getHeight(), 4.0f);
     }
 }
@@ -1320,7 +1324,7 @@ void TimelineComponent::drawSection(juce::Graphics& g, const ArrangementSection&
         g.setColour(section.colour.withAlpha(0.5f));
         // Draw dotted border to indicate locked state
         const float dashLengths[] = {2.0f, 2.0f};
-        float sectionTop = static_cast<float>(chordHeight);
+        auto sectionTop = static_cast<float>(chordHeight);
         auto sectionBottom = static_cast<float>(sectionArea.getBottom());
 
         if (isXVisible(g, getWidth(), startX)) {
@@ -1348,8 +1352,8 @@ void TimelineComponent::drawSection(juce::Graphics& g, const ArrangementSection&
 
     // Section name
     if (sectionArea.getWidth() > 40) {  // Only draw text if there's enough space
-        g.setColour(arrangementLocked ? DarkTheme::getColour(DarkTheme::TEXT_SECONDARY)
-                                      : DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        g.setColour(arrangementLocked ? ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY)
+                                      : ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
 
         // Draw section name without lock symbol (lock will be shown elsewhere)
@@ -1445,9 +1449,9 @@ void TimelineComponent::drawLoopMarkerFlags(juce::Graphics& g) {
     }
 
     const int stripTop = rulerRows().loopTop;
-    const float startX =
+    const auto startX =
         static_cast<float>(beatsToPixel(loopStartBeats) + LayoutConfig::TIMELINE_LEFT_PADDING);
-    const float endX =
+    const auto endX =
         static_cast<float>(beatsToPixel(loopEndBeats) + LayoutConfig::TIMELINE_LEFT_PADDING);
 
     LoopStripRenderer::draw(g, startX, endX, stripTop, LayoutConfig::loopStripHeight, getWidth(),
@@ -1504,15 +1508,15 @@ double TimelineComponent::getSnapInterval() const {
         // zoom is in pixels per beat
         double secondsPerBeat = 60.0 / tempoBPM;
 
-        double frac = GridConstants::findBeatSubdivision(pixelsPerBeat, minPixelSpacing);
+        double frac = GridConstants::findBeatSubdivision(pixelsPerBeat, getSignatureBeatLength(),
+                                                         minPixelSpacing);
         if (frac > 0) {
             return secondsPerBeat * frac;
         }
 
         // Fall back to bar multiples
-        int mult =
-            GridConstants::findBarMultiple(pixelsPerBeat, timeSignatureNumerator, minPixelSpacing);
-        return secondsPerBeat * timeSignatureNumerator * mult;
+        int mult = GridConstants::findBarMultiple(pixelsPerBeat, getBeatsPerBar(), minPixelSpacing);
+        return secondsPerBeat * getBeatsPerBar() * mult;
     }
 }
 
@@ -1584,20 +1588,20 @@ void TimelineComponent::drawTimeSelection(juce::Graphics& g) {
         return;
 
     // Faint tinted bar between the handles, matching the loop rail's ~38% tint.
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.38f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.38f));
     g.fillRoundedRectangle(selectionArea.toFloat(), static_cast<float>(height) / 2.0f);
 
     // Brighter diamond (rhombus) handles at the range edges. These are the
     // endpoint markers and double as the drag handles (see hitTimeSelectionEdge).
-    const auto handleColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY_SOFT);
+    const auto handleColour = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY_SOFT);
     const float cy = static_cast<float>(rows.playheadTop + rows.playheadBottom) * 0.5f;
-    const float dh = static_cast<float>(rows.playheadBottom - rows.playheadTop);
+    const auto dh = static_cast<float>(rows.playheadBottom - rows.playheadTop);
     constexpr float dw = 8.0f;
     g.setColour(handleColour);
     const auto diamond = [&](int x) {
         if (!isXVisible(g, getWidth(), x))
             return;
-        const float fx = static_cast<float>(x);
+        const auto fx = static_cast<float>(x);
         juce::Path d;
         d.startNewSubPath(fx, cy - dh / 2.0f);
         d.lineTo(fx + dw / 2.0f, cy);

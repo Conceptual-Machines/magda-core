@@ -4,6 +4,7 @@
 
 #include <array>
 #include <functional>
+#include <memory>
 
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/DeviceInfo.hpp"
@@ -29,7 +30,7 @@ class CompiledUtilityView final : public juce::Component, public CompiledDeviceP
     juce::Component& component() override {
         return *this;
     }
-    void bindPlugin(te::Plugin* plugin) override;
+    void bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) override;
     void setOnParameterChanged(std::function<void(int, float)> cb) override {
         onParameterChanged = std::move(cb);
     }
@@ -61,7 +62,7 @@ class CompiledUtilityView final : public juce::Component, public CompiledDeviceP
     void updateLinkSlotValues();
 
     magda::DeviceInfo deviceSnapshot_;
-    magda::daw::audio::compiled::MagdaUtilityCompiledPlugin* compiledPlugin_ = nullptr;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaUtilityCompiledPlugin> compiledPlugin_;
     ParamLinkContext linkContext_;
     bool hasLinkContext_ = false;
 

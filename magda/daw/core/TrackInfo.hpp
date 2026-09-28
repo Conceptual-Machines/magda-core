@@ -30,18 +30,31 @@ struct SendInfo {
     float level = 1.0f;                      // Send level (0.0 - 1.0)
     bool preFader = false;                   // Pre/post fader
     TrackId destTrackId = INVALID_TRACK_ID;  // Target aux track (for display)
+    bool enabled = true;
+    juce::String id;  // Stable public identity; older projects may leave this empty
+
+    bool operator==(const SendInfo&) const = default;
+};
+
+/** The four routing selectors owned by one track. */
+struct TrackRoutingState {
+    TrackId trackId = INVALID_TRACK_ID;
+    juce::String audioInput;
+    juce::String midiInput;
+    juce::String audioOutput;
+    juce::String midiOutput;
+
+    bool operator==(const TrackRoutingState&) const = default;
 };
 
 enum class InputMonitorMode { Off, In, Auto };
-
-enum class TrackPlaybackMode { Arrangement, Session };
 
 /**
  * @brief Track data structure containing all track properties
  */
 struct TrackInfo {
     TrackId id = INVALID_TRACK_ID;      // Unique identifier
-    TrackType type = TrackType::Audio;  // Track type
+    TrackType type = TrackType::Media;  // Track type
     juce::String name;                  // Track name
     juce::Colour colour;                // Track color
 
@@ -81,6 +94,10 @@ struct TrackInfo {
     juce::String audioInputDevice;   // Audio input device/channel (device ID or empty for none)
     juce::String audioOutputDevice;  // Audio output routing (default: "master")
 
+    TrackRoutingState routingState() const {
+        return {id, audioInputDevice, midiInputDevice, audioOutputDevice, midiOutputDevice};
+    }
+
     // Sends (to aux tracks)
     std::vector<SendInfo> sends;
 
@@ -114,42 +131,8 @@ struct TrackInfo {
     TrackInfo(TrackInfo&&) = default;
     TrackInfo& operator=(TrackInfo&&) = default;
 
-    // Copy constructor - deep copies chainElements
-    TrackInfo(const TrackInfo& other)
-        : id(other.id),
-          type(other.type),
-          name(other.name),
-          colour(other.colour),
-          parentId(other.parentId),
-          childIds(other.childIds),
-          volume(other.volume),
-          pan(other.pan),
-          manualVolume(other.manualVolume),
-          manualPan(other.manualPan),
-          muted(other.muted),
-          soloed(other.soloed),
-          recordArmed(other.recordArmed),
-          inputMonitor(other.inputMonitor),
-          frozen(other.frozen),
-          playbackMode(other.playbackMode),
-          mixerChannelWidth(other.mixerChannelWidth),
-          mixerFaderTopInset(other.mixerFaderTopInset),
-          activeSessionClipId(other.activeSessionClipId),
-          midiInputDevice(other.midiInputDevice),
-          midiOutputDevice(other.midiOutputDevice),
-          audioInputDevice(other.audioInputDevice),
-          audioOutputDevice(other.audioOutputDevice),
-          sends(other.sends),
-          auxBusIndex(other.auxBusIndex),
-          multiOutLink(other.multiOutLink),
-          chain(other.chain),
-          viewSettings(other.viewSettings),
-          mods(other.mods),
-          macros(other.macros),
-          globalModsPanelOpen(other.globalModsPanelOpen),
-          globalMacrosPanelOpen(other.globalMacrosPanelOpen),
-          selectedGlobalModIndex(other.selectedGlobalModIndex),
-          selectedGlobalMacroIndex(other.selectedGlobalMacroIndex) {}
+    // Copy constructor. chain deep-copies via TrackChain's own copy constructor.
+    TrackInfo(const TrackInfo& other) = default;
 
     // Copy assignment - deep copies chainElements
     TrackInfo& operator=(const TrackInfo& other) {
@@ -224,20 +207,42 @@ struct TrackInfo {
         return parentId == INVALID_TRACK_ID;
     }
 
-    // True for tracks that take external audio/MIDI input and can be recorded /
-    // monitored. Aux send buses and Group summing tracks only pass signal from
-    // elsewhere, so they never take external input. Single source of truth for
-    // the input/record/monitor guards across TrackManager and MidiInputRouter.
+    // Both of these used to be their own list of types to exclude, and the two
+    // lists differed by one member. They now read the same table every other
+    // question reads (TrackTypes.hpp), which is what stops them drifting.
     bool takesExternalInput() const {
-        return type != TrackType::Aux && type != TrackType::Group;
+        return traitsOf(type).takesExternalInput;
     }
 
-    // True for tracks that can host an instrument device. Aux/Group summing
-    // buses and the Master track only process signal from elsewhere, so they
-    // never host instruments. Single source of truth for the instrument-add
-    // guards across TrackManager (track and rack-chain add paths).
     bool canHostInstrument() const {
-        return type != TrackType::Aux && type != TrackType::Group && type != TrackType::Master;
+        return traitsOf(type).hostsInstrument;
+    }
+
+    // Whether a user may put a clip of this kind on the track: drop a file on
+    // it, drag one in, nudge one over. See UserClipAcceptance for why this
+    // takes the kind rather than answering yes or no for the whole track.
+    //
+    // A Progressions lane answers yes to MIDI, because a progression is a MIDI
+    // clip. Whether the material really is a progression is a question about
+    // content, so it is asked where the content is readable -- at the drop,
+    // which has the file.
+    bool acceptsUserClip(ClipType clipType) const {
+        switch (traitsOf(type).userClips) {
+            case UserClipAcceptance::None:
+                return false;
+            case UserClipAcceptance::Any:
+                return true;
+            case UserClipAcceptance::MidiOnly:
+            case UserClipAcceptance::Progressions:
+                return clipType == ClipType::MIDI;
+        }
+        return false;
+    }
+
+    // Whether anything at all may be placed here, for the callers that have no
+    // clip in hand yet.
+    bool acceptsAnyUserClip() const {
+        return traitsOf(type).userClips != UserClipAcceptance::None;
     }
 
     // Enforce the track-type invariants on this struct's own fields. Input-less
@@ -264,6 +269,12 @@ struct TrackInfo {
     // listens when input monitoring is enabled (In/Auto) or it is record-armed.
     bool receivesLiveMidiInput() const {
         return inputMonitor != InputMonitorMode::Off || recordArmed;
+    }
+
+    /// Live input reaches the chain: armed, or monitoring set to In. Narrower
+    /// than receivesLiveMidiInput, which answers for the UI's activity light.
+    bool monitorsInput() const {
+        return recordArmed || inputMonitor == InputMonitorMode::In;
     }
 
     // View settings helpers

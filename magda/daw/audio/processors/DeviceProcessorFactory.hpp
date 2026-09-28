@@ -12,7 +12,7 @@ namespace magda {
 class DeviceProcessor;
 
 std::unique_ptr<DeviceProcessor> createDeviceProcessorForPlugin(
-    DeviceId deviceId, tracktion::engine::Plugin::Ptr plugin, const juce::String& pluginId,
+    DeviceId deviceId, const tracktion::engine::Plugin::Ptr& plugin, const juce::String& pluginId,
     daw::audio::DeviceTrackContext* trackContext = nullptr);
 
 }  // namespace magda

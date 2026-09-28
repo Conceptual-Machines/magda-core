@@ -2,7 +2,6 @@
 
 #include <memory>
 #include <mutex>
-#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -63,8 +62,8 @@ PluginMetadataStore::PluginMetadataStore(const juce::File& databaseFile)
                          databaseFile.getParentDirectory().getChildFile("plugin_exclusions.txt")}) {
 }
 
-PluginMetadataStore::PluginMetadataStore(const juce::File& databaseFile, LegacyFiles legacyFiles)
-    : file_(databaseFile), legacyFiles_(std::move(legacyFiles)) {
+PluginMetadataStore::PluginMetadataStore(juce::File databaseFile, LegacyFiles legacyFiles)
+    : file_(std::move(databaseFile)), legacyFiles_(std::move(legacyFiles)) {
     (void)file_.getParentDirectory().createDirectory();
     db_.open(utf8(file_.getFullPathName()), "open plugin metadata database");
 
@@ -74,7 +73,7 @@ PluginMetadataStore::PluginMetadataStore(const juce::File& databaseFile, LegacyF
         // busy handler when two connections open a fresh database together.
         // Cover that step as well as the transactional setup for concurrent
         // first opens within the application.
-        const std::lock_guard initializationLock(initializationMutex);
+        const std::scoped_lock initializationLock(initializationMutex);
         sqlite::exec(db_.get(), "PRAGMA journal_mode=WAL", "set plugin metadata journal mode");
         sqlite::exec(db_.get(), "PRAGMA synchronous=NORMAL",
                      "set plugin metadata synchronous mode");

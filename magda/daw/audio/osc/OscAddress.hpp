@@ -46,11 +46,10 @@ namespace magda::osc {
  * addresses eight strips needs eight dense numbers. Resolving a position to a
  * track happens at apply time, on the message thread.
  *
- * Parsing is deliberately strict: an address carrying a wildcard where the
- * track number belongs is rejected, and so is `/magda/track/03/volume`. OSC
- * address *patterns* are a real part of the protocol, and quietly reading one
- * as an index would mean a surface driving every track at once when its author
- * meant one — or two spellings of the same strip drifting apart.
+ * Parsing is deliberately strict: a wildcard where the track number belongs
+ * is rejected, and so is `/magda/track/03/volume`. OSC address *patterns*
+ * are a real part of the protocol, and quietly reading one as an index would
+ * mean a surface driving every track at once when its author meant one.
  */
 
 /// Highest 1-based track number the fixed namespace addresses. Positions past
@@ -149,11 +148,11 @@ std::optional<OscCommand> parseOscAddress(juce::StringRef address);
 /**
  * @brief The address a command is spelled with. The inverse of the parser.
  *
- * Feedback (#2091) sends on the address a value is received on, so the spelling
- * has to come from the same place the grammar does rather than from a second
- * list of string literals that agrees with it today. `parseOscAddress` of the
- * result is `command` again, for every command the parser can produce, which is
- * what the round-trip test asserts over the whole slot space.
+ * Feedback sends on the address a value is received on (#2091), so the
+ * spelling has to come from the same place the grammar does rather than a
+ * second list of string literals that could drift from it. `parseOscAddress`
+ * of the result is `command` again, for every command the parser can
+ * produce -- what the round-trip test asserts over the whole slot space.
  *
  * Called on the message thread, once per address that actually changed, so it
  * builds a `juce::String` rather than writing into a caller's buffer.

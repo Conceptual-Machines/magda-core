@@ -18,7 +18,8 @@ class DawProjectArchive {
     // the project's media directory so the audio persists with the project. When
     // empty, a session-temp directory is used (resolves for the session only).
     static bool readFromFile(const juce::File& file, ProjectDocument& outDocument,
-                             juce::String& error, const juce::File& audioExtractionDir = {});
+                             juce::String& error, const juce::File& audioExtractionDir = {},
+                             const ProjectDefaults* creationDefaults = nullptr);
 };
 
 }  // namespace magda

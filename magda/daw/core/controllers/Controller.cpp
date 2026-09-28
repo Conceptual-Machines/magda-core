@@ -28,7 +28,7 @@ juce::var encodeController(const Controller& c) {
     obj->setProperty("script", c.script);
     if (c.profileId.isNotEmpty())
         obj->setProperty("profileId", c.profileId);
-    return juce::var(obj);
+    return {obj};
 }
 
 // ============================================================================

@@ -1,13 +1,18 @@
 // TrackContentPanel — Multi-clip drag, time selection clip handling, and clip ghost methods.
 // Split from TrackContentPanel.cpp for file-size compliance.
 
+#include <algorithm>
 #include <limits>
+#include <ranges>
 
+#include "../../interaction/ClipDragTargets.hpp"
 #include "../../interaction/ClipNudge.hpp"
 #include "../clips/ClipComponent.hpp"
 #include "TrackContentPanel.hpp"
 #include "core/ClipCommands.hpp"
+#include "core/ClipPlacementPolicy.hpp"
 #include "core/GestureRouter.hpp"
+#include "core/RangesHelpers.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TempoUtils.hpp"
 #include "core/UndoManager.hpp"
@@ -35,6 +40,22 @@ double clipTimelineLengthBeats(const ClipInfo& clip, double bpm) {
         return clip.placement.lengthBeats;
     const double resolvedBpm = isValidBpm(bpm) ? bpm : DEFAULT_BPM;
     return clip.getTimelineLength(resolvedBpm) * resolvedBpm / 60.0;
+}
+
+// Tracks a move may put this selection on, which is the same question a file
+// drop, a keyboard nudge and a clip drag ask, of the same table
+// (TrackTypes.hpp).
+//
+// Asked with the selection in hand rather than of the track alone, because a
+// lane can accept one kind and not another: a multi-out lane takes MIDI, whose
+// notes play the parent instrument, and has nothing to do with audio. A mixed
+// selection therefore needs a track that accepts every kind in it, since a move
+// carries the selection as one block and cannot leave half of it behind.
+bool canHostClips(const TrackInfo& track, const std::vector<const ClipInfo*>& moving) {
+    for (const auto* clip : moving)
+        if (clip == nullptr || !trackAcceptsClip(track, *clip))
+            return false;
+    return !moving.empty();
 }
 
 }  // namespace
@@ -112,6 +133,155 @@ ClipComponent* TrackContentPanel::getClipComponentAt(int x, int y) const {
 }
 
 // ============================================================================
+// Clip Drag Destinations (#2179)
+// ============================================================================
+
+void TrackContentPanel::beginClipDragTargets(const std::vector<ClipId>& movingClips,
+                                             ClipId anchorClipId) {
+    endClipDragTargets();
+
+    auto& clipManager = ClipManager::getInstance();
+    auto& trackManager = TrackManager::getInstance();
+
+    // The clips themselves rather than their kinds: a chord lane takes a MIDI
+    // clip that is already a progression and not one that merely could have
+    // been, and a kind cannot tell those apart.
+    std::vector<const ClipInfo*> moving;
+    moving.reserve(movingClips.size());
+    for (const ClipId clipId : movingClips)
+        if (const auto* clip = clipManager.getClip(clipId))
+            moving.push_back(clip);
+    if (moving.empty())
+        return;
+
+    // Frozen tracks are excluded as destinations for the same reason they are
+    // refused as sources: dropping a clip into a frozen track's lane would put
+    // the model out of step with its rendered audio. Skipped rather than
+    // refused, so a frozen lane does not wall off the tracks below it -- which
+    // is the whole argument of this feature, applied to the one lane that had
+    // it written down first (nudgeSelectedClipsToAdjacentTrack).
+    for (int lane = 0; lane < static_cast<int>(visibleTrackIds_.size()); ++lane) {
+        const TrackId trackId = visibleTrackIds_[static_cast<size_t>(lane)];
+        const auto* track = trackManager.getTrack(trackId);
+        if (track == nullptr || track->frozen || !canHostClips(*track, moving))
+            continue;
+        clipDragHostLanes_.push_back(lane);
+        clipDragHostTrackIds_.push_back(trackId);
+    }
+
+    // Every clip in the selection needs a slot of its own, because the delta is
+    // measured from where each one starts. A selection with a clip on a lane
+    // that is not in the set cannot be given one consistently, so the drag
+    // keeps its vertical position instead of moving part of the selection.
+    int minSlot = std::numeric_limits<int>::max();
+    int maxSlot = std::numeric_limits<int>::min();
+    for (const auto* clip : moving) {
+        const int slot = clipDragSlotOfTrack(clip->trackId);
+        if (slot < 0) {
+            endClipDragTargets();
+            return;
+        }
+        minSlot = std::min(minSlot, slot);
+        maxSlot = std::max(maxSlot, slot);
+    }
+
+    clipDragMinSlot_ = minSlot;
+    clipDragMaxSlot_ = maxSlot;
+
+    // Measured from the anchor clip's own lane rather than from the pointer's,
+    // so a grab a pixel over a lane boundary does not start the gesture with a
+    // delta already in it.
+    const auto* anchor = clipManager.getClip(anchorClipId);
+    clipDragAnchorSlot_ = anchor != nullptr ? clipDragSlotOfTrack(anchor->trackId) : minSlot;
+    if (clipDragAnchorSlot_ < 0)
+        clipDragAnchorSlot_ = minSlot;
+}
+
+void TrackContentPanel::endClipDragTargets() {
+    clipDragHostTrackIds_.clear();
+    clipDragHostLanes_.clear();
+    clipDragAnchorSlot_ = -1;
+    clipDragMinSlot_ = 0;
+    clipDragMaxSlot_ = 0;
+}
+
+int TrackContentPanel::clipDragSlotOfTrack(TrackId trackId) const {
+    const auto it = std::ranges::find(clipDragHostTrackIds_, trackId);
+    if (it == clipDragHostTrackIds_.end())
+        return -1;
+    return static_cast<int>(std::distance(clipDragHostTrackIds_.begin(), it));
+}
+
+int TrackContentPanel::clipDragRowAtY(int pointerY) const {
+    if (trackLanes.empty())
+        return -1;
+    if (pointerY < 0)
+        return 0;
+
+    // getTrackIndexAtY answers with the track's own lane area and nothing else,
+    // so it says -1 both for a pointer below the arrangement and for one inside
+    // a track's automation lanes. A drag has to tell those apart: the second is
+    // a gap in the middle of the stack, and reading it as "below everything"
+    // would send the ghost to the bottom of the arrangement from a position the
+    // user is holding halfway up it. An automation lane belongs to the track it
+    // was opened under, so the row it falls in is that track's.
+    int currentY = 0;
+    for (size_t row = 0; row < trackLanes.size(); ++row) {
+        const int rowHeight = getTrackTotalHeight(static_cast<int>(row));
+        if (pointerY < currentY + rowHeight)
+            return static_cast<int>(row);
+        currentY += rowHeight;
+    }
+
+    // Genuinely past the end of the stack.
+    return static_cast<int>(trackLanes.size()) - 1;
+}
+
+int TrackContentPanel::clipDragSlotDelta(int pointerY) const {
+    if (clipDragAnchorSlot_ < 0)
+        return 0;
+
+    // Off either end of the arrangement the pointer counts as being at whichever
+    // end it left through, so a drag dragged past the top keeps travelling
+    // upwards rather than stalling on the last lane it was over.
+    const int lane = clipDragRowAtY(pointerY);
+    if (lane < 0)
+        return 0;
+
+    const int slot = interaction::nearestHostSlot(clipDragHostLanes_, lane);
+    if (slot < 0)
+        return 0;
+
+    return interaction::blockSlotDelta(slot - clipDragAnchorSlot_, clipDragMinSlot_,
+                                       clipDragMaxSlot_,
+                                       static_cast<int>(clipDragHostLanes_.size()));
+}
+
+int TrackContentPanel::clipDragTargetLane(TrackId originalTrackId, int slotDelta) const {
+    const int slot = clipDragSlotOfTrack(originalTrackId);
+    if (slot < 0)
+        return -1;
+
+    const int target = slot + slotDelta;
+    if (target < 0 || target >= static_cast<int>(clipDragHostLanes_.size()))
+        return -1;
+
+    return clipDragHostLanes_[static_cast<size_t>(target)];
+}
+
+TrackId TrackContentPanel::clipDragTargetTrackId(TrackId originalTrackId, int slotDelta) const {
+    const int slot = clipDragSlotOfTrack(originalTrackId);
+    if (slot < 0)
+        return originalTrackId;
+
+    const int target = slot + slotDelta;
+    if (target < 0 || target >= static_cast<int>(clipDragHostTrackIds_.size()))
+        return originalTrackId;
+
+    return clipDragHostTrackIds_[static_cast<size_t>(target)];
+}
+
+// ============================================================================
 // Multi-Clip Drag
 // ============================================================================
 
@@ -138,14 +308,15 @@ void TrackContentPanel::startMultiClipDrag(ClipId anchorClipId, const juce::Poin
     anchorClipId_ = anchorClipId;
     multiClipDragStartPos_ = startPos;
     multiClipDragDeltaTime_ = 0.0;
-    multiClipDragTrackDelta_ = 0;
+    multiClipDragSlotDelta_ = 0;
 
     // Get the anchor clip's start time and track index
     const auto* anchorClip = ClipManager::getInstance().getClip(anchorClipId);
     if (anchorClip) {
         multiClipDragStartTime_ = clipTimelineStart(*anchorClip, tempoBPM);
     }
-    multiClipDragAnchorTrackIndex_ = getTrackIndexAtY(startPos.y);
+    beginClipDragTargets(std::vector<ClipId>(selectedClips.begin(), selectedClips.end()),
+                         anchorClipId);
 
     // Store original positions of all selected clips
     multiClipDragInfos_.clear();
@@ -158,7 +329,7 @@ void TrackContentPanel::startMultiClipDrag(ClipId anchorClipId, const juce::Poin
             info.originalTrackId = clip->trackId;
 
             // Find track index
-            auto it = std::find(visibleTrackIds_.begin(), visibleTrackIds_.end(), clip->trackId);
+            auto it = std::ranges::find(visibleTrackIds_, clip->trackId);
             if (it != visibleTrackIds_.end()) {
                 info.originalTrackIndex =
                     static_cast<int>(std::distance(visibleTrackIds_.begin(), it));
@@ -202,27 +373,27 @@ void TrackContentPanel::updateMultiClipDrag(const juce::Point<int>& currentPos) 
     multiClipDragDeltaTime_ =
         actualDeltaTime;  // Store for finishMultiClipDrag — no pixel round-trip
 
-    // Compute vertical (cross-track) delta from mouse Y
-    int currentTrackIndex = getTrackIndexAtY(currentPos.y);
-    if (currentTrackIndex < 0) {
-        // Mouse is outside track lanes — clamp based on direction
-        if (currentPos.y <= 0)
-            currentTrackIndex = 0;
-        else
-            currentTrackIndex = static_cast<int>(visibleTrackIds_.size()) - 1;
-    }
-    if (currentTrackIndex >= 0 && multiClipDragAnchorTrackIndex_ >= 0) {
-        multiClipDragTrackDelta_ = currentTrackIndex - multiClipDragAnchorTrackIndex_;
-    }
+    // Vertical travel, counted in lanes that can hold the selection rather than
+    // in lanes: a lane the drag cannot land on is stepped over, so it is not
+    // travel, and the same delta then means the same thing for every clip in
+    // the selection however the refusing lanes are distributed between them.
+    multiClipDragSlotDelta_ = clipDragSlotDelta(currentPos.y);
 
-    int numTracks = static_cast<int>(visibleTrackIds_.size());
+    // The ghost is drawn where the commit will put the clip, from the same
+    // resolution of the same pointer position, because a ghost that lands where
+    // the commit refuses is the defect this replaced. A clip with nowhere to go
+    // stays on its own lane.
+    const auto ghostLaneFor = [this](TrackId originalTrackId, int originalLane) {
+        const int lane = clipDragTargetLane(originalTrackId, multiClipDragSlotDelta_);
+        return lane >= 0 ? lane : originalLane;
+    };
 
     if (isMultiClipDuplicating_) {
         // Copy-on-drag: show ghosts at NEW positions, keep originals in place
         for (const auto& dragInfo : multiClipDragInfos_) {
             double newStartTime = juce::jmax(0.0, dragInfo.originalStartTime + actualDeltaTime);
-            int targetTrackIdx = juce::jlimit(
-                0, numTracks - 1, dragInfo.originalTrackIndex + multiClipDragTrackDelta_);
+            const int targetTrackIdx =
+                ghostLaneFor(dragInfo.originalTrackId, dragInfo.originalTrackIndex);
 
             const auto* clip = ClipManager::getInstance().getClip(dragInfo.clipId);
             if (clip) {
@@ -236,12 +407,12 @@ void TrackContentPanel::updateMultiClipDrag(const juce::Point<int>& currentPos) 
                              clip->colour);
             }
         }
-    } else if (multiClipDragTrackDelta_ != 0) {
+    } else if (multiClipDragSlotDelta_ != 0) {
         // Cross-track move: show ghosts on target track, keep originals in place
         for (const auto& dragInfo : multiClipDragInfos_) {
             double newStartTime = juce::jmax(0.0, dragInfo.originalStartTime + actualDeltaTime);
-            int targetTrackIdx = juce::jlimit(
-                0, numTracks - 1, dragInfo.originalTrackIndex + multiClipDragTrackDelta_);
+            const int targetTrackIdx =
+                ghostLaneFor(dragInfo.originalTrackId, dragInfo.originalTrackIndex);
             const auto* clip = ClipManager::getInstance().getClip(dragInfo.clipId);
             if (clip) {
                 int ghostX = beatsToPixel(newStartTime * tempoBPM / 60.0);
@@ -282,10 +453,9 @@ void TrackContentPanel::finishMultiClipDrag() {
 
     // Use the deltas stored during updateMultiClipDrag — never re-derive from pixels
     double actualDeltaTime = multiClipDragDeltaTime_;
-    int trackDelta = multiClipDragTrackDelta_;
-    int numTracks = static_cast<int>(visibleTrackIds_.size());
+    int slotDelta = multiClipDragSlotDelta_;
 
-    bool hasTrackChange = trackDelta != 0;
+    bool hasTrackChange = slotDelta != 0;
     bool isCompound = multiClipDragInfos_.size() > 1 || hasTrackChange;
     std::unordered_set<ClipId> duplicatedClipIds;
 
@@ -299,9 +469,7 @@ void TrackContentPanel::finishMultiClipDrag() {
         std::vector<std::unique_ptr<DuplicateClipCommand>> commands;
         for (const auto& dragInfo : multiClipDragInfos_) {
             double newStartTime = juce::jmax(0.0, dragInfo.originalStartTime + actualDeltaTime);
-            int targetIdx =
-                juce::jlimit(0, numTracks - 1, dragInfo.originalTrackIndex + trackDelta);
-            TrackId targetTrackId = visibleTrackIds_[static_cast<size_t>(targetIdx)];
+            TrackId targetTrackId = clipDragTargetTrackId(dragInfo.originalTrackId, slotDelta);
             const double bpm = getTempo();
             auto cmd = std::make_unique<DuplicateClipCommand>(
                 dragInfo.clipId, BeatPosition{newStartTime * bpm / 60.0}, targetTrackId, bpm, -1,
@@ -335,13 +503,20 @@ void TrackContentPanel::finishMultiClipDrag() {
             UndoManager::getInstance().executeCommand(std::move(cmd));
 
             // Move to new track if needed
-            int targetIdx =
-                juce::jlimit(0, numTracks - 1, dragInfo.originalTrackIndex + trackDelta);
-            TrackId targetTrackId = visibleTrackIds_[static_cast<size_t>(targetIdx)];
+            TrackId targetTrackId = clipDragTargetTrackId(dragInfo.originalTrackId, slotDelta);
             if (targetTrackId != dragInfo.originalTrackId) {
-                auto trackCmd =
-                    std::make_unique<MoveClipToTrackCommand>(dragInfo.clipId, targetTrackId);
-                UndoManager::getInstance().executeCommand(std::move(trackCmd));
+                // Asked before the command is built, not because the command
+                // would let it through -- it refuses the same targets -- but
+                // because a refused command is still an undo step that does
+                // nothing, and the clip stays where it was either way.
+                const auto* target = TrackManager::getInstance().getTrack(targetTrackId);
+                const auto* dragged = ClipManager::getInstance().getClip(dragInfo.clipId);
+                if (target != nullptr && dragged != nullptr &&
+                    trackAcceptsClip(*target, *dragged)) {
+                    auto trackCmd =
+                        std::make_unique<MoveClipToTrackCommand>(dragInfo.clipId, targetTrackId);
+                    UndoManager::getInstance().executeCommand(std::move(trackCmd));
+                }
             }
         }
 
@@ -357,8 +532,8 @@ void TrackContentPanel::finishMultiClipDrag() {
     anchorClipId_ = INVALID_CLIP_ID;
     multiClipDragInfos_.clear();
     multiClipDuplicateIds_.clear();
-    multiClipDragAnchorTrackIndex_ = -1;
-    multiClipDragTrackDelta_ = 0;
+    multiClipDragSlotDelta_ = 0;
+    endClipDragTargets();
 
     // Refresh positions from ClipManager
     updateClipComponentPositions();
@@ -392,8 +567,8 @@ void TrackContentPanel::cancelMultiClipDrag() {
     anchorClipId_ = INVALID_CLIP_ID;
     multiClipDragInfos_.clear();
     multiClipDuplicateIds_.clear();
-    multiClipDragAnchorTrackIndex_ = -1;
-    multiClipDragTrackDelta_ = 0;
+    multiClipDragSlotDelta_ = 0;
+    endClipDragTargets();
 }
 
 // ============================================================================
@@ -402,32 +577,18 @@ void TrackContentPanel::cancelMultiClipDrag() {
 
 namespace {
 
-// Tracks a nudge may move a clip onto. Group and aux tracks are buses with no
-// clip timeline, the master track has no lane, and the chord track is a
-// singleton whose clips are chord progressions — a MIDI clip landing there
-// would change meaning. Multi-out tracks look like ordinary lanes but are
-// owned by a device's output pair: deactivateMultiOutPair() erases the track
-// outright without touching its clips, so anything parked there is orphaned
-// the moment the user switches that output off. Vertical nudging steps over
-// all of them.
-bool canHostNudgedClips(const TrackInfo& track) {
-    return track.type != TrackType::Group && track.type != TrackType::Aux &&
-           track.type != TrackType::Master && track.type != TrackType::Chord &&
-           track.type != TrackType::MultiOut;
-}
-
 // The clips a nudge acts on: the arrangement half of the selection. Session
 // clips live in a scene grid, not on the timeline, and are left alone even
 // when a session view put them in the same selection.
 std::vector<ClipId> selectedArrangementClips() {
-    std::vector<ClipId> clips;
     auto& clipManager = ClipManager::getInstance();
-    for (ClipId clipId : SelectionManager::getInstance().getSelectedClips()) {
+    const auto isOnTimeline = [&clipManager](ClipId clipId) {
         const auto* clip = clipManager.getClip(clipId);
-        if (clip != nullptr && clip->view == ClipView::Arrangement)
-            clips.push_back(clipId);
-    }
-    return clips;
+        return clip != nullptr && clip->view == ClipView::Arrangement;
+    };
+
+    const auto& selected = SelectionManager::getInstance().getSelectedClips();
+    return selected | std::views::filter(isOnTimeline) | toStd<std::vector<ClipId>>();
 }
 
 // Frozen tracks are rendered to audio, so their clips must not move out from
@@ -444,7 +605,7 @@ bool isOnFrozenTrack(ClipId clipId) {
 }
 
 bool anyClipOnFrozenTrack(const std::vector<ClipId>& clips) {
-    return std::any_of(clips.begin(), clips.end(), isOnFrozenTrack);
+    return std::ranges::any_of(clips, isOnFrozenTrack);
 }
 
 }  // namespace
@@ -505,14 +666,14 @@ bool TrackContentPanel::nudgeSelectedClipsHorizontally(int direction) {
     // it, with the surviving clip decided by unordered_set iteration order.
     // Moving the far clip first keeps the path clear.
     std::vector<ClipId> ordered = clips;
-    std::sort(ordered.begin(), ordered.end(), [&](ClipId lhs, ClipId rhs) {
-        const auto* a = clipManager.getClip(lhs);
-        const auto* b = clipManager.getClip(rhs);
-        if (a == nullptr || b == nullptr)
-            return false;
-        return direction > 0 ? a->placement.startBeat > b->placement.startBeat
-                             : a->placement.startBeat < b->placement.startBeat;
-    });
+    const auto startBeatOf = [&clipManager](ClipId id) {
+        const auto* clip = clipManager.getClip(id);
+        return clip != nullptr ? clip->placement.startBeat : 0.0;
+    };
+    if (direction > 0)
+        std::ranges::sort(ordered, std::ranges::greater{}, startBeatOf);
+    else
+        std::ranges::sort(ordered, {}, startBeatOf);
 
     // Always compound, even for one clip: consecutive MoveClipCommands on the
     // same clip merge into a single history entry, which would fold a run of
@@ -543,10 +704,22 @@ bool TrackContentPanel::nudgeSelectedClipsToAdjacentTrack(int direction) {
     // the model out of step with its rendered audio. Skipping them (rather
     // than refusing) keeps a frozen lane from walling off the tracks below it.
     auto& trackManager = TrackManager::getInstance();
+    auto& clipManager = ClipManager::getInstance();
+
+    // What is moving, so a destination can be judged against it. The clips
+    // themselves rather than their kinds: a chord lane takes a MIDI clip that
+    // is already a progression and not one that merely could have been, and a
+    // kind cannot tell those apart.
+    std::vector<const ClipInfo*> moving;
+    moving.reserve(clips.size());
+    for (const ClipId clipId : clips)
+        if (const auto* clip = clipManager.getClip(clipId))
+            moving.push_back(clip);
+
     std::vector<TrackId> hostTrackIds;
     for (TrackId trackId : visibleTrackIds_) {
         const auto* track = trackManager.getTrack(trackId);
-        if (track != nullptr && canHostNudgedClips(*track) && !track->frozen)
+        if (track != nullptr && canHostClips(*track, moving) && !track->frozen)
             hostTrackIds.push_back(trackId);
     }
     if (hostTrackIds.size() < 2)
@@ -559,14 +732,13 @@ bool TrackContentPanel::nudgeSelectedClipsToAdjacentTrack(int direction) {
     std::vector<ClipTrackIndex> moves;
     moves.reserve(clips.size());
 
-    auto& clipManager = ClipManager::getInstance();
     int minTrackIndex = std::numeric_limits<int>::max();
     int maxTrackIndex = std::numeric_limits<int>::min();
     for (ClipId clipId : clips) {
         const auto* clip = clipManager.getClip(clipId);
         if (clip == nullptr)
             continue;
-        auto it = std::find(hostTrackIds.begin(), hostTrackIds.end(), clip->trackId);
+        auto it = std::ranges::find(hostTrackIds, clip->trackId);
         if (it == hostTrackIds.end())
             return false;  // e.g. a chord clip: the selection moves whole or not at all
 
@@ -591,13 +763,15 @@ bool TrackContentPanel::nudgeSelectedClipsToAdjacentTrack(int direction) {
     // Same back-to-front rule as the horizontal path: landing on a track a
     // still-unmoved selected clip occupies would let overlap resolution trim
     // or delete that clip. Vacate the far track first.
-    std::sort(moves.begin(), moves.end(), [direction](const auto& lhs, const auto& rhs) {
-        return direction > 0 ? lhs.trackIndex > rhs.trackIndex : lhs.trackIndex < rhs.trackIndex;
-    });
+    const auto trackIndexOf = [](const auto& move) { return move.trackIndex; };
+    if (direction > 0)
+        std::ranges::sort(moves, std::ranges::greater{}, trackIndexOf);
+    else
+        std::ranges::sort(moves, {}, trackIndexOf);
 
     CompoundOperationScope undoScope("Move Clips to Track");
     for (const auto& move : moves) {
-        const auto targetIndex = static_cast<size_t>(move.trackIndex + trackDelta);
+        const auto targetIndex = static_cast<size_t>(move.trackIndex) + trackDelta;
         UndoManager::getInstance().executeCommand(
             std::make_unique<MoveClipToTrackCommand>(move.clipId, hostTrackIds[targetIndex]));
     }
@@ -631,7 +805,7 @@ void TrackContentPanel::splitClipsAtSelectionBoundaries() {
     std::vector<SplitInfo> clipsToSplit;
 
     for (const auto& clip : clips) {
-        auto it = std::find(visibleTrackIds_.begin(), visibleTrackIds_.end(), clip.trackId);
+        auto it = std::ranges::find(visibleTrackIds_, clip.trackId);
         if (it == visibleTrackIds_.end())
             continue;
 
@@ -707,7 +881,7 @@ void TrackContentPanel::captureClipsInTimeSelection() {
 
     for (const auto& clip : clips) {
         // Check if clip's track is in the selection
-        auto it = std::find(visibleTrackIds_.begin(), visibleTrackIds_.end(), clip.trackId);
+        auto it = std::ranges::find(visibleTrackIds_, clip.trackId);
         if (it == visibleTrackIds_.end()) {
             continue;  // Track not visible
         }
@@ -825,6 +999,13 @@ void TrackContentPanel::clearAllClipGhosts() {
         clipGhosts_.clear();
         repaintVisible();
     }
+}
+
+juce::Rectangle<int> TrackContentPanel::getClipGhostBounds(ClipId clipId) const {
+    for (const auto& ghost : clipGhosts_)
+        if (ghost.clipId == clipId)
+            return ghost.bounds;
+    return {};
 }
 
 void TrackContentPanel::paintClipGhosts(juce::Graphics& g) {

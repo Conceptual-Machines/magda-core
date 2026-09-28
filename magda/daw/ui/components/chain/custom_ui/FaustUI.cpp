@@ -1,25 +1,20 @@
 #include "custom_ui/FaustUI.hpp"
 
 #include <BinaryData.h>
-#include <tracktion_engine/tracktion_engine.h>
 
-#include "audio/AudioBridge.hpp"
 #include "audio/FaustResources.hpp"
-#include "audio/plugin_manager/PluginManager.hpp"
+#include "audio/faust/FaustModelEdits.hpp"
 #include "audio/plugins/FaustParamPool.hpp"
 #include "audio/plugins/IFaustEditorModel.hpp"
+#include "audio/plugins/MagdaDevice.hpp"
 #include "compiled/MagdaDriveCurveView.hpp"
 #include "core/AppPaths.hpp"
-#include "core/TrackManager.hpp"
 #include "custom_ui/FaustCodeEditorWindow.hpp"
-#include "engine/AudioEngine.hpp"
 #include "ui/components/common/SvgButton.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
-
-namespace te = tracktion::engine;
 
 FaustUI::FaustUI() {
     // First-touch registration of the built-in Faust custom views.
@@ -38,12 +33,12 @@ FaustUI::FaustUI() {
     logo_ = juce::Drawable::createFromImageData(BinaryData::fausttextlogo_svg,
                                                 BinaryData::fausttextlogo_svgSize);
     if (logo_)
-        logo_->replaceColour(juce::Colour(0xFFD9D9D9), DarkTheme::getSecondaryTextColour());
+        logo_->replaceColour(juce::Colour(0xFFD9D9D9), ActiveTheme::getSecondaryTextColour());
     if (logo_)
-        DarkTheme::applyToSvgIcon(*logo_);
+        ActiveTheme::applyToSvgIcon(*logo_);
 
     nameLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     nameLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(nameLabel_);
 
@@ -78,14 +73,11 @@ FaustUI::~FaustUI() = default;
 
 void FaustUI::setDevicePath(const ChainNodePath& path) {
     devicePath_ = path;
-    DBG("[FaustUI] setDevicePath trackId=" << path.trackId
-                                           << " topLevelDevice=" << (int)path.topLevelDeviceId
-                                           << " steps=" << static_cast<int>(path.steps.size()));
 }
 
-void FaustUI::setPlugin(magda::daw::audio::IFaustEditorModel* plugin) {
-    plugin_ = plugin;
-    DBG("[FaustUI] setPlugin: " << (plugin ? "ok" : "NULL"));
+void FaustUI::setDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) {
+    device_ = std::move(device);
+    plugin_ = dynamic_cast<magda::daw::audio::IFaustEditorModel*>(device_.get());
     refreshNameLabel();
 }
 
@@ -159,62 +151,20 @@ void FaustUI::refreshNameLabel() {
 }
 
 bool FaustUI::tryLoad(const juce::String& name, const juce::String& source) {
-    DBG("[FaustUI] tryLoad name='" << name << "' src.len=" << source.length());
-    if (plugin_ == nullptr) {
-        DBG("[FaustUI] tryLoad: plugin_ is NULL - bailing");
-        return false;
-    }
     juce::String err;
-    if (!plugin_->loadDspSource(name, source, err)) {
-        DBG("[FaustUI] tryLoad: loadDspSource FAILED: " << err);
+    if (!faust_edits::loadSource(devicePath_, name, source, err)) {
         errorLabel_.setText(err, juce::dontSendNotification);
         return false;
     }
-    DBG("[FaustUI] tryLoad: loadDspSource OK, pool active=" << plugin_->getPool().activeCount());
     errorLabel_.setText({}, juce::dontSendNotification);
     refreshNameLabel();
 
     // Surface any pool diagnostics (overflow / duplicate idx) in the
     // header's error label so silent failures don't slip through.
-    const auto& diagnostics = plugin_->getLastRebindDiagnostics();
-    if (!diagnostics.empty())
-        errorLabel_.setText(diagnostics.front(), juce::dontSendNotification);
-
-    // Push the now-active pool layout into TrackManager.DeviceInfo so
-    // the slot rebuild reads fresh ParameterInfo from FaustProcessor.
-    // populateParameters runs once at processor registration; we have
-    // to nudge it here because Faust's parameter set changes at
-    // runtime. Then notify so the chain UI rebuilds against the new
-    // DeviceInfo.
-    auto& tm = TrackManager::getInstance();
-    auto* dev = tm.getDeviceInChainByPath(devicePath_);
-    DBG("[FaustUI] tryLoad: device-by-path lookup " << (dev ? "ok" : "NULL")
-                                                    << " trackId=" << devicePath_.trackId);
-    if (dev) {
-        if (auto* engine = tm.getAudioEngine()) {
-            if (auto* bridge = engine->getAudioBridge()) {
-                DBG("[FaustUI] tryLoad: calling refreshDeviceParameters for path deviceId="
-                    << (int)devicePath_.getDeviceId());
-                bridge->getPluginManager().refreshDeviceParameters(devicePath_);
-                bridge->getPluginManager().capturePluginState(devicePath_);
-            } else {
-                DBG("[FaustUI] tryLoad: AudioBridge is NULL");
-            }
-        } else {
-            DBG("[FaustUI] tryLoad: AudioEngine is NULL");
-        }
-    }
-
-    // notifyTrackDevicesChanged tears down the DeviceSlotComponent that
-    // owns this FaustUI — calling it inline destroys `this` mid-method
-    // and the rest of tryLoad runs on freed memory. Defer to the next
-    // message-thread tick so the modal-callback frame can unwind first.
-    // Lambda captures trackId by value, so it doesn't touch `this`.
-    if (devicePath_.trackId != INVALID_TRACK_ID) {
-        const auto trackId = devicePath_.trackId;
-        DBG("[FaustUI] tryLoad: queuing notifyTrackDevicesChanged trackId=" << trackId);
-        juce::MessageManager::callAsync(
-            [trackId]() { TrackManager::getInstance().notifyTrackDevicesChanged(trackId); });
+    if (plugin_ != nullptr) {
+        const auto& diagnostics = plugin_->getLastRebindDiagnostics();
+        if (!diagnostics.empty())
+            errorLabel_.setText(diagnostics.front(), juce::dontSendNotification);
     }
     return true;
 }
@@ -309,7 +259,7 @@ void FaustUI::loadFromFile() {
         juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
         [this](const juce::FileChooser& fc) {
             auto file = fc.getResult();
-            if (!file.existsAsFile() || plugin_ == nullptr)
+            if (!file.existsAsFile())
                 return;
             tryLoad(file.getFileNameWithoutExtension(), file.loadFileAsString());
         });
@@ -376,27 +326,10 @@ void FaustUI::showCodeEditor() {
             // No need to preserve the view across an in-place edit: it is read
             // back out of the edited source, so it survives as long as the
             // `declare magda_view` line does.
-            if (!plugin_->loadDspSource(editedName, src, err))
+            if (!faust_edits::loadSource(devicePath_, editedName, src, err))
                 return false;
             errorLabel_.setText({}, juce::dontSendNotification);
             refreshNameLabel();
-            auto& tm = TrackManager::getInstance();
-            if (auto* dev = tm.getDeviceInChainByPath(devicePath_)) {
-                if (auto* engine = tm.getAudioEngine()) {
-                    if (auto* bridge = engine->getAudioBridge()) {
-                        bridge->getPluginManager().refreshDeviceParameters(devicePath_);
-                        bridge->getPluginManager().capturePluginState(devicePath_);
-                    }
-                }
-            }
-            // Same deferred-notify rule as tryLoad — the rebuild
-            // destroys `this` synchronously.
-            if (devicePath_.trackId != INVALID_TRACK_ID) {
-                const auto trackId = devicePath_.trackId;
-                juce::MessageManager::callAsync([trackId]() {
-                    TrackManager::getInstance().notifyTrackDevicesChanged(trackId);
-                });
-            }
             return true;
         });
 }
@@ -404,7 +337,7 @@ void FaustUI::showCodeEditor() {
 void FaustUI::paint(juce::Graphics& g) {
     const auto bounds = getLocalBounds();
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
     g.fillRect(bounds);
 
     if (logo_) {
@@ -414,7 +347,7 @@ void FaustUI::paint(juce::Graphics& g) {
 
     // Single vertical rules between the three bands. Full height, so the
     // strip reads as columns rather than a boxed name with loose icons.
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawVerticalLine(logoRuleX_, static_cast<float>(bounds.getY()),
                        static_cast<float>(bounds.getBottom()));
     g.drawVerticalLine(actionRuleX_, static_cast<float>(bounds.getY()),
@@ -422,13 +355,13 @@ void FaustUI::paint(juce::Graphics& g) {
 
     // Second identity row: the credit line under the patch name it describes.
     if (showMetaRow_ && metaText_.isNotEmpty() && !metaBounds_.isEmpty()) {
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.setFont(FontManager::getInstance().getUIFont(9.0f));
         g.drawText(metaText_, metaBounds_, juce::Justification::centredLeft, true);
     }
 
     // Re-set the colour: the meta row above leaves the text colour behind.
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawHorizontalLine(bounds.getBottom() - 1, static_cast<float>(bounds.getX()),
                          static_cast<float>(bounds.getRight()));
 }
@@ -486,10 +419,10 @@ void FaustUI::resized() {
 
 void FaustUI::lookAndFeelChanged() {
     if (logo_) {
-        logo_->replaceColour(juce::Colour(0xFFD9D9D9), DarkTheme::getSecondaryTextColour());
-        DarkTheme::applyToSvgIcon(*logo_);
+        logo_->replaceColour(juce::Colour(0xFFD9D9D9), ActiveTheme::getSecondaryTextColour());
+        ActiveTheme::applyToSvgIcon(*logo_);
     }
-    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
 }
 
 }  // namespace magda::daw::ui

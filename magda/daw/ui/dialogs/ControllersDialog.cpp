@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <map>
 
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
 #include "core/Config.hpp"
@@ -25,8 +25,8 @@ constexpr int kScriptPortOutWidth = 170;
 constexpr int kScriptPortInWidth = 170;
 
 void styleListBox(juce::ListBox& lb) {
-    lb.setColour(juce::ListBox::backgroundColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-    lb.setColour(juce::ListBox::outlineColourId, DarkTheme::getBorderColour());
+    lb.setColour(juce::ListBox::backgroundColourId, ActiveTheme::getColour(ActiveTheme::SURFACE));
+    lb.setColour(juce::ListBox::outlineColourId, ActiveTheme::getBorderColour());
     lb.setOutlineThickness(1);
 }
 
@@ -226,7 +226,7 @@ void ControllerProfilesPage::ControllerListModel::paintListBoxItem(int rowNumber
     const bool active = enabled && connected;
 
     if (rowIsSelected) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.20f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.20f));
         g.fillRect(0, 0, width, height);
     }
 
@@ -239,14 +239,14 @@ void ControllerProfilesPage::ControllerListModel::paintListBoxItem(int rowNumber
     const int lineH = (height - 2 * pad) / 2;
 
     const int dotY = (height - dotSize) / 2;
-    g.setColour(active ? DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE)
-                       : DarkTheme::getColour(DarkTheme::TEXT_DIM));
+    g.setColour(active ? ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE)
+                       : ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
     g.fillEllipse(static_cast<float>(dotX), static_cast<float>(dotY), static_cast<float>(dotSize),
                   static_cast<float>(dotSize));
 
     juce::String line1 = c.vendor.isEmpty() ? c.name : c.vendor + "  \xc2\xb7  " + c.name;
-    g.setColour(active ? DarkTheme::getTextColour()
-                       : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    g.setColour(active ? ActiveTheme::getTextColour()
+                       : ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     g.setFont(FontManager::getInstance().getUIFontBold(12.0f));
     g.drawText(line1, textX, pad, nameW, lineH, juce::Justification::centredLeft, true);
 
@@ -259,7 +259,7 @@ void ControllerProfilesPage::ControllerListModel::paintListBoxItem(int rowNumber
         status = tr("controllers.not_connected");
 
     juce::String line2 = status;
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
     g.setFont(FontManager::getInstance().getUIFont(10.0f));
     g.drawText(line2, textX, pad + lineH, nameW, lineH, juce::Justification::centredLeft, true);
 
@@ -268,12 +268,12 @@ void ControllerProfilesPage::ControllerListModel::paintListBoxItem(int rowNumber
     if (portText.isEmpty())
         portText = tr("controllers.port.none");
 
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
     g.setFont(FontManager::getInstance().getUIFont(9.0f));
     g.drawText(tr("controllers.port.port_out"), portX, 4, kProfilePortOutWidth, 12,
                juce::Justification::centredLeft, true);
 
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     g.setFont(FontManager::getInstance().getUIFont(11.0f));
     g.drawText(portText, portX, 18, kProfilePortOutWidth, 18, juce::Justification::centredLeft,
                true);
@@ -393,7 +393,7 @@ void ControllerProfilesPage::onAddClicked() {
                        [this, profiles](int result) {
                            if (result <= 0)
                                return;
-                           size_t idx = static_cast<size_t>(result - 1);
+                           auto idx = static_cast<size_t>(result - 1);
                            if (idx >= profiles.size())
                                return;
                            onProfilePicked(profiles[idx]);
@@ -759,7 +759,7 @@ class LuaScriptsPage : public juce::Component {
                 auto& cfg = magda::Config::getInstance();
                 auto enabled = cfg.getEnabledFactoryLuaScripts();
                 const auto name = file.getFileName().toStdString();
-                enabled.erase(std::remove(enabled.begin(), enabled.end(), name), enabled.end());
+                std::erase(enabled, name);
                 cfg.setEnabledFactoryLuaScripts(std::move(enabled));
                 cfg.save();
                 if (file.getFileName() == scripting_app::activeLuaScriptName())
@@ -783,19 +783,18 @@ class LuaScriptsPage : public juce::Component {
             menu.addItem(static_cast<int>(i + 1), available[i].getFileName());
 
         juce::Component::SafePointer<LuaScriptsPage> self(this);
-        const auto availableCopy = available;
+        const auto& availableCopy = available;
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&addScriptButton_),
                            [self, availableCopy](int result) {
                                if (result <= 0)
                                    return;
-                               const size_t idx = static_cast<size_t>(result - 1);
+                               const auto idx = static_cast<size_t>(result - 1);
                                if (idx >= availableCopy.size())
                                    return;
                                auto& cfg = magda::Config::getInstance();
                                auto enabled = cfg.getEnabledFactoryLuaScripts();
                                const auto name = availableCopy[idx].getFileName().toStdString();
-                               if (std::find(enabled.begin(), enabled.end(), name) ==
-                                   enabled.end()) {
+                               if (!std::ranges::contains(enabled, name)) {
                                    enabled.push_back(name);
                                    cfg.setEnabledFactoryLuaScripts(std::move(enabled));
                                    cfg.save();
@@ -895,7 +894,7 @@ void LuaScriptsPage::ScriptListModel::paintListBoxItem(int rowNumber, juce::Grap
     const bool isActive = name == active && active.isNotEmpty();
 
     if (rowIsSelected) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.20f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.20f));
         g.fillRect(0, 0, width, height);
     }
 
@@ -909,23 +908,23 @@ void LuaScriptsPage::ScriptListModel::paintListBoxItem(int rowNumber, juce::Grap
     const int nameW = juce::jmax(40, portOutX - textX - 8);
 
     if (isActive) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE));
         g.fillEllipse(static_cast<float>(dotX), static_cast<float>(dotY),
                       static_cast<float>(dotSize), static_cast<float>(dotSize));
     } else {
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         g.drawEllipse(static_cast<float>(dotX), static_cast<float>(dotY),
                       static_cast<float>(dotSize), static_cast<float>(dotSize), 1.0f);
     }
 
-    g.setColour(isActive ? DarkTheme::getTextColour()
-                         : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    g.setColour(isActive ? ActiveTheme::getTextColour()
+                         : ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     g.setFont(isActive ? FontManager::getInstance().getUIFontBold(12.0f)
                        : FontManager::getInstance().getUIFont(12.0f));
     g.drawText(name, textX, 5, nameW, 18, juce::Justification::centredLeft, true);
 
     if (isActive) {
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
         g.drawText(tr("controllers.scripts.active"), textX, 22, nameW, 14,
                    juce::Justification::centredLeft, true);
@@ -942,14 +941,14 @@ void LuaScriptsPage::ScriptListModel::paintListBoxItem(int rowNumber, juce::Grap
     if (portOutText.isEmpty())
         portOutText = tr("controllers.port.none");
 
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
     g.setFont(FontManager::getInstance().getUIFont(9.0f));
     g.drawText(tr("controllers.port.port_out"), portOutX, 4, kScriptPortOutWidth, 12,
                juce::Justification::centredLeft, true);
     g.drawText(tr("controllers.port.port_in"), portInX, 4, kScriptPortInWidth, 12,
                juce::Justification::centredLeft, true);
 
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     g.setFont(FontManager::getInstance().getUIFont(11.0f));
     g.drawText(portOutText, portOutX, 18, kScriptPortOutWidth, 18, juce::Justification::centredLeft,
                true);
@@ -967,7 +966,7 @@ ControllersDialog::ControllersDialog() {
     profilesPage_ = std::make_unique<ControllerProfilesPage>();
     scriptsPage_ = std::make_unique<LuaScriptsPage>();
 
-    auto tabBg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+    auto tabBg = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
     tabbedComponent_.addTab(
         tr("controllers.tab.profiles")
             .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)),
@@ -986,7 +985,7 @@ ControllersDialog::~ControllersDialog() {
 }
 
 void ControllersDialog::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
 }
 
 void ControllersDialog::resized() {
@@ -1011,7 +1010,7 @@ class SelfClosingDialogWindow : public juce::DialogWindow {
 
 void ControllersDialog::showDialog(juce::Component* /*parent*/) {
     auto* dialog = new ControllersDialog();
-    auto bg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+    auto bg = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
 
     auto* window = new SelfClosingDialogWindow(tr("controllers.title"), bg);
     window->setContentOwned(dialog, true);

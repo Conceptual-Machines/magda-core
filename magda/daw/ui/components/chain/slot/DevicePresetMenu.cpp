@@ -1,11 +1,11 @@
 #include "slot/DevicePresetMenu.hpp"
 
-#include "audio/AudioBridge.hpp"
 #include "core/PluginPresetScanner.hpp"
 #include "core/PresetManager.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "engine/PluginService.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -30,9 +30,8 @@ void showPresetErrorAsync(const juce::String& title, const juce::String& message
                                  nullptr);
 }
 
-magda::AudioBridge* getAudioBridge() {
-    auto* engine = magda::TrackManager::getInstance().getAudioEngine();
-    return engine != nullptr ? engine->getAudioBridge() : nullptr;
+magda::AudioEngine* getAudioEngine() {
+    return magda::TrackManager::getInstance().getAudioEngine();
 }
 
 void buildPresetSubmenu(juce::PopupMenu& menu, const juce::File& dir, const juce::String& prefix,
@@ -93,14 +92,14 @@ class PluginPresetsButtonLookAndFeel : public juce::LookAndFeel_V4 {
                               const juce::Colour& /*bgColour*/, bool isHighlighted,
                               bool isDown) override {
         auto bounds = button.getLocalBounds().toFloat().reduced(0.5f);
-        auto bg = DarkTheme::getColour(DarkTheme::SURFACE);
+        auto bg = ActiveTheme::getColour(ActiveTheme::SURFACE);
         if (isDown)
             bg = bg.darker(0.2f);
         else if (isHighlighted)
             bg = bg.brighter(0.1f);
         g.setColour(bg);
         g.fillRoundedRectangle(bounds, 3.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRoundedRectangle(bounds, 3.0f, 1.0f);
     }
 
@@ -108,11 +107,11 @@ class PluginPresetsButtonLookAndFeel : public juce::LookAndFeel_V4 {
                         bool /*down*/) override {
         auto bounds = button.getLocalBounds().reduced(6, 0);
         constexpr float chevronW = 10.0f;
-        auto chevronArea = bounds.removeFromRight((int)chevronW).toFloat();
+        auto chevronArea = bounds.removeFromRight(static_cast<int>(chevronW)).toFloat();
 
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
         g.setColour(
-            DarkTheme::getTextColour().withMultipliedAlpha(button.isEnabled() ? 1.0f : 0.5f));
+            ActiveTheme::getTextColour().withMultipliedAlpha(button.isEnabled() ? 1.0f : 0.5f));
         g.drawText(button.getButtonText(), bounds.toFloat(), juce::Justification::centredLeft,
                    /*useEllipses*/ true);
 
@@ -123,7 +122,7 @@ class PluginPresetsButtonLookAndFeel : public juce::LookAndFeel_V4 {
         chevron.startNewSubPath(cx - halfSize, cy - 1.0f);
         chevron.lineTo(cx, cy + 1.5f);
         chevron.lineTo(cx + halfSize, cy - 1.0f);
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.strokePath(chevron, juce::PathStrokeType(1.0f, juce::PathStrokeType::curved,
                                                    juce::PathStrokeType::rounded));
     }
@@ -190,8 +189,7 @@ void showMagdaPresetMenu(juce::Component* targetComponent, const juce::String& p
 std::optional<magda::DeviceInfo> snapshotDeviceForPreset(const magda::DeviceInfo& fallbackDevice,
                                                          const magda::ChainNodePath& nodePath) {
     auto& trackManager = magda::TrackManager::getInstance();
-    if (auto* bridge = getAudioBridge())
-        bridge->getPluginManager().capturePluginState(nodePath);
+    magda::PluginService::getInstance().capturePluginStateAt(nodePath);
 
     if (auto* live = trackManager.getDeviceInChainByPath(nodePath))
         return *live;
@@ -282,7 +280,7 @@ void showSaveMagdaPresetDialog(const magda::DeviceInfo& device,
 }
 
 void saveCurrentMagdaPreset(const juce::String& currentPresetName,
-                            PresetSnapshotProvider snapshotProvider) {
+                            const PresetSnapshotProvider& snapshotProvider) {
     if (currentPresetName.isEmpty() || !snapshotProvider)
         return;
 
@@ -295,11 +293,10 @@ void saveCurrentMagdaPreset(const juce::String& currentPresetName,
         showPresetErrorAsync("Save Preset Failed", presetManager.getLastError());
 }
 
-void loadMagdaPreset(
-    const juce::String& pluginFolder, const magda::ChainNodePath& nodePath,
-    const juce::String& presetRelativePath,
-    std::function<void(const magda::DeviceInfo& liveDevice, const juce::String& presetName)>
-        onLoaded) {
+void loadMagdaPreset(const juce::String& pluginFolder, const magda::ChainNodePath& nodePath,
+                     const juce::String& presetRelativePath,
+                     const std::function<void(const magda::DeviceInfo& liveDevice,
+                                              const juce::String& presetName)>& onLoaded) {
     magda::DeviceInfo preset;
     auto& presetManager = magda::PresetManager::getInstance();
     if (!presetManager.loadDevicePreset(pluginFolder, presetRelativePath, preset)) {
@@ -389,7 +386,7 @@ void PluginDevicePresetPresenter::showMenu(juce::Component* targetComponent,
                                            const magda::DeviceInfo& device,
                                            const magda::ChainNodePath& devicePath,
                                            bool isInternalDevice,
-                                           std::function<void()> onSelectionChanged) {
+                                           const std::function<void()>& onSelectionChanged) {
     auto state = state_;
     PluginPresetMenuActions actions;
     actions.saveAs = [this, device, devicePath, onSelectionChanged]() {
@@ -412,7 +409,7 @@ void PluginDevicePresetPresenter::showMenu(juce::Component* targetComponent,
 
 void PluginDevicePresetPresenter::loadFile(const magda::ChainNodePath& devicePath,
                                            const juce::File& file,
-                                           std::function<void()> onSelectionChanged) {
+                                           const std::function<void()>& onSelectionChanged) {
     auto state = state_;
     loadPluginPresetFile(devicePath, file,
                          [state, onSelectionChanged](const juce::File& currentFile,
@@ -426,7 +423,7 @@ void PluginDevicePresetPresenter::loadFile(const magda::ChainNodePath& devicePat
 
 void PluginDevicePresetPresenter::showSaveDialog(const magda::DeviceInfo& device,
                                                  const magda::ChainNodePath& devicePath,
-                                                 std::function<void()> onSelectionChanged) {
+                                                 const std::function<void()>& onSelectionChanged) {
     auto state = state_;
     showSavePluginPresetDialog(device, devicePath, state->presetName,
                                [state, onSelectionChanged](const juce::File& currentFile,
@@ -447,8 +444,8 @@ void showPluginPresetMenu(juce::Component* targetComponent, const magda::DeviceI
                           const magda::ChainNodePath& devicePath, bool isInternalDevice,
                           const juce::File& currentPluginPresetFile,
                           PluginPresetMenuActions actions) {
-    auto* bridge = getAudioBridge();
-    if (bridge == nullptr || isInternalDevice)
+    auto* engine = getAudioEngine();
+    if (engine == nullptr || isInternalDevice)
         return;
 
     auto& scanner = magda::PluginPresetScanner::getInstance();
@@ -467,12 +464,13 @@ void showPluginPresetMenu(juce::Component* targetComponent, const magda::DeviceI
         }
     }
 
-    const int numPrograms = bridge->getPluginNumPrograms(devicePath);
+    const auto programs = engine->getPluginPrograms(devicePath);
+    const int numPrograms = programs ? programs->names.size() : 0;
     if (numPrograms > 1) {
         juce::PopupMenu programsSubmenu;
-        const int currentProgram = bridge->getPluginCurrentProgram(devicePath);
+        const int currentProgram = programs->current;
         for (int i = 0; i < numPrograms; ++i) {
-            auto name = bridge->getPluginProgramName(devicePath, i);
+            auto name = programs->names[i];
             if (name.isEmpty())
                 name = "Program " + juce::String(i + 1);
             programsSubmenu.addItem(kProgramIdBase + i, name, true, i == currentProgram);
@@ -491,7 +489,7 @@ void showPluginPresetMenu(juce::Component* targetComponent, const magda::DeviceI
                      !userDir.getFullPathName().isEmpty());
         menu.addItem(kRescanPluginPresets, "Rescan");
     } else if (numPrograms <= 1) {
-        return;
+        menu.addItem(kPresetIdBase, "(no presets or programs available)", false);
     }
 
     menu.showMenuAsync(
@@ -522,9 +520,12 @@ void showPluginPresetMenu(juce::Component* targetComponent, const magda::DeviceI
 
             if (chosen >= kProgramIdBase) {
                 const int programIndex = chosen - kProgramIdBase;
-                if (auto* bridge = getAudioBridge()) {
-                    if (bridge->setPluginCurrentProgram(devicePath, programIndex)) {
-                        auto name = bridge->getPluginProgramName(devicePath, programIndex);
+                if (auto* engine = getAudioEngine()) {
+                    if (engine->setPluginCurrentProgram(devicePath, programIndex)) {
+                        const auto selected = engine->getPluginPrograms(devicePath);
+                        auto name = selected && programIndex < selected->names.size()
+                                        ? selected->names[programIndex]
+                                        : juce::String{};
                         if (name.isEmpty())
                             name = "Program " + juce::String(programIndex + 1);
                         if (actions.selectionChanged)
@@ -542,14 +543,14 @@ void showPluginPresetMenu(juce::Component* targetComponent, const magda::DeviceI
         });
 }
 
-void loadPluginPresetFile(
-    const magda::ChainNodePath& devicePath, const juce::File& file,
-    std::function<void(const juce::File& currentFile, const juce::String& displayName)> onLoaded) {
-    auto* bridge = getAudioBridge();
-    if (bridge == nullptr)
+void loadPluginPresetFile(const magda::ChainNodePath& devicePath, const juce::File& file,
+                          const std::function<void(const juce::File& currentFile,
+                                                   const juce::String& displayName)>& onLoaded) {
+    auto* engine = getAudioEngine();
+    if (engine == nullptr)
         return;
 
-    if (!bridge->loadPluginPresetFile(devicePath, file)) {
+    if (!engine->loadPluginPresetFile(devicePath, file)) {
         showPresetErrorAsync("Load Preset Failed",
                              "Could not load \"" + file.getFileName() + "\".");
         return;
@@ -603,11 +604,11 @@ void showSavePluginPresetDialog(
 
             const auto target = userDir.getChildFile(safeName + extension);
             auto doSave = [device, devicePath, target, onSaved]() {
-                auto* bridge = getAudioBridge();
-                if (bridge == nullptr)
+                auto* engine = getAudioEngine();
+                if (engine == nullptr)
                     return;
 
-                if (!bridge->savePluginPresetFile(devicePath, target)) {
+                if (!engine->savePluginPresetFile(devicePath, target)) {
                     showPresetErrorAsync("Save Preset Failed",
                                          "Could not write \"" + target.getFileName() + "\".");
                     return;

@@ -4,17 +4,18 @@ declare license "GPL-3.0";
 declare version "1.0";
 
 import("stdfaust.lib");
+msm = library("magda_smoothing.lib");
 
 // ============================================================================
 // User controls
 // ============================================================================
 
 drive    = hslider("Drive [unit:dB] [idx:0]", 0.0, 0.0, 24.0, 0.1)
-           : si.smooth(ba.tau2pole(0.02));
+           : msm.smooth(ba.tau2pole(0.02));
 mode     = nentry("Mode [idx:1] [style:menu{'Hard':0;'Soft':1;'Tanh':2;'Hyperbolic':3;'Sine':4}]",
                   0, 0, 4, 1);
 outputDb = hslider("Output [unit:dB] [idx:2]", 0.0, -24.0, 12.0, 0.1)
-           : si.smooth(ba.tau2pole(0.02));
+           : msm.smooth(ba.tau2pole(0.02));
 
 // ============================================================================
 // DSP

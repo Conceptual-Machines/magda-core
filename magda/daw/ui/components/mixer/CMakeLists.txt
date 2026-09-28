@@ -1,4 +1,5 @@
 target_sources(magda_daw_app PRIVATE
+    HardwareInputLevels.cpp
     MasterChannelStrip.cpp
     InputTypeSelector.cpp
     MiniChainRow.cpp
@@ -6,6 +7,7 @@ target_sources(magda_daw_app PRIVATE
     MixerToggleRail.cpp
     MonitorSelector.cpp
     RoutingSelector.cpp
+    HardwareInputLevels.hpp
     MasterChannelStrip.hpp
     InputTypeSelector.hpp
     LevelMeterScale.hpp

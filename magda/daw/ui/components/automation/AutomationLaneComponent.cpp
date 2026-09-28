@@ -9,8 +9,8 @@
 #include "../../../core/ParameterUtils.hpp"
 #include "../../../core/UndoManager.hpp"
 #include "../../state/TimelineController.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/CursorManager.hpp"
-#include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 
 namespace magda {
@@ -44,8 +44,8 @@ void AutomationLaneComponent::paint(juce::Graphics& g) {
 
     // Background
     juce::Colour bgColour = isSelected_
-                                ? DarkTheme::getColour(DarkTheme::AUTOMATION_LANE_SELECTED)
-                                : DarkTheme::getColour(DarkTheme::AUTOMATION_LANE_BACKGROUND);
+                                ? ActiveTheme::getColour(ActiveTheme::AUTOMATION_LANE_SELECTED)
+                                : ActiveTheme::getColour(ActiveTheme::AUTOMATION_LANE_BACKGROUND);
     g.fillAll(bgColour);
 
     // Reserve the top handle strip first (top-handle hosts), so the header
@@ -54,19 +54,19 @@ void AutomationLaneComponent::paint(juce::Graphics& g) {
 
     // Header area - just a simple background (name is painted by TrackHeadersPanel)
     auto headerBounds = bounds.removeFromTop(HEADER_HEIGHT);
-    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_LANE_HEADER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_LANE_HEADER));
     g.fillRect(headerBounds);
 
     // Header border
-    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_DIVIDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_DIVIDER));
     g.drawHorizontalLine(headerBounds.getBottom() - 1, 0.0f, static_cast<float>(getWidth()));
 
     // Resize handle strip: bottom edge by default, top edge for bottom-anchored
     // hosts (the master automation band).
     auto resizeArea = getResizeHandleArea();
-    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_DIVIDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_DIVIDER));
     g.fillRect(resizeArea);
-    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_DIVIDER_LIGHT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_DIVIDER_LIGHT));
     int handleLineY =
         resizeHandleAtTop_ ? RESIZE_HANDLE_HEIGHT - 1 : getHeight() - RESIZE_HANDLE_HEIGHT;
     g.drawHorizontalLine(handleLineY, 0.0f, static_cast<float>(getWidth()));
@@ -80,9 +80,9 @@ void AutomationLaneComponent::paint(juce::Graphics& g) {
         const int x1 = SCALE_LABEL_WIDTH + static_cast<int>(drawClipEndBeat_ * pixelsPerBeat_);
         const auto rect = juce::Rectangle<int>(x0, contentY, juce::jmax(2, x1 - x0),
                                                juce::jmax(1, contentHeight));
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0.15f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0.15f));
         g.fillRoundedRectangle(rect.toFloat(), 3.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0.5f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0.5f));
         g.drawRoundedRectangle(rect.toFloat().reduced(0.5f), 3.0f, 1.0f);
     }
 }
@@ -113,9 +113,9 @@ void AutomationLaneComponent::paintOverChildren(juce::Graphics& g) {
         const int width = static_cast<int>(copyGhostLengthBeats_ * pixelsPerBeat_);
         const auto rect =
             juce::Rectangle<int>(x0, contentY, juce::jmax(2, width), juce::jmax(1, contentHeight));
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0.15f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0.15f));
         g.fillRoundedRectangle(rect.toFloat(), 3.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0.5f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0.5f));
         g.drawRoundedRectangle(rect.toFloat().reduced(0.5f), 3.0f, 1.0f);
     }
 
@@ -220,7 +220,7 @@ void AutomationLaneComponent::mouseDoubleClick(const juce::MouseEvent& e) {
     // Default clip length: one bar, from the timeline's time signature.
     double lengthBeats = 4.0;
     if (auto* tc = TimelineController::getCurrent())
-        lengthBeats = juce::jmax(1, tc->getState().tempo.timeSignatureNumerator);
+        lengthBeats = tc->getState().tempo.beatsPerBar();
 
     auto cmd = std::make_unique<CreateAutomationClipCommand>(laneId_, beat, lengthBeats);
     auto* cmdPtr = cmd.get();
@@ -277,7 +277,7 @@ void AutomationLaneComponent::mouseUp(const juce::MouseEvent& e) {
             // the double-click gesture.
             lengthBeats = 4.0;
             if (auto* tc = TimelineController::getCurrent())
-                lengthBeats = juce::jmax(1, tc->getState().tempo.timeSignatureNumerator);
+                lengthBeats = tc->getState().tempo.beatsPerBar();
         }
         auto cmd =
             std::make_unique<CreateAutomationClipCommand>(laneId_, drawClipStartBeat_, lengthBeats);
@@ -380,7 +380,7 @@ bool AutomationLaneComponent::hitTest(int x, int y) {
 
 juce::Rectangle<int> AutomationLaneComponent::getResizeHandleArea() const {
     int y = resizeHandleAtTop_ ? 0 : getHeight() - RESIZE_HANDLE_HEIGHT;
-    return juce::Rectangle<int>(0, y, getWidth(), RESIZE_HANDLE_HEIGHT);
+    return {0, y, getWidth(), RESIZE_HANDLE_HEIGHT};
 }
 
 void AutomationLaneComponent::setResizeHandleAtTop(bool atTop) {
@@ -608,18 +608,17 @@ void AutomationLaneComponent::simplifyLane(AutomationLaneId laneId, double epsil
     };
 
     std::vector<AutomationPointId> filterSorted(pointIdFilter.begin(), pointIdFilter.end());
-    std::sort(filterSorted.begin(), filterSorted.end());
+    std::ranges::sort(filterSorted);
     const bool hasFilter = !filterSorted.empty();
 
     std::vector<Entry> entries;
     entries.reserve(lane->absolutePoints.size());
     for (const auto& pt : lane->absolutePoints) {
-        bool inScope =
-            !hasFilter || std::binary_search(filterSorted.begin(), filterSorted.end(), pt.id);
+        bool inScope = !hasFilter || std::ranges::binary_search(filterSorted, pt.id);
         entries.push_back({pt.id, {pt.beatPosition, pt.value}, inScope});
     }
-    std::sort(entries.begin(), entries.end(),
-              [](const Entry& a, const Entry& b) { return a.p.beatPosition < b.p.beatPosition; });
+    const auto beatPositionOf = [](const Entry& entry) { return entry.p.beatPosition; };
+    std::ranges::sort(entries, {}, beatPositionOf);
 
     std::vector<AutomationCurveSimplifier::Point> polyline;
     polyline.reserve(entries.size());
@@ -659,21 +658,23 @@ void AutomationLaneComponent::simplifyLane(AutomationLaneId laneId, double epsil
 }
 
 // Convert real value to normalized position using ParameterInfo
-static double realToNormalizedForTarget(double realValue, const ParameterInfo& info) {
+namespace {
+double realToNormalizedForTarget(double realValue, const ParameterInfo& info) {
     return static_cast<double>(
         ParameterUtils::realToNormalized(static_cast<float>(realValue), info));
 }
+}  // namespace
 
 void AutomationLaneComponent::paintScaleLabels(juce::Graphics& g, juce::Rectangle<int> area) {
     if (area.getHeight() <= 0 || area.getWidth() < 25)
         return;
 
     // Background for scale area
-    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_LANE_SCALE_BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_LANE_SCALE_BACKGROUND));
     g.fillRect(area);
 
     // Right border
-    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_DIVIDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_DIVIDER));
     g.drawVerticalLine(area.getRight() - 1, static_cast<float>(area.getY()),
                        static_cast<float>(area.getBottom()));
 
@@ -681,7 +682,7 @@ void AutomationLaneComponent::paintScaleLabels(juce::Graphics& g, juce::Rectangl
     if (!lane)
         return;
 
-    paintScaleLabelsFor(g, area, lane->target, [this, &area](double normalized) {
+    paintScaleLabelsFor(g, area, lane->target, [&area](double normalized) {
         return valueToPixel(normalized, area.getHeight());
     });
 }
@@ -692,7 +693,7 @@ void AutomationLaneComponent::paintScaleLabelsFor(juce::Graphics& g, juce::Recta
     // Get parameter info for this target
     ParameterInfo paramInfo = getParameterInfoForTarget(target);
 
-    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_SCALE_TEXT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_SCALE_TEXT));
     g.setFont(FontManager::getInstance().getUIFont(9.0f));
 
     // Helper lambda to draw a label at a real value position
@@ -777,7 +778,7 @@ void AutomationLaneComponent::paintScaleLabelsFor(juce::Graphics& g, juce::Recta
             // Clamp to range and convert back to normalized for positioning.
             double clamped = juce::jlimit(static_cast<double>(paramInfo.minValue),
                                           static_cast<double>(paramInfo.maxValue), realValue);
-            double normValue = static_cast<double>(
+            auto normValue = static_cast<double>(
                 ParameterUtils::realToNormalized(static_cast<float>(clamped), paramInfo));
             int y = area.getY() + normToYOffset(normValue);
 
@@ -915,7 +916,7 @@ juce::String AutomationLaneComponent::formatScaleValue(double normalizedValue) c
     return juce::String(static_cast<int>(normalizedValue * 100)) + "%";
 }
 
-int AutomationLaneComponent::valueToPixel(double value, int areaHeight) const {
+int AutomationLaneComponent::valueToPixel(double value, int areaHeight) {
     return static_cast<int>((1.0 - value) * areaHeight);
 }
 

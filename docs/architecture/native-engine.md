@@ -30,11 +30,11 @@ is. When the two disagree, the headers are right and this file is stale.
 | **Engine core: plan, executor, PDC** | [#1889](https://github.com/Conceptual-Machines/magda-core/issues/1889) | **all 10 slices done** |
 | **Arranger clip playback** | [#1890](https://github.com/Conceptual-Machines/magda-core/issues/1890) | **all 7 slices done** |
 | **Parameters, modifiers, macros, automation** | [#1891](https://github.com/Conceptual-Machines/magda-core/issues/1891) | **all 8 slices done** |
-| Rack graph: pins, summing, multi-out, nesting | [#1892](https://github.com/Conceptual-Machines/magda-core/issues/1892) | 3 of 5 slices done |
+| **Rack graph: pins, summing, multi-out, nesting** | [#1892](https://github.com/Conceptual-Machines/magda-core/issues/1892) | **all 5 slices done** |
 | External plugin hosting and hardware inserts | [#1893](https://github.com/Conceptual-Machines/magda-core/issues/1893) | not started |
 | Clip launcher and session playback | [#1894](https://github.com/Conceptual-Machines/magda-core/issues/1894) | not started |
 | Live input, monitoring, recording | [#1895](https://github.com/Conceptual-Machines/magda-core/issues/1895) | not started |
-| Null-diff validation harness | [#1896](https://github.com/Conceptual-Machines/magda-core/issues/1896) | rig built, 3 of 8 slices done |
+| Null-diff validation harness | [#1896](https://github.com/Conceptual-Machines/magda-core/issues/1896) | rig built, 6 of 8 slices done |
 | Cutover: bridge rewrite, dual-engine release | [#1897](https://github.com/Conceptual-Machines/magda-core/issues/1897) | not started |
 
 Engine core, slice by slice: plan IR and compiler ([#2010](https://github.com/Conceptual-Machines/magda-core/issues/2010)),
@@ -74,8 +74,8 @@ Racks, slice by slice: aux outputs and multi-out tracks
 delta solo at device and rack scope
 ([#2136](https://github.com/Conceptual-Machines/magda-core/issues/2136)),
 nesting, recursion and op-key identity
-([#2137](https://github.com/Conceptual-Machines/magda-core/issues/2137)).
-Open: pins, channel counts and implicit summing
+([#2137](https://github.com/Conceptual-Machines/magda-core/issues/2137)),
+pins, channel counts and implicit summing
 ([#2138](https://github.com/Conceptual-Machines/magda-core/issues/2138)),
 parity cases for rack topologies
 ([#2139](https://github.com/Conceptual-Machines/magda-core/issues/2139)).
@@ -85,10 +85,13 @@ Validation, slice by slice. Done: whole-project cases and the tiered oracle
 plan goldens ([#2076](https://github.com/Conceptual-Machines/magda-core/issues/2076)),
 differ property tests ([#2077](https://github.com/Conceptual-Machines/magda-core/issues/2077)),
 the block-size invariance gate
-([#2078](https://github.com/Conceptual-Machines/magda-core/issues/2078)).
-Open: migrators ([#2079](https://github.com/Conceptual-Machines/magda-core/issues/2079)),
-the DAWproject cross-check ([#2080](https://github.com/Conceptual-Machines/magda-core/issues/2080)),
-the real-project corpus ([#2081](https://github.com/Conceptual-Machines/magda-core/issues/2081)),
+([#2078](https://github.com/Conceptual-Machines/magda-core/issues/2078)),
+project and preset migrators
+([#2079](https://github.com/Conceptual-Machines/magda-core/issues/2079)),
+the DAWproject cross-check
+([#2080](https://github.com/Conceptual-Machines/magda-core/issues/2080)).
+Open: the real-project corpus
+([#2081](https://github.com/Conceptual-Machines/magda-core/issues/2081)),
 the parity envelope suite ([#2082](https://github.com/Conceptual-Machines/magda-core/issues/2082)).
 Parity cases for a feature live with the feature, so #1891 through #1895 each carry their own,
 the way #2040 was the last slice of #1890.
@@ -308,6 +311,15 @@ The op vocabulary is deliberately small: `ClipAudio`, `ClipMidi`, `AudioInput`, 
 `Device`, `MixAudio`, `MergeMidi`, `Subtract`, `Delay`, `Crossfade`, `Gain`, `Fader`, `SendTap`,
 `Meter`, `ModSource`, `Output`.
 
+**A device's sidechain is a slot fed from a modelled source** (#2329). The `Device` op's three
+inputs are `[audio, MIDI, sidechain]`, and `SidechainConfig` says more than which track the key
+comes from: `tapPoint` picks between the two points a modifier also chooses between, so a key
+taken pre-FX reads the source's trigger tap and one taken post-fader reads its sidechain tap;
+`gainDb` is a `Gain` op on the edge, emitted wherever a key is connected so moving the trim is a
+value rather than a recompile; `listen` is a value on the process op, like a delta solo, and
+replaces the slot's output with the key it was handed. Which slot a device wants is the device's
+own declaration (`DeviceProperties::sidechain`), not something inferred from its channel counts.
+
 ---
 
 ## 4. The life of an edit
@@ -360,6 +372,15 @@ the old epoch is destroyed right there, on the publishing thread. The callback n
 
 **Crossfade** (`plan/PlanCrossfade.hpp`) ramps the edges an edit moved. Fades are ops the
 compiler never emitted, added by a pass over its output and gone again at the next publish.
+
+**A note that is already sounding follows the edit.** Change a playing note's pitch and the
+pitch changes under your fingers, because a voice renders what the published snapshot says
+rather than what an event said when it started. The fork cannot do that: by then the note is a
+MIDI message its plugin has already been handed, and the model no longer reaches it.
+
+This is intended, and it is worth writing down because nothing would catch it being taken away.
+The null-diff corpus pins renders, and a render never edits anything mid-note, so a later pass
+chasing parity could remove this and every suite would stay green.
 
 ---
 
@@ -734,12 +755,25 @@ do with the mixer. The runner refuses to certify a case that provoked an asserti
 failure rather than a quiet pass, and the collision is
 [#2085](https://github.com/Conceptual-Machines/magda-core/issues/2085).
 
-Sends are the one routing dimension left out, and not because they are hard to model: the
-compiler emits `SendTap` pre and post fader and the value layer resolves the levels already.
-The incumbent's sends live on `te::AuxSendPlugin` instances that `PluginManagerSync` creates,
-which wants a `PluginManager` and the device layer behind it, and writing those plugins straight
-into the leg would be the second sync the corpus refuses to have. They belong with the rest of
-the routing graph, in [#1892](https://github.com/Conceptual-Machines/magda-core/issues/1892).
+Sends were the one routing dimension left out, and never because they were hard to model: the
+compiler emits `SendTap` pre and post fader and the value layer resolved the levels all along.
+What they waited for was the other leg, since the incumbent's sends live on `te::AuxSendPlugin`
+instances `PluginManagerSync` creates from a `PluginManager`. Three cases carry them now
+([#2174](https://github.com/Conceptual-Machines/magda-core/issues/2174)). Where the tap sits is
+read off the fader it sits after: one project renders three quarters of an impulse with the send
+post-fader and unity with it pre-fader, so what the pair measures is the flag rather than whether
+a send exists at all. The third pins a claim `PlanValues.cpp` had only made in a comment, that a
+muted track keeps feeding its aux, because the tap is upstream of the muting stage in both
+engines.
+
+Nothing in those cases is panned, and that is a correction. They were first written with the
+source hard left and the return hard right so the dry and the send could be read out of separate
+channels. A post-fader tap is taken after the fader and the fader is where the pan is applied, so
+what reached the return was already hard left and the return's own hard right multiplied it away:
+both post-fader cases measured silence down the path they existed to measure, and nulled, because
+the incumbent was doing the same thing. They are read as one total now, and the runner refuses a
+case whose two renders are both silent -- which does not reach this one, since the dry path kept
+the render audible, and the limit is written down beside the guard.
 
 **Parameters are where the corpus first runs a device.** Until
 [#2123](https://github.com/Conceptual-Machines/magda-core/issues/2123) a `Device` op resolved to
@@ -749,9 +783,9 @@ as a contract (`tests/NullDiffGain.hpp`) and implemented in both legs the way th
 already was. What a gain device renders is the value of its own parameter, so a case that plays a
 constant into it draws the curve directly.
 
-Nine cases, all nulling: the stored value, a step curve over it, a square LFO over it, both at
-once, the stored value under each, a macro at track and at device scope, and the fader past both
-ends of its range where the clamp is. Each drives the incumbent through the app's own paths
+Eleven cases, all nulling: the stored value, a step curve over it, a square LFO over it, both at
+once, the stored value under each, a macro at all three scopes, an envelope follower, and the
+fader past both ends of its range where the clamp is. Each drives the incumbent through the app's own paths
 rather than a second set written here: the curve is emitted by the same `bakeLaneIntoCurve` the
 playback engine uses, and the modifiers and macros are built by `ModifierSyncWalker`, the walker
 `PluginManager` drives.
@@ -762,17 +796,30 @@ wherever a curve is holding still and can differ by up to a block wherever it ju
 thousand samples of silence either side of every jump covers a block at 4096 as well as at 512,
 so these cases are also bit identical across the invariance gate rather than exempt from it.
 
-**Three things are named rather than covered**, each after being tried. Rack-scope macros need a
-`te::RackType` that `RackSyncManager` builds out of a `PluginManager`, which is the boundary sends
-stop at and moves with #1892. The random walk cannot be nulled by anybody, since the fork seeds
-its generator from the clock. The envelope follower is fed by a `FollowerSourceTapPlugin` that
-`PluginManager` installs, so without the device layer the fork's follower is handed nothing.
+**Rack-scope macros and the envelope follower are covered now**, and both for the same reason the
+sends are: each wanted something only a `PluginManager` builds -- a `te::RackType` for the one, a
+`FollowerSourceTapPlugin` for the other -- and the leg drives that manager. The macro case links
+one of a rack's two chains and leaves the other fixed, so its sum says the macro resolved at rack
+scope rather than that something modulated. The follower case is cross-track: the modifier sits on
+the target's gain device and that device's audio sidechain names the source.
 
-The envelope is a finding rather than a boundary. Its note gate is behind that same device layer,
-and its transport gate is the fork asking `TransportControl::isPlaying()`, which is false
-throughout every offline render: a transport-triggered envelope does nothing in a bounce in the
-current engine, while the engine being built plays it. The case was written and renders 0.625
-against silence. It is not in the corpus, for the reason reverse-plus-warp is not.
+The follower case pins the steady state and deliberately not the envelope's timing. Its source
+plays a square, so the source's magnitude is one constant and every block's peak is the same
+number at every block size, which is what lets it null at all: the plan resolves parameters at the
+top of a block, so what a follower follows is the block before this one (`ModFollower.hpp`), and a
+lag makes no difference to a level that is not moving. A case built on a swell would be measuring
+that lag against a fork whose own ordering is the graph's rather than a rule.
+
+**One thing is still named rather than covered.** The random walk cannot be nulled by anybody,
+since the fork seeds its generator from the clock.
+
+The envelope has one gate a render cannot open and one nobody has tried. Its transport gate is the
+fork asking `TransportControl::isPlaying()`, which is false throughout every offline render: a
+transport-triggered envelope does nothing in a bounce in the current engine, while the engine
+being built plays it. The case was written and renders 0.625 against silence, and pinning it would
+ask the engine to reproduce a bug, so it is out for the reason reverse-plus-warp is. Its note gate
+was behind the device layer, which has moved; whether the fork's MIDI monitor opens one in an
+offline render is untested rather than settled.
 
 The slice also found one in the fork's LFO. `std::fmod` keeps the sign of its left-hand side, so
 a negative edit time gave `Ramp::setPosition` a negative position, which it asserts on and then
@@ -836,7 +883,7 @@ graph that was misaligned in fact while every latency assertion above it passed.
 corpus, and it is the question `RenderContext` already answers on paper: output is a function of
 timeline position and nothing else, so a project renders the same audio however the callback is
 cut up. Every non-MIDI case is rendered at 64, 96, 512 and 4096 samples and the other three are
-compared against 512. It lives in `tests/test_null_diff_block_size.cpp` and runs in `magda_tests`,
+compared against 512. It lives in `tests/engine/test_null_diff_block_size.cpp` and runs in `magda_tests`,
 because the claim is the native engine's alone: the incumbent owes nobody block-size invariance
 and could not be held to it here if it did.
 
@@ -870,26 +917,40 @@ cell now, which is the unit the voice actually drives it in.
 
 What the rig still does not cover is the rest of
 [#1896](https://github.com/Conceptual-Machines/magda-core/issues/1896): no case carries a device
-either engine ships, because nothing yet runs one of those under both of them, and the gain
-device the parameter cases play through was written for the corpus; the interactive paths have no
-runner; and none of the migration half exists.
+either engine ships, and the gain device the parameter cases play through was written for the
+corpus; the interactive paths have no runner; and none of the migration half exists.
+
+The first of those has moved half its distance
+([#2174](https://github.com/Conceptual-Machines/magda-core/issues/2174)). The native leg no
+longer stands in for a device it was handed: a `Device` op is bound through the app's own
+catalogs, so every device that has moved to the SDK runs under the engine, and one that has not
+is reported as a device the engine cannot run rather than passed through in silence. What is
+still one-sided is the other leg. The incumbent instantiates the two devices the corpus declares
+and nothing else, so a case carrying a shipped device would be comparing a rendered device
+against a device nobody built, which is a residual that says nothing about either engine. Driving
+the app's own device path from that leg is what makes such a case worth writing, and it is what
+rack-scope macros, sends and the envelope follower were each waiting on.
 
 ---
 
 ## 8. What is not built yet
 
+As of [#2579](https://github.com/Conceptual-Machines/magda-core/issues/2579), the fork under the magda engine is services only: plugin scan and formats, the device manager, MidiBridge, and the save hooks. `initialisePlayback()` is never called, so there is no Edit, no playback context and no AudioBridge, and every external plugin is loaded once. What remains the fork's work is tracked in separate issues: external plugin editors [#2580](https://github.com/Conceptual-Machines/magda-core/issues/2580), capture on save [#2581](https://github.com/Conceptual-Machines/magda-core/issues/2581), programs and preset files [#2582](https://github.com/Conceptual-Machines/magda-core/issues/2582), chunk presets [#2573](https://github.com/Conceptual-Machines/magda-core/issues/2573), controller and OSC writes [#2554](https://github.com/Conceptual-Machines/magda-core/issues/2554) and [#2317](https://github.com/Conceptual-Machines/magda-core/issues/2317), device slot meters [#2570](https://github.com/Conceptual-Machines/magda-core/issues/2570), analyzer and custom UI telemetry [#2585](https://github.com/Conceptual-Machines/magda-core/issues/2585), the remote transport API [#2554](https://github.com/Conceptual-Machines/magda-core/issues/2554), export and bounce [#2555](https://github.com/Conceptual-Machines/magda-core/issues/2555), session [#2552](https://github.com/Conceptual-Machines/magda-core/issues/2552), and recording and input [#2553](https://github.com/Conceptual-Machines/magda-core/issues/2553).
+
 Worth knowing before reading the code and wondering where something is:
 
-- **Racks, the rest of them** ([#1892](https://github.com/Conceptual-Machines/magda-core/issues/1892)).
-  `PlanCompiler::emitRack` emits chain faders, the rack mix, its MIDI merges and its output
-  fader; nesting, its recursion case and the identity a nesting change has to leave alone are
-  settled, and so are aux outputs, multi-out tracks and delta solo at both scopes. What is
-  missing is the pin-level connection graph and the channel model, which is stereo everywhere
-  and needs not to be ([#2138](https://github.com/Conceptual-Machines/magda-core/issues/2138)),
-  and the parity corpus for rack topologies
-  ([#2139](https://github.com/Conceptual-Machines/magda-core/issues/2139)).
+- **The rest of the device layer**
+  ([#2174](https://github.com/Conceptual-Machines/magda-core/issues/2174)). The engine now runs
+  the devices MAGDA ships: `magda_engine_devices` hosts a `MagdaDevice` behind a `Device` op the
+  way `magda_tracktion_compat_devices` hosts one behind a `te::Plugin`, so a device is written
+  once and both engines run that one. What has not moved to the SDK the engine cannot run, and
+  the factory says so rather than standing something in. Both legs cross the boundary now: the
+  incumbent drives `PluginManager` rather than a copy of it, which is what let the sends,
+  rack-scope macros and the envelope follower into the corpus. What is left is a case whose
+  devices are the ones MAGDA ships rather than the corpus's own gain, which is the real-project
+  corpus ([#2081](https://github.com/Conceptual-Machines/magda-core/issues/2081)).
 - **External plugins** ([#1893](https://github.com/Conceptual-Machines/magda-core/issues/1893)).
-  A `Device` op resolves to whatever the host hands the store. Nothing hosts VST3 yet.
+  A `Device` op for one resolves to nothing. Nothing hosts VST3 yet.
 - **Launcher and recording** ([#1894](https://github.com/Conceptual-Machines/magda-core/issues/1894),
   [#1895](https://github.com/Conceptual-Machines/magda-core/issues/1895)).
 - **Wiring the ports to the model.** The native transient detector, the loop-info parse and the
@@ -900,9 +961,10 @@ Worth knowing before reading the code and wondering where something is:
 - **The rest of the validation harness**
   ([#1896](https://github.com/Conceptual-Machines/magda-core/issues/1896)). The rig exists and
   section 7 describes it, whole-project cases and the tiers above them (#2075), the plan goldens
-  (#2076), the differ properties (#2077) and the block-size gate (#2078) included. Missing: the
-  migrators (#2079), the DAWproject cross-check (#2080), a real-project corpus (#2081), and the
-  parity envelope suite that gates cutover (#2082).
+  (#2076), the differ properties (#2077), the block-size gate (#2078) and the DAWproject
+  cross-check (#2080) included. Missing: the migrators (#2079), a real-project corpus (#2081) and
+  the rig a real project reaches it through (#2173, #2174, #2175), and the parity envelope suite
+  that gates cutover (#2082).
 
 ---
 
@@ -919,6 +981,14 @@ Worth knowing before reading the code and wondering where something is:
 
 Every one of those files opens with a comment explaining why it exists. Read that before the
 code; most of them answer the question you are about to ask.
+
+One piece of the engine's world lives outside that tree on purpose. A device is neither the
+engine's nor the current engine's -- it is MAGDA's, written against the device SDK -- so the
+lifecycle adapter that runs one belongs to whichever host is running it, and there is one per
+host: `magda/daw/audio/plugins/tracktion/` for the incumbent and
+`magda/daw/audio/plugins/engine/` for this one (`magda_engine_devices`). Neither is a device. The
+boundary check on `magda_engine` is what keeps them out of it: an adapter that lived in the
+engine would be the engine knowing what a MAGDA device is.
 
 ---
 

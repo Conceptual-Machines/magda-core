@@ -1,12 +1,24 @@
 #include <algorithm>
 #include <map>
+#include <ranges>
+#include <span>
 
-#include "../audio/AudioBridge.hpp"
 #include "../audio/TracktionHelpers.hpp"
 #include "../audio/plugin_manager/ExternalPluginStateUtil.hpp"
+#include "../audio/plugins/DeviceCatalogParameters.hpp"
+#include "../audio/plugins/InternalPluginRegistry.hpp"
+#include "../audio/plugins/MagdaDevice.hpp"
 #include "../audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "../engine/AudioEngine.hpp"
+#include "../engine/PluginService.hpp"
+#include "ChainWalk.hpp"
 #include "DeviceState.hpp"
+#include "DeviceStateCommands.hpp"
+#include "DrumGridPads.hpp"
+#include "HostedParameterEdit.hpp"
+#include "LegacyDeviceAliases.hpp"
+#include "ParameterUtils.hpp"
+#include "PluginCapabilities.hpp"
 #include "PluginPreferences.hpp"
 #include "RackInfo.hpp"
 #include "TrackManager.hpp"
@@ -18,9 +30,109 @@ namespace {
 struct PresetIdRemap {
     TrackId trackId = INVALID_TRACK_ID;
     std::map<DeviceId, DeviceId> devices;
+    std::map<DeviceId, DeviceId> postFxDevices;
+    std::map<DeviceId, DeviceId> mixerAnalysisDevices;
     std::map<RackId, RackId> racks;
     std::map<ChainId, ChainId> chains;
 };
+
+template <typename Id> bool remapId(std::map<Id, Id> const& ids, int& value) {
+    auto it = ids.find(value);
+    if (it == ids.end())
+        return false;
+    value = it->second;
+    return true;
+}
+
+/// Whether anything in @p element has a Drum Grid pad routed to a bus.
+///
+/// The whole subtree, because a rack being moved carries its devices with it.
+/// The single-device callers this replaces looked only at the element itself.
+bool anyPadOnABusInSubtree(const ChainElement& element) {
+    if (magda::isDevice(element)) {
+        const auto& device = magda::getDevice(element);
+        if (anyPadOnABus(device))
+            return true;
+
+        if (device.pads)
+            for (const auto& pad : device.pads->chains)
+                for (const auto& padElement : pad.elements)
+                    if (anyPadOnABusInSubtree(padElement))
+                        return true;
+        return false;
+    }
+
+    if (!magda::isRack(element))
+        return false;
+
+    for (const auto& chain : magda::getRack(element).chains)
+        for (const auto& nested : chain.elements)
+            if (anyPadOnABusInSubtree(nested))
+                return true;
+    return false;
+}
+
+/// Whether anything strictly BELOW @p element has a Drum Grid pad routed to a bus.
+///
+/// The distinction the destination rule needs. Only the root of a subtree lands
+/// where the caller says it lands; anything below it stays nested inside the
+/// root wherever that is, so it can never be the top-level instrument whose
+/// output instance carries a bus (#2221).
+bool anyPadOnABusBelowRoot(const ChainElement& element) {
+    if (magda::isDevice(element)) {
+        const auto& device = magda::getDevice(element);
+        if (device.pads)
+            for (const auto& pad : device.pads->chains)
+                for (const auto& padElement : pad.elements)
+                    if (anyPadOnABusInSubtree(padElement))
+                        return true;
+        return false;
+    }
+
+    if (!magda::isRack(element))
+        return false;
+
+    for (const auto& chain : magda::getRack(element).chains)
+        for (const auto& nested : chain.elements)
+            if (anyPadOnABusInSubtree(nested))
+                return true;
+    return false;
+}
+
+/// Whether anything in @p element drives a multi-out child track of @p sourceTrackId.
+///
+/// The whole subtree, because a rack being moved carries its devices with it.
+/// Ownership of a generated child track belongs to the device where it stands,
+/// and the child track's link names the track it stands on, so carrying the
+/// device somewhere else would leave the link naming a track that no longer
+/// hosts it (#2220).
+bool ownsMultiOutChildTracks(const TrackManager& tm, const ChainElement& element,
+                             TrackId sourceTrackId) {
+    if (magda::isDevice(element)) {
+        const auto& device = magda::getDevice(element);
+        if (device.multiOut.isMultiOut) {
+            for (std::size_t pair = 0; pair < device.multiOut.outputPairs.size(); ++pair)
+                if (tm.multiOutPairIsActive(sourceTrackId, device.id, static_cast<int>(pair)))
+                    return true;
+        }
+
+        if (device.pads)
+            for (const auto& pad : device.pads->chains)
+                for (const auto& padElement : pad.elements)
+                    if (ownsMultiOutChildTracks(tm, padElement, sourceTrackId))
+                        return true;
+        return false;
+    }
+
+    if (!magda::isRack(element))
+        return false;
+
+    for (const auto& chain : magda::getRack(element).chains)
+        for (const auto& nested : chain.elements)
+            if (ownsMultiOutChildTracks(tm, nested, sourceTrackId))
+                return true;
+    return false;
+}
 
 bool targetPointsAtDevice(const ControlTarget& target, DeviceId deviceId) {
     return deviceId != INVALID_DEVICE_ID && target.devicePath.getDeviceId() == deviceId;
@@ -45,14 +157,6 @@ void retargetPresetLinks(MacroArray& macros, ModArray& mods, DeviceId presetDevi
     }
 }
 
-template <typename Id> bool remapId(std::map<Id, Id> const& ids, int& value) {
-    auto it = ids.find(value);
-    if (it == ids.end())
-        return false;
-    value = it->second;
-    return true;
-}
-
 void remapPresetPath(ChainNodePath& path, const PresetIdRemap& remap) {
     bool touched = false;
 
@@ -64,6 +168,10 @@ void remapPresetPath(ChainNodePath& path, const PresetIdRemap& remap) {
     if (path.topLevelDeviceId != INVALID_DEVICE_ID)
         touched = remapId(remap.devices, path.topLevelDeviceId) || touched;
 
+    const auto& deviceIds = path.isPostFx()          ? remap.postFxDevices
+                            : path.isMixerAnalysis() ? remap.mixerAnalysisDevices
+                                                     : remap.devices;
+
     for (auto& step : path.steps) {
         switch (step.type) {
             case ChainStepType::Rack:
@@ -73,8 +181,17 @@ void remapPresetPath(ChainNodePath& path, const PresetIdRemap& remap) {
                 touched = remapId(remap.chains, step.id) || touched;
                 break;
             case ChainStepType::Device:
+                touched = remapId(deviceIds, step.id) || touched;
+                break;
+            case ChainStepType::PadRack:
+                // A PadRack step carries the owning grid's DeviceId, so it moves
+                // with the devices map like any other device id. Saying so in
+                // the type is what removed the shape-matching pad remapper this
+                // used to need (#2219).
                 touched = remapId(remap.devices, step.id) || touched;
                 break;
+            case ChainStepType::PadChain:
+                break;  // Pad chain ids are rack-local and survive the copy
             case ChainStepType::Segment:
                 break;  // Segment steps carry no remappable ID
         }
@@ -124,41 +241,79 @@ juce::String stripPresetRuntimePluginState(const juce::String& pluginState) {
     return pluginState;
 }
 
-void remapPresetLinksRecursive(std::vector<ChainElement>& elements, const PresetIdRemap& remap);
+/// Whether a re-keyed subtree's saved plugin state is a preset's or a project's.
+///
+/// A preset carries state captured against another project's engine, so the
+/// runtime ids in it name plugin instances that are not this project's. A
+/// subtree being re-keyed in place -- a Drum Grid getting its own DeviceId as it
+/// is placed -- carries no such thing, and rewriting its state would be a change
+/// nobody asked for.
+enum class PresetState { Strip, Keep };
 
-void remapRackPresetLinks(RackInfo& rack, const PresetIdRemap& remap) {
+void remapPresetLinksRecursive(std::vector<ChainElement>& elements, const PresetIdRemap& remap,
+                               PresetState state = PresetState::Strip);
+
+void remapRackPresetLinks(RackInfo& rack, const PresetIdRemap& remap,
+                          PresetState state = PresetState::Strip) {
     remapPresetLinks(rack.macros, rack.mods, remap);
     for (auto& chain : rack.chains)
-        remapPresetLinksRecursive(chain.elements, remap);
+        remapPresetLinksRecursive(chain.elements, remap, state);
 }
 
-void remapPresetLinksRecursive(std::vector<ChainElement>& elements, const PresetIdRemap& remap) {
+void remapPresetLinksRecursive(std::vector<ChainElement>& elements, const PresetIdRemap& remap,
+                               PresetState state) {
     for (auto& element : elements) {
         if (magda::isDevice(element)) {
             auto& device = magda::getDevice(element);
             remapPresetLinks(device.macros, device.mods, remap);
-            device.pluginState = stripPresetRuntimePluginState(device.pluginState);
+            if (state == PresetState::Strip)
+                device.pluginState = stripPresetRuntimePluginState(device.pluginState);
+
+            // The pad rack, as a rack. A pad device is an ordinary DeviceInfo
+            // and owns macros and mods like any other, so a copy's have to be
+            // retargeted too (#2211) -- and so does the pad rack itself, which
+            // is a RackInfo with macros and mods of its own that a pad path
+            // resolves to and the modulation surfaces compile from. Descending
+            // straight into its chains walked past those (#2261).
+            if (device.pads)
+                remapRackPresetLinks(*device.pads.get(), remap, state);
         } else if (magda::isRack(element)) {
-            remapRackPresetLinks(magda::getRack(element), remap);
+            remapRackPresetLinks(magda::getRack(element), remap, state);
         }
     }
 }
 
-void collectDeviceIdMatches(std::vector<ChainElement>& elements, DeviceId deviceId,
-                            std::vector<DeviceInfo*>& matches) {
-    for (auto& element : elements) {
-        if (magda::isDevice(element)) {
-            auto& device = magda::getDevice(element);
-            if (device.id == deviceId)
-                matches.push_back(&device);
-            continue;
-        }
+/// Follow a re-keyed Drum Grid's pads with everything that addressed them.
+///
+/// @p ids is what `rekeyPads()` moved, the grid's own id included. Every end of
+/// a pad link needs it: the grid's macros and mods point down into the pads,
+/// the pad rack's own point at what it holds, and a pad device's point at its
+/// siblings. A link out of the subtree names an id this does not hold and is
+/// left alone, which is what `remapPresetPath()` does with an unmapped id.
+void retargetPadLinks(DeviceInfo& device, TrackId trackId, const ChainIdRemap& ids) {
+    if (!device.pads)
+        return;
 
-        if (magda::isRack(element)) {
-            for (auto& chain : magda::getRack(element).chains)
-                collectDeviceIdMatches(chain.elements, deviceId, matches);
-        }
-    }
+    PresetIdRemap remap;
+    remap.trackId = trackId;
+    remap.devices = ids.devices;
+    remap.racks = ids.racks;
+    remap.chains = ids.chains;
+
+    remapPresetLinks(device.macros, device.mods, remap);
+    remapRackPresetLinks(*device.pads.get(), remap, PresetState::Keep);
+}
+
+void collectDeviceIdMatches(std::vector<ChainElement>& elements, TrackId trackId, DeviceId deviceId,
+                            std::vector<DeviceInfo*>& matches) {
+    // Pads entered: this asks whether a bare device id names exactly one
+    // device, and a pad device is one. Skipping them would answer "unique" for
+    // an id that two devices hold.
+    chain_walk::forEachDevice(elements, ChainNodePath::trackLevel(trackId), chain_walk::Pads::Enter,
+                              [deviceId, &matches](DeviceInfo& device, const ChainNodePath&) {
+                                  if (device.id == deviceId)
+                                      matches.push_back(&device);
+                              });
 }
 
 void collectDeviceIdMatches(std::vector<PostFxChainElement>& elements, DeviceId deviceId,
@@ -171,12 +326,12 @@ void collectDeviceIdMatches(std::vector<PostFxChainElement>& elements, DeviceId 
 DeviceInfo* findUniqueBareDeviceIdMatch(TrackInfo& masterTrack, std::vector<TrackInfo>& tracks,
                                         DeviceId deviceId) {
     std::vector<DeviceInfo*> matches;
-    collectDeviceIdMatches(masterTrack.chain.fxChainElements, deviceId, matches);
+    collectDeviceIdMatches(masterTrack.chain.fxChainElements, masterTrack.id, deviceId, matches);
     collectDeviceIdMatches(masterTrack.chain.postFxChainElements, deviceId, matches);
     collectDeviceIdMatches(masterTrack.chain.mixerAnalysisElements, deviceId, matches);
 
     for (auto& track : tracks) {
-        collectDeviceIdMatches(track.chain.fxChainElements, deviceId, matches);
+        collectDeviceIdMatches(track.chain.fxChainElements, track.id, deviceId, matches);
         collectDeviceIdMatches(track.chain.postFxChainElements, deviceId, matches);
         collectDeviceIdMatches(track.chain.mixerAnalysisElements, deviceId, matches);
     }
@@ -184,7 +339,116 @@ DeviceInfo* findUniqueBareDeviceIdMatch(TrackInfo& masterTrack, std::vector<Trac
     return matches.size() == 1 ? matches.front() : nullptr;
 }
 
+/// Follow @p path from @p index inside @p elements, ending on its Device step.
+///
+/// The ordinary `Rack > Chain > ... > Device` alternation, walked from wherever
+/// the caller has already got to. A pad's chain holds elements like any other,
+/// racks included, so the tail of a pad device's address is an ordinary route.
+DeviceInfo* followChainSteps(std::vector<ChainElement>& elements, const ChainNodePath& path,
+                             std::size_t index) {
+    if (index >= path.steps.size())
+        return nullptr;
+
+    const auto& step = path.steps[index];
+
+    if (step.type == ChainStepType::Device) {
+        // A Device step is a leaf: anything after it describes no route.
+        if (index + 1 != path.steps.size())
+            return nullptr;
+        for (auto& element : elements)
+            if (magda::isDevice(element) && magda::getDevice(element).id == step.id)
+                return &magda::getDevice(element);
+        return nullptr;
+    }
+
+    if (step.type != ChainStepType::Rack || index + 1 >= path.steps.size() ||
+        path.steps[index + 1].type != ChainStepType::Chain)
+        return nullptr;
+
+    for (auto& element : elements) {
+        if (!magda::isRack(element) || magda::getRack(element).id != step.id)
+            continue;
+        for (auto& chain : magda::getRack(element).chains)
+            if (chain.id == path.steps[index + 1].id)
+                return followChainSteps(chain.elements, path, index + 2);
+        return nullptr;
+    }
+    return nullptr;
+}
+
+/// The device @p deviceId names, searched for its pads rather than itself.
+///
+/// A grid can sit anywhere a device can, including inside a rack chain, so the
+/// search descends the same way `findDeviceUnder` does.
+DeviceInfo* findPadOwner(std::vector<ChainElement>& elements, DeviceId deviceId) {
+    for (auto& element : elements) {
+        if (magda::isDevice(element)) {
+            auto& device = magda::getDevice(element);
+            if (device.id == deviceId)
+                return device.pads ? &device : nullptr;
+            continue;
+        }
+
+        if (magda::isRack(element))
+            for (auto& chain : magda::getRack(element).chains)
+                if (auto* found = findPadOwner(chain.elements, deviceId))
+                    return found;
+    }
+    return nullptr;
+}
+
 }  // namespace
+
+TrackId TrackManager::createTrackFromPreset(TrackInfo presetTrack, const juce::String& name) {
+    // A chain preset creates one ordinary playable track. Project hierarchy,
+    // child ownership and multi-output child links are not portable properties
+    // of a standalone preset.
+    presetTrack.id = nextTrackId_++;
+    presetTrack.type = TrackType::Media;
+    presetTrack.name = name.isNotEmpty() ? name : presetTrack.name;
+    presetTrack.parentId = INVALID_TRACK_ID;
+    presetTrack.childIds.clear();
+    presetTrack.activeSessionClipId = INVALID_CLIP_ID;
+    presetTrack.multiOutLink.reset();
+    presetTrack.auxBusIndex = -1;
+
+    PresetIdRemap remap;
+    remap.trackId = presetTrack.id;
+    ChainIdRemap ids;
+    reassignChainElementIds(presetTrack.chain.fxChainElements, ids);
+    remap.devices = std::move(ids.devices);
+    remap.racks = std::move(ids.racks);
+    remap.chains = std::move(ids.chains);
+
+    for (auto& element : presetTrack.chain.postFxChainElements) {
+        const auto oldId = element.device.id;
+        element.device.id = nextPostFxDeviceId_++;
+        remap.postFxDevices[oldId] = element.device.id;
+    }
+    for (auto& element : presetTrack.chain.mixerAnalysisElements) {
+        const auto oldId = element.device.id;
+        element.device.id = nextMixerAnalysisDeviceId_++;
+        remap.mixerAnalysisDevices[oldId] = element.device.id;
+    }
+
+    remapPresetLinks(presetTrack.macros, presetTrack.mods, remap);
+    remapPresetLinksRecursive(presetTrack.chain.fxChainElements, remap);
+    const auto remapFlat = [&remap](std::vector<PostFxChainElement>& elements) {
+        for (auto& element : elements) {
+            remapPresetLinks(element.device.macros, element.device.mods, remap);
+            element.device.pluginState = stripPresetRuntimePluginState(element.device.pluginState);
+        }
+    };
+    remapFlat(presetTrack.chain.postFxChainElements);
+    remapFlat(presetTrack.chain.mixerAnalysisElements);
+
+    presetTrack.normalizeForType();
+    const auto id = presetTrack.id;
+    tracks_.push_back(std::move(presetTrack));
+    startMidiMonitoring(tracks_.back(), tracks_.back().midiInputDevice);
+    notifyTracksChanged();
+    return id;
+}
 
 // ============================================================================
 // Device Management in Chains
@@ -198,7 +462,7 @@ DeviceId TrackManager::addDeviceToChain(TrackId trackId, RackId rackId, ChainId 
         }
     }
     if (auto* chain = getChain(trackId, rackId, chainId)) {
-        DeviceInfo newDevice = prepareNewDevice(device);
+        DeviceInfo newDevice = prepareNewDevice(trackId, device);
         seedSidechainModIfMissing(
             newDevice, ChainNodePath::chainDevice(trackId, rackId, chainId, newDevice.id));
         chain->elements.push_back(makeDeviceElement(newDevice));
@@ -237,7 +501,6 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
     for (size_t i = 0; i < chainPath.steps.size() - 1; ++i) {
         rackPath.steps.push_back(chainPath.steps[i]);
     }
-
     // Get the parent rack
     if (auto* rack = getRackByPath(rackPath)) {
         // Find the chain within the rack
@@ -254,7 +517,7 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
         }
 
         // Add the device
-        DeviceInfo newDevice = prepareNewDevice(device);
+        DeviceInfo newDevice = prepareNewDevice(chainPath.trackId, device);
         seedSidechainModIfMissing(newDevice, chainPath.withDevice(newDevice.id));
         chain->elements.push_back(makeDeviceElement(newDevice));
         notifyTrackDevicesChanged(chainPath.trackId);
@@ -308,7 +571,7 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
         }
 
         // Add the device at the specified index
-        DeviceInfo newDevice = prepareNewDevice(device);
+        DeviceInfo newDevice = prepareNewDevice(chainPath.trackId, device);
         seedSidechainModIfMissing(newDevice, chainPath.withDevice(newDevice.id));
 
         // Clamp insert index to valid range
@@ -332,7 +595,8 @@ void TrackManager::removeDeviceFromChain(TrackId trackId, RackId rackId, ChainId
             return magda::isDevice(e) && magda::getDevice(e).id == deviceId;
         });
         if (it != elements.end()) {
-            SelectionManager::getInstance().clearSelectionForDeletedChainNode(
+            clearSelectionsUnderDevice(
+                magda::getDevice(*it),
                 ChainNodePath::chainDevice(trackId, rackId, chainId, deviceId));
             elements.erase(it);
             notifyTrackDevicesChanged(trackId);
@@ -449,12 +713,13 @@ void TrackManager::setDeviceInChainBypassed(TrackId trackId, RackId rackId, Chai
  * (`toChainNodePath` builds them from whatever steps arrive). One body means
  * one set of rules for both.
  */
-static ChainInfo* getChainFromPath(TrackManager& tm, const ChainNodePath& chainPath) {
+namespace {
+ChainInfo* getChainFromPath(TrackManager& tm, const ChainNodePath& chainPath) {
     return tm.getChainByPath(chainPath);
 }
 
-static std::vector<ChainElement>* getElementContainerForChainPath(TrackManager& tm,
-                                                                  const ChainNodePath& chainPath) {
+std::vector<ChainElement>* getElementContainerForChainPath(TrackManager& tm,
+                                                           const ChainNodePath& chainPath) {
     if (chainPath.trackId == INVALID_TRACK_ID)
         return nullptr;
 
@@ -470,13 +735,15 @@ static std::vector<ChainElement>* getElementContainerForChainPath(TrackManager& 
     return nullptr;
 }
 
-static ChainNodePath getParentChainPathForElementPath(const ChainNodePath& elementPath) {
+ChainNodePath getParentChainPathForElementPath(const ChainNodePath& elementPath) {
     return elementPath.parentChain();
 }
+}  // namespace
 
 using DevicePathMap = std::map<DeviceId, ChainNodePath>;
 
-static void retargetMovedTarget(ControlTarget& target, const DevicePathMap& movedPaths) {
+namespace {
+void retargetMovedTarget(ControlTarget& target, const DevicePathMap& movedPaths) {
     const auto deviceId = target.devicePath.getDeviceId();
     if (deviceId == INVALID_DEVICE_ID)
         return;
@@ -486,8 +753,7 @@ static void retargetMovedTarget(ControlTarget& target, const DevicePathMap& move
         target.devicePath = it->second;
 }
 
-static void retargetMovedLinks(MacroArray& macros, ModArray& mods,
-                               const DevicePathMap& movedPaths) {
+void retargetMovedLinks(MacroArray& macros, ModArray& mods, const DevicePathMap& movedPaths) {
     for (auto& macro : macros) {
         for (auto& link : macro.links)
             retargetMovedTarget(link.target, movedPaths);
@@ -499,57 +765,61 @@ static void retargetMovedLinks(MacroArray& macros, ModArray& mods,
     }
 }
 
-static void collectMovedDevicePaths(const ChainElement& element, const ChainNodePath& elementPath,
-                                    DevicePathMap& movedPaths) {
-    if (magda::isDevice(element)) {
-        movedPaths[magda::getDevice(element).id] = elementPath;
-        return;
-    }
+/// Where every device under @p element now lives, keyed by id, for the links
+/// naming them to be retargeted onto.
+///
+/// Pads entered: a Drum Grid carries its pad devices with it. This stopped at
+/// the grid, so moving one to another track left every link into its pads
+/// holding the path it had on the track it came from -- a device id that
+/// `retargetMovedTarget` never found, so the whole address survived unchanged
+/// (#2204).
+void collectMovedDevicePaths(const ChainElement& element, const ChainNodePath& elementPath,
+                             DevicePathMap& movedPaths) {
+    const std::span<const ChainElement> subtree{&element, 1};
+    const auto parentPath =
+        magda::isDevice(element) ? elementPath.parentChain() : elementPath.parent();
 
-    const auto& rack = magda::getRack(element);
-    auto rackPath = elementPath;
-    for (const auto& chain : rack.chains) {
-        auto chainPath = rackPath.withChain(chain.id);
-        for (const auto& child : chain.elements) {
-            if (magda::isDevice(child)) {
-                collectMovedDevicePaths(child, chainPath.withDevice(magda::getDevice(child).id),
-                                        movedPaths);
-            } else if (magda::isRack(child)) {
-                collectMovedDevicePaths(child, chainPath.withRack(magda::getRack(child).id),
-                                        movedPaths);
-            }
-        }
-    }
+    chain_walk::forEachDevice(subtree, parentPath, chain_walk::Pads::Enter,
+                              [&movedPaths](const DeviceInfo& device, const ChainNodePath& path) {
+                                  movedPaths[device.id] = path;
+                              });
 }
 
-static void retargetLinksInElements(std::vector<ChainElement>& elements,
-                                    const DevicePathMap& movedPaths) {
-    for (auto& element : elements) {
-        if (magda::isDevice(element)) {
-            auto& device = magda::getDevice(element);
+/// Point every link @p elements OWNS at where the moved devices now are.
+///
+/// Pads entered: a pad device owns macros and mods like any other, and a
+/// modifier on one pointing at its own parameter is the ordinary case. This
+/// descended only through racks, so such a link went on naming the track its
+/// grid came from (#2204).
+void retargetLinksInElements(std::vector<ChainElement>& elements, const ChainNodePath& parentPath,
+                             const DevicePathMap& movedPaths) {
+    // The real parent, not the track: these run over a nested chain's elements
+    // as well as a track's own list, and a walk told the wrong parent spells
+    // every device in it as top-level. Nothing here reads the address it
+    // builds, which is exactly why passing the wrong one would sit unnoticed.
+    chain_walk::forEachNode(
+        elements, parentPath, chain_walk::Pads::Enter,
+        [&movedPaths](DeviceInfo& device, const ChainNodePath&) {
             retargetMovedLinks(device.macros, device.mods, movedPaths);
-        } else if (magda::isRack(element)) {
-            auto& rack = magda::getRack(element);
+        },
+        [&movedPaths](RackInfo& rack, const ChainNodePath&) {
             retargetMovedLinks(rack.macros, rack.mods, movedPaths);
-            for (auto& chain : rack.chains)
-                retargetLinksInElements(chain.elements, movedPaths);
-        }
-    }
+            return chain_walk::Descend::Into;
+        });
 }
 
-static void retargetMovedLinksInTrack(TrackInfo& track, const DevicePathMap& movedPaths) {
+void retargetMovedLinksInTrack(TrackInfo& track, const DevicePathMap& movedPaths) {
     retargetMovedLinks(track.macros, track.mods, movedPaths);
-    retargetLinksInElements(track.chain.fxChainElements, movedPaths);
+    retargetLinksInElements(track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
+                            movedPaths);
 }
 
-static bool targetPointsAtMovedDevice(const ControlTarget& target,
-                                      const DevicePathMap& movedPaths) {
+bool targetPointsAtMovedDevice(const ControlTarget& target, const DevicePathMap& movedPaths) {
     const auto deviceId = target.devicePath.getDeviceId();
     return deviceId != INVALID_DEVICE_ID && movedPaths.find(deviceId) != movedPaths.end();
 }
 
-static void removeMovedTargets(MacroArray& macros, ModArray& mods,
-                               const DevicePathMap& movedPaths) {
+void removeMovedTargets(MacroArray& macros, ModArray& mods, const DevicePathMap& movedPaths) {
     for (auto& macro : macros) {
         macro.links.erase(std::remove_if(macro.links.begin(), macro.links.end(),
                                          [&movedPaths](const MacroLink& link) {
@@ -569,28 +839,32 @@ static void removeMovedTargets(MacroArray& macros, ModArray& mods,
     }
 }
 
-static void removeMovedTargetsInElements(std::vector<ChainElement>& elements,
-                                         const DevicePathMap& movedPaths) {
-    for (auto& element : elements) {
-        if (magda::isDevice(element)) {
-            auto& device = magda::getDevice(element);
+/// Drop every link @p elements owns to a device that has left the track.
+///
+/// The mirror of the above, and it skipped pads the same way: a pad device
+/// staying put kept a link to something no longer on its track (#2204).
+void removeMovedTargetsInElements(std::vector<ChainElement>& elements,
+                                  const ChainNodePath& parentPath,
+                                  const DevicePathMap& movedPaths) {
+    chain_walk::forEachNode(
+        elements, parentPath, chain_walk::Pads::Enter,
+        [&movedPaths](DeviceInfo& device, const ChainNodePath&) {
             removeMovedTargets(device.macros, device.mods, movedPaths);
-        } else if (magda::isRack(element)) {
-            auto& rack = magda::getRack(element);
+        },
+        [&movedPaths](RackInfo& rack, const ChainNodePath&) {
             removeMovedTargets(rack.macros, rack.mods, movedPaths);
-            for (auto& chain : rack.chains)
-                removeMovedTargetsInElements(chain.elements, movedPaths);
-        }
-    }
+            return chain_walk::Descend::Into;
+        });
 }
 
-static void removeMovedTargetsInTrack(TrackInfo& track, const DevicePathMap& movedPaths) {
+void removeMovedTargetsInTrack(TrackInfo& track, const DevicePathMap& movedPaths) {
     removeMovedTargets(track.macros, track.mods, movedPaths);
-    removeMovedTargetsInElements(track.chain.fxChainElements, movedPaths);
+    removeMovedTargetsInElements(track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
+                                 movedPaths);
 }
 
-static ChainNodePath getInsertedElementPath(const ChainNodePath& destinationChainPath,
-                                            const ChainElement& element) {
+ChainNodePath getInsertedElementPath(const ChainNodePath& destinationChainPath,
+                                     const ChainElement& element) {
     if (magda::isDevice(element)) {
         const auto deviceId = magda::getDevice(element).id;
         if (destinationChainPath.steps.empty())
@@ -601,40 +875,25 @@ static ChainNodePath getInsertedElementPath(const ChainNodePath& destinationChai
     return destinationChainPath.withRack(magda::getRack(element).id);
 }
 
-static void reassignCopiedElementIds(TrackManager& tm, std::vector<ChainElement>& elements,
-                                     TrackId targetTrackId) {
+void reassignCopiedElementIds(TrackManager& tm, std::vector<ChainElement>& elements,
+                              TrackId targetTrackId) {
     PresetIdRemap remap;
     remap.trackId = targetTrackId;
 
-    std::function<void(std::vector<ChainElement>&)> reassignIds;
-    reassignIds = [&](std::vector<ChainElement>& items) {
-        for (auto& element : items) {
-            if (magda::isDevice(element)) {
-                auto& device = magda::getDevice(element);
-                const auto oldId = device.id;
-                device.id = tm.allocateDeviceId();
-                remap.devices[oldId] = device.id;
-            } else if (magda::isRack(element)) {
-                auto& rack = magda::getRack(element);
-                const auto oldRackId = rack.id;
-                rack.id = tm.allocateRackId();
-                remap.racks[oldRackId] = rack.id;
-                for (auto& chain : rack.chains) {
-                    const auto oldChainId = chain.id;
-                    chain.id = tm.allocateChainId();
-                    remap.chains[oldChainId] = chain.id;
-                    reassignIds(chain.elements);
-                }
-            }
-        }
-    };
+    // The shared walk: fresh ids for every device, rack and chain, pads
+    // included, with the synthetic pad rack id recorded so a link naming one can
+    // be followed (#2221).
+    ChainIdRemap ids;
+    tm.reassignChainElementIds(elements, ids);
+    remap.devices = std::move(ids.devices);
+    remap.racks = std::move(ids.racks);
+    remap.chains = std::move(ids.chains);
 
-    reassignIds(elements);
     remapPresetLinksRecursive(elements, remap);
 }
 
-static bool chainPathContainsRack(const ChainNodePath& destinationChainPath,
-                                  const ChainNodePath& sourceRackPath) {
+bool chainPathContainsRack(const ChainNodePath& destinationChainPath,
+                           const ChainNodePath& sourceRackPath) {
     if (sourceRackPath.steps.empty() || sourceRackPath.steps.back().type != ChainStepType::Rack ||
         destinationChainPath.steps.size() <= sourceRackPath.steps.size()) {
         return false;
@@ -644,7 +903,7 @@ static bool chainPathContainsRack(const ChainNodePath& destinationChainPath,
                       destinationChainPath.steps.begin());
 }
 
-static bool elementContainsInstrument(const ChainElement& element) {
+bool elementContainsInstrument(const ChainElement& element) {
     if (magda::isDevice(element))
         return magda::getDevice(element).isInstrument;
 
@@ -656,6 +915,90 @@ static bool elementContainsInstrument(const ChainElement& element) {
         }
     }
     return false;
+}
+}  // namespace
+
+/// The chain element @p path addresses, device or rack, or null.
+const ChainElement* findChainElement(TrackManager& tm, const ChainNodePath& path) {
+    const auto parentPath = getParentChainPathForElementPath(path);
+    const auto* elements = getElementContainerForChainPath(tm, parentPath);
+    if (elements == nullptr)
+        return nullptr;
+
+    const auto type = path.topLevelDeviceId != INVALID_DEVICE_ID
+                          ? ChainStepType::Device
+                          : (!path.steps.empty() ? path.steps.back().type : ChainStepType::Device);
+    const auto id = path.topLevelDeviceId != INVALID_DEVICE_ID
+                        ? path.topLevelDeviceId
+                        : (!path.steps.empty() ? path.steps.back().id : INVALID_DEVICE_ID);
+
+    for (const auto& element : *elements) {
+        if (type == ChainStepType::Device) {
+            if (magda::isDevice(element) && magda::getDevice(element).id == id)
+                return &element;
+            continue;
+        }
+        if (magda::isRack(element) && magda::getRack(element).id == id)
+            return &element;
+    }
+    return nullptr;
+}
+
+PlacementRefusal TrackManager::checkPlacement(const PlacementRequest& request) const {
+    if (request.subtree == nullptr)
+        return PlacementRefusal::Allowed;
+
+    // Reordering inside the container a subtree already lives in changes neither
+    // the track nor the ids anything is keyed on, so the rules below, which all
+    // exist to protect one of those, do not apply to it.
+    if (!request.leavesItsContainer)
+        return PlacementRefusal::Allowed;
+
+    // A rack cannot be put inside one of its own chains.
+    if (chainPathContainsRack(request.destination, request.sourcePath))
+        return PlacementRefusal::DestinationInsideSource;
+
+    // The destination track has to be able to hold what is coming. Asked of the
+    // whole subtree, because a rack carries its devices with it.
+    if (const auto* destinationTrack = getTrack(request.destination.trackId)) {
+        if (!destinationTrack->canHostInstrument() && elementContainsInstrument(*request.subtree))
+            return PlacementRefusal::DestinationCannotHostInstrument;
+    } else {
+        return PlacementRefusal::DestinationCannotHostInstrument;
+    }
+
+    // A pad on a bus is carried by the output instance made for a top-level
+    // instrument. Nowhere else carries one, so a destination that is not a
+    // track's own list would silently drop the routing, and leaving the track
+    // the buses were realised on would leave its child tracks behind. Neither
+    // clean-up is part of the undoable step (#2211).
+    //
+    // A source-less reconstruction is neither: a paste, or an undo putting a
+    // deleted device back, owns no child tracks and leaves no track. Refusing it
+    // would have made undoing the deletion of a routed grid restore nothing at
+    // all, silently, because the callers discard the result (#2221).
+    //
+    // Only the root lands where the caller says it lands. A routed grid deeper
+    // in the subtree stays nested inside that root wherever it goes, so it can
+    // never be the top-level instrument its bus needs, whatever the destination.
+    if (anyPadOnABusBelowRoot(*request.subtree))
+        return PlacementRefusal::PadOnABus;
+
+    if (magda::isDevice(*request.subtree) && anyPadOnABus(magda::getDevice(*request.subtree))) {
+        const bool hasSource = request.sourcePath.trackId != INVALID_TRACK_ID;
+        const bool leavesItsTrack =
+            hasSource && request.destination.trackId != request.sourcePath.trackId;
+        if (!request.destinationIsTrackTopLevel || leavesItsTrack)
+            return PlacementRefusal::PadOnABus;
+    }
+
+    // And the same for a multi-out pair: the child track's link names the track
+    // the device stands on, so moving it strands the link, and a device off the
+    // top level has no output instance to carry a bus at all (#2220).
+    if (ownsMultiOutChildTracks(*this, *request.subtree, request.sourcePath.trackId))
+        return PlacementRefusal::OwnsMultiOutChildTracks;
+
+    return PlacementRefusal::Allowed;
 }
 
 bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
@@ -684,11 +1027,12 @@ bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
         return false;
     }
 
-    if (sourceType == ChainStepType::Rack &&
-        chainPathContainsRack(destinationChainPath, sourceElementPath)) {
-        return false;
-    }
-
+    // Refused for the same reason a wrap is: dropping a grid into a rack takes
+    // it somewhere no bus is carried, so the move would have to put every pad
+    // back on the main mix and take its child tracks down, and that clean-up is
+    // not part of the undoable step the move is. Undo would return the grid to
+    // the top level with its routing gone. Reordering within the track's own
+    // list is not a placement change and stays allowed (#2211).
     auto* sourceElements = getElementContainerForChainPath(*this, sourceChainPath);
     auto* destinationElements = getElementContainerForChainPath(*this, destinationChainPath);
     if (sourceElements == nullptr || destinationElements == nullptr) {
@@ -706,18 +1050,13 @@ bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
         return false;
     }
 
-    if (auto* destinationTrack = getTrack(destinationChainPath.trackId)) {
-        const bool destinationCannotHostInstruments = destinationTrack->type == TrackType::Aux ||
-                                                      destinationTrack->type == TrackType::Group ||
-                                                      destinationTrack->type == TrackType::Master;
-        if (destinationCannotHostInstruments && elementContainsInstrument(*sourceIt)) {
-            return false;
-        }
-    } else {
-        return false;
-    }
-
     const bool sameContainer = sourceElements == destinationElements;
+
+    // One question, asked before anything is mutated (#2221).
+    if (checkPlacement({&*sourceIt, sourceElementPath, destinationChainPath, !sameContainer,
+                        destinationChainPath.steps.empty()}) != PlacementRefusal::Allowed)
+        return false;
+
     const int sourceIndex = static_cast<int>(std::distance(sourceElements->begin(), sourceIt));
     const int destinationSize = static_cast<int>(destinationElements->size());
     insertIndex = std::clamp(insertIndex, 0, destinationSize);
@@ -726,12 +1065,7 @@ bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
         return false;
     }
 
-    if (audioEngine_) {
-        if (auto* bridge = audioEngine_->getAudioBridge()) {
-            bridge->getPluginManager().prepareForChainElementMove(sourceElementPath,
-                                                                  destinationChainPath);
-        }
-    }
+    notifyChainElementMoving(sourceElementPath, destinationChainPath);
 
     ChainElement element = std::move(*sourceIt);
     sourceElements->erase(sourceElements->begin() + sourceIndex);
@@ -750,7 +1084,7 @@ bool TrackManager::moveChainElement(const ChainNodePath& sourceElementPath,
         if (auto* track = getTrack(destinationChainPath.trackId))
             retargetMovedLinksInTrack(*track, movedPaths);
     } else {
-        retargetLinksInElements(*destinationElements, movedPaths);
+        retargetLinksInElements(*destinationElements, destinationChainPath, movedPaths);
         if (auto* sourceTrack = getTrack(sourceElementPath.trackId))
             removeMovedTargetsInTrack(*sourceTrack, movedPaths);
     }
@@ -809,12 +1143,78 @@ std::vector<ChainElement> TrackManager::copyChainElements(
     return copied;
 }
 
+bool TrackManager::insertFlatSectionDeviceByPath(const ChainNodePath& devicePath, DeviceInfo device,
+                                                 int index) {
+    auto* track = getTrack(devicePath.trackId);
+    if (track == nullptr || device.id == INVALID_DEVICE_ID)
+        return false;
+
+    const bool postFx = devicePath.isPostFx();
+    if (!postFx && !devicePath.isMixerAnalysis())
+        return false;
+
+    auto& section = postFx ? track->chain.postFxChainElements : track->chain.mixerAnalysisElements;
+    index = std::clamp(index, 0, static_cast<int>(section.size()));
+    section.insert(section.begin() + index, PostFxChainElement{std::move(device)});
+    notifyTrackDevicesChanged(devicePath.trackId);
+    return true;
+}
+
+DeviceId TrackManager::stageFlatSectionReplacement(const ChainNodePath& incumbentPath,
+                                                   const DeviceInfo& device, int index) {
+    auto* track = getTrack(incumbentPath.trackId);
+    if (track == nullptr || (!incumbentPath.isPostFx() && !incumbentPath.isMixerAnalysis()) ||
+        getDeviceInChainByPath(incumbentPath) == nullptr || device.isInstrument)
+        return INVALID_DEVICE_ID;
+
+    const bool postFx = incumbentPath.isPostFx();
+    if (postFx && daw::audio::internalPluginHasTag(device.pluginId, "sidechain"))
+        return INVALID_DEVICE_ID;
+
+    auto& section = postFx ? track->chain.postFxChainElements : track->chain.mixerAnalysisElements;
+    const bool uniqueKind = !postFx || daw::audio::isInternalAnalysisPlugin(device.pluginId);
+    if (uniqueKind && std::ranges::any_of(section, [&](const PostFxChainElement& element) {
+            return element.device.id != incumbentPath.getDeviceId() &&
+                   element.device.pluginId == device.pluginId;
+        }))
+        return INVALID_DEVICE_ID;
+
+    DeviceInfo staged = device;
+    staged.id = postFx ? nextPostFxDeviceId_++ : nextMixerAnalysisDeviceId_++;
+    applyCachedCapabilitiesToDevice(staged);
+    daw::audio::applyDeviceDeclaration(staged);
+    if (daw::audio::isInternalAnalysisPlugin(staged.pluginId))
+        staged.deviceType = DeviceType::Analysis;
+    if (postFx)
+        legacy_devices::normalizeChordEngineRole(staged);
+
+    index = std::clamp(index, 0, static_cast<int>(section.size()));
+    section.insert(section.begin() + index, PostFxChainElement{staged});
+    const auto stagedPath =
+        postFx ? ChainNodePath::postFxDevice(incumbentPath.trackId, staged.id)
+               : ChainNodePath::mixerAnalysisDevice(incumbentPath.trackId, staged.id);
+    notifyTrackDevicesChanged(incumbentPath.trackId);
+    notifyDeviceAdded(stagedPath, staged);
+    return staged.id;
+}
+
 bool TrackManager::insertChainElementsByPath(const ChainNodePath& destinationChainPath,
                                              std::vector<ChainElement> elements, int insertIndex,
                                              bool reassignIds) {
     auto* destinationElements = getElementContainerForChainPath(*this, destinationChainPath);
     if (destinationElements == nullptr || elements.empty())
         return false;
+
+    // This asked nothing before, so a paste could put an instrument on a track
+    // that cannot host one. There is no source: the elements are arriving, so
+    // the rules keyed on where they came from pass and the ones about what is
+    // being placed still apply (#2221).
+    for (const auto& element : elements) {
+        if (checkPlacement(
+                {&element, {}, destinationChainPath, true, destinationChainPath.steps.empty()}) !=
+            PlacementRefusal::Allowed)
+            return false;
+    }
 
     if (reassignIds)
         reassignCopiedElementIds(*this, elements, destinationChainPath.trackId);
@@ -828,7 +1228,8 @@ bool TrackManager::insertChainElementsByPath(const ChainNodePath& destinationCha
 }
 
 RackId TrackManager::wrapChainElementsInRack(const std::vector<ChainNodePath>& paths,
-                                             const juce::String& rackName) {
+                                             const juce::String& rackName, RackId presetRackId,
+                                             ChainId presetChainId) {
     if (paths.empty())
         return INVALID_RACK_ID;
 
@@ -842,9 +1243,18 @@ RackId TrackManager::wrapChainElementsInRack(const std::vector<ChainNodePath>& p
         if (!path.isValid() || getParentChainPathForElementPath(path) != sourceChainPath)
             return INVALID_RACK_ID;
 
+        // Wrapping takes an element off the top level, which is a placement
+        // change like any other. Asked the same way: this used to check only
+        // whether a pad was on a bus, so wrapping a multi-out instrument
+        // stranded the child tracks a move of it refuses to strand (#2221).
+        if (const auto* element = findChainElement(*this, path);
+            element != nullptr && checkPlacement({element, path, sourceChainPath, true, false}) !=
+                                      PlacementRefusal::Allowed)
+            return INVALID_RACK_ID;
+
         const int index = getChainElementIndex(path);
         if (index >= 0)
-            orderedPaths.push_back({index, path});
+            orderedPaths.emplace_back(index, path);
     }
 
     if (orderedPaths.empty())
@@ -854,27 +1264,25 @@ RackId TrackManager::wrapChainElementsInRack(const std::vector<ChainNodePath>& p
                      [](const auto& a, const auto& b) { return a.first < b.first; });
 
     RackInfo rack;
-    rack.id = allocateRackId();
+    // A redo passes the ids its first run allocated, so the rack keeps the
+    // identity every link naming it was made against (#2221).
+    rack.id = presetRackId != INVALID_RACK_ID ? presetRackId : allocateRackId();
     rack.name = rackName.isEmpty() ? "Rack" : rackName;
     ChainInfo chain;
-    chain.id = allocateChainId();
+    chain.id = presetChainId != INVALID_CHAIN_ID ? presetChainId : allocateChainId();
     chain.name = "Chain 1";
 
-    if (audioEngine_) {
-        if (auto* bridge = audioEngine_->getAudioBridge()) {
-            ChainNodePath destinationPath = sourceChainPath;
-            destinationPath.steps.push_back({ChainStepType::Rack, rack.id});
-            destinationPath.steps.push_back({ChainStepType::Chain, chain.id});
-            for (const auto& [_, path] : orderedPaths)
-                bridge->getPluginManager().prepareForChainElementMove(path, destinationPath);
-        }
-    }
+    ChainNodePath destinationPath = sourceChainPath;
+    destinationPath.steps.push_back({ChainStepType::Rack, rack.id});
+    destinationPath.steps.push_back({ChainStepType::Chain, chain.id});
+    for (const auto& [_, path] : orderedPaths)
+        notifyChainElementMoving(path, destinationPath);
 
     for (const auto& [index, _] : orderedPaths)
         chain.elements.push_back(std::move((*sourceElements)[static_cast<size_t>(index)]));
 
-    for (auto it = orderedPaths.rbegin(); it != orderedPaths.rend(); ++it)
-        sourceElements->erase(sourceElements->begin() + it->first);
+    for (auto& orderedPath : std::views::reverse(orderedPaths))
+        sourceElements->erase(sourceElements->begin() + orderedPath.first);
 
     const int insertIndex =
         std::clamp(orderedPaths.front().first, 0, static_cast<int>(sourceElements->size()));
@@ -893,6 +1301,26 @@ RackId TrackManager::wrapChainElementsInRack(const std::vector<ChainNodePath>& p
 }
 
 int TrackManager::getChainElementIndex(const ChainNodePath& elementPath) {
+    // The two flat sections hold bare devices rather than chain elements, so
+    // the container lookup below has no answer for them. Without this a removal
+    // command could not record where a post-fader device stood and stopped
+    // before removing it, which is why the structural matrix recorded every
+    // flat-section removal as refused (#2232).
+    if (elementPath.isPostFx() || elementPath.isMixerAnalysis()) {
+        auto* track = getTrack(elementPath.trackId);
+        if (track == nullptr)
+            return -1;
+
+        const auto& section = elementPath.isPostFx() ? track->chain.postFxChainElements
+                                                     : track->chain.mixerAnalysisElements;
+        const auto deviceId = elementPath.getDeviceId();
+        for (int i = 0; i < static_cast<int>(section.size()); ++i) {
+            if (section[static_cast<size_t>(i)].device.id == deviceId)
+                return i;
+        }
+        return -1;
+    }
+
     ChainNodePath containerPath;
     containerPath.trackId = elementPath.trackId;
 
@@ -935,7 +1363,7 @@ void TrackManager::removeDeviceFromChainByPath(const ChainNodePath& devicePath) 
         auto it = std::find_if(elements.begin(), elements.end(),
                                [id](const PostFxChainElement& e) { return e.device.id == id; });
         if (it != elements.end()) {
-            SelectionManager::getInstance().clearSelectionForDeletedChainNode(devicePath);
+            clearSelectionsUnderDevice(it->device, devicePath);
             elements.erase(it);
             notifyTrackDevicesChanged(devicePath.trackId);
         }
@@ -965,7 +1393,7 @@ void TrackManager::removeDeviceFromChainByPath(const ChainNodePath& devicePath) 
                 return magda::isDevice(e) && magda::getDevice(e).id == devicePath.topLevelDeviceId;
             });
         if (it != elements.end()) {
-            SelectionManager::getInstance().clearSelectionForDeletedChainNode(devicePath);
+            clearSelectionsUnderDevice(magda::getDevice(*it), devicePath);
             elements.erase(it);
             notifyTrackDevicesChanged(devicePath.trackId);
         }
@@ -996,7 +1424,7 @@ void TrackManager::removeDeviceFromChainByPath(const ChainNodePath& devicePath) 
             return magda::isDevice(e) && magda::getDevice(e).id == deviceId;
         });
         if (it != elements.end()) {
-            SelectionManager::getInstance().clearSelectionForDeletedChainNode(devicePath);
+            clearSelectionsUnderDevice(magda::getDevice(*it), devicePath);
             elements.erase(it);
             notifyTrackDevicesChanged(devicePath.trackId);
         }
@@ -1071,6 +1499,12 @@ DeviceInfo* TrackManager::getDeviceInChainByPath(const ChainNodePath& devicePath
         return nullptr;
     }
 
+    // A typed pad address says outright that its owner step is a DeviceId, so
+    // it goes straight to the pad route rather than walking a rack tree that
+    // cannot contain it (#2219).
+    if (devicePath.isPadOwned())
+        return getDeviceInPadByPath(devicePath);
+
     // Otherwise, device is inside a chain
     if (auto* chain = getChainFromPath(*this, chainPath)) {
         for (auto& element : chain->elements) {
@@ -1079,7 +1513,112 @@ DeviceInfo* TrackManager::getDeviceInChainByPath(const ChainNodePath& devicePath
             }
         }
     }
+
+    // Last: an untyped pad address from a project saved before the pad step
+    // types. Ordering is the tie-break, as it always was.
+    return getDeviceInPadByPath(devicePath);
+}
+
+DeviceInfo* TrackManager::getDeviceInPadByPath(const ChainNodePath& devicePath) {
+    // A pad device's chain is not in the rack tree. Its address names the
+    // owning device by that device's own id, and a pad rack is
+    // `DeviceInfo::pads` rather than a chain element, so `getRackByPath()`
+    // cannot follow it and was never meant to (#2207).
+    //
+    // `PadRack(gridDeviceId) > PadChain(pad)` is the prefix; everything past it
+    // is an ordinary route, because a pad's chain holds racks like any other
+    // chain does and every walk that reaches a pad recurses through them.
+    //
+    // Two spellings are accepted. The typed one is what `padChainPath()` builds
+    // and what `getDeviceInChainByPath()` dispatches on directly, because the
+    // types say the leading id is a DeviceId and no allocated rack can be
+    // confused with it. The untyped `Rack > Chain` one is what projects saved
+    // before the pad step types carry; `migrateStagedPadPaths()` retypes those
+    // on load, and until a project is re-saved this still resolves them, tried
+    // only after the ordinary rack route has failed so an allocated rack
+    // sharing the number wins exactly as it used to (#2219).
+    if (devicePath.steps.size() < 3)
+        return nullptr;
+    const bool typed = devicePath.steps[0].type == ChainStepType::PadRack &&
+                       devicePath.steps[1].type == ChainStepType::PadChain;
+    const bool legacy = devicePath.steps[0].type == ChainStepType::Rack &&
+                        devicePath.steps[1].type == ChainStepType::Chain;
+    if (!typed && !legacy)
+        return nullptr;
+
+    auto* track = getTrack(devicePath.trackId);
+    if (track == nullptr)
+        return nullptr;
+
+    auto* owner = findPadOwner(track->chain.fxChainElements, devicePath.steps[0].id);
+    if (owner == nullptr)
+        return nullptr;
+
+    for (auto& pad : owner->pads->chains)
+        if (pad.id == devicePath.steps[1].id)
+            return followChainSteps(pad.elements, devicePath, 2);
+
     return nullptr;
+}
+
+ChainInfo* TrackManager::getChainInPadByPath(const ChainNodePath& chainPath) {
+    // `PadRack(gridDeviceId) > PadChain(pad)` and then ordinary `Rack > Chain`
+    // pairs: a pad's chain holds racks like any other chain does, and their
+    // chains are addressable. Stopping at the pad chain would leave
+    // `getElementContainerForChainPath()` unable to name them, so copy, move,
+    // remove, wrap, insert and paste could not act on anything inside a rack
+    // nested under a pad even though device lookup resolves the same route
+    // (#2219).
+    if (!chainPath.isPadOwned() || chainPath.steps.size() < 2 ||
+        chainPath.getPadChainId() == INVALID_CHAIN_ID)
+        return nullptr;
+
+    // The tail is whole pairs, and the address ends on the chain it names.
+    if ((chainPath.steps.size() - 2) % 2 != 0)
+        return nullptr;
+
+    auto* track = getTrack(chainPath.trackId);
+    if (track == nullptr)
+        return nullptr;
+
+    auto* owner = findPadOwner(track->chain.fxChainElements, chainPath.getPadOwnerDeviceId());
+    if (owner == nullptr)
+        return nullptr;
+
+    ChainInfo* current = nullptr;
+    for (auto& pad : owner->pads->chains) {
+        if (pad.id == chainPath.getPadChainId()) {
+            current = &pad;
+            break;
+        }
+    }
+    if (current == nullptr)
+        return nullptr;
+
+    for (std::size_t index = 2; index < chainPath.steps.size(); index += 2) {
+        const auto& rackStep = chainPath.steps[index];
+        const auto& chainStep = chainPath.steps[index + 1];
+        if (rackStep.type != ChainStepType::Rack || chainStep.type != ChainStepType::Chain)
+            return nullptr;
+
+        ChainInfo* next = nullptr;
+        for (auto& element : current->elements) {
+            if (!magda::isRack(element) || magda::getRack(element).id != rackStep.id)
+                continue;
+            for (auto& chain : magda::getRack(element).chains) {
+                if (chain.id == chainStep.id) {
+                    next = &chain;
+                    break;
+                }
+            }
+            break;
+        }
+        if (next == nullptr)
+            return nullptr;
+        current = next;
+    }
+
+    return current;
 }
 
 const DeviceInfo* TrackManager::getDeviceInChainByPath(const ChainNodePath& devicePath) const {
@@ -1287,31 +1826,99 @@ void TrackManager::setDeviceKitRows(TrackId trackId, DeviceId deviceId,
     mirrorKitToPreferences(*device);
 }
 
-ChainNodePath TrackManager::findDevicePath(DeviceId deviceId) const {
-    // Search all tracks for a device by ID and return its full path
-    for (const auto& track : tracks_) {
-        for (const auto& element : track.chain.fxChainElements) {
-            if (magda::isDevice(element) && magda::getDevice(element).id == deviceId)
-                return ChainNodePath::topLevelDevice(track.id, deviceId);
-            if (magda::isRack(element)) {
-                const auto& rack = magda::getRack(element);
-                for (const auto& chain : rack.chains) {
-                    for (const auto& chainElement : chain.elements) {
-                        if (magda::isDevice(chainElement) &&
-                            magda::getDevice(chainElement).id == deviceId)
-                            return ChainNodePath::chainDevice(track.id, rack.id, chain.id,
-                                                              deviceId);
-                    }
-                }
-            }
+namespace {
+
+/// The path @p parentChain gives a device it directly holds.
+///
+/// A track's own FX list is not a chain and its devices are addressed as
+/// top-level ones, which is the same split `AddDeviceByPathCommand` makes.
+ChainNodePath devicePathUnder(const ChainNodePath& parentChain, DeviceId deviceId) {
+    return parentChain.getType() == ChainNodeType::Track
+               ? ChainNodePath::topLevelDevice(parentChain.trackId, deviceId)
+               : parentChain.withDevice(deviceId);
+}
+
+/// The path addressing @p deviceId somewhere under @p parentChain, or an
+/// invalid path when it is not there.
+///
+/// Descends into a rack's chains and into a pad-per-chain device's pads. A pad
+/// device is an ordinary DeviceInfo since #2207, so anything that starts from a
+/// DeviceId and needs a path -- alias generation, automation targets, link
+/// repair -- has to be able to reach one (#2211).
+ChainNodePath findDeviceUnder(const std::vector<ChainElement>& elements,
+                              const ChainNodePath& parentChain, DeviceId deviceId) {
+    for (const auto& element : elements) {
+        if (magda::isDevice(element)) {
+            const auto& device = magda::getDevice(element);
+            if (device.id == deviceId)
+                return devicePathUnder(parentChain, deviceId);
+
+            if (!device.pads)
+                continue;
+
+            // A pad's address spells its rack step with the grid's own
+            // DeviceId: what padChainPath() builds, and what every link a
+            // project has saved to a pad device carries.
+            const auto gridPath = devicePathUnder(parentChain, device.id);
+            for (const auto& pad : device.pads->chains)
+                if (auto found = findDeviceUnder(
+                        pad.elements, TrackManager::padChainPath(gridPath, pad.id), deviceId);
+                    found.isValid())
+                    return found;
+            continue;
+        }
+
+        if (magda::isRack(element)) {
+            const auto& rack = magda::getRack(element);
+            const auto rackPath = parentChain.getType() == ChainNodeType::Track
+                                      ? ChainNodePath::rack(parentChain.trackId, rack.id)
+                                      : parentChain.withRack(rack.id);
+            for (const auto& chain : rack.chains)
+                if (auto found =
+                        findDeviceUnder(chain.elements, rackPath.withChain(chain.id), deviceId);
+                    found.isValid())
+                    return found;
         }
     }
-    // Also check master track
-    for (const auto& element : masterTrack_.chain.fxChainElements) {
-        if (magda::isDevice(element) && magda::getDevice(element).id == deviceId)
-            return ChainNodePath::topLevelDevice(MASTER_TRACK_ID, deviceId);
+    return {};
+}
+
+}  // namespace
+
+ChainNodePath TrackManager::findDevicePath(DeviceId deviceId) const {
+    return findDevicePath(deviceId, ChainSegment::Fx);
+}
+
+ChainNodePath TrackManager::findDevicePath(DeviceId deviceId, ChainSegment segment) const {
+    if (segment == ChainSegment::Fx) {
+        for (const auto& track : tracks_)
+            if (auto found = findDeviceUnder(track.chain.fxChainElements,
+                                             ChainNodePath::trackLevel(track.id), deviceId);
+                found.isValid())
+                return found;
+
+        return findDeviceUnder(masterTrack_.chain.fxChainElements,
+                               ChainNodePath::trackLevel(MASTER_TRACK_ID), deviceId);
     }
-    return {};  // Not found — returns invalid path
+
+    ChainNodePath found;
+    forEachTrackIncludingMaster([&found, deviceId, segment](const TrackInfo& track) {
+        if (found.isValid())
+            return;
+
+        const auto& elements = segment == ChainSegment::PostFx ? track.chain.postFxChainElements
+                                                               : track.chain.mixerAnalysisElements;
+
+        for (const auto& element : elements)
+            if (element.device.id == deviceId) {
+                found = segment == ChainSegment::PostFx
+                            ? ChainNodePath::postFxDevice(track.id, deviceId)
+                            : ChainNodePath::mixerAnalysisDevice(track.id, deviceId);
+                return;
+            }
+    });
+
+    return found;
 }
 
 void TrackManager::updateDeviceParameters(DeviceId deviceId,
@@ -1403,64 +2010,178 @@ void TrackManager::setDeviceParameterValue(const ChainNodePath& devicePath, int 
     }
 }
 
-bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
-                                     const DeviceInfo& presetDevice) {
-    auto* live = getDeviceInChainByPath(devicePath);
-    if (!live) {
-        return false;
+void TrackManager::setDeviceParameterValue(const ChainNodePath& devicePath,
+                                           const ParameterInfo& described,
+                                           ParameterModelValue value) {
+    auto* device = getDeviceInChainByPath(devicePath);
+    if (device == nullptr)
+        return;
+
+    // A slot the model mirrors is one a host control drives, and its value is
+    // the document's: the base a lane or a macro offsets from.
+    if (device->findParameterByIndex(described.paramIndex) != nullptr) {
+        setDeviceParameterValue(devicePath, described.paramIndex, value);
+        return;
     }
 
-    // Don't load a preset captured from a different plugin onto this slot.
-    if (live->pluginId != presetDevice.pluginId) {
+    // Everything else on a hosted plugin belongs to the plugin, so the edit is
+    // a command rather than a document change: no model entry, no table entry,
+    // no plan rebuild (docs/specs/hosted-plugin-parameter-control.md).
+    if (device->format == PluginFormat::Internal)
+        return;
+
+    auto* engine = getAudioEngine();
+    if (engine == nullptr)
+        return;
+
+    // Through the model convention, not the display range: an external
+    // parameter's model value is already a position even when its range reads
+    // in Hz or dB, and converting it again sends the plugin somewhere else.
+    const auto position = ParameterUtils::modelToNormalizedValue(value, described).value;
+    // A knob that did nothing is worth a line: every refusal here is something
+    // to tell a person rather than to branch on. What the plugin settles on is
+    // its own to report, and reconciling a display against it is the
+    // observation path's, not this one's.
+    const auto refused = [name = described.name](const juce::String& why) {
+        juce::Logger::writeToLog("[engine] " + name + ": " + why);
+    };
+
+    const auto receipt = engine->editHostedParameter(
+        devicePath, described.paramIndex, position, EditOrigin::Ui, [refused](EditCompletion done) {
+            if (!done.delivered && !done.superseded)
+                refused("the plugin did not take the edit");
+        });
+
+    if (!receipt.accepted())
+        refused(describeEditStatus(receipt.status));
+}
+
+namespace {
+
+/// Push an internal device's state document into its running instance, if it has
+/// one. The projection direction: the model already holds the document, the
+/// engine that renders is told to match it.
+void projectAuthoredStateToEngine(const ChainNodePath& devicePath, const juce::String& docText,
+                                  bool resetWhenUndecodable = true) {
+    if (!resetWhenUndecodable &&
+        !daw::audio::tracktion_adapter::devicePluginTreeFromState(docText).isValid())
+        return;
+
+    PluginService::getInstance().projectAuthoredStateAt(devicePath);
+}
+
+}  // namespace
+
+bool TrackManager::updateDeviceAuthoredState(const ChainNodePath& devicePath,
+                                             const std::function<void(device_state::Doc&)>& patch) {
+    auto* device = getDeviceInChainByPath(devicePath);
+    if (device == nullptr || device->format != PluginFormat::Internal)
         return false;
+    if (device_state::isFutureDeviceState(device->pluginState))
+        return false;
+
+    device_state::Doc doc;
+    if (auto decoded = device_state::decode(device->pluginState))
+        doc = std::move(*decoded);
+    doc.deviceType = device->pluginId;
+
+    // A pre-#2317 document still carries the retired duplicate parameter
+    // record, and encode() writes whatever is in `params`. The record was
+    // consumed by the load-time hydration; writing it back here would leave a
+    // second persisted authority alive in every path that never passes through
+    // a Tracktion capture (preset saves, native-only sessions), free to
+    // hydrate stale values on the next load. This edit is the moment the
+    // document goes canonical.
+    doc.params.clear();
+    doc.paramsAreDisplayDomain = false;
+
+    patch(doc);
+
+    device->pluginState = device_state::encode(doc);
+    projectAuthoredStateToEngine(devicePath, device->pluginState);
+    notifyDevicePropertyChanged(devicePath);
+    return true;
+}
+
+bool TrackManager::setDeviceAuthoredState(const ChainNodePath& devicePath,
+                                          const juce::String& docText) {
+    auto* device = getDeviceInChainByPath(devicePath);
+    if (device == nullptr || device->format != PluginFormat::Internal)
+        return false;
+    // Same contract as updateDeviceAuthoredState: state this build cannot read
+    // must not be replaced blind - and must not be ACCEPTED blind either. An
+    // incoming future-schema snapshot would sit in the model unreadable while
+    // the projection restored a bare tree in its place.
+    if (device_state::isFutureDeviceState(device->pluginState) ||
+        device_state::isFutureDeviceState(docText))
+        return false;
+
+    // Canonicalize at the WRITE BOUNDARY, not per mutation path: a snapshot
+    // taken from a pre-#2317 document still carries the retired parameter
+    // record, and an undo that put it back verbatim would recreate the second
+    // authority the edit itself just eliminated. Anything else decode refuses -
+    // legacy engine XML, an empty string - passes through unchanged; only a
+    // readable v2 document is stripped.
+    auto canonical = docText;
+    if (auto decoded = device_state::decode(docText)) {
+        // A readable document also has to be THIS device's: seating another
+        // device's authored state is corruption, not restoration. The saved
+        // type may be an older load alias, so the registry has the final say.
+        auto savedType = decoded->deviceType;
+        if (const auto* spec = daw::audio::findInternalPluginSpecForLoadType(savedType);
+            spec != nullptr && spec->pluginId != nullptr)
+            savedType = spec->pluginId;
+        if (savedType != device->pluginId)
+            return false;
+
+        decoded->params.clear();
+        decoded->paramsAreDisplayDomain = false;
+        canonical = device_state::encode(*decoded);
     }
 
-    auto presetMacros = presetDevice.macros;
-    auto presetMods = presetDevice.mods;
-    retargetPresetLinks(presetMacros, presetMods, presetDevice.id, devicePath);
+    device->pluginState = std::move(canonical);
+    projectAuthoredStateToEngine(devicePath, device->pluginState);
+    notifyDevicePropertyChanged(devicePath);
+    return true;
+}
 
+std::optional<DeviceInfo> TrackManager::prepareDevicePresetState(
+    const ChainNodePath& devicePath, const DeviceInfo& presetDevice) const {
+    const auto* live = getDeviceInChainByPath(devicePath);
+    if (live == nullptr || live->pluginId != presetDevice.pluginId)
+        return std::nullopt;
+
+    auto prepared = *live;
     // Copy state-y fields; preserve identity (id, name, format, fileOrIdentifier,
     // capabilities, sidechain wiring, current track placement).
-    live->parameters = presetDevice.parameters;
-    live->macros = std::move(presetMacros);
-    live->mods = std::move(presetMods);
-    live->gainDb = presetDevice.gainDb;
-    live->gainValue = std::pow(10.0f, presetDevice.gainDb / 20.0f);
-    live->pluginState = stripPresetRuntimePluginState(presetDevice.pluginState);
+    prepared.parameters = presetDevice.parameters;
+    prepared.macros = presetDevice.macros;
+    prepared.mods = presetDevice.mods;
+    prepared.gainDb = presetDevice.gainDb;
+    prepared.gainValue = std::pow(10.0f, presetDevice.gainDb / 20.0f);
+    prepared.pluginState = stripPresetRuntimePluginState(presetDevice.pluginState);
+    retargetPresetLinks(prepared.macros, prepared.mods, presetDevice.id, devicePath);
+    return prepared;
+}
 
-    // Push the new pluginState into the running plugin.
-    if (audioEngine_) {
-        if (auto* bridge = audioEngine_->getAudioBridge()) {
-            if (auto plugin = bridge->getPlugin(devicePath)) {
-                if (dynamic_cast<tracktion::engine::ExternalPlugin*>(plugin.get()) != nullptr) {
-                    // Only when the preset carries a native state chunk: it is the
-                    // authoritative source for the entire voice. Re-assert it +
-                    // refresh TE's param cache, then re-derive live->parameters from
-                    // the plugin, so the preset's (possibly stale) saved parameter
-                    // array can't clobber the restored voice when the
-                    // devicePropertyChanged notification below drives
-                    // syncFromDeviceInfo. (Same hazard + helper as loadDeviceAsPlugin.)
-                    //
-                    // For a parameter-only preset (no chunk -- e.g. a plugin that
-                    // returns no state, or a legacy preset) we must NOT repopulate:
-                    // that would overwrite the preset's saved parameter values with
-                    // the plugin's current ones. Leave live->parameters as captured
-                    // and let the notification below apply them via syncFromDeviceInfo.
-                    if (live->pluginState.isNotEmpty()) {
-                        applyExternalPluginChunk(plugin.get(), live->pluginState);
-                        if (auto* proc = bridge->getDeviceProcessor(devicePath))
-                            proc->populateParameters(*live);
-                    }
-                } else {
-                    namespace ta = daw::audio::tracktion_adapter;
-                    auto savedState = ta::devicePluginTreeFromState(live->pluginState);
-                    if (savedState.isValid()) {
-                        plugin->restorePluginStateFromValueTree(savedState);
-                        ta::applyDeviceStateParameters(*plugin, live->pluginState);
-                    }
-                }
-            }
-        }
+bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
+                                     const DeviceInfo& presetDevice) {
+    auto prepared = prepareDevicePresetState(devicePath, presetDevice);
+    auto* live = getDeviceInChainByPath(devicePath);
+    if (!prepared || live == nullptr)
+        return false;
+    *live = std::move(*prepared);
+
+    if (live->format == PluginFormat::Internal) {
+        // Internal authored state is projected onto either the bridge plugin or the
+        // native rendered device. A preset without a decodable snapshot leaves
+        // authored-only live settings alone, matching the external chunk path.
+        projectAuthoredStateToEngine(devicePath, live->pluginState,
+                                     /*resetWhenUndecodable=*/false);
+    } else {
+        // The hosted-plugin provider owns the live chunk and may rewrite the model's
+        // parameter cache while applying it (#2573, #2758).
+        PluginService::getInstance().applyPluginStateAt(devicePath);
     }
 
     // Notify listeners — devicePropertyChanged covers gain/macros/mods refresh
@@ -1475,6 +2196,107 @@ bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
         notifyDeviceParameterChanged(devicePath, p.paramIndex, p.currentValue);
     }
     return true;
+}
+
+DeviceInfo TrackManager::prepareNewDevice(TrackId trackId, const DeviceInfo& device) {
+    DeviceInfo newDevice = device;
+    newDevice.id = nextFxDeviceId_++;
+
+    // The grid's own id is in the map because a pad path names the grid rather
+    // than a route to it: every link into these pads carries the old DeviceId
+    // in its PadRack step, and the ones the grid's own macros and mods hold
+    // carry it in `topLevelDeviceId` as well.
+    // A pad device owns its pads from the start, so the compiler expands it
+    // rather than planning a device nothing builds.
+    if (isPadRackDevice(newDevice.pluginId))
+        ensurePads(newDevice);
+
+    ChainIdRemap ids;
+    ids.devices[device.id] = newDevice.id;
+    rekeyPads(newDevice, ids);
+    retargetPadLinks(newDevice, trackId, ids);
+
+    applyCachedCapabilitiesToDevice(newDevice);
+    daw::audio::applyDeviceDeclaration(newDevice);
+    stampDefaultKitIfMissing(newDevice);
+    if (daw::audio::isInternalAnalysisPlugin(newDevice.pluginId))
+        newDevice.deviceType = DeviceType::Analysis;
+
+    // The browser hands over a type derived from where the device is filed, and
+    // the Chord Engine is filed under MIDI. Corrected here, on the one path
+    // every insertion goes through, rather than at each of the six places that
+    // read a browser category (#2427).
+    legacy_devices::normalizeChordEngineRole(newDevice);
+    return newDevice;
+}
+
+void TrackManager::rekeyPads(DeviceInfo& device, ChainIdRemap& remap) {
+    if (!device.pads)
+        return;
+
+    // Both the pad rack's id and its devices' are DeviceIds in disguise, so a
+    // copied Drum Grid that kept them would key the ops of the one it was
+    // copied from: the plan would emit two devices onto one op and the executor
+    // would run whichever it saw last (#2207).
+    stampPadRackId(device);
+
+    // A pad holds chain elements like any other chain, nested racks included,
+    // so the same recursive walk re-keys them. A shallow pass over the direct
+    // pad devices left everything inside a pad's rack carrying the source's
+    // DeviceIds, so a copied grid shared ops with the one it came from.
+    //
+    // Reported rather than discarded: the ids this moves are the ones a macro
+    // or a mod addressing anything in the pad subtree was pointing at, and a
+    // link left on the old address resolves to nothing.
+    for (auto& pad : device.pads->chains)
+        reassignChainElementIds(pad.elements, remap);
+}
+
+void TrackManager::reassignChainElementIds(std::vector<ChainElement>& elements,
+                                           ChainIdRemap& remap) {
+    for (auto& element : elements) {
+        if (magda::isDevice(element)) {
+            auto& device = magda::getDevice(element);
+            const auto oldDeviceId = device.id;
+            device.id = allocateDeviceId();
+            remap.devices[oldDeviceId] = device.id;
+
+            if (!device.pads)
+                continue;
+
+            // A device's pads are a rack it owns, and their contents are chain
+            // elements like any other, so they are re-keyed by the same walk.
+            // Two of the four walkers this replaces stopped at the device and
+            // left a preset's pad DeviceIds in a live project.
+            //
+            // The pad rack's own id is derived from the device's, so it moves
+            // with it. Recorded, because a stored link can name it and there is
+            // otherwise nothing to follow it by.
+            remap.racks[padRackIdFor(oldDeviceId)] = padRackIdFor(device.id);
+            stampPadRackId(device);
+
+            // Pad chain ids are rack-local and stay as they are, which is what
+            // keeps a link naming a pad still naming it.
+            for (auto& pad : device.pads->chains)
+                reassignChainElementIds(pad.elements, remap);
+            continue;
+        }
+
+        if (!magda::isRack(element))
+            continue;
+
+        auto& rack = magda::getRack(element);
+        const auto oldRackId = rack.id;
+        rack.id = allocateRackId();
+        remap.racks[oldRackId] = rack.id;
+
+        for (auto& chain : rack.chains) {
+            const auto oldChainId = chain.id;
+            chain.id = allocateChainId();
+            remap.chains[oldChainId] = chain.id;
+            reassignChainElementIds(chain.elements, remap);
+        }
+    }
 }
 
 bool TrackManager::applyRackPreset(const ChainNodePath& rackPath, const RackInfo& presetRack) {
@@ -1494,37 +2316,21 @@ bool TrackManager::applyRackPreset(const ChainNodePath& rackPath, const RackInfo
     remap.racks[presetRack.id] = preservedId;
 
     // Reassign every chain / device / nested-rack id under this rack so the
-    // freshly-loaded subtree doesn't collide with other live elements'
-    // runtime IDs. Macros and mods are indexed within their parent and don't
-    // need reassignment. Mirrors the recursive walk in duplicateTrack.
-    std::function<void(std::vector<ChainElement>&)> reassignIds;
-    reassignIds = [&](std::vector<ChainElement>& elements) {
-        for (auto& element : elements) {
-            if (magda::isDevice(element)) {
-                auto& device = magda::getDevice(element);
-                const auto oldId = device.id;
-                device.id = nextFxDeviceId_++;
-                remap.devices[oldId] = device.id;
-            } else if (magda::isRack(element)) {
-                auto& nested = magda::getRack(element);
-                const auto oldRackId = nested.id;
-                nested.id = nextRackId_++;
-                remap.racks[oldRackId] = nested.id;
-                for (auto& chain : nested.chains) {
-                    const auto oldChainId = chain.id;
-                    chain.id = nextChainId_++;
-                    remap.chains[oldChainId] = chain.id;
-                    reassignIds(chain.elements);
-                }
-            }
-        }
-    };
+    // freshly-loaded subtree doesn't collide with other live elements' runtime
+    // IDs. Macros and mods are indexed within their parent and don't need
+    // reassignment. Through the shared walk, which descends into a device's
+    // pads: this one used not to, so a rack preset holding a Drum Grid brought
+    // the preset's pad DeviceIds in with it (#2221).
+    ChainIdRemap ids;
     for (auto& chain : live->chains) {
         const auto oldChainId = chain.id;
-        chain.id = nextChainId_++;
-        remap.chains[oldChainId] = chain.id;
-        reassignIds(chain.elements);
+        chain.id = allocateChainId();
+        ids.chains[oldChainId] = chain.id;
+        reassignChainElementIds(chain.elements, ids);
     }
+    remap.devices.merge(ids.devices);
+    remap.racks.merge(ids.racks);
+    remap.chains.merge(ids.chains);
     remapRackPresetLinks(*live, remap);
 
     // Trigger a full track resync — AudioBridge::trackDevicesChanged tears
@@ -1540,38 +2346,86 @@ bool TrackManager::applyChainPreset(TrackId trackId, std::vector<ChainElement> p
     }
 
     // Reassign every chain / device / nested-rack id in the preset so they
-    // don't collide with other live elements' runtime IDs. Same recursive
-    // walk applyRackPreset uses.
+    // don't collide with other live elements' runtime IDs, through the shared
+    // walk. This one used not to descend into a device's pads either (#2221).
     PresetIdRemap remap;
     remap.trackId = trackId;
-    std::function<void(std::vector<ChainElement>&)> reassignIds;
-    reassignIds = [&](std::vector<ChainElement>& elements) {
-        for (auto& element : elements) {
-            if (magda::isDevice(element)) {
-                auto& device = magda::getDevice(element);
-                const auto oldId = device.id;
-                device.id = nextFxDeviceId_++;
-                remap.devices[oldId] = device.id;
-            } else if (magda::isRack(element)) {
-                auto& nested = magda::getRack(element);
-                const auto oldRackId = nested.id;
-                nested.id = nextRackId_++;
-                remap.racks[oldRackId] = nested.id;
-                for (auto& chain : nested.chains) {
-                    const auto oldChainId = chain.id;
-                    chain.id = nextChainId_++;
-                    remap.chains[oldChainId] = chain.id;
-                    reassignIds(chain.elements);
-                }
-            }
-        }
-    };
-    reassignIds(presetElements);
+    ChainIdRemap ids;
+    reassignChainElementIds(presetElements, ids);
+    remap.devices = std::move(ids.devices);
+    remap.racks = std::move(ids.racks);
+    remap.chains = std::move(ids.chains);
     remapPresetLinksRecursive(presetElements, remap);
 
     track->chain.fxChainElements = std::move(presetElements);
 
     notifyTrackDevicesChanged(trackId);
+    return true;
+}
+
+std::optional<TrackInfo> TrackManager::prepareTrackPresetState(TrackId trackId,
+                                                               const TrackInfo& presetTrack) {
+    const auto* live = getTrack(trackId);
+    if (live == nullptr)
+        return std::nullopt;
+
+    const auto destination = ChainNodePath::trackLevel(trackId);
+    for (const auto& element : presetTrack.chain.fxChainElements) {
+        if (checkPlacement({&element, {}, destination, true, true}) != PlacementRefusal::Allowed)
+            return std::nullopt;
+    }
+
+    std::vector<juce::String> analysisPlugins;
+    for (const auto& element : presetTrack.chain.postFxChainElements) {
+        const auto& device = element.device;
+        if (device.isInstrument || daw::audio::internalPluginHasTag(device.pluginId, "sidechain"))
+            return std::nullopt;
+        if (!daw::audio::isInternalAnalysisPlugin(device.pluginId))
+            continue;
+        if (std::ranges::contains(analysisPlugins, device.pluginId))
+            return std::nullopt;
+        analysisPlugins.push_back(device.pluginId);
+    }
+
+    auto prepared = *live;
+    prepared.chain = presetTrack.chain;
+    // Mixer-analysis devices are rail-managed mixer state, not part of a
+    // user-authored chain preset.
+    prepared.chain.mixerAnalysisElements = live->chain.mixerAnalysisElements;
+    prepared.macros = presetTrack.macros;
+    prepared.mods = presetTrack.mods;
+
+    PresetIdRemap remap;
+    remap.trackId = trackId;
+    ChainIdRemap ids;
+    reassignChainElementIds(prepared.chain.fxChainElements, ids);
+    remap.devices = std::move(ids.devices);
+    remap.racks = std::move(ids.racks);
+    remap.chains = std::move(ids.chains);
+
+    for (auto& element : prepared.chain.postFxChainElements) {
+        const auto oldId = element.device.id;
+        element.device.id = nextPostFxDeviceId_++;
+        remap.postFxDevices[oldId] = element.device.id;
+    }
+
+    remapPresetLinks(prepared.macros, prepared.mods, remap);
+    remapPresetLinksRecursive(prepared.chain.fxChainElements, remap);
+    for (auto& element : prepared.chain.postFxChainElements) {
+        remapPresetLinks(element.device.macros, element.device.mods, remap);
+        element.device.pluginState = stripPresetRuntimePluginState(element.device.pluginState);
+    }
+    return prepared;
+}
+
+bool TrackManager::applyPreparedTrackPreset(TrackId trackId, const TrackInfo& preparedTrack) {
+    auto* live = getTrack(trackId);
+    if (live == nullptr || preparedTrack.id != trackId)
+        return false;
+
+    *live = preparedTrack;
+    notifyTrackDevicesChanged(trackId);
+    notifyModulationChanged();
     return true;
 }
 
@@ -1600,55 +2454,28 @@ void TrackManager::setDeviceParameterValueFromPlugin(DeviceId deviceId, int para
         setDeviceParameterValueFromPlugin(path, paramIndex, value);
 }
 
-bool TrackManager::isChordTrackMuted() const {
-    const auto chordTrackId = getChordTrackId();
-    const auto* chordTrack = chordTrackId != INVALID_TRACK_ID ? getTrack(chordTrackId) : nullptr;
-    return chordTrack != nullptr && chordTrack->muted;
-}
-
 double TrackManager::getDeviceLatencySeconds(const ChainNodePath& devicePath) {
-    auto* device = getDeviceInChainByPath(devicePath);
-    if (!device || !audioEngine_)
+    if (!getDeviceInChainByPath(devicePath) || !audioEngine_)
         return 0.0;
-
-    if (auto* bridge = audioEngine_->getAudioBridge()) {
-        if (auto* processor = bridge->getPluginManager().getDeviceProcessor(devicePath)) {
-            if (auto plugin = processor->getPlugin())
-                return plugin->getLatencySeconds();
-        }
-    }
-    return 0.0;
+    return audioEngine_->deviceLatencySeconds(devicePath);
 }
 
 double TrackManager::getTrackLatencySeconds(TrackId trackId) {
-    if (!audioEngine_)
+    const auto* track = getTrack(trackId);
+    if (!audioEngine_ || !track)
         return 0.0;
 
-    auto* bridge = audioEngine_->getAudioBridge();
-    if (!bridge)
-        return 0.0;
-
-    auto* track = getTrack(trackId);
-    if (!track)
-        return 0.0;
-
-    auto& pm = bridge->getPluginManager();
-    double total = 0.0;
-
-    // Helper to get latency for a single device
-    auto getDeviceLatency = [&](const ChainNodePath& devicePath) -> double {
-        if (auto* proc = pm.getDeviceProcessor(devicePath)) {
-            if (auto plugin = proc->getPlugin())
-                return plugin->getLatencySeconds();
-        }
-        return 0.0;
+    const auto latencyOf = [this](const ChainNodePath& devicePath) {
+        return audioEngine_->deviceLatencySeconds(devicePath);
     };
+
+    double total = 0.0;
 
     // Sum latency across top-level chain elements
     for (const auto& element : track->chain.fxChainElements) {
         if (magda::isDevice(element)) {
             const auto& device = magda::getDevice(element);
-            total += getDeviceLatency(ChainNodePath::topLevelDevice(trackId, device.id));
+            total += latencyOf(ChainNodePath::topLevelDevice(trackId, device.id));
         } else if (magda::isRack(element)) {
             // For racks: each chain is parallel, so take the max chain latency
             const auto& rack = magda::getRack(element);
@@ -1658,7 +2485,7 @@ double TrackManager::getTrackLatencySeconds(TrackId trackId) {
                 for (const auto& chainElem : chain.elements) {
                     if (magda::isDevice(chainElem)) {
                         const auto& device = magda::getDevice(chainElem);
-                        chainLatency += getDeviceLatency(
+                        chainLatency += latencyOf(
                             ChainNodePath::chainDevice(trackId, rack.id, chain.id, device.id));
                     }
                 }
@@ -1688,6 +2515,16 @@ RackId TrackManager::wrapDeviceInRack(TrackId trackId, DeviceId deviceId,
         return magda::isDevice(e) && magda::getDevice(e).id == deviceId;
     });
     if (it == elements.end())
+        return INVALID_RACK_ID;
+
+    // Wrapping takes the device off the top level, where the output instance
+    // that carries a bus is made, so it is a placement change and asks the same
+    // question every other one does. This used to check only whether a pad was
+    // on a bus, so wrapping a multi-out instrument stranded the child tracks a
+    // move of it refuses to strand (#2211, #2221).
+    if (checkPlacement({&*it, ChainNodePath::topLevelDevice(trackId, deviceId),
+                        ChainNodePath::trackLevel(trackId), true, false}) !=
+        PlacementRefusal::Allowed)
         return INVALID_RACK_ID;
 
     int insertIndex = static_cast<int>(std::distance(elements.begin(), it));
@@ -1734,6 +2571,13 @@ RackId TrackManager::wrapDeviceInRackByPath(const ChainNodePath& devicePath,
         return magda::isDevice(e) && magda::getDevice(e).id == deviceId;
     });
     if (it == elements.end())
+        return INVALID_RACK_ID;
+
+    // The same question the top-level branch asks through `wrapDeviceInRack()`.
+    // A nested device can drive multi-out child tracks too, and wrapping moves
+    // it into a container it was not in, so this is a placement change like any
+    // other and was going round the boundary (#2221).
+    if (checkPlacement({&*it, devicePath, chainPath, true, false}) != PlacementRefusal::Allowed)
         return INVALID_RACK_ID;
 
     int insertIndex = static_cast<int>(std::distance(elements.begin(), it));
@@ -1853,28 +2697,8 @@ RackId TrackManager::addRackToChainByPath(const ChainNodePath& chainPath,
     return INVALID_RACK_ID;
 }
 
-void TrackManager::removeRackFromChain(TrackId trackId, RackId parentRackId, ChainId chainId,
-                                       RackId nestedRackId) {
-    if (auto* chain = getChain(trackId, parentRackId, chainId)) {
-        auto& elements = chain->elements;
-        for (auto it = elements.begin(); it != elements.end(); ++it) {
-            if (magda::isRack(*it)) {
-                if (magda::getRack(*it).id == nestedRackId) {
-                    elements.erase(it);
-                    notifyTrackDevicesChanged(trackId);
-                    return;
-                }
-            }
-        }
-    } else {
-    }
-}
-
 void TrackManager::removeRackFromChainByPath(const ChainNodePath& rackPath) {
     // rackPath ends with a Rack step - we need to find the parent chain and remove this rack
-    for (size_t i = 0; i < rackPath.steps.size(); ++i) {
-    }
-
     if (rackPath.steps.size() == 1 && rackPath.steps.back().type == ChainStepType::Rack) {
         removeRackFromTrack(rackPath.trackId, rackPath.steps.back().id);
         return;
@@ -1903,15 +2727,13 @@ void TrackManager::removeRackFromChainByPath(const ChainNodePath& rackPath) {
     if (auto* chain = getChainFromPath(*this, chainPath)) {
         auto& elements = chain->elements;
         for (auto it = elements.begin(); it != elements.end(); ++it) {
-            if (magda::isRack(*it)) {
-                if (magda::getRack(*it).id == rackId) {
-                    elements.erase(it);
-                    notifyTrackDevicesChanged(rackPath.trackId);
-                    return;
-                }
+            if (magda::isRack(*it) && magda::getRack(*it).id == rackId) {
+                clearSelectionsUnderRack(magda::getRack(*it), rackPath);
+                elements.erase(it);
+                notifyTrackDevicesChanged(rackPath.trackId);
+                return;
             }
         }
-    } else {
     }
 }
 
@@ -1919,15 +2741,18 @@ void TrackManager::removeRackFromChainByPath(const ChainNodePath& rackPath) {
 // Sidechain Configuration
 // ============================================================================
 
-void TrackManager::setSidechainSource(DeviceId targetDevice, TrackId sourceTrack,
-                                      SidechainConfig::Type type) {
+// Every sidechain edit is the same walk with a different write, so the walk is
+// written once: find the device, change its source, notify. Callers that only
+// move the tap point, the trim or the listen switch go through here too, which
+// is what keeps a sidechain edit one shape for undo and for the API (#2329).
+void TrackManager::editSidechain(DeviceId targetDevice,
+                                 const std::function<void(SidechainConfig&)>& edit) {
     auto updateElements = [&](auto&& self, std::vector<ChainElement>& elements) -> bool {
         for (auto& element : elements) {
             if (magda::isDevice(element)) {
                 auto& device = magda::getDevice(element);
                 if (device.id == targetDevice) {
-                    device.sidechain.type = type;
-                    device.sidechain.sourceTrackId = sourceTrack;
+                    edit(device.sidechain);
                     notifyDevicePropertyChanged(findDevicePath(targetDevice));
                     return true;
                 }
@@ -1958,8 +2783,31 @@ void TrackManager::setSidechainSource(DeviceId targetDevice, TrackId sourceTrack
     }
 }
 
+void TrackManager::setSidechainSource(DeviceId targetDevice, TrackId sourceTrack,
+                                      SidechainConfig::Type type) {
+    editSidechain(targetDevice, [&](SidechainConfig& sidechain) {
+        sidechain.type = type;
+        sidechain.sourceTrackId = sourceTrack;
+        sidechain.enabled = true;
+    });
+}
+
+void TrackManager::setSidechainTapPoint(DeviceId targetDevice, ModTapPoint tapPoint) {
+    editSidechain(targetDevice, [&](SidechainConfig& sidechain) { sidechain.tapPoint = tapPoint; });
+}
+
+void TrackManager::setSidechainGainDb(DeviceId targetDevice, float gainDb) {
+    editSidechain(targetDevice, [&](SidechainConfig& sidechain) { sidechain.gainDb = gainDb; });
+}
+
+void TrackManager::setSidechainListen(DeviceId targetDevice, bool listen) {
+    editSidechain(targetDevice, [&](SidechainConfig& sidechain) { sidechain.listen = listen; });
+}
+
 void TrackManager::clearSidechain(DeviceId targetDevice) {
-    setSidechainSource(targetDevice, INVALID_TRACK_ID, SidechainConfig::Type::None);
+    // The whole source, the fields that shape it included: a slot that is not
+    // keyed off anything is not still trimming and monitoring a key.
+    editSidechain(targetDevice, [](SidechainConfig& sidechain) { sidechain = {}; });
 }
 
 void TrackManager::setRackSidechainSource(const ChainNodePath& rackPath, TrackId sourceTrack,
@@ -1969,11 +2817,41 @@ void TrackManager::setRackSidechainSource(const ChainNodePath& rackPath, TrackId
         return;
     rack->sidechain.type = type;
     rack->sidechain.sourceTrackId = sourceTrack;
+    rack->sidechain.enabled = true;
     notifyDeviceModifiersChanged(rackPath.trackId);
 }
 
 void TrackManager::clearRackSidechain(const ChainNodePath& rackPath) {
     setRackSidechainSource(rackPath, INVALID_TRACK_ID, SidechainConfig::Type::None);
+}
+
+bool TrackManager::setSidechainConfigByPath(const ChainNodePath& ownerPath,
+                                            const SidechainConfig& sidechain) {
+    if (ownerPath.getType() == ChainNodeType::Device ||
+        ownerPath.getType() == ChainNodeType::TopLevelDevice) {
+        auto* device = getDeviceInChainByPath(ownerPath);
+        if (device == nullptr)
+            return false;
+        if (device->sidechain == sidechain)
+            return true;
+        device->sidechain = sidechain;
+        notifyDevicePropertyChanged(ownerPath);
+        notifyDeviceModifiersChanged(ownerPath.trackId);
+        return true;
+    }
+
+    if (ownerPath.getType() == ChainNodeType::Rack) {
+        auto* rack = getRackByPath(ownerPath);
+        if (rack == nullptr)
+            return false;
+        if (rack->sidechain == sidechain)
+            return true;
+        rack->sidechain = sidechain;
+        notifyDeviceModifiersChanged(ownerPath.trackId);
+        return true;
+    }
+
+    return false;
 }
 
 }  // namespace magda

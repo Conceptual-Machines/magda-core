@@ -6,7 +6,7 @@
 #include <cmath>
 #include <functional>
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallComboBoxLookAndFeel.hpp"
 #include "core/GridDivision.hpp"
@@ -95,12 +95,12 @@ class GridDivisionButton final : public juce::Button {
 
     void paintButton(juce::Graphics& g, bool highlighted, bool down) override {
         auto bounds = getLocalBounds().toFloat().reduced(0.5f);
-        auto background = DarkTheme::getColour(DarkTheme::SURFACE).darker(down ? 0.35f : 0.2f);
+        auto background = ActiveTheme::getColour(ActiveTheme::SURFACE).darker(down ? 0.35f : 0.2f);
         if (highlighted)
             background = background.brighter(0.08f);
         g.setColour(background);
         g.fillRoundedRectangle(bounds, 3.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRoundedRectangle(bounds, 3.0f, 1.0f);
 
         const auto alpha = isEnabled() ? 1.0f : 0.5f;
@@ -112,8 +112,9 @@ class GridDivisionButton final : public juce::Button {
 
         const auto drawFraction = [&](juce::Rectangle<int> area) {
             const auto numberColour =
-                DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).withMultipliedAlpha(alpha);
-            const auto slashColour = DarkTheme::getSecondaryTextColour().withMultipliedAlpha(alpha);
+                ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).withMultipliedAlpha(alpha);
+            const auto slashColour =
+                ActiveTheme::getSecondaryTextColour().withMultipliedAlpha(alpha);
             const int numWidth =
                 static_cast<int>(std::ceil(g.getCurrentFont().getStringWidthFloat(numeratorText)));
             const int slashWidth =
@@ -140,9 +141,9 @@ class GridDivisionButton final : public juce::Button {
             auto top = getLocalBounds().reduced(2);
             auto bottom = top.removeFromBottom(top.getHeight() / 2);
             g.setColour(
-                DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).withMultipliedAlpha(alpha));
+                ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).withMultipliedAlpha(alpha));
             g.drawText(numeratorText, top, juce::Justification::centred, false);
-            g.setColour(DarkTheme::getSecondaryTextColour().withMultipliedAlpha(alpha));
+            g.setColour(ActiveTheme::getSecondaryTextColour().withMultipliedAlpha(alpha));
             g.drawText(denominatorText, bottom, juce::Justification::centred, false);
         }
     }
@@ -165,11 +166,11 @@ class GridDivisionCustomEditor final : public juce::Component {
             control->setJustification(juce::Justification::centred);
             control->setFont(FontManager::getInstance().getUIFont(12.0f));
             control->setColour(juce::TextEditor::textColourId,
-                               DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+                               ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
             control->setColour(juce::TextEditor::backgroundColourId,
-                               DarkTheme::getColour(DarkTheme::SURFACE).darker(0.2f));
+                               ActiveTheme::getColour(ActiveTheme::SURFACE).darker(0.2f));
             control->setColour(juce::TextEditor::outlineColourId,
-                               DarkTheme::getColour(DarkTheme::BORDER));
+                               ActiveTheme::getColour(ActiveTheme::BORDER));
             addAndMakeVisible(control);
         }
         const auto [num, den] = magda::grid::normaliseFraction(numerator, denominator);
@@ -184,11 +185,11 @@ class GridDivisionCustomEditor final : public juce::Component {
 
         slash_.setText("/", juce::dontSendNotification);
         slash_.setJustificationType(juce::Justification::centred);
-        slash_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        slash_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
         addAndMakeVisible(slash_);
         hint_.setJustificationType(juce::Justification::centred);
         hint_.setFont(FontManager::getInstance().getUIFont(11.0f));
-        hint_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        hint_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
         addAndMakeVisible(hint_);
         refreshHint();
     }
@@ -203,7 +204,7 @@ class GridDivisionCustomEditor final : public juce::Component {
     }
 
     void paint(juce::Graphics& g) override {
-        g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
         g.fillRoundedRectangle(getLocalBounds().toFloat(), 4.0f);
     }
 

@@ -1,13 +1,13 @@
 #pragma once
 
 #include <juce_dsp/juce_dsp.h>
-#include <tracktion_engine/tracktion_engine.h>
 
 #include <atomic>
 
-namespace magda::daw::audio {
+#include "core/ParameterUtils.hpp"
+#include "plugins/MagdaDevice.hpp"
 
-namespace te = tracktion::engine;
+namespace magda::daw::audio {
 
 //==============================================================================
 /**
@@ -15,8 +15,9 @@ namespace te = tracktion::engine;
  *
  * Loads a user-supplied impulse response and convolves the track signal with
  * it, followed by a high pass / low pass pair and an output trim, mixed back
- * against the dry signal. It replaces `te::ImpulseResponsePlugin`, the last
- * browser-visible stock Tracktion effect (#1980).
+ * against the dry signal. It replaced the fork's ImpulseResponsePlugin, the last
+ * browser-visible stock Tracktion effect (#1980), and is a MagdaDevice since
+ * #2299: one DSP hosted by whichever engine is running it.
  *
  * Faust is not an option for this device: `fi.conv` takes a compile-time
  * constant kernel, so a user-loadable IR cannot be expressed as a compiled
@@ -26,9 +27,7 @@ namespace te = tracktion::engine;
  * Latency: the convolution runs in JUCE's default configuration, uniform
  * partitioned and ZERO latency, which is what the retired device used. The
  * device therefore reports no latency and nothing about delay compensation
- * changes across the migration. (JUCE also offers `NonUniform`, cheaper for
- * long IRs and also zero latency; it is a one-line change if CPU ever asks for
- * it, and produces the same output.)
+ * changes across the migration.
  *
  * The impulse response lives in the device's own state as `irFileData`, a FLAC
  * encoding of the loaded audio, so a project stays self-contained. MAGDA's v2
@@ -39,17 +38,24 @@ namespace te = tracktion::engine;
  * Parameter identity with the retired device is deliberate and complete: five
  * parameters in the same order, each with the same normalised curve, so saved
  * automation, macro links and mod links survive the migration untouched. The
- * one change is that the two cutoffs now STORE Hz where the retired device
- * stored a MIDI note number and merely displayed Hz. The normalised mapping is
- * unchanged (a MIDI note number is affine in log2 of frequency, and the range
- * ends are the same 10 Hz and 20 kHz), so only the unit a host write carries is
- * different - which is what the custom UI, whose sliders were already in Hz,
- * had assumed all along.
+ * cutoffs STORE Hz (the retired Tracktion device stored a MIDI note number and
+ * merely displayed Hz); the normalised mapping is unchanged.
  */
-class MagdaConvolutionPlugin : public te::Plugin {
+class MagdaConvolutionPlugin : public MagdaDevice {
   public:
-    explicit MagdaConvolutionPlugin(const te::PluginCreationInfo&);
+    MagdaConvolutionPlugin();
     ~MagdaConvolutionPlugin() override;
+
+    // The device's own state property names. The spellings deliberately match
+    // the retired Tracktion device's, which is how a migrated project keeps
+    // its impulse response (core/LegacyDeviceAliases.cpp). Public because an
+    // IR load travels as a model document patch in this vocabulary (#2317).
+    struct StateIDs {
+        static const juce::Identifier name;
+        static const juce::Identifier normalise;
+        static const juce::Identifier trimSilence;
+        static const juce::Identifier irFileData;
+    };
 
     //==============================================================================
     /// FROZEN parameter order - the compatibility surface saved links address.
@@ -68,61 +74,74 @@ class MagdaConvolutionPlugin : public te::Plugin {
     static const char* xmlTypeName;
 
     //==============================================================================
-    /** Loads an impulse response from any audio format the engine can read, and
-        stores it in the device state. Message thread only.
+    /** Loads an impulse response from any audio format JUCE's basic formats
+        read, and stores it in the device state. Message thread only.
         @return false when the file cannot be read or encoded.
     */
     bool loadImpulseResponse(const juce::File&);
+
+    /// Parse @p sourceData as audio and re-encode it as the FLAC blob the
+    /// state document stores. Pure: touches no device. The model-first IR
+    /// load (#2317) encodes here and writes the result into the document; the
+    /// projection then decodes it in restoreState().
+    static bool encodeImpulseResponse(const void* sourceData, size_t sourceDataSize,
+                                      juce::MemoryBlock& outEncoded);
 
     /** Loads an impulse response from an encoded audio file held in memory. */
     bool loadImpulseResponse(const void* sourceData, size_t sourceDataSize);
 
     /// The loaded IR's display name. Not used by the DSP; the custom UI shows it.
-    juce::CachedValue<juce::String> irName;
-    /// Normalise the IR's amplitude on load. True, as on the retired device.
-    juce::CachedValue<bool> normalise;
-    /// Trim leading and trailing silence on load. False, as on the retired device.
-    juce::CachedValue<bool> trimSilence;
+    const juce::String& irName() const {
+        return irName_;
+    }
+    void setIrName(const juce::String& name) {
+        irName_ = name;
+    }
 
-    te::AutomatableParameter::Ptr gainParam;
-    te::AutomatableParameter::Ptr lowCutParam;
-    te::AutomatableParameter::Ptr highCutParam;
-    te::AutomatableParameter::Ptr mixParam;
-    te::AutomatableParameter::Ptr filterQParam;
+    /// Normalise the IR's amplitude on load. True, as on the retired device.
+    /// Read when a blob is decoded, so set it before loading.
+    bool normalise() const {
+        return normalise_;
+    }
+    void setNormalise(bool shouldNormalise) {
+        normalise_ = shouldNormalise;
+    }
+
+    /// Trim leading and trailing silence on load. False, as on the retired device.
+    bool trimSilence() const {
+        return trimSilence_;
+    }
+    void setTrimSilence(bool shouldTrim) {
+        trimSilence_ = shouldTrim;
+    }
 
     //==============================================================================
-    juce::String getName() const override {
-        return getPluginName();
-    }
-    juce::String getPluginType() override {
-        return xmlTypeName;
-    }
-    juce::String getShortName(int) override {
-        return "IR";
-    }
-    juce::String getSelectableDescription() override {
-        return getName();
+    DeviceProperties properties() const override {
+        return {
+            .pluginId = xmlTypeName,
+            .name = getPluginName(),
+            .shortName = "IR",
+            // A convolution rings for exactly the length of its impulse
+            // response, plus the filters' own short decay. Declaring it is what
+            // lets an offline render or a freeze keep the reverb's tail instead
+            // of cutting it at the last note.
+            .tailLengthSeconds = irLengthSeconds_.load(std::memory_order_relaxed),
+        };
     }
 
-    double getLatencySeconds() override;
-    double getTailLength() const override;
-
-    void initialise(const te::PluginInitialisationInfo&) override;
-    void deinitialise() override;
+    void prepare(const DevicePrepareContext& context) override;
     void reset() override;
-    void applyToBuffer(const te::PluginRenderContext&) override;
+    void process(DeviceProcessContext& context) override;
 
-    bool takesAudioInput() override {
-        return true;
+    int parameterCount() const override {
+        return kNumParams;
     }
-    bool takesMidiInput() override {
-        return false;
-    }
-    bool isSynth() override {
-        return false;
-    }
+    ParameterInfo parameterInfo(int index) const override;
+    float parameterValue(int index) const override;
+    void setParameterValue(int index, float value) override;
 
-    void restorePluginStateFromValueTree(const juce::ValueTree&) override;
+    void flushState(juce::ValueTree& state) override;
+    void restoreState(const juce::ValueTree& state) override;
 
   private:
     //==============================================================================
@@ -131,10 +150,22 @@ class MagdaConvolutionPlugin : public te::Plugin {
     using Duplicator = juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>,
                                                       juce::dsp::IIR::Coefficients<float>>;
 
-    void loadImpulseResponseFromState();
-    void valueTreePropertyChanged(juce::ValueTree&, const juce::Identifier&) override;
+    /// The parameter's display-domain value, converted through the cached
+    /// domain rather than a freshly built ParameterInfo: this runs per block on
+    /// the audio thread, and a ParameterInfo carries strings that allocate.
+    float displayValue(int index) const;
 
-    juce::CachedValue<float> gainValue, lowCutValue, highCutValue, mixValue, filterQValue;
+    void loadImpulseResponseFromData();
+
+    std::array<float, kNumParams> values_{};
+    std::array<ParameterUtils::ParameterDomain, kNumParams> domains_{};
+
+    // The device's own non-parameter state, flushed to and restored from the
+    // host's state tree under the retired device's property names.
+    juce::MemoryBlock irData_;
+    juce::String irName_;
+    bool normalise_ = true;     // normalise the IR's amplitude on load
+    bool trimSilence_ = false;  // trim leading/trailing silence on load
 
     juce::dsp::ProcessorChain<juce::dsp::Convolution, Duplicator, Duplicator,
                               juce::dsp::Gain<float>>
@@ -143,7 +174,13 @@ class MagdaConvolutionPlugin : public te::Plugin {
     juce::SmoothedValue<float> lowCutSmoother_, highCutSmoother_, gainSmoother_, filterQSmoother_,
         wetSmoother_, drySmoother_;
 
-    // Written when an IR is loaded, read by getTailLength() off the message
+    /// Dry copy for the mix, sized in prepare() so process() never allocates.
+    /// (The fork's pooled AudioScratchBuffer is host code.)
+    juce::AudioBuffer<float> dryBuffer_;
+
+    double sampleRate_ = 44100.0;
+
+    // Written when an IR is loaded, read by properties() off the message
     // thread. The convolution's own IR size lives behind a pointer the audio
     // thread swaps, so it is not a safe read from here.
     std::atomic<double> irLengthSeconds_{0.0};

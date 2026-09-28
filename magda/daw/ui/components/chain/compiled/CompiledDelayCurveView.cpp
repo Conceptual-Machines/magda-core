@@ -4,7 +4,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaDelayCompiledPlugin.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -30,8 +30,8 @@ CompiledDelayCurveView::CompiledDelayCurveView(juce::String /*pluginId*/) {
 }
 
 void CompiledDelayCurveView::setCompiledPlugin(
-    magda::daw::audio::compiled::MagdaDelayCompiledPlugin* plugin) {
-    compiledPlugin_ = plugin;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaDelayCompiledPlugin> plugin) {
+    compiledPlugin_ = std::move(plugin);
 }
 
 void CompiledDelayCurveView::updateFromDevice(const magda::DeviceInfo& device) {
@@ -60,20 +60,17 @@ void CompiledDelayCurveView::timerCallback() {
     float bpm = bpm_;
 
     if (compiledPlugin_ != nullptr) {
-        if (auto* p = compiledPlugin_->getSlotParameter(Delay::kTimeSlot))
-            time =
-                compiledPlugin_->nativeValueToDisplayValue(Delay::kTimeSlot, p->getCurrentValue());
-        if (auto* p = compiledPlugin_->getSlotParameter(Delay::kFeedbackSlot))
-            fb = compiledPlugin_->nativeValueToDisplayValue(Delay::kFeedbackSlot,
-                                                            p->getCurrentValue());
-        if (auto* p = compiledPlugin_->getSlotParameter(Delay::kCrossSlot))
-            cross =
-                compiledPlugin_->nativeValueToDisplayValue(Delay::kCrossSlot, p->getCurrentValue());
-        if (auto* p = compiledPlugin_->getSlotParameter(Delay::kSyncSlot))
-            sync = p->getCurrentValue() >= 0.5f;
-        if (auto* p = compiledPlugin_->getSlotParameter(Delay::kDivisionSlot)) {
+        if (auto p = compiledPlugin_->getSlotParameter(Delay::kTimeSlot))
+            time = compiledPlugin_->nativeValueToDisplayValue(Delay::kTimeSlot, p.currentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(Delay::kFeedbackSlot))
+            fb = compiledPlugin_->nativeValueToDisplayValue(Delay::kFeedbackSlot, p.currentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(Delay::kCrossSlot))
+            cross = compiledPlugin_->nativeValueToDisplayValue(Delay::kCrossSlot, p.currentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(Delay::kSyncSlot))
+            sync = p.currentValue() >= 0.5f;
+        if (auto p = compiledPlugin_->getSlotParameter(Delay::kDivisionSlot)) {
             divIdx = static_cast<int>(std::round(compiledPlugin_->nativeValueToDisplayValue(
-                Delay::kDivisionSlot, p->getCurrentValue())));
+                Delay::kDivisionSlot, p.currentValue())));
         }
         bpm = compiledPlugin_->currentBpm();
     } else {
@@ -122,14 +119,14 @@ void CompiledDelayCurveView::resampleFromPlugin() {
 
 void CompiledDelayCurveView::paint(juce::Graphics& g) {
     const auto bounds = getLocalBounds();
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).darker(0.06f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).darker(0.06f));
     g.fillRect(bounds);
 
     auto plot = bounds.toFloat().reduced(kPlotPadX, kPlotPadY);
     if (plot.getWidth() < 8.0f || plot.getHeight() < 8.0f)
         return;
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.55f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.55f));
     g.drawRect(plot, 1.0f);
 
     const float midY = plot.getCentreY();
@@ -156,10 +153,10 @@ void CompiledDelayCurveView::paint(juce::Graphics& g) {
     // Centre line — separates "L" half (above) from "R" half (below) when
     // ping-pong is engaged. Always visible so the timeline reads as
     // bipolar even at cross = 0.
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.35f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.35f));
     g.drawHorizontalLine(static_cast<int>(std::round(midY)), plot.getX(), plot.getRight());
 
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE);
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE);
     const float halfH = plot.getHeight() * 0.5f;
     constexpr float kBarMinPx = 1.5f;
     const float barWidthPx =
@@ -177,7 +174,7 @@ void CompiledDelayCurveView::paint(juce::Graphics& g) {
     // bars use so beats line up with the taps that fall on them.
     if (sync_ && bpm_ > 1.0f) {
         const float beatSec = 60.0f / bpm_;
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.18f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.18f));
         for (float t = beatSec; t <= windowSec; t += beatSec) {
             const float x = plotXOffset + (t / windowSec) * plotWidthInner;
             g.drawVerticalLine(static_cast<int>(std::round(x)), plot.getY(), plot.getBottom());
@@ -237,8 +234,10 @@ const CompiledPresentationSpec& getMagdaDelayPresentation() {
     return kSpec;
 }
 
-void CompiledDelayCurveView::bindPlugin(te::Plugin* plugin) {
-    setCompiledPlugin(dynamic_cast<magda::daw::audio::compiled::MagdaDelayCompiledPlugin*>(plugin));
+void CompiledDelayCurveView::bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) {
+    setCompiledPlugin(
+        std::dynamic_pointer_cast<magda::daw::audio::compiled::MagdaDelayCompiledPlugin>(
+            std::move(device)));
 }
 
 }  // namespace magda::daw::ui

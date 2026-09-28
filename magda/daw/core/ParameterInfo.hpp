@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "ChainNodePath.hpp"
@@ -22,6 +23,14 @@ enum class ParameterScale {
     Discrete,     // value = choices[round(normalized * (count-1))]
     Boolean,      // value = normalized >= 0.5
     FaderDB       // Fader-style dB: 0.75 = 0dB (unity), 0.0 = minDb, 1.0 = maxDb
+};
+
+/**
+ * @brief The value domain used by currentValue and defaultValue.
+ */
+enum class ParameterValueConvention {
+    Real,        // Values use the display domain described by minValue/maxValue/scale
+    Normalized,  // Values use the normalized [0, 1] domain
 };
 
 /**
@@ -78,13 +87,12 @@ struct ParameterInfo {
     // `[tooltip:…]`. Never affects value handling.
     juce::String tooltip;
 
-    // Value range — ALL stored in REAL parameter units (Hz, dB, %, …).
-    // Consumers never see normalized values here; the normalized↔real
-    // conversion lives exclusively in ParameterUtils.
-    float minValue = 0.0f;      // Real minimum (e.g., 20.0 for Hz)
-    float maxValue = 1.0f;      // Real maximum (e.g., 20000.0 for Hz)
-    float defaultValue = 0.5f;  // Real default
-    float currentValue = 0.5f;  // Current REAL value (for UI display and sync)
+    // Display range, always stored in real parameter units (Hz, dB, %, …).
+    float minValue = 0.0f;  // Real minimum (e.g., 20.0 for Hz)
+    float maxValue = 1.0f;  // Real maximum (e.g., 20000.0 for Hz)
+    ParameterValueConvention valueConvention = ParameterValueConvention::Real;
+    float defaultValue = 0.5f;  // Default in valueConvention's domain
+    float currentValue = 0.5f;  // Current value in valueConvention's domain
 
     // The native range that the owning te::AutomatableParameter actually
     // stores. For external VSTs this is ALWAYS [0, 1] because TE wraps VST
@@ -186,11 +194,11 @@ struct ParameterInfo {
     ParameterInfo() = default;
 
     // Constructor with basic info
-    ParameterInfo(int index, const juce::String& n, const juce::String& u, float min, float max,
-                  float def, ParameterScale s = ParameterScale::Linear)
+    ParameterInfo(int index, juce::String n, juce::String u, float min, float max, float def,
+                  ParameterScale s = ParameterScale::Linear)
         : paramIndex(index),
-          name(n),
-          unit(u),
+          name(std::move(n)),
+          unit(std::move(u)),
           minValue(min),
           maxValue(max),
           defaultValue(def),

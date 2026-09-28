@@ -9,6 +9,10 @@
 
 #include "core/DeviceInfo.hpp"
 
+namespace magda::daw::audio {
+class MagdaDevice;
+}
+
 namespace magda::daw::ui {
 
 namespace te = tracktion::engine;
@@ -30,7 +34,10 @@ class CompiledDevicePanel {
     virtual void updateFromDevice(const magda::DeviceInfo& device, const ParamLinkContext*) {
         updateFromDevice(device);
     }
-    virtual void bindPlugin(te::Plugin*) = 0;
+    /// The device rendering behind this slot, whichever engine holds it (#2585).
+    /// The panel keeps the handle: its views poll the DSP on a timer, and the
+    /// instance must not be freed under them by a plan rebuild.
+    virtual void bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) = 0;
     virtual void setOnParameterChanged(std::function<void(int slotIndex, float displayValue)>) = 0;
     virtual void setOnLinkRequested(std::function<void(int slotIndex, float amount)>) {}
     virtual void setOnLinkAmountChanged(std::function<void(int slotIndex, float amount)>) {}

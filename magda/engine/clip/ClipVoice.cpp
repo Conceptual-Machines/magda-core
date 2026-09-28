@@ -1,11 +1,14 @@
 #include "clip/ClipVoice.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 
+#include "clip/ClipStreamFeed.hpp"
 #include "clip/EventPlacement.hpp"
 #include "clip/FadeCurves.hpp"
+#include "trace/PlaybackTrace.hpp"
 
 namespace magda::engine {
 
@@ -18,6 +21,25 @@ void ClipVoice::prepare(const RenderContext& context) {
     held_.setSize(std::max(1, context.numChannels), kCellSamples, false, true, false);
 
     release();
+    stop_.reset();
+}
+
+void ClipVoice::releaseInto(juce::dsp::AudioBlock<float> out, int offset, int fadeSamples) {
+    // What it was contributing, remembered by the render that produced it, so
+    // the ramp decays this voice and nothing else that landed in the same
+    // samples (StopDeClick::push).
+    stop_.begin(out, offset, fadeSamples);
+
+    release();
+}
+
+void ClipVoice::cut() {
+    release();
+    stop_.reset();
+}
+
+void ClipVoice::carryTail(juce::dsp::AudioBlock<float> out) {
+    stop_.advance(out);
 }
 
 void ClipVoice::release() {
@@ -25,28 +47,57 @@ void ClipVoice::release() {
     eventId_ = INVALID_EVENT_ID;
     sounded_ = false;
     primed_ = nullptr;
+    adopted_ = nullptr;
     deClick_.reset();
+
+    // stop_ is deliberately left alone: releasing is what starts its ramp, and
+    // what is left of it is still sounding.
     pending_ = false;
     pendingCount_ = 0;
     pendingRead_ = 0;
     skip_ = 0;
 }
 
+ClipStretcher* ClipVoice::adoptStandby(StandbyStretcher* standby, const AudioClipPlayback& clip,
+                                       const AudioEventPlayback& event, const BlockInfo& block,
+                                       const ClipStretcher& handed, int preRoll,
+                                       std::uint64_t snapshot) {
+    if (standby == nullptr || standby->stretcher == nullptr)
+        return nullptr;
+
+    const auto prime = cellPrimeAt(handed, preRoll, nextCell_, sampleRate_, [&](double seconds) {
+        return readingPositionAt(clip, event, seconds, block.beatAtTime(seconds), sampleRate_);
+    });
+    const StretchPrimeKey key{nextCell_,
+                              prime.readFrom,
+                              prime.preRoll,
+                              prime.step,
+                              block.tempo != nullptr ? block.tempo->fingerprint() : 0,
+                              snapshot};
+
+    // Checked before claiming, so a standby for somewhere else is left for its own start.
+    // Key checking and the withdrawal race are modelled in specs/tla/hand_back_standby.
+    if (standby->key != key || !standby->claim())
+        return nullptr;
+
+    adopted_ = standby;
+    ++adoptions_;
+    return standby->stretcher.get();
+}
+
 bool ClipVoice::renderThroughCells(const AudioClipPlayback& clip, const AudioEventPlayback& event,
                                    const BlockInfo& block, PrefetchStream& stream,
-                                   ClipStretcher& stretcher, int preRoll,
+                                   ClipStretcher& handed, int preRoll,
                                    juce::dsp::AudioBlock<float> scratch,
                                    juce::dsp::AudioBlock<float> region, double windowStart,
-                                   int count) {
+                                   int count, StandbyStretcher* standby, std::uint64_t snapshot) {
     // The grid, in samples of the timeline, anchored to where the event begins
     // rather than to where this block does. That anchor is the whole point: two
     // renders that cut the timeline into different blocks still divide it into
     // the same cells, so the stretcher is handed the same input in the same
     // order both times and gives back the same samples.
-    const auto eventStartSample =
-        static_cast<std::int64_t>(std::llround(event.span.startSeconds * sampleRate_));
-    const auto windowStartSample =
-        static_cast<std::int64_t>(std::llround(windowStart * sampleRate_));
+    const auto eventStartSample = sampleAt(event.span.seconds.start * sampleRate_);
+    const auto windowStartSample = sampleAt(windowStart * sampleRate_);
 
     // Beginning rather than carrying on: the first block of a voice, the first
     // after the timeline jumped, and one whose stretcher the pool has replaced.
@@ -54,7 +105,8 @@ bool ClipVoice::renderThroughCells(const AudioClipPlayback& clip, const AudioEve
     // reader catching up and one that never does: priming reads behind the
     // position wanted, so a stream that came back short and was primed again
     // would be sent backwards every block.
-    auto needsPrime = primed_ != &stretcher || !block.continuous || !pending_;
+    auto* stretcher = &handed;
+    auto needsPrime = primed_ != stretcher || !block.continuous || !pending_;
 
     if (needsPrime) {
         // Back to the cell boundary at or before where playback resumes, and
@@ -70,8 +122,14 @@ bool ClipVoice::renderThroughCells(const AudioClipPlayback& clip, const AudioEve
         pendingRead_ = 0;
         skip_ = static_cast<int>(windowStartSample - nextCell_);
 
-        stretcher.reset();
-        primed_ = &stretcher;
+        // Primed off the audio thread for exactly this cell, which leaves nothing to do here.
+        if (auto* adopted = adoptStandby(standby, clip, event, block, handed, preRoll, snapshot)) {
+            stretcher = adopted;
+            needsPrime = false;
+        } else {
+            stretcher->reset();
+        }
+        primed_ = stretcher;
         pending_ = true;
     }
 
@@ -100,15 +158,23 @@ bool ClipVoice::renderThroughCells(const AudioClipPlayback& clip, const AudioEve
         const auto cellStartSeconds = static_cast<double>(nextCell_) / sampleRate_;
         const auto cellEndSeconds = static_cast<double>(nextCell_ + kCellSamples) / sampleRate_;
 
-        const auto opens = readingPositionAt(clip, event, cellStartSeconds,
-                                             block.beatAtTime(cellStartSeconds), sampleRate_);
-        const auto closes = readingPositionAt(clip, event, cellEndSeconds,
-                                              block.beatAtTime(cellEndSeconds), sampleRate_);
-        const auto step = (closes - opens) / kCellSamples;
+        const auto positionAt = [&](double seconds) {
+            return readingPositionAt(clip, event, seconds, block.beatAtTime(seconds), sampleRate_);
+        };
+        const auto opens = positionAt(cellStartSeconds);
 
-        const auto ahead = stretcher.readAheadSamples();
-        const auto readFrom = static_cast<std::int64_t>(std::llround(opens)) + ahead;
-        const auto readTo = static_cast<std::int64_t>(std::llround(closes)) + ahead;
+        const auto read =
+            stretchReadAt(*stretcher, preRoll, cellStartSeconds, sampleRate_, positionAt);
+        const auto readEnd =
+            stretchReadAt(*stretcher, preRoll, cellEndSeconds, sampleRate_, positionAt);
+        const auto readFrom = read.from;
+        const auto readTo = readEnd.from;
+
+        // The rate of what is fed, which is heard a latency later than this cell.
+        const auto step = (readEnd.heard - read.heard) / kCellSamples;
+
+        // The ceiling every buffer downstream was sized against. Auto tempo alone
+        // can ask past it, and such a cell reads short and seeks after.
         const auto wanted = static_cast<int>(
             std::clamp<std::int64_t>(readTo - readFrom, 0, maxReadingSamples(maxBlockSamples_)));
 
@@ -117,7 +183,17 @@ bool ClipVoice::renderThroughCells(const AudioClipPlayback& clip, const AudioEve
             // the stretcher is primed with is the material leading up to a
             // fixed instant. Read out of the same stream in the same pass, so
             // the cell's own read continues it rather than seeking again.
-            stretcher.prime(stream, readFrom, preRoll, step);
+            //
+            // A prime the reader was behind on aligned against silence, and
+            // what comes out of the cells that window covers is damaged whether
+            // or not their own reads arrived. Said here and not primed again:
+            // priming reads behind the position wanted, so a second attempt
+            // would send a reader that is already late further back still, and
+            // the material it recovered would then play after the moment it
+            // belonged to.
+            if (stretcher->prime(stream, readFrom, read.preRoll, step) > 0)
+                full = false;
+
             needsPrime = false;
         }
 
@@ -127,7 +203,7 @@ bool ClipVoice::renderThroughCells(const AudioClipPlayback& clip, const AudioEve
 
         juce::dsp::AudioBlock<float> cell(held_);
         auto cellOut = cell.getSubBlock(0, static_cast<std::size_t>(kCellSamples));
-        stretcher.process(reading, opens - static_cast<double>(readFrom), step, cellOut);
+        stretcher->process(reading, opens - static_cast<double>(readFrom), step, cellOut);
 
         nextCell_ += kCellSamples;
         pendingCount_ = kCellSamples;
@@ -147,44 +223,58 @@ bool ClipVoice::renderThroughCells(const AudioClipPlayback& clip, const AudioEve
     return full;
 }
 
-void ClipVoice::applyFade(juce::dsp::AudioBlock<float> region, int regionFirstSample,
+void ClipVoice::applyFade(juce::dsp::AudioBlock<float> region, EdgeSample regionFirstSample,
                           const BlockInfo& block, double startSeconds, double endSeconds,
-                          FadeCurve curve, bool rising) const {
+                          FadeCurve curve, bool rising) {
     const auto length = endSeconds - startSeconds;
     if (!(length > 0.0) || block.numSamples <= 0)
         return;
 
-    const auto blockSeconds = block.endSeconds - block.startSeconds;
+    const auto blockSeconds = block.seconds.end - block.seconds.start;
     if (!(blockSeconds > 0.0))
         return;
 
     // The samples of the block the fade covers, narrowed to the ones this
-    // region holds. sampleForTime clamps to the block, so a fade that began
-    // before it or runs past it contributes the part that is here.
+    // region holds. Bounds rather than moments, so they may sit one past the
+    // block's last sample, and edgeForTime clamps them to it: a fade that began
+    // before this block or runs past it contributes the part that is here.
     const auto count = static_cast<int>(region.getNumSamples());
-    const auto from = std::max(regionFirstSample, block.sampleForTime(startSeconds));
-    const auto to = std::min(regionFirstSample + count, block.sampleForTime(endSeconds));
+    const auto from = std::max(regionFirstSample, block.edgeForTime(startSeconds));
+    const auto to = std::min(regionFirstSample + count, block.edgeForTime(endSeconds));
     if (to <= from)
         return;
 
     const auto secondsPerSample = blockSeconds / block.numSamples;
     const auto channels = region.getNumChannels();
 
-    for (auto sample = from; sample < to; ++sample) {
-        const auto seconds = block.startSeconds + sample * secondsPerSample;
-        const auto progress = static_cast<float>((seconds - startSeconds) / length);
-        const auto gain = fadeGain(curve, rising ? progress : 1.0f - progress);
+    // The envelope is the same for every channel, so it is built once per chunk
+    // and each channel is one vector multiply against it (#2152).
+    constexpr int kChunkSamples = 256;
+    std::array<float, kChunkSamples> gains{};
 
-        const auto index = static_cast<std::size_t>(sample - regionFirstSample);
+    for (auto sample = from.value; sample < to.value; sample += kChunkSamples) {
+        const auto chunk =
+            static_cast<int>(std::min<decltype(to.value)>(kChunkSamples, to.value - sample));
+
+        for (int i = 0; i < chunk; ++i) {
+            const auto seconds = block.seconds.start + ((sample + i) * secondsPerSample);
+            const auto progress = static_cast<float>((seconds - startSeconds) / length);
+            gains[static_cast<std::size_t>(i)] =
+                fadeGain(curve, rising ? progress : 1.0f - progress);
+        }
+
+        const auto index = static_cast<std::size_t>(sample - regionFirstSample.value);
         for (std::size_t channel = 0; channel < channels; ++channel)
-            region.getChannelPointer(channel)[index] *= gain;
+            juce::FloatVectorOperations::multiply(region.getChannelPointer(channel) + index,
+                                                  gains.data(), chunk);
     }
 }
 
 bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& event,
                        const BlockInfo& block, PrefetchStream& stream, ClipStretcher* stretcher,
                        int preRoll, juce::dsp::AudioBlock<float> scratch,
-                       juce::dsp::AudioBlock<float> out) {
+                       juce::dsp::AudioBlock<float> out, bool correctTrimmedStart,
+                       StandbyStretcher* standby, std::uint64_t snapshot) {
     // A voice handed a different entry is a new voice: whatever it played
     // before has nothing to do with where this one begins.
     if (!playing(clip.clipId, event.eventId)) {
@@ -192,8 +282,17 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
         eventId_ = event.eventId;
         sounded_ = false;
         primed_ = nullptr;
+        adopted_ = nullptr;
         deClick_.reset();
     }
+
+    // A claimed standby is this voice's stretcher while the table still names it. Once the
+    // pool has made it the entry's own, the entry's is that same object; if it dropped it
+    // instead, the entry's is another and this start primes it.
+    if (adopted_ != nullptr && adopted_ != standby)
+        adopted_ = nullptr;
+    if (adopted_ != nullptr)
+        stretcher = adopted_->stretcher.get();
 
     const auto nothing = [this] {
         sounded_ = false;
@@ -207,14 +306,14 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
     // audible, narrowed to the event's own stretch of it. The silences inside
     // are not part of this, because they mute material that goes on running.
     const auto windowStart =
-        std::max({block.startSeconds, clip.span.startSeconds, event.span.startSeconds});
+        std::max({block.seconds.start, clip.span.seconds.start, event.span.seconds.start});
     const auto windowEnd =
-        std::min({block.endSeconds, clip.span.endSeconds, event.span.endSeconds});
+        std::min({block.seconds.end, clip.span.seconds.end, event.span.seconds.end});
     if (windowEnd <= windowStart)
         return nothing();
 
-    const auto first = block.sampleForTime(windowStart);
-    const auto count = block.sampleForTime(windowEnd) - first;
+    const auto first = block.edgeForTime(windowStart);
+    const auto count = block.edgeForTime(windowEnd) - first;
     if (count <= 0)
         return nothing();
 
@@ -236,72 +335,41 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
     const auto closes =
         readingPositionAt(clip, event, windowEnd, block.beatAtTime(windowEnd), sampleRate_);
 
-    // How much of the reading one output sample of this block costs. Not the
-    // event's nominal rate: under a tempo curve or through a speed ramp the two
-    // differ, and what a block actually plays is the distance between its own
-    // two ends.
-    const auto step = (closes - opens) / count;
-
-    // How far ahead of the position wanted the reading is consumed, which is not
-    // zero only for the path that lands between samples (ClipStretcher.hpp).
-    const auto ahead = stretcher != nullptr ? stretcher->readAheadSamples() : 0;
-    const auto readFrom = static_cast<std::int64_t>(std::llround(opens)) + ahead;
-    const auto readTo = static_cast<std::int64_t>(std::llround(closes)) + ahead;
-
-    // Rounded at both ends rather than counted forward, so one block's reading
-    // ends exactly where the next one's begins and nothing accumulates. What is
-    // left over lands in the ratio the stretcher is handed, which is where a
-    // fraction of a sample belongs.
-    //
-    // A clip with no stretcher consumes one sample per sample by definition, and
-    // asking for the difference would let a rounding of a hair shorten a block
-    // that is not stretched at all.
-    //
-    // The ceiling is the contract every buffer downstream was sized against
-    // (maxReadingSamples), and it is enforced here because it cannot be enforced
-    // in the position map: clamping a position would break the rounded ends that
-    // make one block's reading continue the last one's. A rate past the ceiling
-    // is reachable through auto tempo alone, where the ratio is the project's
-    // tempo over a file's own analysed bpm and nothing bounds their quotient.
-    // Such a clip reads short and seeks after it, which is wrong the way a
-    // clamped ratio is wrong, rather than wrong the way a buffer overrun is.
-    const auto wanted = stretcher == nullptr
-                            ? count
-                            : static_cast<int>(std::clamp<std::int64_t>(
-                                  readTo - readFrom, 0, maxReadingSamples(maxBlockSamples_)));
-
-    // The reading sits behind what the block renders, in the same scratch: they
-    // are different lengths whenever the clip is not at its file's own speed.
-    auto reading = stretcher != nullptr
-                       ? scratch.getSubBlock(static_cast<std::size_t>(maxBlockSamples_),
-                                             static_cast<std::size_t>(wanted))
-                       : region;
+    playbackTrace({.kind = PlaybackTraceEntry::Kind::VoiceWindow,
+                   .clip = clip.clipId,
+                   .beat = block.beatAtTime(windowStart),
+                   .a = opens,
+                   .b = closes,
+                   .c = static_cast<double>(event.loopStartSamples),
+                   .d = static_cast<double>(event.loopLengthSamples)});
 
     // A clip that consumes its reading at a rate is fed on a grid of its own
     // rather than a block at a time, so that what the stretcher is handed is a
     // function of where the timeline is and never of how the callback was cut
-    // up (renderThroughCells). Everything else here is the plain path: one
-    // sample of reading per sample of output, where a block boundary already
-    // changes nothing.
+    // up (renderThroughCells). Everything else is the plain path: one sample of
+    // reading per sample of output, starting with the first source sample at or
+    // after where the region's first output sample reads. windowStart sits a
+    // fraction into that sample (#2741).
     //
-    // Both answer the same question, which is whether this voice got everything
-    // it asked for. What "everything" counts in differs: the plain path asks
-    // the reader for a block's worth of samples, and the grid asks it for
-    // whatever a cell consumes and then measures what it produced.
-    const auto full = stretcher != nullptr
-                          ? renderThroughCells(clip, event, block, stream, *stretcher, preRoll,
-                                               scratch, region, windowStart, count)
-                          : stream.read(readFrom, reading, wanted) == wanted;
+    // Both answer whether this voice got everything it asked for. The plain
+    // path asks the reader for a block's worth of samples, and the grid asks it
+    // for whatever a cell consumes and then measures what it produced.
+    const auto full =
+        stretcher != nullptr
+            ? renderThroughCells(clip, event, block, stream, *stretcher, preRoll, scratch, region,
+                                 windowStart, count, standby, snapshot)
+            : stream.read(firstSampleFrom(opens - fractionAt(block.offsetForTime(windowStart))),
+                          region, count) == count;
 
     // The holes, cleared out of what was read rather than skipped over.
     for (const auto& hole : clip.silenced) {
-        const auto holeStart = std::max(hole.startSeconds, windowStart);
-        const auto holeEnd = std::min(hole.endSeconds, windowEnd);
+        const auto holeStart = std::max(hole.seconds.start, windowStart);
+        const auto holeEnd = std::min(hole.seconds.end, windowEnd);
         if (holeEnd <= holeStart)
             continue;
 
-        const auto from = std::clamp(block.sampleForTime(holeStart) - first, 0, count);
-        const auto to = std::clamp(block.sampleForTime(holeEnd) - first, 0, count);
+        const auto from = std::clamp(block.edgeForTime(holeStart) - first, 0, count);
+        const auto to = std::clamp(block.edgeForTime(holeEnd) - first, 0, count);
         if (to > from)
             region.getSubBlock(static_cast<std::size_t>(from), static_cast<std::size_t>(to - from))
                 .clear();
@@ -325,9 +393,8 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
                 region.getSingleChannelBlock(channel).copyFrom(region.getSingleChannelBlock(heard));
     }
 
-    // The span's edges, not the placement's. What the lane leaves audible is
-    // what a listener hears begin and end, and the fades the snapshot resolved
-    // are the ones that shape it.
+    // Captured material keeps the source envelope around its audible window,
+    // so punching into a fade resumes its gain instead of starting it again.
     //
     // The clip's pair only. An event carries its own (AudioEventPlayback), and
     // for the single event a clip has today they are the same fade before and
@@ -339,13 +406,14 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
     // the clip instead of rising into it (EventPlacement.hpp), and putting a
     // gain curve on top of that would fade an edge that was never meant to be
     // quiet.
+    const auto& envelope = clip.envelopeSpan();
     if (clip.fadeInBehaviour == 0)
-        applyFade(region, first, block, clip.span.startSeconds,
-                  clip.span.startSeconds + clip.fadeInSeconds, clip.fadeInCurve, true);
+        applyFade(region, first, block, envelope.seconds.start,
+                  envelope.seconds.start + clip.fadeInSeconds, clip.fadeInCurve, true);
 
     if (clip.fadeOutBehaviour == 0)
-        applyFade(region, first, block, clip.span.endSeconds - clip.fadeOutSeconds,
-                  clip.span.endSeconds, clip.fadeOutCurve, false);
+        applyFade(region, first, block, envelope.seconds.end - clip.fadeOutSeconds,
+                  envelope.seconds.end, clip.fadeOutCurve, false);
 
     // Volume and gain summed, panned the way the incumbent pans a clip: linear,
     // and hotter on one side rather than quieter on the other. Not a law with a
@@ -370,23 +438,23 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
     // after the timeline jumped, and the first after the reader came back from
     // an underrun. All three start the material wherever it happens to be.
     //
-    // Except one, and it is the whole reason this is a condition rather than a
-    // call. A voice starting at the beginning of what it plays is not starting
-    // mid-material: there is nothing before it to be discontinuous with, and
-    // what looks like a step is the material's own attack. De-clicking there
-    // subtracts the attack and decays the correction over the ramp, so a clip
-    // whose first sample is a transient loses it and gains 256 samples of tail.
-    // The corpus found exactly that on an impulse sitting on a clip edge
-    // (#2040), and the incumbent does not do it.
+    // Except at the source boundary. What looks like a step there is the
+    // material's own attack, and correcting it loses that transient (#2040).
+    // A clip edge can begin inside its source after trim, reverse, loop phase
+    // or warp resolution; that edge still needs the correction (#2457).
     //
     // A ramp longer than the block it starts in goes on into the next one. It
     // has to: clamping it to the block would make the same clip come out
     // differently at 128 samples a block and at 1024, and an offline render at
     // one size disagree with playback at another.
-    const auto beginsAtItsOwnStart = windowStart <= event.span.startSeconds + (0.5 / sampleRate_);
+    const auto beginsAtItsOwnStart = windowStart <= event.span.seconds.start + (0.5 / sampleRate_);
 
     if (!sounded_ || !block.continuous) {
-        if (beginsAtItsOwnStart)
+        const auto preservesSourceAttack =
+            beginsAtItsOwnStart &&
+            (!correctTrimmedStart || !startsInsideSourceMaterial(event, sampleRate_));
+
+        if (preservesSourceAttack)
             deClick_.reset();
         else
             deClick_.begin(region, clip.launchFadeSamples);
@@ -394,7 +462,13 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
         deClick_.advance(region);
     }
 
-    out.getSubBlock(static_cast<std::size_t>(first), static_cast<std::size_t>(count)).add(region);
+    // Before it is summed with anything else, and before any correction is
+    // added to it: what is remembered has to be this voice's own signal, or a
+    // ramp that decays it corrects for whatever else landed here too.
+    stop_.push(region.getSubBlock(0, static_cast<std::size_t>(count)));
+
+    out.getSubBlock(static_cast<std::size_t>(first.value), static_cast<std::size_t>(count))
+        .add(region);
 
     // Silence the reader could not fill is not sounding, and a block it only
     // half filled ends in that silence as surely as one it missed entirely.

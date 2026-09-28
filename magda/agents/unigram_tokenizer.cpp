@@ -71,7 +71,7 @@ std::string metaspace(const std::string& word) {
 // Advance one UTF-8 code point; used so an unknown byte sequence is consumed
 // whole rather than split into invalid fragments.
 size_t utf8Advance(const std::string& s, size_t i) {
-    unsigned char c = static_cast<unsigned char>(s[i]);
+    auto c = static_cast<unsigned char>(s[i]);
     size_t len = 1;
     if ((c & 0xE0) == 0xC0)
         len = 2;

@@ -1,11 +1,15 @@
 #include "PresetManager.hpp"
 
+#include <juce_cryptography/juce_cryptography.h>
+
 #include <filesystem>
 
+#include "../audio/plugins/DeviceStateHydration.hpp"
 #include "../media_db/MediaDbContext.hpp"
 #include "../media_db/PresetDbIndexer.hpp"
 #include "../project/serialization/ProjectSerializer.hpp"
 #include "AppPaths.hpp"
+#include "AutomationInfo.hpp"
 #include "DeviceParamMigrations.hpp"
 #include "LegacyDeviceAliases.hpp"
 #include "version.hpp"
@@ -127,12 +131,36 @@ void collectPresetsRecursive(const juce::File& root, const juce::String& prefix,
         out.add(prefix + f.getFileNameWithoutExtension());
 }
 
+// Read the persisted opaque id, or derive one for a legacy envelope.
+juce::String idFromPresetFile(const juce::File& file) {
+    if (!file.existsAsFile())
+        return {};
+
+    if (const auto root = juce::JSON::parse(file.loadFileAsString()); root.isObject()) {
+        const auto id = root.getDynamicObject()->getProperty("id").toString().trim();
+        if (id.isNotEmpty())
+            return id;
+    }
+
+    // Released presets predate ids. A digest gives those files a deterministic,
+    // opaque address without writing into the user's library during a read.
+    if (auto stream = file.createInputStream())
+        return juce::SHA256(*stream).toHexString();
+    return {};
+}
+
 // Wrap payload in the standard envelope and write pretty JSON.
 bool writePresetFile(const juce::File& target, const juce::String& kind, const juce::var& payload,
                      juce::String& outError) {
     auto* envelope = new juce::DynamicObject();
     envelope->setProperty("magdaVersion", juce::String(MAGDA_VERSION));
     envelope->setProperty("kind", kind);
+    // Overwriting and renaming retain identity. A newly-created preset gets a
+    // UUID which never needs to expose or encode its filesystem path.
+    auto id = idFromPresetFile(target);
+    if (id.isEmpty())
+        id = juce::Uuid().toString();
+    envelope->setProperty("id", id);
     envelope->setProperty("payload", payload);
 
     juce::var root(envelope);
@@ -146,9 +174,12 @@ bool writePresetFile(const juce::File& target, const juce::String& kind, const j
     return true;
 }
 
-// Parse a preset file, validate the envelope, and return the payload.
+// Parse a preset file, validate the envelope, and return the payload. The
+// envelope's magdaVersion travels out so a load can resolve the domain of a
+// pre-#2317 parameter record by the build that wrote it.
 bool readPresetFile(const juce::File& source, const juce::String& expectedKind,
-                    juce::var& outPayload, juce::String& outError) {
+                    juce::var& outPayload, juce::String& outError,
+                    juce::String* outVersion = nullptr) {
     if (!source.existsAsFile()) {
         outError = "Preset file not found: " + source.getFullPathName();
         return false;
@@ -169,6 +200,8 @@ bool readPresetFile(const juce::File& source, const juce::String& expectedKind,
     }
 
     outPayload = obj->getProperty("payload");
+    if (outVersion != nullptr)
+        *outVersion = obj->getProperty("magdaVersion").toString();
     return true;
 }
 
@@ -191,7 +224,7 @@ PresetManager::PresetManager() {
 // Preset Directories
 // ============================================================================
 
-juce::File PresetManager::getPresetsDirectory() const {
+juce::File PresetManager::getPresetsDirectory() {
     return magda::paths::presetsDir();
 }
 
@@ -233,12 +266,32 @@ bool PresetManager::saveChainPreset(const std::vector<ChainElement>& chainElemen
     return true;
 }
 
+bool PresetManager::saveChainPreset(const TrackInfo& track, const juce::String& presetName) {
+    juce::Array<juce::var> elementsArray;
+    for (const auto& element : track.chain.fxChainElements)
+        elementsArray.add(ProjectSerializer::serializeChainElement(element));
+
+    auto* payload = new juce::DynamicObject();
+    // Keep the legacy fragment alongside the richer snapshot so older MAGDA
+    // versions can still apply the main chain from a newly-saved preset.
+    payload->setProperty("elements", juce::var(elementsArray));
+    payload->setProperty("track", ProjectSerializer::serializeTrackInfo(track));
+
+    auto target =
+        getChainsDirectory().getChildFile(sanitizeRelativePath(presetName) + kPresetExtension);
+    if (!writePresetFile(target, kKindChain, juce::var(payload), lastError_))
+        return false;
+    mirrorToMediaDb(getPresetsDirectory(), target);
+    return true;
+}
+
 bool PresetManager::loadChainPreset(const juce::String& presetName,
                                     std::vector<ChainElement>& outChainElements) {
     auto source =
         getChainsDirectory().getChildFile(sanitizeRelativePath(presetName) + kPresetExtension);
     juce::var payload;
-    if (!readPresetFile(source, kKindChain, payload, lastError_))
+    juce::String savedVersion;
+    if (!readPresetFile(source, kKindChain, payload, lastError_, &savedVersion))
         return false;
 
     if (!payload.isObject()) {
@@ -263,7 +316,16 @@ bool PresetManager::loadChainPreset(const juce::String& presetName,
         outChainElements.push_back(std::move(element));
     }
     legacy_devices::migrateRetiredDevicesInChain(outChainElements);
+
+    // A preset saved before #2427 carries the Chord Engine declared as a MIDI
+    // producer, and a preset loader does not go through the project's staging
+    // pass, so inserting one would put the old declaration back into a project
+    // that had already been migrated.
+    legacy_devices::normalizeChordEngineRoleInChain(outChainElements);
     device_param_migrations::migrateChainPreset(outChainElements);
+    namespace hydration = daw::audio::device_state_hydration;
+    hydration::hydrateChainElements(outChainElements,
+                                    hydration::provenanceFromMagdaVersion(savedVersion));
     return true;
 }
 
@@ -271,6 +333,90 @@ juce::StringArray PresetManager::getChainPresets() const {
     juce::StringArray out;
     collectPresetsRecursive(getChainsDirectory(), "", out);
     return out;
+}
+
+std::vector<PresetManager::TrackPresetMetadata> PresetManager::getTrackPresetMetadata() const {
+    std::vector<TrackPresetMetadata> result;
+    const auto relativeNames = getChainPresets();
+    result.reserve(static_cast<std::size_t>(relativeNames.size()));
+
+    for (const auto& relativeName : relativeNames) {
+        const auto file =
+            getChainsDirectory().getChildFile(relativeName + juce::String(kPresetExtension));
+        const auto rawId = idFromPresetFile(file);
+        if (rawId.isEmpty())
+            continue;
+
+        const auto slash = relativeName.lastIndexOfChar('/');
+        result.push_back({"track-preset:" + rawId,
+                          slash >= 0 ? relativeName.substring(slash + 1) : relativeName,
+                          slash >= 0 ? relativeName.substring(0, slash) : juce::String()});
+    }
+    return result;
+}
+
+bool PresetManager::loadTrackPresetById(const juce::String& presetId, TrackPreset& outPreset) {
+    const auto relativeNames = getChainPresets();
+    for (const auto& relativeName : relativeNames) {
+        const auto file =
+            getChainsDirectory().getChildFile(relativeName + juce::String(kPresetExtension));
+        if ("track-preset:" + idFromPresetFile(file) != presetId)
+            continue;
+
+        juce::var payload;
+        juce::String savedVersion;
+        if (!readPresetFile(file, kKindChain, payload, lastError_, &savedVersion))
+            return false;
+        if (!payload.isObject()) {
+            lastError_ = "Track preset payload is not an object";
+            return false;
+        }
+
+        auto* object = payload.getDynamicObject();
+        const auto trackValue = object->getProperty("track");
+        if (trackValue.isObject()) {
+            TrackInfo track;
+            if (!ProjectSerializer::deserializeTrackInfo(trackValue, track)) {
+                lastError_ =
+                    "Failed to deserialize track preset: " + ProjectSerializer::getLastError();
+                return false;
+            }
+
+            // Run the same whole-track migrations as project loading. The
+            // empty automation collections are intentional: a track preset
+            // carries links and devices, never project automation lanes.
+            std::vector<TrackInfo> tracks;
+            tracks.push_back(std::move(track));
+            std::vector<AutomationLaneInfo> lanes;
+            std::vector<AutomationClipInfo> clips;
+            legacy_devices::migrateRetiredDevicesInProject(tracks, nullptr, lanes, clips);
+            legacy_devices::normalizeChordEngineRoleInProject(tracks, nullptr);
+            device_param_migrations::applyParamIndexMigrations(tracks, nullptr, lanes, clips);
+            daw::audio::device_state_hydration::hydrateStagedProject(tracks, nullptr, savedVersion);
+            outPreset.track = std::move(tracks.front());
+            outPreset.hasTrackSettings = true;
+            return true;
+        }
+
+        std::vector<ChainElement> elements;
+        if (!loadChainPreset(relativeName, elements))
+            return false;
+        outPreset.track = TrackInfo{};
+        outPreset.track.type = TrackType::Media;
+        const auto slash = relativeName.lastIndexOfChar('/');
+        outPreset.track.name = slash >= 0 ? relativeName.substring(slash + 1) : relativeName;
+        // A legacy preset contains no track settings. Seed the same portable
+        // routing defaults as a newly-created media track rather than leaving
+        // the promoted track disconnected.
+        outPreset.track.audioOutputDevice = "master";
+        outPreset.track.midiInputDevice = "all";
+        outPreset.track.chain.fxChainElements = std::move(elements);
+        outPreset.hasTrackSettings = false;
+        return true;
+    }
+
+    lastError_ = "Track preset not found";
+    return false;
 }
 
 bool PresetManager::deleteChainPreset(const juce::String& presetName) {
@@ -344,7 +490,8 @@ bool PresetManager::loadRackPreset(const juce::String& presetName, RackInfo& out
     auto source =
         getRacksDirectory().getChildFile(sanitizeRelativePath(presetName) + kPresetExtension);
     juce::var payload;
-    if (!readPresetFile(source, kKindRack, payload, lastError_))
+    juce::String savedVersion;
+    if (!readPresetFile(source, kKindRack, payload, lastError_, &savedVersion))
         return false;
 
     if (!ProjectSerializer::deserializeRackInfo(payload, outRack)) {
@@ -352,7 +499,10 @@ bool PresetManager::loadRackPreset(const juce::String& presetName, RackInfo& out
         return false;
     }
     legacy_devices::migrateRetiredDevicesInRack(outRack);
+    legacy_devices::normalizeChordEngineRoleInRack(outRack);
     device_param_migrations::migrateRackPreset(outRack);
+    namespace hydration = daw::audio::device_state_hydration;
+    hydration::hydrateRack(outRack, hydration::provenanceFromMagdaVersion(savedVersion));
     return true;
 }
 
@@ -400,7 +550,8 @@ bool PresetManager::loadDevicePreset(const juce::String& pluginFolder,
     auto source = getDevicePluginDirectory(pluginFolder)
                       .getChildFile(sanitizeRelativePath(presetRelativePath) + kPresetExtension);
     juce::var payload;
-    if (!readPresetFile(source, kKindDevice, payload, lastError_))
+    juce::String savedVersion;
+    if (!readPresetFile(source, kKindDevice, payload, lastError_, &savedVersion))
         return false;
 
     if (!ProjectSerializer::deserializeDeviceInfo(payload, outDevice)) {
@@ -409,6 +560,9 @@ bool PresetManager::loadDevicePreset(const juce::String& pluginFolder,
     }
     legacy_devices::migrateRetiredDevice(outDevice);
     device_param_migrations::migrateDevicePreset(outDevice);
+    namespace hydration = daw::audio::device_state_hydration;
+    hydration::completeDeviceParameters(outDevice,
+                                        hydration::provenanceFromMagdaVersion(savedVersion));
     return true;
 }
 
@@ -416,6 +570,40 @@ juce::StringArray PresetManager::getDevicePresets(const juce::String& pluginFold
     juce::StringArray out;
     collectPresetsRecursive(getDevicePluginDirectory(pluginFolder), "", out);
     return out;
+}
+
+std::vector<PresetManager::DevicePresetMetadata> PresetManager::getDevicePresetMetadata(
+    const juce::String& pluginFolder) const {
+    std::vector<DevicePresetMetadata> result;
+    const auto relativeNames = getDevicePresets(pluginFolder);
+    result.reserve(static_cast<std::size_t>(relativeNames.size()));
+
+    for (const auto& relativeName : relativeNames) {
+        const auto file = getDevicePluginDirectory(pluginFolder)
+                              .getChildFile(relativeName + juce::String(kPresetExtension));
+        const auto rawId = idFromPresetFile(file);
+        if (rawId.isEmpty())
+            continue;
+
+        const auto slash = relativeName.lastIndexOfChar('/');
+        result.push_back({"device-preset:" + rawId,
+                          slash >= 0 ? relativeName.substring(slash + 1) : relativeName,
+                          slash >= 0 ? relativeName.substring(0, slash) : juce::String()});
+    }
+    return result;
+}
+
+bool PresetManager::loadDevicePresetById(const juce::String& pluginFolder,
+                                         const juce::String& presetId, DeviceInfo& outDevice) {
+    for (const auto& relativeName : getDevicePresets(pluginFolder)) {
+        const auto file = getDevicePluginDirectory(pluginFolder)
+                              .getChildFile(relativeName + juce::String(kPresetExtension));
+        if ("device-preset:" + idFromPresetFile(file) == presetId)
+            return loadDevicePreset(pluginFolder, relativeName, outDevice);
+    }
+
+    lastError_ = "Device preset id was not found";
+    return false;
 }
 
 bool PresetManager::deleteDevicePreset(const juce::String& pluginFolder,
@@ -510,7 +698,7 @@ bool PresetManager::ensureDirectoryExists(const juce::File& directory) {
     return true;
 }
 
-juce::StringArray PresetManager::getPresetList(const juce::File& directory) const {
+juce::StringArray PresetManager::getPresetList(const juce::File& directory) {
     juce::StringArray presets;
 
     if (!directory.exists())

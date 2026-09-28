@@ -1,21 +1,11 @@
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
-
-#include <array>
-#include <atomic>
-#include <memory>
 #include <vector>
 
-#include "../FaustParamPool.hpp"
-#include "core/ParameterInfo.hpp"
-#include "plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
+#include "plugins/compiled/MagdaCompiledPolyInstrument.hpp"
 
-// mydsp_poly (Faust's polyphonic voice allocator) and the single-voice dsp are
-// forward-declared via their Faust base so the header doesn't pull in the Faust
-// SDK; the .cpp owns them.
+// The single-voice dsp is forward-declared via its Faust base; the .cpp owns it.
 class dsp;
-class dsp_poly;
 
 namespace magda::daw::audio::compiled {
 
@@ -34,46 +24,15 @@ namespace magda::daw::audio::compiled {
  *
  * First compiled instrument in MAGDA (all other compiled devices are effects).
  */
-class MagdaPolySynthCompiledPlugin : public te::Plugin, public ICompiledFaustPlugin {
+class MagdaPolySynthCompiledPlugin : public MagdaCompiledPolyInstrument {
   public:
     static const char* xmlTypeName;
 
-    explicit MagdaPolySynthCompiledPlugin(const te::PluginCreationInfo& info);
-    ~MagdaPolySynthCompiledPlugin() override;
+    MagdaPolySynthCompiledPlugin();
 
-    juce::String getName() const override;
-    juce::String getPluginType() override;
-    juce::String getShortName(int) override;
-    juce::String getSelectableDescription() override;
-
-    void initialise(const te::PluginInitialisationInfo& info) override;
-    void deinitialise() override;
-    void reset() override;
-    void applyToBuffer(const te::PluginRenderContext& fc) override;
-
-    bool takesMidiInput() override {
-        return true;
-    }
-    bool takesAudioInput() override {
-        return false;
-    }
-    bool isSynth() override {
-        return true;
-    }
-    bool producesAudioWhenNoAudioInput() override {
-        return true;
-    }
-    double getTailLength() const override {
-        return 0.0;
-    }
-
-    // Slot ordering matches the [idx:N] pins inside magda_polysynth.dsp:
-    // four contiguous slots per oscillator (wave / level / coarse / fine),
-    // then the filter section, then the amp envelope.
     static constexpr int kOscSlotCount = 4;  // slots per oscillator
     static constexpr int kNumOscillators = 4;
     static constexpr int kOscBaseSlot = 0;  // osc n -> kOscBaseSlot + 4*(n-1)
-
     static constexpr int kFilterTypeSlot = 16;
     static constexpr int kCutoffSlot = 17;
     static constexpr int kResonanceSlot = 18;
@@ -82,139 +41,58 @@ class MagdaPolySynthCompiledPlugin : public te::Plugin, public ICompiledFaustPlu
     static constexpr int kFilterDecaySlot = 21;
     static constexpr int kFilterSustainSlot = 22;
     static constexpr int kFilterReleaseSlot = 23;
-
     static constexpr int kAmpAttackSlot = 24;
     static constexpr int kAmpDecaySlot = 25;
     static constexpr int kAmpSustainSlot = 26;
     static constexpr int kAmpReleaseSlot = 27;
-
-    // Filter drive + slope (idx:28/29 in the dsp; appended after the amp
-    // envelope so the existing slot indices stay stable).
     static constexpr int kFilterDriveSlot = 28;
     static constexpr int kFilterSlopeSlot = 29;
-
-    // Performance controls (appended). Bend Range has a dsp [idx:30] zone (it
-    // scales the MIDI-driven `bend` input); Voice Mode is wrapper-only (it
-    // selects which engine renders, so it has no dsp zone - a decorative dsp
-    // control would be dead-code-eliminated by Faust).
     static constexpr int kBendRangeSlot = 30;
     static constexpr int kVoiceModeSlot = 31;
-    // Glide (portamento) has a dsp [idx:32] zone; the wrapper zeroes it on the
-    // poly voices so only the Mono/Legato voice glides.
     static constexpr int kGlideSlot = 32;
-    // Per-oscillator phase reset (restart that oscillator's phase on note-on),
-    // discrete Off/On. osc n -> kOscResetBaseSlot + (n - 1), idx 33..36.
     static constexpr int kOscResetBaseSlot = 33;
-    // Velocity routing: depth into amplitude, and octaves into the filter cutoff.
     static constexpr int kVelAmpSlot = 37;
     static constexpr int kVelFilterSlot = 38;
-    // Per-oscillator enable (mute that oscillator), discrete Off/On, default On.
-    // osc n -> kOscEnableBaseSlot + (n - 1), idx 39..42.
     static constexpr int kOscEnableBaseSlot = 39;
-    // Master output gain (dB), applied per voice after the soft-clip.
     static constexpr int kOutputGainSlot = 43;
-
     static constexpr int kHostSlotCount = 44;
-
-    enum VoiceMode { Poly = 0, Mono = 1, Legato = 2 };
-
     static constexpr int kNumVoices = 16;
 
-    te::AutomatableParameter* getSlotParameter(int slotIndex) const;
-    float displayValueToNativeValue(int slotIndex, float displayValue) const;
-    float nativeValueToDisplayValue(int slotIndex, float nativeValue) const;
+    juce::String devicePluginId() const override {
+        return xmlTypeName;
+    }
+    juce::String deviceName() const override {
+        return "Poly Synth";
+    }
 
-    using HostSlotInfo = CompiledHostSlotInfo;
-    const HostSlotInfo& getSlotInfo(int slotIndex) const;
+    // Where this synth's panel puts the controls the base would otherwise
+    // append. Gain is -1 because the dsp trims and soft-clips per voice
+    // (`outGain`, [idx:43]), so a second output stage in the wrapper would be
+    // limiting a signal that has already been limited.
+    int gainSlot() const override {
+        return -1;
+    }
+    int voiceModeSlot() const override {
+        return kVoiceModeSlot;
+    }
 
-    // ICompiledFaustPlugin
-    int hostSlotCount() const override {
-        return kHostSlotCount;
+  protected:
+    ::dsp* createVoiceDsp() const override;
+    std::vector<HostSlotInfo> slotInfos() const override;
+    const char* slotIdPrefix() const override {
+        return "magda_polysynth_";
     }
-    const CompiledHostSlotInfo& hostSlotInfo(int slotIndex) const override {
-        return getSlotInfo(slotIndex);
+    int numVoices() const override {
+        return kNumVoices;
     }
-    DeviceParameterHandle hostSlotParameter(int slotIndex) const override {
-        return tracktion_adapter::parameterHandle(getSlotParameter(slotIndex));
+    bool hasVoiceModes() const override {
+        return true;
     }
-    float displayToNormalized(int slotIndex, float displayValue) const override {
-        return displayValueToNativeValue(slotIndex, displayValue);
-    }
-    float normalizedToDisplay(int slotIndex, float normalizedValue) const override {
-        return nativeValueToDisplayValue(slotIndex, normalizedValue);
+    int glideVoiceSlot() const override {
+        return kGlideSlot;
     }
 
   private:
-    void buildHostParameters();
-    void rebuildEngineState(int sampleRate);
-
-    int readVoiceModeIndex() const;
-    // Reset both engines and the held-note stack (used on a Poly/Mono switch).
-    void resetAllVoices();
-    // Mono/Legato note handling on the dedicated single voice. handleMonoNoteOn
-    // returns true when a one-sample gate edge is needed to retrigger (Mono only).
-    bool handleMonoNoteOn(int note, int velocity, int mode);
-    void handleMonoNoteOff(int note);
-    // Releases EVERY poly voice currently sounding (or legato-targeting) the
-    // given pitch. Used both before a re-trigger (one voice per pitch) and on
-    // note-off. Unlike mydsp_poly::keyOff — which releases only the oldest
-    // matching voice and logs "Playing pitch not found" to stderr when there is
-    // none — this is a silent no-op for unmatched note-offs and self-heals
-    // orphaned voices. Duplicate on/off streams for the same pitch are
-    // legitimate (e.g. a freshly recorded clip playing back merged with the
-    // still-monitored live input that fed it), so unbalanced deliveries must
-    // never strand a sounding voice.
-    void releasePolyVoicesForPitch(int pitch);
-
-    std::unique_ptr<::dsp_poly> poly_;
-    // Dedicated single voice for Mono/Legato: the wrapper owns its freq/gate/gain
-    // zones directly (the poly engine skips idle voices, so it cannot be driven
-    // zone-only). Always allocated; only rendered when Voice Mode != Poly.
-    std::unique_ptr<::dsp> monoVoice_;
-    int numOutputs_ = 0;
-    double sampleRate_ = 44100.0;
-
-    // Per host slot: that control's zone in EVERY poly voice (group=false gives
-    // each voice its own zones). Harvested by [idx:N], skipping the proxy box.
-    std::array<std::vector<FAUSTFLOAT*>, kHostSlotCount> voiceZonesBySlot_;
-    // Same control's single zone in the mono voice (nullptr if it has none, e.g.
-    // the wrapper-only Voice Mode slot).
-    std::array<FAUSTFLOAT*, kHostSlotCount> monoZonesBySlot_{};
-
-    // MIDI-driven pitch-bend zones (no [idx]): per poly voice, and the mono voice.
-    std::vector<FAUSTFLOAT*> voiceBendZones_;
-    FAUSTFLOAT* monoBendZone_ = nullptr;
-    // Mono voice's reserved freq/gain/gate zones, driven directly from MIDI.
-    FAUSTFLOAT* monoFreqZone_ = nullptr;
-    FAUSTFLOAT* monoGainZone_ = nullptr;
-    FAUSTFLOAT* monoGateZone_ = nullptr;
-
-    // Mono/Legato held-note stack (most-recent at the back) and live bend.
-    struct HeldNote {
-        int note = 0;
-        float gain = 0.0f;
-    };
-    std::vector<HeldNote> heldNotes_;
-    // reset() may be called from the message thread (e.g. AudioBridge::
-    // resetSynthsOnTrack after a record pass) while the audio thread is inside
-    // compute()/keyOn()/keyOff(). Walking the Faust voice table from two
-    // threads is a data race, so reset() only raises this flag and the flush
-    // itself runs at the top of the next applyToBuffer() on the audio thread.
-    std::atomic<bool> pendingVoiceFlush_{false};
-    float currentBend_ = 0.0f;  // normalised [-1, 1]
-    int lastVoiceMode_ = 0;
-    // Transport play state from the previous block. On the playing->stopped edge
-    // we flush all voices: clip playback doesn't send note-offs when the user
-    // hits Stop mid-note, so the voice would stay gated on and keep sounding.
-    bool wasPlaying_ = false;
-
-    std::array<HostSlotInfo, kHostSlotCount> hostSlotInfo_;
-    std::array<te::AutomatableParameter::Ptr, kHostSlotCount> hostParams_;
-    std::array<juce::CachedValue<float>, kHostSlotCount> hostCached_;
-
-    juce::AudioBuffer<float> scratchOut_;
-    std::vector<float*> outPtrs_;
-
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MagdaPolySynthCompiledPlugin)
 };
 

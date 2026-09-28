@@ -8,9 +8,7 @@ bool matches(const juce::String& storedKey, const juce::String& liveIdentifier,
         return false;
     if (storedKey == liveIdentifier)
         return true;
-    if (liveName.isNotEmpty() && storedKey.equalsIgnoreCase(liveName))
-        return true;
-    return false;
+    return liveName.isNotEmpty() && storedKey.equalsIgnoreCase(liveName);
 }
 
 bool matchedByNameOnly(const juce::String& storedKey, const juce::String& liveIdentifier,
@@ -19,9 +17,7 @@ bool matchedByNameOnly(const juce::String& storedKey, const juce::String& liveId
         return false;
     if (storedKey == liveIdentifier)
         return false;  // identifier match wins; not name-only
-    if (liveName.isNotEmpty() && storedKey.equalsIgnoreCase(liveName))
-        return true;
-    return false;
+    return liveName.isNotEmpty() && storedKey.equalsIgnoreCase(liveName);
 }
 
 std::optional<juce::MidiDeviceInfo> resolve(const juce::Array<juce::MidiDeviceInfo>& devices,

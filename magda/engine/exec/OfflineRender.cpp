@@ -2,8 +2,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
+#include "clip/ClipSnapshotFeed.hpp"
 #include "clip/ClipVoicePool.hpp"
+#include "clip/SessionPlayback.hpp"
+#include "launch/SessionLauncher.hpp"
 #include "transport/TransportState.hpp"
 
 namespace magda::engine {
@@ -15,13 +19,88 @@ std::int64_t samplesBetween(double startSeconds, double endSeconds, double sampl
     return static_cast<std::int64_t>(std::llround((endSeconds - startSeconds) * sampleRate));
 }
 
+/**
+ * @brief A sink with the plan's own latency taken off the front (#2246).
+ *
+ * A prepared plan's output is however far behind the timeline the devices on
+ * its longest path report between them, and during playback that is the whole
+ * point: the graph is aligned with itself and the interface's own buffer is
+ * what the listener hears it through. A file has no such excuse. A bounce whose
+ * first sample is not the range's first sample is a bounce that drifts against
+ * every other bounce of the same project, and against the project itself the
+ * moment it is imported back in.
+ *
+ * So the render pulls the plan's latency in extra samples at the end and this
+ * drops the same number off the front. What the sink receives is exactly the
+ * range it asked for, at the position it asked for it, with nothing lost:
+ * material still inside a delay line when the range ends comes out during those
+ * extra samples rather than being cut off.
+ *
+ * Nothing at all when the plan reports no latency, which is every project
+ * without a latency-reporting plugin in it.
+ */
+class LatencyTrimmedSink final : public OfflineRenderSink {
+  public:
+    LatencyTrimmedSink(OfflineRenderSink& target, int latencySamples)
+        : target_(target), remaining_(latencySamples) {}
+
+    void write(const juce::AudioBuffer<float>& block, int numSamples) override {
+        if (remaining_ <= 0) {
+            forward(block, numSamples);
+            return;
+        }
+
+        if (remaining_ >= numSamples) {
+            remaining_ -= numSamples;
+            return;
+        }
+
+        // The block the trim ends inside, handed on as the part of itself that
+        // is past it. A view rather than a copy: the sink's contract already
+        // says the buffer is the renderer's and is reused, so a sink that wants
+        // to keep these samples was going to copy them anyway.
+        const auto skipped = remaining_;
+        remaining_ = 0;
+
+        juce::AudioBuffer<float> rest(const_cast<float* const*>(block.getArrayOfReadPointers()),
+                                      block.getNumChannels(), skipped, numSamples - skipped);
+        forward(rest, numSamples - skipped);
+    }
+
+    /// What the sink behind this one actually received. The result reports
+    /// these rather than what the render pulled: a caller writing a file is
+    /// owed the length of the file, and the samples that went into the trim
+    /// never reached it.
+    std::int64_t forwardedSamples() const {
+        return forwardedSamples_;
+    }
+
+    int forwardedBlocks() const {
+        return forwardedBlocks_;
+    }
+
+  private:
+    void forward(const juce::AudioBuffer<float>& block, int numSamples) {
+        target_.write(block, numSamples);
+        forwardedSamples_ += numSamples;
+        ++forwardedBlocks_;
+    }
+
+    OfflineRenderSink& target_;
+    int remaining_ = 0;
+    std::int64_t forwardedSamples_ = 0;
+    int forwardedBlocks_ = 0;
+};
+
 }  // namespace
 
-OfflineRenderResult renderOffline(PlanExecutor& executor, const PlanValues& values,
-                                  const RenderContext& context, const TempoMap& tempo,
-                                  const OfflineRenderRequest& request, OfflineRenderSink& sink,
-                                  ClipVoicePool* voices,
-                                  const std::function<bool()>& shouldContinue) {
+template <typename Executor>
+OfflineRenderResult renderOfflineOn(Executor& executor, const PlanValues& values,
+                                    const RenderContext& context, const TempoMap& tempo,
+                                    const OfflineRenderRequest& request, OfflineRenderSink& sink,
+                                    ClipVoicePool* voices, ClipSnapshotFeed* clips,
+                                    const OfflineLauncher& launcher,
+                                    const std::function<bool()>& shouldContinue) {
     OfflineRenderResult result;
 
     // The context is refused on the same grounds the values are, and for the
@@ -53,6 +132,14 @@ OfflineRenderResult renderOffline(PlanExecutor& executor, const PlanValues& valu
         request.tailSeconds > 0.0
             ? static_cast<std::int64_t>(std::llround(request.tailSeconds * context.sampleRate))
             : 0;
+
+    // What the plan is behind by, and therefore what has to come off the front
+    // of the file and be pulled in at the end of it. Asked of the executor
+    // rather than recomputed, because it is the number the same executor
+    // aligned its own graph with.
+    const auto latencySamples = std::max(0, executor.latencySamples());
+
+    LatencyTrimmedSink trimmed(sink, latencySamples);
 
     juce::AudioBuffer<float> buffer(context.numChannels, blockSize);
 
@@ -110,18 +197,48 @@ OfflineRenderResult renderOffline(PlanExecutor& executor, const PlanValues& valu
                 // waits for the disk, which is exactly what it is allowed to
                 // do and playback is not.
                 if (voices != nullptr) {
-                    voices->setPosition(segment.block.startSeconds);
+                    voices->setPosition(segment.block.seconds.start, segment.block.playing);
                     voices->service();
                     voices->fillNow();
+                }
+
+                // The block's one acquisition of the clips, which is where
+                // playback puts it too (#2490): a track's two sources play one
+                // publish, and what gates its arrangement is resolved once,
+                // before either of them renders.
+                std::optional<ClipSnapshotFeed::BlockScope> pinned;
+                if (clips != nullptr) {
+                    pinned.emplace(*clips);
+                }
+                std::optional<ClipStreamFeed::BlockScope> streams;
+                if (voices != nullptr)
+                    streams.emplace(voices->feed());
+                std::optional<LaunchHandleFeed::BlockScope> handles;
+                if (launcher.present())
+                    handles.emplace(*launcher.handles);
+
+                // Before the plan and over every handle, against the same
+                // pinned material the sources render below.
+                if (launcher.present())
+                    advanceLaunchHandles(*launcher.handles, *launcher.requests, segment.block,
+                                         nullptr, clips != nullptr ? clips->live() : nullptr);
+
+                if (clips != nullptr) {
+                    advanceTrackSections(clips->sections(), clips->live(), launcher.handles,
+                                         segment.block);
+                    if (voices != nullptr)
+                        voices->announceHandBacks(clips->sections(), segment.block);
                 }
 
                 executor.process(values, segment.block, piece);
             }
 
-            sink.write(buffer, numSamples);
+            trimmed.write(buffer, numSamples);
 
-            result.samplesRendered += numSamples;
-            ++result.blocksRendered;
+            // Assigned rather than accumulated, because what the result reports
+            // is what the sink received and the trim is between the two.
+            result.samplesRendered = trimmed.forwardedSamples();
+            result.blocksRendered = trimmed.forwardedBlocks();
             samples -= numSamples;
         }
     };
@@ -135,7 +252,19 @@ OfflineRenderResult renderOffline(PlanExecutor& executor, const PlanValues& valu
     // same request a moment later.
     clock.advance(snapshot, context.sampleRate, 0);
 
-    renderSpan(rangeSamples);
+    // A request with nothing in it renders nothing, latency or not. The flush
+    // below exists to push the last of a range through the graph, and a range
+    // with no samples in it has nothing to push: rendering it anyway would run
+    // every bound device and ask the caller whether to continue, for blocks the
+    // sink is never handed, so an empty request could come back cancelled or
+    // leave a delay line holding something.
+    const auto flushSamples = rangeSamples > 0 || tailSamples > 0 ? latencySamples : 0;
+
+    // The flush goes on whichever span is last, so that the samples it produces
+    // are the continuation of what came before them: with a tail, the graph is
+    // still ringing out with the transport stopped, and without one the sources
+    // play on past the range while the kept window ends where it was asked to.
+    renderSpan(rangeSamples + (tailSamples > 0 ? 0 : flushSamples));
 
     if (result.cancelled || tailSamples <= 0)
         return result;
@@ -154,9 +283,29 @@ OfflineRenderResult renderOffline(PlanExecutor& executor, const PlanValues& valu
     snapshot.request.playing = false;
     snapshot.request.locate = false;
 
-    renderSpan(tailSamples);
+    renderSpan(tailSamples + flushSamples);
 
     return result;
+}
+
+OfflineRenderResult renderOffline(PlanExecutor& executor, const PlanValues& values,
+                                  const RenderContext& context, const TempoMap& tempo,
+                                  const OfflineRenderRequest& request, OfflineRenderSink& sink,
+                                  ClipVoicePool* voices, ClipSnapshotFeed* clips,
+                                  const OfflineLauncher& launcher,
+                                  const std::function<bool()>& shouldContinue) {
+    return renderOfflineOn(executor, values, context, tempo, request, sink, voices, clips, launcher,
+                           shouldContinue);
+}
+
+OfflineRenderResult renderOffline(ParallelPlanExecutor& executor, const PlanValues& values,
+                                  const RenderContext& context, const TempoMap& tempo,
+                                  const OfflineRenderRequest& request, OfflineRenderSink& sink,
+                                  ClipVoicePool* voices, ClipSnapshotFeed* clips,
+                                  const OfflineLauncher& launcher,
+                                  const std::function<bool()>& shouldContinue) {
+    return renderOfflineOn(executor, values, context, tempo, request, sink, voices, clips, launcher,
+                           shouldContinue);
 }
 
 }  // namespace magda::engine

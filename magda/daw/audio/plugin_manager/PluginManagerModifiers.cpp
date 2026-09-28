@@ -13,6 +13,7 @@
 #include "../TrackController.hpp"
 #include "../TracktionHelpers.hpp"
 #include "PluginManager.hpp"
+#include "core/BlockMath.hpp"
 #include "modifiers/ADSRDebugLog.hpp"
 #include "modifiers/CurveSnapshot.hpp"
 #include "modifiers/ModifierHelpers.hpp"
@@ -74,16 +75,16 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
     std::function<void(const std::function<void(te::Plugin*)>&)> visitHostPlugins;
     if (teTrack) {
         visitHostPlugins = [teTrack](const std::function<void(te::Plugin*)>& visit) {
-            for (int pi = 0; pi < teTrack->pluginList.size(); ++pi) {
-                if (auto* plugin = teTrack->pluginList[pi])
+            for (auto* plugin : teTrack->pluginList) {
+                if (plugin)
                     visit(plugin);
             }
         };
     } else if (trackId == MASTER_TRACK_ID && edit_.getMasterTrack()) {
         visitHostPlugins = [this](const std::function<void(te::Plugin*)>& visit) {
             const auto& masterList = edit_.getMasterPluginList();
-            for (int pi = 0; pi < masterList.size(); ++pi) {
-                if (auto* plugin = masterList[pi])
+            for (auto* plugin : masterList) {
+                if (plugin)
                     visit(plugin);
             }
         };
@@ -147,7 +148,7 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
         // input). The in-place property path must set this too, since a
         // sidechain-source change keeps the same link fingerprint and so never
         // triggers a full rebuild.
-        ctx.hasCrossTrackSidechain = device.sidechain.sourceTrackId != INVALID_TRACK_ID;
+        ctx.hasCrossTrackSidechain = device.sidechain.isActive();
 
         auto& sd = sdIt->second;
         ModifierSyncState state{sd.modifiers, sd.curveSnapshots, sd.macroParams};
@@ -277,7 +278,7 @@ void PluginManager::syncDeviceModifiers(
         ctx.macroList = macroList;
         ctx.lookup = &lookup;
         ctx.forEachScopePlugin = forEachPlugin;
-        ctx.hasCrossTrackSidechain = device.sidechain.sourceTrackId != INVALID_TRACK_ID;
+        ctx.hasCrossTrackSidechain = device.sidechain.isActive();
 
         auto& sd = syncedDevices_[ChainNodePath::topLevelDevice(trackId, device.id)];
         ModifierSyncState state{sd.modifiers, sd.curveSnapshots, sd.macroParams};
@@ -323,7 +324,7 @@ void PluginManager::triggerLFONoteOn(TrackId trackId) {
         // triggerSidechainNoteOn from the source track's monitor plugin.
         // Triggering them here would reset the TE LFO phase mid-cycle,
         // causing false wrap-around detection in one-shot mode.
-        if (device.sidechain.sourceTrackId != INVALID_TRACK_ID)
+        if (device.sidechain.isActive())
             continue;
 
         auto it = findSyncedDevice(ChainNodePath::topLevelDevice(trackId, device.id));
@@ -511,9 +512,7 @@ void PluginManager::pushFollowerSourceBuffer(TrackId sourceTrackId, const float*
     // (so each can track a different part of the spectrum), then take the peak
     // and stream it to the follower's envelope DSP.
     const int n = std::min(numSamples, static_cast<int>(followerScratch_.size()));
-    float rawPeak = 0.0f;
-    for (int s = 0; s < n; ++s)
-        rawPeak = std::max(rawPeak, std::abs(mono[s]));
+    const float rawPeak = peakMagnitude(mono, n);
 
     static std::atomic<int> pushLogThrottle{0};
     const bool logThisBlock = (pushLogThrottle.fetch_add(1, std::memory_order_relaxed) % 100) == 0;
@@ -534,16 +533,15 @@ void PluginManager::pushFollowerSourceBuffer(TrackId sourceTrackId, const float*
 
         float peak = 0.0f;
         if (!slot.hpEnabled && !slot.lpEnabled) {
-            for (int s = 0; s < n; ++s)
-                peak = std::max(peak, std::abs(mono[s] * slot.gain));
+            // Scaling by a constant is monotone in magnitude, so the peak of
+            // the scaled block is the scaled peak: no second pass.
+            peak = rawPeak * std::abs(slot.gain);
         } else {
             float* work = followerScratch_.data();
-            if (slot.gain == 1.0f) {
+            if (slot.gain == 1.0f)
                 std::copy(mono, mono + n, work);
-            } else {
-                for (int s = 0; s < n; ++s)
-                    work[s] = mono[s] * slot.gain;
-            }
+            else
+                juce::FloatVectorOperations::copyWithMultiply(work, mono, slot.gain, n);
 
             if (slot.hpEnabled) {
                 if (slot.curHpFreq != slot.hpFreq) {
@@ -562,9 +560,7 @@ void PluginManager::pushFollowerSourceBuffer(TrackId sourceTrackId, const float*
                 slot.lp.process(work, n);
             }
 
-            peak = 0.0f;
-            for (int s = 0; s < n; ++s)
-                peak = std::max(peak, std::abs(work[s]));
+            peak = peakMagnitude(work, n);
         }
 
         const float outBefore = slot.mod->getCurrentValue();
@@ -679,6 +675,24 @@ void PluginManager::prepareForRendering() {
 void PluginManager::restoreAfterRendering() {
     renderingActive_.store(false, std::memory_order_release);
     rackSyncManager_.setRenderingActive(false);
+
+    // The tone generators prepareForRendering un-bypassed, back to whatever the
+    // transport says they should be.
+    //
+    // The pair has to leave what it found. prepareForRendering enables every
+    // tone generator because the renderer drives playback independently of the
+    // transport, and nothing here put them back: they stayed audible with the
+    // transport stopped until the next play or stop happened to run
+    // updateTransportSyncedProcessors again. In the app that is a tone playing
+    // out of a stopped project after a bounce; in a test binary, which opens
+    // the same audio device and never moves a transport, it is a tone that
+    // never stops.
+    //
+    // Ordered after the flag is cleared, because updateTransportSyncedProcessors
+    // returns early while a render is active -- which is the whole reason it
+    // could not undo this itself.
+    updateTransportSyncedProcessors(transportState_.isPlaying());
+
     // LFOs were un-gated for rendering. They'll be re-gated naturally by
     // gateSidechainLFOs on the next note-off, or by syncDeviceModifiers
     // if the edit is rebuilt.
@@ -853,12 +867,11 @@ void PluginManager::rebuildSidechainLFOCache() {
             for (const auto& element : elements) {
                 if (isDevice(element)) {
                     const auto sourceTrackId = getDevice(element).sidechain.sourceTrackId;
-                    if (sourceTrackId != INVALID_TRACK_ID && sourceTrackId != track.id)
+                    if (getDevice(element).sidechain.isActive() && sourceTrackId != track.id)
                         return true;
                 } else if (isRack(element)) {
                     const auto& rack = getRack(element);
-                    if (rack.sidechain.sourceTrackId != INVALID_TRACK_ID &&
-                        rack.sidechain.sourceTrackId != track.id)
+                    if (rack.sidechain.isActive() && rack.sidechain.sourceTrackId != track.id)
                         return true;
                     for (const auto& chain : rack.chains)
                         if (self(self, chain.elements))
@@ -875,8 +888,7 @@ void PluginManager::rebuildSidechainLFOCache() {
             if (!isDevice(element))
                 continue;
             const auto& device = getDevice(element);
-            if (device.sidechain.sourceTrackId != INVALID_TRACK_ID &&
-                device.sidechain.sourceTrackId != track.id)
+            if (device.sidechain.isActive() && device.sidechain.sourceTrackId != track.id)
                 continue;  // Has external sidechain — skip self-triggering
             collectDeviceLFOs(device, track.id);
         }
@@ -911,7 +923,7 @@ void PluginManager::rebuildSidechainLFOCache() {
                     continue;
                 const auto& device = getDevice(element);
                 // Only collect from devices whose sidechain source is this track
-                if (device.sidechain.sourceTrackId != track.id)
+                if (!device.sidechain.isActive() || device.sidechain.sourceTrackId != track.id)
                     continue;
                 collectDeviceLFOs(device, otherTrack.id);
             }
@@ -988,7 +1000,7 @@ void PluginManager::rebuildSidechainLFOCache() {
 
 // =============================================================================
 std::pair<int, int> PluginManager::computeModLinkFingerprint(TrackId trackId,
-                                                             const TrackInfo* trackInfo) const {
+                                                             const TrackInfo* trackInfo) {
     if (!trackInfo)
         return {0, 0};
 
@@ -1059,8 +1071,8 @@ void PluginManager::resyncDeviceModifiers(TrackId trackId) {
         defaultModifierList = teTrack->getModifierList();
         macroList = &teTrack->getMacroParameterListForWriting();
         visitHostPlugins = [teTrack](const std::function<void(te::Plugin*)>& visit) {
-            for (int pi = 0; pi < teTrack->pluginList.size(); ++pi) {
-                if (auto* plugin = teTrack->pluginList[pi])
+            for (auto* plugin : teTrack->pluginList) {
+                if (plugin)
                     visit(plugin);
             }
         };
@@ -1072,8 +1084,8 @@ void PluginManager::resyncDeviceModifiers(TrackId trackId) {
             // null macro host as unsupported master macros.
             visitHostPlugins = [this](const std::function<void(te::Plugin*)>& visit) {
                 const auto& masterList = edit_.getMasterPluginList();
-                for (int pi = 0; pi < masterList.size(); ++pi) {
-                    if (auto* plugin = masterList[pi])
+                for (auto* plugin : masterList) {
+                    if (plugin)
                         visit(plugin);
                 }
             };

@@ -1,30 +1,33 @@
+#include <algorithm>
 #include <cmath>
 
 #include "../../../../../audio/AudioThumbnailManager.hpp"
 #include "../../../../components/common/ColourSwatch.hpp"
 #include "../../../../components/common/SvgButton.hpp"
+#include "../../../../components/common/Toast.hpp"
 #include "../../../../state/TimelineController.hpp"
-#include "../../../../themes/DarkTheme.hpp"
+#include "../../../../themes/ActiveTheme.hpp"
 #include "../../../../themes/FontManager.hpp"
 #include "../../../../themes/InspectorComboBoxLookAndFeel.hpp"
 #include "../../../../themes/SmallButtonLookAndFeel.hpp"
 #include "../../../../utils/TimelineUtils.hpp"
 #include "../ClipInspector.hpp"
 #include "BinaryData.h"
-#include "audio/AudioBridge.hpp"
 #include "audio/CompService.hpp"
+#include "core/AudioClipSourceDisplay.hpp"
 #include "core/ClipBatchEdit.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/ClipDisplayInfo.hpp"
 #include "core/ClipOperations.hpp"
 #include "core/ClipPropertyCommands.hpp"
-#include "core/Config.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/TempoUtils.hpp"
 #include "core/TimeStretchModes.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
+#include "engine/TracktionFork.hpp"
+#include "music/GrooveLibrary.hpp"
 #include "project/ProjectManager.hpp"
 
 namespace magda::daw::ui {
@@ -75,13 +78,13 @@ class ClipInspector::GroovePickerPopup : public juce::Component {
         categoryList_.setModel(&categoryModel_);
         categoryList_.setRowHeight(22);
         categoryList_.setColour(juce::ListBox::backgroundColourId,
-                                DarkTheme::getColour(DarkTheme::SURFACE));
+                                ActiveTheme::getColour(ActiveTheme::SURFACE));
         categoryList_.setOutlineThickness(0);
 
         templateList_.setModel(&templateModel_);
         templateList_.setRowHeight(22);
         templateList_.setColour(juce::ListBox::backgroundColourId,
-                                DarkTheme::getColour(DarkTheme::SURFACE));
+                                ActiveTheme::getColour(ActiveTheme::SURFACE));
         templateList_.setOutlineThickness(0);
 
         // Click on category → update right column
@@ -97,7 +100,7 @@ class ClipInspector::GroovePickerPopup : public juce::Component {
 
         // Click on template → select and close
         templateModel_.onItemClicked = [this](int row) {
-            auto& items = templateModel_.getItems();
+            const auto& items = templateModel_.getItems();
             if (row >= 0 && row < static_cast<int>(items.size())) {
                 owner_.onGrooveTemplateSelected(items[static_cast<size_t>(row)]);
                 // Dismiss the callout box we're hosted in
@@ -145,8 +148,8 @@ class ClipInspector::GroovePickerPopup : public juce::Component {
     }
 
     void paint(juce::Graphics& g) override {
-        g.fillAll(DarkTheme::getColour(DarkTheme::SURFACE));
-        g.setColour(DarkTheme::getBorderColour());
+        g.fillAll(ActiveTheme::getColour(ActiveTheme::SURFACE));
+        g.setColour(ActiveTheme::getBorderColour());
         g.drawRect(getLocalBounds());
         // Separator between columns
         int catWidth = getWidth() * 2 / 5;
@@ -172,11 +175,11 @@ class ClipInspector::GroovePickerPopup : public juce::Component {
             if (!categories_ || row < 0 || row >= static_cast<int>(categories_->size()))
                 return;
             if (rowIsSelected) {
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.25f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.25f));
                 g.fillRect(0, 0, width, height);
             }
-            g.setColour(rowIsSelected ? DarkTheme::getTextColour()
-                                      : DarkTheme::getSecondaryTextColour());
+            g.setColour(rowIsSelected ? ActiveTheme::getTextColour()
+                                      : ActiveTheme::getSecondaryTextColour());
             g.setFont(FontManager::getInstance().getUIFont(11.0f));
             g.drawText((*categories_)[static_cast<size_t>(row)].name, 8, 0, width - 8, height,
                        juce::Justification::centredLeft);
@@ -213,10 +216,10 @@ class ClipInspector::GroovePickerPopup : public juce::Component {
             if (row < 0 || row >= items_.size())
                 return;
             if (rowIsSelected) {
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.25f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.25f));
                 g.fillRect(0, 0, width, height);
             }
-            g.setColour(DarkTheme::getTextColour());
+            g.setColour(ActiveTheme::getTextColour());
             g.setFont(FontManager::getInstance().getUIFont(11.0f));
             g.drawText(items_[row], 8, 0, width - 8, height, juce::Justification::centredLeft);
         }
@@ -249,9 +252,9 @@ void ClipInspector::initClipPropertiesSection() {
     clipNameLabel_.setVisible(false);  // Not used anymore
 
     clipNameValue_.setFont(FontManager::getInstance().getUIFont(14.0f));  // Larger for header
-    clipNameValue_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    clipNameValue_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     clipNameValue_.setColour(juce::Label::backgroundColourId,
-                             DarkTheme::getColour(DarkTheme::SURFACE));
+                             ActiveTheme::getColour(ActiveTheme::SURFACE));
     clipNameValue_.setEditable(true);
     clipNameValue_.onTextChange = [this]() {
         if (primaryClipId() != magda::INVALID_CLIP_ID) {
@@ -288,35 +291,21 @@ void ClipInspector::initClipPropertiesSection() {
         menu.addItem(2, "Inherit from Track");
         menu.addSeparator();
 
-        // Default colours
-        for (size_t i = 0; i < magda::Config::defaultColourPalette.size(); ++i) {
-            auto colour = juce::Colour(magda::Config::defaultColourPalette[i].colour);
-            menu.addItem(static_cast<int>(i + 3), magda::Config::defaultColourPalette[i].name, true,
-                         false, makeChip(colour));
-        }
-
-        // Custom colours from Config
-        const auto customPalette = magda::Config::getInstance().getTrackColourPalette();
-        const int customOffset = static_cast<int>(magda::Config::defaultColourPalette.size()) + 3;
-        if (!customPalette.empty()) {
-            menu.addSeparator();
-            for (size_t i = 0; i < customPalette.size(); ++i) {
-                auto colour = juce::Colour(customPalette[i].colour);
-                menu.addItem(customOffset + static_cast<int>(i),
-                             juce::String(customPalette[i].name), true, false, makeChip(colour));
-            }
+        const auto palette =
+            magda::ProjectManager::getInstance().getCurrentProjectInfo().defaults.colourPalette;
+        for (size_t i = 0; i < palette.size(); ++i) {
+            const auto colour = juce::Colour(palette[i].colour);
+            menu.addItem(static_cast<int>(i + 3), palette[i].name, true, false, makeChip(colour));
         }
 
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(swatch), [this, swatch,
-                                                                                    customPalette](
+                                                                                    palette](
                                                                                        int result) {
             if (result == 0)
                 return;
             auto pid = primaryClipId();
             if (pid == magda::INVALID_CLIP_ID)
                 return;
-            const int customOff = static_cast<int>(magda::Config::defaultColourPalette.size()) + 3;
-
             if (result == 1) {
                 // "None"
                 swatch->clearColour();
@@ -341,17 +330,10 @@ void ClipInspector::initClipPropertiesSection() {
                         }
                     }
                 }
-            } else if (result >= 3 && result < customOff) {
-                auto colour = juce::Colour(magda::Config::getDefaultColour(result - 3));
-                swatch->setColour(colour);
-                magda::ClipBatchEdit batch("Set Clip Colour", selectedClipIds_.size());
-                for (auto cid : selectedClipIds_) {
-                    batch.execute(std::make_unique<magda::SetClipColourCommand>(cid, colour));
-                }
             } else {
-                auto idx = static_cast<size_t>(result - customOff);
-                if (idx < customPalette.size()) {
-                    auto colour = juce::Colour(customPalette[idx].colour);
+                const auto idx = static_cast<size_t>(result - 3);
+                if (idx < palette.size()) {
+                    const auto colour = juce::Colour(palette[idx].colour);
                     swatch->setColour(colour);
                     magda::ClipBatchEdit batch("Set Clip Colour", selectedClipIds_.size());
                     for (auto cid : selectedClipIds_) {
@@ -365,7 +347,7 @@ void ClipInspector::initClipPropertiesSection() {
 
     // Clip file path (read-only, inside viewport)
     clipFilePathLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
-    clipFilePathLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipFilePathLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipFilePathLabel_.setJustificationType(juce::Justification::centredLeft);
     clipPropsContainer_.addChildComponent(clipFilePathLabel_);
 
@@ -374,7 +356,7 @@ void ClipInspector::initClipPropertiesSection() {
     clipTypeIcon_ = std::make_unique<magda::SvgButton>("Type", BinaryData::iconaudioboldm_svg,
                                                        BinaryData::iconaudioboldm_svgSize);
     clipTypeIcon_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    clipTypeIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    clipTypeIcon_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     clipTypeIcon_->setIconPadding(1.0f);
     clipTypeIcon_->setInterceptsMouseClicks(false, false);
     clipTypeIcon_->setTooltip("Audio clip");
@@ -388,7 +370,7 @@ void ClipInspector::initClipPropertiesSection() {
     // recolor from black rather than the #B3B3B3 the audio icon uses — otherwise
     // the recolor misses and this icon renders black while the audio one is grey.
     clipViewIcon_->setOriginalColor(juce::Colour(0xFF000000));
-    clipViewIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    clipViewIcon_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     clipViewIcon_->setIconPadding(1.0f);
     clipViewIcon_->setInterceptsMouseClicks(false, false);
     clipViewIcon_->setTooltip("Arrangement clip");
@@ -401,7 +383,7 @@ void ClipInspector::initClipPropertiesSection() {
     clipGhostIcon_ = std::make_unique<magda::SvgButton>("Ghost", BinaryData::link_flat_svg,
                                                         BinaryData::link_flat_svgSize);
     clipGhostIcon_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    clipGhostIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    clipGhostIcon_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     clipGhostIcon_->setNormalBackgroundColor(juce::Colour(0xff2A2A2A));
     clipGhostIcon_->setBorderColor(juce::Colour(0xff555555));
     clipGhostIcon_->setBorderThickness(1.0f);
@@ -417,12 +399,12 @@ void ClipInspector::initClipPropertiesSection() {
         "ClipEnabled", BinaryData::toggle_off_svg, BinaryData::toggle_off_svgSize,
         BinaryData::toggle_on_svg, BinaryData::toggle_on_svgSize);
     // Chip-style bordered button, matching the view|type chip next to it.
-    clipEnabledToggle_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    clipEnabledToggle_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    clipEnabledToggle_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
-                                                  DarkTheme::ICON_NEUTRAL);
+    clipEnabledToggle_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+    clipEnabledToggle_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     clipEnabledToggle_->setStateColourReplacement(
-        juce::Colour(0xFF1E1E1E), DarkTheme::ICON_ON_ACCENT, DarkTheme::ICON_ON_ACCENT);
+        juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL, ActiveTheme::ICON_NEUTRAL);
+    clipEnabledToggle_->setStateColourReplacement(
+        juce::Colour(0xFF1E1E1E), ActiveTheme::ICON_ON_ACCENT, ActiveTheme::ICON_ON_ACCENT);
     clipEnabledToggle_->setBorderThickness(1.0f);
     clipEnabledToggle_->setIconPadding(2.0f);
     clipEnabledToggle_->setClickingTogglesState(false);
@@ -449,8 +431,9 @@ void ClipInspector::initClipPropertiesSection() {
 
     // Source BPM (editable — shown at bottom with WARP/BEAT buttons)
     clipBpmValue_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipBpmValue_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    clipBpmValue_.setColour(juce::Label::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+    clipBpmValue_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
+    clipBpmValue_.setColour(juce::Label::outlineColourId,
+                            ActiveTheme::getColour(ActiveTheme::BORDER));
     clipBpmValue_.setJustificationType(juce::Justification::centred);
     clipBpmValue_.setEditable(true);
     clipBpmValue_.onTextChange = [this]() {
@@ -461,61 +444,13 @@ void ClipInspector::initClipPropertiesSection() {
         // Parse BPM from text. Older builds stored the unit in the text, so strip it defensively.
         juce::String text = clipBpmValue_.getText().trimCharactersAtEnd(" BPMbpm");
         double newBPM = text.getDoubleValue();
-        if (newBPM < 20.0 || newBPM > 999.0)
+        if (newBPM < 20.0 || newBPM > 999.0) {
+            updateFromSelectedClip();  // show what the clip holds, not the rejected text
             return;
-
-        double bpm = timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
-
-        // BPM and Beats are two editable views of the same fixed-duration source
-        // interpretation. Editing the BPM must keep totalBeats coherent against
-        // the same file duration so the inspector doesn't display the previous
-        // (often project-BPM-derived) beat count under the new tempo.
-        //
-        // The user setting the BPM is asserting "this file is N BPM" — that is
-        // the authoritative musical interpretation. totalBeats = fileDuration ×
-        // newBPM / 60, regardless of autoTempo (autoTempo controls playback
-        // stretching, not the interpretation metadata).
-        double durationSeconds = magda::audioEventRef(*clip).sourceDurationSeconds();
-        double thumbDuration = 0.0;
-        if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
-                magda::audioEventRef(*clip).sourceFilePath())) {
-            thumbDuration = thumb->getTotalLength();
-            if (thumbDuration > 0.0)
-                durationSeconds = thumbDuration;
         }
-        if (durationSeconds <= 0.0)
-            durationSeconds = magda::audioEventRef(*clip).sourceLengthSeconds(clip->length);
 
-        if (magda::audioEventRef(*clip).autoTempo) {
-            magda::ClipManager::AudioClipBeatsUpdate u;
-            u.interpretationBpm = newBPM;
-            if (thumbDuration > 0.0 && magda::audioEventRef(*clip).sourceDurationSeconds() <= 0.0)
-                u.sourceDurationSeconds = thumbDuration;
-            if (durationSeconds > 0.0) {
-                u.interpretationTotalBeats = durationSeconds * newBPM / 60.0;
-                u.lockInterpretationTotalBeats = true;
-            }
-            auto& mgr = magda::ClipManager::getInstance();
-            mgr.applyAudioClipBeats(primaryClipId(), u, bpm);
-        } else {
-            // Non-autoTempo audio: source interpretation is stored metadata,
-            // not playback-affecting, but the inspector reads it for display
-            // and tooling (autoTempo toggle, future stretch correctness, etc.)
-            // so the BPM-and-totalBeats pair must stay coherent here too.
-            if (auto* event = clip->primaryEvent()) {
-                event->interpBpm = newBPM;
-                if (auto* src = magda::SourcePool::getInstance().getMutable(event->sourceId);
-                    src != nullptr && thumbDuration > 0.0 && src->durationSeconds <= 0.0) {
-                    src->durationSeconds = thumbDuration;
-                }
-                if (durationSeconds > 0.0) {
-                    event->interpTotalBeats = durationSeconds * newBPM / 60.0;
-                    event->interpTotalBeatsLocked = true;
-                }
-            }
-            auto& mgr = magda::ClipManager::getInstance();
-            mgr.forceNotifyClipPropertyChanged(primaryClipId());
-        }
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::SetSourceTempoCommand>(primaryClipId(), newBPM));
 
         clipBpmValue_.setText(juce::String(newBPM, 1), juce::dontSendNotification);
         updateFromSelectedClip();
@@ -524,7 +459,7 @@ void ClipInspector::initClipPropertiesSection() {
 
     clipBpmUnitLabel_.setText("BPM", juce::dontSendNotification);
     clipBpmUnitLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipBpmUnitLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipBpmUnitLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipBpmUnitLabel_.setJustificationType(juce::Justification::centredLeft);
     clipPropsContainer_.addChildComponent(clipBpmUnitLabel_);
 
@@ -540,30 +475,11 @@ void ClipInspector::initClipPropertiesSection() {
     clipBeatsLengthValue_->onValueChange = [this]() {
         if (primaryClipId() != magda::INVALID_CLIP_ID) {
             auto* clip = magda::ClipManager::getInstance().getClip(primaryClipId());
-            if (clip && magda::audioEventRef(*clip).autoTempo) {
+            if (clip != nullptr && clip->isAudio()) {
                 double newSourceBeats = clipBeatsLengthValue_->getValue();
-                double projectBpm =
-                    timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
-
-                double durationSeconds = magda::audioEventRef(*clip).sourceDurationSeconds();
-                if (durationSeconds <= 0.0) {
-                    if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
-                            magda::audioEventRef(*clip).sourceFilePath())) {
-                        durationSeconds = thumb->getTotalLength();
-                    }
-                }
-
-                magda::ClipManager::AudioClipBeatsUpdate u;
-                u.interpretationTotalBeats = newSourceBeats;
-                u.lockInterpretationTotalBeats = true;
-                if (durationSeconds > 0.0)
-                    u.interpretationBpm = newSourceBeats * 60.0 / durationSeconds;
-                if (durationSeconds > 0.0 &&
-                    magda::audioEventRef(*clip).sourceDurationSeconds() <= 0.0)
-                    u.sourceDurationSeconds = durationSeconds;
-
-                magda::ClipManager::getInstance().applyAudioClipBeats(primaryClipId(), u,
-                                                                      projectBpm);
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetSourceBeatCountCommand>(primaryClipId(),
+                                                                       newSourceBeats));
             }
         }
     };
@@ -571,7 +487,7 @@ void ClipInspector::initClipPropertiesSection() {
 
     clipBeatsUnitLabel_.setText("Beats", juce::dontSendNotification);
     clipBeatsUnitLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipBeatsUnitLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipBeatsUnitLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipBeatsUnitLabel_.setJustificationType(juce::Justification::centredLeft);
     clipPropsContainer_.addChildComponent(clipBeatsUnitLabel_);
 
@@ -579,7 +495,7 @@ void ClipInspector::initClipPropertiesSection() {
     clipPositionIcon_ = std::make_unique<magda::SvgButton>("Position", BinaryData::position_svg,
                                                            BinaryData::position_svgSize);
     clipPositionIcon_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    clipPositionIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    clipPositionIcon_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     clipPositionIcon_->setIconPadding(1.0f);
     clipPositionIcon_->setInterceptsMouseClicks(false, false);
     clipPropsContainer_.addChildComponent(*clipPositionIcon_);
@@ -587,18 +503,19 @@ void ClipInspector::initClipPropertiesSection() {
     // Row labels for position grid
     playbackColumnLabel_.setText("position", juce::dontSendNotification);
     playbackColumnLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    playbackColumnLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    playbackColumnLabel_.setColour(juce::Label::textColourId,
+                                   ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(playbackColumnLabel_);
 
     loopColumnLabel_.setText("loop", juce::dontSendNotification);
     loopColumnLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    loopColumnLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    loopColumnLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(loopColumnLabel_);
 
     // Clip start
     clipStartLabel_.setText("start", juce::dontSendNotification);
     clipStartLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipStartLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipStartLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(clipStartLabel_);
 
     clipStartValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
@@ -629,7 +546,7 @@ void ClipInspector::initClipPropertiesSection() {
     // Clip end
     clipEndLabel_.setText("end", juce::dontSendNotification);
     clipEndLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipEndLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipEndLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(clipEndLabel_);
 
     clipEndValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
@@ -649,7 +566,7 @@ void ClipInspector::initClipPropertiesSection() {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
             if (c && c->view != magda::ClipView::Session) {
                 double newLength =
-                    juce::jmax(minClipLengthBeats(bpm), c->getLengthInBeats(bpm) + deltaBeats);
+                    juce::jmax(minClipLengthBeats(bpm), c->getLengthInBeats() + deltaBeats);
                 batch.execute(std::make_unique<magda::ResizeClipCommand>(
                     cid, magda::BeatDuration{newLength}, false, bpm));
             }
@@ -661,7 +578,7 @@ void ClipInspector::initClipPropertiesSection() {
     // Clip length (shown in position row, 3rd column)
     clipLengthLabel_.setText("len", juce::dontSendNotification);
     clipLengthLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipLengthLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipLengthLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(clipLengthLabel_);
 
     clipLengthValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
@@ -682,7 +599,7 @@ void ClipInspector::initClipPropertiesSection() {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
             if (c && c->view != magda::ClipView::Session) {
                 const double newLength =
-                    juce::jmax(minClipLengthBeats(bpm), c->getLengthInBeats(bpm) + deltaBeats);
+                    juce::jmax(minClipLengthBeats(bpm), c->getLengthInBeats() + deltaBeats);
                 batch.execute(std::make_unique<magda::ResizeClipCommand>(
                     cid, magda::BeatDuration{newLength}, false, bpm));
             }
@@ -697,9 +614,9 @@ void ClipInspector::initClipPropertiesSection() {
     clipLoopToggle_ = std::make_unique<magda::SvgButton>("Loop", BinaryData::loop_icon_svg,
                                                          BinaryData::loop_icon_svgSize);
     clipLoopToggle_->setOriginalColor(juce::Colour(0xFFBCBCBC));
-    clipLoopToggle_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    clipLoopToggle_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     clipLoopToggle_->setActiveColor(juce::Colours::white);
-    clipLoopToggle_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    clipLoopToggle_->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     clipLoopToggle_->setClickingTogglesState(false);
     clipLoopToggle_->onClick = [this]() {
         if (selectedClipIds_.empty())
@@ -730,30 +647,32 @@ void ClipInspector::initClipPropertiesSection() {
     clipPropsContainer_.addChildComponent(*clipLoopToggle_);
 
     // Audio clip properties collapse toggle
-    audioPropsCollapseToggle_.setButtonText(juce::String::charToString(
-        audioPropsCollapsed_ ? (juce::juce_wchar)0x25B6 : (juce::juce_wchar)0x25BC));
+    audioPropsCollapseToggle_.setButtonText(
+        juce::String::charToString(audioPropsCollapsed_ ? static_cast<juce::juce_wchar>(0x25B6)
+                                                        : static_cast<juce::juce_wchar>(0x25BC)));
     audioPropsCollapseToggle_.setColour(juce::TextButton::buttonColourId,
                                         juce::Colours::transparentBlack);
     audioPropsCollapseToggle_.setColour(juce::TextButton::buttonOnColourId,
                                         juce::Colours::transparentBlack);
     audioPropsCollapseToggle_.setColour(juce::TextButton::textColourOffId,
-                                        DarkTheme::getSecondaryTextColour());
+                                        ActiveTheme::getSecondaryTextColour());
     audioPropsCollapseToggle_.setColour(juce::TextButton::textColourOnId,
-                                        DarkTheme::getSecondaryTextColour());
+                                        ActiveTheme::getSecondaryTextColour());
     audioPropsCollapseToggle_.setConnectedEdges(
         juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
         juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
     audioPropsCollapseToggle_.onClick = [this]() {
         audioPropsCollapsed_ = !audioPropsCollapsed_;
         audioPropsCollapseToggle_.setButtonText(juce::String::charToString(
-            audioPropsCollapsed_ ? (juce::juce_wchar)0x25B6 : (juce::juce_wchar)0x25BC));
+            audioPropsCollapsed_ ? static_cast<juce::juce_wchar>(0x25B6)
+                                 : static_cast<juce::juce_wchar>(0x25BC)));
         updateFromSelectedClip();
     };
     clipPropsContainer_.addChildComponent(audioPropsCollapseToggle_);
 
     audioPropsLabel_.setText("Audio Properties", juce::dontSendNotification);
     audioPropsLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    audioPropsLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    audioPropsLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     audioPropsLabel_.setJustificationType(juce::Justification::centredLeft);
     clipPropsContainer_.addChildComponent(audioPropsLabel_);
 
@@ -761,12 +680,12 @@ void ClipInspector::initClipPropertiesSection() {
     clipWarpToggle_.setButtonText("WARP");
     clipWarpToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     clipWarpToggle_.setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::SURFACE));
+                              ActiveTheme::getColour(ActiveTheme::SURFACE));
     clipWarpToggle_.setColour(juce::TextButton::buttonOnColourId,
-                              DarkTheme::getAccentColour().withAlpha(0.3f));
+                              ActiveTheme::getAccentColour().withAlpha(0.3f));
     clipWarpToggle_.setColour(juce::TextButton::textColourOffId,
-                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    clipWarpToggle_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+                              ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    clipWarpToggle_.setColour(juce::TextButton::textColourOnId, ActiveTheme::getAccentColour());
     clipWarpToggle_.setClickingTogglesState(false);
     clipWarpToggle_.onClick = [this]() {
         if (selectedClipIds_.empty())
@@ -787,12 +706,13 @@ void ClipInspector::initClipPropertiesSection() {
     clipAutoTempoToggle_.setButtonText("BEAT");
     clipAutoTempoToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     clipAutoTempoToggle_.setColour(juce::TextButton::buttonColourId,
-                                   DarkTheme::getColour(DarkTheme::SURFACE));
+                                   ActiveTheme::getColour(ActiveTheme::SURFACE));
     clipAutoTempoToggle_.setColour(juce::TextButton::buttonOnColourId,
-                                   DarkTheme::getAccentColour().withAlpha(0.3f));
+                                   ActiveTheme::getAccentColour().withAlpha(0.3f));
     clipAutoTempoToggle_.setColour(juce::TextButton::textColourOffId,
-                                   DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    clipAutoTempoToggle_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+                                   ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    clipAutoTempoToggle_.setColour(juce::TextButton::textColourOnId,
+                                   ActiveTheme::getAccentColour());
     clipAutoTempoToggle_.setClickingTogglesState(false);
     clipAutoTempoToggle_.setTooltip(
         "Lock clip to musical time (bars/beats) instead of absolute time.\n"
@@ -808,62 +728,23 @@ void ClipInspector::initClipPropertiesSection() {
         return clipIds;
     };
 
-    auto seedSourceInterpretation = [](auto& clip, double bpm) {
-        // When enabling, seed source interpretation BPM/source interpretation total beats from
-        // cached metadata since the clip model may have stale metadata from TE's default loopInfo.
-        const bool sourceInterpretationBpmLooksDefaulted =
-            audioEventRef(clip).interpBpm <= 0.0 ||
-            (magda::isValidBpm(bpm) && std::abs(audioEventRef(clip).interpBpm - bpm) < 0.1);
-        if (!sourceInterpretationBpmLooksDefaulted)
-            return;
-
-        // Issue #1157: only seed from cached metadata when the file didn't
-        // carry tempo metadata. setSourceMetadata (from TE's loopInfo) is
-        // authoritative when present.
-        auto& thumbs = magda::AudioThumbnailManager::getInstance();
-        auto* event = clip.primaryEvent();
-        double cached = event != nullptr ? thumbs.getCachedBPM(event->sourceFilePath()) : 0.0;
-        if (event != nullptr && cached > 0.0) {
-            event->interpBpm = cached;
-            if (auto* thumb = thumbs.getThumbnail(event->sourceFilePath())) {
-                double fileDuration = thumb->getTotalLength();
-                if (fileDuration > 0.0) {
-                    if (auto* src = magda::SourcePool::getInstance().getMutable(event->sourceId);
-                        src != nullptr && src->durationSeconds <= 0.0) {
-                        src->durationSeconds = fileDuration;
-                    }
-                    event->interpTotalBeats = fileDuration * cached / 60.0;
-                }
-            }
-        }
-    };
-
     // Helper lambda: apply auto-tempo state change and sync
-    auto applyAutoTempo =
-        [this, seedSourceInterpretation](bool enable, const std::vector<magda::ClipId>& clipIds) {
-            double bpm = 120.0;
-            if (timelineController_) {
-                bpm = timelineController_->getState().tempo.bpm;
-            }
+    auto applyAutoTempo = [this](bool enable, const std::vector<magda::ClipId>& clipIds) {
+        double bpm = 120.0;
+        if (timelineController_) {
+            bpm = timelineController_->getState().tempo.bpm;
+        }
 
-            magda::ClipBatchEdit batch("Set Clip Beat Mode", clipIds.size());
-            for (auto cid : clipIds) {
-                auto* clip = magda::ClipManager::getInstance().getClip(cid);
-                if (!clip || !clip->isAudio())
-                    continue;
-                batch.execute(std::make_unique<magda::SetClipPropertyCommand>(
-                    cid, "Set Clip Beat Mode",
-                    [enable, bpm, seedSourceInterpretation](auto& manager, magda::ClipId id) {
-                        auto* targetClip = manager.getClip(id);
-                        if (!targetClip || !targetClip->isAudio())
-                            return;
-                        if (enable)
-                            seedSourceInterpretation(*targetClip, bpm);
-                        manager.setAutoTempo(id, enable, bpm);
-                    }));
-            }
-            updateFromSelectedClip();
-        };
+        magda::ClipBatchEdit batch("Set Clip Beat Mode", clipIds.size());
+        for (auto cid : clipIds) {
+            auto* clip = magda::ClipManager::getInstance().getClip(cid);
+            if (!clip || !clip->isAudio())
+                continue;
+            batch.execute(std::make_unique<magda::SetPlaybackIntentCommand>(
+                cid, enable ? magda::PlaybackIntent::Beat : magda::PlaybackIntent::Free, bpm));
+        }
+        updateFromSelectedClip();
+    };
 
     clipAutoTempoToggle_.onClick = [this, getSelectedAudioClipIds, applyAutoTempo]() {
         if (primaryClipId() == magda::INVALID_CLIP_ID)
@@ -877,43 +758,47 @@ void ClipInspector::initClipPropertiesSection() {
             return;
 
         bool newState = !magda::audioEventRef(*clip).autoTempo;
-
-        int clipsNeedingStretchReset = 0;
-        for (auto cid : targetClipIds) {
-            const auto* selectedClip = magda::ClipManager::getInstance().getClip(cid);
-            if (selectedClip &&
-                std::abs(magda::audioEventRef(*selectedClip).speedRatio - 1.0) > 0.001)
-                ++clipsNeedingStretchReset;
-        }
-
-        if (newState && clipsNeedingStretchReset > 0) {
-            // Show async warning — avoid re-entrancy from synchronous modal loop
-            juce::String message = "Auto-tempo mode requires speed ratio 1.0.\n";
-            if (clipsNeedingStretchReset == 1 && targetClipIds.size() == 1) {
-                message << "Current stretch ("
-                        << juce::String(magda::audioEventRef(*clip).speedRatio, 2)
-                        << "x) will be reset.\n\nContinue?";
-            } else {
-                message << juce::String(clipsNeedingStretchReset)
-                        << (clipsNeedingStretchReset == 1
-                                ? " selected clip will have stretch reset.\n\nContinue?"
-                                : " selected clips will have stretch reset.\n\nContinue?");
-            }
-            juce::NativeMessageBox::showAsync(
-                juce::MessageBoxOptions()
-                    .withIconType(juce::MessageBoxIconType::WarningIcon)
-                    .withTitle("Reset Time Stretch")
-                    .withMessage(message)
-                    .withButton("OK")
-                    .withButton("Cancel"),
-                [applyAutoTempo, targetClipIds](int result) {
-                    if (result == 0)
-                        applyAutoTempo(true, targetClipIds);
-                });
+        if (!newState) {
+            applyAutoTempo(false, targetClipIds);
             return;
         }
 
-        applyAutoTempo(newState, targetClipIds);
+        // Clips no tier could answer for stay out of beat mode; say so once.
+        auto applyAndReport = [applyAutoTempo](const std::vector<magda::ClipId>& clipIds) {
+            applyAutoTempo(true, clipIds);
+            for (auto cid : clipIds) {
+                const auto* c = magda::ClipManager::getInstance().getClip(cid);
+                if (!c || !c->isAudio() || magda::audioEventRef(*c).autoTempo)
+                    continue;
+                magda::daw::ui::Toast::showGlobal(
+                    "No tempo found for " +
+                    juce::File(magda::audioEventRef(*c).sourceFilePath()).getFileName() +
+                    ". Set the source BPM to use beat mode.");
+                break;
+            }
+        };
+
+        // Beat mode plays at speed 1.0; a stretch the clip carried is dropped
+        // without asking (#2674).
+        auto enableBeatMode = [applyAndReport](const std::vector<magda::ClipId>& clipIds) {
+            applyAndReport(clipIds);
+        };
+
+        double bpm = 120.0;
+        if (timelineController_)
+            bpm = timelineController_->getState().tempo.bpm;
+
+        // Beat mode needs a tempo the file may not have said yet, so ask for it
+        // first, then toggle (#2674).
+        clipAutoTempoToggle_.setEnabled(false);
+        juce::Component::SafePointer<juce::TextButton> button(&clipAutoTempoToggle_);
+        magda::ClipManager::getInstance().detectMissingTempo(
+            targetClipIds, bpm, [button, enableBeatMode, targetClipIds]() {
+                if (button == nullptr)
+                    return;
+                button->setEnabled(true);
+                enableBeatMode(targetClipIds);
+            });
     };
     clipPropsContainer_.addChildComponent(clipAutoTempoToggle_);
 
@@ -946,10 +831,10 @@ void ClipInspector::initClipPropertiesSection() {
 
     // Stretch mode selector (algorithm)
     stretchModeCombo_.setColour(juce::ComboBox::backgroundColourId,
-                                DarkTheme::getColour(DarkTheme::SURFACE));
-    stretchModeCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+                                ActiveTheme::getColour(ActiveTheme::SURFACE));
+    stretchModeCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
     stretchModeCombo_.setColour(juce::ComboBox::outlineColourId,
-                                DarkTheme::getColour(DarkTheme::BORDER));
+                                ActiveTheme::getColour(ActiveTheme::BORDER));
     // Mode values match TimeStretcher::Mode enum (combo ID = mode + 1)
     stretchModeCombo_.addItem("Off", time_stretch_mode::kDisabled + 1);
     stretchModeCombo_.addItem("Signalsmith", time_stretch_mode::kSignalsmith + 1);
@@ -972,7 +857,7 @@ void ClipInspector::initClipPropertiesSection() {
     // below. Scale (major/minor) is intentionally not exposed.
     clipKeyLabel_.setText("KEY", juce::dontSendNotification);
     clipKeyLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipKeyLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipKeyLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipKeyLabel_.setJustificationType(juce::Justification::centredLeft);
     clipPropsContainer_.addChildComponent(clipKeyLabel_);
 
@@ -983,10 +868,10 @@ void ClipInspector::initClipPropertiesSection() {
     // (stretchModeCombo_). InspectorComboBoxLookAndFeel below restyles the
     // popup menu — these setColour calls control the closed widget.
     clipKeyRootCombo_.setColour(juce::ComboBox::backgroundColourId,
-                                DarkTheme::getColour(DarkTheme::SURFACE));
-    clipKeyRootCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+                                ActiveTheme::getColour(ActiveTheme::SURFACE));
+    clipKeyRootCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
     clipKeyRootCombo_.setColour(juce::ComboBox::outlineColourId,
-                                DarkTheme::getColour(DarkTheme::BORDER));
+                                ActiveTheme::getColour(ActiveTheme::BORDER));
     clipKeyRootCombo_.addItem("--", 1);
     for (int i = 0; i < 12; ++i) {
         clipKeyRootCombo_.addItem(kKeyRoots[i], i + 2);
@@ -1028,35 +913,24 @@ void ClipInspector::initClipPropertiesSection() {
         const bool savingMidiClip = clip->isMidi();
         std::optional<std::vector<magda::WarpMarker>> markers;
         if (clip->isAudio()) {
-            const auto bpmText = clipBpmValue_.getText().trimCharactersAtEnd(" BPMbpm");
-            const double displayedBpm = bpmText.getDoubleValue();
+            // Edits are already in the model; the widgets are rounded copies. Only a
+            // tempo-less event takes the cached detection it has been showing as a hint.
             auto* event = clip->primaryEvent();
-            if (event != nullptr && magda::isValidBpm(displayedBpm)) {
-                event->interpBpm = displayedBpm;
-            }
-            if (event != nullptr && clipBeatsLengthValue_ && clipBeatsLengthValue_->isVisible()) {
-                const double displayedBeats = clipBeatsLengthValue_->getValue();
-                if (displayedBeats > 0.0) {
-                    event->interpTotalBeats = displayedBeats;
-                    event->interpTotalBeatsLocked = true;
+            if (event != nullptr && !event->hasInterpretedBpm()) {
+                const double projectBPM =
+                    timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
+                const double cachedBpm = magda::AudioThumbnailManager::getInstance().getCachedBPM(
+                    audioEventRef(*clip).sourceFilePath());
+                const auto display = magda::computeAudioClipSourceDisplay(
+                    *clip, projectBPM, getAudioFileDurationForInspector(*clip), cachedBpm);
+                if (display.bpm > 0.0) {
+                    magda::ClipManager::getInstance().adoptAnalysis(
+                        primaryClipId(), event->sourceFilePath(), display.bpm);
                 }
             }
 
-            if (magda::audioEventRef(*clip).warpEnabled) {
-                markers = std::vector<magda::WarpMarker>{};
-                if (auto* engine = magda::TrackManager::getInstance().getAudioEngine()) {
-                    if (auto* bridge = engine->getAudioBridge()) {
-                        const auto liveMarkers = bridge->getWarpMarkers(primaryClipId());
-                        markers->reserve(liveMarkers.size());
-                        for (const auto& marker : liveMarkers) {
-                            markers->push_back({marker.sourceTime, marker.warpTime});
-                        }
-                    }
-                }
-                if (markers->empty()) {
-                    *markers = magda::audioEventRef(*clip).warpMarkers;
-                }
-            }
+            if (magda::audioEventRef(*clip).warpEnabled)
+                markers = magda::audioEventRef(*clip).warpMarkers;
         }
 
         const bool saved = magda::ClipManager::getInstance().saveClipToLibrary(primaryClipId(),
@@ -1088,7 +962,7 @@ void ClipInspector::initClipPropertiesSection() {
     // Loop start
     clipLoopStartLabel_.setText("start", juce::dontSendNotification);
     clipLoopStartLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipLoopStartLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipLoopStartLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(clipLoopStartLabel_);
 
     clipLoopStartValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
@@ -1123,7 +997,7 @@ void ClipInspector::initClipPropertiesSection() {
                               magda::audioEventRef(*clip).loopStartSeconds();
         double newLoopStartSeconds =
             displayBeatsToAudioSourceSeconds(*clip, newLoopStartBeats, bpm);
-        newLoopStartSeconds = std::max(0.0, newLoopStartSeconds);
+        newLoopStartSeconds = std::max(newLoopStartSeconds, 0.0);
         double newOffset = newLoopStartSeconds + currentPhase;
         // Atomic: change loopStart, then place offset to preserve phase. Undo
         // collapses both in a single step.
@@ -1140,7 +1014,7 @@ void ClipInspector::initClipPropertiesSection() {
     // Loop end (derived: loopStart + loopLength)
     clipLoopEndLabel_.setText("end", juce::dontSendNotification);
     clipLoopEndLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipLoopEndLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipLoopEndLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(clipLoopEndLabel_);
 
     clipLoopEndValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
@@ -1161,17 +1035,19 @@ void ClipInspector::initClipPropertiesSection() {
         // Compute new loop length from loop end - loop start.
         double newLoopEndBeats = clipLoopEndValue_->getValue();
 
-        double newLoopLengthSeconds;
+        double newLoopLengthSeconds = NAN;
         if (clip->isAudio()) {
+            const auto info =
+                magda::ClipDisplayInfo::from(*clip, bpm, getAudioFileDurationForInspector(*clip));
             const double newLoopEndSeconds =
-                displayBeatsToAudioSourceSeconds(*clip, newLoopEndBeats, bpm);
-            newLoopLengthSeconds =
-                juce::jmax(0.0, newLoopEndSeconds - magda::audioEventRef(*clip).loopStartSeconds());
+                magda::TimelineUtils::beatsToSeconds(newLoopEndBeats, bpm);
+            const double newDisplayLength =
+                juce::jmax(0.0, newLoopEndSeconds - info.loopStartPositionSeconds);
+            newLoopLengthSeconds = info.timelineToSource(newDisplayLength);
         } else {
             double loopStartBeats = clip->loopStartBeats;
             double newLoopLengthBeats = newLoopEndBeats - loopStartBeats;
-            if (newLoopLengthBeats < 0.25)
-                newLoopLengthBeats = 0.25;
+            newLoopLengthBeats = std::max(newLoopLengthBeats, 0.25);
             magda::UndoManager::getInstance().executeCommand(
                 std::make_unique<magda::SetMidiClipLoopLengthBeatsCommand>(
                     primaryClipId(), newLoopLengthBeats, bpm));
@@ -1185,19 +1061,20 @@ void ClipInspector::initClipPropertiesSection() {
 
         if (clip->view == magda::ClipView::Session) {
             double clipEndSeconds = timelineLengthSeconds(*clip, bpm);
-            const double sourceLoopStart = magda::audioEventRef(*clip).loopStartSeconds();
-            const double sourceLoopLength = magda::audioEventRef(*clip).loopLengthSeconds();
-            double currentSourceEnd = sourceLoopStart + sourceLoopLength;
-            bool sourceEndMatchedClipEnd = std::abs(currentSourceEnd - clipEndSeconds) < 0.001;
-            double newSourceEnd = sourceLoopStart + newLoopLengthSeconds;
+            const auto info =
+                magda::ClipDisplayInfo::from(*clip, bpm, getAudioFileDurationForInspector(*clip));
+            const double newDisplayEnd =
+                info.loopStartPositionSeconds + info.sourceToTimeline(newLoopLengthSeconds);
+            const bool displayEndMatchedClipEnd =
+                std::abs(info.loopEndPositionSeconds - clipEndSeconds) < 0.001;
 
-            if (sourceEndMatchedClipEnd && newSourceEnd > clipEndSeconds) {
+            if (displayEndMatchedClipEnd && newDisplayEnd > clipEndSeconds) {
                 shouldResizeClip = true;
-                resizeLengthSeconds = newSourceEnd;
-            } else {
-                if (newSourceEnd > clipEndSeconds) {
-                    newLoopLengthSeconds = clipEndSeconds - sourceLoopStart;
-                }
+                resizeLengthSeconds = newDisplayEnd;
+            } else if (newDisplayEnd > clipEndSeconds) {
+                const double clampedDisplayLength =
+                    juce::jmax(0.0, clipEndSeconds - info.loopStartPositionSeconds);
+                newLoopLengthSeconds = info.timelineToSource(clampedDisplayLength);
             }
         }
 
@@ -1208,15 +1085,22 @@ void ClipInspector::initClipPropertiesSection() {
                 bpm));
         }
 
-        batch.execute(std::make_unique<magda::SetClipLoopLengthCommand>(primaryClipId(),
-                                                                        newLoopLengthSeconds, bpm));
+        const auto& event = magda::audioEventRef(*clip);
+        if (event.hasInterpretedBpm()) {
+            const double sourceBeats = newLoopLengthSeconds * event.interpBpm / 60.0;
+            batch.execute(std::make_unique<magda::SetAudioClipLoopLengthBeatsCommand>(
+                primaryClipId(), sourceBeats));
+        } else {
+            batch.execute(std::make_unique<magda::SetClipLoopLengthCommand>(
+                primaryClipId(), newLoopLengthSeconds, bpm));
+        }
     };
     clipPropsContainer_.addChildComponent(*clipLoopEndValue_);
 
     // Source read offset / loop phase (same model field, mode-specific label)
     clipLoopPhaseLabel_.setText("phase", juce::dontSendNotification);
     clipLoopPhaseLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipLoopPhaseLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipLoopPhaseLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(clipLoopPhaseLabel_);
 
     clipLoopPhaseValue_ = std::make_unique<magda::BarsBeatsTicksLabel>();
@@ -1263,16 +1147,16 @@ void ClipInspector::initClipPropertiesSection() {
 void ClipInspector::initSessionLaunchSection() {
     launchModeLabel_.setText("Launch Mode", juce::dontSendNotification);
     launchModeLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    launchModeLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    launchModeLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(launchModeLabel_);
 
     launchModeCombo_.addItem("Trigger", 1);
     launchModeCombo_.addItem("Toggle", 2);
     launchModeCombo_.setColour(juce::ComboBox::backgroundColourId,
-                               DarkTheme::getColour(DarkTheme::SURFACE));
-    launchModeCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+                               ActiveTheme::getColour(ActiveTheme::SURFACE));
+    launchModeCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
     launchModeCombo_.setColour(juce::ComboBox::outlineColourId,
-                               DarkTheme::getColour(DarkTheme::SEPARATOR));
+                               ActiveTheme::getColour(ActiveTheme::SEPARATOR));
     launchModeCombo_.onChange = [this]() {
         if (selectedClipIds_.empty())
             return;
@@ -1288,7 +1172,8 @@ void ClipInspector::initSessionLaunchSection() {
 
     launchQuantizeLabel_.setText("Launch Quantize", juce::dontSendNotification);
     launchQuantizeLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    launchQuantizeLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    launchQuantizeLabel_.setColour(juce::Label::textColourId,
+                                   ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(launchQuantizeLabel_);
 
     launchQuantizeCombo_.addItem("None", 1);
@@ -1301,10 +1186,10 @@ void ClipInspector::initSessionLaunchSection() {
     launchQuantizeCombo_.addItem("1/8", 8);
     launchQuantizeCombo_.addItem("1/16", 9);
     launchQuantizeCombo_.setColour(juce::ComboBox::backgroundColourId,
-                                   DarkTheme::getColour(DarkTheme::SURFACE));
-    launchQuantizeCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+                                   ActiveTheme::getColour(ActiveTheme::SURFACE));
+    launchQuantizeCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
     launchQuantizeCombo_.setColour(juce::ComboBox::outlineColourId,
-                                   DarkTheme::getColour(DarkTheme::SEPARATOR));
+                                   ActiveTheme::getColour(ActiveTheme::SEPARATOR));
     launchQuantizeCombo_.onChange = [this]() {
         if (selectedClipIds_.empty())
             return;
@@ -1322,7 +1207,7 @@ void ClipInspector::initSessionLaunchSection() {
 
     followActionLabel_.setText("Follow Action", juce::dontSendNotification);
     followActionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    followActionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    followActionLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(followActionLabel_);
 
     followActionCombo_.addItem("None", 1);
@@ -1332,10 +1217,10 @@ void ClipInspector::initSessionLaunchSection() {
     followActionCombo_.addItem("Stop", 5);
     followActionCombo_.addItem("Play Again", 6);
     followActionCombo_.setColour(juce::ComboBox::backgroundColourId,
-                                 DarkTheme::getColour(DarkTheme::SURFACE));
-    followActionCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+                                 ActiveTheme::getColour(ActiveTheme::SURFACE));
+    followActionCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
     followActionCombo_.setColour(juce::ComboBox::outlineColourId,
-                                 DarkTheme::getColour(DarkTheme::SEPARATOR));
+                                 ActiveTheme::getColour(ActiveTheme::SEPARATOR));
     followActionCombo_.onChange = [this]() {
         if (selectedClipIds_.empty())
             return;
@@ -1353,7 +1238,7 @@ void ClipInspector::initSessionLaunchSection() {
     followActionDelayLabel_.setText("Follow Delay (beats)", juce::dontSendNotification);
     followActionDelayLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     followActionDelayLabel_.setColour(juce::Label::textColourId,
-                                      DarkTheme::getSecondaryTextColour());
+                                      ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(followActionDelayLabel_);
 
     followActionDelaySlider_.setRange(0.0, 64.0, 0.25);
@@ -1375,7 +1260,7 @@ void ClipInspector::initSessionLaunchSection() {
     followActionLoopCountLabel_.setText("Follow Loops", juce::dontSendNotification);
     followActionLoopCountLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     followActionLoopCountLabel_.setColour(juce::Label::textColourId,
-                                          DarkTheme::getSecondaryTextColour());
+                                          ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(followActionLoopCountLabel_);
 
     followActionLoopCountSlider_.setRange(1.0, 64.0, 1.0);
@@ -1418,17 +1303,17 @@ void ClipInspector::initViewport() {
 void ClipInspector::initPitchSection() {
     pitchSectionLabel_.setText("Pitch", juce::dontSendNotification);
     pitchSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    pitchSectionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    pitchSectionLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(pitchSectionLabel_);
 
     autoPitchToggle_.setButtonText("AUTO-PITCH");
     autoPitchToggle_.setColour(juce::TextButton::buttonColourId,
-                               DarkTheme::getColour(DarkTheme::SURFACE));
+                               ActiveTheme::getColour(ActiveTheme::SURFACE));
     autoPitchToggle_.setColour(juce::TextButton::buttonOnColourId,
-                               DarkTheme::getAccentColour().withAlpha(0.3f));
+                               ActiveTheme::getAccentColour().withAlpha(0.3f));
     autoPitchToggle_.setColour(juce::TextButton::textColourOffId,
-                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    autoPitchToggle_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+                               ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    autoPitchToggle_.setColour(juce::TextButton::textColourOnId, ActiveTheme::getAccentColour());
     autoPitchToggle_.onClick = [this]() {
         if (selectedClipIds_.empty())
             return;
@@ -1449,12 +1334,12 @@ void ClipInspector::initPitchSection() {
     analogPitchToggle_.setButtonText("ANALOG");
     analogPitchToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     analogPitchToggle_.setColour(juce::TextButton::buttonColourId,
-                                 DarkTheme::getColour(DarkTheme::SURFACE));
+                                 ActiveTheme::getColour(ActiveTheme::SURFACE));
     analogPitchToggle_.setColour(juce::TextButton::buttonOnColourId,
-                                 DarkTheme::getAccentColour().withAlpha(0.3f));
+                                 ActiveTheme::getAccentColour().withAlpha(0.3f));
     analogPitchToggle_.setColour(juce::TextButton::textColourOffId,
-                                 DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    analogPitchToggle_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+                                 ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    analogPitchToggle_.setColour(juce::TextButton::textColourOnId, ActiveTheme::getAccentColour());
     analogPitchToggle_.setTooltip(
         "Analog pitch shift: resample instead of time-stretch.\n"
         "Changes playback speed to change pitch (tape/vinyl/sampler behavior).");
@@ -1476,10 +1361,10 @@ void ClipInspector::initPitchSection() {
     clipPropsContainer_.addChildComponent(analogPitchToggle_);
 
     autoPitchModeCombo_.setColour(juce::ComboBox::backgroundColourId,
-                                  DarkTheme::getColour(DarkTheme::SURFACE));
-    autoPitchModeCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+                                  ActiveTheme::getColour(ActiveTheme::SURFACE));
+    autoPitchModeCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
     autoPitchModeCombo_.setColour(juce::ComboBox::outlineColourId,
-                                  DarkTheme::getColour(DarkTheme::BORDER));
+                                  ActiveTheme::getColour(ActiveTheme::BORDER));
     autoPitchModeCombo_.addItem("Pitch Track", 1);
     autoPitchModeCombo_.addItem("Chord Mono", 2);
     autoPitchModeCombo_.addItem("Chord Poly", 3);
@@ -1513,16 +1398,16 @@ void ClipInspector::initPitchSection() {
 
     midiTransposeLabel_.setText("Transpose", juce::dontSendNotification);
     midiTransposeLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
-    midiTransposeLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    midiTransposeLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     midiTransposeLabel_.setJustificationType(juce::Justification::centredLeft);
     clipPropsContainer_.addChildComponent(midiTransposeLabel_);
 
     midiTransposeDownBtn_.setButtonText("-");
     midiTransposeDownBtn_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     midiTransposeDownBtn_.setColour(juce::TextButton::buttonColourId,
-                                    DarkTheme::getColour(DarkTheme::SURFACE));
+                                    ActiveTheme::getColour(ActiveTheme::SURFACE));
     midiTransposeDownBtn_.setColour(juce::TextButton::textColourOffId,
-                                    DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                                    ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     midiTransposeDownBtn_.setTooltip("Transpose down (Shift = octave)");
     midiTransposeDownBtn_.onClick = [transposeAction]() {
         transposeAction(-1, juce::ModifierKeys::currentModifiers.isShiftDown());
@@ -1532,9 +1417,9 @@ void ClipInspector::initPitchSection() {
     midiTransposeUpBtn_.setButtonText("+");
     midiTransposeUpBtn_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     midiTransposeUpBtn_.setColour(juce::TextButton::buttonColourId,
-                                  DarkTheme::getColour(DarkTheme::SURFACE));
+                                  ActiveTheme::getColour(ActiveTheme::SURFACE));
     midiTransposeUpBtn_.setColour(juce::TextButton::textColourOffId,
-                                  DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                                  ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     midiTransposeUpBtn_.setTooltip("Transpose up (Shift = octave)");
     midiTransposeUpBtn_.onClick = [transposeAction]() {
         transposeAction(1, juce::ModifierKeys::currentModifiers.isShiftDown());
@@ -1574,14 +1459,15 @@ void ClipInspector::initPitchSection() {
 void ClipInspector::initGrooveSection() {
     grooveSectionLabel_.setText("Groove", juce::dontSendNotification);
     grooveSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    grooveSectionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    grooveSectionLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(grooveSectionLabel_);
 
     // Groove template picker button
     grooveTemplateButton_.setButtonText("None");
     grooveTemplateButton_.setColour(juce::TextButton::buttonColourId,
-                                    DarkTheme::getColour(DarkTheme::SURFACE));
-    grooveTemplateButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+                                    ActiveTheme::getColour(ActiveTheme::SURFACE));
+    grooveTemplateButton_.setColour(juce::TextButton::textColourOffId,
+                                    ActiveTheme::getTextColour());
     grooveTemplateButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     grooveTemplateButton_.onClick = [this]() { showGroovePicker(); };
     clipPropsContainer_.addChildComponent(grooveTemplateButton_);
@@ -1589,7 +1475,8 @@ void ClipInspector::initGrooveSection() {
     // Groove strength slider
     grooveStrengthLabel_.setText("Strength", juce::dontSendNotification);
     grooveStrengthLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
-    grooveStrengthLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    grooveStrengthLabel_.setColour(juce::Label::textColourId,
+                                   ActiveTheme::getSecondaryTextColour());
     grooveStrengthLabel_.setJustificationType(juce::Justification::centredLeft);
     clipPropsContainer_.addChildComponent(grooveStrengthLabel_);
 
@@ -1600,7 +1487,7 @@ void ClipInspector::initGrooveSection() {
     grooveStrengthValue_->onValueChange = [this]() {
         if (selectedClipIds_.empty())
             return;
-        float newStrength = static_cast<float>(grooveStrengthValue_->getValue());
+        auto newStrength = static_cast<float>(grooveStrengthValue_->getValue());
         magda::ClipBatchEdit batch("Set Clip Groove Strength", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
@@ -1629,7 +1516,7 @@ void ClipInspector::showGroovePicker() {
 
     auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
     if (audioEngine) {
-        auto names = audioEngine->getGrooveTemplateNames();
+        auto names = magda::GrooveLibrary::getInstance().names();
 
         struct GroupDef {
             juce::String heading;
@@ -1700,7 +1587,8 @@ void ClipInspector::onGrooveTemplateSelected(const juce::String& templateName) {
 void ClipInspector::initMixSection() {
     clipMixSectionLabel_.setText("Mix", juce::dontSendNotification);
     clipMixSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipMixSectionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipMixSectionLabel_.setColour(juce::Label::textColourId,
+                                   ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(clipMixSectionLabel_);
 
     clipVolumeValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Decibels);
@@ -1776,18 +1664,18 @@ void ClipInspector::initPlaybackSection() {
     beatDetectionSectionLabel_.setText("Playback", juce::dontSendNotification);
     beatDetectionSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     beatDetectionSectionLabel_.setColour(juce::Label::textColourId,
-                                         DarkTheme::getSecondaryTextColour());
+                                         ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(beatDetectionSectionLabel_);
 
     reverseToggle_.setButtonText("REVERSE");
     reverseToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     reverseToggle_.setColour(juce::TextButton::buttonColourId,
-                             DarkTheme::getColour(DarkTheme::SURFACE));
+                             ActiveTheme::getColour(ActiveTheme::SURFACE));
     reverseToggle_.setColour(juce::TextButton::buttonOnColourId,
-                             DarkTheme::getAccentColour().withAlpha(0.3f));
+                             ActiveTheme::getAccentColour().withAlpha(0.3f));
     reverseToggle_.setColour(juce::TextButton::textColourOffId,
-                             DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    reverseToggle_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+                             ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    reverseToggle_.setColour(juce::TextButton::textColourOnId, ActiveTheme::getAccentColour());
     reverseToggle_.onClick = [this]() {
         if (selectedClipIds_.empty())
             return;
@@ -1804,13 +1692,13 @@ void ClipInspector::initPlaybackSection() {
 
     autoDetectBeatsToggle_.setButtonText("AUTO-DETECT");
     autoDetectBeatsToggle_.setColour(juce::TextButton::buttonColourId,
-                                     DarkTheme::getColour(DarkTheme::SURFACE));
+                                     ActiveTheme::getColour(ActiveTheme::SURFACE));
     autoDetectBeatsToggle_.setColour(juce::TextButton::buttonOnColourId,
-                                     DarkTheme::getAccentColour().withAlpha(0.3f));
+                                     ActiveTheme::getAccentColour().withAlpha(0.3f));
     autoDetectBeatsToggle_.setColour(juce::TextButton::textColourOffId,
-                                     DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                     ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     autoDetectBeatsToggle_.setColour(juce::TextButton::textColourOnId,
-                                     DarkTheme::getAccentColour());
+                                     ActiveTheme::getAccentColour());
     autoDetectBeatsToggle_.onClick = [this]() {
         if (selectedClipIds_.empty())
             return;
@@ -1834,7 +1722,7 @@ void ClipInspector::initPlaybackSection() {
     beatSensitivityValue_->onValueChange = [this]() {
         if (selectedClipIds_.empty())
             return;
-        float sensitivity = static_cast<float>(beatSensitivityValue_->getValue());
+        auto sensitivity = static_cast<float>(beatSensitivityValue_->getValue());
         magda::ClipBatchEdit batch("Set Clip Beat Sensitivity", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
@@ -1853,13 +1741,13 @@ void ClipInspector::initPlaybackSection() {
     transientSectionLabel_.setText("Transient Detection", juce::dontSendNotification);
     transientSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     transientSectionLabel_.setColour(juce::Label::textColourId,
-                                     DarkTheme::getSecondaryTextColour());
+                                     ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(transientSectionLabel_);
 
     transientSensitivityLabel_.setText("Sensitivity", juce::dontSendNotification);
     transientSensitivityLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
     transientSensitivityLabel_.setColour(juce::Label::textColourId,
-                                         DarkTheme::getSecondaryTextColour());
+                                         ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(transientSensitivityLabel_);
 
     transientSensitivityValue_ =
@@ -1870,14 +1758,8 @@ void ClipInspector::initPlaybackSection() {
     transientSensitivityValue_->onValueChange = [this]() {
         if (primaryClipId() == magda::INVALID_CLIP_ID)
             return;
-        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-        if (!audioEngine)
-            return;
-        auto* bridge = audioEngine->getAudioBridge();
-        if (bridge) {
-            bridge->setTransientSensitivity(
-                primaryClipId(), static_cast<float>(transientSensitivityValue_->getValue()));
-        }
+        magda::tracktion_fork::setTransientSensitivity(
+            primaryClipId(), static_cast<float>(transientSensitivityValue_->getValue()));
     };
     clipPropsContainer_.addChildComponent(*transientSensitivityValue_);
 }
@@ -1904,18 +1786,19 @@ void ClipInspector::initFadesSection() {
 void ClipInspector::initChannelsSection() {
     channelsSectionLabel_.setText("Channels", juce::dontSendNotification);
     channelsSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    channelsSectionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    channelsSectionLabel_.setColour(juce::Label::textColourId,
+                                    ActiveTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(channelsSectionLabel_);
 
     leftChannelToggle_.setButtonText("L");
     leftChannelToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     leftChannelToggle_.setColour(juce::TextButton::buttonColourId,
-                                 DarkTheme::getColour(DarkTheme::SURFACE));
+                                 ActiveTheme::getColour(ActiveTheme::SURFACE));
     leftChannelToggle_.setColour(juce::TextButton::buttonOnColourId,
-                                 DarkTheme::getAccentColour().withAlpha(0.3f));
+                                 ActiveTheme::getAccentColour().withAlpha(0.3f));
     leftChannelToggle_.setColour(juce::TextButton::textColourOffId,
-                                 DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    leftChannelToggle_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+                                 ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    leftChannelToggle_.setColour(juce::TextButton::textColourOnId, ActiveTheme::getAccentColour());
     leftChannelToggle_.onClick = [this]() {
         if (selectedClipIds_.empty())
             return;
@@ -1936,12 +1819,12 @@ void ClipInspector::initChannelsSection() {
     rightChannelToggle_.setButtonText("R");
     rightChannelToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     rightChannelToggle_.setColour(juce::TextButton::buttonColourId,
-                                  DarkTheme::getColour(DarkTheme::SURFACE));
+                                  ActiveTheme::getColour(ActiveTheme::SURFACE));
     rightChannelToggle_.setColour(juce::TextButton::buttonOnColourId,
-                                  DarkTheme::getAccentColour().withAlpha(0.3f));
+                                  ActiveTheme::getAccentColour().withAlpha(0.3f));
     rightChannelToggle_.setColour(juce::TextButton::textColourOffId,
-                                  DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    rightChannelToggle_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+                                  ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    rightChannelToggle_.setColour(juce::TextButton::textColourOnId, ActiveTheme::getAccentColour());
     rightChannelToggle_.onClick = [this]() {
         if (selectedClipIds_.empty())
             return;

@@ -2,9 +2,12 @@
 
 #include <BinaryData.h>
 
-#include "../../../audio/AudioBridge.hpp"
+#include <algorithm>
+
+#include "../../../audio/DeviceParameterList.hpp"
+#include "../../../core/ParameterUtils.hpp"
 #include "../../../engine/AudioEngine.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../chain/layout/NodeHeaderStyles.hpp"
 #include "../common/SvgButton.hpp"
@@ -12,7 +15,6 @@
 #include "core/ChainNodePath.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
-#include "ui/dialogs/ParameterConfigDialog.hpp"
 
 namespace magda {
 
@@ -20,6 +22,7 @@ MiniChainRow::MiniChainRow() {
     setInterceptsMouseClicks(true, true);
     paramSliders_.reserve(kMaxExpandedParams);
     trackedParamIndices_.reserve(kMaxExpandedParams);
+    trackedParams_.reserve(kMaxExpandedParams);
 }
 
 MiniChainRow::~MiniChainRow() {
@@ -38,6 +41,8 @@ void MiniChainRow::setDevice(const ChainNodePath& devicePath, AudioEngine* engin
         paramSliders_.clear();
         paramLabels_.clear();
         trackedParamIndices_.clear();
+        trackedParams_.clear();
+        trackedParams_.clear();
         retainExpandedForFadeOut_ = false;
         paramsFadeActive_ = false;
         paramsAlpha_ = 1.0f;
@@ -54,21 +59,23 @@ void MiniChainRow::setDevice(const ChainNodePath& devicePath, AudioEngine* engin
     if (wantUiButton && uiButton_ == nullptr) {
         uiButton_ = std::make_unique<SvgButton>("UI", BinaryData::open_in_new_svg,
                                                 BinaryData::open_in_new_svgSize);
-        daw::ui::node_header::applyHeaderIconStyle(*uiButton_,
-                                                   DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        daw::ui::node_header::applyHeaderIconStyle(
+            *uiButton_, ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         uiButton_->onClick = [this]() {
             if (engine_ == nullptr)
                 return;
-            if (auto* bridge = engine_->getAudioBridge()) {
-                const bool isOpen = bridge->togglePluginWindow(devicePath_);
-                uiButton_->setToggleState(isOpen, juce::dontSendNotification);
-                uiButton_->setActive(isOpen);
-            }
+            const bool isOpen = engine_->toggleDeviceEditor(devicePath_);
+            uiButton_->setToggleState(isOpen, juce::dontSendNotification);
+            uiButton_->setActive(isOpen);
         };
         addAndMakeVisible(*uiButton_);
     }
-    if (uiButton_)
+    if (uiButton_) {
         uiButton_->setVisible(wantUiButton);
+        setPluginEditorOpen(wantUiButton && engine_ != nullptr &&
+                            engine_->isDeviceEditorOpen(devicePath_));
+    }
+    updateTimerState();
 
     repaint();
 }
@@ -84,7 +91,8 @@ void MiniChainRow::setPluginEditorOpen(bool open) {
     if (uiButton_ == nullptr)
         return;
     uiButton_->setToggleState(open, juce::dontSendNotification);
-    uiButton_->setActive(open);
+    if (uiButton_->isActive() != open)
+        uiButton_->setActive(open);
 }
 
 void MiniChainRow::setExpanded(bool expanded) {
@@ -139,8 +147,6 @@ void MiniChainRow::resolveParams() {
     auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(devicePath_);
     if (devInfo == nullptr)
         return;
-    if (devInfo->uniqueId.isNotEmpty())
-        daw::ui::ParameterConfigDialog::applyConfigToDevice(devInfo->uniqueId, *devInfo);
     const auto path = devicePath_;
 
     auto addParamSlider = [&](const ParameterInfo& paramInfo) {
@@ -148,11 +154,12 @@ void MiniChainRow::resolveParams() {
             return;
 
         trackedParamIndices_.push_back(paramInfo.paramIndex);
+        trackedParams_.push_back(paramInfo);
 
         auto label = std::make_unique<juce::Label>();
         label->setText(paramInfo.name, juce::dontSendNotification);
         label->setFont(FontManager::getInstance().getUIFont(9.0f));
-        label->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        label->setColour(juce::Label::textColourId, ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         label->setJustificationType(juce::Justification::centredLeft);
         label->setInterceptsMouseClicks(false, false);
         label->setAlpha(paramsAlpha_);
@@ -164,13 +171,17 @@ void MiniChainRow::resolveParams() {
         // the parameter's real value and formats/parses it from ParameterInfo.
         auto slider = std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Decimal);
         slider->setParameterInfo(paramInfo);
-        slider->setValue(paramInfo.currentValue, juce::dontSendNotification);
+        slider->setValue(ParameterUtils::modelToRealValue({paramInfo.currentValue}, paramInfo),
+                         juce::dontSendNotification);
         slider->setFont(FontManager::getInstance().getUIFont(10.0f));
-        slider->setTextColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        const int paramIndex = paramInfo.paramIndex;
-        slider->onValueChanged = [path, paramIndex](double v) {
-            TrackManager::getInstance().setDeviceParameterValue(path, paramIndex,
-                                                                static_cast<float>(v));
+        slider->setTextColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        // By value: this outlives the list it was described from, and a
+        // hosted plugin's ordinary parameter is not in the document to look up
+        // again (docs/specs/hosted-plugin-parameter-control.md).
+        slider->onValueChanged = [path, described = paramInfo](double v) {
+            TrackManager::getInstance().setDeviceParameterValue(
+                path, described,
+                ParameterUtils::realToModelValue(static_cast<float>(v), described));
         };
         slider->setAlpha(paramsAlpha_);
         slider->setVisible(isParamsLaidOut());
@@ -178,22 +189,27 @@ void MiniChainRow::resolveParams() {
         paramSliders_.push_back(std::move(slider));
     };
 
+    // What the plugin has (#2634).
+    const auto parameters = deviceParameterList(*devInfo, devicePath_);
+
+    const auto parameterAt = [&parameters](int slot) -> const ParameterInfo* {
+        const auto found = std::ranges::find(parameters, slot, &ParameterInfo::paramIndex);
+        return found == parameters.end() ? nullptr : &*found;
+    };
+
     // 1) Explicit user selection from the parameter config dialog's "Mini"
-    //    column (indices into devInfo->parameters), in the order chosen.
-    for (int idx : devInfo->miniMixerParameters) {
+    //    column (slots, #2638), in the order chosen.
+    for (const int slot : devInfo->miniMixerParameters) {
         if (static_cast<int>(trackedParamIndices_.size()) >= kMaxExpandedParams)
             break;
-        if (idx >= 0 && idx < static_cast<int>(devInfo->parameters.size())) {
-            const auto& paramInfo = devInfo->parameters[static_cast<size_t>(idx)];
-            if (!paramInfo.hidden)
-                addParamSlider(paramInfo);
-        }
+        if (const auto* paramInfo = parameterAt(slot); paramInfo != nullptr && !paramInfo->hidden)
+            addParamSlider(*paramInfo);
     }
 
     // 2) Fallback (no explicit selection): first N non-hidden parameters in
     //    device order.
     if (trackedParamIndices_.empty()) {
-        for (const auto& paramInfo : devInfo->parameters) {
+        for (const auto& paramInfo : parameters) {
             if (static_cast<int>(trackedParamIndices_.size()) >= kMaxExpandedParams)
                 break;
             if (paramInfo.hidden)
@@ -257,13 +273,21 @@ void MiniChainRow::applyParamsAlpha() {
 }
 
 void MiniChainRow::updateTimerState() {
-    if ((expanded_ && !trackedParamIndices_.empty()) || paramsFadeActive_)
+    // Collapsed plugin rows still follow windows opened or closed elsewhere.
+    if ((uiButton_ != nullptr && uiButton_->isVisible() && engine_ != nullptr) ||
+        (expanded_ && !trackedParamIndices_.empty()) || paramsFadeActive_)
         startTimerHz(30);
     else
         stopTimer();
 }
 
 void MiniChainRow::timerCallback() {
+    // Ask the engine that owns the rendered instance, including when its own
+    // window close button was used. A Tracktion window-manager callback cannot
+    // report this for the native engine (#2668).
+    if (isShowing() && uiButton_ != nullptr && uiButton_->isVisible() && engine_ != nullptr)
+        setPluginEditorOpen(engine_->isDeviceEditorOpen(devicePath_));
+
     advanceParamsFade();
 
     // Keep the sliders in sync with the live parameter values (automation,
@@ -277,38 +301,61 @@ void MiniChainRow::timerCallback() {
         auto* slider = paramSliders_[i].get();
         if (slider == nullptr || slider->isBeingDragged())
             continue;
-        const int paramIndex = (i < trackedParamIndices_.size()) ? trackedParamIndices_[i] : -1;
-        const auto* pInfo = devInfo->findParameterByIndex(paramIndex);
-        if (pInfo == nullptr)
+        if (i >= trackedParams_.size())
             continue;
-        const auto v = static_cast<double>(pInfo->currentValue);
+        const auto& described = trackedParams_[i];
+
+        // The document holds a value only for what a host control drives; for
+        // everything else the plugin's own last report is the value.
+        const auto* held = devInfo->findParameterByIndex(described.paramIndex);
+        if (held == nullptr && hostedEditPending(described.paramIndex))
+            continue;  // Its completion reads the plugin; the cache is older.
+
+        const auto model = held != nullptr ? std::optional{held->currentValue}
+                                           : observedValue(described.paramIndex);
+        if (!model.has_value())
+            continue;
+
+        const auto v = static_cast<double>(
+            ParameterUtils::modelToRealValue(ParameterModelValue{*model}, described));
         if (std::abs(slider->getValue() - v) > 1e-6)
             slider->setValue(v, juce::dontSendNotification);
     }
+}
+
+/// What the engine last saw the plugin report for @p paramIndex.
+std::optional<float> MiniChainRow::observedValue(int paramIndex) const {
+    auto* engine = TrackManager::getInstance().getAudioEngine();
+    return engine != nullptr ? engine->observedParameter(devicePath_, paramIndex) : std::nullopt;
+}
+
+bool MiniChainRow::hostedEditPending(int paramIndex) const {
+    auto* engine = TrackManager::getInstance().getAudioEngine();
+    return engine != nullptr && engine->hostedEditPending(devicePath_, paramIndex);
 }
 
 void MiniChainRow::paint(juce::Graphics& g) {
     auto headRect = getLocalBounds().removeFromTop(kCollapsedHeight);
 
     // Row background
-    g.setColour(DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
     g.fillRect(headRect);
 
     // Bypass dot — green when active, dim when bypassed.
     constexpr int dotSize = 8;
     auto dotBounds = bypassRect_.withSizeKeepingCentre(dotSize, dotSize).toFloat();
-    g.setColour(bypassed_ ? DarkTheme::getColour(DarkTheme::TEXT_DISABLED)
-                          : DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
+    g.setColour(bypassed_ ? ActiveTheme::getColour(ActiveTheme::TEXT_DISABLED)
+                          : ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE));
     g.fillEllipse(dotBounds);
 
     // Device name
     g.setFont(FontManager::getInstance().getUIFont(10.0f));
-    g.setColour(bypassed_ ? DarkTheme::getColour(DarkTheme::TEXT_DIM)
-                          : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    g.setColour(bypassed_ ? ActiveTheme::getColour(ActiveTheme::TEXT_DIM)
+                          : ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     g.drawText(deviceName_, nameRect_.reduced(2, 0), juce::Justification::centredLeft, true);
 
     // Chevron (down when expanded, right when collapsed).
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
     auto centre = chevronRect_.getCentre().toFloat();
     juce::Path arrow;
     if (expanded_) {
@@ -357,7 +404,8 @@ void MiniChainRow::lookAndFeelChanged() {
     // SvgButton re-resolve their own colours from stored roles on repaint.
     for (auto& label : paramLabels_)
         if (label)
-            label->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_DIM));
+            label->setColour(juce::Label::textColourId,
+                             ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
 }
 
 void MiniChainRow::mouseDown(const juce::MouseEvent& event) {

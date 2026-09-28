@@ -2,7 +2,7 @@
 
 #include <BinaryData.h>
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "MixAnalysisModal.hpp"
 #include "core/Config.hpp"
 
@@ -45,7 +45,7 @@ MixerToggleRail::MixerToggleRail() {
 
 void MixerToggleRail::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.fillRect(bounds.getRight() - 1, bounds.getY(), 1, bounds.getHeight());
 }
 
@@ -91,9 +91,9 @@ void MixerToggleRail::setupButton(std::unique_ptr<SvgButton>& btn, const juce::S
                                   bool initialState, std::function<void(bool)> setter) {
     btn = std::make_unique<SvgButton>(name, svgData, svgSize);
     btn->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    btn->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
-    btn->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    btn->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+    btn->setPressedColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+    btn->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     btn->setBorderThickness(1.0f);
     btn->setTooltip(tooltip);
     btn->setWantsKeyboardFocus(false);
@@ -115,7 +115,7 @@ void MixerToggleRail::applyToggleState(SvgButton* btn, bool on) {
     if (btn == nullptr)
         return;
     btn->setActive(on);
-    const auto base = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+    const auto base = ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY);
     btn->setNormalColor(on ? base : base.withAlpha(0.3f));
     btn->repaint();
 }
@@ -132,12 +132,12 @@ void MixerToggleRail::setupAnalyzeButton() {
     analyzeButton_ = std::make_unique<SvgButton>("MixAnalyze", BinaryData::iconcheckmixboldm_svg,
                                                  BinaryData::iconcheckmixboldm_svgSize);
     analyzeButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    analyzeButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    analyzeButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    analyzeButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_INFO));
+    analyzeButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    analyzeButton_->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+    analyzeButton_->setActiveColor(ActiveTheme::getColour(ActiveTheme::ACCENT_INFO));
     analyzeButton_->setActiveBackgroundColor(
-        DarkTheme::getColour(DarkTheme::ACCENT_INFO).withAlpha(0.25f));
-    analyzeButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+        ActiveTheme::getColour(ActiveTheme::ACCENT_INFO).withAlpha(0.25f));
+    analyzeButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     analyzeButton_->setBorderThickness(1.0f);
     analyzeButton_->setTooltip("Analyze the mix");
     analyzeButton_->setWantsKeyboardFocus(false);
@@ -176,7 +176,7 @@ void MixerToggleRail::updateAnalyzeButtonMode() {
         analyzeButton_->setTooltip("Analyze the mix");
         // Dim to the disengaged-toggle look until there's an analysis to show;
         // brighten once data exists (matches the other rail buttons' on/off weight).
-        const auto base = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+        const auto base = ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY);
         const bool hasData = svc.latest().has_value();
         analyzeButton_->setNormalColor(hasData ? base : base.withAlpha(0.3f));
     }

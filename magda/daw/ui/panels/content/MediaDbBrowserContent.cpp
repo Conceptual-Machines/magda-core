@@ -9,18 +9,17 @@
 #include <mutex>
 #include <unordered_map>
 
-#include "../../../audio/AudioBridge.hpp"
+#include "../../../audio/AudioThumbnailManager.hpp"
 #include "../../../core/ClipManager.hpp"
 #include "../../../core/TrackManager.hpp"
-#include "../../../engine/AudioEngine.hpp"
 #include "../../../media_db/MediaDatabase.hpp"
 #include "../../../media_db/MediaDbContext.hpp"
 #include "../../../media_db/MediaDbIndexer.hpp"
 #include "../../../media_db/MediaDbMetadata.hpp"
-#include "../../../media_db/SampleTaggerDownloader.hpp"
+#include "../../../media_db/MediaModelDownloader.hpp"
 #include "../../components/chain/layout/DeviceSlotHeaderLayout.hpp"
 #include "../../components/common/InternalFileDrag.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FileBrowserLookAndFeel.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallComboBoxLookAndFeel.hpp"
@@ -134,9 +133,9 @@ juce::String prettyDuration(std::optional<double> seconds) {
 
 juce::String displayNameFor(const magda::media::QueryResult& result) {
     if (result.displayName && !result.displayName->empty()) {
-        return juce::String(*result.displayName);
+        return {*result.displayName};
     }
-    return juce::String(result.path.filename().string());
+    return {result.path.filename().string()};
 }
 
 // A compact, branded chip used as the drag image for preset rows. macOS would
@@ -158,21 +157,21 @@ juce::Image makePresetDragImage(const juce::StringArray& names) {
     auto bounds =
         juce::Rectangle<float>(0.0F, 0.0F, static_cast<float>(width), static_cast<float>(height))
             .reduced(0.5F);
-    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).withAlpha(0.96F));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE).withAlpha(0.96F));
     g.fillRoundedRectangle(bounds, 6.0F);
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     g.drawRoundedRectangle(bounds, 6.0F, 1.5F);
 
     // Two offset squares read as a stacked "preset".
     const float gy = static_cast<float>(height) * 0.5F;
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     g.fillRoundedRectangle(8.0F, gy - 6.0F, 8.0F, 8.0F, 2.0F);
-    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).withAlpha(0.96F));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE).withAlpha(0.96F));
     g.fillRoundedRectangle(11.0F, gy - 2.5F, 8.0F, 8.0F, 2.0F);
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     g.drawRoundedRectangle(11.0F, gy - 2.5F, 8.0F, 8.0F, 2.0F, 1.0F);
 
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     g.setFont(font);
     g.drawText(text, juce::Rectangle<int>(padLeft, 0, width - padLeft - padRight, height),
                juce::Justification::centredLeft, true);
@@ -208,20 +207,7 @@ std::optional<std::vector<magda::WarpMarker>> currentWarpMarkersForClip(magda::C
         return std::nullopt;
     }
 
-    std::vector<magda::WarpMarker> markers;
-    if (auto* engine = magda::TrackManager::getInstance().getAudioEngine()) {
-        if (auto* bridge = engine->getAudioBridge()) {
-            const auto liveMarkers = bridge->getWarpMarkers(clipId);
-            markers.reserve(liveMarkers.size());
-            for (const auto& marker : liveMarkers) {
-                markers.push_back({marker.sourceTime, marker.warpTime});
-            }
-        }
-    }
-    if (markers.empty()) {
-        markers = magda::audioEventRef(*clip).warpMarkers;
-    }
-    return markers;
+    return magda::audioEventRef(*clip).warpMarkers;
 }
 
 juce::String formatIndexSummary(const std::filesystem::path& path,
@@ -283,6 +269,27 @@ juce::String formatAnalysisProgress(int done, int total, const std::filesystem::
         status += " - ETA " + formatEta(perFile * (total - done));
     }
     return status;
+}
+
+juce::String formatTempoProgress(int done, int total, const std::filesystem::path& current,
+                                 std::chrono::steady_clock::time_point startedAt) {
+    juce::String status = juce::String("Measuring tempo: ") +
+                          juce::String(current.filename().string()) + " (" + juce::String(done) +
+                          "/" + juce::String(total) + ")";
+    if (done > 0 && total > done) {
+        const auto elapsed = std::chrono::steady_clock::now() - startedAt;
+        status += " - ETA " + formatEta((elapsed / done) * (total - done));
+    }
+    return status;
+}
+
+juce::String formatTempoSummary(const magda::media::MediaDbIndexer::TempoStats& stats) {
+    juce::String summary = juce::String("Tempo: ") + juce::String(stats.measured) + " measured, " +
+                           juce::String(stats.silent) + " unclear";
+    if (stats.failed > 0) {
+        summary += ", " + juce::String(stats.failed) + " failed";
+    }
+    return summary;
 }
 
 juce::String prettyBpm(std::optional<double> bpm) {
@@ -347,7 +354,7 @@ std::vector<std::string> parseTags(const juce::String& raw) {
         const auto clean = token.trim().toLowerCase();
         if (clean.isNotEmpty()) {
             const auto s = clean.toStdString();
-            if (std::find(out.begin(), out.end(), s) == out.end()) {
+            if (!std::ranges::contains(out, s)) {
                 out.push_back(s);
             }
         }
@@ -459,13 +466,13 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
     void paintRowBackground(juce::Graphics& g, int rowNumber, int /*width*/, int /*height*/,
                             bool rowIsSelected) override {
         if (rowIsSelected) {
-            g.fillAll(DarkTheme::getColour(DarkTheme::SURFACE_HOVER));
+            g.fillAll(ActiveTheme::getColour(ActiveTheme::SURFACE_HOVER));
             return;
         }
         if (rowNumber >= 0 && rowNumber < static_cast<int>(owner_.results_.size())) {
             const auto& r = owner_.results_[static_cast<size_t>(rowNumber)];
             if (r.kind == "audio" && r.tagged) {
-                g.fillAll(DarkTheme::getAccentColour().withAlpha(0.055F));
+                g.fillAll(ActiveTheme::getAccentColour().withAlpha(0.055F));
             }
         }
     }
@@ -507,22 +514,23 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
 
         switch (columnId) {
             case kColName: {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
                 if (r.userEdited) {
                     const float dotR = 3.0F;
-                    g.setColour(DarkTheme::getAccentColour());
+                    g.setColour(ActiveTheme::getAccentColour());
                     g.fillEllipse(8.0F, static_cast<float>(height) * 0.5F - dotR, dotR * 2.0F,
                                   dotR * 2.0F);
                 }
                 const bool rowMissing = integrityFor(r) == RowIntegrity::Missing;
                 if (rowMissing) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.55F));
+                    g.setColour(
+                        ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.55F));
                     g.setFont(font.italicised());
                 } else if (r.kind == "audio" && !r.tagged) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
                     g.setFont(font.italicised());
                 } else {
-                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
                 }
                 g.drawText(displayNameFor(r), cell.withTrimmedLeft(18).reduced(0, 2),
                            juce::Justification::centredLeft, true);
@@ -547,32 +555,32 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
                 } else {  // Missing
                     g.setColour(juce::Colour(0xFFD05A4A));
                     g.fillEllipse(rect);
-                    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE_HOVER));
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE_HOVER));
                     g.drawLine(cx - r2 * 0.6F, cy + r2 * 0.6F, cx + r2 * 0.6F, cy - r2 * 0.6F,
                                1.4F);
                 }
                 break;
             }
             case kColFamily:
-                drawPill(juce::String(r.family), DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY),
-                         true);
+                drawPill(juce::String(r.family),
+                         ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY), true);
                 break;
             case kColShape:
-                drawPill(juce::String(r.shape), DarkTheme::getColour(DarkTheme::TEXT_PRIMARY),
+                drawPill(juce::String(r.shape), ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY),
                          true);
                 break;
             case kColBpm:
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
                 g.drawText(prettyBpm(r.bpm), cell.reduced(6, 2), juce::Justification::centredRight,
                            true);
                 break;
             case kColKey:
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
                 g.drawText(prettyKey(r.keyRoot, r.keyScale), cell.reduced(6, 2),
                            juce::Justification::centredRight, true);
                 break;
             case kColDuration:
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
                 g.drawText(prettyDuration(r.durationS), cell.reduced(6, 2),
                            juce::Justification::centredRight, true);
                 break;
@@ -580,7 +588,7 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
                 // Comma-joined tag list, single-line, truncated at the cell
                 // edge. Hidden by default in the docked browser; visible in
                 // the pop-out window where there's more horizontal room.
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
                 juce::String joined;
                 for (const auto& t : r.tags) {
                     if (joined.isNotEmpty()) {
@@ -682,6 +690,11 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
             menu.addItem(
                 6, selectedCount > 1 ? "Reset selected rows to detected" : "Reset to detected",
                 !owner_.indexing_);
+            menu.addItem(9,
+                         selectedCount > 1
+                             ? "Delete file metadata (" + juce::String(selectedCount) + ")"
+                             : "Delete file metadata",
+                         !owner_.indexing_);
             menu.addItem(7, "Save current clip values to library",
                          !owner_.indexing_ && selectedCount == 1 && hasMatchingClip);
             menu.addItem(8, "Recover missing file...",
@@ -696,7 +709,7 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
             }
             const juce::Component::SafePointer<MediaDbBrowserContent> self(&owner_);
             const auto seedId = r.fileId;
-            const auto seedName = fileName;
+            const auto& seedName = fileName;
             menu.showMenuAsync(
                 juce::PopupMenu::Options{},
                 [self, seedId, seedName, selectedIds = std::move(selectedIds)](int choice) mutable {
@@ -715,6 +728,8 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
                         }
                     } else if (choice == 5) {
                         self->deleteFileIdsWithConfirmation(std::move(selectedIds));
+                    } else if (choice == 9) {
+                        self->deleteRowMetadata(std::move(selectedIds));
                     } else if (choice == 6) {
                         self->resetRowsToDetected(std::move(selectedIds));
                     } else if (choice == 7) {
@@ -999,10 +1014,10 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
 
     auto& header = resultsTable_.getHeader();
     header.setColour(juce::TableHeaderComponent::backgroundColourId,
-                     DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05F));
+                     ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05F));
     header.setColour(juce::TableHeaderComponent::textColourId,
-                     DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    header.setColour(juce::TableHeaderComponent::outlineColourId, DarkTheme::getBorderColour());
+                     ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    header.setColour(juce::TableHeaderComponent::outlineColourId, ActiveTheme::getBorderColour());
     // appearsOnColumnMenu — right-click the header to show/hide any column.
     // JUCE drives the visibility toggle itself once the flag is set.
     const int flags = juce::TableHeaderComponent::visible | juce::TableHeaderComponent::resizable |
@@ -1040,7 +1055,7 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     emptyState_.setFont(FontManager::getInstance().getUIFont(13.0F));
     emptyState_.setJustificationType(juce::Justification::centred);
     emptyState_.setColour(juce::Label::textColourId,
-                          DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                          ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     emptyState_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(emptyState_);
 
@@ -1063,7 +1078,7 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     pageLabel_.setFont(FontManager::getInstance().getUIFont(11.0F));
     pageLabel_.setJustificationType(juce::Justification::centred);
     pageLabel_.setColour(juce::Label::textColourId,
-                         DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                         ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     pageLabel_.setInterceptsMouseClicks(false, false);
     prevPageBtn_->setVisible(false);
     nextPageBtn_->setVisible(false);
@@ -1077,7 +1092,7 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     statusLabel_.setFont(FontManager::getInstance().getUIFont(10.0F));
     statusLabel_.setJustificationType(juce::Justification::centredLeft);
     statusLabel_.setColour(juce::Label::textColourId,
-                           DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                           ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     statusLabel_.setMinimumHorizontalScale(1.0F);  // truncate long paths, don't shrink the font
     statusLabel_.setInterceptsMouseClicks(false, false);
     statusLabel_.setVisible(false);
@@ -1121,39 +1136,42 @@ MediaDbBrowserContent::~MediaDbBrowserContent() {
 }
 
 void MediaDbBrowserContent::applyThemeColours() {
-    bpmLabel_.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    bpmLabel_.setColour(juce::Label::textColourId,
+                        ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
 
     for (auto* cb : {&familyFilter_, &shapeFilter_, &keyFilter_}) {
-        cb->setColour(juce::ComboBox::backgroundColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-        cb->setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-        cb->setColour(juce::ComboBox::outlineColourId, DarkTheme::getBorderColour());
+        cb->setColour(juce::ComboBox::backgroundColourId,
+                      ActiveTheme::getColour(ActiveTheme::SURFACE));
+        cb->setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
+        cb->setColour(juce::ComboBox::outlineColourId, ActiveTheme::getBorderColour());
     }
 
     const auto styleEditor = [](juce::TextEditor& e, const juce::String& placeholder) {
-        e.setTextToShowWhenEmpty(placeholder, DarkTheme::getSecondaryTextColour());
-        e.setColour(juce::TextEditor::backgroundColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-        e.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
-        e.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
+        e.setTextToShowWhenEmpty(placeholder, ActiveTheme::getSecondaryTextColour());
+        e.setColour(juce::TextEditor::backgroundColourId,
+                    ActiveTheme::getColour(ActiveTheme::SURFACE));
+        e.setColour(juce::TextEditor::textColourId, ActiveTheme::getTextColour());
+        e.setColour(juce::TextEditor::outlineColourId, ActiveTheme::getBorderColour());
     };
     styleEditor(bpmMinBox_, "min");
     styleEditor(bpmMaxBox_, "max");
     styleEditor(tagsFilter_, "tags (e.g. drum 808)");
 
     resultsTable_.setColour(juce::ListBox::backgroundColourId,
-                            DarkTheme::getColour(DarkTheme::BACKGROUND));
-    resultsTable_.setColour(juce::ListBox::outlineColourId, DarkTheme::getBorderColour());
+                            ActiveTheme::getColour(ActiveTheme::BACKGROUND));
+    resultsTable_.setColour(juce::ListBox::outlineColourId, ActiveTheme::getBorderColour());
 
     // The column-label header draws through the LookAndFeel with its own
     // colour ids; set them on the component (same pattern as the
     // TrackManager/ParameterConfig/PluginSettings tables).
     auto& header = resultsTable_.getHeader();
     header.setColour(juce::TableHeaderComponent::backgroundColourId,
-                     DarkTheme::getColour(DarkTheme::SURFACE));
-    header.setColour(juce::TableHeaderComponent::textColourId, DarkTheme::getTextColour());
+                     ActiveTheme::getColour(ActiveTheme::SURFACE));
+    header.setColour(juce::TableHeaderComponent::textColourId, ActiveTheme::getTextColour());
     header.setColour(juce::TableHeaderComponent::outlineColourId,
-                     DarkTheme::getColour(DarkTheme::SEPARATOR));
+                     ActiveTheme::getColour(ActiveTheme::SEPARATOR));
     header.setColour(juce::TableHeaderComponent::highlightColourId,
-                     DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+                     ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
 }
 
 void MediaDbBrowserContent::lookAndFeelChanged() {
@@ -1162,7 +1180,7 @@ void MediaDbBrowserContent::lookAndFeelChanged() {
 }
 
 void MediaDbBrowserContent::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::SURFACE));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::SURFACE));
 }
 
 void MediaDbBrowserContent::resized() {
@@ -1502,7 +1520,7 @@ void MediaDbBrowserContent::showBulkEditRowsDialog(std::vector<std::int64_t> fil
         }));
 }
 
-void MediaDbBrowserContent::resetRowsToDetected(std::vector<std::int64_t> fileIds) {
+void MediaDbBrowserContent::resetRowsToDetected(const std::vector<std::int64_t>& fileIds) {
     if (indexing_ || fileIds.empty()) {
         return;
     }
@@ -1517,6 +1535,27 @@ void MediaDbBrowserContent::resetRowsToDetected(std::vector<std::int64_t> fileId
                                          .withMessage("No media rows were reset.")
                                          .withButton("OK"),
                                      nullptr);
+        return;
+    }
+    ctx.bumpMediaRevision();
+    restartSearch();
+}
+
+void MediaDbBrowserContent::deleteRowMetadata(const std::vector<std::int64_t>& fileIds) {
+    if (indexing_ || fileIds.empty()) {
+        return;
+    }
+    auto& ctx = magda::media::MediaDbContext::getInstance();
+    if (!ctx.ensureInitialized()) {
+        return;
+    }
+    // The session's cached answer for the file goes with it, so BEAT measures again.
+    for (auto fileId : fileIds) {
+        if (auto row = magda::media::getEditableMediaRow(ctx.db(), fileId)) {
+            AudioThumbnailManager::getInstance().invalidateFile(juce::String(row->path.string()));
+        }
+    }
+    if (magda::media::clearMediaRowMetadata(ctx.db(), fileIds) <= 0) {
         return;
     }
     ctx.bumpMediaRevision();
@@ -1892,6 +1931,21 @@ void MediaDbBrowserContent::startAnalyzingFileIds(std::vector<std::int64_t> file
             const auto decodeStats =
                 indexer.indexFileIds(ids, magda::media::MediaDbIndexer::Mode::ForceAll);
 
+            magda::media::MediaDbIndexer::TempoStats tempoStats;
+            if (!(cancelToken && cancelToken->load())) {
+                const auto tempoStartedAt = std::chrono::steady_clock::now();
+                indexer.setProgress([self, tempoStartedAt](int done, int total,
+                                                           const std::filesystem::path& current) {
+                    const auto status = formatTempoProgress(done, total, current, tempoStartedAt);
+                    juce::MessageManager::callAsync([self, status]() {
+                        if (self != nullptr && self->onIndexingStatus) {
+                            self->onIndexingStatus(status);
+                        }
+                    });
+                });
+                tempoStats = indexer.measureTempoForFileIds(ids);
+            }
+
             magda::media::MediaDbIndexer::EmbeddingStats tagStats;
             if (encoder != nullptr && !(cancelToken && cancelToken->load())) {
                 const auto analysisStartedAt = std::chrono::steady_clock::now();
@@ -1911,6 +1965,8 @@ void MediaDbBrowserContent::startAnalyzingFileIds(std::vector<std::int64_t> file
             }
 
             finalStatus = formatAnalysisSummary(decodeStats, tagStats);
+            if (tempoStats.measured + tempoStats.silent + tempoStats.failed > 0)
+                finalStatus += " | " + formatTempoSummary(tempoStats);
             if (cancelToken && cancelToken->load()) {
                 finalStatus = "Analysis stopped: " + finalStatus;
             }
@@ -2062,7 +2118,8 @@ void MediaDbBrowserContent::runSearch() {
     resultsTable_.updateContent();
     resultsTable_.repaint();
     resultsTable_.setVisible(false);
-    const bool needsModelLoad = magda::media::SampleTaggerDownloader::isInstalled() &&
+    const bool needsModelLoad = magda::media::MediaModelDownloader::isInstalled(
+                                    magda::media::MediaModelDownloader::Bundle::SampleTagger) &&
                                 (!ctx.isTextEncoderLoaded() || !ctx.isTokenizerLoaded());
     emptyState_.setText(needsModelLoad ? "Loading text-search model (~500 MB)..." : "Searching...",
                         juce::dontSendNotification);
@@ -2159,7 +2216,9 @@ void MediaDbBrowserContent::applySearchResultsToUi() {
         } else {
             text = "No results match the current filters.";
             if constexpr (magda::media::clapBackendAvailable()) {
-                if (!queryText_.isEmpty() && !magda::media::SampleTaggerDownloader::isInstalled()) {
+                if (!queryText_.isEmpty() &&
+                    !magda::media::MediaModelDownloader::isInstalled(
+                        magda::media::MediaModelDownloader::Bundle::SampleTagger)) {
                     text += "\n\nText search is filename / tag only without the AI Sample "
                             "Analyzer.\nInstall it from AI Settings > Sample Analyzer.";
                 }
@@ -2221,7 +2280,8 @@ void MediaDbBrowserContent::visibilityChanged() {
     // so by the time they type a query it's likely already done. No-op when
     // the bundle isn't installed (preloadModels() returns immediately) or
     // when the encoder is already loaded.
-    if (magda::media::SampleTaggerDownloader::isInstalled()) {
+    if (magda::media::MediaModelDownloader::isInstalled(
+            magda::media::MediaModelDownloader::Bundle::SampleTagger)) {
         auto& ctx = magda::media::MediaDbContext::getInstance();
         if (!ctx.isTextEncoderLoaded() || !ctx.isTokenizerLoaded()) {
             if (!searchPool_) {
@@ -2287,7 +2347,8 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir,
     };
 
     if constexpr (magda::media::clapBackendAvailable()) {
-        if (!magda::media::SampleTaggerDownloader::isInstalled()) {
+        if (!magda::media::MediaModelDownloader::isInstalled(
+                magda::media::MediaModelDownloader::Bundle::SampleTagger)) {
             const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
             juce::AlertWindow::showAsync(
                 juce::MessageBoxOptions()
@@ -2424,7 +2485,7 @@ void MediaDbBrowserContent::runIndexing(const juce::File& dir,
                                      juce::String(reason);
                 juce::Logger::writeToLog(message);
 
-                std::lock_guard<std::mutex> lock(failureMutex);
+                std::scoped_lock lock(failureMutex);
                 ++failureCount;
                 if (firstFailures.size() < 5) {
                     firstFailures.push_back(message);
@@ -2472,7 +2533,33 @@ void MediaDbBrowserContent::runIndexing(const juce::File& dir,
                 }
             });
 
-            if (encoder != nullptr && !cancelledAfterScan) {
+            // The beat model, before the CLAP pass and separate from it: a
+            // different download, and useful on its own. Both run after the
+            // walk rather than inside it so the library is browsable first and
+            // no scan worker is holding a model's working set (#2674).
+            if (!cancelledAfterScan) {
+                const auto tempoStartedAt = std::chrono::steady_clock::now();
+                indexer.setProgress([self, tempoStartedAt](int done, int total,
+                                                           const std::filesystem::path& current) {
+                    const auto status = formatTempoProgress(done, total, current, tempoStartedAt);
+                    juce::MessageManager::callAsync([self, status]() {
+                        if (self != nullptr && self->onIndexingStatus) {
+                            self->onIndexingStatus(status);
+                        }
+                    });
+                });
+                const auto tempoStats = indexer.measureMissingTempo(path);
+                if (tempoStats.measured + tempoStats.silent + tempoStats.failed > 0) {
+                    const auto tempoStatus = formatTempoSummary(tempoStats);
+                    const bool stopped = cancelToken && cancelToken->load();
+                    finalStatus =
+                        scanStatus + (stopped ? " | Tempo stopped: " : " | ") + tempoStatus;
+                    juce::Logger::writeToLog(juce::String("[MediaDbIndexer] ") + tempoStatus);
+                }
+            }
+
+            const bool cancelledAfterTempo = cancelToken && cancelToken->load();
+            if (encoder != nullptr && !cancelledAfterTempo) {
                 const auto analysisStartedAt = std::chrono::steady_clock::now();
                 indexer.setProgress([self, analysisStartedAt](
                                         int done, int total, const std::filesystem::path& current) {
@@ -2490,10 +2577,10 @@ void MediaDbBrowserContent::runIndexing(const juce::File& dir,
                 const auto analysisStatus = formatAnalysisSummary(tagStats);
                 const bool cancelledAfterAnalysis = cancelToken && cancelToken->load();
                 finalStatus = cancelledAfterAnalysis
-                                  ? scanStatus + " | Analysis stopped: " + analysisStatus
-                                  : scanStatus + " | " + analysisStatus;
+                                  ? finalStatus + " | Analysis stopped: " + analysisStatus
+                                  : finalStatus + " | " + analysisStatus;
                 juce::Logger::writeToLog(juce::String("[MediaDbIndexer] ") + analysisStatus);
-            } else if (!cancelledAfterScan) {
+            } else if (encoder == nullptr && !cancelledAfterTempo) {
                 // Encoder unavailable — most common reason is the Sample
                 // Tagger bundle isn't installed (or failed to load). Without
                 // this branch the user just sees the scan summary and has
@@ -2505,11 +2592,11 @@ void MediaDbBrowserContent::runIndexing(const juce::File& dir,
                         : juce::String(juce::String::fromUTF8(
                               "Sample Tagger not installed — skipping audio analysis. Install it "
                               "in AI Settings to enable semantic search."));
-                finalStatus = scanStatus + " | " + skipReason;
+                finalStatus = finalStatus + " | " + skipReason;
                 juce::Logger::writeToLog(juce::String("[MediaDbIndexer] ") + skipReason);
             }
 
-            std::lock_guard<std::mutex> lock(failureMutex);
+            std::scoped_lock lock(failureMutex);
             for (const auto& failure : firstFailures) {
                 juce::Logger::writeToLog(juce::String("[MediaDbIndexer] First failure: ") +
                                          failure);
@@ -2558,7 +2645,8 @@ void MediaDbBrowserContent::runIndexing(const juce::File& dir,
 class MediaDbBrowserContent::PopOutWindow : public juce::DocumentWindow {
   public:
     PopOutWindow()
-        : juce::DocumentWindow("MAGDA - Media Browser", DarkTheme::getColour(DarkTheme::BACKGROUND),
+        : juce::DocumentWindow("MAGDA - Media Browser",
+                               ActiveTheme::getColour(ActiveTheme::BACKGROUND),
                                juce::DocumentWindow::allButtons) {
         setUsingNativeTitleBar(true);
         setResizable(true, false);
@@ -2577,7 +2665,7 @@ class MediaDbBrowserContent::PopOutWindow : public juce::DocumentWindow {
     // window left open across a theme switch keeps the old palette.
     void lookAndFeelChanged() override {
         juce::DocumentWindow::lookAndFeelChanged();
-        setBackgroundColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+        setBackgroundColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     }
 
   private:

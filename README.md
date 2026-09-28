@@ -7,7 +7,7 @@
   <a href="https://github.com/Conceptual-Machines/magda-core/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Conceptual-Machines/magda-core/ci.yml?label=macOS&logo=apple" alt="macOS Build"></a>
   <a href="https://github.com/Conceptual-Machines/magda-core/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Conceptual-Machines/magda-core/ci.yml?label=Windows&logo=windows" alt="Windows Build"></a>
   <a href="https://github.com/Conceptual-Machines/magda-core/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="License"></a>
-  <img src="https://img.shields.io/badge/C%2B%2B-20-blue.svg" alt="C++20">
+  <img src="https://img.shields.io/badge/C%2B%2B-23-blue.svg" alt="C++23">
   <a href="https://crowdin.com/project/magda"><img src="https://badges.crowdin.net/magda/localized.svg" alt="Crowdin"></a>
 </p>
 
@@ -17,7 +17,7 @@
 <p align="center"><img src="assets/treaktion-engine-logo.png" alt="Powered by Tracktion Engine" width="250" height="80"></p>
 
 ---
-MAGDA is a free, open-source DAW with AI integrated from the ground up. Built on C++20, JUCE, and Tracktion Engine.
+MAGDA is a free, open-source DAW with AI integrated from the ground up. Built on C++23, JUCE, and Tracktion Engine.
  - **English** | [简体中文](README_CN.md)
 
 ### Features
@@ -48,8 +48,16 @@ See [Issues](https://github.com/Conceptual-Machines/magda-core/issues) for known
 
 ### Prerequisites
 
-- C++20 compiler (GCC 10+, Clang 12+, or Xcode)
-- CMake 3.20+
+- C++23 compiler **and standard library**: GCC 13+, Clang 16+ with libc++,
+  AppleClang 16+, or MSVC 19.36+ (VS 2022 17.6). The floor is the library, not
+  the language: `std::views::zip`, `std::views::chunk_by`,
+  `std::ranges::fold_left` and `std::ranges::contains` are in use, and libstdc++
+  only gained them in GCC 13.1, so a GCC 12 build fails even though CMake will
+  select C++23 for it. `std::ranges::to` is *not* used: libstdc++ only has it
+  from GCC 14, so collecting goes through `toStd<C>()` / `toJuce<C>()` in
+  `magda/daw/core/RangesHelpers.hpp`.
+  (CI builds with GCC 13.3, AppleClang 16.0 and MSVC 19.50.)
+- CMake 3.24+
 - [Git LFS](https://git-lfs.com/) — required to fetch bundled binary assets
   (CJK font, etc.). Install with `brew install git-lfs` (macOS),
   `apt install git-lfs` (Debian/Ubuntu), or `choco install git-lfs` (Windows),

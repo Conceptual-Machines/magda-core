@@ -1,6 +1,6 @@
 #include "InspectorContainer.hpp"
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "AutomationClipInspector.hpp"
 #include "AutomationPointInspector.hpp"
@@ -17,7 +17,7 @@ InspectorContainer::InspectorContainer() {
     // No selection label
     noSelectionLabel_.setText("No selection", juce::dontSendNotification);
     noSelectionLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
-    noSelectionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    noSelectionLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     noSelectionLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(noSelectionLabel_);
 
@@ -60,7 +60,7 @@ void InspectorContainer::onDeactivated() {
 }
 
 void InspectorContainer::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getPanelBackgroundColour());
+    g.fillAll(ActiveTheme::getPanelBackgroundColour());
 }
 
 void InspectorContainer::resized() {

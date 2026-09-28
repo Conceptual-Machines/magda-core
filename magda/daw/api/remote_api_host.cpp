@@ -9,6 +9,8 @@
 #include "magda_api.hpp"
 #include "remote_audit.hpp"
 #include "remote_clients.hpp"
+#include "remote_diagnostics.hpp"
+#include "remote_engine_jobs.hpp"
 #include "remote_mcp_server.hpp"
 #include "remote_model_bridge.hpp"
 #include "remote_service.hpp"
@@ -26,8 +28,7 @@
     #include <csignal>
 #endif
 
-namespace magda {
-namespace remote {
+namespace magda::remote {
 
 namespace {
 
@@ -204,8 +205,12 @@ RemoteApiHost::RemoteApiHost(MagdaApi& api, AudioEngine* engine)
       service_(std::make_unique<RemoteApiService>(api)),
       bridge_(std::make_unique<ModelChangeBridge>(*service_, &api.transport())),
       subscriptions_(std::make_unique<SubscriptionHub>(api, *service_)) {
-    if (engine != nullptr)
-        subscriptions_->setMeterSource(makeLiveMeterSource(*engine));
+    if (engine != nullptr) {
+        std::shared_ptr<MeterSource> meters = makeLiveMeterSource(*engine);
+        subscriptions_->setMeterSource(meters);
+        service_->setDiagnosticsSource(makeLiveDiagnosticsSource(*engine, std::move(meters)));
+        service_->setEngineJobSource(makeLiveEngineJobSource(*engine));
+    }
 
     service_->setAuditLog(audit_);
 
@@ -213,6 +218,10 @@ RemoteApiHost::RemoteApiHost(MagdaApi& api, AudioEngine* engine)
     // them does not immediately write them back out again.
     clients_->loadGrantsFromJson(Config::getInstance().getRemoteApiClients());
     clients_->setChangeHandler([this] { persistGrants(); });
+    audit_->setDeniedHandler([this](const AuditEntry& entry) {
+        if (const auto scope = scopeFromName(entry.detail))
+            clients_->notePermissionDenied(entry.client, entry.transport, *scope);
+    });
 
     activeHostInstance = this;
 }
@@ -226,6 +235,8 @@ RemoteApiHost::~RemoteApiHost() {
     // joined the transports, so nothing can be mid-notification here.
     if (clients_ != nullptr)
         clients_->setChangeHandler(nullptr);
+    if (audit_ != nullptr)
+        audit_->setDeniedHandler(nullptr);
     if (service_ != nullptr)
         service_->setAuditLog(nullptr);
 
@@ -239,7 +250,7 @@ RemoteApiHost::~RemoteApiHost() {
 void RemoteApiHost::persistGrants() {
     auto writer = grantWriter_;
     {
-        const std::lock_guard<std::mutex> lock(writer->mutex);
+        const std::scoped_lock lock(writer->mutex);
         // Snapshotted *under* this lock, not before it. Reading first and
         // storing second leaves the same reordering one level down: a thread
         // can read A, be preempted while another reads B and stores it, then
@@ -283,11 +294,11 @@ void RemoteApiHost::persistGrants() {
         // only ever takes `mutex`, so a recorder is never blocked behind a file
         // write; it just leaves a newer `latest` for whoever is inside here to
         // pick up.
-        const std::lock_guard<std::mutex> applying(writer->applyMutex);
+        const std::scoped_lock applying(writer->applyMutex);
 
         juce::var latest;
         {
-            const std::lock_guard<std::mutex> lock(writer->mutex);
+            const std::scoped_lock lock(writer->mutex);
             latest = writer->latest;
             writer->posted = false;
         }
@@ -316,7 +327,7 @@ void RemoteApiHost::persistGrants() {
     // is not persisted — the same outcome as the process being killed a moment
     // earlier, and not something worth a synchronous write on shutdown.
     if (!juce::MessageManager::callAsync(apply)) {
-        const std::lock_guard<std::mutex> lock(writer->mutex);
+        const std::scoped_lock lock(writer->mutex);
         writer->posted = false;
     }
 }
@@ -536,7 +547,7 @@ int RemoteApiHost::mcpPort() const {
     return mcpServer_ != nullptr ? mcpServer_->boundPort() : 0;
 }
 
-juce::File RemoteApiHost::tokenFile() const {
+juce::File RemoteApiHost::tokenFile() {
     return paths::dataDir().getChildFile(juce::String(kTokenFilePrefix) +
                                          juce::String(currentProcessId()) + kTokenFileSuffix);
 }
@@ -557,5 +568,4 @@ RemoteAuditLog& RemoteApiHost::audit() {
     return *audit_;
 }
 
-}  // namespace remote
-}  // namespace magda
+}  // namespace magda::remote

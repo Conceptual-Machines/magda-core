@@ -51,7 +51,7 @@ juce::var encodeControllerProfile(const ControllerProfile& p) {
     }
     obj->setProperty("defaultBindings", bindingsArr);
 
-    return juce::var(obj);
+    return {obj};
 }
 
 // ============================================================================

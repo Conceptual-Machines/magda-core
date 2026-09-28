@@ -57,8 +57,9 @@ void InsertCapturePlugin::initialise(const te::PluginInitialisationInfo& info) {
     zeroBuf_.assign(static_cast<size_t>(juce::jmax(4096, info.blockSizeSamples)), 0.0f);
 }
 
-bool InsertCapturePlugin::startCapture(const juce::File& wavFile, double windowStartSec,
-                                       double windowEndSec, double sampleRate) {
+bool InsertCapturePlugin::startCapture(
+    const juce::File& wavFile, double windowStartSec, double windowEndSec, double sampleRate,
+    const std::unordered_map<juce::String, juce::String>& metadata) {
     jassert(juce::MessageManager::getInstance()->isThisTheMessageThread());
     stopCapture(false);
     if (sampleRate > 0.0)
@@ -78,7 +79,8 @@ bool InsertCapturePlugin::startCapture(const juce::File& wavFile, double windowS
             .withSampleRate(sampleRate_)
             .withNumChannels(kNumChannels)
             .withBitsPerSample(32)
-            .withSampleFormat(juce::AudioFormatWriterOptions::SampleFormat::floatingPoint);
+            .withSampleFormat(juce::AudioFormatWriterOptions::SampleFormat::floatingPoint)
+            .withMetadataValues(metadata);
     auto writer = format.createWriterFor(stream, writerOptions);
     if (writer == nullptr)
         return false;
@@ -122,8 +124,8 @@ void InsertCapturePlugin::stopCapture(bool keepFile) {
 bool InsertCapturePlugin::writeSilence(juce::AudioFormatWriter::ThreadedWriter& writer,
                                        juce::int64 numSamples) {
     const float* chans[kNumChannels];
-    for (int c = 0; c < kNumChannels; ++c)
-        chans[c] = zeroBuf_.data();
+    for (auto& chan : chans)
+        chan = zeroBuf_.data();
 
     while (numSamples > 0) {
         const auto chunk = std::min(numSamples, static_cast<juce::int64>(zeroBuf_.size()));
@@ -150,7 +152,7 @@ void InsertCapturePlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         // REPLACE semantics: whatever the offline insert produced (silence or
         // dry passthrough) must not mix with the captured return.
         fc.destBuffer->clear(fc.bufferStartSample, fc.bufferNumSamples);
-        if (m.numSamples > 0 && m.fileStartSample < (juce::int64)reader->lengthInSamples) {
+        if (m.numSamples > 0 && m.fileStartSample < reader->lengthInSamples) {
             // std::min, not juce::jmin: an explicit jmin<int64> instantiation
             // drags in the juce::dsp SIMD overload set, which has no
             // SIMDNativeOps<long long> on Linux/GCC and fails to compile.

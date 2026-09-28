@@ -1,5 +1,6 @@
 #pragma once
 
+#include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_core/juce_core.h>
 
 #include <array>
@@ -7,6 +8,7 @@
 #include <cmath>
 #include <vector>
 
+#include "../../core/BlockMath.hpp"
 #include "AudioTapBuffer.hpp"
 
 namespace magda::daw::audio {
@@ -90,10 +92,8 @@ class TrackMeasurer {
             h.store(0, std::memory_order_relaxed);
         corrSmoothed_ = 1.0f;
         widthSmoothed_ = 0.0f;
-        for (auto& s : tpDelayL_)
-            s = 0.0f;
-        for (auto& s : tpDelayR_)
-            s = 0.0f;
+        tpDelayL_.clear();
+        tpDelayR_.clear();
         momentary_.store(kSilenceLufs, std::memory_order_relaxed);
         shortTerm_.store(kSilenceLufs, std::memory_order_relaxed);
         samplePeak_.store(kSilenceDb, std::memory_order_relaxed);
@@ -112,19 +112,17 @@ class TrackMeasurer {
         const float* r = numChannels > 1 ? channels[1] : channels[0];
 
         double sumMidSq = 0.0, sumSideSq = 0.0, sumLR = 0.0, sumLL = 0.0, sumRR = 0.0;
-        float samplePeak = 0.0f;
-        // Hosts can deliver blocks larger than the size reported during prepare().
-        // Feed spectrum capture through the fixed scratch buffer in chunks so
-        // those blocks remain continuous without allocating on the audio thread.
-        const bool capture = captureSpectrum_.load(std::memory_order_acquire) && !scratchL_.empty();
-        size_t scratchFill = 0;
+
+        // Sample peak as its own vectorised reduction: the loop below stays
+        // serial on the K-weighting recursion, so folding it in there costs a
+        // fabs and a compare per sample for nothing.
+        const float samplePeak =
+            numChannels > 1 ? juce::jmax(peakMagnitude(l, numSamples), peakMagnitude(r, numSamples))
+                            : peakMagnitude(l, numSamples);
 
         for (int i = 0; i < numSamples; ++i) {
             const float xl = l[i];
             const float xr = r[i];
-
-            // Sample peak (cheap, always on).
-            samplePeak = juce::jmax(samplePeak, std::abs(xl), std::abs(xr));
 
             // K-weighted energy for loudness.
             const double kl = applyKWeight(filtL_, xl);
@@ -141,17 +139,10 @@ class TrackMeasurer {
             sumLR += static_cast<double>(xl) * xr;
             sumLL += static_cast<double>(xl) * xl;
             sumRR += static_cast<double>(xr) * xr;
-
-            if (capture) {
-                scratchL_[scratchFill++] = static_cast<float>(mid);  // mono for band FFT
-                if (scratchFill == scratchL_.size()) {
-                    spectrumRing_.write(scratchL_.data(), static_cast<int>(scratchFill));
-                    scratchFill = 0;
-                }
-            }
         }
-        if (scratchFill > 0)
-            spectrumRing_.write(scratchL_.data(), static_cast<int>(scratchFill));
+
+        if (captureSpectrum_.load(std::memory_order_acquire) && !scratchL_.empty())
+            captureMonoDownmix(l, r, numSamples);
 
         // Sample peak -> dBFS.
         if (samplePeak > 0.0f)
@@ -380,9 +371,36 @@ class TrackMeasurer {
     // ---- True-peak 4x polyphase oversampler ----------------------------------
     static constexpr int kOsFactor = 4;
     static constexpr int kTapsPerPhase = 12;
+
+    /** @brief Newest-first sample history for the true-peak FIR (#2152).
+     *
+     *  The window walks backwards through a buffer holding two copies of itself,
+     *  so the polyphase dot products always read kTapsPerPhase contiguous
+     *  samples and no sample is ever moved.
+     */
+    struct TruePeakHistory {
+        std::array<float, 2 * kTapsPerPhase> samples{};
+        int newest = 0;
+
+        void clear() noexcept {
+            samples.fill(0.0f);
+            newest = 0;
+        }
+
+        void push(float x) noexcept {
+            newest = (newest == 0 ? kTapsPerPhase : newest) - 1;
+            samples[static_cast<size_t>(newest)] = x;
+            samples[static_cast<size_t>(newest + kTapsPerPhase)] = x;
+        }
+
+        const float* window() const noexcept {
+            return samples.data() + newest;
+        }
+    };
+
     std::array<std::array<float, kTapsPerPhase>, kOsFactor> osCoeffs_{};
-    std::array<float, kTapsPerPhase> tpDelayL_{};
-    std::array<float, kTapsPerPhase> tpDelayR_{};
+    TruePeakHistory tpDelayL_;
+    TruePeakHistory tpDelayR_;
 
     void buildOversampler() {
         // Windowed-sinc low-pass (cutoff at original Nyquist), split into 4 polyphase
@@ -415,18 +433,29 @@ class TrackMeasurer {
             }
     }
 
-    float oversamplePeak(std::array<float, kTapsPerPhase>& delay, const float* x, int n) noexcept {
+    /// Audio thread. Mono downmix of the block into the spectrum ring. Hosts can
+    /// deliver blocks larger than the size reported during prepare(), so it goes
+    /// through the fixed scratch buffer in chunks: continuous, and no allocation.
+    void captureMonoDownmix(const float* l, const float* r, int numSamples) noexcept {
+        const auto chunk = static_cast<int>(scratchL_.size());
+        for (int offset = 0; offset < numSamples; offset += chunk) {
+            const int n = juce::jmin(chunk, numSamples - offset);
+            juce::FloatVectorOperations::copyWithMultiply(scratchL_.data(), l + offset, 0.5f, n);
+            juce::FloatVectorOperations::addWithMultiply(scratchL_.data(), r + offset, 0.5f, n);
+            spectrumRing_.write(scratchL_.data(), n);
+        }
+    }
+
+    float oversamplePeak(TruePeakHistory& delay, const float* x, int n) noexcept {
         float peak = 0.0f;
         for (int i = 0; i < n; ++i) {
-            // Shift newest sample into the delay line (newest at [0]).
-            for (int t = kTapsPerPhase - 1; t > 0; --t)
-                delay[static_cast<size_t>(t)] = delay[static_cast<size_t>(t - 1)];
-            delay[0] = x[i];
+            delay.push(x[i]);
+            const float* window = delay.window();
             for (int phase = 0; phase < kOsFactor; ++phase) {
                 float acc = 0.0f;
                 const auto& c = osCoeffs_[static_cast<size_t>(phase)];
                 for (int t = 0; t < kTapsPerPhase; ++t)
-                    acc += c[static_cast<size_t>(t)] * delay[static_cast<size_t>(t)];
+                    acc += c[static_cast<size_t>(t)] * window[t];
                 peak = juce::jmax(peak, std::abs(acc));
             }
         }

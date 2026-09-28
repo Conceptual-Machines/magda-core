@@ -1,6 +1,7 @@
 #include "TimelineController.hpp"
 
 #include <algorithm>
+#include <ranges>
 
 #include "../../core/ClipManager.hpp"
 #include "../../core/GridDivision.hpp"
@@ -16,14 +17,13 @@ TimelineController::TimelineController() {
     // Set as current instance for global access
     currentInstance_ = this;
 
-    // Load configuration values (bars → seconds using default 120 BPM)
-    auto& config = magda::Config::getInstance();
-    state.timelineLengthBeats =
-        config.getDefaultTimelineLengthBars() * state.tempo.timeSignatureNumerator;
-    state.timelineLength = state.tempo.barsToTime(config.getDefaultTimelineLengthBars());
+    // Load the current project's values (bars → seconds using default 120 BPM).
+    const auto& project = ProjectManager::getInstance().getCurrentProjectInfo();
+    state.timelineLengthBeats = project.timelineLengthBars * state.tempo.beatsPerBar();
+    state.timelineLength = state.tempo.barsToTime(project.timelineLengthBars);
 
     // Set default zoom (ppb) to show a reasonable view duration
-    double defaultViewDuration = state.tempo.barsToTime(config.getDefaultZoomViewBars());
+    double defaultViewDuration = state.tempo.barsToTime(project.defaults.zoomViewBars);
     if (defaultViewDuration > 0 && state.zoom.viewportWidth > 0) {
         double beats = state.secondsToBeats(defaultViewDuration);
         if (beats > 0)
@@ -52,26 +52,23 @@ void TimelineController::dispatch(const TimelineEvent& event) {
 }
 
 void TimelineController::addListener(TimelineStateListener* listener) {
-    if (listener && std::find(listeners.begin(), listeners.end(), listener) == listeners.end()) {
+    if (listener && !std::ranges::contains(listeners, listener)) {
         listeners.push_back(listener);
     }
 }
 
 void TimelineController::removeListener(TimelineStateListener* listener) {
-    listeners.erase(std::remove(listeners.begin(), listeners.end(), listener), listeners.end());
+    std::erase(listeners, listener);
 }
 
 void TimelineController::addAudioEngineListener(AudioEngineListener* listener) {
-    if (listener && std::find(audioEngineListeners.begin(), audioEngineListeners.end(), listener) ==
-                        audioEngineListeners.end()) {
+    if (listener && !std::ranges::contains(audioEngineListeners, listener)) {
         audioEngineListeners.push_back(listener);
     }
 }
 
 void TimelineController::removeAudioEngineListener(AudioEngineListener* listener) {
-    audioEngineListeners.erase(
-        std::remove(audioEngineListeners.begin(), audioEngineListeners.end(), listener),
-        audioEngineListeners.end());
+    std::erase(audioEngineListeners, listener);
 }
 
 // ===== Zoom Event Handlers =====
@@ -271,18 +268,23 @@ TimelineController::ChangeFlags TimelineController::handleEvent(
     if (punchArmed_ && newBeats >= state.punch.startBeats) {
         punchArmed_ = false;
         DBG("SetPlaybackPositionEvent: punch-in triggered at " << state.punch.startTime);
-        for (auto* listener : audioEngineListeners) {
-            listener->onTransportRecord(state.punch.startTime);
-        }
+        for (auto* listener : audioEngineListeners)
+            if (!listener->hasSampleAccuratePunch())
+                listener->onTransportRecord(state.punch.startTime);
     }
 
     // === Punch Out: stop recording when playhead reaches punch-out point ===
     if (state.playhead.isRecording && !punchArmed_ && state.punch.punchOutEnabled &&
         state.punch.isValid() && newBeats >= state.punch.endBeats) {
-        DBG("SetPlaybackPositionEvent: punch-out triggered at " << state.punch.endTime);
-        state.playhead.isRecording = false;
-        for (auto* listener : audioEngineListeners) {
-            listener->onTransportStopRecording();
+        const auto nativePunch =
+            std::ranges::any_of(audioEngineListeners, [](const auto* listener) {
+                return listener->hasSampleAccuratePunch();
+            });
+        if (!nativePunch) {
+            DBG("SetPlaybackPositionEvent: punch-out triggered at " << state.punch.endTime);
+            state.playhead.isRecording = false;
+            for (auto* listener : audioEngineListeners)
+                listener->onTransportStopRecording();
         }
     }
 
@@ -317,6 +319,9 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const StartRecor
         DBG("StartRecordEvent: cancelling punch-armed state");
         punchArmed_ = false;
         state.playhead.isRecording = false;
+        for (auto* listener : audioEngineListeners)
+            if (listener->hasSampleAccuratePunch())
+                listener->onTransportStopRecording();
         return ChangeFlags::Playhead;
     }
 
@@ -342,11 +347,28 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const StartRecor
                                                      : state.playhead.editPositionBeats;
 
         if (startBeats < state.punch.startBeats) {
+            const auto recordPosition = state.playhead.isPlaying ? state.playhead.playbackPosition
+                                                                 : state.playhead.editPosition;
             // Playhead is before punch-in point — arm and start playback, defer recording
             DBG("StartRecordEvent: punch-in armed, waiting for position "
                 << state.punch.startTime << " (current beats: " << startBeats << ")");
             punchArmed_ = true;
             state.playhead.isRecording = true;  // UI shows recording state
+
+            const auto nativePunch =
+                std::ranges::any_of(audioEngineListeners, [](const auto* listener) {
+                    return listener->hasSampleAccuratePunch();
+                });
+            if (nativePunch) {
+                if (!state.playhead.isPlaying) {
+                    state.playhead.isPlaying = true;
+                    state.playhead.playbackPosition = state.playhead.editPosition;
+                    state.playhead.playbackPositionBeats = state.playhead.editPositionBeats;
+                }
+                for (auto* listener : audioEngineListeners)
+                    listener->onTransportRecord(recordPosition);
+                return ChangeFlags::Playhead;
+            }
 
             if (!state.playhead.isPlaying) {
                 state.playhead.isPlaying = true;
@@ -432,19 +454,19 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const MovePlayhe
 TimelineController::ChangeFlags TimelineController::handleEvent(const SetPlaybackStateEvent& e) {
     bool changed = false;
 
+    // This event reports the engine's authoritative state. A stopped engine
+    // cannot still be waiting to punch in; the optimistic armed state is only
+    // preserved while playback itself remains in flight or active.
+    if (!e.isPlaying || !e.isRecording)
+        punchArmed_ = false;
+
     if (state.playhead.isPlaying != e.isPlaying) {
         state.playhead.isPlaying = e.isPlaying;
-        // If starting playback, sync playbackPosition to editPosition
-        if (e.isPlaying) {
-            state.playhead.playbackPositionBeats = state.playhead.editPositionBeats;
-            state.playhead.playbackPosition =
-                state.beatsToSeconds(state.playhead.playbackPositionBeats);
-        } else {
-            // If stopping, reset playbackPosition to editPosition
-            state.playhead.playbackPositionBeats = state.playhead.editPositionBeats;
-            state.playhead.playbackPosition =
-                state.beatsToSeconds(state.playhead.playbackPositionBeats);
-        }
+        // Both edges do the same thing: starting syncs the playback position to
+        // the edit position, stopping resets it back to the same place.
+        state.playhead.playbackPositionBeats = state.playhead.editPositionBeats;
+        state.playhead.playbackPosition =
+            state.beatsToSeconds(state.playhead.playbackPositionBeats);
         changed = true;
     }
 
@@ -543,8 +565,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopReg
 
     state.loop.setFromBeats(start, end, state.tempo.bpm);
 
-    // Enable loop if it wasn't valid before
-    if (!state.loop.enabled && state.loop.isValid()) {
+    if (e.enable && !state.loop.enabled && state.loop.isValid()) {
         state.loop.enabled = true;
     }
 
@@ -603,8 +624,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetLoopEna
         return ChangeFlags::None;
     }
 
-    const double defaultDurationBeats =
-        juce::jmax(minLoopBeats, static_cast<double>(state.tempo.timeSignatureNumerator));
+    const double defaultDurationBeats = juce::jmax(minLoopBeats, state.tempo.beatsPerBar());
     double start =
         juce::jlimit(0.0, state.timelineLengthBeats, state.playhead.getCurrentPositionBeats());
     double end = juce::jmin(state.timelineLengthBeats, start + defaultDurationBeats);
@@ -688,7 +708,14 @@ TimelineController::ChangeFlags TimelineController::handleEvent(
         return ChangeFlags::None;
     }
 
+    const auto cancelledArm = punchArmed_;
     punchArmed_ = false;
+    if (cancelledArm) {
+        state.playhead.isRecording = false;
+        for (auto* listener : audioEngineListeners)
+            if (listener->hasSampleAccuratePunch())
+                listener->onTransportStopRecording();
+    }
     state.punch.clear();
 
     // Notify audio engine
@@ -860,59 +887,13 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
         }
     }
 
-    // Update beat-authoritative clips when project tempo changes.
-    //
-    // Beats are the canonical state for these clips — seconds are a derived
-    // cache. ClipManager::refreshDerivedSeconds is the single source of truth
-    // for that derivation; calling it here keeps every reader (renderers,
-    // ClipSynchronizer, inspector readouts) consistent without duplicating
-    // formulas. Process clips of every view (arrangement AND session) — the
-    // earlier session-only skip caused issue #1157: session autoTempo clips
-    // kept stale `length` / `startTime` after a project-tempo change, which
-    // made the inspector beat readout disagree with the rendered loop region.
+    // Clips are placed in beats, so a tempo change moves their seconds. Every
+    // view: a session clip skipped here kept stale seconds (#1157).
     if (std::abs(newBpm - oldBpm) > 0.01) {
         auto& clipManager = ClipManager::getInstance();
-        auto allClips = clipManager.getClips();
-
-        std::vector<ClipId> updatedClipIds;
-        for (const auto& clip : allClips) {
-            auto* mutableClip = clipManager.getClip(clip.id);
-            if (!mutableClip)
-                continue;
-
-            // Legacy migration: old projects may have meaningful startTime/length
-            // caches while placement is still at its default value. Once a clip
-            // has explicit beat placement, never derive beats back from the
-            // seconds cache on tempo changes; the cache may be stale.
-            constexpr double eps = 0.000001;
-            double startBeats = mutableClip->placement.startBeat;
-            double lengthBeats = mutableClip->placement.lengthBeats;
-
-            const bool hasBeatStart = startBeats > eps || mutableClip->startBeats > eps;
-            const bool hasBeatLength = lengthBeats > eps || mutableClip->lengthBeats > eps;
-
-            if (startBeats <= eps && mutableClip->startBeats > eps)
-                startBeats = mutableClip->startBeats;
-            if (!hasBeatStart && mutableClip->startTime > eps)
-                startBeats = magda::TimelineUtils::secondsToBeats(mutableClip->startTime, oldBpm);
-
-            if (lengthBeats <= eps && mutableClip->lengthBeats > eps)
-                lengthBeats = mutableClip->lengthBeats;
-
-            if (!hasBeatLength && mutableClip->length > eps)
-                lengthBeats = magda::TimelineUtils::secondsToBeats(mutableClip->length, oldBpm);
-
-            mutableClip->setPlacementBeats(startBeats, lengthBeats);
-
-            // Beat-authoritative path: refresh the seconds cache from beats.
-            clipManager.refreshDerivedSeconds(clip.id, newBpm);
-            updatedClipIds.push_back(clip.id);
-        }
-
         // Notify so AudioBridge re-syncs TE positions and the UI re-reads.
-        for (auto clipId : updatedClipIds) {
-            clipManager.forceNotifyClipPropertyChanged(clipId);
-        }
+        for (const auto& clip : clipManager.getClips())
+            clipManager.forceNotifyClipPropertyChanged(clip.id);
     }
 
     // Return combined flags for all updated state
@@ -983,10 +964,9 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetGridQua
             newNum = gq.autoEffectiveNumerator;
             newDen = gq.autoEffectiveDenominator;
         } else {
-            // Bar multiple — convert to note fraction using time signature
-            // e.g. 1 bar in 4/4 → 4/1, 2 bars in 4/4 → 8/1
+            // Bar multiple as a note fraction: 1 bar of 4/4 is 4/4, 2 bars of 6/8 are 12/8
             newNum = gq.autoEffectiveNumerator * state.tempo.timeSignatureNumerator;
-            newDen = 1;
+            newDen = state.tempo.timeSignatureDenominator;
         }
     }
 
@@ -1143,8 +1123,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const AddMarkerE
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const UpdateMarkerEvent& e) {
-    auto it = std::find_if(state.markers.begin(), state.markers.end(),
-                           [&](const TimelineMarker& marker) { return marker.id == e.markerId; });
+    auto it = std::ranges::find(state.markers, e.markerId, &TimelineMarker::id);
     if (it == state.markers.end())
         return ChangeFlags::None;
 
@@ -1153,21 +1132,15 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const UpdateMark
     it->setFromBeats(juce::jlimit(0.0, state.timelineLengthBeats, e.positionBeats),
                      state.tempo.bpm);
 
-    std::sort(state.markers.begin(), state.markers.end(),
-              [](const TimelineMarker& a, const TimelineMarker& b) {
-                  return a.positionBeats < b.positionBeats;
-              });
+    std::ranges::sort(state.markers, {}, &TimelineMarker::positionBeats);
     ProjectManager::getInstance().markDirty();
     return ChangeFlags::Markers;
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const RemoveMarkerEvent& e) {
-    auto oldSize = state.markers.size();
-    state.markers.erase(
-        std::remove_if(state.markers.begin(), state.markers.end(),
-                       [&](const TimelineMarker& marker) { return marker.id == e.markerId; }),
-        state.markers.end());
-    if (state.markers.size() == oldSize)
+    const auto removed = std::erase_if(
+        state.markers, [&](const TimelineMarker& marker) { return marker.id == e.markerId; });
+    if (removed == 0)
         return ChangeFlags::None;
 
     if (state.selectedMarkerId == e.markerId)
@@ -1178,18 +1151,14 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const RemoveMark
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const SetMarkersEvent& e) {
     state.markers = e.markers;
-    std::sort(state.markers.begin(), state.markers.end(),
-              [](const TimelineMarker& a, const TimelineMarker& b) {
-                  return a.positionBeats < b.positionBeats;
-              });
+    std::ranges::sort(state.markers, {}, &TimelineMarker::positionBeats);
     // Keep nextMarkerId ahead of every restored id so later adds don't collide.
     state.nextMarkerId = 1;
     for (const auto& marker : state.markers)
         state.nextMarkerId = juce::jmax(state.nextMarkerId, marker.id + 1);
     // Drop a stale selection that no longer points at a live marker.
     if (state.selectedMarkerId != 0 &&
-        std::none_of(state.markers.begin(), state.markers.end(),
-                     [&](const TimelineMarker& m) { return m.id == state.selectedMarkerId; }))
+        !std::ranges::contains(state.markers, state.selectedMarkerId, &TimelineMarker::id))
         state.selectedMarkerId = 0;
     ProjectManager::getInstance().markDirty();
     return ChangeFlags::Markers;
@@ -1197,9 +1166,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetMarkers
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const SelectMarkerEvent& e) {
     if (e.markerId != 0) {
-        auto it =
-            std::find_if(state.markers.begin(), state.markers.end(),
-                         [&](const TimelineMarker& marker) { return marker.id == e.markerId; });
+        auto it = std::ranges::find(state.markers, e.markerId, &TimelineMarker::id);
         if (it == state.markers.end())
             return ChangeFlags::None;
     }
@@ -1212,8 +1179,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SelectMark
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const GoToMarkerEvent& e) {
-    auto it = std::find_if(state.markers.begin(), state.markers.end(),
-                           [&](const TimelineMarker& marker) { return marker.id == e.markerId; });
+    auto it = std::ranges::find(state.markers, e.markerId, &TimelineMarker::id);
     if (it == state.markers.end())
         return ChangeFlags::None;
 
@@ -1230,10 +1196,10 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const GoToNextMa
         return ChangeFlags::None;
 
     const double current = state.playhead.getCurrentPositionBeats();
-    auto it =
-        std::find_if(state.markers.begin(), state.markers.end(), [&](const TimelineMarker& marker) {
-            return marker.positionBeats > current + 0.000001;
-        });
+    const auto isAfterPlayhead = [current](const TimelineMarker& marker) {
+        return marker.positionBeats > current + 0.000001;
+    };
+    auto it = std::ranges::find_if(state.markers, isAfterPlayhead);
     if (it == state.markers.end())
         it = state.markers.begin();
 
@@ -1246,10 +1212,12 @@ TimelineController::ChangeFlags TimelineController::handleEvent(
         return ChangeFlags::None;
 
     const double current = state.playhead.getCurrentPositionBeats();
-    auto it = std::find_if(
-        state.markers.rbegin(), state.markers.rend(),
-        [&](const TimelineMarker& marker) { return marker.positionBeats < current - 0.000001; });
-    const int markerId = it != state.markers.rend() ? it->id : state.markers.back().id;
+    const auto isBeforePlayhead = [current](const TimelineMarker& marker) {
+        return marker.positionBeats < current - 0.000001;
+    };
+    auto earlierMarkers = state.markers | std::views::reverse;
+    const auto it = std::ranges::find_if(earlierMarkers, isBeforePlayhead);
+    const int markerId = it != earlierMarkers.end() ? it->id : state.markers.back().id;
     return handleEvent(GoToMarkerEvent{markerId});
 }
 
@@ -1354,12 +1322,10 @@ void TimelineController::restoreProjectState(double tempo, int timeSigNum, int t
     state.tempo.timeSignatureNumerator = clampTimeSignatureValue(timeSigNum);
     state.tempo.timeSignatureDenominator = clampTimeSignatureValue(timeSigDen);
 
-    // Timeline length is a per-project property; fall back to the global default
-    // (e.g. older projects without the field) when not supplied.
-    const int lengthBars = (timelineLengthBars > 0)
-                               ? timelineLengthBars
-                               : magda::Config::getInstance().getDefaultTimelineLengthBars();
-    state.timelineLengthBeats = lengthBars * state.tempo.timeSignatureNumerator;
+    // A missing legacy field is seeded by deserialization. An explicitly
+    // invalid value uses a neutral schema default, never the outgoing project.
+    const int lengthBars = timelineLengthBars > 0 ? timelineLengthBars : kDefaultTimelineLengthBars;
+    state.timelineLengthBeats = lengthBars * state.tempo.beatsPerBar();
     state.timelineLength = state.tempo.barsToTime(lengthBars);
 
     // Loop: beats are authoritative, derive seconds from BPM
@@ -1390,10 +1356,7 @@ void TimelineController::restoreProjectState(double tempo, int timeSigNum, int t
         state.markers.push_back(marker);
         state.nextMarkerId = juce::jmax(state.nextMarkerId, marker.id + 1);
     }
-    std::sort(state.markers.begin(), state.markers.end(),
-              [](const TimelineMarker& a, const TimelineMarker& b) {
-                  return a.positionBeats < b.positionBeats;
-              });
+    std::ranges::sort(state.markers, {}, &TimelineMarker::positionBeats);
 
     // Notify audio engine unconditionally
     for (auto* listener : audioEngineListeners) {

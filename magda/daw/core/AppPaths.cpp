@@ -1,6 +1,5 @@
 #include "AppPaths.hpp"
 
-#include <atomic>
 #include <cstdlib>
 #include <memory>
 #include <mutex>
@@ -36,7 +35,7 @@ std::shared_ptr<const Resolved>& cachedSlot() {
 }
 
 std::shared_ptr<const Resolved> snapshot() {
-    std::lock_guard<std::mutex> lock(cacheMutex());
+    std::scoped_lock lock(cacheMutex());
     if (cachedSlot() == nullptr) {
         // Bootstrap: first reader before resolve() ran. Compute defaults
         // on demand so paths remain useful even if a consumer touches them
@@ -173,7 +172,7 @@ juce::File configFile() {
     // Read on every call rather than cached in the resolve() snapshot: config
     // has to be readable before resolve() has run.
     if (const auto override_ = envVar("MAGDA_CONFIG_FILE"); override_.isNotEmpty())
-        return juce::File(override_);
+        return {override_};
     return alwaysOSDefault().getChildFile("config.json");
 }
 
@@ -249,7 +248,7 @@ void resolve() {
     fresh->renderFromEnv = render.fromEnv;
 
     {
-        std::lock_guard<std::mutex> lock(cacheMutex());
+        std::scoped_lock lock(cacheMutex());
         cachedSlot() = fresh;
     }
 }

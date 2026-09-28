@@ -120,12 +120,12 @@ class MoveAutomationPointCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const MoveAutomationPointCommand*>(other))
+        if (const auto* o = dynamic_cast<const MoveAutomationPointCommand*>(other))
             return o->pointId_ == pointId_ && o->laneId_ == laneId_ && o->clipId_ == clipId_;
         return false;
     }
     void mergeWith(const UndoableCommand* other) override {
-        auto* o = static_cast<const MoveAutomationPointCommand*>(other);
+        const auto* o = static_cast<const MoveAutomationPointCommand*>(other);
         newBeatPosition_ = o->newBeatPosition_;
         newValue_ = o->newValue_;
     }
@@ -163,7 +163,7 @@ class SetAutomationPointTensionCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const SetAutomationPointTensionCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetAutomationPointTensionCommand*>(other))
             return o->pointId_ == pointId_ && o->laneId_ == laneId_ && o->clipId_ == clipId_;
         return false;
     }
@@ -206,12 +206,12 @@ class SetAutomationPointHandlesCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const SetAutomationPointHandlesCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetAutomationPointHandlesCommand*>(other))
             return o->pointId_ == pointId_ && o->laneId_ == laneId_ && o->clipId_ == clipId_;
         return false;
     }
     void mergeWith(const UndoableCommand* other) override {
-        auto* o = static_cast<const SetAutomationPointHandlesCommand*>(other);
+        const auto* o = static_cast<const SetAutomationPointHandlesCommand*>(other);
         newInHandle_ = o->newInHandle_;
         newOutHandle_ = o->newOutHandle_;
     }
@@ -383,7 +383,7 @@ class MoveAutomationClipCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const MoveAutomationClipCommand*>(other))
+        if (const auto* o = dynamic_cast<const MoveAutomationClipCommand*>(other))
             return o->clipId_ == clipId_;
         return false;
     }
@@ -404,8 +404,8 @@ class MoveAutomationClipCommand : public UndoableCommand {
  */
 class RenameAutomationClipCommand : public UndoableCommand {
   public:
-    RenameAutomationClipCommand(AutomationClipId clipId, const juce::String& newName)
-        : clipId_(clipId), newName_(newName) {
+    RenameAutomationClipCommand(AutomationClipId clipId, juce::String newName)
+        : clipId_(clipId), newName_(std::move(newName)) {
         captureOldName();
     }
 
@@ -464,7 +464,7 @@ class ResizeAutomationClipCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const ResizeAutomationClipCommand*>(other))
+        if (const auto* o = dynamic_cast<const ResizeAutomationClipCommand*>(other))
             return o->clipId_ == clipId_ && o->fromStart_ == fromStart_;
         return false;
     }
@@ -503,6 +503,42 @@ class DuplicateAutomationClipCommand : public UndoableCommand {
   private:
     AutomationClipId sourceClipId_;
     AutomationClipId createdClipId_ = INVALID_AUTOMATION_CLIP_ID;
+};
+
+/**
+ * @brief Atomically update automation-clip metadata and optionally its points.
+ *
+ * The first execution lets AutomationManager allocate fresh opaque point ids.
+ * Undo and redo then restore the captured snapshots verbatim so point identity
+ * remains stable across history navigation.
+ */
+class UpdateAutomationClipCommand : public UndoableCommand {
+  public:
+    UpdateAutomationClipCommand(AutomationClipId clipId, AutomationClipInfo desired,
+                                bool replacePoints)
+        : clipId_(clipId), desired_(std::move(desired)), replacePoints_(replacePoints) {
+        if (const auto* clip = AutomationManager::getInstance().getClip(clipId_)) {
+            original_ = *clip;
+            captured_ = true;
+        }
+    }
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Update Automation Clip";
+    }
+    bool didApply() const {
+        return applied_;
+    }
+
+  private:
+    AutomationClipId clipId_;
+    AutomationClipInfo original_;
+    AutomationClipInfo desired_;
+    bool replacePoints_ = false;
+    bool captured_ = false;
+    bool applied_ = false;
 };
 
 /**

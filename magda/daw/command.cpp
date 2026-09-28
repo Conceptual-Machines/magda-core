@@ -1,9 +1,10 @@
 #include "command.hpp"
 
 #include <stdexcept>
+#include <utility>
 
 // Command implementation
-Command::Command(const std::string& command_type) : type_(command_type) {}
+Command::Command(std::string command_type) : type_(std::move(command_type)) {}
 
 Command::Command(const juce::var& json) {
     if (!json.hasProperty("command")) {
@@ -15,7 +16,7 @@ Command::Command(const juce::var& json) {
     // Parse parameters
     auto* obj = json.getDynamicObject();
     if (obj) {
-        for (auto& prop : obj->getProperties()) {
+        for (const auto& prop : obj->getProperties()) {
             std::string key = prop.name.toString().toStdString();
             if (key == "command")
                 continue;
@@ -101,7 +102,7 @@ juce::var Command::toJson() const {
             value);
     }
 
-    return juce::var(obj.get());
+    return {obj.get()};
 }
 
 Command Command::fromJsonString(const std::string& json_str) {
@@ -114,8 +115,8 @@ std::string Command::toJsonString() const {
 }
 
 // CommandResponse implementation
-CommandResponse::CommandResponse(Status status, const std::string& message)
-    : status_(status), message_(message) {}
+CommandResponse::CommandResponse(Status status, std::string message)
+    : status_(status), message_(std::move(message)) {}
 
 juce::var CommandResponse::toJson() const {
     juce::DynamicObject::Ptr obj = new juce::DynamicObject();
@@ -140,5 +141,5 @@ juce::var CommandResponse::toJson() const {
         obj->setProperty("data", data_);
     }
 
-    return juce::var(obj.get());
+    return {obj.get()};
 }

@@ -44,7 +44,7 @@ float preset(CurvePreset shape, float phase);
  * modulator with a Custom waveform and no points would otherwise have to
  * invent for itself.
  */
-float points(std::span<const CurvePointData> points, float phase);
+float points(std::span<const CurvePointData> curve, float phase);
 
 /**
  * @brief The level a modulator of this shape has at @p phase.
@@ -52,7 +52,7 @@ float points(std::span<const CurvePointData> points, float phase);
  * The whole question in one call: a built-in waveform, or a drawn curve, or the
  * preset behind a Custom waveform nobody has drawn on yet.
  */
-float shapeAt(LFOWaveform wave, CurvePreset shape, std::span<const CurvePointData> points,
+float shapeAt(LFOWaveform wave, CurvePreset shape, std::span<const CurvePointData> curve,
               float phase);
 
 /**
@@ -63,6 +63,6 @@ float shapeAt(LFOWaveform wave, CurvePreset shape, std::span<const CurvePointDat
  * which is the run that closes the loop and not a place a one-shot ever
  * arrives at.
  */
-float endValue(LFOWaveform wave, CurvePreset shape, std::span<const CurvePointData> points);
+float endValue(LFOWaveform wave, CurvePreset shape, std::span<const CurvePointData> curve);
 
 }  // namespace magda::modcurve

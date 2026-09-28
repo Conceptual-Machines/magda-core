@@ -3,6 +3,8 @@
 #include <vector>
 
 #include "../../api/magda_api_live.hpp"
+#include "../../api/remote_api_host.hpp"
+#include "../../api/remote_clients.hpp"
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
 #include "../../core/SelectionManager.hpp"
@@ -12,6 +14,7 @@
 #include "../debug/DebugSettings.hpp"
 #include "../dialogs/AISettingsDialog.hpp"
 #include "../dialogs/AudioSettingsDialog.hpp"
+#include "../dialogs/ConnectionsDialog.hpp"
 #include "../dialogs/ControllersDialog.hpp"
 #include "../dialogs/ExportAudioDialog.hpp"
 #include "../dialogs/PreferencesDialog.hpp"
@@ -25,7 +28,7 @@
 #include "../state/KeyMappingStore.hpp"
 #include "../state/TimelineController.hpp"
 #include "../state/TimelineEvents.hpp"
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FileBrowserLookAndFeel.hpp"
 #include "../themes/MixerMetrics.hpp"
@@ -36,9 +39,9 @@
 #include "../views/MainView.hpp"
 #include "../views/MixerView.hpp"
 #include "../views/SessionView.hpp"
-#include "audio/AudioBridge.hpp"
 #include "audio/MidiBridge.hpp"
 #include "audio/midi/QwertyMidiKeyboard.hpp"
+#include "core/AutomationManager.hpp"
 #include "core/Config.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/ModulatorEngine.hpp"
@@ -47,6 +50,7 @@
 #include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
+#include "core/UserAlert.hpp"
 #include "engine/AudioEngine.hpp"
 #include "engine/MagdaUIBehaviour.hpp"
 #include "engine/PlaybackPositionTimer.hpp"
@@ -71,7 +75,7 @@ class MainWindow::MainComponent::LoadingOverlay : public juce::Component, privat
         setInterceptsMouseClicks(false, false);  // Non-blocking - clicks pass through
     }
 
-    ~LoadingOverlay() {
+    ~LoadingOverlay() override {
         stopTimer();
     }
 
@@ -106,7 +110,7 @@ class MainWindow::MainComponent::LoadingOverlay : public juce::Component, privat
         float bgAlpha = 0.9f * alpha_;
 
         // Box background with rounded corners
-        g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND).withAlpha(bgAlpha));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND).withAlpha(bgAlpha));
         g.fillRoundedRectangle(notificationBounds.toFloat(), 6.0f);
 
         // Box border
@@ -171,7 +175,7 @@ class MainWindow::MainComponent::ResizeHandle : public juce::Component {
     }
 
     void paint(juce::Graphics& g) override {
-        g.setColour(DarkTheme::getColour(DarkTheme::RESIZE_HANDLE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::RESIZE_HANDLE));
         g.fillAll();
     }
 
@@ -205,7 +209,7 @@ class MainWindow::MainComponent::ResizeHandle : public juce::Component {
 
 // MainWindow implementation
 MainWindow::MainWindow(AudioEngine* audioEngine)
-    : DocumentWindow("MAGDA", DarkTheme::getBackgroundColour(), DocumentWindow::allButtons),
+    : DocumentWindow("MAGDA", ActiveTheme::getBackgroundColour(), DocumentWindow::allButtons),
       externalAudioEngine_(audioEngine) {
     juce::Logger::writeToLog("[MainWindow] Constructor started");
     // Use native window decorations on every platform, including Linux. Linux
@@ -247,16 +251,10 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
             else
                 removeKeyListener(kb);
 
-            // Enable/disable the virtual MIDI device and notify the
-            // routing selectors to refresh their cached device lists.
-            if (auto* engine = mainComponent->getAudioEngine()) {
-                if (auto* bridge = engine->getAudioBridge()) {
-                    if (auto* vmd = bridge->getQwertyMidiDevice())
-                        vmd->setEnabled(enabled);
-                }
-                if (auto* mb = engine->getMidiBridge())
-                    mb->notifyMidiDeviceListChanged();
-            }
+            // Enable/disable the QWERTY device and notify the routing
+            // selectors to refresh their cached device lists.
+            MidiBridge::getInstance().setQwertyEnabled(enabled);
+            MidiBridge::getInstance().notifyMidiDeviceListChanged();
             DBG("QWERTY keyboard " << (enabled ? "ON" : "OFF"));
         };
     }
@@ -267,7 +265,7 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
     juce::Logger::writeToLog("[MainWindow] Menu bar ready");
 
     // Size and position the window within the display's work area
-    auto display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay();
+    const auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay();
     if (display != nullptr) {
         auto workArea = display->userArea;  // Excludes taskbar
         // Leave some margin so the title bar and window frame are fully visible
@@ -292,10 +290,12 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
 
     // Start modulation engine at 60 FPS (updates LFO values in background)
     magda::ModulatorEngine::getInstance().startTimer(16);
+    startTimer(500);
 }
 
 MainWindow::~MainWindow() {
     DBG("  [5a] MainWindow::~MainWindow start");
+    stopTimer();
 
     // Remove QWERTY keyboard listener from this window before content is destroyed
     if (mainComponent) {
@@ -328,6 +328,53 @@ MainWindow::~MainWindow() {
 
     removeKeyListener(mainComponent->getCommandManager().getKeyMappings());
     DBG("  [5c] MainWindow::~MainWindow - about to destroy content");
+}
+
+void MainWindow::timerCallback() {
+    if (permissionPromptActive_)
+        return;
+    auto* host = remote::activeHost();
+    if (host == nullptr)
+        return;
+    const auto request = host->clients().nextPermissionRequest();
+    if (!request)
+        return;
+
+    permissionPromptActive_ = true;
+    juce::StringArray requested;
+    for (const auto& name : remote::scopeNames(request->scopes))
+        requested.add(name);
+    const auto transport = request->transports.isEmpty() ? juce::String("remote connection")
+                                                         : request->transports.joinIntoString(", ");
+    const auto message = request->client + " via " + transport + " requested " +
+                         requested.joinIntoString(", ") +
+                         " access. The current request was "
+                         "denied; any grant applies to future requests.";
+    const auto keepLabel =
+        host->clients().peekScopes(request->client).value_or(remote::defaultClientScopes()) ==
+                remote::defaultClientScopes()
+            ? "Keep read-only"
+            : "Keep current access";
+    const auto safeThis = juce::Component::SafePointer<MainWindow>(this);
+    juce::AlertWindow::showAsync(juce::MessageBoxOptions{}
+                                     .withIconType(juce::MessageBoxIconType::QuestionIcon)
+                                     .withTitle("Remote client permissions")
+                                     .withMessage(message)
+                                     .withButton("Allow requested & remember")
+                                     .withButton(keepLabel)
+                                     .withButton("Review permissions")
+                                     .withAssociatedComponent(this),
+                                 [safeThis, host, request = *request](int result) {
+                                     if (safeThis == nullptr)
+                                         return;
+                                     if (remote::activeHost() == host)
+                                         host->clients().resolvePermissionRequest(
+                                             request.client, request.scopes, result == 1);
+                                     safeThis->permissionPromptActive_ = false;
+                                     if (result == 3)
+                                         ConnectionsDialog::showDialog(safeThis.getComponent(),
+                                                                       true);
+                                 });
 }
 
 void MainWindow::configChanged() {
@@ -436,13 +483,13 @@ void MainWindow::onActiveThemeFileChanged() {
 void MainWindow::refreshThemedLookAndFeels() {
     if (auto* lookAndFeel =
             dynamic_cast<juce::LookAndFeel_V4*>(&juce::LookAndFeel::getDefaultLookAndFeel())) {
-        DarkTheme::applyToLookAndFeel(*lookAndFeel);
+        ActiveTheme::applyToLookAndFeel(*lookAndFeel);
     }
-    DarkTheme::applyToLookAndFeel(daw::ui::DialogLookAndFeel::getInstance());
-    DarkTheme::applyToLookAndFeel(daw::ui::SmallButtonLookAndFeel::getInstance());
-    DarkTheme::applyToLookAndFeel(daw::ui::FlatTabButtonLookAndFeel::getInstance());
-    DarkTheme::applyToLookAndFeel(daw::ui::SmallComboBoxLookAndFeel::getInstance());
-    // Not a DarkTheme::applyToLookAndFeel target: it pushes its own scrollbar
+    ActiveTheme::applyToLookAndFeel(daw::ui::DialogLookAndFeel::getInstance());
+    ActiveTheme::applyToLookAndFeel(daw::ui::SmallButtonLookAndFeel::getInstance());
+    ActiveTheme::applyToLookAndFeel(daw::ui::FlatTabButtonLookAndFeel::getInstance());
+    ActiveTheme::applyToLookAndFeel(daw::ui::SmallComboBoxLookAndFeel::getInstance());
+    // Not an ActiveTheme::applyToLookAndFeel target: it pushes its own scrollbar
     // colour into its table, which no repaint would refresh.
     daw::ui::FileBrowserLookAndFeel::getInstance().refreshThemeColours();
 
@@ -460,7 +507,7 @@ void MainWindow::refreshThemedLookAndFeels() {
 
     // Theme colours live in both JUCE colour IDs and custom paint code. A
     // look-and-feel change reaches every child so controls that cache colours
-    // can refresh, while repaint covers direct DarkTheme lookups at paint time.
+    // can refresh, while repaint covers direct ActiveTheme lookups at paint time.
     for (int i = juce::TopLevelWindow::getNumTopLevelWindows(); --i >= 0;) {
         if (auto* window = juce::TopLevelWindow::getTopLevelWindow(i))
             window->sendLookAndFeelChange();
@@ -478,7 +525,7 @@ void MainWindow::closeButtonPressed() {
 // stale colour shows straight through as a strip along the top of the window.
 void MainWindow::lookAndFeelChanged() {
     juce::DocumentWindow::lookAndFeelChanged();
-    setBackgroundColour(DarkTheme::getBackgroundColour());
+    setBackgroundColour(ActiveTheme::getBackgroundColour());
 }
 
 void MainWindow::applyPanelVisibilityFromConfig() {
@@ -519,6 +566,27 @@ void MainWindow::updateWindowTitle() {
 
 void MainWindow::projectOpened(const ProjectInfo&) {
     updateWindowTitle();
+    const auto generation = ++projectOpenGeneration_;
+    if (!ProjectManager::getInstance().interactiveRecoveryAllowedForCurrentOpen())
+        return;
+    const auto safeThis = juce::Component::SafePointer<MainWindow>(this);
+    // The project-open notification arrives before the async completion callback
+    // dismisses the loading overlay. Defer the snapshot so recovery UI cannot
+    // open behind that overlay, then keep filesystem probes off the message thread.
+    juce::MessageManager::callAsync([safeThis, generation] {
+        if (safeThis == nullptr || !safeThis->isCurrentProjectGeneration(generation))
+            return;
+
+        auto referenced = ProjectManager::getInstance().getReferencedMediaFiles();
+        juce::Thread::launch([safeThis, generation, referenced = std::move(referenced)]() mutable {
+            auto missing = ProjectManager::findMissingMediaFiles(referenced);
+            juce::MessageManager::callAsync(
+                [safeThis, generation, missing = std::move(missing)]() mutable {
+                    if (safeThis != nullptr && safeThis->isCurrentProjectGeneration(generation))
+                        safeThis->offerMissingMediaRecovery(std::move(missing), generation);
+                });
+        });
+    });
 }
 
 void MainWindow::projectSaved(const ProjectInfo&) {
@@ -526,6 +594,7 @@ void MainWindow::projectSaved(const ProjectInfo&) {
 }
 
 void MainWindow::projectClosed() {
+    ++projectOpenGeneration_;
     updateWindowTitle();
 }
 
@@ -593,17 +662,12 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     // Initialize TrackManager with audio engine for routing operations
     TrackManager::getInstance().setAudioEngine(externalEngine);
 
-    // Wire MidiBridge to DebugDialog for MIDI monitor
-    if (externalEngine) {
-        daw::ui::DebugDialog::setMidiBridge(externalEngine->getMidiBridge());
-    }
-
     // Initialize panel sizes from LayoutConfig, scaled to display size
     auto& layout = LayoutConfig::getInstance();
     transportHeight = layout.defaultTransportHeight;
 
     // Scale side panel defaults based on screen width
-    if (auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay()) {
+    if (const auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay()) {
         int screenWidth = display->userArea.getWidth();
         if (screenWidth >= 2560) {  // Large display (1440p+)
             leftPanelWidth = rightPanelWidth = 400;
@@ -953,7 +1017,7 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     setupResizeHandles();
     setupViewModeListener();
     setupAudioEngineCallbacks(externalEngine);
-    setupDeviceLoadingCallback();
+    setupLoadingOverlay();
 
     // Sync persisted collapse state to PanelController so TabbedPanel UI matches
     // Note: LeftPanel uses PanelLocation::Right and RightPanel uses PanelLocation::Left
@@ -981,6 +1045,10 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     addAndMakeVisible(*toast_);
     toast_->toFront(false);
     daw::ui::Toast::setGlobalHost(toast_.get());
+    // Bridge non-UI code's notifyUserAlert() to a toast without giving
+    // core/engine/audio a link-time dependency on the UI layer (#2395).
+    magda::setUserAlertHandler(
+        [](const juce::String& message) { daw::ui::Toast::showGlobal(message, 5000); });
 
     // Listen for MIDI Learn events to show toast notifications
     magda::MidiLearnCoordinator::getInstance().addListener(this);
@@ -1141,6 +1209,22 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
             // just because the user happens to have a time selection active.
             mainView->getTimelineController().dispatch(SetLoopEnabledEvent{enabled});
         });
+        // While playing, the edit position is only the return point, so the engine moves too.
+        live->setTransportSeekDispatcher([this, engine](double beats) {
+            auto& timeline = mainView->getTimelineController();
+            timeline.dispatch(SetEditPositionBeatsEvent{beats});
+            if (engine->isPlaying())
+                engine->locate(timeline.getState().beatsToSeconds(beats));
+        });
+        live->setTransportRecordDispatcher([this, engine](bool recording) {
+            if (recording != engine->isRecording())
+                mainView->getTimelineController().dispatch(StartRecordEvent{});
+        });
+        // A range set behind the controller's back is lost on the next loop toggle.
+        live->setProjectLoopRangeDispatcher([this](double startBeats, double endBeats) {
+            mainView->getTimelineController().dispatch(
+                SetLoopRegionBeatsEvent{startBeats, endBeats, false});
+        });
     }
 
     // Wire transport callbacks - just dispatch events, TimelineController notifies audio engine
@@ -1176,9 +1260,7 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
     // onQwertyKeyboardToggled callback set in the MainWindow constructor
     // (after setContentOwned) so the key listener registers on the
     // DocumentWindow, not on MainComponent.
-    if (auto* bridge = engine->getAudioBridge()) {
-        qwertyKeyboard_ = std::make_unique<QwertyMidiKeyboard>(*bridge, engine->getMidiBridge());
-    }
+    qwertyKeyboard_ = std::make_unique<QwertyMidiKeyboard>();
 
     transportPanel->onTempoChange = [this](double bpm) {
         mainView->getTimelineController().dispatch(SetTempoEvent{bpm});
@@ -1209,13 +1291,12 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
             SetGridQuantizeEvent{autoGrid, numerator, denominator});
     };
 
-    transportPanel->onAutomationWriteToggle = [this](bool enabled) {
-        if (auto* bridge = getAudioEngine()->getAudioBridge())
-            bridge->setAutomationWriteEnabled(enabled);
+    transportPanel->onAutomationWriteToggle = [](bool enabled) {
+        AutomationManager::getInstance().setAutomationMode(enabled ? AutomationMode::Write
+                                                                   : AutomationMode::Off);
     };
-    transportPanel->onAutomationModeChanged = [this](AutomationMode mode) {
-        if (auto* bridge = getAudioEngine()->getAudioBridge())
-            bridge->setAutomationMode(mode);
+    transportPanel->onAutomationModeChanged = [](AutomationMode mode) {
+        AutomationManager::getInstance().setAutomationMode(mode);
     };
 
     // Navigation callbacks
@@ -1226,7 +1307,7 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
         mainView->getTimelineController().dispatch(SetEditPositionEvent{0.0});
     };
     transportPanel->onGoToNext = [this]() {
-        auto& state = mainView->getTimelineController().getState();
+        const auto& state = mainView->getTimelineController().getState();
         mainView->getTimelineController().dispatch(SetEditPositionEvent{state.timelineLength});
     };
     transportPanel->onPlayheadEdit = [this](double beats) {
@@ -1256,62 +1337,13 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
     };
 }
 
-void MainWindow::MainComponent::setupDeviceLoadingCallback() {
+void MainWindow::MainComponent::setupLoadingOverlay() {
     // Create loading notification (non-blocking, bottom-right corner)
     loadingOverlay_ = std::make_unique<LoadingOverlay>();
-    addAndMakeVisible(*loadingOverlay_);
+    addChildComponent(*loadingOverlay_);
 
-    // Get audio engine (either external or internal)
-    auto* engine = getAudioEngine();
-    if (engine) {
-        // Show notification and disable transport if devices are still loading
-        if (engine->isDevicesLoading()) {
-            loadingOverlay_->setMessage(
-                trEllipsis("main_window.loading.scanning_devices")
-                    .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Audio))
-                    .replace("{1}", magda::technicalText(magda::TechnicalTextToken::Midi)));
-            loadingOverlay_->showWithFade();
-            loadingOverlay_->toFront(false);
-            transportPanel->setTransportEnabled(false);
-        } else {
-            loadingOverlay_->setVisible(false);
-            transportPanel->setTransportEnabled(true);
-        }
-
-        // Wire up callback to update/hide notification when devices finish loading
-        engine->setDevicesLoadingCallback([this](bool loading, const juce::String& message) {
-            juce::MessageManager::callAsync([this, loading, message]() {
-                // Enable/disable transport based on loading state
-                if (transportPanel) {
-                    transportPanel->setTransportEnabled(!loading);
-                }
-
-                if (loadingOverlay_) {
-                    if (loading) {
-                        loadingOverlay_->setMessage(message);
-                        loadingOverlay_->showWithFade();
-                        loadingOverlay_->toFront(false);
-                    } else {
-                        // Show the final device list briefly, then fade out
-                        loadingOverlay_->setMessage(message);
-                        loadingOverlay_->repaint();
-                        // Fade out after brief delay
-                        // Note: Don't capture 'this' - the overlay handles its own fade timer
-                        if (loadingOverlay_) {
-                            loadingOverlay_->hideWithFade();
-                        }
-                    }
-                }
-            });
-        });
-    } else {
-        // No Tracktion Engine wrapper, don't show notification
-        loadingOverlay_->setVisible(false);
-    }
-
-    // Stem separation reuses the same banner: show with live percent while a
-    // split runs, fade out when it completes (#1288). Fires on the message
-    // thread.
+    // Stem separation shows it: live percent while a split runs, fading out
+    // when it completes (#1288). Fires on the message thread.
     magda::stems::StemSeparationService::getInstance().setActivityCallback(
         [this](bool running, float progress) {
             if (running) {
@@ -1378,6 +1410,7 @@ MainWindow::MainComponent::~MainComponent() {
     magda::MidiLearnCoordinator::getInstance().removeListener(this);
 
     // Clear Toast global host before destroying
+    magda::setUserAlertHandler(nullptr);
     daw::ui::Toast::setGlobalHost(nullptr);
     toast_.reset();
 
@@ -1427,7 +1460,7 @@ juce::ApplicationCommandTarget* MainWindow::MainComponent::getNextCommandTarget(
 }
 
 void MainWindow::MainComponent::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getBackgroundColour());
+    g.fillAll(ActiveTheme::getBackgroundColour());
 }
 
 void MainWindow::MainComponent::resized() {

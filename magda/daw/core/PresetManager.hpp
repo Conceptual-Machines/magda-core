@@ -24,6 +24,9 @@ namespace magda {
  */
 class PresetManager {
   public:
+    PresetManager(const PresetManager&) = delete;
+    PresetManager& operator=(const PresetManager&) = delete;
+
     static PresetManager& getInstance();
 
     // ========================================================================
@@ -34,7 +37,7 @@ class PresetManager {
      * @brief Get the root presets directory
      * @return ~/Documents/MAGDA/Presets/
      */
-    juce::File getPresetsDirectory() const;
+    static juce::File getPresetsDirectory();
 
     /**
      * @brief Get the chains presets directory
@@ -70,6 +73,15 @@ class PresetManager {
                          const juce::String& presetName);
 
     /**
+     * @brief Save a complete track-chain preset.
+     *
+     * In addition to the main FX tree this preserves the post-FX section,
+     * track-level modulators/macros, routing, and mixer settings. The legacy
+     * chain-only overload remains for callers that only own a fragment.
+     */
+    bool saveChainPreset(const TrackInfo& track, const juce::String& presetName);
+
+    /**
      * @brief Load a chain preset
      * @param presetName Name of the preset file
      * @param outChainElements Output chain elements
@@ -82,6 +94,24 @@ class PresetManager {
      * @brief Get list of available chain presets
      */
     juce::StringArray getChainPresets() const;
+
+    /** Safe, path-free metadata exposed to remote clients. */
+    struct TrackPresetMetadata {
+        juce::String id;
+        juce::String name;
+        juce::String category;
+    };
+
+    /** A loaded preset. Legacy chain-only files are promoted to a media track. */
+    struct TrackPreset {
+        TrackInfo track;
+        bool hasTrackSettings = false;
+    };
+
+    std::vector<TrackPresetMetadata> getTrackPresetMetadata() const;
+
+    /** Resolve an opaque id returned by getTrackPresetMetadata(). */
+    bool loadTrackPresetById(const juce::String& presetId, TrackPreset& outPreset);
 
     /** @brief Delete a chain preset file (and its media DB row). */
     bool deleteChainPreset(const juce::String& presetName);
@@ -150,6 +180,20 @@ class PresetManager {
      */
     juce::StringArray getDevicePresets(const juce::String& pluginFolder) const;
 
+    /** Safe, path-free metadata for MAGDA device-state presets. */
+    struct DevicePresetMetadata {
+        juce::String id;
+        juce::String name;
+        juce::String category;
+    };
+
+    std::vector<DevicePresetMetadata> getDevicePresetMetadata(
+        const juce::String& pluginFolder) const;
+
+    /** Resolve an opaque id returned by getDevicePresetMetadata(). */
+    bool loadDevicePresetById(const juce::String& pluginFolder, const juce::String& presetId,
+                              DeviceInfo& outDevice);
+
     /** @brief The Devices/<pluginFolder>/ directory. Created lazily on save. */
     juce::File getDevicePluginDirectory(const juce::String& pluginFolder) const;
 
@@ -203,9 +247,8 @@ class PresetManager {
     //
     // External producers (the AI sound-design agent, future preset-import
     // flows) can stash a default name keyed by DeviceId so the next save
-    // dialog on that device pre-fills the name field without needing the
-    // user to retype it. Values persist until overwritten or cleared —
-    // they're transient session state, never serialized.
+    // dialog on that device pre-fills it. Transient session state only,
+    // never serialized.
 
     void setSuggestedPresetName(DeviceId deviceId, const juce::String& name);
     juce::String getSuggestedPresetName(DeviceId deviceId) const;
@@ -226,10 +269,6 @@ class PresetManager {
     PresetManager();
     ~PresetManager() = default;
 
-    // Non-copyable
-    PresetManager(const PresetManager&) = delete;
-    PresetManager& operator=(const PresetManager&) = delete;
-
     /**
      * @brief Ensure a directory exists, creating it if necessary
      */
@@ -238,7 +277,7 @@ class PresetManager {
     /**
      * @brief Get list of preset files in a directory
      */
-    juce::StringArray getPresetList(const juce::File& directory) const;
+    static juce::StringArray getPresetList(const juce::File& directory);
 
     juce::String lastError_;
     std::unordered_map<DeviceId, juce::String> suggestedNames_;

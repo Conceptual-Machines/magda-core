@@ -18,6 +18,8 @@ namespace magda {
  */
 class UpdateChecker {
   public:
+    UpdateChecker() = delete;
+
     struct Result {
         bool success = false;          // Network + parse succeeded
         bool updateAvailable = false;  // True when latest > current
@@ -52,9 +54,6 @@ class UpdateChecker {
      * the clean version.
      */
     static int compareVersions(const juce::String& a, const juce::String& b);
-
-  private:
-    UpdateChecker() = delete;
 };
 
 }  // namespace magda

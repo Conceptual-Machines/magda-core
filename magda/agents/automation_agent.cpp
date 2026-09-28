@@ -99,7 +99,8 @@ juce::String buildSelectionContext(MagdaApi& api) {
 
     const auto& project = api.project().getCurrentProjectInfo();
     out << "Project timing: " << project.timeSignatureNumerator << "/"
-        << project.timeSignatureDenominator << " (beats_per_bar=" << project.timeSignatureNumerator
+        << project.timeSignatureDenominator << " (beats_per_bar="
+        << beatsPerBar(project.timeSignatureNumerator, project.timeSignatureDenominator)
         << ", tempo=" << project.tempo << " BPM).\n";
 
     TrackId contextTrackId = sel.getSelectedTrack();
@@ -164,7 +165,7 @@ llm::Request buildRequest(MagdaApi& api, const std::string& message) {
         systemPrompt += "\n\nContext:\n" + ctx;
 
     llm::Request request;
-    request.systemPrompt = systemPrompt;
+    request.systemPrompt = std::move(systemPrompt);
     request.userMessage = juce::String::fromUTF8(message.c_str());
     request.temperature = 0.1f;
     return request;

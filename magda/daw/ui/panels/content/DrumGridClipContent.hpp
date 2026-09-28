@@ -7,12 +7,9 @@
 
 namespace magda {
 class SvgButton;
+struct ChainInfo;
+struct DeviceInfo;
 }  // namespace magda
-
-namespace magda::daw::audio {
-class DrumGridPlugin;
-class MagdaSamplerPlugin;
-}  // namespace magda::daw::audio
 
 namespace magda::daw::ui {
 
@@ -78,15 +75,14 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
     int getLeftPanelWidth() const override {
         return SIDEBAR_WIDTH + ZOOM_STRIP_WIDTH + labelWidth_ + LABEL_DIVIDER_WIDTH;
     }
-    void updateGridSize() override;
+    void updateGridSize() final;
     void setGridPixelsPerBeat(double ppb) override;
-    void setGridPlayheadPosition(double position) override;
+    void setGridPlayheadBeat(double timelineBeat) override;
     void setGridEditCursorPosition(double positionSeconds, bool visible) override;
     void onScrollPositionChanged(int scrollX, int scrollY) override;
-    void onGridResolutionChanged() override;
-    void updateGridLoopRegion() override;
+    void onGridResolutionChanged() final;
     void setGridPhasePreview(double beats, bool active) override;
-    void applyOverlayTracks() override;
+    void applyOverlayTracks() final;
 
     // Fold hooks (base owns foldEnabled_/applyFold): drum fold filters the pad
     // rows to those that have notes rather than using the pitch fold map.
@@ -95,14 +91,14 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
     void updateLaneToggleStates() override;
 
     // Override velocity lane methods
-    void updateVelocityLane() override;
+    void updateVelocityLane() final;
 
     // Live MIDI note monitor hooks (plumbing lives in MidiEditorContent):
     // highlight the played pad row and scroll it into view.
     void highlightMonitoredNote(int noteNumber, bool noteOn) override;
     void ensureMonitoredNoteVisible(int noteNumber) override;
 
-    daw::audio::DrumGridPlugin* drumGrid_ = nullptr;
+    bool hasPadDevice_ = false;
 
     // Layout constants (DrumGrid-specific)
     static constexpr int SIDEBAR_WIDTH = 32;
@@ -137,6 +133,9 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
     void buildPadRows();
     void refreshPadRowNames();
     void findDrumGrid();
+    /// The pad device on the edited clip's track, or null.
+    const magda::DeviceInfo* padDevice() const;
+    const magda::ChainInfo* padForNote(int noteNumber) const;
     void setLabelWidth(int newWidth);
     void showRowContextMenu(int noteNumber, juce::Point<int> screenPos);
     void applyTemplateToClip(const daw::audio::drum_grid_templates::Template& templ);

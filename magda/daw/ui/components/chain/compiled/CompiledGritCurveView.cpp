@@ -4,7 +4,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaGritCompiledPlugin.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -53,8 +53,8 @@ CompiledGritCurveView::CompiledGritCurveView(juce::String /*pluginId*/) {
 }
 
 void CompiledGritCurveView::setCompiledPlugin(
-    magda::daw::audio::compiled::MagdaGritCompiledPlugin* plugin) {
-    compiledPlugin_ = plugin;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaGritCompiledPlugin> plugin) {
+    compiledPlugin_ = std::move(plugin);
 }
 
 void CompiledGritCurveView::updateFromDevice(const magda::DeviceInfo& device) {
@@ -72,18 +72,17 @@ void CompiledGritCurveView::timerCallback() {
     int mode = modeIndex_;
 
     if (compiledPlugin_ != nullptr) {
-        if (auto* p = compiledPlugin_->getSlotParameter(Grit::kFrequencySlot))
-            freq = compiledPlugin_->nativeValueToDisplayValue(Grit::kFrequencySlot,
-                                                              p->getCurrentValue());
-        if (auto* p = compiledPlugin_->getSlotParameter(Grit::kWidthSlot))
-            width =
-                compiledPlugin_->nativeValueToDisplayValue(Grit::kWidthSlot, p->getCurrentValue());
-        if (auto* p = compiledPlugin_->getSlotParameter(Grit::kAmountSlot))
+        if (auto p = compiledPlugin_->getSlotParameter(Grit::kFrequencySlot))
+            freq =
+                compiledPlugin_->nativeValueToDisplayValue(Grit::kFrequencySlot, p.currentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(Grit::kWidthSlot))
+            width = compiledPlugin_->nativeValueToDisplayValue(Grit::kWidthSlot, p.currentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(Grit::kAmountSlot))
             amount =
-                compiledPlugin_->nativeValueToDisplayValue(Grit::kAmountSlot, p->getCurrentValue());
-        if (auto* p = compiledPlugin_->getSlotParameter(Grit::kModeSlot)) {
+                compiledPlugin_->nativeValueToDisplayValue(Grit::kAmountSlot, p.currentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(Grit::kModeSlot)) {
             mode = static_cast<int>(std::round(
-                compiledPlugin_->nativeValueToDisplayValue(Grit::kModeSlot, p->getCurrentValue())));
+                compiledPlugin_->nativeValueToDisplayValue(Grit::kModeSlot, p.currentValue())));
         }
     } else {
         freq = valueForSlot(deviceSnapshot_, Grit::kFrequencySlot, freq);
@@ -116,14 +115,14 @@ void CompiledGritCurveView::resampleFromPlugin() {
 
 void CompiledGritCurveView::paint(juce::Graphics& g) {
     const auto bounds = getLocalBounds();
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).darker(0.06f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).darker(0.06f));
     g.fillRect(bounds);
 
     auto plot = bounds.toFloat().reduced(kPlotPadX, kPlotPadY);
     if (plot.getWidth() < 8.0f || plot.getHeight() < 8.0f)
         return;
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.55f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.55f));
     g.drawRect(plot, 1.0f);
 
     juce::Graphics::ScopedSaveState clipGuard(g);
@@ -131,14 +130,14 @@ void CompiledGritCurveView::paint(juce::Graphics& g) {
 
     // Decade grid lines (100 Hz / 1 kHz / 10 kHz) — keeps the log axis
     // legible without a full ruler.
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.22f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.22f));
     for (float decade : {100.0f, 1000.0f, 10000.0f}) {
         const float n = freqToNorm(decade);
         const float x = plot.getX() + n * plot.getWidth();
         g.drawVerticalLine(static_cast<int>(std::round(x)), plot.getY(), plot.getBottom());
     }
 
-    const auto carrierColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
+    const auto carrierColour = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
     const float amount01 = juce::jlimit(0.0f, 1.0f, amount_);
     const float plotBottom = plot.getBottom();
     const float plotTop = plot.getY();
@@ -203,8 +202,10 @@ const CompiledPresentationSpec& getMagdaGritPresentation() {
     return kSpec;
 }
 
-void CompiledGritCurveView::bindPlugin(te::Plugin* plugin) {
-    setCompiledPlugin(dynamic_cast<magda::daw::audio::compiled::MagdaGritCompiledPlugin*>(plugin));
+void CompiledGritCurveView::bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) {
+    setCompiledPlugin(
+        std::dynamic_pointer_cast<magda::daw::audio::compiled::MagdaGritCompiledPlugin>(
+            std::move(device)));
 }
 
 }  // namespace magda::daw::ui

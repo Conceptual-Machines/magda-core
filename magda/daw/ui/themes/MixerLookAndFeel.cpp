@@ -1,6 +1,6 @@
 #include "MixerLookAndFeel.hpp"
 
-#include "DarkTheme.hpp"
+#include "ActiveTheme.hpp"
 #include "FontManager.hpp"
 #include "MixerMetrics.hpp"
 
@@ -13,9 +13,9 @@ MixerLookAndFeel::MixerLookAndFeel() {
 // Reached for slider styles this class does not draw itself, which fall through
 // to LookAndFeel_V4 and resolve these ids.
 void MixerLookAndFeel::refreshThemeColours() {
-    setColour(juce::Slider::trackColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-    setColour(juce::Slider::backgroundColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-    setColour(juce::Slider::thumbColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    setColour(juce::Slider::trackColourId, ActiveTheme::getColour(ActiveTheme::SURFACE));
+    setColour(juce::Slider::backgroundColourId, ActiveTheme::getColour(ActiveTheme::SURFACE));
+    setColour(juce::Slider::thumbColourId, ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
 }
 
 MixerLookAndFeel::~MixerLookAndFeel() = default;
@@ -56,14 +56,14 @@ void MixerLookAndFeel::drawLinearSlider(juce::Graphics& g, int x, int y, int wid
         // Draw the full track background
         auto fullTrackRect =
             juce::Rectangle<float>(extendedLeft, trackY, extendedWidth, trackHeight);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.fillRoundedRectangle(fullTrackRect, trackHeight / 2.0f);
 
         // Draw filled portion to the left of the thumb (value indicator - blue)
         float thumbX = sliderPos - thumbWidth / 2.0f;
         auto filledTrackRect =
             juce::Rectangle<float>(extendedLeft, trackY, sliderPos - extendedLeft, trackHeight);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         g.fillRoundedRectangle(filledTrackRect, trackHeight / 2.0f);
 
         // Draw thumb - small rounded rectangle
@@ -71,15 +71,15 @@ void MixerLookAndFeel::drawLinearSlider(juce::Graphics& g, int x, int y, int wid
         auto thumbRect = juce::Rectangle<float>(thumbX, thumbY, thumbWidth, thumbHeight);
 
         // Fill
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
         g.fillRoundedRectangle(thumbRect, thumbRadius);
 
         // Border
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRoundedRectangle(thumbRect, thumbRadius, 1.0f);
 
         // Center line indicator (vertical for horizontal slider)
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         float lineX = thumbX + thumbWidth / 2.0f;
         float lineInset = 3.0f;
         g.drawLine(lineX, thumbY + lineInset, lineX, thumbY + thumbHeight - lineInset, 1.5f);
@@ -105,7 +105,7 @@ void MixerLookAndFeel::drawLinearSlider(juce::Graphics& g, int x, int y, int wid
 
     // Draw the full track background (gray line from +6dB to -60dB)
     auto fullTrackRect = juce::Rectangle<float>(trackX, extendedTop, trackWidth, extendedHeight);
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.fillRoundedRectangle(fullTrackRect, trackWidth / 2.0f);
 
     // Draw filled portion below the thumb (value indicator - blue)
@@ -113,7 +113,7 @@ void MixerLookAndFeel::drawLinearSlider(juce::Graphics& g, int x, int y, int wid
     float thumbY = sliderPos - thumbHeight / 2.0f;
     auto filledTrackRect =
         juce::Rectangle<float>(trackX, sliderPos, trackWidth, extendedBottom - sliderPos);
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     g.fillRoundedRectangle(filledTrackRect, trackWidth / 2.0f);
 
     // Draw thumb - simple rounded rectangle matching knob style
@@ -121,15 +121,15 @@ void MixerLookAndFeel::drawLinearSlider(juce::Graphics& g, int x, int y, int wid
     auto thumbRect = juce::Rectangle<float>(thumbX, thumbY, thumbWidth, thumbHeight);
 
     // Fill
-    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
     g.fillRoundedRectangle(thumbRect, thumbHeight / 2.0f);
 
     // Border (matching knob style)
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRoundedRectangle(thumbRect, thumbHeight / 2.0f, 1.0f);
 
     // Center line indicator
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     float lineY = thumbY + thumbHeight / 2.0f;
     float lineInset = thumbHeight / 2.0f;
     g.drawLine(thumbX + lineInset, lineY, thumbX + thumbWidth - lineInset, lineY, 2.0f);
@@ -156,11 +156,11 @@ void MixerLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int wid
     auto radius = juce::jmin(bounds.getWidth(), bounds.getHeight()) / 2.0f * 0.7f;
 
     // Circle
-    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
     g.fillEllipse(centreX - radius, centreY - radius, radius * 2.0f, radius * 2.0f);
 
     // Border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawEllipse(centreX - radius, centreY - radius, radius * 2.0f, radius * 2.0f, 1.0f);
 
     // Pointer line with rounded corners
@@ -173,7 +173,7 @@ void MixerLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int wid
     pointerPath.addRoundedRectangle(-lineWidth / 2.0f, -radius + 4.0f, lineWidth, lineLength,
                                     lineWidth / 2.0f);
 
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     g.fillPath(pointerPath, juce::AffineTransform::rotation(angle).translated(centreX, centreY));
 }
 
@@ -183,12 +183,12 @@ void MixerLookAndFeel::drawComboBox(juce::Graphics& g, int width, int height, bo
     auto bounds = juce::Rectangle<int>(0, 0, width, height).toFloat();
 
     // Background
-    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
     g.fillRoundedRectangle(bounds, 3.0f);
 
     // Border
-    g.setColour(box.hasKeyboardFocus(false) ? DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)
-                                            : DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(box.hasKeyboardFocus(false) ? ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)
+                                            : ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRoundedRectangle(bounds.reduced(0.5f), 3.0f, 1.0f);
 
     // Small arrow on the right (compact triangle)
@@ -201,7 +201,7 @@ void MixerLookAndFeel::drawComboBox(juce::Graphics& g, int width, int height, bo
                       arrowY - arrowSize / 2.0f, arrowX + arrowSize / 2.0f,
                       arrowY + arrowSize / 2.0f);
 
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     g.fillPath(arrow);
 }
 

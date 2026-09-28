@@ -23,7 +23,6 @@ namespace magda {
 namespace te = tracktion;
 class TrackController;
 class WarpMarkerManager;
-struct WarpMarkerInfo;
 
 /**
  * @brief Manages clip synchronization between ClipManager and Tracktion Engine
@@ -33,7 +32,7 @@ struct WarpMarkerInfo;
  * - ClipManagerListener implementation (clips changed, property changed)
  * - Arrangement clip synchronization (audio + MIDI)
  * - Session clip slot management (create, launch, stop)
- * - Warp marker delegation to WarpMarkerManager
+ * - Warp marker map mirrored from the model; transient detection via WarpMarkerManager
  *
  * Thread Safety:
  * - All operations assumed to run on message thread
@@ -43,7 +42,7 @@ struct WarpMarkerInfo;
  * Dependencies:
  * - te::Edit& (for clip creation, tempo sequence, playback context)
  * - TrackController& (for track lookup and creation)
- * - WarpMarkerManager& (for transient detection and warp markers)
+ * - WarpMarkerManager& (for transient detection)
  */
 class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener {
   public:
@@ -179,7 +178,7 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
     te::Clip* getSessionTeClip(ClipId clipId);
 
     // =========================================================================
-    // Warp Marker Operations (Delegated to WarpMarkerManager)
+    // Transient Detection (Delegated to WarpMarkerManager)
     // =========================================================================
 
     /**
@@ -195,50 +194,6 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
      * @return true if transients were found
      */
     bool getTransientTimes(ClipId clipId);
-
-    /**
-     * @brief Enable warp/time-stretch for a clip
-     * @param clipId The MAGDA clip ID
-     */
-    void enableWarp(ClipId clipId);
-
-    /**
-     * @brief Disable warp/time-stretch for a clip
-     * @param clipId The MAGDA clip ID
-     */
-    void disableWarp(ClipId clipId);
-
-    /**
-     * @brief Get all warp markers for a clip
-     * @param clipId The MAGDA clip ID
-     * @return Vector of warp marker information
-     */
-    std::vector<WarpMarkerInfo> getWarpMarkers(ClipId clipId);
-
-    /**
-     * @brief Add a warp marker to a clip
-     * @param clipId The MAGDA clip ID
-     * @param sourceTime Time in source audio
-     * @param warpTime Warped time position
-     * @return Index of the added marker
-     */
-    int addWarpMarker(ClipId clipId, double sourceTime, double warpTime);
-
-    /**
-     * @brief Move an existing warp marker
-     * @param clipId The MAGDA clip ID
-     * @param markerIndex Index of marker to move
-     * @param newWarpTime New warped time position
-     * @return Actual new warp time (may be clamped)
-     */
-    double moveWarpMarker(ClipId clipId, int markerIndex, double newWarpTime);
-
-    /**
-     * @brief Remove a warp marker from a clip
-     * @param clipId The MAGDA clip ID
-     * @param markerIndex Index of marker to remove
-     */
-    void removeWarpMarker(ClipId clipId, int markerIndex);
 
     // =========================================================================
     // Utilities
@@ -297,6 +252,28 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
     bool syncArrangementClipToEngine(ClipId clipId);
 
     /**
+     * @brief The session half of syncClipPropertyToEngine().
+     *
+     * A slot not synced yet becomes one; one that is has its changed properties
+     * pushed.
+     */
+    bool syncSessionClipPropertyToEngine(ClipId clipId, const ClipInfo& clip);
+
+    /**
+     * @brief Put a session clip in auto-tempo or time-based mode.
+     *
+     * Auto-tempo audio goes through configureSessionAutoTempo(); anything else
+     * keeps its time-based loop state.
+     *
+     * @return The stretch mode that stood before configureSessionAutoTempo() ran,
+     * which is what the mode check downstream compares against. Nullopt when it
+     * did not run.
+     */
+    std::optional<tracktion::TimeStretcher::Mode> applySessionTempoMode(tracktion::Clip& teClip,
+                                                                        const ClipInfo& clip,
+                                                                        bool autoTempoAudio);
+
+    /**
      * @brief Sync MIDI clip properties to Tracktion Engine
      * @param clipId The MAGDA clip ID
      * @param clip The ClipInfo from ClipManager
@@ -310,10 +287,41 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
      * @param clipId The MAGDA clip ID
      * @param clip The ClipInfo from ClipManager
      *
-     * Handles position, speed, tempo sync, loop, offset, pitch, fades, etc.
-     * Complex logic for beat-based vs. time-based properties
+     * Creates the TE clip if needed, then walks the properties in the order
+     * Tracktion requires.
      */
     bool syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip);
+
+    /**
+     * @brief The TE clip already standing for @p clipId, if one still is.
+     *
+     * `discarded` says a stale, moved or source-changed clip was removed. The
+     * graph needs rebuilding for that whether or not a new clip replaces it.
+     */
+    struct ExistingTeClip {
+        tracktion::WaveAudioClip* clip = nullptr;
+        bool discarded = false;
+    };
+
+    ExistingTeClip findOrDiscardTeClip(ClipId clipId, tracktion::AudioTrack& audioTrack,
+                                       const ClipInfo& clip);
+
+    /**
+     * @brief Create the TE clip for @p clip on @p audioTrack.
+     *
+     * @return Null when the model names no file, the file is missing, or
+     * Tracktion refused the insert. Each is reported.
+     */
+    tracktion::WaveAudioClip* createTeClip(ClipId clipId, tracktion::AudioTrack& audioTrack,
+                                           const ClipInfo& clip);
+
+    /**
+     * @brief Hand the reverse flag over to Tracktion.
+     *
+     * Tracktion then owns the mirrored offset and loop range. The graph rebuild
+     * is deferred until the reversed proxy is playable.
+     */
+    void applyReverse(ClipId clipId, tracktion::WaveAudioClip& teClip, const ClipInfo& clip);
 
     /**
      * @brief Re-attach loop-record takes onto a freshly built TE clip.
@@ -325,7 +333,7 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
      * clip's source already points at takes[currentTakeIndex]; the others are
      * preserved as alternates.
      */
-    void applyModelTakesToTeClip(tracktion::WaveAudioClip& teClip, const ClipInfo& clip);
+    static void applyModelTakesToTeClip(tracktion::WaveAudioClip& teClip, const ClipInfo& clip);
 
     /**
      * @brief Configure autoTempo on a session audio clip in TE

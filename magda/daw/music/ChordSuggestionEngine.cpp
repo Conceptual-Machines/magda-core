@@ -4,7 +4,6 @@
 #include <cmath>
 #include <map>
 #include <numeric>
-#include <random>
 #include <set>
 #include <unordered_set>
 
@@ -51,7 +50,7 @@ juce::String ChordSuggestionEngine::getNoteName(int pitchClass) {
 }
 
 void ChordSuggestionEngine::updateWithChord(const Chord& chord, double currentTimeSeconds) {
-    std::lock_guard<std::mutex> lock(pcsHistogramMutex);
+    std::scoped_lock lock(pcsHistogramMutex);
 
     // Decay histogram since last update (exponential decay)
     if (lastPcsUpdateTime > 0.0) {
@@ -83,7 +82,7 @@ bool ChordSuggestionEngine::addChordToContext(const Chord& chord, double current
     // Check for duplicates and manage context
     bool wasAdded = false;
     {
-        std::lock_guard<std::mutex> lock(chordContextMutex);
+        std::scoped_lock lock(chordContextMutex);
 
         bool isDuplicate = false;
         if (!recentChords_.empty()) {
@@ -124,18 +123,18 @@ bool ChordSuggestionEngine::addChordToContext(const Chord& chord, double current
 
 void ChordSuggestionEngine::reset() {
     {
-        std::lock_guard<std::mutex> lock(pcsHistogramMutex);
+        std::scoped_lock lock(pcsHistogramMutex);
         pcsHistogram.fill(0.0);
         lastPcsUpdateTime = 0.0;
     }
     {
-        std::lock_guard<std::mutex> lock(chordContextMutex);
+        std::scoped_lock lock(chordContextMutex);
         recentChords_.clear();
     }
 }
 
 void ChordSuggestionEngine::clearContext() {
-    std::lock_guard<std::mutex> lock(chordContextMutex);
+    std::scoped_lock lock(chordContextMutex);
     recentChords_.clear();
 }
 
@@ -157,7 +156,7 @@ std::array<double, 12> ChordSuggestionEngine::getDecayedHistogram(double current
 
 std::optional<std::pair<juce::String, juce::String>>
 ChordSuggestionEngine::inferKeyModeFromHistogram() const {
-    std::lock_guard<std::mutex> lock(pcsHistogramMutex);
+    std::scoped_lock lock(pcsHistogramMutex);
 
     const auto hist = getDecayedHistogram(juce::Time::getMillisecondCounter() / 1000.0);
 
@@ -201,7 +200,7 @@ ChordSuggestionEngine::inferKeyModeFromHistogram() const {
 }
 
 std::pair<juce::String, juce::String> ChordSuggestionEngine::inferKeyModeFromContext(
-    const std::vector<Chord>& recentChords) const {
+    const std::vector<Chord>& recentChords) {
     if (recentChords.empty()) {
         return {"C", "major"};
     }
@@ -220,7 +219,7 @@ std::pair<juce::String, juce::String> ChordSuggestionEngine::inferKeyModeFromCon
 
         // Count root notes
         if (chord.rootNoteNumber >= 0) {
-            const juce::String rootName = NOTE_NAMES[chord.rootNoteNumber % 12];
+            const juce::String& rootName = NOTE_NAMES[chord.rootNoteNumber % 12];
             rootCounts[rootName]++;
         }
 
@@ -256,7 +255,7 @@ std::pair<juce::String, juce::String> ChordSuggestionEngine::inferKeyModeFromCon
 }
 
 double ChordSuggestionEngine::dotProduct(const std::array<double, 12>& a,
-                                         const std::array<double, 12>& b) const {
+                                         const std::array<double, 12>& b) {
     double sum = 0.0;
     for (int i = 0; i < 12; ++i) {
         sum += a[i] * b[i];
@@ -265,7 +264,7 @@ double ChordSuggestionEngine::dotProduct(const std::array<double, 12>& a,
 }
 
 std::array<double, 12> ChordSuggestionEngine::rotateProfile(const std::array<double, 12>& profile,
-                                                            int shift) const {
+                                                            int shift) {
     std::array<double, 12> rotated{};
     shift = shift % 12;
     if (shift < 0)
@@ -422,9 +421,7 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::genera
         if (!params.add13ths && is13thQuality(c.chord.quality))
             return false;
         // addSlashChords=false => exclude slash names
-        if (!params.addSlashChords && isSlashName(c.chord.getName()))
-            return false;
-        return true;
+        return !(!params.addSlashChords && isSlashName(c.chord.getName()));
     };
 
     std::vector<SuggestionItem> filtered;
@@ -436,8 +433,7 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::genera
     }
 
     // Apply priority boost (sort by score descending)
-    std::sort(filtered.begin(), filtered.end(),
-              [](const SuggestionItem& a, const SuggestionItem& b) { return a.score > b.score; });
+    std::ranges::sort(filtered, std::ranges::greater{}, &SuggestionItem::score);
     auto boostedCandidates = std::move(filtered);
 
     // Convert to final format with score decay by position and deduplicate by chord name
@@ -448,8 +444,8 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::genera
         return n;
     };
     std::set<juce::String> seen;  // normalized chord names
-    for (int i = 0;
-         i < static_cast<int>(boostedCandidates.size()) && (int)suggestions.size() < params.topK;
+    for (int i = 0; i < static_cast<int>(boostedCandidates.size()) &&
+                    static_cast<int>(suggestions.size()) < params.topK;
          ++i) {
         auto candidate = boostedCandidates[i];
         auto k = normName(candidate.chord.name);
@@ -475,10 +471,10 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::genera
     const int minDesired =
         std::max(params.topK, minPages * minPerPage);  // at least 16, or topK if larger
 
-    if ((int)suggestions.size() < minDesired) {
+    if (static_cast<int>(suggestions.size()) < minDesired) {
         // Backfill using raw pools but still respect current params to avoid disabled types
         for (const auto& c : diatonicCandidatesRaw) {
-            if ((int)suggestions.size() >= minDesired)
+            if (static_cast<int>(suggestions.size()) >= minDesired)
                 break;
             if (allowedByParams(c))
                 addUnique(c);
@@ -486,7 +482,7 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::genera
         // Only consider non-diatonic backfill when novelty > 0
         if (params.novelty > 0.0f) {
             for (const auto& c : nonDiatonicCandidatesRaw) {
-                if ((int)suggestions.size() >= minDesired)
+                if (static_cast<int>(suggestions.size()) >= minDesired)
                     break;
                 if (allowedByParams(c))
                     addUnique(c);
@@ -494,11 +490,11 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::genera
         }
     }
 
-    if ((int)suggestions.size() < minDesired) {
+    if (static_cast<int>(suggestions.size()) < minDesired) {
         // Final safety: synthesize only when novelty allows non-diatonic/fallback content
         if (params.novelty > 0.0f) {
-            for (int i = 0; i < 12 && (int)suggestions.size() < minDesired; ++i) {
-                juce::String rootName = NOTE_NAMES[i];
+            for (int i = 0; i < 12 && static_cast<int>(suggestions.size()) < minDesired; ++i) {
+                const juce::String& rootName = NOTE_NAMES[i];
                 juce::String quality = (i % 2 == 0) ? "maj" : "min";
                 auto chord = buildChordObject(rootName, quality, targetOctave, effectiveInversions,
                                               recentChords);
@@ -509,7 +505,7 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::genera
     }
 
     // Trim to max desired output (preserve earlier ranking at the top)
-    if ((int)suggestions.size() > std::max(minDesired, params.topK)) {
+    if (static_cast<int>(suggestions.size()) > std::max(minDesired, params.topK)) {
         suggestions.resize(std::max(minDesired, params.topK));
     }
 
@@ -910,11 +906,10 @@ ChordSuggestionEngine::generateNonDiatonicCandidates(const juce::String& key,
             std::vector<ChordNote> notes;
             notes.reserve(lowerNotes.size() + upperNotes.size());
             for (int n : lowerNotes)
-                notes.push_back({n, 100});
+                notes.emplace_back(n, 100);
             for (int n : upperNotes)
-                notes.push_back({n, 100});
-            std::sort(notes.begin(), notes.end(),
-                      [](auto& a, auto& b) { return a.noteNumber < b.noteNumber; });
+                notes.emplace_back(n, 100);
+            std::ranges::sort(notes, {}, &ChordNote::noteNumber);
 
             // Build chord object with base lower quality for compatibility; override names
             auto baseQuality = lowerMinor ? ChordQuality::Minor : ChordQuality::Major;
@@ -926,7 +921,7 @@ ChordSuggestionEngine::generateNonDiatonicCandidates(const juce::String& key,
             juce::String uname = upperRoot + (upperMinor ? " min" : " maj");
             juce::String fullName = lname + " + " + uname;
             lowerChord.name = fullName;
-            lowerChord.displayName = fullName;
+            lowerChord.displayName = std::move(fullName);
 
             candidates.push_back({lowerChord, priority, label, "polychord"});
         };
@@ -945,7 +940,7 @@ ChordSuggestionEngine::generateNonDiatonicCandidates(const juce::String& key,
 
 std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::mixCandidates(
     const std::vector<SuggestionItem>& diatonic, const std::vector<SuggestionItem>& nonDiatonic,
-    float novelty, int topK) const {
+    float novelty, int topK) {
     std::vector<SuggestionItem> result;
 
     if (novelty <= 0.0f) {
@@ -983,9 +978,7 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::mixCan
         }
 
         // Sort by priority (highest first)
-        std::sort(
-            prioritizedDiatonic.begin(), prioritizedDiatonic.end(),
-            [](const SuggestionItem& a, const SuggestionItem& b) { return a.score > b.score; });
+        std::ranges::sort(prioritizedDiatonic, std::ranges::greater{}, &SuggestionItem::score);
 
         // Take top candidates up to topK
         result.resize(std::min(topK, static_cast<int>(prioritizedDiatonic.size())));
@@ -1002,8 +995,7 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::mixCan
 
     // Sort non-diatonic candidates by score (highest first) before taking
     std::vector<SuggestionItem> sortedNonDiatonic = nonDiatonic;
-    std::sort(sortedNonDiatonic.begin(), sortedNonDiatonic.end(),
-              [](const SuggestionItem& a, const SuggestionItem& b) { return a.score > b.score; });
+    std::ranges::sort(sortedNonDiatonic, std::ranges::greater{}, &SuggestionItem::score);
 
     // Ensure polychords are visible even at low novelty by reserving a couple of early slots
     std::vector<SuggestionItem> polyList;
@@ -1086,7 +1078,7 @@ juce::String ChordSuggestionEngine::noteAtSemitone(const juce::String& root, int
     return NOTE_NAMES[targetIdx];
 }
 
-int ChordSuggestionEngine::noteToSemitone(const juce::String& note) const {
+int ChordSuggestionEngine::noteToSemitone(const juce::String& note) {
     // Handle enharmonic equivalents
     static const std::map<juce::String, int> noteMap = {
         {"C", 0},  {"C#", 1}, {"Db", 1},  {"D", 2},   {"D#", 3}, {"Eb", 3},
@@ -1124,12 +1116,9 @@ Chord ChordSuggestionEngine::buildChordInRootPosition(const juce::String& root,
     // Helpers
     auto addNote = [&](int midi) {
         if (midi >= 0)
-            notes.push_back({midi, 100});
+            notes.emplace_back(midi, 100);
     };
-    auto ensureSorted = [&]() {
-        std::sort(notes.begin(), notes.end(),
-                  [](const auto& a, const auto& b) { return a.noteNumber < b.noteNumber; });
-    };
+    auto ensureSorted = [&]() { std::ranges::sort(notes, {}, &ChordNote::noteNumber); };
 
     // Handle slash chords: e.g., "maj/5", "maj/b7"
     if (quality.containsChar('/')) {
@@ -1174,8 +1163,8 @@ Chord ChordSuggestionEngine::buildChordInRootPosition(const juce::String& root,
 
         // Create chord with base quality (enum), but override names below
         Chord chord(rootEnum, baseQuality, notes, rootMidiNote, std::nullopt, 0);
-        chord.name = finalName;
-        chord.displayName = displayName;
+        chord.name = std::move(finalName);
+        chord.displayName = std::move(displayName);
         return chord;
     }
 
@@ -1213,7 +1202,7 @@ Chord ChordSuggestionEngine::buildChordInRootPosition(const juce::String& root,
 
         Chord chord(rootEnum, baseQuality, notes, rootMidiNote, std::nullopt, 0);
         chord.name = finalName;  // preserve original descriptor like "7alt"
-        chord.displayName = finalName;
+        chord.displayName = std::move(finalName);
         return chord;
     }
 
@@ -1224,11 +1213,11 @@ Chord ChordSuggestionEngine::buildChordInRootPosition(const juce::String& root,
         addNote(rootMidiNote + iv);
     Chord chord(rootEnum, qualityEnum, notes, rootMidiNote, std::nullopt, 0);
     chord.name = finalName;
-    chord.displayName = finalName;
+    chord.displayName = std::move(finalName);
     return chord;
 }
 
-int ChordSuggestionEngine::calculateTargetOctave(const std::vector<Chord>& recentChords) const {
+int ChordSuggestionEngine::calculateTargetOctave(const std::vector<Chord>& recentChords) {
     if (recentChords.empty()) {
         return 4;  // Default to octave 4 (C4 = 60)
     }
@@ -1359,7 +1348,7 @@ Chord ChordSuggestionEngine::optimizeVoicing(const Chord& chord, float inversion
     Chord result;
     if (inversionStrength >= 0.3f) {  // Lower threshold - use voice leading for most cases
         // Use voice leading optimization
-        result = bestInversion;
+        result = std::move(bestInversion);
         result.inversion = bestInversionValue;
     } else {
         // Only interpolate for very low inversion strength (prefer root position)
@@ -1379,7 +1368,7 @@ Chord ChordSuggestionEngine::optimizeVoicing(const Chord& chord, float inversion
                 result = chord;  // Fallback if no inversions available
             }
         } else {
-            result = bestInversion;  // Use the best inversion
+            result = std::move(bestInversion);  // Use the best inversion
         }
         result.inversion =
             static_cast<int>(std::round(bestInversionValue * inversionStrength * 3.0f));
@@ -1389,9 +1378,7 @@ Chord ChordSuggestionEngine::optimizeVoicing(const Chord& chord, float inversion
     if (!result.notes.empty()) {
         // Sort notes to find the bass note
         auto sortedNotes = result.notes;
-        std::sort(
-            sortedNotes.begin(), sortedNotes.end(),
-            [](const ChordNote& a, const ChordNote& b) { return a.noteNumber < b.noteNumber; });
+        std::ranges::sort(sortedNotes, {}, &ChordNote::noteNumber);
 
         int bassNote = sortedNotes[0].noteNumber;
         int bassPitchClass = bassNote % 12;
@@ -1450,7 +1437,7 @@ Chord ChordSuggestionEngine::optimizeVoicing(const Chord& chord, float inversion
     return result;
 }
 
-std::vector<Chord> ChordSuggestionEngine::generateInversions(const Chord& chord) const {
+std::vector<Chord> ChordSuggestionEngine::generateInversions(const Chord& chord) {
     std::vector<Chord> inversions;
 
     if (chord.notes.size() < 2) {
@@ -1469,9 +1456,7 @@ std::vector<Chord> ChordSuggestionEngine::generateInversions(const Chord& chord)
 
         // Sort notes to find the bass note
         auto sortedNotes = chord.notes;
-        std::sort(
-            sortedNotes.begin(), sortedNotes.end(),
-            [](const ChordNote& a, const ChordNote& b) { return a.noteNumber < b.noteNumber; });
+        std::ranges::sort(sortedNotes, {}, &ChordNote::noteNumber);
 
         int bassNote = sortedNotes[0].noteNumber;
         int bassPitchClass = bassNote % 12;
@@ -1534,8 +1519,7 @@ std::vector<Chord> ChordSuggestionEngine::generateInversions(const Chord& chord)
 
     // Sort notes to find the bass note
     auto sortedNotes = canonicalRootPosition.notes;
-    std::sort(sortedNotes.begin(), sortedNotes.end(),
-              [](const ChordNote& a, const ChordNote& b) { return a.noteNumber < b.noteNumber; });
+    std::ranges::sort(sortedNotes, {}, &ChordNote::noteNumber);
 
     // Find the root pitch class from the chord name
     juce::String rootStr = chord.name.upToFirstOccurrenceOf(":", false, false);
@@ -1602,9 +1586,7 @@ std::vector<Chord> ChordSuggestionEngine::generateInversions(const Chord& chord)
             }
 
             // Sort by pitch to ensure proper ordering
-            std::sort(
-                rearrangedNotes.begin(), rearrangedNotes.end(),
-                [](const ChordNote& a, const ChordNote& b) { return a.noteNumber < b.noteNumber; });
+            std::ranges::sort(rearrangedNotes, {}, &ChordNote::noteNumber);
 
             canonicalRootPosition.notes = rearrangedNotes;
             canonicalRootPosition.inversion = 0;
@@ -1617,9 +1599,7 @@ std::vector<Chord> ChordSuggestionEngine::generateInversions(const Chord& chord)
         Chord inversion = canonicalRootPosition;
 
         // Sort notes by pitch
-        std::sort(
-            inversion.notes.begin(), inversion.notes.end(),
-            [](const ChordNote& a, const ChordNote& b) { return a.noteNumber < b.noteNumber; });
+        std::ranges::sort(inversion.notes, {}, &ChordNote::noteNumber);
 
         // Move the highest 'abs(inv)' notes down an octave
         int notesToMove = std::abs(inv);
@@ -1630,9 +1610,7 @@ std::vector<Chord> ChordSuggestionEngine::generateInversions(const Chord& chord)
         }
 
         // Sort again to maintain order
-        std::sort(
-            inversion.notes.begin(), inversion.notes.end(),
-            [](const ChordNote& a, const ChordNote& b) { return a.noteNumber < b.noteNumber; });
+        std::ranges::sort(inversion.notes, {}, &ChordNote::noteNumber);
 
         // Now detect the actual inversion based on the bass note
         inversion.inversion = detectInversion(inversion);
@@ -1647,9 +1625,7 @@ std::vector<Chord> ChordSuggestionEngine::generateInversions(const Chord& chord)
         Chord inversion = canonicalRootPosition;
 
         // Sort notes by pitch
-        std::sort(
-            inversion.notes.begin(), inversion.notes.end(),
-            [](const ChordNote& a, const ChordNote& b) { return a.noteNumber < b.noteNumber; });
+        std::ranges::sort(inversion.notes, {}, &ChordNote::noteNumber);
 
         // Move the lowest 'inv' notes up an octave
         for (int i = 0; i < inv && i < static_cast<int>(inversion.notes.size()); ++i) {
@@ -1657,9 +1633,7 @@ std::vector<Chord> ChordSuggestionEngine::generateInversions(const Chord& chord)
         }
 
         // Sort again to maintain order
-        std::sort(
-            inversion.notes.begin(), inversion.notes.end(),
-            [](const ChordNote& a, const ChordNote& b) { return a.noteNumber < b.noteNumber; });
+        std::ranges::sort(inversion.notes, {}, &ChordNote::noteNumber);
 
         // Now detect the actual inversion based on the bass note
         inversion.inversion = detectInversion(inversion);
@@ -1669,7 +1643,7 @@ std::vector<Chord> ChordSuggestionEngine::generateInversions(const Chord& chord)
     return inversions;
 }
 
-double ChordSuggestionEngine::calculateCentroid(const Chord& chord) const {
+double ChordSuggestionEngine::calculateCentroid(const Chord& chord) {
     if (chord.notes.empty()) {
         return 60.0;  // Default to C4
     }
@@ -1687,7 +1661,7 @@ double ChordSuggestionEngine::calculateCentroid(const Chord& chord) const {
     return count > 0 ? (total / count) : 60.0;
 }
 
-bool ChordSuggestionEngine::chordsAreEquivalent(const Chord& a, const Chord& b) const {
+bool ChordSuggestionEngine::chordsAreEquivalent(const Chord& a, const Chord& b) {
     // First check if they have the same pitch classes (notes)
     if (!magda::music::chordsAreEquivalent(a, b)) {
         return false;
@@ -1710,7 +1684,7 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::proces
     bool isDuplicate = false;
     std::vector<Chord> contextCopy;
     {
-        std::lock_guard<std::mutex> lock(chordContextMutex);
+        std::scoped_lock lock(chordContextMutex);
 
         if (!recentChords_.empty()) {
             const Chord& last = recentChords_.back();
@@ -1760,12 +1734,12 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::proces
 }
 
 std::vector<Chord> ChordSuggestionEngine::getRecentChords() const {
-    std::lock_guard<std::mutex> lock(chordContextMutex);
-    return std::vector<Chord>(recentChords_.begin(), recentChords_.end());
+    std::scoped_lock lock(chordContextMutex);
+    return {recentChords_.begin(), recentChords_.end()};
 }
 
 juce::String ChordSuggestionEngine::getContextTailString(int maxChords) const {
-    std::lock_guard<std::mutex> lock(chordContextMutex);
+    std::scoped_lock lock(chordContextMutex);
 
     juce::String contextTail;
     int count = 0;
@@ -1778,7 +1752,7 @@ juce::String ChordSuggestionEngine::getContextTailString(int maxChords) const {
 }
 
 std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::filterRecentChords(
-    const std::vector<SuggestionItem>& candidates, const std::vector<Chord>& recentChords) const {
+    const std::vector<SuggestionItem>& candidates, const std::vector<Chord>& recentChords) {
     std::vector<SuggestionItem> filtered;
 
     // Get last 2 chords to avoid (reduced from 3 to give more variety and prevent stale
@@ -1831,7 +1805,7 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::filter
 // Infer key/mode using comprehensive scale detection system
 std::optional<std::pair<juce::String, juce::String>>
 ChordSuggestionEngine::inferKeyModeFromScaleDetection() const {
-    std::lock_guard<std::mutex> lock(chordContextMutex);
+    std::scoped_lock lock(chordContextMutex);
 
     if (recentChords_.empty()) {
         return std::nullopt;
@@ -1917,7 +1891,7 @@ ChordSuggestionEngine::inferKeyModeFromScaleDetection() const {
 }
 
 juce::String ChordSuggestionEngine::getDetectedScalesString(float /*novelty*/) const {
-    std::lock_guard<std::mutex> lock(chordContextMutex);
+    std::scoped_lock lock(chordContextMutex);
 
     if (recentChords_.empty()) {
         return "";
@@ -1978,8 +1952,8 @@ juce::String ChordSuggestionEngine::getDetectedScalesString(float /*novelty*/) c
         }
 
         // Re-sort after reweighting
-        std::sort(detectedScales.begin(), detectedScales.end(),
-                  [](const auto& a, const auto& b) { return a.second.score > b.second.score; });
+        const auto scoreOf = [](const auto& entry) { return entry.second.score; };
+        std::ranges::sort(detectedScales, std::ranges::greater{}, scoreOf);
 
         if (detectedScales.empty()) {
             return "";
@@ -1996,7 +1970,7 @@ juce::String ChordSuggestionEngine::getDetectedScalesString(float /*novelty*/) c
             // Only show scales with good confidence
             if (matchScore.matchedNotes.size() >= 3) {
                 // Format scale name without duplicating root note
-                juce::String rootNote = NOTE_NAMES[scale.rootNote % 12];
+                const juce::String& rootNote = NOTE_NAMES[scale.rootNote % 12];
                 juce::String scaleName = juce::String(scale.name);
 
                 // Check if scale name already starts with the root note
@@ -2106,8 +2080,8 @@ std::vector<std::pair<juce::String, juce::String>> ChordSuggestionEngine::getTop
         }
 
         // Re-sort after reweighting
-        std::sort(detectedScales.begin(), detectedScales.end(),
-                  [](const auto& a, const auto& b) { return a.second.score > b.second.score; });
+        const auto scoreOf = [](const auto& entry) { return entry.second.score; };
+        std::ranges::sort(detectedScales, std::ranges::greater{}, scoreOf);
 
         // Extract top scales with good confidence
         for (int i = 0; i < std::min(maxScales, static_cast<int>(detectedScales.size())); ++i) {
@@ -2124,7 +2098,7 @@ std::vector<std::pair<juce::String, juce::String>> ChordSuggestionEngine::getTop
                     scaleName = scaleName.replace("Aeolian", "Minor");
                 }
 
-                topScales.push_back({rootNote, scaleName});
+                topScales.emplace_back(rootNote, scaleName);
             }
         }
 

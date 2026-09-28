@@ -8,8 +8,7 @@
 #include <optional>
 #include <vector>
 
-namespace magda {
-namespace remote {
+namespace magda::remote {
 
 /**
  * @brief What a remote client is allowed to reach (#1860).
@@ -53,13 +52,6 @@ enum class Scope {
     Session,
     /**
      * Reach physical MIDI ports, including SysEx.
-     *
-     * No operation requires this today — the registry exposes no hardware MIDI
-     * surface yet. It is declared now because grants are persisted: a scope
-     * invented later would silently read as "not granted" on every existing
-     * client, which is the correct answer, but only if the word already exists
-     * when those grants are written. It also gives the settings UI a stable
-     * place to show the permission before there is anything behind it.
      */
     HardwareMidi,
 };
@@ -195,5 +187,4 @@ inline constexpr const char* ANONYMOUS_CLIENT = "unknown";
 /// client chose.
 inline constexpr int MAX_CLIENT_NAME_LENGTH = 64;
 
-}  // namespace remote
-}  // namespace magda
+}  // namespace magda::remote

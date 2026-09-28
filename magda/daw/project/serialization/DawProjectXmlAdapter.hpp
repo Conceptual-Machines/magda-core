@@ -29,7 +29,8 @@ class DawProjectXmlAdapter {
 
     static juce::String toProjectXml(const ProjectDocument& document);
     static bool fromProjectXml(const juce::String& xml, ProjectDocument& outDocument,
-                               juce::String& error);
+                               juce::String& error,
+                               const ProjectDefaults* creationDefaults = nullptr);
 
     // Unique, on-disk audio sources referenced by the document's audio clips,
     // each assigned a collision-free archive-relative path. toProjectXml() and

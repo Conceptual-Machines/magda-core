@@ -2,10 +2,12 @@
 
 #include <algorithm>
 #include <array>
+#include <ranges>
 
 #include "TracktionHelpers.hpp"
 #include "core/DeviceState.hpp"
 #include "core/LegacyDeviceAliases.hpp"
+#include "core/RangesHelpers.hpp"
 #include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/compiled/CompiledFaustInterface.hpp"
 #include "plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
@@ -28,11 +30,18 @@ namespace ds = magda::device_state;
 /// stripping it there would leave a tree that `getOrCreatePluginFor` cannot
 /// instantiate, so the pad would come back empty.
 bool isRootEngineOwnedProperty(const juce::Identifier& id) {
-    static const std::array<juce::Identifier, 12> engineOwned{
+    // `parameters` is the engine's own pre-v2 blob of parameter state. The
+    // engine deletes it on the next flush, so a capture that recorded it wrote
+    // a document that could not reproduce itself: the property was there the
+    // first time and gone the second. It is also exactly the engine-shaped
+    // parameter state v2 exists to keep out of a MAGDA file, so it is dropped
+    // here with the rest (#2192).
+    static const std::array<juce::Identifier, 13> engineOwned{
         te::IDs::id,           te::IDs::type,           te::IDs::enabled,
         te::IDs::process,      te::IDs::frozen,         te::IDs::quickParamName,
         te::IDs::windowPos,    te::IDs::windowX,        te::IDs::windowY,
         te::IDs::windowLocked, te::IDs::masterPluginID, te::IDs::sidechainSourceID,
+        te::IDs::parameters,
     };
     return std::find(engineOwned.begin(), engineOwned.end(), id) != engineOwned.end();
 }
@@ -80,12 +89,9 @@ ds::Node captureNode(const juce::ValueTree& tree, bool isRoot,
         node.props.set(name, tree.getProperty(name));
     }
 
-    for (int i = 0; i < tree.getNumChildren(); ++i) {
-        const auto child = tree.getChild(i);
-        if (isEngineOwnedChild(child))
-            continue;
+    const auto isOurs = [](const juce::ValueTree& child) { return !isEngineOwnedChild(child); };
+    for (const auto child : children(tree) | std::views::filter(isOurs))
         node.children.push_back(captureNode(child, false, parameterProperties));
-    }
 
     return node;
 }
@@ -114,16 +120,10 @@ juce::String canonicalDeviceType(const juce::String& pluginType) {
 }
 
 juce::ValueTree legacyPluginTree(const juce::String& savedState) {
-    auto xml = juce::parseXML(savedState);
-    if (!xml)
-        return {};
-
-    auto tree = juce::ValueTree::fromXml(*xml);
+    auto tree = ds::legacyEngineStateTree(savedState);
     if (!tree.isValid())
         return {};
 
-    stripTracktionIdsRecursive(tree);
-    stripModifierAssignmentsRecursive(tree);
     adoptCanonicalPluginType(tree);
     return tree;
 }
@@ -146,7 +146,6 @@ juce::String captureInternalDeviceState(te::Plugin& plugin, const juce::String& 
     doc.deviceType = canonicalDeviceType(plugin.state.getProperty(te::IDs::type).toString());
 
     const auto& params = plugin.getAutomatableParameters();
-    doc.params.reserve(static_cast<size_t>(params.size()));
 
     // Three Tracktion parameters store under a property spelled differently
     // from their paramID; the spellings are frozen because released TE projects
@@ -158,14 +157,15 @@ juce::String captureInternalDeviceState(te::Plugin& plugin, const juce::String& 
         {"damping", "damp"},             // Reverb
     };
 
+    // The document carries NO parameter values (#2317): `DeviceInfo::parameters`
+    // is the sole persisted authority for automatable parameters, in the
+    // device's display domain. The live parameter list is still walked so the
+    // engine's per-parameter properties are filtered out of the root below -
+    // they are exactly the engine-shaped state the document exists to exclude.
     juce::StringArray parameterProperties;
-    for (int i = 0; i < params.size(); ++i) {
-        auto* param = params[i];
+    for (auto* param : params) {
         if (param == nullptr)
             continue;
-        // Base value, never the modulated value: a modulated read would bake the
-        // current LFO position into the saved patch.
-        doc.params.push_back({i, param->paramID, param->getCurrentBaseValue()});
         parameterProperties.add(param->paramID);
         for (const auto& [paramID, property] : kParamPropertySpellings)
             if (param->paramID == paramID)
@@ -194,35 +194,6 @@ juce::ValueTree devicePluginTreeFromState(const juce::String& savedState) {
     applyNode(doc->root, tree);
     adoptCanonicalPluginType(tree);
     return tree;
-}
-
-void applyDeviceStateParameters(te::Plugin& plugin, const juce::String& savedState) {
-    const auto doc = ds::decode(savedState);
-    if (!doc || doc->params.empty())
-        return;
-
-    const auto& params = plugin.getAutomatableParameters();
-
-    for (const auto& saved : doc->params) {
-        te::AutomatableParameter* param = nullptr;
-
-        // Frozen index first; the stable id re-seats a value if a device ever
-        // has to renumber (see DeviceParamSchema.hpp).
-        if (saved.index >= 0 && saved.index < params.size())
-            if (auto* candidate = params[saved.index];
-                candidate != nullptr && (saved.id.isEmpty() || candidate->paramID == saved.id))
-                param = candidate;
-
-        if (param == nullptr && saved.id.isNotEmpty())
-            for (auto* candidate : params)
-                if (candidate != nullptr && candidate->paramID == saved.id) {
-                    param = candidate;
-                    break;
-                }
-
-        if (param != nullptr)
-            param->setParameterFromHost(saved.value, juce::sendNotificationSync);
-    }
 }
 
 std::vector<magda::legacy_devices::RetiredSlotValue> adoptRetiredNestedPluginTree(

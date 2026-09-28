@@ -3,6 +3,8 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <memory>
+#include <utility>
+#include <vector>
 
 #include "AutomationInfo.hpp"
 #include "TypeIds.hpp"
@@ -53,6 +55,27 @@ void syncAutoLaneHeaderButtonStates(AutoLaneHeaderButtons& buttons, const Automa
  */
 void layoutAutoLaneHeaderButtons(AutoLaneHeaderButtons& buttons, const AutomationLaneInfo& lane,
                                  int laneTopY, int headerWidth, int topInset = 0);
+
+/// One tick on a lane's value axis: where it sits in [0, 1], and what it reads.
+using AutomationGridTick = std::pair<double, juce::String>;
+
+/**
+ * @brief The ticks a lane's value axis shows, chosen by what the parameter is.
+ *
+ * @p target only decides the pan case, whose ticks are L/C/R rather than the
+ * numbers its range would give.
+ */
+std::vector<AutomationGridTick> automationGridTicks(const AutomationTarget& target,
+                                                    const ParameterInfo& paramInfo);
+
+/**
+ * @brief The ticks that fit when @p maxLabels is fewer than there are.
+ *
+ * Evenly spaced samples with both endpoints kept, or the middle tick alone
+ * when only one label fits. More slots than ticks changes nothing.
+ */
+std::vector<AutomationGridTick> thinAutomationGridTicks(std::vector<AutomationGridTick> ticks,
+                                                        int maxLabels);
 
 /**
  * @brief Paint a single automation lane header: background, parameter name, and

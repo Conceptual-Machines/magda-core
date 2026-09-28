@@ -5,9 +5,65 @@
 #include <cmath>
 #include <map>
 #include <set>
+#include <utility>
+
+#include "core/BlockMath.hpp"
+#include "exec/BlockProfile.hpp"
 
 namespace magda::engine {
 namespace {
+
+/**
+ * @brief Every MIDI op behind each device, by key.
+ *
+ * A device is retained across a publish while the plan behind it is rebuilt,
+ * so what it is being fed can change without the device knowing. The keys of
+ * the ops feeding it are what says whether it did: a track's merge keeps its
+ * own key when the track it reads changes underneath it, so comparing one
+ * level would see nothing.
+ *
+ * By DeviceKey, which is the identity the store keeps an instance under
+ * (RuntimeStateStore::realise). A device moved to another track is the same
+ * instrument holding the same notes, under an OpKey that no longer matches.
+ */
+std::map<DeviceKey, std::set<OpKey>> midiBehindDevices(const RenderPlan& plan) {
+    std::map<DeviceKey, std::set<OpKey>> behind;
+
+    for (std::size_t i = 0; i < plan.ops.size(); ++i) {
+        const auto& device = plan.ops[i];
+        if (device.kind != OpKind::Device || device.inputs.size() < 2)
+            continue;
+
+        std::set<OpKey> sources;
+        std::vector<char> seen(plan.ops.size(), 0);
+        std::vector<PortRef> pending{device.inputs[1]};
+
+        while (!pending.empty()) {
+            const auto port = pending.back();
+            pending.pop_back();
+
+            if (!port.valid())
+                continue;
+
+            const auto id = static_cast<std::size_t>(port.op);
+            if (std::exchange(seen[id], static_cast<char>(1)) != 0)
+                continue;
+
+            const auto& op = plan.ops[id];
+            sources.insert(op.key);
+
+            for (const auto& input : op.inputs)
+                if (input.valid() &&
+                    plan.ops[static_cast<std::size_t>(input.op)]
+                            .outputs[static_cast<std::size_t>(input.port)] == SignalKind::Midi)
+                    pending.push_back(input);
+        }
+
+        behind[device.key.deviceKey()] = std::move(sources);
+    }
+
+    return behind;
+}
 
 /// Per-channel gain for a stereo pair. Anything wider alternates, which keeps
 /// the pairs correct if a device ever reports more than two channels; the model
@@ -93,6 +149,56 @@ void AudioDelayLine::process(juce::dsp::AudioBlock<float> block, int numSamples)
     }
 }
 
+void FeedbackCarry::prepare(int numChannels, int maxBlockSize) {
+    audio_.setSize(numChannels, maxBlockSize, false, true, false);
+    audio_.clear();
+}
+
+void FeedbackCarry::read(juce::dsp::AudioBlock<float> block, int numSamples) const {
+    const auto channels =
+        std::min(static_cast<int>(block.getNumChannels()), audio_.getNumChannels());
+    const auto samples = std::min(numSamples, audio_.getNumSamples());
+
+    for (int channel = 0; channel < channels; ++channel)
+        juce::FloatVectorOperations::copy(
+            block.getChannelPointer(static_cast<std::size_t>(channel)),
+            audio_.getReadPointer(channel), samples);
+
+    // A block longer than the carry, or wider, is one the carry was not
+    // prepared for; the rest is silence rather than whatever was there before.
+    for (int channel = 0; channel < channels; ++channel)
+        juce::FloatVectorOperations::clear(
+            block.getChannelPointer(static_cast<std::size_t>(channel)) + samples,
+            numSamples - samples);
+    for (auto channel = static_cast<std::size_t>(channels); channel < block.getNumChannels();
+         ++channel)
+        juce::FloatVectorOperations::clear(block.getChannelPointer(channel), numSamples);
+}
+
+void FeedbackCarry::write(juce::dsp::AudioBlock<const float> block, int numSamples) {
+    const auto channels =
+        std::min(static_cast<int>(block.getNumChannels()), audio_.getNumChannels());
+    const auto samples = std::min(numSamples, audio_.getNumSamples());
+
+    // Everything this block did not fill is cleared rather than left behind.
+    // Callback sizes vary, and a short block over a long one would leave the
+    // tail of the longer to come back as the end of the next read.
+    for (int channel = 0; channel < channels; ++channel) {
+        juce::FloatVectorOperations::copy(
+            audio_.getWritePointer(channel),
+            block.getChannelPointer(static_cast<std::size_t>(channel)), samples);
+        juce::FloatVectorOperations::clear(audio_.getWritePointer(channel) + samples,
+                                           audio_.getNumSamples() - samples);
+    }
+
+    for (int channel = channels; channel < audio_.getNumChannels(); ++channel)
+        juce::FloatVectorOperations::clear(audio_.getWritePointer(channel), audio_.getNumSamples());
+}
+
+void FeedbackCarry::clear() {
+    audio_.clear();
+}
+
 void MidiDelayLine::prepare(int delaySamples, int capacityBytes) {
     delay_ = delaySamples;
     capacity_ = capacityBytes;
@@ -104,10 +210,30 @@ void MidiDelayLine::prepare(int delaySamples, int capacityBytes) {
     // the callback the first time it came round.
     pending_.ensureSize(static_cast<std::size_t>(capacityBytes));
     scratch_.ensureSize(static_cast<std::size_t>(capacityBytes));
+
+    const auto notes = static_cast<std::size_t>(capacityBytes / kMidiShortMessageBytes + 1);
+    pendingFractions_ = NoteFractions(notes);
+    scratchFractions_ = NoteFractions(notes);
 }
 
-void MidiDelayLine::process(const juce::MidiBuffer& in, juce::MidiBuffer& out, int numSamples) {
+void MidiDelayLine::process(const juce::MidiBuffer& in, const NoteFractions& inFractions,
+                            juce::MidiBuffer& out, NoteFractions& outFractions, int numSamples) {
     scratch_.clear();
+    scratchFractions_.clear();
+
+    // The fractions travel with their notes, by the same rule.
+    const auto carry = [&](const NoteFractions& from, int shift) {
+        for (const auto& entry : from.entries()) {
+            const auto position = entry.sample + shift;
+            if (position < numSamples)
+                outFractions.add(position, entry.channel, entry.note, entry.fraction);
+            else
+                scratchFractions_.add(position - numSamples, entry.channel, entry.note,
+                                      entry.fraction);
+        }
+    };
+    carry(pendingFractions_, 0);
+    carry(inFractions, delay_);
 
     // Positions are relative to the start of the block, so what is still in the
     // future stays here and moves one block closer.
@@ -128,6 +254,7 @@ void MidiDelayLine::process(const juce::MidiBuffer& in, juce::MidiBuffer& out, i
     }
 
     pending_.swapWith(scratch_);
+    std::swap(pendingFractions_, scratchFractions_);
 
     // The reservation covers what a port may carry over one block's worth of
     // samples, times the spans the delay holds in flight. Past it the buffer
@@ -197,6 +324,12 @@ const std::shared_ptr<CrossfadeRamp>& PlanExecutor::crossfadeFor(OpId op) const 
     return ramp < 0 ? none : crossfades_[static_cast<std::size_t>(ramp)];
 }
 
+const std::shared_ptr<FeedbackCarry>& PlanExecutor::feedbackCarryFor(OpId op) const {
+    static const std::shared_ptr<FeedbackCarry> none;
+    const auto carry = feedbackForOp_[static_cast<std::size_t>(op)];
+    return carry < 0 ? none : feedbackCarries_[static_cast<std::size_t>(carry)];
+}
+
 std::vector<char> PlanExecutor::unfinishedCrossfades() const {
     std::vector<char> running(plan_ == nullptr ? 0 : plan_->ops.size(), 0);
     for (std::size_t i = 0; i < running.size(); ++i) {
@@ -216,13 +349,20 @@ int PlanExecutor::activeCrossfades() const {
 void PlanExecutor::reset() {
     plan_ = nullptr;
     planFingerprint_ = 0;
+    reportedUnboundInputs_.clear();
     latencySamples_ = 0;
     carriedDelayLines_ = 0;
     carriedCrossfades_ = 0;
     crossfadeForOp_.clear();
     crossfades_.clear();
+    carriedFeedbackCarries_ = 0;
+    feedbackForOp_.clear();
+    feedbackCarries_.clear();
+    notePassing_.clear();
     audioSlots_.clear();
     midiSlots_.clear();
+    midiFractions_.clear();
+    midiSlotPanic_.clear();
     slotChannels_.clear();
     midiByteBounds_.clear();
     portOffsets_.clear();
@@ -233,7 +373,12 @@ void PlanExecutor::reset() {
     audioDelays_.clear();
     midiDelays_.clear();
     deviceForOp_.clear();
+    midiPanicForOp_.clear();
+    reroutedOps_.clear();
+    epoch_ = 0;
     audioSourceForOp_.clear();
+    sessionSourceForOp_.clear();
+    sessionScratch_.clear();
     midiSourceForOp_.clear();
     meterForOp_.clear();
     boundMeterCount_ = 0;
@@ -250,11 +395,38 @@ void PlanExecutor::reset() {
     paramLayout_ = 0;
 }
 
+namespace {
+
+/// Whether @p trackId is listening to its live audio input, which is the value
+/// on the gate the input reaches its chain through (#2612). True where the
+/// caller published no values, and where the plan has no gate: an input nobody
+/// can silence is one the track hears.
+bool hearsLiveInput(const RenderPlan& plan, const PlanValues* values, TrackId trackId) {
+    if (values == nullptr)
+        return true;
+
+    for (std::size_t i = 0; i < plan.ops.size(); ++i) {
+        const auto& key = plan.ops[i].key;
+        if (key.role == OpRole::LiveInputGate && key.trackId == trackId)
+            return i < values->ops.size() ? !values->ops[i].silent : true;
+    }
+    return true;
+}
+
+std::string describeOp(const RenderPlan& plan, std::size_t index) {
+    return "op " + std::to_string(index) + " (" + toString(plan.ops[index].kind) + " " +
+           toString(plan.ops[index].key) + "): ";
+}
+
+}  // namespace
+
 std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const PlanBindings& bindings,
                                                const RenderContext& context,
                                                const PlanExecutor* previous,
-                                               const ParamTable* params) {
+                                               const PlanValues* values) {
     reset();
+
+    const auto* params = values == nullptr ? nullptr : values->params.get();
 
     std::vector<std::string> messages;
 
@@ -271,7 +443,13 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     const auto numOps = plan.ops.size();
 
     deviceForOp_.assign(numOps, nullptr);
+    midiPanicForOp_.assign(numOps, nullptr);
+    reroutedOps_.clear();
+    insertForOp_.assign(numOps, nullptr);
     audioSourceForOp_.assign(numOps, nullptr);
+    sessionSourceForOp_.assign(numOps, nullptr);
+    sessionScratch_.clear();
+    sessionScratch_.resize(numOps);
     midiSourceForOp_.assign(numOps, nullptr);
     meterForOp_.assign(numOps, nullptr);
     midiTapForOp_.assign(numOps, nullptr);
@@ -318,6 +496,37 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
         }
     }
 
+    // A device the store keeps across the swap whose MIDI is now coming from
+    // somewhere else: the note-off for what it is holding is going to the old
+    // source's new destination, or nowhere. Only sources that left, because
+    // one arriving beside the others takes nothing away (#2418).
+    if (previous != nullptr && previous != this && previous->plan_ != nullptr) {
+        const auto was = midiBehindDevices(*previous->plan_);
+        const auto now = midiBehindDevices(plan);
+
+        for (std::size_t i = 0; i < numOps; ++i) {
+            const auto& op = plan.ops[i];
+            if (op.kind != OpKind::Device)
+                continue;
+
+            const auto key = op.key.deviceKey();
+            const auto before = was.find(key);
+            const auto after = now.find(key);
+
+            const auto lost = before != was.end() && after != now.end() &&
+                              std::ranges::any_of(before->second, [&after](const OpKey& source) {
+                                  return !after->second.contains(source);
+                              });
+
+            // Recorded, not raised: this plan may still be refused, and a
+            // debt raised for a routing change that was never published is a
+            // panic on an instrument nothing rerouted. commitReroutes() writes
+            // them once the swap is certain.
+            if (lost)
+                reroutedOps_.push_back(i);
+        }
+    }
+
     inMidiPrefix_.assign(numOps, 0);
     midiPrefix_.clear();
     paramLayout_ = 0;
@@ -360,6 +569,15 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                 mixerParamForOp_[i].gain = params->find(key);
                 key.kind = ParamKey::Kind::TrackPan;
                 mixerParamForOp_[i].pan = params->find(key);
+            } else if (op.kind == OpKind::Fader && op.key.role == OpRole::RackChainFader &&
+                       op.padLevelParam >= 0) {
+                // The exception to the line above: a Drum Grid's pad level and
+                // pan are real parameters of the device that owns the pad, so a
+                // lane over them has to reach this fader. Asked by slot, since
+                // the owner's window carries only the parameters it declared.
+                mixerParamForOp_[i].gain =
+                    params->deviceParam(op.key.deviceKey(), op.padLevelParam);
+                mixerParamForOp_[i].pan = params->deviceParam(op.key.deviceKey(), op.padPanParam);
             } else if (op.kind == OpKind::SendTap) {
                 key.kind = ParamKey::Kind::SendLevel;
                 key.index = op.key.index;
@@ -435,10 +653,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
 
     detectMono_.assign(static_cast<std::size_t>(std::max(context.maxBlockSize, 0)), 0.0f);
 
-    const auto describe = [&plan](std::size_t index) {
-        return "op " + std::to_string(index) + " (" + toString(plan.ops[index].kind) + " " +
-               toString(plan.ops[index].key) + "): ";
-    };
+    const auto describe = [&plan](std::size_t index) { return describeOp(plan, index); };
 
     const auto findAudioSource = [](const auto& map, TrackId trackId) -> EngineAudioSource* {
         const auto found = map.find(trackId);
@@ -449,23 +664,45 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
         return found == map.end() ? nullptr : found->second;
     };
 
+    liveSession_ = bindings.liveSession;
+
     for (std::size_t i = 0; i < numOps; ++i) {
         const auto& op = plan.ops[i];
         const auto trackId = op.key.trackId;
 
         switch (op.kind) {
+            // The arrangement and the session of one track, in one op: only one of them sounds
+            // outside a hand-over. A session source is reported only by a host that has a
+            // launcher at all, which is what a non-empty binding map says (#2301).
             case OpKind::ClipAudio:
                 audioSourceForOp_[i] = findAudioSource(bindings.clipAudio, trackId);
                 if (audioSourceForOp_[i] == nullptr)
                     messages.push_back(describe(i) + "no clip audio source bound for track " +
                                        std::to_string(trackId) + ", it renders silence");
+
+                sessionSourceForOp_[i] = findAudioSource(bindings.sessionAudio, trackId);
+                if (sessionSourceForOp_[i] != nullptr)
+                    sessionScratch_[i].setSize(context.numChannels, context.maxBlockSize, false,
+                                               true, false);
+                else if (!bindings.sessionAudio.empty())
+                    messages.push_back(describe(i) + "no session audio source bound for track " +
+                                       std::to_string(trackId) + ", its session is silent");
                 break;
 
+            // Not reported here: an input op is compiled whether or not the
+            // track is monitoring, so what makes an unbound one worth saying is
+            // the values, and those arrive again without a prepare (#2612).
+            // reportUnboundInputs below answers for the values this plan is
+            // published with, and publishValues asks again for every set after.
             case OpKind::AudioInput:
                 audioSourceForOp_[i] = findAudioSource(bindings.audioInputs, trackId);
-                if (audioSourceForOp_[i] == nullptr)
-                    messages.push_back(describe(i) + "no live audio input bound for track " +
-                                       std::to_string(trackId) + ", it renders silence");
+                break;
+
+            case OpKind::SessionMidi:
+                midiSourceForOp_[i] = findMidiSource(bindings.sessionMidi, trackId);
+                if (midiSourceForOp_[i] == nullptr && !bindings.sessionMidi.empty())
+                    messages.push_back(describe(i) + "no session MIDI source bound for track " +
+                                       std::to_string(trackId) + ", it renders nothing");
                 break;
 
             case OpKind::ClipMidi:
@@ -475,9 +712,12 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                                        std::to_string(trackId) + ", it renders nothing");
                 break;
 
+            // Only where a live input was ever going to arrive. An offline
+            // render binds no hardware by definition, so an unbound input op is
+            // its correct answer rather than a defect to report (#2628).
             case OpKind::MidiInput:
                 midiSourceForOp_[i] = findMidiSource(bindings.midiInputs, trackId);
-                if (midiSourceForOp_[i] == nullptr)
+                if (midiSourceForOp_[i] == nullptr && bindings.liveSession)
                     messages.push_back(describe(i) + "no live MIDI input bound for track " +
                                        std::to_string(trackId) + ", it renders nothing");
                 break;
@@ -493,6 +733,33 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                     break;
                 }
                 deviceForOp_[i] = found->second;
+
+                if (const auto owed = bindings.deviceMidiPanicEpoch.find(op.key.deviceKey());
+                    owed != bindings.deviceMidiPanicEpoch.end())
+                    midiPanicForOp_[i] = owed->second;
+                break;
+            }
+
+            case OpKind::InsertSend:
+            case OpKind::InsertReturn: {
+                // Both halves resolve to one object, because a round trip is
+                // one thing: an implementation handed a separately bound sink
+                // and source would be rebuilding the pairing the plan already
+                // did (#2245).
+                const auto found = bindings.inserts.find(op.key.deviceKey());
+                if (found == bindings.inserts.end() || found->second == nullptr) {
+                    // Reported, unlike a device that failed to load, which
+                    // passes audio through. There is no passing through here:
+                    // an insert with nothing behind it sends into nothing and
+                    // its return has nothing to answer with, so a render that
+                    // went ahead would be a render of a project with the
+                    // outboard unplugged and no way to tell from the audio.
+                    messages.push_back(describe(i) + "no insert bound for " +
+                                       toString(op.key.deviceKey()) +
+                                       ", nothing leaves the machine and its return is silent");
+                    break;
+                }
+                insertForOp_[i] = found->second;
                 break;
             }
 
@@ -512,7 +779,8 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                 break;
             }
 
-            case OpKind::MergeMidi: {
+            case OpKind::MergeMidi:
+            case OpKind::MidiNoteGate: {
                 // Optional for the same reason a meter is, and silent for the
                 // same reason: an observation point nobody is watching is the
                 // ordinary case, and reporting one would put a line per track in
@@ -537,9 +805,20 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     // a buffer. So the two passes run here, in this order, on every prepare.
 
     std::vector<int> deviceLatency(numOps, 0);
-    for (std::size_t i = 0; i < numOps; ++i)
+    for (std::size_t i = 0; i < numOps; ++i) {
         if (const auto* device = deviceForOp_[i]; device != nullptr)
             deviceLatency[i] = device->latencySamples();
+
+        // An insert's round trip goes in the same array, on the return op,
+        // which is where it is incurred: what left is coming back late, and
+        // everything downstream of the return is what has to be aligned against
+        // it. The send declares none -- nothing waits on it, because nothing
+        // reads it -- and the latency pass below has no idea any of this is an
+        // insert, which is the whole point (#2245).
+        if (plan.ops[i].kind == OpKind::InsertReturn)
+            if (const auto* insert = insertForOp_[i]; insert != nullptr)
+                deviceLatency[i] = insert->latencySamples();
+    }
 
     // Through resolveLayout rather than the three passes inline, because the
     // plan goldens (#2076) pin what a prepare resolves and have to be resolving
@@ -571,46 +850,84 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     const auto numPorts = static_cast<std::size_t>(portOffsets_.back());
     std::vector<int> portMidiBytes(numPorts, kMaxMidiBytesPerPort);
     const auto flatPort = [this](const PortRef& ref) {
-        return static_cast<std::size_t>(portOffsets_[static_cast<std::size_t>(ref.op)] + ref.port);
+        return static_cast<std::size_t>(portOffsets_[static_cast<std::size_t>(ref.op)]) + ref.port;
     };
 
-    for (std::size_t i = 0; i < numOps; ++i) {
-        const auto& op = plan.ops[i];
+    const auto sweep = [&] {
+        for (std::size_t i = 0; i < numOps; ++i) {
+            const auto& op = plan.ops[i];
 
-        if (op.kind == OpKind::Delay) {
-            if (op.outputs.front().kind != SignalKind::Midi)
+            if (op.kind == OpKind::Delay) {
+                if (op.outputs.front().kind != SignalKind::Midi)
+                    continue;
+                // A delay's output block covers one block's worth of its input's
+                // time, and that stretch falls across two of the spans the budget
+                // is counted over unless the delay is a whole number of them. Zero
+                // is not a delay at all: the op does not run, and the port is its
+                // input's.
+                const auto carried = portMidiBytes[flatPort(op.inputs.front())];
+                portMidiBytes[static_cast<std::size_t>(portOffsets_[i])] =
+                    latency.delaySamples[i] == 0 ? carried : 2 * carried;
                 continue;
-            // A delay's output block covers one block's worth of its input's
-            // time, and that stretch falls across two of the spans the budget
-            // is counted over unless the delay is a whole number of them. Zero
-            // is not a delay at all: the op does not run, and the port is its
-            // input's.
-            const auto carried = portMidiBytes[flatPort(op.inputs.front())];
-            portMidiBytes[static_cast<std::size_t>(portOffsets_[i])] =
-                latency.delaySamples[i] == 0 ? carried : 2 * carried;
-            continue;
+            }
+
+            // Everything that carries MIDI on from what reached it. A merge is the
+            // obvious one and a fader carries a rack chain's MIDI out beside its
+            // audio, but a conduit is a conduit: a note gate passes on whatever
+            // falls in its range.
+            //
+            // A Device is deliberately not one. Its MIDI output port carries what
+            // the device produced and nothing it was handed: MIDI thru is the
+            // compiler's merge behind the device (OpRole::ChainMidiMerge), which is
+            // the only way a host can offer it over a plugin it does not write, and
+            // a device doing it as well made every note a pair (#2345). So a device
+            // is a producer like any other and its port stays at the budget every
+            // port starts on.
+            //
+            // Unless it says otherwise: a MIDI FX that consumes notes hands the
+            // rest of the channel on, since thru would bring the notes back with
+            // it (#2417). Its port holds what it makes and what reached it, and
+            // what reached it is a merge's sum rather than one producer's budget.
+            if (op.kind == OpKind::Device) {
+                const auto* device = deviceForOp_[i];
+                const auto hasMidiOut =
+                    op.outputs.size() > 1 && op.outputs[1].kind == SignalKind::Midi;
+                if (device == nullptr || !device->forwardsMidiInput() || !hasMidiOut)
+                    continue;
+
+                const auto reaching = op.inputs.size() > 1 && op.inputs[1].valid()
+                                          ? portMidiBytes[flatPort(op.inputs[1])]
+                                          : 0;
+                portMidiBytes[static_cast<std::size_t>(portOffsets_[i]) + 1] =
+                    kMaxMidiBytesPerPort + reaching;
+                continue;
+            }
+
+            if (op.kind != OpKind::MergeMidi && op.kind != OpKind::Fader &&
+                op.kind != OpKind::MidiNoteGate)
+                continue;
+
+            int carried = 0;
+            for (const auto& input : op.inputs) {
+                if (!input.valid())
+                    continue;
+                if (plan.ops[static_cast<std::size_t>(input.op)]
+                        .outputs[static_cast<std::size_t>(input.port)]
+                        .kind != SignalKind::Midi)
+                    continue;
+                carried += portMidiBytes[flatPort(input)];
+            }
+
+            for (std::size_t port = 0; port < op.outputs.size(); ++port)
+                if (op.outputs[port].kind == SignalKind::Midi)
+                    portMidiBytes[static_cast<std::size_t>(portOffsets_[i]) + port] = carried;
         }
+    };
 
-        if (op.kind != OpKind::MergeMidi && op.kind != OpKind::Fader)
-            continue;
-
-        int carried = 0;
-        for (const auto& input : op.inputs) {
-            if (!input.valid())
-                continue;
-            if (plan.ops[static_cast<std::size_t>(input.op)]
-                    .outputs[static_cast<std::size_t>(input.port)]
-                    .kind != SignalKind::Midi)
-                continue;
-            carried += portMidiBytes[flatPort(input)];
-        }
-
-        for (std::size_t port = 0; port < op.outputs.size(); ++port)
-            if (op.outputs[port].kind == SignalKind::Midi)
-                portMidiBytes[static_cast<std::size_t>(portOffsets_[i]) + port] = carried;
-    }
+    sweep();
 
     midiSlots_.resize(static_cast<std::size_t>(layout.numMidiSlots));
+    midiSlotPanic_.assign(static_cast<std::size_t>(layout.numMidiSlots), 0);
     midiByteBounds_.assign(static_cast<std::size_t>(layout.numMidiSlots), 0);
     for (std::size_t i = 0; i < numOps; ++i) {
         for (std::size_t port = 0; port < plan.ops[i].outputs.size(); ++port) {
@@ -624,6 +941,42 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
 
     for (std::size_t slot = 0; slot < midiSlots_.size(); ++slot)
         midiSlots_[slot].ensureSize(static_cast<std::size_t>(midiByteBounds_[slot]));
+
+    midiFractions_.clear();
+    for (const auto bound : midiByteBounds_)
+        midiFractions_.emplace_back(static_cast<std::size_t>(bound / kMidiShortMessageBytes + 1));
+
+    // Tell every bound device how much MIDI can reach it and how much it may
+    // write, now that the sums are known and while there is still a thread that
+    // may allocate.
+    //
+    // A device can work out neither for itself: kMaxMidiBytesPerPort is what
+    // one producer may write, and a device fed by a merge is fed the sum of
+    // several. Sizing from the constant is how a device on a track with two
+    // MIDI sources silently drops the second one's tail on the way in. The two
+    // figures differ for that reason and no other now that thru is the plan's
+    // (#2345): a device writes one producer's worth and may read far more.
+    // The executor is the only thing that knows, so it is the thing that says.
+    //
+    // The input is the slot's bound and the output is the port's own. A slot
+    // holds the largest of the ports sharing it, which is the right size for a
+    // buffer to read from and the wrong figure to write against: everything
+    // downstream reserved its room from this port's figure, not its
+    // neighbour's.
+    for (std::size_t i = 0; i < numOps; ++i) {
+        auto* device = deviceForOp_[i];
+        if (device == nullptr)
+            continue;
+
+        const auto& op = plan.ops[i];
+        const auto hasMidiIn = op.inputs.size() > 1 && op.inputs[1].valid();
+        device->setMidiInputBoundBytes(
+            hasMidiIn ? midiByteBounds_[static_cast<std::size_t>(slotFor(op.inputs[1]))] : 0);
+
+        const auto hasMidiOut = op.outputs.size() > 1 && op.outputs[1].kind == SignalKind::Midi;
+        device->setMidiOutputBoundBytes(
+            hasMidiOut ? portMidiBytes[static_cast<std::size_t>(portOffsets_[i]) + 1] : 0);
+    }
 
     // Delay lines, for the edges that turned out to need one. A plan with no
     // latency in it allocates nothing here, which is the whole point of
@@ -709,6 +1062,21 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     const auto fadeSamples =
         std::max(1, static_cast<int>(std::lround(kCrossfadeSeconds * context_.sampleRate)));
 
+    // Shared with the executor this one replaces, so a gate that was passing
+    // still raises its all-notes-off when the same publish that changed the
+    // shape also turned the monitor off. Starting every gate closed would call
+    // that "already silent" and let the notes hang (#2612).
+    notePassing_.assign(numOps, nullptr);
+    for (std::size_t i = 0; i < numOps; ++i) {
+        if (plan.ops[i].kind != OpKind::MidiNoteGate)
+            continue;
+
+        if (const auto from = carriedFrom(i); from != INVALID_OP_ID)
+            notePassing_[i] = previous->notePassingFor(from);
+        if (notePassing_[i] == nullptr)
+            notePassing_[i] = std::make_shared<std::atomic<char>>(0);
+    }
+
     crossfadeForOp_.assign(numOps, -1);
     for (std::size_t i = 0; i < numOps; ++i) {
         if (plan.ops[i].kind != OpKind::Crossfade)
@@ -740,6 +1108,42 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
         crossfades_.push_back(std::move(ramp));
     }
 
+    // Both halves of one cut route share a carry, paired by the track that
+    // reads it and the signal its key names. Adopted across a recompile the way
+    // a delay line is: a loop that is still sounding should not restart from
+    // silence because something elsewhere in the project changed.
+    feedbackForOp_.assign(numOps, -1);
+    std::map<std::pair<TrackId, int>, int> carryForRoute;
+    for (std::size_t i = 0; i < numOps; ++i) {
+        const auto& op = plan.ops[i];
+        if (op.kind != OpKind::FeedbackSend && op.kind != OpKind::FeedbackReturn)
+            continue;
+
+        const std::pair route{op.key.trackId, op.key.index};
+        if (const auto found = carryForRoute.find(route); found != carryForRoute.end()) {
+            feedbackForOp_[i] = found->second;
+            continue;
+        }
+
+        std::shared_ptr<FeedbackCarry> carry;
+        if (const auto from = carriedFrom(i); from != INVALID_OP_ID)
+            if (const auto& adopted = previous->feedbackCarryFor(from);
+                adopted != nullptr &&
+                adopted->hasConfiguration(context_.numChannels, context_.maxBlockSize)) {
+                carry = adopted;
+                ++carriedFeedbackCarries_;
+            }
+
+        if (carry == nullptr) {
+            carry = std::make_shared<FeedbackCarry>();
+            carry->prepare(context_.numChannels, context_.maxBlockSize);
+        }
+
+        feedbackForOp_[i] = static_cast<int>(feedbackCarries_.size());
+        carryForRoute.emplace(route, feedbackForOp_[i]);
+        feedbackCarries_.push_back(std::move(carry));
+    }
+
     silence_.setSize(context_.numChannels, context_.maxBlockSize, false, true, false);
     silence_.clear();
     noMidi_.clear();
@@ -760,13 +1164,36 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
 
     planFingerprint_ = magda::engine::planFingerprint(plan);
     plan_ = &plan;
+
+    for (auto& report : reportUnboundInputs(values))
+        messages.push_back(std::move(report));
+
+    return messages;
+}
+
+std::vector<std::string> PlanExecutor::reportUnboundInputs(const PlanValues* values) {
+    std::vector<std::string> messages;
+    if (plan_ == nullptr || !liveSession_)
+        return messages;
+
+    for (std::size_t i = 0; i < plan_->ops.size(); ++i) {
+        const auto& op = plan_->ops[i];
+        if (op.kind != OpKind::AudioInput || audioSourceForOp_[i] != nullptr)
+            continue;
+        if (!hearsLiveInput(*plan_, values, op.key.trackId))
+            continue;
+        if (!reportedUnboundInputs_.insert(static_cast<OpId>(i)).second)
+            continue;
+
+        messages.push_back(describeOp(*plan_, i) + "no live audio input bound for track " +
+                           std::to_string(op.key.trackId) + ", it renders silence");
+    }
     return messages;
 }
 
 juce::dsp::AudioBlock<float> PlanExecutor::audioBlock(std::size_t row, int numSamples) const {
     const auto channels = static_cast<std::size_t>(context_.numChannels);
-    return juce::dsp::AudioBlock<float>(&slotChannels_[row * channels], channels,
-                                        static_cast<std::size_t>(numSamples));
+    return {&slotChannels_[row * channels], channels, static_cast<std::size_t>(numSamples)};
 }
 
 juce::dsp::AudioBlock<float> PlanExecutor::audioIn(const PortRef& ref, int numSamples) const {
@@ -786,6 +1213,46 @@ const juce::MidiBuffer& PlanExecutor::midiIn(const PortRef& ref) const {
 
 juce::MidiBuffer& PlanExecutor::midiOut(OpId op, int port) {
     return midiSlots_[static_cast<std::size_t>(slotFor(PortRef{op, port}))];
+}
+
+const NoteFractions& PlanExecutor::fractionsIn(const PortRef& ref) const {
+    return ref.valid() ? midiFractions_[static_cast<std::size_t>(slotFor(ref))] : noFractions_;
+}
+
+NoteFractions& PlanExecutor::fractionsOut(OpId op, int port) {
+    return midiFractions_[static_cast<std::size_t>(slotFor(PortRef{op, port}))];
+}
+
+void PlanExecutor::commitReroutes(std::uint64_t epoch) {
+    epoch_ = epoch;
+
+    for (const auto op : reroutedOps_)
+        if (auto* owed = midiPanicForOp_[op]; owed != nullptr)
+            owed->store(epoch, std::memory_order_relaxed);
+}
+
+bool PlanExecutor::takeOwedPanic(std::atomic<std::uint64_t>* owed) const {
+    if (owed == nullptr)
+        return false;
+
+    auto pending = owed->load(std::memory_order_relaxed);
+
+    // Never a later epoch's: the plan that raised it is not the one rendering,
+    // and a note played through this route before the swap still needs the
+    // panic that plan is about to deliver. An earlier one's is this plan's to
+    // deliver, since whoever it was owed by never got to.
+    if (pending == 0 || pending > epoch_)
+        return false;
+
+    return owed->compare_exchange_strong(pending, 0, std::memory_order_relaxed);
+}
+
+bool PlanExecutor::midiInPanic(const PortRef& ref) const {
+    return ref.valid() && midiSlotPanic_[static_cast<std::size_t>(slotFor(ref))] != 0;
+}
+
+void PlanExecutor::setMidiOutPanic(OpId op, int port, bool panic) {
+    midiSlotPanic_[static_cast<std::size_t>(slotFor(PortRef{op, port}))] = panic ? 1 : 0;
 }
 
 PlanExecutor::BlockStart PlanExecutor::beginBlock(const PlanValues& values,
@@ -862,12 +1329,8 @@ void PlanExecutor::feedNoteTriggers(std::size_t op, const juce::MidiBuffer& midi
     // A cross-track listener takes one trigger for the block rather than one
     // per note, which is what the fork's monitor does: it scans the buffer,
     // sets a flag, and fires triggerSidechain once.
-    bool anyNoteOn = false;
-    for (const auto metadata : midi)
-        if (metadata.getMessage().isNoteOn()) {
-            anyNoteOn = true;
-            break;
-        }
+    const auto isNoteOn = [](const auto& metadata) { return metadata.getMessage().isNoteOn(); };
+    const bool anyNoteOn = std::ranges::any_of(midi, isNoteOn);
 
     for (const auto index : modSourceForOp_[op]) {
         if (mods_.listensFor(index, *blockTable_) != ModListen::Midi)
@@ -929,12 +1392,11 @@ void PlanExecutor::renderModSource(OpId id, const BlockInfo& block) {
     const auto channels = static_cast<int>(in.getNumChannels());
     const auto scale = channels > 0 ? 1.0f / static_cast<float>(channels) : 0.0f;
 
-    for (int s = 0; s < numSamples; ++s) {
-        float sum = 0.0f;
-        for (int c = 0; c < channels; ++c)
-            sum += in.getSample(c, s);
-        detectMono_[static_cast<std::size_t>(s)] = sum * scale;
-    }
+    juce::FloatVectorOperations::clear(detectMono_.data(), numSamples);
+    for (int c = 0; c < channels; ++c)
+        juce::FloatVectorOperations::addWithMultiply(
+            detectMono_.data(), in.getChannelPointer(static_cast<std::size_t>(c)), scale,
+            numSamples);
 
     const auto mono =
         std::span<const float>{detectMono_}.first(static_cast<std::size_t>(numSamples));
@@ -944,8 +1406,8 @@ void PlanExecutor::renderModSource(OpId id, const BlockInfo& block) {
     // and a duck should follow whichever side is loud.
     float peak = 0.0f;
     for (int c = 0; c < channels; ++c)
-        for (int s = 0; s < numSamples; ++s)
-            peak = std::max(peak, std::abs(in.getSample(c, s)));
+        peak = std::max(
+            peak, peakMagnitude(in.getChannelPointer(static_cast<std::size_t>(c)), numSamples));
 
     auto* detector = triggerForOp_[i].get();
     if (detector == nullptr)
@@ -1042,6 +1504,12 @@ void PlanExecutor::publishValueTaps() {
 
 void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedBlock,
                            juce::AudioBuffer<float>& output) {
+    // Flush-to-zero for everything this block runs (#2240). A device that feeds
+    // its own output back through a filter decays into the denormal range and
+    // stays there, where on Intel every multiply is a microcode trap; the mode
+    // is per thread, so it is set where the render is and not once at startup.
+    const juce::ScopedNoDenormals noDenormals;
+
     const auto start = beginBlock(values, requestedBlock, output);
     if (!start.render) {
         resolveParameters(values, start.block);
@@ -1104,6 +1572,20 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
     const auto i = static_cast<std::size_t>(id);
     const auto& op = plan_->ops[i];
     const auto numSamples = block.numSamples;
+
+    if (!published.required) {
+        for (std::size_t port = 0; port < op.outputs.size(); ++port) {
+            if (op.outputs[port].kind == SignalKind::Audio) {
+                audioOut(id, static_cast<int>(port), numSamples).clear();
+            } else {
+                midiOut(id, static_cast<int>(port)).clear();
+                fractionsOut(id, static_cast<int>(port)).clear();
+                setMidiOutPanic(id, static_cast<int>(port), false);
+            }
+        }
+        return;
+    }
+
     const auto value = mixerValueFor(i, published);
 
     switch (op.kind) {
@@ -1114,19 +1596,34 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
                 out.clear();
             else
                 audioSourceForOp_[i]->render(block, out);
+
+            // Added after the arrangement, the order the track's mix summed the two in.
+            if (auto* session = sessionSourceForOp_[i];
+                session != nullptr && !value.silent && !session->silentFor(block)) {
+                auto scratch = juce::dsp::AudioBlock<float>(sessionScratch_[i])
+                                   .getSubBlock(0, static_cast<std::size_t>(numSamples));
+                session->render(block, scratch);
+                out.add(scratch);
+            }
             break;
         }
 
         case OpKind::ClipMidi:
-        case OpKind::MidiInput: {
+        case OpKind::MidiInput:
+        case OpKind::SessionMidi: {
             auto& out = midiOut(id, 0);
             out.clear();
+            auto& fractions = fractionsOut(id, 0);
+            fractions.clear();
+            bool panic = false;
             if (!value.silent && midiSourceForOp_[i] != nullptr) {
-                midiSourceForOp_[i]->render(block, out);
+                midiSourceForOp_[i]->renderWithFractions(block, out, fractions);
                 // Bytes, not events: one SysEx dump outweighs a thousand
                 // notes, and an event count would wave it through.
                 jassert(out.data.size() <= kMaxMidiBytesPerPort);
+                panic = midiSourceForOp_[i]->raisedAllNotesOff();
             }
+            setMidiOutPanic(id, 0, panic);
             break;
         }
 
@@ -1200,8 +1697,14 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
                 break;
             auto& out = midiOut(id, 0);
             out.clear();
-            midiDelays_[static_cast<std::size_t>(line)]->process(midiIn(op.inputs[0]), out,
-                                                                 numSamples);
+            auto& fractions = fractionsOut(id, 0);
+            fractions.clear();
+            midiDelays_[static_cast<std::size_t>(line)]->process(
+                midiIn(op.inputs[0]), fractionsIn(op.inputs[0]), out, fractions, numSamples);
+            // Undelayed. The line holds events, not the discontinuity that
+            // produced them, and a device is owed its panic on the block that
+            // caused it rather than a latency later (#2418).
+            setMidiOutPanic(id, 0, midiInPanic(op.inputs[0]));
             jassert(out.data.size() <=
                     midiByteBounds_[static_cast<std::size_t>(slotFor(PortRef{id, 0}))]);
             break;
@@ -1232,15 +1735,87 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
         case OpKind::MergeMidi: {
             auto& out = midiOut(id, 0);
             out.clear();
+            auto& fractions = fractionsOut(id, 0);
+            fractions.clear();
+            bool panic = false;
             if (!value.silent)
                 for (const auto& input : op.inputs)
-                    if (input.valid())
+                    if (input.valid()) {
                         out.addEvents(midiIn(input), 0, numSamples, 0);
+                        fractions.addFrom(fractionsIn(input));
+                        panic = panic || midiInPanic(input);
+                    }
+            setMidiOutPanic(id, 0, panic);
 
             // After the merge and on silent blocks too, so a tap reads what the
             // chain reads rather than what the executor felt like reporting: a
             // gated chain receives nothing, and that is a fact about the block
             // rather than an absence of one.
+            if (auto* tap = midiTapForOp_[i]; tap != nullptr)
+                tap->write(out, block);
+            break;
+        }
+
+        case OpKind::MidiNoteGate: {
+            // A pad answers to a contiguous range of notes and plays them from
+            // its own root, so a sampler mapped at C0 sounds from whichever pad
+            // triggered it. Both halves are here because they are one decision:
+            // an event is either this pad's, in which case it arrives
+            // transposed, or it is not and this pad never sees it.
+            auto& out = midiOut(id, 0);
+            out.clear();
+            auto& fractions = fractionsOut(id, 0);
+            fractions.clear();
+
+            // Going silent is itself an all-notes-off. Nothing downstream will
+            // ever see the note-offs for what already went through, and the
+            // monitor switch over an input route no longer recompiles, so the
+            // reroute machinery is not there to cover it either (#2612).
+            auto& passing = *notePassing_[i];
+            const bool wasPassing =
+                passing.exchange(value.silent ? 0 : 1, std::memory_order_relaxed) != 0;
+
+            if (value.silent) {
+                setMidiOutPanic(id, 0, wasPassing);
+                break;
+            }
+
+            setMidiOutPanic(id, 0, midiInPanic(op.inputs[0]));
+
+            const int low = op.noteGateLow;
+            const int high = op.noteGateHigh;
+            const int transpose = op.noteGateTranspose;
+
+            for (const auto metadata : midiIn(op.inputs[0])) {
+                auto message = metadata.getMessage();
+
+                // Everything that is not a note carries no pitch to gate on and
+                // is the chain's business as much as any pad's: a sustain pedal
+                // or a pitch bend reaches every pad, which is what the current
+                // engine does with them too.
+                if (!message.isNoteOnOrOff() && !message.isAftertouch()) {
+                    out.addEvent(message, metadata.samplePosition);
+                    continue;
+                }
+
+                const int note = message.getNoteNumber();
+                if (note < low || note > high)
+                    continue;
+
+                // Clamped rather than dropped. A transposed note past the end of
+                // the keyboard is a pad configured to play higher than MIDI
+                // goes, and the note it asked for is the nearest one that
+                // exists; dropping it would leave a pad that triggers nothing
+                // and looks broken.
+                message.setNoteNumber(std::clamp(note + transpose, 0, 127));
+                out.addEvent(message, metadata.samplePosition);
+            }
+
+            for (const auto& entry : fractionsIn(op.inputs[0]).entries())
+                if (entry.note >= low && entry.note <= high)
+                    fractions.add(entry.sample, entry.channel,
+                                  std::clamp(entry.note + transpose, 0, 127), entry.fraction);
+
             if (auto* tap = midiTapForOp_[i]; tap != nullptr)
                 tap->write(out, block);
             break;
@@ -1254,6 +1829,10 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             if (producesMidi) {
                 deviceMidiOut = &midiOut(id, 1);
                 deviceMidiOut->clear();
+                fractionsOut(id, 1).clear();
+                // Cleared with the buffer and beside it, so every early return
+                // below leaves the port saying the same thing the buffer does.
+                setMidiOutPanic(id, 1, false);
             }
             // A multi-out instrument's further pairs sit on the ports after
             // the main audio and any MIDI, so the count is what is left.
@@ -1307,12 +1886,33 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             // plan and published with it, which is #2117. Until then a device
             // is handed an empty window rather than a stale one.
             const auto window = paramWindowForOp_[static_cast<std::size_t>(i)];
-            DeviceBlock deviceBlock{.audio = audio.getSubsetChannelBlock(0, blockWidth),
-                                    .midiIn = &midiIn(op.inputs[1]),
-                                    .midiOut = deviceMidiOut,
-                                    .sidechain = {},
-                                    .params = paramValues_.device(window.first, window.count),
-                                    .block = block};
+
+            // Spent here rather than inside the block below: as the last
+            // operand of an || it would be skipped on a block that already
+            // carried a panic, and fire again on a later one (#2418).
+            const auto rerouted = takeOwedPanic(midiPanicForOp_[static_cast<std::size_t>(i)]);
+            DeviceBlock deviceBlock{
+                .audio = audio.getSubsetChannelBlock(0, blockWidth),
+                .midiIn = &midiIn(op.inputs[1]),
+                .midiInFractions = &fractionsIn(op.inputs[1]),
+                // What reached the port, plus the block's
+                // own playhead jump, which both hosts raise
+                // per device rather than passing it along a
+                // chain.
+                //
+                // Deliberately not this track going quiet. A
+                // panic says the host is about to re-assert
+                // what should sound, and only a jump does
+                // (playLane chases on !continuous); mute here
+                // is a gain with the track still rendering, so
+                // nothing is withheld and nothing would come
+                // back (#2418).
+                .midiInAllNotesOff = !block.continuous || midiInPanic(op.inputs[1]) || rerouted,
+                .midiOut = deviceMidiOut,
+                .midiOutFractions = producesMidi ? &fractionsOut(id, 1) : nullptr,
+                .sidechain = {},
+                .params = deviceParams(window),
+                .block = block};
             if (op.inputs[2].valid())
                 deviceBlock.sidechain = audioIn(op.inputs[2], numSamples);
 
@@ -1321,19 +1921,50 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             // likes, and anything shared here would be two devices writing one
             // array. Built only where there are pairs, so the devices that have
             // none, which is nearly all of them, pay nothing for it.
+            const ProfileScope timed([device](auto elapsed) {
+                BlockProfile::addDevice(device->profileName(), elapsed);
+            });
             if (multiOutPairs <= 0) {
                 device->process(deviceBlock);
             } else {
                 std::array<juce::dsp::AudioBlock<float>, kMaxMultiOutPairs> pairs;
                 for (int pair = 0; pair < multiOutPairs; ++pair) {
                     const auto& port =
-                        op.outputs[static_cast<std::size_t>(firstMultiOutPort + pair)];
+                        op.outputs[static_cast<std::size_t>(firstMultiOutPort) + pair];
                     pairs[static_cast<std::size_t>(pair)] =
                         audioOut(id, firstMultiOutPort + pair, numSamples)
                             .getSubsetChannelBlock(0, static_cast<std::size_t>(port.channels));
                 }
                 deviceBlock.extraOutputs = {pairs.data(), static_cast<std::size_t>(multiOutPairs)};
                 device->process(deviceBlock);
+            }
+
+            // Monitoring the key: the slot puts out what it was handed instead
+            // of what the device made of it (#2329). After process(), so the
+            // device's own smoothing and metering carry on and switching back
+            // is not a click; an unconnected key monitors silence.
+            if (value.listensToSidechain) {
+                const auto key = deviceBlock.sidechain;
+                for (std::size_t channel = 0; channel < audio.getNumChannels(); ++channel) {
+                    auto side = audio.getSingleChannelBlock(channel);
+                    if (key.getNumChannels() == 0)
+                        side.clear();
+                    else
+                        side.copyFrom(
+                            key.getSingleChannelBlock(std::min(channel, key.getNumChannels() - 1)));
+                }
+            }
+
+            // What the device left on its output, for whatever the port feeds.
+            // A device that produces MIDI and says nothing drops the panic,
+            // which is what the fork does with its fresh output buffer.
+            if (producesMidi) {
+                setMidiOutPanic(id, 1, deviceBlock.midiOutAllNotesOff);
+
+                // A device that said nothing about fractions, a hosted plugin
+                // among them, put every note on its sample (#2741).
+                if (auto& fractions = fractionsOut(id, 1); fractions.empty())
+                    fractions.addWhole(midiOut(id, 1));
             }
 
             // Everything downstream reads slots at full width, so each port
@@ -1351,7 +1982,12 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
                 else
                     slot.clear();
             }
-            jassert(deviceMidiOut == nullptr || deviceMidiOut->data.size() <= kMaxMidiBytesPerPort);
+            // The port's reservation, not the flat constant: a device passing a
+            // merged input through legally writes more than one producer's
+            // worth, and that is what its port was sized for (#2341).
+            jassert(deviceMidiOut == nullptr ||
+                    deviceMidiOut->data.size() <=
+                        midiByteBounds_[static_cast<std::size_t>(slotFor(PortRef{id, 1}))]);
             break;
         }
 
@@ -1383,8 +2019,14 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             if (op.outputs.size() > 1 && op.outputs[1].kind == SignalKind::Midi) {
                 auto& outMidiBuffer = midiOut(id, 1);
                 outMidiBuffer.clear();
-                if (!value.silent && op.inputs[1].valid())
+                auto& fractions = fractionsOut(id, 1);
+                fractions.clear();
+                const bool carries = !value.silent && op.inputs[1].valid();
+                if (carries) {
                     outMidiBuffer.addEvents(midiIn(op.inputs[1]), 0, numSamples, 0);
+                    fractions.addFrom(fractionsIn(op.inputs[1]));
+                }
+                setMidiOutPanic(id, 1, carries && midiInPanic(op.inputs[1]));
             }
             break;
         }
@@ -1410,15 +2052,121 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             renderModSource(id, block);
             break;
 
+        case OpKind::InsertSend: {
+            // A sink, and the one place in the graph where the block leaves the
+            // machine. Silent means the chain feeding it is muted, and a muted
+            // track sends nothing: the hardware hears what the track is doing,
+            // which for a muted track is nothing (#2245).
+            auto* insert = insertForOp_[i];
+            if (insert == nullptr)
+                break;
+
+            // Where a device would be handed an all-notes-off, and also when the
+            // chain falls silent: a muted track sends nothing more, including the
+            // note-offs for what it started.
+            if (op.inputs[1].valid() &&
+                (value.silent || !block.continuous || midiInPanic(op.inputs[1])))
+                insert->releaseNotes(block);
+
+            if (value.silent)
+                break;
+
+            static const juce::MidiBuffer kNoMidi;
+
+            // Either input may be unconnected: an external effect sends audio
+            // and no MIDI, an external instrument the reverse. An empty block
+            // and an empty buffer are what "this insert has no send of that
+            // kind" looks like to whoever implements it.
+            const auto audio =
+                op.inputs[0].valid()
+                    ? juce::dsp::AudioBlock<const float>(audioIn(op.inputs[0], numSamples))
+                    : juce::dsp::AudioBlock<const float>();
+
+            insert->send(block, audio, op.inputs[1].valid() ? midiIn(op.inputs[1]) : kNoMidi);
+            break;
+        }
+
+        case OpKind::InsertReturn: {
+            // A source, like a live input, and asked for exactly the one port
+            // the plan declared: the compiler emits an audio port or a MIDI
+            // port from what the insert says comes back, so which of the two is
+            // wanted is already decided here.
+            auto* insert = insertForOp_[i];
+            const bool returnsAudio = op.outputs[0].kind == SignalKind::Audio;
+
+            static thread_local juce::MidiBuffer discardedMidi;
+            discardedMidi.clear();
+
+            // Asked when silent too, so a capture of the return covers the whole pass
+            // whatever is muted (#2279); a silent chain still passes on silence.
+            if (returnsAudio) {
+                auto out = audioOut(id, 0, numSamples);
+                if (insert != nullptr)
+                    insert->receive(block, out, discardedMidi);
+                if (insert == nullptr || value.silent)
+                    out.clear();
+            } else {
+                auto& out = midiOut(id, 0);
+                out.clear();
+                auto& fractions = fractionsOut(id, 0);
+                fractions.clear();
+                if (insert != nullptr)
+                    insert->receive(block, {}, out);
+                if (value.silent)
+                    out.clear();
+                fractions.addWhole(out);
+
+                jassert(out.data.size() <= kMaxMidiBytesPerPort);
+            }
+            break;
+        }
+
+        case OpKind::FeedbackReturn: {
+            // Read before this block's send fills it, which is the whole of the
+            // one-block carry: a return has no dependencies and its send waits
+            // on the source track, so the schedule cannot put them the other
+            // way round (#2612).
+            const auto carry = feedbackForOp_[i];
+            auto out = audioOut(id, 0, numSamples);
+            if (carry < 0)
+                out.clear();
+            else
+                feedbackCarries_[static_cast<std::size_t>(carry)]->read(out, numSamples);
+            break;
+        }
+
+        case OpKind::FeedbackSend: {
+            const auto carry = feedbackForOp_[i];
+            if (carry < 0)
+                break;
+
+            auto& storage = *feedbackCarries_[static_cast<std::size_t>(carry)];
+            if (!op.inputs[0].valid()) {
+                storage.clear();
+                break;
+            }
+
+            storage.write(juce::dsp::AudioBlock<const float>(audioIn(op.inputs[0], numSamples)),
+                          numSamples);
+            break;
+        }
+
         case OpKind::Output: {
             if (value.silent || !op.inputs[0].valid())
                 break;
             auto in = audioIn(op.inputs[0], numSamples);
-            const auto numChannels =
-                std::min(static_cast<int>(in.getNumChannels()), output.getNumChannels());
-            for (int channel = 0; channel < numChannels; ++channel)
-                output.addFrom(channel, 0, in.getChannelPointer(static_cast<std::size_t>(channel)),
+            if (op.hardwareOutput.leftChannel >= 0 &&
+                op.hardwareOutput.leftChannel < output.getNumChannels() &&
+                in.getNumChannels() > 0) {
+                output.addFrom(op.hardwareOutput.leftChannel, 0, in.getChannelPointer(0),
                                numSamples);
+            }
+            if (op.hardwareOutput.rightChannel >= 0 &&
+                op.hardwareOutput.rightChannel < output.getNumChannels() &&
+                in.getNumChannels() > 1) {
+                output.addFrom(op.hardwareOutput.rightChannel, 0, in.getChannelPointer(1),
+                               numSamples);
+            }
             break;
         }
     }

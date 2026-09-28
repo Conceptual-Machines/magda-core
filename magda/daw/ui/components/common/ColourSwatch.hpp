@@ -4,7 +4,7 @@
 
 #include <functional>
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 
 namespace magda {
 

@@ -127,7 +127,7 @@ class MacroKnobComponent : public juce::Component,
     void endAutomationGesture();
 
     void showLinkMenu();
-    void paintLinkIndicator(juce::Graphics& g, juce::Rectangle<int> area);
+    static void paintLinkIndicator(juce::Graphics& g, juce::Rectangle<int> area);
     void onNameLabelEdited();
     void onLinkButtonClicked();
 

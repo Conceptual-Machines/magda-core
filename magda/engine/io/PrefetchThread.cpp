@@ -18,8 +18,8 @@ PrefetchThread::~PrefetchThread() {
 
 void PrefetchThread::add(PrefetchStream& stream) {
     {
-        const std::lock_guard<std::mutex> guard(lock_);
-        if (std::find(streams_.begin(), streams_.end(), &stream) == streams_.end())
+        const std::scoped_lock guard(lock_);
+        if (!std::ranges::contains(streams_, &stream))
             streams_.push_back(&stream);
     }
 
@@ -27,21 +27,28 @@ void PrefetchThread::add(PrefetchStream& stream) {
 }
 
 void PrefetchThread::remove(PrefetchStream& stream) {
-    const std::lock_guard<std::mutex> guard(lock_);
-    streams_.erase(std::remove(streams_.begin(), streams_.end(), &stream), streams_.end());
+    const std::scoped_lock guard(lock_);
+    std::erase(streams_, &stream);
 }
 
 std::size_t PrefetchThread::streamCount() const {
-    const std::lock_guard<std::mutex> guard(lock_);
+    const std::scoped_lock guard(lock_);
     return streams_.size();
 }
 
 bool PrefetchThread::fillOnce() {
-    const std::lock_guard<std::mutex> guard(lock_);
+    const std::scoped_lock guard(lock_);
 
+    // A chunk each, then round again. A stream is entitled to a full pool and
+    // takes one whatever the order it was registered in: filling one to the top
+    // before looking at the next spends the whole round on the clip that
+    // happened to be first, and a clip further down the list waits for it plus
+    // every disk read in between. The work is the same either way, so the only
+    // thing bounded here is how long a stream can be made to wait for its turn
+    // (#2705).
     auto worked = false;
     for (auto* stream : streams_)
-        worked = stream->fill() || worked;
+        worked = stream->fill(kChunksPerVisit) || worked;
 
     return worked;
 }

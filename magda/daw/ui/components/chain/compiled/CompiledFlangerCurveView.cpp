@@ -4,7 +4,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaFlangerCompiledPlugin.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -53,13 +53,14 @@ CompiledFlangerCurveView::CompiledFlangerCurveView(juce::String /*pluginId*/) {
 }
 
 void CompiledFlangerCurveView::setCompiledPlugin(
-    magda::daw::audio::compiled::MagdaFlangerCompiledPlugin* plugin) {
-    compiledPlugin_ = plugin;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaFlangerCompiledPlugin> plugin) {
+    compiledPlugin_ = std::move(plugin);
 }
 
-void CompiledFlangerCurveView::bindPlugin(te::Plugin* plugin) {
+void CompiledFlangerCurveView::bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) {
     setCompiledPlugin(
-        dynamic_cast<magda::daw::audio::compiled::MagdaFlangerCompiledPlugin*>(plugin));
+        std::dynamic_pointer_cast<magda::daw::audio::compiled::MagdaFlangerCompiledPlugin>(
+            std::move(device)));
 }
 
 void CompiledFlangerCurveView::updateFromDevice(const magda::DeviceInfo& device) {
@@ -86,8 +87,8 @@ void CompiledFlangerCurveView::timerCallback() {
     auto readPluginSlot = [this](int slot, float fallback) {
         if (compiledPlugin_ == nullptr)
             return fallback;
-        if (auto* p = compiledPlugin_->getSlotParameter(slot))
-            return compiledPlugin_->nativeValueToDisplayValue(slot, p->getCurrentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(slot))
+            return compiledPlugin_->nativeValueToDisplayValue(slot, p.currentValue());
         return fallback;
     };
 
@@ -107,8 +108,8 @@ void CompiledFlangerCurveView::timerCallback() {
         feedback = readPluginSlot(Flanger::kFeedbackSlot, feedback);
         mix = readPluginSlot(Flanger::kMixSlot, mix);
         width = readPluginSlot(Flanger::kWidthSlot, width);
-        if (auto* p = compiledPlugin_->getSlotParameter(Flanger::kDivisionSlot)) {
-            const float norm = p->getCurrentValue();
+        if (auto p = compiledPlugin_->getSlotParameter(Flanger::kDivisionSlot)) {
+            const float norm = p.currentValue();
             const auto& info = compiledPlugin_->getSlotInfo(Flanger::kDivisionSlot);
             const int count = static_cast<int>(info.choices.size());
             const int idx =
@@ -157,7 +158,7 @@ void CompiledFlangerCurveView::resampleFromPlugin() {
 
 void CompiledFlangerCurveView::paint(juce::Graphics& g) {
     const auto bounds = getLocalBounds();
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).darker(0.06f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).darker(0.06f));
     g.fillRect(bounds);
 
     auto plot = bounds.toFloat().reduced(kPlotPadX, kPlotPadY);
@@ -165,22 +166,21 @@ void CompiledFlangerCurveView::paint(juce::Graphics& g) {
     if (plot.getWidth() < 8.0f || plot.getHeight() < 8.0f)
         return;
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.55f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.55f));
     g.drawRect(plot, 1.0f);
 
     juce::Graphics::ScopedSaveState clipGuard(g);
     g.reduceClipRegion(plot.toNearestInt());
 
     // Log-frequency grid at decades.
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.18f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.18f));
     for (float decade : {100.0f, 1000.0f, 10000.0f}) {
         const float x = freqToX(decade, plot);
         g.drawVerticalLine(static_cast<int>(std::round(x)), plot.getY(), plot.getBottom());
     }
 
     // Current delay time from LFO position.
-    const float lfoBi =
-        static_cast<float>(std::sin(lfoPhase_ * juce::MathConstants<double>::twoPi));
+    const auto lfoBi = static_cast<float>(std::sin(lfoPhase_ * juce::MathConstants<double>::twoPi));
     const float delayMs = kCenterMs + lfoBi * depth_ * kSwingMs;
     const float delaySec = delayMs / 1000.0f;
 
@@ -188,14 +188,14 @@ void CompiledFlangerCurveView::paint(juce::Graphics& g) {
     // below. Symmetric reading uses the whole plot height rather than the
     // top half only.
     const float midY = plot.getCentreY();
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.30f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.30f));
     g.drawHorizontalLine(static_cast<int>(std::round(midY)), plot.getX(), plot.getRight());
 
     // Plot the magnitude response in dB. Comb notches at high feedback can
     // be narrower than a single pixel, so we oversample each output column
     // and average — kills the per-frame aliasing flicker that comes from
     // sample positions snapping past razor-thin notches.
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_MODULATION);
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION);
     const int pixelCount = std::max(64, static_cast<int>(std::round(plot.getWidth())));
     constexpr int kSubSamples = 8;
     constexpr float kDisplayRangeDb = 24.0f;  // ±24 dB fills the plot
@@ -231,7 +231,7 @@ void CompiledFlangerCurveView::paint(juce::Graphics& g) {
     // Delay readout (current LFO position translated to ms).
     const juce::String delayLabel = juce::String(delayMs, 2) + " ms";
     g.setFont(11.0f);
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.75f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.75f));
     g.drawText(
         delayLabel,
         juce::Rectangle<float>(plot.getX() + 6.0f, plot.getY() + 4.0f, 80.0f, 14.0f).toNearestInt(),
@@ -243,9 +243,9 @@ void CompiledFlangerCurveView::paint(juce::Graphics& g) {
         if (compiledPlugin_ != nullptr) {
             const auto& info = compiledPlugin_->getSlotInfo(
                 magda::daw::audio::compiled::MagdaFlangerCompiledPlugin::kDivisionSlot);
-            if (auto* p = compiledPlugin_->getSlotParameter(
+            if (auto p = compiledPlugin_->getSlotParameter(
                     magda::daw::audio::compiled::MagdaFlangerCompiledPlugin::kDivisionSlot)) {
-                const float norm = p->getCurrentValue();
+                const float norm = p.currentValue();
                 const int count = static_cast<int>(info.choices.size());
                 if (count > 0) {
                     const int idx = juce::jlimit(
@@ -261,7 +261,7 @@ void CompiledFlangerCurveView::paint(juce::Graphics& g) {
         rateLabel =
             rateHz_ >= 10.0f ? juce::String(rateHz_, 1) + " Hz" : juce::String(rateHz_, 2) + " Hz";
     }
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.6f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.6f));
     g.drawText(
         rateLabel,
         juce::Rectangle<float>(plot.getRight() - 80.0f - 6.0f, plot.getY() + 4.0f, 80.0f, 14.0f)

@@ -7,6 +7,7 @@
 
 #include "../core/ChainNodePath.hpp"
 #include "../core/DeviceInfo.hpp"
+#include "../core/ReferenceImpact.hpp"
 #include "../core/TypeIds.hpp"
 
 namespace magda {
@@ -35,6 +36,50 @@ struct DeviceCatalogEntry {
     bool operator==(const DeviceCatalogEntry&) const = default;
 };
 
+/** One path-free preset address for a particular live device. */
+struct DevicePresetEntry {
+    juce::String id;
+    juce::String name;
+    juce::String category;
+    /** "magda" for a saved device state, "plugin" for VST3/AU preset files. */
+    juce::String source;
+
+    bool operator==(const DevicePresetEntry&) const = default;
+};
+
+enum class ApplyDevicePresetStatus {
+    Applied,
+    Unchanged,
+    DeviceNotFound,
+    PresetNotFound,
+    Incompatible,
+    ReferenceConflict,
+    LoadFailed,
+};
+
+/** Result of resolving, preflighting, and atomically applying one opaque preset id. */
+struct ApplyDevicePresetResult {
+    ApplyDevicePresetStatus status = ApplyDevicePresetStatus::LoadFailed;
+    ReferenceImpactPlan referenceImpact;
+};
+
+enum class ReplaceDeviceStatus {
+    Replaced,
+    DeviceNotFound,
+    CatalogNotFound,
+    PresetNotFound,
+    Incompatible,
+    ReferenceConflict,
+    LoadFailed,
+};
+
+/** Result of staging and atomically replacing one device in its existing slot. */
+struct ReplaceDeviceResult {
+    ReplaceDeviceStatus status = ReplaceDeviceStatus::LoadFailed;
+    ChainNodePath devicePath;
+    ReferenceImpactPlan referenceImpact;
+};
+
 /**
  * @brief One automatable parameter of a live device.
  *
@@ -53,6 +98,124 @@ struct DeviceParameter {
     float currentValue = 0.0f;
 
     bool operator==(const DeviceParameter&) const = default;
+};
+
+/**
+ * @brief Detection-data overrides for one parameter.
+ *
+ * The same fields Configure Parameters' AI-Detect writes: display unit,
+ * scale, display range, and discrete choice labels. Present fields replace
+ * the saved value; absent fields keep it. `index` is a position in
+ * `DeviceInfo::parameters`.
+ */
+struct DeviceParameterOverride {
+    int index = -1;
+    std::optional<juce::String> unit;
+    std::optional<ParameterScale> scale;
+    std::optional<float> minValue;
+    std::optional<float> maxValue;
+    std::optional<std::vector<juce::String>> choices;
+};
+
+/**
+ * @brief A partial update to a device's saved parameter customization.
+ *
+ * Each present field replaces that selection wholesale — an empty vector
+ * clears it; an absent field leaves the saved selection alone. Indices are
+ * positions in `DeviceInfo::parameters`.
+ */
+struct DeviceParameterConfigUpdate {
+    std::optional<std::vector<int>> visibleParameters;
+    std::optional<std::vector<int>> miniMixerParameters;
+    std::optional<std::vector<int>> aiAgentParameters;
+    std::optional<juce::String> aiPrompt;
+    std::optional<std::vector<DeviceParameterOverride>> parameterOverrides;
+};
+
+/** Fields an agent may change on a device modulator. Missing fields are retained. */
+struct DeviceModUpdate {
+    std::optional<juce::String> name;
+    std::optional<ModType> type;
+    std::optional<LFOWaveform> waveform;
+    std::optional<float> rate;
+    std::optional<bool> enabled;
+    std::optional<bool> tempoSync;
+    std::optional<SyncDivision> syncDivision;
+    std::optional<bool> oneShot;
+    std::optional<float> attackMs;
+    std::optional<float> decayMs;
+    std::optional<float> sustain;
+    std::optional<float> releaseMs;
+};
+
+/** A partial update to one Drum Grid pad chain. */
+struct PadUpdate {
+    std::optional<int> lowNote;
+    std::optional<int> highNote;
+    std::optional<int> rootNote;
+    std::optional<float> levelDb;
+    std::optional<float> pan;
+    std::optional<bool> muted;
+    std::optional<bool> solo;
+    std::optional<bool> bypassed;
+    std::optional<int> outputBus;
+};
+
+enum class SidechainOwnerKind { Device, Rack };
+
+/** Capabilities are derived from the live owner and are safe to expose remotely. */
+struct SidechainCapabilities {
+    bool audio = false;
+    bool midi = false;
+    int audioChannels = 0;
+    std::vector<ModTapPoint> tapPoints;
+    bool gain = false;
+    bool listen = false;
+    std::vector<juce::String> channelMappings;
+};
+
+/** Path-addressed sidechain state. Source ids are public logical endpoint ids. */
+struct SidechainView {
+    ChainNodePath ownerPath;
+    SidechainOwnerKind ownerKind = SidechainOwnerKind::Device;
+    SidechainCapabilities capabilities;
+    std::optional<juce::String> sourceEndpointId;
+    SidechainConfig::Type type = SidechainConfig::Type::None;
+    ModTapPoint tapPoint = ModTapPoint::PostFader;
+    float gainDb = 0.0f;
+    bool enabled = false;
+    bool listen = false;
+    juce::String channelMapping = "automatic";
+};
+
+/**
+ * A partial sidechain update. The outer source optional means "not supplied";
+ * a supplied empty inner optional clears the source.
+ */
+struct SidechainPatch {
+    std::optional<std::optional<juce::String>> sourceEndpointId;
+    std::optional<SidechainConfig::Type> type;
+    std::optional<ModTapPoint> tapPoint;
+    std::optional<float> gainDb;
+    std::optional<bool> enabled;
+    std::optional<bool> listen;
+    std::optional<juce::String> channelMapping;
+};
+
+enum class SetSidechainStatus {
+    Applied,
+    Unchanged,
+    OwnerNotFound,
+    EndpointNotFound,
+    Incompatible,
+    FeedbackCycle,
+    ApplyFailed,
+};
+
+struct SetSidechainResult {
+    SetSidechainStatus status = SetSidechainStatus::ApplyFailed;
+    std::optional<SidechainView> sidechain;
+    ReferenceImpactPlan referenceImpact;
 };
 
 /**
@@ -86,6 +249,19 @@ class DeviceApi {
     virtual std::vector<DeviceParameter> getDeviceParameters(
         const ChainNodePath& devicePath) const = 0;
 
+    /** Presets applicable to this device, with opaque ids and no file paths. */
+    virtual std::vector<DevicePresetEntry> getDevicePresets(
+        const ChainNodePath& devicePath) const = 0;
+
+    /** Apply an id returned by getDevicePresets() without replacing the device slot. */
+    virtual ApplyDevicePresetResult applyPreset(const ChainNodePath& devicePath,
+                                                const juce::String& presetId) = 0;
+
+    /** Replace a device in place, optionally loading an opaque compatible preset first. */
+    virtual ReplaceDeviceResult replaceDevice(
+        const ChainNodePath& devicePath, const juce::String& catalogId,
+        const std::optional<juce::String>& presetId = std::nullopt) = 0;
+
     /**
      * @brief Add a device to a track's FX chain or to a rack chain.
      *
@@ -103,7 +279,23 @@ class DeviceApi {
     /** Move a device within the chain it already lives in. */
     virtual bool moveDevice(const ChainNodePath& devicePath, int toIndex) = 0;
 
+    /** Drum Grid kit edits. Paths identify the owning grid, never a rack with a colliding id. */
+    virtual ChainId createPad(const ChainNodePath&, int) = 0;
+    virtual DeviceId setPadVoice(const ChainNodePath&, int, const juce::String&) = 0;
+    /** A host-local sample path is accepted only as write input and is never projected. */
+    virtual DeviceId setPadSample(const ChainNodePath&, int, const juce::String&) = 0;
+    virtual bool clearPad(const ChainNodePath&, int) = 0;
+    virtual bool swapPads(const ChainNodePath&, int, int) = 0;
+    virtual bool updatePad(const ChainNodePath&, int, const PadUpdate&) = 0;
+
     virtual bool setDeviceBypassed(const ChainNodePath& devicePath, bool bypassed) = 0;
+
+    /** Inspect or atomically update a device/rack sidechain by exact owner path. */
+    virtual std::vector<SidechainView> getSidechains(
+        std::optional<TrackId> trackId = std::nullopt) const = 0;
+    virtual std::optional<SidechainView> getSidechain(const ChainNodePath& ownerPath) const = 0;
+    virtual SetSidechainResult setSidechain(const ChainNodePath& ownerPath,
+                                            const SidechainPatch& patch) = 0;
 
     /**
      * @brief Write one parameter, in real parameter units.
@@ -111,9 +303,56 @@ class DeviceApi {
      * Values outside the parameter's range are rejected rather than clamped: a
      * silently clamped write reports success while doing something the caller
      * did not ask for.
+     *
+     * External-plugin parameters the user has not opted in under Configure
+     * Parameters are rejected: this facade is the programmatic surface, and
+     * the per-parameter opt-in is enforced here so no consumer routes around
+     * it. Internal devices accept writes on every parameter.
      */
     virtual bool setDeviceParameter(const ChainNodePath& devicePath, int paramIndex,
                                     float value) = 0;
+
+    /**
+     * @brief Update the plugin's saved parameter customization and persist it.
+     *
+     * Writes the same per-plugin store Configure Parameters writes, then
+     * re-applies it to every live instance, so the change outlives the
+     * session. External plugins only: internal devices have no saved
+     * customization and their parameters already accept agent writes. False
+     * when the path does not resolve, the device is internal or carries no
+     * config id, or an index is out of range.
+     */
+    virtual bool setDeviceParameterConfig(const ChainNodePath& devicePath,
+                                          const DeviceParameterConfigUpdate& update) = 0;
+
+    /**
+     * @brief Open the device's plugin editor window in the MAGDA UI.
+     *
+     * Returns whether a window is actually open afterwards — false when the
+     * path does not resolve, when no engine is running (headless), or when
+     * the device has no native editor to show.
+     */
+    virtual bool openDeviceEditor(const ChainNodePath& devicePath) = 0;
+
+    /** Device-owned modulation. Link targets are parameters on the same device.
+     * External targets require the same AI opt-in as setDeviceParameter. */
+    virtual std::vector<ModInfo> getDeviceMods(const ChainNodePath& devicePath) const = 0;
+    virtual std::vector<MacroInfo> getDeviceMacros(const ChainNodePath& devicePath) const = 0;
+    virtual ModId createDeviceMod(const ChainNodePath& devicePath, ModType type,
+                                  LFOWaveform waveform) = 0;
+    virtual bool updateDeviceMod(const ChainNodePath& devicePath, ModId modId,
+                                 const DeviceModUpdate& update) = 0;
+    virtual bool removeDeviceMod(const ChainNodePath& devicePath, ModId modId) = 0;
+    virtual bool linkDeviceMod(const ChainNodePath& devicePath, ModId modId, int parameterIndex,
+                               float amount, bool bipolar) = 0;
+    virtual bool unlinkDeviceMod(const ChainNodePath& devicePath, ModId modId,
+                                 int parameterIndex) = 0;
+    virtual bool setDeviceMacroValue(const ChainNodePath& devicePath, int macroIndex,
+                                     float value) = 0;
+    virtual bool linkDeviceMacro(const ChainNodePath& devicePath, int macroIndex,
+                                 int parameterIndex, float amount, bool bipolar) = 0;
+    virtual bool unlinkDeviceMacro(const ChainNodePath& devicePath, int macroIndex,
+                                   int parameterIndex) = 0;
 };
 
 }  // namespace magda

@@ -1,7 +1,9 @@
 #include "VelocityLaneComponent.hpp"
 
+#include <algorithm>
+
 #include "../../state/TimelineController.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "VelocityLaneUtils.hpp"
 #include "core/ClipInfo.hpp"
@@ -149,8 +151,7 @@ size_t VelocityLaneComponent::findNoteAtX(int x) const {
             bestIndex = i;
         } else if (dist == bestDist && bestIndex != SIZE_MAX) {
             // Prefer selected notes when equidistant
-            if (std::find(selectedNoteIndices_.begin(), selectedNoteIndices_.end(), i) !=
-                selectedNoteIndices_.end()) {
+            if (std::ranges::contains(selectedNoteIndices_, i)) {
                 bestIndex = i;
             }
         }
@@ -161,7 +162,7 @@ size_t VelocityLaneComponent::findNoteAtX(int x) const {
 
 juce::Colour VelocityLaneComponent::getClipColour() const {
     const auto* clip = ClipManager::getInstance().getClip(clipId_);
-    return clip ? clip->colour : DarkTheme::getAccentColour();
+    return clip ? clip->colour : ActiveTheme::getAccentColour();
 }
 
 int VelocityLaneComponent::interpolateVelocity(float t) const {
@@ -261,11 +262,11 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
 
     // Background
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND_ALT));
     g.fillRect(bounds);
 
     // Draw horizontal grid lines at 25%, 50%, 75%, 100%
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.5f));
     int margin = 2;
     int usableHeight = getHeight() - (margin * 2);
 
@@ -277,7 +278,7 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
     // Value labels on the left
     {
         g.setFont(FontManager::getInstance().getUIFont(9.0f));
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.6f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.6f));
         constexpr int labelMargin = 2;
         constexpr int labelWidth = 24;
 
@@ -402,9 +403,7 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
 
             // Draw circle on top — selected notes are larger and brighter
             bool isBeingDragged = isDragging_ && isPrimaryClip && i == draggingNoteIndex_;
-            bool isSelected =
-                isPrimaryClip && std::find(selectedNoteIndices_.begin(), selectedNoteIndices_.end(),
-                                           i) != selectedNoteIndices_.end();
+            bool isSelected = isPrimaryClip && std::ranges::contains(selectedNoteIndices_, i);
             float radius = isSelected ? 4.5f : circleRadius;
             auto circleColour = isBeingDragged ? noteColour.brighter(0.5f)
                                 : isSelected   ? noteColour.brighter(0.3f)
@@ -445,8 +444,8 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
                     float t = static_cast<float>(seg) / static_cast<float>(numSegments);
                     double beat = firstBeat + t * beatRange;
                     int vel = interpolateVelocity(t);
-                    float px = static_cast<float>(beatToPixel(beat + clipAbsOffset));
-                    float py = static_cast<float>(velocityToY(vel));
+                    auto px = static_cast<float>(beatToPixel(beat + clipAbsOffset));
+                    auto py = static_cast<float>(velocityToY(vel));
 
                     if (!started) {
                         curvePath.startNewSubPath(px, py);
@@ -456,15 +455,15 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
                     }
                 }
 
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0.6f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0.6f));
                 g.strokePath(curvePath, juce::PathStrokeType(1.5f));
             }
 
             // Draw curve handle
             if (isCurveHandleVisible_ && !isRampDragging_) {
-                float hx = static_cast<float>(curveHandleX_);
-                float hy = static_cast<float>(curveHandleY_);
-                float hs = static_cast<float>(CURVE_HANDLE_SIZE);
+                auto hx = static_cast<float>(curveHandleX_);
+                auto hy = static_cast<float>(curveHandleY_);
+                auto hs = static_cast<float>(CURVE_HANDLE_SIZE);
 
                 // Diamond shape
                 juce::Path diamond;
@@ -475,17 +474,17 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
                 diamond.closeSubPath();
 
                 g.setColour(isCurveHandleDragging_
-                                ? DarkTheme::getColour(DarkTheme::TEXT_BRIGHT)
-                                : DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0.8f));
+                                ? ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT)
+                                : ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0.8f));
                 g.fillPath(diamond);
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DARK).withAlpha(0.5f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DARK).withAlpha(0.5f));
                 g.strokePath(diamond, juce::PathStrokeType(1.0f));
             }
         }
     }
 
     // Draw top border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawHorizontalLine(0, 0.0f, static_cast<float>(bounds.getWidth()));
 }
 
@@ -510,10 +509,10 @@ void VelocityLaneComponent::mouseDown(const juce::MouseEvent& e) {
             }
             if (sortedSelectedIndices_.size() < 2)
                 return;
-            std::sort(sortedSelectedIndices_.begin(), sortedSelectedIndices_.end(),
-                      [&clip](size_t a, size_t b) {
-                          return clip->midiNotes[a].startBeat < clip->midiNotes[b].startBeat;
-                      });
+            const auto startBeatOf = [&clip](size_t index) {
+                return clip->midiNotes[index].startBeat;
+            };
+            std::ranges::sort(sortedSelectedIndices_, {}, startBeatOf);
 
             isRampDragging_ = true;
             isCurveHandleVisible_ = false;
@@ -545,9 +544,7 @@ void VelocityLaneComponent::mouseDown(const juce::MouseEvent& e) {
 
             // B5: Store starting velocities of all selected notes
             selectionDragStartVelocities_.clear();
-            bool noteIsSelected =
-                std::find(selectedNoteIndices_.begin(), selectedNoteIndices_.end(), noteIndex) !=
-                selectedNoteIndices_.end();
+            bool noteIsSelected = std::ranges::contains(selectedNoteIndices_, noteIndex);
             if (noteIsSelected && selectedNoteIndices_.size() > 1) {
                 for (size_t idx : selectedNoteIndices_) {
                     if (idx < clip->midiNotes.size()) {

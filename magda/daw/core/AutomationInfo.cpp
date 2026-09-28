@@ -163,7 +163,7 @@ ParameterInfo getParameterInfoForTarget(const AutomationTarget& target) {
             // based on the modifier's tempoSync flag.
             if (target.modParamIndex == 0) {
                 juce::String name("Rate");
-                if (auto* mod = resolveModInfoForTarget(target); mod && mod->tempoSync)
+                if (const auto* mod = resolveModInfoForTarget(target); mod && mod->tempoSync)
                     return makeSyncDivisionInfo(name);
                 return makeHzRateInfo(name);
             }
@@ -207,12 +207,12 @@ juce::String getDisplayNameForTarget(const AutomationTarget& target) {
         }
         case ControlTarget::Kind::DeviceMacro: {
             auto defaultName = getMacroDefaultDisplayName(target.paramIndex);
-            if (auto* macro = resolveMacroInfoForTarget(target))
+            if (const auto* macro = resolveMacroInfoForTarget(target))
                 return formatCustomNameWithDefault(macro->name, defaultName);
             return defaultName;
         }
         case ControlTarget::Kind::ModParam: {
-            if (auto* mod = resolveModInfoForTarget(target))
+            if (const auto* mod = resolveModInfoForTarget(target))
                 return getModParameterDisplayName(*mod, target.modParamIndex);
             return "Mod " + juce::String(target.modId) + " Param " +
                    juce::String(target.modParamIndex);

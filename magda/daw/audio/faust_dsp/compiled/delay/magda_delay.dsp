@@ -4,6 +4,7 @@ declare license "GPL-3.0";
 declare version "1.0";
 
 import("stdfaust.lib");
+msm = library("magda_smoothing.lib");
 
 // ============================================================================
 // User controls
@@ -16,7 +17,7 @@ import("stdfaust.lib");
 // Free-time delay (used when sync is off). Gated: greyed when Sync (slot 2)
 // is ON, because the free-time value has no effect while sync is active.
 time      = hslider("Time [unit:ms] [idx:0] [gate:!2]", 250, 1, 2000, 1)
-            : si.smooth(ba.tau2pole(0.05));   // 50 ms parameter smoothing - keeps
+            : msm.smooth(ba.tau2pole(0.05));   // 50 ms parameter smoothing - keeps
                                               // automating Time from pitch-bending
                                               // the buffer pointer.
 
@@ -87,7 +88,7 @@ freeSamples    = time * ma.SR / 1000.0;
 // echoes. ~50 ms one-pole keeps the transition inaudible while still
 // settling fast enough to feel responsive.
 delaySamples   = ((1.0 - sync) * freeSamples + sync * syncedSamples)
-                 : si.smooth(ba.tau2pole(0.05));
+                 : msm.smooth(ba.tau2pole(0.05));
 
 // Tilt EQ: blend a 1 kHz lowpass and a 1 kHz highpass against the dry
 // signal.  At tilt = 0 we pass `x` through unchanged.

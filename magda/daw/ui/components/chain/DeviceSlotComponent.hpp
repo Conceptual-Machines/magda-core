@@ -80,10 +80,6 @@ class DeviceSlotComponent : public NodeComponent,
     int getCustomUITabIndex() const;
     void setCustomUITabIndex(int index);
 
-    // DrumGrid pad chain collapsed plugins (for saving/restoring across rebuilds)
-    std::vector<tracktion::engine::Plugin*> getDrumPadCollapsedPlugins() const;
-    void setDrumPadCollapsedPlugins(const std::vector<tracktion::engine::Plugin*>& plugins);
-
     // Callbacks for owner-specific behavior
     std::function<void()> onDeviceDeleted;
     std::function<void()> onDeviceLayoutChanged;
@@ -135,8 +131,8 @@ class DeviceSlotComponent : public NodeComponent,
     }
 
     // Mod/macro data providers
-    const magda::ModArray* getModsData() const override;
-    const magda::MacroArray* getMacrosData() const override;
+    const magda::ModArray* getModsData() const final;
+    const magda::MacroArray* getMacrosData() const final;
     std::vector<std::pair<magda::DeviceId, juce::String>> getAvailableDevices() const override;
     std::map<magda::DeviceId, std::vector<juce::String>> getDeviceParamNames() const override;
 
@@ -191,7 +187,6 @@ class DeviceSlotComponent : public NodeComponent,
     // SelectionManagerListener overrides — chain-node + binding/controller
     // listeners now live on NodeComponent (the base class), which fans
     // refreshControllerIndicators() out for us.
-    void chainNodeSelectionChanged(const magda::ChainNodePath& path) override;
     void selectionTypeChanged(magda::SelectionType newType) override;
     void modSelectionChanged(const magda::ModSelection& selection) override;
     void macroSelectionChanged(const magda::MacroSelection& selection) override;
@@ -205,6 +200,9 @@ class DeviceSlotComponent : public NodeComponent,
 
     // TrackManagerListener - only implement parameter change notification
     void tracksChanged() override {}
+    void deviceParameterObserved(const magda::ChainNodePath& devicePath, int paramIndex,
+                                 float normalised, magda::ObservationSource source) override;
+
     void deviceParameterChanged(const magda::ChainNodePath& devicePath, int paramIndex,
                                 float newValue) override;
 
@@ -224,6 +222,10 @@ class DeviceSlotComponent : public NodeComponent,
     void aiSoundDesignerPreferenceChanged(const juce::String& pluginIdentifier) override;
 
   private:
+    /// Take the parameter list from whatever holds it: a hosted plugin's own
+    /// instance, or the model (#2634).
+    void adoptParameterList();
+
     magda::DeviceInfo device_;
     DeviceSlotTraits traits_;
     DeviceSlotModMacroCommandCallbacks modMacroCommandCallbacks();
@@ -306,7 +308,7 @@ class DeviceSlotComponent : public NodeComponent,
 
     // Plugin presets button helpers (disk-scanned .vstpreset / .aupreset).
     void refreshPresetsButton();             // re-paint label + recompute visibility
-    bool hasPluginPresetsAvailable() const;  // disk presets OR >1 built-in programs
+    bool hasPluginPresetsAvailable() const;  // loaded external plugin with scanned presets
     void showPluginPresetMenu();
     void loadPluginPresetFile(const juce::File& file);
     void showSavePluginPresetDialog();
@@ -320,7 +322,6 @@ class DeviceSlotComponent : public NodeComponent,
 
     void updateParameterSlots();   // Reload parameter data for current page
     void updateParameterValues();  // Update only parameter values (for polling)
-    bool applySavedParameterConfig();
     void updateParameterPagination();
     void goToPrevPage();
     void goToNextPage();
@@ -344,6 +345,7 @@ class DeviceSlotComponent : public NodeComponent,
     // Helper to create custom UI for internal devices
     void createCustomUI();
     void detachInlineUiFromLivePlugin();
+    void bindFaustHeader();
     void refreshInlinePluginBindings();
     void setupCustomUILinking();
     void wirePadChainLinkCallbacks();  // Wire link mode on PadDeviceSlot param slots

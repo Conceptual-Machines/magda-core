@@ -46,8 +46,9 @@ class ParamHostComponent : public juce::Component {
     }
 
     // Parameter data updates.
-    void updateParameterSlots(const magda::DeviceInfo& device, int currentPage,
-                              std::function<void(int paramIndex, double value)> onValueChanged);
+    void updateParameterSlots(
+        const magda::DeviceInfo& device, int currentPage,
+        const std::function<void(int paramIndex, double value)>& onValueChanged);
     void updateParameterValues(const magda::DeviceInfo& device, int currentPage);
 
     void updateParamModulation(const magda::ModArray* mods, const magda::MacroArray* macros,

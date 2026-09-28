@@ -1,6 +1,6 @@
 #include "TimelineFiller.hpp"
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 
 namespace magda {
 
@@ -10,10 +10,10 @@ TimelineFiller::TimelineFiller() {
 
 void TimelineFiller::paint(juce::Graphics& g) {
     // Fill with timeline background color to match the timeline
-    g.fillAll(DarkTheme::getColour(DarkTheme::TIMELINE_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::TIMELINE_BACKGROUND));
 
     // Draw border to match timeline
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(getLocalBounds(), 1);
 }
 

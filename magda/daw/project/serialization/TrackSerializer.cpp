@@ -2,6 +2,7 @@
 
 #include "../../audio/plugins/InternalPluginRegistry.hpp"
 #include "../../core/DeviceParamMigrations.hpp"
+#include "../../core/DrumGridPads.hpp"
 #include "../../core/PluginCapabilities.hpp"
 #include "../../core/ViewModeState.hpp"
 #include "ProjectSerializer.hpp"
@@ -32,11 +33,56 @@ void migrateUtilityWidthToPercent(DeviceInfo& device) {
     }
 }
 
+/// The slot at @p position of @p device's parameter array, or -1.
+int slotAtPosition(const DeviceInfo& device, int position) {
+    if (position < 0 || position >= static_cast<int>(device.parameters.size()))
+        return -1;
+
+    return device.parameters[static_cast<std::size_t>(position)].paramIndex;
+}
+
+std::vector<int> readInts(const juce::DynamicObject& obj, const char* key) {
+    std::vector<int> values;
+    const auto var = obj.getProperty(key);
+    if (const auto* array = var.getArray())
+        for (const auto& value : *array)
+            values.push_back(static_cast<int>(value));
+
+    return values;
+}
+
+/**
+ * @brief The three parameter selections, whichever way the project holds them.
+ *
+ * Slots from #2638 on. An older project holds positions, translated through
+ * the saved array, which still carries every slot at load.
+ */
+void readParameterSelections(const juce::DynamicObject& obj, DeviceInfo& device) {
+    const auto selection = [&obj, &device](const char* slotsKey, const char* positionsKey) {
+        auto slots = readInts(obj, slotsKey);
+        if (!slots.empty() || obj.hasProperty(slotsKey))
+            return slots;
+
+        std::vector<int> translated;
+        for (const auto position : readInts(obj, positionsKey))
+            if (const auto slot = slotAtPosition(device, position); slot >= 0)
+                translated.push_back(slot);
+
+        return translated;
+    };
+
+    device.visibleParameters = selection("visibleParameterSlots", "visibleParameters");
+    device.miniMixerParameters = selection("miniMixerParameterSlots", "miniMixerParameters");
+    device.aiSoundDesignerParameters =
+        selection("aiSoundDesignerParameterSlots", "aiSoundDesignerParameters");
+}
+
 void enforcePostFxAnalysisDeviceOrder(std::vector<PostFxChainElement>& elements) {
-    auto findAnalysis = [&elements](int order) {
-        return std::find_if(elements.begin(), elements.end(), [order](const auto& element) {
-            return daw::audio::internalPostFxAnalysisOrder(element.device.pluginId) == order;
-        });
+    const auto analysisOrderOf = [](const PostFxChainElement& element) {
+        return daw::audio::internalPostFxAnalysisOrder(element.device.pluginId);
+    };
+    auto findAnalysis = [&elements, &analysisOrderOf](int order) {
+        return std::ranges::find(elements, order, analysisOrderOf);
     };
 
     auto osc = findAnalysis(0);
@@ -170,7 +216,7 @@ juce::var ProjectSerializer::serializeTrackInfo(const TrackInfo& track) {
     obj->setProperty("selectedGlobalModIndex", track.selectedGlobalModIndex);
     obj->setProperty("selectedGlobalMacroIndex", track.selectedGlobalMacroIndex);
 
-    return juce::var(obj);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& outTrack) {
@@ -394,7 +440,7 @@ juce::var ProjectSerializer::serializeChainElement(const ChainElement& element) 
         obj->setProperty("rack", serializeRackInfo(getRack(element)));
     }
 
-    return juce::var(obj);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeChainElement(const juce::var& json, ChainElement& outElement) {
@@ -447,6 +493,7 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     obj->setProperty("gainPanelOpen", device.gainPanelOpen);
     obj->setProperty("paramPanelOpen", device.paramPanelOpen);
     obj->setProperty("aiPanelOpen", device.aiPanelOpen);
+    obj->setProperty("padDetailOpen", device.padDetailOpen);
 
     // Parameters
     juce::Array<juce::var> paramsArray;
@@ -455,26 +502,18 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     }
     obj->setProperty("parameters", juce::var(paramsArray));
 
-    // Visible parameters
-    juce::Array<juce::var> visibleParamsArray;
-    for (auto index : device.visibleParameters) {
-        visibleParamsArray.add(index);
-    }
-    obj->setProperty("visibleParameters", juce::var(visibleParamsArray));
+    // Slots (#2638), under their own keys so a reader can tell them from the
+    // positions older projects hold.
+    const auto writeSlots = [&obj](const char* key, const std::vector<int>& slots) {
+        juce::Array<juce::var> array;
+        for (const auto slot : slots)
+            array.add(slot);
+        obj->setProperty(key, juce::var(array));
+    };
 
-    // Mini mixer parameters
-    juce::Array<juce::var> miniMixerParamsArray;
-    for (auto index : device.miniMixerParameters) {
-        miniMixerParamsArray.add(index);
-    }
-    obj->setProperty("miniMixerParameters", juce::var(miniMixerParamsArray));
-
-    // AI sound-designer parameters
-    juce::Array<juce::var> aiSoundDesignerParamsArray;
-    for (auto index : device.aiSoundDesignerParameters) {
-        aiSoundDesignerParamsArray.add(index);
-    }
-    obj->setProperty("aiSoundDesignerParameters", juce::var(aiSoundDesignerParamsArray));
+    writeSlots("visibleParameterSlots", device.visibleParameters);
+    writeSlots("miniMixerParameterSlots", device.miniMixerParameters);
+    writeSlots("aiSoundDesignerParameterSlots", device.aiSoundDesignerParameters);
     obj->setProperty("aiSoundDesignerPrompt", device.aiSoundDesignerPrompt);
 
     // Device volume
@@ -508,8 +547,9 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
             auto* pairObj = new juce::DynamicObject();
             pairObj->setProperty("outputIndex", pair.outputIndex);
             pairObj->setProperty("name", pair.name);
-            pairObj->setProperty("active", pair.active);
-            pairObj->setProperty("trackId", pair.trackId);
+            // `active` and `trackId` are not written: which child track a pair
+            // drives is the child track's `multiOutLink`, and persisting a
+            // second copy is what let the two disagree (#2220).
             pairObj->setProperty("firstPin", pair.firstPin);
             pairObj->setProperty("numChannels", pair.numChannels);
             pairsArray.add(juce::var(pairObj));
@@ -519,13 +559,14 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     }
 
     // Plugin native state (base64 blob, only if captured)
-    if (device.pluginState.isNotEmpty()) {
+    if (device.hasPluginState()) {
         obj->setProperty("pluginState", device.pluginState);
     }
 
     // Sidechain / MIDI receive capabilities
-    if (device.canSidechain) {
-        obj->setProperty("canSidechain", true);
+    if (device.sidechainPort.declared()) {
+        obj->setProperty("sidechainPortKind", static_cast<int>(device.sidechainPort.kind));
+        obj->setProperty("sidechainPortChannels", device.sidechainPort.channels);
     }
     if (device.canReceiveMidi) {
         obj->setProperty("canReceiveMidi", true);
@@ -563,14 +604,40 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     }
 
     // Sidechain
-    if (device.sidechain.isActive()) {
+    if (device.insert.isActive()) {
+        auto* insertObj = new juce::DynamicObject();
+        insertObj->setProperty("sendType", static_cast<int>(device.insert.sendType));
+        insertObj->setProperty("returnType", static_cast<int>(device.insert.returnType));
+        insertObj->setProperty("sendDevice", device.insert.sendDevice);
+        insertObj->setProperty("returnDevice", device.insert.returnDevice);
+        insertObj->setProperty("manualAdjustMs", device.insert.manualAdjustMs);
+        obj->setProperty("insert", juce::var(insertObj));
+    }
+
+    if (device.sidechain.isConfigured()) {
         auto* scObj = new juce::DynamicObject();
         scObj->setProperty("type", static_cast<int>(device.sidechain.type));
         scObj->setProperty("sourceTrackId", device.sidechain.sourceTrackId);
+        if (!device.sidechain.enabled)
+            scObj->setProperty("enabled", false);
+        // Only when they are not the defaults a project that predates them
+        // reads back as: post-fader, no trim, not listening (#2329).
+        if (device.sidechain.tapPoint != ModTapPoint::PostFader)
+            scObj->setProperty("tapPoint", static_cast<int>(device.sidechain.tapPoint));
+        if (device.sidechain.gainDb != 0.0f)
+            scObj->setProperty("gainDb", device.sidechain.gainDb);
+        if (device.sidechain.listen)
+            scObj->setProperty("listen", true);
         obj->setProperty("sidechain", juce::var(scObj));
     }
 
-    return juce::var(obj);
+    // A pad-per-chain device's pads. Saved as the rack they are, so what the
+    // model holds is what the project carries: nothing re-reads them out of
+    // `pluginState`, which is where they used to live (#2207).
+    if (device.pads)
+        obj->setProperty("pads", serializeRackInfo(*device.pads.get()));
+
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo& outDevice) {
@@ -609,6 +676,8 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
     outDevice.paramPanelOpen = obj->getProperty("paramPanelOpen");
     if (obj->hasProperty("aiPanelOpen"))
         outDevice.aiPanelOpen = static_cast<bool>(obj->getProperty("aiPanelOpen"));
+    if (obj->hasProperty("padDetailOpen"))
+        outDevice.padDetailOpen = static_cast<bool>(obj->getProperty("padDetailOpen"));
 
     // Parameters
     auto paramsVar = obj->getProperty("parameters");
@@ -618,6 +687,17 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
             ParameterInfo param;
             if (!deserializeParameterInfo(paramVar, param)) {
                 return false;
+            }
+            // Older projects predate an explicit value-domain tag. Their
+            // hosted parameter arrays were already written in the plugin's
+            // normalised domain; internal devices have always used display
+            // values. Infer that historical contract here, where the owning
+            // format is known, and persist it explicitly on the next save.
+            if (const auto* paramObj = paramVar.getDynamicObject();
+                paramObj != nullptr && !paramObj->hasProperty("valueConvention")) {
+                param.valueConvention = outDevice.format == PluginFormat::Internal
+                                            ? ParameterValueConvention::Real
+                                            : ParameterValueConvention::Normalized;
             }
             // Builds before the version string was wired to the tag wrote every
             // parameter with paramIndex -1: the index was its position in the
@@ -633,32 +713,7 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
 
     migrateUtilityWidthToPercent(outDevice);
 
-    // Visible parameters
-    auto visibleParamsVar = obj->getProperty("visibleParameters");
-    if (visibleParamsVar.isArray()) {
-        auto* arr = visibleParamsVar.getArray();
-        for (const auto& indexVar : *arr) {
-            outDevice.visibleParameters.push_back(static_cast<int>(indexVar));
-        }
-    }
-
-    // Mini mixer parameters
-    auto miniMixerParamsVar = obj->getProperty("miniMixerParameters");
-    if (miniMixerParamsVar.isArray()) {
-        auto* arr = miniMixerParamsVar.getArray();
-        for (const auto& indexVar : *arr) {
-            outDevice.miniMixerParameters.push_back(static_cast<int>(indexVar));
-        }
-    }
-
-    // AI sound-designer parameters
-    auto aiSoundDesignerParamsVar = obj->getProperty("aiSoundDesignerParameters");
-    if (aiSoundDesignerParamsVar.isArray()) {
-        auto* arr = aiSoundDesignerParamsVar.getArray();
-        for (const auto& indexVar : *arr) {
-            outDevice.aiSoundDesignerParameters.push_back(static_cast<int>(indexVar));
-        }
-    }
+    readParameterSelections(*obj, outDevice);
     outDevice.aiSoundDesignerPrompt = obj->getProperty("aiSoundDesignerPrompt").toString();
 
     // Device volume
@@ -710,8 +765,12 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
                     MultiOutOutputPair pair;
                     pair.outputIndex = pairObj->getProperty("outputIndex");
                     pair.name = pairObj->getProperty("name").toString();
-                    pair.active = pairObj->getProperty("active");
-                    pair.trackId = pairObj->getProperty("trackId");
+                    // A project saved before the ownership flip carries `active`
+                    // and `trackId` here. Both are dropped rather than read: the
+                    // child tracks in the same project carry the links, so the
+                    // assignments come back from them, and a pair the device
+                    // claimed with no child track to match was already an
+                    // orphan (#2220).
                     if (pairObj->hasProperty("firstPin"))
                         pair.firstPin = pairObj->getProperty("firstPin");
                     if (pairObj->hasProperty("numChannels"))
@@ -723,9 +782,14 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
     }
 
     // Sidechain / MIDI receive capabilities
-    auto canSidechainVar = obj->getProperty("canSidechain");
-    if (!canSidechainVar.isVoid()) {
-        outDevice.canSidechain = static_cast<bool>(canSidechainVar);
+    if (obj->hasProperty("sidechainPortKind")) {
+        outDevice.sidechainPort.kind = static_cast<SidechainPort::Kind>(
+            static_cast<int>(obj->getProperty("sidechainPortKind")));
+        outDevice.sidechainPort.channels = obj->getProperty("sidechainPortChannels");
+    } else if (static_cast<bool>(obj->getProperty("canSidechain"))) {
+        // Projects that predate the declared port, where the only fact saved
+        // was that the device had one (#2329).
+        outDevice.sidechainPort = monoAudioSidechain;
     }
     auto canReceiveMidiVar = obj->getProperty("canReceiveMidi");
     if (!canReceiveMidiVar.isVoid()) {
@@ -753,6 +817,21 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
     if (obj->hasProperty("pluginState"))
         outDevice.pluginState = obj->getProperty("pluginState").toString();
 
+    // A pad-per-chain device's pads (#2207). A project saved before they moved
+    // into the model has none here and still carries them inside `pluginState`,
+    // so read them out of it once; a project saved since is taken at its word,
+    // including one whose pads were all deleted.
+    auto padsVar = obj->getProperty("pads");
+    if (padsVar.isObject()) {
+        auto pads = std::make_unique<RackInfo>();
+        if (!deserializeRackInfo(padsVar, *pads))
+            return false;
+        outDevice.pads.reset(std::move(pads));
+        stampPadRackId(outDevice);
+    } else {
+        migrateLegacyPads(outDevice);
+    }
+
     // Per-instance drum kit rows
     auto kitVar = obj->getProperty("kitRows");
     if (kitVar.isArray()) {
@@ -769,12 +848,34 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
     }
 
     // Sidechain
+    auto insertVar = obj->getProperty("insert");
+    if (insertVar.isObject()) {
+        auto* insertObj = insertVar.getDynamicObject();
+        outDevice.insert.sendType = static_cast<InsertConfig::Endpoint>(
+            static_cast<int>(insertObj->getProperty("sendType")));
+        outDevice.insert.returnType = static_cast<InsertConfig::Endpoint>(
+            static_cast<int>(insertObj->getProperty("returnType")));
+        outDevice.insert.sendDevice = insertObj->getProperty("sendDevice").toString();
+        outDevice.insert.returnDevice = insertObj->getProperty("returnDevice").toString();
+        outDevice.insert.manualAdjustMs = insertObj->getProperty("manualAdjustMs");
+    }
+
     auto sidechainVar = obj->getProperty("sidechain");
     if (sidechainVar.isObject()) {
         auto* scObj = sidechainVar.getDynamicObject();
         outDevice.sidechain.type =
             static_cast<SidechainConfig::Type>(static_cast<int>(scObj->getProperty("type")));
         outDevice.sidechain.sourceTrackId = scObj->getProperty("sourceTrackId");
+        if (scObj->hasProperty("enabled"))
+            outDevice.sidechain.enabled = static_cast<bool>(scObj->getProperty("enabled"));
+        // Absent in a project that predates them, which is the default each
+        // field carries: post-fader, no trim, not listening.
+        if (scObj->hasProperty("tapPoint"))
+            outDevice.sidechain.tapPoint =
+                static_cast<ModTapPoint>(static_cast<int>(scObj->getProperty("tapPoint")));
+        if (scObj->hasProperty("gainDb"))
+            outDevice.sidechain.gainDb = static_cast<float>(double(scObj->getProperty("gainDb")));
+        outDevice.sidechain.listen = static_cast<bool>(scObj->getProperty("listen"));
     }
 
     applyCachedCapabilitiesToDevice(outDevice);
@@ -816,14 +917,16 @@ juce::var ProjectSerializer::serializeRackInfo(const RackInfo& rack) {
     obj->setProperty("mods", juce::var(modsArray));
 
     // Sidechain
-    if (rack.sidechain.isActive()) {
+    if (rack.sidechain.isConfigured()) {
         auto* scObj = new juce::DynamicObject();
         scObj->setProperty("type", static_cast<int>(rack.sidechain.type));
         scObj->setProperty("sourceTrackId", rack.sidechain.sourceTrackId);
+        if (!rack.sidechain.enabled)
+            scObj->setProperty("enabled", false);
         obj->setProperty("sidechain", juce::var(scObj));
     }
 
-    return juce::var(obj);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeRackInfo(const juce::var& json, RackInfo& outRack) {
@@ -896,6 +999,8 @@ bool ProjectSerializer::deserializeRackInfo(const juce::var& json, RackInfo& out
         outRack.sidechain.type =
             static_cast<SidechainConfig::Type>(static_cast<int>(scObj->getProperty("type")));
         outRack.sidechain.sourceTrackId = scObj->getProperty("sourceTrackId");
+        if (scObj->hasProperty("enabled"))
+            outRack.sidechain.enabled = static_cast<bool>(scObj->getProperty("enabled"));
     }
 
     return true;
@@ -914,6 +1019,15 @@ juce::var ProjectSerializer::serializeChainInfo(const ChainInfo& chain) {
     obj->setProperty("pan", chain.pan);
     obj->setProperty("expanded", chain.expanded);
 
+    // The notes a pad answers to, and the pitch they are transposed onto. Only
+    // for a chain that is keyed by pitch: a plain parallel chain takes every
+    // note, which is what the absent properties read back as (#2207).
+    if (!chain.answersToEveryNote()) {
+        obj->setProperty("lowNote", chain.lowNote);
+        obj->setProperty("highNote", chain.highNote);
+        obj->setProperty("rootNote", chain.rootNote);
+    }
+
     // Elements
     juce::Array<juce::var> elementsArray;
     for (const auto& element : chain.elements) {
@@ -921,7 +1035,7 @@ juce::var ProjectSerializer::serializeChainInfo(const ChainInfo& chain) {
     }
     obj->setProperty("elements", juce::var(elementsArray));
 
-    return juce::var(obj);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeChainInfo(const juce::var& json, ChainInfo& outChain) {
@@ -934,13 +1048,29 @@ bool ProjectSerializer::deserializeChainInfo(const juce::var& json, ChainInfo& o
 
     outChain.id = obj->getProperty("id");
     outChain.name = obj->getProperty("name").toString();
-    outChain.outputIndex = obj->getProperty("outputIndex");
+
+    // Normalised on the way in, not trusted. A pad's bus is what the plan
+    // compiler routes from, and it silences a pad on a bus that reaches no
+    // track rather than folding it into the device's mix, so a saved value
+    // outside the range the buses exist in would lose the audio (#2211).
+    outChain.outputIndex =
+        juce::jlimit(0, kPadBusCount - 1, static_cast<int>(obj->getProperty("outputIndex")));
     outChain.muted = obj->getProperty("muted");
     outChain.solo = obj->getProperty("solo");
     outChain.bypassed = obj->getProperty("bypassed");
     outChain.volume = obj->getProperty("volume");
     outChain.pan = obj->getProperty("pan");
     outChain.expanded = obj->getProperty("expanded");
+
+    // Left at ChainInfo's "every note" default when the chain is not keyed by
+    // pitch, which is every chain a project saved before pads moved into the
+    // model (#2207).
+    if (obj->hasProperty("lowNote"))
+        outChain.lowNote = static_cast<int>(obj->getProperty("lowNote"));
+    if (obj->hasProperty("highNote"))
+        outChain.highNote = static_cast<int>(obj->getProperty("highNote"));
+    if (obj->hasProperty("rootNote"))
+        outChain.rootNote = static_cast<int>(obj->getProperty("rootNote"));
 
     // Elements
     auto elementsVar = obj->getProperty("elements");
@@ -965,7 +1095,9 @@ juce::var ProjectSerializer::serializeSendInfo(const SendInfo& data) {
     SER(level);
     SER(preFader);
     SER(destTrackId);
-    return juce::var(obj);
+    SER(enabled);
+    SER(id);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeSendInfo(const juce::var& json, SendInfo& data) {
@@ -978,6 +1110,10 @@ bool ProjectSerializer::deserializeSendInfo(const juce::var& json, SendInfo& dat
     DESER(level);
     DESER(preFader);
     DESER(destTrackId);
+    if (obj->hasProperty("enabled"))
+        DESER(enabled);
+    if (obj->hasProperty("id"))
+        DESER(id);
     return true;
 }
 

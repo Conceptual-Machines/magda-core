@@ -161,6 +161,7 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
                 menu.addSubMenu(tr("menu.file.open_recent"), recentMenu);
             }
 
+            menu.addItem(RecoverProject, trEllipsis("menu.file.recover_project"));
             menu.addItem(CloseProject,
                          tr("menu.file.close_project") + keyHint(CommandIDs::closeProject), true,
                          false);
@@ -449,6 +450,10 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
             break;
         case OpenProject:
             invokeApplicationCommand(CommandIDs::openProject);
+            break;
+        case RecoverProject:
+            if (callbacks_.onRecoverProject)
+                callbacks_.onRecoverProject();
             break;
         case CloseProject:
             invokeApplicationCommand(CommandIDs::closeProject);

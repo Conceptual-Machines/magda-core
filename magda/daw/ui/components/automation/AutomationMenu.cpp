@@ -4,6 +4,7 @@
 #include <memory>
 #include <vector>
 
+#include "audio/DeviceParameterList.hpp"
 #include "core/AutomationInfo.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/ChainNodePath.hpp"
@@ -13,8 +14,9 @@
 
 namespace magda {
 
-void showAutomationMenu(TrackId trackId, juce::Component* relativeTo,
-                        std::function<void(TrackId, AutomationLaneId)> onShowAutomationLane) {
+void showAutomationMenu(
+    TrackId trackId, juce::Component* relativeTo,
+    const std::function<void(TrackId, AutomationLaneId)>& onShowAutomationLane) {
     auto& automationManager = AutomationManager::getInstance();
 
     juce::PopupMenu menu;
@@ -189,10 +191,14 @@ void showAutomationMenu(TrackId trackId, juce::Component* relativeTo,
                                               ? ChainNodePath::topLevelDevice(trackId, device.id)
                                               : parentPath.withDevice(device.id);
 
+                        // A lane can be drawn on any parameter the plugin has,
+                        // so the list comes from the instance (#2634).
+                        const auto parameters = deviceParameterList(device, devicePath);
+
                         // Params submenu
-                        if (!device.parameters.empty()) {
+                        if (!parameters.empty()) {
                             juce::PopupMenu paramsMenu;
-                            for (const auto& p : device.parameters) {
+                            for (const auto& p : parameters) {
                                 AutomationTarget target;
                                 target.kind = ControlTarget::Kind::PluginParam;
                                 target.devicePath.trackId = trackId;

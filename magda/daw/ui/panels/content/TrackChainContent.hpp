@@ -16,11 +16,9 @@
 #include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/SvgButton.hpp"
 
-namespace tracktion {
-inline namespace engine {
+namespace tracktion::inline engine {
 class Plugin;
 }
-}  // namespace tracktion
 
 namespace magda::daw::ui {
 
@@ -57,7 +55,7 @@ class TrackChainContent : public PanelContent,
     }
 
     void paint(juce::Graphics& g) override;
-    void resized() override;
+    void resized() final;
     void lookAndFeelChanged() override;
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
@@ -298,8 +296,6 @@ class TrackChainContent : public PanelContent,
     std::map<juce::String, magda::ChainId> savedExpandedChains_;  // rackPath -> expanded chainId
     std::map<juce::String, bool> savedParamPanelStates_;          // path -> paramPanelVisible
     std::map<juce::String, int> savedCustomUITabStates_;          // path -> custom UI tab index
-    std::map<juce::String, std::vector<tracktion::engine::Plugin*>>
-        savedDrumPadCollapsedPlugins_;  // path -> collapsed plugin ptrs
     void saveNodeStates();
     void restoreNodeStates();
 

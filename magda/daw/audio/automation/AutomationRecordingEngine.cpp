@@ -12,16 +12,27 @@
 namespace magda {
 
 // Convert linear gain to dB (same formula as AutomationManager.cpp)
-static float gainToDb(float gain) {
+namespace {
+float gainToDb(float gain) {
     constexpr float MIN_DB = -60.0f;
     if (gain <= 0.0f)
         return MIN_DB;
     return 20.0f * std::log10(gain);
 }
+}  // namespace
 
-AutomationRecordingEngine::AutomationRecordingEngine(te::Edit& edit) : edit_(edit) {}
+AutomationRecordingEngine::AutomationRecordingEngine(te::Edit& edit) : edit_(edit) {
+    auto& automation = AutomationManager::getInstance();
+    setMode(automation.getAutomationMode());
+    automation.addListener(this);
+}
 
-static const char* modeName(AutomationMode m) {
+AutomationRecordingEngine::~AutomationRecordingEngine() {
+    AutomationManager::getInstance().removeListener(this);
+}
+
+namespace {
+const char* modeName(AutomationMode m) {
     switch (m) {
         case AutomationMode::Off:
             return "OFF";
@@ -34,6 +45,7 @@ static const char* modeName(AutomationMode m) {
     }
     return "?";
 }
+}  // namespace
 
 void AutomationRecordingEngine::setMode(AutomationMode mode) {
     if (mode == mode_)
@@ -480,7 +492,7 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
         if (isNewLane) {
             ParameterInfo paramInfo = getParameterInfoForTarget(target);
             float seedDb = gainToDb(preSeedVolume);
-            double seedNorm =
+            auto seedNorm =
                 static_cast<double>(ParameterUtils::realToNormalized(seedDb, paramInfo));
             const auto* lane = autoMgr.getLane(laneId);
             if (lane && !lane->absolutePoints.empty()) {
@@ -496,8 +508,7 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
 
         ParameterInfo paramInfo = getParameterInfoForTarget(target);
         float db = gainToDb(track->volume);
-        double normalizedValue =
-            static_cast<double>(ParameterUtils::realToNormalized(db, paramInfo));
+        auto normalizedValue = static_cast<double>(ParameterUtils::realToNormalized(db, paramInfo));
 
         DBG("[AutoRec] Volume hit: track=" << (int)tid << " vol=" << track->volume << " (" << db
                                            << " dB)"
@@ -522,7 +533,7 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
 
         if (isNewLane) {
             ParameterInfo paramInfo = getParameterInfoForTarget(target);
-            double seedNorm =
+            auto seedNorm =
                 static_cast<double>(ParameterUtils::realToNormalized(preSeedPan, paramInfo));
             const auto* lane = autoMgr.getLane(laneId);
             if (lane && !lane->absolutePoints.empty()) {
@@ -534,7 +545,7 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
         }
 
         ParameterInfo paramInfo = getParameterInfoForTarget(target);
-        double normalizedValue =
+        auto normalizedValue =
             static_cast<double>(ParameterUtils::realToNormalized(track->pan, paramInfo));
 
         DBG("[AutoRec] Pan hit: track=" << (int)tid << " pan=" << track->pan
@@ -555,7 +566,7 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
         if (isNewLane) {
             ParameterInfo paramInfo = getParameterInfoForTarget(target);
             float seedDb = gainToDb(s.preSeedLevel);
-            double seedNorm =
+            auto seedNorm =
                 static_cast<double>(ParameterUtils::realToNormalized(seedDb, paramInfo));
             const auto* lane = autoMgr.getLane(laneId);
             if (lane && !lane->absolutePoints.empty()) {
@@ -568,8 +579,7 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
 
         ParameterInfo paramInfo = getParameterInfoForTarget(target);
         float db = gainToDb(s.newLevel);
-        double normalizedValue =
-            static_cast<double>(ParameterUtils::realToNormalized(db, paramInfo));
+        auto normalizedValue = static_cast<double>(ParameterUtils::realToNormalized(db, paramInfo));
 
         if (!shouldThinPoint(laneId, beatTime, normalizedValue))
             recordPoint(laneId, beatTime, normalizedValue);
@@ -609,7 +619,7 @@ void AutomationRecordingEngine::onModParameterValueChanged(TrackId trackId,
     // Convert raw rate (Hz, etc.) to normalized 0..1 using the lane's stored
     // ParameterInfo so curve points are stored in the same space as draws.
     ParameterInfo info = getParameterInfoForTarget(target);
-    double normalizedValue = static_cast<double>(ParameterUtils::realToNormalized(value, info));
+    auto normalizedValue = static_cast<double>(ParameterUtils::realToNormalized(value, info));
 
     double beatTime = getCurrentBeatTime();
     if (shouldThinPoint(laneId, beatTime, normalizedValue))
@@ -660,7 +670,7 @@ void AutomationRecordingEngine::onMacroValueChanged(TrackId trackId, ChainScope 
     }
 
     double beatTime = getCurrentBeatTime();
-    double normalizedValue = static_cast<double>(value);  // Macros are already 0-1
+    auto normalizedValue = static_cast<double>(value);  // Macros are already 0-1
 
     if (shouldThinPoint(laneId, beatTime, normalizedValue))
         return;

@@ -75,7 +75,7 @@ class AIChatConsoleContent : public PanelContent,
     }
 
     void paint(juce::Graphics& g) override;
-    void resized() override;
+    void resized() final;
     void lookAndFeelChanged() override;
 
     void onActivated() override;
@@ -83,6 +83,7 @@ class AIChatConsoleContent : public PanelContent,
 
     // ProjectManagerListener
     void projectOpened(const magda::ProjectInfo& info) override;
+    void projectClosed() override;
 
     // ConfigListener
     void configChanged() override;
@@ -99,9 +100,9 @@ class AIChatConsoleContent : public PanelContent,
 
     // SelectionManagerListener
     void selectionTypeChanged(magda::SelectionType newType) override;
-    void trackSelectionChanged(magda::TrackId trackId) override;
+    void trackSelectionChanged(magda::TrackId trackId) final;
     void multiTrackSelectionChanged(const std::unordered_set<magda::TrackId>& trackIds) override;
-    void clipSelectionChanged(magda::ClipId clipId) override;
+    void clipSelectionChanged(magda::ClipId clipId) final;
     void multiClipSelectionChanged(const std::unordered_set<magda::ClipId>& clipIds) override;
     void chainNodeSelectionChanged(const magda::ChainNodePath& path) override;
 
@@ -125,9 +126,10 @@ class AIChatConsoleContent : public PanelContent,
 
     void sendMessage(const juce::String& text);
     void cancelRequest();
+    void resetForProjectBoundary();
     void restoreSendIcon();
-    void setThemedButtonIcon(juce::DrawableButton& button, const void* svgData,
-                             std::size_t svgDataSize);
+    static void setThemedButtonIcon(juce::DrawableButton& button, const void* svgData,
+                                    std::size_t svgDataSize);
     void appendToChat(const juce::String& text);
     void updateContextBar();
     void showMidiContextPicker();
@@ -247,7 +249,7 @@ class AIChatConsoleContent : public PanelContent,
     std::unique_ptr<ControllerRequestThread> controllerThread_;
 
     void startControllerGeneration(const juce::String& description);
-    void finishControllerGeneration(bool success, const juce::String& errorOrRawJson,
+    void finishControllerGeneration(bool success, const juce::String& errorOrJson,
                                     juce::String profileId, juce::String profileName);
 
     // /design <description> — kick the FourOscAgent on a background thread
@@ -308,7 +310,7 @@ class AIChatConsoleContent : public PanelContent,
     juce::Label configStatusLabel_;
     std::unique_ptr<magda::SvgButton> serverToggleButton_;
     void updateConfigStatus();
-    bool isLocalPreset() const;
+    static bool isLocalPreset();
 
     // Plugin alias autocomplete
     struct AliasEntry {
@@ -339,9 +341,9 @@ class AIChatConsoleContent : public PanelContent,
     std::vector<AliasEntry> allAliases_;
 
     void buildAliasList();
-    std::vector<ParamAliasEntry> collectParamAliases(const juce::String& pluginAlias) const;
+    static std::vector<ParamAliasEntry> collectParamAliases(const juce::String& pluginAlias);
     juce::String resolveAliases(const juce::String& text);
-    juce::String rewriteSlashCommand(const juce::String& text);
+    static juce::String rewriteSlashCommand(const juce::String& text);
 
     // Slash commands live in their own module (SlashCommands.{hpp,cpp})
     // so they can be tested without standing up the full chat panel. The

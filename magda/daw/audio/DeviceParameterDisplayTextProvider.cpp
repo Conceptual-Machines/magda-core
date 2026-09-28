@@ -1,22 +1,22 @@
 #include "DeviceParameterDisplayTextProvider.hpp"
 
-#include "audio/AudioBridge.hpp"
+#include "core/DeviceInfo.hpp"
 #include "core/ParameterInfo.hpp"
 #include "core/TrackManager.hpp"
-#include "engine/AudioEngine.hpp"
-#include "processors/base/DeviceProcessor.hpp"
 
 namespace magda {
 
 namespace {
 
+DeviceParameterFormatter& deviceParameterFormatter() {
+    static DeviceParameterFormatter formatter;
+    return formatter;
+}
+
 juce::String formatParameterDisplayTextFromDevice(
     const ParameterInfo::DisplayTextProvider& provider, float normalizedValue) {
-    auto* engine = TrackManager::getInstance().getAudioEngine();
-    if (engine == nullptr)
-        return {};
-    auto* bridge = engine->getAudioBridge();
-    if (bridge == nullptr)
+    const auto& formatter = deviceParameterFormatter();
+    if (!formatter)
         return {};
 
     auto path = provider.devicePath;
@@ -25,10 +25,7 @@ juce::String formatParameterDisplayTextFromDevice(
     if (!path.isValid())
         return {};
 
-    auto* processor = bridge->getDeviceProcessor(path);
-    if (processor == nullptr)
-        return {};
-    return processor->formatParameterValue(provider.paramIndex, normalizedValue);
+    return formatter(path, provider.paramIndex, normalizedValue);
 }
 
 std::shared_ptr<ParameterInfo::DisplayTextProvider> makeDeviceParameterDisplayTextProvider(
@@ -42,6 +39,23 @@ std::shared_ptr<ParameterInfo::DisplayTextProvider> makeDeviceParameterDisplayTe
 }
 
 }  // namespace
+
+void setDeviceParameterFormatter(DeviceParameterFormatter formatter) {
+    deviceParameterFormatter() = std::move(formatter);
+}
+
+void forgetDeviceParameterFormatter() {
+    deviceParameterFormatter() = nullptr;
+}
+
+void attachParameterTextProviders(DeviceInfo& device, const ChainNodePath& devicePath) {
+    if (!devicePath.isValid())
+        return;
+
+    for (auto& parameter : device.parameters)
+        parameter.displayText =
+            makeParameterDisplayTextProvider(devicePath, device.id, parameter.paramIndex);
+}
 
 void installDeviceParameterDisplayTextProviderFactory() {
     const bool registered =

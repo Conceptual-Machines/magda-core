@@ -8,8 +8,8 @@
 
 #include "../../state/TimelineController.hpp"
 #include "../../state/TimelineEvents.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/CursorManager.hpp"
-#include "../../themes/DarkTheme.hpp"
 #include "../../utils/SelectionPolicy.hpp"
 #include "../../windows/CommandIDs.hpp"
 #include "PhaseMarker.hpp"
@@ -20,10 +20,12 @@
 #include "core/GestureRouter.hpp"
 #include "core/MidiChordMarkers.hpp"
 #include "core/MidiNoteCommands.hpp"
+#include "core/PitchExpressionCurve.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "ui/components/common/InternalFileDrag.hpp"
+#include "ui/utils/AudioFileTypes.hpp"
 
 namespace magda {
 
@@ -33,46 +35,11 @@ double timelineStartBeats(const ClipInfo& clip, double bpm) {
 }
 
 double timelineLengthBeats(const ClipInfo& clip, double bpm) {
-    return clip.getLengthInBeats(bpm);
+    return clip.getLengthInBeats();
 }
 
 double timelineEndBeats(const ClipInfo& clip, double bpm) {
     return clip.getEndBeats(bpm);
-}
-
-// Audio clips reach this grid too (PianoRollContent and DrumGridClipContent
-// both route them here), so the loop has to come back in timeline beats for
-// either content type rather than off one domain's field.
-double effectiveLoopStartBeats(const ClipInfo& clip, double bpm) {
-    return juce::jmax(0.0, clip.loopStartInBeats(bpm));
-}
-
-double effectiveLoopLengthBeats(const ClipInfo& clip, double bpm) {
-    const double loopBeats = clip.loopLengthInBeats(bpm);
-    return loopBeats > 0.0 ? loopBeats : timelineLengthBeats(clip, bpm);
-}
-
-// Grid clicks use the same relative-loop contract as the ruler: display beat is
-// loop phase, and the global target stays in the current playhead cycle.
-double globalBeatForRelativeLoopClick(double displayBeat, double currentGlobalBeat,
-                                      const ClipInfo& clip, double bpm) {
-    const double clipStart = timelineStartBeats(clip, bpm);
-    const double loopStart = effectiveLoopStartBeats(clip, bpm);
-    const double loopLength = effectiveLoopLengthBeats(clip, bpm);
-    const double phase = wrapPhase(displayBeat - loopStart, loopLength);
-    const double currentElapsed = currentGlobalBeat - clipStart;
-    const double cycle =
-        currentElapsed >= loopStart ? std::floor((currentElapsed - loopStart) / loopLength) : 0.0;
-
-    double target = clipStart + loopStart + cycle * loopLength + phase;
-
-    const double clipEnd = timelineEndBeats(clip, bpm);
-    while (target < clipStart)
-        target += loopLength;
-    while (target > clipEnd)
-        target -= loopLength;
-
-    return juce::jlimit(clipStart, clipEnd, target);
 }
 }  // namespace
 
@@ -87,7 +54,13 @@ PianoRollGridComponent::PianoRollGridComponent() {
 
 PianoRollGridComponent::~PianoRollGridComponent() {
     ClipManager::getInstance().removeListener(this);
-    clearNoteComponents();
+    try {
+        clearNoteComponents();
+    } catch (const std::exception& e) {
+        juce::Logger::writeToLog(juce::String("[PianoRollGridComponent] ") + e.what());
+    } catch (...) {
+        juce::Logger::writeToLog("[PianoRollGridComponent] unknown exception during teardown");
+    }
 }
 
 void PianoRollGridComponent::paint(juce::Graphics& g) {
@@ -143,11 +116,9 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
 
         // Dim everything outside selected clip regions
         if (!selectedRegions.empty()) {
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DARK).withAlpha(0x20 / 255.0f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DARK).withAlpha(0x20 / 255.0f));
             int prevEnd = bounds.getX();
-            // Sort by startX
-            std::sort(selectedRegions.begin(), selectedRegions.end(),
-                      [](const ClipRegion& a, const ClipRegion& b) { return a.startX < b.startX; });
+            std::ranges::sort(selectedRegions, {}, &ClipRegion::startX);
             for (const auto& region : selectedRegions) {
                 if (region.startX > prevEnd) {
                     g.fillRect(prevEnd, 0, region.startX - prevEnd, getHeight());
@@ -163,13 +134,13 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
         // Clip start boundary
         int clipStartX = beatToPixel(clipStartBeats_);
         if (clipStartX >= 0 && clipStartX <= bounds.getRight()) {
-            g.setColour(DarkTheme::getColour(DarkTheme::CLIP_BOUNDARY));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::CLIP_BOUNDARY));
             g.fillRect(clipStartX - 1, 0, 2, bounds.getHeight());
         }
 
         // Dim area before clip start
         if (clipStartX > bounds.getX()) {
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DARK).withAlpha(0x60 / 255.0f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DARK).withAlpha(0x60 / 255.0f));
             g.fillRect(bounds.getX(), bounds.getY(), clipStartX - bounds.getX(),
                        bounds.getHeight());
         }
@@ -178,12 +149,13 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
         if (!loopEnabled_) {
             int clipEndX = beatToPixel(clipStartBeats_ + clipLengthBeats_);
             if (clipEndX >= 0 && clipEndX <= bounds.getRight()) {
-                g.setColour(DarkTheme::getColour(DarkTheme::CLIP_BOUNDARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::CLIP_BOUNDARY));
                 g.fillRect(clipEndX - 1, 0, 2, bounds.getHeight());
             }
 
             if (clipEndX < bounds.getRight()) {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DARK).withAlpha(0x60 / 255.0f));
+                g.setColour(
+                    ActiveTheme::getColour(ActiveTheme::TEXT_DARK).withAlpha(0x60 / 255.0f));
                 g.fillRect(clipEndX, bounds.getY(), bounds.getRight() - clipEndX,
                            bounds.getHeight());
             }
@@ -193,12 +165,13 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
         if (!loopEnabled_) {
             int clipEndX = beatToPixel(clipLengthBeats_);
             if (clipEndX >= 0 && clipEndX <= bounds.getRight()) {
-                g.setColour(DarkTheme::getColour(DarkTheme::CLIP_BOUNDARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::CLIP_BOUNDARY));
                 g.fillRect(clipEndX - 1, 0, 2, bounds.getHeight());
             }
 
             if (clipEndX < bounds.getRight()) {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DARK).withAlpha(0x60 / 255.0f));
+                g.setColour(
+                    ActiveTheme::getColour(ActiveTheme::TEXT_DARK).withAlpha(0x60 / 255.0f));
                 g.fillRect(clipEndX, bounds.getY(), bounds.getRight() - clipEndX,
                            bounds.getHeight());
             }
@@ -240,8 +213,9 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
     // Draw chord drop preview (vertical line during DnD drag)
     if (chordDropActive_) {
         int lineX = beatToPixel(chordDropBeat_);
-        g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_CHORD_PREVIEW).withAlpha(0.8f));
-        g.drawLine(float(lineX), 0.f, float(lineX), float(bounds.getHeight()), 2.0f);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_CHORD_PREVIEW).withAlpha(0.8f));
+        g.drawLine(static_cast<float>(lineX), 0.f, static_cast<float>(lineX),
+                   static_cast<float>(bounds.getHeight()), 2.0f);
     }
 
     // Draw pending chord placement preview (after drop, awaiting length confirmation)
@@ -251,19 +225,23 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
 
         // Draw the span region
         if (endX > startX) {
-            g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_CHORD_PREVIEW).withAlpha(0.12f));
+            g.setColour(
+                ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_CHORD_PREVIEW).withAlpha(0.12f));
             g.fillRect(startX, 0, endX - startX, bounds.getHeight());
         }
 
         // Draw blinking start line
         float alpha = pendingChord_.blinkOn ? 0.9f : 0.3f;
-        g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_CHORD_PREVIEW).withAlpha(alpha));
-        g.drawLine(float(startX), 0.f, float(startX), float(bounds.getHeight()), 2.0f);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_CHORD_PREVIEW).withAlpha(alpha));
+        g.drawLine(static_cast<float>(startX), 0.f, static_cast<float>(startX),
+                   static_cast<float>(bounds.getHeight()), 2.0f);
 
         // Draw end line at mouse position
         if (endX > startX + 2) {
-            g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_CHORD_PREVIEW).withAlpha(0.5f));
-            g.drawLine(float(endX), 0.f, float(endX), float(bounds.getHeight()), 1.0f);
+            g.setColour(
+                ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_CHORD_PREVIEW).withAlpha(0.5f));
+            g.drawLine(static_cast<float>(endX), 0.f, static_cast<float>(endX),
+                       static_cast<float>(bounds.getHeight()), 1.0f);
         }
     }
 
@@ -307,11 +285,14 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
         double displayBeat = relativeMode_ ? (cursorBeats - clipStartBeats_) : cursorBeats;
         int cursorX = beatToPixel(displayBeat);
         if (cursorX >= 0 && cursorX <= bounds.getRight()) {
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DARK).withAlpha(0.5f));
-            g.drawLine(float(cursorX - 1), 0.f, float(cursorX - 1), float(bounds.getHeight()), 1.f);
-            g.drawLine(float(cursorX + 1), 0.f, float(cursorX + 1), float(bounds.getHeight()), 1.f);
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
-            g.drawLine(float(cursorX), 0.f, float(cursorX), float(bounds.getHeight()), 2.f);
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DARK).withAlpha(0.5f));
+            g.drawLine(static_cast<float>(cursorX - 1), 0.f, static_cast<float>(cursorX - 1),
+                       static_cast<float>(bounds.getHeight()), 1.f);
+            g.drawLine(static_cast<float>(cursorX + 1), 0.f, static_cast<float>(cursorX + 1),
+                       static_cast<float>(bounds.getHeight()), 1.f);
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT));
+            g.drawLine(static_cast<float>(cursorX), 0.f, static_cast<float>(cursorX),
+                       static_cast<float>(bounds.getHeight()), 2.f);
         }
     }
 
@@ -319,7 +300,7 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
     {
         int playheadX = 0;
         if (getPlayheadDisplayX(playheadX) && playheadX >= 0 && playheadX <= bounds.getRight()) {
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
             g.fillRect(playheadX - 1, 0, 2, bounds.getHeight());
         }
     }
@@ -327,11 +308,11 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
     // Draw rubber band selection rectangle
     if (isDragSelecting_) {
         auto selectionRect = juce::Rectangle<int>(dragSelectStart_, dragSelectEnd_).toFloat();
-        g.setColour(
-            DarkTheme::getColour(DarkTheme::PIANO_ROLL_PITCH_HIGHLIGHT).withAlpha(0x30 / 255.0f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_PITCH_HIGHLIGHT)
+                        .withAlpha(0x30 / 255.0f));
         g.fillRect(selectionRect);
-        g.setColour(
-            DarkTheme::getColour(DarkTheme::PIANO_ROLL_PITCH_HIGHLIGHT).withAlpha(0xAA / 255.0f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_PITCH_HIGHLIGHT)
+                        .withAlpha(0xAA / 255.0f));
         g.drawRect(selectionRect, 1.0f);
     }
 }
@@ -454,7 +435,7 @@ void PianoRollGridComponent::paintOverlayNotes(juce::Graphics& g) {
 
 void PianoRollGridComponent::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
     // Background - match the white key color from keyboard
-    g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_GRID_BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_GRID_BACKGROUND));
     g.fillRect(area);
 
     // Use the full timeline length for drawing grid lines
@@ -475,14 +456,14 @@ void PianoRollGridComponent::paintGrid(juce::Graphics& g, juce::Rectangle<int> a
 
         // Black key rows are darker
         if (isBlackKey(noteForRow(row))) {
-            g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_GRID_BLACK_KEY));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_GRID_BLACK_KEY));
             g.fillRect(gridArea.getX(), y, gridArea.getWidth(), noteHeight_);
         }
     }
 
     if (!selectedPitchRows_.empty()) {
-        g.setColour(
-            DarkTheme::getColour(DarkTheme::PIANO_ROLL_PITCH_HIGHLIGHT).withAlpha(0x55 / 255.0f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_PITCH_HIGHLIGHT)
+                        .withAlpha(0x55 / 255.0f));
         for (int note : selectedPitchRows_) {
             int y = noteNumberToY(note);
             if (y + noteHeight_ < area.getY() || y > area.getBottom())
@@ -493,13 +474,13 @@ void PianoRollGridComponent::paintGrid(juce::Graphics& g, juce::Rectangle<int> a
 
     // Fill left padding area with solid panel background (covers the alternating rows)
     if (leftPadding_ > 0) {
-        g.setColour(DarkTheme::getPanelBackgroundColour());
+        g.setColour(ActiveTheme::getPanelBackgroundColour());
         g.fillRect(area.getX(), area.getY(), leftPadding_, area.getHeight());
     }
 
     // Draw horizontal grid lines at each row boundary (at bottom of each row, -1 to match
     // keyboard)
-    g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_GRID_SUBDIVISION));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_GRID_SUBDIVISION));
     for (int row = 0; row < rows; row++) {
         int y = row * noteHeight_ + noteHeight_ - 1;
         if (y >= area.getY() && y <= area.getBottom()) {
@@ -518,23 +499,24 @@ void PianoRollGridComponent::paintBeatLines(juce::Graphics& g, juce::Rectangle<i
     if (gridRes <= 0.0)
         return;
 
-    const float top = static_cast<float>(area.getY());
-    const float bottom = static_cast<float>(area.getBottom());
+    const auto top = static_cast<float>(area.getY());
+    const auto bottom = static_cast<float>(area.getBottom());
     const int left = area.getX();
     const int right = area.getRight();
-    const int tsNum = timeSignatureNumerator_;
+    const double barBeats = beatsPerBar(timeSignatureNumerator_, timeSignatureDenominator_);
+    const double sigBeat = signatureBeatLength(timeSignatureDenominator_);
 
     // Pass 1: Subdivision lines at grid resolution (finest, drawn first)
     // Use integer counter to avoid floating-point drift (important for triplets etc.)
     {
-        g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_GRID_SUBDIVISION));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_GRID_SUBDIVISION));
         int numLines = static_cast<int>(std::ceil(lengthBeats / gridRes));
         for (int i = 0; i <= numLines; i++) {
             double beat = i * gridRes;
             if (beat > lengthBeats)
                 break;
-            // Skip positions on whole beats (drawn in pass 2/3)
-            double nearest = std::round(beat);
+            // Skip positions on signature beats (drawn in pass 2/3)
+            double nearest = std::round(beat / sigBeat) * sigBeat;
             if (std::abs(beat - nearest) < 0.001)
                 continue;
             int x = beatToPixel(beat);
@@ -544,20 +526,22 @@ void PianoRollGridComponent::paintBeatLines(juce::Graphics& g, juce::Rectangle<i
     }
 
     // Pass 2: Beat lines (always visible)
-    g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_GRID_BEAT));
-    for (int b = 1; b <= static_cast<int>(lengthBeats); b++) {
+    g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_GRID_BEAT));
+    for (int b = 1; b * sigBeat <= lengthBeats + 0.001; b++) {
+        const double beat = b * sigBeat;
         // Skip bar boundaries (drawn in pass 3)
-        if (b % tsNum == 0)
+        const double barRemainder = std::fmod(beat, barBeats);
+        if (barRemainder < 0.001 || barRemainder > barBeats - 0.001)
             continue;
-        int x = beatToPixel(static_cast<double>(b));
+        int x = beatToPixel(beat);
         if (x >= left && x <= right)
             g.drawVerticalLine(x, top, bottom);
     }
 
     // Pass 3: Bar lines (brightest, always visible, drawn last)
-    g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_GRID_BAR));
-    for (int bar = 0; bar * tsNum <= static_cast<int>(lengthBeats); bar++) {
-        int x = beatToPixel(static_cast<double>(bar * tsNum));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_GRID_BAR));
+    for (int bar = 0; bar * barBeats <= lengthBeats + 0.001; bar++) {
+        int x = beatToPixel(bar * barBeats);
         if (x >= left && x <= right)
             g.drawVerticalLine(x, top, bottom);
     }
@@ -901,6 +885,7 @@ void PianoRollGridComponent::mouseMove(const juce::MouseEvent& e) {
             hoveredExpressionPoint_ = hit;
             repaint();
         }
+        updateExpressionCursor(e.mods, e.getEventRelativeTo(this).getPosition());
     } else if (hoveredExpressionPoint_) {
         hoveredExpressionPoint_.reset();
         repaint();
@@ -1008,7 +993,7 @@ void PianoRollGridComponent::adjustVelocityForNote(ClipId clipId, size_t noteInd
     // A note that is part of the current selection scales the whole selection;
     // an unselected note is edited on its own without disturbing the selection.
     std::vector<size_t> targets = selectedNoteIndicesForClip(clipId);
-    if (std::find(targets.begin(), targets.end(), noteIndex) == targets.end())
+    if (!std::ranges::contains(targets, noteIndex))
         targets = {noteIndex};
     adjustMidiNoteVelocities(clipId, targets, velocityDelta);
     flashVelocityReadout(clipId, noteIndex);
@@ -1372,9 +1357,10 @@ void PianoRollGridComponent::setSnapEnabled(bool enabled) {
     snapEnabled_ = enabled;
 }
 
-void PianoRollGridComponent::setTimeSignatureNumerator(int numerator) {
-    if (timeSignatureNumerator_ != numerator) {
+void PianoRollGridComponent::setTimeSignature(int numerator, int denominator) {
+    if (timeSignatureNumerator_ != numerator || timeSignatureDenominator_ != denominator) {
         timeSignatureNumerator_ = numerator;
+        timeSignatureDenominator_ = denominator;
         repaint();
     }
 }
@@ -1493,7 +1479,7 @@ void PianoRollGridComponent::updateNotePosition(NoteComponent* note, double beat
         note->setVisible(true);
     }
 
-    double displayBeat;
+    double displayBeat = NAN;
     const double visibleStart = clip ? ClipOperations::getMidiVisibleRange(*clip).startBeat : 0.0;
     if (relativeMode_) {
         if (clipIds_.size() > 1 && clip) {
@@ -1553,20 +1539,11 @@ void PianoRollGridComponent::setCopyDragPreview(double beat, int noteNumber, dou
     auto toDisplayBeat = [this, srcClip](double clipBeat) {
         const double visibleStart = ClipOperations::getMidiVisibleRange(*srcClip).startBeat;
         if (relativeMode_) {
-            if (clipIds_.size() > 1) {
-                double tempo = 120.0;
-                if (auto* controller = TimelineController::getCurrent())
-                    tempo = controller->getState().tempo.bpm;
-                return srcClip->startTime * (tempo / 60.0) - clipStartBeats_ + clipBeat -
-                       visibleStart;
-            }
+            if (clipIds_.size() > 1)
+                return srcClip->placement.startBeat - clipStartBeats_ + clipBeat - visibleStart;
             return clipBeat - visibleStart;
         }
-
-        double tempo = 120.0;
-        if (auto* controller = TimelineController::getCurrent())
-            tempo = controller->getState().tempo.bpm;
-        return srcClip->startTime * (tempo / 60.0) + clipBeat - visibleStart;
+        return srcClip->placement.startBeat + clipBeat - visibleStart;
     };
 
     auto addGhost = [&](double clipBeat, int ghostNote, double ghostLength) {
@@ -1838,8 +1815,7 @@ void PianoRollGridComponent::clipPropertyChanged(ClipId clipId) {
     // track's clip changes
     if (!overlayTrackIds_.empty()) {
         const auto* clip = ClipManager::getInstance().getClip(clipId);
-        if (clip && std::find(overlayTrackIds_.begin(), overlayTrackIds_.end(), clip->trackId) !=
-                        overlayTrackIds_.end()) {
+        if (clip && std::ranges::contains(overlayTrackIds_, clip->trackId)) {
             repaint();
         }
     }
@@ -1850,6 +1826,22 @@ double PianoRollGridComponent::snapBeatToGrid(double beat) const {
         return beat;
     }
     return std::round(beat / gridResolutionBeats_) * gridResolutionBeats_;
+}
+
+double PianoRollGridComponent::snapBeatToGridFloor(int mouseX) const {
+    const double beat = pixelToBeat(mouseX);
+    if (!snapEnabled_ || gridResolutionBeats_ <= 0.0) {
+        return beat;
+    }
+    // Grid lines render at rounded integer pixels (beatToPixel), so decide the
+    // containing cell against those same rounded boundaries: the click lands
+    // in the cell whose rendered start is at or left of the clicked pixel.
+    double cell = std::floor(beat / gridResolutionBeats_ + 1e-6);
+    if (beatToPixel((cell + 1.0) * gridResolutionBeats_) <= mouseX)
+        cell += 1.0;
+    else if (beatToPixel(cell * gridResolutionBeats_) > mouseX)
+        cell -= 1.0;
+    return cell * gridResolutionBeats_;
 }
 
 bool PianoRollGridComponent::isNearGridLine(int mouseX) const {
@@ -1933,7 +1925,7 @@ PianoRollGridComponent::getNoteInsertPosition(juce::Point<int> localPos) const {
 
     NoteInsertPosition insertPos;
     insertPos.clipId = targetClipId;
-    insertPos.beat = clipBeatForDisplayX(targetClipId, localPos.x);
+    insertPos.beat = clipBeatForDisplayX(targetClipId, localPos.x, /*floorToCell=*/true);
     insertPos.noteNumber = yToNoteNumber(localPos.y);
     return insertPos;
 }
@@ -1968,9 +1960,17 @@ double PianoRollGridComponent::displayBeatForClipBeat(ClipId clipId, double clip
     return clipStartBeats_ + clipBeat;
 }
 
-double PianoRollGridComponent::clipBeatForDisplayX(ClipId clipId, int mouseX) const {
+double PianoRollGridComponent::clipBeatForDisplayBeat(ClipId clipId, double displayBeat) const {
+    // displayBeatForClipBeat is a shift, so its value at zero is the whole inverse.
+    return displayBeat - displayBeatForClipBeat(clipId, 0.0);
+}
+
+double PianoRollGridComponent::clipBeatForDisplayX(ClipId clipId, int mouseX,
+                                                   bool floorToCell) const {
     const auto* clip = ClipManager::getInstance().getClip(clipId);
-    double clipBeat = pixelToBeat(mouseX);
+    // Cell flooring works in display space, where the painted grid lines
+    // live, so the chosen cell always matches the rendered boundaries.
+    double clipBeat = floorToCell ? snapBeatToGridFloor(mouseX) : pixelToBeat(mouseX);
 
     if (relativeMode_) {
         if (clipIds_.size() > 1 && clip) {
@@ -1994,7 +1994,9 @@ double PianoRollGridComponent::clipBeatForDisplayX(ClipId clipId, int mouseX) co
         }
     }
 
-    clipBeat = snapBeatToGrid(clipBeat);
+    if (!floorToCell) {
+        clipBeat = snapBeatToGrid(clipBeat);
+    }
     clipBeat = juce::jmax(0.0, clipBeat);
     if (clip) {
         clipBeat += ClipOperations::getMidiVisibleRange(*clip).startBeat;
@@ -2009,31 +2011,55 @@ double PianoRollGridComponent::absolutePlayheadBeatForDisplayX(int mouseX) const
     // transport position (#1706 follow-up).
     double beat = pixelToBeat(mouseX);
 
-    if (relativeMode_) {
-        const auto* clip =
-            clipId_ != INVALID_CLIP_ID ? ClipManager::getInstance().getClip(clipId_) : nullptr;
-
-        if (clip && clip->loopEnabled) {
-            double bpm = 120.0;
-            double currentGlobalBeat = 0.0;
-            if (auto* controller = TimelineController::getCurrent()) {
-                const auto& state = controller->getState();
-                bpm = state.tempo.bpm > 0.0 ? state.tempo.bpm : bpm;
-                currentGlobalBeat = state.playhead.getCurrentPositionBeats();
-            }
-
-            const double loopLength = effectiveLoopLengthBeats(*clip, bpm);
-            if (loopLength > 0.0)
-                return globalBeatForRelativeLoopClick(beat, currentGlobalBeat, *clip, bpm);
+    // The inverse of getPlayheadDisplayX for the clip being edited, so a click lands where the
+    // playhead would be drawn. A looped clip only answers inside the span it is drawn over.
+    const auto* clip = selectedClipIds_.size() <= 1 && clipId_ != INVALID_CLIP_ID
+                           ? ClipManager::getInstance().getClip(clipId_)
+                           : nullptr;
+    if (clip) {
+        double bpm = 120.0;
+        double currentGlobalBeat = 0.0;
+        if (auto* controller = TimelineController::getCurrent()) {
+            const auto& state = controller->getState();
+            bpm = state.tempo.bpm > 0.0 ? state.tempo.bpm : bpm;
+            currentGlobalBeat = state.playhead.getCurrentPositionBeats();
         }
-
-        return juce::jmax(0.0, beat + clipStartBeats_);
+        const double drawnStart =
+            displayBeatForClipBeat(clipId_, ClipOperations::getMidiVisibleRange(*clip).startBeat);
+        const bool insideDrawnLoop =
+            beat >= drawnStart && beat <= drawnStart + clip->placement.lengthBeats;
+        if (!clip->loopEnabled || insideDrawnLoop) {
+            const double target = ClipOperations::timelineBeatForContentBeat(
+                *clip, clipBeatForDisplayBeat(clipId_, beat), currentGlobalBeat, bpm);
+            return juce::jlimit(0.0, timelineLengthBeats_, target);
+        }
     }
+
+    if (relativeMode_)
+        return juce::jmax(0.0, beat + clipStartBeats_);
 
     return juce::jlimit(0.0, timelineLengthBeats_, beat);
 }
 
+void PianoRollGridComponent::updateExpressionCursor(const juce::ModifierKeys& mods,
+                                                    juce::Point<int> pos) {
+    // Only while the modifier is actually held: the cursor is how the gesture
+    // announces itself, and showing it unprompted over every glide would make
+    // Alt look like it was already down.
+    if (isBendExpressionGesture(mods) && hitTestExpressionSegment(pos).has_value())
+        setMouseCursor(CursorManager::getInstance().getCurveBendCursor());
+    else
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+}
+
 void PianoRollGridComponent::updateEmptyGridCursor(const juce::ModifierKeys& mods, int /*mouseX*/) {
+    // Alt means bend while glides are being edited, not draw, and a pencil
+    // pointing at a curve the click will reshape is the wrong promise.
+    if (pitchExpressionMode_) {
+        updateExpressionCursor(mods, getMouseXYRelative());
+        return;
+    }
+
     if (mods.isAltDown()) {
         setMouseCursor(CursorManager::getInstance().getNoteDrawCursor());
     } else {
@@ -2042,8 +2068,8 @@ void PianoRollGridComponent::updateEmptyGridCursor(const juce::ModifierKeys& mod
 }
 
 void PianoRollGridComponent::modifierKeysChanged(const juce::ModifierKeys& modifiers) {
-    // Pressing/releasing Alt while hovering must swap the pencil cursor
-    // without waiting for a mouse move.
+    // Pressing/releasing Alt while hovering must swap the cursor -- pencil
+    // normally, bend while editing glides -- without waiting for a mouse move.
     if (isMouseOver() && !juce::Component::isMouseButtonDownAnywhere())
         updateEmptyGridCursor(modifiers, getMouseXYRelative().x);
 }
@@ -2449,7 +2475,7 @@ void PianoRollGridComponent::updateNoteComponentBounds() {
 
         // Relative mode: notes at content-relative beats.
         // Absolute mode: midiTrimOffset compensates for left-resize.
-        double displayBeat;
+        double displayBeat = NAN;
 
         const double visibleStart = ClipOperations::getMidiVisibleRange(*clip).startBeat;
         if (relativeMode_) {
@@ -2467,7 +2493,7 @@ void PianoRollGridComponent::updateNoteComponentBounds() {
             // Absolute mode: use clipStartBeats_ which reflects the drag
             // preview position during clip moves, falling back to the clip's
             // actual timeline position otherwise.
-            double clipOffsetBeats;
+            double clipOffsetBeats = NAN;
             if (clipIds_.size() > 1) {
                 double tempo = 120.0;
                 if (auto* controller = TimelineController::getCurrent()) {
@@ -2513,20 +2539,20 @@ void PianoRollGridComponent::rebuildSelectedPitchRows() {
     }
 }
 
-bool PianoRollGridComponent::isBlackKey(int noteNumber) const {
+bool PianoRollGridComponent::isBlackKey(int noteNumber) {
     int note = noteNumber % 12;
     return note == 1 || note == 3 || note == 6 || note == 8 || note == 10;
 }
 
 juce::Colour PianoRollGridComponent::getClipColour() const {
     const auto* clip = ClipManager::getInstance().getClip(clipId_);
-    return clip ? clip->colour : DarkTheme::getColour(DarkTheme::PIANO_ROLL_PITCH_HIGHLIGHT);
+    return clip ? clip->colour : ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_PITCH_HIGHLIGHT);
 }
 
 juce::Colour PianoRollGridComponent::getColourForClip(ClipId clipId) const {
     const auto* clip = ClipManager::getInstance().getClip(clipId);
     if (!clip) {
-        return DarkTheme::getColour(DarkTheme::PIANO_ROLL_FALLBACK_CLIP);
+        return ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_FALLBACK_CLIP);
     }
 
     // Chord clips follow the chord track's colour live (rather than the colour
@@ -2545,8 +2571,7 @@ juce::Colour PianoRollGridComponent::getColourForClip(ClipId clipId) const {
 }
 
 bool PianoRollGridComponent::isClipSelected(ClipId clipId) const {
-    return std::find(selectedClipIds_.begin(), selectedClipIds_.end(), clipId) !=
-           selectedClipIds_.end();
+    return std::ranges::contains(selectedClipIds_, clipId);
 }
 
 void PianoRollGridComponent::setLoopRegion(double offsetBeats, double lengthBeats, bool enabled) {
@@ -2562,42 +2587,38 @@ void PianoRollGridComponent::setPhasePreview(double beats, bool active) {
     repaint();
 }
 
-void PianoRollGridComponent::setPlayheadPosition(double positionSeconds) {
-    if (playheadPosition_ != positionSeconds) {
-        playheadPosition_ = positionSeconds;
+void PianoRollGridComponent::setPlayheadBeat(double timelineBeat) {
+    if (playheadBeat_ != timelineBeat) {
+        playheadBeat_ = timelineBeat;
         repaint();
     }
 }
 
 bool PianoRollGridComponent::getPlayheadDisplayX(int& gridLocalX) const {
-    if (playheadPosition_ < 0.0 || clipLengthBeats_ <= 0.0)
+    if (playheadBeat_ < 0.0)
         return false;
 
-    // Convert seconds to beats
-    double tempo = 120.0;
+    double bpm = 120.0;
     if (auto* controller = TimelineController::getCurrent())
-        tempo = controller->getState().tempo.bpm;
-    double secondsPerBeat = 60.0 / tempo;
-    double playheadBeats = playheadPosition_ / secondsPerBeat;
+        bpm = controller->getState().tempo.bpm;
 
-    // Only visible when the playhead falls within the clip's time range
-    double relBeat = playheadBeats - clipStartBeats_;
-    if (relBeat < 0.0 || relBeat > clipLengthBeats_)
-        return false;
-
-    double displayBeat = relativeMode_ ? (playheadBeats - clipStartBeats_) : playheadBeats;
-
-    // Wrap playhead within loop region when looping is enabled
-    if (loopEnabled_ && loopLengthBeats_ > 0.0) {
-        double beatPos = relativeMode_ ? displayBeat : (displayBeat - clipStartBeats_);
-        beatPos = std::fmod(beatPos, loopLengthBeats_);
-        if (beatPos < 0.0)
-            beatPos += loopLengthBeats_;
-        displayBeat = relativeMode_ ? beatPos : (clipStartBeats_ + beatPos);
+    // Drawn where the note being heard is drawn, in whichever selected clip is sounding.
+    auto& clipManager = ClipManager::getInstance();
+    for (const auto clipId : selectedClipIds_) {
+        const auto* clip = clipManager.getClip(clipId);
+        if (!clip)
+            continue;
+        const auto contentBeat =
+            clip->view == ClipView::Session
+                ? ClipOperations::contentBeatAtSessionBeat(
+                      *clip, clip->sessionPlayheadPos * bpm / 60.0, bpm)
+                : ClipOperations::contentBeatAtTimelineBeat(*clip, playheadBeat_, bpm);
+        if (contentBeat) {
+            gridLocalX = beatToPixel(displayBeatForClipBeat(clipId, *contentBeat));
+            return true;
+        }
     }
-
-    gridLocalX = beatToPixel(displayBeat);
-    return true;
+    return false;
 }
 
 void PianoRollGridComponent::setEditCursorPosition(double positionSeconds, bool blinkVisible) {
@@ -2694,7 +2715,7 @@ void PianoRollGridComponent::itemDropped(const SourceDetails& details) {
     pendingChord_.startBeat = dropBeat;
     pendingChord_.previewEndBeat = dropBeat + gridResolutionBeats_;  // Default length preview
     pendingChord_.notes = std::move(notes);
-    pendingChord_.chordName = chordName;
+    pendingChord_.chordName = std::move(chordName);
     pendingChord_.active = true;
     pendingChord_.blinkOn = true;
 
@@ -2704,24 +2725,18 @@ void PianoRollGridComponent::itemDropped(const SourceDetails& details) {
 }
 
 bool PianoRollGridComponent::isInterestedInFileDrag(const juce::StringArray& files) {
-    for (const auto& f : files)
-        if (f.endsWithIgnoreCase(".mid") || f.endsWithIgnoreCase(".midi"))
-            return true;
-    return false;
+    return std::ranges::any_of(files, isMidiFile);
 }
 
 void PianoRollGridComponent::filesDropped(const juce::StringArray& files, int x, int /*y*/) {
     if (clipId_ == INVALID_CLIP_ID && selectedClipIds_.empty())
         return;
 
-    // Find first .mid file
-    juce::File midiFile;
-    for (const auto& f : files) {
-        if (f.endsWithIgnoreCase(".mid") || f.endsWithIgnoreCase(".midi")) {
-            midiFile = juce::File(f);
-            break;
-        }
-    }
+    const auto first = std::ranges::find_if(files, isMidiFile);
+    if (first == files.end())
+        return;
+
+    const juce::File midiFile(*first);
     if (!midiFile.existsAsFile())
         return;
 
@@ -2753,7 +2768,7 @@ void PianoRollGridComponent::filesDropped(const juce::StringArray& files, int x,
     std::vector<std::pair<int, int>> simpleNotes;
 
     for (int t = 0; t < midi.getNumTracks(); ++t) {
-        auto* track = midi.getTrack(t);
+        const auto* track = midi.getTrack(t);
         if (!track)
             continue;
         for (int i = 0; i < track->getNumEvents(); ++i) {
@@ -2862,8 +2877,7 @@ void PianoRollGridComponent::confirmPendingChord(double endBeat) {
         return;
 
     double length = endBeat - pendingChord_.startBeat;
-    if (length < gridResolutionBeats_)
-        length = gridResolutionBeats_;
+    length = std::max(length, gridResolutionBeats_);
 
     if (onChordDropped) {
         rememberAddedNoteLength(length);
@@ -2908,25 +2922,10 @@ void PianoRollGridComponent::setPitchExpressionMode(bool enabled) {
 
 double PianoRollGridComponent::evaluatePitchExpression(
     const std::vector<MidiPitchExpressionPoint>& points, double relBeat) {
-    if (points.empty())
-        return 0.0;
-    if (relBeat <= points.front().beat)
-        return points.front().semitones;
-    if (relBeat >= points.back().beat)
-        return points.back().semitones;
-
-    for (size_t i = 0; i + 1 < points.size(); ++i) {
-        const auto& a = points[i];
-        const auto& b = points[i + 1];
-        if (relBeat >= a.beat && relBeat <= b.beat) {
-            const double span = b.beat - a.beat;
-            if (span <= 0.0)
-                return b.semitones;
-            const double t = (relBeat - a.beat) / span;
-            return a.semitones + t * (b.semitones - a.semitones);
-        }
-    }
-    return points.back().semitones;
+    // The shape lives in core (#2198) because the compiler and the Tracktion
+    // bridge have to draw the same one, and a curve the editor renders
+    // differently from what plays is not an editor.
+    return evaluatePitchExpressionCurve(points, relBeat);
 }
 
 double PianoRollGridComponent::expressionRelBeatForX(ClipId clipId, const MidiNote& note,
@@ -2939,7 +2938,7 @@ double PianoRollGridComponent::expressionRelBeatForX(ClipId clipId, const MidiNo
 juce::Point<float> PianoRollGridComponent::expressionPointToScreen(
     ClipId clipId, const MidiNote& note, const MidiPitchExpressionPoint& point) const {
     const double noteStartDisplayBeat = displayBeatForClipBeat(clipId, note.startBeat);
-    const float x = static_cast<float>(beatToPixel(noteStartDisplayBeat + point.beat));
+    const auto x = static_cast<float>(beatToPixel(noteStartDisplayBeat + point.beat));
     const float centerY =
         static_cast<float>(noteNumberToY(note.noteNumber)) + static_cast<float>(noteHeight_) * 0.5f;
     const float y = centerY - static_cast<float>(point.semitones * noteHeight_);
@@ -2970,6 +2969,61 @@ std::optional<PianoRollGridComponent::ExpressionHit> PianoRollGridComponent::hit
         }
     }
     return std::nullopt;
+}
+
+std::optional<PianoRollGridComponent::ExpressionHit>
+PianoRollGridComponent::hitTestExpressionSegment(juce::Point<int> pos) const {
+    auto& clipManager = ClipManager::getInstance();
+
+    std::optional<ExpressionHit> best;
+    double bestDistance = std::numeric_limits<double>::max();
+
+    for (ClipId clipId : selectedClipIds_) {
+        const auto* clip = clipManager.getClip(clipId);
+        if (!clip || !clip->isMidi() || !isClipSelected(clipId))
+            continue;
+
+        for (size_t i = 0; i < clip->midiNotes.size(); ++i) {
+            const auto& note = clip->midiNotes[i];
+            const auto& points = note.pitchExpression;
+            if (points.size() < 2)
+                continue;
+
+            auto visibleNote = clip->midiNotes[i];
+            if (!ClipOperations::clipMidiNoteToVisibleRange(*clip, visibleNote))
+                continue;
+
+            const double noteStartDisplayBeat = displayBeatForClipBeat(clipId, note.startBeat);
+            const double centerY = noteNumberToY(note.noteNumber) + noteHeight_ * 0.5;
+
+            for (size_t p = 0; p + 1 < points.size(); ++p) {
+                // Segments that cannot be bent are not offered: the cursor is a
+                // promise, and a drag that starts here would end in a commit
+                // that changed nothing.
+                if (!pitchExpressionSegmentCanBend(points, p))
+                    continue;
+
+                const int segStartX = beatToPixel(noteStartDisplayBeat + points[p].beat);
+                const int segEndX = beatToPixel(noteStartDisplayBeat + points[p + 1].beat);
+                if (pos.x < segStartX || pos.x > segEndX || segEndX <= segStartX)
+                    continue;
+
+                // Distance to the curve as it is drawn, not to the straight
+                // line between the endpoints: a segment already bent has to be
+                // grabbable where it actually is.
+                const double relBeat = expressionRelBeatForX(clipId, note, pos.x);
+                const double curveY =
+                    centerY - evaluatePitchExpression(points, relBeat) * noteHeight_;
+                const double distance = std::abs(pos.y - curveY);
+
+                if (distance <= noteHeight_ && distance < bestDistance) {
+                    bestDistance = distance;
+                    best = ExpressionHit{clipId, i, static_cast<int>(p)};
+                }
+            }
+        }
+    }
+    return best;
 }
 
 std::optional<PianoRollGridComponent::ExpressionHit> PianoRollGridComponent::hitTestExpressionNote(
@@ -3051,6 +3105,32 @@ bool PianoRollGridComponent::handleExpressionMouseDown(const juce::MouseEvent& e
         }
     }
 
+    // Bend the segment under the cursor (#2198). Ahead of the point grab
+    // because the gesture is deliberately usable near a point, and behind the
+    // frozen guard because bending is an edit like any other.
+    //
+    // Alt is the modifier Bitwig uses for this and the one free here: Shift
+    // already means "do not snap to semitones" on both of the other gestures.
+    if (isBendExpressionGesture(e.mods)) {
+        if (auto hit = hitTestExpressionSegment(e.getPosition())) {
+            const auto* clip = clipManager.getClip(hit->clipId);
+            if (!clip || hit->noteIndex >= clip->midiNotes.size())
+                return true;
+
+            expressionClipId_ = hit->clipId;
+            expressionNoteIndex_ = hit->noteIndex;
+            expressionWorkingPoints_ = clip->midiNotes[hit->noteIndex].pitchExpression;
+            expressionTensionSegmentIndex_ = hit->pointIndex;
+            expressionDragPointIndex_ = -1;
+            isExpressionDragging_ = true;
+            repaint();
+            return true;
+        }
+        // Alt with no segment under the cursor does nothing rather than falling
+        // through to adding a point: the user asked to bend something.
+        return true;
+    }
+
     // Grab an existing point
     if (auto hit = hitTestExpressionPoint(e.getPosition())) {
         const auto* clip = clipManager.getClip(hit->clipId);
@@ -3102,8 +3182,7 @@ bool PianoRollGridComponent::handleExpressionMouseDown(const juce::MouseEvent& e
 }
 
 void PianoRollGridComponent::handleExpressionMouseDrag(const juce::MouseEvent& e) {
-    if (!isExpressionDragging_ || expressionDragPointIndex_ < 0 ||
-        expressionDragPointIndex_ >= static_cast<int>(expressionWorkingPoints_.size()))
+    if (!isExpressionDragging_)
         return;
 
     const auto* clip = ClipManager::getInstance().getClip(expressionClipId_);
@@ -3111,6 +3190,16 @@ void PianoRollGridComponent::handleExpressionMouseDrag(const juce::MouseEvent& e
         return;
 
     const auto& note = clip->midiNotes[expressionNoteIndex_];
+
+    if (expressionTensionSegmentIndex_ >= 0) {
+        bendExpressionSegment(note, e);
+        return;
+    }
+
+    if (expressionDragPointIndex_ < 0 ||
+        expressionDragPointIndex_ >= static_cast<int>(expressionWorkingPoints_.size()))
+        return;
+
     auto& point = expressionWorkingPoints_[static_cast<size_t>(expressionDragPointIndex_)];
 
     // Horizontal: clamp between neighbouring points so ordering is stable
@@ -3119,7 +3208,7 @@ void PianoRollGridComponent::handleExpressionMouseDrag(const juce::MouseEvent& e
     if (expressionDragPointIndex_ > 0)
         minBeat = expressionWorkingPoints_[static_cast<size_t>(expressionDragPointIndex_ - 1)].beat;
     if (expressionDragPointIndex_ + 1 < static_cast<int>(expressionWorkingPoints_.size()))
-        maxBeat = expressionWorkingPoints_[static_cast<size_t>(expressionDragPointIndex_ + 1)].beat;
+        maxBeat = expressionWorkingPoints_[static_cast<size_t>(expressionDragPointIndex_) + 1].beat;
 
     const double noteStartDisplayBeat = displayBeatForClipBeat(expressionClipId_, note.startBeat);
     point.beat = juce::jlimit(minBeat, maxBeat, pixelToBeat(e.x) - noteStartDisplayBeat);
@@ -3135,6 +3224,32 @@ void PianoRollGridComponent::handleExpressionMouseDrag(const juce::MouseEvent& e
     repaint();
 }
 
+void PianoRollGridComponent::bendExpressionSegment(const MidiNote& note,
+                                                   const juce::MouseEvent& e) {
+    const auto index = static_cast<size_t>(expressionTensionSegmentIndex_);
+
+    // The same question the hit test asked before offering the gesture, asked
+    // again because the points can move under a live drag.
+    if (!pitchExpressionSegmentCanBend(expressionWorkingPoints_, index))
+        return;
+
+    auto& left = expressionWorkingPoints_[index];
+    const auto& right = expressionWorkingPoints_[index + 1];
+
+    const double span = right.beat - left.beat;
+    const double rise = right.semitones - left.semitones;
+
+    const double noteStartDisplayBeat = displayBeatForClipBeat(expressionClipId_, note.startBeat);
+    const double relBeat = pixelToBeat(e.x) - noteStartDisplayBeat;
+    const double t = juce::jlimit(0.0, 1.0, (relBeat - left.beat) / span);
+
+    const double centerY = noteNumberToY(note.noteNumber) + noteHeight_ * 0.5;
+    const double semitones = (centerY - e.y) / noteHeight_;
+
+    left.tension = pitchExpressionTensionThrough(t, (semitones - left.semitones) / rise);
+    repaint();
+}
+
 void PianoRollGridComponent::handleExpressionMouseUp(const juce::MouseEvent& /*e*/) {
     if (!isExpressionDragging_)
         return;
@@ -3143,6 +3258,7 @@ void PianoRollGridComponent::handleExpressionMouseUp(const juce::MouseEvent& /*e
 
     isExpressionDragging_ = false;
     expressionDragPointIndex_ = -1;
+    expressionTensionSegmentIndex_ = -1;
     expressionClipId_ = INVALID_CLIP_ID;
     expressionWorkingPoints_.clear();
     repaint();
@@ -3171,8 +3287,8 @@ void PianoRollGridComponent::commitExpressionEdit() {
         return;
 
     auto points = expressionWorkingPoints_;
-    std::sort(points.begin(), points.end(),
-              [](const auto& a, const auto& b) { return a.beat < b.beat; });
+    const auto beatOf = [](const auto& point) { return point.beat; };
+    std::ranges::sort(points, {}, beatOf);
 
     onPitchExpressionChanged(expressionClipId_, expressionNoteIndex_, std::move(points));
 }
@@ -3202,12 +3318,12 @@ void PianoRollGridComponent::paintExpressionPointLabel(juce::Graphics& g, const 
         y = screen.y + 8.0f;
 
     juce::Rectangle<float> bubble(x, y, w, h);
-    g.setColour(
-        DarkTheme::getColour(DarkTheme::PIANO_ROLL_TOOLTIP_BACKGROUND).withAlpha(0xEE / 255.0f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_TOOLTIP_BACKGROUND)
+                    .withAlpha(0xEE / 255.0f));
     g.fillRoundedRectangle(bubble, 3.0f);
-    g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_GRID_SUBDIVISION));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_GRID_SUBDIVISION));
     g.drawRoundedRectangle(bubble, 3.0f, 1.0f);
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT));
     g.setFont(font);
     g.drawText(text, bubble, juce::Justification::centred, false);
 }
@@ -3239,8 +3355,8 @@ void PianoRollGridComponent::paintPitchExpression(juce::Graphics& g) {
                 continue;
 
             const double noteStartDisplayBeat = displayBeatForClipBeat(clipId, note.startBeat);
-            const float startX = static_cast<float>(beatToPixel(noteStartDisplayBeat));
-            const float endX =
+            const auto startX = static_cast<float>(beatToPixel(noteStartDisplayBeat));
+            const auto endX =
                 static_cast<float>(beatToPixel(noteStartDisplayBeat + note.lengthBeats));
             const float centerY = static_cast<float>(noteNumberToY(note.noteNumber)) +
                                   static_cast<float>(noteHeight_) * 0.5f;
@@ -3251,9 +3367,32 @@ void PianoRollGridComponent::paintPitchExpression(juce::Graphics& g) {
 
             juce::Path path;
             path.startNewSubPath(startX, yForSemitones(evaluatePitchExpression(points, 0.0)));
-            for (const auto& p : points) {
-                const float px = static_cast<float>(beatToPixel(noteStartDisplayBeat + p.beat));
-                path.lineTo(juce::jlimit(startX, endX, px), yForSemitones(p.semitones));
+            for (size_t p = 0; p < points.size(); ++p) {
+                const auto px =
+                    static_cast<float>(beatToPixel(noteStartDisplayBeat + points[p].beat));
+                const float clampedX = juce::jlimit(startX, endX, px);
+
+                // A bent segment is sampled rather than drawn as one line
+                // (#2198). Sample count follows the segment's width on screen so
+                // a steep bend stays smooth when zoomed in and costs nothing
+                // when the note is a few pixels wide.
+                const bool bent = p > 0 && std::abs(points[p - 1].tension) >= 0.001;
+                if (bent) {
+                    const float prevX = juce::jlimit(
+                        startX, endX,
+                        static_cast<float>(beatToPixel(noteStartDisplayBeat + points[p - 1].beat)));
+                    const int samples =
+                        juce::jlimit(8, 96, static_cast<int>(std::abs(clampedX - prevX) * 0.5f));
+                    for (int sIdx = 1; sIdx < samples; ++sIdx) {
+                        const double u = static_cast<double>(sIdx) / samples;
+                        const double beat =
+                            points[p - 1].beat + (points[p].beat - points[p - 1].beat) * u;
+                        path.lineTo(prevX + (clampedX - prevX) * static_cast<float>(u),
+                                    yForSemitones(evaluatePitchExpression(points, beat)));
+                    }
+                }
+
+                path.lineTo(clampedX, yForSemitones(points[p].semitones));
             }
             path.lineTo(endX, yForSemitones(evaluatePitchExpression(points, note.lengthBeats)));
 
@@ -3266,7 +3405,7 @@ void PianoRollGridComponent::paintPitchExpression(juce::Graphics& g) {
                     for (size_t p = 0; p < points.size(); ++p) {
                         auto screen = expressionPointToScreen(clipId, note, points[p]);
                         const float r = 3.5f;
-                        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
+                        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT));
                         g.fillEllipse(screen.x - r, screen.y - r, r * 2.0f, r * 2.0f);
                         g.setColour(curveColour.darker(0.6f));
                         g.drawEllipse(screen.x - r, screen.y - r, r * 2.0f, r * 2.0f, 1.0f);

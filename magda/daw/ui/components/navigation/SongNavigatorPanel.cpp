@@ -2,7 +2,7 @@
 
 #include "../../../core/ClipInfo.hpp"
 #include "../../layout/LayoutConfig.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 
 namespace magda {
 
@@ -92,15 +92,15 @@ juce::Rectangle<float> SongNavigatorPanel::getViewportBox() const {
     const int left = beatToX(startBeats);
     const int right = beatToX(endBeats);
     // Span the lanes area only - start below the ruler band, like the playhead.
-    return juce::Rectangle<float>(static_cast<float>(left), static_cast<float>(kRulerHeight),
-                                  static_cast<float>(juce::jmax(2, right - left)),
-                                  static_cast<float>(getHeight() - kRulerHeight));
+    return {static_cast<float>(left), static_cast<float>(kRulerHeight),
+            static_cast<float>(juce::jmax(2, right - left)),
+            static_cast<float>(getHeight() - kRulerHeight)};
 }
 
 // ===== Painting =====
 
 void SongNavigatorPanel::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND));
 
     auto bounds = getLocalBounds();
 
@@ -112,8 +112,7 @@ void SongNavigatorPanel::paint(juce::Graphics& g) {
     // Mini ruler band along the top, plus faint bar gridlines down the strip so
     // the navigator carries its own scale (no need to read it against the main
     // ruler above, which has a different zoom).
-    const int beatsPerBar =
-        controller_ ? juce::jmax(1, controller_->getState().tempo.timeSignatureNumerator) : 4;
+    const double beatsPerBar = controller_ ? controller_->getState().tempo.beatsPerBar() : 4.0;
     const double totalBars = totalBeats() / beatsPerBar;
     {
         // Pick a "nice" bar step so labels stay readable (~one per 70px).
@@ -128,7 +127,7 @@ void SongNavigatorPanel::paint(juce::Graphics& g) {
             }
         }
 
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.5f));
         g.fillRect(0, 0, getWidth(), kRulerHeight);
         g.setFont(8.0f);
 
@@ -137,10 +136,10 @@ void SongNavigatorPanel::paint(juce::Graphics& g) {
             if (x >= getWidth() - 2) {
                 return;
             }
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.6f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.6f));
             g.drawVerticalLine(x, static_cast<float>(kRulerHeight),
                                static_cast<float>(getHeight()));
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.7f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.7f));
             g.drawText(juce::String(barNumber), x + 2, 0, 40, kRulerHeight,
                        juce::Justification::centredLeft);
         };
@@ -153,9 +152,9 @@ void SongNavigatorPanel::paint(juce::Graphics& g) {
             if (endBar - bar < barStep) {
                 continue;
             }
-            drawTick(bar, (bar - 1) * static_cast<double>(beatsPerBar));
+            drawTick(bar, (bar - 1) * beatsPerBar);
         }
-        drawTick(endBar, totalBars * static_cast<double>(beatsPerBar));
+        drawTick(endBar, totalBars * beatsPerBar);
     }
 
     // Height is limited, so merge tracks onto a few lanes rather than one thin
@@ -222,7 +221,7 @@ void SongNavigatorPanel::paint(juce::Graphics& g) {
     if (controller_) {
         const double playBeats = controller_->getState().playhead.playbackPositionBeats;
         const int px = beatToX(playBeats);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.9f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.9f));
         g.drawVerticalLine(px, static_cast<float>(kRulerHeight), static_cast<float>(getHeight()));
     }
 
@@ -230,14 +229,14 @@ void SongNavigatorPanel::paint(juce::Graphics& g) {
     // project is empty - a big selection rectangle over a blank strip is noise.
     if (hasContent) {
         const auto box = getViewportBox();
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_INFO).withAlpha(0.15f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_INFO).withAlpha(0.15f));
         g.fillRect(box);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_INFO).withAlpha(0.9f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_INFO).withAlpha(0.9f));
         g.drawRect(box, 1.5f);
     }
 
     // Outer border.
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(bounds, 1);
 }
 

@@ -4,6 +4,7 @@ declare license "GPL-3.0";
 declare version "1.0";
 
 import("stdfaust.lib");
+msm = library("magda_smoothing.lib");
 
 // ============================================================================
 // User controls
@@ -11,7 +12,7 @@ import("stdfaust.lib");
 
 // Free-time delay (used when sync is off). Greyed when Sync (slot 2) is ON.
 time      = hslider("Time [unit:ms] [idx:0] [gate:!2]", 500, 1, 2000, 1)
-            : si.smooth(ba.tau2pole(0.05));
+            : msm.smooth(ba.tau2pole(0.05));
 
 // Note division when synced. Same encoding as magda_delay.
 division  = nentry("Division [idx:1] [gate:2] [style:menu{
@@ -33,13 +34,13 @@ sync      = checkbox("Sync [idx:2]");
 
 // Grain length in milliseconds. Sub-30ms gets glitchy on purpose.
 size_ms   = hslider("Size [unit:ms] [idx:3]", 120, 20, 500, 1)
-            : si.smooth(ba.tau2pole(0.05));
+            : msm.smooth(ba.tau2pole(0.05));
 
 // Pitch shift in semitones. Each grain is read at the corresponding rate
 // inside its window, so positive values cover more buffer per grain
 // (chipmunk), negative values cover less (slowed-down tail).
 pitch_st  = hslider("Pitch [unit:st] [idx:4]", 0, -24, 24, 0.01)
-            : si.smooth(ba.tau2pole(0.05));
+            : msm.smooth(ba.tau2pole(0.05));
 
 // Per-grain position jitter, as a fraction of grain length. 0 = grains
 // always read from the same buffer offset; 1 = grain center wanders by

@@ -1,21 +1,20 @@
 #include "custom_ui/PolyStepSequencerUI.hpp"
 
-#include "audio/plugins/DrumGridPlugin.hpp"
-#include "audio/transport/StepClock.hpp"
+#include <algorithm>
+
 #include "core/GestureRouter.hpp"
+#include "core/RackInfo.hpp"
+#include "core/TrackManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 #include "ui/themes/SmallComboBoxLookAndFeel.hpp"
 
 namespace magda::daw::ui {
 
-namespace te = tracktion::engine;
-
 using PolySeqPlugin = daw::audio::PolyStepSequencerPlugin;
 
-namespace {
+std::atomic<int> PolyStepSequencerUI::nextPatternGesture_{magda::kNoStepPatternGesture + 1};
 
-// Drum Grid chain child type (mirrors DrumGridPlugin's private chainTreeId)
-const juce::Identifier DRUM_CHAIN_TYPE("CHAIN");
+namespace {
 
 const char* POLY_NOTE_NAMES[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
 
@@ -42,15 +41,15 @@ void drawStepRuler(juce::Graphics& g, juce::Rectangle<int> timelineArea,
     if (timelineArea.isEmpty())
         return;
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.04f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.04f));
     g.fillRect(timelineArea);
 
-    const float top = static_cast<float>(timelineArea.getY());
-    const float bottom = static_cast<float>(timelineArea.getBottom());
+    const auto top = static_cast<float>(timelineArea.getY());
+    const auto bottom = static_cast<float>(timelineArea.getBottom());
 
     // Highlight the playing step.
     if (playStep >= 0 && playStep < count) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.45f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.45f));
         g.fillRect(
             juce::Rectangle<float>(cellArea.getX() + playStep * colW, top, colW, bottom - top));
     }
@@ -59,10 +58,10 @@ void drawStepRuler(juce::Graphics& g, juce::Rectangle<int> timelineArea,
     for (int i = 0; i < count; ++i) {
         const float x = cellArea.getX() + i * colW;
         const bool group = (i % 4 == 0);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(group ? 0.5f : 0.2f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(group ? 0.5f : 0.2f));
         g.drawVerticalLine(juce::roundToInt(x), group ? top : top + 4.0f, bottom);
         if (group) {
-            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.setColour(ActiveTheme::getSecondaryTextColour());
             g.drawText(
                 juce::String(i + 1),
                 juce::Rectangle<float>(x + 2.0f, top, colW - 2.0f, bottom - top).toNearestInt(),
@@ -70,12 +69,117 @@ void drawStepRuler(juce::Graphics& g, juce::Rectangle<int> timelineArea,
         }
     }
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.4f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.4f));
     g.drawHorizontalLine(timelineArea.getBottom() - 1, static_cast<float>(cellArea.getX()),
                          static_cast<float>(cellArea.getRight()));
 }
 
+/// True when every note in the pattern can move by @p semitones and stay in
+/// MIDI range. A transpose is all or nothing, so it is asked before it is done.
+bool canTranspose(const step_pattern::PolyPattern& pattern, int semitones) {
+    for (const auto& step : pattern.steps) {
+        for (int n = 0; n < step.noteCount; ++n) {
+            const int moved = step.notes[static_cast<size_t>(n)].noteNumber + semitones;
+            if (moved < 0 || moved > 127)
+                return false;
+        }
+    }
+    return true;
+}
+
+void transposePattern(step_pattern::PolyPattern& pattern, int semitones) {
+    if (!canTranspose(pattern, semitones))
+        return;
+    for (auto& step : pattern.steps)
+        for (int n = 0; n < step.noteCount; ++n)
+            step.notes[static_cast<size_t>(n)].noteNumber += semitones;
+}
+
+/// Add or remove @p note on @p stepIndex, the way a grid click does.
+void toggleStepNote(step_pattern::PolyPattern& pattern, int stepIndex, int note) {
+    if (stepIndex < 0 || stepIndex >= daw::audio::sequencer::kMaxSteps)
+        return;
+
+    auto& step = pattern.steps[static_cast<size_t>(stepIndex)];
+    for (int i = 0; i < step.noteCount; ++i) {
+        if (step.notes[static_cast<size_t>(i)].noteNumber != note)
+            continue;
+        for (int j = i; j + 1 < step.noteCount; ++j)
+            step.notes[static_cast<size_t>(j)] = step.notes[static_cast<size_t>(j) + 1];
+        --step.noteCount;
+        step.notes[static_cast<size_t>(step.noteCount)] = {};
+        return;
+    }
+
+    if (step.noteCount >= daw::audio::sequencer::kMaxNotesPerStep)
+        return;  // voice cap reached
+    step.notes[static_cast<size_t>(step.noteCount)] = {.noteNumber = juce::jlimit(0, 127, note)};
+    ++step.noteCount;
+}
+
 }  // namespace
+
+// =============================================================================
+// PatternView — what both modes share
+// =============================================================================
+
+void PolyStepSequencerUI::PatternView::setContext(const ViewContext& context) {
+    context_ = context;
+    repaint();
+}
+
+const step_pattern::PolyPattern& PolyStepSequencerUI::PatternView::pattern() const {
+    static const step_pattern::PolyPattern empty;
+    return context_.pattern != nullptr ? *context_.pattern : empty;
+}
+
+void PolyStepSequencerUI::PatternView::editPattern(
+    const juce::String& description, std::function<void(step_pattern::PolyPattern&)> edit,
+    magda::StepPatternGesture gesture) const {
+    if (context_.edit)
+        context_.edit(description, std::move(edit), gesture);
+}
+
+bool PolyStepSequencerUI::PatternView::applyStepMenuAction(int result, int stepIndex) {
+    const auto transpose = [this](int semitones) {
+        if (!canTranspose(pattern(), semitones))
+            return;
+        editPattern("Transpose Pattern",
+                    [semitones](step_pattern::PolyPattern& p) { transposePattern(p, semitones); });
+        patternTransposed(semitones);
+    };
+
+    switch (result) {
+        case 1:
+            editPattern("Mute Step", [stepIndex](step_pattern::PolyPattern& p) {
+                auto& step = p.steps[static_cast<size_t>(stepIndex)];
+                step.gate = !step.gate;
+            });
+            return true;
+        case 2:
+            editPattern("Clear Step", [stepIndex](step_pattern::PolyPattern& p) {
+                p.steps[static_cast<size_t>(stepIndex)] = {};
+            });
+            return true;
+        case 10:
+            transpose(1);
+            return true;
+        case 11:
+            transpose(-1);
+            return true;
+        case 12:
+            transpose(12);
+            return true;
+        case 13:
+            transpose(-12);
+            return true;
+        case 20:
+            editPattern("Clear Pattern", [](step_pattern::PolyPattern& p) { p.steps.fill({}); });
+            return true;
+        default:
+            return false;
+    }
+}
 
 // =============================================================================
 // KeysView — piano-roll style pitch x step grid
@@ -84,11 +188,6 @@ void drawStepRuler(juce::Graphics& g, juce::Rectangle<int> timelineArea,
 class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
   public:
     KeysView() = default;
-
-    void setPlugin(PolySeqPlugin* plugin) override {
-        plugin_ = plugin;
-        repaint();
-    }
 
     void setPlayStep(int step) override {
         if (step != playStep_) {
@@ -101,9 +200,13 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
         repaint();
     }
 
+    void patternTransposed(int semitones) override {
+        shiftWindow(semitones);
+    }
+
     void paint(juce::Graphics& g) override {
         auto bounds = getLocalBounds();
-        if (bounds.isEmpty() || plugin_ == nullptr)
+        if (bounds.isEmpty() || context_.pattern == nullptr)
             return;
 
         // Mini timeline (step ruler) across the top, above the whole grid.
@@ -125,7 +228,7 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
         drawOctaveArrow(g, octaveDownArea_, false);
         drawZoomButton(g, zoomOutArea_, false);
 
-        const int count = juce::jlimit(1, PolySeqPlugin::MAX_STEPS, plugin_->numSteps.get());
+        const int count = pattern().playingLength();
         const float rowH = static_cast<float>(cellArea_.getHeight()) / visibleNotes_;
         const float colW = static_cast<float>(cellArea_.getWidth()) / static_cast<float>(count);
 
@@ -145,7 +248,7 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
             g.fillRect(rowRect.reduced(0.0f, 0.5f));
 
             if (note % 12 == 0) {
-                g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
                 g.drawText(polyNoteNameShort(note), rowRect.toNearestInt(),
                            juce::Justification::centred);
             }
@@ -157,17 +260,17 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
             const float y = cellArea_.getY() + row * rowH;
 
             for (int i = 0; i < count; ++i) {
-                const auto step = plugin_->getStep(i);
+                const auto& step = pattern().step(i);
                 const float x = cellArea_.getX() + i * colW;
                 auto cellRect =
                     juce::Rectangle<float>(x + 0.5f, y + 0.5f, colW - 1.0f, rowH - 1.0f);
 
                 // Background: black-key rows darker, playhead column highlighted
-                juce::Colour bg = DarkTheme::getColour(DarkTheme::BACKGROUND)
+                juce::Colour bg = ActiveTheme::getColour(ActiveTheme::BACKGROUND)
                                       .brighter(isBlackKey(note) ? 0.04f : 0.10f);
                 if (i == playStep_)
                     bg = bg.overlaidWith(
-                        DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.18f));
+                        ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.18f));
                 if (!step.gate)
                     bg = bg.darker(0.3f);
                 g.setColour(bg);
@@ -185,7 +288,8 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
                 }
                 if (noteVel > 0) {
                     const float alpha = 0.35f + 0.6f * static_cast<float>(noteVel) / 127.0f;
-                    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(alpha));
+                    g.setColour(
+                        ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(alpha));
                     g.fillRoundedRectangle(cellRect, 1.5f);
                 }
             }
@@ -195,14 +299,14 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
         for (int i = 0; i <= count; ++i) {
             const float x = cellArea_.getX() + i * colW;
             g.setColour(
-                DarkTheme::getColour(DarkTheme::BORDER).withAlpha(i % 4 == 0 ? 0.4f : 0.15f));
+                ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(i % 4 == 0 ? 0.4f : 0.15f));
             g.drawVerticalLine(juce::roundToInt(x), static_cast<float>(cellArea_.getY()),
                                static_cast<float>(cellArea_.getBottom()));
         }
         for (int row = 0; row <= visibleNotes_; ++row) {
             const int noteBelow = lowNote_ + (visibleNotes_ - 1 - row);
             const float y = cellArea_.getY() + row * rowH;
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER)
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER)
                             .withAlpha((noteBelow + 1) % 12 == 0 ? 0.4f : 0.1f));
             g.drawHorizontalLine(juce::roundToInt(y), static_cast<float>(cellArea_.getX()),
                                  static_cast<float>(cellArea_.getRight()));
@@ -210,7 +314,7 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
     }
 
     void mouseDown(const juce::MouseEvent& e) override {
-        if (plugin_ == nullptr)
+        if (context_.pattern == nullptr)
             return;
         const auto pos = e.getPosition();
 
@@ -244,7 +348,8 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
             return;
         }
 
-        plugin_->toggleStepNote(step, note);
+        editPattern("Toggle Step Note",
+                    [step, note](step_pattern::PolyPattern& p) { toggleStepNote(p, step, note); });
         repaint();
     }
 
@@ -288,9 +393,9 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
     }
 
     int stepAt(int x) const {
-        if (plugin_ == nullptr || cellArea_.getWidth() <= 0)
+        if (context_.pattern == nullptr || cellArea_.getWidth() <= 0)
             return -1;
-        const int count = juce::jlimit(1, PolySeqPlugin::MAX_STEPS, plugin_->numSteps.get());
+        const int count = pattern().playingLength();
         const int relX = x - cellArea_.getX();
         if (relX < 0 || relX >= cellArea_.getWidth())
             return -1;
@@ -308,7 +413,7 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
     }
 
     void showStepContextMenu(int stepIndex) {
-        const auto step = plugin_->getStep(stepIndex);
+        const auto& step = pattern().step(stepIndex);
 
         juce::PopupMenu menu;
         menu.addItem(1, step.gate ? "Mute Step" : "Unmute Step");
@@ -324,42 +429,14 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
         patternMenu.addItem(20, "Clear Pattern");
         menu.addSubMenu("Pattern", patternMenu);
 
-        menu.showMenuAsync(juce::PopupMenu::Options(), [this, stepIndex](int result) {
-            if (plugin_ == nullptr)
-                return;
-            switch (result) {
-                case 1: {
-                    auto s = plugin_->getStep(stepIndex);
-                    plugin_->setStepGate(stepIndex, !s.gate);
-                    break;
-                }
-                case 2:
-                    plugin_->clearStep(stepIndex);
-                    break;
-                case 10:
-                    if (plugin_->transposePattern(1))
-                        shiftWindow(1);
-                    break;
-                case 11:
-                    if (plugin_->transposePattern(-1))
-                        shiftWindow(-1);
-                    break;
-                case 12:
-                    if (plugin_->transposePattern(12))
-                        shiftWindow(12);
-                    break;
-                case 13:
-                    if (plugin_->transposePattern(-12))
-                        shiftWindow(-12);
-                    break;
-                case 20:
-                    plugin_->clearPattern();
-                    break;
-                default:
-                    return;
-            }
-            repaint();
-        });
+        menu.showMenuAsync(juce::PopupMenu::Options(),
+                           [safeThis = juce::Component::SafePointer(this), stepIndex](int result) {
+                               if (safeThis == nullptr || safeThis->context_.pattern == nullptr)
+                                   return;
+                               if (!safeThis->applyStepMenuAction(result, stepIndex))
+                                   return;
+                               safeThis->repaint();
+                           });
     }
 
     void drawOctaveArrow(juce::Graphics& g, juce::Rectangle<int> area, bool isUp) {
@@ -369,17 +446,17 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
         auto btn = area.reduced(2);
         const bool canShift = isUp ? (lowNote_ < 127 - visibleNotes_ + 1) : (lowNote_ > 0);
 
-        g.setColour(canShift ? DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.15f)
-                             : DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
+        g.setColour(canShift ? ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.15f)
+                             : ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
         g.fillRoundedRectangle(btn.toFloat(), 2.0f);
 
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.3f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.3f));
         g.drawRoundedRectangle(btn.toFloat(), 2.0f, 0.5f);
 
-        g.setColour(canShift ? DarkTheme::getTextColour()
-                             : DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
-        const float cx = static_cast<float>(btn.getCentreX());
-        const float cy = static_cast<float>(btn.getCentreY());
+        g.setColour(canShift ? ActiveTheme::getTextColour()
+                             : ActiveTheme::getSecondaryTextColour().withAlpha(0.3f));
+        const auto cx = static_cast<float>(btn.getCentreX());
+        const auto cy = static_cast<float>(btn.getCentreY());
         constexpr float arrowSize = 4.0f;
         juce::Path arrow;
         if (isUp) {
@@ -400,23 +477,22 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
         const bool enabled =
             isIn ? (visibleNotes_ > MIN_VISIBLE_NOTES) : (visibleNotes_ < MAX_VISIBLE_NOTES);
 
-        g.setColour(enabled ? DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.15f)
-                            : DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
+        g.setColour(enabled ? ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.15f)
+                            : ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
         g.fillRoundedRectangle(btn.toFloat(), 2.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.3f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.3f));
         g.drawRoundedRectangle(btn.toFloat(), 2.0f, 0.5f);
 
-        g.setColour(enabled ? DarkTheme::getTextColour()
-                            : DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
-        const float cx = static_cast<float>(btn.getCentreX());
-        const float cy = static_cast<float>(btn.getCentreY());
+        g.setColour(enabled ? ActiveTheme::getTextColour()
+                            : ActiveTheme::getSecondaryTextColour().withAlpha(0.3f));
+        const auto cx = static_cast<float>(btn.getCentreX());
+        const auto cy = static_cast<float>(btn.getCentreY());
         constexpr float s = 3.0f;
         g.drawLine(cx - s, cy, cx + s, cy, 1.0f);  // minus / plus horizontal bar
         if (isIn)
             g.drawLine(cx, cy - s, cx, cy + s, 1.0f);  // plus vertical bar
     }
 
-    PolySeqPlugin* plugin_ = nullptr;
     int playStep_ = -1;
     int lowNote_ = 48;                          // C2..B3 window — C3 (60) centered
     int visibleNotes_ = DEFAULT_VISIBLE_NOTES;  // pitch rows shown (vertical zoom)
@@ -443,26 +519,18 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
 // pattern notes that match no lane get an orphan lane so they stay editable.
 
 class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternView,
-                                           private juce::ValueTree::Listener {
+                                           private magda::TrackManagerListener {
   public:
-    DrumLanesView() = default;
-
-    ~DrumLanesView() override {
-        detachStateListeners();
+    DrumLanesView() {
+        magda::TrackManager::getInstance().addListener(this);
     }
 
-    void setPlugin(PolySeqPlugin* plugin) override {
-        detachStateListeners();
-        plugin_ = plugin;
+    ~DrumLanesView() override {
+        magda::TrackManager::getInstance().removeListener(this);
+    }
 
-        // Watch the owner track's tree so the lane set follows Drum Grid
-        // devices being added / removed / reordered in the chain.
-        if (plugin_ != nullptr) {
-            if (auto* track = plugin_->getOwnerTrack()) {
-                trackState_ = track->state;
-                trackState_.addListener(this);
-            }
-        }
+    void setContext(const ViewContext& context) override {
+        PatternView::setContext(context);
         refreshLanes();
     }
 
@@ -480,7 +548,7 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
 
     void paint(juce::Graphics& g) override {
         auto bounds = getLocalBounds();
-        if (bounds.isEmpty() || plugin_ == nullptr || lanes_.empty())
+        if (bounds.isEmpty() || context_.pattern == nullptr || lanes_.empty())
             return;
 
         // Mini timeline (step ruler) across the top, above the whole grid.
@@ -504,7 +572,7 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
 
         g.setFont(FontManager::getInstance().getUIFont(7.0f));
 
-        const int count = juce::jlimit(1, PolySeqPlugin::MAX_STEPS, plugin_->numSteps.get());
+        const int count = pattern().playingLength();
         const float colW = static_cast<float>(cellArea_.getWidth()) / static_cast<float>(count);
 
         drawStepRuler(g, timelineArea_, cellArea_, count, colW, playStep_);
@@ -520,27 +588,27 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
             auto labelRect =
                 juce::Rectangle<float>(static_cast<float>(labelArea_.getX()), y,
                                        static_cast<float>(labelArea_.getWidth()), laneH);
-            g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND)
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND)
                             .brighter(laneIdx % 2 == 0 ? 0.18f : 0.12f));
             g.fillRect(labelRect.reduced(0.0f, 0.5f));
-            g.setColour(lane.orphan ? DarkTheme::getSecondaryTextColour()
-                                    : DarkTheme::getTextColour());
+            g.setColour(lane.orphan ? ActiveTheme::getSecondaryTextColour()
+                                    : ActiveTheme::getTextColour());
             g.drawText(lane.label, labelRect.toNearestInt().reduced(2, 0),
                        juce::Justification::centredLeft);
 
             // --- Cells ---
             for (int i = 0; i < count; ++i) {
-                const auto step = plugin_->getStep(i);
+                const auto& step = pattern().step(i);
                 const float x = cellArea_.getX() + i * colW;
                 auto cellRect =
                     juce::Rectangle<float>(x + 0.5f, y + 0.5f, colW - 1.0f, laneH - 1.0f);
 
                 // Background: alternate lane shading, playhead column highlighted
-                juce::Colour bg = DarkTheme::getColour(DarkTheme::BACKGROUND)
+                juce::Colour bg = ActiveTheme::getColour(ActiveTheme::BACKGROUND)
                                       .brighter(laneIdx % 2 == 0 ? 0.10f : 0.04f);
                 if (i == playStep_)
                     bg = bg.overlaidWith(
-                        DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.18f));
+                        ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.18f));
                 if (!step.gate)
                     bg = bg.darker(0.3f);
                 g.setColour(bg);
@@ -558,7 +626,8 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
                 }
                 if (noteVel > 0) {
                     const float alpha = 0.35f + 0.6f * static_cast<float>(noteVel) / 127.0f;
-                    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(alpha));
+                    g.setColour(
+                        ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(alpha));
                     g.fillRoundedRectangle(cellRect, 1.5f);
                 }
             }
@@ -568,20 +637,20 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
         for (int i = 0; i <= count; ++i) {
             const float x = cellArea_.getX() + i * colW;
             g.setColour(
-                DarkTheme::getColour(DarkTheme::BORDER).withAlpha(i % 4 == 0 ? 0.4f : 0.15f));
+                ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(i % 4 == 0 ? 0.4f : 0.15f));
             g.drawVerticalLine(juce::roundToInt(x), static_cast<float>(cellArea_.getY()),
                                static_cast<float>(cellArea_.getBottom()));
         }
         for (int row = 0; row <= visible; ++row) {
             const float y = cellArea_.getY() + row * laneH;
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.15f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.15f));
             g.drawHorizontalLine(juce::roundToInt(y), static_cast<float>(cellArea_.getX()),
                                  static_cast<float>(cellArea_.getRight()));
         }
     }
 
     void mouseDown(const juce::MouseEvent& e) override {
-        if (plugin_ == nullptr)
+        if (context_.pattern == nullptr)
             return;
         const auto pos = e.getPosition();
 
@@ -607,7 +676,10 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
             return;
         }
 
-        plugin_->toggleStepNote(step, lanes_[static_cast<size_t>(laneIdx)].note);
+        const int laneNote = lanes_[static_cast<size_t>(laneIdx)].note;
+        editPattern("Toggle Step Note", [step, laneNote](step_pattern::PolyPattern& p) {
+            toggleStepNote(p, step, laneNote);
+        });
         repaint();
     }
 
@@ -632,74 +704,21 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
 
     // --- Lane discovery ---
 
-    /** Find a Drum Grid downstream of the sequencer on the owner track,
-     *  looking inside rack instances (instruments are rack-wrapped). If the
-     *  sequencer itself is not on the top-level list, any Drum Grid on the
-     *  track is accepted. */
-    daw::audio::DrumGridPlugin* findDownstreamDrumGrid() const {
-        if (plugin_ == nullptr)
-            return nullptr;
-        auto* track = plugin_->getOwnerTrack();
-        if (track == nullptr)
-            return nullptr;
-
-        bool passedSelf = false;
-        daw::audio::DrumGridPlugin* fallback = nullptr;
-        for (auto* p : track->pluginList) {
-            if (p == plugin_) {
-                passedSelf = true;
-                continue;
-            }
-            auto* found = dynamic_cast<daw::audio::DrumGridPlugin*>(p);
-            if (found == nullptr) {
-                if (auto* rackInstance = dynamic_cast<te::RackInstance*>(p)) {
-                    if (rackInstance->type != nullptr) {
-                        for (auto* inner : rackInstance->type->getPlugins()) {
-                            found = dynamic_cast<daw::audio::DrumGridPlugin*>(inner);
-                            if (found != nullptr)
-                                break;
-                        }
-                    }
-                }
-            }
-            if (found != nullptr) {
-                if (passedSelf)
-                    return found;
-                if (fallback == nullptr)
-                    fallback = found;
-            }
-        }
-        return passedSelf ? nullptr : fallback;
-    }
-
     /** Rebuild the lane list: Drum Grid chains (or GM fallback) + orphan
      *  lanes for pattern notes that match no chain. Sorted note-ascending so
      *  the lowest lane paints at the bottom. */
     void refreshLanes() {
-        auto* drumGrid = findDownstreamDrumGrid();
-
-        // (Re)attach the Drum Grid state listener when the target changes,
-        // so chain renames / note-range edits refresh the lane labels.
-        auto newState = drumGrid != nullptr ? drumGrid->state : juce::ValueTree();
-        if (newState != drumGridState_) {
-            if (drumGridState_.isValid())
-                drumGridState_.removeListener(this);
-            drumGridState_ = newState;
-            if (drumGridState_.isValid())
-                drumGridState_.addListener(this);
-        }
+        const auto* drumGrid =
+            magda::TrackManager::getInstance().findPadDeviceDownstreamOf(context_.devicePath);
 
         lanes_.clear();
-        if (drumGrid != nullptr) {
-            for (const auto& chain : drumGrid->getChains()) {
-                if (chain == nullptr)
-                    continue;
-                // The chain's low note is the incoming MIDI note that triggers
-                // the pad (single-note chains have lowNote == highNote).
+        if (drumGrid != nullptr && drumGrid->pads) {
+            for (const auto& pad : drumGrid->pads->chains) {
+                // The pad's low note is the incoming MIDI note that triggers
+                // it (single-note pads have lowNote == highNote).
                 Lane lane;
-                lane.note = chain->lowNote;
-                lane.label =
-                    chain->name.isNotEmpty() ? chain->name : polyNoteNameShort(chain->lowNote);
+                lane.note = pad.lowNote;
+                lane.label = pad.name.isNotEmpty() ? pad.name : polyNoteNameShort(pad.lowNote);
                 lanes_.push_back(std::move(lane));
             }
         }
@@ -716,32 +735,26 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
         }
 
         // Pattern notes with no matching lane stay visible and editable
-        if (plugin_ != nullptr) {
-            for (int i = 0; i < PolySeqPlugin::MAX_STEPS; ++i) {
-                const auto step = plugin_->getStep(i);
-                for (int n = 0; n < step.noteCount; ++n) {
-                    const int note = step.notes[static_cast<size_t>(n)].noteNumber;
-                    if (!hasLaneForNote(note))
-                        lanes_.push_back({note, polyNoteNameShort(note), true});
-                }
+        for (int i = 0; i < PolySeqPlugin::MAX_STEPS; ++i) {
+            const auto& step = pattern().step(i);
+            for (int n = 0; n < step.noteCount; ++n) {
+                const int note = step.notes[static_cast<size_t>(n)].noteNumber;
+                if (!hasLaneForNote(note))
+                    lanes_.push_back({note, polyNoteNameShort(note), true});
             }
         }
 
-        std::sort(lanes_.begin(), lanes_.end(),
-                  [](const Lane& a, const Lane& b) { return a.note < b.note; });
-        lanes_.erase(std::unique(lanes_.begin(), lanes_.end(),
-                                 [](const Lane& a, const Lane& b) { return a.note == b.note; }),
-                     lanes_.end());
+        std::ranges::sort(lanes_, {}, &Lane::note);
+        const auto duplicates = std::ranges::unique(lanes_, {}, &Lane::note);
+        lanes_.erase(duplicates.begin(), duplicates.end());
 
         clampScrollOffset();
         repaint();
     }
 
     bool hasLaneForNote(int note) const {
-        for (const auto& lane : lanes_)
-            if (lane.note == note)
-                return true;
-        return false;
+        const auto hasNote = [note](const auto& lane) { return lane.note == note; };
+        return std::ranges::any_of(lanes_, hasNote);
     }
 
     /** Coalesced async lane refresh (ValueTree callbacks can fire mid-edit). */
@@ -758,32 +771,17 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
             });
     }
 
-    void detachStateListeners() {
-        if (trackState_.isValid()) {
-            trackState_.removeListener(this);
-            trackState_ = juce::ValueTree();
-        }
-        if (drumGridState_.isValid()) {
-            drumGridState_.removeListener(this);
-            drumGridState_ = juce::ValueTree();
-        }
+    // Chain membership and pad edits arrive as a devices change on the track, a
+    // pad renamed through setChainName as a property change.
+    void tracksChanged() override {
+        triggerLaneRefresh();
     }
-
-    // ValueTree::Listener — chain membership (track tree) + Drum Grid chains
-    void valueTreePropertyChanged(juce::ValueTree& tree, const juce::Identifier&) override {
-        if (tree.hasType(DRUM_CHAIN_TYPE))
+    void trackDevicesChanged(magda::TrackId trackId) override {
+        if (trackId == context_.devicePath.trackId)
             triggerLaneRefresh();
     }
-    void valueTreeChildAdded(juce::ValueTree&, juce::ValueTree& child) override {
-        if (child.hasType(te::IDs::PLUGIN) || child.hasType(DRUM_CHAIN_TYPE))
-            triggerLaneRefresh();
-    }
-    void valueTreeChildRemoved(juce::ValueTree&, juce::ValueTree& child, int) override {
-        if (child.hasType(te::IDs::PLUGIN) || child.hasType(DRUM_CHAIN_TYPE))
-            triggerLaneRefresh();
-    }
-    void valueTreeChildOrderChanged(juce::ValueTree& parent, int, int) override {
-        if (parent == trackState_)
+    void trackPropertyChanged(int trackId) override {
+        if (trackId == context_.devicePath.trackId)
             triggerLaneRefresh();
     }
 
@@ -818,9 +816,9 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
     }
 
     int stepAt(int x) const {
-        if (plugin_ == nullptr || cellArea_.getWidth() <= 0)
+        if (context_.pattern == nullptr || cellArea_.getWidth() <= 0)
             return -1;
-        const int count = juce::jlimit(1, PolySeqPlugin::MAX_STEPS, plugin_->numSteps.get());
+        const int count = pattern().playingLength();
         const int relX = x - cellArea_.getX();
         if (relX < 0 || relX >= cellArea_.getWidth())
             return -1;
@@ -841,7 +839,7 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
     }
 
     void showStepContextMenu(int stepIndex) {
-        const auto step = plugin_->getStep(stepIndex);
+        const auto& step = pattern().step(stepIndex);
 
         juce::PopupMenu menu;
         menu.addItem(1, step.gate ? "Mute Step" : "Unmute Step");
@@ -857,38 +855,14 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
         patternMenu.addItem(20, "Clear Pattern");
         menu.addSubMenu("Pattern", patternMenu);
 
-        menu.showMenuAsync(juce::PopupMenu::Options(), [this, stepIndex](int result) {
-            if (plugin_ == nullptr)
-                return;
-            switch (result) {
-                case 1: {
-                    auto s = plugin_->getStep(stepIndex);
-                    plugin_->setStepGate(stepIndex, !s.gate);
-                    break;
-                }
-                case 2:
-                    plugin_->clearStep(stepIndex);
-                    break;
-                case 10:
-                    plugin_->transposePattern(1);
-                    break;
-                case 11:
-                    plugin_->transposePattern(-1);
-                    break;
-                case 12:
-                    plugin_->transposePattern(12);
-                    break;
-                case 13:
-                    plugin_->transposePattern(-12);
-                    break;
-                case 20:
-                    plugin_->clearPattern();
-                    break;
-                default:
-                    return;
-            }
-            repaint();
-        });
+        menu.showMenuAsync(juce::PopupMenu::Options(),
+                           [safeThis = juce::Component::SafePointer(this), stepIndex](int result) {
+                               if (safeThis == nullptr || safeThis->context_.pattern == nullptr)
+                                   return;
+                               if (!safeThis->applyStepMenuAction(result, stepIndex))
+                                   return;
+                               safeThis->repaint();
+                           });
     }
 
     void drawScrollArrow(juce::Graphics& g, juce::Rectangle<int> area, bool isUp) {
@@ -899,17 +873,17 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
         const int maxOffset = juce::jmax(0, static_cast<int>(lanes_.size()) - visibleLaneCount());
         const bool canShift = isUp ? (scrollOffset_ < maxOffset) : (scrollOffset_ > 0);
 
-        g.setColour(canShift ? DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.15f)
-                             : DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
+        g.setColour(canShift ? ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.15f)
+                             : ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
         g.fillRoundedRectangle(btn.toFloat(), 2.0f);
 
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.3f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.3f));
         g.drawRoundedRectangle(btn.toFloat(), 2.0f, 0.5f);
 
-        g.setColour(canShift ? DarkTheme::getTextColour()
-                             : DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
-        const float cx = static_cast<float>(btn.getCentreX());
-        const float cy = static_cast<float>(btn.getCentreY());
+        g.setColour(canShift ? ActiveTheme::getTextColour()
+                             : ActiveTheme::getSecondaryTextColour().withAlpha(0.3f));
+        const auto cx = static_cast<float>(btn.getCentreX());
+        const auto cy = static_cast<float>(btn.getCentreY());
         constexpr float arrowSize = 4.0f;
         juce::Path arrow;
         if (isUp) {
@@ -922,15 +896,11 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
         g.fillPath(arrow);
     }
 
-    PolySeqPlugin* plugin_ = nullptr;
     int playStep_ = -1;
     int scrollOffset_ = 0;  // Index of the bottom-most visible lane
     bool refreshPending_ = false;
 
     std::vector<Lane> lanes_;  // Sorted note-ascending (lowest paints at the bottom)
-
-    juce::ValueTree trackState_;     // Owner track tree (chain membership)
-    juce::ValueTree drumGridState_;  // Discovered Drum Grid state (CHAIN children)
 
     juce::Rectangle<int> scrollUpArea_;
     juce::Rectangle<int> scrollDownArea_;
@@ -956,8 +926,7 @@ PolyStepSequencerUI::PolyStepSequencerUI() {
     });
     rateSlider_.setValueParser([](const juce::String&) { return 1.0; });
     rateSlider_.onValueChanged = [this](double value) {
-        if (plugin_)
-            plugin_->rate = juce::roundToInt(value);
+        sendChange(PolySeqPlugin::kRate, static_cast<float>(juce::roundToInt(value)));
     };
 
     setupLabel(stepsLabel_, "STEPS");
@@ -965,31 +934,36 @@ PolyStepSequencerUI::PolyStepSequencerUI() {
     stepsSlider_.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v)); });
     stepsSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
     stepsSlider_.onValueChanged = [this](double value) {
-        if (plugin_) {
-            int steps = juce::roundToInt(value);
-            plugin_->numSteps = steps;
-            rampCurveDisplay_.setNumTicks(steps);
-            // Clamp cycles to num steps
-            cyclesSlider_.setRange(1.0, static_cast<double>(steps), 1.0);
-            if (cyclesSlider_.getValue() > steps)
-                cyclesSlider_.setValue(static_cast<double>(steps), juce::sendNotificationSync);
-            repaint();
-        }
+        const int steps = juce::jlimit(1, PolySeqPlugin::MAX_STEPS, juce::roundToInt(value));
+        // How many steps play is part of the pattern, so it is a pattern edit.
+        // A drag coalesces into one undo entry; a typed or clicked value is a
+        // single discrete edit (#2335).
+        editPattern(
+            "Set Step Count", [steps](step_pattern::PolyPattern& p) { p.length = steps; },
+            stepsSlider_.isBeingDragged() ? magda::StepPatternGesture::Continuous
+                                          : magda::StepPatternGesture::Discrete);
+        rampCurveDisplay_.setNumTicks(steps);
+        // Clamp cycles to num steps
+        cyclesSlider_.setRange(1.0, static_cast<double>(steps), 1.0);
+        if (cyclesSlider_.getValue() > steps)
+            cyclesSlider_.setValue(static_cast<double>(steps), juce::sendNotificationSync);
+        repaint();
     };
+    stepsSlider_.getSlider().onDragEnd = [this] { endPatternGesture(); };
 
     setupLabel(dirLabel_, "DIR");
     dirCombo_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
     dirCombo_.setColour(juce::ComboBox::backgroundColourId,
-                        DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
-    dirCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-    dirCombo_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+                        ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.1f));
+    dirCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
+    dirCombo_.setColour(juce::ComboBox::outlineColourId,
+                        ActiveTheme::getColour(ActiveTheme::BORDER));
     dirCombo_.addItem("Forward", 1);
     dirCombo_.addItem("Reverse", 2);
     dirCombo_.addItem("Ping-Pong", 3);
     dirCombo_.addItem("Random", 4);
     dirCombo_.onChange = [this] {
-        if (plugin_)
-            plugin_->direction = dirCombo_.getSelectedId() - 1;
+        sendChange(PolySeqPlugin::kDirection, static_cast<float>(dirCombo_.getSelectedId() - 1));
     };
     addAndMakeVisible(dirCombo_);
 
@@ -1000,8 +974,7 @@ PolyStepSequencerUI::PolyStepSequencerUI() {
     swingSlider_.setValueParser(
         [](const juce::String& t) { return t.replace("%", "").trim().getDoubleValue() / 100.0; });
     swingSlider_.onValueChanged = [this](double value) {
-        if (plugin_)
-            plugin_->swing = static_cast<float>(value);
+        sendChange(PolySeqPlugin::kSwing, static_cast<float>(value));
     };
 
     setupLabel(gateLengthLabel_, "GATE");
@@ -1011,8 +984,7 @@ PolyStepSequencerUI::PolyStepSequencerUI() {
     gateLengthSlider_.setValueParser(
         [](const juce::String& t) { return t.replace("%", "").trim().getDoubleValue() / 100.0; });
     gateLengthSlider_.onValueChanged = [this](double value) {
-        if (plugin_)
-            plugin_->gateLength = static_cast<float>(value);
+        sendChange(PolySeqPlugin::kGateLength, static_cast<float>(value));
     };
 
     // Quantize slider (adaptive snap strength 0-100%)
@@ -1022,10 +994,7 @@ PolyStepSequencerUI::PolyStepSequencerUI() {
         [](double v) { return juce::String(juce::roundToInt(v * 100)) + "%"; });
     quantizeSlider_.setValueParser(
         [](const juce::String& t) { return t.replace("%", "").trim().getDoubleValue() / 100.0; });
-    quantizeSlider_.onValueChanged = [this](double value) {
-        if (plugin_)
-            plugin_->quantize = static_cast<float>(value);
-    };
+    quantizeSlider_.onValueChanged = [this](double) { settingsEdited(); };
 
     // Quantize subdivisions (grid resolution, multiples of 16)
     setupLabel(quantizeSubLabel_, "SUB");
@@ -1034,19 +1003,16 @@ PolyStepSequencerUI::PolyStepSequencerUI() {
         [](double v) { return juce::String(juce::roundToInt(v)); });
     quantizeSubSlider_.setValueParser(
         [](const juce::String& t) { return t.trim().getDoubleValue(); });
-    quantizeSubSlider_.onValueChanged = [this](double value) {
-        if (plugin_)
-            plugin_->quantizeSub = juce::roundToInt(value);
-    };
+    quantizeSubSlider_.onValueChanged = [this](double) { settingsEdited(); };
 
     // --- Ramp curve (time warp) ---
     setupLabel(rampLabel_, "TIME BEND");
     addAndMakeVisible(rampCurveDisplay_);
     rampCurveDisplay_.onCurveChanged = [this](float depth, float skew) {
-        if (plugin_) {
-            plugin_->ramp = depth;
-            plugin_->skew = skew;
-        }
+        sendChange(PolySeqPlugin::kRamp, depth);
+        sendChange(PolySeqPlugin::kSkew, skew);
+        depthSlider_.setValue(depth, juce::dontSendNotification);
+        skewSlider_.setValue(skew, juce::dontSendNotification);
     };
 
     setupLabel(depthLabel_, "DEPTH");
@@ -1057,10 +1023,9 @@ PolyStepSequencerUI::PolyStepSequencerUI() {
     depthSlider_.setValueParser(
         [](const juce::String& t) { return t.trim().getDoubleValue() / 100.0; });
     depthSlider_.onValueChanged = [this](double value) {
-        if (plugin_) {
-            plugin_->ramp = static_cast<float>(value);
-            rampCurveDisplay_.setValues(static_cast<float>(value), plugin_->skew.get());
-        }
+        sendChange(PolySeqPlugin::kRamp, static_cast<float>(value));
+        rampCurveDisplay_.setValues(static_cast<float>(value),
+                                    static_cast<float>(skewSlider_.getValue()));
     };
 
     setupLabel(skewLabel_, "SKEW");
@@ -1070,25 +1035,21 @@ PolyStepSequencerUI::PolyStepSequencerUI() {
     skewSlider_.setValueParser(
         [](const juce::String& t) { return t.trim().getDoubleValue() / 100.0; });
     skewSlider_.onValueChanged = [this](double value) {
-        if (plugin_) {
-            plugin_->skew = static_cast<float>(value);
-            rampCurveDisplay_.setValues(plugin_->ramp.get(), static_cast<float>(value));
-        }
+        sendChange(PolySeqPlugin::kSkew, static_cast<float>(value));
+        rampCurveDisplay_.setValues(static_cast<float>(depthSlider_.getValue()),
+                                    static_cast<float>(value));
     };
 
     setupLabel(cyclesLabel_, "CYCLES");
     setupSlider(cyclesSlider_, 1.0, static_cast<double>(PolySeqPlugin::MAX_STEPS), 1.0);
     cyclesSlider_.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v)); });
     cyclesSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
-    cyclesSlider_.onValueChanged = [this](double value) {
-        if (plugin_)
-            plugin_->rampCycles = juce::roundToInt(value);
-    };
+    cyclesSlider_.onValueChanged = [this](double) { settingsEdited(); };
 
     // Hard angle toggle (right-click on control point)
     rampCurveDisplay_.onHardAngleChanged = [this](bool hardAngle) {
-        if (plugin_)
-            plugin_->hardAngle = hardAngle;
+        hardAngle_ = hardAngle;
+        settingsEdited();
     };
 
     // MIDI thru / step record live in the device-slot header, owned by
@@ -1100,17 +1061,16 @@ PolyStepSequencerUI::PolyStepSequencerUI() {
     // Theme font + box-style rounding, matching the side-panel sliders/combo.
     viewModeButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     viewModeButton_.setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
+                              ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.1f));
     viewModeButton_.setColour(juce::TextButton::buttonOnColourId,
-                              DarkTheme::getAccentColour().withAlpha(0.6f));
-    viewModeButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
-    viewModeButton_.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+                              ActiveTheme::getAccentColour().withAlpha(0.6f));
+    viewModeButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
+    viewModeButton_.setColour(juce::TextButton::textColourOnId, ActiveTheme::getTextColour());
     viewModeButton_.setTooltip("Switch between keys and drum-lane pattern views");
     viewModeButton_.onClick = [this] {
-        if (plugin_)
-            plugin_->viewMode =
-                viewModeButton_.getToggleState() ? juce::String("drum") : juce::String("keys");
-        updatePatternViewMode();
+        drumViewActive_ = viewModeButton_.getToggleState();
+        settingsEdited();
+        applyPatternViewMode();
     };
     addAndMakeVisible(viewModeButton_);
 
@@ -1121,40 +1081,164 @@ PolyStepSequencerUI::PolyStepSequencerUI() {
 
 PolyStepSequencerUI::~PolyStepSequencerUI() {
     stopTimer();
-    if (watchedState_.isValid())
-        watchedState_.removeListener(this);
     dirCombo_.setLookAndFeel(nullptr);
     viewModeButton_.setLookAndFeel(nullptr);
 }
 
 // =============================================================================
-// Plugin binding
+// Model and device binding
 // =============================================================================
 
-void PolyStepSequencerUI::setPlugin(daw::audio::PolyStepSequencerPlugin* plugin) {
+void PolyStepSequencerUI::setSequencer(daw::audio::PolyStepSequencerPlugin* device) {
     stopTimer();
-    if (watchedState_.isValid())
-        watchedState_.removeListener(this);
+    device_ = device;
 
-    plugin_ = plugin;
-    patternView_->setPlugin(plugin);
-
-    if (plugin_) {
-        watchedState_ = plugin_->state;
-        watchedState_.addListener(this);
-        syncFromPlugin();
+    if (device_ != nullptr) {
+        drumViewActive_ = device_->viewMode() == "drum";
+        syncSettingsFromDevice();
+        applyPatternViewMode();
         startTimerHz(30);
     }
 }
 
-void PolyStepSequencerUI::updatePatternViewMode() {
-    const bool wantDrum = plugin_ != nullptr && plugin_->viewMode.get() == "drum";
-    if (wantDrum != drumViewActive_) {
-        drumViewActive_ = wantDrum;
-        patternView_ = wantDrum ? std::unique_ptr<PatternView>(std::make_unique<DrumLanesView>())
-                                : std::unique_ptr<PatternView>(std::make_unique<KeysView>());
+void PolyStepSequencerUI::setDevicePath(const magda::ChainNodePath& devicePath) {
+    devicePath_ = devicePath;
+    pushViewContext();
+}
+
+void PolyStepSequencerUI::updateFromParameters(const std::vector<magda::ParameterInfo>& params) {
+    // By paramIndex, not array position: the model's list is in the saved
+    // document's order and need not be complete, so a positional read draws one
+    // slot's value on another's control (#2335).
+    const auto display = [&params](int index, float fallback) {
+        for (const auto& parameter : params)
+            if (parameter.paramIndex == index)
+                return parameter.currentValue;
+        return fallback;
+    };
+
+    rateSlider_.setValue(static_cast<double>(display(PolySeqPlugin::kRate, 7.0f)),
+                         juce::dontSendNotification);
+    dirCombo_.setSelectedId(juce::roundToInt(display(PolySeqPlugin::kDirection, 0.0f)) + 1,
+                            juce::dontSendNotification);
+    swingSlider_.setValue(static_cast<double>(display(PolySeqPlugin::kSwing, 0.0f)),
+                          juce::dontSendNotification);
+    gateLengthSlider_.setValue(static_cast<double>(display(PolySeqPlugin::kGateLength, 0.8f)),
+                               juce::dontSendNotification);
+
+    const float depth = display(PolySeqPlugin::kRamp, 0.0f);
+    const float skew = display(PolySeqPlugin::kSkew, 0.0f);
+    depthSlider_.setValue(static_cast<double>(depth), juce::dontSendNotification);
+    skewSlider_.setValue(static_cast<double>(skew), juce::dontSendNotification);
+    rampCurveDisplay_.setValues(depth, skew);
+
+    syncSettingsFromDevice();
+    applyPatternViewMode();
+    repaint();
+}
+
+void PolyStepSequencerUI::setPattern(const step_pattern::PolyPattern& pattern) {
+    // See StepSequencerUI::setPattern: the controls are written whether or not
+    // the pattern moved, and only the redraw is skipped.
+    const bool changed = !(pattern == pattern_);
+
+    pattern_ = pattern;
+    const int steps = pattern_.playingLength();
+    stepsSlider_.setValue(static_cast<double>(steps), juce::dontSendNotification);
+    rampCurveDisplay_.setNumTicks(steps);
+    cyclesSlider_.setRange(1.0, static_cast<double>(steps), 1.0);
+
+    if (!changed)
+        return;
+
+    pushViewContext();
+    patternView_->patternChanged();
+    repaint();
+}
+
+void PolyStepSequencerUI::syncSettingsFromDevice() {
+    if (device_ == nullptr)
+        return;
+
+    const int steps = pattern_.playingLength();
+    hardAngle_ = device_->hardAngle.load(std::memory_order_relaxed);
+    rampCurveDisplay_.setHardAngle(hardAngle_);
+    quantizeSlider_.setValue(static_cast<double>(device_->quantize.load(std::memory_order_relaxed)),
+                             juce::dontSendNotification);
+    quantizeSubSlider_.setValue(
+        static_cast<double>(device_->quantizeSub.load(std::memory_order_relaxed)),
+        juce::dontSendNotification);
+    cyclesSlider_.setValue(static_cast<double>(juce::jlimit(
+                               1, steps, device_->rampCycles.load(std::memory_order_relaxed))),
+                           juce::dontSendNotification);
+    drumViewActive_ = device_->viewMode() == "drum";
+}
+
+void PolyStepSequencerUI::sendChange(int paramIndex, float value) {
+    if (onParameterChanged)
+        onParameterChanged(paramIndex, value);
+}
+
+void PolyStepSequencerUI::settingsEdited() {
+    if (!onSettingsEdited)
+        return;
+
+    using IDs = daw::audio::PolyStepSequencerPlugin::SettingIDs;
+    juce::NamedValueSet settings;
+    settings.set(IDs::rampCycles, juce::roundToInt(cyclesSlider_.getValue()));
+    settings.set(IDs::quantize, static_cast<float>(quantizeSlider_.getValue()));
+    settings.set(IDs::quantizeSub, juce::roundToInt(quantizeSubSlider_.getValue()));
+    settings.set(IDs::hardAngle, hardAngle_);
+    settings.set(IDs::viewMode, drumViewActive_ ? juce::String("drum") : juce::String("keys"));
+    onSettingsEdited(settings);
+}
+
+void PolyStepSequencerUI::editPattern(const juce::String& description,
+                                      std::function<void(step_pattern::PolyPattern&)> edit,
+                                      magda::StepPatternGesture gesture) {
+    if (onPatternEdited)
+        onPatternEdited(description, std::move(edit), gesture);
+}
+
+void PolyStepSequencerUI::drainRecordedSteps() {
+    if (device_ == nullptr)
+        return;
+
+    // The device heard the notes; the model is where they are written.
+    daw::audio::PolyStepSequencerPlugin::RecordedStep recorded;
+    while (device_->popRecordedStep(recorded)) {
+        editPattern("Record Step", [recorded](step_pattern::PolyPattern& p) {
+            if (recorded.stepIndex < 0 || recorded.stepIndex >= daw::audio::sequencer::kMaxSteps)
+                return;
+            p.steps[static_cast<size_t>(recorded.stepIndex)].gate = true;
+            toggleStepNote(p, recorded.stepIndex, recorded.noteNumber);
+        });
+    }
+}
+
+void PolyStepSequencerUI::pushViewContext() {
+    if (patternView_ == nullptr)
+        return;
+
+    ViewContext context;
+    context.pattern = &pattern_;
+    context.devicePath = devicePath_;
+    context.edit = [this](const juce::String& description,
+                          std::function<void(step_pattern::PolyPattern&)> edit,
+                          magda::StepPatternGesture gesture) {
+        editPattern(description, std::move(edit), gesture);
+    };
+    patternView_->setContext(context);
+}
+
+void PolyStepSequencerUI::applyPatternViewMode() {
+    if (drumViewActive_ != usingDrumView_ || patternView_ == nullptr) {
+        usingDrumView_ = drumViewActive_;
+        patternView_ = usingDrumView_
+                           ? std::unique_ptr<PatternView>(std::make_unique<DrumLanesView>())
+                           : std::unique_ptr<PatternView>(std::make_unique<KeysView>());
         addAndMakeVisible(*patternView_);
-        patternView_->setPlugin(plugin_);
+        pushViewContext();
         patternView_->setPlayStep(currentPlayStep_);
         resized();
     }
@@ -1162,68 +1246,26 @@ void PolyStepSequencerUI::updatePatternViewMode() {
     viewModeButton_.setButtonText(drumViewActive_ ? "DRUM" : "KEYS");
 }
 
-void PolyStepSequencerUI::syncFromPlugin() {
-    if (!plugin_)
-        return;
-
-    updatePatternViewMode();
-    rateSlider_.setValue(static_cast<double>(plugin_->rate.get()), juce::dontSendNotification);
-    stepsSlider_.setValue(static_cast<double>(plugin_->numSteps.get()), juce::dontSendNotification);
-    dirCombo_.setSelectedId(plugin_->direction.get() + 1, juce::dontSendNotification);
-    swingSlider_.setValue(static_cast<double>(plugin_->swing.get()), juce::dontSendNotification);
-    gateLengthSlider_.setValue(static_cast<double>(plugin_->gateLength.get()),
-                               juce::dontSendNotification);
-    depthSlider_.setValue(static_cast<double>(plugin_->ramp.get()), juce::dontSendNotification);
-    skewSlider_.setValue(static_cast<double>(plugin_->skew.get()), juce::dontSendNotification);
-    rampCurveDisplay_.setValues(plugin_->ramp.get(), plugin_->skew.get());
-    rampCurveDisplay_.setHardAngle(plugin_->hardAngle.get());
-    int steps = plugin_->numSteps.get();
-    rampCurveDisplay_.setNumTicks(steps);
-    cyclesSlider_.setRange(1.0, static_cast<double>(steps), 1.0);
-    quantizeSlider_.setValue(static_cast<double>(plugin_->quantize.get()),
-                             juce::dontSendNotification);
-    quantizeSubSlider_.setValue(static_cast<double>(plugin_->quantizeSub.get()),
-                                juce::dontSendNotification);
-    cyclesSlider_.setValue(static_cast<double>(juce::jlimit(1, steps, plugin_->rampCycles.get())),
-                           juce::dontSendNotification);
-    patternView_->patternChanged();
-    repaint();
-}
-
-void PolyStepSequencerUI::valueTreePropertyChanged(juce::ValueTree&, const juce::Identifier&) {
-    juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer(this)] {
-        if (safeThis)
-            safeThis->syncFromPlugin();
-    });
-}
-
-void PolyStepSequencerUI::valueTreeChildAdded(juce::ValueTree&, juce::ValueTree&) {
-    juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer(this)] {
-        if (safeThis)
-            safeThis->syncFromPlugin();
-    });
-}
-
-void PolyStepSequencerUI::valueTreeChildRemoved(juce::ValueTree&, juce::ValueTree&, int) {
-    juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer(this)] {
-        if (safeThis)
-            safeThis->syncFromPlugin();
-    });
-}
-
 void PolyStepSequencerUI::timerCallback() {
-    if (!plugin_)
+    if (device_ == nullptr)
         return;
 
-    int step = plugin_->currentPlayStep_.load(std::memory_order_relaxed);
+    drainRecordedSteps();
+
+    // The device is the model's projection (see StepSequencerUI): polling it
+    // catches every way a pattern can change, without decoding the model's
+    // document 30 times a second.
+    setPattern(device_->pattern());
+
+    int step = device_->currentPlayStep_.load(std::memory_order_relaxed);
     if (step != currentPlayStep_) {
         currentPlayStep_ = step;
         patternView_->setPlayStep(step);
         // Update curve display sweep
-        int numSteps = juce::jlimit(1, PolySeqPlugin::MAX_STEPS, plugin_->numSteps.get());
+        const int numSteps = pattern_.playingLength();
         float pos = (step >= 0) ? static_cast<float>(step) / static_cast<float>(numSteps) : -1.0f;
-        rampCurveDisplay_.setPlaybackPosition(pos,
-                                              juce::jlimit(1, numSteps, plugin_->rampCycles.get()));
+        rampCurveDisplay_.setPlaybackPosition(
+            pos, juce::jlimit(1, numSteps, device_->rampCycles.load(std::memory_order_relaxed)));
     }
 }
 
@@ -1320,9 +1362,9 @@ void PolyStepSequencerUI::paint(juce::Graphics& g) {
     // Control side panel: subtle card + left separator, matching the device
     // mod/macro side panels.
     if (!sidePanelArea_.isEmpty()) {
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND_ALT));
         g.fillRect(sidePanelArea_);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.5f));
         g.drawVerticalLine(sidePanelArea_.getX(), static_cast<float>(sidePanelArea_.getY()),
                            static_cast<float>(sidePanelArea_.getBottom()));
     }
@@ -1335,20 +1377,20 @@ void PolyStepSequencerUI::paint(juce::Graphics& g) {
 
 void PolyStepSequencerUI::drawToggleRow(juce::Graphics& g, juce::Rectangle<int> area,
                                         const juce::String& label, bool isTieRow) {
-    if (!plugin_ || area.isEmpty())
+    if (area.isEmpty())
         return;
 
-    int count = juce::jlimit(1, PolySeqPlugin::MAX_STEPS, plugin_->numSteps.get());
+    int count = pattern_.playingLength();
     g.setFont(FontManager::getInstance().getUIFont(7.0f));
 
     // Row label, aligned with the grid's left gutter
-    g.setColour(DarkTheme::getSecondaryTextColour());
+    g.setColour(ActiveTheme::getSecondaryTextColour());
     g.drawText(label, area.removeFromLeft(LEFT_GUTTER_WIDTH), juce::Justification::centredLeft);
 
     float boxW = static_cast<float>(area.getWidth()) / static_cast<float>(count);
 
     for (int i = 0; i < count; ++i) {
-        auto step = plugin_->getStep(i);
+        const auto& step = pattern_.step(i);
         float x = static_cast<float>(area.getX()) + i * boxW;
         auto rect =
             juce::Rectangle<float>(x + 1.0f, static_cast<float>(area.getY()) + 1.0f, boxW - 2.0f,
@@ -1356,12 +1398,12 @@ void PolyStepSequencerUI::drawToggleRow(juce::Graphics& g, juce::Rectangle<int> 
 
         bool on = isTieRow ? step.tie : step.gate;
         if (on) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.7f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.7f));
             g.fillRoundedRectangle(rect, 2.0f);
-            g.setColour(DarkTheme::getTextColour());
+            g.setColour(ActiveTheme::getTextColour());
             g.drawText(isTieRow ? "T" : "G", rect.toNearestInt(), juce::Justification::centred);
         } else {
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.2f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.2f));
             g.fillRoundedRectangle(rect, 2.0f);
         }
     }
@@ -1369,27 +1411,27 @@ void PolyStepSequencerUI::drawToggleRow(juce::Graphics& g, juce::Rectangle<int> 
 
 void PolyStepSequencerUI::drawBarLane(juce::Graphics& g, juce::Rectangle<int> area,
                                       const juce::String& label, bool isProbability) {
-    if (!plugin_ || area.isEmpty())
+    if (area.isEmpty())
         return;
 
-    int count = juce::jlimit(1, PolySeqPlugin::MAX_STEPS, plugin_->numSteps.get());
+    int count = pattern_.playingLength();
     g.setFont(FontManager::getInstance().getUIFont(7.0f));
 
     // Lane label, aligned with the grid's left gutter
-    g.setColour(DarkTheme::getSecondaryTextColour());
+    g.setColour(ActiveTheme::getSecondaryTextColour());
     g.drawText(label, area.removeFromLeft(LEFT_GUTTER_WIDTH), juce::Justification::centredLeft);
 
     float boxW = static_cast<float>(area.getWidth()) / static_cast<float>(count);
 
     for (int i = 0; i < count; ++i) {
-        auto step = plugin_->getStep(i);
+        const auto& step = pattern_.step(i);
         float x = static_cast<float>(area.getX()) + i * boxW;
         auto rect =
             juce::Rectangle<float>(x + 1.0f, static_cast<float>(area.getY()) + 1.0f, boxW - 2.0f,
                                    static_cast<float>(area.getHeight()) - 2.0f);
 
         // Background
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.2f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.2f));
         g.fillRoundedRectangle(rect, 2.0f);
 
         // Value bar from the bottom
@@ -1397,8 +1439,8 @@ void PolyStepSequencerUI::drawBarLane(juce::Graphics& g, juce::Rectangle<int> ar
                                     : static_cast<float>(step.velocity) / 127.0f;
         if (ratio > 0.0f) {
             auto bar = rect.withTrimmedTop(rect.getHeight() * (1.0f - ratio));
-            g.setColour((isProbability ? DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION)
-                                       : DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY))
+            g.setColour((isProbability ? ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION)
+                                       : ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY))
                             .withAlpha(0.7f));
             g.fillRoundedRectangle(bar, 2.0f);
         }
@@ -1409,7 +1451,7 @@ void PolyStepSequencerUI::drawBarLane(juce::Graphics& g, juce::Rectangle<int> ar
 // Mouse interaction (per-step lanes; the grid handles its own mouse)
 // =============================================================================
 
-int PolyStepSequencerUI::getStepAtX(int x, int areaX, int areaWidth, int numSteps) const {
+int PolyStepSequencerUI::getStepAtX(int x, int areaX, int areaWidth, int numSteps) {
     if (numSteps <= 0 || areaWidth <= 0)
         return -1;
     int relX = x - areaX;
@@ -1419,12 +1461,12 @@ int PolyStepSequencerUI::getStepAtX(int x, int areaX, int areaWidth, int numStep
 }
 
 void PolyStepSequencerUI::applyLaneDrag(const juce::MouseEvent& e) {
-    if (!plugin_ || activeDragLane_ == DragLane::None)
+    if (activeDragLane_ == DragLane::None)
         return;
 
     auto area = (activeDragLane_ == DragLane::Velocity ? velocityArea_ : probabilityArea_)
                     .withTrimmedLeft(LEFT_GUTTER_WIDTH);
-    int count = juce::jlimit(1, PolySeqPlugin::MAX_STEPS, plugin_->numSteps.get());
+    int count = pattern_.playingLength();
     int step = getStepAtX(juce::jlimit(area.getX(), area.getRight() - 1, e.x), area.getX(),
                           area.getWidth(), count);
     if (step < 0 || step >= count)
@@ -1434,26 +1476,38 @@ void PolyStepSequencerUI::applyLaneDrag(const juce::MouseEvent& e) {
                              static_cast<float>(juce::jmax(1, area.getHeight()));
     ratio = juce::jlimit(0.0f, 1.0f, ratio);
 
-    if (activeDragLane_ == DragLane::Velocity)
-        plugin_->setStepVelocity(step, juce::jlimit(1, 127, juce::roundToInt(ratio * 127.0f)));
-    else
-        plugin_->setStepProbability(step, ratio);
+    if (activeDragLane_ == DragLane::Velocity) {
+        const int velocity = juce::jlimit(1, 127, juce::roundToInt(ratio * 127.0f));
+        editPattern(
+            "Set Step Velocity",
+            [step, velocity](step_pattern::PolyPattern& p) {
+                p.steps[static_cast<size_t>(step)].velocity = velocity;
+            },
+            magda::StepPatternGesture::Continuous);
+    } else {
+        editPattern(
+            "Set Step Probability",
+            [step, ratio](step_pattern::PolyPattern& p) {
+                p.steps[static_cast<size_t>(step)].probability = juce::jlimit(0.0f, 1.0f, ratio);
+            },
+            magda::StepPatternGesture::Continuous);
+    }
     repaint();
 }
 
 void PolyStepSequencerUI::mouseDown(const juce::MouseEvent& e) {
-    if (!plugin_)
-        return;
     auto pos = e.getPosition();
-    int count = juce::jlimit(1, PolySeqPlugin::MAX_STEPS, plugin_->numSteps.get());
+    int count = pattern_.playingLength();
 
     // Gate row — toggle gate
     if (gateArea_.contains(pos)) {
         auto contentArea = gateArea_.withTrimmedLeft(LEFT_GUTTER_WIDTH);
         int step = getStepAtX(pos.x, contentArea.getX(), contentArea.getWidth(), count);
         if (step >= 0 && step < count) {
-            auto s = plugin_->getStep(step);
-            plugin_->setStepGate(step, !s.gate);
+            editPattern("Toggle Step Gate", [step](step_pattern::PolyPattern& p) {
+                auto& target = p.steps[static_cast<size_t>(step)];
+                target.gate = !target.gate;
+            });
             repaint();
         }
         return;
@@ -1464,8 +1518,10 @@ void PolyStepSequencerUI::mouseDown(const juce::MouseEvent& e) {
         auto contentArea = tieArea_.withTrimmedLeft(LEFT_GUTTER_WIDTH);
         int step = getStepAtX(pos.x, contentArea.getX(), contentArea.getWidth(), count);
         if (step >= 0 && step < count) {
-            auto s = plugin_->getStep(step);
-            plugin_->setStepTie(step, !s.tie);
+            editPattern("Toggle Step Tie", [step](step_pattern::PolyPattern& p) {
+                auto& target = p.steps[static_cast<size_t>(step)];
+                target.tie = !target.tie;
+            });
             repaint();
         }
         return;
@@ -1489,6 +1545,10 @@ void PolyStepSequencerUI::mouseDrag(const juce::MouseEvent& e) {
 }
 
 void PolyStepSequencerUI::mouseUp(const juce::MouseEvent&) {
+    // The drag is over, so the next one starts its own undo entry rather than
+    // merging into the run this one built (#2335).
+    if (activeDragLane_ != DragLane::None)
+        endPatternGesture();
     activeDragLane_ = DragLane::None;
 }
 
@@ -1499,7 +1559,7 @@ void PolyStepSequencerUI::mouseUp(const juce::MouseEvent&) {
 void PolyStepSequencerUI::setupLabel(juce::Label& label, const juce::String& text) {
     label.setText(text, juce::dontSendNotification);
     label.setFont(FontManager::getInstance().getUIFont(9.0f));
-    label.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    label.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     label.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(label);
 }
@@ -1515,19 +1575,20 @@ void PolyStepSequencerUI::lookAndFeelChanged() {
     for (auto* label :
          {&rateLabel_, &stepsLabel_, &dirLabel_, &swingLabel_, &gateLengthLabel_, &quantizeLabel_,
           &quantizeSubLabel_, &rampLabel_, &depthLabel_, &skewLabel_, &cyclesLabel_})
-        label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
 
     dirCombo_.setColour(juce::ComboBox::backgroundColourId,
-                        DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
-    dirCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-    dirCombo_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+                        ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.1f));
+    dirCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
+    dirCombo_.setColour(juce::ComboBox::outlineColourId,
+                        ActiveTheme::getColour(ActiveTheme::BORDER));
 
     viewModeButton_.setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
+                              ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.1f));
     viewModeButton_.setColour(juce::TextButton::buttonOnColourId,
-                              DarkTheme::getAccentColour().withAlpha(0.6f));
-    viewModeButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
-    viewModeButton_.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+                              ActiveTheme::getAccentColour().withAlpha(0.6f));
+    viewModeButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
+    viewModeButton_.setColour(juce::TextButton::textColourOnId, ActiveTheme::getTextColour());
 
     repaint();
 }

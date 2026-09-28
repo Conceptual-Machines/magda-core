@@ -1,5 +1,7 @@
 #pragma once
 
+#include <map>
+#include <string>
 #include <vector>
 
 #include "plan/RenderPlan.hpp"
@@ -15,6 +17,40 @@ struct CompileOptions {
     /// Emit a level tap after each device slot, feeding the chain UI's meters.
     /// Off in golden tests that are not about metering.
     bool deviceMeters = true;
+
+    /**
+     * @brief Compile the tracks that exist to be monitored rather than kept
+     *        (#2446).
+     *
+     * The chord track is the only one today. It carries a Chord Engine and an
+     * instrument, it is routed to master, and its mute is the audition toggle
+     * the user reaches for, so it sounds during playback: a plan for playback
+     * has to carry it or audition does nothing.
+     *
+     * It must never reach a file. The app's own export says so and already
+     * excludes it by id (`MainWindowExport.cpp`), and printing a chord track
+     * into somebody's master is the kind of wrong nobody notices until the
+     * bounce is already sent.
+     *
+     * Default off, and that is the whole reason this is a compile option rather
+     * than a filter every caller applies. A bounce that forgets to ask gets a
+     * plan without the chord track, which is right; a playback path that
+     * forgets to ask loses audition, which is visible the moment somebody
+     * tries it. The two ways of being wrong are not worth the same.
+     */
+    bool monitorTracks = false;
+
+    /**
+     * @brief Give every track that reads MIDI a live input op (#2579).
+     *
+     * Otherwise one is compiled only for a track that is armed or monitoring
+     * in, and a piano-roll preview on an idle track has nothing to reach. Set
+     * by the app; off for a bounce and for the corpus.
+     */
+    bool auditionMidi = false;
+
+    /// Exact persisted hardware route string to packed callback channels.
+    std::map<std::string, HardwareOutputRoute> hardwareOutputs;
 };
 
 /**

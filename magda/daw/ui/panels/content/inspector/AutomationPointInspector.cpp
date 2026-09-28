@@ -2,7 +2,8 @@
 
 #include <cmath>
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../state/TimelineController.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "core/AutomationCommands.hpp"
 #include "core/AutomationInfo.hpp"
@@ -16,14 +17,14 @@ namespace {
 void styleLabel(juce::Label& label, const juce::String& text) {
     label.setText(text, juce::dontSendNotification);
     label.setFont(FontManager::getInstance().getUIFont(11.0f));
-    label.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    label.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
 }
 
 }  // namespace
 
 AutomationPointInspector::AutomationPointInspector() {
     countLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
-    countLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    countLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     addAndMakeVisible(countLabel_);
 
     styleLabel(valueLabel_, "Value");
@@ -90,7 +91,7 @@ void AutomationPointInspector::onDeactivated() {
 }
 
 void AutomationPointInspector::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getBackgroundColour());
+    g.fillAll(ActiveTheme::getBackgroundColour());
 }
 
 const std::vector<magda::AutomationPoint>* AutomationPointInspector::sourcePoints() const {
@@ -165,7 +166,8 @@ void AutomationPointInspector::updateFromSelection() {
         valueValue_->setSuffix(info_.unit.isNotEmpty() ? " " + info_.unit : "");
         valueValue_->setDecimalPlaces(2);
     }
-    valueValue_->setRange(info_.minValue, info_.maxValue, info_.defaultValue);
+    valueValue_->setRange(info_.minValue, info_.maxValue,
+                          ParameterUtils::modelToRealValue({info_.defaultValue}, info_));
     valueValue_->setDoubleClickResetsValue(false);
 
     // Position field is single-point only (a delta on many points is unclear).
@@ -191,6 +193,11 @@ void AutomationPointInspector::refreshDisplay() {
 
     if (selection_.isSinglePoint()) {
         valueValue_->clearTextOverride();
+        if (auto* controller = magda::TimelineController::getCurrent()) {
+            const auto& tempo = controller->getState().tempo;
+            posValue_->setTimeSignature(tempo.timeSignatureNumerator,
+                                        tempo.timeSignatureDenominator);
+        }
         posValue_->setValue(rep->beatPosition, juce::dontSendNotification);
         posDragStart_ = rep->beatPosition;
     } else {

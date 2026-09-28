@@ -1,5 +1,8 @@
+#include <algorithm>
+#include <iterator>
+#include <ranges>
+
 #include "../audio/AudioBridge.hpp"
-#include "../core/TrackManager.hpp"
 #include "TracktionEngineWrapper.hpp"
 
 namespace magda {
@@ -44,7 +47,7 @@ void TracktionEngineWrapper::deleteTrack(const std::string& track_id) {
         // Drop any in-flight recording pass for this track so a deletion
         // mid-record cannot leave a stale preview/target behind.
         try {
-            TrackId magdaTrackId = static_cast<TrackId>(std::stoi(track_id));
+            auto magdaTrackId = static_cast<TrackId>(std::stoi(track_id));
             recordingPreviews_.erase(magdaTrackId);
             sessionSlotRecordingTargets_.erase(magdaTrackId);
         } catch (const std::exception&) {
@@ -56,45 +59,45 @@ void TracktionEngineWrapper::deleteTrack(const std::string& track_id) {
 }
 
 void TracktionEngineWrapper::setTrackName(const std::string& track_id, const std::string& name) {
-    auto track = findTrackById(track_id);
+    auto* track = findTrackById(track_id);
     if (track) {
         track->setName(name);
     }
 }
 
 std::string TracktionEngineWrapper::getTrackName(const std::string& track_id) const {
-    auto track = findTrackById(track_id);
+    auto* track = findTrackById(track_id);
     return track ? track->getName().toStdString() : "";
 }
 
 void TracktionEngineWrapper::setTrackMuted(const std::string& track_id, bool muted) {
-    auto track = findTrackById(track_id);
+    auto* track = findTrackById(track_id);
     if (track) {
         track->setMute(muted);
     }
 }
 
 bool TracktionEngineWrapper::isTrackMuted(const std::string& track_id) const {
-    auto track = findTrackById(track_id);
+    auto* track = findTrackById(track_id);
     return track ? track->isMuted(false) : false;
 }
 
 void TracktionEngineWrapper::setTrackSolo(const std::string& track_id, bool solo) {
-    auto track = findTrackById(track_id);
+    auto* track = findTrackById(track_id);
     if (track) {
         track->setSolo(solo);
     }
 }
 
 bool TracktionEngineWrapper::isTrackSolo(const std::string& track_id) const {
-    auto track = findTrackById(track_id);
+    auto* track = findTrackById(track_id);
     return track ? track->isSolo(false) : false;
 }
 
 void TracktionEngineWrapper::setTrackArmed(const std::string& track_id, bool armed) {
-    auto track = findTrackById(track_id);
+    auto* track = findTrackById(track_id);
     if (track) {
-        if (auto audioTrack = dynamic_cast<tracktion::AudioTrack*>(track)) {
+        if (auto* audioTrack = dynamic_cast<tracktion::AudioTrack*>(track)) {
             // Simplified - in real implementation would set input recording
             DBG("Set track armed (stub): " << track_id << " = " << (int)armed);
         }
@@ -102,9 +105,9 @@ void TracktionEngineWrapper::setTrackArmed(const std::string& track_id, bool arm
 }
 
 bool TracktionEngineWrapper::isTrackArmed(const std::string& track_id) const {
-    auto track = findTrackById(track_id);
+    auto* track = findTrackById(track_id);
     if (track) {
-        if (auto audioTrack = dynamic_cast<tracktion::AudioTrack*>(track)) {
+        if (auto* audioTrack = dynamic_cast<tracktion::AudioTrack*>(track)) {
             // Simplified - in real implementation would check input recording
             return false;
         }
@@ -113,7 +116,7 @@ bool TracktionEngineWrapper::isTrackArmed(const std::string& track_id) const {
 }
 
 void TracktionEngineWrapper::setTrackColor(const std::string& track_id, int r, int g, int b) {
-    auto track = findTrackById(track_id);
+    auto* track = findTrackById(track_id);
     if (track) {
         track->setColour(juce::Colour::fromRGB(r, g, b));
     }
@@ -121,14 +124,13 @@ void TracktionEngineWrapper::setTrackColor(const std::string& track_id, int r, i
 
 std::vector<std::string> TracktionEngineWrapper::getAllTrackIds() const {
     std::vector<std::string> ids;
-    for (const auto& pair : trackMap_) {
-        ids.push_back(pair.first);
-    }
+    ids.reserve(trackMap_.size());
+    std::ranges::copy(trackMap_ | std::views::keys, std::back_inserter(ids));
     return ids;
 }
 
 bool TracktionEngineWrapper::trackExists(const std::string& track_id) const {
-    return trackMap_.find(track_id) != trackMap_.end();
+    return trackMap_.contains(track_id);
 }
 
 void TracktionEngineWrapper::previewNoteOnTrack(const std::string& track_id, int noteNumber,
@@ -163,17 +165,17 @@ void TracktionEngineWrapper::previewNoteOnTrack(const std::string& track_id, int
     // Inject MIDI directly into the track's plugin chain via LiveMidiInjectingNode,
     // bypassing the MIDI input device and its monitor mode entirely (#762)
     juce::MidiMessage message =
-        isNoteOn ? juce::MidiMessage::noteOn(1, noteNumber, (juce::uint8)velocity)
-                 : juce::MidiMessage::noteOff(1, noteNumber, (juce::uint8)velocity);
+        isNoteOn ? juce::MidiMessage::noteOn(1, noteNumber, static_cast<juce::uint8>(velocity))
+                 : juce::MidiMessage::noteOff(1, noteNumber, static_cast<juce::uint8>(velocity));
 
     audioTrack->injectLiveMidiMessage(message, {});
 }
 
 void TracktionEngineWrapper::setTrackVolume(const std::string& track_id, double volume) {
-    auto track = findTrackById(track_id);
+    auto* track = findTrackById(track_id);
     if (track) {
         // Find VolumeAndPanPlugin on track
-        if (auto volPan =
+        if (auto* volPan =
                 track->pluginList.findFirstPluginOfType<tracktion::VolumeAndPanPlugin>()) {
             // Convert linear gain to dB for the plugin
             float db =
@@ -187,9 +189,9 @@ void TracktionEngineWrapper::setTrackVolume(const std::string& track_id, double 
 }
 
 double TracktionEngineWrapper::getTrackVolume(const std::string& track_id) const {
-    auto track = findTrackById(track_id);
+    auto* track = findTrackById(track_id);
     if (track) {
-        if (auto volPan =
+        if (auto* volPan =
                 track->pluginList.findFirstPluginOfType<tracktion::VolumeAndPanPlugin>()) {
             float db = volPan->getVolumeDb();
             return juce::Decibels::decibelsToGain(db);
@@ -199,9 +201,9 @@ double TracktionEngineWrapper::getTrackVolume(const std::string& track_id) const
 }
 
 void TracktionEngineWrapper::setTrackPan(const std::string& track_id, double pan) {
-    auto track = findTrackById(track_id);
+    auto* track = findTrackById(track_id);
     if (track) {
-        if (auto volPan =
+        if (auto* volPan =
                 track->pluginList.findFirstPluginOfType<tracktion::VolumeAndPanPlugin>()) {
             // Pan is -1.0 (left) to 1.0 (right)
             volPan->setPan(static_cast<float>(pan));
@@ -210,9 +212,9 @@ void TracktionEngineWrapper::setTrackPan(const std::string& track_id, double pan
 }
 
 double TracktionEngineWrapper::getTrackPan(const std::string& track_id) const {
-    auto track = findTrackById(track_id);
+    auto* track = findTrackById(track_id);
     if (track) {
-        if (auto volPan =
+        if (auto* volPan =
                 track->pluginList.findFirstPluginOfType<tracktion::VolumeAndPanPlugin>()) {
             return volPan->getPan();
         }

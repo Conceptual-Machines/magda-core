@@ -1,6 +1,7 @@
 #include "controllers/ControllerRouter.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 #include "../../core/aliases/AliasRegistry.hpp"
 #include "../../core/aliases/ChainContext.hpp"
@@ -279,7 +280,7 @@ void ControllerRouter::onMidiFromControllerPort(const juce::String& portId,
     if (hasExplicitOverride) {
         bindings.erase(std::remove_if(bindings.begin(), bindings.end(),
                                       [](const Binding& b) {
-                                          if (auto* rr = std::get_if<ResolverRef>(&b.target))
+                                          if (const auto* rr = std::get_if<ResolverRef>(&b.target))
                                               return rr->kind == "focused.macro";
                                           return false;
                                       }),
@@ -321,7 +322,7 @@ void ControllerRouter::scheduleWrite(const BindingId& bindingId, int rawValue, i
         return;
 
     auto pwShared = pwIt->second;
-    Binding bindingCopy = binding;
+    const Binding& bindingCopy = binding;
 
     // If we're already on the message thread (or no message manager -- test context),
     // execute synchronously to avoid deadlock and allow tests to run without a
@@ -347,7 +348,7 @@ void ControllerRouter::executeWrite(const BindingId& bindingId, int rawValue, in
     juce::String key = bindingId.toDashedString();
     auto& state = runtimeState_[key];
 
-    float finalValue;
+    float finalValue = NAN;
 
     if (binding.mode == BindingMode::Toggle) {
         float toggled = applyToggle(rawValue, state.toggleState);

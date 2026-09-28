@@ -1,10 +1,9 @@
 #include "compiled/CompiledLimiterCurveView.hpp"
 
-#include <algorithm>
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaLimiterCompiledPlugin.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -30,7 +29,7 @@ float valueForSlot(const magda::DeviceInfo& device, int slotIndex, float fallbac
 juce::String formatDb(float db) {
     if (db <= -90.0f)
         return "-inf";
-    return juce::String(db, db > -10.0f ? 1 : 0);
+    return {db, db > -10.0f ? 1 : 0};
 }
 
 }  // namespace
@@ -42,13 +41,14 @@ CompiledLimiterCurveView::CompiledLimiterCurveView(juce::String /*pluginId*/) {
 }
 
 void CompiledLimiterCurveView::setCompiledPlugin(
-    magda::daw::audio::compiled::MagdaLimiterCompiledPlugin* plugin) {
-    compiledPlugin_ = plugin;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaLimiterCompiledPlugin> plugin) {
+    compiledPlugin_ = std::move(plugin);
 }
 
-void CompiledLimiterCurveView::bindPlugin(te::Plugin* plugin) {
+void CompiledLimiterCurveView::bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) {
     setCompiledPlugin(
-        dynamic_cast<magda::daw::audio::compiled::MagdaLimiterCompiledPlugin*>(plugin));
+        std::dynamic_pointer_cast<magda::daw::audio::compiled::MagdaLimiterCompiledPlugin>(
+            std::move(device)));
 }
 
 void CompiledLimiterCurveView::updateFromDevice(const magda::DeviceInfo& device) {
@@ -63,8 +63,8 @@ void CompiledLimiterCurveView::timerCallback() {
     auto readPluginSlot = [this](int slot, float fallback) {
         if (compiledPlugin_ == nullptr)
             return fallback;
-        if (auto* p = compiledPlugin_->getSlotParameter(slot))
-            return compiledPlugin_->nativeValueToDisplayValue(slot, p->getCurrentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(slot))
+            return compiledPlugin_->nativeValueToDisplayValue(slot, p.currentValue());
         return fallback;
     };
 
@@ -179,7 +179,7 @@ void CompiledLimiterCurveView::mouseUp(const juce::MouseEvent& e) {
 
 void CompiledLimiterCurveView::paint(juce::Graphics& g) {
     const auto bounds = getLocalBounds();
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).darker(0.06f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).darker(0.06f));
     g.fillRect(bounds);
 
     auto area = bounds.toFloat().reduced(kPlotPadX, kPlotPadY);
@@ -192,11 +192,11 @@ void CompiledLimiterCurveView::paint(juce::Graphics& g) {
     auto readoutStrip = area.removeFromBottom(14.0f);
     meterArea_ = area;
 
-    const auto border = DarkTheme::getColour(DarkTheme::BORDER);
-    const auto text = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE);
-    const auto grColour = DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION);
-    const auto inColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
+    const auto border = ActiveTheme::getColour(ActiveTheme::BORDER);
+    const auto text = ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY);
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE);
+    const auto grColour = ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION);
+    const auto inColour = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
 
     g.setColour(border.withAlpha(0.55f));
     g.drawRect(meterArea_, 1.0f);

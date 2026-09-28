@@ -14,17 +14,6 @@
 #include "core/TypeIds.hpp"
 #include "drum_grid/PadDeviceSlot.hpp"
 
-namespace tracktion {
-inline namespace engine {
-class Plugin;
-}
-}  // namespace tracktion
-
-namespace magda::daw::audio {
-class MagdaSamplerPlugin;
-class DrumGridPlugin;
-}  // namespace magda::daw::audio
-
 namespace magda::daw::ui {
 
 /**
@@ -42,15 +31,17 @@ class PadChainPanel : public juce::Component, public juce::DragAndDropTarget {
     /** Info about a single plugin slot in the pad chain. */
     struct PluginSlotInfo {
         juce::String name;
-        magda::DeviceInfo device;
+        PadDeviceSlot::Binding binding;
         bool isSampler = false;
-        tracktion::engine::Plugin* plugin = nullptr;
-        std::function<tracktion::engine::Plugin::Ptr()> livePlugin;
         float gainDb = 0.0f;
         magda::DeviceId deviceId =
             magda::INVALID_DEVICE_ID;  // MAGDA DeviceId for macro/mod linking
         std::function<std::pair<float, float>()> getMeterLevels;
         std::function<void(float)> onGainDbChanged;
+        /// The pad device's power, and where a toggle of it goes. Model state:
+        /// the slot reports, TrackManager decides, the sync applies (#2207).
+        bool bypassed = false;
+        std::function<void(bool)> onPowerChanged;
     };
 
     PadChainPanel();
@@ -60,12 +51,6 @@ class PadChainPanel : public juce::Component, public juce::DragAndDropTarget {
     void clear();
     void refresh();
     int getContentWidth() const;
-
-    /** Get list of currently collapsed plugins (for state preservation). */
-    std::vector<tracktion::engine::Plugin*> getCollapsedPlugins() const;
-
-    /** Collapse slots matching the given plugins (call after rebuildSlots). */
-    void setCollapsedPlugins(const std::vector<tracktion::engine::Plugin*>& plugins);
 
     // Callbacks (wired by DrumGridUI / DeviceSlotComponent)
     std::function<std::vector<PluginSlotInfo>(int padIndex)> getPluginSlots;

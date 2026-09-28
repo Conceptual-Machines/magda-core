@@ -1,6 +1,7 @@
 #include "io/PrefetchStream.hpp"
 
 #include <algorithm>
+#include <limits>
 #include <utility>
 
 namespace magda::engine {
@@ -35,13 +36,25 @@ PrefetchStream::PrefetchStream(std::unique_ptr<AudioFileReader> reader,
     }
 }
 
-void PrefetchStream::startAt(std::int64_t sourceStart) {
+void PrefetchStream::startAt(std::int64_t sourceStart, int cacheSamples) {
     // Both cursors, and neither generation. Nothing has been read for the
     // position this leaves behind, so there is nothing to invalidate; leaving
     // the two sides on the generation they were born with is exactly what keeps
     // the first fill from being read for one position and dropped for another.
     nextSample_ = sourceStart;
     fillPosition_ = sourceStart;
+    cacheStart_ = sourceStart;
+    cacheCount_ = 0;
+    if (reader_ != nullptr && cacheSamples > 0 && sourceStart < length_) {
+        if (sourceStart >= 0)
+            cacheSamples =
+                static_cast<int>(std::min<std::int64_t>(cacheSamples, length_ - sourceStart));
+        startCache_.setSize(numChannels_, cacheSamples);
+        startCache_.clear();
+        cacheCount_ =
+            std::clamp(reader_->read(startCache_, 0, sourceStart, cacheSamples), 0, cacheSamples);
+        fillPosition_ += cacheCount_;
+    }
 }
 
 void PrefetchStream::seek(std::int64_t sourceStart) {
@@ -51,7 +64,67 @@ void PrefetchStream::seek(std::int64_t sourceStart) {
     cue_.nonRealtimeReplace(SeekRequest{sourceStart, ++cueGeneration_});
 }
 
+void PrefetchStream::prepareRead(std::int64_t sourceStart) {
+    PublishedRetained::ScopedAccess<farbot::ThreadType::realtime> retained(retained_);
+    moveTo(sourceStart, retained->get());
+}
+
+void PrefetchStream::moveTo(std::int64_t sourceStart, const RetainedRegion* retained) {
+    if (sourceStart == nextSample_)
+        return;
+
+    if (retainedActive_ && (retained == nullptr || sourceStart < retained->startSample ||
+                            sourceStart >= retainedEnd_)) {
+        retainedActive_ = false;
+        retainedUse_.store(0, std::memory_order_release);
+    }
+
+    if (!seekWithinResident(sourceStart, retained))
+        requestSeek(sourceStart, retained);
+}
+
+bool PrefetchStream::seekWithinResident(std::int64_t sourceStart, const RetainedRegion* retained) {
+    // The retained opening plays from memory wherever the cursor is, but its
+    // continuation is the reader's to fill: requestSeek is what points the
+    // reader past the cache, and a cursor moved without it would walk out of
+    // the cache into chunks read for somewhere else.
+    if (cacheCount_ > 0 && sourceStart >= cacheStart_ && sourceStart < cacheStart_ + cacheCount_)
+        return false;
+    if (retained != nullptr && retained->count > 0 && sourceStart >= retained->startSample &&
+        sourceStart < retained->startSample + retained->count) {
+        auto idle = 0;
+        if (retainedUse_.compare_exchange_strong(idle, 1, std::memory_order_acq_rel)) {
+            retainedActive_ = true;
+            retainedEnd_ = retained->startSample + retained->count;
+        }
+        return false;
+    }
+
+    if (current_ != nullptr) {
+        // Behind the chunk in hand is audio the reader has already taken back.
+        if (sourceStart < current_->startSample)
+            return false;
+
+        if (sourceStart < current_->startSample + current_->numSamples) {
+            currentOffset_ = static_cast<int>(sourceStart - current_->startSample);
+            nextSample_ = sourceStart;
+            return true;
+        }
+
+        releaseCurrent();
+    }
+
+    // Everything queued was read for one forward run, so a position inside it
+    // is a position this stream is already on its way to: the chunks in front
+    // of it are spent either way, and the reader keeps filling from the end of
+    // the queue, which is where the continuation is. No generation changes, so
+    // nothing in flight becomes stale.
+    nextSample_ = sourceStart;
+    return takeNextChunk();
+}
+
 void PrefetchStream::applyPendingCue() {
+    // Cue publication and deferral while sounding: specs/tla/hand_back_cue.
     // Whether anything played out of this stream since the last time it was
     // asked. Read here rather than in read(), so that what it answers is a
     // question about the block that just went by.
@@ -73,10 +146,16 @@ void PrefetchStream::applyPendingCue() {
         return;
 
     appliedCue_ = cue->generation;
-    requestSeek(cue->sourceStart);
+    PublishedRetained::ScopedAccess<farbot::ThreadType::realtime> retained(retained_);
+    moveTo(cue->sourceStart, retained->get());
 }
 
-void PrefetchStream::requestSeek(std::int64_t sourceStart) {
+void PrefetchStream::requestSeek(std::int64_t sourceStart, const RetainedRegion* retained) {
+    if (retainedActive_ && (retained == nullptr || sourceStart < retained->startSample ||
+                            sourceStart >= retainedEnd_)) {
+        retainedActive_ = false;
+        retainedUse_.store(0, std::memory_order_release);
+    }
     nextSample_ = sourceStart;
     ++generation_;
 
@@ -99,7 +178,16 @@ void PrefetchStream::requestSeek(std::int64_t sourceStart) {
     farbot::RealtimeObject<SeekRequest, farbot::RealtimeObjectOptions::realtimeMutatable>::
         ScopedAccess<farbot::ThreadType::realtime>
             request(request_);
-    request->sourceStart = sourceStart;
+    // While the callback plays the retained opening, refill its continuation.
+    // A wrap must not wait for the disk to return to the first transient.
+    if (cacheCount_ > 0 && sourceStart >= cacheStart_ && sourceStart < cacheStart_ + cacheCount_)
+        request->sourceStart = cacheStart_ + cacheCount_;
+    else if (retainedActive_ && retained != nullptr && retained->count > 0 &&
+             sourceStart >= retained->startSample &&
+             sourceStart < retained->startSample + retained->count)
+        request->sourceStart = retained->startSample + retained->count;
+    else
+        request->sourceStart = sourceStart;
     request->generation = generation_;
 }
 
@@ -124,6 +212,12 @@ bool PrefetchStream::takeNextChunk() {
         // asked for, and the fifo behind it might be.
         if (chunk->generation != generation_ ||
             chunk->startSample + chunk->numSamples <= nextSample_) {
+            // Counted only where the callback outran it. A chunk left behind by
+            // a seek was read for a position somebody changed their mind about,
+            // which is the cost of the locate and not of catching up.
+            if (chunk->generation == generation_)
+                obsoleteFrames_.fetch_add(chunk->numSamples, std::memory_order_relaxed);
+
             spent_.push(std::move(chunk));
             continue;
         }
@@ -145,7 +239,7 @@ bool PrefetchStream::takeNextChunk() {
 }
 
 int PrefetchStream::read(std::int64_t sourceStart, juce::dsp::AudioBlock<float> destination,
-                         int numSamples) {
+                         int numSamples, ReadPurpose purpose) {
     if (numSamples <= 0)
         return 0;
 
@@ -175,12 +269,45 @@ int PrefetchStream::read(std::int64_t sourceStart, juce::dsp::AudioBlock<float> 
     // that is not playing at all.
     readSinceCueCheck_ = true;
 
-    if (sourceStart != nextSample_)
-        requestSeek(sourceStart);
+    PublishedRetained::ScopedAccess<farbot::ThreadType::realtime> retainedAccess(retained_);
+    const auto* retained = retainedAccess->get();
+    moveTo(sourceStart, retained);
 
     auto done = 0;
 
     while (done < numSamples) {
+        if (cacheCount_ > 0 && nextSample_ >= cacheStart_ &&
+            nextSample_ < cacheStart_ + cacheCount_) {
+            const auto offset = static_cast<int>(nextSample_ - cacheStart_);
+            const auto count = std::min(numSamples - done, cacheCount_ - offset);
+            for (std::size_t channel = 0; channel < destination.getNumChannels(); ++channel)
+                juce::FloatVectorOperations::copy(
+                    destination.getChannelPointer(channel) + done,
+                    startCache_.getReadPointer(static_cast<int>(channel) % numChannels_, offset),
+                    count);
+            nextSample_ += count;
+            done += count;
+            continue;
+        }
+        if (retainedActive_ && retained != nullptr && retained->count > 0 &&
+            nextSample_ >= retained->startSample &&
+            nextSample_ < retained->startSample + retained->count) {
+            const auto offset = static_cast<int>(nextSample_ - retained->startSample);
+            const auto count = std::min(numSamples - done, retained->count - offset);
+            for (std::size_t channel = 0; channel < destination.getNumChannels(); ++channel)
+                juce::FloatVectorOperations::copy(
+                    destination.getChannelPointer(channel) + done,
+                    retained->audio.getReadPointer(static_cast<int>(channel) % numChannels_,
+                                                   offset),
+                    count);
+            nextSample_ += count;
+            done += count;
+            if (nextSample_ >= retainedEnd_) {
+                retainedActive_ = false;
+                retainedUse_.store(0, std::memory_order_release);
+            }
+            continue;
+        }
         if (current_ == nullptr && !takeNextChunk())
             break;
 
@@ -214,40 +341,97 @@ int PrefetchStream::read(std::int64_t sourceStart, juce::dsp::AudioBlock<float> 
         if (sourceStart + done < wanted)
             underruns_.fetch_add(1, std::memory_order_relaxed);
 
+        // A bounded reading pads before sample zero; a looping one has material there.
+        const auto bounded = length_ != std::numeric_limits<std::int64_t>::max();
+        const auto firstMissing =
+            bounded ? std::max<std::int64_t>(sourceStart + done, 0) : sourceStart + done;
+        if (firstMissing < wanted)
+            missingFrames_[static_cast<std::size_t>(purpose)].fetch_add(wanted - firstMissing,
+                                                                        std::memory_order_relaxed);
+
         // The cursor moves whether or not the samples arrived. A stream that
         // resumed where it ran dry would play the missing audio late and stay
         // late for the rest of the take; the gap is the honest cost.
         nextSample_ = sourceStart + numSamples;
+
+        // And the reader is told, because it cannot work this out for itself: it
+        // fills forward from where it last read, which is now behind the
+        // callback by the whole length of the stall. Left alone it would come
+        // back and read that distance one chunk at a time, every one of them
+        // thrown away here for being behind the cursor, so the gap would go on
+        // sounding for as long again as the stall itself. Through requestSeek
+        // rather than by assignment, so a cursor inside the retained opening
+        // still points the reader at the continuation rather than at the
+        // material already in memory (#2704).
+        if (firstMissing < wanted)
+            requestSeek(nextSample_, retained);
     }
 
     return done;
 }
 
-bool PrefetchStream::fill() {
+bool PrefetchStream::fill(int maxChunks) {
     if (reader_ == nullptr)
         return false;
 
-    {
-        farbot::RealtimeObject<SeekRequest, farbot::RealtimeObjectOptions::realtimeMutatable>::
-            ScopedAccess<farbot::ThreadType::nonRealtime>
-                request(request_);
-
-        if (request->generation != fillGeneration_) {
-            fillGeneration_ = request->generation;
-            fillPosition_ = request->sourceStart;
-            stalled_ = false;
-        }
-    }
-
-    if (stalled_)
-        return false;
-
     auto worked = false;
+    auto read = 0;
     Chunk* chunk = nullptr;
 
-    while (fillPosition_ < length_ && spent_.pop(chunk)) {
-        const auto count =
-            static_cast<int>(std::min<std::int64_t>(chunkSamples_, length_ - fillPosition_));
+    while (maxChunks <= 0 || read < maxChunks) {
+        // Between chunks rather than once on the way in. A seek that arrives
+        // while this thread is inside a read would otherwise be seen only after
+        // the whole pool had been refilled for the position the callback has
+        // already left, and every one of those chunks thrown away on arrival --
+        // which is the catch-up a short read now asks to be spared (#2704).
+        {
+            farbot::RealtimeObject<SeekRequest, farbot::RealtimeObjectOptions::realtimeMutatable>::
+                ScopedAccess<farbot::ThreadType::nonRealtime>
+                    request(request_);
+
+            if (request->generation != fillGeneration_) {
+                fillGeneration_ = request->generation;
+                fillPosition_ = request->sourceStart;
+                stalled_ = false;
+            }
+        }
+
+        if (stalled_ || fillPosition_ >= length_ || !spent_.pop(chunk))
+            break;
+
+        // How much of the stream is left, saturating rather than wrapping.
+        //
+        // The subtraction on its own overflows, and the way it overflows is
+        // silent and unsafe. A looping reader has no last sample, so its
+        // length is int64's maximum (SourceReaders.cpp), and a position can be
+        // negative: an event anchored before its own loop start is anchored at
+        // a phase within it, and a reversed clip trimmed longer than its source
+        // begins ahead of the first sample. Subtracting a negative position
+        // from that maximum wraps to a large negative, whose low thirty-two
+        // bits truncate back to a positive count larger than a chunk -- 8414
+        // samples into a chunk of 4096, which is a read past the end of the
+        // buffer rather than a wrong number. A real project found it: a loop
+        // whose region starts after the clip does.
+        //
+        // Branched rather than written as one expression, because the guard has
+        // to come before the arithmetic it is guarding and not beside it. The
+        // saturating form needs int64's maximum plus the position, and that sum
+        // is only representable while the position is negative: computing it
+        // first and testing the sign afterwards is the same overflow again,
+        // moved.
+        const auto remaining = [this]() -> std::int64_t {
+            constexpr auto unbounded = std::numeric_limits<std::int64_t>::max();
+
+            if (fillPosition_ >= 0)
+                return length_ - fillPosition_;  // both non-negative, so no wrap
+
+            // Safe here and only here: the position is negative, so the sum is
+            // below the maximum rather than past it.
+            const auto headroom = unbounded + fillPosition_;
+            return length_ > headroom ? unbounded : length_ - fillPosition_;
+        }();
+
+        const auto count = static_cast<int>(std::min<std::int64_t>(chunkSamples_, remaining));
 
         chunk->startSample = fillPosition_;
         chunk->numSamples = reader_->read(chunk->audio, 0, fillPosition_, count);
@@ -255,6 +439,7 @@ bool PrefetchStream::fill() {
 
         fillPosition_ += chunk->numSamples;
         worked = true;
+        ++read;
 
         // A reader that gives nothing at a position inside its own file has
         // stopped being able to answer: a file truncated under us, a device

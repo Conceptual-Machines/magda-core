@@ -86,8 +86,8 @@ class ConsoleAgentOrchestrator {
                              DrummerAgent& drummer);
     explicit ConsoleAgentOrchestrator(Workflows workflows);
 
-    ConsoleRunOutput run(const ConsoleRunRequest& request, ConsoleRunObserver observer = {},
-                         CancellationToken cancellation = {});
+    ConsoleRunOutput run(const ConsoleRunRequest& request, const ConsoleRunObserver& observer = {},
+                         const CancellationToken& cancellation = {});
 
     void cancel();
     void resetCancellation();
@@ -95,7 +95,7 @@ class ConsoleAgentOrchestrator {
     static std::string composePrompt(const ConsoleRunRequest& request);
 
   private:
-    ConsoleRunOutput runWorkflow(
+    static ConsoleRunOutput runWorkflow(
         const std::function<ConsoleRunOutput(const ConsoleRunRequest&, const ConsoleRunObserver&,
                                              const CancellationToken&)>& workflow,
         const ConsoleRunRequest& request, const ConsoleRunObserver& observer,

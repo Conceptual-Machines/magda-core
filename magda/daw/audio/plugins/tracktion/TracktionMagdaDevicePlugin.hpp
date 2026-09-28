@@ -2,9 +2,13 @@
 
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <atomic>
+#include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
+#include "plugins/DeviceTiming.hpp"
 #include "plugins/MagdaDevice.hpp"
 
 namespace magda::daw::audio::tracktion_adapter {
@@ -25,6 +29,15 @@ class TracktionMagdaDevicePlugin final : public te::Plugin {
     }
     te::AutomatableParameter* parameterForDeviceSlot(int slotIndex) const;
 
+    /// Take the device's own parameter values back into the host's.
+    ///
+    /// The host is the authority every other block -- syncParametersToDevice()
+    /// pushes on every applyToBuffer -- so a device that changes its own values
+    /// has them overwritten unless something pulls. A runtime Faust patch swap
+    /// is the case: rebinding the pool assigns new defaults to slots whose
+    /// control changed identity. Message thread only.
+    void pullParametersFromDevice();
+
     juce::String getName() const override;
     juce::String getPluginType() override;
     juce::String getShortName(int) override;
@@ -40,6 +53,8 @@ class TracktionMagdaDevicePlugin final : public te::Plugin {
     bool isSynth() override;
     bool producesAudioWhenNoAudioInput() override;
     bool canSidechain() override;
+    int getNumOutputChannelsGivenInputs(int numInputChannels) override;
+    void getChannelNames(juce::StringArray* inputs, juce::StringArray* outputs) override;
     double getLatencySeconds() override;
     double getTailLength() const override;
 
@@ -49,11 +64,40 @@ class TracktionMagdaDevicePlugin final : public te::Plugin {
   private:
     void buildParameters();
     void syncParametersToDevice();
+    void refreshLiveSourceIds();
+    /// Re-read the two widths the render path splits its buffer on. Message
+    /// thread, from wherever the fork asks this plugin about its shape: most
+    /// devices' properties never change, but the runtime Faust device
+    /// recompiles into a different one and the split has to follow it (#2329).
+    void refreshChannelLayout();
 
     std::unique_ptr<MagdaDevice> device_;
+    /// Handed to the parameter conversion lambdas, which an automation curve can
+    /// keep alive past this plugin. Nulled in the destructor, so a stale
+    /// parameter falls back to the metadata it was built with instead of
+    /// calling into a device that is gone.
+    std::shared_ptr<MagdaDevice*> deviceHandle_;
     const DeviceProperties properties_;
+    /// What the device's own process() is timed under, beside the adapter's (DeviceTiming.hpp).
+    const std::string dspTimingName_;
+    /// The live channel split, published for the audio thread: the device's own
+    /// input width, and the key channels the fork appends after them.
+    std::atomic<int> ownInputChannels_{0};
+    std::atomic<int> sidechainChannels_{0};
     std::vector<std::unique_ptr<juce::CachedValue<float>>> parameterValues_;
     std::vector<te::AutomatableParameter::Ptr> parameters_;
+    /// The device's MIDI output for the current block, swapped into the host's
+    /// buffer after process() when the device declares producesMidi (#2347).
+    te::MidiMessageArray midiOut_;
+
+    /// MPE source ids of the engine's MIDI inputs, which is what a device
+    /// reads to tell a player's keys from clip playback. One immutable block,
+    /// count first and then the ids, because a graph rebuild runs while the
+    /// previous graph still calls applyToBuffer on this same plugin: a block
+    /// is never rewritten, and the ones it replaces outlive every reader by
+    /// living as long as the plugin.
+    std::atomic<const std::uint32_t*> liveSources_{nullptr};
+    std::vector<std::vector<std::uint32_t>> liveSourceBlocks_;
 };
 
 template <typename DeviceType> DeviceType* deviceFromPlugin(te::Plugin* plugin) {
@@ -68,8 +112,25 @@ template <typename DeviceType> const DeviceType* deviceFromPlugin(const te::Plug
     if (auto* device = dynamic_cast<const DeviceType*>(plugin))
         return device;
 
-    auto* adapter = dynamic_cast<const TracktionMagdaDevicePlugin*>(plugin);
+    const auto* adapter = dynamic_cast<const TracktionMagdaDevicePlugin*>(plugin);
     return adapter != nullptr ? dynamic_cast<const DeviceType*>(&adapter->device()) : nullptr;
+}
+
+/**
+ * @brief The MAGDA device inside @p plugin, holding the plugin open (#2585).
+ *
+ * The fork's answer to "the device rendering here": the edit owns the plugin
+ * and the plugin owns the device, so the handle carries the plugin's own
+ * reference in its deleter rather than a second count beside it. Empty for a
+ * plugin that is not one of MAGDA's devices.
+ */
+inline std::shared_ptr<MagdaDevice> deviceHandleFromPlugin(te::Plugin::Ptr plugin) {
+    auto* device = deviceFromPlugin<MagdaDevice>(plugin.get());
+    if (device == nullptr)
+        return {};
+
+    std::shared_ptr<te::Plugin> owner(plugin.get(), [held = plugin](te::Plugin*) {});
+    return {std::move(owner), device};
 }
 
 }  // namespace magda::daw::audio::tracktion_adapter

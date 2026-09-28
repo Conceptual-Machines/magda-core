@@ -89,12 +89,8 @@ double InstructionExecutor::barsToLength(double bars) const {
 }
 
 double InstructionExecutor::barsToBeats(double bars) const {
-    // Use the project's time-signature numerator. Hard-coding 4 here was
-    // the source of the seconds↔beats round-trip drift under non-4/4 sigs.
-    int beatsPerBar = api_.project().getCurrentProjectInfo().timeSignatureNumerator;
-    if (beatsPerBar <= 0)
-        beatsPerBar = 4;
-    return bars * static_cast<double>(beatsPerBar);
+    const auto& project = api_.project().getCurrentProjectInfo();
+    return bars * beatsPerBar(project.timeSignatureNumerator, project.timeSignatureDenominator);
 }
 
 double InstructionExecutor::beatsToBar(double beats) const {
@@ -130,8 +126,8 @@ double InstructionExecutor::findNonOverlappingClipStartBeats(TrackId trackId,
             ranges.push_back({start, end});
     }
 
-    std::sort(ranges.begin(), ranges.end(),
-              [](const auto& a, const auto& b) { return a.start < b.start; });
+    const auto startOf = [](const auto& range) { return range.start; };
+    std::ranges::sort(ranges, {}, startOf);
 
     for (const auto& range : ranges) {
         if (range.end <= candidate + epsilon)
@@ -250,7 +246,7 @@ bool InstructionExecutor::execute(const std::vector<Instruction>& instructions) 
     }
 
     // Multi-clip selection → populate selectedClips_ so SET/DEL apply to all
-    auto& uiClips = sm.getSelectedClips();
+    const auto& uiClips = sm.getSelectedClips();
     if (!uiClips.empty()) {
         selectedClips_.insert(uiClips.begin(), uiClips.end());
         // Derive track from first clip if no track selected
@@ -414,7 +410,7 @@ bool InstructionExecutor::executeTrack(const TrackOp& op) {
         }
 
         auto createCmd = std::make_unique<CreateTrackCommand>(
-            TrackType::Audio, op.name.isEmpty() ? trackName : op.name);
+            TrackType::Media, op.name.isEmpty() ? trackName : op.name);
         auto* createPtr = createCmd.get();
         api_.undo().executeCommand(std::move(createCmd));
         currentTrackId_ = createPtr->getCreatedTrackId();
@@ -429,7 +425,7 @@ bool InstructionExecutor::executeTrack(const TrackOp& op) {
         return true;
     }
 
-    auto createCmd = std::make_unique<CreateTrackCommand>(TrackType::Audio, op.name);
+    auto createCmd = std::make_unique<CreateTrackCommand>(TrackType::Media, op.name);
     auto* createPtr = createCmd.get();
     api_.undo().executeCommand(std::move(createCmd));
     currentTrackId_ = createPtr->getCreatedTrackId();
@@ -543,7 +539,7 @@ void InstructionExecutor::applySetProps(int trackId, const juce::StringPairArray
         auto val = props.getValue(key, "");
         if (key == "vol" || key == "volume_db") {
             double db = val.getDoubleValue();
-            float vol = static_cast<float>(std::pow(10.0, db / 20.0));
+            auto vol = static_cast<float>(std::pow(10.0, db / 20.0));
             undo.executeCommand(std::make_unique<SetTrackVolumeCommand>(trackId, vol));
         } else if (key == "pan") {
             undo.executeCommand(std::make_unique<SetTrackPanCommand>(trackId, val.getFloatValue()));
@@ -853,12 +849,12 @@ bool InstructionExecutor::executeArp(const ArpOp& op) {
     juce::String chordError;
     if (!music::resolveChordNotes(op.root.toStdString(), op.quality.toStdString(), op.inversion,
                                   midiNotes, chordError)) {
-        error_ = chordError;
+        error_ = std::move(chordError);
         return false;
     }
 
     // Sort ascending as the canonical starting order
-    std::sort(midiNotes.begin(), midiNotes.end());
+    std::ranges::sort(midiNotes);
 
     // Apply pattern ordering: up (default), down, updown
     auto pattern = op.pattern.trim().toLowerCase();
@@ -925,7 +921,7 @@ bool InstructionExecutor::executeChord(const ChordOp& op) {
     juce::String chordError;
     if (!music::resolveChordNotes(op.root.toStdString(), op.quality.toStdString(), op.inversion,
                                   midiNotes, chordError)) {
-        error_ = chordError;
+        error_ = std::move(chordError);
         return false;
     }
 

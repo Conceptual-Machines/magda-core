@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "project": "reverse-fades.mgd",
+  "cluster": "reverse and fades",
+  "range": { "startBeat": 0, "endBeat": 8 },
+  "requires": { "plugins": [], "hardware": [] },
+  "tracks": [
+    { "name": "Reversed", "sound": true, "peakDb": { "min": -48, "max": 0 } },
+    { "name": "Faded", "sound": true, "peakDb": { "min": -48, "max": 0 } }
+  ],
+  "listen": "The loop backwards (blips swell in) against the loop forwards, which fades in over its first second and out over its last one and a half."
+}

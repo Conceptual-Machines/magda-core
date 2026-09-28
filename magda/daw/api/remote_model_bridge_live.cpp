@@ -48,8 +48,10 @@ class ModelChangeBridge::Impl final : public TrackManagerListener,
         AutomationManager::getInstance().addListener(this);
         SelectionManager::getInstance().addListener(this);
         if (transport_ != nullptr) {
-            transportListener_ = transport_->addStateListener(
-                [this] { service_.noteModelActivity(Topic::Transport); });
+            transportListener_ = transport_->addStateListener([this] {
+                service_.noteModelActivity(Topic::Transport);
+                service_.pollSessionRecordings();
+            });
         }
         if (observingProject_)
             ProjectManager::getInstance().addListener(this);
@@ -77,7 +79,10 @@ class ModelChangeBridge::Impl final : public TrackManagerListener,
         if (AutomationManager::getInstance().isApplyingAutomationWrite())
             service_.noteModelActivity(Topic::Tracks);
         else
-            service_.noteModelChanged(Topic::Tracks);
+            service_.noteModelChanged({Topic::Tracks, Topic::Session});
+    }
+    void trackPlaybackModeChanged(TrackId) override {
+        service_.noteModelActivity(Topic::Session);
     }
     void masterChannelChanged() override {
         if (AutomationManager::getInstance().isApplyingAutomationWrite())
@@ -123,6 +128,7 @@ class ModelChangeBridge::Impl final : public TrackManagerListener,
     // coalesced away before an event is built.
     void clipsChanged() override {
         service_.noteModelChanged({Topic::Clips, Topic::Session});
+        service_.pollSessionRecordings();
     }
     void clipPropertyChanged(ClipId) override {
         service_.noteModelChanged({Topic::Clips, Topic::Session});
@@ -138,6 +144,10 @@ class ModelChangeBridge::Impl final : public TrackManagerListener,
     }
     void clipPlaybackStateChanged(ClipId) override {
         service_.noteModelActivity(Topic::Session);
+    }
+    void sessionRuntimeStateChanged() override {
+        service_.noteModelActivity(Topic::Session);
+        service_.pollSessionRecordings();
     }
     void clipPlaybackRequested(ClipId, ClipPlaybackRequest) override {
         service_.noteModelActivity(Topic::Session);
@@ -194,26 +204,32 @@ class ModelChangeBridge::Impl final : public TrackManagerListener,
 
     // ---- ProjectManagerListener -----------------------------------------
 
+    void projectTeardown() override {
+        service_.projectReplacementStarted();
+    }
+
     void projectOpened(const ProjectInfo&) override {
         if (transport_ != nullptr)
             transport_->refreshStateSource();
-        // Everything queued against the outgoing project is now addressed at
-        // state that no longer exists. This is the trigger the service's
-        // cancellation path exists for, and it already bumps the revision and
-        // publishes Topic::Project — bumping again here would advance it twice
-        // for one swap.
-        service_.projectReplaced();
+        // A remote lifecycle handler owns the service's execution lock and
+        // retires its queued work after the manager returns. UI transitions
+        // arrive outside that lock and must retire it here instead.
+        if (!service_.isExecutingOnThisThread())
+            service_.projectReplaced();
     }
     void projectClosed() override {
         if (transport_ != nullptr)
             transport_->refreshStateSource();
-        service_.projectReplaced();
+        if (!service_.isExecutingOnThisThread())
+            service_.projectReplaced();
     }
     void projectSaved(const ProjectInfo&) override {
-        service_.noteModelChanged(Topic::Project);
+        // Saving changes persistence state, not project content. Async Save As
+        // therefore notifies subscribers without invalidating revisions.
+        service_.noteModelActivity(Topic::Project);
     }
     void projectPropertiesChanged() override {
-        service_.noteModelChanged(Topic::Project);
+        service_.noteModelChanged({Topic::Project, Topic::Session});
     }
 
   private:

@@ -291,7 +291,7 @@ class RackSyncManager {
      * @brief Check if rack structure changed (devices/chains added/removed/reordered)
      * vs only properties changed (bypass, volume, mute/solo)
      */
-    bool structureChanged(const SyncedRack& synced, const RackInfo& rackInfo) const;
+    static bool structureChanged(const SyncedRack& synced, const RackInfo& rackInfo);
 
     /**
      * @brief Update only properties (bypass, volume, chain mute/solo) without rebuilding plugins
@@ -305,8 +305,8 @@ class RackSyncManager {
 
     void loadRackContents(SyncedRack& synced, TrackId trackId, const RackInfo& rackInfo,
                           const ChainNodePath& rackPath, te::RackType& rackType);
-    void buildConnectionsForRack(SyncedRack& synced, const RackInfo& rackInfo,
-                                 const ChainNodePath& rackPath, te::RackType& rackType);
+    static void buildConnectionsForRack(SyncedRack& synced, const RackInfo& rackInfo,
+                                        const ChainNodePath& rackPath, te::RackType& rackType);
     void rebuildConnectionsRecursive(SyncedRack& synced, const RackInfo& rackInfo,
                                      const ChainNodePath& rackPath, te::RackType& rackType);
     void updateElementPropertiesRecursive(SyncedRack& synced, const RackInfo& rackInfo,
@@ -343,7 +343,7 @@ class RackSyncManager {
     /**
      * @brief Apply rack bypass state via wet/dry gains
      */
-    void applyBypassState(SyncedRack& synced, const RackInfo& rackInfo);
+    static void applyBypassState(SyncedRack& synced, const RackInfo& rackInfo);
 
     /**
      * @brief Capture plugin states for a single rack back to TrackManager DeviceInfo

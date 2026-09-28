@@ -5,11 +5,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <mutex>
 #include <vector>
 
-namespace magda {
-namespace remote {
+namespace magda::remote {
 
 /// How one audited request or connection ended.
 enum class AuditOutcome {
@@ -102,6 +102,9 @@ class RemoteAuditLog {
     /// and drops the oldest entry when full.
     void record(AuditEntry entry);
 
+    /// Called after a denied entry is recorded, outside the log lock.
+    void setDeniedHandler(std::function<void(const AuditEntry&)> handler);
+
     /// Oldest first.
     std::vector<AuditEntry> entries() const;
 
@@ -128,6 +131,7 @@ class RemoteAuditLog {
     std::deque<AuditEntry> entries_;
     std::size_t capacity_;
     std::uint64_t totalRecorded_ = 0;
+    std::function<void(const AuditEntry&)> deniedHandler_;
 };
 
 // ===========================================================================
@@ -174,5 +178,4 @@ juce::String redactSecrets(const juce::String& text);
  */
 juce::String redactedFileName(const juce::File& file);
 
-}  // namespace remote
-}  // namespace magda
+}  // namespace magda::remote

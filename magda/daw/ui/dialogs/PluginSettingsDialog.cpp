@@ -2,14 +2,14 @@
 
 #include <algorithm>
 
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
 #include "core/TechnicalText.hpp"
-#include "engine/AudioEngine.hpp"
 #include "engine/PluginScanCoordinator.hpp"
+#include "engine/PluginService.hpp"
 
 namespace magda {
 
@@ -28,11 +28,11 @@ void PluginSettingsDialog::DirectoryListModel::paintListBoxItem(int rowNumber, j
         return;
 
     if (rowIsSelected) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
         g.fillRect(0, 0, width, height);
     }
 
-    g.setColour(DarkTheme::getTextColour());
+    g.setColour(ActiveTheme::getTextColour());
     g.setFont(FontManager::getInstance().getUIFont(12.0f));
     g.drawText(juce::String((*paths)[static_cast<size_t>(rowNumber)]), 4, 0, width - 8, height,
                juce::Justification::centredLeft);
@@ -50,9 +50,9 @@ void PluginSettingsDialog::ExcludedTableModel::paintRowBackground(juce::Graphics
                                                                   int /*rowNumber*/, int width,
                                                                   int height, bool rowIsSelected) {
     if (rowIsSelected) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
     } else {
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
     }
     g.fillRect(0, 0, width, height);
 }
@@ -65,7 +65,7 @@ void PluginSettingsDialog::ExcludedTableModel::paintCell(juce::Graphics& g, int 
 
     const auto& entry = (*entries)[static_cast<size_t>(rowNumber)];
 
-    g.setColour(DarkTheme::getTextColour());
+    g.setColour(ActiveTheme::getTextColour());
     g.setFont(FontManager::getInstance().getUIFont(11.0f));
 
     juce::String text;
@@ -79,6 +79,8 @@ void PluginSettingsDialog::ExcludedTableModel::paintCell(juce::Graphics& g, int 
             break;
         case 3:
             text = entry.timestamp;
+            break;
+        default:  // dismissed, or a column with no text
             break;
     }
 
@@ -94,19 +96,13 @@ juce::Component* PluginSettingsDialog::ExcludedTableModel::refreshComponentForCe
 // PluginSettingsDialog
 // =============================================================================
 
-PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
-    : scanProgressBar_(scanProgress_), engine_(engine) {
+PluginSettingsDialog::PluginSettingsDialog() : scanProgressBar_(scanProgress_) {
     setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
     // Load current data
     customPaths_ = Config::getInstance().getCustomPluginPaths();
 
-    if (engine_) {
-        excludedPlugins_ = engine_->getExcludedPlugins();
-    }
-
-    // Populate system plugin directories from format manager
-    if (engine_)
-        systemPaths_ = engine_->getSystemPluginSearchPaths();
+    excludedPlugins_ = PluginService::getInstance().excludedPlugins();
+    systemPaths_ = PluginService::getInstance().systemSearchPaths();
 
     // Wire up models
     systemDirListModel_.paths = &systemPaths_;
@@ -118,8 +114,8 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
 
     systemDirsList_.setModel(&systemDirListModel_);
     systemDirsList_.setColour(juce::ListBox::backgroundColourId,
-                              DarkTheme::getColour(DarkTheme::SURFACE));
-    systemDirsList_.setColour(juce::ListBox::outlineColourId, DarkTheme::getBorderColour());
+                              ActiveTheme::getColour(ActiveTheme::SURFACE));
+    systemDirsList_.setColour(juce::ListBox::outlineColourId, ActiveTheme::getBorderColour());
     systemDirsList_.setOutlineThickness(1);
     systemDirsList_.setRowHeight(22);
     addAndMakeVisible(systemDirsList_);
@@ -129,8 +125,8 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
 
     directoriesList_.setModel(&dirListModel_);
     directoriesList_.setColour(juce::ListBox::backgroundColourId,
-                               DarkTheme::getColour(DarkTheme::SURFACE));
-    directoriesList_.setColour(juce::ListBox::outlineColourId, DarkTheme::getBorderColour());
+                               ActiveTheme::getColour(ActiveTheme::SURFACE));
+    directoriesList_.setColour(juce::ListBox::outlineColourId, ActiveTheme::getBorderColour());
     directoriesList_.setOutlineThickness(1);
     directoriesList_.setRowHeight(22);
     addAndMakeVisible(directoriesList_);
@@ -166,8 +162,6 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
     // Scan section
     scanButton_.setButtonText(tr("plugin_settings.button.scan"));
     scanButton_.onClick = [this]() {
-        if (!engine_)
-            return;
         // Apply settings first so custom paths are used during scan
         applySettings();
 
@@ -180,18 +174,19 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
 
         auto safeThis = juce::Component::SafePointer<PluginSettingsDialog>(this);
 
-        engine_->startPluginScan([safeThis](float progress, const juce::String& pluginName) {
-            juce::MessageManager::callAsync([safeThis, progress, pluginName]() {
-                if (safeThis == nullptr)
-                    return;
-                safeThis->scanProgress_ = static_cast<double>(progress);
-                safeThis->scanStatusLabel_.setText(tr("plugin_settings.status.scanning") + " " +
-                                                       pluginDisplayName(pluginName),
-                                                   juce::dontSendNotification);
+        PluginService::getInstance().startScan(
+            [safeThis](float progress, const juce::String& pluginName) {
+                juce::MessageManager::callAsync([safeThis, progress, pluginName]() {
+                    if (safeThis == nullptr)
+                        return;
+                    safeThis->scanProgress_ = static_cast<double>(progress);
+                    safeThis->scanStatusLabel_.setText(tr("plugin_settings.status.scanning") + " " +
+                                                           pluginDisplayName(pluginName),
+                                                       juce::dontSendNotification);
+                });
             });
-        });
 
-        engine_->setPluginScanCompletionCallback(
+        PluginService::getInstance().setScanCompletionCallback(
             [safeThis](bool success, int numPlugins, const juce::StringArray& failedPlugins) {
                 juce::MessageManager::callAsync([safeThis, success, numPlugins, failedPlugins]() {
                     if (safeThis == nullptr)
@@ -222,11 +217,9 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
                     safeThis->updatePluginCountLabel();
 
                     // Refresh excluded plugins list
-                    if (safeThis->engine_) {
-                        safeThis->excludedPlugins_ = safeThis->engine_->getExcludedPlugins();
-                        safeThis->excludedTable_.updateContent();
-                        safeThis->excludedTable_.repaint();
-                    }
+                    safeThis->excludedPlugins_ = PluginService::getInstance().excludedPlugins();
+                    safeThis->excludedTable_.updateContent();
+                    safeThis->excludedTable_.repaint();
                 });
             });
     };
@@ -234,8 +227,6 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
 
     scanNewButton_.setButtonText(tr("plugin_settings.button.scan_new"));
     scanNewButton_.onClick = [this]() {
-        if (!engine_)
-            return;
         applySettings();
 
         setScanningUIEnabled(false);
@@ -247,7 +238,7 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
 
         auto safeThis = juce::Component::SafePointer<PluginSettingsDialog>(this);
 
-        engine_->detectNewPlugins(
+        PluginService::getInstance().detectNewPlugins(
             [safeThis](PluginScanPhase phase, const juce::String& currentPlugin) {
                 juce::MessageManager::callAsync([safeThis, phase, currentPlugin]() {
                     if (safeThis == nullptr)
@@ -308,11 +299,9 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
                     juce::ignoreUnused(totalCount);
                     safeThis->updatePluginCountLabel();
 
-                    if (safeThis->engine_) {
-                        safeThis->excludedPlugins_ = safeThis->engine_->getExcludedPlugins();
-                        safeThis->excludedTable_.updateContent();
-                        safeThis->excludedTable_.repaint();
-                    }
+                    safeThis->excludedPlugins_ = PluginService::getInstance().excludedPlugins();
+                    safeThis->excludedTable_.updateContent();
+                    safeThis->excludedTable_.repaint();
                 });
             });
     };
@@ -320,11 +309,9 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
 
     viewReportButton_.setButtonText(tr("plugin_settings.button.view_report"));
     viewReportButton_.onClick = [this]() {
-        if (engine_) {
-            auto reportFile = engine_->getPluginScanReportFile();
-            if (reportFile.existsAsFile())
-                reportFile.startAsProcess();
-        }
+        auto reportFile = PluginService::getInstance().scanReportFile();
+        if (reportFile.existsAsFile())
+            reportFile.startAsProcess();
     };
     addAndMakeVisible(viewReportButton_);
 
@@ -332,13 +319,13 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
     scanOnStartupToggle_.setToggleState(Config::getInstance().getScanPluginsOnStartup(),
                                         juce::dontSendNotification);
     scanOnStartupToggle_.setColour(juce::ToggleButton::textColourId,
-                                   DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                   ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     addAndMakeVisible(scanOnStartupToggle_);
 
     formatPreferenceLabel_.setText(tr("plugin_settings.label.external_format_preference"),
                                    juce::dontSendNotification);
     formatPreferenceLabel_.setColour(juce::Label::textColourId,
-                                     DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                     ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     formatPreferenceLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
     addAndMakeVisible(formatPreferenceLabel_);
 
@@ -359,10 +346,10 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
             .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Lv2)),
         static_cast<int>(PluginFormat::LV2) + 1);
     formatPreferenceSelector_.setColour(juce::ComboBox::backgroundColourId,
-                                        DarkTheme::getColour(DarkTheme::SURFACE));
-    formatPreferenceSelector_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+                                        ActiveTheme::getColour(ActiveTheme::SURFACE));
+    formatPreferenceSelector_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
     formatPreferenceSelector_.setColour(juce::ComboBox::outlineColourId,
-                                        DarkTheme::getBorderColour());
+                                        ActiveTheme::getBorderColour());
     auto currentFormatPreference =
         PluginPreferences::getInstance().externalPluginFormatPreference();
 #if !JUCE_MAC
@@ -380,13 +367,13 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
     addAndMakeVisible(scanProgressBar_);
 
     scanStatusLabel_.setColour(juce::Label::textColourId,
-                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                               ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     scanStatusLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     scanStatusLabel_.setVisible(false);
     addAndMakeVisible(scanStatusLabel_);
 
     pluginCountLabel_.setColour(juce::Label::textColourId,
-                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     pluginCountLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     updatePluginCountLabel();
     addAndMakeVisible(pluginCountLabel_);
@@ -396,16 +383,16 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
 
     excludedTable_.setModel(&excludedTableModel_);
     excludedTable_.setColour(juce::ListBox::backgroundColourId,
-                             DarkTheme::getColour(DarkTheme::SURFACE));
-    excludedTable_.setColour(juce::ListBox::outlineColourId, DarkTheme::getBorderColour());
+                             ActiveTheme::getColour(ActiveTheme::SURFACE));
+    excludedTable_.setColour(juce::ListBox::outlineColourId, ActiveTheme::getBorderColour());
     excludedTable_.setOutlineThickness(1);
     excludedTable_.getHeader().addColumn(tr("plugin_settings.column.plugin"), 1, 250, 100, 400);
     excludedTable_.getHeader().addColumn(tr("plugin_settings.column.reason"), 2, 80, 60, 150);
     excludedTable_.getHeader().addColumn(tr("plugin_settings.column.date"), 3, 150, 80, 250);
     excludedTable_.getHeader().setColour(juce::TableHeaderComponent::backgroundColourId,
-                                         DarkTheme::getColour(DarkTheme::SURFACE));
+                                         ActiveTheme::getColour(ActiveTheme::SURFACE));
     excludedTable_.getHeader().setColour(juce::TableHeaderComponent::textColourId,
-                                         DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                         ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     excludedTable_.setMultipleSelectionEnabled(true);
     addAndMakeVisible(excludedTable_);
 
@@ -418,7 +405,7 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
             if (idx >= 0 && idx < static_cast<int>(excludedPlugins_.size()))
                 indices.push_back(idx);
         }
-        std::sort(indices.rbegin(), indices.rend());
+        std::ranges::sort(indices, std::ranges::greater{});
         for (int idx : indices) {
             excludedPlugins_.erase(excludedPlugins_.begin() + idx);
         }
@@ -466,7 +453,7 @@ PluginSettingsDialog::~PluginSettingsDialog() {
 }
 
 void PluginSettingsDialog::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
 }
 
 void PluginSettingsDialog::resized() {
@@ -574,13 +561,11 @@ void PluginSettingsDialog::applySettings() {
         PluginPreferences::getInstance().setExternalPluginFormatPreference(
             static_cast<PluginFormat>(selected - 1));
 
-    if (engine_) {
-        engine_->setExcludedPlugins(excludedPlugins_);
-    }
+    PluginService::getInstance().setExcludedPlugins(excludedPlugins_);
 }
 
 bool PluginSettingsDialog::isScanRunning() const {
-    return engine_ && engine_->isPluginScanRunning();
+    return PluginService::getInstance().isScanRunning();
 }
 
 // DialogWindow subclass that prevents closing while a scan is in progress
@@ -600,9 +585,9 @@ class PluginSettingsDialogWindow : public juce::DialogWindow {
     PluginSettingsDialog* content_;
 };
 
-void PluginSettingsDialog::showDialog(AudioEngine* engine, juce::Component* /*parent*/) {
-    auto* dialog = new PluginSettingsDialog(engine);
-    auto bg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+void PluginSettingsDialog::showDialog(juce::Component* /*parent*/) {
+    auto* dialog = new PluginSettingsDialog();
+    auto bg = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
 
     auto* window = new PluginSettingsDialogWindow(tr("dialogs.plugin_settings"), bg, false, dialog);
     window->setContentOwned(dialog, true);
@@ -631,7 +616,8 @@ void PluginSettingsDialog::updatePluginCountLabel() {
 
 void PluginSettingsDialog::setupSectionHeader(juce::Label& header, const juce::String& text) {
     header.setText(text, juce::dontSendNotification);
-    header.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    header.setColour(juce::Label::textColourId,
+                     ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     header.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     header.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(header);

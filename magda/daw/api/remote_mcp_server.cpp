@@ -39,8 +39,7 @@
 #include "remote_service.hpp"
 #include "remote_subscriptions.hpp"
 
-namespace magda {
-namespace remote {
+namespace magda::remote {
 
 namespace {
 
@@ -56,7 +55,7 @@ constexpr const char* kBase64Prefix = "=?base64?";
 constexpr const char* kBase64Suffix = "?=";
 
 juce::var makeObject() {
-    return juce::var(new juce::DynamicObject());
+    return {new juce::DynamicObject()};
 }
 
 void setProperty(juce::var& object, const char* name, const juce::var& value) {
@@ -162,11 +161,12 @@ juce::String generateSessionId() {
  */
 struct EventStream {
     EventStream(int outboxCapacity, juce::var streamSubscriptionId, juce::String streamHandle,
-                juce::String streamClientName)
+                juce::String streamClientName, juce::String ownerId)
         : capacity(outboxCapacity),
           subscriptionId(std::move(streamSubscriptionId)),
           handle(std::move(streamHandle)),
-          clientName(std::move(streamClientName)) {}
+          clientName(std::move(streamClientName)),
+          jobOwnerId(std::move(ownerId)) {}
 
     enum class Take { Frame, KeepAlive, Closed };
 
@@ -177,6 +177,8 @@ struct EventStream {
     const juce::String handle;
     /// Normalised declared name of whoever opened it.
     const juce::String clientName;
+    /// The request identity whose owner-scoped jobs this stream may project.
+    const juce::String jobOwnerId;
 
     mutable std::mutex mutex;
     std::condition_variable ready;
@@ -198,7 +200,7 @@ struct EventStream {
 
     bool push(std::string frame) {
         {
-            const std::lock_guard<std::mutex> lock(mutex);
+            const std::scoped_lock lock(mutex);
             if (closed || static_cast<int>(outbox.size()) >= capacity)
                 return false;
             outbox.push_back(std::move(frame));
@@ -219,7 +221,7 @@ struct EventStream {
     bool publish(Topic topic, const McpEndpoint& endpoint) {
         std::vector<std::string> frames;
         {
-            const std::lock_guard<std::mutex> lock(mutex);
+            const std::scoped_lock lock(mutex);
             if (closed)
                 return false;
             const auto uris = endpoint.urisAffectedBy(topic, filter);
@@ -262,7 +264,7 @@ struct EventStream {
 
     void close(std::string terminalFrame = {}) {
         {
-            const std::lock_guard<std::mutex> lock(mutex);
+            const std::scoped_lock lock(mutex);
             if (closed)
                 return;
             outbox.clear();
@@ -274,17 +276,17 @@ struct EventStream {
     }
 
     bool isClosed() const {
-        const std::lock_guard<std::mutex> lock(mutex);
+        const std::scoped_lock lock(mutex);
         return closed;
     }
 
     void setFilter(McpEndpoint::ListenFilter updated) {
-        const std::lock_guard<std::mutex> lock(mutex);
+        const std::scoped_lock lock(mutex);
         filter = std::move(updated);
     }
 
     McpEndpoint::ListenFilter currentFilter() const {
-        const std::lock_guard<std::mutex> lock(mutex);
+        const std::scoped_lock lock(mutex);
         return filter;
     }
 };
@@ -330,7 +332,8 @@ struct RemoteMcpServer::Impl {
     struct Waiter;
 
     Impl(RemoteApiService& apiService, Options serverOptions, SubscriptionHub* hub)
-        : options(std::move(serverOptions)),
+        : service(apiService),
+          options(std::move(serverOptions)),
           subscriptions(hub),
           endpoint(apiService,
                    McpEndpoint::Options{"MAGDA", options.serverVersion, options.defaultDeadlineMs},
@@ -341,6 +344,7 @@ struct RemoteMcpServer::Impl {
           // indistinguishable from the server being broken.
           tokens(static_cast<double>(options.maxConcurrentRequests)) {}
 
+    RemoteApiService& service;
     const Options options;
     SubscriptionHub* const subscriptions;
     McpEndpoint endpoint;
@@ -382,7 +386,7 @@ struct RemoteMcpServer::Impl {
     // -----------------------------------------------------------------------
 
     bool admit() {
-        const std::lock_guard<std::mutex> lock(rateMutex);
+        const std::scoped_lock lock(rateMutex);
         const auto now = std::chrono::steady_clock::now();
         const auto elapsed = std::chrono::duration<double>(now - lastRefill).count();
         lastRefill = now;
@@ -464,7 +468,7 @@ struct RemoteMcpServer::Impl {
     void collectIdleSessions() {
         std::vector<juce::String> collected;
         {
-            const std::lock_guard<std::mutex> lock(sessionMutex);
+            const std::scoped_lock lock(sessionMutex);
             collectIdleSessionsLocked(collected);
         }
         noteSessionsClosed(collected);
@@ -475,7 +479,7 @@ struct RemoteMcpServer::Impl {
         std::vector<juce::String> collected;
         juce::String id;
         {
-            const std::lock_guard<std::mutex> lock(sessionMutex);
+            const std::scoped_lock lock(sessionMutex);
             collectIdleSessionsLocked(collected);
             if (static_cast<int>(sessions.size()) >= options.maxSessions) {
                 // Still report the sessions that were just collected, or the
@@ -505,7 +509,7 @@ struct RemoteMcpServer::Impl {
     };
 
     std::optional<SessionState> touchSession(const juce::String& id) {
-        const std::lock_guard<std::mutex> lock(sessionMutex);
+        const std::scoped_lock lock(sessionMutex);
         const auto it = sessions.find(id.toStdString());
         if (it == sessions.end())
             return std::nullopt;
@@ -517,7 +521,7 @@ struct RemoteMcpServer::Impl {
         std::shared_ptr<EventStream> stream;
         juce::String clientName;
         {
-            const std::lock_guard<std::mutex> lock(sessionMutex);
+            const std::scoped_lock lock(sessionMutex);
             const auto it = sessions.find(id.toStdString());
             if (it == sessions.end())
                 return false;
@@ -558,6 +562,7 @@ struct RemoteMcpServer::Impl {
     }
 
     void noteSessionClosed(const juce::String& sessionId, const juce::String& clientName) {
+        service.clientDisconnected(handleForSession(sessionId));
         if (options.clients != nullptr)
             options.clients->noteDisconnected(handleForSession(sessionId));
         audit(clientName, handleForSession(sessionId), AUDIT_CONNECTION_CLOSE,
@@ -603,10 +608,11 @@ struct RemoteMcpServer::Impl {
     bool disconnectByHandle(const juce::String& handle) {
         std::shared_ptr<EventStream> target;
         {
-            const std::lock_guard<std::mutex> lock(streamMutex);
-            const auto found = std::find_if(
-                streams.begin(), streams.end(),
-                [&](const std::shared_ptr<EventStream>& s) { return s->handle == handle; });
+            const std::scoped_lock lock(streamMutex);
+            const auto hasHandle = [&handle](const std::shared_ptr<EventStream>& stream) {
+                return stream->handle == handle;
+            };
+            const auto found = std::ranges::find_if(streams, hasHandle);
             if (found != streams.end())
                 target = *found;
         }
@@ -627,10 +633,11 @@ struct RemoteMcpServer::Impl {
     // -----------------------------------------------------------------------
 
     std::shared_ptr<EventStream> claimStream(const juce::var& subscriptionId,
-                                             const juce::String& clientName) {
+                                             const juce::String& clientName,
+                                             const juce::String& jobOwnerId) {
         std::shared_ptr<EventStream> stream;
         {
-            const std::lock_guard<std::mutex> lock(streamMutex);
+            const std::scoped_lock lock(streamMutex);
             if (static_cast<int>(streams.size()) >= options.maxStreams)
                 return nullptr;
             // Sized against the connection's own reading. Each entry is one
@@ -638,7 +645,7 @@ struct RemoteMcpServer::Impl {
             // a client may fall rather than about memory.
             stream = std::make_shared<EventStream>(
                 64, subscriptionId, "mcp:stream:" + juce::String(nextStreamId.fetch_add(1)),
-                clientName);
+                clientName, jobOwnerId);
             streams.push_back(stream);
         }
 
@@ -694,6 +701,10 @@ struct RemoteMcpServer::Impl {
                         }
                         live->close(std::move(terminal));
                     }
+                },
+                stream->jobOwnerId,
+                [clients = options.clients, name = stream->clientName] {
+                    return clients != nullptr ? clients->scopesFor(name) : ScopeSet{};
                 });
         }
 
@@ -713,7 +724,7 @@ struct RemoteMcpServer::Impl {
         setProperty(params, "snapshot", false);
 
         subscriptions->handle(stream->subscriber, "subscriptions.subscribe", params,
-                              [](Response) {});
+                              [](const Response&) {});
     }
 
     /// Replace what a stream watches. The legacy era needs this because
@@ -726,7 +737,7 @@ struct RemoteMcpServer::Impl {
         // topic, so this converges on the new set whether the change added or
         // removed a resource — no diff to compute and none to get wrong.
         subscriptions->handle(stream->subscriber, "subscriptions.unsubscribe", makeObject(),
-                              [](Response) {});
+                              [](const Response&) {});
         subscribeStream(stream);
     }
 
@@ -746,8 +757,8 @@ struct RemoteMcpServer::Impl {
         stream->close(std::move(terminal));
 
         {
-            const std::lock_guard<std::mutex> lock(streamMutex);
-            streams.erase(std::remove(streams.begin(), streams.end(), stream), streams.end());
+            const std::scoped_lock lock(streamMutex);
+            std::erase(streams, stream);
         }
 
         if (options.clients != nullptr)
@@ -765,7 +776,7 @@ struct RemoteMcpServer::Impl {
         response.set_header("X-Accel-Buffering", "no");
 
         const auto keepAlive = std::chrono::milliseconds(options.keepAliveIntervalMs);
-        auto self = this;
+        auto* self = this;
 
         response.set_chunked_content_provider(
             "text/event-stream",
@@ -793,7 +804,7 @@ struct RemoteMcpServer::Impl {
     // Era selection
     // -----------------------------------------------------------------------
 
-    McpError unsupportedVersion(const juce::String& requested) const {
+    static McpError unsupportedVersion(const juce::String& requested) {
         juce::Array<juce::var> supported;
         for (const auto& version : mcpProtocolVersions())
             supported.add(version);
@@ -826,7 +837,7 @@ struct RemoteMcpServer::Impl {
      * Refusing would break every conforming host that simply does not send it.
      */
     static juce::String modernClientName(const juce::var& params) {
-        const auto meta = params["_meta"];
+        const auto& meta = params["_meta"];
         if (meta.getDynamicObject() == nullptr)
             return normaliseClientName({});
         return normaliseClientName(meta[MCP_META_CLIENT_INFO]["name"].toString());
@@ -843,7 +854,7 @@ struct RemoteMcpServer::Impl {
      */
     std::optional<McpError> resolveEra(const httplib::Request& request, const juce::String& method,
                                        const juce::var& params, Resolution& resolution) {
-        const auto meta = params["_meta"];
+        const auto& meta = params["_meta"];
         const auto declared = meta.getDynamicObject() != nullptr
                                   ? meta[MCP_META_PROTOCOL_VERSION].toString()
                                   : juce::String();
@@ -920,9 +931,10 @@ struct RemoteMcpServer::Impl {
      * two components acting on two different requests. Rejecting the
      * disagreement is what keeps that from being exploitable.
      */
-    std::optional<McpError> validateHeaders(const httplib::Request& request,
-                                            const juce::String& method, const juce::var& params,
-                                            const juce::String& version) const {
+    static std::optional<McpError> validateHeaders(const httplib::Request& request,
+                                                   const juce::String& method,
+                                                   const juce::var& params,
+                                                   const juce::String& version) {
         const auto mismatch = [](const juce::String& message) {
             return McpError{MCP_HEADER_MISMATCH, message, {}, httplib::StatusCode::BadRequest_400};
         };
@@ -970,7 +982,7 @@ struct RemoteMcpServer::Impl {
     /// The `_meta` fields a modern request must carry. `clientInfo` is optional
     /// and, being self-reported, is never read for anything but logging.
     static std::optional<McpError> validateModernMeta(const juce::var& params) {
-        const auto meta = params["_meta"];
+        const auto& meta = params["_meta"];
         if (meta[MCP_META_CLIENT_CAPABILITIES].getDynamicObject() == nullptr) {
             return McpError{MCP_INVALID_PARAMS,
                             juce::String(MCP_META_CLIENT_CAPABILITIES) +
@@ -996,33 +1008,29 @@ struct RemoteMcpServer::Impl {
     };
 
     bool registerWaiter(const std::shared_ptr<Waiter>& waiter) {
-        const std::lock_guard<std::mutex> lock(waiterMutex);
+        const std::scoped_lock lock(waiterMutex);
         // Synchronises with cancelWaiters(): a handler that reaches this point
         // after stop() has already swept the list must not add an unwakeable
         // waiter behind that sweep.
         if (!running.load())
             return false;
-        waiters.erase(std::remove_if(waiters.begin(), waiters.end(),
-                                     [](const auto& weak) { return weak.expired(); }),
-                      waiters.end());
+        std::erase_if(waiters, [](const auto& weak) { return weak.expired(); });
         waiters.push_back(waiter);
         return true;
     }
 
     void unregisterWaiter(const std::shared_ptr<Waiter>& waiter) {
-        const std::lock_guard<std::mutex> lock(waiterMutex);
-        waiters.erase(std::remove_if(waiters.begin(), waiters.end(),
-                                     [&](const auto& weak) {
-                                         const auto live = weak.lock();
-                                         return live == nullptr || live == waiter;
-                                     }),
-                      waiters.end());
+        const std::scoped_lock lock(waiterMutex);
+        std::erase_if(waiters, [&](const auto& weak) {
+            const auto live = weak.lock();
+            return live == nullptr || live == waiter;
+        });
     }
 
     void cancelWaiters() {
         std::vector<std::shared_ptr<Waiter>> live;
         {
-            const std::lock_guard<std::mutex> lock(waiterMutex);
+            const std::scoped_lock lock(waiterMutex);
             for (const auto& weak : waiters)
                 if (auto waiter = weak.lock())
                     live.push_back(std::move(waiter));
@@ -1030,7 +1038,7 @@ struct RemoteMcpServer::Impl {
         }
         for (const auto& waiter : live) {
             {
-                const std::lock_guard<std::mutex> lock(waiter->mutex);
+                const std::scoped_lock lock(waiter->mutex);
                 if (waiter->done)
                     continue;
                 waiter->reply =
@@ -1062,7 +1070,7 @@ struct RemoteMcpServer::Impl {
         }
         endpoint.handle(call, [waiter](McpReply reply) {
             {
-                const std::lock_guard<std::mutex> lock(waiter->mutex);
+                const std::scoped_lock lock(waiter->mutex);
                 if (waiter->done)
                     return;
                 waiter->reply = std::move(reply);
@@ -1122,7 +1130,7 @@ struct RemoteMcpServer::Impl {
         }
 
         const auto filter = endpoint.parseListenFilter(call.params);
-        auto stream = claimStream(id, call.clientName);
+        auto stream = claimStream(id, call.clientName, call.clientId);
         if (stream == nullptr) {
             writeJson(response, httplib::StatusCode::ServiceUnavailable_503,
                       jsonRpcError(id, McpError{MCP_INTERNAL_ERROR,
@@ -1170,7 +1178,7 @@ struct RemoteMcpServer::Impl {
 
         std::shared_ptr<EventStream> stream;
         {
-            const std::lock_guard<std::mutex> lock(sessionMutex);
+            const std::scoped_lock lock(sessionMutex);
             const auto it = sessions.find(call.idempotencyScope.toStdString());
             if (it == sessions.end()) {
                 writeJson(response, httplib::StatusCode::NotFound_404,
@@ -1182,7 +1190,7 @@ struct RemoteMcpServer::Impl {
             }
 
             auto& uris = it->second.subscribedUris;
-            const auto existing = std::find(uris.begin(), uris.end(), uri);
+            const auto existing = std::ranges::find(uris, uri);
             if (subscribe) {
                 if (existing == uris.end())
                     uris.push_back(uri);
@@ -1403,14 +1411,14 @@ struct RemoteMcpServer::Impl {
             return;
         }
 
-        auto stream = claimStream({}, session->clientName);
+        auto stream = claimStream({}, session->clientName, handleForSession(sessionId));
         if (stream == nullptr) {
             response.status = httplib::StatusCode::ServiceUnavailable_503;
             return;
         }
 
         {
-            const std::lock_guard<std::mutex> lock(sessionMutex);
+            const std::scoped_lock lock(sessionMutex);
             const auto it = sessions.find(sessionId.toStdString());
             if (it == sessions.end()) {
                 releaseStream(stream);
@@ -1458,7 +1466,13 @@ RemoteMcpServer::RemoteMcpServer(RemoteApiService& service, Options options,
     : impl_(std::make_unique<Impl>(service, std::move(options), subscriptions)) {}
 
 RemoteMcpServer::~RemoteMcpServer() {
-    stop();
+    try {
+        stop();
+    } catch (const std::exception& e) {
+        juce::Logger::writeToLog(juce::String("[RemoteMcpServer] ") + e.what());
+    } catch (...) {
+        juce::Logger::writeToLog("[RemoteMcpServer] unknown exception during teardown");
+    }
 }
 
 const char* RemoteMcpServer::endpointPath() {
@@ -1470,12 +1484,12 @@ const McpEndpoint& RemoteMcpServer::endpoint() const {
 }
 
 int RemoteMcpServer::streamCount() const {
-    const std::lock_guard<std::mutex> lock(impl_->streamMutex);
+    const std::scoped_lock lock(impl_->streamMutex);
     return static_cast<int>(impl_->streams.size());
 }
 
 int RemoteMcpServer::sessionCount() const {
-    const std::lock_guard<std::mutex> lock(impl_->sessionMutex);
+    const std::scoped_lock lock(impl_->sessionMutex);
     return static_cast<int>(impl_->sessions.size());
 }
 
@@ -1508,8 +1522,8 @@ bool RemoteMcpServer::start() {
     // its whole lifetime — so with cpp-httplib's default pool, enough
     // subscribers would leave nothing to answer requests with and the endpoint
     // would stall while still accepting connections.
-    const auto poolSize = static_cast<std::size_t>(impl_->options.maxStreams +
-                                                   impl_->options.maxConcurrentRequests + 2);
+    const auto poolSize = static_cast<std::size_t>(impl_->options.maxStreams) +
+                          impl_->options.maxConcurrentRequests + 2;
     impl_->server.new_task_queue = [poolSize] { return new httplib::ThreadPool(poolSize); };
 
     impl_->server.Post(kEndpoint,
@@ -1566,48 +1580,55 @@ void RemoteMcpServer::stop() {
     if (!impl_->running.exchange(false))
         return;
 
-    // First, so nothing can route a disconnect into a server that is tearing
-    // its streams and sessions down.
-    if (impl_->options.clients != nullptr)
-        impl_->options.clients->setDisconnectHandler(TRANSPORT_MCP, nullptr);
+    try {
+        // First, so nothing can route a disconnect into a server that is tearing
+        // its streams and sessions down.
+        if (impl_->options.clients != nullptr)
+            impl_->options.clients->setDisconnectHandler(TRANSPORT_MCP, nullptr);
 
-    // Requests already dispatched may be waiting for a completion posted to
-    // this same message thread. Wake their pool threads before joining them.
-    impl_->cancelWaiters();
+        // Requests already dispatched may be waiting for a completion posted to
+        // this same message thread. Wake their pool threads before joining them.
+        impl_->cancelWaiters();
 
-    // Streams first. Each is a pool thread parked in its content provider, and
-    // closing the outbox is what wakes it — `server.stop()` alone would leave
-    // them waiting on a condition variable nobody was going to notify.
-    std::vector<std::shared_ptr<EventStream>> live;
-    {
-        const std::lock_guard<std::mutex> lock(impl_->streamMutex);
-        live = impl_->streams;
-    }
-    // `releaseStream` deregisters each from the client registry, so the
-    // settings list empties as the streams close rather than keeping rows for
-    // connections that no longer exist.
-    for (const auto& stream : live)
-        impl_->releaseStream(stream);
-
-    {
-        std::vector<juce::String> closed;
+        // Streams first. Each is a pool thread parked in its content provider, and
+        // closing the outbox is what wakes it — `server.stop()` alone would leave
+        // them waiting on a condition variable nobody was going to notify.
+        std::vector<std::shared_ptr<EventStream>> live;
         {
-            const std::lock_guard<std::mutex> lock(impl_->sessionMutex);
-            closed.reserve(impl_->sessions.size());
-            for (const auto& [key, session] : impl_->sessions)
-                closed.push_back(session.id);
-            impl_->sessions.clear();
+            const std::scoped_lock lock(impl_->streamMutex);
+            live = impl_->streams;
         }
-        impl_->noteSessionsClosed(closed);
+        // `releaseStream` deregisters each from the client registry, so the
+        // settings list empties as the streams close rather than keeping rows for
+        // connections that no longer exist.
+        for (const auto& stream : live)
+            impl_->releaseStream(stream);
+
+        {
+            std::vector<juce::String> closed;
+            {
+                const std::scoped_lock lock(impl_->sessionMutex);
+                closed.reserve(impl_->sessions.size());
+                for (const auto& [key, session] : impl_->sessions)
+                    closed.push_back(session.id);
+                impl_->sessions.clear();
+            }
+            impl_->noteSessionsClosed(closed);
+        }
+
+        impl_->server.stop();
+    } catch (const std::exception& e) {
+        juce::Logger::writeToLog(juce::String("[RemoteMcpServer::stop] ") + e.what());
+    } catch (...) {
+        juce::Logger::writeToLog("[RemoteMcpServer::stop] unknown exception");
     }
 
-    impl_->server.stop();
-
+    // Must run even if teardown above threw: a still-joinable std::thread
+    // calls std::terminate from its own destructor, unconditionally.
     if (impl_->listener.joinable())
         impl_->listener.join();
 
     impl_->port.store(0);
 }
 
-}  // namespace remote
-}  // namespace magda
+}  // namespace magda::remote

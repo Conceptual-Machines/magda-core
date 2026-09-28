@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "project": "session-launcher.mgd",
+  "cluster": "session launcher and follow actions",
+  "range": { "startBeat": 0, "endBeat": 24 },
+  "requires": { "plugins": [], "hardware": [] },
+  "scenario": [
+    { "beat": 0, "call": "session.launchScene", "input": { "sceneIndex": 0 } }
+  ],
+  "tracks": [
+    { "name": "Bass", "sound": true, "peakDb": { "min": -48, "max": 0 } },
+    { "name": "Drums", "sound": true, "peakDb": { "min": -48, "max": 0 } },
+    { "name": "Keys", "sound": true, "peakDb": { "min": -48, "max": 0 } }
+  ],
+  "listen": "Scene 1 (bass and kick) plays twice, then every track follows on to scene 2 (bass and G chord) on the bar line with no gap, and the kick stops."
+}

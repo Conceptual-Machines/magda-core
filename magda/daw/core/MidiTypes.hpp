@@ -2,6 +2,8 @@
 
 #include <juce_core/juce_core.h>
 
+#include <utility>
+
 namespace magda {
 
 /**
@@ -46,9 +48,12 @@ struct MidiDeviceInfo {
 
     MidiDeviceInfo() = default;
 
-    MidiDeviceInfo(const juce::String& deviceId, const juce::String& deviceName,
-                   bool enabled = false, bool available = true)
-        : id(deviceId), name(deviceName), isEnabled(enabled), isAvailable(available) {}
+    MidiDeviceInfo(juce::String deviceId, juce::String deviceName, bool enabled = false,
+                   bool available = true)
+        : id(std::move(deviceId)),
+          name(std::move(deviceName)),
+          isEnabled(enabled),
+          isAvailable(available) {}
 };
 
 }  // namespace magda

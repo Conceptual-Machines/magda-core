@@ -6,11 +6,10 @@
 #include <cmath>
 #include <memory>
 
-#include "../audio/AudioBridge.hpp"
-#include "../audio/DeviceMeteringManager.hpp"
+#include "../audio/DeviceMeters.hpp"
 #include "../engine/AudioEngine.hpp"
+#include "ChainWalk.hpp"
 #include "DeviceInfo.hpp"
-#include "RackInfo.hpp"
 #include "TrackInfo.hpp"
 #include "TrackManager.hpp"
 #include "UndoManager.hpp"
@@ -21,18 +20,6 @@ namespace {
 
 float linearToDb(float linear) {
     return juce::Decibels::gainToDecibels(linear, kGainStageSilenceDb);
-}
-
-void collectChainDeviceIds(const std::vector<ChainElement>& elements, std::vector<DeviceId>& out) {
-    for (const auto& element : elements) {
-        if (isDevice(element)) {
-            out.push_back(getDevice(element).id);
-        } else if (isRack(element)) {
-            const auto& rack = getRack(element);
-            for (const auto& chain : rack.chains)
-                collectChainDeviceIds(chain.elements, out);
-        }
-    }
 }
 
 struct CascadeSuggestion {
@@ -124,8 +111,9 @@ void GainStagingManager::startCollection(TrackId trackId) {
     activeTrackId_ = trackId;
     buildStagedDeviceList(trackId);
 
-    juce::Logger::writeToLog("[GainStaging] start pass on track " + juce::String((int)trackId) +
-                             ": " + juce::String((int)staged_.size()) + " devices, target " +
+    juce::Logger::writeToLog("[GainStaging] start pass on track " +
+                             juce::String(static_cast<int>(trackId)) + ": " +
+                             juce::String(static_cast<int>(staged_.size())) + " devices, target " +
                              juce::String(targetDb_, 1) + " dBFS");
 
     // A fresh pass on these devices supersedes any prior marks on them.
@@ -365,14 +353,18 @@ void GainStagingManager::buildStagedDeviceList(TrackId trackId) {
     if (track == nullptr)
         return;
 
-    // Main FX chain (device/rack tree) in signal order.
-    std::vector<DeviceId> fxIds;
-    collectChainDeviceIds(track->chain.fxChainElements, fxIds);
-    for (auto deviceId : fxIds) {
-        auto path = tm.findDevicePath(deviceId);
-        if (path.isValid())
-            staged_.push_back({deviceId, path});
-    }
+    // Main FX chain (device/rack tree) in signal order. Pads skipped: gain
+    // staging works on a track's chain, and a pad's level is the grid's
+    // business rather than a stage in the cascade (#2204).
+    //
+    // The walk hands back the address it built, so there is no findDevicePath()
+    // search per device to undo the descent that just passed the device.
+    chain_walk::forEachDevice(track->chain.fxChainElements, ChainNodePath::trackLevel(trackId),
+                              chain_walk::Pads::Skip,
+                              [this](const DeviceInfo& device, const ChainNodePath& path) {
+                                  if (path.isValid())
+                                      staged_.push_back({device.id, path});
+                              });
 
     // Post-FX stage (flat, devices only).
     for (const auto& element : track->chain.postFxChainElements) {
@@ -389,20 +381,18 @@ void GainStagingManager::buildStagedDeviceList(TrackId trackId) {
 }
 
 bool GainStagingManager::readDevicePeakLinear(const ChainNodePath& devicePath,
-                                              float& peakLinearOut) const {
+                                              float& peakLinearOut) {
     auto* engine = TrackManager::getInstance().getAudioEngine();
     if (engine == nullptr)
         return false;
 
-    auto* bridge = engine->getAudioBridge();
-    if (bridge == nullptr)
+    // The engine's own meters, since the fork's bridge is null under the
+    // native engine (#2570).
+    DeviceMeters::Levels levels;
+    if (!engine->deviceMeters().devicePeak(devicePath, levels))
         return false;
 
-    DeviceMeteringManager::DeviceMeterData data;
-    if (!bridge->getDeviceMetering().getLatestLevels(devicePath, data))
-        return false;
-
-    peakLinearOut = std::max(data.peakL, data.peakR);
+    peakLinearOut = std::max(levels.peakL, levels.peakR);
     return true;
 }
 

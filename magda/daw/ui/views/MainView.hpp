@@ -23,6 +23,7 @@ namespace magda {
 
 // Forward declaration
 class AudioEngine;
+struct ProjectInfo;
 class SongNavigatorPanel;
 class MasterAutomationHeaderPanel;
 class MasterAutomationContentPanel;
@@ -45,6 +46,7 @@ class MainView : public juce::Component,
     // Zoom and scroll controls
     void setHorizontalZoom(double zoomFactor);
     void setVerticalZoom(double zoomFactor);
+    void applyInitialZoomForProject(const ProjectInfo& info);
     void scrollToPosition(double timePosition);
     void scrollToTrack(int trackIndex);
 
@@ -418,7 +420,7 @@ class MainView::MasterHeaderPanel : public juce::Component,
 
     // TrackManagerListener
     void tracksChanged() override {}
-    void masterChannelChanged() override;
+    void masterChannelChanged() final;
 
     // AutomationManagerListener
     void automationLanesChanged() override;
@@ -430,7 +432,7 @@ class MainView::MasterHeaderPanel : public juce::Component,
   private:
     // Opens the master automation menu (mirrors the per-track automation
     // button). Shared by the icon button and the header right-click.
-    void showMasterAutomationMenu(juce::Component* anchor);
+    static void showMasterAutomationMenu(juce::Component* anchor);
 
     std::unique_ptr<SvgButton> speakerButton;          // Speaker on/off toggle
     std::unique_ptr<SvgButton> automationButton;       // Show master automation lane
@@ -471,6 +473,7 @@ class MainView::AuxHeadersPanel : public juce::Component, public TrackManagerLis
 
     // TrackManagerListener
     void tracksChanged() override;
+    void trackPropertyChanged(int trackId) override;
 
     // Metering
     void updateMetering(AudioEngine* engine);
@@ -488,6 +491,7 @@ class MainView::AuxHeadersPanel : public juce::Component, public TrackManagerLis
         std::unique_ptr<DraggableValueLabel> panLabel;
         std::unique_ptr<juce::TextButton> muteButton;
         std::unique_ptr<juce::TextButton> soloButton;
+        std::unique_ptr<LevelMeter> peakMeter;
     };
 
     std::vector<std::unique_ptr<AuxRow>> auxRows_;

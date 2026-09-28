@@ -1,6 +1,7 @@
 #include "AutomationCommands.hpp"
 
 #include <algorithm>
+#include <ranges>
 
 #include "LinkModeManager.hpp"
 #include "TrackManager.hpp"
@@ -13,36 +14,33 @@ bool pointIsInDuplicateRange(double beatPosition, double startBeat, double endBe
     return beatPosition >= startBeat - epsilon && beatPosition <= endBeat + epsilon;
 }
 
-}  // namespace
-
 // ============================================================================
 // Helper: find a point in a lane or clip
 // ============================================================================
 
-static const AutomationPoint* findPointInLane(AutomationLaneId laneId, AutomationPointId pointId) {
+const AutomationPoint* findPointInLane(AutomationLaneId laneId, AutomationPointId pointId) {
     auto* lane = AutomationManager::getInstance().getLane(laneId);
     if (!lane)
         return nullptr;
-    for (const auto& p : lane->absolutePoints)
-        if (p.id == pointId)
-            return &p;
-    return nullptr;
+    const auto matchesPointId = [pointId](const AutomationPoint& p) { return p.id == pointId; };
+    const auto found = std::ranges::find_if(lane->absolutePoints, matchesPointId);
+    return found == lane->absolutePoints.end() ? nullptr : &(*found);
 }
 
-static const AutomationPoint* findPointInClip(AutomationClipId clipId, AutomationPointId pointId) {
+const AutomationPoint* findPointInClip(AutomationClipId clipId, AutomationPointId pointId) {
     auto* clip = AutomationManager::getInstance().getClip(clipId);
     if (!clip)
         return nullptr;
-    for (const auto& p : clip->points)
-        if (p.id == pointId)
-            return &p;
-    return nullptr;
+    const auto matchesPointId = [pointId](const AutomationPoint& p) { return p.id == pointId; };
+    const auto found = std::ranges::find_if(clip->points, matchesPointId);
+    return found == clip->points.end() ? nullptr : &(*found);
 }
 
-static const AutomationPoint* findPoint(bool isClip, AutomationLaneId laneId,
-                                        AutomationClipId clipId, AutomationPointId pointId) {
+const AutomationPoint* findPoint(bool isClip, AutomationLaneId laneId, AutomationClipId clipId,
+                                 AutomationPointId pointId) {
     return isClip ? findPointInClip(clipId, pointId) : findPointInLane(laneId, pointId);
 }
+}  // namespace
 
 // ============================================================================
 // AddAutomationPointCommand
@@ -266,12 +264,11 @@ bool DuplicateAutomationTimeSelectionCommand::shouldDuplicateLane(
     if (lane.target.kind == ControlTarget::Kind::Tempo)
         return false;
     if (!laneIds_.empty()) {
-        return std::find(laneIds_.begin(), laneIds_.end(), lane.id) != laneIds_.end();
+        return std::ranges::find(laneIds_, lane.id) != laneIds_.end();
     }
     if (trackIds_.empty())
         return true;
-    return std::find(trackIds_.begin(), trackIds_.end(), lane.target.devicePath.trackId) !=
-           trackIds_.end();
+    return std::ranges::find(trackIds_, lane.target.devicePath.trackId) != trackIds_.end();
 }
 
 // ============================================================================
@@ -419,6 +416,35 @@ void DuplicateAutomationClipCommand::execute() {
 void DuplicateAutomationClipCommand::undo() {
     if (createdClipId_ != INVALID_AUTOMATION_CLIP_ID)
         AutomationManager::getInstance().deleteClip(createdClipId_);
+}
+
+void UpdateAutomationClipCommand::execute() {
+    if (!captured_)
+        return;
+
+    auto& manager = AutomationManager::getInstance();
+    if (applied_) {
+        manager.restoreClipState(desired_);
+        return;
+    }
+
+    AutomationManager::BatchScope batch;
+    manager.setClipName(clipId_, desired_.name);
+    manager.setClipColour(clipId_, desired_.colour);
+    manager.setClipLooping(clipId_, desired_.looping);
+    manager.setClipLoopLength(clipId_, desired_.loopLengthBeats);
+    if (replacePoints_)
+        manager.setClipPoints(clipId_, desired_.points);
+
+    if (const auto* updated = manager.getClip(clipId_)) {
+        desired_ = *updated;
+        applied_ = true;
+    }
+}
+
+void UpdateAutomationClipCommand::undo() {
+    if (applied_)
+        AutomationManager::getInstance().restoreClipState(original_);
 }
 
 // ============================================================================
@@ -639,16 +665,15 @@ bool DuplicateAutomationTimeSelectionCommand::canDuplicatePoints() const {
         return false;
 
     const auto& mgr = AutomationManager::getInstance();
-    for (const auto& lane : mgr.getLanes()) {
+    const auto laneHasPointInRange = [&](const AutomationLaneInfo& lane) {
         if (!shouldDuplicateLane(lane))
-            continue;
-
-        for (const auto& point : lane.absolutePoints) {
-            if (pointIsInDuplicateRange(point.beatPosition, startBeat_, endBeat_))
-                return true;
-        }
-    }
-    return false;
+            return false;
+        const auto inRange = [&](const AutomationPoint& point) {
+            return pointIsInDuplicateRange(point.beatPosition, startBeat_, endBeat_);
+        };
+        return std::ranges::any_of(lane.absolutePoints, inRange);
+    };
+    return std::ranges::any_of(mgr.getLanes(), laneHasPointInRange);
 }
 
 void DuplicateAutomationTimeSelectionCommand::execute() {
@@ -696,8 +721,8 @@ void DuplicateAutomationTimeSelectionCommand::undo() {
 
     auto& mgr = AutomationManager::getInstance();
     AutomationManager::BatchScope batch;
-    for (auto it = insertedPoints_.rbegin(); it != insertedPoints_.rend(); ++it) {
-        mgr.deletePoint(it->laneId, it->pointId);
+    for (auto& insertedPoint : std::views::reverse(insertedPoints_)) {
+        mgr.deletePoint(insertedPoint.laneId, insertedPoint.pointId);
     }
     insertedPoints_.clear();
 }
@@ -714,12 +739,11 @@ bool InsertTimeAutomationCommand::shouldShiftLane(const AutomationLaneInfo& lane
     if (lane.target.kind == ControlTarget::Kind::Tempo)
         return false;
     if (!laneIds_.empty()) {
-        return std::find(laneIds_.begin(), laneIds_.end(), lane.id) != laneIds_.end();
+        return std::ranges::find(laneIds_, lane.id) != laneIds_.end();
     }
     if (trackIds_.empty())
         return true;
-    return std::find(trackIds_.begin(), trackIds_.end(), lane.target.devicePath.trackId) !=
-           trackIds_.end();
+    return std::ranges::find(trackIds_, lane.target.devicePath.trackId) != trackIds_.end();
 }
 
 bool InsertTimeAutomationCommand::canShiftPoints() const {
@@ -728,15 +752,15 @@ bool InsertTimeAutomationCommand::canShiftPoints() const {
 
     constexpr double epsilon = 1.0e-9;
     const auto& mgr = AutomationManager::getInstance();
-    for (const auto& lane : mgr.getLanes()) {
+    const auto laneHasPointToShift = [&](const AutomationLaneInfo& lane) {
         if (!shouldShiftLane(lane))
-            continue;
-        for (const auto& point : lane.absolutePoints) {
-            if (point.beatPosition >= insertBeat_ - epsilon)
-                return true;
-        }
-    }
-    return false;
+            return false;
+        const auto afterInsertBeat = [&](const AutomationPoint& point) {
+            return point.beatPosition >= insertBeat_ - epsilon;
+        };
+        return std::ranges::any_of(lane.absolutePoints, afterInsertBeat);
+    };
+    return std::ranges::any_of(mgr.getLanes(), laneHasPointToShift);
 }
 
 void InsertTimeAutomationCommand::execute() {
@@ -778,8 +802,9 @@ void InsertTimeAutomationCommand::undo() {
     auto& mgr = AutomationManager::getInstance();
     AutomationManager::BatchScope batch;
     // Move leftmost first so each original beat is empty as we restore it.
-    for (auto it = shiftedPoints_.rbegin(); it != shiftedPoints_.rend(); ++it) {
-        mgr.movePoint(it->laneId, it->pointId, it->oldBeat, it->value);
+    for (auto& shiftedPoint : std::views::reverse(shiftedPoints_)) {
+        mgr.movePoint(shiftedPoint.laneId, shiftedPoint.pointId, shiftedPoint.oldBeat,
+                      shiftedPoint.value);
     }
     shiftedPoints_.clear();
 }

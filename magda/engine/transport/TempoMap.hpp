@@ -128,6 +128,18 @@ class TempoMap {
     BarsAndBeats barsAndBeatsAt(double beat) const;
 
     /**
+     * @brief Where the signature at @p beat gives way to the next, or infinity.
+     *
+     * A modifier that runs in bars has to know how far its own bar length
+     * carries before the map cuts it short: a bar is a different number of
+     * beats on the far side of a change, so a stretch that crosses one is a
+     * sum over two grids rather than one division (ModLfo.hpp's
+     * modBarsElapsed). The metronome already needed this per section
+     * (Section::signatureEndBeat); this is the same number, public.
+     */
+    double signatureEndAfter(double beat) const;
+
+    /**
      * @brief The first metronome tick at or after @p beat.
      *
      * A beat sitting exactly on a tick is that tick, so a block starting on the

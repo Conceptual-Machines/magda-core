@@ -193,7 +193,7 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
     auto safeAnchor = juce::Component::SafePointer<juce::Component>(anchor);
     auto paramIdx = ctx.paramIndex;
     auto devicePath = ctx.devicePath;
-    auto cbs = callbacks;
+    const auto& cbs = callbacks;
 
     menu.showMenuAsync(juce::PopupMenu::Options(), [safeAnchor, paramIdx, devicePath, cbs,
                                                     bakeable](int result) {

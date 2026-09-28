@@ -1,6 +1,8 @@
 #include "ThemeSerialization.hpp"
 
+#include <algorithm>
 #include <array>
+#include <iterator>
 
 namespace magda {
 
@@ -9,7 +11,7 @@ namespace {
 // Canonical camelCase names, one per ColourRole, IN ENUM ORDER. The static
 // assert below guarantees the count matches; the ordering must track the
 // enum exactly (same positional contract as the palette arrays in
-// DarkTheme.cpp).
+// ActiveTheme.cpp).
 constexpr std::array<const char*, static_cast<std::size_t>(ColourRole::count)> kColourRoleNames{{
     "e0",
     "e1",
@@ -200,20 +202,23 @@ std::optional<ColourRole> findColourRole(const juce::String& key) {
     const auto norm = normalizeKey(key);
     if (norm.isEmpty())
         return std::nullopt;
-    for (std::size_t i = 0; i < kColourRoleNames.size(); ++i)
-        if (normalizeKey(kColourRoleNames[i]) == norm)
-            return static_cast<ColourRole>(i);
-    return std::nullopt;
+    const auto matchesKey = [&norm](const auto& name) { return normalizeKey(name) == norm; };
+    const auto match = std::ranges::find_if(kColourRoleNames, matchesKey);
+    if (match == kColourRoleNames.end())
+        return std::nullopt;
+    return static_cast<ColourRole>(std::ranges::distance(kColourRoleNames.begin(), match));
 }
 
 std::optional<SyntaxColourRole> findSyntaxColourRole(const juce::String& key) {
     const auto norm = normalizeKey(key);
     if (norm.isEmpty())
         return std::nullopt;
-    for (std::size_t i = 0; i < kSyntaxColourRoleNames.size(); ++i)
-        if (normalizeKey(kSyntaxColourRoleNames[i]) == norm)
-            return static_cast<SyntaxColourRole>(i);
-    return std::nullopt;
+    const auto matchesKey = [&norm](const auto& name) { return normalizeKey(name) == norm; };
+    const auto match = std::ranges::find_if(kSyntaxColourRoleNames, matchesKey);
+    if (match == kSyntaxColourRoleNames.end())
+        return std::nullopt;
+    return static_cast<SyntaxColourRole>(
+        std::ranges::distance(kSyntaxColourRoleNames.begin(), match));
 }
 
 std::optional<juce::Colour> parseColourString(const juce::String& text) {

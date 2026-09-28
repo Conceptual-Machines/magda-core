@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <functional>
@@ -5,10 +6,17 @@
 
 #include "NullDiffCase.hpp"
 #include "NullDiffGain.hpp"
+#include "NullDiffHostedPlugin.hpp"
 #include "NullDiffMaterial.hpp"
+#include "core/ChainWalk.hpp"
 #include "core/DeviceInfo.hpp"
+#include "core/DeviceState.hpp"
 #include "core/SourcePool.hpp"
 #include "core/TimeStretchModes.hpp"
+#include "magda/daw/audio/plugins/FaustInstrumentPlugin.hpp"
+#include "magda/daw/audio/plugins/MagdaSamplerPlugin.hpp"
+#include "magda/daw/audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
+#include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
 
 /**
  * The corpus itself (#2040): every case, as model values.
@@ -35,6 +43,8 @@
  * the case would be asserting that the engine reproduces a bug.
  */
 
+namespace adapter = ::magda::daw::audio::engine_adapter;
+
 namespace magda::nulldiff {
 
 const char* const kGrooveName = "null-diff swing";
@@ -56,7 +66,7 @@ constexpr double kSourceSeconds = 12.0;
 TrackInfo plainTrack() {
     TrackInfo track;
     track.id = kTrack;
-    track.type = TrackType::Audio;
+    track.type = TrackType::Media;
     track.name = "Null Diff";
     track.audioOutputDevice = "master";
     return track;
@@ -70,7 +80,7 @@ TrackInfo plainTrack() {
 TrackInfo instrumentTrackOn(TrackId trackId, DeviceId deviceId, const char* name) {
     TrackInfo track;
     track.id = trackId;
-    track.type = TrackType::Audio;
+    track.type = TrackType::Media;
     track.name = name;
     track.audioOutputDevice = "master";
 
@@ -160,10 +170,46 @@ TrackInfo masterTrack() {
 TrackInfo mixTrack(TrackId id, const char* name) {
     TrackInfo track;
     track.id = id;
-    track.type = TrackType::Audio;
+    track.type = TrackType::Media;
     track.name = name;
     track.audioOutputDevice = "master";
     return track;
+}
+
+/// The return side of a send: an ordinary track carrying no clips, whose
+/// `auxBusIndex` is what makes the incumbent give it an AuxReturnPlugin and what
+/// an older project's send names its destination by.
+///
+/// `TrackType::Aux` alongside it because that is what the app stores, and for no
+/// other reason: neither engine reads the type here, the incumbent builds the
+/// same te::AudioTrack for it as for any other, and the plan routes it off
+/// `audioOutputDevice` like the rest. Written the way a project writes it so the
+/// case is a project rather than the subset of one the two legs happen to read.
+TrackInfo auxTrack(TrackId trackId, const char* name, int busIndex) {
+    TrackInfo track;
+    track.id = trackId;
+    track.type = TrackType::Aux;
+    track.name = name;
+    track.audioOutputDevice = "master";
+    track.auxBusIndex = busIndex;
+    return track;
+}
+
+/// A send from a track to @p destination, at @p level, tapped either side of the
+/// fader.
+///
+/// Both the bus index and the destination id are set, because the two engines
+/// read different ones: the incumbent matches an AuxSendPlugin's bus number
+/// against an AuxReturnPlugin's, and the plan resolves `destTrackId` and only
+/// falls back to the bus when a project predates the field. A case that set one
+/// would be handing one leg a send and the other nothing.
+SendInfo sendTo(TrackId destination, int busIndex, float level, bool preFader) {
+    SendInfo send;
+    send.busIndex = busIndex;
+    send.destTrackId = destination;
+    send.level = level;
+    send.preFader = preFader;
+    return send;
 }
 
 /// A track carrying one gain device, the only device either engine really runs
@@ -172,10 +218,54 @@ TrackInfo mixTrack(TrackId id, const char* name) {
 TrackInfo gainTrackOn(TrackId trackId, DeviceId deviceId, const char* name, float base) {
     TrackInfo track;
     track.id = trackId;
-    track.type = TrackType::Audio;
+    track.type = TrackType::Media;
     track.name = name;
     track.audioOutputDevice = "master";
     track.chain.fxChainElements.emplace_back(gainDevice(deviceId, base));
+    return track;
+}
+
+// --- racks -------------------------------------------------------------------
+//
+// A rack is the one structure in the chain that is not a list: parallel chains
+// over one input, each with its own fader and its own switches, summed at a
+// rack output that has a second fader with a different law behind it. Every
+// piece of that is built here out of the same gain device the parameter cases
+// run, so what a rack case measures is the topology rather than a new device.
+
+/// A rack chain holding gain devices in the order and at the values given.
+ChainInfo gainChain(ChainId id, const char* name,
+                    const std::vector<std::pair<DeviceId, float>>& gains) {
+    ChainInfo chain;
+    chain.id = id;
+    chain.name = name;
+    for (const auto& [deviceId, base] : gains)
+        chain.elements.emplace_back(gainDevice(deviceId, base));
+    return chain;
+}
+
+/// One gain device in a chain of its own, which is the common shape.
+ChainInfo gainChain(ChainId id, const char* name, DeviceId deviceId, float base) {
+    return gainChain(id, name, {{deviceId, base}});
+}
+
+/// A rack over the chains given, at unity and centred.
+RackInfo rackOf(RackId id, const char* name, std::vector<ChainInfo> chains) {
+    RackInfo rack;
+    rack.id = id;
+    rack.name = name;
+    rack.chains = std::move(chains);
+    return rack;
+}
+
+/// A track whose FX chain is that one rack.
+TrackInfo rackTrack(TrackId trackId, const char* name, RackInfo rack) {
+    TrackInfo track;
+    track.id = trackId;
+    track.type = TrackType::Media;
+    track.name = name;
+    track.audioOutputDevice = "master";
+    track.chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
     return track;
 }
 
@@ -247,6 +337,45 @@ ModInfo squareLfo(ModId id, const ControlTarget& target, float amount, bool temp
     mod.tempoSync = tempoSynced;
     mod.syncDivision = SyncDivision::Whole;
     mod.triggerMode = LFOTriggerMode::Transport;
+
+    ModLink link;
+    link.target = target;
+    link.amount = amount;
+    link.bipolar = false;
+    link.enabled = true;
+    mod.links.push_back(link);
+
+    return mod;
+}
+
+/// An envelope follower over whatever its scope listens to, driving @p target.
+///
+/// Its times are the shortest the two engines both honour rather than the
+/// model's defaults, and that is the case's design rather than a preference.
+/// The detector reduces a block to one peak in both engines, so a follower's
+/// output is a function of the block grid wherever the source's amplitude is
+/// moving -- which the block-size gate would report as the engine failing to be
+/// a function of timeline position (#2078), and it would be right. A millisecond
+/// either side settles the envelope inside a block at every size the gate
+/// renders at, so the only grid-dependent stretch is the one at the very start,
+/// and the case's material is silent there.
+///
+/// The input gain is not a default either. It is the one stage both engines
+/// place by hand: TE's own gain is held at unity and the decibels are applied
+/// source-side, before the band limits and before detection, because a level
+/// that has been detected has no frequency content left to filter
+/// (ModFollower.hpp, applyFollowerProperties). A follower at 0 dB would render
+/// the same whether either engine had done that or not.
+ModInfo envelopeFollower(ModId id, const ControlTarget& target, float amount, float gainDb) {
+    ModInfo mod;
+    mod.id = id;
+    mod.name = "Follower " + juce::String(static_cast<int>(id) + 1);
+    mod.type = ModType::Follower;
+    mod.enabled = true;
+    mod.followerGainDb = gainDb;
+    mod.followerAttackMs = 1.0f;
+    mod.followerHoldMs = 0.0f;
+    mod.followerReleaseMs = 1.0f;
 
     ModLink link;
     link.target = target;
@@ -365,7 +494,6 @@ ClipInfo audioClipOn(TrackId trackId, ClipId id, double startBeat, double length
     clip.audio().addEvent(std::move(event));
 
     clip.setPlacementBeats(startBeat, lengthBeats);
-    clip.deriveTimesFromBeats(kBpm);
     return clip;
 }
 
@@ -385,12 +513,31 @@ ClipInfo midiClipOn(TrackId trackId, ClipId id, double startBeat, double lengthB
     clip.view = ClipView::Arrangement;
     clip.setMidiContent();
     clip.setPlacementBeats(startBeat, lengthBeats);
-    clip.deriveTimesFromBeats(kBpm);
     return clip;
 }
 
 ClipInfo midiClip(ClipId id, double startBeat, double lengthBeats) {
     return midiClipOn(kTrack, id, startBeat, lengthBeats);
+}
+
+/// The same clip, in a slot rather than on the timeline (#2441).
+///
+/// A slot has no beat: the compiler normalises the placement away and compiles
+/// it from the origin, and the fork's ClipOwner sets a slot clip's start to zero
+/// when it is inserted. What survives is the length, the scene, and everything
+/// the clip itself is made of.
+ClipInfo inSlot(ClipInfo clip, int sceneIndex) {
+    clip.view = ClipView::Session;
+    clip.sceneIndex = sceneIndex;
+    return clip;
+}
+
+/// @p track, with its session in front of its arrangement. The model's
+/// TrackPlaybackMode, which the incumbent syncs to the fork's playSlotClips and
+/// the engine expresses as the section hold a launched handle takes (#2302).
+TrackInfo launching(TrackInfo track) {
+    track.playbackMode = TrackPlaybackMode::Session;
+    return track;
 }
 
 MidiNote note(int pitch, double startBeat, double lengthBeats, int velocity = 100) {
@@ -444,6 +591,19 @@ Case newParamCase(const char* name, const char* covers, TrackInfo track) {
     return value;
 }
 
+/// A `rack.*` case: one track carrying one rack, two bars.
+///
+/// Two bars for the reason the mixer and parameter cases are: what a rack case
+/// asserts is a constant, and the invariance gate renders every case four more
+/// times (#2078).
+Case newRackCase(const char* name, const char* covers, TrackInfo track) {
+    std::vector<TrackInfo> tracks;
+    tracks.push_back(std::move(track));
+    auto value = newTrackCase(name, covers, std::move(tracks));
+    value.endBeat = 8.0;
+    return value;
+}
+
 Case newCase(const char* name, const char* covers, TrackInfo track) {
     std::vector<TrackInfo> tracks;
     tracks.push_back(std::move(track));
@@ -467,6 +627,187 @@ void expectsPrimingShift(Case& value) {
 }
 
 }  // namespace
+
+/// A runtime Faust instrument carrying @p source, as a project would save it.
+/// Spelled out rather than left at the device's default, which imports
+/// stdfaust.lib and cannot compile in this target (#2238).
+magda::DeviceInfo faustInstrumentDevice(magda::DeviceId id, const char* source) {
+    magda::DeviceInfo device;
+    device.id = id;
+    device.name = "Faust Instrument";
+    device.pluginId = magda::daw::audio::FaustInstrumentPlugin::xmlTypeName;
+    device.deviceType = magda::DeviceType::Instrument;
+    device.isInstrument = true;
+    device.canReceiveMidi = true;
+    device.format = magda::PluginFormat::Internal;
+    device.audioInputChannels = 0;
+    device.audioOutputChannels = 2;
+
+    // As saved device state, which is the path a project takes on both legs.
+    magda::device_state::Doc doc;
+    doc.deviceType = device.pluginId;
+    doc.root.props.set("dspName", "Null Diff Faust Synth");
+    doc.root.props.set("dspSource", source);
+    device.pluginState = magda::device_state::encode(doc);
+
+    return device;
+}
+
+/// The sampler's shortest envelope stage. Its attack, decay and release ranges
+/// all start here, and the case wants every one of them as close to a gate as
+/// the device allows.
+constexpr float kSamplerEnvelopeSeconds = 0.001f;
+
+/// A sampler pointed at @p sampleFile, as a project would save it (#2271).
+/// Root note 60 so a C4 plays the file back at its own rate: a wrong pitch
+/// ratio then shows up as a stretched staircase rather than as nothing.
+magda::DeviceInfo samplerDevice(magda::DeviceId id, const juce::File& sampleFile) {
+    magda::DeviceInfo device;
+    device.id = id;
+    device.name = "Sampler";
+    device.pluginId = magda::daw::audio::MagdaSamplerPlugin::xmlTypeName;
+    device.deviceType = magda::DeviceType::Instrument;
+    device.isInstrument = true;
+    device.canReceiveMidi = true;
+    device.format = magda::PluginFormat::Internal;
+    device.audioInputChannels = 0;
+    device.audioOutputChannels = 2;
+
+    // The envelope flattened to a gate, so the note-end nudge stays confined
+    // to the window the case excludes (Case::noteEndReleaseSeconds). Values
+    // travel on the model, which owns them since #2317.
+    using Sampler = magda::daw::audio::MagdaSamplerPlugin;
+    const auto slot = [](int index, float value) {
+        magda::daw::audio::MagdaSamplerPlugin metadata;
+        auto info = metadata.parameterInfo(index);
+        info.currentValue = value;
+        return info;
+    };
+    device.parameters.push_back(slot(Sampler::kAttack, kSamplerEnvelopeSeconds));
+    device.parameters.push_back(slot(Sampler::kDecay, kSamplerEnvelopeSeconds));
+    device.parameters.push_back(slot(Sampler::kSustain, 1.0f));
+    device.parameters.push_back(slot(Sampler::kRelease, kSamplerEnvelopeSeconds));
+
+    // As saved device state, which is the path a project takes on both legs.
+    magda::device_state::Doc doc;
+    doc.deviceType = device.pluginId;
+    doc.root.props.set("source", sampleFile.getFullPathName());
+    doc.root.props.set("rootNote", 60);
+    doc.root.props.set("loopEnabled", false);
+    device.pluginState = magda::device_state::encode(doc);
+
+    return device;
+}
+
+/// The Poly Synth's shortest envelope stage, in the milliseconds its slots
+/// carry. Every amp stage sits here, so the note is as near a gate as the
+/// device allows and the window the case excludes stays short.
+constexpr float kPolySynthEnvelopeMs = 1.0f;
+
+/// How long the amp release takes to leave the corpus floor, which is not the
+/// stage's own length: the DSP's envelope is en.adsre, a one-pole, so the
+/// number above is where it is 60 dB down rather than where it ends. Three of
+/// them measures -209 dB, against a floor of -120.
+constexpr double kPolySynthReleaseSettlingSeconds = 3.0 * kPolySynthEnvelopeMs / 1000.0;
+
+/// The Poly Synth, which is MagdaCompiledPolyInstrument and therefore every
+/// compiled synth MAGDA ships, as a project would save it (#2352).
+///
+/// The whole slot table travels, defaults and all: a gap in an internal
+/// device's parameter indices is a diagnostic rather than a render
+/// (ParamTableCompiler::Builder). The amp envelope is flattened on top of it,
+/// and the filter's envelope amount is already zero by default, so the only
+/// thing shaping a note is its gate.
+magda::DeviceInfo polySynthDevice(magda::DeviceId id) {
+    using PolySynth = magda::daw::audio::compiled::MagdaPolySynthCompiledPlugin;
+
+    magda::DeviceInfo device;
+    device.id = id;
+    device.name = "Poly Synth";
+    device.pluginId = PolySynth::xmlTypeName;
+    device.deviceType = magda::DeviceType::Instrument;
+    device.isInstrument = true;
+    device.canReceiveMidi = true;
+    device.format = magda::PluginFormat::Internal;
+    device.audioInputChannels = 0;
+    device.audioOutputChannels = 2;
+
+    const PolySynth metadata;
+    for (auto index = 0; index < metadata.parameterCount(); ++index) {
+        auto info = metadata.parameterInfo(index);
+        info.currentValue = info.defaultValue;
+        device.parameters.push_back(std::move(info));
+    }
+
+    // Values travel on the model, which owns them since #2317.
+    const auto set = [&device](int index, float value) {
+        device.parameters[static_cast<size_t>(index)].currentValue = value;
+    };
+    set(PolySynth::kAmpAttackSlot, kPolySynthEnvelopeMs);
+    set(PolySynth::kAmpDecaySlot, kPolySynthEnvelopeMs);
+    set(PolySynth::kAmpSustainSlot, 1.0f);
+    set(PolySynth::kAmpReleaseSlot, kPolySynthEnvelopeMs);
+
+    return device;
+}
+
+/// A gated DC level per voice. No oscillator and no envelope, so the output is
+/// a staircase and every change is a gate edge - which is what the case
+/// measures.
+constexpr const char* kNullDiffFaustSynthDsp = R"FAUST(
+// Self-contained: the literal "stdfaust.lib" here is load-bearing, since the
+// compiler only skips its automatic import when the source already names it.
+freq = hslider("freq", 440, 20, 20000, 0.01);
+gain = hslider("gain", 0.5, 0, 1, 0.01);
+gate = button("gate");
+
+voice = (freq / 20000.0) * gain * gate;
+process = voice <: _, _;
+)FAUST";
+
+Case buildTrimmedSessionLaunchCase(const juce::File& scratchDirectory) {
+    auto value =
+        newCase("session.launch.trimmed", "a trimmed audio slot launch", launching(plainTrack()));
+    value.endBeat = 2.0;
+
+    auto steady = steps();
+    steady.intervalSeconds = steady.durationSeconds;
+    const auto source = writeSource(scratchDirectory, "session_trimmed", steady);
+    value.sources.push_back(source);
+
+    auto clip = inSlot(audioClip(402, 0.0, 4.0, source), 0);
+    eventOf(clip).sourceAnchorSamples = static_cast<std::int64_t>(source.sampleRate);
+    value.clips.push_back(std::move(clip));
+    value.launches.push_back(LaunchInfo{kTrack, 0, 0.0});
+    return value;
+}
+
+Case buildUntrimmedSessionAttackCase(const juce::File& scratchDirectory) {
+    auto value =
+        newCase("session.launch.attack", "an untrimmed Session attack", launching(plainTrack()));
+    value.endBeat = 2.0;
+
+    const auto source = writeSource(scratchDirectory, "session_attack", impulses());
+    value.sources.push_back(source);
+    value.clips.push_back(inSlot(audioClip(403, 0.0, 4.0, source), 0));
+    value.launches.push_back(LaunchInfo{kTrack, 0, 0.0});
+    return value;
+}
+
+Case buildTrimmedArrangementCase(const juce::File& scratchDirectory) {
+    auto value = newCase("arrangement.trimmed.steady", "a trimmed arrangement clip", plainTrack());
+    value.endBeat = 2.0;
+
+    auto steady = steps();
+    steady.intervalSeconds = steady.durationSeconds;
+    const auto source = writeSource(scratchDirectory, "arrangement_trimmed", steady);
+    value.sources.push_back(source);
+
+    auto clip = audioClip(404, 0.0, 4.0, source);
+    eventOf(clip).sourceAnchorSamples = static_cast<std::int64_t>(source.sampleRate);
+    value.clips.push_back(std::move(clip));
+    return value;
+}
 
 std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
     scratchDirectory.createDirectory();
@@ -792,11 +1133,11 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
     // gone with it, and
     // mix.summing carries a fourth track to keep the case that found it.
     //
-    // Sends are absent on purpose. The native leg could render one today, and
-    // the incumbent's live on te::AuxSendPlugin instances that PluginManagerSync
-    // creates from a PluginManager and the device layer behind it. Writing those
-    // plugins straight into the leg would be the second sync this corpus refuses
-    // to have. They belong with the rest of the routing graph, in #1892.
+    // Sends are below rather than absent. They used to be absent because the
+    // incumbent's live on te::AuxSendPlugin instances PluginManagerSync creates
+    // from a PluginManager, and writing those into the leg would have been the
+    // second sync this corpus refuses to have. The leg drives that manager now
+    // (#2174), so the sends are the manager's rather than the harness's.
 
     {
         // Four tracks, which is where the node-identity collision in #2085 used
@@ -986,6 +1327,114 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         corpus.push_back(std::move(value));
     }
 
+    // --- sends -----------------------------------------------------------------
+    //
+    // A send is the mixer's one piece of topology: everything above routes a
+    // track to exactly one place, and a send is the track reaching a second one
+    // without leaving the first. The two engines build it least alike of
+    // anything in this section -- the incumbent hangs an AuxSendPlugin in the
+    // source's plugin list and an AuxReturnPlugin at the head of the
+    // destination's, and the two find each other by bus number through TE's own
+    // aux routing; the plan emits a SendTap op and queues its port onto the
+    // destination track's pending inputs, so the sum happens where every other
+    // sum in the plan happens. Nothing about those two descriptions makes them
+    // agree, which is why they are rendered.
+    //
+    // Nothing here is panned, and that is a correction rather than an omission.
+    // These cases were first written with the source hard left and the return
+    // hard right, so that the dry path and the send path could be read out of
+    // different channels. A post-fader tap is taken after the fader and the
+    // fader is where the pan is applied, so what reached the return was already
+    // hard left; the return's own hard right then multiplied it away, and both
+    // post-fader cases rendered silence down the path they existed to measure
+    // while still nulling against an incumbent doing the same thing. A case
+    // that agrees with itself about nothing is the one failure a null-diff
+    // corpus cannot see.
+    //
+    // So the dry and the send sum at the master and each case is read as one
+    // total. What distinguishes them is the total: the same project renders
+    // three quarters with the tap after the fader and unity with it before, and
+    // the muted one renders the send alone. Impulses, so the ordinary floor
+    // applies and a level wrong in the fourth decimal shows up.
+
+    {
+        // Where the tap sits, read off the fader it sits after.
+        //
+        // The source's fader is at half and its send at half, so the dry path
+        // carries a half and the return carries a quarter of what the clip
+        // played: three quarters of an impulse at the master. The pair with
+        // send.prefader below is the case, because those two projects are
+        // identical but for the flag and the total is what the flag decides. A
+        // leg that ignored it would render one of the two correctly, and one of
+        // two is not a coincidence either way.
+        auto source = mixTrack(1, "Source");
+        source.volume = 0.5f;
+        source.sends.push_back(sendTo(2, 0, 0.5f, false));
+
+        auto value = newMixCase("send.postfader", "a post-fader send carries the fader with it",
+                                {std::move(source), auxTrack(2, "Return", 0)});
+
+        const auto material = writeSource(scratchDirectory, "sendpost", impulses(0.25));
+        value.sources.push_back(material);
+        value.clips.push_back(audioClipOn(1, 330, 0.0, 4.0, material));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // The same project with the flag turned over: the tap is ahead of the
+        // fader, so the return carries half of what the clip played rather than
+        // a quarter of it while the dry path is unchanged at a half, and the
+        // master sums to unity rather than three quarters.
+        //
+        // The fader is what makes the two readable. With the source at unity
+        // both flags render the same samples and the pair would assert that a
+        // send exists rather than where it is tapped.
+        auto source = mixTrack(1, "Source");
+        source.volume = 0.5f;
+        source.sends.push_back(sendTo(2, 0, 0.5f, true));
+
+        auto value = newMixCase("send.prefader", "a pre-fader send is tapped ahead of the fader",
+                                {std::move(source), auxTrack(2, "Return", 0)});
+
+        const auto material = writeSource(scratchDirectory, "sendpre", impulses(0.25));
+        value.sources.push_back(material);
+        value.clips.push_back(audioClipOn(1, 331, 0.0, 4.0, material));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // A muted track keeps feeding its aux, which is a claim the plan makes
+        // in a comment (PlanValues.cpp, OpRole::SendTap) and nothing had
+        // rendered. The send taps ahead of the muting stage in both engines, and
+        // the current one only zeroes an aux send when it stops processing the
+        // track's contents at all, which MAGDA never does: it processes muted
+        // tracks so their meters stay alive.
+        //
+        // Post-fader, because that is the tap the claim is least obvious for: a
+        // pre-fader send sits ahead of the fader as well as the mute and would
+        // pass whatever the mute did.
+        //
+        // The mute takes the dry path out, so what reaches the master is the
+        // send and nothing else: half an impulse, through a fader left at
+        // unity. That makes the total say both halves of the claim at once. A
+        // leg whose mute reached the send renders silence, and a leg whose mute
+        // reached nothing renders the impulse and a half.
+        auto source = mixTrack(1, "Muted");
+        source.muted = true;
+        source.sends.push_back(sendTo(2, 0, 0.5f, false));
+
+        auto value = newMixCase("send.mute", "a muted track still feeds its aux",
+                                {std::move(source), auxTrack(2, "Return", 0)});
+
+        const auto material = writeSource(scratchDirectory, "sendmute", impulses(0.25));
+        value.sources.push_back(material);
+        value.clips.push_back(audioClipOn(1, 332, 0.0, 4.0, material));
+
+        corpus.push_back(std::move(value));
+    }
+
     // --- parameters, automation, modifiers and macros --------------------------
     //
     // The first cases that run a device under both engines, and therefore the
@@ -1001,29 +1450,27 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
     // every jump is what makes the ordinary floor apply rather than a
     // tolerance. Choose the material so a residual can only be a bug.
     //
-    // **Rack scope is missing from the macro cases**, and deliberately. A
-    // rack's macros live on a te::RackType that RackSyncManager builds out of a
-    // PluginManager, and writing one into the leg is the second sync this
-    // corpus refuses to have. It is the boundary sends stop at, and it moves
-    // with #1892.
+    // **All three macro scopes are here**, rack included. Rack scope used to be
+    // missing because a rack's macros live on a te::RackType only
+    // RackSyncManager builds out of a PluginManager, which was the boundary the
+    // sends stopped at too; the leg drives that manager now (#2174).
     //
-    // **Three of the four modifier engines are not here either**, each after
-    // being tried rather than for want of a case.
+    // **Two of the four modifier engines are still not here**, each after being
+    // tried rather than for want of a case.
     //
     // The random walk cannot be nulled by anybody: the fork seeds from the
     // clock, so it does not render the same numbers twice (ModRandom.hpp).
     //
-    // The envelope follower is fed by a FollowerSourceTapPlugin PluginManager
-    // installs, so without the device layer the fork's follower is handed
-    // nothing. Same boundary as the sends.
-    //
-    // The envelope has no gate a render can open. Its note gate is behind that
-    // same boundary, and its transport gate is the fork asking
-    // TransportControl::isPlaying(), which is false throughout every offline
-    // render: a transport-gated envelope does nothing in a bounce there, while
-    // the engine plays it. The case was written and renders 0.625 against
-    // silence; pinning it would ask the engine to reproduce a bug. The LFO
-    // carries this dimension instead, in both rate modes.
+    // The envelope has one gate a render cannot open and one this slice did not
+    // try. Its transport gate is the fork asking TransportControl::isPlaying(),
+    // which is false throughout every offline render: a transport-gated
+    // envelope does nothing in a bounce there while the engine plays it. That
+    // case was written and renders 0.625 against silence, and pinning it would
+    // ask the engine to reproduce a bug. Its note gate was behind the device
+    // layer, which has moved (#2174); whether the fork's MIDI monitor opens it
+    // in an offline render is untested rather than settled, and it belongs with
+    // whoever writes it. The LFO carries this dimension meanwhile, in both rate
+    // modes.
 
     {
         auto value = newParamCase("param.base", "a device parameter's stored value, heard",
@@ -1176,6 +1623,603 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         const auto source = writeSource(scratchDirectory, "macrodevice", impulses(0.5));
         value.sources.push_back(source);
         value.clips.push_back(audioClip(287, 0.0, 8.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // The third scope, and the one that was out of reach: a rack's macros
+        // live on a te::RackType that only RackSyncManager builds.
+        //
+        // Two chains, and only the first one's device is linked. That is what
+        // makes the case able to say the macro resolved at rack scope rather
+        // than merely that something modulated: chain one's gain is a quarter
+        // stored and 0.625 driven, chain two's is a fixed quarter, and the sum
+        // is 0.875 rather than the 0.5 a leg that left the link unresolved
+        // would render. Neither the macro's own position nor the base appears in
+        // the answer.
+        auto rack = rackOf(712, "Rack Macro",
+                           {gainChain(1, "Driven", 966, 0.25f), gainChain(2, "Fixed", 967, 0.25f)});
+        linkMacro(rack.macros, 0, 0.75f,
+                  ControlTarget::pluginParam(ChainNodePath::chainDevice(kTrack, 712, 1, 966),
+                                             kGainParamIndex),
+                  0.5f);
+
+        auto value =
+            newParamCase("macro.rack", "a rack macro driving a device in one of its chains",
+                         rackTrack(kTrack, "Rack Macro", std::move(rack)));
+
+        const auto source = writeSource(scratchDirectory, "macrorack", impulses(0.5));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(288, 0.0, 8.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // The envelope follower, which is the one modifier that is not a
+        // function of time: it answers "how loud is that", and the that is
+        // audio the modifier does not own. Until the device layer moved (#2174)
+        // the fork's follower was handed nothing at all here, because what feeds
+        // it is a FollowerSourceTapPlugin PluginManager installs on the source
+        // track, and this corpus had no PluginManager.
+        //
+        // Two tracks, and the modifier is on neither one's own scope: the
+        // follower sits on the target's gain device, and that device's audio
+        // sidechain names the source. That is the cross-track shape, and it is
+        // the one worth rendering -- a follower listening to its own track
+        // drives a device whose output it is downstream of, which is a loop in
+        // both engines and a case about feedback rather than about following.
+        //
+        // **What this case pins is the steady state, and deliberately not the
+        // envelope's timing.** The source's material is a square wave, so its
+        // magnitude is one constant for the whole render and every block's peak
+        // is the same number whatever the block grid is. That is what lets the
+        // case null at all: the engines read the source a block apart -- the
+        // plan resolves every parameter at the top of a block, so what a
+        // follower follows is the block before this one (ModFollower.hpp) --
+        // and a lag makes no difference to a level that is not moving. A case
+        // built on a swell would be measuring that lag, and measuring it
+        // against a fork whose own ordering is the graph's rather than a rule.
+        //
+        // The chain of numbers is therefore readable end to end: the square is
+        // at half, the follower's input gain takes 6 dB off it, and the link
+        // carries the whole of what is left onto a parameter stored at zero. So
+        // the device's gain settles at a quarter, which is not the source's
+        // level, not the parameter's base and not unity: a leg that dropped the
+        // input gain would render a half, and one that dropped the follower
+        // would render silence.
+        //
+        // The target's clip starts a beat in. The one stretch of this render
+        // that does depend on the block grid is the first block of it, where
+        // the detector has no previous block to have read and the envelope
+        // starts from zero; half a second is longer than the largest block the
+        // invariance gate renders at, by an order of magnitude.
+        auto source = mixTrack(1, "Source");
+
+        auto target = gainTrackOn(2, 968, "Target", 0.0f);
+        auto& device = magda::getDevice(target.chain.fxChainElements.front());
+        device.sidechain.type = SidechainConfig::Type::Audio;
+        device.sidechain.sourceTrackId = 1;
+        device.mods.push_back(envelopeFollower(0, gainTarget(2, 968), 1.0f, -6.0f));
+
+        auto value = newTrackCase("mod.follower",
+                                  "an envelope follower over another track's post-fader level",
+                                  {std::move(source), std::move(target)});
+        value.endBeat = 8.0;
+
+        // The square is what the follower is following, and a square is the one
+        // material whose peak is the same in every block: |x| never moves, so
+        // the detector's answer is a constant and the two engines' block grids
+        // have nothing to disagree about.
+        const auto square = writeSource(scratchDirectory, "followersource", steps());
+        value.sources.push_back(square);
+        value.clips.push_back(audioClipOn(1, 333, 0.0, 8.0, square));
+
+        // A tone on the target, because what the follower does to it has to be
+        // legible in the residual: a modulated square would put two constants
+        // on top of each other and a level error would look like a level error
+        // in either of them.
+        const auto carrier = writeSource(scratchDirectory, "followercarrier", tone());
+        value.sources.push_back(carrier);
+        value.clips.push_back(audioClipOn(2, 334, 1.0, 7.0, carrier));
+
+        corpus.push_back(std::move(value));
+    }
+
+    // --- racks -----------------------------------------------------------------
+    //
+    // The rack graph, through the oracle (#2139, slice 5 of #1892). Slices one
+    // to four put aux outputs, delta solo, nesting and channel counts into the
+    // compiler and pinned each against the plan goldens; goldens compare
+    // structure, and nothing had yet compared the sound.
+    //
+    // Every one of these is arithmetic over impulses, so the ordinary floor
+    // applies and a law that differs in the fourth decimal shows up. What makes
+    // them worth rendering rather than dumping is that a rack is where the two
+    // engines are built least alike: the incumbent wires a te::RackType, one
+    // VolumeAndPan per chain and a connection matrix, and the plan compiles a
+    // fader per chain, a mix and a fader over it. Two structures that agree op
+    // for op could still disagree about a value, and two that disagree about
+    // structure can still render the same samples. Only the render says which.
+    //
+    // The incumbent leg builds these through the app's own RackSyncManager
+    // rather than through a rack builder written for the harness, for the
+    // reason the mixer cases go through TrackController: the sync layer is part
+    // of what is being validated.
+    //
+    // **The chains of a rack all read the same input.** That is what a rack is,
+    // and it is why these cases cannot use the mixer's trick of giving every
+    // track different material: two chains are fed the same samples by
+    // construction. So the asymmetry is put in the chains themselves -- a
+    // different number of devices, a different value, a different pan -- and
+    // every case below is built so that swapping what its chains hold changes
+    // what comes out. A case whose chains are interchangeable asserts the sum
+    // and nothing about which chain did what.
+
+    {
+        // Two chains summing at the rack output, and serial order inside one of
+        // them. The second chain holds two devices rather than one so that the
+        // two are not interchangeable: 0.5 against 0.5 * 0.25 is 0.625 out of
+        // unity, and no swap of values between the chains reproduces it.
+        auto value =
+            newRackCase("rack.parallel", "parallel chains summed at the rack output",
+                        rackTrack(kTrack, "Parallel",
+                                  rackOf(700, "Parallel",
+                                         {gainChain(1, "One", 940, 0.5f),
+                                          gainChain(2, "Two", {{941, 0.5f}, {942, 0.25f}})})));
+
+        const auto source = writeSource(scratchDirectory, "rackparallel", impulses(0.25));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(300, 0.0, 4.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // The chain fader's two halves, which are the track fader's laws and
+        // not the rack's: the volume is decibels through the fader curve, and
+        // the pan is the linear law that boosts the near side rather than
+        // attenuating the far one.
+        //
+        // One chain carries the volume and the other the pan, so the case reads
+        // both at once and neither can stand in for the other: a leg applying
+        // the pan law to the volume chain would move a channel that should not
+        // have moved.
+        auto rack = rackOf(701, "Chain Fader",
+                           {gainChain(1, "Down", 943, 1.0f), gainChain(2, "Left", 944, 0.5f)});
+        rack.chains[0].volume = -6.0f;
+        rack.chains[1].pan = -1.0f;
+
+        auto value =
+            newRackCase("rack.chain.fader", "the chain fader: decibels, and the linear pan law",
+                        rackTrack(kTrack, "Chain Fader", std::move(rack)));
+
+        const auto source = writeSource(scratchDirectory, "rackchainfader", impulses(0.25));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(301, 0.0, 4.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // The rack's own fader, which is the other law: it is the rack
+        // instance's output levels rather than a fader, so the pan attenuates
+        // the far side instead of boosting the near one and the volume is
+        // decibels straight rather than through the fader curve. A leg that
+        // reused the chain law here would put the case's left channel 6 dB out.
+        //
+        // One chain, because what this measures is the fader over the mix and a
+        // second chain would only change what reaches it.
+        auto rack = rackOf(702, "Rack Fader", {gainChain(1, "One", 945, 0.5f)});
+        rack.volume = -6.0f;
+        rack.pan = 0.5f;
+
+        auto value = newRackCase("rack.fader", "the rack fader: decibels, and the far-side pan law",
+                                 rackTrack(kTrack, "Rack Fader", std::move(rack)));
+
+        const auto source = writeSource(scratchDirectory, "rackfader", impulses(0.25));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(302, 0.0, 4.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // A muted chain contributes nothing, and its sibling still does. The
+        // two hold different values so that the case can tell which one
+        // survived: a leg that muted the wrong chain would render 0.25 where
+        // this expects 0.75.
+        auto rack = rackOf(703, "Chain Mute",
+                           {gainChain(1, "Heard", 946, 0.75f), gainChain(2, "Muted", 947, 0.25f)});
+        rack.chains[1].muted = true;
+
+        auto value = newRackCase("rack.chain.mute", "a muted chain contributes nothing",
+                                 rackTrack(kTrack, "Chain Mute", std::move(rack)));
+
+        const auto source = writeSource(scratchDirectory, "rackchainmute", impulses(0.25));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(303, 0.0, 4.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // Mute against a sibling's solo, which is the pair rather than either
+        // one: a soloed chain takes its siblings out of the mix, and a chain
+        // that is muted as well as unsoloed is out for two reasons at once. The
+        // third chain is what makes the answer a value rather than a flag --
+        // solo has to silence a plain sibling as well as a muted one, and a
+        // case with only the muted one could not tell the two rules apart.
+        auto rack = rackOf(704, "Chain Solo",
+                           {gainChain(1, "Solo", 948, 0.75f), gainChain(2, "Muted", 949, 0.5f),
+                            gainChain(3, "Other", 950, 0.25f)});
+        rack.chains[0].solo = true;
+        rack.chains[1].muted = true;
+
+        auto value =
+            newRackCase("rack.chain.solo", "a soloed chain against a muted and a plain one",
+                        rackTrack(kTrack, "Chain Solo", std::move(rack)));
+
+        const auto source = writeSource(scratchDirectory, "rackchainsolo", impulses(0.25));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(304, 0.0, 4.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // Delta solo at device scope: what the device added, which for a gain
+        // of 0.25 is the input at -0.75 of itself. Inverted rather than merely
+        // quieter, so a leg that took the difference the other way round is a
+        // sign flip rather than a level and the case says so at full scale.
+        //
+        // The sibling chain is at unity and carries no delta, so the rack's
+        // output is the sum of a difference and a passthrough. That is the
+        // arrangement the button is used in: delta on one device of one chain,
+        // with the rest of the rack still playing.
+        auto rack = rackOf(705, "Device Delta",
+                           {gainChain(1, "Delta", 951, 0.25f), gainChain(2, "Plain", 952, 1.0f)});
+        magda::getDevice(rack.chains[0].elements.front()).deltaSolo = true;
+
+        auto value =
+            newRackCase("rack.deltasolo.device", "delta solo on a device inside a rack chain",
+                        rackTrack(kTrack, "Device Delta", std::move(rack)));
+
+        const auto source = writeSource(scratchDirectory, "rackdeltadevice", impulses(0.25));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(305, 0.0, 4.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // Delta solo at rack scope, which subtracts the rack's own input from
+        // its output rather than one device's. Two chains, so that what is
+        // subtracted is the sum of both and not either alone: their total is
+        // 0.75, so the rack renders the input at -0.25 of itself, and a leg
+        // that took the difference against one chain would render silence or
+        // twice as much.
+        auto rack = rackOf(706, "Rack Delta",
+                           {gainChain(1, "One", 953, 0.5f), gainChain(2, "Two", 954, 0.25f)});
+        rack.deltaSolo = true;
+
+        auto value = newRackCase("rack.deltasolo.rack", "delta solo at rack scope",
+                                 rackTrack(kTrack, "Rack Delta", std::move(rack)));
+
+        const auto source = writeSource(scratchDirectory, "rackdeltarack", impulses(0.25));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(306, 0.0, 4.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // A rack inside a chain of another rack, which is the case the op-key
+        // identity slice was written for (#2137): the inner rack's chains and
+        // devices are addressed through the path they sit at, and two racks
+        // holding a device with the same number are two different devices.
+        //
+        // The inner rack sits behind a device in the outer chain rather than
+        // alone in it, so the case also asserts the order of the two: 0.5 into
+        // an inner rack summing 0.5 and 0.25 is 0.375, and a leg that ran the
+        // rack first would render the same number, which is why the outer
+        // chain's sibling is here. It carries a value neither product can be
+        // confused with.
+        auto inner =
+            rackOf(708, "Inner", {gainChain(1, "One", 957, 0.5f), gainChain(2, "Two", 958, 0.25f)});
+
+        ChainInfo outerChain;
+        outerChain.id = 1;
+        outerChain.name = "Nesting";
+        outerChain.elements.emplace_back(gainDevice(955, 0.5f));
+        outerChain.elements.push_back(makeRackElement(std::move(inner)));
+
+        std::vector<ChainInfo> outerChains;
+        outerChains.push_back(std::move(outerChain));
+        outerChains.push_back(gainChain(2, "Sibling", 956, 0.125f));
+
+        auto value =
+            newRackCase("rack.nested", "a rack inside a chain of another rack",
+                        rackTrack(kTrack, "Nested", rackOf(707, "Outer", std::move(outerChains))));
+
+        const auto source = writeSource(scratchDirectory, "racknested", impulses(0.25));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(307, 0.0, 4.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // The same shape as rack.nested.latency with nothing nested: latency in
+        // the track chain ahead of a rack, and latency inside the rack. Present
+        // to say whether a divergence there is about nesting or about racks.
+        ChainInfo chain;
+        chain.id = 1;
+        chain.name = "Delayed";
+        chain.elements.emplace_back(hostedDevice(985, HostedRole::Latency));
+
+        std::vector<ChainInfo> chains;
+        chains.push_back(std::move(chain));
+
+        TrackInfo track;
+        track.id = kTrack;
+        track.type = TrackType::Media;
+        track.name = "Rack Latency";
+        track.audioOutputDevice = "master";
+        track.chain.fxChainElements.emplace_back(hostedDevice(986, HostedRole::Latency));
+        track.chain.fxChainElements.push_back(
+            makeRackElement(rackOf(715, "Latency", std::move(chains))));
+
+        auto value = newRackCase("rack.latency", "latency before and inside a rack, not nested",
+                                 std::move(track));
+
+        const auto source = writeSource(scratchDirectory, "racklatency", impulses());
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(340, 1.0, 7.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // Latency both before a nested rack and inside it, with delta solo on
+        // the inner one.
+        //
+        // A rack instance compensates its dry path against its wet path during
+        // the transform pass, but the buses the wet path runs through connect
+        // during that same pass. A nested instance can therefore be visited
+        // before the inner rack's own input return has found its send, at which
+        // point the wet latency is short by everything preceding the instance,
+        // and a compensation computed once from that number stays wrong.
+        //
+        // Delta solo is what makes it readable: the rack returns wet minus dry,
+        // which is silence while the two are aligned and a pair of
+        // opposite-polarity impulses one compensation apart when they are not.
+        ChainInfo innerChain;
+        innerChain.id = 1;
+        innerChain.name = "Delayed";
+        innerChain.elements.emplace_back(hostedDevice(983, HostedRole::Latency));
+
+        std::vector<ChainInfo> innerChains;
+        innerChains.push_back(std::move(innerChain));
+        auto inner = rackOf(713, "Inner Latency", std::move(innerChains));
+        inner.deltaSolo = true;
+
+        ChainInfo outerChain;
+        outerChain.id = 1;
+        outerChain.name = "Nesting";
+        outerChain.elements.emplace_back(hostedDevice(984, HostedRole::Latency));
+        outerChain.elements.push_back(makeRackElement(std::move(inner)));
+
+        std::vector<ChainInfo> outerChains;
+        outerChains.push_back(std::move(outerChain));
+        outerChains.push_back(gainChain(2, "Sibling", 987, 0.125f));
+
+        auto value = newRackCase("rack.nested.latency",
+                                 "latency before and inside a nested rack, delta soloed",
+                                 rackTrack(kTrack, "Nested Latency",
+                                           rackOf(714, "Outer Latency", std::move(outerChains))));
+
+        // A beat in, for the reason plugin.latency starts there: a render of a
+        // project whose plugin reports latency comes back from the incumbent
+        // with its first samples missing, and this case is about alignment.
+        const auto source = writeSource(scratchDirectory, "racknestedlatency", impulses());
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(339, 1.0, 7.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // A chain routed to an aux output of the rack, which reaches nothing in
+        // either engine: RackSyncManager wires it to output pins three and up
+        // and the rack instance on the track reads pins one and two, so there
+        // is no other end to it. The plan compiles nothing for such a chain and
+        // says so in a diagnostic.
+        //
+        // Written as a case because "both engines drop it" is a claim about the
+        // engines and not about the model, and the day one of them starts
+        // carrying an aux output is the day this has to be looked at rather
+        // than the day a project quietly changes. The audible chain is what
+        // makes the assertion a comparison instead of two silences agreeing.
+        auto rack =
+            rackOf(709, "Aux", {gainChain(1, "Main", 959, 0.5f), gainChain(2, "Aux", 960, 1.0f)});
+        rack.chains[1].outputIndex = 1;
+
+        auto value = newRackCase("rack.aux", "a chain routed to an aux output reaches nothing",
+                                 rackTrack(kTrack, "Aux", std::move(rack)));
+
+        // Named rather than suppressed: the plan is right to say so, and a case
+        // that stopped getting this diagnostic would be measuring a compiler
+        // that had started carrying the aux output without anybody deciding to.
+        value.expectedDiagnostics.push_back("rack 709 chain 2: aux output 1 reaches nothing");
+
+        const auto source = writeSource(scratchDirectory, "rackaux", impulses(0.25));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(308, 0.0, 4.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // A mono device between stereo ones. What it measures is the bus rather
+        // than the device: the chain arrives stereo, narrows to one channel at
+        // the middle device, and widens again behind it, and both engines have
+        // to narrow and widen at the same points and in the same direction.
+        //
+        // The direction is the half a symmetric signal cannot ask about, which
+        // is why this is the one case in the corpus that plays noise on purpose:
+        // every other generator writes the same samples to both channels, and a
+        // fold of two identical channels is the identity whichever way it is
+        // done. With the two sides different, a device that read the right
+        // channel instead of the left, or summed the two instead of taking one,
+        // renders something this case can see.
+        //
+        // Behind it the chain is stereo again, and it has to be the same on both
+        // sides: a mono port's channel is copied to both, so the stereo device
+        // after it reads the narrow device's output twice rather than the
+        // original right channel once.
+        auto value = newRackCase(
+            "rack.mono", "a mono device between stereo ones",
+            rackTrack(
+                kTrack, "Mono",
+                rackOf(710, "Mono",
+                       {gainChain(1, "Narrowing", {{961, 0.5f}, {962, 0.5f}, {963, 0.5f}})})));
+
+        magda::getRack(value.tracks.front().chain.fxChainElements.front())
+            .chains.front()
+            .elements[1] = monoGainDevice(962, 0.5f);
+
+        auto material = noise();
+        material.seed = 0x9E3779B9u;
+        // Two channels, and stated rather than left to the default: MaterialSpec
+        // starts at one, and a mono file read into a stereo bus arrives with the
+        // same samples on both sides. That is the one thing this case cannot
+        // afford -- a fold of two identical channels is the identity whichever
+        // way it is done, so the case would null green over a device reading the
+        // wrong side. The noise generator seeds per channel, so asking for two
+        // is what makes the two sides differ.
+        material.channels = 2;
+        value.seed = material.seed;
+
+        const auto source = writeSource(scratchDirectory, "rackmono", material);
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(309, 0.0, 4.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // An instrument behind an audio source in the same chain. What it
+        // measures is one rule: an instrument's output is added to the bus it
+        // was handed rather than replacing it, so the audio already travelling
+        // the chain survives it and the two are heard together.
+        //
+        // A real instrument, playing real notes. An earlier version of this
+        // case used the silent stand-in the MIDI cases use, and it nulled for
+        // the wrong reason: the incumbent instantiates nothing for that device,
+        // so its rack chain held a gain and no instrument at all, and the rule
+        // was being asserted of one engine while the other was asked whether
+        // half of full scale equals half of full scale. A case whose whole
+        // subject is absent from one side of the comparison is worse than no
+        // case, because it reports green.
+        //
+        // The instrument is second so that the audio reaches it. First would
+        // ask a different and weaker question, because there would be nothing
+        // travelling the chain yet for it to be added to.
+        //
+        // The audio clip runs the first four beats and the notes the last four,
+        // and they do not overlap. Not a weakening of the case: what it asks is
+        // whether the bus survives the instrument, and with the two apart the
+        // first half of the render is audio that only reaches the output if the
+        // instrument added to the bus rather than replacing it, while the
+        // second half is the instrument itself. Replacing would silence the
+        // first half completely.
+        //
+        // Apart because they have to be. Occlusion is kind-blind (ClipOcclusion:
+        // one switch decides, on audio and MIDI alike), so a MIDI clip laid over
+        // an audio clip on the same track covers it, and the corpus excludes
+        // overlaps for the reason its header gives -- the incumbent has no
+        // correct behaviour to diff against there. Overlapped, this case
+        // measured that exclusion instead of what it is about.
+        ChainInfo chain;
+        chain.id = 1;
+        chain.name = "Source then instrument";
+        chain.elements.emplace_back(gainDevice(964, 0.5f));
+        chain.elements.emplace_back(synthDevice(965));
+
+        std::vector<ChainInfo> chains;
+        chains.push_back(std::move(chain));
+
+        auto value = newRackCase(
+            "rack.instrument", "an instrument behind an audio source in one chain",
+            rackTrack(kTrack, "Instrument", rackOf(711, "Instrument", std::move(chains))));
+
+        const auto source = writeSource(scratchDirectory, "rackinstrument", impulses(0.25));
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(310, 0.0, 4.0, source));
+
+        // On the half beat, which at 120 bpm is 11025 samples and therefore a
+        // whole one. A quarter beat is 5512.5, and a note asked to start half
+        // way through a sample is rounded into a block, so where it lands
+        // depends on how the render was cut up -- which the invariance gate
+        // reads as the engine failing to be a function of timeline position
+        // (#2078). It was right to.
+        auto notes = midiClip(311, 4.0, 4.0);
+        for (auto index = 0; index < 4; ++index)
+            notes.midiNotes.push_back(note(60 + index, index + 0.5, 0.5, 127));
+        value.clips.push_back(std::move(notes));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // A multi-out instrument and the track that reads its second pair.
+        //
+        // The other half of the aux question, and a different mechanism from
+        // rack.aux above: a chain routed to a rack's aux output reaches
+        // nothing, while an output pair of an instrument reaches the MultiOut
+        // track that opened it. The compiler says as much where it refuses the
+        // first; this is where the second is rendered rather than asserted in
+        // a comment.
+        //
+        // MIDI drives it, so nothing here rests on two engines agreeing about
+        // a free-running clock: on every note-on the device writes an impulse
+        // to pair 0 and half of one to pair 1 (NullDiffGain.hpp), and where a
+        // note lands is what the `midi.*` cases already pin.
+        //
+        // The two tracks are panned apart, and that is what makes the case able
+        // to say which pair reached which track rather than only that the total
+        // was right. Both feed the master, so a leg that sent both pairs down
+        // one track, or swapped them, would sum to the same figure on a case
+        // that let them overlap; hard left against hard right puts the source
+        // pair at full scale in one channel and the second pair at half scale
+        // in the other, and any mixing up of the two moves both.
+        auto source = instrumentTrackOn(1, 970, "Source");
+        source.chain.fxChainElements.clear();
+        source.chain.fxChainElements.emplace_back(multiOutSynthDevice(970));
+        source.pan = -1.0f;
+
+        TrackInfo pairTrack;
+        pairTrack.id = 2;
+        pairTrack.type = TrackType::MultiOut;
+        pairTrack.name = "Pair";
+        pairTrack.audioOutputDevice = "master";
+        pairTrack.pan = 1.0f;
+        pairTrack.multiOutLink = MultiOutTrackLink{1, 970, 1};
+
+        auto value = newTrackCase("multiout.pair",
+                                  "an instrument's second output pair and the track that reads it",
+                                  {std::move(source), std::move(pairTrack)});
+        value.endBeat = 8.0;
+
+        auto clip = midiClipOn(1, 320, 0.0, 8.0);
+        // Full velocity, so the level is exactly one and the pair's half is
+        // exactly a half: a corpus that had to compare 0.7874 against 0.7874
+        // would be measuring the same arithmetic with more places to go wrong.
+        for (auto index = 0; index < 8; ++index)
+            clip.midiNotes.push_back(note(60 + index, static_cast<double>(index), 0.5, 127));
+        value.clips.push_back(std::move(clip));
 
         corpus.push_back(std::move(value));
     }
@@ -1380,52 +2424,618 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         corpus.push_back(std::move(value));
     }
 
+    // --- the session -----------------------------------------------------------
+    //
+    // The first cases in the corpus whose material is in a slot rather than on
+    // the timeline (#2441). Both legs are handed the same launch and queue it
+    // before the render, in monotonic beats, which begin at zero on the render's
+    // first block on both sides -- so the two runs start on one sample rather
+    // than on whichever moment each engine happened to begin at.
+    //
+    // Launched on the render's own start beat and over a slot longer than the
+    // render, so neither end of a run is in these. What a launch inside a block
+    // rounds to and what happens when a run ends are #2306's, which asserts
+    // them; these null what #2306 calls the ordinary clip render in between.
+
+    {
+        auto value = newCase("session.launch", "an audio slot playing from the first sample",
+                             launching(plainTrack()));
+        value.endBeat = 8.0;
+
+        // Impulses, which put a full-scale transient on the slot's very first
+        // sample. That is the sample both engines take a step out of when a
+        // launch begins, and the one they used to disagree about: the fork
+        // de-clicked whatever a launched block began with and removed the
+        // transient, where the engine leaves a voice that begins at its own
+        // start alone (ClipVoice.cpp). Fixed in the fork for #2444, and this
+        // material is what holds it fixed -- a tone would pass either way,
+        // because its file is windowed and its first sample is silence.
+        const auto source = writeSource(scratchDirectory, "session", impulses());
+        value.sources.push_back(source);
+
+        // Sixteen beats against an eight-beat render, so the run never reaches
+        // its own end inside the case.
+        value.clips.push_back(inSlot(audioClip(400, 0.0, 16.0, source), 0));
+        value.launches.push_back(LaunchInfo{kTrack, 0, 0.0});
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        auto value = newCase("session.launch.sustained",
+                             "a launched slot holding a level, where ULP noise has something to "
+                             "ride on",
+                             launching(plainTrack()));
+        value.endBeat = 8.0;
+
+        // Steps rather than the impulses session.launch plays, and that is the
+        // whole case (#2458). Impulses are silence between impulses, so a path
+        // that is a bit-or-two inexact on a sustained level nulls anyway --
+        // there is nothing for the error to ride on. A held level puts every
+        // sample of the render under the comparison.
+        //
+        // The same material on an arrangement clip nulls at -inf, so what this
+        // measures is the launcher's path rather than the material.
+        const auto source = writeSource(scratchDirectory, "session_sustained", steps());
+        value.sources.push_back(source);
+
+        value.clips.push_back(inSlot(audioClip(401, 0.0, 16.0, source), 0));
+        value.launches.push_back(LaunchInfo{kTrack, 0, 0.0});
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        auto value = newCase("session.launch.midi", "a MIDI slot playing from the first sample",
+                             launching(instrumentTrack()));
+        value.endBeat = 8.0;
+
+        auto clip = midiClip(410, 0.0, 16.0);
+        for (auto index = 0; index < 8; ++index)
+            clip.midiNotes.push_back(
+                note(60 + index, static_cast<double>(index), 0.5, 40 + index * 10));
+        value.clips.push_back(inSlot(std::move(clip), 0));
+        value.launches.push_back(LaunchInfo{kTrack, 0, 0.0});
+
+        value.tier = AudioTier::None;
+        value.compareMidiStreams = true;
+
+        // The fork's launcher path does not make the nudge its arranger path
+        // makes. MidiNote::getPlaybackTime pulls every note-off back by a tenth
+        // of a millisecond to keep an off ahead of an on at the same instant,
+        // and that is what the corpus's default allows for; a clip played from
+        // a slot reaches the graph through LoopingMidiNode and keeps the length
+        // the note was drawn at, which is what the engine does everywhere.
+        //
+        // Declared as the zero it is rather than left at the corpus default, so
+        // the case is asserting that the two agree exactly rather than
+        // forgiving four samples of whatever.
+        value.incumbentNoteEndEarlySeconds = 0.0;
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // #2485: Session mode holds the arrangement silent with nothing
+        // launched -- the retrospect fixture's shape. Track 1 alone would
+        // render silent on both legs, which the runner refuses
+        // (NullDiffRunner.cpp:577), so track 2's clip is the audible
+        // neighbour that keeps the case measurable.
+        //
+        // The incumbent derives Session mode from activeSessionClipId rather
+        // than from a settable flag (SessionClipScheduler::
+        // syncTrackPlaybackModes), so the track needs a session clip to point
+        // it at even though nothing launches it; a track with no session
+        // content at all is a mode the incumbent's own writer never holds,
+        // and only the native engine's is asserted for that shape (the
+        // SwitchRig{false} cases in test_session_playback.cpp).
+        auto track = launching(plainTrack());
+        track.activeSessionClipId = 423;
+
+        auto value =
+            newTrackCase("session.mode.holds.slot",
+                         "a Session-mode track's arrangement stays silent with an unlaunched slot",
+                         {std::move(track), mixTrack(2, "Neighbour")});
+        value.endBeat = 8.0;
+
+        const auto source = writeSource(scratchDirectory, "sessionmodeholdsslot", impulses());
+        value.sources.push_back(source);
+        value.clips.push_back(audioClipOn(kTrack, 422, 0.0, 4.0, source));
+        value.clips.push_back(inSlot(audioClip(423, 0.0, 4.0, source), 0));
+        value.clips.push_back(audioClipOn(2, 424, 0.0, 4.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    // --- external plugins ------------------------------------------------------
+    //
+    // The first cases in the corpus that host a plugin rather than run a device
+    // written for them (#2246). What each one asserts is a number the host
+    // chose: how a mix the plugin never declared is applied, which channels a
+    // narrow plugin is handed, where a reported latency is taken out again,
+    // which bus a key arrives on, what a plugin is told about the transport, and
+    // what an instrument's MIDI does on the way in and on the way out.
+    //
+    // They are held to the ordinary floor rather than given the epsilon a
+    // project hosting a plugin may declare (#2078). The plugin is ours and does
+    // nothing that depends on how a render was framed (NullDiffHostedPlugin.hpp),
+    // so there is nothing here to attribute a difference to, and a case that
+    // took the allowance anyway would be spending it on the host.
+
+    {
+        // The pair the fork gives every external plugin and the plugin never
+        // asked for. Dry six tenths against wet four, over a plugin that
+        // inverts, so what the render carries is a fifth of the material and
+        // the arithmetic is the whole signal rather than a level somebody has
+        // to measure.
+        auto track = plainTrack();
+        auto device = hostedDevice(970, HostedRole::Polarity);
+        setHostedMix(device, 0.6f, 0.4f);
+        track.chain.fxChainElements.emplace_back(std::move(device));
+
+        auto value = newCase("plugin.wetdry", "the wrapper pair at a value a project saves",
+                             std::move(track));
+        value.endBeat = 8.0;
+
+        const auto source = writeSource(scratchDirectory, "pluginwetdry", impulses());
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(330, 0.0, 8.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // Fully dry, which both engines still run the plugin for. The claim is
+        // that the slot is transparent and not that the plugin was skipped: the
+        // fork's own dry path takes the input around a plugin it nevertheless
+        // called, and the engine reproduces that including the threshold below
+        // which it stops mixing at all (EngineExternalDevice.cpp).
+        auto track = plainTrack();
+        auto device = hostedDevice(971, HostedRole::Polarity);
+        setHostedMix(device, 1.0f, 0.0f);
+        track.chain.fxChainElements.emplace_back(std::move(device));
+
+        auto value =
+            newCase("plugin.wetdry.dry", "a fully dry slot in front of a plugin that still runs",
+                    std::move(track));
+        value.endBeat = 8.0;
+
+        const auto source = writeSource(scratchDirectory, "plugindry", impulses());
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(331, 0.0, 8.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // A one-channel plugin on a stereo track: the host folds the bus into
+        // it and spreads what comes back. Two-channel noise, and stated rather
+        // than left to the default for the reason rack.mono states it -- a fold
+        // of two identical channels is the identity whichever way it is done, so
+        // a case playing a mono file would null green over a host reading the
+        // wrong side.
+        auto track = plainTrack();
+        track.chain.fxChainElements.emplace_back(hostedDevice(972, HostedRole::Narrow));
+
+        auto value = newCase("plugin.mono", "a mono plugin folded into and out of a stereo chain",
+                             std::move(track));
+        value.endBeat = 8.0;
+
+        auto material = noise();
+        material.channels = 2;
+        value.seed = material.seed;
+
+        const auto source = writeSource(scratchDirectory, "pluginmono", material);
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(332, 0.0, 8.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // And the adaptation the other way round: a stereo plugin in a slot one
+        // channel wide, which is what the corpus's own mono device leaves behind
+        // it inside a rack chain. The host has one channel and a plugin that
+        // wants two, and what it does with the second is arithmetic in both
+        // engines.
+        ChainInfo chain;
+        chain.id = 1;
+        chain.name = "Narrowed";
+        chain.elements.emplace_back(monoGainDevice(973, 1.0f));
+        chain.elements.emplace_back(hostedDevice(974, HostedRole::Polarity));
+
+        std::vector<ChainInfo> chains;
+        chains.push_back(std::move(chain));
+
+        auto value = newRackCase(
+            "plugin.narrow.slot", "a stereo plugin in a mono slot",
+            rackTrack(kTrack, "Narrow slot", rackOf(720, "Narrowed", std::move(chains))));
+
+        auto material = noise();
+        material.channels = 2;
+        value.seed = material.seed;
+
+        const auto source = writeSource(scratchDirectory, "pluginnarrowslot", material);
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(333, 0.0, 8.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // A plugin reporting latency, against a track without one. Both tracks
+        // play the same impulses, so a compensation that worked puts one impulse
+        // per interval where two would otherwise sit 333 samples apart, and the
+        // second track's fader keeps the two halves separable if it did not.
+        //
+        // The figure is deliberately awkward (NullDiffHostedPlugin.hpp): a
+        // compensation that is only right on block boundaries is wrong here at
+        // every size the invariance gate renders at.
+        //
+        // The clips start a beat in, and that is this case's one concession to
+        // the incumbent. A render of a project whose plugin reports latency
+        // comes back from the fork with its first 333 samples missing -- the
+        // impulse at beat zero is simply not in the file, while every impulse
+        // after it sits at its own sample. The engine loses nothing there: the
+        // offline render pulls the plan's latency in extra samples at the end
+        // and drops the same number off the front, so the file starts where the
+        // range does and the material still inside the delay line comes out
+        // (OfflineRender.cpp). Starting a beat in keeps that difference out of
+        // a case about alignment, which is what this one is for.
+        auto delayed = mixTrack(1, "Through the plugin");
+        delayed.chain.fxChainElements.emplace_back(hostedDevice(975, HostedRole::Latency));
+
+        auto direct = mixTrack(2, "Direct");
+        direct.volume = 0.5f;
+
+        auto value = newMixCase("plugin.latency", "a plugin's reported latency, taken back out",
+                                {std::move(delayed), std::move(direct)});
+
+        const auto source = writeSource(scratchDirectory, "pluginlatency", impulses());
+        value.sources.push_back(source);
+        value.clips.push_back(audioClipOn(1, 334, 1.0, 7.0, source));
+        value.clips.push_back(audioClipOn(2, 335, 1.0, 7.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // A sidechained plugin, which returns its key instead of its input. That
+        // is what makes the case readable rather than a level to be trusted: a
+        // host that wired nothing renders silence on this track, one that wired
+        // the main input renders this track's own impulses, and only the host
+        // that put the key on the bus after the plugin's own renders the other
+        // track's.
+        //
+        // The two tracks play different intervals for the same reason.
+        auto keyed = mixTrack(1, "Keyed");
+        auto device = hostedDevice(976, HostedRole::Key);
+        device.sidechain.type = SidechainConfig::Type::Audio;
+        device.sidechain.sourceTrackId = 2;
+        keyed.chain.fxChainElements.emplace_back(std::move(device));
+
+        auto value = newMixCase("plugin.sidechain", "a key on the bus after the plugin's own",
+                                {std::move(keyed), mixTrack(2, "Key source")});
+
+        const auto keyedSource = writeSource(scratchDirectory, "pluginkeyed", impulses(0.375));
+        const auto keySource = writeSource(scratchDirectory, "pluginkey", impulses(0.25));
+        value.sources.push_back(keyedSource);
+        value.sources.push_back(keySource);
+        value.clips.push_back(audioClipOn(1, 336, 0.0, 8.0, keyedSource));
+        value.clips.push_back(audioClipOn(2, 337, 0.0, 8.0, keySource));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // What a plugin cannot work out for itself. This one discards its input
+        // and renders a sine locked to the bar from the position the host
+        // published, so a host that reported the wrong place renders the right
+        // shape at the wrong phase, and one that published nothing renders
+        // silence.
+        //
+        // The clip is there to give both engines a track with something on it
+        // rather than to be heard: the plugin overwrites whatever it is handed.
+        auto track = plainTrack();
+        track.chain.fxChainElements.emplace_back(hostedDevice(977, HostedRole::Transport));
+
+        auto value =
+            newCase("plugin.transport", "the position a plugin is told it is at", std::move(track));
+        value.endBeat = 8.0;
+
+        const auto source = writeSource(scratchDirectory, "plugintransport", impulses());
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(338, 0.0, 8.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // MIDI into a hosted instrument. One sample at the note's own velocity
+        // on every note-on, which says both that the MIDI arrived and where it
+        // landed, and nothing between the two engines interpolates it.
+        auto track = plainTrack();
+        track.chain.fxChainElements.emplace_back(hostedDevice(978, HostedRole::Instrument));
+
+        auto value =
+            newCase("plugin.instrument", "MIDI into a hosted instrument", std::move(track));
+        value.endBeat = 8.0;
+
+        auto clip = midiClip(339, 0.0, 8.0);
+        for (auto index = 0; index < 8; ++index)
+            clip.midiNotes.push_back(note(60 + index, static_cast<double>(index), 0.5, 127));
+        value.clips.push_back(std::move(clip));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // And MIDI out of one. The instrument answers every note-on with its own
+        // an octave up at half the velocity, the device behind it renders what it
+        // receives as impulses at a quarter of that, and the chain's raw input is
+        // held back so the second device can only be hearing the first.
+        //
+        // Three levels in one render, and they are what the case reads: the
+        // instrument's own impulse at full scale, the echo's at an eighth of it,
+        // and nothing at all where a host dropped the plugin's MIDI on the way to
+        // the next device.
+        auto track = plainTrack();
+        auto relay = hostedDevice(979, HostedRole::InstrumentMidiOut);
+        relay.midiInThru = false;
+        track.chain.fxChainElements.emplace_back(std::move(relay));
+        track.chain.fxChainElements.emplace_back(hostedDevice(980, HostedRole::Echo));
+
+        auto value =
+            newCase("plugin.instrument.midiout",
+                    "an instrument's MIDI output reaching the device behind it", std::move(track));
+        value.endBeat = 8.0;
+
+        auto clip = midiClip(340, 0.0, 8.0);
+        for (auto index = 0; index < 8; ++index)
+            clip.midiNotes.push_back(note(60 + index, static_cast<double>(index), 0.5, 127));
+        value.clips.push_back(std::move(clip));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // The same chain with MIDI thru on, which is the toggle above turned
+        // the other way and the only case in the corpus that holds it there.
+        //
+        // Thru belongs to the host: no plugin format lets a plugin hand its
+        // MIDI input back -- every one of them replaces the host's buffer with
+        // what the plugin declared -- so both engines have to offer the raw
+        // stream themselves, beside the plugin's output. The native leg merges
+        // it into the chain behind the device and the fork wires it across the
+        // instrument's rack, and this is where the two are held to the same
+        // answer (#2345).
+        //
+        // What the echo renders says which notes reached it and at what
+        // strength. The chain's own note arrives at full velocity and the
+        // relay's an octave up at half, so a leg that dropped one, or sent
+        // either twice, renders a level nothing here can otherwise produce.
+        auto track = plainTrack();
+        auto relay = hostedDevice(981, HostedRole::InstrumentMidiOut);
+        relay.midiInThru = true;
+        track.chain.fxChainElements.emplace_back(std::move(relay));
+        track.chain.fxChainElements.emplace_back(hostedDevice(982, HostedRole::Echo));
+
+        auto value = newCase("plugin.instrument.midiout.thru",
+                             "MIDI thru beside an instrument's own MIDI output", std::move(track));
+        value.endBeat = 8.0;
+
+        auto clip = midiClip(341, 0.0, 8.0);
+        for (auto index = 0; index < 8; ++index)
+            clip.midiNotes.push_back(note(60 + index, static_cast<double>(index), 0.5, 127));
+        value.clips.push_back(std::move(clip));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // The runtime Faust instrument on both legs (#2315). Chords rather
+        // than a line, so the allocator holds several voices at once and has to
+        // release the right one.
+        auto track = plainTrack();
+        track.chain.fxChainElements.emplace_back(
+            faustInstrumentDevice(983, kNullDiffFaustSynthDsp));
+
+        auto value = newCase("plugin.faust.instrument",
+                             "a runtime Faust instrument's voice allocation", std::move(track));
+        value.endBeat = 8.0;
+
+        // The corpus's first sustaining synth, so the first case that can hear
+        // the fork's note-end nudge at all.
+        value.audioChangesAtNoteEnds = true;
+        value.mechanism =
+            "the fork ends every note 0.0001 s early (MidiNote::getPlaybackTime) and the engine "
+            "keeps the authored length; the four samples between the two releases are named per "
+            "note and taken out of the residual, everything else held to bit identity";
+
+        auto clip = midiClip(342, 0.0, 8.0);
+        for (auto index = 0; index < 4; ++index) {
+            const auto at = static_cast<double>(index) * 2.0;
+            // Overlapping releases: the third note is still sounding when the
+            // next chord starts, so voices are reused rather than always free.
+            clip.midiNotes.push_back(note(48 + index, at, 1.0, 100));
+            clip.midiNotes.push_back(note(55 + index, at, 1.0, 100));
+            clip.midiNotes.push_back(note(64 + index, at, 2.5, 100));
+        }
+        value.clips.push_back(std::move(clip));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // The sampler on both legs (#2271) — every Drum Grid pad is one.
+        // Staircase material read back at its own rate, so a read head in the
+        // wrong place shows as a step on the wrong sample, not a level change.
+        auto track = plainTrack();
+        const auto sampleFile = writeMaterial(scratchDirectory, "sampler", stepsEvery(0.05));
+        track.chain.fxChainElements.emplace_back(samplerDevice(984, sampleFile));
+
+        auto value = newCase("plugin.sampler", "a sampler's voice allocation and playback region",
+                             std::move(track));
+        value.endBeat = 8.0;
+
+        // A sustaining instrument, so this case hears the fork's note-end nudge
+        // exactly as the Faust instrument does (#2315) — and unlike that one it
+        // has an envelope, so the difference does not end at the note-off. The
+        // release is at the device's minimum to keep that carry short.
+        value.audioChangesAtNoteEnds = true;
+        value.noteEndReleaseSeconds = kSamplerEnvelopeSeconds;
+        value.mechanism =
+            "the fork ends every note 0.0001 s early (MidiNote::getPlaybackTime) and the engine "
+            "keeps the authored length; the two legs then run the same 0.001 s release four "
+            "samples apart, so that window is named per note and taken out of the residual, "
+            "everything else held to bit identity";
+
+        auto clip = midiClip(343, 0.0, 8.0);
+        for (auto index = 0; index < 4; ++index) {
+            const auto at = static_cast<double>(index) * 2.0;
+            // Overlapping releases, so voices are reused rather than always
+            // free, and two pitches at once so the pitch ratio is exercised.
+            clip.midiNotes.push_back(note(60, at, 1.0, 100));
+            clip.midiNotes.push_back(note(67, at, 2.5, 80));
+        }
+        value.clips.push_back(std::move(clip));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // The compiled poly instrument on both legs (#2352). Every synth MAGDA
+        // ships is one of these, and none of them had been measured against the
+        // fork before this case: the corpus's other instruments answer a
+        // note-on with an impulse, so what they pin is that a note arrived and
+        // where, not which voice took it or when it was let go.
+        auto track = plainTrack();
+        track.chain.fxChainElements.emplace_back(polySynthDevice(987));
+
+        auto value = newCase("plugin.compiled.instrument",
+                             "a compiled poly instrument's voice allocation", std::move(track));
+        value.endBeat = 8.0;
+
+        // A sustaining instrument with an envelope, so it hears the fork's
+        // note-end nudge the way the sampler does (#2271).
+        value.audioChangesAtNoteEnds = true;
+        value.noteEndReleaseSeconds = kPolySynthReleaseSettlingSeconds;
+        value.mechanism =
+            "the fork ends every note 0.0001 s early (MidiNote::getPlaybackTime) and the engine "
+            "keeps the authored length; the two legs then run the same one-pole release four "
+            "samples apart, so the three time constants it takes to leave the floor are named "
+            "per note and taken out of the residual, everything else held to bit identity";
+
+        auto clip = midiClip(344, 0.0, 8.0);
+        for (auto index = 0; index < 4; ++index) {
+            const auto at = static_cast<double>(index) * 2.0;
+            // Three voices held at once and released in an order the onsets do
+            // not give: the middle pitch goes first, the lowest last, and the
+            // lowest is still sounding when the next chord arrives, so a voice
+            // is reused rather than always free.
+            //
+            // Every length is a whole half-beat, which at 120 bpm is a whole
+            // number of samples. A note ending between two samples is rounded
+            // one way here and the other way by the fork, and the window below
+            // is derived from this end rather than found in the residual.
+            clip.midiNotes.push_back(note(48 + index, at, 2.5, 100));
+            clip.midiNotes.push_back(note(55 + index, at, 1.0, 100));
+            clip.midiNotes.push_back(note(64 + index, at, 1.5, 100));
+        }
+        value.clips.push_back(std::move(clip));
+
+        corpus.push_back(std::move(value));
+    }
+
     return corpus;
 }
 
-std::vector<std::string> externalDevicesIn(const Case& value) {
-    std::vector<std::string> external;
-
-    // Recursive, because a rack is a chain of chains and a plugin four levels
-    // down frames its own work exactly like one at the top. A walk that stopped
-    // at the first level would report a rack full of plugins as an internal
-    // project and hold it to bit identity, which is the one way this can be
-    // wrong in the direction nobody notices: the gate would fail, and the
-    // failure would name no cause.
-    const std::function<void(const std::vector<ChainElement>&)> walk =
-        [&](const std::vector<ChainElement>& elements) {
-            for (const auto& element : elements) {
-                if (isDevice(element)) {
-                    const auto& device = getDevice(element);
-                    if (device.format != PluginFormat::Internal)
-                        external.push_back(device.name.toStdString());
-                    continue;
-                }
-
-                for (const auto& chain : getRack(element).chains)
-                    walk(chain.elements);
-            }
-        };
+/**
+ * @brief Every external device @p value hosts, wherever it sits, in chain order.
+ *
+ * The model's own walk, because a rack is a chain of chains and a plugin four
+ * levels down frames its own work exactly like one at the top. A walk that
+ * stopped at the first level would report a rack full of plugins as an internal
+ * project and hold it to bit identity, which is the one way this can be wrong in
+ * the direction nobody notices: the gate would fail, and the failure would name
+ * no cause.
+ *
+ * Pads::Enter for the same reason one level further in. A Drum Grid's pads are
+ * chains of devices, and a kit built out of hosted plugins is a project this
+ * would otherwise call internal.
+ *
+ * Shared by the two questions asked of a project's plugins -- what could account
+ * for a difference, and which of them this machine does not have -- because two
+ * walks would eventually disagree about where a plugin can hide, and the one
+ * that missed a place would be the one deciding a case is safe to hold to bit
+ * identity.
+ */
+void forEachExternalDevice(const Case& value, const std::function<void(const DeviceInfo&)>& visit) {
+    const auto walk = [&visit](const std::vector<ChainElement>& elements, TrackId trackId) {
+        chain_walk::forEachDevice(elements, ChainNodePath::trackLevel(trackId),
+                                  chain_walk::Pads::Enter,
+                                  [&visit](const DeviceInfo& device, const ChainNodePath&) {
+                                      if (device.format != PluginFormat::Internal)
+                                          visit(device);
+                                  });
+    };
 
     // The post-FX stage and the mixer rail's analysis devices are as much of the
     // project as the insert chain is, and a plugin in either one reaches the
     // render the same way.
     const auto walkTrack = [&](const TrackInfo& track) {
-        walk(track.chain.fxChainElements);
+        walk(track.chain.fxChainElements, track.id);
 
+        // Flat stages: no racks, but a device there can still carry pads.
         for (const auto* stage :
              {&track.chain.postFxChainElements, &track.chain.mixerAnalysisElements})
-            for (const auto& element : *stage)
+            for (const auto& element : *stage) {
                 if (element.device.format != PluginFormat::Internal)
-                    external.push_back(element.device.name.toStdString());
+                    visit(element.device);
+
+                if (element.device.pads)
+                    for (const auto& pad : element.device.pads->chains)
+                        walk(pad.elements, track.id);
+            }
     };
 
     for (const auto& track : value.tracks)
         walkTrack(track);
 
     walkTrack(value.master);
+}
+
+std::vector<std::string> externalDevicesIn(const Case& value) {
+    std::vector<std::string> external;
+
+    forEachExternalDevice(value, [&external](const DeviceInfo& device) {
+        external.push_back(device.name.toStdString());
+    });
 
     return external;
+}
+
+std::vector<std::string> absentPluginsIn(const Case& value,
+                                         const juce::KnownPluginList* knownPlugins) {
+    std::vector<std::string> absent;
+
+    forEachExternalDevice(value, [&](const DeviceInfo& device) {
+        // No scan at all is not a special case: nothing is installed, so every
+        // plugin the project names is absent. That is the state every CI runner
+        // is in, and it is the one this has to get right without a flag.
+        if (knownPlugins != nullptr && adapter::isInstalledExternalPlugin(device, *knownPlugins))
+            return;
+
+        // Once each, unlike externalDevicesIn beside it, and the difference is
+        // the question. That one asks what could account for a difference and
+        // wants every instance in chain order; this one asks what this machine
+        // does not have, which a plugin hosted twice does not answer twice.
+        auto name = device.name.toStdString();
+        if (std::find(absent.begin(), absent.end(), name) == absent.end())
+            absent.push_back(std::move(name));
+    });
+
+    return absent;
 }
 
 const std::vector<Case>& sharedCorpus(const juce::File& scratchDirectory) {

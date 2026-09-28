@@ -1,5 +1,8 @@
 #include "UndoManager.hpp"
 
+#include <ranges>
+#include <utility>
+
 #include "../project/ProjectManager.hpp"
 
 namespace magda {
@@ -15,10 +18,10 @@ UndoManager& UndoManager::getInstance() {
 
 UndoManager::UndoManager() = default;
 
-void UndoManager::executeCommand(std::unique_ptr<UndoableCommand> command) {
+bool UndoManager::executeCommand(std::unique_ptr<UndoableCommand> command) {
     if (!command) {
         DBG("UNDO: executeCommand called with null command!");
-        return;
+        return false;
     }
 
     const auto beforeStateId = currentStateId_;
@@ -26,13 +29,15 @@ void UndoManager::executeCommand(std::unique_ptr<UndoableCommand> command) {
         ProjectManager::UndoableMutationScope mutationScope;
         command->execute();
     }
+    if (!command->didMutate())
+        return false;
     currentStateId_ = nextStateId_++;
 
     // If in compound operation, collect commands instead of pushing to stack
     if (compoundDepth_ > 0) {
         compoundCommands_.push_back(std::move(command));
         updateProjectDirtyState();
-        return;
+        return true;
     }
 
     // Check if we can merge with the previous command
@@ -53,6 +58,7 @@ void UndoManager::executeCommand(std::unique_ptr<UndoableCommand> command) {
 
     updateProjectDirtyState();
     notifyListeners();
+    return true;
 }
 
 bool UndoManager::undo() {
@@ -201,9 +207,9 @@ void UndoManager::updateProjectDirtyState() {
 // CompoundCommand Implementation
 // ============================================================================
 
-CompoundCommand::CompoundCommand(const juce::String& description,
+CompoundCommand::CompoundCommand(juce::String description,
                                  std::vector<std::unique_ptr<UndoableCommand>> commands)
-    : description_(description), commands_(std::move(commands)) {}
+    : description_(std::move(description)), commands_(std::move(commands)) {}
 
 void CompoundCommand::execute() {
     // Execute all commands in order
@@ -214,8 +220,8 @@ void CompoundCommand::execute() {
 
 void CompoundCommand::undo() {
     // Undo all commands in reverse order
-    for (auto it = commands_.rbegin(); it != commands_.rend(); ++it) {
-        (*it)->undo();
+    for (auto& command : std::views::reverse(commands_)) {
+        command->undo();
     }
 }
 
@@ -228,7 +234,13 @@ CompoundOperationScope::CompoundOperationScope(const juce::String& description) 
 }
 
 CompoundOperationScope::~CompoundOperationScope() {
-    UndoManager::getInstance().endCompoundOperation();
+    try {
+        UndoManager::getInstance().endCompoundOperation();
+    } catch (const std::exception& e) {
+        juce::Logger::writeToLog(juce::String("[CompoundOperationScope] ") + e.what());
+    } catch (...) {
+        juce::Logger::writeToLog("[CompoundOperationScope] unknown exception");
+    }
 }
 
 }  // namespace magda

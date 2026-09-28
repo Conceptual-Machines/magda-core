@@ -8,6 +8,8 @@ namespace magda {
 
 namespace te = tracktion;
 
-ParameterInfo makeInfoFromTeParam(int index, te::AutomatableParameter* param);
+ParameterInfo makeInfoFromTeParam(
+    int index, te::AutomatableParameter* param,
+    ParameterValueConvention valueConvention = ParameterValueConvention::Real);
 
 }  // namespace magda

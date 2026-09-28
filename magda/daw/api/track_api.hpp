@@ -1,15 +1,137 @@
 #pragma once
 
+#include <optional>
 #include <vector>
 
 #include "../core/ChainNodePath.hpp"
 #include "../core/DeviceInfo.hpp"
 #include "../core/RackInfo.hpp"
+#include "../core/ReferenceImpact.hpp"
 #include "../core/TrackInfo.hpp"
 #include "../core/TrackTypes.hpp"
 #include "../core/TypeIds.hpp"
 
 namespace magda {
+
+enum class ApplyTrackPresetStatus {
+    Applied,
+    Unchanged,
+    TrackNotFound,
+    PresetNotFound,
+    Incompatible,
+    ReferenceConflict,
+    LoadFailed,
+};
+
+struct ApplyTrackPresetResult {
+    ApplyTrackPresetStatus status = ApplyTrackPresetStatus::LoadFailed;
+    ReferenceImpactPlan referenceImpact;
+};
+
+enum class RoutingMedia { Audio, Midi };
+enum class RoutingDirection { Input, Output };
+enum class RoutingEndpointKind { None, Hardware, Track, Master, AllMidiInputs };
+
+/** A currently resolvable route. `internalId` never crosses the remote boundary. */
+struct RoutingEndpoint {
+    juce::String id;
+    juce::String name;
+    RoutingMedia media = RoutingMedia::Audio;
+    RoutingDirection direction = RoutingDirection::Input;
+    RoutingEndpointKind kind = RoutingEndpointKind::None;
+    bool available = true;
+    int channelCount = 0;
+    std::optional<TrackId> trackId;
+    juce::String internalId;
+};
+
+struct TrackRoutingPatch {
+    std::optional<juce::String> audioInputEndpointId;
+    std::optional<juce::String> midiInputEndpointId;
+    std::optional<juce::String> audioOutputEndpointId;
+    std::optional<juce::String> midiOutputEndpointId;
+};
+
+struct DroppedRoutingConnection {
+    TrackId trackId = INVALID_TRACK_ID;
+    juce::String field;
+    juce::String endpointId;
+    juce::String reason;
+};
+
+enum class SetTrackRoutingStatus {
+    Applied,
+    Unchanged,
+    TrackNotFound,
+    EndpointNotFound,
+    Incompatible,
+    FeedbackCycle,
+    ApplyFailed,
+};
+
+struct SetTrackRoutingResult {
+    SetTrackRoutingStatus status = SetTrackRoutingStatus::ApplyFailed;
+    std::vector<DroppedRoutingConnection> droppedConnections;
+};
+
+struct TrackRoutingView {
+    TrackId trackId = INVALID_TRACK_ID;
+    juce::String audioInputEndpointId;
+    juce::String midiInputEndpointId;
+    juce::String audioOutputEndpointId;
+    juce::String midiOutputEndpointId;
+    bool recordArmed = false;
+    InputMonitorMode inputMonitor = InputMonitorMode::Off;
+};
+
+struct TrackSendView {
+    juce::String id;
+    TrackId sourceTrackId = INVALID_TRACK_ID;
+    juce::String destinationEndpointId;
+    float level = 1.0f;
+    bool enabled = true;
+    bool preFader = false;
+
+    bool operator==(const TrackSendView&) const = default;
+};
+
+struct TrackSendPatch {
+    std::optional<juce::String> destinationEndpointId;
+    std::optional<float> level;
+    std::optional<bool> enabled;
+    std::optional<bool> preFader;
+};
+
+struct InvalidatedSendConnection {
+    juce::String sendId;
+    juce::String destinationEndpointId;
+    juce::String reason;
+};
+
+enum class TrackSendMutationStatus {
+    Applied,
+    Unchanged,
+    TrackNotFound,
+    SendNotFound,
+    EndpointNotFound,
+    Incompatible,
+    Duplicate,
+    LimitReached,
+    FeedbackCycle,
+    Referenced,
+    ApplyFailed,
+};
+
+struct TrackSendMutationResult {
+    TrackSendMutationStatus status = TrackSendMutationStatus::ApplyFailed;
+    std::optional<TrackSendView> send;
+    std::vector<InvalidatedSendConnection> invalidatedConnections;
+};
+
+/** Public token for a stored route; hashes backend-specific identifiers. */
+juce::String routingEndpointId(RoutingMedia media, RoutingDirection direction,
+                               const juce::String& internalId);
+juce::String trackSendId(TrackId sourceTrackId, const SendInfo& send);
 
 /**
  * Abstract view onto TrackManager — the track-level surface the agent
@@ -31,10 +153,26 @@ class TrackApi {
     virtual TrackInfo* getTrack(TrackId trackId) = 0;
     virtual const TrackInfo* getTrack(TrackId trackId) const = 0;
 
+    virtual ApplyTrackPresetResult applyPreset(TrackId trackId, const juce::String& presetId) = 0;
+    virtual std::vector<RoutingEndpoint> getRoutingEndpoints() const = 0;
+    virtual std::optional<TrackRoutingView> getRouting(TrackId trackId) const = 0;
+    virtual SetTrackRoutingResult setRouting(TrackId trackId, const TrackRoutingPatch& patch) = 0;
+    virtual std::vector<TrackSendView> getSends(TrackId trackId) const = 0;
+    virtual TrackSendMutationResult createSend(TrackId trackId, const TrackSendPatch& patch) = 0;
+    virtual TrackSendMutationResult updateSend(const juce::String& sendId,
+                                               const TrackSendPatch& patch) = 0;
+    virtual TrackSendMutationResult removeSend(const juce::String& sendId) = 0;
+
     virtual void setTrackName(TrackId trackId, const juce::String& name) = 0;
     virtual void setTrackColour(TrackId trackId, juce::Colour colour) = 0;
-    virtual void setTrackVolume(TrackId trackId, float volume, bool fromAutomation = false) = 0;
-    virtual void setTrackPan(TrackId trackId, float pan, bool fromAutomation = false) = 0;
+    virtual void setTrackVolume(TrackId trackId, float volume, bool fromAutomation) = 0;
+    void setTrackVolume(TrackId trackId, float volume) {
+        setTrackVolume(trackId, volume, false);
+    }
+    virtual void setTrackPan(TrackId trackId, float pan, bool fromAutomation) = 0;
+    void setTrackPan(TrackId trackId, float pan) {
+        setTrackPan(trackId, pan, false);
+    }
     virtual void setTrackMuted(TrackId trackId, bool muted) = 0;
     virtual void setTrackSoloed(TrackId trackId, bool soloed) = 0;
     virtual void setTrackRecordArmed(TrackId trackId, bool armed) = 0;

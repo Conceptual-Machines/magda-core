@@ -93,24 +93,18 @@ class AutomationPlaybackEngine : public AutomationManagerListener,
 
     te::AutomatableParameter* resolveParameter(const AutomationTarget& target);
 
-    // Maps a MAGDA 0..1 normalized value to the TE parameter's real range,
-    // accounting for the non-linear dB scale on track volume and TE's native
-    // fader position encoding. Shared by the bake loop and the drag-preview
-    // fast path so both paths agree on the conversion.
-    float convertToTEValue(const AutomationTarget& target, te::AutomatableParameter* param,
-                           double magdaNormalized) const;
-
-    // Inverse of convertToTEValue: TE parameter's real value → MAGDA 0..1.
+    // Inverse of makeParameterValueConverter (AutomationBake.hpp): the TE
+    // parameter's real value → MAGDA 0..1.
     // Used by currentValueChanged to translate TE-driven parameter writes back
     // into the normalized form UI listeners expect.
-    double convertFromTEValue(const AutomationTarget& target, te::AutomatableParameter* param,
-                              float teValue) const;
+    static double convertFromTEValue(const AutomationTarget& target,
+                                     te::AutomatableParameter* param, float teValue);
 
     // Push a normalized rate-curve value back into MAGDA's modulator state.
     // The lane is mode-aware: tempoSync=false → setXxxModRate (Hz), true →
     // setXxxModSyncDivision. Used by both drag-preview and TE-driven
     // currentValueChanged writeback so the two paths agree.
-    void writeModRateFromCurve(const AutomationTarget& target, double normalized);
+    static void writeModRateFromCurve(const AutomationTarget& target, double normalized);
 
     // Push a macro curve value into MAGDA state and update linked TE targets.
     // Drag preview also seeds the TE macro param; playback callbacks skip that

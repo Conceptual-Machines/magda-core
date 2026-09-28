@@ -1,0 +1,272 @@
+#include <catch2/catch_approx.hpp>
+#include <catch2/catch_test_macros.hpp>
+
+#include "transport/ClickGenerator.hpp"
+
+using magda::engine::BlockInfo;
+using magda::engine::ClickGenerator;
+using magda::engine::ClickSettings;
+using magda::engine::RenderContext;
+using magda::engine::TempoMap;
+
+namespace {
+
+constexpr double kSampleRate = 44100.0;
+constexpr int kBlockSize = 512;
+
+/// 120 bpm: 22050 samples to the beat.
+constexpr double kSamplesPerBeat = kSampleRate / 2.0;
+
+/// A block at 120 bpm, with both faces and the rate the transport would give
+/// it: a tick is placed through the map, and the map needs a seconds face to
+/// answer against (RenderContext::offsetForBeat).
+BlockInfo blockFrom(double startBeat, int numSamples) {
+    BlockInfo block;
+    block.numSamples = numSamples;
+    block.sampleRate = kSampleRate;
+    block.playing = true;
+    block.beats.start = startBeat;
+    block.beats.end = startBeat + numSamples / kSamplesPerBeat;
+    block.seconds.start = block.beats.start * 0.5;
+    block.seconds.end = block.beats.end * 0.5;
+    block.continuous = true;
+    return block;
+}
+
+/// The first sample past @p from with anything in it, or -1.
+int firstSounding(const juce::AudioBuffer<float>& output, int from = 0) {
+    for (auto sample = from; sample < output.getNumSamples(); ++sample)
+        if (output.getSample(0, sample) != 0.0f)
+            return sample;
+    return -1;
+}
+
+/// Where a click begins, or -1. Its very first sample is silent wherever it
+/// lands, because a sine starts at zero, so the burst begins one before the
+/// first thing audible.
+int clickStart(const juce::AudioBuffer<float>& output) {
+    const auto sounding = firstSounding(output);
+    return sounding < 0 ? sounding : sounding - 1;
+}
+
+struct Fixture {
+    Fixture() {
+        generator.prepare(RenderContext{kSampleRate, kBlockSize, 2});
+        output.setSize(2, kBlockSize);
+        output.clear();
+    }
+
+    void render(BlockInfo block, bool countingIn = false) {
+        block.tempo = &tempo;
+        generator.render(tempo, click, block, countingIn, output, 0);
+    }
+
+    ClickGenerator generator;
+    TempoMap tempo;
+    ClickSettings click{true, true, 1.0f};
+    juce::AudioBuffer<float> output;
+};
+
+}  // namespace
+
+TEST_CASE("The metronome sounds where the beat is", "[engine][transport][click]") {
+    Fixture fixture;
+
+    SECTION("on the first sample of a block that starts on a beat") {
+        fixture.render(blockFrom(0.0, kBlockSize));
+        CHECK(clickStart(fixture.output) == 0);
+    }
+
+    SECTION("part way into a block that does not") {
+        // The beat falls a hundred samples in, which is where the click starts
+        // and not a block early or a block late.
+        fixture.render(blockFrom(1.0 - 100.0 / kSamplesPerBeat, kBlockSize));
+        CHECK(clickStart(fixture.output) == 100);
+    }
+
+    SECTION("not at all between beats") {
+        fixture.render(blockFrom(0.25, kBlockSize));
+        CHECK(firstSounding(fixture.output) == -1);
+    }
+
+    SECTION("not at all while stopped") {
+        auto block = blockFrom(0.0, kBlockSize);
+        block.playing = false;
+        block.beats.end = block.beats.start;
+
+        fixture.render(block);
+        CHECK(firstSounding(fixture.output) == -1);
+    }
+}
+
+TEST_CASE("A bar is accented", "[engine][transport][click]") {
+    // A generator apiece, because a click carries into the blocks after it and
+    // one rendered on top of another's tail is not the sound being compared.
+    Fixture onTheBar, offTheBar;
+
+    onTheBar.render(blockFrom(0.0, kBlockSize));
+    offTheBar.render(blockFrom(1.0, kBlockSize));
+
+    REQUIRE(clickStart(onTheBar.output) == 0);
+    REQUIRE(clickStart(offTheBar.output) == 0);
+
+    auto different = false;
+    for (auto sample = 0; sample < kBlockSize; ++sample)
+        different = different ||
+                    onTheBar.output.getSample(0, sample) != offTheBar.output.getSample(0, sample);
+    CHECK(different);
+
+    SECTION("unless the emphasis is off, and then every beat is a beat") {
+        Fixture plain;
+        plain.click.emphasiseBars = false;
+        plain.render(blockFrom(0.0, kBlockSize));
+
+        for (auto sample = 0; sample < kBlockSize; ++sample)
+            REQUIRE(plain.output.getSample(0, sample) == offTheBar.output.getSample(0, sample));
+    }
+}
+
+TEST_CASE("A rendered click is the one the metronome plays", "[engine][transport][click]") {
+    // Tracktion plays these as its click samples, so both engines sound the same (#2802)
+    for (const bool accent : {true, false}) {
+        Fixture fixture;
+        constexpr int kWholeClick = 2048;
+        fixture.output.setSize(fixture.output.getNumChannels(), kWholeClick);
+        fixture.output.clear();
+        fixture.render(blockFrom(accent ? 0.0 : 1.0, kWholeClick));
+        const auto sound = ClickGenerator::renderSound(accent, kSampleRate);
+
+        REQUIRE(sound.getNumSamples() < kWholeClick);
+        for (auto sample = 0; sample < sound.getNumSamples(); ++sample)
+            REQUIRE(sound.getSample(0, sample) * fixture.click.gain ==
+                    Catch::Approx(fixture.output.getSample(0, sample)).margin(1.0e-6));
+    }
+}
+
+TEST_CASE("A click outlives the block it starts in", "[engine][transport][click]") {
+    Fixture fixture;
+
+    // A click is forty milliseconds, which is several blocks of five hundred
+    // and twelve samples: what carries is the only state the metronome has.
+    fixture.render(blockFrom(0.0, kBlockSize));
+    REQUIRE(fixture.output.getSample(0, kBlockSize - 1) != 0.0f);
+
+    fixture.output.clear();
+    fixture.render(blockFrom(kBlockSize / kSamplesPerBeat, kBlockSize));
+    CHECK(fixture.output.getSample(0, 0) != 0.0f);
+
+    SECTION("including across a jump, which is not the metronome's business") {
+        fixture.output.clear();
+
+        auto jumped = blockFrom(64.0, kBlockSize);
+        jumped.continuous = false;
+
+        fixture.render(jumped);
+        CHECK(fixture.output.getSample(0, 0) != 0.0f);
+    }
+}
+
+TEST_CASE("The metronome is off when it is off, and on for a count-in",
+          "[engine][transport][click][countin]") {
+    Fixture fixture;
+    fixture.click.enabled = false;
+
+    SECTION("switched off") {
+        fixture.render(blockFrom(0.0, kBlockSize));
+        CHECK(firstSounding(fixture.output) == -1);
+    }
+
+    SECTION("switched off, but counting in") {
+        // A count-in that did not count would just be a late start.
+        fixture.render(blockFrom(0.0, kBlockSize), true);
+        CHECK(clickStart(fixture.output) == 0);
+    }
+
+    SECTION("switched off during a click, which finishes rather than snapping") {
+        fixture.click.enabled = true;
+        fixture.render(blockFrom(0.0, kBlockSize));
+        REQUIRE(fixture.output.getSample(0, kBlockSize - 1) != 0.0f);
+
+        fixture.click.enabled = false;
+        fixture.output.clear();
+        fixture.render(blockFrom(kBlockSize / kSamplesPerBeat, kBlockSize));
+        CHECK(fixture.output.getSample(0, 0) != 0.0f);
+    }
+}
+
+TEST_CASE("The metronome follows the time signature", "[engine][transport][click]") {
+    Fixture fixture;
+    fixture.tempo = TempoMap({}, {{0.0, 6, 8}});
+
+    // Six eighths to the bar: a click every half beat rather than every beat.
+    fixture.render(blockFrom(0.5 - 100.0 / kSamplesPerBeat, kBlockSize));
+    CHECK(clickStart(fixture.output) == 100);
+}
+
+TEST_CASE("Two beats inside one block both sound", "[engine][transport][click]") {
+    Fixture fixture;
+
+    // A block long enough to hold a whole beat, at a tempo where one fits:
+    // the metronome is not once per callback.
+    juce::AudioBuffer<float> output(2, static_cast<int>(kSamplesPerBeat) + 200);
+    output.clear();
+
+    auto block = blockFrom(0.0, output.getNumSamples());
+    block.tempo = &fixture.tempo;
+    fixture.generator.render(fixture.tempo, fixture.click, block, false, output, 0);
+
+    CHECK(clickStart(output) == 0);
+    CHECK(output.getSample(0, static_cast<int>(kSamplesPerBeat) + 1) != 0.0f);
+}
+
+TEST_CASE("The metronome follows a signature change inside one block",
+          "[engine][transport][click][2336]") {
+    // The other thing the tempo-section cut incidentally provides: a block
+    // inside one time signature. The metronome walks the map's own ticks rather
+    // than a grid it worked out from the block's ends, so it does not need one,
+    // and this is the case that says so (#2333).
+    //
+    // The transport does not hand out such a block today. Built by hand, the
+    // assertion holds whatever the clock decides about cutting.
+    Fixture fixture;
+    fixture.tempo = TempoMap({}, {{0.0, 4, 4}, {2.0, 6, 8}});
+
+    constexpr auto kSamples = static_cast<int>(1.5 * kSamplesPerBeat);
+    fixture.output.setSize(2, kSamples);
+    fixture.output.clear();
+
+    fixture.render(blockFrom(1.5, kSamples));
+
+    // The beat at 2, half a beat into the block.
+    const auto first = static_cast<int>(0.5 * kSamplesPerBeat);
+    CHECK(clickStart(fixture.output) == first);
+
+    // And the one at 2.5, which only exists because six eighths to the bar puts
+    // a tick every half beat. Under four four the next tick would be at beat 3,
+    // past the end of the block, and this half of it would be silent.
+    const auto blip = static_cast<int>(0.05 * kSampleRate);
+    CHECK(firstSounding(fixture.output, first + blip) - 1 ==
+          static_cast<int>(1.0 * kSamplesPerBeat));
+}
+
+TEST_CASE("A tick a fraction into a sample sounds that fraction late",
+          "[engine][transport][click][2741]") {
+    // The same beat, once on sample 100 and once half a sample after it. Both
+    // land on sample 100; the second is the first delayed by half a sample,
+    // which is the mean of two neighbours to within the click's curvature.
+    Fixture onTheSample, halfAfter;
+    onTheSample.render(blockFrom(1.0 - 100.0 / kSamplesPerBeat, kBlockSize));
+    halfAfter.render(blockFrom(1.0 - 100.5 / kSamplesPerBeat, kBlockSize));
+
+    REQUIRE(clickStart(onTheSample.output) == 100);
+    REQUIRE(clickStart(halfAfter.output) == 100);
+
+    for (auto sample = 102; sample < kBlockSize; ++sample) {
+        const auto mean = 0.5f * (onTheSample.output.getSample(0, sample - 1) +
+                                  onTheSample.output.getSample(0, sample));
+        INFO("sample " << sample);
+        REQUIRE(halfAfter.output.getSample(0, sample) == Catch::Approx(mean).margin(0.01));
+    }
+
+    CHECK(halfAfter.output.getSample(0, 110) != onTheSample.output.getSample(0, 110));
+}

@@ -29,7 +29,7 @@ class ScanWorker : private juce::ChildProcessCoordinator {
 
     using ResultCallback = std::function<void(int workerIndex, const Result& result)>;
 
-    ScanWorker(int index, const juce::File& scannerExe, ResultCallback callback);
+    ScanWorker(int index, juce::File scannerExe, ResultCallback callback);
     ~ScanWorker() override;
 
     void scanPlugin(const juce::String& formatName, const juce::String& pluginPath);

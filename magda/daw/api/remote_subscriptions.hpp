@@ -63,7 +63,7 @@ const char* toString(SubscriptionEvent::Type type);
  *
  * `sample()` is called on the message thread and must not block: it reads a
  * lock-free snapshot the audio path has already published, and never touches the
- * audio thread itself.
+ * audio thread itself. The source is shared with one-shot meter reads.
  */
 class MeterSource {
   public:
@@ -80,6 +80,7 @@ class MeterSource {
 
     /// Latest levels for every track that has any, plus `MASTER_TRACK_ID`.
     virtual std::vector<TrackLevels> sample() = 0;
+    virtual void projectReplaced() {}
 };
 
 /**
@@ -160,6 +161,7 @@ class SubscriptionHub {
     /// Drop a client that has stopped consuming. Called with the hub's lock
     /// held, so it must do no more than mark the connection.
     using Disconnect = std::function<void(const juce::String& reason)>;
+    using ScopeProvider = std::function<ScopeSet()>;
 
     /// Answer to one subscription method. Called exactly once.
     using Completion = std::function<void(Response)>;
@@ -188,7 +190,8 @@ class SubscriptionHub {
 
     /// Register a transport connection. The returned id addresses it until
     /// `removeClient`; ids are never reused.
-    ClientId addClient(Sink sink, Disconnect disconnect);
+    ClientId addClient(Sink sink, Disconnect disconnect, juce::String ownerClientId = {},
+                       ScopeProvider scopes = {});
     void removeClient(ClientId client);
 
     /// Subscribed clients. For tests and diagnostics.
@@ -234,7 +237,7 @@ class SubscriptionHub {
      * remote client can do anything about, and a subscription that errors on a
      * headless host would make every client special-case it.
      */
-    void setMeterSource(std::unique_ptr<MeterSource> source);
+    void setMeterSource(std::shared_ptr<MeterSource> source);
 
     /// Stop delivering, drop every client, and detach from the change source.
     /// Idempotent; the destructor calls it. Call on the message thread, which is
@@ -253,14 +256,16 @@ class SubscriptionHub {
         juce::var baseline;
     };
 
-    juce::var projectTopic(Topic topic);
+    juce::var projectTopic(Topic topic, const juce::String& ownerClientId = {},
+                           ScopeSet scopes = allScopes());
     juce::var sampleTopic(Topic topic);
 
     Response execute(ClientId client, const juce::String& method, const juce::var& params,
                      const std::vector<Topic>& requested, bool topicsGiven);
 
-    void publishTopicLocked(Topic topic, Revision revision);
-    void deliverLocked(Client& client, const SubscriptionEvent& event);
+    void publishTopicLocked(Topic topic, Revision revision, bool reset);
+    void publishJobsLocked(Revision revision, bool reset);
+    static void deliverLocked(Client& client, const SubscriptionEvent& event);
     void foldFlushOutcomesLocked();
     void sendSnapshotsLocked(Client& client, const std::vector<Topic>& topics, Revision revision,
                              juce::Array<juce::var>& into);
@@ -289,7 +294,7 @@ class SubscriptionHub {
     ClientId nextClientId_ = 1;
     std::array<TopicState, TOPIC_COUNT> topics_{};
 
-    std::unique_ptr<MeterSource> meters_;
+    std::shared_ptr<MeterSource> meters_;
     std::unique_ptr<Sampler> sampler_;
     std::shared_ptr<Gate> gate_;
     int changeToken_ = 0;

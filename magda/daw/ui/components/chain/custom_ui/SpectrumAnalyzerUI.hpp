@@ -35,6 +35,15 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
 
     void setTelemetrySource(std::shared_ptr<SpectrumTelemetrySource> telemetry);
 
+    /// Read the transform and colour the device holds back into the controls.
+    /// Called when the device behind the source changes -- including the first
+    /// one, published after the slot is built (#2663).
+    void refreshSettingsFromSource();
+
+    /// Where an edited setting goes: the model's state document, which is what
+    /// persists it and what the device is rebuilt from (#2317).
+    std::function<void(const juce::NamedValueSet&)> onSettingsEdited;
+
     // The track this Spectrum device lives on. Enables the inter-track masking
     // overlay (#1400): a dropdown picks another track, whose spectrum is drawn
     // over this one with the clashing frequency zones shaded.
@@ -67,15 +76,18 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
     void parentHierarchyChanged() override;
 
   private:
+    /// Patch the model's document with what the controls hold.
+    void commitSettings();
+
     void timerCallback() override;
     void updateTimerState();
-    void refreshOverlayList();                        // rebuild combo items from the track list
-    void selectOverlayTrack(magda::TrackId trackId);  // change selection + arm/disarm analysis
-    void releaseMeasurementArming();                  // undo only what this UI armed
+    void refreshOverlayList();                       // rebuild combo items from the track list
+    void selectOverlayTrack(magda::TrackId target);  // change selection + arm/disarm analysis
+    void releaseMeasurementArming();                 // undo only what this UI armed
     void pollOverlayData();      // fetch overlay band spectrum + pair-filtered findings
     void rebuildFft(int order);  // (re)allocate FFT + buffers for a 2^order transform
-    float freqToX(float hz, juce::Rectangle<float> area) const;
-    float dbToY(float db, juce::Rectangle<float> area) const;
+    static float freqToX(float hz, juce::Rectangle<float> area);
+    static float dbToY(float db, juce::Rectangle<float> area);
     juce::Rectangle<float> plotArea() const;  // plot region (excludes the control row)
     void updateControlVisibility();
     void startControlsFade(bool expanding);

@@ -3,23 +3,24 @@
 #include <BinaryData.h>
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include <algorithm>
 #include <cmath>
 #include <numeric>
+#include <ranges>
 #include <unordered_set>
 
 #include "../../dialogs/AISettingsDialog.hpp"
 #include "../../panels/state/PanelController.hpp"
 #include "../../state/TimelineController.hpp"
 #include "../../state/TimelineEvents.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/CursorManager.hpp"
-#include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../utils/SelectionPolicy.hpp"
 #include "../common/Toast.hpp"
 #include "../tracks/TrackContentPanel.hpp"
 #include "../waveform/ClipWaveformPainter.hpp"
 #include "../waveform/WarpedWaveformRenderer.hpp"
-#include "audio/AudioBridge.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/AppPaths.hpp"
 #include "core/ChordAnnotationCommands.hpp"
@@ -35,6 +36,7 @@
 #include "core/TempoUtils.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
+#include "core/WarpMarkerCommands.hpp"
 #include "engine/AudioEngine.hpp"
 #include "stem_separation/DemucsSeparator.hpp"
 #include "stem_separation/StemSeparationService.hpp"
@@ -118,9 +120,9 @@ void extractChordsToChordTrack(magda::ClipId sourceClipId, bool replace) {
     if (source == nullptr || !source->isMidi() || source->midiNotes.empty())
         return;
 
-    int beatsPerBar = magda::DEFAULT_TIME_SIGNATURE_NUMERATOR;
+    double beatsPerBar = 4.0;
     if (auto* controller = TimelineController::getCurrent())
-        beatsPerBar = controller->getState().tempo.timeSignatureNumerator;
+        beatsPerBar = controller->getState().tempo.beatsPerBar();
 
     const auto extracted = magda::extractChordsFromNotes(source->midiNotes, beatsPerBar);
     if (extracted.empty()) {
@@ -257,12 +259,12 @@ juce::Path makeClippedRoundedRectPath(juce::Rectangle<int> bounds, juce::Rectang
         return path;
     }
 
-    const float left = static_cast<float>(region.getX());
-    const float right = static_cast<float>(region.getRight());
-    const float top = static_cast<float>(region.getY());
-    const float bottom = static_cast<float>(region.getBottom());
-    const float boundsLeft = static_cast<float>(bounds.getX());
-    const float boundsRight = static_cast<float>(bounds.getRight());
+    const auto left = static_cast<float>(region.getX());
+    const auto right = static_cast<float>(region.getRight());
+    const auto top = static_cast<float>(region.getY());
+    const auto bottom = static_cast<float>(region.getBottom());
+    const auto boundsLeft = static_cast<float>(bounds.getX());
+    const auto boundsRight = static_cast<float>(bounds.getRight());
     const float r = juce::jmin(radius, 0.5f * static_cast<float>(region.getHeight()),
                                0.5f * static_cast<float>(region.getWidth()));
 
@@ -321,9 +323,7 @@ void logArrangeRangeSelect(const juce::String& message) {
     }
 }
 
-}  // namespace
-
-static float computeFadeGain(float alpha, FadeCurve curve) {
+float computeFadeGain(float alpha, FadeCurve curve) {
     const float a = alpha * juce::MathConstants<float>::halfPi;
     switch (curve) {
         case FadeCurve::Convex:
@@ -340,6 +340,7 @@ static float computeFadeGain(float alpha, FadeCurve curve) {
             return alpha;
     }
 }
+}  // namespace
 
 ClipComponent::ClipComponent(ClipId clipId, TrackContentPanel* parent)
     : clipId_(clipId), parentPanel_(parent) {
@@ -453,7 +454,7 @@ void ClipComponent::paint(juce::Graphics& g) {
         // Calculate pixel spacing between loop boundaries to scale indicators
         float loopPixelWidth =
             static_cast<float>(loopLengthBeats / beatRange) * clipBounds.getWidth();
-        float clipHeight = static_cast<float>(clipBounds.getHeight());
+        auto clipHeight = static_cast<float>(clipBounds.getHeight());
 
         // Below this per-loop pixel width the markers pack so densely they
         // turn the clip into a solid black mass — hide them entirely.
@@ -472,8 +473,8 @@ void ClipComponent::paint(juce::Graphics& g) {
             // Shadow gradient on right side of boundary (fold effect)
             float shadeWidth = juce::jmin(6.0f, loopPixelWidth * 0.15f);
             if (shadeWidth >= 1.0f) {
-                float top = static_cast<float>(clipBounds.getY());
-                float bot = static_cast<float>(clipBounds.getBottom());
+                auto top = static_cast<float>(clipBounds.getY());
+                auto bot = static_cast<float>(clipBounds.getBottom());
                 juce::ColourGradient shade(juce::Colours::black.withAlpha(0.45f), bx, 0.0f,
                                            juce::Colours::transparentBlack, bx + shadeWidth, 0.0f,
                                            false);
@@ -492,7 +493,7 @@ void ClipComponent::paint(juce::Graphics& g) {
             if (cutSize < 2.0f)
                 continue;  // Too small to draw meaningfully
 
-            float top = static_cast<float>(clipBounds.getY());
+            auto top = static_cast<float>(clipBounds.getY());
             juce::Path cut;
             // Left triangle
             cut.addTriangle(bx - cutSize, top, bx, top, bx, top + cutSize);
@@ -526,7 +527,7 @@ void ClipComponent::paint(juce::Graphics& g) {
             // Diagonal hatch, one line every 6px, running the full height so it
             // reads at any clip size.
             g.setColour(juce::Colours::white.withAlpha(0.10f));
-            const float height = static_cast<float>(region.getHeight());
+            const auto height = static_cast<float>(region.getHeight());
             for (float x = static_cast<float>(region.getX()) - height;
                  x < static_cast<float>(region.getRight()); x += 6.0f) {
                 g.drawLine(x, static_cast<float>(region.getBottom()), x + height,
@@ -604,6 +605,8 @@ size_t ClipComponent::computeWaveformHash(const ClipInfo& clip) {
     combine(std::hash<double>{}(audioEventRef(clip).loopLengthSeconds()));
     combine(std::hash<double>{}(clip.loopLengthBeats));
     combine(std::hash<long long>{}(audioEventRef(clip).loopLengthSamples));
+    combine(static_cast<size_t>(audioEventRef(clip).loopLengthIntent));
+    combine(std::hash<double>{}(audioEventRef(clip).musicalLoopLengthBeats));
     combine(std::hash<double>{}(audioEventRef(clip).interpTotalBeats));
     combine(std::hash<bool>{}(audioEventRef(clip).warpEnabled));
     combine(std::hash<bool>{}(audioEventRef(clip).autoTempo));
@@ -743,6 +746,20 @@ ClipComponent::EffectiveFades ClipComponent::computeEffectiveFades(const ClipInf
     return ClipManager::getInstance().getEffectiveFades(clipId_, tempo);
 }
 
+std::vector<ClipId> ClipComponent::selectedClipsInTimelineOrder() const {
+    const auto& selected = SelectionManager::getInstance().getSelectedClips();
+    std::vector<ClipId> ordered(selected.begin(), selected.end());
+
+    auto& clipManager = ClipManager::getInstance();
+    const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+    const auto startSeconds = [&clipManager, tempo](ClipId id) {
+        const auto* clip = clipManager.getClip(id);
+        return clip != nullptr ? timelineStartSeconds(*clip, tempo) : 0.0;
+    };
+    std::ranges::sort(ordered, {}, startSeconds);
+    return ordered;
+}
+
 ClipId ClipComponent::findCrossfadeNeighbour(bool atStart) const {
     return ClipManager::getInstance().findCrossfadeNeighbour(clipId_, atStart);
 }
@@ -814,7 +831,7 @@ void ClipComponent::paintMidiNotes(juce::Graphics& g, const ClipInfo& clip,
     // and no source region to consult.
     double loopLengthBeats = clip.loopLengthBeats > 0.0 ? clip.loopLengthBeats : clipLengthInBeats;
 
-    double midiOffset;
+    double midiOffset = NAN;
     if (isDragging_ && dragMode_ == DragMode::ResizeLeft) {
         midiOffset =
             clip.loopEnabled ? resizePreviewClip_.midiOffset : resizePreviewClip_.midiTrimOffset;
@@ -922,7 +939,7 @@ void ClipComponent::paintMidiNotes(juce::Graphics& g, const ClipInfo& clip,
     }
 }
 
-bool ClipComponent::isChordClip(const ClipInfo& clip) const {
+bool ClipComponent::isChordClip(const ClipInfo& clip) {
     const auto* track = TrackManager::getInstance().getTrack(clip.trackId);
     return track != nullptr && track->type == TrackType::Chord;
 }
@@ -953,7 +970,7 @@ void ClipComponent::paintChordClip(juce::Graphics& g, const ClipInfo& clip,
         // The chord blocks (glassy card + spine) take the chord track's colour
         // live, so they stay correct after a track recolour (matches the
         // piano-roll grid notes for chord clips).
-        auto blockColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
+        auto blockColour = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
         if (auto* chordTrack = magda::TrackManager::getInstance().getTrack(
                 magda::TrackManager::getInstance().getChordTrackId()))
             blockColour = chordTrack->colour;
@@ -1028,7 +1045,7 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
     const bool selected = isSelected_ || SelectionManager::getInstance().isClipSelected(clipId_);
     const auto headerColour = selected ? juce::Colours::black : deriveTrackSwatch(clip.colour);
     const auto headerForeground =
-        selected ? juce::Colours::white : DarkTheme::getColour(DarkTheme::BACKGROUND);
+        selected ? juce::Colours::white : ActiveTheme::getColour(ActiveTheme::BACKGROUND);
 
     // Extended 2px past its bottom so the lower corners get cut off by the body
     // and only the top pair reads as rounded.
@@ -1050,7 +1067,7 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
             if (linkIcon) {
                 auto themedIcon = linkIcon->createCopy();
                 themedIcon->replaceColour(juce::Colour(0xFFB3B3B3), headerForeground);
-                DarkTheme::applyToSvgIcon(*themedIcon);
+                ActiveTheme::applyToSvgIcon(*themedIcon);
                 themedIcon->drawWithin(g, iconArea.toFloat(), juce::RectanglePlacement::centred,
                                        1.0f);
             }
@@ -1066,7 +1083,7 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
             if (chordIcon) {
                 auto themedIcon = chordIcon->createCopy();
                 themedIcon->replaceColour(juce::Colour(0xFFB3B3B3), headerForeground);
-                DarkTheme::applyToSvgIcon(*themedIcon);
+                ActiveTheme::applyToSvgIcon(*themedIcon);
                 themedIcon->drawWithin(g, iconArea.toFloat(), juce::RectanglePlacement::centred,
                                        1.0f);
             }
@@ -1115,7 +1132,7 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
             if (loopIcon) {
                 auto themedIcon = loopIcon->createCopy();
                 themedIcon->replaceColour(juce::Colour(0xFFBCBCBC), headerForeground);
-                DarkTheme::applyToSvgIcon(*themedIcon);
+                ActiveTheme::applyToSvgIcon(*themedIcon);
                 themedIcon->drawWithin(g, loopArea.toFloat(), juce::RectanglePlacement::centred,
                                        1.0f);
             }
@@ -1145,11 +1162,11 @@ void ClipComponent::paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
                                       const EffectiveFades& fades,
                                       juce::Rectangle<int> waveformArea, double pixelsPerSecond) {
     constexpr int NUM_STEPS = 32;
-    float areaTop = static_cast<float>(waveformArea.getY());
-    float areaBottom = static_cast<float>(waveformArea.getBottom());
+    auto areaTop = static_cast<float>(waveformArea.getY());
+    auto areaBottom = static_cast<float>(waveformArea.getBottom());
     float areaHeight = areaBottom - areaTop;
-    float areaLeft = static_cast<float>(waveformArea.getX());
-    float areaRight = static_cast<float>(waveformArea.getRight());
+    auto areaLeft = static_cast<float>(waveformArea.getX());
+    auto areaRight = static_cast<float>(waveformArea.getRight());
 
     // The counterpart curve of a crossfade (the other clip's fade across the
     // same overlap) — drawn by both components of the pair so the X reads the
@@ -1295,16 +1312,16 @@ void ClipComponent::paintFadeHandles(juce::Graphics& g, const ClipInfo& clip,
     if (pixelsPerSecond <= 0.0)
         return;
 
-    float hs = static_cast<float>(FADE_HANDLE_SIZE);
+    auto hs = static_cast<float>(FADE_HANDLE_SIZE);
     float half = hs * 0.5f;
-    float waveTop = static_cast<float>(waveformArea.getY());
+    auto waveTop = static_cast<float>(waveformArea.getY());
 
-    auto handleColour = DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION);
+    auto handleColour = ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION);
     const auto fades = computeEffectiveFades(clip);
 
     // Fade-in handle: only visible on hover
     if (hoverFadeIn_) {
-        float fadeInPx = static_cast<float>(fades.fadeInSeconds * pixelsPerSecond);
+        auto fadeInPx = static_cast<float>(fades.fadeInSeconds * pixelsPerSecond);
         float cx = static_cast<float>(waveformArea.getX()) + fadeInPx;
         g.setColour(handleColour);
         g.fillRect(cx - half, waveTop, hs, hs);
@@ -1312,7 +1329,7 @@ void ClipComponent::paintFadeHandles(juce::Graphics& g, const ClipInfo& clip,
 
     // Fade-out handle: only visible on hover
     if (hoverFadeOut_) {
-        float fadeOutPx = static_cast<float>(fades.fadeOutSeconds * pixelsPerSecond);
+        auto fadeOutPx = static_cast<float>(fades.fadeOutSeconds * pixelsPerSecond);
         float cx = static_cast<float>(waveformArea.getRight()) - fadeOutPx;
         g.setColour(handleColour);
         g.fillRect(cx - half, waveTop, hs, hs);
@@ -1363,21 +1380,18 @@ bool ClipComponent::hitTest(int x, int y) {
     if (x < 0 || x >= getWidth() || y < 0 || y >= getHeight())
         return false;
 
-    // Be transparent to a plain (unmodified, non-edge) click that lands on an
-    // active time selection covering this clip, so the gesture goes straight to
-    // the panel's time-selection machinery and the panel owns the drag. Routing
-    // it through this component instead breaks mid-drag: splitting at the
-    // selection boundaries rebuilds (destroys) every ClipComponent, killing the
-    // drag (you had to drag twice). Clip resize edges and modified clicks
-    // (copy/select/blade/erase/context menu) still hit the clip.
+    // Selection edges remain draggable across the lane. Inside the selection,
+    // only the lower time-selection zone passes through to the panel; the upper
+    // zone must still be able to start an ordinary clip drag after a trim.
     if (parentPanel_ != nullptr) {
         const auto mods = juce::ModifierKeys::getCurrentModifiers();
         if (!mods.isAnyModifierKeyDown() && !mods.isPopupMenu() && !isOnLeftEdge(x) &&
             !isOnRightEdge(x)) {
             const int panelX = getX() + x;
             const int panelY = getY() + y;
-            if (parentPanel_->pointInTimeSelection(panelX, panelY) ||
-                parentPanel_->pointOnTimeSelectionEdge(panelX, panelY)) {
+            if (parentPanel_->pointOnTimeSelectionEdge(panelX, panelY) ||
+                (!parentPanel_->pointInUpperTrackZone(panelY) &&
+                 parentPanel_->pointInTimeSelection(panelX, panelY))) {
                 return false;
             }
         }
@@ -1665,6 +1679,13 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
     }
     dragStartTrackId_ = clip->trackId;
     dragStartAudioOffset_ = magda::audioEventRef(*clip).anchorSeconds();
+
+    // Which lanes this drag may land on (#2179), worked out once here rather
+    // than per frame. A multi-clip drag replaces it in startMultiClipDrag with
+    // the whole selection's answer; this covers the single-clip case, which is
+    // the panel's only way to know a drag has begun.
+    if (parentPanel_)
+        parentPanel_->beginClipDragTargets({clipId_}, clipId_);
 
     // Cache file duration for resize clamping
     dragStartFileDuration_ = 0.0;
@@ -2008,7 +2029,8 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                     int ghostH = getHeight();
                     const int localY =
                         e.getScreenPosition().y - parentPanel_->getScreenBounds().getPosition().y;
-                    const int trackIndex = parentPanel_->getTrackIndexAtY(localY);
+                    const int trackIndex = parentPanel_->clipDragTargetLane(
+                        dragStartTrackId_, parentPanel_->clipDragSlotDelta(localY));
                     if (trackIndex >= 0) {
                         ghostY = parentPanel_->getTrackYPosition(trackIndex);
                         ghostH = parentPanel_->getTrackTotalHeight(trackIndex);
@@ -2027,32 +2049,29 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                 int newWidth = static_cast<int>(std::round(lengthBeats * pixelsPerBeat));
                 setBounds(newX, getY(), juce::jmax(10, newWidth), getHeight());
 
-                // Show ghost on target track when dragging across tracks
+                // Show ghost on the track the drop will actually use, which is
+                // the nearest lane that can hold this clip rather than whichever
+                // one the pointer is over (#2179). Resolved through the panel so
+                // the ghost and the mouseUp commit cannot disagree.
                 auto screenPos = e.getScreenPosition();
                 auto parentPos = parentPanel_->getScreenBounds().getPosition();
                 int localY = screenPos.y - parentPos.y;
-                int trackIndex = parentPanel_->getTrackIndexAtY(localY);
+                const int slotDelta = parentPanel_->clipDragSlotDelta(localY);
+                const int trackIndex =
+                    parentPanel_->clipDragTargetLane(dragStartTrackId_, slotDelta);
 
-                if (trackIndex >= 0) {
-                    auto visibleTracks = TrackManager::getInstance().getVisibleTracks(
-                        ViewModeController::getInstance().getViewMode());
-
-                    if (trackIndex < static_cast<int>(visibleTracks.size()) &&
-                        visibleTracks[trackIndex] != dragStartTrackId_) {
-                        // Over a different track — show ghost
-                        int targetY = parentPanel_->getTrackYPosition(trackIndex);
-                        int targetH = parentPanel_->getTrackTotalHeight(trackIndex);
-                        const auto* clip = getClipInfo();
-                        juce::Rectangle<int> ghostBounds(newX, targetY, juce::jmax(10, newWidth),
-                                                         targetH);
-                        parentPanel_->setClipGhost(clipId_, ghostBounds,
-                                                   clip ? clip->colour : juce::Colours::grey);
-                    } else {
-                        // Back on source track — clear ghost
-                        parentPanel_->clearClipGhost(clipId_);
-                    }
+                if (trackIndex >= 0 && parentPanel_->clipDragTargetTrackId(
+                                           dragStartTrackId_, slotDelta) != dragStartTrackId_) {
+                    // Landing somewhere else — show ghost
+                    int targetY = parentPanel_->getTrackYPosition(trackIndex);
+                    int targetH = parentPanel_->getTrackTotalHeight(trackIndex);
+                    const auto* clip = getClipInfo();
+                    juce::Rectangle<int> ghostBounds(newX, targetY, juce::jmax(10, newWidth),
+                                                     targetH);
+                    parentPanel_->setClipGhost(clipId_, ghostBounds,
+                                               clip ? clip->colour : juce::Colours::grey);
                 } else {
-                    // Outside any track — clear ghost
+                    // Staying on the source track — no ghost to draw
                     parentPanel_->clearClipGhost(clipId_);
                 }
             }
@@ -2288,7 +2307,7 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                              ? static_cast<double>(wfArea.getWidth()) / dragStartLength_
                              : 0.0;
             if (pps > 0.0) {
-                double fadeInPx = static_cast<double>(e.x - wfArea.getX());
+                auto fadeInPx = static_cast<double>(e.x - wfArea.getX());
                 double newFadeIn = juce::jmax(0.0, fadeInPx / pps);
                 const auto* ci = getClipInfo();
                 double maxFadeIn =
@@ -2320,7 +2339,7 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                              ? static_cast<double>(wfArea.getWidth()) / dragStartLength_
                              : 0.0;
             if (pps > 0.0) {
-                double fadeOutPx = static_cast<double>(wfArea.getRight() - e.x);
+                auto fadeOutPx = static_cast<double>(wfArea.getRight() - e.x);
                 double newFadeOut = juce::jmax(0.0, fadeOutPx / pps);
                 const auto* ci = getClipInfo();
                 double maxFadeOut =
@@ -2549,22 +2568,19 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                 }
                 finalStartTime = juce::jmax(0.0, finalStartTime);
 
-                // Determine target track
+                // Determine target track — the same resolution the ghost used,
+                // so the lane under the ghost at the moment of release is the
+                // lane the clip lands on (#2179).
                 TrackId targetTrackId = dragStartTrackId_;
                 if (parentPanel_) {
                     auto screenPos = e.getScreenPosition();
                     auto parentPos = parentPanel_->getScreenBounds().getPosition();
                     int localY = screenPos.y - parentPos.y;
-                    int trackIndex = parentPanel_->getTrackIndexAtY(localY);
-
-                    if (trackIndex >= 0) {
-                        auto visibleTracks = TrackManager::getInstance().getVisibleTracks(
-                            ViewModeController::getInstance().getViewMode());
-
-                        if (trackIndex < static_cast<int>(visibleTracks.size())) {
-                            targetTrackId = visibleTracks[trackIndex];
-                        }
-                    }
+                    targetTrackId = parentPanel_->clipDragTargetTrackId(
+                        dragStartTrackId_, parentPanel_->clipDragSlotDelta(localY));
+                    // Nothing below reads them, and the commit can destroy this
+                    // component before any later exit could clear them.
+                    parentPanel_->endClipDragTargets();
                 }
 
                 if (isDuplicating_) {
@@ -2708,7 +2724,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                                      ? static_cast<double>(wfArea.getWidth()) / dragStartLength_
                                      : 0.0;
                     if (pps > 0.0) {
-                        double fadeInPx = static_cast<double>(e.x - wfArea.getX());
+                        auto fadeInPx = static_cast<double>(e.x - wfArea.getX());
                         finalFadeIn = juce::jmax(0.0, fadeInPx / pps);
                         const auto* ci = getClipInfo();
                         double maxFadeIn = ci ? timelineLengthSeconds(*ci, commitTempoBPM) -
@@ -2768,7 +2784,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                                      ? static_cast<double>(wfArea.getWidth()) / dragStartLength_
                                      : 0.0;
                     if (pps > 0.0) {
-                        double fadeOutPx = static_cast<double>(wfArea.getRight() - e.x);
+                        auto fadeOutPx = static_cast<double>(wfArea.getRight() - e.x);
                         finalFadeOut = juce::jmax(0.0, fadeOutPx / pps);
                         const auto* ci = getClipInfo();
                         double maxFadeOut = ci ? timelineLengthSeconds(*ci, commitTempoBPM) -
@@ -3163,16 +3179,13 @@ namespace {
 /// Repaint only when the ranges actually moved: these are pushed on every lane
 /// update, most of which change nothing.
 bool sameRanges(const std::vector<BeatRange>& a, const std::vector<BeatRange>& b) {
-    if (a.size() != b.size())
-        return false;
-    constexpr double tolBeats = 1e-6;
-    for (size_t i = 0; i < a.size(); ++i) {
-        if (std::abs(a[i].start.value - b[i].start.value) >= tolBeats ||
-            std::abs(a[i].end.value - b[i].end.value) >= tolBeats) {
-            return false;
-        }
-    }
-    return true;
+    const auto samePair = [](const auto& pair) {
+        constexpr double tolBeats = 1e-6;
+        const auto& [lhs, rhs] = pair;
+        return std::abs(lhs.start.value - rhs.start.value) < tolBeats &&
+               std::abs(lhs.end.value - rhs.end.value) < tolBeats;
+    };
+    return a.size() == b.size() && std::ranges::all_of(std::views::zip(a, b), samePair);
 }
 
 }  // namespace
@@ -3218,7 +3231,7 @@ bool ClipComponent::isPartOfMultiSelection() const {
 // Helpers
 // ============================================================================
 
-bool ClipComponent::isOnLeftEdge(int x) const {
+bool ClipComponent::isOnLeftEdge(int x) {
     return x < RESIZE_HANDLE_WIDTH;
 }
 
@@ -3318,7 +3331,7 @@ void ClipComponent::showContextMenu() {
     std::vector<TrackId> progressionTargets;
     if (isChord && !isMultiSelection) {
         for (const auto& t : TrackManager::getInstance().getTracks())
-            if (t.type == TrackType::Audio)
+            if (t.type == TrackType::Media)
                 progressionTargets.push_back(t.id);
     }
 
@@ -3386,12 +3399,9 @@ void ClipComponent::showContextMenu() {
         double gridInterval = 0.0;
         if (parentPanel_ && parentPanel_->getTimelineController())
             gridInterval = parentPanel_->getTimelineController()->getState().getSnapInterval();
-        auto* audioEngine = TrackManager::getInstance().getAudioEngine();
-        auto* bridge = audioEngine ? audioEngine->getAudioBridge() : nullptr;
-
-        auto hasWarpMarkers = [&](const ClipInfo* c, ClipId id) {
-            return c && c->isAudio() && magda::audioEventRef(*c).warpEnabled && bridge &&
-                   bridge->getWarpMarkers(id).size() > 2;
+        auto hasWarpMarkers = [](const ClipInfo* c, ClipId id) {
+            return c && c->isAudio() && magda::audioEventRef(*c).warpEnabled &&
+                   getClipWarpMarkers(id).size() > 2;
         };
 
         if (isMultiSelection) {
@@ -3502,16 +3512,7 @@ void ClipComponent::showContextMenu() {
     // Join Clips (need 2+ adjacent clips on same track)
     bool canJoin = false;
     if (selectionManager.getSelectedClipCount() >= 2) {
-        auto selected = selectionManager.getSelectedClips();
-        std::vector<ClipId> sorted(selected.begin(), selected.end());
-        std::sort(sorted.begin(), sorted.end(), [&](ClipId a, ClipId b) {
-            auto* ca = clipManager.getClip(a);
-            auto* cb = clipManager.getClip(b);
-            if (!ca || !cb)
-                return false;
-            const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
-            return timelineStartSeconds(*ca, tempo) < timelineStartSeconds(*cb, tempo);
-        });
+        const auto sorted = selectedClipsInTimelineOrder();
         canJoin = true;
         for (size_t i = 1; i < sorted.size() && canJoin; ++i) {
             JoinClipsCommand testCmd(sorted[i - 1], sorted[i]);
@@ -3624,7 +3625,7 @@ void ClipComponent::showContextMenu() {
                 const auto& state = parentPanel_->getTimelineController()->getState();
                 double gridBeats = GridConstants::computeGridInterval(
                     state.display.gridQuantize, state.zoom.horizontalZoom,
-                    state.tempo.timeSignatureNumerator, 50);
+                    state.tempo.beatsPerBar(), state.tempo.signatureBeatLength(), 50);
                 hasGrid = gridBeats > 0.0;
             }
             {
@@ -4075,7 +4076,7 @@ void ClipComponent::showContextMenu() {
                 auto visibleTracks = TrackManager::getInstance().getVisibleTracks(
                     ViewModeController::getInstance().getViewMode());
                 if (sel.isAllTracks()) {
-                    trackIds = visibleTracks;
+                    trackIds = std::move(visibleTracks);
                 } else {
                     for (int idx : sel.trackIndices) {
                         if (idx >= 0 && idx < static_cast<int>(visibleTracks.size()))
@@ -4148,17 +4149,8 @@ void ClipComponent::showContextMenu() {
             }
 
             case 8: {  // Join Clips
-                auto selectedClips = selectionManager.getSelectedClips();
-                if (selectedClips.size() >= 2) {
-                    std::vector<ClipId> sorted(selectedClips.begin(), selectedClips.end());
-                    std::sort(sorted.begin(), sorted.end(), [&](ClipId a, ClipId b) {
-                        auto* ca = clipManager.getClip(a);
-                        auto* cb = clipManager.getClip(b);
-                        if (!ca || !cb)
-                            return false;
-                        const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
-                        return timelineStartSeconds(*ca, tempo) < timelineStartSeconds(*cb, tempo);
-                    });
+                if (selectionManager.getSelectedClipCount() >= 2) {
+                    const auto sorted = selectedClipsInTimelineOrder();
 
                     if (sorted.size() > 2)
                         UndoManager::getInstance().beginCompoundOperation("Join Clips");
@@ -4321,19 +4313,17 @@ void ClipComponent::showContextMenu() {
 
             case 13: {  // Slice at Warp Markers In Place
                 double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
-                auto* audioEngine = TrackManager::getInstance().getAudioEngine();
-                auto* bridge = audioEngine ? audioEngine->getAudioBridge() : nullptr;
                 if (selectionManager.getSelectedClipCount() > 1) {
                     UndoManager::getInstance().beginCompoundOperation(
                         "Slice Clips at Warp Markers");
                     for (auto cid : selectionManager.getSelectedClips()) {
                         const auto* c = clipManager.getClip(cid);
                         if (c && c->isAudio())
-                            sliceClipAtWarpMarkers(cid, tempo, bridge);
+                            sliceClipAtWarpMarkers(cid, tempo);
                     }
                     UndoManager::getInstance().endCompoundOperation();
                 } else {
-                    sliceClipAtWarpMarkers(clipId_, tempo, bridge);
+                    sliceClipAtWarpMarkers(clipId_, tempo);
                 }
                 break;
             }
@@ -4345,27 +4335,23 @@ void ClipComponent::showContextMenu() {
                     gridInterval =
                         parentPanel_->getTimelineController()->getState().getSnapInterval();
                 }
-                auto* audioEngine = TrackManager::getInstance().getAudioEngine();
-                auto* bridge = audioEngine ? audioEngine->getAudioBridge() : nullptr;
                 if (selectionManager.getSelectedClipCount() > 1) {
                     UndoManager::getInstance().beginCompoundOperation("Slice Clips at Grid");
                     for (auto cid : selectionManager.getSelectedClips()) {
                         const auto* c = clipManager.getClip(cid);
                         if (c && c->isAudio())
-                            sliceClipAtGrid(cid, gridInterval, tempo, bridge);
+                            sliceClipAtGrid(cid, gridInterval, tempo);
                     }
                     UndoManager::getInstance().endCompoundOperation();
                 } else {
-                    sliceClipAtGrid(clipId_, gridInterval, tempo, bridge);
+                    sliceClipAtGrid(clipId_, gridInterval, tempo);
                 }
                 break;
             }
 
             case 15: {  // Slice at Warp Markers to Drum Grid
                 double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
-                auto* audioEngine = TrackManager::getInstance().getAudioEngine();
-                auto* bridge = audioEngine ? audioEngine->getAudioBridge() : nullptr;
-                sliceWarpMarkersToDrumGrid(clipId_, tempo, bridge);
+                sliceWarpMarkersToDrumGrid(clipId_, tempo);
                 break;
             }
 
@@ -4376,9 +4362,7 @@ void ClipComponent::showContextMenu() {
                     gridInterval =
                         parentPanel_->getTimelineController()->getState().getSnapInterval();
                 }
-                auto* audioEngine = TrackManager::getInstance().getAudioEngine();
-                auto* bridge = audioEngine ? audioEngine->getAudioBridge() : nullptr;
-                sliceAtGridToDrumGrid(clipId_, gridInterval, tempo, bridge);
+                sliceAtGridToDrumGrid(clipId_, gridInterval, tempo);
                 break;
             }
 
@@ -4393,7 +4377,7 @@ void ClipComponent::showContextMenu() {
                         const auto& state = parentPanel_->getTimelineController()->getState();
                         grid = GridConstants::computeGridInterval(
                             state.display.gridQuantize, state.zoom.horizontalZoom,
-                            state.tempo.timeSignatureNumerator, 50);
+                            state.tempo.beatsPerBar(), state.tempo.signatureBeatLength(), 50);
                     }
 
                     auto selectedClips = selectionManager.getSelectedClips();

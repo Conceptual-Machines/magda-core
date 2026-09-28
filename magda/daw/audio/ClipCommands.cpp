@@ -4,22 +4,30 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <limits>
+#include <ranges>
+#include <utility>
 
+#include "../core/RangesHelpers.hpp"
 #include "../engine/AudioEngine.hpp"
+#include "../engine/RenderProgressWindow.hpp"
+#include "../engine/TracktionFork.hpp"
 #include "../project/ProjectManager.hpp"
 #include "../ui/state/TimelineController.hpp"
-#include "audio/AudioBridge.hpp"
-#include "audio/insert_capture/InsertRenderCaptureService.hpp"
+#include "audio/insert_capture/InsertRenderCapture.hpp"
 #include "audio/plugins/DrumGridPlugin.hpp"
-#include "audio/plugins/InsertCapturePlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
-#include "audio/racks/InstrumentRackManager.hpp"
+#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
+#include "core/ChainWalk.hpp"
 #include "core/ClipOcclusion.hpp"
 #include "core/ClipOperations.hpp"
+#include "core/ClipPlacementPolicy.hpp"
 #include "core/Config.hpp"
 #include "core/ControlTarget.hpp"
+#include "core/DrumGridPads.hpp"
 #include "core/TrackManager.hpp"
+#include "core/WarpMarkerCommands.hpp"
 
 namespace magda {
 
@@ -90,46 +98,25 @@ double timelineSecondsForBeat(double beat, const TempoMap* tempoMap) {
 }
 
 /**
- * Progress window for offline rendering that runs on a background thread
- * while pumping the message loop (via runThread()) so the UI stays responsive.
+ * @brief Whether @p trackId hosts an enabled external insert with a send and a return.
+ *
+ * Its hardware return only exists live, so an offline bounce needs the
+ * real-time capture pass first (#1623).
  */
-class RenderProgressWindow : public juce::ThreadWithProgressWindow {
-  public:
-    RenderProgressWindow(const juce::String& title, std::unique_ptr<OfflineRenderTask> task)
-        : ThreadWithProgressWindow(title, true, true), task_(std::move(task)) {
-        setStatusMessage("Preparing to render...");
-    }
+bool trackNeedsInsertCapture(TrackId trackId) {
+    auto& trackManager = TrackManager::getInstance();
+    const auto* track = trackManager.getTrack(trackId);
+    if (track == nullptr)
+        return false;
 
-    void run() override {
-        setStatusMessage("Rendering...");
-        if (!task_)
-            return;
-        result_ = task_->run([this]() { return threadShouldExit(); },
-                             [this](float progress) { setProgress(progress); });
-        success_ = result_.success;
-    }
-
-    bool wasSuccessful() const {
-        return success_;
-    }
-
-  private:
-    std::unique_ptr<OfflineRenderTask> task_;
-    OfflineRenderResult result_;
-    bool success_ = false;
-};
-
-// True when this track hosts an enabled external insert with both send and
-// return set — its hardware return only exists live, so an offline bounce
-// needs the real-time capture pass first (#1623).
-bool trackNeedsInsertCapture(te::Track& track) {
-    for (auto plugin : track.pluginList) {
-        if (auto* insert = dynamic_cast<te::InsertPlugin*>(plugin))
-            if (insert->isEnabled() && insert->outputDevice.get().isNotEmpty() &&
-                insert->inputDevice.get().isNotEmpty())
-                return true;
-    }
-    return false;
+    const auto* routed = chain_walk::findDevice(
+        track->chain.fxChainElements, ChainNodePath::trackLevel(trackId), chain_walk::Pads::Skip,
+        [&trackManager](const DeviceInfo& device, const ChainNodePath& path) {
+            return device.insert.sendDevice.isNotEmpty() &&
+                   device.insert.returnDevice.isNotEmpty() &&
+                   trackManager.isDeviceEffectivelyEnabled(path, device);
+        });
+    return routed != nullptr;
 }
 
 // Runs the external-insert capture pass modally over [startSec, endSec]
@@ -142,7 +129,7 @@ bool trackNeedsInsertCapture(te::Track& track) {
 // does it on scope exit.
 bool runInsertCapturePass(AudioEngine& engine, double startSec, double endSec,
                           double renderSampleRate) {
-    auto* service = engine.getInsertRenderCaptureService();
+    auto* service = engine.getInsertRenderCapture();
     if (service == nullptr)
         return true;
 
@@ -155,9 +142,9 @@ bool runInsertCapturePass(AudioEngine& engine, double startSec, double endSec,
     window.addButton("Cancel", 0);
 
     struct ProgressTimer : juce::Timer {
-        InsertRenderCaptureService& service;
+        InsertRenderCapture& service;
         double& value;
-        ProgressTimer(InsertRenderCaptureService& s, double& v) : service(s), value(v) {
+        ProgressTimer(InsertRenderCapture& s, double& v) : service(s), value(v) {
             startTimerHz(10);
         }
         void timerCallback() override {
@@ -176,7 +163,7 @@ bool runInsertCapturePass(AudioEngine& engine, double startSec, double endSec,
     if (!started) {
         // Arming failure must abort the bounce; "no insert qualifies" (no
         // error recorded) just means there is nothing to capture after all.
-        return service->getLastPassError() == InsertRenderCaptureService::PassError::None;
+        return service->getLastPassError() == InsertRenderCapture::PassError::None;
     }
 
     window.setVisible(true);
@@ -193,12 +180,15 @@ bool runInsertCapturePass(AudioEngine& engine, double startSec, double endSec,
 // Removes the hidden capture taps + temp files when the bounce is done, on
 // every exit path.
 struct InsertCaptureScope {
-    InsertRenderCaptureService* service = nullptr;
+    InsertRenderCapture* service = nullptr;
     ~InsertCaptureScope() {
         if (service != nullptr)
             service->cleanupAfterRender();
     }
 };
+
+/// Rendered past a bounce's range, for reverb and delay tails.
+constexpr double kBounceTailSeconds = 2.0;
 
 struct PlaybackResumeScope {
     explicit PlaybackResumeScope(AudioEngine& engine)
@@ -306,7 +296,7 @@ bool BounceInPlaceReplacement::replace(ClipManager& clipManager, ClipId sourceCl
     clipManager.deleteClip(replacementSourceId);
     newClipId_ = clipManager.createAudioClipBeats(originalClip_.trackId, range.startBeats,
                                                   range.lengthBeats(), renderedFilePath,
-                                                  ClipView::Arrangement, projectBPM);
+                                                  ClipView::Arrangement);
     if (newClipId_ == INVALID_CLIP_ID) {
         restoreOriginalClip(clipManager);
         return false;
@@ -453,12 +443,12 @@ void MoveClipCommand::undo() {
 }
 
 bool MoveClipCommand::canMergeWith(const UndoableCommand* other) const {
-    auto* otherMove = dynamic_cast<const MoveClipCommand*>(other);
+    const auto* otherMove = dynamic_cast<const MoveClipCommand*>(other);
     return otherMove != nullptr && otherMove->clipId_ == clipId_;
 }
 
 void MoveClipCommand::mergeWith(const UndoableCommand* other) {
-    auto* otherMove = dynamic_cast<const MoveClipCommand*>(other);
+    const auto* otherMove = dynamic_cast<const MoveClipCommand*>(other);
     if (otherMove) {
         // Keep our original snapshot, just update the target position
         newStartBeat_ = otherMove->newStartBeat_;
@@ -520,7 +510,16 @@ MoveClipToTrackCommand::MoveClipToTrackCommand(ClipId clipId, TrackId newTrackId
 
 bool MoveClipToTrackCommand::canExecute() const {
     auto* clip = ClipManager::getInstance().getClip(clipId_);
-    return clip && newTrackId_ != INVALID_TRACK_ID;
+    if (clip == nullptr || newTrackId_ == INVALID_TRACK_ID)
+        return false;
+
+    // Where a clip may go is decided here rather than only at the gestures that
+    // move one. A drag and a nudge can each decline to offer a bad target, and
+    // both did so separately, which is how they came to disagree; the command
+    // is the one place the API, the scripting layer and the next caller all go
+    // through.
+    const auto* track = TrackManager::getInstance().getTrack(newTrackId_);
+    return track != nullptr && trackAcceptsClip(*track, *clip);
 }
 
 void MoveClipToTrackCommand::execute() {
@@ -581,13 +580,13 @@ void ResizeClipCommand::performAction() {
 }
 
 bool ResizeClipCommand::canMergeWith(const UndoableCommand* other) const {
-    auto* otherResize = dynamic_cast<const ResizeClipCommand*>(other);
+    const auto* otherResize = dynamic_cast<const ResizeClipCommand*>(other);
     return otherResize != nullptr && otherResize->clipId_ == clipId_ &&
            otherResize->fromStart_ == fromStart_;
 }
 
 void ResizeClipCommand::mergeWith(const UndoableCommand* other) {
-    auto* otherResize = dynamic_cast<const ResizeClipCommand*>(other);
+    const auto* otherResize = dynamic_cast<const ResizeClipCommand*>(other);
     if (otherResize) {
         // Update to their new length
         newLengthBeats_ = otherResize->newLengthBeats_;
@@ -624,19 +623,24 @@ bool DeleteClipCommand::validateState() const {
 // ============================================================================
 
 CreateClipCommand::CreateClipCommand(ClipType type, TrackId trackId, BeatPosition startBeat,
-                                     BeatDuration lengthBeats, const juce::String& audioFilePath,
-                                     ClipView view, double tempo, ClipOverlapPolicy overlapPolicy)
+                                     BeatDuration lengthBeats, juce::String audioFilePath,
+                                     ClipView view, ClipOverlapPolicy overlapPolicy, int sceneIndex)
     : type_(type),
       trackId_(trackId),
       startBeat_(startBeat.value),
       lengthBeats_(lengthBeats.value),
-      audioFilePath_(audioFilePath),
+      audioFilePath_(std::move(audioFilePath)),
       view_(view),
-      tempo_(tempo),
-      overlapPolicy_(overlapPolicy) {}
+      overlapPolicy_(overlapPolicy),
+      sceneIndex_(sceneIndex) {}
 
 bool CreateClipCommand::canExecute() const {
-    return trackId_ != INVALID_TRACK_ID && lengthBeats_ > 0.0;
+    if (trackId_ == INVALID_TRACK_ID || lengthBeats_ <= 0.0)
+        return false;
+    if (view_ != ClipView::Session)
+        return true;
+    return sceneIndex_ >= 0 &&
+           ClipManager::getInstance().getClipInSlot(trackId_, sceneIndex_) == INVALID_CLIP_ID;
 }
 
 void CreateClipCommand::execute() {
@@ -650,12 +654,14 @@ void CreateClipCommand::execute() {
     }
 
     if (type_ == ClipType::Audio) {
-        createdClipId_ = clipManager.createAudioClipBeats(
-            trackId_, startBeat_, lengthBeats_, audioFilePath_, view_, tempo_, overlapPolicy_);
+        createdClipId_ = clipManager.createAudioClipBeats(trackId_, startBeat_, lengthBeats_,
+                                                          audioFilePath_, view_, overlapPolicy_);
     } else {
         createdClipId_ = clipManager.createMidiClipBeats(trackId_, startBeat_, lengthBeats_, view_,
                                                          overlapPolicy_);
     }
+    if (view_ == ClipView::Session && createdClipId_ != INVALID_CLIP_ID)
+        clipManager.setClipSceneIndex(createdClipId_, sceneIndex_);
 
     executed_ = true;
 }
@@ -665,6 +671,10 @@ void CreateClipCommand::undo() {
         return;
 
     auto& clipManager = ClipManager::getInstance();
+
+    // The arrangement snapshot does not hold Session clips.
+    if (view_ == ClipView::Session && createdClipId_ != INVALID_CLIP_ID)
+        clipManager.deleteClip(createdClipId_);
 
     auto currentClips = clipManager.getArrangementClips();
     for (const auto& clip : currentClips) {
@@ -948,10 +958,7 @@ bool JoinClipsCommand::canExecute() const {
 
     // Must be adjacent (left ends where right starts)
     const double bpm = resolveTimelineBpm(tempo_);
-    if (std::abs(left->getTimelineEnd(bpm) - right->getTimelineStart(bpm)) > 0.001)
-        return false;
-
-    return true;
+    return std::abs(left->getTimelineEnd(bpm) - right->getTimelineStart(bpm)) <= 0.001;
 }
 
 JoinClipsState JoinClipsCommand::captureState() {
@@ -1011,6 +1018,8 @@ void JoinClipsCommand::performAction() {
         left->midiNotes = std::move(flattenedLeft.midiNotes);
         left->midiCCData = std::move(flattenedLeft.midiCCData);
         left->midiPitchBendData = std::move(flattenedLeft.midiPitchBendData);
+        left->midiChannelPressureData = std::move(flattenedLeft.midiChannelPressureData);
+        left->midiPolyAftertouchData = std::move(flattenedLeft.midiPolyAftertouchData);
 
         for (const auto& note : flattenedRight.midiNotes) {
             MidiNote adjustedNote = note;
@@ -1030,6 +1039,17 @@ void JoinClipsCommand::performAction() {
             left->midiPitchBendData.push_back(adjustedPitchBend);
         }
 
+        for (const auto& pressure : flattenedRight.midiChannelPressureData) {
+            auto adjusted = pressure;
+            adjusted.beatPosition += beatOffset;
+            left->midiChannelPressureData.push_back(adjusted);
+        }
+        for (const auto& pressure : flattenedRight.midiPolyAftertouchData) {
+            auto adjusted = pressure;
+            adjusted.beatPosition += beatOffset;
+            left->midiPolyAftertouchData.push_back(adjusted);
+        }
+
         left->loopEnabled = false;
         left->loopStartBeats = 0.0;
         left->loopLengthBeats = 0.0;
@@ -1042,7 +1062,6 @@ void JoinClipsCommand::performAction() {
 
     // Extend left clip length
     left->setPlacementBeats(leftStartBeats, joinedLengthBeats);
-    left->deriveTimesFromBeats(bpm);
 
     // Delete right clip
     clipManager.deleteClip(rightClipId_);
@@ -1059,18 +1078,15 @@ bool JoinClipsCommand::validateState() const {
     if (!left)
         return false;
 
-    if (left->trackId == INVALID_TRACK_ID)
-        return false;
-
-    return true;
+    return left->trackId != INVALID_TRACK_ID;
 }
 
 // ============================================================================
 // StretchClipCommand
 // ============================================================================
 
-StretchClipCommand::StretchClipCommand(ClipId clipId, const ClipInfo& beforeState)
-    : clipId_(clipId), beforeState_(beforeState) {}
+StretchClipCommand::StretchClipCommand(ClipId clipId, ClipInfo beforeState)
+    : clipId_(clipId), beforeState_(std::move(beforeState)) {}
 
 void StretchClipCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
@@ -1101,8 +1117,8 @@ void StretchClipCommand::undo() {
 // SetFadeCommand
 // ============================================================================
 
-SetFadeCommand::SetFadeCommand(ClipId clipId, const ClipInfo& beforeState)
-    : clipId_(clipId), beforeState_(beforeState) {}
+SetFadeCommand::SetFadeCommand(ClipId clipId, ClipInfo beforeState)
+    : clipId_(clipId), beforeState_(std::move(beforeState)) {}
 
 void SetFadeCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
@@ -1168,8 +1184,8 @@ void SetCrossfadeCommand::undo() {
 // SetVolumeCommand
 // ============================================================================
 
-SetVolumeCommand::SetVolumeCommand(ClipId clipId, const ClipInfo& beforeState)
-    : clipId_(clipId), beforeState_(beforeState) {}
+SetVolumeCommand::SetVolumeCommand(ClipId clipId, ClipInfo beforeState)
+    : clipId_(clipId), beforeState_(std::move(beforeState)) {}
 
 void SetVolumeCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
@@ -1214,16 +1230,8 @@ void RenderClipCommand::execute() {
     // Snapshot original clip for undo
     originalClipSnapshot_ = *clip;
 
-    auto* bridge = engine_->getAudioBridge();
-    if (!engine_->hasActiveEdit() || !bridge) {
-        DBG("RenderClipCommand: no active edit or bridge");
-        return;
-    }
-
-    // Find the TE clip
-    auto* teClip = bridge->getArrangementTeClip(clipId_);
-    if (!teClip) {
-        DBG("RenderClipCommand: TE clip not found");
+    if (!engine_->hasActiveEdit()) {
+        DBG("RenderClipCommand: no active edit");
         return;
     }
 
@@ -1238,11 +1246,8 @@ void RenderClipCommand::execute() {
     juce::String trackName = trackInfo ? trackInfo->name : "Track";
     juce::String clipName =
         clip->name.isNotEmpty() ? clip->name : sourceFile.getFileNameWithoutExtension();
-    renderedFile_ = rendersDir.getChildFile(expandRenderPattern(clipName, trackName) + ".wav");
-
-    const double projectBPM = currentProjectBpm();
-    const double renderStart = clip->getTimelineStart(projectBPM);
-    const double renderEnd = clip->getTimelineEnd(projectBPM);
+    renderedFile_ =
+        rendersDir.getNonexistentChildFile(expandRenderPattern(clipName, trackName), ".wav", false);
 
     const auto& project = ProjectManager::getInstance().getCurrentProjectInfo();
     OfflineRenderRequest request;
@@ -1251,7 +1256,7 @@ void RenderClipCommand::execute() {
     request.sampleRate = project.sampleRate;
     request.usePlugins = false;
     request.useMasterPlugins = false;
-    request.range = {{renderStart}, {renderEnd}, {}};
+    request.range = {{clip->placement.startBeat}, {clip->placement.endBeat()}};
     request.trackIds = {clip->trackId};
     request.clipIds = {clipId_};
 
@@ -1270,8 +1275,9 @@ void RenderClipCommand::execute() {
     }
 
     // Capture original clip properties before deletion
+    const double projectBPM = currentProjectBpm();
     double startBeats = clip->getStartBeats(projectBPM);
-    double lengthBeats = clip->getLengthInBeats(projectBPM);
+    double lengthBeats = clip->getLengthInBeats();
     double startTime = clip->getTimelineStart(projectBPM);
     double length = clip->getTimelineLength(projectBPM);
     TrackId trackId = clip->trackId;
@@ -1346,6 +1352,15 @@ void RenderTimeSelectionCommand::execute() {
     trackStates_.clear();
     newClipIds_.clear();
 
+    // The timeline selection is held in seconds; the render takes beats.
+    const auto* tempoMap = engine_->tempoMap();
+    if (tempoMap == nullptr) {
+        DBG("RenderTimeSelectionCommand: no tempo map");
+        return;
+    }
+    const BeatRange selectionBeats{{tempoMap->timeToBeat(startTime_)},
+                                   {tempoMap->timeToBeat(endTime_)}};
+
     auto renderSession = engine_->createOfflineRenderSession(engine_->isPlaying());
     if (!renderSession) {
         DBG("RenderTimeSelectionCommand: could not create render session");
@@ -1393,8 +1408,8 @@ void RenderTimeSelectionCommand::execute() {
         juce::String trackName = trackInfo ? trackInfo->name : "Track";
         auto* firstClipInfo = clipManager.getClip(overlappingIds[0]);
         juce::String clipName = firstClipInfo ? firstClipInfo->name : trackName;
-        trackState.renderedFile =
-            rendersDir.getChildFile(expandRenderPattern(clipName, trackName) + ".wav");
+        trackState.renderedFile = rendersDir.getNonexistentChildFile(
+            expandRenderPattern(clipName, trackName), ".wav", false);
 
         const auto& project = ProjectManager::getInstance().getCurrentProjectInfo();
         OfflineRenderRequest request;
@@ -1403,7 +1418,7 @@ void RenderTimeSelectionCommand::execute() {
         request.sampleRate = project.sampleRate;
         request.usePlugins = false;
         request.useMasterPlugins = false;
-        request.range = {{startTime_}, {endTime_}, {}};
+        request.range = selectionBeats;
         request.trackIds = {trackId};
 
         // Run render on background thread with progress UI
@@ -1480,10 +1495,10 @@ void RenderTimeSelectionCommand::undo() {
 }
 
 // ============================================================================
-static bool trimLoopedClip(ClipManager& clipManager, const ClipInfo& clip, double selStart,
-                           double selEnd, bool ripple, double duration,
-                           std::vector<ClipId>& clipsToDelete, std::vector<ClipId>& clipsToResync,
-                           double tempo) {
+namespace {
+bool trimLoopedClip(ClipManager& clipManager, const ClipInfo& clip, double selStart, double selEnd,
+                    bool ripple, double duration, std::vector<ClipId>& clipsToDelete,
+                    std::vector<ClipId>& clipsToResync, double tempo) {
     if (!clip.loopEnabled)
         return false;
 
@@ -1538,6 +1553,7 @@ static bool trimLoopedClip(ClipManager& clipManager, const ClipInfo& clip, doubl
 
     return true;
 }
+}  // namespace
 
 // ============================================================================
 // DeleteTimeSelectionCommand (no ripple)
@@ -1654,11 +1670,8 @@ void DeleteTimeSelectionCommand::undo() {
     // Re-trimmed/kept clips keep their engine mapping, so forceNotifyClipsChanged
     // (topology only) won't restore their length/position. Push every restored
     // clip's placement back to the engine; unchanged clips are cheap no-ops.
-    std::vector<ClipId> restoredIds;
-    restoredIds.reserve(snapshot_.size());
-    for (const auto& clip : snapshot_)
-        restoredIds.push_back(clip.id);
-    clipManager.forceNotifyMultipleClipPropertiesChanged(restoredIds);
+    clipManager.forceNotifyMultipleClipPropertiesChanged(
+        snapshot_ | std::views::transform(&ClipInfo::id) | toStd<std::vector<ClipId>>());
     executed_ = false;
 }
 
@@ -1770,11 +1783,8 @@ void InsertTimeCommand::undo() {
     clipManager.forceNotifyClipsChanged();
     // Push every restored placement back to the engine so shifted/split clips
     // return to their pre-insert positions; unchanged clips are cheap no-ops.
-    std::vector<ClipId> restoredIds;
-    restoredIds.reserve(snapshot_.size());
-    for (const auto& clip : snapshot_)
-        restoredIds.push_back(clip.id);
-    clipManager.forceNotifyMultipleClipPropertiesChanged(restoredIds);
+    clipManager.forceNotifyMultipleClipPropertiesChanged(
+        snapshot_ | std::views::transform(&ClipInfo::id) | toStd<std::vector<ClipId>>());
     executed_ = false;
 }
 
@@ -1843,11 +1853,8 @@ void SplitClipsAtBeatCommand::undo() {
     clipManager.forceNotifyClipsChanged();
     // Re-merged clips keep their engine mapping, so push every restored
     // placement back to the engine; unchanged clips are cheap no-ops.
-    std::vector<ClipId> restoredIds;
-    restoredIds.reserve(snapshot_.size());
-    for (const auto& clip : snapshot_)
-        restoredIds.push_back(clip.id);
-    clipManager.forceNotifyMultipleClipPropertiesChanged(restoredIds);
+    clipManager.forceNotifyMultipleClipPropertiesChanged(
+        snapshot_ | std::views::transform(&ClipInfo::id) | toStd<std::vector<ClipId>>());
     createdClipIds_.clear();
     executed_ = false;
 }
@@ -2003,11 +2010,8 @@ void RippleDeleteRangeCommand::undo() {
     }
 
     clipManager.forceNotifyClipsChanged();
-    std::vector<ClipId> restoredIds;
-    restoredIds.reserve(snapshot_.size());
-    for (const auto& clip : snapshot_)
-        restoredIds.push_back(clip.id);
-    clipManager.forceNotifyMultipleClipPropertiesChanged(restoredIds);
+    clipManager.forceNotifyMultipleClipPropertiesChanged(
+        snapshot_ | std::views::transform(&ClipInfo::id) | toStd<std::vector<ClipId>>());
     executed_ = false;
 }
 
@@ -2045,36 +2049,28 @@ void BounceInPlaceCommand::execute() {
     const auto bounceRange =
         resolveBounceRenderRange(replacement_.getOriginalClip(), range_, tempoMap, true);
 
-    auto* bridge = engine_->getAudioBridge();
-    if (!engine_->hasActiveEdit() || !bridge) {
-        DBG("BounceInPlaceCommand: no active edit or bridge");
+    if (!engine_->hasActiveEdit()) {
+        DBG("BounceInPlaceCommand: no active edit");
         return;
     }
 
-    // Find the TE clip
-    auto* teClip = bridge->getArrangementTeClip(clipId_);
-    if (!teClip) {
-        DBG("BounceInPlaceCommand: TE clip not found");
-        return;
-    }
-
-    // Determine output file path — always the project's bounces directory.
+    // Determine output file path — always the project's renders directory.
     // A bounce file is referenced by a clip inside the project, so it must live
     // in the project media tree (so save/collect/move keeps it). It must NOT
     // honour Config::getRenderFolder(): that is the global Export-to-file
     // folder, and letting it hijack bounce output drops the file outside the
     // project (e.g. on the Desktop) where the project can't track it.
-    auto bouncesDir = ProjectManager::getInstance().getBouncesDirectory();
-    if (bouncesDir == juce::File())
-        bouncesDir = engine_->getEditFile().getParentDirectory().getChildFile("bounces");
+    auto rendersDir = ProjectManager::getInstance().getRendersDirectory();
+    if (rendersDir == juce::File())
+        rendersDir = engine_->getEditFile().getParentDirectory().getChildFile("renders");
     // Verify the destination is actually writable before handing the renderer a
     // dead destFile. On a read-only / unavailable project media tree the render
     // would otherwise fail with only a DBG line and no bounced clip, leaving the
     // user with nothing and no explanation. Bail with a visible error instead.
     // Safe to return here: the transport hasn't been touched yet.
-    if (bouncesDir.createDirectory().failed() || !bouncesDir.hasWriteAccess()) {
+    if (rendersDir.createDirectory().failed() || !rendersDir.hasWriteAccess()) {
         errorMessage_ =
-            "Bounce failed: can't write to the bounces folder:\n" + bouncesDir.getFullPathName();
+            "Bounce failed: can't write to the renders folder:\n" + rendersDir.getFullPathName();
         juce::Logger::writeToLog(errorMessage_);
         return;
     }
@@ -2083,70 +2079,46 @@ void BounceInPlaceCommand::execute() {
         auto* trackInfo = TrackManager::getInstance().getTrack(clip->trackId);
         juce::String trackName = trackInfo ? trackInfo->name : "Track";
         juce::String clipName = clip->name.isNotEmpty() ? clip->name : "clip";
-        renderedFile_ = bouncesDir.getChildFile(expandBouncePattern(clipName, trackName) + ".wav");
+        // Renders and bounces share this folder and expand independently
+        // configurable patterns, so the two can name the same file. Claim a
+        // free name: overwriting would leave another clip playing this audio
+        // and let undo delete a file it does not own.
+        renderedFile_ = rendersDir.getNonexistentChildFile(expandBouncePattern(clipName, trackName),
+                                                           ".wav", false);
     }
 
     // Match the original bounce lifecycle: stop before capture or FX bypass,
     // and resume once after every render/capture cleanup has completed.
     PlaybackResumeScope playbackScope(*engine_);
 
-    // Find TE track
-    auto* teTrack = teClip->getTrack();
-    if (!teTrack) {
-        DBG("BounceInPlaceCommand: clip has no track");
-        return;
-    }
-
     // External insert returns only exist live — run the capture pass first,
     // with the chain still fully enabled (#1623). The taps substitute the
     // captured returns during the offline render below.
-    const double bounceTailSeconds = 2.0;
     InsertCaptureScope captureScope;
-    if (trackNeedsInsertCapture(*teTrack)) {
+    if (trackNeedsInsertCapture(clip->trackId)) {
         const double renderRate = ProjectManager::getInstance().getCurrentProjectInfo().sampleRate;
         if (!runInsertCapturePass(*engine_, bounceRange.startSeconds,
-                                  bounceRange.endSeconds + bounceTailSeconds, renderRate)) {
+                                  bounceRange.endSeconds + kBounceTailSeconds, renderRate)) {
             // A user cancel (no recorded error) stays quiet; a real capture
             // failure gets the toast.
-            auto* service = engine_->getInsertRenderCaptureService();
+            auto* service = engine_->getInsertRenderCapture();
             if (service != nullptr &&
-                service->getLastPassError() != InsertRenderCaptureService::PassError::None) {
+                service->getLastPassError() != InsertRenderCapture::PassError::None) {
                 errorMessage_ = "Bounce failed: couldn't capture the external insert return.";
                 juce::Logger::writeToLog(errorMessage_);
             }
             return;
         }
-        captureScope.service = engine_->getInsertRenderCaptureService();
+        captureScope.service = engine_->getInsertRenderCapture();
 
         // The pass ran the live transport; listener callbacks may have
-        // invalidated the model/engine clip pointers — re-resolve.
+        // invalidated the model clip pointer — re-resolve.
         clip = clipManager.getClip(clipId_);
-        teClip = clip != nullptr ? bridge->getArrangementTeClip(clipId_) : nullptr;
-        teTrack = teClip != nullptr ? teClip->getTrack() : nullptr;
-        if (clip == nullptr || teClip == nullptr || teTrack == nullptr) {
+        if (clip == nullptr) {
             errorMessage_ = "Bounce failed: the clip disappeared during the capture pass.";
             juce::Logger::writeToLog(errorMessage_);
             return;
         }
-    }
-
-    // Bypass FX plugins (everything that isn't the instrument wrapper rack).
-    // The external insert counts as the instrument on its track, and the
-    // hidden capture tap must stay enabled to play the captured return.
-    auto& rackManager = bridge->getPluginManager().getInstrumentRackManager();
-    struct PluginState {
-        te::Plugin* plugin;
-        bool wasEnabled;
-    };
-    std::vector<PluginState> savedStates;
-
-    for (auto plugin : teTrack->pluginList) {
-        if (rackManager.isWrapperRack(plugin) ||
-            dynamic_cast<te::InsertPlugin*>(plugin) != nullptr ||
-            dynamic_cast<InsertCapturePlugin*>(plugin) != nullptr)
-            continue;
-        savedStates.push_back({plugin, plugin->isEnabled()});
-        plugin->setEnabled(false);
     }
 
     const auto& project = ProjectManager::getInstance().getCurrentProjectInfo();
@@ -2156,7 +2128,11 @@ void BounceInPlaceCommand::execute() {
     request.sampleRate = project.sampleRate;
     request.usePlugins = true;
     request.useMasterPlugins = false;
-    request.range = {{bounceRange.startSeconds}, {bounceRange.endSeconds + bounceTailSeconds}, {}};
+
+    // The instrument's own output: the effects after it stay out of the bounce.
+    request.useTrackEffects = false;
+    request.range = {{bounceRange.startBeats}, {bounceRange.endBeats}};
+    request.tailSeconds = kBounceTailSeconds;
     request.trackIds = {clip->trackId};
     request.clipIds = {clipId_};
 
@@ -2169,11 +2145,6 @@ void BounceInPlaceCommand::execute() {
             "Bouncing In Place...", renderSession ? renderSession->createTask(request) : nullptr);
         userCancelled = !progressWindow.runThread();
         renderSucceeded = progressWindow.wasSuccessful();
-    }
-
-    // Restore FX plugins regardless of render outcome
-    for (auto& state : savedStates) {
-        state.plugin->setEnabled(state.wasEnabled);
     }
 
     if (userCancelled || !renderSucceeded) {
@@ -2247,20 +2218,11 @@ void BounceToNewTrackCommand::execute() {
         return;
     }
 
-    auto* bridge = engine_->getAudioBridge();
-    if (!engine_->hasActiveEdit() || !bridge) {
-        DBG("BounceToNewTrackCommand: no active edit or bridge");
+    if (!engine_->hasActiveEdit()) {
+        DBG("BounceToNewTrackCommand: no active edit");
         return;
     }
 
-    // Find the TE clip
-    auto* teClip = bridge->getArrangementTeClip(clipId_);
-    if (!teClip) {
-        DBG("BounceToNewTrackCommand: TE clip not found");
-        return;
-    }
-
-    const double projectBPM = currentProjectBpm();
     const auto* tempoMap =
         TimelineController::getCurrent() ? TimelineController::getCurrent()->tempoMap() : nullptr;
     const auto bounceRange = resolveBounceRenderRange(*clip, range_, tempoMap, false);
@@ -2268,23 +2230,23 @@ void BounceToNewTrackCommand::execute() {
     const auto sourceClipColour = clip->colour;
     const auto sourceTrackId = clip->trackId;
 
-    // Determine output file path — always the project's bounces directory.
+    // Determine output file path — always the project's renders directory.
     // A bounce file is referenced by a clip inside the project, so it must live
     // in the project media tree (so save/collect/move keeps it). It must NOT
     // honour Config::getRenderFolder(): that is the global Export-to-file
     // folder, and letting it hijack bounce output drops the file outside the
     // project (e.g. on the Desktop) where the project can't track it.
-    auto bouncesDir = ProjectManager::getInstance().getBouncesDirectory();
-    if (bouncesDir == juce::File())
-        bouncesDir = engine_->getEditFile().getParentDirectory().getChildFile("bounces");
+    auto rendersDir = ProjectManager::getInstance().getRendersDirectory();
+    if (rendersDir == juce::File())
+        rendersDir = engine_->getEditFile().getParentDirectory().getChildFile("renders");
     // Verify the destination is actually writable before handing the renderer a
     // dead destFile. On a read-only / unavailable project media tree the render
     // would otherwise fail with only a DBG line and no bounced clip, leaving the
     // user with nothing and no explanation. Bail with a visible error instead.
     // Safe to return here: the transport hasn't been touched yet.
-    if (bouncesDir.createDirectory().failed() || !bouncesDir.hasWriteAccess()) {
+    if (rendersDir.createDirectory().failed() || !rendersDir.hasWriteAccess()) {
         errorMessage_ =
-            "Bounce failed: can't write to the bounces folder:\n" + bouncesDir.getFullPathName();
+            "Bounce failed: can't write to the renders folder:\n" + rendersDir.getFullPathName();
         juce::Logger::writeToLog(errorMessage_);
         return;
     }
@@ -2293,35 +2255,33 @@ void BounceToNewTrackCommand::execute() {
         auto* trackInfo = TrackManager::getInstance().getTrack(clip->trackId);
         juce::String trackName = trackInfo ? trackInfo->name : "Track";
         juce::String clipName = clip->name.isNotEmpty() ? clip->name : "clip";
-        renderedFile_ = bouncesDir.getChildFile(expandBouncePattern(clipName, trackName) + ".wav");
+        // Renders and bounces share this folder and expand independently
+        // configurable patterns, so the two can name the same file. Claim a
+        // free name: overwriting would leave another clip playing this audio
+        // and let undo delete a file it does not own.
+        renderedFile_ = rendersDir.getNonexistentChildFile(expandBouncePattern(clipName, trackName),
+                                                           ".wav", false);
     }
 
     PlaybackResumeScope playbackScope(*engine_);
 
-    // Find TE track
-    auto* teTrack = teClip->getTrack();
-    if (!teTrack) {
-        DBG("BounceToNewTrackCommand: clip has no track");
-        return;
-    }
-
-    const double bounceTailSeconds = 2.0;
     const auto& project = ProjectManager::getInstance().getCurrentProjectInfo();
 
     // External insert returns only exist live — capture them first (#1623).
     InsertCaptureScope captureScope;
-    if (trackNeedsInsertCapture(*teTrack)) {
+    if (trackNeedsInsertCapture(sourceTrackId)) {
         if (!runInsertCapturePass(*engine_, bounceRange.startSeconds,
-                                  bounceRange.endSeconds + bounceTailSeconds, project.sampleRate)) {
-            auto* service = engine_->getInsertRenderCaptureService();
+                                  bounceRange.endSeconds + kBounceTailSeconds,
+                                  project.sampleRate)) {
+            auto* service = engine_->getInsertRenderCapture();
             if (service != nullptr &&
-                service->getLastPassError() != InsertRenderCaptureService::PassError::None) {
+                service->getLastPassError() != InsertRenderCapture::PassError::None) {
                 errorMessage_ = "Bounce failed: couldn't capture the external insert return.";
                 juce::Logger::writeToLog(errorMessage_);
             }
             return;
         }
-        captureScope.service = engine_->getInsertRenderCaptureService();
+        captureScope.service = engine_->getInsertRenderCapture();
     }
 
     OfflineRenderRequest request;
@@ -2330,8 +2290,9 @@ void BounceToNewTrackCommand::execute() {
     request.sampleRate = project.sampleRate;
     request.usePlugins = true;
     request.useMasterPlugins = false;
-    request.range = {{bounceRange.startSeconds}, {bounceRange.endSeconds + bounceTailSeconds}, {}};
-    request.trackIds = {clip->trackId};
+    request.range = {{bounceRange.startBeats}, {bounceRange.endBeats}};
+    request.tailSeconds = kBounceTailSeconds;
+    request.trackIds = {sourceTrackId};
     request.clipIds = {clipId_};
 
     // Render
@@ -2362,7 +2323,7 @@ void BounceToNewTrackCommand::execute() {
     auto& trackManager = TrackManager::getInstance();
     juce::String trackName =
         sourceClipName.isNotEmpty() ? sourceClipName + " (bounced)" : "Bounced";
-    newTrackId_ = trackManager.createTrack(trackName, TrackType::Audio);
+    newTrackId_ = trackManager.createTrack(trackName, TrackType::Media);
 
     // Move new track to position after source track
     int sourceIndex = trackManager.getTrackIndex(sourceTrackId);
@@ -2373,7 +2334,7 @@ void BounceToNewTrackCommand::execute() {
     // Create audio clip on new track
     newClipId_ = clipManager.createAudioClipBeats(
         newTrackId_, bounceRange.startBeats, bounceRange.lengthBeats(),
-        renderedFile_.getFullPathName(), ClipView::Arrangement, projectBPM);
+        renderedFile_.getFullPathName(), ClipView::Arrangement);
 
     if (auto* newClip = clipManager.getClip(newClipId_)) {
         newClip->colour = sourceClipColour;
@@ -2465,11 +2426,12 @@ bool playsAt(const AudibleSpan& span, double timelineBeat) {
         return false;
     if (timelineBeat < span.startBeat - tolBeats || timelineBeat >= span.endBeat() - tolBeats)
         return false;
-    for (const auto& hole : span.silenced) {
-        if (timelineBeat >= hole.start.value - tolBeats && timelineBeat < hole.end.value - tolBeats)
-            return false;
-    }
-    return true;
+    const auto silencedHere = [timelineBeat](const auto& hole) {
+        return timelineBeat >= hole.start.value - tolBeats &&
+               timelineBeat < hole.end.value - tolBeats;
+    };
+
+    return std::ranges::none_of(span.silenced, silencedHere);
 }
 
 }  // namespace
@@ -2566,6 +2528,8 @@ void FlattenClipStackCommand::execute() {
     std::vector<MidiNote> mergedNotes;
     std::vector<MidiCCData> mergedCC;
     std::vector<MidiPitchBendData> mergedPitchBend;
+    std::vector<MidiChannelPressureData> mergedChannelPressure;
+    std::vector<MidiPolyAftertouchData> mergedPolyAftertouch;
 
     for (const auto& member : members) {
         // Unroll first: what a looped clip plays is its expanded note list, and
@@ -2602,6 +2566,22 @@ void FlattenClipStackCommand::execute() {
             moved.beatPosition = timelineBeat - mergedStart;
             mergedPitchBend.push_back(moved);
         }
+        for (const auto& pressure : flattened.midiChannelPressureData) {
+            const double timelineBeat = flattened.placement.startBeat + pressure.beatPosition;
+            if (!playsAt(span, timelineBeat))
+                continue;
+            auto moved = pressure;
+            moved.beatPosition = timelineBeat - mergedStart;
+            mergedChannelPressure.push_back(moved);
+        }
+        for (const auto& pressure : flattened.midiPolyAftertouchData) {
+            const double timelineBeat = flattened.placement.startBeat + pressure.beatPosition;
+            if (!playsAt(span, timelineBeat))
+                continue;
+            auto moved = pressure;
+            moved.beatPosition = timelineBeat - mergedStart;
+            mergedPolyAftertouch.push_back(moved);
+        }
     }
 
     std::sort(mergedNotes.begin(), mergedNotes.end(),
@@ -2623,6 +2603,8 @@ void FlattenClipStackCommand::execute() {
     target->midiNotes = std::move(mergedNotes);
     target->midiCCData = std::move(mergedCC);
     target->midiPitchBendData = std::move(mergedPitchBend);
+    target->midiChannelPressureData = std::move(mergedChannelPressure);
+    target->midiPolyAftertouchData = std::move(mergedPolyAftertouch);
     target->loopEnabled = false;
     target->midiOffset = 0.0;
     target->midiTrimOffset = 0.0;
@@ -2721,15 +2703,12 @@ void sliceClipAtTimes(ClipId clipId, const std::vector<double>& splitTimes, doub
     undoManager.endCompoundOperation();
 }
 
-void sliceClipAtWarpMarkers(ClipId clipId, double tempo, AudioBridge* bridge) {
-    if (!bridge)
-        return;
-
+void sliceClipAtWarpMarkers(ClipId clipId, double tempo) {
     auto* clip = ClipManager::getInstance().getClip(clipId);
     if (!clip || !clip->isAudio())
         return;
 
-    auto markers = bridge->getWarpMarkers(clipId);
+    auto markers = getClipWarpMarkers(clipId);
     if (markers.size() <= 2)
         return;  // Only boundary markers
 
@@ -2738,9 +2717,10 @@ void sliceClipAtWarpMarkers(ClipId clipId, double tempo, AudioBridge* bridge) {
     // markers define a non-linear mapping.  With warp off the linear formula
     // is correct, so we convert marker sourceTime values to the linear
     // timeline domain.
-    if (auto* warpEvent = clip->primaryEvent())
+    if (auto* warpEvent = clip->primaryEvent()) {
         warpEvent->warpEnabled = false;
-    bridge->disableWarp(clipId);
+        warpEvent->warpMarkers.clear();
+    }
 
     const double bpm = resolveTimelineBpm(tempo);
     double clipStart = clip->getTimelineStart(bpm);
@@ -2755,7 +2735,7 @@ void sliceClipAtWarpMarkers(ClipId clipId, double tempo, AudioBridge* bridge) {
     // the inverse of splitClip's offset formula.
     for (size_t i = 1; i + 1 < markers.size(); ++i) {
         double sourceDelta = markers[i].sourceTime - clipOffset;
-        double splitTime;
+        double splitTime = NAN;
         if (magda::audioEventRef(*clip).autoTempo && magda::audioEventRef(*clip).interpBpm > 0.0) {
             splitTime = clipStart + sourceDelta * magda::audioEventRef(*clip).interpBpm / bpm;
         } else {
@@ -2772,7 +2752,7 @@ void sliceClipAtWarpMarkers(ClipId clipId, double tempo, AudioBridge* bridge) {
     sliceClipAtTimes(clipId, splitTimes, tempo);
 }
 
-void sliceClipAtGrid(ClipId clipId, double gridInterval, double tempo, AudioBridge* bridge) {
+void sliceClipAtGrid(ClipId clipId, double gridInterval, double tempo) {
     if (gridInterval <= 0.0)
         return;
 
@@ -2783,8 +2763,7 @@ void sliceClipAtGrid(ClipId clipId, double gridInterval, double tempo, AudioBrid
     // Disable warp before splitting if enabled
     if (auto* warpEvent = clip->primaryEvent(); warpEvent != nullptr && warpEvent->warpEnabled) {
         warpEvent->warpEnabled = false;
-        if (bridge)
-            bridge->disableWarp(clipId);
+        warpEvent->warpMarkers.clear();
     }
 
     const double bpm = resolveTimelineBpm(tempo);
@@ -2836,20 +2815,29 @@ void prepareDrumGridAdsrMacros(DeviceInfo& drumGridDevice) {
     }
 }
 
-void zeroSamplerAdsrBase(daw::audio::MagdaSamplerPlugin& sampler) {
-    const float attackMin = sampler.attackParam->getValueRange().getStart();
-    const float decayMin = sampler.decayParam->getValueRange().getStart();
-    const float releaseMin = sampler.releaseParam->getValueRange().getStart();
+/// A pad device's own address in the model: `PadRack(grid) > PadChain(pad) >
+/// Device`, rooted at the track whatever the grid is nested in.
+ChainNodePath padDevicePath(TrackId trackId, DeviceId gridDeviceId, ChainId padChainId,
+                            DeviceId padDeviceId) {
+    return ChainNodePath::padChain(trackId, gridDeviceId, padChainId).withDevice(padDeviceId);
+}
 
-    sampler.attackParam->setParameterFromHost(attackMin, juce::dontSendNotification);
-    sampler.decayParam->setParameterFromHost(decayMin, juce::dontSendNotification);
-    sampler.sustainParam->setParameterFromHost(0.0f, juce::dontSendNotification);
-    sampler.releaseParam->setParameterFromHost(releaseMin, juce::dontSendNotification);
+/// Flatten the pad sampler's envelope so the DrumGrid ADSR macros, which are
+/// added next, are the only thing shaping it.
+///
+/// On the MODEL, which owns a device's parameters and projects them onto the
+/// plugin (#2317). Written onto the plugin instead, the flattened envelope was
+/// gone at the next rebuild while the macros shaping it stayed (#2379).
+void zeroSamplerAdsrBase(const ChainNodePath& samplerPath,
+                         const daw::audio::MagdaSamplerPlugin& sampler) {
+    using Sampler = daw::audio::MagdaSamplerPlugin;
+    auto& trackManager = TrackManager::getInstance();
+    const auto lowest = [&sampler](int index) { return sampler.parameterInfo(index).minValue; };
 
-    sampler.attackValue = attackMin;
-    sampler.decayValue = decayMin;
-    sampler.sustainValue = 0.0f;
-    sampler.releaseValue = releaseMin;
+    trackManager.setDeviceParameterValue(samplerPath, Sampler::kAttack, lowest(Sampler::kAttack));
+    trackManager.setDeviceParameterValue(samplerPath, Sampler::kDecay, lowest(Sampler::kDecay));
+    trackManager.setDeviceParameterValue(samplerPath, Sampler::kSustain, 0.0f);
+    trackManager.setDeviceParameterValue(samplerPath, Sampler::kRelease, lowest(Sampler::kRelease));
 }
 
 void addSamplerAdsrMacroLinks(DeviceInfo& drumGridDevice, TrackId trackId, int chainIndex,
@@ -2896,13 +2884,19 @@ void linkAssignedDrumGridSamplerAdsrMacros(DeviceInfo& drumGridDevice, TrackId t
         if (chain == nullptr || chain->plugins.empty())
             continue;
 
-        auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(chain->plugins[0].get());
-        if (sampler == nullptr)
+        auto* plugin = chain->plugins[0].get();
+        if (plugin == nullptr)
             continue;
 
-        zeroSamplerAdsrBase(*sampler);
-        addSamplerAdsrMacroLinks(drumGridDevice, trackId, chain->index,
-                                 drumGrid.getPluginDeviceId(chain->index, 0), *sampler);
+        const auto* sampler =
+            daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MagdaSamplerPlugin>(plugin);
+        const auto samplerDeviceId = drumGrid.getPluginDeviceId(chain->index, 0);
+        if (sampler == nullptr || samplerDeviceId == INVALID_DEVICE_ID)
+            continue;
+
+        zeroSamplerAdsrBase(
+            padDevicePath(trackId, drumGridDevice.id, chain->index, samplerDeviceId), *sampler);
+        addSamplerAdsrMacroLinks(drumGridDevice, trackId, chain->index, samplerDeviceId, *plugin);
     }
 }
 
@@ -2911,19 +2905,18 @@ void linkAssignedDrumGridSamplerAdsrMacros(DeviceInfo& drumGridDevice, TrackId t
  * track, load each region to a pad, and write a MIDI clip.
  */
 void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipInfo& clip,
-                             const juce::File& audioFile, double tempo, AudioBridge* bridge) {
+                             const juce::File& audioFile, double tempo) {
     if (slices.empty())
         return;
 
     int numSlices = static_cast<int>(slices.size());
-    if (numSlices > daw::audio::DrumGridPlugin::maxPads)
-        numSlices = daw::audio::DrumGridPlugin::maxPads;
+    numSlices = std::min(numSlices, daw::audio::DrumGridPlugin::maxPads);
 
     // Create Instrument track with DrumGridPlugin
     auto& trackManager = TrackManager::getInstance();
     juce::String clipName =
         clip.name.isNotEmpty() ? clip.name : audioFile.getFileNameWithoutExtension();
-    TrackId newTrackId = trackManager.createTrack("Drum Grid - " + clipName, TrackType::Audio);
+    TrackId newTrackId = trackManager.createTrack("Drum Grid - " + clipName, TrackType::Media);
     if (newTrackId == INVALID_TRACK_ID)
         return;
 
@@ -2940,57 +2933,38 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
     if (drumGridDevice == nullptr)
         return;
 
-    // Find the DrumGridPlugin that was just created
-    auto* audioEngine = trackManager.getAudioEngine();
-    if (!audioEngine)
-        return;
-    auto* teTrack = bridge->getAudioTrack(newTrackId);
-    if (!teTrack)
-        return;
-
-    daw::audio::DrumGridPlugin* drumGrid = nullptr;
-    for (auto* plugin : teTrack->pluginList) {
-        drumGrid = dynamic_cast<daw::audio::DrumGridPlugin*>(plugin);
-        if (drumGrid)
-            break;
-        if (auto* rackInstance = dynamic_cast<te::RackInstance*>(plugin)) {
-            if (rackInstance->type != nullptr) {
-                for (auto* innerPlugin : rackInstance->type->getPlugins()) {
-                    drumGrid = dynamic_cast<daw::audio::DrumGridPlugin*>(innerPlugin);
-                    if (drumGrid)
-                        break;
-                }
-            }
-        }
-        if (drumGrid)
-            break;
-    }
+    const auto gridPath = ChainNodePath::topLevelDevice(newTrackId, drumGridDeviceId);
+    auto gridPlugin = tracktion_fork::pluginAt(gridPath);
+    auto* drumGrid = dynamic_cast<daw::audio::DrumGridPlugin*>(gridPlugin.get());
 
     if (!drumGrid) {
         DBG("buildDrumGridFromSlices: DrumGridPlugin not found on new track");
         return;
     }
 
-    // Load samples to pads and set region boundaries
+    // Load samples to pads and set region boundaries. Both go into the MODEL
+    // and the plugin follows by sync: the markers are what makes a slice a
+    // slice, and written onto the plugin they would be gone at the next
+    // rebuild, leaving sixteen pads playing the whole file (#2379).
     for (int i = 0; i < numSlices; ++i) {
         const auto& slice = slices[static_cast<size_t>(i)];
-        drumGrid->loadSampleToPad(i, audioFile);
+        const auto samplerDeviceId =
+            trackManager.setPadDevice(gridPath, i,
+                                      padSamplerDevice(audioFile.getFullPathName(),
+                                                       daw::audio::DrumGridPlugin::baseNote + i));
 
-        auto* chain = drumGrid->getChainForNote(daw::audio::DrumGridPlugin::baseNote + i);
-        if (chain && !chain->plugins.empty()) {
-            auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(chain->plugins[0].get());
-            if (sampler) {
-                auto startSec = static_cast<float>(slice.sourceStart);
-                auto endSec = static_cast<float>(slice.sourceEnd);
-                // setParameterFromHost, not setParameter: the latter is silently
-                // dropped once a macro or mod is attached to the parameter.
-                sampler->sampleStartParam->setParameterFromHost(startSec,
-                                                                juce::dontSendNotification);
-                sampler->sampleStartValue = startSec;
-                sampler->sampleEndParam->setParameterFromHost(endSec, juce::dontSendNotification);
-                sampler->sampleEndValue = endSec;
-            }
-        }
+        const auto* pad = trackManager.getPad(gridPath, i);
+        if (samplerDeviceId == INVALID_DEVICE_ID || pad == nullptr)
+            continue;
+
+        const auto samplerPath =
+            padDevicePath(newTrackId, drumGridDeviceId, pad->id, samplerDeviceId);
+        trackManager.setDeviceParameterValue(samplerPath,
+                                             daw::audio::MagdaSamplerPlugin::kSampleStart,
+                                             static_cast<float>(slice.sourceStart));
+        trackManager.setDeviceParameterValue(samplerPath,
+                                             daw::audio::MagdaSamplerPlugin::kSampleEnd,
+                                             static_cast<float>(slice.sourceEnd));
     }
 
     linkAssignedDrumGridSamplerAdsrMacros(*drumGridDevice, newTrackId, *drumGrid);
@@ -3014,12 +2988,11 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
         double noteStartBeat = noteStartTime * beatsPerSecond;
 
         double nextTimeline =
-            (i + 1 < numSlices) ? slices[static_cast<size_t>(i + 1)].timelinePos : clipEnd;
+            (i + 1 < numSlices) ? slices[static_cast<size_t>(i) + 1].timelinePos : clipEnd;
         double noteDuration = nextTimeline - slice.timelinePos;
         double noteLengthBeats = noteDuration * beatsPerSecond;
 
-        if (noteStartBeat < 0.0)
-            noteStartBeat = 0.0;
+        noteStartBeat = std::max(noteStartBeat, 0.0);
         if (noteLengthBeats <= 0.0)
             noteLengthBeats = 0.01;
 
@@ -3036,15 +3009,15 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
 
 }  // namespace
 
-void sliceWarpMarkersToDrumGrid(ClipId clipId, double tempo, AudioBridge* bridge) {
-    if (!bridge)
+void sliceWarpMarkersToDrumGrid(ClipId clipId, double tempo) {
+    if (!tracktion_fork::isRendering())
         return;
 
     auto* clip = ClipManager::getInstance().getClip(clipId);
     if (!clip || !clip->isAudio() || magda::audioEventRef(*clip).sourceFilePath().isEmpty())
         return;
 
-    auto markers = bridge->getWarpMarkers(clipId);
+    auto markers = getClipWarpMarkers(clipId);
     if (markers.size() <= 2)
         return;
 
@@ -3096,11 +3069,11 @@ void sliceWarpMarkersToDrumGrid(ClipId clipId, double tempo, AudioBridge* bridge
         slices.push_back({boundaries[i], boundaries[i + 1], tlPos});
     }
 
-    buildDrumGridFromSlices(slices, *clip, audioFile, tempo, bridge);
+    buildDrumGridFromSlices(slices, *clip, audioFile, tempo);
 }
 
-void sliceAtGridToDrumGrid(ClipId clipId, double gridInterval, double tempo, AudioBridge* bridge) {
-    if (!bridge || gridInterval <= 0.0)
+void sliceAtGridToDrumGrid(ClipId clipId, double gridInterval, double tempo) {
+    if (!tracktion_fork::isRendering() || gridInterval <= 0.0)
         return;
 
     auto* clip = ClipManager::getInstance().getClip(clipId);
@@ -3145,7 +3118,7 @@ void sliceAtGridToDrumGrid(ClipId clipId, double gridInterval, double tempo, Aud
         slices.push_back({srcStart, srcEnd, gridTimes[i]});
     }
 
-    buildDrumGridFromSlices(slices, *clip, audioFile, tempo, bridge);
+    buildDrumGridFromSlices(slices, *clip, audioFile, tempo);
 }
 
 }  // namespace magda

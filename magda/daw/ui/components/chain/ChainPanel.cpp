@@ -1,5 +1,10 @@
 #include "ChainPanel.hpp"
 
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <ranges>
+
 #include "ChainNodePathDrag.hpp"
 #include "DeviceSlotComponent.hpp"
 #include "NodeComponent.hpp"
@@ -11,13 +16,15 @@
 #include "core/GestureRouter.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
+#include "core/RangesHelpers.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
+#include "engine/PluginService.hpp"
 #include "ui/debug/DebugSettings.hpp"
 #include "ui/panels/content/PluginBrowserContent.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui {
@@ -133,11 +140,11 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
         const bool appendHighlighted =
             owner_.dragInsertIndex_ == static_cast<int>(elementSlots_->size()) ||
             owner_.dropInsertIndex_ == static_cast<int>(elementSlots_->size());
-        auto appendColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)
+        auto appendColour = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)
                                 .withAlpha(appendHighlighted ? 0.18f : 0.07f);
         g.setColour(appendColour);
         g.fillRoundedRectangle(appendZone.reduced(4, 6).toFloat(), 3.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)
                         .withAlpha(appendHighlighted ? 0.75f : 0.28f));
         g.drawRoundedRectangle(appendZone.reduced(4, 6).toFloat(), 3.0f, 1.0f);
 
@@ -146,7 +153,7 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
             int indicatorIndex =
                 owner_.dragInsertIndex_ >= 0 ? owner_.dragInsertIndex_ : owner_.dropInsertIndex_;
             int indicatorX = owner_.calculateIndicatorX(indicatorIndex);
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
             g.fillRect(indicatorX - 2, 0, 4, getHeight());
         }
 
@@ -348,9 +355,9 @@ ChainPanel::ChainPanel()
     // Add device button (inside the container, after all slots)
     addDeviceButton_.setButtonText("+");
     addDeviceButton_.setColour(juce::TextButton::buttonColourId,
-                               DarkTheme::getColour(DarkTheme::SURFACE));
+                               ActiveTheme::getColour(ActiveTheme::SURFACE));
     addDeviceButton_.setColour(juce::TextButton::textColourOffId,
-                               DarkTheme::getSecondaryTextColour());
+                               ActiveTheme::getSecondaryTextColour());
     addDeviceButton_.onClick = [this]() { onAddDeviceClicked(); };
     addDeviceButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     elementSlotsContainer_->addAndMakeVisible(addDeviceButton_);
@@ -402,16 +409,9 @@ void ChainPanel::resizedContent(juce::Rectangle<int> contentArea) {
 }
 
 int ChainPanel::calculateTotalContentWidth() const {
-    // Add left padding during drag/drop to show insertion indicator before first element
-    bool isDraggingOrDropping = dragOriginalIndex_ >= 0 || dropInsertIndex_ >= 0;
-    int totalWidth = isDraggingOrDropping ? DRAG_LEFT_PADDING : 0;
-
-    int scaledArrowWidth = getScaledWidth(ARROW_WIDTH);
-    for (const auto& slot : elementSlots_) {
-        totalWidth += getScaledWidth(slot->getPreferredWidth()) + scaledArrowWidth;
-    }
-    totalWidth += getScaledWidth(APPEND_ZONE_WIDTH);
-    return totalWidth;
+    // The append zone sits past the last slot, where calculateAppendZoneX()
+    // already ends.
+    return calculateAppendZoneX() + getScaledWidth(APPEND_ZONE_WIDTH);
 }
 
 int ChainPanel::getContentWidth() const {
@@ -451,9 +451,9 @@ void ChainPanel::lookAndFeelChanged() {
     // The add-device button captures concrete colours at construction;
     // re-apply so a live theme switch restyles it.
     addDeviceButton_.setColour(juce::TextButton::buttonColourId,
-                               DarkTheme::getColour(DarkTheme::SURFACE));
+                               ActiveTheme::getColour(ActiveTheme::SURFACE));
     addDeviceButton_.setColour(juce::TextButton::textColourOffId,
-                               DarkTheme::getSecondaryTextColour());
+                               ActiveTheme::getSecondaryTextColour());
 }
 
 void ChainPanel::mouseEnter(const juce::MouseEvent&) {
@@ -497,9 +497,9 @@ void ChainPanel::showChain(const magda::ChainNodePath& chainPath) {
     // The path should end with a Chain step
     if (!chainPath.steps.empty()) {
         for (const auto& step : chainPath.steps) {
-            if (step.type == magda::ChainStepType::Rack) {
+            if (magda::isRackStep(step.type)) {
                 rackId_ = step.id;
-            } else if (step.type == magda::ChainStepType::Chain) {
+            } else if (magda::isChainStep(step.type)) {
                 chainId_ = step.id;
             }
         }
@@ -593,25 +593,19 @@ void ChainPanel::rebuildElementSlots() {
         if (magda::isDevice(element)) {
             const auto& device = magda::getDevice(element);
 
-            // Check if we already have a slot for this device
-            DeviceSlotComponent* existingDeviceSlot = nullptr;
-            size_t existingIndex = 0;
-            for (size_t i = 0; i < elementSlots_.size(); ++i) {
-                if (auto* deviceSlot = dynamic_cast<DeviceSlotComponent*>(elementSlots_[i].get())) {
-                    if (deviceSlot->getDeviceId() == device.id) {
-                        existingDeviceSlot = deviceSlot;
-                        existingIndex = i;
-                        break;
-                    }
-                }
-            }
+            // Reuse the existing slot for this device rather than rebuilding it.
+            const auto showsThisDevice = [&device](const auto& slot) {
+                const auto* deviceSlot = dynamic_cast<const DeviceSlotComponent*>(slot.get());
+                return deviceSlot != nullptr && deviceSlot->getDeviceId() == device.id;
+            };
+            const auto existing = std::ranges::find_if(elementSlots_, showsThisDevice);
 
-            if (existingDeviceSlot) {
-                // Found existing slot - preserve it and update its data
+            if (existing != elementSlots_.end()) {
+                auto* existingDeviceSlot = static_cast<DeviceSlotComponent*>(existing->get());
                 existingDeviceSlot->updateFromDevice(device);
                 existingDeviceSlot->setNodePath(chainPath_.withDevice(device.id));
-                newSlots.push_back(std::move(elementSlots_[existingIndex]));
-                elementSlots_.erase(elementSlots_.begin() + static_cast<long>(existingIndex));
+                newSlots.push_back(std::move(*existing));
+                elementSlots_.erase(existing);
             } else {
                 // Create new slot for new device
                 auto slot = std::make_unique<DeviceSlotComponent>(device);
@@ -633,25 +627,19 @@ void ChainPanel::rebuildElementSlots() {
                                     << " steps, trackId=" << chainPath_.trackId);
             DBG("  nestedRackPath has " << nestedRackPath.steps.size() << " steps");
 
-            // Check if we already have a RackComponent for this rack
-            RackComponent* existingRackComp = nullptr;
-            size_t existingIndex = 0;
-            for (size_t i = 0; i < elementSlots_.size(); ++i) {
-                if (auto* rackComp = dynamic_cast<RackComponent*>(elementSlots_[i].get())) {
-                    if (rackComp->getRackId() == rack.id) {
-                        existingRackComp = rackComp;
-                        existingIndex = i;
-                        break;
-                    }
-                }
-            }
+            // Reuse the existing component for this rack rather than rebuilding it.
+            const auto showsThisRack = [&rack](const auto& slot) {
+                const auto* rackComp = dynamic_cast<const RackComponent*>(slot.get());
+                return rackComp != nullptr && rackComp->getRackId() == rack.id;
+            };
+            const auto existing = std::ranges::find_if(elementSlots_, showsThisRack);
 
-            if (existingRackComp) {
-                // Found existing RackComponent - preserve it and update its data
+            if (existing != elementSlots_.end()) {
+                auto* existingRackComp = static_cast<RackComponent*>(existing->get());
                 existingRackComp->updateFromRack(rack);
                 existingRackComp->setNodePath(nestedRackPath);
-                newSlots.push_back(std::move(elementSlots_[existingIndex]));
-                elementSlots_.erase(elementSlots_.begin() + static_cast<long>(existingIndex));
+                newSlots.push_back(std::move(*existing));
+                elementSlots_.erase(existing);
             } else {
                 // Create new RackComponent for nested rack (with path context)
                 auto rackComp = std::make_unique<RackComponent>(nestedRackPath, rack);
@@ -741,10 +729,7 @@ void ChainPanel::onAddDeviceClicked() {
     menu.addSubMenu("Internal", internalMenu);
 
     // --- External plugins from KnownPluginList ---
-    juce::Array<juce::PluginDescription> externalPlugins;
-    if (auto* engine = magda::TrackManager::getInstance().getAudioEngine()) {
-        externalPlugins = engine->getPreferredPluginTypes();
-    }
+    const auto externalPlugins = magda::PluginService::getInstance().preferredTypes();
 
     if (!externalPlugins.isEmpty()) {
         // Group by manufacturer
@@ -876,24 +861,20 @@ void ChainPanel::onDeviceSlotSelected(magda::DeviceId deviceId) {
 }
 
 int ChainPanel::findElementIndex(NodeComponent* element) const {
-    for (size_t i = 0; i < elementSlots_.size(); ++i) {
-        if (elementSlots_[i].get() == element) {
-            return static_cast<int>(i);
-        }
-    }
-    return -1;
+    const auto isElement = [element](const auto& slot) { return slot.get() == element; };
+    const auto match = std::ranges::find_if(elementSlots_, isElement);
+    return match == elementSlots_.end()
+               ? -1
+               : static_cast<int>(std::ranges::distance(elementSlots_.begin(), match));
 }
 
 int ChainPanel::calculateInsertIndex(int mouseX) const {
-    // Find insert position based on mouse X and element midpoints
-    for (size_t i = 0; i < elementSlots_.size(); ++i) {
-        int midX = elementSlots_[i]->getX() + elementSlots_[i]->getWidth() / 2;
-        if (mouseX < midX) {
-            return static_cast<int>(i);
-        }
-    }
-    // After last element
-    return static_cast<int>(elementSlots_.size());
+    // The first slot whose midpoint the mouse has not passed; else after the last.
+    const auto isPastMouse = [mouseX](const auto& slot) {
+        return mouseX < slot->getX() + slot->getWidth() / 2;
+    };
+    const auto match = std::ranges::find_if(elementSlots_, isPastMouse);
+    return static_cast<int>(std::ranges::distance(elementSlots_.begin(), match));
 }
 
 int ChainPanel::calculateIndicatorX(int index) const {
@@ -921,15 +902,16 @@ int ChainPanel::calculateIndicatorX(int index) const {
 }
 
 int ChainPanel::calculateAppendZoneX() const {
-    bool isDraggingOrDropping = dragOriginalIndex_ >= 0 || dropInsertIndex_ >= 0;
-    int x = isDraggingOrDropping ? DRAG_LEFT_PADDING : 0;
-    int scaledArrowWidth = getScaledWidth(ARROW_WIDTH);
+    // Drag/drop adds left padding, so the insertion indicator has room before
+    // the first element.
+    const bool isDraggingOrDropping = dragOriginalIndex_ >= 0 || dropInsertIndex_ >= 0;
+    const int scaledArrowWidth = getScaledWidth(ARROW_WIDTH);
+    const auto slotAndArrowWidth = [this, scaledArrowWidth](const auto& slot) {
+        return getScaledWidth(slot->getPreferredWidth()) + scaledArrowWidth;
+    };
 
-    for (const auto& slot : elementSlots_) {
-        x += getScaledWidth(slot->getPreferredWidth()) + scaledArrowWidth;
-    }
-
-    return x;
+    return std::ranges::fold_left(elementSlots_ | std::views::transform(slotAndArrowWidth),
+                                  isDraggingOrDropping ? DRAG_LEFT_PADDING : 0, std::plus{});
 }
 
 void ChainPanel::timerCallback() {

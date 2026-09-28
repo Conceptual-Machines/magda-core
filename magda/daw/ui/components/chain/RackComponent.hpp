@@ -89,9 +89,11 @@ class RackComponent : public NodeComponent, public juce::Timer {
     }
 
   private:
+    /// Every chain row stacked, each with the 2px gap that follows it.
+    int stackedChainRowsHeight() const;
+
     void initializeCommon(const magda::RackInfo& rack);
     void onAddChainClicked();
-    void openMacroPanelForSelectionIfNeeded();
 
     magda::ChainNodePath rackPath_;  // Full path to this rack
     magda::TrackId trackId_;

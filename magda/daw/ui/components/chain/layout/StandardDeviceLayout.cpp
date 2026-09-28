@@ -11,12 +11,23 @@ int visibleCountFor(const magda::DeviceInfo& device) {
                                             : static_cast<int>(device.visibleParameters.size());
 }
 
+/// Where @p slot sits in the device's parameter array, or -1.
+int positionOfSlot(const magda::DeviceInfo& device, int slot) {
+    const auto found =
+        std::ranges::find(device.parameters, slot, &magda::ParameterInfo::paramIndex);
+    return found == device.parameters.end()
+               ? -1
+               : static_cast<int>(std::distance(device.parameters.begin(), found));
+}
+
 int paramArrayIndexFor(const magda::DeviceInfo& device, int slotIndex) {
     if (device.visibleParameters.empty())
         return slotIndex;
     if (slotIndex < 0 || slotIndex >= static_cast<int>(device.visibleParameters.size()))
         return -1;
-    return device.visibleParameters[static_cast<size_t>(slotIndex)];
+
+    // The selections name slots (#2638); the grid draws from array positions.
+    return positionOfSlot(device, device.visibleParameters[static_cast<size_t>(slotIndex)]);
 }
 
 bool gateEnabled(const magda::DeviceInfo& device, const magda::ParameterInfo& param) {

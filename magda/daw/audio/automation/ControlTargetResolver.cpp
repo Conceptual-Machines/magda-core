@@ -85,7 +85,7 @@ double laneNormalizedFromTEValue(const ControlTarget& target, te::AutomatablePar
                                  float teValue) {
     switch (target.kind) {
         case ControlTarget::Kind::DeviceMacro:
-            // Mirror of convertToTEValue: macros are 0..1 on both sides.
+            // Mirror of makeParameterValueConverter: macros are 0..1 on both sides.
             return juce::jlimit(0.0, 1.0, static_cast<double>(teValue));
 
         case ControlTarget::Kind::TrackVolume:
@@ -101,14 +101,10 @@ double laneNormalizedFromTEValue(const ControlTarget& target, te::AutomatablePar
             return ParameterUtils::realToNormalized(teValue, paramInfo);
         }
         default: {
-            // Inverse of convertToTEValue — keep the two symmetric or the
+            // Inverse of makeParameterValueConverter — keep the two symmetric or the
             // round-trip (MAGDA normalized -> TE raw -> MAGDA normalized)
             // will drift and the UI will fight the curve.
             ParameterInfo info = getParameterInfoForTarget(target);
-            // Mirror of convertToTEValue: display-mapped internal params keep
-            // the lane normalized == TE native, so pass through directly.
-            if (ParameterUtils::isDisplayMappedInternalValue(info))
-                return juce::jlimit(0.0, 1.0, static_cast<double>(teValue));
             const float teSpan = info.teMaxValue - info.teMinValue;
             if (teSpan <= 0.0f) {
                 if (!param)
@@ -120,7 +116,14 @@ double laneNormalizedFromTEValue(const ControlTarget& target, te::AutomatablePar
                 return juce::jlimit(0.0, 1.0,
                                     static_cast<double>((teValue - range.getStart()) / span));
             }
-            return ParameterUtils::modelToNormalizedValue(ParameterModelValue{teValue}, info).value;
+            const bool teRangeMatchesDisplay =
+                std::abs(info.minValue - info.teMinValue) < 1.0e-6f &&
+                std::abs(info.maxValue - info.teMaxValue) < 1.0e-6f;
+            if (info.valueConvention == ParameterValueConvention::Real && teRangeMatchesDisplay)
+                return ParameterUtils::modelToNormalizedValue(ParameterModelValue{teValue}, info)
+                    .value;
+            return juce::jlimit(0.0, 1.0,
+                                static_cast<double>((teValue - info.teMinValue) / teSpan));
         }
     }
 }

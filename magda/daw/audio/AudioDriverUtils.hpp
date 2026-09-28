@@ -20,7 +20,7 @@ inline juce::AudioIODeviceType* activeDeviceTypeFor(juce::AudioDeviceManager& de
     if (auto* current = deviceManager.getCurrentDeviceTypeObject())
         return current;
 
-    auto& types = deviceManager.getAvailableDeviceTypes();
+    const auto& types = deviceManager.getAvailableDeviceTypes();
     return types.isEmpty() ? nullptr : types.getFirst();
 }
 

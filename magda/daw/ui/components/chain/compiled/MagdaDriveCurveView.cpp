@@ -5,7 +5,7 @@
 #include "audio/plugins/FaustParamPool.hpp"
 #include "audio/plugins/FaustParamSlot.hpp"
 #include "audio/plugins/IFaustEditorModel.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -76,7 +76,7 @@ void MagdaDriveCurveView::paint(juce::Graphics& g) {
 
     // Background — slightly inset from the FaustUI body fill so the
     // header strip's separator stays visually distinct.
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     g.fillRect(bounds);
 
     auto plot = bounds.reduced(kPlotPadding).toFloat();
@@ -89,11 +89,11 @@ void MagdaDriveCurveView::paint(juce::Graphics& g) {
     const float halfH = plot.getHeight() * 0.5f;
 
     // Axis grid: midline crosshair plus a 0.5-amplitude rule on each side.
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.4f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.4f));
     g.drawHorizontalLine(static_cast<int>(std::round(midY)), plot.getX(), plot.getRight());
     g.drawVerticalLine(static_cast<int>(std::round(midX)), plot.getY(), plot.getBottom());
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.18f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.18f));
     for (float t : {-0.5f, 0.5f}) {
         const float x = midX + t * halfW;
         const float y = midY - t * halfH;
@@ -102,7 +102,7 @@ void MagdaDriveCurveView::paint(juce::Graphics& g) {
     }
 
     // Frame.
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.6f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.6f));
     g.drawRect(plot, 1.0f);
 
     // Sample the curve at one point per pixel.
@@ -124,7 +124,7 @@ void MagdaDriveCurveView::paint(juce::Graphics& g) {
             curve.lineTo(px, py);
     }
 
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE));
     g.strokePath(curve, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved,
                                              juce::PathStrokeType::rounded));
 }

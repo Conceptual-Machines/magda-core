@@ -145,7 +145,7 @@ Before merging to `main`, the following checks **must pass**:
 ### Code Security
 
 1. **Memory Safety**
-   - Use C++20 RAII patterns
+   - Use C++23 RAII patterns
    - Smart pointers over raw pointers
    - No unsafe C functions
    - Bounds checking on arrays

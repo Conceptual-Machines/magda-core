@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "project": "sidechain.mgd",
+  "cluster": "sidechain",
+  "range": { "startBeat": 0, "endBeat": 8 },
+  "requires": { "plugins": [], "hardware": [] },
+  "tracks": [
+    { "name": "Kick", "sound": true, "peakDb": { "min": -48, "max": 0 } },
+    { "name": "Pad", "sound": true, "peakDb": { "min": -48, "max": 0 } }
+  ],
+  "listen": "The held pad chord ducks on every kick through the Compressor's audio sidechain."
+}

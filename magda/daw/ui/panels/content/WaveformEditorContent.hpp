@@ -94,10 +94,13 @@ class WaveformEditorContent : public PanelContent,
 
     // Waveform editor is always source-relative.
     void setRelativeTimeMode(bool relative);
-    bool isRelativeTimeMode() const {
+    static bool isRelativeTimeMode() {
         return true;
     }
     void setSnapEnabledFromUI(bool enabled);
+    bool isSnapEnabled() const {
+        return snapEnabled_;
+    }
 
     // Loop-record take lanes (header TAKES toggle).
     bool editingClipHasMultipleTakes() const;
@@ -180,7 +183,6 @@ class WaveformEditorContent : public PanelContent,
 
     // Warp marker helpers
     void refreshWarpMarkers();
-    magda::AudioBridge* getBridge();
 
     // Slice helpers
     void sliceAtWarpMarkers();

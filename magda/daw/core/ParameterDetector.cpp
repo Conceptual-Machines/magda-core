@@ -1,7 +1,6 @@
 #include "ParameterDetector.hpp"
 
 #include <juce_events/juce_events.h>
-#include <juce_llm/juce_llm.h>
 
 #include <cmath>
 #include <mutex>
@@ -28,7 +27,7 @@ juce::File getDetectorLogFile() {
 
 void logDetector(const juce::String& msg) {
     static std::mutex logMutex;
-    std::lock_guard<std::mutex> lock(logMutex);
+    std::scoped_lock lock(logMutex);
     auto f = getDetectorLogFile();
     f.appendText(msg + "\n");
 }
@@ -399,7 +398,7 @@ DetectedParameterInfo detectSingleParameter(const ParameterScanInput& input) {
         // Parse numeric values from display texts
         std::vector<float> parsedValues;
         for (const auto& text : input.displayTexts) {
-            float val;
+            float val = NAN;
             // Try bracketed value first: "50% [-9.0 dB]" → -9.0
             if (parseNumberFromBracketedUnit(text, displayUnit, val)) {
                 parsedValues.push_back(val);
@@ -469,7 +468,7 @@ DetectedParameterInfo detectSingleParameter(const ParameterScanInput& input) {
         if (displayTextsCompatible) {
             std::vector<float> parsedValues;
             for (const auto& text : input.displayTexts) {
-                float val;
+                float val = NAN;
                 // Try bracketed value first: "50% [-9.0 dB]" → -9.0
                 if (parseNumberFromBracketedUnit(text, nameUnit, val)) {
                     parsedValues.push_back(val);
@@ -637,7 +636,7 @@ int parseAIResponse(const juce::String& responseText, const std::vector<Ambiguou
     }
 
     int parsedCount = 0;
-    std::lock_guard<std::mutex> lock(resultsMutex);
+    std::scoped_lock lock(resultsMutex);
     for (const auto& paramVar : *paramsArray) {
         if (auto* pObj = paramVar.getDynamicObject()) {
             int paramIndex = -1;
@@ -670,8 +669,8 @@ int parseAIResponse(const juce::String& responseText, const std::vector<Ambiguou
 void detectWithAI(const juce::String& pluginName, const std::vector<ParameterScanInput>& params,
                   const std::vector<DetectedParameterInfo>& deterministicResults,
                   float confidenceThreshold, std::shared_ptr<std::atomic<bool>> cancelFlag,
-                  std::function<void(int resolved, int total)> onProgress,
-                  std::function<void(std::vector<DetectedParameterInfo>)> onComplete) {
+                  const std::function<void(int resolved, int total)>& onProgress,
+                  const std::function<void(std::vector<DetectedParameterInfo>)>& onComplete) {
     // Collect ambiguous parameters
     std::vector<AmbiguousParam> ambiguous;
     for (size_t i = 0; i < deterministicResults.size(); ++i) {
@@ -689,8 +688,8 @@ void detectWithAI(const juce::String& pluginName, const std::vector<ParameterSca
     auto batches = std::make_shared<std::vector<std::vector<AmbiguousParam>>>();
     for (size_t i = 0; i < ambiguous.size(); i += batchSize) {
         auto end = std::min(i + batchSize, ambiguous.size());
-        batches->push_back({ambiguous.begin() + static_cast<ptrdiff_t>(i),
-                            ambiguous.begin() + static_cast<ptrdiff_t>(end)});
+        batches->emplace_back(ambiguous.begin() + static_cast<ptrdiff_t>(i),
+                              ambiguous.begin() + static_cast<ptrdiff_t>(end));
     }
 
     auto totalAmbiguous = static_cast<int>(ambiguous.size());
@@ -787,9 +786,7 @@ void detectWithAI(const juce::String& pluginName, const std::vector<ParameterSca
                     }
 
                     auto response = client->sendStreamingRequest(request, [&](const juce::String&) {
-                        if (cancelFlag && cancelFlag->load())
-                            return false;
-                        return true;
+                        return !(cancelFlag && cancelFlag->load());
                     });
 
                     if (cancelFlag && cancelFlag->load())

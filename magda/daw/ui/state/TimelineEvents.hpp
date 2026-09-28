@@ -287,6 +287,8 @@ struct CreateLoopFromSelectionEvent {};
 struct SetLoopRegionBeatsEvent {
     double startBeats;
     double endBeats;
+    /// A gesture that draws a loop also turns it on; the Remote API leaves it as it was.
+    bool enable = true;
 };
 
 /**
@@ -497,7 +499,7 @@ struct SelectSectionEvent {
  */
 struct AddMarkerBeatsEvent {
     double positionBeats;
-    juce::String name = {};
+    juce::String name;
     juce::Colour colour = juce::Colour(0xFF9E9E9E);
 };
 
@@ -506,7 +508,7 @@ struct AddMarkerBeatsEvent {
  */
 struct AddMarkerEvent {
     double positionTime;
-    juce::String name = {};
+    juce::String name;
     juce::Colour colour = juce::Colour(0xFF9E9E9E);
 };
 

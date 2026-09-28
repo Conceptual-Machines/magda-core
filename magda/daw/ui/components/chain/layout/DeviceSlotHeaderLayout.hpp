@@ -2,7 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -16,7 +16,7 @@ static constexpr int kNavArrowSize = 12;
 inline std::unique_ptr<juce::ArrowButton> makeNavArrowButton(const juce::String& name,
                                                              float direction) {
     return std::make_unique<juce::ArrowButton>(name, direction,
-                                               DarkTheme::getSecondaryTextColour());
+                                               ActiveTheme::getSecondaryTextColour());
 }
 
 /**

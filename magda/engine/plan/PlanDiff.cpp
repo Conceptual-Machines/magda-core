@@ -9,7 +9,8 @@ namespace {
 bool sameShape(const PlanOp& before, const PlanOp& after) {
     return before.kind == after.kind && before.outputs == after.outputs &&
            before.inputs.size() == after.inputs.size() &&
-           before.audioInputChannels == after.audioInputChannels;
+           before.audioInputChannels == after.audioInputChannels &&
+           before.hardwareOutput == after.hardwareOutput;
 }
 
 /// Whether both ops read the same places. Producers are compared by key rather

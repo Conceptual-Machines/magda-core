@@ -1,6 +1,6 @@
 #include "ExportMidiDialog.hpp"
 
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
 #include "core/StringTable.hpp"
@@ -69,7 +69,7 @@ ExportMidiDialog::~ExportMidiDialog() {
 }
 
 void ExportMidiDialog::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
 }
 
 void ExportMidiDialog::lookAndFeelChanged() {
@@ -138,12 +138,12 @@ void ExportMidiDialog::showDialog(juce::Component* parent,
     auto* dialog = new ExportMidiDialog();
     dialog->setTimeSelectionAvailable(hasTimeSelection);
     dialog->setLoopRegionAvailable(hasLoopRegion);
-    dialog->onExport = exportCallback;
+    dialog->onExport = std::move(exportCallback);
 
     juce::DialogWindow::LaunchOptions options;
     options.dialogTitle =
         tr("action.export").replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi));
-    options.dialogBackgroundColour = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+    options.dialogBackgroundColour = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
     options.content.setOwned(dialog);
     options.escapeKeyTriggersCloseButton = true;
     options.useNativeTitleBar = true;

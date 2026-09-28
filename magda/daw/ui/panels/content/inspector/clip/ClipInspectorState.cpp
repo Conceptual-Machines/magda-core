@@ -53,27 +53,28 @@ void ClipInspector::updateAudioSourceValueDisplays(const magda::ClipInfo& clip) 
     const auto display = magda::computeAudioClipSourceDisplay(
         clip, projectBPM, getAudioFileDurationForInspector(clip), cachedBpm);
 
-    if (display.bpm > 0.0) {
+    if (clipBpmValue_.isBeingEdited()) {
+        // Never under the user's cursor: setText would close the editor.
+    } else if (display.bpm > 0.0) {
         clipBpmValue_.setText(juce::String(display.bpm, 1), juce::dontSendNotification);
     } else {
         clipBpmValue_.setText(juce::String::fromUTF8("\xe2\x80\x94"), juce::dontSendNotification);
     }
 
-    if (audioEventRef(clip).autoTempo && clipBeatsLengthValue_ &&
-        !clipBeatsLengthValue_->isDragging()) {
+    if (clipBeatsLengthValue_ && !clipBeatsLengthValue_->isDragging()) {
         clipBeatsLengthValue_->setValue(display.totalBeats > 0.0 ? display.totalBeats : 4.0,
                                         juce::dontSendNotification);
     }
 }
 
 void ClipInspector::updateLoopValueDisplays(const magda::ClipInfo& clip, double projectBPM,
-                                            int beatsPerBar) {
+                                            int numerator, int denominator) {
     if (!clipLoopStartValue_ || !clipLoopEndValue_ || !clipLoopPhaseValue_)
         return;
 
-    clipLoopStartValue_->setBeatsPerBar(beatsPerBar);
-    clipLoopEndValue_->setBeatsPerBar(beatsPerBar);
-    clipLoopPhaseValue_->setBeatsPerBar(beatsPerBar);
+    clipLoopStartValue_->setTimeSignature(numerator, denominator);
+    clipLoopEndValue_->setTimeSignature(numerator, denominator);
+    clipLoopPhaseValue_->setTimeSignature(numerator, denominator);
 
     double loopBpm = magda::isValidBpm(projectBPM) ? projectBPM : magda::DEFAULT_BPM;
 
@@ -107,7 +108,7 @@ void ClipInspector::updateLoopValueDisplays(const magda::ClipInfo& clip, double 
 
     double loopLengthDisplayBeats = clip.loopLengthInBeats(loopBpm);
     if (loopLengthDisplayBeats <= 0.0)
-        loopLengthDisplayBeats = clip.getLengthInBeats(loopBpm);
+        loopLengthDisplayBeats = clip.getLengthInBeats();
     clipLoopEndValue_->setValue(loopStartBeats + loopLengthDisplayBeats,
                                 juce::dontSendNotification);
 
@@ -148,62 +149,6 @@ void ClipInspector::updateFromSelectedClip() {
     } else {
         clipCountLabel_.setVisible(false);
         clipNameValue_.setEditable(true);
-    }
-
-    // Sanitize stale audio clip values (e.g. offset past file end from old model)
-    // Only for single-clip selection to avoid sanitization conflicts
-    if (!isMulti) {
-        auto* mutableClip = magda::ClipManager::getInstance().getClip(pid);
-        if (mutableClip && mutableClip->isAudio() &&
-            !magda::audioEventRef(*mutableClip).sourceFilePath().isEmpty()) {
-            auto* thumbnail = magda::AudioThumbnailManager::getInstance().getThumbnail(
-                magda::audioEventRef(*mutableClip).sourceFilePath());
-            if (thumbnail) {
-                const double fileDur = thumbnail->getTotalLength();
-                if (fileDur > 0.0) {
-                    double newOffset = magda::audioEventRef(*mutableClip).anchorSeconds();
-                    double newLoopStart = magda::audioEventRef(*mutableClip).loopStartSeconds();
-                    double newLoopLength = magda::audioEventRef(*mutableClip).loopLengthSeconds();
-
-                    bool fixed = false;
-
-                    if (newOffset > fileDur) {
-                        newOffset = juce::jmin(newOffset, fileDur);
-                        fixed = true;
-                    }
-
-                    if (newLoopStart > fileDur) {
-                        newLoopStart = 0.0;
-                        fixed = true;
-                    }
-
-                    const double avail = fileDur - newLoopStart;
-                    if (newLoopLength > avail) {
-                        newLoopLength = avail;
-                        fixed = true;
-                    }
-
-                    if (fixed) {
-                        auto& clipManager = magda::ClipManager::getInstance();
-
-                        if (newOffset != magda::audioEventRef(*mutableClip).anchorSeconds()) {
-                            clipManager.setOffset(pid, newOffset);
-                        }
-
-                        if (newLoopStart != magda::audioEventRef(*mutableClip).loopStartSeconds()) {
-                            clipManager.setLoopStart(pid, newLoopStart);
-                        }
-
-                        if (newLoopLength !=
-                            magda::audioEventRef(*mutableClip).loopLengthSeconds()) {
-                            clipManager.setLoopLength(pid, newLoopLength);
-                        }
-
-                        return;
-                    }
-                }
-            }
-        }
     }
 
     const auto* clip = magda::ClipManager::getInstance().getClip(pid);
@@ -326,27 +271,25 @@ void ClipInspector::updateFromSelectedClip() {
             }
             clipBpmValue_.setVisible(true);
             clipBpmUnitLabel_.setVisible(true);
-            // Source BPM only drives playback in beat mode (autoTempo); in
-            // time-based mode the engine uses speedRatio and never reads it, so
-            // grey it out — the mirror of how the speed control is disabled in
-            // beat mode.
-            const bool sourceBpmActive = magda::audioEventRef(*clip).autoTempo;
-            clipBpmValue_.setEnabled(sourceBpmActive);
-            clipBpmValue_.setAlpha(sourceBpmActive ? 1.0f : 0.4f);
-            clipBpmUnitLabel_.setAlpha(sourceBpmActive ? 1.0f : 0.4f);
+            // Live once beat mode is asked for, granted or waiting on a tempo
+            // (#2676). A raw clip has no tempo to state (#2791).
+            const bool tempoLive = magda::audioEventRef(*clip).wantsBeatMode();
+            clipBpmValue_.setEnabled(tempoLive);
+            clipBpmValue_.setAlpha(tempoLive ? 1.0f : 0.5f);
+            clipBpmUnitLabel_.setAlpha(tempoLive ? 1.0f : 0.5f);
             updateAudioSourceValueDisplays(*clip);
         } else {
             clipBpmValue_.setVisible(false);
             clipBpmUnitLabel_.setVisible(false);
         }
 
-        // Show source interpretation total beats for audio clips with auto-tempo enabled.
-        // Clip placement length is already represented by start/end and by the clip body itself.
-        if (showAudioProps && magda::audioEventRef(*clip).autoTempo && !isMulti) {
+        // The other half of the interpretation the BPM field edits, live when it is.
+        if (showAudioProps && !isMulti) {
+            const bool tempoLive = magda::audioEventRef(*clip).wantsBeatMode();
             clipBeatsLengthValue_->setVisible(true);
             clipBeatsUnitLabel_.setVisible(true);
-            clipBeatsLengthValue_->setEnabled(true);
-            clipBeatsLengthValue_->setAlpha(1.0f);
+            clipBeatsLengthValue_->setEnabled(tempoLive);
+            clipBeatsLengthValue_->setAlpha(tempoLive ? 1.0f : 0.5f);
             updateAudioSourceValueDisplays(*clip);
         } else {
             clipBeatsLengthValue_->setVisible(false);
@@ -389,20 +332,21 @@ void ClipInspector::updateFromSelectedClip() {
 
         // Get tempo from TimelineController, fallback to 120 BPM if not available
         double bpm = 120.0;
-        int beatsPerBar = magda::DEFAULT_TIME_SIGNATURE_NUMERATOR;
+        int numerator = magda::DEFAULT_TIME_SIGNATURE_NUMERATOR;
+        int denominator = magda::DEFAULT_TIME_SIGNATURE_DENOMINATOR;
         if (timelineController_) {
             const auto& state = timelineController_->getState();
             bpm = state.tempo.bpm;
-            beatsPerBar = state.tempo.timeSignatureNumerator;
+            numerator = state.tempo.timeSignatureNumerator;
+            denominator = state.tempo.timeSignatureDenominator;
         }
 
         bool isSessionClip = (clip->view == magda::ClipView::Session);
 
-        // Update beatsPerBar on all draggable labels
-        clipStartValue_->setBeatsPerBar(beatsPerBar);
-        clipEndValue_->setBeatsPerBar(beatsPerBar);
-        clipLengthValue_->setBeatsPerBar(beatsPerBar);
-        clipLoopEndValue_->setBeatsPerBar(beatsPerBar);
+        clipStartValue_->setTimeSignature(numerator, denominator);
+        clipEndValue_->setTimeSignature(numerator, denominator);
+        clipLengthValue_->setTimeSignature(numerator, denominator);
+        clipLoopEndValue_->setTimeSignature(numerator, denominator);
 
         if (isSessionClip) {
             // Session clips: hide the position row entirely (no arrangement position)
@@ -430,7 +374,7 @@ void ClipInspector::updateFromSelectedClip() {
 
             clipStartValue_->setValue(clip->getStartBeats(bpm), juce::dontSendNotification);
             clipEndValue_->setValue(clip->getEndBeats(bpm), juce::dontSendNotification);
-            clipLengthValue_->setValue(clip->getLengthInBeats(bpm), juce::dontSendNotification);
+            clipLengthValue_->setValue(clip->getLengthInBeats(), juce::dontSendNotification);
         }
 
         clipLoopToggle_->setActive(clip->loopEnabled || magda::audioEventRef(*clip).autoTempo);
@@ -440,7 +384,7 @@ void ClipInspector::updateFromSelectedClip() {
 
         // Loop state determines source-row labels/interactivity.
         bool loopOn = isSessionClip || clip->loopEnabled || magda::audioEventRef(*clip).autoTempo;
-        updateLoopValueDisplays(*clip, bpm, beatsPerBar);
+        updateLoopValueDisplays(*clip, bpm, numerator, denominator);
 
         if (loopOn) {
             // Show loop row: lstart | lend | phase

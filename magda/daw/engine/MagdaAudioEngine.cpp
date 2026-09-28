@@ -1,0 +1,701 @@
+#include "MagdaAudioEngine.hpp"
+
+#include <algorithm>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+#include "../api/magda_api_live.hpp"
+#include "../audio/DeviceParameterDisplayTextProvider.hpp"
+#include "../audio/controllers/ControllerRouter.hpp"
+#include "../audio/io/TracktionAudioSettings.hpp"
+#include "../audio/sampling/SamplerMedia.hpp"
+#include "../core/Config.hpp"
+#include "../core/DeviceStateCommands.hpp"
+#include "../core/GrooveStore.hpp"
+#include "../core/TrackManager.hpp"
+#include "../core/UndoManager.hpp"  // complete type for the unique_ptr this forwards
+#include "../core/controllers/MidiLearnCoordinator.hpp"
+#include "../music/GrooveLibrary.hpp"
+#include "AppServices.hpp"
+#include "PluginService.hpp"
+#include "RenderProgressWindow.hpp"
+#include "host/EngineHost.hpp"
+
+namespace magda::daw::engine_host {
+/// Declared rather than included: EngineProject.hpp reaches magda/engine's own
+/// headers, which magda_daw does not see (EngineHost.hpp says why).
+double projectEndBeat();
+}  // namespace magda::daw::engine_host
+
+namespace {
+/// What has named itself unwired, in the order it first did. Message thread
+/// only, like every caller of the surface below.
+std::vector<std::string_view>& unwiredSoFar() {
+    static std::vector<std::string_view> names;
+    return names;
+}
+
+/** @brief The channels @p audioIO has open one way, under the names saved routes use. */
+magda::daw::engine_host::EngineHost::HardwareChannelCatalog hardwareCatalog(
+    const magda::AudioIOService& audioIO, bool inputs) {
+    auto direction = inputs ? audioIO.inputs() : audioIO.outputs();
+    return {.enabledChannels = std::move(direction.open),
+            .namesByChannel = std::move(direction.routeNames)};
+}
+}  // namespace
+
+namespace magda {
+
+MagdaAudioEngine::MagdaAudioEngine(AudioEngineOptions options) : headless_(options.headless) {
+    // Here rather than in initialize(), so that everything below can ask it
+    // things without first asking whether it exists. It renders nothing until
+    // start() puts it on a device.
+    audioIO_ = std::make_unique<AudioIOService>();
+    host_ = std::make_unique<daw::engine_host::EngineHost>();
+
+    // No edit accessor: the half of the API that reads a te::Edit is #2554's.
+    api_ = std::make_unique<MagdaApiLive>();
+    api_->setProjectTempoWriter([this](double bpm) { setTempo(bpm); });
+    api_->setProjectTimeSignatureWriter(
+        [this](int numerator, int denominator) { setTimeSignature(numerator, denominator); });
+    api_->setProjectLoopRangeWriter([this](double start, double end) {
+        setLoopRegionBeats({{start}, {end}});
+    });
+    api_->setProjectTempoMap([this] { return tempoMap(); });
+    SamplerMedia::getInstance().setProvider(modelSamplerMedia);
+    api_->setTransportEngineState({
+        .playing = [this] { return isPlaying(); },
+        .recording = [this] { return isRecording(); },
+        .looping = [this] { return isLooping(); },
+        .positionBeats = [this] { return tempoMap()->timeToBeat(getCurrentPosition()); },
+        .beatsPerBar =
+            [this] {
+                int numerator = 4, denominator = 4;
+                getTimeSignature(numerator, denominator);
+                return numerator * 4.0 / denominator;
+            },
+    });
+}
+
+/**
+ * @brief Point the host's meters at meters_ and deviceMeters_ (#2579, #2570).
+ *
+ * Mixer and recording each have a ring; remote readers share a latest-value
+ * snapshot. The device side is handed the store itself, since the host has
+ * nothing to translate and is what hears a project close.
+ */
+void MagdaAudioEngine::meterInto() {
+    host_->meterInto([this](TrackId trackId, float peakL, float peakR) {
+        // No ring can hold it: MASTER_TRACK_ID is negative.
+        if (trackId == MASTER_TRACK_ID) {
+            meters_.setMasterPeak(peakL, peakR);
+            return;
+        }
+
+        const MeterData data{.peakL = peakL, .peakR = peakR};
+        meters_.mixer.pushLevels(trackId, data);
+        meters_.recording.pushLevels(trackId, data);
+        meters_.setRemotePeak(trackId, data);
+    });
+
+    host_->meterDevicesInto(deviceMeters_);
+}
+
+void MagdaAudioEngine::reportUnwired(const char* method, const char* issue) const {
+    // string_view over the literal: the session surface below is asked from
+    // paint loops, so only a method's first report may touch the heap.
+    auto& said = unwiredSoFar();
+    if (std::ranges::find(said, std::string_view{method}) != said.end())
+        return;
+
+    said.emplace_back(method);
+    juce::Logger::writeToLog(juce::String("[engine] ") + method +
+                             " is not wired on magda::engine yet (" + issue + ")");
+}
+
+#ifdef MAGDA_ENABLE_TEST_HOOKS
+juce::StringArray MagdaAudioEngine::unwiredMethods() {
+    juce::StringArray methods;
+    for (const auto name : unwiredSoFar())
+        methods.add(juce::String(name.data(), name.size()));
+
+    return methods;
+}
+#endif
+
+MagdaAudioEngine::~MagdaAudioEngine() {
+    // The app destroys the engine with a plain reset() and no shutdown() call
+    // (magda_daw_main.cpp), which would leave the MIDI service pushing live
+    // notes through a destroyed sink and the host rendering from a device it
+    // never came off. Safe twice: every step below is.
+    shutdown();
+}
+
+// --- what magda::engine answers ----------------------------------------------
+//
+// Transport and what is published with it. Below this section is what nothing
+// answers yet, each named with its issue.
+
+bool MagdaAudioEngine::initialize() {
+    app_services::bringUp();
+
+    // No engine lends the service a list, so it keeps its own; a headless run never scans.
+    auto& plugins = PluginService::getInstance();
+    plugins.useOwnList();
+    plugins.openList(!app_services::isHeadless(headless_) &&
+                     Config::getInstance().getScanPluginsOnStartup());
+
+    // Where Tracktion kept them, so switching engines keeps the list (#2761).
+    grooveStore_ = std::make_unique<GrooveStore>(tracktionSettingsFile());
+    GrooveLibrary::getInstance().setStore(
+        [this] { return grooveStore_->grooves(); },
+        [this](const GrooveTemplateData& groove) { return grooveStore_->upsert(groove); });
+
+    // Before the device, so the first publish can already load the plugins a
+    // project names rather than going without them until the second (#2566).
+    host_->setPluginServices(*plugins.formats(), *plugins.knownList());
+
+    setDeviceParameterFormatter([this](const ChainNodePath& devicePath, int paramIndex,
+                                       float normalised) {
+        return host_ != nullptr ? host_->formatDeviceParameter(devicePath, paramIndex, normalised)
+                                : juce::String{};
+    });
+
+    // Read at each publish, and republished when the library changes: a groove already
+    // on a playing clip keeps the one it was compiled with otherwise (#2757).
+    GrooveLibrary::getInstance().setOnChanged([this] { host_->refreshGrooves(); });
+    host_->setGrooveProvider([] {
+        std::vector<daw::engine_host::EngineHost::GrooveEntry> entries;
+        for (const auto& groove : GrooveLibrary::getInstance().all())
+            entries.push_back({.name = groove.name.toStdString(),
+                               .latenesses = groove.latenessProportions,
+                               .notesPerBeat = groove.notesPerBeat,
+                               .parameterized = groove.parameterized});
+        return entries;
+    });
+
+    meterInto();
+
+    // Named before the first publish, so a track routed to "all" hears the
+    // keyboard from its first note rather than from the next republish. The
+    // system's MIDI list never holds it, so it is registered as virtual or a
+    // device scan would take it back out of every "all" route.
+    host_->registerVirtualMidiSource(qwertyMidiDeviceId());
+
+    // The only interface, and the headless CLI renders offline without it.
+    host_->setHardwareOutputProvider([this] { return hardwareCatalog(*audioIO_, false); });
+    host_->setHardwareInputProvider([this] { return hardwareCatalog(*audioIO_, true); });
+    audioIO_->addListener(this);
+    if (!app_services::isHeadless(headless_))
+        audioIO_->open();
+    host_->start(audioIO_->getDeviceManager());
+
+    // The activity light and every live note go to this engine's meters and queue, and
+    // the only virtual input is the QWERTY keyboard (#2759).
+    auto& midi = MidiBridge::getInstance();
+    midi.useEngine(this, [] {
+        std::vector<MidiDeviceInfo> devices;
+        if (MidiBridge::getInstance().isQwertyEnabled())
+            devices.emplace_back(qwertyMidiDeviceId(), kQwertyMidiDeviceName, /*enabled=*/true);
+        return devices;
+    });
+    api_->setMidiBridge(&midi);
+    midi.setMeters(&meters_);
+    midi.setLiveSink(this);
+    midi.onActiveInputsChanged = [this] { host_->refreshMidiInputs(); };
+    midi.addMidiDeviceListListener(this);
+
+    initialised_ = true;
+    return true;
+}
+void MagdaAudioEngine::shutdown() {
+    // Stop the service reaching the host before it is stopped or destroyed.
+    PluginService::getInstance().forgetStateProvider(*this);
+    SamplerMedia::getInstance().forgetProvider();
+
+    // The sink has to be gone before the host's queue behind it is. clearLiveSink returns
+    // only once any in-flight MIDI callback has left, which is what forgetEngine() then
+    // asserts. Unconditional, and conditional on being this engine's sink rather than on
+    // owning MIDI: the sink is this object, so it is owed the service whether or not
+    // another engine has since attached over it.
+    //
+    // The rest is the MIDI layer's, so it only runs while this engine is the one
+    // attached. shutdown() runs again from the destructor, and by then another engine may
+    // hold MIDI; unbinding its router or stopping its inputs is not this one's to do.
+    // The router goes first so it unsubscribes before the inputs stop.
+    auto& midi = MidiBridge::getInstance();
+    midi.removeMidiDeviceListListener(this);
+    midi.clearLiveSink(this);
+    if (midi.isAttachedTo(this)) {
+        MidiLearnCoordinator::getInstance().cancelLearn();
+        ControllerRouter::getInstance().shutdown();
+        midi.forgetEngine(this);
+    }
+
+    // The API outlives this call.
+    api_->setMidiBridge(nullptr);
+    audioIO_->removeListener(this);
+
+    // What initialize() lent the app's services, handed back once: by the destructor's
+    // call another engine may have lent its own.
+    const bool lent = std::exchange(initialised_, false);
+    if (lent) {
+        forgetDeviceParameterFormatter();
+        GrooveLibrary::getInstance().forgetOnChanged();
+        GrooveLibrary::getInstance().forgetStore();
+    }
+
+    host_->stop();
+    audioIO_->getDeviceManager().closeAudioDevice();
+
+    // After the host, which opens plugins off the list.
+    if (lent)
+        PluginService::getInstance().forgetEngineList();
+}
+bool MagdaAudioEngine::hasActiveEdit() const {
+    return initialised_;
+}
+BeatDuration MagdaAudioEngine::getEditLengthBeats() const {
+    return BeatDuration{daw::engine_host::projectEndBeat()};
+}
+juce::File MagdaAudioEngine::getEditFile() const {
+    // What the fork answers with no Edit: the file is the project layer's.
+    return juce::File{};
+}
+void MagdaAudioEngine::play() {
+    host_->play();
+}
+void MagdaAudioEngine::stop() {
+    host_->stopPlaying();
+}
+void MagdaAudioEngine::pause() {
+    // The engine has no pause: a stop that does not move the cursor is the same
+    // thing, and is what this asks for.
+    host_->stopPlaying();
+}
+void MagdaAudioEngine::record() {
+    host_->beginArmedSessionSlotRecordings(getCurrentPosition());
+    host_->startMidiRecording(getCurrentPosition());
+}
+void MagdaAudioEngine::locate(double positionSeconds) {
+    host_->locateSeconds(positionSeconds);
+}
+double MagdaAudioEngine::getCurrentPosition() const {
+    return host_->positionSeconds();
+}
+bool MagdaAudioEngine::isPlaying() const {
+    return host_->isPlaying();
+}
+bool MagdaAudioEngine::isRecording() const {
+    return host_->isRecording();
+}
+// The session launcher, off the handle the engine publishes per slot and the
+// tap the block that advanced it wrote (#2552). SlotLauncher.hpp is the whole
+// of it; what a slot is doing is never asked of the fork again.
+double MagdaAudioEngine::getSessionPlayheadPosition() const {
+    return host_->sessionPlayheadSeconds();
+}
+ClipId MagdaAudioEngine::getSessionPlayheadClipId() const {
+    return host_->sessionPlayheadClip();
+}
+std::unordered_map<ClipId, double> MagdaAudioEngine::getActiveClipPlayheadPositions() const {
+    return host_->sessionPlayheads();
+}
+SessionClipPlayState MagdaAudioEngine::getSessionClipPlayState(ClipId clipId) const {
+    return host_->sessionClipPlayState(clipId);
+}
+void MagdaAudioEngine::stopSessionTrack(TrackId trackId) {
+    host_->stopSessionTrack(trackId);
+}
+bool MagdaAudioEngine::isSessionTrackStopPending(TrackId trackId) const {
+    return host_->sessionTrackStopPending(trackId);
+}
+void MagdaAudioEngine::launchSessionScene(const std::vector<TrackId>& trackIds, int sceneIndex) {
+    host_->launchScene(trackIds, sceneIndex);
+}
+double MagdaAudioEngine::getAudioThreadTransportSeconds() const {
+    return host_->positionSeconds();
+}
+void MagdaAudioEngine::deactivateAllSessionClips() {
+    host_->stopAllSessionClips();
+}
+// Tempo, time signature and loop are the host's: there is no Edit to hold a
+// second copy of them, and what the ruler converts through is the same map the
+// engine renders with; the tempo lane drives the host's map when it has a curve.
+void MagdaAudioEngine::setTempo(double bpm) {
+    host_->setTempo(bpm);
+}
+double MagdaAudioEngine::getTempo() const {
+    return host_->tempo();
+}
+void MagdaAudioEngine::setTimeSignature(int numerator, int denominator) {
+    host_->setTimeSignature(numerator, denominator);
+}
+void MagdaAudioEngine::getTimeSignature(int& numerator, int& denominator) const {
+    host_->getTimeSignature(numerator, denominator);
+}
+const TempoMap* MagdaAudioEngine::tempoMap() const {
+    return host_->tempoMap();
+}
+void MagdaAudioEngine::setLooping(bool enabled) {
+    const auto loop = host_->loop();
+    host_->setLoop(enabled, loop.startBeat, loop.endBeat);
+}
+void MagdaAudioEngine::setLoopRegionBeats(BeatRange range) {
+    host_->setLoop(host_->loop().enabled, range.start.value, range.end.value);
+}
+bool MagdaAudioEngine::isLooping() const {
+    return host_->loop().enabled;
+}
+BeatRange MagdaAudioEngine::getLoopRegionBeats() const {
+    const auto loop = host_->loop();
+    return {{loop.startBeat}, {loop.endBeat}};
+}
+void MagdaAudioEngine::setMetronomeEnabled(bool enabled) {
+    host_->setMetronomeEnabled(enabled);
+}
+bool MagdaAudioEngine::isMetronomeEnabled() const {
+    return host_->isMetronomeEnabled();
+}
+void MagdaAudioEngine::setCountInMode(int mode) {
+    host_->setCountInMode(mode);
+}
+int MagdaAudioEngine::getCountInMode() const {
+    return host_->countInMode();
+}
+
+/// The play-start and loop edges the modulators retrigger on, once a frame.
+void MagdaAudioEngine::updateTriggerState() {
+    const bool playing = host_->isPlaying();
+    const double position = host_->positionSeconds();
+
+    const bool justStarted = playing && !wasPlaying_;
+
+    // 100 ms backwards, the fork's own threshold: anything smaller is jitter
+    // rather than a loop.
+    const bool justLooped = playing && isLooping() && lastPosition_ - position > 0.1;
+
+    wasPlaying_ = playing;
+    lastPosition_ = position;
+
+    TrackManager::getInstance().updateTransportState(playing, getTempo(), justStarted, justLooped);
+}
+void MagdaAudioEngine::processSessionStateEvents() {
+    // What the taps say, turned into the model's own state once a frame. Where
+    // a follow action is noticed, since the engine moves a run between slots
+    // without telling anyone (#2304).
+    host_->processSessionStateEvents();
+}
+AudioIOControl* MagdaAudioEngine::getAudioIO() {
+    return audioIO_.get();
+}
+void MagdaAudioEngine::hardwareChannelsChanged() {
+    host_->refreshHardwareOutputs();
+    host_->refreshHardwareInputs();
+}
+void MagdaAudioEngine::setMidiDevicesReadyCallback(std::function<void()> callback) {
+    midiDevicesReady_ = std::move(callback);
+}
+void MagdaAudioEngine::midiDeviceListChanged() {
+    // JUCE opens a port when it is first sent to, so a device listed is a device ready.
+    if (midiDevicesReady_ && !juce::MidiInput::getAvailableDevices().isEmpty())
+        midiDevicesReady_();
+}
+
+/** @brief Read hosted external-plugin state through EngineHost (#2758). */
+void MagdaAudioEngine::captureAllPluginStates() {
+    if (host_ != nullptr)
+        host_->captureExternalPluginStates();
+}
+
+void MagdaAudioEngine::capturePluginStateAt(const ChainNodePath& devicePath) {
+    if (host_ != nullptr)
+        host_->captureExternalPluginStateAt(devicePath);
+}
+
+void MagdaAudioEngine::applyPluginStateAt(const ChainNodePath& devicePath) {
+    if (host_ != nullptr)
+        host_->applyExternalPluginStateAt(devicePath);
+}
+
+void MagdaAudioEngine::projectAuthoredStateAt(const ChainNodePath& devicePath) {
+    projectAuthoredStateToRenderedDevice(*this, devicePath);
+
+    // The restore reset the device's parameters behind the adapter's write cache.
+    if (host_ != nullptr)
+        host_->invalidateParameterWritesAt(devicePath);
+}
+
+// The window opens onto the instance this renders through (#2580).
+std::optional<PluginPrograms> MagdaAudioEngine::getPluginPrograms(const ChainNodePath& path) {
+    return host_->getPluginPrograms(path);
+}
+bool MagdaAudioEngine::setPluginCurrentProgram(const ChainNodePath& path, int index) {
+    return host_->setPluginCurrentProgram(path, index);
+}
+bool MagdaAudioEngine::loadPluginPresetFile(const ChainNodePath& path, const juce::File& file) {
+    return host_->loadPluginPresetFile(path, file);
+}
+bool MagdaAudioEngine::savePluginPresetFile(const ChainNodePath& path, const juce::File& file) {
+    return host_->savePluginPresetFile(path, file);
+}
+
+bool MagdaAudioEngine::showDeviceEditor(const ChainNodePath& devicePath) {
+    return host_->showDeviceEditor(devicePath);
+}
+bool MagdaAudioEngine::hideDeviceEditor(const ChainNodePath& devicePath) {
+    return host_->hideDeviceEditor(devicePath);
+}
+bool MagdaAudioEngine::toggleDeviceEditor(const ChainNodePath& devicePath) {
+    return host_->toggleDeviceEditor(devicePath);
+}
+bool MagdaAudioEngine::isDeviceEditorOpen(const ChainNodePath& devicePath) const {
+    return host_->isDeviceEditorOpen(devicePath);
+}
+
+/** @brief The host's instance is the one filling the ring a faceplate draws (#2585). */
+std::shared_ptr<daw::audio::MagdaDevice> MagdaAudioEngine::renderedDevice(
+    const ChainNodePath& devicePath) const {
+    return host_ != nullptr ? host_->renderedDevice(devicePath)
+                            : std::shared_ptr<daw::audio::MagdaDevice>{};
+}
+
+/** @brief The host's instances, which are the only ones there are (#2579). */
+HostParameters MagdaAudioEngine::describeDeviceParameters(const ChainNodePath& devicePath) const {
+    return host_ != nullptr ? host_->describeDeviceParameters(devicePath) : HostParameters{};
+}
+
+std::optional<float> MagdaAudioEngine::observedParameter(const ChainNodePath& devicePath,
+                                                         int paramIndex) const {
+    return host_ != nullptr ? host_->observedParameter(devicePath, paramIndex) : std::nullopt;
+}
+
+bool MagdaAudioEngine::hostedEditPending(const ChainNodePath& devicePath, int paramIndex) const {
+    return host_ != nullptr && host_->hostedEditPending(devicePath, paramIndex);
+}
+
+EditReceipt MagdaAudioEngine::editHostedParameter(const ChainNodePath& devicePath, int paramIndex,
+                                                  float normalised, EditOrigin origin,
+                                                  std::function<void(EditCompletion)> completed) {
+    if (host_ == nullptr)
+        return {.status = EditStatus::Unavailable, .requested = normalised};
+
+    return host_->editHostedParameter(devicePath, paramIndex, normalised, origin,
+                                      std::move(completed));
+}
+
+MagdaApi& MagdaAudioEngine::getMagdaApi() {
+    return *api_;
+}
+InsertRenderCapture* MagdaAudioEngine::getInsertRenderCapture() {
+    return &host_->insertCapture();
+}
+std::unique_ptr<OfflineRenderSession> MagdaAudioEngine::createOfflineRenderSession(
+    bool resumePlaybackWhenFinished) {
+    return host_->createOfflineRenderSession(resumePlaybackWhenFinished);
+}
+MasterCaptureStartStatus MagdaAudioEngine::startMasterCapture(const MasterCaptureRequest& request) {
+    return host_->startMasterCapture(request);
+}
+MasterCaptureResult MagdaAudioEngine::stopMasterCapture() {
+    return host_->stopMasterCapture();
+}
+void MagdaAudioEngine::cancelMasterCapture() {
+    host_->cancelMasterCapture();
+}
+MasterCaptureState MagdaAudioEngine::masterCaptureState() const {
+    return host_->masterCaptureState();
+}
+
+AudioEngine::TrackFreezePlan MagdaAudioEngine::planTrackFreeze(TrackId trackId) {
+    const auto* track = TrackManager::getInstance().getTrack(trackId);
+    if (track == nullptr)
+        return {.request = nullptr, .refusal = "no such track"};
+    if (track->frozen)
+        return {.request = nullptr, .refusal = "the track is already frozen"};
+    auto freeze = host_->planFreeze(trackId);
+    if (freeze.request != nullptr)
+        freeze.request->destination.getParentDirectory().createDirectory();
+    return {.request = std::move(freeze.request), .refusal = freeze.refusal};
+}
+
+void MagdaAudioEngine::adoptTrackFreeze(TrackId trackId, const OfflineRenderRequest& request) {
+    host_->adoptFreeze(request);
+    TrackManager::getInstance().setTrackFrozen(trackId, true);
+}
+
+void MagdaAudioEngine::setTrackFrozen(TrackId trackId, bool frozen) {
+    auto& tracks = TrackManager::getInstance();
+    const auto* track = tracks.getTrack(trackId);
+    if (track == nullptr || track->frozen == frozen)
+        return;
+
+    if (!frozen) {
+        tracks.setTrackFrozen(trackId, false);
+        return;
+    }
+
+    const auto freeze = planTrackFreeze(trackId);
+    if (freeze.request == nullptr) {
+        juce::Logger::writeToLog("[engine] freeze of track " + juce::String(trackId) + ": " +
+                                 freeze.refusal);
+        return;
+    }
+
+    auto rendered = false;
+    {
+        auto session = host_->createOfflineRenderSession(false);
+        RenderProgressWindow progress("Creating track freeze for \"" + track->name + "\"...",
+                                      session->createTask(*freeze.request));
+        rendered = progress.runThread() && progress.wasSuccessful();
+        if (!rendered)
+            juce::Logger::writeToLog("[engine] freeze of track " + juce::String(trackId) +
+                                     " failed: " + progress.result().error);
+    }
+
+    if (!rendered) {
+        freeze.request->destination.deleteFile();
+        return;
+    }
+
+    adoptTrackFreeze(trackId, *freeze.request);
+}
+
+void MagdaAudioEngine::previewNoteOnTrack(const std::string& track_id, int noteNumber, int velocity,
+                                          bool isNoteOn) {
+    TrackId trackId = INVALID_TRACK_ID;
+    try {
+        trackId = std::stoi(track_id);
+    } catch (const std::exception&) {
+        return;
+    }
+
+    // Channel 1, like the fork's preview, and auditioned rather than routed:
+    // the track it is played on need not be monitoring anything (#762).
+    host_->audition(
+        trackId,
+        isNoteOn ? juce::MidiMessage::noteOn(1, noteNumber, static_cast<juce::uint8>(velocity))
+                 : juce::MidiMessage::noteOff(1, noteNumber, static_cast<juce::uint8>(velocity)));
+}
+void MagdaAudioEngine::pushMidi(const juce::String& deviceId, const juce::MidiMessage& message) {
+    host_->pushMidi(deviceId, message);
+}
+void MagdaAudioEngine::audition(TrackId trackId, const juce::MidiMessage& message) {
+    host_->audition(trackId, message);
+}
+// The UI's own transport, which TimelineController drives. Deliberately not
+// forwarded: the fork's versions of these are locate-and-play, and starting its
+// transport is the one thing this class must never do.
+void MagdaAudioEngine::onTransportPlay(double positionSeconds) {
+    locate(positionSeconds);
+    play();
+    api_->notifyTransportStateChanged();
+}
+void MagdaAudioEngine::onTransportStop(double returnPositionSeconds) {
+    stop();
+    locate(returnPositionSeconds);
+    api_->notifyTransportStateChanged();
+}
+void MagdaAudioEngine::onTransportPause() {
+    pause();
+    api_->notifyTransportStateChanged();
+}
+void MagdaAudioEngine::onTransportRecord(double positionSeconds) {
+    const auto punch = host_->punch();
+    const auto validPunch =
+        punch.endBeat > punch.startBeat && (punch.punchInEnabled || punch.punchOutEnabled);
+    if (validPunch) {
+        const auto waiting = punch.punchInEnabled &&
+                             host_->tempoMap()->timeToBeat(positionSeconds) < punch.startBeat;
+        host_->startPunchRecording(positionSeconds,
+                                   waiting ? std::optional<double>{punch.startBeat} : std::nullopt);
+    } else {
+        host_->beginArmedSessionSlotRecordings(positionSeconds);
+        host_->startMidiRecording(positionSeconds);
+    }
+    api_->notifyTransportStateChanged();
+}
+void MagdaAudioEngine::onTransportStopRecording() {
+    host_->stopMidiRecording();
+    api_->notifyTransportStateChanged();
+}
+void MagdaAudioEngine::onEditPositionChanged(double positionSeconds) {
+    // Only while stopped, which is the fork's rule and the right one: this
+    // fires whenever the edit cursor moves, and clicking in the piano roll to
+    // place a note moves it. Seeking on that would drag the transport out from
+    // under whoever is listening.
+    if (!isPlaying())
+        locate(positionSeconds);
+}
+void MagdaAudioEngine::onTempoChanged(double bpm) {
+    host_->setTempo(bpm);
+}
+void MagdaAudioEngine::onTimeSignatureChanged(int numerator, int denominator) {
+    host_->setTimeSignature(numerator, denominator);
+}
+void MagdaAudioEngine::onLoopRegionChanged(double startSeconds, double endSeconds, bool enabled) {
+    // The UI sends a loop in seconds; the transport is published in beats.
+    const auto* map = host_->tempoMap();
+    host_->setLoop(enabled, map->timeToBeat(startSeconds), map->timeToBeat(endSeconds));
+    api_->notifyTransportStateChanged();
+}
+void MagdaAudioEngine::onLoopEnabledChanged(bool enabled) {
+    setLooping(enabled);
+    api_->notifyTransportStateChanged();
+}
+
+// Session recording is owned by EngineHost beside Arrangement input recording.
+
+void MagdaAudioEngine::armSessionSlotRecording(TrackId trackId, int sceneIndex) {
+    host_->armSessionSlotRecording(trackId, sceneIndex);
+}
+
+void MagdaAudioEngine::beginArmedSessionSlotRecordings() {
+    host_->beginArmedSessionSlotRecordings();
+}
+
+bool MagdaAudioEngine::isSessionSlotRecordArmed(TrackId trackId, int sceneIndex) const {
+    return host_->isSessionSlotRecordArmed(trackId, sceneIndex);
+}
+
+bool MagdaAudioEngine::isSessionSlotRecording(TrackId trackId, int sceneIndex) const {
+    return host_->isSessionSlotRecording(trackId, sceneIndex);
+}
+
+SessionRecordingCapabilities MagdaAudioEngine::sessionRecordingCapabilities() const {
+    return {.slotRecording = true,
+            .performanceCapture = true,
+            .slotCancellation = true,
+            .performanceCaptureCancellation = false,
+            .slotStopStopsTransport = false};
+}
+
+bool MagdaAudioEngine::stopSessionSlotRecording(TrackId trackId, bool commit) {
+    return host_->stopSessionSlotRecording(trackId, commit);
+}
+
+const std::unordered_map<TrackId, RecordingPreview>& MagdaAudioEngine::getRecordingPreviews()
+    const {
+    return host_->recordingPreviews();
+}
+
+void MagdaAudioEngine::onPunchRegionChanged(double startSeconds, double endSeconds,
+                                            bool punchInEnabled, bool punchOutEnabled) {
+    const auto* map = host_->tempoMap();
+    host_->setPunch(map->timeToBeat(startSeconds), map->timeToBeat(endSeconds), punchInEnabled,
+                    punchOutEnabled);
+}
+
+void MagdaAudioEngine::onPunchEnabledChanged(bool punchInEnabled, bool punchOutEnabled) {
+    const auto punch = host_->punch();
+    host_->setPunch(punch.startBeat, punch.endBeat, punchInEnabled, punchOutEnabled);
+}
+
+}  // namespace magda
+
+// No Tracktion header may reach this engine (#2761): an include that brings one in fails here.
+#ifdef TRACKTION_ENGINE_H_INCLUDED
+    #error "MagdaAudioEngine.cpp reaches tracktion_engine.h"
+#endif

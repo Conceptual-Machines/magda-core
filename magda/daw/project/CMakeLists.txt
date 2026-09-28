@@ -2,6 +2,7 @@
 
 target_sources(magda_daw PRIVATE
     ProjectManager.cpp
+    RecoverySession.cpp
     MediaCollector.cpp
     serialization/ProjectSerializer.cpp
     serialization/NativeProjectDocumentAdapter.cpp

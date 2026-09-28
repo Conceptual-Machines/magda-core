@@ -2,16 +2,20 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
-#include "../themes/DarkTheme.hpp"
+#include <cmath>
+#include <utility>
+
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
 #include "audio/plugins/InternalPluginRegistry.hpp"
 #include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
-#include "core/AppPaths.hpp"
 #include "core/Config.hpp"
+#include "core/PluginParameterConfigStore.hpp"
 #include "core/TechnicalText.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"
+#include "engine/PluginService.hpp"
 
 namespace magda::daw::ui {
 
@@ -20,7 +24,9 @@ struct CachedPluginParams {
     std::vector<MockParameterInfo> parameters;
     std::vector<magda::ParameterScanInput> scanInputs;
 };
-static std::map<juce::String, CachedPluginParams> parameterCache_;
+namespace {
+std::map<juce::String, CachedPluginParams> parameterCache_;
+}  // namespace
 
 class AIPromptEditorComponent : public juce::Component {
   public:
@@ -30,7 +36,7 @@ class AIPromptEditorComponent : public juce::Component {
         description_.setText(
             "These instructions are added to every sound-design request for this plug-in.",
             juce::dontSendNotification);
-        description_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        description_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
         description_.setFont(FontManager::getInstance().getUIFont(11.0f));
         addAndMakeVisible(description_);
 
@@ -41,28 +47,28 @@ class AIPromptEditorComponent : public juce::Component {
         editor_.setTextToShowWhenEmpty(
             "Example: Prefer classic analogue signal paths, keep output levels conservative, "
             "and use oscillator 2 only for subtle detuning.",
-            DarkTheme::getColour(DarkTheme::TEXT_DIM));
+            ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         editor_.setColour(juce::TextEditor::backgroundColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
-        editor_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
-        editor_.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
+                          ActiveTheme::getColour(ActiveTheme::SURFACE));
+        editor_.setColour(juce::TextEditor::textColourId, ActiveTheme::getTextColour());
+        editor_.setColour(juce::TextEditor::outlineColourId, ActiveTheme::getBorderColour());
         addAndMakeVisible(editor_);
 
         clearButton_.setButtonText("Clear");
         clearButton_.setColour(juce::TextButton::buttonColourId,
-                               DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                               ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
         clearButton_.onClick = [this]() { editor_.clear(); };
         addAndMakeVisible(clearButton_);
 
         cancelButton_.setButtonText("Cancel");
         cancelButton_.setColour(juce::TextButton::buttonColourId,
-                                DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                                ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
         cancelButton_.onClick = [this]() { close(0); };
         addAndMakeVisible(cancelButton_);
 
         saveButton_.setButtonText("Done");
         saveButton_.setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                              ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         saveButton_.onClick = [this]() {
             if (onSave_)
                 onSave_(editor_.getText().trim());
@@ -108,14 +114,6 @@ class AIPromptEditorComponent : public juce::Component {
     juce::TextButton saveButton_;
 };
 
-static bool applyConfigToMatchingDevice(const juce::String& uniqueId, magda::DeviceInfo& device) {
-    const auto deviceConfigId = device.uniqueId.isNotEmpty() ? device.uniqueId : device.pluginId;
-    if (deviceConfigId != uniqueId)
-        return false;
-
-    return ParameterConfigDialog::applyConfigToDevice(uniqueId, device);
-}
-
 void ParameterConfigDialog::showAiPromptEditor() {
     auto safeThis = juce::Component::SafePointer<ParameterConfigDialog>(this);
     auto* editor = new AIPromptEditorComponent(aiCustomPrompt_, [safeThis](juce::String prompt) {
@@ -127,7 +125,7 @@ void ParameterConfigDialog::showAiPromptEditor() {
 
     juce::DialogWindow::LaunchOptions options;
     options.dialogTitle = "AI Prompt - " + pluginName_;
-    options.dialogBackgroundColour = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+    options.dialogBackgroundColour = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
     options.content.setOwned(editor);
     options.escapeKeyTriggersCloseButton = true;
     options.useNativeTitleBar = true;
@@ -139,85 +137,6 @@ void ParameterConfigDialog::updateAiPromptButtonText() {
     aiPromptButton_.setButtonText(aiCustomPrompt_.isEmpty() ? "AI Prompt..." : "AI Prompt \u2713");
 }
 
-static bool refreshElementParameterConfig(const juce::String& uniqueId,
-                                          std::vector<magda::ChainElement>& elements) {
-    bool changed = false;
-    for (auto& element : elements) {
-        if (magda::isDevice(element)) {
-            changed = applyConfigToMatchingDevice(uniqueId, magda::getDevice(element)) || changed;
-        } else if (magda::isRack(element)) {
-            for (auto& chain : magda::getRack(element).chains)
-                changed = refreshElementParameterConfig(uniqueId, chain.elements) || changed;
-        }
-    }
-    return changed;
-}
-
-static bool refreshFlatParameterConfig(const juce::String& uniqueId,
-                                       std::vector<magda::PostFxChainElement>& elements) {
-    bool changed = false;
-    for (auto& element : elements)
-        changed = applyConfigToMatchingDevice(uniqueId, element.device) || changed;
-    return changed;
-}
-
-static void refreshLiveDevicesForParameterConfig(const juce::String& uniqueId) {
-    if (uniqueId.isEmpty())
-        return;
-
-    auto& tm = magda::TrackManager::getInstance();
-    std::vector<magda::TrackId> trackIds;
-    trackIds.reserve(tm.getTracks().size() + 1);
-    trackIds.push_back(magda::MASTER_TRACK_ID);
-    for (const auto& track : tm.getTracks())
-        trackIds.push_back(track.id);
-
-    for (auto trackId : trackIds) {
-        auto* track = tm.getTrack(trackId);
-        if (track == nullptr)
-            continue;
-
-        bool changed = refreshElementParameterConfig(uniqueId, track->chain.fxChainElements);
-        changed = refreshFlatParameterConfig(uniqueId, track->chain.postFxChainElements) || changed;
-        changed =
-            refreshFlatParameterConfig(uniqueId, track->chain.mixerAnalysisElements) || changed;
-        if (changed)
-            tm.notifyTrackDevicesChanged(trackId);
-    }
-}
-
-static juce::String scaleToXmlString(magda::ParameterScale scale) {
-    switch (scale) {
-        case magda::ParameterScale::Linear:
-            return "linear";
-        case magda::ParameterScale::Logarithmic:
-            return "logarithmic";
-        case magda::ParameterScale::Exponential:
-            return "exponential";
-        case magda::ParameterScale::Discrete:
-            return "discrete";
-        case magda::ParameterScale::Boolean:
-            return "boolean";
-        case magda::ParameterScale::FaderDB:
-            return "fader_db";
-    }
-    return "linear";
-}
-
-static magda::ParameterScale xmlStringToScale(const juce::String& str) {
-    if (str == "logarithmic")
-        return magda::ParameterScale::Logarithmic;
-    if (str == "exponential")
-        return magda::ParameterScale::Exponential;
-    if (str == "discrete")
-        return magda::ParameterScale::Discrete;
-    if (str == "boolean")
-        return magda::ParameterScale::Boolean;
-    if (str == "fader_db")
-        return magda::ParameterScale::FaderDB;
-    return magda::ParameterScale::Linear;
-}
-
 //==============================================================================
 // ToggleCell - Checkbox cell for visible/use as gain columns
 //==============================================================================
@@ -226,9 +145,9 @@ class ParameterConfigDialog::ToggleCell : public juce::Component {
     ToggleCell(ParameterConfigDialog& owner, int row, int column)
         : owner_(owner), row_(row), column_(column) {
         toggle_.setColour(juce::ToggleButton::tickColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                          ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         toggle_.setColour(juce::ToggleButton::tickDisabledColourId,
-                          DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                          ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         toggle_.onClick = [this]() {
             int paramIndex = owner_.getParamIndexForRow(row_);
             if (paramIndex >= 0 && paramIndex < static_cast<int>(owner_.parameters_.size())) {
@@ -301,8 +220,8 @@ class ParameterConfigDialog::ComboCell : public juce::Component {
         combo_.addItem(magda::technicalText(magda::TechnicalTextToken::Boolean), 10);
 
         combo_.setColour(juce::ComboBox::backgroundColourId,
-                         DarkTheme::getColour(DarkTheme::SURFACE));
-        combo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+                         ActiveTheme::getColour(ActiveTheme::SURFACE));
+        combo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
         combo_.setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
 
         combo_.onChange = [this]() {
@@ -352,8 +271,8 @@ class ParameterConfigDialog::RangeCell : public juce::Component {
   public:
     RangeCell(ParameterConfigDialog& owner, int row) : owner_(owner), row_(row) {
         editor_.setColour(juce::TextEditor::backgroundColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
-        editor_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
+                          ActiveTheme::getColour(ActiveTheme::SURFACE));
+        editor_.setColour(juce::TextEditor::textColourId, ActiveTheme::getTextColour());
         editor_.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
         editor_.setFont(FontManager::getInstance().getUIFont(11.0f));
         editor_.setJustification(juce::Justification::centredLeft);
@@ -390,7 +309,7 @@ class ParameterConfigDialog::RangeCell : public juce::Component {
                     return "-inf";
                 if (std::isinf(v))
                     return "+inf";
-                return juce::String(v, 1);
+                return {v, 1};
             };
             editor_.setText(formatValue(param.rangeMin) + juce::String::fromUTF8(" — ") +
                                 formatValue(param.rangeMax),
@@ -448,7 +367,7 @@ class ParameterConfigDialog::RangeCell : public juce::Component {
         }
 
         if (minStr.isNotEmpty() && maxStr.isNotEmpty()) {
-            float newMin, newMax;
+            float newMin = NAN, newMax = NAN;
             if (minStr.toLowerCase() == "-inf")
                 newMin = -std::numeric_limits<float>::infinity();
             else
@@ -476,8 +395,8 @@ ParameterConfigDialog::~ParameterConfigDialog() {
     setLookAndFeel(nullptr);
 }
 
-ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
-    : pluginName_(pluginName) {
+ParameterConfigDialog::ParameterConfigDialog(juce::String pluginName)
+    : pluginName_(std::move(pluginName)) {
     // Use the shared dialog look-and-feel so every button / combo /
     // text editor in the dialog picks up the theme font (Inter) instead
     // of JUCE's platform default. Children inherit unless they set their
@@ -487,14 +406,14 @@ ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
     // Title
     titleLabel_.setText("Configure Parameters - " + pluginName_, juce::dontSendNotification);
     titleLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
-    titleLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    titleLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     addAndMakeVisible(titleLabel_);
 
     // Setup table
     table_.setModel(this);
     table_.setColour(juce::ListBox::backgroundColourId,
-                     DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
-    table_.setColour(juce::ListBox::outlineColourId, DarkTheme::getBorderColour());
+                     ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
+    table_.setColour(juce::ListBox::outlineColourId, ActiveTheme::getBorderColour());
     table_.setOutlineThickness(1);
     table_.setRowHeight(28);
 
@@ -507,15 +426,15 @@ ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
     header.addColumn("Range", Range, 180, 120, 300);
 
     header.setColour(juce::TableHeaderComponent::backgroundColourId,
-                     DarkTheme::getColour(DarkTheme::SURFACE));
-    header.setColour(juce::TableHeaderComponent::textColourId, DarkTheme::getTextColour());
+                     ActiveTheme::getColour(ActiveTheme::SURFACE));
+    header.setColour(juce::TableHeaderComponent::textColourId, ActiveTheme::getTextColour());
 
     addAndMakeVisible(table_);
 
     // Buttons
     okButton_.setButtonText("OK");
     okButton_.setColour(juce::TextButton::buttonColourId,
-                        DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                        ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     okButton_.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     okButton_.onClick = [this]() {
         saveParameterConfiguration();
@@ -527,8 +446,8 @@ ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
 
     cancelButton_.setButtonText("Cancel");
     cancelButton_.setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    cancelButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+                            ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
+    cancelButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
     cancelButton_.onClick = [this]() {
         if (auto* dw = findParentComponentOfClass<juce::DialogWindow>()) {
             dw->exitModalState(0);
@@ -538,8 +457,8 @@ ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
 
     applyButton_.setButtonText("Apply");
     applyButton_.setColour(juce::TextButton::buttonColourId,
-                           DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    applyButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+                           ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
+    applyButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
     applyButton_.onClick = [this]() {
         saveParameterConfiguration();
         DBG("Applied parameter config");
@@ -550,7 +469,7 @@ ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
     // independently bulk-edit each checkbox column; internal plugins narrow
     // this selector to Mini FX in showForPlugin().
     bulkColumnLabel_.setText("Column:", juce::dontSendNotification);
-    bulkColumnLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    bulkColumnLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     bulkColumnLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     addAndMakeVisible(bulkColumnLabel_);
 
@@ -559,22 +478,22 @@ ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
     bulkColumnSelector_.addItem("AI Agent", ColumnIds::AI);
     bulkColumnSelector_.setSelectedId(ColumnIds::Visible, juce::dontSendNotification);
     bulkColumnSelector_.setColour(juce::ComboBox::backgroundColourId,
-                                  DarkTheme::getColour(DarkTheme::SURFACE));
-    bulkColumnSelector_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-    bulkColumnSelector_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getBorderColour());
+                                  ActiveTheme::getColour(ActiveTheme::SURFACE));
+    bulkColumnSelector_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
+    bulkColumnSelector_.setColour(juce::ComboBox::outlineColourId, ActiveTheme::getBorderColour());
     addAndMakeVisible(bulkColumnSelector_);
 
     selectAllButton_.setButtonText("Select All");
     selectAllButton_.setColour(juce::TextButton::buttonColourId,
-                               DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    selectAllButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+                               ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
+    selectAllButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
     selectAllButton_.onClick = [this]() { selectAllParameters(); };
     addAndMakeVisible(selectAllButton_);
 
     deselectAllButton_.setButtonText("Deselect All");
     deselectAllButton_.setColour(juce::TextButton::buttonColourId,
-                                 DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    deselectAllButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+                                 ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
+    deselectAllButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
     deselectAllButton_.onClick = [this]() { deselectAllParameters(); };
     addAndMakeVisible(deselectAllButton_);
 
@@ -583,8 +502,8 @@ ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
     // strings give away.
     detectButton_.setButtonText("Detect");
     detectButton_.setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    detectButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+                            ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
+    detectButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
     detectButton_.onClick = [this]() { runHeuristicDetection(); };
     addAndMakeVisible(detectButton_);
 
@@ -592,8 +511,8 @@ ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
     // back to a plain 0–100 % view.
     resetButton_.setButtonText("Reset");
     resetButton_.setColour(juce::TextButton::buttonColourId,
-                           DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    resetButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+                           ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
+    resetButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
     resetButton_.onClick = [this]() {
         auto* alert = new juce::AlertWindow(
             "Reset parameter configuration?",
@@ -620,7 +539,7 @@ ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
     // AI Detect button
     aiDetectButton_.setButtonText("AI Detect");
     aiDetectButton_.setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+                              ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
     aiDetectButton_.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     aiDetectButton_.onClick = [this]() {
         if (detecting_) {
@@ -636,27 +555,28 @@ ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
     addAndMakeVisible(aiDetectButton_);
 
     // AI status label (shows streaming tokens)
-    aiStatusLabel_.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_DIM));
+    aiStatusLabel_.setColour(juce::Label::textColourId,
+                             ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
     aiStatusLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
     aiStatusLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(aiStatusLabel_);
 
     // Search box
     searchLabel_.setText("Search:", juce::dontSendNotification);
-    searchLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    searchLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     addAndMakeVisible(searchLabel_);
 
     searchBox_.setColour(juce::TextEditor::backgroundColourId,
-                         DarkTheme::getColour(DarkTheme::SURFACE));
-    searchBox_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
-    searchBox_.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
+                         ActiveTheme::getColour(ActiveTheme::SURFACE));
+    searchBox_.setColour(juce::TextEditor::textColourId, ActiveTheme::getTextColour());
+    searchBox_.setColour(juce::TextEditor::outlineColourId, ActiveTheme::getBorderColour());
     searchBox_.onTextChange = [this]() { filterParameters(searchBox_.getText()); };
     addAndMakeVisible(searchBox_);
 
     aiPromptButton_.setButtonText("AI Prompt...");
     aiPromptButton_.setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    aiPromptButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+                              ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
+    aiPromptButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
     aiPromptButton_.setTooltip(
         "Edit persistent instructions added to every AI sound-design request for this plug-in.");
     aiPromptButton_.onClick = [this]() { showAiPromptEditor(); };
@@ -670,7 +590,7 @@ ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
 }
 
 void ParameterConfigDialog::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
 
     if (detecting_ && !aiSpinnerBounds_.isEmpty()) {
         const auto spinner = aiSpinnerBounds_.toFloat();
@@ -680,7 +600,7 @@ void ParameterConfigDialog::paint(juce::Graphics& g) {
         juce::Path arc;
         arc.addCentredArc(centre.x, centre.y, radius, radius, 0.0f, aiSpinnerPhase_,
                           aiSpinnerPhase_ + juce::MathConstants<float>::pi * 1.45f, true);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
         g.strokePath(arc, juce::PathStrokeType(2.0f, juce::PathStrokeType::curved,
                                                juce::PathStrokeType::rounded));
     }
@@ -753,11 +673,11 @@ int ParameterConfigDialog::getNumRows() {
 void ParameterConfigDialog::paintRowBackground(juce::Graphics& g, int rowNumber, int width,
                                                int height, bool rowIsSelected) {
     if (rowIsSelected) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.2f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.2f));
     } else if (rowNumber % 2 == 0) {
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).withAlpha(0.3f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE).withAlpha(0.3f));
     } else {
-        g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
     }
     g.fillRect(0, 0, width, height);
 }
@@ -773,7 +693,7 @@ void ParameterConfigDialog::paintCell(juce::Graphics& g, int rowNumber, int colu
 
     const auto& param = parameters_[static_cast<size_t>(paramIndex)];
 
-    g.setColour(DarkTheme::getTextColour());
+    g.setColour(ActiveTheme::getTextColour());
     g.setFont(FontManager::getInstance().getUIFont(11.0f));
 
     if (columnId == ParamName) {
@@ -904,7 +824,7 @@ void ParameterConfigDialog::show(const juce::String& pluginName, juce::Component
 
     juce::DialogWindow::LaunchOptions options;
     options.dialogTitle = "Parameter Configuration";
-    options.dialogBackgroundColour = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+    options.dialogBackgroundColour = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
     options.content.setOwned(dialog);
     options.escapeKeyTriggersCloseButton = true;
     options.useNativeTitleBar = true;
@@ -946,7 +866,7 @@ void ParameterConfigDialog::showForPlugin(const juce::String& uniqueId,
 
     juce::DialogWindow::LaunchOptions options;
     options.dialogTitle = "Configure Parameters - " + pluginName;
-    options.dialogBackgroundColour = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+    options.dialogBackgroundColour = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
     options.content.setOwned(dialog);
     options.escapeKeyTriggersCloseButton = true;
     options.useNativeTitleBar = true;
@@ -984,18 +904,12 @@ void ParameterConfigDialog::loadParameters(const juce::String& uniqueId) {
 
     DBG("Scanning parameters for " << uniqueId);
 
-    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-    if (!audioEngine) {
-        DBG("No audio engine available");
-        buildMockParameters();
-        return;
-    }
-
     parameters_.clear();
     scanInputs_.clear();
-    for (auto& scanned : audioEngine->scanPluginParameters(uniqueId, false)) {
+    for (auto& scanned : magda::PluginService::getInstance().scanParameters(uniqueId, false)) {
         MockParameterInfo info;
         info.name = scanned.name;
+        info.stableId = scanned.stableId;
         info.defaultValue = scanned.defaultValue;
         info.isVisible = true;
         info.unit = scanned.unit;
@@ -1020,15 +934,12 @@ void ParameterConfigDialog::loadParameters(const juce::String& uniqueId) {
 }
 
 bool ParameterConfigDialog::scanInternalParameters(const juce::String& pluginId) {
-    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-    if (audioEngine == nullptr)
-        return false;
-
     parameters_.clear();
     scanInputs_.clear();
-    for (auto& scanned : audioEngine->scanPluginParameters(pluginId, true)) {
+    for (auto& scanned : magda::PluginService::getInstance().scanParameters(pluginId, true)) {
         MockParameterInfo info;
         info.name = scanned.name;
+        info.stableId = scanned.stableId;
         info.isVisible = true;
         info.defaultValue = scanned.defaultValue;
         info.rangeMin = scanned.rangeMin;
@@ -1063,14 +974,8 @@ void ParameterConfigDialog::resetParameterConfiguration() {
     // Delete the persisted XML so next time the dialog opens (or a project
     // reloads this plugin) applyConfigToDevice finds nothing and the plugin
     // keeps its native metadata.
-    if (!pluginUniqueId_.isEmpty()) {
-        auto configFile = magda::paths::pluginConfigsDir().getChildFile(
-            pluginUniqueId_.replaceCharacters(":/\\,; ", "______") + ".xml");
-        if (configFile.existsAsFile()) {
-            configFile.deleteFile();
-            DBG("Deleted parameter config: " << configFile.getFullPathName());
-        }
-    }
+    if (!pluginUniqueId_.isEmpty())
+        magda::PluginParameterConfigStore::remove(pluginUniqueId_);
 
     // Restore scanInputs_ from the pristine cache so Detect / AI Detect can
     // be re-run later. The user-facing parameters_ list keeps names and
@@ -1167,7 +1072,7 @@ void ParameterConfigDialog::setDetecting(bool detecting) {
     if (detecting) {
         aiDetectButton_.setButtonText("Cancel");
         aiDetectButton_.setColour(juce::TextButton::buttonColourId,
-                                  DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                                  ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
         cancelButton_.setEnabled(false);
         aiSpinnerPhase_ = 0.0f;
         aiStatusLabel_.setText(juce::String(aiResolved_) + " / " + juce::String(aiTotal_) +
@@ -1177,7 +1082,7 @@ void ParameterConfigDialog::setDetecting(bool detecting) {
     } else {
         aiDetectButton_.setButtonText("AI Detect");
         aiDetectButton_.setColour(juce::TextButton::buttonColourId,
-                                  DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+                                  ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
         cancelButton_.setEnabled(true);
         stopTimer();
     }
@@ -1269,7 +1174,7 @@ void ParameterConfigDialog::runDetection() {
                     safeThis->aiResolved_ = resolved;
                 },
                 // onComplete
-                [safeThis](std::vector<magda::DetectedParameterInfo> aiResults) {
+                [safeThis](const std::vector<magda::DetectedParameterInfo>& aiResults) {
                     if (!safeThis)
                         return;
                     safeThis->applyDetectionResults(aiResults);
@@ -1324,67 +1229,40 @@ void ParameterConfigDialog::saveParameterConfiguration() {
         return;
     }
 
-    // Get the config directory
-    auto configDir = magda::paths::pluginConfigsDir();
-
-    if (!configDir.exists()) {
-        configDir.createDirectory();
-    }
-
-    // Create config file for this plugin
-    auto configFile =
-        configDir.getChildFile(pluginUniqueId_.replaceCharacters(":/\\,; ", "______") + ".xml");
-
-    juce::XmlElement root("ParameterConfig");
-    root.setAttribute("pluginId", pluginUniqueId_);
-
-    // Save visible parameters and detection data
-    auto* paramsElem = root.createNewChildElement("Parameters");
+    magda::PluginParameterConfig config;
+    config.pluginId = pluginUniqueId_;
+    config.aiPrompt = aiCustomPrompt_;
+    config.entries.reserve(parameters_.size());
     int visibleCount = 0;
     for (size_t i = 0; i < parameters_.size(); ++i) {
         const auto& p = parameters_[i];
-        auto* paramElem = paramsElem->createNewChildElement("Param");
-        paramElem->setAttribute("index", static_cast<int>(i));
-        paramElem->setAttribute("name", p.name);
+        magda::PluginParameterConfigEntry entry;
+        entry.index = static_cast<int>(i);
+        entry.id = p.stableId;
+        entry.name = p.name;
         // Internal devices intentionally expose no Visible params (only Mini FX),
         // so never persist visibility for them regardless of the default state.
-        paramElem->setAttribute("visible", !isInternalPlugin_ && p.isVisible);
-        paramElem->setAttribute("mini", p.inMiniMixer);
-        paramElem->setAttribute("ai", !isInternalPlugin_ && p.inAiSoundDesigner);
-        paramElem->setAttribute("unit", p.unit);
-        paramElem->setAttribute("scale", scaleToXmlString(p.scale));
-        paramElem->setAttribute("min", static_cast<double>(p.rangeMin));
-        paramElem->setAttribute("max", static_cast<double>(p.rangeMax));
-        paramElem->setAttribute("center", static_cast<double>(p.rangeCenter));
-        // Save discrete choices
-        if (!p.choices.empty()) {
-            auto* choicesElem = paramElem->createNewChildElement("Choices");
-            for (const auto& choice : p.choices) {
-                auto* c = choicesElem->createNewChildElement("Choice");
-                c->setAttribute("label", choice);
-            }
-        }
-        // Save full value table (pipe-separated for compactness)
-        if (!p.valueTable.empty()) {
-            juce::String tableStr;
-            for (size_t j = 0; j < p.valueTable.size(); ++j) {
-                if (j > 0)
-                    tableStr += "|";
-                tableStr += p.valueTable[j];
-            }
-            paramElem->setAttribute("valueTable", tableStr);
-        }
+        entry.visible = !isInternalPlugin_ && p.isVisible;
+        entry.miniMixer = p.inMiniMixer;
+        entry.aiAgent = !isInternalPlugin_ && p.inAiSoundDesigner;
+        entry.unit = p.unit;
+        entry.scale = p.scale;
+        entry.rangeMin = p.rangeMin;
+        entry.rangeMax = p.rangeMax;
+        entry.rangeCenter = p.rangeCenter;
+        if (!p.choices.empty())
+            entry.choices = p.choices;
+        if (!p.valueTable.empty())
+            entry.valueTable = p.valueTable;
         if (p.isVisible)
             visibleCount++;
+        config.entries.push_back(std::move(entry));
     }
 
-    if (aiCustomPrompt_.isNotEmpty())
-        root.createNewChildElement("AISoundDesignerPrompt")->addTextElement(aiCustomPrompt_);
-
-    if (root.writeTo(configFile)) {
+    if (magda::PluginParameterConfigStore::save(pluginUniqueId_, config)) {
         DBG("Saved parameter config for " << pluginUniqueId_ << " - " << visibleCount
-                                          << " visible params to " << configFile.getFullPathName());
-        refreshLiveDevicesForParameterConfig(pluginUniqueId_);
+                                          << " visible params");
+        magda::PluginParameterConfigStore::refreshLiveDevices(pluginUniqueId_);
     } else {
         DBG("Failed to save parameter config for " << pluginUniqueId_);
     }
@@ -1396,24 +1274,11 @@ void ParameterConfigDialog::loadParameterConfiguration() {
         return;
     }
 
-    auto configDir = magda::paths::pluginConfigsDir();
-
-    auto configFile =
-        configDir.getChildFile(pluginUniqueId_.replaceCharacters(":/\\,; ", "______") + ".xml");
-
-    if (!configFile.existsAsFile()) {
+    const auto config = magda::PluginParameterConfigStore::load(pluginUniqueId_);
+    if (!config)
         return;
-    }
 
-    auto xml = juce::parseXML(configFile);
-    if (!xml) {
-        DBG("Failed to parse config file for " << pluginUniqueId_);
-        return;
-    }
-
-    aiCustomPrompt_.clear();
-    if (auto* promptElem = xml->getChildByName("AISoundDesignerPrompt"))
-        aiCustomPrompt_ = promptElem->getAllSubText().trim();
+    aiCustomPrompt_ = config->aiPrompt;
     updateAiPromptButtonText();
 
     // First, mark all as invisible
@@ -1421,187 +1286,49 @@ void ParameterConfigDialog::loadParameterConfiguration() {
         param.isVisible = false;
     }
 
-    int loadedCount = 0;
+    // By the same rule applyToDevice() reads one: the row a saved entry
+    // describes is the one whose parameter it names, not the one it sat at when
+    // it was written. Overlaying by position would show an old customization
+    // against the wrong control, and this dialog's save would then write that
+    // row's id over it and make the mistake permanent.
+    std::vector<juce::String> currentIds;
+    currentIds.reserve(parameters_.size());
+    for (const auto& parameter : parameters_)
+        currentIds.push_back(parameter.stableId);
 
-    // New format: Parameters element with full detection data
-    if (auto* paramsElem = xml->getChildByName("Parameters")) {
-        for (auto* paramElem : paramsElem->getChildIterator()) {
-            int index = paramElem->getIntAttribute("index", -1);
-            if (index >= 0 && index < static_cast<int>(parameters_.size())) {
-                auto& p = parameters_[static_cast<size_t>(index)];
-                p.isVisible = paramElem->getBoolAttribute("visible", false);
-                p.inMiniMixer = paramElem->getBoolAttribute("mini", false);
-                p.inAiSoundDesigner = paramElem->getBoolAttribute("ai", false);
-                if (paramElem->hasAttribute("unit"))
-                    p.unit = paramElem->getStringAttribute("unit");
-                if (paramElem->hasAttribute("scale"))
-                    p.scale = xmlStringToScale(paramElem->getStringAttribute("scale"));
-                if (paramElem->hasAttribute("min"))
-                    p.rangeMin = static_cast<float>(paramElem->getDoubleAttribute("min"));
-                if (paramElem->hasAttribute("max"))
-                    p.rangeMax = static_cast<float>(paramElem->getDoubleAttribute("max"));
-                if (paramElem->hasAttribute("center"))
-                    p.rangeCenter = static_cast<float>(paramElem->getDoubleAttribute("center"));
-                // Load discrete choices
-                if (auto* choicesElem = paramElem->getChildByName("Choices")) {
-                    p.choices.clear();
-                    for (auto* c : choicesElem->getChildIterator()) {
-                        p.choices.push_back(c->getStringAttribute("label"));
-                    }
-                }
-                // Load value table
-                if (paramElem->hasAttribute("valueTable")) {
-                    auto tableStr = paramElem->getStringAttribute("valueTable");
-                    p.valueTable.clear();
-                    auto tokens = juce::StringArray::fromTokens(tableStr, "|", "");
-                    for (const auto& t : tokens)
-                        p.valueTable.push_back(t);
-                }
-                if (p.isVisible)
-                    loadedCount++;
-            }
-        }
-    }
-    // Legacy format: VisibleParameters only
-    else if (auto* visibleParams = xml->getChildByName("VisibleParameters")) {
-        for (auto* paramElem : visibleParams->getChildIterator()) {
-            int index = paramElem->getIntAttribute("index", -1);
-            if (index >= 0 && index < static_cast<int>(parameters_.size())) {
-                parameters_[static_cast<size_t>(index)].isVisible = true;
-                loadedCount++;
-            }
-        }
+    const auto positions = magda::PluginParameterConfigStore::entryPositions(*config, currentIds);
+
+    int loadedCount = 0;
+    for (size_t at = 0; at < config->entries.size(); ++at) {
+        const auto& entry = config->entries[at];
+        const auto index = positions[at];
+        if (index < 0 || index >= static_cast<int>(parameters_.size()))
+            continue;
+        auto& p = parameters_[static_cast<size_t>(index)];
+        p.isVisible = entry.visible;
+        p.inMiniMixer = entry.miniMixer;
+        p.inAiSoundDesigner = entry.aiAgent;
+        if (entry.unit)
+            p.unit = *entry.unit;
+        if (entry.scale)
+            p.scale = *entry.scale;
+        if (entry.rangeMin)
+            p.rangeMin = *entry.rangeMin;
+        if (entry.rangeMax)
+            p.rangeMax = *entry.rangeMax;
+        if (entry.rangeCenter)
+            p.rangeCenter = *entry.rangeCenter;
+        if (entry.choices)
+            p.choices = *entry.choices;
+        if (entry.valueTable)
+            p.valueTable = *entry.valueTable;
+        if (p.isVisible)
+            loadedCount++;
     }
 
     DBG("Loaded parameter config for " << pluginUniqueId_ << " - " << loadedCount
                                        << " visible params");
 }
-
-bool ParameterConfigDialog::applyConfigToDevice(const juce::String& uniqueId,
-                                                magda::DeviceInfo& device) {
-    if (uniqueId.isEmpty()) {
-        DBG("Cannot apply config - no plugin unique ID");
-        return false;
-    }
-
-    auto configDir = magda::paths::pluginConfigsDir();
-
-    auto configFile =
-        configDir.getChildFile(uniqueId.replaceCharacters(":/\\,; ", "______") + ".xml");
-
-    if (!configFile.existsAsFile()) {
-        return false;
-    }
-
-    auto xml = juce::parseXML(configFile);
-    if (!xml) {
-        DBG("Failed to parse config file for " << uniqueId);
-        return false;
-    }
-
-    // Load parameters from new format or legacy format
-    device.visibleParameters.clear();
-    device.miniMixerParameters.clear();
-    device.aiSoundDesignerParameters.clear();
-    device.aiSoundDesignerPrompt.clear();
-
-    if (auto* promptElem = xml->getChildByName("AISoundDesignerPrompt"))
-        device.aiSoundDesignerPrompt = promptElem->getAllSubText().trim();
-
-    // device.parameters now holds only the plugin's own params — TE's slot
-    // dry/wet live in device.wrapperParameters — so the XML's stored index
-    // maps 1:1 to the device array. (Configs saved before the wrapper-param
-    // split assumed indices 0/1 were dry/wet; those will resolve to the
-    // wrong slots once and need to be re-saved.)
-    if (auto* paramsElem = xml->getChildByName("Parameters")) {
-        for (auto* paramElem : paramsElem->getChildIterator()) {
-            int deviceIndex = paramElem->getIntAttribute("index", -1);
-            if (deviceIndex < 0)
-                continue;
-
-            auto xmlName = paramElem->getStringAttribute("name");
-            bool visible = paramElem->getBoolAttribute("visible", false);
-            bool mini = paramElem->getBoolAttribute("mini", false);
-            bool ai = paramElem->getBoolAttribute("ai", false);
-
-            if (visible && deviceIndex < static_cast<int>(device.parameters.size())) {
-                device.visibleParameters.push_back(deviceIndex);
-            }
-            if (mini && deviceIndex < static_cast<int>(device.parameters.size())) {
-                device.miniMixerParameters.push_back(deviceIndex);
-            }
-            if (ai && deviceIndex < static_cast<int>(device.parameters.size())) {
-                device.aiSoundDesignerParameters.push_back(deviceIndex);
-            }
-
-            // Apply detection data to device parameters
-            if (deviceIndex < static_cast<int>(device.parameters.size())) {
-                auto& p = device.parameters[static_cast<size_t>(deviceIndex)];
-                if (paramElem->hasAttribute("unit"))
-                    p.unit = paramElem->getStringAttribute("unit");
-                if (paramElem->hasAttribute("scale"))
-                    p.scale = xmlStringToScale(paramElem->getStringAttribute("scale"));
-                if (paramElem->hasAttribute("min"))
-                    p.minValue = static_cast<float>(paramElem->getDoubleAttribute("min"));
-                if (paramElem->hasAttribute("max"))
-                    p.maxValue = static_cast<float>(paramElem->getDoubleAttribute("max"));
-                // Load discrete choices
-                if (auto* choicesElem = paramElem->getChildByName("Choices")) {
-                    p.choices.clear();
-                    for (auto* c : choicesElem->getChildIterator()) {
-                        p.choices.push_back(c->getStringAttribute("label"));
-                    }
-                }
-                // Load value table
-                if (paramElem->hasAttribute("valueTable")) {
-                    auto tableStr = paramElem->getStringAttribute("valueTable");
-                    p.valueTable.clear();
-                    auto tokens = juce::StringArray::fromTokens(tableStr, "|", "");
-                    for (const auto& t : tokens)
-                        p.valueTable.push_back(t);
-                }
-            }
-        }
-    } else if (auto* visibleParams = xml->getChildByName("VisibleParameters")) {
-        for (auto* paramElem : visibleParams->getChildIterator()) {
-            int deviceIndex = paramElem->getIntAttribute("index", -1);
-            if (deviceIndex >= 0 && deviceIndex < static_cast<int>(device.parameters.size())) {
-                device.visibleParameters.push_back(deviceIndex);
-            }
-        }
-    }
-
-    return true;
-}
-
-bool ParameterConfigDialog::hasAiSoundDesignerParameters(const juce::String& uniqueId) {
-    if (uniqueId.isEmpty())
-        return false;
-
-    auto configFile = magda::paths::pluginConfigsDir().getChildFile(
-        uniqueId.replaceCharacters(":/\\,; ", "______") + ".xml");
-    if (!configFile.existsAsFile())
-        return false;
-
-    auto xml = juce::parseXML(configFile);
-    if (!xml)
-        return false;
-
-    if (auto* paramsElem = xml->getChildByName("Parameters")) {
-        for (auto* paramElem : paramsElem->getChildIterator()) {
-            if (paramElem->getBoolAttribute("ai", false))
-                return true;
-        }
-    }
-    return false;
-}
-
-#ifdef MAGDA_ENABLE_TEST_HOOKS
-void ParameterConfigDialog::refreshLiveDevicesForParameterConfigForTest(
-    const juce::String& uniqueId) {
-    refreshLiveDevicesForParameterConfig(uniqueId);
-}
-#endif
 
 void ParameterConfigDialog::rebuildFilteredList() {
     filteredIndices_.clear();

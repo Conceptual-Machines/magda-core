@@ -1,11 +1,11 @@
 #include "AutomationClipInspector.hpp"
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "BinaryData.h"
 #include "core/AutomationCommands.hpp"
-#include "core/Config.hpp"
 #include "core/UndoManager.hpp"
+#include "project/ProjectManager.hpp"
 
 namespace magda::daw::ui {
 
@@ -15,7 +15,7 @@ constexpr double kMinClipLength = 0.1;
 void styleLabel(juce::Label& label, const juce::String& text) {
     label.setText(text, juce::dontSendNotification);
     label.setFont(FontManager::getInstance().getUIFont(11.0f));
-    label.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    label.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
 }
 }  // namespace
 
@@ -26,7 +26,7 @@ AutomationClipInspector::AutomationClipInspector() {
     viewIcon_ = std::make_unique<magda::SvgButton>("View", BinaryData::iconarrangementboldm_svg,
                                                    BinaryData::iconarrangementboldm_svgSize);
     viewIcon_->setOriginalColor(juce::Colour(0xFF000000));
-    viewIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    viewIcon_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     viewIcon_->setIconPadding(1.0f);
     viewIcon_->setInterceptsMouseClicks(false, false);
     viewIcon_->setTooltip("Arrangement clip");
@@ -37,7 +37,7 @@ AutomationClipInspector::AutomationClipInspector() {
     typeIcon_ = std::make_unique<magda::SvgButton>("Type", BinaryData::automation_svg,
                                                    BinaryData::automation_svgSize);
     typeIcon_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    typeIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    typeIcon_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     typeIcon_->setIconPadding(1.0f);
     typeIcon_->setInterceptsMouseClicks(false, false);
     typeIcon_->setTooltip("Automation clip");
@@ -66,25 +66,16 @@ AutomationClipInspector::AutomationClipInspector() {
         menu.addSeparator();
         menu.addItem(2, "Inherit from Track");
         menu.addSeparator();
-        for (size_t i = 0; i < magda::Config::defaultColourPalette.size(); ++i) {
-            auto colour = juce::Colour(magda::Config::defaultColourPalette[i].colour);
-            menu.addItem(static_cast<int>(i + 3), magda::Config::defaultColourPalette[i].name, true,
-                         false, makeChip(colour));
-        }
-        const auto customPalette = magda::Config::getInstance().getTrackColourPalette();
-        const int customOffset = static_cast<int>(magda::Config::defaultColourPalette.size()) + 3;
-        if (!customPalette.empty()) {
-            menu.addSeparator();
-            for (size_t i = 0; i < customPalette.size(); ++i) {
-                auto colour = juce::Colour(customPalette[i].colour);
-                menu.addItem(customOffset + static_cast<int>(i),
-                             juce::String(customPalette[i].name), true, false, makeChip(colour));
-            }
+        const auto palette =
+            magda::ProjectManager::getInstance().getCurrentProjectInfo().defaults.colourPalette;
+        for (size_t i = 0; i < palette.size(); ++i) {
+            const auto colour = juce::Colour(palette[i].colour);
+            menu.addItem(static_cast<int>(i + 3), palette[i].name, true, false, makeChip(colour));
         }
 
         menu.showMenuAsync(
             juce::PopupMenu::Options().withTargetComponent(colourSwatch_.get()),
-            [this, customPalette, customOffset](int result) {
+            [this, palette](int result) {
                 if (result == 0)
                     return;
                 const auto* clip = getClip();
@@ -101,13 +92,11 @@ AutomationClipInspector::AutomationClipInspector() {
                     if (!trackColour)
                         return;
                     newColour = *trackColour;
-                } else if (result < customOffset) {
-                    newColour = juce::Colour(magda::Config::getDefaultColour(result - 3));
                 } else {
-                    const auto idx = static_cast<size_t>(result - customOffset);
-                    if (idx >= customPalette.size())
+                    const auto idx = static_cast<size_t>(result - 3);
+                    if (idx >= palette.size())
                         return;
-                    newColour = juce::Colour(customPalette[idx].colour);
+                    newColour = juce::Colour(palette[idx].colour);
                 }
                 magda::UndoManager::getInstance().executeCommand(
                     std::make_unique<magda::SetAutomationClipColourCommand>(clip->id, newColour));
@@ -118,9 +107,9 @@ AutomationClipInspector::AutomationClipInspector() {
     // Editable clip name, MIDI-clip-inspector style. The lane target stays
     // visible in the editor panel's title.
     titleLabel_.setFont(FontManager::getInstance().getUIFont(14.0f));
-    titleLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    titleLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     titleLabel_.setColour(juce::Label::backgroundColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
+                          ActiveTheme::getColour(ActiveTheme::SURFACE));
     titleLabel_.setEditable(true);
     titleLabel_.onTextChange = [this]() {
         const auto* clip = getClip();
@@ -190,9 +179,9 @@ AutomationClipInspector::AutomationClipInspector() {
     loopToggle_ = std::make_unique<magda::SvgButton>("Loop", BinaryData::loop_icon_svg,
                                                      BinaryData::loop_icon_svgSize);
     loopToggle_->setOriginalColor(juce::Colour(0xFFBCBCBC));
-    loopToggle_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    loopToggle_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     loopToggle_->setActiveColor(juce::Colours::white);
-    loopToggle_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    loopToggle_->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     loopToggle_->setClickingTogglesState(false);
     loopToggle_->onClick = [this]() {
         if (const auto* clip = getClip())
@@ -227,7 +216,7 @@ void AutomationClipInspector::onDeactivated() {
 }
 
 void AutomationClipInspector::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getBackgroundColour());
+    g.fillAll(ActiveTheme::getBackgroundColour());
 }
 
 const magda::AutomationClipInfo* AutomationClipInspector::getClip() const {
@@ -266,6 +255,10 @@ void AutomationClipInspector::refreshDisplay() {
     if (!titleLabel_.isBeingEdited())
         titleLabel_.setText(clip->name, juce::dontSendNotification);
     colourSwatch_->setColour(clip->colour);
+    const auto& project = magda::ProjectManager::getInstance().getCurrentProjectInfo();
+    for (auto* label :
+         {startValue_.get(), endValue_.get(), lengthValue_.get(), loopLengthValue_.get()})
+        label->setTimeSignature(project.timeSignatureNumerator, project.timeSignatureDenominator);
     startValue_->setValue(clip->startBeats, juce::dontSendNotification);
     endValue_->setValue(clip->getEndBeats(), juce::dontSendNotification);
     lengthValue_->setValue(clip->lengthBeats, juce::dontSendNotification);

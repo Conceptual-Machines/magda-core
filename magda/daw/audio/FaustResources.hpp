@@ -4,6 +4,7 @@
 
 #include <vector>
 
+#include "core/SidechainPort.hpp"
 #include "plugins/FaustPatchInfo.hpp"
 
 namespace magda::daw::audio {
@@ -28,11 +29,39 @@ struct StarterDsp {
  */
 juce::String readCustomViewName(const juce::String& source);
 
+/**
+ * @brief The sidechain slot a patch asks for via `declare magda_sidechain "audio";`.
+ *
+ * None when the patch declares none, which is the common case. Declared rather
+ * than read off the channel counts: a patch with three inputs and two outputs
+ * may be a widener's dry line as easily as a key, and only the patch knows
+ * (#2329). The key's width is the inputs past the outputs, because that is
+ * where the dsp reads it -- the declaration says the last inputs are a key, not
+ * how many signals the process function takes.
+ *
+ * @param inputCount   the compiled dsp's input count
+ * @param outputCount  its output count
+ */
+magda::SidechainPort readSidechainPort(const juce::String& source, int inputCount, int outputCount);
+
 // Path to the Faust standard libraries directory bundled alongside the app.
 // Returned File may not exist when running outside an installed bundle (e.g.
 // unit tests); FaustPlugin falls back to a built-in passthrough DSP in that
 // case so the plugin always loads.
 juce::File getFaustLibrariesPath();
+
+/** Refuse Faust sources that import libraries, for the whole process.
+ *
+ *  For test binaries that ship no faustlibraries: an importing source could
+ *  only fail its compile into passthrough while still entering libfaust,
+ *  which aborts on Linux under some suites (#2238). Disallowed, importing
+ *  sources are passthrough by contract without touching libfaust, and
+ *  self-contained sources still compile for real. Not undoable.
+ */
+void disallowFaustLibraryImports();
+
+/// True once disallowFaustLibraryImports() has been called.
+bool faustLibraryImportsDisallowed();
 
 // Root of the runtime .dsp library staged alongside the app. Like
 // getFaustLibrariesPath(), the returned File may not exist outside an

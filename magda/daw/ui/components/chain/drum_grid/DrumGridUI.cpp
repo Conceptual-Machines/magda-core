@@ -1,22 +1,23 @@
 #include "drum_grid/DrumGridUI.hpp"
 
 #include <BinaryData.h>
-#include <tracktion_engine/tracktion_engine.h>
 
+#include <algorithm>
+#include <cmath>
 #include <set>
 
-#include "audio/plugins/DrumGridPlugin.hpp"
-#include "audio/plugins/MagdaSamplerPlugin.hpp"
+#include "core/DrumGridPads.hpp"
 #include "ui/components/chain/layout/DeviceSlotHeaderLayout.hpp"
 #include "ui/components/common/InternalFileDrag.hpp"
 #include "ui/debug/DebugSettings.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
-
-namespace te = tracktion::engine;
+#include "ui/utils/AudioFileTypes.hpp"
 
 namespace magda::daw::ui {
+
+std::atomic<int> DrumGridUI::nextFaderGesture_{0};
 
 // =============================================================================
 // PadButton
@@ -98,18 +99,18 @@ void DrumGridUI::PadButton::paint(juce::Graphics& g) {
 
     // Background colour
     juce::Colour bg;
-    float borderThickness;
+    float borderThickness = NAN;
     if (triggered_) {
         bg = juce::Colour(0xFF5A5A2A);
         borderThickness = 1.5f;
     } else if (selected_) {
-        bg = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.4f);
+        bg = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.4f);
         borderThickness = 1.5f;
     } else if (hasSample_) {
-        bg = DarkTheme::getColour(DarkTheme::SURFACE).brighter(0.1f);
+        bg = ActiveTheme::getColour(ActiveTheme::SURFACE).brighter(0.1f);
         borderThickness = 0.75f;
     } else {
-        bg = DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.03f);
+        bg = ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.03f);
         borderThickness = 0.5f;
     }
 
@@ -122,15 +123,15 @@ void DrumGridUI::PadButton::paint(juce::Graphics& g) {
 
     // Border
     if (selected_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     } else {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     }
     g.drawRoundedRectangle(bounds.toFloat(), 3.0f, borderThickness);
 
     // Solo indicator — orange top bar
     if (soloed_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
         g.fillRoundedRectangle(bounds.removeFromTop(3).toFloat(), 1.0f);
     }
 
@@ -143,17 +144,17 @@ void DrumGridUI::PadButton::paint(juce::Graphics& g) {
 
         // Note name (small, secondary)
         g.setFont(FontManager::getInstance().getUIFont(8.0f));
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.drawText(noteName_, topRow, juce::Justification::centredBottom, false);
 
         // Plugin/sample name (primary, truncated)
         g.setFont(FontManager::getInstance().getUIFont(9.0f));
-        g.setColour(DarkTheme::getTextColour());
+        g.setColour(ActiveTheme::getTextColour());
         g.drawText(sampleName_, bottomRow, juce::Justification::centred, true);
     } else {
         // --- Empty pad: note name centred ---
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.drawText(noteName_, textArea, juce::Justification::centred, false);
     }
 }
@@ -206,6 +207,8 @@ void DrumGridUI::PadButton::mouseUp(const juce::MouseEvent& /*e*/) {
 // =============================================================================
 
 DrumGridUI::DrumGridUI() {
+    startTimer(50);  // pad triggers and the pads' mix, at 20 fps
+
     // Setup pad buttons
     for (int i = 0; i < kPadsPerPage; ++i) {
         padButtons_[static_cast<size_t>(i)].onClicked = [this](int padIndex) {
@@ -242,13 +245,13 @@ DrumGridUI::DrumGridUI() {
     addAndMakeVisible(*nextPageButton_);
 
     pageLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    pageLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    pageLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     pageLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(pageLabel_);
 
     // Detail panel labels
     setupLabel(detailPadNameLabel_, "Pad 0 - C2", 11.0f);
-    detailPadNameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    detailPadNameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     setupLabel(detailSampleNameLabel_, "(empty)", 10.0f);
     setupLabel(levelLabel_, "LEVEL", 9.0f);
     setupLabel(panLabel_, "PAN", 9.0f);
@@ -260,7 +263,13 @@ DrumGridUI::DrumGridUI() {
     levelSlider_.onValueChanged = [this](double value) {
         if (onPadLevelChanged)
             onPadLevelChanged(selectedPad_, static_cast<float>(value));
+        // A typed value or a reset has no drag to end, so it closes its own
+        // gesture here. Without this, two typed values on the same fader keep
+        // the same token and fold into one undo step (#2211).
+        if (!levelSlider_.isBeingDragged())
+            endFaderGesture();
     };
+    levelSlider_.onDragEnd = [this]() { endFaderGesture(); };
     addAndMakeVisible(levelSlider_);
 
     // Pan slider (-1 to +1)
@@ -287,7 +296,10 @@ DrumGridUI::DrumGridUI() {
     panSlider_.onValueChanged = [this](double value) {
         if (onPadPanChanged)
             onPadPanChanged(selectedPad_, static_cast<float>(value));
+        if (!panSlider_.isBeingDragged())
+            endFaderGesture();
     };
+    panSlider_.onDragEnd = [this]() { endFaderGesture(); };
     addAndMakeVisible(panSlider_);
 
     // Mute/Solo buttons
@@ -340,7 +352,7 @@ DrumGridUI::DrumGridUI() {
     // Chains panel
     chainsLabel_.setText("Chains:", juce::dontSendNotification);
     chainsLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    chainsLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    chainsLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     chainsLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(chainsLabel_);
 
@@ -354,10 +366,10 @@ DrumGridUI::DrumGridUI() {
                                                              BinaryData::menu_svgSize);
     chainsToggleButton_->setClickingTogglesState(true);
     chainsToggleButton_->setToggleState(chainsPanelVisible_, juce::dontSendNotification);
-    chainsToggleButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+    chainsToggleButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
     chainsToggleButton_->setActiveColor(juce::Colours::white);
     chainsToggleButton_->setActiveBackgroundColor(
-        DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).darker(0.6f));
+        ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).darker(0.6f));
     chainsToggleButton_->setActive(chainsPanelVisible_);
     chainsToggleButton_->onClick = [this]() {
         setChainsPanelVisible(chainsToggleButton_->getToggleState());
@@ -374,22 +386,18 @@ DrumGridUI::~DrumGridUI() {
     stopTimer();
 }
 
-void DrumGridUI::setDrumGridPlugin(daw::audio::DrumGridPlugin* plugin) {
-    drumGridPlugin_ = plugin;
-    if (drumGridPlugin_) {
-        startTimer(50);  // 20fps polling
-        // Restore detail collapsed state
-        detailCollapsed_ = drumGridPlugin_->state.getProperty("uiDetailCollapsed", false);
-    }
+void DrumGridUI::restoreDetailCollapsed(bool collapsed) {
+    if (detailCollapsed_ == collapsed)
+        return;
+    detailCollapsed_ = collapsed;
+    resized();
+    repaint();
 }
 
 void DrumGridUI::timerCallback() {
-    if (!drumGridPlugin_)
-        return;
-
     int pageStart = currentPage_ * kPadsPerPage;
     for (int i = 0; i < kTotalPads; ++i) {
-        if (drumGridPlugin_->consumePadTrigger(i)) {
+        if (consumePadTrigger && consumePadTrigger(i)) {
             // Only flash pads on the current page
             int btnIdx = i - pageStart;
             if (btnIdx >= 0 && btnIdx < kPadsPerPage) {
@@ -414,15 +422,15 @@ void DrumGridUI::timerCallback() {
         if (info.chainIndex < 0)
             continue;
 
-        const auto* chain = drumGridPlugin_->getChainByIndex(info.chainIndex);
-        if (!chain)
+        const auto mix = getPadMix ? getPadMix(i) : std::nullopt;
+        if (!mix.has_value())
             continue;
 
-        float chainLevel = chain->level.get();
-        float chainPan = chain->pan.get();
-        bool chainMute = chain->mute.get();
-        bool chainSolo = chain->solo.get();
-        int chainBusOutput = chain->busOutput.get();
+        float chainLevel = mix->level;
+        float chainPan = mix->pan;
+        bool chainMute = mix->mute;
+        bool chainSolo = mix->solo;
+        int chainBusOutput = mix->busOutput;
 
         bool changed = false;
         if (std::abs(info.level - chainLevel) > 0.01f) {
@@ -550,25 +558,14 @@ void DrumGridUI::setSelectedPad(int padIndex) {
 // =============================================================================
 
 bool DrumGridUI::isInterestedInFileDrag(const juce::StringArray& files) {
-    for (const auto& f : files) {
-        if (f.endsWithIgnoreCase(".wav") || f.endsWithIgnoreCase(".aif") ||
-            f.endsWithIgnoreCase(".aiff") || f.endsWithIgnoreCase(".flac") ||
-            f.endsWithIgnoreCase(".ogg") || f.endsWithIgnoreCase(".mp3"))
-            return true;
-    }
-    return false;
+    return std::ranges::any_of(files, isAudioFile);
 }
 
-static int countAudioFilesDG(const juce::StringArray& files) {
-    int n = 0;
-    for (const auto& f : files) {
-        if (f.endsWithIgnoreCase(".wav") || f.endsWithIgnoreCase(".aif") ||
-            f.endsWithIgnoreCase(".aiff") || f.endsWithIgnoreCase(".flac") ||
-            f.endsWithIgnoreCase(".ogg") || f.endsWithIgnoreCase(".mp3"))
-            ++n;
-    }
-    return n;
+namespace {
+int countAudioFilesDG(const juce::StringArray& files) {
+    return static_cast<int>(std::ranges::count_if(files, isAudioFile));
 }
+}  // namespace
 
 void DrumGridUI::fileDragEnter(const juce::StringArray& files, int x, int y) {
     fileDropCount_ = countAudioFilesDG(files);
@@ -629,7 +626,7 @@ void DrumGridUI::paint(juce::Graphics& g) {
     // Background
     constexpr float corner = 5.0f;
     auto bounds = getLocalBounds().toFloat();
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
     g.fillRoundedRectangle(bounds.reduced(1.0f), corner);
 
     // Clip inner fills to the rounded shape so they don't bleed past the corners
@@ -639,7 +636,7 @@ void DrumGridUI::paint(juce::Graphics& g) {
         g.reduceClipRegion(clip);
 
         // Left column background
-        auto sidebarColour = DarkTheme::getColour(DarkTheme::BACKGROUND);
+        auto sidebarColour = ActiveTheme::getColour(ActiveTheme::BACKGROUND);
         g.setColour(sidebarColour);
         g.fillRect(toggleColBounds_);
 
@@ -648,7 +645,7 @@ void DrumGridUI::paint(juce::Graphics& g) {
         // overflow into this strip, which they can't if drawn before children.)
 
         // Left column right-edge separator — drawn last so it renders over pagination fill
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawVerticalLine(toggleColBounds_.getRight(), static_cast<float>(toggleColBounds_.getY()),
                            static_cast<float>(toggleColBounds_.getBottom()));
 
@@ -656,9 +653,9 @@ void DrumGridUI::paint(juce::Graphics& g) {
         bool selectedPadHasContent =
             padInfos_[static_cast<size_t>(selectedPad_)].sampleName.isNotEmpty();
         auto divArea = getLocalBounds().reduced(6);
-        float top = static_cast<float>(divArea.getY());
-        float bottom = static_cast<float>(divArea.getBottom());
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        auto top = static_cast<float>(divArea.getY());
+        auto bottom = static_cast<float>(divArea.getBottom());
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         if (selectedPadHasContent) {
             int detailLeft = padChainPanel_.getX() - kGap / 2;
             g.drawVerticalLine(detailLeft, top, bottom);
@@ -670,7 +667,7 @@ void DrumGridUI::paint(juce::Graphics& g) {
     }
 
     // Border drawn on top of everything
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRoundedRectangle(bounds.reduced(0.5f), corner, 1.0f);
 }
 
@@ -678,8 +675,8 @@ void DrumGridUI::PaginationStripBg::paint(juce::Graphics& g) {
     // Opaque background — occludes any pad button pixels that overflow into
     // the pagination strip. The nav arrow buttons and page label are siblings
     // added AFTER this in z-order, so they paint on top and remain visible.
-    g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawHorizontalLine(0, 0.0f, static_cast<float>(getWidth()));
 }
 
@@ -974,6 +971,7 @@ void DrumGridUI::rebuildChainRows() {
             if (onPadPanChanged)
                 onPadPanChanged(padIndex, val);
         };
+        row->onFaderGestureEnd = [this]() { endFaderGesture(); };
         row->onMuteChanged = [this](int padIndex, bool val) {
             padInfos_[static_cast<size_t>(padIndex)].mute = val;
             if (onPadMuteChanged)
@@ -1009,7 +1007,13 @@ void DrumGridUI::rebuildChainRows() {
                 onPadOutputChanged(padIndex, busIndex);
         };
 
-        row->setSelected(i == selectedPad_);
+        // By chain, the same comparison setSelectedPad() makes. A row is named
+        // by the lowest pad its chain covers, so selecting any other note of a
+        // ranged chain left the next rebuild unselecting its only row, and the
+        // range editor under it went unlaid out (#2211).
+        row->setSelected(info.chainIndex >= 0 &&
+                         info.chainIndex ==
+                             padInfos_[static_cast<size_t>(selectedPad_)].chainIndex);
         chainRows_.push_back(std::move(row));
     }
 
@@ -1017,6 +1021,10 @@ void DrumGridUI::rebuildChainRows() {
     repaint();
     if (onLayoutChanged)
         onLayoutChanged();
+}
+
+void DrumGridUI::endFaderGesture() {
+    faderGesture_ = nextFaderGesture_.fetch_add(1);
 }
 
 void DrumGridUI::showPadContextMenu(int padIndex, juce::Point<int> screenPos) {
@@ -1103,8 +1111,8 @@ void DrumGridUI::setDetailCollapsed(bool collapsed) {
     if (detailCollapsed_ == collapsed)
         return;
     detailCollapsed_ = collapsed;
-    if (drumGridPlugin_)
-        drumGridPlugin_->state.setProperty("uiDetailCollapsed", collapsed, nullptr);
+    if (onDetailCollapsedChanged)
+        onDetailCollapsedChanged(collapsed);
     resized();
     repaint();
     if (onLayoutChanged)
@@ -1144,11 +1152,11 @@ void DrumGridUI::refreshDetailPanel() {
 
     if (info.sampleName.isNotEmpty()) {
         detailSampleNameLabel_.setText(info.sampleName, juce::dontSendNotification);
-        detailSampleNameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        detailSampleNameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     } else {
         detailSampleNameLabel_.setText("(empty)", juce::dontSendNotification);
         detailSampleNameLabel_.setColour(juce::Label::textColourId,
-                                         DarkTheme::getSecondaryTextColour());
+                                         ActiveTheme::getSecondaryTextColour());
     }
 
     levelSlider_.setValue(info.level, juce::dontSendNotification);
@@ -1156,26 +1164,26 @@ void DrumGridUI::refreshDetailPanel() {
 
     muteButton_.setToggleState(info.mute, juce::dontSendNotification);
     muteButton_.setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_RED));
+                          ActiveTheme::getColour(ActiveTheme::ACCENT_RED));
     soloButton_.setToggleState(info.solo, juce::dontSendNotification);
     soloButton_.setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+                          ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
 }
 
 void DrumGridUI::lookAndFeelChanged() {
     // Re-apply cached theme colours after a live theme switch.
-    pageLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    detailPadNameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    pageLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
+    detailPadNameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     for (auto* label : {&levelLabel_, &panLabel_, &chainsLabel_})
-        label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
 
     for (auto* btn : {&muteButton_, &soloButton_, &loadButton_, &clearButton_})
         setupButton(*btn);
 
     if (chainsToggleButton_) {
-        chainsToggleButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+        chainsToggleButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
         chainsToggleButton_->setActiveBackgroundColor(
-            DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).darker(0.6f));
+            ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).darker(0.6f));
     }
 
     // Re-applies the state-dependent sample-name and mute/solo colours.
@@ -1198,7 +1206,7 @@ void DrumGridUI::goToNextPage() {
 }
 
 juce::String DrumGridUI::getNoteName(int padIndex) {
-    int midiNote = daw::audio::DrumGridPlugin::baseNote + padIndex;
+    int midiNote = magda::padNoteFor(padIndex);
     return juce::MidiMessage::getMidiNoteName(midiNote, true, true, 3);
 }
 
@@ -1213,14 +1221,15 @@ int DrumGridUI::padButtonIndexAtPoint(juce::Point<int> point) const {
 void DrumGridUI::setupLabel(juce::Label& label, const juce::String& text, float fontSize) {
     label.setText(text, juce::dontSendNotification);
     label.setFont(FontManager::getInstance().getUIFont(fontSize));
-    label.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    label.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     label.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(label);
 }
 
 void DrumGridUI::setupButton(juce::TextButton& button) {
-    button.setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-    button.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+    button.setColour(juce::TextButton::buttonColourId,
+                     ActiveTheme::getColour(ActiveTheme::SURFACE));
+    button.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
 }
 
 }  // namespace magda::daw::ui

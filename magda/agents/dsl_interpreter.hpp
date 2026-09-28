@@ -4,6 +4,7 @@
 
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "../daw/core/ClipTypes.hpp"
@@ -49,8 +50,8 @@ struct Token {
     int col;
 
     Token() : type(TokenType::END_OF_INPUT), line(0), col(0) {}
-    Token(TokenType t, const std::string& v, int l = 0, int c = 0)
-        : type(t), value(v), line(l), col(c) {}
+    Token(TokenType t, std::string v, int l = 0, int c = 0)
+        : type(t), value(std::move(v)), line(l), col(c) {}
 
     bool is(TokenType t) const {
         return type == t;
@@ -91,10 +92,10 @@ class Tokenizer {
 
     const char* input_;
     const char* pos_;
-    int line_;
-    int col_;
+    int line_{1};
+    int col_{1};
     Token peeked_;
-    bool hasPeeked_;
+    bool hasPeeked_{false};
 };
 
 // ============================================================================

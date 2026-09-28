@@ -55,7 +55,7 @@ MagdaApi* getApi(lua_State* L) {
 
 // Push a `juce::String` as a Lua string (UTF-8).
 void pushJuceString(lua_State* L, const juce::String& s) {
-    auto raw = s.toRawUTF8();
+    const auto* raw = s.toRawUTF8();
     lua_pushlstring(L, raw, static_cast<size_t>(s.getNumBytesAsUTF8()));
 }
 
@@ -236,7 +236,7 @@ int lua_selection_clear_notes(lua_State* L) {
 
 TrackType parseTrackType(const char* s) {
     if (juce::String(s).equalsIgnoreCase("audio"))
-        return TrackType::Audio;
+        return TrackType::Media;
     if (juce::String(s).equalsIgnoreCase("group"))
         return TrackType::Group;
     if (juce::String(s).equalsIgnoreCase("aux"))
@@ -246,12 +246,12 @@ TrackType parseTrackType(const char* s) {
     if (juce::String(s).equalsIgnoreCase("multi_out") ||
         juce::String(s).equalsIgnoreCase("multiout"))
         return TrackType::MultiOut;
-    return TrackType::Audio;
+    return TrackType::Media;
 }
 
 const char* trackTypeToLuaString(TrackType t) {
     switch (t) {
-        case TrackType::Audio:
+        case TrackType::Media:
             return "audio";
         case TrackType::Group:
             return "group";

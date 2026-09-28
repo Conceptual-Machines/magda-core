@@ -19,21 +19,10 @@ namespace magda {
 namespace te = tracktion;
 
 /**
- * @brief Warp marker information for UI display
- */
-struct WarpMarkerInfo {
-    double sourceTime;
-    double warpTime;
-};
-
-/**
- * @brief Manages warp markers and transient detection for audio clips
+ * @brief Transient detection for audio clips, cached per source file
  *
- * Responsibilities:
- * - Transient detection (async via Tracktion Engine's WarpTimeManager)
- * - Warp marker enable/disable
- * - Warp marker CRUD operations (add, move, remove, get)
- * - Caching of transient times
+ * Detection runs through Tracktion Engine's WarpTimeManager. The marker map
+ * itself is the model's (#2760); the clip sync mirrors it onto the fork.
  *
  * Thread Safety:
  * - All operations run on message thread (UI thread)
@@ -42,7 +31,7 @@ struct WarpMarkerInfo {
 class WarpMarkerManager : private te::WarpTimeManager::Listener, private juce::Timer {
   public:
     WarpMarkerManager() = default;
-    ~WarpMarkerManager();
+    ~WarpMarkerManager() override;
 
     /**
      * @brief Detect transient times for an audio clip's source file
@@ -68,68 +57,6 @@ class WarpMarkerManager : private te::WarpTimeManager::Listener, private juce::T
     void setTransientSensitivity(te::Edit& edit,
                                  const std::map<ClipId, std::string>& clipIdToEngineId,
                                  ClipId clipId, float sensitivity);
-
-    /**
-     * @brief Enable warping: populate WarpTimeManager with markers at detected transients
-     * @param edit Tracktion Engine edit
-     * @param clipIdToEngineId Mapping from MAGDA clip ID to TE clip ID
-     * @param clipId The MAGDA clip ID
-     */
-    void enableWarp(te::Edit& edit, const std::map<ClipId, std::string>& clipIdToEngineId,
-                    ClipId clipId);
-
-    /**
-     * @brief Disable warping: remove all warp markers
-     * @param edit Tracktion Engine edit
-     * @param clipIdToEngineId Mapping from MAGDA clip ID to TE clip ID
-     * @param clipId The MAGDA clip ID
-     */
-    void disableWarp(te::Edit& edit, const std::map<ClipId, std::string>& clipIdToEngineId,
-                     ClipId clipId);
-
-    /**
-     * @brief Get current warp marker positions for display
-     * @param edit Tracktion Engine edit
-     * @param clipIdToEngineId Mapping from MAGDA clip ID to TE clip ID
-     * @param clipId The MAGDA clip ID
-     * @return Vector of warp marker info
-     */
-    std::vector<WarpMarkerInfo> getWarpMarkers(
-        te::Edit& edit, const std::map<ClipId, std::string>& clipIdToEngineId, ClipId clipId);
-
-    /**
-     * @brief Add a warp marker
-     * @param edit Tracktion Engine edit
-     * @param clipIdToEngineId Mapping from MAGDA clip ID to TE clip ID
-     * @param clipId The MAGDA clip ID
-     * @param sourceTime Source time position
-     * @param warpTime Warped time position
-     * @return Index of inserted marker, or -1 on failure
-     */
-    int addWarpMarker(te::Edit& edit, const std::map<ClipId, std::string>& clipIdToEngineId,
-                      ClipId clipId, double sourceTime, double warpTime);
-
-    /**
-     * @brief Move a warp marker's warp time
-     * @param edit Tracktion Engine edit
-     * @param clipIdToEngineId Mapping from MAGDA clip ID to TE clip ID
-     * @param clipId The MAGDA clip ID
-     * @param index Marker index
-     * @param newWarpTime New warped time position
-     * @return Actual position (clamped by TE)
-     */
-    double moveWarpMarker(te::Edit& edit, const std::map<ClipId, std::string>& clipIdToEngineId,
-                          ClipId clipId, int index, double newWarpTime);
-
-    /**
-     * @brief Remove a warp marker at index
-     * @param edit Tracktion Engine edit
-     * @param clipIdToEngineId Mapping from MAGDA clip ID to TE clip ID
-     * @param clipId The MAGDA clip ID
-     * @param index Marker index
-     */
-    void removeWarpMarker(te::Edit& edit, const std::map<ClipId, std::string>& clipIdToEngineId,
-                          ClipId clipId, int index);
 
   private:
     // -------- In-flight guard for transient detection --------

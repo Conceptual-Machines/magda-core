@@ -2,7 +2,9 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "DarkTheme.hpp"
+#include <utility>
+
+#include "ActiveTheme.hpp"
 #include "FontManager.hpp"
 
 namespace magda {
@@ -71,7 +73,7 @@ class MainLookAndFeel : public juce::LookAndFeel_V4 {
     juce::Button* createDocumentWindowButton(int buttonType) override {
         juce::Path shape;
         const float crossThickness = 0.15f;
-        const auto glyph = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
+        const auto glyph = ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY);
 
         if (buttonType == juce::DocumentWindow::closeButton) {
             shape.addLineSegment({0.0f, 0.0f, 1.0f, 1.0f}, crossThickness);
@@ -104,9 +106,11 @@ class MainLookAndFeel : public juce::LookAndFeel_V4 {
   private:
     class GlyphButton : public juce::Button {
       public:
-        GlyphButton(const juce::String& name, juce::Colour c, const juce::Path& normal,
-                    const juce::Path& toggled)
-            : juce::Button(name), colour(c), normalShape(normal), toggledShape(toggled) {}
+        GlyphButton(const juce::String& name, juce::Colour c, juce::Path normal, juce::Path toggled)
+            : juce::Button(name),
+              colour(c),
+              normalShape(std::move(normal)),
+              toggledShape(std::move(toggled)) {}
 
         void paintButton(juce::Graphics& g, bool isHighlighted, bool isDown) override {
             auto background = juce::Colours::grey;

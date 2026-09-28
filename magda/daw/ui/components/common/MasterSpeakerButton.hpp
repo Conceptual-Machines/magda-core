@@ -4,7 +4,7 @@
 
 #include <memory>
 
-#include "DarkTheme.hpp"
+#include "ActiveTheme.hpp"
 #include "SvgButton.hpp"
 
 namespace magda {
@@ -17,13 +17,13 @@ namespace magda {
 
 inline void configureMasterSpeakerButton(SvgButton& button) {
     button.setClickingTogglesState(true);
-    button.setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    button.setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    button.setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
-    button.setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
-                                     DarkTheme::ICON_ON_ACCENT);
-    button.setStateColourReplacement(juce::Colour(0xFF1E1E1E), DarkTheme::ICON_NEUTRAL,
-                                     DarkTheme::ICON_ON_ACCENT);
+    button.setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    button.setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+    button.setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::STATUS_WARNING));
+    button.setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
+                                     ActiveTheme::ICON_ON_ACCENT);
+    button.setStateColourReplacement(juce::Colour(0xFF1E1E1E), ActiveTheme::ICON_NEUTRAL,
+                                     ActiveTheme::ICON_ON_ACCENT);
     button.setIconPadding(3.5f);  // larger speaker glyph
 }
 

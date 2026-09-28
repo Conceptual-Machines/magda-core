@@ -28,7 +28,7 @@ MediaDbContext& MediaDbContext::getInstance() {
 MediaDbContext::MediaDbContext() = default;
 MediaDbContext::~MediaDbContext() = default;
 
-std::filesystem::path MediaDbContext::dbPath() const {
+std::filesystem::path MediaDbContext::dbPath() {
     // User override: same fall-back semantics as modelsDir(). Lets users
     // park the (potentially large) index on a different drive without
     // symlinking. If the override directory has gone missing (drive
@@ -48,7 +48,7 @@ std::filesystem::path MediaDbContext::dbPath() const {
            "db" / "media.db";
 }
 
-std::filesystem::path MediaDbContext::modelsDir() const {
+std::filesystem::path MediaDbContext::modelsDir() {
     // User override: if Config has a non-empty path AND it points at a
     // real directory, use it. Lets the user keep the ~600 MB Sample
     // Tagger bundle on an external drive. Falls back to the default
@@ -227,10 +227,23 @@ bool MediaDbContext::isReady() const noexcept {
 bool MediaDbContext::hasAudioEncoder() const noexcept {
     // "Has" means "model file is present on disk" — whether or not it's
     // been loaded yet. The lazy load happens on first audioEncoder() call.
-    return std::filesystem::exists(audioModelPath());
+    // modelsDir() copies a Config string and builds a filesystem::path, so
+    // the whole lookup (not just exists()) needs a catch to stay noexcept.
+    try {
+        std::error_code ec;
+        return std::filesystem::exists(audioModelPath(), ec);
+    } catch (const std::exception&) {
+        return false;
+    }
 }
 bool MediaDbContext::hasTextSearch() const noexcept {
-    return std::filesystem::exists(textModelPath()) && std::filesystem::exists(tokenizerJsonPath());
+    try {
+        std::error_code ec;
+        return std::filesystem::exists(textModelPath(), ec) &&
+               std::filesystem::exists(tokenizerJsonPath(), ec);
+    } catch (const std::exception&) {
+        return false;
+    }
 }
 
 bool MediaDbContext::isAudioEncoderLoaded() const noexcept {
@@ -277,11 +290,12 @@ ClapAudioEncoder* MediaDbContext::audioEncoder() noexcept {
     if (audioEnc_) {
         return audioEnc_.get();
     }
-    if (!std::filesystem::exists(audioModelPath())) {
-        return nullptr;
-    }
-    LoadGuard guard(loadInProgress_);
     try {
+        std::error_code ec;
+        if (!std::filesystem::exists(audioModelPath(), ec)) {
+            return nullptr;
+        }
+        LoadGuard guard(loadInProgress_);
         audioEnc_ = std::make_unique<ClapAudioEncoder>(audioModelPath());
     } catch (const std::exception&) {
         audioEnc_.reset();
@@ -293,11 +307,12 @@ ClapTextEncoder* MediaDbContext::textEncoder() noexcept {
     if (textEnc_) {
         return textEnc_.get();
     }
-    if (!std::filesystem::exists(textModelPath())) {
-        return nullptr;
-    }
-    LoadGuard guard(loadInProgress_);
     try {
+        std::error_code ec;
+        if (!std::filesystem::exists(textModelPath(), ec)) {
+            return nullptr;
+        }
+        LoadGuard guard(loadInProgress_);
         textEnc_ = std::make_unique<ClapTextEncoder>(textModelPath());
     } catch (const std::exception&) {
         textEnc_.reset();
@@ -309,11 +324,12 @@ RobertaTokenizer* MediaDbContext::tokenizer() noexcept {
     if (tokenizer_) {
         return tokenizer_.get();
     }
-    if (!std::filesystem::exists(tokenizerJsonPath())) {
-        return nullptr;
-    }
-    LoadGuard guard(loadInProgress_);
     try {
+        std::error_code ec;
+        if (!std::filesystem::exists(tokenizerJsonPath(), ec)) {
+            return nullptr;
+        }
+        LoadGuard guard(loadInProgress_);
         tokenizer_ = std::make_unique<RobertaTokenizer>(tokenizerJsonPath());
     } catch (const std::exception&) {
         tokenizer_.reset();

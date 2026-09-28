@@ -146,7 +146,7 @@ class MidiEditorContent : public PanelContent,
     // --- Multi-track overlay (ghost notes from other tracks, #1281) ---
     // Shared between piano roll and drum grid; each editor renders the
     // overlay in its own grid via applyOverlayTracks().
-    bool hasOverlayTracks() const {
+    static bool hasOverlayTracks() {
         return !overlayTrackIds_.empty();
     }
     // Sticky multi-select menu of other MIDI tracks (anchored at `anchor`);
@@ -161,13 +161,18 @@ class MidiEditorContent : public PanelContent,
     static bool isNotePreviewEnabled() {
         return notePreviewEnabled_;
     }
-    void setNotePreviewEnabled(bool enabled) {
+    static void setNotePreviewEnabled(bool enabled) {
         notePreviewEnabled_ = enabled;
     }
     // Update a gutter preview toggle to reflect `on`: crossed speaker in dimmed
     // grey when off, plain speaker in accent blue when on (glyph + colour). Shared
     // by the piano roll and drum grid so both toggles read identically (#1705).
     static void syncNotePreviewToggle(magda::SvgButton& button, bool on);
+
+    /// Effective grid division, including the current Auto zoom resolution.
+    double getGridResolutionBeats() const {
+        return gridResolutionBeats_;
+    }
 
   protected:
     // --- Shared state ---
@@ -180,9 +185,6 @@ class MidiEditorContent : public PanelContent,
     double gridResolutionBeats_ = 0.25;  // Current grid resolution in beats (default 1/16)
     bool snapEnabled_ = true;            // Whether snap-to-grid is active
 
-    double getGridResolutionBeats() const {
-        return gridResolutionBeats_;
-    }
     double snapBeatToGrid(double beat) const;
     void updateGridResolution();
 
@@ -222,7 +224,7 @@ class MidiEditorContent : public PanelContent,
     static bool velocityDrawerOpen_;
     static bool velocityLaneVisible_;
     void setVelocityDrawerVisible(bool visible);
-    bool isVelocityDrawerVisible() const {
+    static bool isVelocityDrawerVisible() {
         return velocityDrawerOpen_;
     }
     // Push the velocity-visible flag into the drawer, recompute drawer-open, and
@@ -268,7 +270,8 @@ class MidiEditorContent : public PanelContent,
     virtual int getLeftPanelWidth() const = 0;
     virtual void updateGridSize() = 0;
     virtual void setGridPixelsPerBeat(double ppb) = 0;
-    virtual void setGridPlayheadPosition(double position) = 0;
+    // Transport position in timeline beats while playing; negative hides the playhead.
+    virtual void setGridPlayheadBeat(double timelineBeat) = 0;
 
     // --- Edit cursor (subclass must forward to its grid component) ---
     virtual void setGridEditCursorPosition(double positionSeconds, bool visible) = 0;
@@ -298,7 +301,6 @@ class MidiEditorContent : public PanelContent,
     // out to the highlight hooks. Invoked from the chained MidiBridge callback.
     void handleMidiNoteEvent(magda::TrackId trackId, const magda::MidiNoteEvent& event);
 
-    magda::MidiBridge* monitoredMidiBridge_ = nullptr;
     std::function<void(magda::TrackId, const magda::MidiNoteEvent&)> previousMidiNoteCallback_;
     bool midiNoteMonitorInstalled_ = false;
 

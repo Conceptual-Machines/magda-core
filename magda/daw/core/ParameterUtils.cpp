@@ -1,14 +1,17 @@
 #include "ParameterUtils.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <functional>
 #include <limits>
+#include <ranges>
 
+#include "RangesHelpers.hpp"
 #include "TechnicalText.hpp"
 #include "TempoUtils.hpp"
 
-namespace magda {
-namespace ParameterUtils {
+namespace magda::ParameterUtils {
 
 namespace {
 
@@ -28,12 +31,15 @@ float computeSkew(float anchorPosition) {
     return std::log(anchorPosition) / std::log(0.5f);
 }
 
-// True when the anchor is set and strictly inside (min, max).
-bool hasValidAnchor(const ParameterDomain& domain) {
+}  // namespace
+
+bool hasScaleAnchor(const ParameterDomain& domain) {
     return domain.scaleAnchor > domain.minValue && domain.scaleAnchor < domain.maxValue;
 }
 
-}  // namespace
+bool hasScaleAnchor(const ParameterInfo& info) {
+    return hasScaleAnchor(domainOf(info));
+}
 
 ParameterDomain domainOf(const ParameterInfo& info) {
     ParameterDomain domain;
@@ -61,7 +67,7 @@ float normalizedToReal(float normalized, const ParameterDomain& domain) {
     switch (domain.scale) {
         case ParameterScale::Linear: {
             float range = domain.maxValue - domain.minValue;
-            if (hasValidAnchor(domain) && range > 0.0f) {
+            if (hasScaleAnchor(domain) && range > 0.0f) {
                 float anchorPos = (domain.scaleAnchor - domain.minValue) / range;
                 float skew = computeSkew(anchorPos);
                 normalized = std::pow(normalized, skew);
@@ -75,7 +81,7 @@ float normalizedToReal(float normalized, const ParameterDomain& domain) {
                 return domain.minValue + normalized * (domain.maxValue - domain.minValue);
             }
             float logRange = std::log(domain.maxValue / domain.minValue);
-            if (hasValidAnchor(domain)) {
+            if (hasScaleAnchor(domain)) {
                 // Place anchor at norm=0.5 in log space by skewing norm first.
                 float anchorLogPos = std::log(domain.scaleAnchor / domain.minValue) / logRange;
                 float skew = computeSkew(anchorLogPos);
@@ -145,7 +151,7 @@ float realToNormalized(float real, const ParameterDomain& domain) {
             if (range == 0.0f)
                 return 0.0f;
             float linPos = (real - domain.minValue) / range;
-            if (hasValidAnchor(domain)) {
+            if (hasScaleAnchor(domain)) {
                 float anchorPos = (domain.scaleAnchor - domain.minValue) / range;
                 float skew = computeSkew(anchorPos);
                 // Invert the forward skew (norm -> norm^skew) with norm -> norm^(1/skew).
@@ -166,7 +172,7 @@ float realToNormalized(float real, const ParameterDomain& domain) {
             if (logRange == 0.0f)
                 return 0.0f;
             float logPos = std::log(real / domain.minValue) / logRange;
-            if (hasValidAnchor(domain)) {
+            if (hasScaleAnchor(domain)) {
                 float anchorLogPos = std::log(domain.scaleAnchor / domain.minValue) / logRange;
                 float skew = computeSkew(anchorLogPos);
                 logPos = std::pow(juce::jlimit(0.0f, 1.0f, logPos), 1.0f / skew);
@@ -221,48 +227,33 @@ float realToNormalized(float real, const ParameterDomain& domain) {
     }
 }
 
-bool infoMatchesTeRange(const ParameterInfo& info) {
-    return std::abs(info.minValue - info.teMinValue) < 1e-6f &&
-           std::abs(info.maxValue - info.teMaxValue) < 1e-6f;
-}
-
-bool isDisplayMappedInternalValue(const ParameterInfo& info) {
-    return std::abs(info.teMinValue) < 1e-6f && std::abs(info.teMaxValue - 1.0f) < 1e-6f &&
-           !infoMatchesTeRange(info) && info.displayText == nullptr;
-}
-
 ParameterModelValue normalizedToModelValue(ParameterNormalizedValue normalized,
                                            const ParameterInfo& info) {
-    const float teSpan = info.teMaxValue - info.teMinValue;
-    const bool useScaledModel = (infoMatchesTeRange(info) || isDisplayMappedInternalValue(info)) &&
-                                info.maxValue > info.minValue;
-
-    if (useScaledModel)
+    if (info.valueConvention == ParameterValueConvention::Real)
         return {normalizedToReal(normalized.value, info)};
-
-    if (teSpan > 0.0f)
-        return {info.teMinValue + normalized.value * teSpan};
-
     return {normalized.value};
 }
 
 ParameterNormalizedValue modelToNormalizedValue(ParameterModelValue model,
                                                 const ParameterInfo& info) {
-    const float teSpan = info.teMaxValue - info.teMinValue;
-    const bool useScaledModel = (infoMatchesTeRange(info) || isDisplayMappedInternalValue(info)) &&
-                                info.maxValue > info.minValue;
-
-    if (useScaledModel)
+    if (info.valueConvention == ParameterValueConvention::Real)
         return ParameterNormalizedValue::clamped(realToNormalized(model.value, info));
-
-    if (teSpan > 0.0f)
-        return ParameterNormalizedValue::clamped((model.value - info.teMinValue) / teSpan);
-
     return ParameterNormalizedValue::clamped(model.value);
 }
 
+float modelToRealValue(ParameterModelValue model, const ParameterInfo& info) {
+    return normalizedToReal(modelToNormalizedValue(model, info).value, info);
+}
+
+ParameterModelValue realToModelValue(float real, const ParameterInfo& info) {
+    return normalizedToModelValue(ParameterNormalizedValue::clamped(realToNormalized(real, info)),
+                                  info);
+}
+
 float modelToTeValue(ParameterModelValue model, const ParameterInfo& info) {
-    if (infoMatchesTeRange(info))
+    const bool teUsesDisplayRange = std::abs(info.minValue - info.teMinValue) < 1e-6f &&
+                                    std::abs(info.maxValue - info.teMaxValue) < 1e-6f;
+    if (info.valueConvention == ParameterValueConvention::Real && teUsesDisplayRange)
         return model.value;
 
     const float teSpan = info.teMaxValue - info.teMinValue;
@@ -273,19 +264,12 @@ float modelToTeValue(ParameterModelValue model, const ParameterInfo& info) {
     return info.teMinValue + normalized.value * teSpan;
 }
 
-bool modelHoldsTeNativeValue(const ParameterInfo& info) {
-    // The branch normalizedToModelValue() / modelToNormalizedValue() take when
-    // they leave the value in TE's domain, named so widgets can ask the same
-    // question instead of guessing at the value's meaning.
-    return !infoMatchesTeRange(info) && !isDisplayMappedInternalValue(info);
-}
-
 int choiceIndexForModelValue(ParameterModelValue model, const ParameterInfo& info) {
     const int count = static_cast<int>(info.choices.size());
     if (count <= 0)
         return -1;
 
-    if (modelHoldsTeNativeValue(info)) {
+    if (info.valueConvention == ParameterValueConvention::Normalized) {
         const float normalized = modelToNormalizedValue(model, info).value;
         return juce::jlimit(
             0, count - 1,
@@ -301,7 +285,7 @@ ParameterModelValue modelValueForChoiceIndex(int index, const ParameterInfo& inf
         return {0.0f};
     index = juce::jlimit(0, count - 1, index);
 
-    if (modelHoldsTeNativeValue(info)) {
+    if (info.valueConvention == ParameterValueConvention::Normalized) {
         const float normalized =
             count > 1 ? static_cast<float>(index) / static_cast<float>(count - 1) : 0.0f;
         return normalizedToModelValue(ParameterNormalizedValue::clamped(normalized), info);
@@ -321,13 +305,14 @@ float applyModulation(float baseNormalized, float modValue, float amount, bool b
 
 float applyModulations(float baseNormalized,
                        const std::vector<std::pair<float, float>>& modsAndAmounts, bool bipolar) {
-    float result = baseNormalized;
+    const auto offsetOf = [bipolar](const std::pair<float, float>& mod) {
+        return modulationOffset(mod.first, mod.second, bipolar);
+    };
 
-    for (const auto& [modValue, amount] : modsAndAmounts) {
-        result += modulationOffset(modValue, amount, bipolar);
-    }
-
-    return juce::jlimit(0.0f, 1.0f, result);
+    // Left fold: the sum keeps the order the mods were stacked in.
+    return juce::jlimit(0.0f, 1.0f,
+                        std::ranges::fold_left(modsAndAmounts | std::views::transform(offsetOf),
+                                               baseNormalized, std::plus{}));
 }
 
 namespace {
@@ -379,7 +364,7 @@ juce::String formatBars(float beats, int beatsPerBar = DEFAULT_TIME_SIGNATURE_NU
     int ticks = static_cast<int>(std::round((rem - b) * TICKS_PER_BEAT));
     char buf[32];
     std::snprintf(buf, sizeof(buf), "%d.%d.%03d", bars + 1, b + 1, ticks);
-    return juce::String(buf);
+    return {buf};
 }
 
 bool storesPercentAsUnitFraction(const ParameterInfo& info) {
@@ -497,29 +482,10 @@ juce::String formatValue(float realValue, const ParameterInfo& info, int decimal
     // Live plugin display text — exact, no quantization.
     //
     // DisplayTextProvider wraps TE's valueToString, which expects the
-    // plugin-native TE value. For internal plugins (and external VSTs
-    // without an AI-Detect display range) info.min/max match the TE
-    // range, so `realValue` IS the TE-native value and we must hand it
-    // to the provider unchanged. Projecting via realToNormalized → linear
-    // remap is only an identity when no skew is applied; with a
-    // scaleAnchor (e.g. 4OSC filterFreq anchored at note 69) the round
-    // trip collapses to the linear midpoint and mis-labels the knob
-    // (note 69 / 440 Hz round-tripped back to note 67.5 / 404 Hz).
-    //
-    // When the info range differs from the TE range (external VST with
-    // AI-Detect) realValue is in the display range and we project it to
-    // the TE range via normalized so the provider sees the native value.
+    // plugin-native TE value. Cross both explicit boundaries: display real
+    // value to the model convention, then model value to TE storage.
     if (info.displayText) {
-        const float teSpan = info.teMaxValue - info.teMinValue;
-        const bool infoMatchesTeRange = std::abs(info.minValue - info.teMinValue) < 1e-6f &&
-                                        std::abs(info.maxValue - info.teMaxValue) < 1e-6f;
-        float teRaw;
-        if (infoMatchesTeRange || teSpan <= 0.0f) {
-            teRaw = realValue;
-        } else {
-            float normalized = realToNormalized(realValue, info);
-            teRaw = info.teMinValue + normalized * teSpan;
-        }
+        const float teRaw = modelToTeValue(realToModelValue(realValue, info), info);
         auto text = info.displayText->format(teRaw);
         if (text.isNotEmpty())
             return text;
@@ -594,7 +560,7 @@ juce::String formatValue(float realValue, const ParameterInfo& info, int decimal
                technicalText(TechnicalTextToken::Percent);
     }
 
-    return juce::String(realValue, decimalPlaces);
+    return {realValue, decimalPlaces};
 }
 
 std::optional<float> parseValue(const juce::String& text, const ParameterInfo& info) {
@@ -640,7 +606,7 @@ std::optional<float> parseValue(const juce::String& text, const ParameterInfo& i
                 t = t.dropLastCharacters(percent.length()).trim();
             if (t.isEmpty())
                 return std::nullopt;
-            float parsed = static_cast<float>(t.getDoubleValue());
+            auto parsed = static_cast<float>(t.getDoubleValue());
             if (storesPercentAsUnitFraction(info))
                 parsed *= 0.01f;
             return clamp(parsed);
@@ -689,7 +655,7 @@ std::optional<float> parseValue(const juce::String& text, const ParameterInfo& i
             t = t.dropLastCharacters(percent.length()).trim();
         if (t.isEmpty())
             return std::nullopt;
-        float parsed = static_cast<float>(t.getDoubleValue());
+        auto parsed = static_cast<float>(t.getDoubleValue());
         if (storesPercentAsUnitFraction(info))
             parsed *= 0.01f;
         return clamp(parsed);
@@ -734,6 +700,15 @@ double snapNormalizedToGrid(double normalized, const ParameterInfo& info) {
     // Build the set of "natural" grid values in normalized space for this
     // parameter, then snap to the closest one. Values mirror what the
     // curve editor and track header paint as grid lines.
+    const auto normalizedTick = [&info](double realValue) {
+        return static_cast<double>(realToNormalized(static_cast<float>(realValue), info));
+    };
+    const auto tenthStep = [](int step) { return step / 10.0; };
+    const auto tenPercentSteps = [&tenthStep] {
+        return std::views::iota(0, 11) | std::views::transform(tenthStep) |
+               toStd<std::vector<double>>();
+    };
+
     std::vector<double> gridNorms;
 
     switch (info.scale) {
@@ -741,10 +716,8 @@ double snapNormalizedToGrid(double normalized, const ParameterInfo& info) {
             // dB ticks — same set the paint code uses.
             static constexpr double kDbTicks[] = {6.0,   3.0,   0.0,   -6.0,  -12.0,
                                                   -18.0, -24.0, -36.0, -48.0, -60.0};
-            for (double db : kDbTicks) {
-                float n = realToNormalized(static_cast<float>(db), info);
-                gridNorms.push_back(static_cast<double>(n));
-            }
+            gridNorms =
+                kDbTicks | std::views::transform(normalizedTick) | toStd<std::vector<double>>();
             // Always include the endpoints so snap can reach max/min.
             gridNorms.push_back(0.0);
             gridNorms.push_back(1.0);
@@ -752,12 +725,15 @@ double snapNormalizedToGrid(double normalized, const ParameterInfo& info) {
         }
 
         case ParameterScale::Discrete: {
-            if (info.choices.empty())
+            // One choice has nowhere to snap to, and its step would be 0/0.
+            const int count = static_cast<int>(info.choices.size());
+            if (count < 2)
                 return normalized;
-            int count = static_cast<int>(info.choices.size());
-            for (int i = 0; i < count; ++i) {
-                gridNorms.push_back(static_cast<double>(i) / (count - 1));
-            }
+            const auto evenStep = [count](int index) {
+                return static_cast<double>(index) / (count - 1);
+            };
+            gridNorms = std::views::iota(0, count) | std::views::transform(evenStep) |
+                        toStd<std::vector<double>>();
             break;
         }
 
@@ -769,38 +745,28 @@ double snapNormalizedToGrid(double normalized, const ParameterInfo& info) {
             // Detect by range; otherwise fall through to 10% steps.
             if (info.minValue == -1.0f && info.maxValue == 1.0f) {
                 static constexpr double kPanTicks[] = {-1.0, -0.5, 0.0, 0.5, 1.0};
-                for (double p : kPanTicks) {
-                    float n = realToNormalized(static_cast<float>(p), info);
-                    gridNorms.push_back(static_cast<double>(n));
-                }
+                gridNorms = kPanTicks | std::views::transform(normalizedTick) |
+                            toStd<std::vector<double>>();
                 break;
             }
             // Generic linear (e.g., percent): 10% steps.
-            for (int i = 0; i <= 10; ++i)
-                gridNorms.push_back(i / 10.0);
+            gridNorms = tenPercentSteps();
             break;
         }
 
         default:
             // Generic fallback: 10% steps in normalized space.
-            for (int i = 0; i <= 10; ++i)
-                gridNorms.push_back(i / 10.0);
+            gridNorms = tenPercentSteps();
             break;
     }
 
     if (gridNorms.empty())
         return normalized;
 
-    double best = gridNorms.front();
-    double bestDist = std::abs(normalized - best);
-    for (double g : gridNorms) {
-        double d = std::abs(normalized - g);
-        if (d < bestDist) {
-            bestDist = d;
-            best = g;
-        }
-    }
-    return best;
+    const auto distanceFromValue = [normalized](double grid) {
+        return std::abs(normalized - grid);
+    };
+    return *std::ranges::min_element(gridNorms, {}, distanceFromValue);
 }
 
 juce::String getChoiceString(int index, const ParameterInfo& info) {
@@ -815,5 +781,4 @@ juce::String getChoiceString(int index, const ParameterInfo& info) {
     return juce::String(index);
 }
 
-}  // namespace ParameterUtils
-}  // namespace magda
+}  // namespace magda::ParameterUtils

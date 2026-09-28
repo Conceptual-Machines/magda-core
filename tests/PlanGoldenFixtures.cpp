@@ -20,7 +20,7 @@
 namespace magda::goldens {
 namespace {
 
-TrackInfo track(TrackId id, TrackType type = TrackType::Audio) {
+TrackInfo track(TrackId id, TrackType type = TrackType::Media) {
     TrackInfo value;
     value.id = id;
     value.type = type;
@@ -40,6 +40,13 @@ DeviceInfo effect(DeviceId id) {
     device.id = id;
     device.name = "Effect " + juce::String(id);
     device.deviceType = DeviceType::Effect;
+
+    // What it is, rather than what the struct defaults to. DeviceInfo::format
+    // starts at VST3, and every device in these fixtures stands for one MAGDA
+    // runs: an external plugin is handed the bus and adapts its own channels,
+    // so a fixture about declared widths has to be a device that declares them
+    // (#2246).
+    device.format = PluginFormat::Internal;
     return device;
 }
 
@@ -63,6 +70,7 @@ DeviceInfo instrument(DeviceId id) {
     device.deviceType = DeviceType::Instrument;
     device.isInstrument = true;
     device.canReceiveMidi = true;
+    device.format = PluginFormat::Internal;
     return device;
 }
 
@@ -222,6 +230,30 @@ Fixture sidechain() {
 
     value.tracks = {track(1), track(2)};
     value.tracks[0].chain.fxChainElements.push_back(makeDeviceElement(compressor));
+    value.master = master();
+    value.options = withoutMeters();
+    return value;
+}
+
+/// The other tap point, which is the only part of a modelled sidechain source
+/// that is structure (#2329): a key taken pre-FX reads the source's trigger tap
+/// rather than its post-fader one. The trim is in both plans, because moving it
+/// is a value, and so is the listen switch.
+Fixture sidechainPreFx() {
+    Fixture value;
+    value.name = "sidechain-prefx";
+    value.covers = "a key taken before the source track's effects";
+
+    auto compressor = effect(7);
+    compressor.sidechain.type = SidechainConfig::Type::Audio;
+    compressor.sidechain.sourceTrackId = 2;
+    compressor.sidechain.tapPoint = ModTapPoint::PreFx;
+
+    // A device on the source, so its pre-FX point and its post-fader one are
+    // different ops rather than the same one twice.
+    value.tracks = {track(1), track(2)};
+    value.tracks[0].chain.fxChainElements.push_back(makeDeviceElement(compressor));
+    value.tracks[1].chain.fxChainElements.push_back(makeDeviceElement(effect(9)));
     value.master = master();
     value.options = withoutMeters();
     return value;
@@ -555,6 +587,7 @@ std::vector<Fixture> planFixtures() {
     fixtures.push_back(cascadedLatency());
     fixtures.push_back(rackChains());
     fixtures.push_back(sidechain());
+    fixtures.push_back(sidechainPreFx());
     fixtures.push_back(deltaSolo());
     fixtures.push_back(sectionLocalDeviceIds());
     fixtures.push_back(groupRouting());

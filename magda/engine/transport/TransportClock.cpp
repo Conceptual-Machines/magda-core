@@ -9,11 +9,6 @@ namespace {
 
 constexpr double kBeatEpsilon = 1.0e-9;
 
-/// A boundary this close to the cursor is the cursor. Rounding up to the first
-/// sample at or past a musical position would otherwise turn the position the
-/// clock just anchored to into a boundary one sample ahead of itself.
-constexpr double kSampleEpsilon = 1.0e-2;
-
 }  // namespace
 
 void TransportClock::anchorTo(const TempoMap& tempo, double beat) {
@@ -22,6 +17,7 @@ void TransportClock::anchorTo(const TempoMap& tempo, double beat) {
     tempoFingerprint_ = tempo.fingerprint();
     positionBeat_ = beat;
     positionBeats_.store(beat, std::memory_order_relaxed);
+    publishSyncPoint(beat);
 }
 
 double TransportClock::secondsAfter(std::int64_t samples) const {
@@ -33,9 +29,49 @@ double TransportClock::beatAfter(const TempoMap& tempo, std::int64_t samples) co
 }
 
 std::int64_t TransportClock::samplesUntil(const TempoMap& tempo, double beat) const {
+    // Rounded down, so a cut here lands on or before the position and never a
+    // sample past it: the loop's wrap relies on that, since a cursor past the
+    // end reads as one put there on purpose (#2691). The epsilon keeps a
+    // boundary a rounding error short of a whole sample from landing one early.
+    const auto now = secondsAfter(samplesSinceAnchor_);
+    const auto target = tempo.beatToTime(beat);
+    return static_cast<std::int64_t>(std::floor((target - now) * sampleRate_ + kSampleEpsilon));
+}
+
+std::int64_t TransportClock::samplesThrough(const TempoMap& tempo, double beat) const {
     const auto now = secondsAfter(samplesSinceAnchor_);
     const auto target = tempo.beatToTime(beat);
     return static_cast<std::int64_t>(std::ceil((target - now) * sampleRate_ - kSampleEpsilon));
+}
+
+// A seqlock: the reader retries, so the audio thread's side is two stores and
+// never a wait. The fences are what stop the pair being published before it is
+// written, and what stop the reader's loads being hoisted over the count.
+void TransportClock::publishSyncPoint(double beat) {
+    const auto writing = syncSequence_.load(std::memory_order_relaxed) + 1;
+
+    syncSequence_.store(writing, std::memory_order_relaxed);
+    std::atomic_thread_fence(std::memory_order_release);
+
+    syncBeat_.store(beat, std::memory_order_relaxed);
+    syncMonotonicBeat_.store(monotonicBeat_, std::memory_order_relaxed);
+
+    syncSequence_.store(writing + 1, std::memory_order_release);
+}
+
+SyncPoint TransportClock::syncPoint() const {
+    for (;;) {
+        const auto before = syncSequence_.load(std::memory_order_acquire);
+        if ((before & 1U) != 0U)
+            continue;
+
+        const SyncPoint point{syncBeat_.load(std::memory_order_relaxed),
+                              syncMonotonicBeat_.load(std::memory_order_relaxed)};
+
+        std::atomic_thread_fence(std::memory_order_acquire);
+        if (syncSequence_.load(std::memory_order_relaxed) == before)
+            return point;
+    }
 }
 
 void TransportClock::applyRequest(const TransportSnapshot& snapshot) {
@@ -53,15 +89,21 @@ void TransportClock::applyRequest(const TransportSnapshot& snapshot) {
 
     countingIn_ = request.playing && request.countInBeats > 0.0;
 
+    // A carried locate this clock already took is not taken again.
+    const bool locates =
+        request.locate && (request.locateId == 0 || request.locateId != appliedLocateId_);
+    if (locates && request.locateId != 0)
+        appliedLocateId_ = request.locateId;
+
     // A request that moves the cursor at all: a locate, or a roll-in, which
     // moves it back to where the count begins. Everything else leaves the
     // anchor alone rather than re-deriving the position it already has.
-    if (request.locate || countingIn_) {
+    if (locates || countingIn_) {
         // A locate is honoured as it was asked for, loop or no loop. The loop
         // is somewhere the timeline returns to when it gets there, not a pen: a
         // playhead put down at bar 40 with a two-bar loop enabled plays bar 40,
         // which is what the user pointed at.
-        const auto target = request.locate ? request.positionBeat : wasAt;
+        const auto target = locates ? request.positionBeat : wasAt;
         const auto position = countingIn_ ? target - request.countInBeats : target;
 
         countInUntilBeat_ = target;
@@ -77,6 +119,8 @@ void TransportClock::applyRequest(const TransportSnapshot& snapshot) {
     // doing.
     if (playing_ && !wasPlaying)
         continuous_ = false;
+
+    appliedGeneration_.store(generation_, std::memory_order_release);
 }
 
 void TransportClock::followTempo(const TempoMap& tempo) {
@@ -117,19 +161,28 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         auto& segment = segments_[0];
         segment.block.numSamples = numSamples;
         segment.block.playing = false;
-        segment.block.startBeat = beat;
-        segment.block.endBeat = beat;
-        segment.block.startSeconds = seconds;
-        segment.block.endSeconds = seconds;
+        segment.block.beats.start = beat;
+        segment.block.beats.end = beat;
+        segment.block.seconds.start = seconds;
+        segment.block.seconds.end = seconds;
+        segment.block.monotonicBeats.start = monotonicBeat_;
+        segment.block.monotonicBeats.end = monotonicBeat_;
+        segment.block.monotonicSeconds.start = monotonicSeconds_;
+        segment.block.monotonicSeconds.end = monotonicSeconds_;
+        segment.block.monotonicSamples.start = monotonicSamples_;
+        segment.block.monotonicSamples.end = monotonicSamples_;
+        segment.block.sampleRate = sampleRate_;
         segment.block.continuous = continuous_;
         segment.block.tempo = &tempo;
         segment.startSample = 0;
         segment.countingIn = false;
+        segment.insidePunch = true;
 
         segmentCount_ = 1;
         continuous_ = true;
         positionBeat_ = beat;
         positionBeats_.store(beat, std::memory_order_relaxed);
+        publishSyncPoint(beat);
         return {segments_.data(), 1};
     }
 
@@ -168,6 +221,14 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         if (countingIn_)
             samples = std::min(samples, samplesUntil(tempo, countInUntilBeat_));
 
+        // A tempo section boundary is not cut at. It used to be, so that the
+        // block's own straight line stayed honest and so that a modifier
+        // reading one bpm per block read the right one; placement goes through
+        // the map now (#2336) and a modifier reads the beats the block covers
+        // (#2340), so nothing is left that a section boundary inside a block
+        // would be wrong for. A tempo change is not a jump either: audio flows
+        // straight through one and the block carries on continuous.
+        //
         // Clamped from inside the loop only. From outside it the count is
         // negative and would cut a callback that is not looping at all; from
         // inside, it can still be zero, for a loop so short that its end is not
@@ -176,6 +237,20 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         // render straight through uncounted.
         if (insideLoop)
             samples = std::min(samples, untilLoopEnd);
+
+        const auto punchValid = snapshot.punch.valid();
+        const auto untilPunchIn = punchValid && snapshot.punch.punchInEnabled
+                                      ? samplesThrough(tempo, snapshot.punch.startBeat)
+                                      : std::int64_t{0};
+        const auto untilPunchOut = punchValid && snapshot.punch.punchOutEnabled
+                                       ? samplesThrough(tempo, snapshot.punch.endBeat)
+                                       : std::int64_t{1};
+        const auto beforePunch = punchValid && snapshot.punch.punchInEnabled && untilPunchIn > 0;
+        const auto afterPunch = punchValid && snapshot.punch.punchOutEnabled && untilPunchOut <= 0;
+        if (beforePunch)
+            samples = std::min(samples, untilPunchIn);
+        else if (!afterPunch && punchValid && snapshot.punch.punchOutEnabled)
+            samples = std::min(samples, untilPunchOut);
 
         // Both boundaries were just moved past if they were behind, so a whole
         // segment is left. What is not left is room to keep cutting: past the
@@ -192,14 +267,40 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         auto& segment = segments_[static_cast<std::size_t>(segmentCount_++)];
         segment.block.numSamples = static_cast<int>(samples);
         segment.block.playing = true;
-        segment.block.startBeat = beatAfter(tempo, samplesSinceAnchor_);
-        segment.block.endBeat = beatAfter(tempo, samplesSinceAnchor_ + samples);
-        segment.block.startSeconds = secondsAfter(samplesSinceAnchor_);
-        segment.block.endSeconds = secondsAfter(samplesSinceAnchor_ + samples);
+        segment.block.beats.start = beatAfter(tempo, samplesSinceAnchor_);
+        segment.block.beats.end = beatAfter(tempo, samplesSinceAnchor_ + samples);
+        segment.block.seconds.start = secondsAfter(samplesSinceAnchor_);
+        segment.block.seconds.end = secondsAfter(samplesSinceAnchor_ + samples);
+
+        // Accumulated from the segment rather than read off the cursor: these
+        // are the quantities a wrap must not take back, and the cursor is about
+        // to be moved by one.
+        segment.block.monotonicBeats.start = monotonicBeat_;
+        monotonicBeat_ += segment.block.beats.end - segment.block.beats.start;
+        segment.block.monotonicBeats.end = monotonicBeat_;
+
+        // From the samples, not the beats: a rate change re-anchors the cursor
+        // and this carries straight on (#2324).
+        segment.block.monotonicSeconds.start = monotonicSeconds_;
+        monotonicSeconds_ += static_cast<double>(samples) / sampleRate_;
+        segment.block.monotonicSeconds.end = monotonicSeconds_;
+
+        // The samples themselves, which is what the seconds above are counted
+        // from and what everything else here is an interpretation of. Kept
+        // rather than divided back out of them: a rate change makes the two no
+        // longer one conversion apart, and this side of it is the one that did
+        // not move (#2332).
+        segment.block.monotonicSamples.start = monotonicSamples_;
+        monotonicSamples_ += SampleDuration{samples};
+        segment.block.monotonicSamples.end = monotonicSamples_;
+
+        segment.block.sampleRate = sampleRate_;
+
         segment.block.continuous = continuous_;
         segment.block.tempo = &tempo;
         segment.startSample = offset;
         segment.countingIn = countingIn_;
+        segment.insidePunch = !beforePunch && !afterPunch;
 
         samplesSinceAnchor_ += samples;
         offset += static_cast<int>(samples);
@@ -220,6 +321,7 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
 
     positionBeat_ = beatAfter(tempo, samplesSinceAnchor_);
     positionBeats_.store(positionBeat_, std::memory_order_relaxed);
+    publishSyncPoint(positionBeat_);
 
     return {segments_.data(), static_cast<std::size_t>(segmentCount_)};
 }

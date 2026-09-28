@@ -55,7 +55,7 @@ bool parseDecisionIndex(const juce::var& value, int& indexOut) {
     if (!isNumericVar(value))
         return false;
 
-    const double asDouble = static_cast<double>(value);
+    const auto asDouble = static_cast<double>(value);
     const double rounded = std::round(asDouble);
     if (std::abs(asDouble - rounded) > 0.000001)
         return false;
@@ -98,10 +98,10 @@ const char* GainStagingAgent::getSystemPrompt() {
 }
 
 juce::String GainStagingAgent::buildUserMessage(float targetPeakDb,
-                                                const std::vector<DeviceLevel>& devices) const {
+                                                const std::vector<DeviceLevel>& devices) {
     juce::Array<juce::var> arr;
-    for (int i = 0; i < (int)devices.size(); ++i) {
-        const auto& d = devices[(size_t)i];
+    for (int i = 0; i < static_cast<int>(devices.size()); ++i) {
+        const auto& d = devices[static_cast<size_t>(i)];
         auto* obj = new juce::DynamicObject();
         obj->setProperty("id", i);  // list index (signal order), unique handle
         obj->setProperty("name", juce::String(d.name));
@@ -132,11 +132,10 @@ juce::String GainStagingAgent::buildUserMessage(float targetPeakDb,
 }
 
 void GainStagingAgent::parseDecisions(const juce::String& rawText,
-                                      const std::vector<DeviceLevel>& devices,
-                                      Result& result) const {
+                                      const std::vector<DeviceLevel>& devices, Result& result) {
     result.rawOutput = rawText.toStdString();
 
-    const int deviceCount = (int)devices.size();
+    const int deviceCount = static_cast<int>(devices.size());
 
     auto parsed = juce::JSON::parse(stripToJsonObject(rawText));
     auto* obj = parsed.getDynamicObject();

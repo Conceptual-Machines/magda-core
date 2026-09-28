@@ -226,8 +226,13 @@ int ResamplingAudioFileReader::read(juce::AudioBuffer<float>& destination, int d
     if (file_ == nullptr || numSamples <= 0)
         return 0;
 
-    const auto available =
-        static_cast<int>(std::clamp<std::int64_t>(length_ - startSample, 0, numSamples));
+    // A loop underneath has no end, and int64's maximum minus a pre-roll's
+    // negative start wraps to nothing readable: the stream then stalled for
+    // good and every 44.1 kHz loop on a 48 kHz device played silence.
+    constexpr auto unbounded = std::numeric_limits<std::int64_t>::max();
+    const auto remaining =
+        startSample < 0 && length_ > unbounded + startSample ? unbounded : length_ - startSample;
+    const auto available = static_cast<int>(std::clamp<std::int64_t>(remaining, 0, numSamples));
 
     if (available < numSamples)
         destination.clear(destinationOffset + available, numSamples - available);

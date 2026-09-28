@@ -5,6 +5,7 @@
 
 #include "core/ChainNodePath.hpp"
 #include "core/TypeIds.hpp"
+#include "plugins/DevicePluginDefaults.hpp"
 #include "plugins/DeviceSessionKey.hpp"
 
 namespace magda::daw::audio {
@@ -21,7 +22,6 @@ class DeviceTrackContext {
   public:
     virtual ~DeviceTrackContext() = default;
 
-    virtual bool isChordTrackMuted() const = 0;
     virtual void setDeviceParameterValueFromPlugin(DeviceId deviceId, int paramIndex,
                                                    float value) = 0;
 };
@@ -79,23 +79,6 @@ class DeviceMeteringContext {
 
     virtual DeviceMeteringTap getRealtimeTap(const ChainNodePath& devicePath) = 0;
     virtual DeviceMeteringTap getRealtimeTap(DeviceId deviceId) = 0;
-};
-
-struct DevicePluginDefaults {
-    struct Oscilloscope {
-        float timebaseMs = 10.0f;
-    } oscilloscope;
-
-    struct Spectrum {
-        int fftOrder = 11;
-        float slopeDbPerOct = 4.5f;
-        float smoothing = 0.5f;
-    } spectrum;
-
-    struct MidiReceive {
-        TrackId sourceTrackId = INVALID_TRACK_ID;
-        bool replaceExistingMidi = false;
-    } midiReceive;
 };
 
 struct DeviceServices {

@@ -2,7 +2,7 @@
 
 #include <cmath>
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "PitchFoldMap.hpp"
 #include "core/ClipInfo.hpp"
@@ -56,7 +56,7 @@ void PianoRollKeyboard::paint(juce::Graphics& g) {
 
         if (isPressed) {
             // Highlight color for pressed key
-            g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_KEY_HIGHLIGHT));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_KEY_HIGHLIGHT));
         } else if (isBlackKey(note)) {
             g.setColour(juce::Colour(accidentalKeyColour));
         } else {
@@ -65,7 +65,7 @@ void PianoRollKeyboard::paint(juce::Graphics& g) {
         g.fillRect(keyArea);
 
         if (highlightedNotes_.find(note) != highlightedNotes_.end()) {
-            g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_PITCH_HIGHLIGHT)
+            g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_PITCH_HIGHLIGHT)
                             .withAlpha(0x55 / 255.0f));
             g.fillRect(keyArea);
         }
@@ -133,12 +133,12 @@ void PianoRollKeyboard::clearPressedNotes() {
         repaint();
 }
 
-bool PianoRollKeyboard::isBlackKey(int noteNumber) const {
+bool PianoRollKeyboard::isBlackKey(int noteNumber) {
     int note = noteNumber % 12;
     return note == 1 || note == 3 || note == 6 || note == 8 || note == 10;
 }
 
-juce::String PianoRollKeyboard::getNoteName(int noteNumber) const {
+juce::String PianoRollKeyboard::getNoteName(int noteNumber) {
     static const char* noteNames[] = {"C",  "C#", "D",  "D#", "E",  "F",
                                       "F#", "G",  "G#", "A",  "A#", "B"};
     int octave = (noteNumber / 12) - 2;  // C-2 convention (note 0 = C-2, note 60 = C3)

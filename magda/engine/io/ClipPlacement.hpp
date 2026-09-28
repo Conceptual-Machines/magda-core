@@ -3,6 +3,8 @@
 #include <cmath>
 #include <cstdint>
 
+#include "transport/TimeDomains.hpp"
+
 /**
  * @file ClipPlacement.hpp
  * @brief Where a file sits on the timeline, and which of its samples plays when.
@@ -26,11 +28,10 @@ namespace magda::engine {
  * audio thread, and there would then be two of them.
  */
 struct ClipPlacement {
-    double startSeconds = 0.0;
-    double endSeconds = 0.0;
+    SecondsRange seconds;
 
-    /// The sample that plays at @ref startSeconds. What trimming the front of a
-    /// clip moves.
+    /// The sample that plays where @ref seconds starts. What trimming the
+    /// front of a clip moves.
     ///
     /// Of the reading rather than of the file, and the two are the same thing
     /// for a clip that asks nothing of its source. Where it asks for reverse,
@@ -41,7 +42,8 @@ struct ClipPlacement {
 };
 
 /**
- * @brief The sample that plays at @p seconds on the timeline.
+ * @brief The sample that an output sample starting at @p seconds plays: the
+ * first of the reading at or after where it reads (TimeDomains::firstSampleFrom).
  *
  * At @p sampleRate, the device's rate, not the file's, and that is not a slip.
  * One sample of the reading is consumed per output sample, so a position
@@ -57,8 +59,8 @@ struct ClipPlacement {
  */
 inline std::int64_t sourceSampleAt(const ClipPlacement& placement, double seconds,
                                    double sampleRate) {
-    return placement.sourceOffsetSamples +
-           static_cast<std::int64_t>(std::llround((seconds - placement.startSeconds) * sampleRate));
+    const auto into = (seconds - placement.seconds.start) * sampleRate;
+    return placement.sourceOffsetSamples + firstSampleFrom(into);
 }
 
 }  // namespace magda::engine

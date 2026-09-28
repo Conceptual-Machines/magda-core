@@ -5,13 +5,16 @@
 #include <atomic>
 #include <chrono>
 #include <memory>
+#include <ranges>
 
+#include "../../core/RangesHelpers.hpp"
+#include "../../core/StringTable.hpp"
 #include "../../core/TrackManager.hpp"
+#include "../../core/UserAlert.hpp"
 #include "../../engine/AudioEngine.hpp"
 #include "MixAnalysisInput.hpp"
 
-namespace magda {
-namespace daw::audio {
+namespace magda::daw::audio {
 
 namespace {
 
@@ -43,7 +46,7 @@ bool runOnMessageThreadBlocking(std::function<void()> operation) {
         return true;
     }
 
-    enum class State { Queued, Running, Cancelled, Finished };
+    enum class State { Queued, Running, Cancelled, Finished, Failed };
     struct SharedOperation {
         explicit SharedOperation(std::function<void()> op) : operation(std::move(op)) {}
         std::function<void()> operation;
@@ -58,8 +61,19 @@ bool runOnMessageThreadBlocking(std::function<void()> operation) {
                 shared->completed.signal();
                 return;
             }
-            shared->operation();
-            shared->state.store(State::Finished);
+            // A throw here runs on the message thread and must not escape:
+            // uncaught, it would propagate into JUCE's dispatch loop and
+            // take the whole app down instead of just failing this render.
+            try {
+                shared->operation();
+                shared->state.store(State::Finished);
+            } catch (const std::exception& e) {
+                juce::Logger::writeToLog(juce::String("[runOnMessageThreadBlocking] ") + e.what());
+                shared->state.store(State::Failed);
+            } catch (...) {
+                juce::Logger::writeToLog("[runOnMessageThreadBlocking] unknown exception");
+                shared->state.store(State::Failed);
+            }
             shared->completed.signal();
         }))
         return false;
@@ -85,7 +99,17 @@ class MessageThreadRenderSession {
     explicit MessageThreadRenderSession(AudioEngine& engine) : engine_(engine) {}
 
     ~MessageThreadRenderSession() {
-        close();
+        try {
+            close();
+        } catch (const std::exception& e) {
+            juce::Logger::writeToLog(juce::String("[MessageThreadRenderSession] ") + e.what());
+            juce::MessageManager::callAsync(
+                [] { magda::notifyUserAlert(magda::tr("mix_analysis.cleanup_failed")); });
+        } catch (...) {
+            juce::Logger::writeToLog("[MessageThreadRenderSession] unknown exception");
+            juce::MessageManager::callAsync(
+                [] { magda::notifyUserAlert(magda::tr("mix_analysis.cleanup_failed")); });
+        }
     }
 
     bool open() {
@@ -186,14 +210,6 @@ class AnalysisJob : public juce::Thread {
         constexpr double kAnalysisSampleRate = 22050.0;
         const double sampleRate = kAnalysisSampleRate;
 
-        const auto* tempoMap = engine_.tempoMap();
-        if (tempoMap == nullptr) {
-            err.hasError = true;
-            err.error = "The audio engine does not provide a tempo map.";
-            return err;
-        }
-
-        // Resolve the musical range first; convert only at the render boundary.
         BeatRange musicalRange{{0.0}, {engine_.getEditLengthBeats().value}};
         if (request_.range == OfflineMixAnalysis::RangeMode::LoopRange) {
             const auto loop = engine_.getLoopRegionBeats();
@@ -205,9 +221,8 @@ class AnalysisJob : public juce::Thread {
         base.bitDepth = 24;
         base.sampleRate = sampleRate;
         base.usePlugins = true;
-        base.range = {{tempoMap->beatToTime(musicalRange.start.value)},
-                      {tempoMap->beatToTime(musicalRange.end.value)},
-                      {2.0}};
+        base.range = musicalRange;
+        base.tailSeconds = 2.0;
 
         MessageThreadRenderSession renderSession(engine_);
         if (!renderSession.open()) {
@@ -226,17 +241,22 @@ class AnalysisJob : public juce::Thread {
         // Resolve the track set up front (Deep) so the total pass count -- and
         // therefore the progress estimate -- is known before rendering starts:
         // one master pass plus one pass per track.
+        const auto isAnalysable = [](const TrackInfo& track) {
+            return track.type != TrackType::Chord;
+        };
+        const auto stillExists = [](TrackId id) {
+            return TrackManager::getInstance().getTrack(id) != nullptr;
+        };
+
         std::vector<TrackId> trackIds;
         if (deep) {
-            if (request_.trackSet.empty()) {
-                for (const auto& track : TrackManager::getInstance().getTracks())
-                    if (track.type != TrackType::Chord)
-                        trackIds.push_back(track.id);
-            } else {
-                for (auto id : request_.trackSet)
-                    if (TrackManager::getInstance().getTrack(id) != nullptr)
-                        trackIds.push_back(id);
-            }
+            const auto& tracks = TrackManager::getInstance().getTracks();
+            trackIds = request_.trackSet.empty()
+                           ? tracks | std::views::filter(isAnalysable) |
+                                 std::views::transform(&TrackInfo::id) |
+                                 toStd<std::vector<TrackId>>()
+                           : request_.trackSet | std::views::filter(stillExists) |
+                                 toStd<std::vector<TrackId>>();
         }
         const int totalPasses = deep ? 1 + static_cast<int>(trackIds.size()) : 1;
 
@@ -372,12 +392,11 @@ class AnalysisJob : public juce::Thread {
             // Annotate each track with its type (audio/MIDI) + effect chain. build()
             // preserves source order, so measurements.tracks[i] matches sourceTrackIds[i].
             auto& tmgr = magda::TrackManager::getInstance();
-            for (size_t i = 0; i < measurements.tracks.size() && i < sourceTrackIds.size(); ++i) {
-                const auto tid = sourceTrackIds[i];
+            for (auto&& [measured, tid] : std::views::zip(measurements.tracks, sourceTrackIds)) {
                 if (tid == magda::INVALID_TRACK_ID)
                     continue;
-                measurements.tracks[i].role = tmgr.getPrimaryInstrument(tid) ? "MIDI" : "audio";
-                measurements.tracks[i].chain = tmgr.getChainSummary(tid);
+                measured.role = tmgr.getPrimaryInstrument(tid) ? "MIDI" : "audio";
+                measured.chain = tmgr.getChainSummary(tid);
             }
 
             if (skipped > 0)
@@ -431,5 +450,4 @@ OfflineMixAnalysis::CancelToken OfflineMixAnalysis::start(AudioEngine& engine, R
     return cancel;
 }
 
-}  // namespace daw::audio
-}  // namespace magda
+}  // namespace magda::daw::audio

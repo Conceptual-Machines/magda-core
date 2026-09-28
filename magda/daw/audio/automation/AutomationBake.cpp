@@ -3,7 +3,10 @@
 #include <cmath>
 #include <vector>
 
+#include "../../core/AutomationInfo.hpp"
 #include "../../core/ClipLaneFlattener.hpp"
+#include "../../core/ParameterInfo.hpp"
+#include "../../core/ParameterUtils.hpp"
 
 namespace magda {
 
@@ -16,7 +19,71 @@ constexpr double kStepEpsilon = 0.0001;
 /// is a ValueTree mutation with a listener fan-out behind it.
 constexpr int kBezierSegments = 12;
 
+/// One point's worth of the conversion, for a target whose ParameterInfo has
+/// already been resolved. Split out only so the two callers below share it;
+/// nothing outside this file has the info to hand.
+float toParameterValue(const AutomationTarget& target, te::AutomatableParameter* param,
+                       const ParameterInfo& info, double magdaNormalized) {
+    switch (target.kind) {
+        case ControlTarget::Kind::DeviceMacro:
+            // Macros are stored as 0..1 on both sides — no display/percent
+            // scale conversion. Going through the percent ParameterInfo
+            // fallback would write 100 to TE for a 1.0 MAGDA value, and the
+            // inverse writeback would then divide by 100, pinning the UI
+            // knob near zero throughout playback.
+            return juce::jlimit(0.0f, 1.0f, static_cast<float>(magdaNormalized));
+
+        case ControlTarget::Kind::TrackVolume:
+        case ControlTarget::Kind::SendLevel: {
+            // MAGDA 0-1 (FaderDB scale) → dB → TE fader position. Same
+            // mapping for both: AuxSendPlugin's `gain` parameter uses
+            // volume-fader-position units just like VolAndPanPlugin.
+            auto paramInfo = ParameterPresets::faderVolume(-1, "Volume");
+            float dB =
+                ParameterUtils::normalizedToReal(static_cast<float>(magdaNormalized), paramInfo);
+            return te::decibelsToVolumeFaderPosition(dB);
+        }
+        case ControlTarget::Kind::TrackPan: {
+            // MAGDA 0-1 → linear -1..+1 (same as TE's pan range)
+            auto paramInfo = ParameterPresets::pan(-1, "Pan");
+            return ParameterUtils::normalizedToReal(static_cast<float>(magdaNormalized), paramInfo);
+        }
+        default: {
+            const auto model = ParameterUtils::normalizedToModelValue(
+                ParameterNormalizedValue::clamped(static_cast<float>(magdaNormalized)), info);
+            return ParameterUtils::modelToTeValue(model, info);
+        }
+    }
+}
+
 }  // namespace
+
+std::function<float(double)> makeParameterValueConverter(const AutomationTarget& target,
+                                                         te::AutomatableParameter* param) {
+    // Resolved once. getParameterInfoForTarget walks the track, rack and chain
+    // tree to find the device and copies a full ParameterInfo, value table,
+    // choices and shared pointers included; a lane can bake a hundred thousand
+    // points, and doing this inside that loop is what used to beach-ball play
+    // and stop on any edit with automation on a plugin parameter.
+    ParameterInfo info = target.kind == ControlTarget::Kind::PluginParam
+                             ? getParameterInfoForTarget(target)
+                             : ParameterInfo{};
+
+    const bool isDeviceParam = target.kind == ControlTarget::Kind::PluginParam;
+    if (isDeviceParam && info.teMaxValue <= info.teMinValue && param != nullptr) {
+        const auto range = param->getValueRange();
+        info.teMinValue = range.getStart();
+        info.teMaxValue = range.getEnd();
+    }
+
+    return [target, param, info, isDeviceParam](double magdaNormalized) -> float {
+        if (!isDeviceParam)
+            return toParameterValue(target, param, info, magdaNormalized);
+        const auto model = ParameterUtils::normalizedToModelValue(
+            ParameterNormalizedValue::clamped(static_cast<float>(magdaNormalized)), info);
+        return ParameterUtils::modelToTeValue(model, info);
+    };
+}
 
 void bakeLaneIntoCurve(te::AutomationCurve& curve, const AutomationLaneInfo& lane,
                        const std::function<const AutomationClipInfo*(AutomationClipId)>& getClip,

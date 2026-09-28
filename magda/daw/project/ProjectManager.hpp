@@ -5,12 +5,16 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <thread>
 #include <vector>
 
 #include "ProjectInfo.hpp"
+#include "RecoverySession.hpp"
 
 namespace magda {
+
+struct StagedProjectData;
 
 /**
  * @brief Listener interface for project lifecycle events
@@ -18,6 +22,17 @@ namespace magda {
 class ProjectManagerListener {
   public:
     virtual ~ProjectManagerListener() = default;
+
+    /**
+     * @brief Called when the current project's runtime is over
+     *
+     * Fired by every path that replaces the project - load, import, new,
+     * close - after the transport has stopped and before the model is
+     * cleared. A listener that has to drop what it built for the outgoing
+     * project does it here rather than inferring the gap from an empty model
+     * (#2576).
+     */
+    virtual void projectTeardown() {}
 
     /**
      * @brief Called when a project is opened or created
@@ -56,7 +71,7 @@ class ProjectManagerListener {
  *
  * Handles new/open/save/close operations and tracks unsaved changes.
  */
-class ProjectManager : private juce::Timer {
+class ProjectManager {
   public:
     static ProjectManager& getInstance();
 
@@ -72,7 +87,55 @@ class ProjectManager : private juce::Timer {
      * @brief Create a new empty project
      * @return true on success
      */
-    bool newProject();
+    enum class UnsavedChangesPolicy { AskUser, Refuse, Discard };
+    enum class AutosaveRecoveryPolicy { Fail, Recover, Ignore };
+
+    struct LoadInspection {
+        int missingMediaCount = 0;
+        int unavailableDeviceCount = 0;
+    };
+
+    struct ControlledLoadOptions {
+        UnsavedChangesPolicy unsavedChanges = UnsavedChangesPolicy::Refuse;
+        AutosaveRecoveryPolicy autosaveRecovery = AutosaveRecoveryPolicy::Fail;
+        bool allowMissingMedia = false;
+        bool allowUnavailableDevices = false;
+        std::function<bool()> shouldCancel;
+        std::function<LoadInspection(const StagedProjectData&)> inspect;
+    };
+
+    enum class ControlledLoadStatus {
+        Succeeded,
+        Cancelled,
+        Conflict,
+        NotFound,
+        InvalidFormat,
+        Failed,
+    };
+
+    struct ControlledLoadResult {
+        ControlledLoadStatus status = ControlledLoadStatus::Failed;
+        bool recoveredAutosave = false;
+        LoadInspection inspection;
+    };
+
+    bool newProject(UnsavedChangesPolicy policy = UnsavedChangesPolicy::AskUser);
+
+    /** Copy Config's new-project preferences into a ProjectInfo snapshot. */
+    static void seedProjectFromConfig(ProjectInfo& project);
+
+    /** Capture only the creation settings used by legacy loads and imports. Call on the UI thread.
+     */
+    static ProjectCreationSettings captureCreationSettingsFromConfig();
+
+    /** Explicitly replace the open project's palette with the current Preferences palette. */
+    void applyConfigPaletteToCurrentProject();
+
+    /**
+     * Seed the initial or closed-project placeholder after Config has been loaded.
+     * This does not notify listeners or mark the project dirty.
+     */
+    void seedCurrentProjectFromConfig();
 
     /**
      * @brief Save project to current file
@@ -80,12 +143,26 @@ class ProjectManager : private juce::Timer {
      */
     bool saveProject();
 
+    /// What a Save As does with the media the project is carrying.
+    enum class MediaTransfer {
+        /// The project is moving, so its recordings, renders and imports go
+        /// with it and the old media folder is left empty.
+        Move,
+        /// Both projects stay playable: the new one gets copies and the one
+        /// being saved from keeps the files its .mgd still names (#2437).
+        Copy,
+    };
+
     /**
      * @brief Save project to a new file
      * @param file Target file path
+     * @param transfer What happens to the media folder
      * @return true on success
      */
-    bool saveProjectAs(const juce::File& file);
+    bool saveProjectAs(const juce::File& file, MediaTransfer transfer = MediaTransfer::Move);
+
+    /** Resolve the on-disk .mgd written by Save As, including its wrapper folder. */
+    static juce::File saveTargetFor(const juce::File& file);
 
     /**
      * @brief Load project from file (synchronous)
@@ -96,7 +173,22 @@ class ProjectManager : private juce::Timer {
      * @return true on success
      */
     bool loadProject(const juce::File& file,
-                     std::function<void(const ProjectInfo&)> onBeforeCommit = nullptr);
+                     const std::function<void(const ProjectInfo&)>& onBeforeCommit = nullptr);
+
+    /**
+     * @brief Make staged data the open project, as both load paths do after staging.
+     *
+     * @p file is where the project is saved, and decides its media directory.
+     * @p recoveredFromAutosave leaves the project dirty so the user saves it properly.
+     */
+    void commitStagedProject(StagedProjectData& staged, const juce::File& file,
+                             bool recoveredFromAutosave,
+                             const std::function<void(const ProjectInfo&)>& onBeforeCommit,
+                             bool allowInteractiveRecovery = true);
+
+    bool interactiveRecoveryAllowedForCurrentOpen() const {
+        return interactiveRecoveryAllowedForCurrentOpen_;
+    }
 
     /**
      * @brief Export the current project to a .dawproject interchange archive.
@@ -112,8 +204,8 @@ class ProjectManager : private juce::Timer {
      * @param onComplete (success, errorMessage); empty error on user cancel.
      */
     void importDawProjectAsync(const juce::File& file,
-                               std::function<void(const ProjectInfo&)> onBeforeCommit,
-                               std::function<void(bool, const juce::String&)> onComplete);
+                               const std::function<void(const ProjectInfo&)>& onBeforeCommit,
+                               const std::function<void(bool, const juce::String&)>& onComplete);
 
     /**
      * @brief Load project asynchronously (heavy I/O on background thread, commit on message thread)
@@ -124,14 +216,18 @@ class ProjectManager : private juce::Timer {
      * @param onComplete Callback invoked on message thread after commit: (success, errorMessage)
      */
     void loadProjectAsync(const juce::File& file,
-                          std::function<void(const ProjectInfo&)> onBeforeCommit,
-                          std::function<void(bool, const juce::String&)> onComplete);
+                          const std::function<void(const ProjectInfo&)>& onBeforeCommit,
+                          const std::function<void(bool, const juce::String&)>& onComplete);
+
+    void loadProjectAsyncControlled(const juce::File& file, ControlledLoadOptions options,
+                                    const std::function<void(const ProjectInfo&)>& onBeforeCommit,
+                                    const std::function<void(ControlledLoadResult)>& onComplete);
 
     /**
      * @brief Close current project
      * @return true on success, false if user cancels due to unsaved changes
      */
-    bool closeProject();
+    bool closeProject(UnsavedChangesPolicy policy = UnsavedChangesPolicy::AskUser);
 
     // ========================================================================
     // Project State
@@ -192,6 +288,15 @@ class ProjectManager : private juce::Timer {
      */
     void setLoopSettings(bool enabled, double startBeats, double endBeats);
 
+    /** Append one durable Session scene and return its stable identity. */
+    SceneId appendSessionScene();
+
+    /** Remove the final Session scene metadata. Callers own occupied-slot policy. */
+    bool removeLastSessionScene();
+
+    /** Atomically replace ordered scene metadata for lifecycle commands/undo. */
+    void replaceSessionScenes(std::vector<ProjectScene> scenes, SceneId nextSceneId);
+
     /**
      * @brief Check if the project has unsaved changes
      */
@@ -251,20 +356,27 @@ class ProjectManager : private juce::Timer {
         return autoSaveEnabled_;
     }
 
-    /**
-     * @brief Check if an autosave file exists for the given project file
-     * @param projectFile The .mgd project file
-     * @return The autosave file if it exists, or an invalid File
-     */
-    static juce::File getAutosaveFile(const juce::File& projectFile);
+    /** Run the same dirty/enabled check and save used by the autosave timer. */
+    bool performAutosave();
 
-    /**
-     * @brief Check for autosave recovery and prompt user
-     * @param projectFile The .mgd project file being opened
-     * @return true if the user chose to recover (caller should load the autosave),
-     *         false if the user declined (caller should load the original)
-     */
-    static bool promptAutosaveRecovery(const juce::File& projectFile);
+    void startRecoverySession();
+    juce::File getAutosaveFile();
+    RecoveryEntry getStartupRecovery();
+    std::vector<RecoveryEntry> getRecoveryEntries();
+    static RecoveryEntry inspectLegacyRecovery(const juce::File& file);
+    bool discardRecovery(const RecoveryEntry& entry);
+    void cleanupRecovery();
+
+    enum class RecoveryChoice { Recover, Discard, Cancel };
+    static RecoveryChoice promptRecovery(const RecoveryEntry& entry, bool atStartup = false);
+    static juce::String describeRecovery(const RecoveryEntry& entry);
+    bool markRecoveryOffered(const RecoveryEntry& entry);
+    bool recoverProject(const RecoveryEntry& entry,
+                        const std::function<void(const ProjectInfo&)>& onBeforeCommit = nullptr,
+                        UnsavedChangesPolicy policy = UnsavedChangesPolicy::AskUser);
+
+    /** Remove this session's recovery state after the user approves a clean quit. */
+    void prepareForCleanShutdown(const juce::File& copiedDataDirectory = {});
 
     // ========================================================================
     // Media Directories
@@ -283,41 +395,87 @@ class ProjectManager : private juce::Timer {
     juce::File getRecordingsDirectory() const;
 
     /**
-     * @brief Get the renders subdirectory
+     * @brief Get the renders subdirectory.
+     *
+     * Everything MAGDA computed from the timeline: clip and track renders,
+     * comp renders, bounces, and one sub-folder per stem split (#1288).
      */
     juce::File getRendersDirectory() const;
 
     /**
-     * @brief Get the bounces subdirectory
-     */
-    juce::File getBouncesDirectory() const;
-
-    /**
-     * @brief Get the copy-on-edit external sample edits subdirectory
-     */
-    juce::File getExternalEditsDirectory() const;
-
-    /**
-     * @brief Get the collected/imported media subdirectory.
+     * @brief Get the imported media subdirectory.
      *
-     * Where "Collect files" copies externally-referenced audio (clip sources,
-     * sampler and drum-pad samples) so the project is self-contained (#1407).
+     * Everything that arrived from outside the timeline: audio copied in by
+     * "Collect files" (clip sources, sampler and drum-pad samples, #1407) and
+     * the copy-on-edit files handed to an external audio editor.
      */
     juce::File getImportedDirectory() const;
 
+    /** One distinct project media path which cannot currently be opened. */
+    struct MissingMediaFile {
+        juce::String path;
+        int referenceCount = 0;
+
+        bool operator==(const MissingMediaFile&) const = default;
+    };
+
+    /** A user- or search-selected replacement for one missing path. */
+    struct MissingMediaReplacement {
+        juce::String missingPath;
+        juce::File replacement;
+
+        bool operator==(const MissingMediaReplacement&) const = default;
+    };
+
+    /** Return every distinct referenced clip, take, sampler and drum-pad path. */
+    std::vector<MissingMediaFile> getReferencedMediaFiles() const;
+
     /**
-     * @brief Get the stem separation output subdirectory (#1288).
-     *
-     * Where "Split into Stems" writes the separated stem WAVs, one
-     * sub-folder per split.
+     * Filter a reference snapshot down to paths which do not exist locally.
+     * This performs filesystem I/O and is safe to run away from the message
+     * thread once getReferencedMediaFiles() has captured the model state.
      */
-    juce::File getStemsDirectory() const;
+    static std::vector<MissingMediaFile> findMissingMediaFiles(
+        const std::vector<MissingMediaFile>& referenced,
+        const std::function<bool()>& shouldStop = {});
+
+    /** Synchronous convenience wrapper, primarily for non-UI callers and tests. */
+    std::vector<MissingMediaFile> getMissingMediaFiles() const;
+
+    /** Filename display which accepts paths authored on any supported platform. */
+    static juce::String missingMediaFileName(juce::String path);
+
+    /**
+     * Convert a stored path to a local file only when its syntax belongs to
+     * the current platform. Foreign absolute paths return an empty File.
+     */
+    static juce::File localFileForStoredMediaPath(juce::String path);
+
+    /**
+     * Search a directory tree for conservative, unambiguous filename matches.
+     * Duplicate filenames are resolved only when their trailing directory
+     * components identify one candidate uniquely. This method performs only
+     * filesystem I/O and is safe to run away from the message thread.
+     */
+    static std::vector<MissingMediaReplacement> searchForMissingMedia(
+        const std::vector<MissingMediaFile>& missing, const juce::File& directory,
+        const std::function<bool()>& shouldStop = {});
+
+    /**
+     * Repoint all project references named by replacements. Invalid targets and
+     * paths which are no longer referenced are ignored. Returns the number of
+     * distinct paths actually repaired and marks the project dirty when nonzero.
+     */
+    int relinkMissingMediaFiles(const std::vector<MissingMediaReplacement>& replacements);
+
+    bool relinkMissingMediaFile(const juce::String& missingPath, const juce::File& replacement);
 
     /**
      * @brief Delete temp media directories older than 7 days.
      * Call once at app launch.
      */
-    static void cleanupStaleTempDirectories();
+    static void cleanupStaleTempDirectories(const juce::File& protectedDirectory = {},
+                                            const juce::File& tempRoot = {});
 
     /**
      * @brief Brackets an undoable command while it runs.
@@ -344,9 +502,14 @@ class ProjectManager : private juce::Timer {
     ~ProjectManager();
 
     void joinBackgroundThread();
-    void timerCallback() override;
-    void performAutosave();
+    void startAutoSaveTimer(int intervalMs);
+    void autoSaveTick();
     void deleteAutosaveFile();
+    RecoverySession& recoverySession();
+    bool commitRecovery(const RecoveryEntry& entry, StagedProjectData& staged,
+                        const std::function<void(const ProjectInfo&)>& onBeforeCommit,
+                        bool allowInteractiveRecovery = true);
+    std::unique_ptr<RecoverySession> recoverySession_;
 
     ProjectInfo currentProject_;
     juce::File currentFile_;
@@ -358,6 +521,12 @@ class ProjectManager : private juce::Timer {
     bool autoSaveEnabled_ = true;
     int undoableMutationDepth_ = 0;
     std::uint64_t mutationRevision_ = 0;
+    bool interactiveRecoveryAllowedForCurrentOpen_ = true;
+
+    /// Held rather than inherited, and made only when autosave starts: a
+    /// juce::Timer that lives as long as this singleton outlives the message
+    /// system it needs, and JUCE tears the two down in that order.
+    std::unique_ptr<juce::TimedCallback> autoSaveTimer_;
 
     std::vector<ProjectManagerListener*> listeners_;
     juce::String lastError_;
@@ -368,6 +537,12 @@ class ProjectManager : private juce::Timer {
     void endUndoableMutation();
     void setUndoHistoryDirty(bool dirty);
     void refreshDirtyState();
+
+    /// Stop the transport and declare the current project's runtime over.
+    /// Every path that replaces the project goes through here, before it
+    /// clears the model.
+    void beginProjectTeardown();
+
     void notifyProjectOpened();
     void notifyProjectSaved();
     void notifyProjectClosed();
@@ -386,7 +561,19 @@ class ProjectManager : private juce::Timer {
     /**
      * @brief Migrate media files from old directory to new, updating clip paths
      */
-    void migrateMediaFiles(const juce::File& oldDir, const juce::File& newDir);
+    static void migrateMediaFiles(const juce::File& oldDir, const juce::File& newDir,
+                                  MediaTransfer transfer);
+
+    /**
+     * @brief Fold the media roots retired by #2170 into the surviving three.
+     *
+     * A project saved before the collapse still has bounces/, external-edits/
+     * and stems/ on disk. Their contents move into renders/ and imported/ and
+     * every clip, take and sampler reference follows. Marks the project dirty
+     * when anything moved: the .mgd on disk still names folders that just
+     * went away.
+     */
+    void foldLegacyMediaDirectories(const juce::File& mediaRoot);
 };
 
 }  // namespace magda

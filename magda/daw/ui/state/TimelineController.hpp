@@ -105,6 +105,11 @@ class TimelineController {
         return state;
     }
 
+    /** True while punch-in is waiting for the transport to reach its start. */
+    bool isPunchArmed() const {
+        return punchArmed_;
+    }
+
     // ===== Tempo Map (beats<->seconds facade) =====
 
     /**

@@ -7,6 +7,7 @@
 #include <set>
 
 #include "AutomationInfo.hpp"
+#include "ChainWalk.hpp"
 #include "TrackInfo.hpp"
 
 namespace magda::device_param_migrations {
@@ -32,7 +33,7 @@ constexpr std::array<int, kEqOldCount> makeEqMapping() {
     std::array<int, kEqOldCount> mapping{};
     for (int band = 0; band < kEqBandCount; ++band)
         for (int slot = 0; slot < kEqSlotsPerBandOld; ++slot)
-            mapping[static_cast<size_t>(band * kEqSlotsPerBandOld + slot)] =
+            mapping[static_cast<size_t>(band) * kEqSlotsPerBandOld + slot] =
                 band * kEqSlotsPerBandNew + 1 + slot;
     mapping[kEqOldCount - 1] = kEqBandCount * kEqSlotsPerBandNew;  // Output
     return mapping;
@@ -139,40 +140,20 @@ using MigrationsById = std::map<DeviceId, const ParamIndexMigration*>;
 /// A device and the path saved links address it by.
 using DeviceAtPath = std::pair<ChainNodePath, DeviceInfo*>;
 
-void collectElements(std::vector<ChainElement>& elements, const ChainNodePath& parentPath,
-                     TrackId trackId, std::vector<DeviceAtPath>& out);
-
-void collectRack(RackInfo& rack, const ChainNodePath& rackPath, TrackId trackId,
-                 std::vector<DeviceAtPath>& out) {
-    for (auto& chain : rack.chains)
-        collectElements(chain.elements, rackPath.withChain(chain.id), trackId, out);
-}
-
-void collectElements(std::vector<ChainElement>& elements, const ChainNodePath& parentPath,
-                     TrackId trackId, std::vector<DeviceAtPath>& out) {
-    for (auto& element : elements) {
-        if (isDevice(element)) {
-            auto& device = getDevice(element);
-            // A top-level device on a track keeps the legacy flat path shape,
-            // which is what the control graph stored for it.
-            out.emplace_back(parentPath.isTrackLevel
-                                 ? ChainNodePath::topLevelDevice(trackId, device.id)
-                                 : parentPath.withDevice(device.id),
-                             &device);
-        } else if (isRack(element)) {
-            auto& rack = getRack(element);
-            const auto rackPath = parentPath.isTrackLevel ? ChainNodePath::rack(trackId, rack.id)
-                                                          : parentPath.withRack(rack.id);
-            collectRack(rack, rackPath, trackId, out);
-        }
-    }
-}
-
 /// Every device on a track, each with the path its links address it by.
 std::vector<DeviceAtPath> devicesInTrack(TrackInfo& track) {
     std::vector<DeviceAtPath> devices;
-    collectElements(track.chain.fxChainElements, ChainNodePath::trackLevel(track.id), track.id,
-                    devices);
+    // Pads skipped: these migrations rewrite parameters saved against a
+    // DeviceInfo in the chain model, and the Drum Grid covers its own retired
+    // nested plugins through adoptRetiredNestedPluginTree.
+    //
+    // The walk spells a top-level device the flat way the control graph stored
+    // it, which this had to remember for itself (#2204).
+    chain_walk::forEachDevice(track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
+                              chain_walk::Pads::Skip,
+                              [&devices](DeviceInfo& device, const ChainNodePath& path) {
+                                  devices.emplace_back(path, &device);
+                              });
     for (auto& element : track.chain.postFxChainElements)
         devices.emplace_back(ChainNodePath::postFxDevice(track.id, element.device.id),
                              &element.device);
@@ -289,15 +270,22 @@ const MigrationTable& shippedMigrations() {
     return table();
 }
 
-const ParamIndexMigration* findMigration(const DeviceInfo& device, const MigrationTable& table) {
+const ParamIndexMigration* findMigrationForSavedCount(const juce::String& deviceType,
+                                                      int savedParamCount,
+                                                      const MigrationTable& table) {
     for (const auto& migration : table) {
-        if (device.pluginId != migration.deviceType)
+        if (deviceType != migration.deviceType)
             continue;
-        if (static_cast<int>(device.parameters.size()) != migration.savedParamCount)
+        if (savedParamCount != migration.savedParamCount)
             continue;  // a different order, or already migrated
         return &migration;
     }
     return nullptr;
+}
+
+const ParamIndexMigration* findMigration(const DeviceInfo& device, const MigrationTable& table) {
+    return findMigrationForSavedCount(device.pluginId, static_cast<int>(device.parameters.size()),
+                                      table);
 }
 
 std::optional<int> migratedParamIndex(const ParamIndexMigration& migration, int savedIndex) {
@@ -383,6 +371,36 @@ void applyParamIndexMigrations(std::vector<TrackInfo>& tracks, TrackInfo* master
     std::erase_if(automationClips, [&droppedLanes](const AutomationClipInfo& clip) {
         return droppedLanes.count(clip.laneId) > 0;
     });
+}
+
+void dropParamLinksInTrack(TrackInfo& track, const std::set<ChainNodePath>& paths) {
+    const auto addressed = [&paths](const ControlTarget& target) {
+        return target.kind == ControlTarget::Kind::PluginParam &&
+               paths.count(target.devicePath) > 0;
+    };
+
+    const auto dropFromOwner = [&addressed](MacroArray& macros, ModArray& mods) {
+        const auto isAddressed = [&addressed](const auto& link) { return addressed(link.target); };
+
+        for (auto& macro : macros)
+            std::erase_if(macro.links, isAddressed);
+        for (auto& mod : mods)
+            std::erase_if(mod.links, isAddressed);
+    };
+
+    forEachLinkOwnerInTrack(track, dropFromOwner);
+}
+
+std::vector<AutomationLaneId> lanesAddressing(const std::vector<AutomationLaneInfo>& lanes,
+                                              const std::set<ChainNodePath>& paths) {
+    std::vector<AutomationLaneId> found;
+
+    for (const auto& lane : lanes)
+        if (lane.target.kind == ControlTarget::Kind::PluginParam &&
+            paths.count(lane.target.devicePath) > 0)
+            found.push_back(lane.id);
+
+    return found;
 }
 
 namespace {

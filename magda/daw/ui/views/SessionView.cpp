@@ -5,11 +5,13 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <iterator>
 #include <set>
+#include <tuple>
 #include <unordered_map>
 
-#include "../../audio/AudioBridge.hpp"
 #include "../../audio/MeteringBuffer.hpp"
+#include "../../audio/TrackMeters.hpp"
 #include "../../engine/AudioEngine.hpp"
 #include "../components/common/InternalFileDrag.hpp"
 #include "../components/common/MasterSpeakerButton.hpp"
@@ -23,7 +25,7 @@
 #include "../components/navigation/MainViewScrollContainer.hpp"
 #include "../panels/state/PanelController.hpp"
 #include "../state/TimelineController.hpp"
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "../themes/SmallButtonLookAndFeel.hpp"
 #include "../utils/SelectionPolicy.hpp"
@@ -41,6 +43,7 @@
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "core/ViewModeController.hpp"
+#include "ui/utils/AudioFileTypes.hpp"
 
 namespace magda {
 
@@ -62,13 +65,10 @@ juce::String formatTrackIds(const std::vector<TrackId>& trackIds) {
 
 juce::String formatSessionClips() {
     auto clips = ClipManager::getInstance().getSessionClips();
-    std::sort(clips.begin(), clips.end(), [](const ClipInfo& a, const ClipInfo& b) {
-        if (a.trackId != b.trackId)
-            return a.trackId < b.trackId;
-        if (a.sceneIndex != b.sceneIndex)
-            return a.sceneIndex < b.sceneIndex;
-        return a.id < b.id;
-    });
+    const auto gridPosition = [](const ClipInfo& clip) {
+        return std::tuple{clip.trackId, clip.sceneIndex, clip.id};
+    };
+    std::ranges::sort(clips, {}, gridPosition);
 
     juce::String text("[");
     for (size_t i = 0; i < clips.size(); ++i) {
@@ -80,6 +80,21 @@ juce::String formatSessionClips() {
     }
     text << "]";
     return text;
+}
+
+/** @brief Whether an id names a clip that lives in the session grid. */
+bool isSessionClip(ClipId clipId) {
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    return clip != nullptr && clip->view == ClipView::Session;
+}
+
+/** @brief The current clip selection, narrowed to the session grid. */
+std::vector<ClipId> selectedSessionClipIds() {
+    const auto& selected = SelectionManager::getInstance().getSelectedClips();
+    std::vector<ClipId> sessionClipIds;
+    sessionClipIds.reserve(selected.size());
+    std::ranges::copy_if(selected, std::back_inserter(sessionClipIds), isSessionClip);
+    return sessionClipIds;
 }
 
 float gainToDb(float gain) {
@@ -107,7 +122,7 @@ std::vector<TrackId> getMultiEditTargets(TrackId clickedId) {
     auto& sel = SelectionManager::getInstance();
     if (sel.isTrackSelected(clickedId) && sel.getSelectedTrackCount() > 1) {
         const auto& set = sel.getSelectedTracks();
-        return std::vector<TrackId>(set.begin(), set.end());
+        return {set.begin(), set.end()};
     }
     return {clickedId};
 }
@@ -135,7 +150,7 @@ class SessionView::SessionToggleRail : public juce::Component {
 
     void paint(juce::Graphics& g) override {
         auto bounds = getLocalBounds();
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.fillRect(bounds.getRight() - 1, bounds.getY(), 1, bounds.getHeight());
     }
 
@@ -182,9 +197,9 @@ class SessionView::SessionToggleRail : public juce::Component {
                      std::function<void(bool)> setter) {
         btn = std::make_unique<SvgButton>(name, svgData, svgSize);
         btn->setOriginalColor(juce::Colour(0xFFB3B3B3));
-        btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        btn->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
-        btn->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+        btn->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+        btn->setPressedColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+        btn->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
         btn->setBorderThickness(1.0f);
         btn->setTooltip(tooltip);
         btn->setWantsKeyboardFocus(false);
@@ -206,7 +221,7 @@ class SessionView::SessionToggleRail : public juce::Component {
         if (btn == nullptr)
             return;
         btn->setActive(on);
-        const auto base = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+        const auto base = ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY);
         btn->setNormalColor(on ? base : base.withAlpha(0.3f));
         btn->repaint();
     }
@@ -245,10 +260,10 @@ class SessionView::GridContent : public juce::Component {
     }
 
     void paint(juce::Graphics& g) override {
-        g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
+        g.fillAll(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
 
         // Draw vertical separators between tracks (after each clip slot)
-        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
         int x = 0;
         for (int i = 0; i < numTracks_ && i < static_cast<int>(trackWidths_.size()); ++i) {
             x += trackWidths_[i];
@@ -288,12 +303,12 @@ class SessionView::GridViewport : public WheelForwardingViewport {
     }
 
     void paint(juce::Graphics& g) override {
-        g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
+        g.fillAll(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
 
         // Draw vertical separators in the background (visible when content is shorter than
         // viewport)
         int scrollX = getViewPositionX();
-        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
         int x = 0;
         for (int i = 0; i < numTracks_ && i < static_cast<int>(trackWidths_.size()); ++i) {
             x += trackWidths_[i];
@@ -327,10 +342,10 @@ class SessionView::HeaderContainer : public juce::Component {
     std::function<void(juce::Graphics&)> onPaintOverChildren;
 
     void paint(juce::Graphics& g) override {
-        g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
+        g.fillAll(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
 
         // Draw vertical separators between tracks
-        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
         int x = 0;
         for (int i = 0; i < numTracks_ && i < static_cast<int>(trackWidths_.size()); ++i) {
             x += trackWidths_[i];
@@ -371,7 +386,7 @@ class SessionView::ResizeHandle : public juce::Component {
     }
 
     void paint(juce::Graphics& g) override {
-        g.setColour(DarkTheme::getColour(DarkTheme::RESIZE_HANDLE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::RESIZE_HANDLE));
         g.fillAll();
     }
 
@@ -422,9 +437,9 @@ class SessionView::FaderContainer : public juce::Component {
     }
 
     void paint(juce::Graphics& g) override {
-        g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+        g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
         // Top border
-        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
         g.fillRect(0, 0, getWidth(), 1);
 
         // Draw vertical separators between tracks
@@ -467,8 +482,8 @@ class SessionView::IOContainer : public juce::Component {
     }
 
     void paint(juce::Graphics& g) override {
-        g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
-        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+        g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
         g.fillRect(0, 0, getWidth(), 1);
 
         int x = 0;
@@ -554,10 +569,10 @@ class SessionView::BeatBandContainer : public juce::Component {
     }
 
     void paint(juce::Graphics& g) override {
-        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
         g.fillRect(0, 0, getWidth(), 1);
 
-        const auto pulseColour = DarkTheme::getColour(DarkTheme::ACCENT_INFO);
+        const auto pulseColour = ActiveTheme::getColour(ActiveTheme::ACCENT_INFO);
         constexpr float kDotRadius = 2.5f;
 
         int cursor = -scrollOffset_;
@@ -569,7 +584,7 @@ class SessionView::BeatBandContainer : public juce::Component {
 
             if (!hidden) {
                 double phase = (i < static_cast<int>(phases_.size())) ? phases_[i] : 0.0;
-                float alpha = static_cast<float>(juce::jmax(0.0, 0.85 - phase * 0.85));
+                auto alpha = static_cast<float>(juce::jmax(0.0, 0.85 - phase * 0.85));
                 g.setColour(pulseColour.withAlpha(alpha));
                 g.fillEllipse(layout.dotCentre.getX() - kDotRadius,
                               layout.dotCentre.getY() - kDotRadius, kDotRadius * 2.0f,
@@ -579,22 +594,22 @@ class SessionView::BeatBandContainer : public juce::Component {
             if (hideIcon_) {
                 auto themedIcon = hideIcon_->createCopy();
                 themedIcon->replaceColour(juce::Colour(0xFFB3B3B3),
-                                          DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-                DarkTheme::applyToSvgIcon(*themedIcon);
+                                          ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+                ActiveTheme::applyToSvgIcon(*themedIcon);
                 themedIcon->drawWithin(g, layout.hideIconBounds.toFloat(),
                                        juce::RectanglePlacement::centred, hidden ? 0.55f : 0.3f);
             }
             if (rateIcon_) {
                 auto themedIcon = rateIcon_->createCopy();
                 themedIcon->replaceColour(juce::Colour(0xFFB3B3B3),
-                                          DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-                DarkTheme::applyToSvgIcon(*themedIcon);
+                                          ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+                ActiveTheme::applyToSvgIcon(*themedIcon);
                 themedIcon->drawWithin(g, layout.rateIconBounds.toFloat(),
                                        juce::RectanglePlacement::centred, 0.3f);
             }
 
             cursor += w;
-            g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
             g.fillRect(cursor, 1, separatorWidth_, getHeight() - 1);
             cursor += separatorWidth_;
         }
@@ -626,7 +641,8 @@ class SessionView::BeatBandContainer : public juce::Component {
 
         const int yCentre = getHeight() / 2;
         // Dot sits in the centre of the column.
-        out.dotCentre = {static_cast<float>(cursor + w / 2), static_cast<float>(yCentre)};
+        out.dotCentre = {static_cast<float>(cursor) + static_cast<float>(w) / 2.0f,
+                         static_cast<float>(yCentre)};
 
         // Icons stacked in the right half, derived from band height.
         constexpr int kGap = 2;
@@ -662,14 +678,14 @@ class SessionView::MasterBeatIndicator : public juce::Component {
     }
 
     void paint(juce::Graphics& g) override {
-        g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
-        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+        g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
         g.fillRect(0, 0, getWidth(), 1);
 
-        const float alpha = static_cast<float>(juce::jmax(0.0, 0.85 - phase_ * 0.85));
+        const auto alpha = static_cast<float>(juce::jmax(0.0, 0.85 - phase_ * 0.85));
         constexpr float kDotRadius = 3.0f;
         const auto centre = getLocalBounds().toFloat().getCentre();
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_INFO).withAlpha(alpha));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_INFO).withAlpha(alpha));
         g.fillEllipse(centre.getX() - kDotRadius, centre.getY() - kDotRadius, kDotRadius * 2.0f,
                       kDotRadius * 2.0f);
     }
@@ -702,8 +718,8 @@ class SessionView::SendSectionContainer : public juce::Component {
     }
 
     void paint(juce::Graphics& g) override {
-        g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
-        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+        g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
         g.fillRect(0, 0, getWidth(), 1);
 
         int x = 0;
@@ -801,7 +817,7 @@ class SessionView::MiniSendStrip : public juce::Component {
             slot.nameLabel->setText(destName, juce::dontSendNotification);
             slot.nameLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
             slot.nameLabel->setColour(juce::Label::textColourId,
-                                      DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                      ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
             slot.nameLabel->setJustificationType(juce::Justification::centredLeft);
             addAndMakeVisible(*slot.nameLabel);
 
@@ -825,9 +841,9 @@ class SessionView::MiniSendStrip : public juce::Component {
                 juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
                 juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
             slot.removeButton->setColour(juce::TextButton::buttonColourId,
-                                         DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                                         ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
             slot.removeButton->setColour(juce::TextButton::textColourOffId,
-                                         DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                         ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
             slot.removeButton->onClick = [this, busIdx]() {
                 UndoManager::getInstance().executeCommand(
                     std::make_unique<RemoveSendCommand>(trackId_, busIdx));
@@ -926,23 +942,13 @@ class SessionView::MiniIOStrip : public juce::Component {
         if (!track)
             return;
 
-        auto* deviceManager = audioEngine_ ? audioEngine_->getDeviceManager() : nullptr;
-        auto* device = deviceManager ? deviceManager->getCurrentAudioDevice() : nullptr;
-        auto* midiBridge = audioEngine_ ? audioEngine_->getMidiBridge() : nullptr;
-
-        juce::BigInteger enabledInputChannels, enabledOutputChannels;
-        std::map<int, juce::String> teInputDeviceNames;
-        if (auto* bridge = audioEngine_->getAudioBridge()) {
-            enabledInputChannels = bridge->getEnabledInputChannels();
-            enabledOutputChannels = bridge->getEnabledOutputChannels();
-            teInputDeviceNames = bridge->getInputDeviceNamesByChannel();
-        }
+        const auto* hardware = audioEngine_ ? audioEngine_->getAudioIO() : nullptr;
 
         RoutingSyncHelper::syncSelectorsFromTrack(
             *track, audioInSelector_.get(), midiInSelector_.get(), audioOutSelector_.get(),
-            midiOutSelector_.get(), midiBridge, device, trackId_, outputTrackMapping_,
-            midiOutputTrackMapping_, &inputTrackMapping_, enabledInputChannels,
-            enabledOutputChannels, nullptr, teInputDeviceNames, &midiInputTrackMapping_);
+            midiOutSelector_.get(), hardware, trackId_, outputTrackMapping_,
+            midiOutputTrackMapping_, &inputTrackMapping_, &inputChannelMapping_,
+            &midiInputTrackMapping_, &outputChannelMapping_);
     }
 
     TrackId getTrackId() const {
@@ -957,34 +963,28 @@ class SessionView::MiniIOStrip : public juce::Component {
     std::unique_ptr<RoutingSelector> midiInSelector_;
     std::unique_ptr<RoutingSelector> midiOutSelector_;
     std::map<int, TrackId> inputTrackMapping_;
+    std::map<int, juce::String> inputChannelMapping_;
     std::map<int, TrackId> midiInputTrackMapping_;
     std::map<int, TrackId> outputTrackMapping_;
     std::map<int, TrackId> midiOutputTrackMapping_;
+    std::map<int, juce::String> outputChannelMapping_;
 
     void populateOptions() {
         if (!audioEngine_)
             return;
 
-        auto* deviceManager = audioEngine_->getDeviceManager();
-        auto* device = deviceManager ? deviceManager->getCurrentAudioDevice() : nullptr;
-        auto* midiBridge = audioEngine_->getMidiBridge();
+        const auto* hardware = audioEngine_->getAudioIO();
 
-        juce::BigInteger enabledInputChannels, enabledOutputChannels;
-        std::map<int, juce::String> teInputDeviceNames;
-        if (auto* bridge = audioEngine_->getAudioBridge()) {
-            enabledInputChannels = bridge->getEnabledInputChannels();
-            enabledOutputChannels = bridge->getEnabledOutputChannels();
-            teInputDeviceNames = bridge->getInputDeviceNamesByChannel();
-        }
-
-        RoutingSyncHelper::populateAudioInputOptions(audioInSelector_.get(), device, trackId_,
-                                                     &inputTrackMapping_, enabledInputChannels,
-                                                     nullptr, teInputDeviceNames);
-        RoutingSyncHelper::populateAudioOutputOptions(audioOutSelector_.get(), trackId_, device,
-                                                      outputTrackMapping_, enabledOutputChannels);
-        RoutingSyncHelper::populateMidiInputOptions(midiInSelector_.get(), midiBridge, trackId_,
+        audioInSelector_->meterInputsFrom(audioEngine_->getAudioIO());
+        RoutingSyncHelper::populateAudioInputOptions(
+            audioInSelector_.get(), RoutingSyncHelper::openDirection(hardware, true), trackId_,
+            &inputTrackMapping_, &inputChannelMapping_);
+        RoutingSyncHelper::populateAudioOutputOptions(
+            audioOutSelector_.get(), trackId_, RoutingSyncHelper::openDirection(hardware, false),
+            outputTrackMapping_, &outputChannelMapping_);
+        RoutingSyncHelper::populateMidiInputOptions(midiInSelector_.get(), trackId_,
                                                     &midiInputTrackMapping_);
-        RoutingSyncHelper::populateMidiOutputOptions(midiOutSelector_.get(), midiBridge,
+        RoutingSyncHelper::populateMidiOutputOptions(midiOutSelector_.get(),
                                                      midiOutputTrackMapping_, trackId_);
 
         // Sync current track state into selectors
@@ -992,8 +992,6 @@ class SessionView::MiniIOStrip : public juce::Component {
     }
 
     void setupRoutingCallbacks() {
-        auto* midiBridge = audioEngine_ ? audioEngine_->getMidiBridge() : nullptr;
-
         audioInSelector_->onEnabledChanged = [this](bool enabled) {
             if (enabled) {
                 midiInSelector_->setEnabled(false);
@@ -1018,11 +1016,14 @@ class SessionView::MiniIOStrip : public juce::Component {
                     TrackManager::getInstance().setTrackAudioInput(
                         trackId_, "track:" + juce::String(it->second));
             } else if (selectedId >= 10) {
-                TrackManager::getInstance().setTrackAudioInput(trackId_, "default");
+                const auto it = inputChannelMapping_.find(selectedId);
+                TrackManager::getInstance().setTrackAudioInput(
+                    trackId_,
+                    it != inputChannelMapping_.end() ? it->second : juce::String("default"));
             }
         };
 
-        midiInSelector_->onEnabledChanged = [this, midiBridge](bool enabled) {
+        midiInSelector_->onEnabledChanged = [this](bool enabled) {
             if (enabled) {
                 audioInSelector_->setEnabled(false);
                 TrackManager::getInstance().setTrackAudioInput(trackId_, "");
@@ -1037,8 +1038,8 @@ class SessionView::MiniIOStrip : public juce::Component {
                             trackId_, "track:" + juce::String(it->second));
                     else
                         TrackManager::getInstance().setTrackMidiInput(trackId_, "all");
-                } else if (selectedId >= 10 && midiBridge) {
-                    auto midiInputs = midiBridge->getAvailableMidiInputs();
+                } else if (selectedId >= 10) {
+                    auto midiInputs = MidiBridge::getInstance().getAvailableMidiInputs();
                     int deviceIndex = selectedId - 10;
                     if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiInputs.size()))
                         TrackManager::getInstance().setTrackMidiInput(trackId_,
@@ -1053,7 +1054,7 @@ class SessionView::MiniIOStrip : public juce::Component {
             }
         };
 
-        midiInSelector_->onSelectionChanged = [this, midiBridge](int selectedId) {
+        midiInSelector_->onSelectionChanged = [this](int selectedId) {
             if (selectedId == 2) {
                 TrackManager::getInstance().setTrackMidiInput(trackId_, "");
             } else if (selectedId == 1) {
@@ -1064,8 +1065,8 @@ class SessionView::MiniIOStrip : public juce::Component {
                 if (it != midiInputTrackMapping_.end())
                     TrackManager::getInstance().setTrackMidiInput(
                         trackId_, "track:" + juce::String(it->second));
-            } else if (selectedId >= 10 && midiBridge) {
-                auto midiInputs = midiBridge->getAvailableMidiInputs();
+            } else if (selectedId >= 10) {
+                auto midiInputs = MidiBridge::getInstance().getAvailableMidiInputs();
                 int deviceIndex = selectedId - 10;
                 if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiInputs.size()))
                     TrackManager::getInstance().setTrackMidiInput(trackId_,
@@ -1091,7 +1092,12 @@ class SessionView::MiniIOStrip : public juce::Component {
                     TrackManager::getInstance().setTrackAudioOutput(
                         trackId_, "track:" + juce::String(it->second));
             } else if (selectedId >= 10) {
-                TrackManager::getInstance().setTrackAudioOutput(trackId_, "master");
+                // Copy the string — the map can be repopulated during
+                // setTrackAudioOutput (change notification re-syncs selectors)
+                auto it = outputChannelMapping_.find(selectedId);
+                juce::String dest =
+                    it != outputChannelMapping_.end() ? it->second : juce::String("master");
+                TrackManager::getInstance().setTrackAudioOutput(trackId_, dest);
             }
         };
 
@@ -1100,7 +1106,7 @@ class SessionView::MiniIOStrip : public juce::Component {
                 TrackManager::getInstance().setTrackMidiOutput(trackId_, "");
         };
 
-        midiOutSelector_->onSelectionChanged = [this, midiBridge](int selectedId) {
+        midiOutSelector_->onSelectionChanged = [this](int selectedId) {
             if (selectedId == 1) {
                 TrackManager::getInstance().setTrackMidiOutput(trackId_, "");
             } else if (selectedId >= 200) {
@@ -1108,8 +1114,8 @@ class SessionView::MiniIOStrip : public juce::Component {
                 auto it = midiOutputTrackMapping_.find(selectedId);
                 if (it != midiOutputTrackMapping_.end())
                     TrackManager::getInstance().routeMidiOutputToTrack(trackId_, it->second);
-            } else if (selectedId >= 10 && midiBridge) {
-                auto midiOutputs = midiBridge->getAvailableMidiOutputs();
+            } else if (selectedId >= 10) {
+                auto midiOutputs = MidiBridge::getAvailableMidiOutputs();
                 int deviceIndex = selectedId - 10;
                 if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiOutputs.size()))
                     TrackManager::getInstance().setTrackMidiOutput(trackId_,
@@ -1143,7 +1149,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
                 return "-inf";
             if (std::abs(db) < 0.05f)
                 db = 0.0f;
-            return juce::String(db, 1);
+            return {db, 1};
         });
         volumeSlider_->setValueParser([](const juce::String& text) -> double {
             auto t = text.trim();
@@ -1217,11 +1223,12 @@ class SessionView::MiniChannelStrip : public juce::Component {
         // Solo target toggle.
         soloButton_ =
             std::make_unique<SvgButton>("solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
-        soloButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-        soloButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-        soloButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
-        soloButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
-                                               DarkTheme::ICON_ON_ACCENT);
+        soloButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+        soloButton_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+        soloButton_->setActiveBackgroundColor(
+            ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
+        soloButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
+                                               ActiveTheme::ICON_ON_ACCENT);
         soloButton_->setIconPadding(5.0f);
         soloButton_->setTooltip("Solo");
         soloButton_->setClickingTogglesState(true);
@@ -1237,11 +1244,11 @@ class SessionView::MiniChannelStrip : public juce::Component {
         // Record arm dot toggle.
         recordButton_ = std::make_unique<SvgButton>("record", BinaryData::track_record_svg,
                                                     BinaryData::track_record_svgSize);
-        recordButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-        recordButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-        recordButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
-        recordButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
-                                                 DarkTheme::ICON_ON_ACCENT);
+        recordButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+        recordButton_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+        recordButton_->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
+        recordButton_->setStateColourReplacement(
+            juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL, ActiveTheme::ICON_ON_ACCENT);
         recordButton_->setIconPadding(5.0f);
         recordButton_->setTooltip("Record arm");
         recordButton_->setClickingTogglesState(true);
@@ -1427,7 +1434,7 @@ class SessionView::MiniMasterStrip : public juce::Component {
                 return "-inf";
             if (std::abs(db) < 0.05f)
                 db = 0.0f;
-            return juce::String(db, 1);
+            return {db, 1};
         });
         volumeSlider_->setValueParser([](const juce::String& text) -> double {
             auto t = text.trim();
@@ -1470,7 +1477,7 @@ class SessionView::MiniMasterStrip : public juce::Component {
     void paint(juce::Graphics& g) override {
         auto bounds = getLocalBounds();
         // Orange accent bar at top
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
         g.fillRect(bounds.removeFromTop(3));
     }
 
@@ -1513,6 +1520,10 @@ class SessionView::MiniMasterStrip : public juce::Component {
 };
 
 SessionView::SessionView() {
+    MidiBridge::getInstance().addMidiDeviceListListener(this);
+    numScenes_ = std::max(
+        1, static_cast<int>(ProjectManager::getInstance().getCurrentProjectInfo().scenes.size()));
+
     // Get current view mode
     currentViewMode_ = ViewModeController::getInstance().getViewMode();
     syncMixerVisibilityFromConfig();
@@ -1651,9 +1662,9 @@ SessionView::SessionView() {
     masterLabel_ =
         std::make_unique<juce::TextButton>(magda::technicalText(magda::TechnicalTextToken::Master));
     masterLabel_->setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+                            ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
     masterLabel_->setColour(juce::TextButton::textColourOffId,
-                            DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                            ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     masterLabel_->setLookAndFeel(&daw::ui::SmallButtonLookAndFeel::getInstance());
     masterLabel_->onClick = []() { SelectionManager::getInstance().selectTrack(MASTER_TRACK_ID); };
     addAndMakeVisible(*masterLabel_);
@@ -1668,10 +1679,10 @@ SessionView::SessionView() {
     dragGhostLabel_->setFont(FontManager::getInstance().getUIFontBold(11.0f));
     dragGhostLabel_->setJustificationType(juce::Justification::centred);
     dragGhostLabel_->setColour(juce::Label::backgroundColourId,
-                               DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.6f));
-    dragGhostLabel_->setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+                               ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.6f));
+    dragGhostLabel_->setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     dragGhostLabel_->setColour(juce::Label::outlineColourId,
-                               DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                               ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     dragGhostLabel_->setVisible(false);
     gridContent->addAndMakeVisible(*dragGhostLabel_);
 
@@ -1680,6 +1691,8 @@ SessionView::SessionView() {
 
     // Register as ClipManager listener
     ClipManager::getInstance().addListener(this);
+
+    ProjectManager::getInstance().addListener(this);
 
     // Register as SelectionManager listener so multi-selected headers light up
     SelectionManager::getInstance().addListener(this);
@@ -1692,13 +1705,15 @@ SessionView::SessionView() {
 }
 
 SessionView::~SessionView() {
+    MidiBridge::getInstance().removeMidiDeviceListListener(this);
     if (audioEngine_) {
-        if (auto* mb = audioEngine_->getMidiBridge())
-            mb->removeMidiDeviceListListener(this);
+        if (auto* hardware = audioEngine_->getAudioIO())
+            hardware->removeListener(this);
     }
     stopTimer();
     TrackManager::getInstance().removeListener(this);
     ClipManager::getInstance().removeListener(this);
+    ProjectManager::getInstance().removeListener(this);
     SelectionManager::getInstance().removeListener(this);
     ViewModeController::getInstance().removeListener(this);
 }
@@ -1709,20 +1724,21 @@ void SessionView::tracksChanged() {
     rebuildTracks();
 }
 
+void SessionView::projectOpened(const ProjectInfo& info) {
+    syncScenesFromProject(info);
+}
+
+void SessionView::projectPropertiesChanged() {
+    syncScenesFromProject(ProjectManager::getInstance().getCurrentProjectInfo());
+}
+
 void SessionView::trackPropertyChanged(int trackId) {
     // Find the track in our visible list
     const auto* track = TrackManager::getInstance().getTrack(trackId);
     if (!track)
         return;
 
-    // Find index in visible track IDs
-    int index = -1;
-    for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
-        if (visibleTrackIds_[i] == trackId) {
-            index = static_cast<int>(i);
-            break;
-        }
-    }
+    const int index = trackIndexOf(trackId);
 
     if (index >= 0 && index < static_cast<int>(trackHeaders.size())) {
         // Update header text with collapse indicator for groups
@@ -1897,12 +1913,12 @@ void SessionView::rebuildTracks() {
                          + track->name;
         }
         header->setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
+                          ActiveTheme::getColour(ActiveTheme::SURFACE));
         header->setTrackColour(track->colour);
 
         header->setButtonText(headerText);
         header->setColour(juce::TextButton::textColourOffId,
-                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                          ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         header->setLookAndFeel(&daw::ui::SmallButtonLookAndFeel::getInstance());
 
         // Click handler - select track and toggle collapse for groups.
@@ -2025,9 +2041,9 @@ void SessionView::rebuildTracks() {
             slot->setButtonText("");
             slot->isGroupSlot = isGroup;
             slot->setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE));
+                            ActiveTheme::getColour(ActiveTheme::SURFACE));
             slot->setColour(juce::TextButton::textColourOffId,
-                            DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                            ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
 
             wireClipSlotCallbacks(*slot, track, scene);
 
@@ -2085,11 +2101,11 @@ void SessionView::rebuildTracks() {
 }
 
 void SessionView::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
 }
 
 void SessionView::paintOverChildren(juce::Graphics& g) {
-    g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
 
     // Vertical separator on left edge of scene column
     auto sceneBounds = sceneContainer->getBounds();
@@ -2107,9 +2123,9 @@ void SessionView::paintOverChildren(juce::Graphics& g) {
                              ? trackColumnWidths_[pluginDropTrackIndex_]
                              : DEFAULT_CLIP_SLOT_WIDTH;
             auto colBounds = juce::Rectangle<int>(trackX, 0, trackW, vpBounds.getBottom());
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.2f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.2f));
             g.fillRect(colBounds);
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.5f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.5f));
             g.drawRect(colBounds, 2);
         } else {
             // Past last track — show "new track" indicator
@@ -2118,14 +2134,14 @@ void SessionView::paintOverChildren(juce::Graphics& g) {
             int indicatorW = DEFAULT_CLIP_SLOT_WIDTH;
             auto indicatorBounds =
                 juce::Rectangle<int>(lastTrackEnd, 0, indicatorW, vpBounds.getBottom());
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.12f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.12f));
             g.fillRect(indicatorBounds);
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.35f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.35f));
             g.drawRect(indicatorBounds, 2);
 
             // Draw "+" icon
             auto centre = indicatorBounds.getCentre().toFloat();
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.6f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.6f));
             g.drawLine(centre.getX() - 8, centre.getY(), centre.getX() + 8, centre.getY(), 2.0f);
             g.drawLine(centre.getX(), centre.getY() - 8, centre.getX(), centre.getY() + 8, 2.0f);
         }
@@ -2138,14 +2154,14 @@ void SessionView::paintOverChildren(juce::Graphics& g) {
         int indicatorW = DEFAULT_CLIP_SLOT_WIDTH;
         auto indicatorBounds =
             juce::Rectangle<int>(lastTrackEnd, 0, indicatorW, vpBounds.getBottom());
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.12f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.12f));
         g.fillRect(indicatorBounds);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.35f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.35f));
         g.drawRect(indicatorBounds, 2);
 
         // Draw "+" icon
         auto centre = indicatorBounds.getCentre().toFloat();
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.6f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.6f));
         g.drawLine(centre.getX() - 8, centre.getY(), centre.getX() + 8, centre.getY(), 2.0f);
         g.drawLine(centre.getX(), centre.getY() - 8, centre.getX(), centre.getY() + 8, 2.0f);
     }
@@ -2187,7 +2203,7 @@ void SessionView::paintControllerSceneWindowHighlight(juce::Graphics& g) {
     if (highlight.isEmpty())
         return;
 
-    auto accent = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
+    auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
     g.setColour(accent.withAlpha(0.82f));
     g.drawRoundedRectangle(highlight.toFloat(), 7.0f, 3.0f);
 }
@@ -2447,12 +2463,18 @@ void SessionView::viewportScrolled(bool horizontal, double rangeStart) {
 void SessionView::setupSceneButtons() {
     sceneButtons.clear();
 
+    const auto& scenes = ProjectManager::getInstance().getCurrentProjectInfo().scenes;
+
     for (int i = 0; i < numScenes_; ++i) {
         auto btn = std::make_unique<SceneButton>();
-        btn->setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
+        btn->setColour(juce::TextButton::buttonColourId,
+                       ActiveTheme::getColour(ActiveTheme::SURFACE));
         btn->setColour(juce::TextButton::textColourOffId,
-                       DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                       ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         btn->setLookAndFeel(&daw::ui::SmallButtonLookAndFeel::getInstance());
+        btn->setButtonText(i < static_cast<int>(scenes.size())
+                               ? scenes[static_cast<std::size_t>(i)].name
+                               : "Scene " + juce::String(i + 1));
         btn->onClick = [this, i]() { onSceneLaunched(i); };
         sceneContainer->addAndMakeVisible(*btn);
         sceneButtons.push_back(std::move(btn));
@@ -2461,9 +2483,26 @@ void SessionView::setupSceneButtons() {
     syncMixerVisibilityFromConfig();
 }
 
+void SessionView::syncScenesFromProject(const ProjectInfo& info) {
+    const auto newCount = std::max(1, static_cast<int>(info.scenes.size()));
+    if (newCount == numScenes_ && sceneButtons.size() == info.scenes.size()) {
+        for (std::size_t index = 0; index < sceneButtons.size(); ++index)
+            sceneButtons[index]->setButtonText(info.scenes[index].name);
+        return;
+    }
+
+    numScenes_ = newCount;
+    if (gridContent != nullptr)
+        gridContent->setNumScenes(numScenes_);
+    if (sceneContainer != nullptr)
+        setupSceneButtons();
+    if (gridContent != nullptr)
+        rebuildTracks();
+}
+
 void SessionView::applyThemeColours() {
-    const auto surface = DarkTheme::getColour(DarkTheme::SURFACE);
-    const auto primary = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
+    const auto surface = ActiveTheme::getColour(ActiveTheme::SURFACE);
+    const auto primary = ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY);
 
     for (auto& button : sceneButtons) {
         button->setColour(juce::TextButton::buttonColourId, surface);
@@ -2472,11 +2511,12 @@ void SessionView::applyThemeColours() {
     }
 
     if (dragGhostLabel_) {
-        dragGhostLabel_->setColour(juce::Label::backgroundColourId,
-                                   DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.6f));
+        dragGhostLabel_->setColour(
+            juce::Label::backgroundColourId,
+            ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.6f));
         dragGhostLabel_->setColour(juce::Label::textColourId, primary);
         dragGhostLabel_->setColour(juce::Label::outlineColourId,
-                                   DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                                   ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     }
 
     updateHeaderSelectionVisuals();
@@ -2499,37 +2539,7 @@ void SessionView::syncMixerVisibilityFromConfig() {
 }
 
 void SessionView::addScene() {
-    numScenes_++;
-    gridContent->setNumScenes(numScenes_);
-
-    // Add a new scene button
-    int sceneIndex = numScenes_ - 1;
-    auto btn = std::make_unique<SceneButton>();
-    btn->setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-    btn->setColour(juce::TextButton::textColourOffId,
-                   DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    btn->setLookAndFeel(&daw::ui::SmallButtonLookAndFeel::getInstance());
-    btn->onClick = [this, sceneIndex]() { onSceneLaunched(sceneIndex); };
-    sceneContainer->addAndMakeVisible(*btn);
-    sceneButtons.push_back(std::move(btn));
-
-    // Add new clip slots for each track
-    int numTracks = static_cast<int>(visibleTrackIds_.size());
-    for (int track = 0; track < numTracks; ++track) {
-        auto slot = std::make_unique<ClipSlotButton>();
-        slot->setButtonText("");
-        slot->setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-        slot->setColour(juce::TextButton::textColourOffId,
-                        DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-
-        wireClipSlotCallbacks(*slot, track, sceneIndex);
-
-        gridContent->addAndMakeVisible(*slot);
-        clipSlots[track].push_back(std::move(slot));
-    }
-
-    resized();
-    updateAllClipSlots();
+    ProjectManager::getInstance().appendSessionScene();
 
     // Scroll to show the newly added scene
     int sceneRowHeight = CLIP_SLOT_HEIGHT + CLIP_SLOT_MARGIN;
@@ -2550,8 +2560,8 @@ void SessionView::removeScene() {
     // Check if any clips exist in the last scene
     auto& clipManager = ClipManager::getInstance();
     bool hasClips = false;
-    for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
-        ClipId clipId = clipManager.getClipInSlot(visibleTrackIds_[i], lastScene);
+    for (const auto& track : TrackManager::getInstance().getTracks()) {
+        ClipId clipId = clipManager.getClipInSlot(track.id, lastScene);
         if (clipId != INVALID_CLIP_ID) {
             hasClips = true;
             break;
@@ -2586,29 +2596,15 @@ void SessionView::removeSceneAsync(int sceneIndex) {
 
     // Stop and delete any clips in this scene
     auto& clipManager = ClipManager::getInstance();
-    for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
-        ClipId clipId = clipManager.getClipInSlot(visibleTrackIds_[i], sceneIndex);
+    for (const auto& track : TrackManager::getInstance().getTracks()) {
+        ClipId clipId = clipManager.getClipInSlot(track.id, sceneIndex);
         if (clipId != INVALID_CLIP_ID) {
             clipManager.stopClip(clipId);
             clipManager.deleteClip(clipId);
         }
     }
 
-    // Remove the last scene button
-    sceneButtons.pop_back();
-
-    // Remove the last clip slot from each track
-    for (auto& trackSlots : clipSlots) {
-        if (!trackSlots.empty()) {
-            trackSlots.pop_back();
-        }
-    }
-
-    numScenes_--;
-    gridContent->setNumScenes(numScenes_);
-
-    resized();
-    updateAllClipSlots();
+    ProjectManager::getInstance().removeLastSessionScene();
 }
 
 void SessionView::wireClipSlotCallbacks(ClipSlotButton& slot, int trackIndex, int sceneIndex) {
@@ -2645,8 +2641,12 @@ void SessionView::wireClipSlotCallbacks(ClipSlotButton& slot, int trackIndex, in
         audioEngine_->armSessionSlotRecording(trackId, sceneIndex);
         updateClipSlotAppearance(trackIndex, sceneIndex);
 
-        if (!audioEngine_->isSessionSlotRecordArmed(trackId, sceneIndex))
+        if (!audioEngine_->isSessionSlotRecordArmed(trackId, sceneIndex)) {
+            if (timelineController_ && timelineController_->getState().playhead.isRecording &&
+                !audioEngine_->isRecording())
+                timelineController_->dispatch(StartRecordEvent{});
             return;
+        }
 
         if (timelineController_) {
             const auto& state = timelineController_->getState();
@@ -2748,32 +2748,16 @@ ClipId SessionView::duplicateSessionClipToNextEmptyScene(ClipId clipId) {
 }
 
 bool SessionView::duplicateSelectedSessionClips() {
-    auto selectedClips = SelectionManager::getInstance().getSelectedClips();
-    if (selectedClips.empty())
-        return false;
-
-    std::vector<ClipId> sessionClipIds;
-    sessionClipIds.reserve(selectedClips.size());
-    auto& clipManager = ClipManager::getInstance();
-    for (ClipId clipId : selectedClips) {
-        const auto* clip = clipManager.getClip(clipId);
-        if (clip && clip->view == ClipView::Session)
-            sessionClipIds.push_back(clipId);
-    }
+    auto sessionClipIds = selectedSessionClipIds();
     if (sessionClipIds.empty())
         return false;
 
-    std::sort(sessionClipIds.begin(), sessionClipIds.end(), [&clipManager](ClipId a, ClipId b) {
-        const auto* clipA = clipManager.getClip(a);
-        const auto* clipB = clipManager.getClip(b);
-        int sceneA = clipA ? clipA->sceneIndex : 0;
-        int sceneB = clipB ? clipB->sceneIndex : 0;
-        if (sceneA != sceneB)
-            return sceneA < sceneB;
-        TrackId trackA = clipA ? clipA->trackId : INVALID_TRACK_ID;
-        TrackId trackB = clipB ? clipB->trackId : INVALID_TRACK_ID;
-        return trackA < trackB;
-    });
+    auto& clipManager = ClipManager::getInstance();
+    const auto sceneThenTrack = [&clipManager](ClipId clipId) {
+        const auto* clip = clipManager.getClip(clipId);
+        return std::tuple{clip ? clip->sceneIndex : 0, clip ? clip->trackId : INVALID_TRACK_ID};
+    };
+    std::ranges::sort(sessionClipIds, {}, sceneThenTrack);
 
     if (sessionClipIds.size() > 1)
         UndoManager::getInstance().beginCompoundOperation("Duplicate Session Clips");
@@ -2796,18 +2780,7 @@ bool SessionView::duplicateSelectedSessionClips() {
 }
 
 bool SessionView::deleteSelectedSessionClips() {
-    auto selectedClips = SelectionManager::getInstance().getSelectedClips();
-    if (selectedClips.empty())
-        return false;
-
-    std::vector<ClipId> sessionClipIds;
-    sessionClipIds.reserve(selectedClips.size());
-    auto& clipManager = ClipManager::getInstance();
-    for (ClipId clipId : selectedClips) {
-        const auto* clip = clipManager.getClip(clipId);
-        if (clip && clip->view == ClipView::Session)
-            sessionClipIds.push_back(clipId);
-    }
+    const auto sessionClipIds = selectedSessionClipIds();
     if (sessionClipIds.empty())
         return false;
 
@@ -2855,15 +2828,9 @@ void SessionView::rangeSelectSlots(int trackIndex, int sceneIndex, ClipId clicke
     // Anchor = last single-clicked clip; the range is the rectangle of slots
     // between the anchor's (track, scene) cell and the clicked cell
     const auto* anchorClip = clipManager.getClip(sel.getAnchorClip());
-    int anchorTrackIndex = -1;
-    if (anchorClip != nullptr && anchorClip->sceneIndex >= 0) {
-        for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
-            if (visibleTrackIds_[i] == anchorClip->trackId) {
-                anchorTrackIndex = static_cast<int>(i);
-                break;
-            }
-        }
-    }
+    const int anchorTrackIndex = (anchorClip != nullptr && anchorClip->sceneIndex >= 0)
+                                     ? trackIndexOf(anchorClip->trackId)
+                                     : -1;
 
     if (anchorTrackIndex < 0) {
         sel.selectClip(clickedClipId);
@@ -2900,8 +2867,9 @@ void SessionView::onPlayButtonClicked(int trackIndex, int sceneIndex) {
         // Filled-slot strip is "trigger this clip". Re-clicking a playing
         // clip re-triggers (or, for Toggle-mode clips, the scheduler still
         // honours toggle — that's a per-clip setting, not a UI default).
-        // Stopping is the empty-slot affordance now.
-        SelectionManager::getInstance().selectClip(clipId);
+        // Stopping is the empty-slot affordance now. Selected when it sounds,
+        // in clipPlaybackStateChanged, not here.
+        pendingEditorClip_ = clipId;
         ClipManager::getInstance().triggerClip(clipId);
     }
 }
@@ -2928,17 +2896,14 @@ void SessionView::triggerGroupScene(TrackId groupId, int sceneIndex) {
 
     // Check if any descendant clip in this scene is playing — if so, stop all; else trigger all
     auto& cm = ClipManager::getInstance();
-    bool anyPlaying = false;
-    for (auto tid : descendants) {
-        ClipId cid = cm.getClipInSlot(tid, sceneIndex);
-        if (cid != INVALID_CLIP_ID && audioEngine_) {
-            auto state = audioEngine_->getSessionClipPlayState(cid);
-            if (state == SessionClipPlayState::Playing || state == SessionClipPlayState::Queued) {
-                anyPlaying = true;
-                break;
-            }
-        }
-    }
+    const auto isSoundingInThisScene = [&](TrackId tid) {
+        const ClipId cid = cm.getClipInSlot(tid, sceneIndex);
+        if (cid == INVALID_CLIP_ID || audioEngine_ == nullptr)
+            return false;
+        const auto state = audioEngine_->getSessionClipPlayState(cid);
+        return state == SessionClipPlayState::Playing || state == SessionClipPlayState::Queued;
+    };
+    const bool anyPlaying = std::ranges::any_of(descendants, isSoundingInThisScene);
 
     for (auto tid : descendants) {
         ClipId cid = cm.getClipInSlot(tid, sceneIndex);
@@ -3008,18 +2973,15 @@ void SessionView::onCreateMidiClipClicked(int trackIndex, int sceneIndex) {
 
     // Create clip through command system for proper undo support
     auto cmd = std::make_unique<CreateClipCommand>(ClipType::MIDI, trackId, BeatPosition{0.0},
-                                                   BeatDuration{4.0}, "", ClipView::Session);
+                                                   BeatDuration{4.0}, "", ClipView::Session,
+                                                   ClipOverlapPolicy::PreserveExisting, sceneIndex);
 
     // Get raw pointer before moving to UndoManager
     auto* cmdPtr = cmd.get();
     UndoManager::getInstance().executeCommand(std::move(cmd));
 
-    // Get the created clip ID and set its scene index
-    ClipId clipId = cmdPtr->getCreatedClipId();
-    if (clipId != INVALID_CLIP_ID) {
-        ClipManager::getInstance().setClipSceneIndex(clipId, sceneIndex);
+    if (cmdPtr->getCreatedClipId() != INVALID_CLIP_ID)
         updateClipSlotAppearance(trackIndex, sceneIndex);
-    }
 }
 
 void SessionView::trackSelectionChanged(TrackId trackId) {
@@ -3083,7 +3045,7 @@ bool SessionView::canDropIntoGroup(int draggedIndex, int targetIndex) const {
     const auto* dragged = tm.getTrack(visibleTrackIds_[draggedIndex]);
     if (dragged && dragged->isGroup()) {
         auto desc = tm.getAllDescendants(dragged->id);
-        if (std::find(desc.begin(), desc.end(), target->id) != desc.end())
+        if (std::ranges::contains(desc, target->id))
             return false;
     }
     return true;
@@ -3138,23 +3100,23 @@ void SessionView::paintHeaderDragFeedback(juce::Graphics& g) {
     // Highlight dragged header
     int dx = getTrackX(headerDragIndex_) - trackHeaderScrollOffset;
     int dw = trackColumnWidths_[headerDragIndex_];
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
     g.fillRect(dx, 0, dw, headerContainer->getHeight());
 
     if (headerDropType_ == HeaderDropType::BetweenTracks && headerDropIndex_ >= 0) {
-        int lineX;
+        int lineX = 0;
         if (headerDropIndex_ >= static_cast<int>(visibleTrackIds_.size()))
             lineX = getTotalTracksWidth() - trackHeaderScrollOffset;
         else
             lineX = getTrackX(headerDropIndex_) - trackHeaderScrollOffset;
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         g.fillRect(lineX - 2, 0, 4, headerContainer->getHeight());
     } else if (headerDropType_ == HeaderDropType::OntoGroup && headerDropIndex_ >= 0) {
         int gx = getTrackX(headerDropIndex_) - trackHeaderScrollOffset;
         int gw = trackColumnWidths_[headerDropIndex_];
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
         g.drawRect(gx, 0, gw, headerContainer->getHeight(), 3);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.15f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.15f));
         g.fillRect(gx, 0, gw, headerContainer->getHeight());
     }
 }
@@ -3182,15 +3144,15 @@ void SessionView::updateHeaderSelectionVisuals() {
             // Selected: white text on the lifted selection fill (shared with
             // the arrange headers / mixer)
             header->setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::TRACK_HEADER_SELECTED));
+                              ActiveTheme::getColour(ActiveTheme::TRACK_HEADER_SELECTED));
             header->setColour(juce::TextButton::textColourOffId,
-                              DarkTheme::getColour(DarkTheme::TRACK_HEADER_SELECTED_TEXT));
+                              ActiveTheme::getColour(ActiveTheme::TRACK_HEADER_SELECTED_TEXT));
         } else {
             // Unselected: dark header, track colour carried by the top strip
             header->setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::SURFACE));
+                              ActiveTheme::getColour(ActiveTheme::SURFACE));
             header->setColour(juce::TextButton::textColourOffId,
-                              DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                              ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         }
     }
     // Master label selection
@@ -3198,14 +3160,15 @@ void SessionView::updateHeaderSelectionVisuals() {
         bool masterSelected = selectedId == MASTER_TRACK_ID;
         if (masterSelected) {
             masterLabel_->setColour(juce::TextButton::buttonColourId,
-                                    DarkTheme::getColour(DarkTheme::TRACK_HEADER_SELECTED));
-            masterLabel_->setColour(juce::TextButton::textColourOffId,
-                                    DarkTheme::getColour(DarkTheme::TRACK_HEADER_SELECTED_TEXT));
+                                    ActiveTheme::getColour(ActiveTheme::TRACK_HEADER_SELECTED));
+            masterLabel_->setColour(
+                juce::TextButton::textColourOffId,
+                ActiveTheme::getColour(ActiveTheme::TRACK_HEADER_SELECTED_TEXT));
         } else {
             masterLabel_->setColour(juce::TextButton::buttonColourId,
-                                    DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+                                    ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
             masterLabel_->setColour(juce::TextButton::textColourOffId,
-                                    DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                    ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         }
     }
 
@@ -3263,14 +3226,7 @@ void SessionView::clipPropertyChanged(ClipId clipId) {
     if (!clip || clip->sceneIndex < 0)
         return;
 
-    // Find track index
-    int trackIndex = -1;
-    for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
-        if (visibleTrackIds_[i] == clip->trackId) {
-            trackIndex = static_cast<int>(i);
-            break;
-        }
-    }
+    const int trackIndex = trackIndexOf(clip->trackId);
 
     if (trackIndex >= 0) {
         updateClipSlotAppearance(trackIndex, clip->sceneIndex);
@@ -3279,12 +3235,8 @@ void SessionView::clipPropertyChanged(ClipId clipId) {
     // Also update parent group slot
     const auto* track = TrackManager::getInstance().getTrack(clip->trackId);
     if (track && track->hasParent()) {
-        for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
-            if (visibleTrackIds_[i] == track->parentId) {
-                updateClipSlotAppearance(static_cast<int>(i), clip->sceneIndex);
-                break;
-            }
-        }
+        if (const int parentIndex = trackIndexOf(track->parentId); parentIndex >= 0)
+            updateClipSlotAppearance(parentIndex, clip->sceneIndex);
     }
 
     updateSceneButtonIcon(clip->sceneIndex);
@@ -3310,18 +3262,17 @@ void SessionView::clipPlaybackStateChanged(ClipId clipId) {
 
     auto playState = audioEngine_ ? audioEngine_->getSessionClipPlayState(clipId)
                                   : SessionClipPlayState::Stopped;
+
+    if (clipId == pendingEditorClip_ && playState != SessionClipPlayState::Queued) {
+        pendingEditorClip_ = INVALID_CLIP_ID;
+        if (playState == SessionClipPlayState::Playing)
+            SelectionManager::getInstance().selectClip(clipId);
+    }
     DBG("SessionView::clipPlaybackStateChanged: clip "
         << clipId << " playState=" << (int)playState
         << " sessionPlayheadPos=" << clip->sessionPlayheadPos);
 
-    // Find track index
-    int trackIndex = -1;
-    for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
-        if (visibleTrackIds_[i] == clip->trackId) {
-            trackIndex = static_cast<int>(i);
-            break;
-        }
-    }
+    const int trackIndex = trackIndexOf(clip->trackId);
 
     if (trackIndex >= 0) {
         updateClipSlotAppearance(trackIndex, clip->sceneIndex);
@@ -3330,12 +3281,8 @@ void SessionView::clipPlaybackStateChanged(ClipId clipId) {
     // Also update parent group slot if this track has a parent
     const auto* track = TrackManager::getInstance().getTrack(clip->trackId);
     if (track && track->hasParent()) {
-        for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
-            if (visibleTrackIds_[i] == track->parentId) {
-                updateClipSlotAppearance(static_cast<int>(i), clip->sceneIndex);
-                break;
-            }
-        }
+        if (const int parentIndex = trackIndexOf(track->parentId); parentIndex >= 0)
+            updateClipSlotAppearance(parentIndex, clip->sceneIndex);
     }
 
     updateSceneButtonIcon(clip->sceneIndex);
@@ -3358,6 +3305,7 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
     // Always set slot identity for drag-and-drop
     slot->trackId = trackId;
     slot->sceneIndex = sceneIndex;
+    slot->transportIsPlaying = audioEngine_ != nullptr && audioEngine_->isPlaying();
 
     // Mirror record-arm state so empty slots can render the record glyph.
     if (const auto* trackInfo = TrackManager::getInstance().getTrack(trackId))
@@ -3394,11 +3342,13 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
 
         slot->hasChildClips = anyClips;
         slot->childClipIsPlaying = anyPlaying;
+        slot->clipHasLaunchIntent = false;
         slot->hasClip = false;
         slot->slotRecordArmed = false;
         slot->slotIsRecording = false;
         slot->setButtonText("");
-        slot->setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
+        slot->setColour(juce::TextButton::buttonColourId,
+                        ActiveTheme::getColour(ActiveTheme::SURFACE));
         slot->repaint();
         return;
     }
@@ -3422,6 +3372,10 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
             slot->clipId = clipId;
             slot->clipIsPlaying = (playState == SessionClipPlayState::Playing);
             slot->clipIsQueued = (playState == SessionClipPlayState::Queued);
+            if (const auto* track = TrackManager::getInstance().getTrack(trackId))
+                slot->clipHasLaunchIntent = track->activeSessionClipId == clipId;
+            else
+                slot->clipHasLaunchIntent = false;
             slot->slotRecordArmed = false;
             slot->slotIsRecording = false;
             slot->isSelected = SelectionManager::getInstance().isClipSelected(clipId);
@@ -3450,7 +3404,7 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
             // Clip always shows its own colour; play state is shown via the play/stop icon
             slot->setColour(juce::TextButton::buttonColourId, clip->colour.withAlpha(0.7f));
             slot->setColour(juce::TextButton::textColourOffId,
-                            DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                            ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         }
     } else {
         // Empty slot
@@ -3464,6 +3418,7 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
         slot->clipId = INVALID_CLIP_ID;
         slot->clipIsPlaying = false;
         slot->clipIsQueued = false;
+        slot->clipHasLaunchIntent = false;
         slot->slotRecordArmed =
             audioEngine_ != nullptr && audioEngine_->isSessionSlotRecordArmed(trackId, sceneIndex);
         slot->slotIsRecording =
@@ -3474,9 +3429,10 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
         slot->clipLength = 0.0;
         slot->sessionPlayheadPos = -1.0;
         slot->setButtonText("");
-        slot->setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
+        slot->setColour(juce::TextButton::buttonColourId,
+                        ActiveTheme::getColour(ActiveTheme::SURFACE));
         slot->setColour(juce::TextButton::textColourOffId,
-                        DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                        ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     }
 
     slot->repaint();
@@ -3620,17 +3576,21 @@ void SessionView::setSessionPlayheadPositions(const std::unordered_map<ClipId, d
 void SessionView::setAudioEngine(AudioEngine* engine) {
     // Unregister from old engine
     if (audioEngine_) {
-        if (auto* mb = audioEngine_->getMidiBridge())
-            mb->removeMidiDeviceListListener(this);
+        if (auto* hardware = audioEngine_->getAudioIO())
+            hardware->removeListener(this);
     }
     audioEngine_ = engine;
     if (audioEngine_) {
-        if (auto* mb = audioEngine_->getMidiBridge())
-            mb->addMidiDeviceListListener(this);
+        if (auto* hardware = audioEngine_->getAudioIO())
+            hardware->addListener(this);
         startTimerHz(30);  // 30Hz meter refresh
     } else {
         stopTimer();
     }
+}
+
+void SessionView::hardwareChannelsChanged() {
+    tracksChanged();
 }
 
 void SessionView::midiDeviceListChanged() {
@@ -3647,11 +3607,8 @@ void SessionView::timerCallback() {
     if (!audioEngine_)
         return;
 
-    auto* bridge = audioEngine_->getAudioBridge();
-    if (!bridge)
-        return;
-
-    auto& meteringBuffer = bridge->getMeteringBuffer();
+    auto& meters = audioEngine_->meters();
+    auto& meteringBuffer = meters.mixer;
 
     // Update track strip meters (peek, don't consume — MixerView also reads these)
     for (auto& strip : trackMiniStrips_) {
@@ -3697,10 +3654,10 @@ void SessionView::timerCallback() {
                 double period = 1.0;
                 switch (getTrackBeatRate(visibleTrackIds_[i])) {
                     case BeatRate::Whole:
-                        period = static_cast<double>(tsNum);
+                        period = beatsPerBar(tsNum, tsDen);
                         break;
                     case BeatRate::Half:
-                        period = static_cast<double>(tsNum) * 0.5;
+                        period = beatsPerBar(tsNum, tsDen) * 0.5;
                         break;
                     case BeatRate::Quarter:
                         period = 1.0;
@@ -3730,6 +3687,10 @@ void SessionView::timerCallback() {
                 auto* slot = dynamic_cast<ClipSlotButton*>(slotBtn.get());
                 if (!slot)
                     continue;
+                if (slot->transportIsPlaying != transportPlaying) {
+                    slot->transportIsPlaying = transportPlaying;
+                    slot->repaint();
+                }
                 if (slot->clipIsQueued) {
                     slot->blinkOn = newBlinkOn;
                     slot->repaint();
@@ -3770,8 +3731,8 @@ void SessionView::timerCallback() {
 
     // Update master strip meters
     if (masterStrip_) {
-        float masterPeakL = bridge->getMasterPeakL();
-        float masterPeakR = bridge->getMasterPeakR();
+        float masterPeakL = meters.getMasterPeakL();
+        float masterPeakR = meters.getMasterPeakR();
         masterStrip_->setMeterLevels(masterPeakL, masterPeakR);
     }
 }
@@ -3780,14 +3741,15 @@ void SessionView::timerCallback() {
 // File Drag & Drop
 // ============================================================================
 
+int SessionView::trackIndexOf(TrackId trackId) const {
+    const auto it = std::ranges::find(visibleTrackIds_, trackId);
+    return it == visibleTrackIds_.end()
+               ? -1
+               : static_cast<int>(std::ranges::distance(visibleTrackIds_.begin(), it));
+}
+
 bool SessionView::isInterestedInFileDrag(const juce::StringArray& files) {
-    // Accept if at least one file is an audio file
-    for (const auto& file : files) {
-        if (isAudioFile(file)) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(files, isAudioFile);
 }
 
 void SessionView::fileDragEnter(const juce::StringArray& files, int x, int y) {
@@ -3875,7 +3837,8 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
         if (newClipId != INVALID_CLIP_ID) {
             UndoManager::getInstance().executeCommand(std::make_unique<SetClipNameCommand>(
                 newClipId, audioFile.getFileNameWithoutExtension()));
-            clipManager.setClipLoopEnabled(newClipId, true, bpm);
+            // Creation already loops a session clip over the whole source;
+            // enabling loop again would freeze the span into a chosen range.
             clipManager.setClipSceneIndex(newClipId, sceneSlot);
         }
     };
@@ -3895,7 +3858,7 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
         for (const auto& filePath : audioFiles) {
             juce::String trackName = juce::File(filePath).getFileNameWithoutExtension();
             auto cmd =
-                std::make_unique<CreateTrackCommand>(TrackType::Audio, trackName, insertAfter);
+                std::make_unique<CreateTrackCommand>(TrackType::Media, trackName, insertAfter);
             auto* cmdPtr = cmd.get();
             UndoManager::getInstance().executeCommand(std::move(cmd));
             TrackId trackId = cmdPtr->getCreatedTrackId();
@@ -3961,8 +3924,9 @@ void SessionView::updateDragHighlight(int x, int y) {
             auto* slot = clipSlots[dragHoverTrackIndex_][dragHoverSceneIndex_].get();
             if (slot) {
                 // Highlight with accent color
-                slot->setColour(juce::TextButton::buttonColourId,
-                                DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.5f));
+                slot->setColour(
+                    juce::TextButton::buttonColourId,
+                    ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.5f));
             }
         }
 
@@ -4025,7 +3989,7 @@ void SessionView::updateDragGhost(const juce::StringArray& files, int trackIndex
     // Position ghost at the target slot (in grid coordinates)
     int sceneRowHeight = CLIP_SLOT_HEIGHT + CLIP_SLOT_MARGIN;
 
-    int ghostX, ghostW;
+    int ghostX = 0, ghostW = 0;
     if (trackIndex >= 0) {
         ghostX = getTrackX(trackIndex);
         ghostW = (trackIndex < static_cast<int>(trackColumnWidths_.size()))
@@ -4049,18 +4013,6 @@ void SessionView::clearDragGhost() {
     if (dragGhostLabel_) {
         dragGhostLabel_->setVisible(false);
     }
-}
-
-bool SessionView::isAudioFile(const juce::String& filename) const {
-    static const juce::StringArray audioExtensions = {".wav",  ".aiff", ".aif", ".mp3", ".ogg",
-                                                      ".flac", ".m4a",  ".wma", ".opus"};
-
-    for (const auto& ext : audioExtensions) {
-        if (filename.endsWithIgnoreCase(ext)) {
-            return true;
-        }
-    }
-    return false;
 }
 
 // ============================================================================
@@ -4179,7 +4131,7 @@ void SessionView::itemDropped(const SourceDetails& details) {
             TrackManager::getInstance().addDeviceToTrack(trackId, device);
         } else {
             // Drop past last track — create new track with plugin
-            TrackType trackType = TrackType::Audio;
+            TrackType trackType = TrackType::Media;
             juce::String pluginName = obj->getProperty("name").toString();
             auto cmd =
                 std::make_unique<CreateTrackWithDeviceCommand>(pluginName, trackType, device);

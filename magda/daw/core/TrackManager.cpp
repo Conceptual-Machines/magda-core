@@ -2,21 +2,27 @@
 
 #include <algorithm>
 #include <map>
+#include <ranges>
+#include <set>
 #include <unordered_set>
 
-#include "../audio/AudioBridge.hpp"
 #include "../audio/MidiBridge.hpp"
 #include "../audio/TracktionHelpers.hpp"
 #include "../audio/plugins/SidechainTriggerBus.hpp"
 #include "../engine/AudioEngine.hpp"
+#include "../engine/PluginService.hpp"
+#include "../project/ProjectManager.hpp"
+#include "ChainWalk.hpp"
 #include "ClipManager.hpp"
-#include "Config.hpp"
 #include "DeviceState.hpp"
-#include "ModulatorEngine.hpp"
+#include "DrumGridPads.hpp"
+#include "LegacyDeviceAliases.hpp"
 #include "PluginCapabilities.hpp"
 #include "PluginPreferences.hpp"
 #include "RackInfo.hpp"
+#include "RangesHelpers.hpp"
 #include "SelectionManager.hpp"
+#include "audio/plugins/DeviceCatalogParameters.hpp"
 #include "audio/plugins/InternalPluginRegistry.hpp"
 
 namespace magda {
@@ -63,6 +69,15 @@ void remapDuplicatedPath(ChainNodePath& path, const DuplicateIdRemap& remap) {
             case ChainStepType::Device:
                 touched = remapDuplicateId(remap.devices, step.id) || touched;
                 break;
+            case ChainStepType::PadRack:
+                // A PadRack step carries the owning grid's DeviceId, so it moves
+                // with the devices map like any other device id. Saying so in
+                // the type is what removed the shape-matching pad remapper this
+                // used to need (#2219).
+                touched = remapDuplicateId(remap.devices, step.id) || touched;
+                break;
+            case ChainStepType::PadChain:
+                break;  // Pad chain ids are rack-local and survive duplication
             case ChainStepType::Segment:
                 break;  // Segment steps carry no remappable ID
         }
@@ -142,8 +157,8 @@ void scanEmbeddedDeviceIds(const juce::ValueTree& tree, int& maxDeviceId) {
             maxDeviceId = std::max(maxDeviceId, embeddedDeviceId);
     }
 
-    for (int i = 0; i < tree.getNumChildren(); ++i)
-        scanEmbeddedDeviceIds(tree.getChild(i), maxDeviceId);
+    for (auto child : children(tree))
+        scanEmbeddedDeviceIds(child, maxDeviceId);
 }
 
 void scanEmbeddedDeviceIds(const juce::String& pluginState, int& maxDeviceId) {
@@ -174,75 +189,28 @@ void scanEmbeddedDeviceIds(const juce::String& pluginState, int& maxDeviceId) {
         scanEmbeddedDeviceIds(state, maxDeviceId);
 }
 
+/// Point a duplicated track's links at the copy, and strip the runtime state
+/// its devices carried over.
+///
+/// The walk addresses everything, including a device's pads: they are chains it
+/// owns, their devices carry state to strip, and the address it builds is
+/// stamped into any mod link that carries none of its own. This built pad
+/// addresses as `Rack(deviceId) > Chain(padId)`, the untyped spelling #2219
+/// removed, so a duplicated pad device's self-targeted modifier named a rack
+/// step holding a DeviceId -- which resolves down the rack walk that no pad
+/// answers to (#2204).
 void remapDuplicatedElements(std::vector<ChainElement>& elements, const ChainNodePath& parentPath,
                              const DuplicateIdRemap& remap) {
-    for (auto& element : elements) {
-        if (magda::isDevice(element)) {
-            auto& device = magda::getDevice(element);
-            auto devicePath = parentPath;
-            if (parentPath.isTrackLevel) {
-                devicePath = ChainNodePath::topLevelDevice(remap.newTrackId, device.id);
-            } else {
-                devicePath = parentPath.withDevice(device.id);
-            }
+    chain_walk::forEachNode(
+        elements, parentPath, chain_walk::Pads::Enter,
+        [&remap](DeviceInfo& device, const ChainNodePath& devicePath) {
             remapDuplicatedLinks(device.macros, device.mods, devicePath, remap);
             device.pluginState = stripDuplicateRuntimePluginState(device.pluginState);
-        } else if (magda::isRack(element)) {
-            auto& rack = magda::getRack(element);
-            auto rackPath = parentPath.isTrackLevel ? ChainNodePath::rack(remap.newTrackId, rack.id)
-                                                    : parentPath.withRack(rack.id);
+        },
+        [&remap](RackInfo& rack, const ChainNodePath& rackPath) {
             remapDuplicatedLinks(rack.macros, rack.mods, rackPath, remap);
-            for (auto& chain : rack.chains)
-                remapDuplicatedElements(chain.elements, rackPath.withChain(chain.id), remap);
-        }
-    }
-}
-
-ChainNodePath childDevicePath(const ChainNodePath& parentPath, DeviceId deviceId) {
-    return parentPath.isTrackLevel ? ChainNodePath::topLevelDevice(parentPath.trackId, deviceId)
-                                   : parentPath.withDevice(deviceId);
-}
-
-ChainNodePath childRackPath(const ChainNodePath& parentPath, RackId rackId) {
-    return parentPath.isTrackLevel ? ChainNodePath::rack(parentPath.trackId, rackId)
-                                   : parentPath.withRack(rackId);
-}
-
-// Collect the device paths of every device in the given chain tree (racks
-// recursed), without mutating anything. Path construction mirrors
-// setChainElementsBypassed below.
-void collectChainDevicePaths(const std::vector<ChainElement>& elements,
-                             const ChainNodePath& parentPath,
-                             std::vector<ChainNodePath>& outDevices) {
-    for (const auto& element : elements) {
-        if (magda::isDevice(element)) {
-            outDevices.push_back(childDevicePath(parentPath, magda::getDevice(element).id));
-            continue;
-        }
-        const auto& rack = magda::getRack(element);
-        const auto rackPath = childRackPath(parentPath, rack.id);
-        for (const auto& chain : rack.chains)
-            collectChainDevicePaths(chain.elements, rackPath.withChain(chain.id), outDevices);
-    }
-}
-
-void setChainElementsBypassed(std::vector<ChainElement>& elements, const ChainNodePath& parentPath,
-                              bool bypassed, std::vector<ChainNodePath>& affectedDevices) {
-    for (auto& element : elements) {
-        if (magda::isDevice(element)) {
-            auto& device = magda::getDevice(element);
-            device.bypassed = bypassed;
-            affectedDevices.push_back(childDevicePath(parentPath, device.id));
-            continue;
-        }
-
-        auto& rack = magda::getRack(element);
-        rack.bypassed = bypassed;
-        const auto rackPath = childRackPath(parentPath, rack.id);
-        for (auto& chain : rack.chains)
-            setChainElementsBypassed(chain.elements, rackPath.withChain(chain.id), bypassed,
-                                     affectedDevices);
-    }
+            return chain_walk::Descend::Into;
+        });
 }
 
 void enforcePostFxAnalysisDeviceOrder(std::vector<PostFxChainElement>& elements) {
@@ -322,7 +290,7 @@ TrackId TrackManager::createTrackWithPlugin(const juce::DynamicObject& pluginObj
     DeviceInfo device = deviceInfoFromPluginObject(pluginObj);
 
     // Determine track type
-    TrackType trackType = TrackType::Audio;
+    TrackType trackType = TrackType::Media;
 
     // Create the track named after the plugin
     juce::String pluginName = pluginObj.getProperty("name").toString();
@@ -346,34 +314,49 @@ TrackId TrackManager::createTrackWithPlugin(const juce::DynamicObject& pluginObj
 // ============================================================================
 
 TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
+    // The chord track is project-wide state, not a repeatable track kind. Keep
+    // the invariant at the model boundary so UI, command, and remote callers
+    // cannot accidentally materialise a second one through a lower-level path.
+    if (type == TrackType::Chord) {
+        if (const auto existing = getChordTrackId(); existing != INVALID_TRACK_ID)
+            return existing;
+    }
+
     TrackInfo track;
     track.id = nextTrackId_++;
     track.type = type;
-    // Chord track defaults to "Chord Track" (still renameable); other tracks get
-    // the generic "N Track".
+
+    // Allocate an aux return's stable bus number before deriving its default
+    // name.  The fixed aux strip has always displayed this number as "Aux N";
+    // storing the same name in the model keeps the inspector, mixer and project
+    // file from seeing the unrelated generic track index instead.
+    if (type == TrackType::Aux)
+        track.auxBusIndex = nextAuxBusIndex_++;
+
+    // Chord and aux tracks have role-specific defaults (still renameable);
+    // ordinary tracks retain the generic "N Track" name.
     track.name = !name.isEmpty()            ? name
                  : type == TrackType::Chord ? juce::String("Chord Track")
-                                            : generateTrackName();
-    track.colour = juce::Colour(Config::getDefaultColour(static_cast<int>(tracks_.size())));
+                 : type == TrackType::Aux
+                     ? juce::String("Aux ") + juce::String(track.auxBusIndex + 1)
+                     : generateTrackName();
+    const auto& projectDefaults = ProjectManager::getInstance().getCurrentProjectInfo().defaults;
+    track.colour = juce::Colour(projectDefaults.colourForIndex(static_cast<int>(tracks_.size())));
 
     // The chord-track audition (speaker) toggle is the track's mute state. Seed
-    // it from the preference so chord preview can be on by default if desired.
+    // it from the project default so it stays stable across machines.
     if (type == TrackType::Chord)
-        track.muted = !Config::getInstance().getChordPreviewOnByDefault();
+        track.muted = !projectDefaults.chordPreview;
 
     // Which side of the fader the post-FX stage starts on. Per track from then
     // on (the fader tag on the post-FX panel); the master track is pinned
     // pre-fader by the compilers whatever this says.
-    track.chain.postFxPostFader = Config::getInstance().getPostFxPostFaderByDefault();
+    track.chain.postFxPostFader = projectDefaults.postFxPostFader;
 
     // Set default routing
     track.audioOutputDevice = "master";  // Audio always routes to master
     track.audioInputDevice = "";         // Audio input disabled by default (enable via UI)
     // midiOutputDevice left empty - requires specific device selection
-
-    // Aux buses need a bus index.
-    if (type == TrackType::Aux)
-        track.auxBusIndex = nextAuxBusIndex_++;
 
     // Seed the default "listen to all inputs" and let the single type-invariant
     // boundary clear it (plus monitor/record-arm) for input-less tracks.
@@ -405,7 +388,15 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
         engine.uniqueId = "midichordengine";
         engine.fileOrIdentifier = "midichordengine";
         engine.isInstrument = false;
-        engine.deviceType = DeviceType::MIDI;
+
+        // A transparent tap that reads the chain's MIDI and writes none
+        // (#2427). Not DeviceType::MIDI, which is the role of a device that
+        // produces MIDI: DeviceInfo::emitsMidi() reads the type, so declaring
+        // it that way gave the engine a MIDI output it never writes to, a thru
+        // toggle that does nothing, and a merge behind it that would double
+        // every note the moment a chord track compiles.
+        engine.deviceType = DeviceType::Analysis;
+        engine.canReceiveMidi = true;
         engine.format = PluginFormat::Internal;
         addDeviceToTrack(trackId, engine);
 
@@ -430,11 +421,9 @@ TrackId TrackManager::createGroupTrack(const juce::String& name) {
 }
 
 TrackId TrackManager::getChordTrackId() const {
-    for (const auto& track : tracks_) {
-        if (track.type == TrackType::Chord)
-            return track.id;
-    }
-    return INVALID_TRACK_ID;
+    const auto isChordTrack = [](const TrackInfo& track) { return track.type == TrackType::Chord; };
+    const auto found = std::ranges::find_if(tracks_, isChordTrack);
+    return found == tracks_.end() ? INVALID_TRACK_ID : found->id;
 }
 
 TrackId TrackManager::ensureChordTrack() {
@@ -504,7 +493,7 @@ TrackId TrackManager::groupTracks(const std::vector<TrackId>& trackIds, const ju
     if (hasSharedParent && parentGroupId != INVALID_TRACK_ID) {
         if (const auto* parent = getTrack(parentGroupId)) {
             for (auto trackId : tracksToGroup) {
-                auto it = std::find(parent->childIds.begin(), parent->childIds.end(), trackId);
+                auto it = std::ranges::find(parent->childIds, trackId);
                 if (it == parent->childIds.end())
                     continue;
 
@@ -527,7 +516,7 @@ TrackId TrackManager::groupTracks(const std::vector<TrackId>& trackIds, const ju
 
         if (auto* parent = getTrack(parentGroupId)) {
             auto& siblings = parent->childIds;
-            siblings.erase(std::remove(siblings.begin(), siblings.end(), groupId), siblings.end());
+            std::erase(siblings, groupId);
 
             auto insertIt = siblings.end();
             if (parentInsertIndex >= 0) {
@@ -557,7 +546,7 @@ std::vector<TrackId> TrackManager::ungroupTrack(TrackId groupId) {
 
     int groupSiblingIndex = -1;
     if (auto* parent = getTrack(parentGroupId)) {
-        auto it = std::find(parent->childIds.begin(), parent->childIds.end(), groupId);
+        auto it = std::ranges::find(parent->childIds, groupId);
         if (it != parent->childIds.end())
             groupSiblingIndex = static_cast<int>(std::distance(parent->childIds.begin(), it));
     }
@@ -581,7 +570,7 @@ std::vector<TrackId> TrackManager::ungroupTrack(TrackId groupId) {
 
     if (auto* parent = getTrack(parentGroupId)) {
         auto& siblings = parent->childIds;
-        siblings.erase(std::remove(siblings.begin(), siblings.end(), groupId), siblings.end());
+        std::erase(siblings, groupId);
 
         auto insertIt = siblings.end();
         if (groupSiblingIndex >= 0) {
@@ -639,8 +628,7 @@ void TrackManager::deleteTrack(TrackId trackId) {
     // If this track has a parent, remove it from parent's children
     if (track->hasParent()) {
         if (auto* parent = getTrack(track->parentId)) {
-            auto& children = parent->childIds;
-            children.erase(std::remove(children.begin(), children.end(), trackId), children.end());
+            std::erase(parent->childIds, trackId);
         }
     }
 
@@ -663,13 +651,8 @@ void TrackManager::deleteTrack(TrackId trackId) {
     }
 
     // Remove sends targeting this track from all other tracks
-    for (auto& t : tracks_) {
-        auto& sends = t.sends;
-        sends.erase(
-            std::remove_if(sends.begin(), sends.end(),
-                           [trackId](const SendInfo& s) { return s.destTrackId == trackId; }),
-            sends.end());
-    }
+    for (auto& t : tracks_)
+        std::erase_if(t.sends, [trackId](const SendInfo& s) { return s.destTrackId == trackId; });
 
     // Clear internal track-input routing on tracks listening to this track.
     // Collect ids first: the setters notify listeners, which may mutate tracks_.
@@ -733,8 +716,8 @@ void TrackManager::deleteTrack(TrackId trackId) {
     }
 
     // Remove the track itself
-    auto it = std::find_if(tracks_.begin(), tracks_.end(),
-                           [trackId](const TrackInfo& t) { return t.id == trackId; });
+    const auto matchesId = [trackId](const TrackInfo& t) { return t.id == trackId; };
+    auto it = std::ranges::find_if(tracks_, matchesId);
 
     if (it != tracks_.end()) {
         DBG("Deleted track: " << it->name << " (id=" << trackId << ")");
@@ -747,6 +730,44 @@ void TrackManager::deleteTrack(TrackId trackId) {
 // Multi-Output Management
 // =============================================================================
 
+namespace {
+
+/// The multi-out device @p deviceId names, wherever it sits on @p parentTrackId.
+///
+/// `getDevice(trackId, deviceId)` walks the track's flat lists only, so a
+/// multi-out instrument inside a rack chain answered nothing and its pairs
+/// could never be activated. A Drum Grid reaches this on any pad given a bus,
+/// and nesting one in a rack is explicitly supported (#2211).
+DeviceInfo* multiOutDevice(TrackManager& tm, TrackId parentTrackId, DeviceId deviceId) {
+    if (auto* device = tm.getDevice(parentTrackId, deviceId))
+        return device;
+
+    const auto path = tm.findDevicePath(deviceId);
+    return path.isValid() && path.trackId == parentTrackId ? tm.getDeviceInChainByPath(path)
+                                                           : nullptr;
+}
+
+}  // namespace
+
+TrackId TrackManager::multiOutChildTrack(TrackId parentTrackId, DeviceId deviceId,
+                                         int pairIndex) const {
+    // The child tracks are asked, because they own the assignment. A device's
+    // description of its pairs says nothing about where they go, so there is no
+    // second answer that can disagree with this one (#2220).
+    if (parentTrackId == INVALID_TRACK_ID || deviceId == INVALID_DEVICE_ID || pairIndex < 0)
+        return INVALID_TRACK_ID;
+
+    const auto isThisPair = [&](const TrackInfo& track) {
+        if (!track.multiOutLink)
+            return false;
+        const auto& link = *track.multiOutLink;
+        return link.sourceTrackId == parentTrackId && link.sourceDeviceId == deviceId &&
+               link.outputPairIndex == pairIndex;
+    };
+    const auto found = std::ranges::find_if(tracks_, isThisPair);
+    return found == tracks_.end() ? INVALID_TRACK_ID : found->id;
+}
+
 TrackId TrackManager::activateMultiOutPair(TrackId parentTrackId, DeviceId deviceId,
                                            int pairIndex) {
     auto* parentTrack = getTrack(parentTrackId);
@@ -754,7 +775,7 @@ TrackId TrackManager::activateMultiOutPair(TrackId parentTrackId, DeviceId devic
         return INVALID_TRACK_ID;
 
     // Find the device
-    DeviceInfo* device = getDevice(parentTrackId, deviceId);
+    DeviceInfo* device = multiOutDevice(*this, parentTrackId, deviceId);
     if (!device || !device->multiOut.isMultiOut)
         return INVALID_TRACK_ID;
 
@@ -762,11 +783,13 @@ TrackId TrackManager::activateMultiOutPair(TrackId parentTrackId, DeviceId devic
     if (pairIndex < 0 || pairIndex >= static_cast<int>(device->multiOut.outputPairs.size()))
         return INVALID_TRACK_ID;
 
-    auto& pair = device->multiOut.outputPairs[static_cast<size_t>(pairIndex)];
+    const auto& pair = device->multiOut.outputPairs[static_cast<size_t>(pairIndex)];
 
-    // Already active?
-    if (pair.active && pair.trackId != INVALID_TRACK_ID)
-        return pair.trackId;
+    // Already driving a child track? Asked of the child tracks, which own the
+    // assignment, rather than of a flag on the device (#2220).
+    if (const auto existing = multiOutChildTrack(parentTrackId, deviceId, pairIndex);
+        existing != INVALID_TRACK_ID)
+        return existing;
 
     // Create the output track
     TrackId newTrackId = nextTrackId_++;
@@ -782,9 +805,10 @@ TrackId TrackManager::activateMultiOutPair(TrackId parentTrackId, DeviceId devic
     newTrack.multiOutLink = MultiOutTrackLink{parentTrackId, deviceId, pairIndex};
 
     // Insert after the parent track (and any existing multi-out siblings) for adjacency
-    auto parentIt =
-        std::find_if(tracks_.begin(), tracks_.end(),
-                     [parentTrackId](const TrackInfo& t) { return t.id == parentTrackId; });
+    const auto matchesParentId = [parentTrackId](const TrackInfo& t) {
+        return t.id == parentTrackId;
+    };
+    auto parentIt = std::ranges::find_if(tracks_, matchesParentId);
     if (parentIt != tracks_.end()) {
         // Find last consecutive multi-out track for this device after the parent
         auto insertIt = parentIt + 1;
@@ -797,14 +821,8 @@ TrackId TrackManager::activateMultiOutPair(TrackId parentTrackId, DeviceId devic
         tracks_.push_back(std::move(newTrack));
     }
 
-    // Re-fetch pointers after insert (vector reallocation invalidates them)
-    parentTrack = getTrack(parentTrackId);
-    device = getDevice(parentTrackId, deviceId);
-    auto& pairRef = device->multiOut.outputPairs[static_cast<size_t>(pairIndex)];
-
-    // Update the output pair state
-    pairRef.active = true;
-    pairRef.trackId = newTrackId;
+    // Nothing to write back on the device: inserting the child track with its
+    // link IS the assignment, and every reader derives from it (#2220).
 
     DBG("TrackManager: Activated multi-out pair " << pairIndex << " for device " << deviceId
                                                   << " -> track " << newTrackId);
@@ -818,29 +836,24 @@ void TrackManager::deactivateMultiOutPair(TrackId parentTrackId, DeviceId device
     if (!parentTrack)
         return;
 
-    DeviceInfo* device = getDevice(parentTrackId, deviceId);
+    DeviceInfo* device = multiOutDevice(*this, parentTrackId, deviceId);
     if (!device || !device->multiOut.isMultiOut)
         return;
 
     if (pairIndex < 0 || pairIndex >= static_cast<int>(device->multiOut.outputPairs.size()))
         return;
 
-    auto& pair = device->multiOut.outputPairs[static_cast<size_t>(pairIndex)];
-    if (!pair.active || pair.trackId == INVALID_TRACK_ID)
+    const auto trackToRemove = multiOutChildTrack(parentTrackId, deviceId, pairIndex);
+    if (trackToRemove == INVALID_TRACK_ID)
         return;
 
-    TrackId trackToRemove = pair.trackId;
-
-    // Remove the track
-    auto it = std::find_if(tracks_.begin(), tracks_.end(),
-                           [trackToRemove](const TrackInfo& t) { return t.id == trackToRemove; });
+    // Removing the child track removes the assignment: the link went with it,
+    // and there is no second copy to clear (#2220).
+    const auto matchesId = [trackToRemove](const TrackInfo& t) { return t.id == trackToRemove; };
+    auto it = std::ranges::find_if(tracks_, matchesId);
     if (it != tracks_.end()) {
         tracks_.erase(it);
     }
-
-    // Update pair state
-    pair.active = false;
-    pair.trackId = INVALID_TRACK_ID;
 
     DBG("TrackManager: Deactivated multi-out pair " << pairIndex << " for device " << deviceId);
 
@@ -851,12 +864,12 @@ void TrackManager::deactivateAllMultiOutPairs(TrackId parentTrackId, DeviceId de
     // Re-fetch device pointer each iteration since deactivateMultiOutPair
     // calls tracks_.erase() which can invalidate pointers
     for (int i = 0;; ++i) {
-        DeviceInfo* device = getDevice(parentTrackId, deviceId);
+        DeviceInfo* device = multiOutDevice(*this, parentTrackId, deviceId);
         if (!device || !device->multiOut.isMultiOut)
             break;
         if (i >= static_cast<int>(device->multiOut.outputPairs.size()))
             break;
-        if (device->multiOut.outputPairs[static_cast<size_t>(i)].active) {
+        if (multiOutPairIsActive(parentTrackId, deviceId, i)) {
             deactivateMultiOutPair(parentTrackId, deviceId, i);
         }
     }
@@ -868,41 +881,150 @@ void TrackManager::startMidiMonitoring(const TrackInfo& track, const juce::Strin
     // MidiBridge activity monitor.
     if (!audioEngine_ || !track.takesExternalInput())
         return;
-    if (auto* midiBridge = audioEngine_->getMidiBridge()) {
-        midiBridge->setTrackMidiInput(track.id, deviceId);
-        midiBridge->startMonitoring(track.id);
+    MidiBridge::getInstance().setTrackMidiInput(track.id, deviceId);
+    MidiBridge::getInstance().startMonitoring(track.id);
+}
+
+TrackRestorePosition TrackManager::restorePositionOf(TrackId trackId) const {
+    TrackRestorePosition position;
+    position.trackIndex = getTrackIndex(trackId);
+
+    if (const auto* track = getTrack(trackId); track != nullptr && track->hasParent()) {
+        if (const auto* parent = getTrack(track->parentId)) {
+            const auto found = std::ranges::find(parent->childIds, trackId);
+            if (found != parent->childIds.end())
+                position.siblingIndex =
+                    static_cast<int>(std::distance(parent->childIds.begin(), found));
+        }
+    }
+
+    return position;
+}
+
+namespace {
+
+/// Every device and rack under @p elements that is sidechained to one of
+/// @p doomed, with the path that addresses it.
+void collectSidechainsInto(const std::vector<ChainElement>& elements,
+                           const ChainNodePath& parentChain, const std::set<TrackId>& doomed,
+                           std::vector<ExternalTrackRouting::Sidechain>& found) {
+    const bool topLevel = parentChain.steps.empty();
+    for (const auto& element : elements) {
+        if (magda::isDevice(element)) {
+            const auto& device = magda::getDevice(element);
+            if (doomed.count(device.sidechain.sourceTrackId) == 1)
+                found.push_back({topLevel
+                                     ? ChainNodePath::topLevelDevice(parentChain.trackId, device.id)
+                                     : parentChain.withDevice(device.id),
+                                 device.sidechain});
+            continue;
+        }
+
+        const auto& rack = magda::getRack(element);
+        const auto rackPath = topLevel ? ChainNodePath::rack(parentChain.trackId, rack.id)
+                                       : parentChain.withRack(rack.id);
+        if (doomed.count(rack.sidechain.sourceTrackId) == 1)
+            found.push_back({rackPath, rack.sidechain});
+        for (const auto& chain : rack.chains)
+            collectSidechainsInto(chain.elements, rackPath.withChain(chain.id), doomed, found);
     }
 }
 
-void TrackManager::restoreTrack(const TrackInfo& trackInfo) {
+}  // namespace
+
+ExternalTrackRouting TrackManager::externalRoutingInto(const std::vector<TrackId>& trackIds) const {
+    ExternalTrackRouting routing;
+    const std::set<TrackId> doomed(trackIds.begin(), trackIds.end());
+
+    const auto listensToADoomedTrack = [&doomed](const juce::String& input) {
+        for (auto id : doomed)
+            if (input == "track:" + juce::String(id))
+                return true;
+        return false;
+    };
+
+    const auto record = [&](const TrackInfo& track) {
+        if (doomed.count(track.id) == 1)
+            return;
+
+        const bool sendsIn = std::ranges::any_of(track.sends, [&doomed](const SendInfo& send) {
+            return doomed.count(send.destTrackId) == 1;
+        });
+        if (sendsIn || listensToADoomedTrack(track.audioInputDevice) ||
+            listensToADoomedTrack(track.midiInputDevice))
+            routing.tracks.push_back(
+                {track.id, track.sends, track.audioInputDevice, track.midiInputDevice});
+
+        collectSidechainsInto(track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
+                              doomed, routing.sidechains);
+    };
+
+    for (const auto& track : tracks_)
+        record(track);
+    record(masterTrack_);
+
+    return routing;
+}
+
+void TrackManager::restoreExternalRouting(const ExternalTrackRouting& routing) {
+    for (const auto& entry : routing.tracks) {
+        if (auto* track = getTrack(entry.trackId)) {
+            // Whole, not by difference: the deletion only removed from these.
+            track->sends = entry.sends;
+            notifyTrackPropertyChanged(entry.trackId);
+        }
+        // Through the setters, so the engine follows the routing back.
+        setTrackAudioInput(entry.trackId, entry.audioInputDevice);
+        setTrackMidiInput(entry.trackId, entry.midiInputDevice);
+    }
+
+    for (const auto& entry : routing.sidechains) {
+        if (entry.nodePath.getType() == ChainNodeType::Rack)
+            setRackSidechainSource(entry.nodePath, entry.config.sourceTrackId, entry.config.type);
+        else if (const auto deviceId = entry.nodePath.getDeviceId(); deviceId != INVALID_DEVICE_ID)
+            setSidechainSource(deviceId, entry.config.sourceTrackId, entry.config.type);
+    }
+}
+
+void TrackManager::restoreTrack(const TrackInfo& trackInfo, TrackRestorePosition position) {
     // Check if a track with this ID already exists
-    auto it = std::find_if(tracks_.begin(), tracks_.end(),
-                           [&trackInfo](const TrackInfo& t) { return t.id == trackInfo.id; });
+    const auto matchesId = [&trackInfo](const TrackInfo& t) { return t.id == trackInfo.id; };
+    auto it = std::ranges::find_if(tracks_, matchesId);
 
     if (it != tracks_.end()) {
         DBG("Warning: Track with id=" << trackInfo.id << " already exists, skipping restore");
         return;
     }
 
-    tracks_.push_back(trackInfo);
+    const int at = position.trackIndex < 0
+                       ? static_cast<int>(tracks_.size())
+                       : std::clamp(position.trackIndex, 0, static_cast<int>(tracks_.size()));
+    auto inserted = tracks_.insert(tracks_.begin() + at, trackInfo);
 
     // Projects saved before the input-less-track invariant existed can carry
     // MIDI/audio input, monitoring, or record-arm on Aux/Group tracks
     // (createTrack used to seed every non-Aux track with "all"). Normalize on
     // restore rather than let stale on-disk state reintroduce it.
-    tracks_.back().normalizeForType();
+    inserted->normalizeForType();
 
     // Ensure nextTrackId_ is beyond any restored track IDs
     if (trackInfo.id >= nextTrackId_) {
         nextTrackId_ = trackInfo.id + 1;
     }
 
-    // If track has a parent, add it back to parent's children
+    // If track has a parent, add it back to parent's children -- where it stood,
+    // not at the end. A group's order is its `childIds` order, so appending a
+    // restored middle child reorders the group even when the project order is
+    // right (#2229).
     if (trackInfo.hasParent()) {
         if (auto* parent = getTrack(trackInfo.parentId)) {
-            if (std::find(parent->childIds.begin(), parent->childIds.end(), trackInfo.id) ==
-                parent->childIds.end()) {
-                parent->childIds.push_back(trackInfo.id);
+            auto& children = parent->childIds;
+            if (std::ranges::find(children, trackInfo.id) == children.end()) {
+                const int amongSiblings =
+                    position.siblingIndex < 0
+                        ? static_cast<int>(children.size())
+                        : std::clamp(position.siblingIndex, 0, static_cast<int>(children.size()));
+                children.insert(children.begin() + amongSiblings, trackInfo.id);
             }
         }
     }
@@ -915,8 +1037,8 @@ void TrackManager::restoreTrack(const TrackInfo& trackInfo) {
 }
 
 TrackId TrackManager::duplicateTrack(TrackId trackId, bool includeDevices) {
-    auto it = std::find_if(tracks_.begin(), tracks_.end(),
-                           [trackId](const TrackInfo& t) { return t.id == trackId; });
+    const auto matchesId = [trackId](const TrackInfo& t) { return t.id == trackId; };
+    auto it = std::ranges::find_if(tracks_, matchesId);
 
     if (it == tracks_.end()) {
         return INVALID_TRACK_ID;
@@ -948,29 +1070,15 @@ TrackId TrackManager::duplicateTrack(TrackId trackId, bool includeDevices) {
     remap.oldTrackId = trackId;
     remap.newTrackId = newTrack.id;
 
-    std::function<void(std::vector<ChainElement>&)> reassignIds;
-    reassignIds = [&](std::vector<ChainElement>& elements) {
-        for (auto& element : elements) {
-            if (magda::isDevice(element)) {
-                auto& device = magda::getDevice(element);
-                const auto oldDeviceId = device.id;
-                device.id = nextFxDeviceId_++;
-                remap.devices[oldDeviceId] = device.id;
-            } else if (magda::isRack(element)) {
-                auto& rack = magda::getRack(element);
-                const auto oldRackId = rack.id;
-                rack.id = nextRackId_++;
-                remap.racks[oldRackId] = rack.id;
-                for (auto& chain : rack.chains) {
-                    const auto oldChainId = chain.id;
-                    chain.id = nextChainId_++;
-                    remap.chains[oldChainId] = chain.id;
-                    reassignIds(chain.elements);
-                }
-            }
-        }
-    };
-    reassignIds(newTrack.chain.fxChainElements);
+    // The shared walk. The duplicate's devices, racks, chains and pads all get
+    // fresh ids: left alone, the copy's pad devices would share the original's
+    // runtime, and its pad rack id would no longer be the one derived from its
+    // device id, which is how every pad path is built (#2207, #2221).
+    ChainIdRemap ids;
+    reassignChainElementIds(newTrack.chain.fxChainElements, ids);
+    remap.devices = std::move(ids.devices);
+    remap.racks = std::move(ids.racks);
+    remap.chains = std::move(ids.chains);
     remapDuplicatedLinks(newTrack.macros, newTrack.mods, ChainNodePath::trackLevel(newTrack.id),
                          remap);
     remapDuplicatedElements(newTrack.chain.fxChainElements, ChainNodePath::trackLevel(newTrack.id),
@@ -1015,26 +1123,10 @@ TrackId TrackManager::duplicateTrack(TrackId trackId, bool includeDevices) {
         newTrack.auxBusIndex = nextAuxBusIndex_++;
     }
 
-    // MultiOut links and output pairs reference the original track — clear them
+    // The copy is not a child track of anything. Its devices need no such reset:
+    // a DeviceInfo no longer carries which child tracks its pairs drive, so a
+    // copy inherits no ownership to begin with (#2220).
     newTrack.multiOutLink.reset();
-
-    std::function<void(std::vector<ChainElement>&)> clearMultiOutPairs;
-    clearMultiOutPairs = [&](std::vector<ChainElement>& elements) {
-        for (auto& element : elements) {
-            if (magda::isDevice(element)) {
-                auto& device = magda::getDevice(element);
-                for (auto& pair : device.multiOut.outputPairs) {
-                    pair.active = false;
-                    pair.trackId = INVALID_TRACK_ID;
-                }
-            } else if (magda::isRack(element)) {
-                auto& rack = magda::getRack(element);
-                for (auto& chain : rack.chains)
-                    clearMultiOutPairs(chain.elements);
-            }
-        }
-    };
-    clearMultiOutPairs(newTrack.chain.fxChainElements);
 
     TrackId newId = newTrack.id;
 
@@ -1111,7 +1203,7 @@ void TrackManager::addTrackToGroup(TrackId trackId, TrackId groupId) {
     if (trackId == groupId)
         return;
     auto descendants = getAllDescendants(trackId);
-    if (std::find(descendants.begin(), descendants.end(), groupId) != descendants.end()) {
+    if (std::ranges::find(descendants, groupId) != descendants.end()) {
         DBG("Cannot add group to its own descendant");
         return;
     }
@@ -1143,7 +1235,7 @@ void TrackManager::moveChildWithinGroup(TrackId childId, TrackId beforeChildId) 
         return;
 
     auto& children = parent->childIds;
-    auto cur = std::find(children.begin(), children.end(), childId);
+    auto cur = std::ranges::find(children, childId);
     if (cur == children.end())
         return;
     children.erase(cur);
@@ -1151,7 +1243,7 @@ void TrackManager::moveChildWithinGroup(TrackId childId, TrackId beforeChildId) 
     // Insert before beforeChildId, or append when it's absent / INVALID.
     auto insertPos = (beforeChildId == INVALID_TRACK_ID)
                          ? children.end()
-                         : std::find(children.begin(), children.end(), beforeChildId);
+                         : std::ranges::find(children, beforeChildId);
     children.insert(insertPos, childId);
 
     notifyTracksChanged();
@@ -1197,7 +1289,7 @@ void TrackManager::moveTrackToPosition(TrackId trackId, int oneBasedPosition) {
         if (count <= 1)
             return;
         const int pos = juce::jlimit(1, count, oneBasedPosition);
-        order.erase(std::remove(order.begin(), order.end(), trackId), order.end());
+        std::erase(order, trackId);
         const TrackId before = (pos - 1 < static_cast<int>(order.size()))
                                    ? order[static_cast<size_t>(pos - 1)]
                                    : INVALID_TRACK_ID;
@@ -1223,18 +1315,19 @@ void TrackManager::moveTrackToPosition(TrackId trackId, int oneBasedPosition) {
                                ? desired[static_cast<size_t>(pos - 1)]
                                : INVALID_TRACK_ID;
 
-    auto self = std::find_if(tracks_.begin(), tracks_.end(),
-                             [&](const TrackInfo& t) { return t.id == trackId; });
+    const auto matchesId = [&](const TrackInfo& t) { return t.id == trackId; };
+    auto self = std::ranges::find_if(tracks_, matchesId);
     if (self == tracks_.end())
         return;
+    // Copy, not a reference: the erase below destroys the element it would bind to.
     const TrackInfo info = *self;
     tracks_.erase(self);
 
     if (anchor == INVALID_TRACK_ID) {
         tracks_.push_back(info);
     } else {
-        auto at = std::find_if(tracks_.begin(), tracks_.end(),
-                               [&](const TrackInfo& t) { return t.id == anchor; });
+        const auto matchesAnchor = [&](const TrackInfo& t) { return t.id == anchor; };
+        auto at = std::ranges::find_if(tracks_, matchesAnchor);
         tracks_.insert(at, info);
     }
     notifyTracksChanged();
@@ -1246,8 +1339,7 @@ void TrackManager::removeTrackFromGroup(TrackId trackId) {
         return;
 
     if (auto* parent = getTrack(track->parentId)) {
-        auto& children = parent->childIds;
-        children.erase(std::remove(children.begin(), children.end(), trackId), children.end());
+        std::erase(parent->childIds, trackId);
     }
 
     track->parentId = INVALID_TRACK_ID;
@@ -1281,13 +1373,8 @@ std::vector<TrackId> TrackManager::getChildTracks(TrackId groupId) const {
 }
 
 std::vector<TrackId> TrackManager::getTopLevelTracks() const {
-    std::vector<TrackId> result;
-    for (const auto& track : tracks_) {
-        if (track.isTopLevel()) {
-            result.push_back(track.id);
-        }
-    }
-    return result;
+    return tracks_ | std::views::filter(&TrackInfo::isTopLevel) |
+           std::views::transform(&TrackInfo::id) | toStd<std::vector<TrackId>>();
 }
 
 std::vector<TrackId> TrackManager::getAllDescendants(TrackId trackId) const {
@@ -1349,26 +1436,23 @@ bool TrackManager::wouldCreateInputRoutingCycle(TrackId destTrackId, TrackId sou
 TrackInfo* TrackManager::getTrack(TrackId trackId) {
     if (trackId == MASTER_TRACK_ID)
         return &masterTrack_;
-    auto it = std::find_if(tracks_.begin(), tracks_.end(),
-                           [trackId](const TrackInfo& t) { return t.id == trackId; });
+    const auto matchesId = [trackId](const TrackInfo& t) { return t.id == trackId; };
+    auto it = std::ranges::find_if(tracks_, matchesId);
     return (it != tracks_.end()) ? &(*it) : nullptr;
 }
 
 const TrackInfo* TrackManager::getTrack(TrackId trackId) const {
     if (trackId == MASTER_TRACK_ID)
         return &masterTrack_;
-    auto it = std::find_if(tracks_.begin(), tracks_.end(),
-                           [trackId](const TrackInfo& t) { return t.id == trackId; });
+    const auto matchesId = [trackId](const TrackInfo& t) { return t.id == trackId; };
+    auto it = std::ranges::find_if(tracks_, matchesId);
     return (it != tracks_.end()) ? &(*it) : nullptr;
 }
 
 int TrackManager::getTrackIndex(TrackId trackId) const {
-    for (size_t i = 0; i < tracks_.size(); ++i) {
-        if (tracks_[i].id == trackId) {
-            return static_cast<int>(i);
-        }
-    }
-    return -1;
+    const auto matchesId = [trackId](const TrackInfo& t) { return t.id == trackId; };
+    const auto found = std::ranges::find_if(tracks_, matchesId);
+    return found == tracks_.end() ? -1 : static_cast<int>(std::distance(tracks_.begin(), found));
 }
 
 // ============================================================================
@@ -1474,7 +1558,7 @@ void TrackManager::setTrackPlaybackMode(TrackId trackId, TrackPlaybackMode mode)
         if (track->playbackMode == mode)
             return;
         track->playbackMode = mode;
-        notifyTrackPropertyChanged(trackId);
+        notifyTrackPlaybackModeChanged(trackId);
     }
 }
 
@@ -1485,11 +1569,10 @@ void TrackManager::setAllTracksPlaybackMode(TrackPlaybackMode mode) {
 }
 
 bool TrackManager::isAnyTrackInSessionMode() const {
-    for (const auto& track : tracks_) {
-        if (track.playbackMode == TrackPlaybackMode::Session)
-            return true;
-    }
-    return false;
+    const auto isSessionMode = [](const TrackInfo& track) {
+        return track.playbackMode == TrackPlaybackMode::Session;
+    };
+    return std::ranges::any_of(tracks_, isSessionMode);
 }
 
 void TrackManager::setTrackMixerChannelWidth(TrackId trackId, int width) {
@@ -1513,7 +1596,16 @@ void TrackManager::setTrackMixerFaderTopInset(TrackId trackId, int inset) {
 }
 
 void TrackManager::setAudioEngine(AudioEngine* audioEngine) {
+    auto& plugins = PluginService::getInstance();
+    if (auto* provider = dynamic_cast<PluginStateProvider*>(audioEngine_))
+        plugins.forgetStateProvider(*provider);
+
     audioEngine_ = audioEngine;
+
+    // The state service follows the renderer selected for this project, not every
+    // initialized engine that happens to remain alive (notably the shared test engine).
+    if (auto* provider = dynamic_cast<PluginStateProvider*>(audioEngine_))
+        plugins.useStateProvider(*provider);
 
     // Sync existing tracks' MIDI routing (in case tracks were created before engine was set)
     // Only set up MidiBridge monitoring; TE-level MIDI routing is handled by
@@ -1597,7 +1689,7 @@ void TrackManager::setTrackMidiInput(TrackId trackId, const juce::String& device
     // Reset held-note state and flush pending MIDI triggers for this track
     // so stale triggers from the old input don't keep LFOs running
     {
-        std::lock_guard<std::mutex> lock(midiTriggerMutex_);
+        std::scoped_lock lock(midiTriggerMutex_);
         midiHeldNotes_.erase(trackId);
         pendingMidiNoteOns_.erase(trackId);
         pendingMidiNoteOffs_.erase(trackId);
@@ -1606,26 +1698,16 @@ void TrackManager::setTrackMidiInput(TrackId trackId, const juce::String& device
     // Forward to MidiBridge for MIDI activity monitoring (UI indicators).
     // MidiBridge is a hardware MIDI input callback — "track:" sources are
     // routed internally via MidiInputRouter, so clear any hardware routing.
-    if (audioEngine_) {
-        if (auto* midiBridge = audioEngine_->getMidiBridge()) {
-            if (deviceId.isEmpty() || deviceId.startsWith("track:")) {
-                midiBridge->clearTrackMidiInput(trackId);
-                midiBridge->stopMonitoring(trackId);
-            } else {
-                midiBridge->setTrackMidiInput(trackId, deviceId);
-                midiBridge->startMonitoring(trackId);
-            }
-        }
-
-        // Forward to AudioBridge for Tracktion Engine MIDI routing (actual plugin input)
-        if (auto* audioBridge = audioEngine_->getAudioBridge()) {
-            // Convert our deviceId to AudioBridge format
-            // "all" stays as "all", empty clears routing, otherwise use the device ID
-            audioBridge->setTrackMidiInput(trackId, deviceId);
-        }
+    auto& midiBridge = MidiBridge::getInstance();
+    if (deviceId.isEmpty() || deviceId.startsWith("track:")) {
+        midiBridge.clearTrackMidiInput(trackId);
+        midiBridge.stopMonitoring(trackId);
+    } else {
+        midiBridge.setTrackMidiInput(trackId, deviceId);
+        midiBridge.startMonitoring(trackId);
     }
 
-    // Notify listeners (inspector, track headers will update)
+    notifyTrackMidiInputChanged(trackId);
     notifyTrackPropertyChanged(trackId);
 }
 
@@ -1750,14 +1832,7 @@ void TrackManager::setTrackAudioInput(TrackId trackId, const juce::String& devic
     // Update track state
     track->audioInputDevice = deviceId;
 
-    // Forward to AudioBridge for actual routing
-    if (audioEngine_) {
-        if (auto* audioBridge = audioEngine_->getAudioBridge()) {
-            audioBridge->setTrackAudioInput(trackId, deviceId);
-        }
-    }
-
-    // Notify listeners
+    notifyTrackAudioInputChanged(trackId);
     notifyTrackPropertyChanged(trackId);
     syncMultiOutChildOutputsForSource(trackId);
 }
@@ -1774,15 +1849,71 @@ void TrackManager::setTrackAudioOutput(TrackId trackId, const juce::String& rout
     // Update track state
     track->audioOutputDevice = routing;
 
-    // Forward to AudioBridge for actual routing
-    if (audioEngine_) {
-        if (auto* audioBridge = audioEngine_->getAudioBridge()) {
-            audioBridge->setTrackAudioOutput(trackId, routing);
-        }
+    notifyTrackPropertyChanged(trackId);
+}
+
+bool TrackManager::applyTrackRoutingStates(const std::vector<TrackRoutingState>& states) {
+    struct Change {
+        TrackId trackId = INVALID_TRACK_ID;
+        bool audioInput = false;
+        bool midiInput = false;
+        bool property = false;
+    };
+
+    std::vector<Change> changes;
+    changes.reserve(states.size());
+    for (const auto& state : states) {
+        const auto* track = getTrack(state.trackId);
+        if (track == nullptr)
+            return false;
+        changes.push_back({state.trackId, track->audioInputDevice != state.audioInput,
+                           track->midiInputDevice != state.midiInput,
+                           track->audioInputDevice != state.audioInput ||
+                               track->midiInputDevice != state.midiInput ||
+                               track->audioOutputDevice != state.audioOutput ||
+                               track->midiOutputDevice != state.midiOutput});
     }
 
-    // Notify listeners
-    notifyTrackPropertyChanged(trackId);
+    // Commit the complete model before notifying anything. Engine and UI
+    // listeners may read other tracks synchronously from their callbacks.
+    for (const auto& state : states) {
+        auto* track = getTrack(state.trackId);
+        track->audioInputDevice = state.audioInput;
+        track->midiInputDevice = state.midiInput;
+        track->audioOutputDevice = state.audioOutput;
+        track->midiOutputDevice = state.midiOutput;
+    }
+
+    for (const auto& change : changes) {
+        if (!change.property)
+            continue;
+
+        auto* track = getTrack(change.trackId);
+        if (track == nullptr)
+            continue;
+
+        if (change.midiInput) {
+            {
+                std::scoped_lock lock(midiTriggerMutex_);
+                midiHeldNotes_.erase(change.trackId);
+                pendingMidiNoteOns_.erase(change.trackId);
+                pendingMidiNoteOffs_.erase(change.trackId);
+            }
+            auto& midiBridge = MidiBridge::getInstance();
+            if (track->midiInputDevice.isEmpty() || track->midiInputDevice.startsWith("track:")) {
+                midiBridge.clearTrackMidiInput(change.trackId);
+                midiBridge.stopMonitoring(change.trackId);
+            } else {
+                midiBridge.setTrackMidiInput(change.trackId, track->midiInputDevice);
+                midiBridge.startMonitoring(change.trackId);
+            }
+            notifyTrackMidiInputChanged(change.trackId);
+        }
+        if (change.audioInput)
+            notifyTrackAudioInputChanged(change.trackId);
+        notifyTrackPropertyChanged(change.trackId);
+    }
+    return true;
 }
 
 // ============================================================================
@@ -1834,10 +1965,7 @@ void TrackManager::removeSend(TrackId sourceTrackId, int busIndex) {
         return;
     }
 
-    auto& sends = source->sends;
-    sends.erase(std::remove_if(sends.begin(), sends.end(),
-                               [busIndex](const SendInfo& s) { return s.busIndex == busIndex; }),
-                sends.end());
+    std::erase_if(source->sends, [busIndex](const SendInfo& s) { return s.busIndex == busIndex; });
 
     notifyTrackDevicesChanged(sourceTrackId);
 }
@@ -1856,6 +1984,40 @@ void TrackManager::setSendLevel(TrackId sourceTrackId, int busIndex, float level
             return;
         }
     }
+}
+
+bool TrackManager::applyTrackSends(TrackId sourceTrackId, std::vector<SendInfo>& sends) {
+    auto* source = getTrack(sourceTrackId);
+    if (source == nullptr || static_cast<int>(sends.size()) > MAX_SENDS_PER_TRACK)
+        return false;
+
+    std::set<TrackId> destinations;
+    for (const auto& send : sends) {
+        const auto* destination = getTrack(send.destTrackId);
+        if (destination == nullptr || destination->type == TrackType::Master ||
+            !destinations.insert(send.destTrackId).second)
+            return false;
+    }
+
+    for (auto& send : sends) {
+        auto* destination = getTrack(send.destTrackId);
+        if (destination->auxBusIndex < 0)
+            destination->auxBusIndex = nextAuxBusIndex_++;
+        send.busIndex = destination->auxBusIndex;
+    }
+
+    std::set<TrackId> affectedDestinations;
+    for (const auto& send : source->sends)
+        affectedDestinations.insert(send.destTrackId);
+    affectedDestinations.insert(destinations.begin(), destinations.end());
+
+    source->sends = sends;
+    notifyTrackDevicesChanged(sourceTrackId);
+    notifyTrackPropertyChanged(sourceTrackId);
+    for (const auto destination : affectedDestinations)
+        if (getTrack(destination) != nullptr)
+            notifyTrackDevicesChanged(destination);
+    return true;
 }
 
 // ============================================================================
@@ -1921,21 +2083,13 @@ TrackManager::ExternalInstrumentRouting TrackManager::getExternalInstrumentRouti
             continue;
 
         routing.present = true;
-        // Mirror the live insert's chosen send/return devices so the track-level
-        // selectors can display them. The plugin may not be resolvable yet
-        // (path invalid during load); present stays true regardless.
-        if (audioEngine_ != nullptr) {
-            if (auto* bridge = audioEngine_->getAudioBridge()) {
-                auto path = ChainNodePath::topLevelDevice(trackId, d.id);
-                if (auto plugin = bridge->getPlugin(path)) {
-                    if (auto* insert =
-                            dynamic_cast<tracktion::engine::InsertPlugin*>(plugin.get())) {
-                        routing.midiOut = insert->outputDevice.get();
-                        routing.audioReturn = insert->inputDevice.get();
-                    }
-                }
-            }
-        }
+
+        // Read from the model rather than from the live plugin (#2245). The two
+        // hold the same facts and the model holds them earlier: a project that
+        // has loaded but whose plugins have not been built yet would have shown
+        // an empty pair here, and a path that would not resolve showed one too.
+        routing.midiOut = d.insert.sendDevice;
+        routing.audioReturn = d.insert.returnDevice;
         break;
     }
     return routing;
@@ -2026,7 +2180,7 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
             DBG("Cannot add MIDI generator to master track");
             return INVALID_DEVICE_ID;
         }
-        DeviceInfo newDevice = prepareNewDevice(device);
+        DeviceInfo newDevice = prepareNewDevice(trackId, device);
         seedSidechainModIfMissing(newDevice, ChainNodePath::topLevelDevice(trackId, newDevice.id));
         track->chain.fxChainElements.push_back(makeDeviceElement(newDevice));
         notifyTrackDevicesChanged(trackId);
@@ -2053,7 +2207,7 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
             DBG("Cannot add MIDI generator to master track");
             return INVALID_DEVICE_ID;
         }
-        DeviceInfo newDevice = prepareNewDevice(device);
+        DeviceInfo newDevice = prepareNewDevice(trackId, device);
         seedSidechainModIfMissing(newDevice, ChainNodePath::topLevelDevice(trackId, newDevice.id));
 
         // Clamp insert index to valid range
@@ -2123,8 +2277,15 @@ DeviceId TrackManager::addDeviceToPostFx(TrackId trackId, const DeviceInfo& devi
     DeviceInfo newDevice = device;
     newDevice.id = nextPostFxDeviceId_++;
     applyCachedCapabilitiesToDevice(newDevice);
+    daw::audio::applyDeviceDeclaration(newDevice);
     if (daw::audio::isInternalAnalysisPlugin(newDevice.pluginId))
         newDevice.deviceType = DeviceType::Analysis;
+
+    // This section stamps its own ids from its own counter and so does not go
+    // through prepareNewDevice, which is where the main chain's insertions are
+    // corrected. The declaration a browser drop carries is wrong here for the
+    // same reason it is wrong there (#2427).
+    legacy_devices::normalizeChordEngineRole(newDevice);
 
     auto& elements = track->chain.postFxChainElements;
     insertIndex = std::clamp(insertIndex, 0, static_cast<int>(elements.size()));
@@ -2188,6 +2349,7 @@ DeviceId TrackManager::addDeviceToMixerAnalysis(TrackId trackId, const DeviceInf
     DeviceInfo newDevice = device;
     newDevice.id = nextMixerAnalysisDeviceId_++;
     applyCachedCapabilitiesToDevice(newDevice);
+    daw::audio::applyDeviceDeclaration(newDevice);
     if (daw::audio::isInternalAnalysisPlugin(newDevice.pluginId))
         newDevice.deviceType = DeviceType::Analysis;
     track->chain.mixerAnalysisElements.push_back(PostFxChainElement{newDevice});
@@ -2212,23 +2374,25 @@ DeviceId TrackManager::findMixerAnalysisDevice(TrackId trackId,
 void TrackManager::removeDeviceFromTrack(TrackId trackId, DeviceId deviceId) {
     if (auto* track = getTrack(trackId)) {
         auto& elements = track->chain.fxChainElements;
-        auto it = std::find_if(elements.begin(), elements.end(), [deviceId](const ChainElement& e) {
+        const auto matchesDeviceId = [deviceId](const ChainElement& e) {
             return magda::isDevice(e) && magda::getDevice(e).id == deviceId;
-        });
+        };
+        auto it = std::ranges::find_if(elements, matchesDeviceId);
         if (it != elements.end()) {
             DBG("Removed device: " << magda::getDevice(*it).name << " (id=" << deviceId
                                    << ") from track " << trackId);
-            SelectionManager::getInstance().clearSelectionForDeletedChainNode(
-                ChainNodePath::topLevelDevice(trackId, deviceId));
+            clearSelectionsUnderDevice(magda::getDevice(*it),
+                                       ChainNodePath::topLevelDevice(trackId, deviceId));
             elements.erase(it);
             notifyTrackDevicesChanged(trackId);
             return;
         }
         // Post-fader FX list (flat device list).
         auto& postElements = track->chain.postFxChainElements;
-        auto pit = std::find_if(
-            postElements.begin(), postElements.end(),
-            [deviceId](const PostFxChainElement& e) { return e.device.id == deviceId; });
+        const auto matchesPostDeviceId = [deviceId](const PostFxChainElement& e) {
+            return e.device.id == deviceId;
+        };
+        auto pit = std::ranges::find_if(postElements, matchesPostDeviceId);
         if (pit != postElements.end()) {
             DBG("Removed post-fx device: " << pit->device.name << " (id=" << deviceId
                                            << ") from track " << trackId);
@@ -2240,9 +2404,10 @@ void TrackManager::removeDeviceFromTrack(TrackId trackId, DeviceId deviceId) {
         }
         // Mixer-analysis section (rail-managed mini Oscilloscope / Spectrum).
         auto& miniElements = track->chain.mixerAnalysisElements;
-        auto mit = std::find_if(
-            miniElements.begin(), miniElements.end(),
-            [deviceId](const PostFxChainElement& e) { return e.device.id == deviceId; });
+        const auto matchesMiniDeviceId = [deviceId](const PostFxChainElement& e) {
+            return e.device.id == deviceId;
+        };
+        auto mit = std::ranges::find_if(miniElements, matchesMiniDeviceId);
         if (mit != miniElements.end()) {
             DBG("Removed mixer-analysis device: " << mit->device.name << " (id=" << deviceId
                                                   << ") from track " << trackId);
@@ -2298,11 +2463,11 @@ void TrackManager::setChainEnabled(TrackId trackId, bool enabled) {
     // regular device sync path (AudioBridge::devicePropertyChanged applies the
     // chain gate on top of each device's own bypassed flag). The flags
     // themselves are untouched, so per-device bypass survives an off/on cycle.
-    std::vector<ChainNodePath> devicePaths;
-    collectChainDevicePaths(track->chain.fxChainElements, ChainNodePath::trackLevel(trackId),
-                            devicePaths);
-    for (const auto& devicePath : devicePaths)
-        notifyDevicePropertyChanged(devicePath);
+    chain_walk::forEachDevice(track->chain.fxChainElements, ChainNodePath::trackLevel(trackId),
+                              chain_walk::Pads::Skip,
+                              [this](const DeviceInfo&, const ChainNodePath& devicePath) {
+                                  notifyDevicePropertyChanged(devicePath);
+                              });
     notifyTrackDevicesChanged(trackId);
 }
 
@@ -2369,15 +2534,64 @@ RackId TrackManager::addRackToTrack(TrackId trackId, const juce::String& name) {
     return INVALID_RACK_ID;
 }
 
+void TrackManager::clearSelectionsUnderDevice(const DeviceInfo& device,
+                                              const ChainNodePath& devicePath) {
+    SelectionManager::getInstance().clearSelectionForDeletedChainNode(devicePath);
+
+    // A device is not always a leaf: a pad-per-chain device owns chains of its
+    // own (#2207), and they are addressed off the track by the device's id
+    // rather than through whatever the device itself stands in, so neither the
+    // grid's path nor its DeviceId matches anything under it. A selected pad
+    // chain, or a device on one, would survive the erase pointing at freed
+    // model (#2232).
+    const auto* pads = device.pads.get();
+    if (pads == nullptr)
+        return;
+
+    for (const auto& pad : pads->chains) {
+        const auto padPath = ChainNodePath::padChain(devicePath.trackId, device.id, pad.id);
+        clearSelectionsUnderChain(pad.elements, padPath);
+        SelectionManager::getInstance().clearSelectionForDeletedChainNode(padPath);
+    }
+}
+
+void TrackManager::clearSelectionsUnderChain(const std::vector<ChainElement>& elements,
+                                             const ChainNodePath& chainPath) {
+    for (const auto& element : elements) {
+        if (magda::isDevice(element)) {
+            const auto& device = magda::getDevice(element);
+            clearSelectionsUnderDevice(device, chainPath.withDevice(device.id));
+            continue;
+        }
+
+        if (magda::isRack(element)) {
+            const auto& rack = magda::getRack(element);
+            clearSelectionsUnderRack(rack, chainPath.withRack(rack.id));
+        }
+    }
+}
+
+void TrackManager::clearSelectionsUnderRack(const RackInfo& rack, const ChainNodePath& rackPath) {
+    auto& selection = SelectionManager::getInstance();
+    for (const auto& chain : rack.chains) {
+        const auto chainPath = rackPath.withChain(chain.id);
+        clearSelectionsUnderChain(chain.elements, chainPath);
+        selection.clearSelectionForDeletedChainNode(chainPath);
+    }
+    selection.clearSelectionForDeletedChainNode(rackPath);
+}
+
 void TrackManager::removeRackFromTrack(TrackId trackId, RackId rackId) {
     if (auto* track = getTrack(trackId)) {
         auto& elements = track->chain.fxChainElements;
-        auto it = std::find_if(elements.begin(), elements.end(), [rackId](const ChainElement& e) {
+        const auto matchesRackId = [rackId](const ChainElement& e) {
             return magda::isRack(e) && magda::getRack(e).id == rackId;
-        });
+        };
+        auto it = std::ranges::find_if(elements, matchesRackId);
         if (it != elements.end()) {
             DBG("Removed rack: " << magda::getRack(*it).name << " (id=" << rackId << ") from track "
                                  << trackId);
+            clearSelectionsUnderRack(magda::getRack(*it), ChainNodePath::rack(trackId, rackId));
             elements.erase(it);
             notifyTrackDevicesChanged(trackId);
         }
@@ -2444,7 +2658,76 @@ void TrackManager::setRackExpanded(TrackId trackId, RackId rackId, bool expanded
 // Chain Management
 // ============================================================================
 
+namespace {
+
+/// The rack @p rackId names among @p elements.
+///
+/// Allocated racks only. A Drum Grid's pads are a rack too, but their address
+/// is the grid's own DeviceId, and rack ids and device ids come out of counters
+/// that both start at 1, so a Rack step cannot tell the two apart. Nothing
+/// resolves a pad through one: `TrackManager::getPads()` reaches them through
+/// the device that owns them, which is unambiguous (#2207).
+RackInfo* findRackAmong(std::vector<ChainElement>& elements, RackId rackId) {
+    const auto isThisRack = [rackId](const ChainElement& element) {
+        return magda::isRack(element) && magda::getRack(element).id == rackId;
+    };
+    const auto found = std::ranges::find_if(elements, isThisRack);
+    return found == elements.end() ? nullptr : &magda::getRack(*found);
+}
+
+const RackInfo* findRackAmong(const std::vector<ChainElement>& elements, RackId rackId) {
+    return findRackAmong(const_cast<std::vector<ChainElement>&>(elements), rackId);
+}
+
+}  // namespace
+
+RackInfo* TrackManager::getRackInPadByPath(const ChainNodePath& rackPath) {
+    if (!rackPath.isPadOwned() || rackPath.steps.empty())
+        return nullptr;
+
+    // `PadRack(grid)` on its own names the grid's own pad rack, which hangs off
+    // the device rather than sitting in a chain.
+    if (rackPath.steps.size() == 1) {
+        const auto gridPath = findDevicePath(rackPath.getPadOwnerDeviceId());
+        return gridPath.isValid() && gridPath.trackId == rackPath.trackId ? getPads(gridPath)
+                                                                          : nullptr;
+    }
+
+    // A path ending on a chain or a device names the rack that encloses it,
+    // which is the #2057 leniency the rack walk already has. The node itself has
+    // to resolve first, so a route that does not exist answers nothing rather
+    // than answering with whatever it passed through.
+    const auto& last = rackPath.steps.back();
+    if (isChainStep(last.type))
+        return getChainInPadByPath(rackPath) != nullptr ? getRackInPadByPath(rackPath.parent())
+                                                        : nullptr;
+    if (last.type == ChainStepType::Device)
+        return getDeviceInPadByPath(rackPath) != nullptr ? getRackInPadByPath(rackPath.parent())
+                                                         : nullptr;
+
+    if (last.type != ChainStepType::Rack)
+        return nullptr;
+
+    // Anything else ends on an allocated rack, sitting in a chain the pad route
+    // reaches: a pad's chain holds racks like any other chain does.
+    auto* chain = getChainInPadByPath(rackPath.parent());
+    if (chain == nullptr)
+        return nullptr;
+
+    const auto isThisRack = [&last](const ChainElement& element) {
+        return magda::isRack(element) && magda::getRack(element).id == last.id;
+    };
+    const auto found = std::ranges::find_if(chain->elements, isThisRack);
+    return found == chain->elements.end() ? nullptr : &magda::getRack(*found);
+}
+
 RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) {
+    // A pad-owned address goes to the pad route, the way `getChainByPath()`
+    // already sends one there. The walk below searches chain elements for a
+    // rack id, and a `PadRack` step carries neither (#2229).
+    if (rackPath.isPadOwned())
+        return getRackInPadByPath(rackPath);
+
     auto* track = getTrack(rackPath.trackId);
     if (!track) {
         return nullptr;
@@ -2501,6 +2784,11 @@ RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) {
         const bool isLast = index + 1 == rackPath.steps.size();
 
         switch (step.type) {
+            // A PadRack is answered above, before the walk starts: it is always
+            // the first step of a pad-owned path, so one reaching here would be
+            // a pad step in a position the model cannot express.
+            case ChainStepType::PadRack:
+                return nullptr;
             case ChainStepType::Rack: {
                 // Valid at track level, or immediately inside a chain. A Rack
                 // straight after a Rack is the sideways move above.
@@ -2511,19 +2799,14 @@ RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) {
                 // lives in the chain the previous step reached.
                 auto& elements =
                     currentChain != nullptr ? currentChain->elements : track->chain.fxChainElements;
-                RackInfo* found = nullptr;
-                for (auto& element : elements) {
-                    if (magda::isRack(element) && magda::getRack(element).id == step.id) {
-                        found = &magda::getRack(element);
-                        break;
-                    }
-                }
+                RackInfo* found = findRackAmong(elements, step.id);
                 if (found == nullptr)
                     return nullptr;
                 currentRack = found;
                 currentChain = nullptr;  // Reset chain context
                 break;
             }
+            case ChainStepType::PadChain:
             case ChainStepType::Chain: {
                 // Only ever directly inside a rack. A Chain after a Chain would
                 // hop between siblings.
@@ -2548,11 +2831,10 @@ RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) {
                 // #2057 behavior of returning its enclosing rack.
                 if (!isLast || currentChain == nullptr)
                     return nullptr;
-                const auto found = std::find_if(
-                    currentChain->elements.begin(), currentChain->elements.end(),
-                    [&step](const ChainElement& element) {
-                        return magda::isDevice(element) && magda::getDevice(element).id == step.id;
-                    });
+                const auto matchesDeviceId = [&step](const ChainElement& element) {
+                    return magda::isDevice(element) && magda::getDevice(element).id == step.id;
+                };
+                const auto found = std::ranges::find_if(currentChain->elements, matchesDeviceId);
                 if (found == currentChain->elements.end())
                     return nullptr;
                 break;
@@ -2590,10 +2872,13 @@ ChainId TrackManager::addChainToRack(const ChainNodePath& rackPath, const juce::
 void TrackManager::removeChainFromRack(TrackId trackId, RackId rackId, ChainId chainId) {
     if (auto* rack = getRack(trackId, rackId)) {
         auto& chains = rack->chains;
-        auto it = std::find_if(chains.begin(), chains.end(),
-                               [chainId](const ChainInfo& c) { return c.id == chainId; });
+        const auto matchesChainId = [chainId](const ChainInfo& c) { return c.id == chainId; };
+        auto it = std::ranges::find_if(chains, matchesChainId);
         if (it != chains.end()) {
             DBG("Removed chain: " << it->name << " (id=" << chainId << ") from rack " << rackId);
+            const auto chainPath = ChainNodePath::rack(trackId, rackId).withChain(chainId);
+            clearSelectionsUnderChain(it->elements, chainPath);
+            SelectionManager::getInstance().clearSelectionForDeletedChainNode(chainPath);
             chains.erase(it);
             notifyTrackDevicesChanged(trackId);
         }
@@ -2626,10 +2911,12 @@ void TrackManager::removeChainByPath(const ChainNodePath& chainPath) {
     // Find the rack and remove the chain
     if (auto* rack = getRackByPath(rackPath)) {
         auto& chains = rack->chains;
-        auto it = std::find_if(chains.begin(), chains.end(),
-                               [chainId](const ChainInfo& c) { return c.id == chainId; });
+        const auto matchesChainId = [chainId](const ChainInfo& c) { return c.id == chainId; };
+        auto it = std::ranges::find_if(chains, matchesChainId);
         if (it != chains.end()) {
             DBG("Removed chain via path: " << it->name << " (id=" << chainId << ")");
+            clearSelectionsUnderChain(it->elements, chainPath);
+            SelectionManager::getInstance().clearSelectionForDeletedChainNode(chainPath);
             chains.erase(it);
             notifyTrackDevicesChanged(chainPath.trackId);
         }
@@ -2638,7 +2925,24 @@ void TrackManager::removeChainByPath(const ChainNodePath& chainPath) {
     }
 }
 
+bool TrackManager::insertChainIntoRackByPath(const ChainNodePath& rackPath, ChainInfo chain,
+                                             int index) {
+    auto* rack = getRackByPath(rackPath);
+    if (rack == nullptr || chain.id == INVALID_CHAIN_ID)
+        return false;
+
+    index = std::clamp(index, 0, static_cast<int>(rack->chains.size()));
+    rack->chains.insert(rack->chains.begin() + index, std::move(chain));
+    notifyTrackDevicesChanged(rackPath.trackId);
+    return true;
+}
+
 ChainInfo* TrackManager::getChainByPath(const ChainNodePath& chainPath) {
+    // A pad chain hangs off a device rather than off a rack in the chain tree,
+    // and its typed address says so, so it needs no walk (#2219).
+    if (chainPath.isPadOwned())
+        return getChainInPadByPath(chainPath);
+
     if (chainPath.steps.empty() || chainPath.steps.back().type != ChainStepType::Chain)
         return nullptr;
 
@@ -2711,8 +3015,8 @@ void TrackManager::setChainPan(const ChainNodePath& chainPath, float pan) {
 ChainInfo* TrackManager::getChain(TrackId trackId, RackId rackId, ChainId chainId) {
     if (auto* rack = getRack(trackId, rackId)) {
         auto& chains = rack->chains;
-        auto it = std::find_if(chains.begin(), chains.end(),
-                               [chainId](const ChainInfo& c) { return c.id == chainId; });
+        const auto matchesChainId = [chainId](const ChainInfo& c) { return c.id == chainId; };
+        auto it = std::ranges::find_if(chains, matchesChainId);
         if (it != chains.end()) {
             return &(*it);
         }
@@ -2723,8 +3027,8 @@ ChainInfo* TrackManager::getChain(TrackId trackId, RackId rackId, ChainId chainI
 const ChainInfo* TrackManager::getChain(TrackId trackId, RackId rackId, ChainId chainId) const {
     if (const auto* rack = getRack(trackId, rackId)) {
         const auto& chains = rack->chains;
-        auto it = std::find_if(chains.begin(), chains.end(),
-                               [chainId](const ChainInfo& c) { return c.id == chainId; });
+        const auto matchesChainId = [chainId](const ChainInfo& c) { return c.id == chainId; };
+        auto it = std::ranges::find_if(chains, matchesChainId);
         if (it != chains.end()) {
             return &(*it);
         }
@@ -2785,7 +3089,7 @@ void TrackManager::setChainName(const ChainNodePath& chainPath, const juce::Stri
         auto trimmed = name.trim();
         if (trimmed.isEmpty() || trimmed == chain->name)
             return;
-        chain->name = trimmed;
+        chain->name = std::move(trimmed);
         notifyTrackPropertyChanged(chainPath.trackId);
     }
 }
@@ -2831,13 +3135,16 @@ TrackManager::ResolvedPath TrackManager::resolvePath(const ChainNodePath& path) 
 
     // Handle top-level device (legacy)
     if (path.topLevelDeviceId != INVALID_DEVICE_ID) {
-        for (const auto& element : track->chain.fxChainElements) {
-            if (magda::isDevice(element) && magda::getDevice(element).id == path.topLevelDeviceId) {
-                result.valid = true;
-                result.device = &magda::getDevice(element);
-                result.displayPath = result.device->name;
-                return result;
-            }
+        const auto matchesTopLevelDeviceId = [&path](const ChainElement& element) {
+            return magda::isDevice(element) &&
+                   magda::getDevice(element).id == path.topLevelDeviceId;
+        };
+        const auto found =
+            std::ranges::find_if(track->chain.fxChainElements, matchesTopLevelDeviceId);
+        if (found != track->chain.fxChainElements.end()) {
+            result.valid = true;
+            result.device = &magda::getDevice(*found);
+            result.displayPath = result.device->name;
         }
         return result;
     }
@@ -2847,53 +3154,47 @@ TrackManager::ResolvedPath TrackManager::resolvePath(const ChainNodePath& path) 
     const RackInfo* currentRack = nullptr;
     const ChainInfo* currentChain = nullptr;
 
-    for (size_t i = 0; i < path.steps.size(); ++i) {
-        const auto& step = path.steps[i];
-
+    for (auto step : path.steps) {
         switch (step.type) {
+            case ChainStepType::PadRack:
             case ChainStepType::Rack: {
-                if (currentChain == nullptr) {
-                    // Top-level rack in track's chainElements
-                    for (const auto& element : track->chain.fxChainElements) {
-                        if (magda::isRack(element) && magda::getRack(element).id == step.id) {
-                            currentRack = &magda::getRack(element);
-                            pathNames.add(currentRack->name);
-                            break;
-                        }
-                    }
-                } else {
-                    // Nested rack within a chain
-                    for (const auto& element : currentChain->elements) {
-                        if (magda::isRack(element) && magda::getRack(element).id == step.id) {
-                            currentRack = &magda::getRack(element);
-                            currentChain = nullptr;  // Reset chain context
-                            pathNames.add(currentRack->name);
-                            break;
-                        }
-                    }
+                // A top-level rack lives in the track's own list, a nested one
+                // in the chain the previous step reached. A PadRack names a
+                // device, so it finds nothing here and contributes no name,
+                // exactly as the untyped spelling did (#2219).
+                const auto& elements =
+                    currentChain != nullptr ? currentChain->elements : track->chain.fxChainElements;
+                if (const auto* found = findRackAmong(elements, step.id)) {
+                    currentRack = found;
+                    currentChain = nullptr;  // Reset chain context
+                    pathNames.add(currentRack->name);
                 }
                 break;
             }
+            case ChainStepType::PadChain:
             case ChainStepType::Chain: {
                 if (currentRack != nullptr) {
-                    for (const auto& chain : currentRack->chains) {
-                        if (chain.id == step.id) {
-                            currentChain = &chain;
-                            pathNames.add(chain.name);
-                            break;
-                        }
+                    const auto matchesChainId = [&step](const ChainInfo& chain) {
+                        return chain.id == step.id;
+                    };
+                    const auto found = std::ranges::find_if(currentRack->chains, matchesChainId);
+                    if (found != currentRack->chains.end()) {
+                        currentChain = &(*found);
+                        pathNames.add(currentChain->name);
                     }
                 }
                 break;
             }
             case ChainStepType::Device: {
                 if (currentChain != nullptr) {
-                    for (const auto& element : currentChain->elements) {
-                        if (magda::isDevice(element) && magda::getDevice(element).id == step.id) {
-                            result.device = &magda::getDevice(element);
-                            pathNames.add(result.device->name);
-                            break;
-                        }
+                    const auto matchesDeviceId = [&step](const ChainElement& element) {
+                        return magda::isDevice(element) && magda::getDevice(element).id == step.id;
+                    };
+                    const auto found =
+                        std::ranges::find_if(currentChain->elements, matchesDeviceId);
+                    if (found != currentChain->elements.end()) {
+                        result.device = &magda::getDevice(*found);
+                        pathNames.add(result.device->name);
                     }
                 }
                 break;
@@ -2957,23 +3258,19 @@ void TrackManager::setTrackHeight(TrackId trackId, ViewMode mode, int height) {
 // ============================================================================
 
 std::vector<TrackId> TrackManager::getVisibleTracks(ViewMode mode) const {
-    std::vector<TrackId> result;
-    for (const auto& track : tracks_) {
-        if (track.isVisibleIn(mode)) {
-            result.push_back(track.id);
-        }
-    }
-    return result;
+    const auto isVisible = [mode](const TrackInfo& track) { return track.isVisibleIn(mode); };
+
+    return tracks_ | std::views::filter(isVisible) | std::views::transform(&TrackInfo::id) |
+           toStd<std::vector<TrackId>>();
 }
 
 std::vector<TrackId> TrackManager::getVisibleTopLevelTracks(ViewMode mode) const {
-    std::vector<TrackId> result;
-    for (const auto& track : tracks_) {
-        if (track.isTopLevel() && track.isVisibleIn(mode)) {
-            result.push_back(track.id);
-        }
-    }
-    return result;
+    const auto isVisibleAtTopLevel = [mode](const TrackInfo& track) {
+        return track.isTopLevel() && track.isVisibleIn(mode);
+    };
+
+    return tracks_ | std::views::filter(isVisibleAtTopLevel) |
+           std::views::transform(&TrackInfo::id) | toStd<std::vector<TrackId>>();
 }
 
 // ============================================================================
@@ -3049,7 +3346,7 @@ void TrackManager::setMasterVisible(ViewMode mode, bool visible) {
 // ============================================================================
 
 void TrackManager::addListener(TrackManagerListener* listener) {
-    if (listener && std::find(listeners_.begin(), listeners_.end(), listener) == listeners_.end()) {
+    if (listener && std::ranges::find(listeners_, listener) == listeners_.end()) {
         listeners_.push_back(listener);
     }
 }
@@ -3060,8 +3357,7 @@ void TrackManager::removeListener(TrackManagerListener* listener) {
         std::replace(listeners_.begin(), listeners_.end(), listener,
                      static_cast<TrackManagerListener*>(nullptr));
     } else {
-        listeners_.erase(std::remove(listeners_.begin(), listeners_.end(), listener),
-                         listeners_.end());
+        std::erase(listeners_, listener);
     }
 }
 
@@ -3093,7 +3389,7 @@ void TrackManager::clearAllTracks() {
     // first-note-on detection after project close/reopen.
     midiHeldNotes_.clear();
     {
-        std::lock_guard<std::mutex> lock(midiTriggerMutex_);
+        std::scoped_lock lock(midiTriggerMutex_);
         pendingMidiNoteOns_.clear();
         pendingMidiNoteOffs_.clear();
     }
@@ -3122,6 +3418,15 @@ void TrackManager::refreshIdCountersFromTracks() {
         if (std::holds_alternative<DeviceInfo>(element)) {
             const auto& device = std::get<DeviceInfo>(element);
             maxFxDeviceId = std::max(maxFxDeviceId, device.id);
+            // A pad device's id comes out of the same counter, so a Drum Grid's
+            // pads have to be scanned or the next device added anywhere on the
+            // project reuses one of theirs (#2207).
+            if (device.pads)
+                for (const auto& pad : device.pads->chains)
+                    for (const auto& padElement : pad.elements)
+                        if (magda::isDevice(padElement))
+                            maxFxDeviceId =
+                                std::max(maxFxDeviceId, magda::getDevice(padElement).id);
             scanEmbeddedDeviceIds(device.pluginState, maxFxDeviceId);
         } else if (std::holds_alternative<std::unique_ptr<RackInfo>>(element)) {
             const auto& rackPtr = std::get<std::unique_ptr<RackInfo>>(element);
@@ -3239,6 +3544,39 @@ void TrackManager::notifyTrackPropertyChanged(int trackId) {
     }
 }
 
+void TrackManager::notifyTrackPlaybackModeChanged(TrackId trackId) {
+    ScopedNotifyGuard guard(*this);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->trackPlaybackModeChanged(trackId);
+    }
+}
+
+void TrackManager::notifyTrackAudioInputChanged(TrackId trackId) {
+    ScopedNotifyGuard guard(*this);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->trackAudioInputChanged(trackId);
+    }
+}
+
+void TrackManager::notifyTrackMidiInputChanged(TrackId trackId) {
+    ScopedNotifyGuard guard(*this);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->trackMidiInputChanged(trackId);
+    }
+}
+
+void TrackManager::notifyChainElementMoving(const ChainNodePath& sourcePath,
+                                            const ChainNodePath& destinationChain) {
+    ScopedNotifyGuard guard(*this);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->chainElementMoving(sourcePath, destinationChain);
+    }
+}
+
 void TrackManager::notifyMasterChannelChanged() {
     ScopedNotifyGuard guard(*this);
     for (size_t i = 0; i < listeners_.size(); ++i) {
@@ -3269,16 +3607,6 @@ void TrackManager::notifyDeviceAdded(const ChainNodePath& devicePath, const Devi
         if (listeners_[i])
             listeners_[i]->deviceAdded(devicePath, device);
     }
-}
-
-DeviceInfo TrackManager::prepareNewDevice(const DeviceInfo& device) {
-    DeviceInfo newDevice = device;
-    newDevice.id = nextFxDeviceId_++;
-    applyCachedCapabilitiesToDevice(newDevice);
-    stampDefaultKitIfMissing(newDevice);
-    if (daw::audio::isInternalAnalysisPlugin(newDevice.pluginId))
-        newDevice.deviceType = DeviceType::Analysis;
-    return newDevice;
 }
 
 void TrackManager::notifyDeviceModifiersChanged(TrackId trackId) {
@@ -3319,6 +3647,15 @@ void TrackManager::notifyDeviceParameterChanged(const ChainNodePath& devicePath,
     for (size_t i = 0; i < listeners_.size(); ++i) {
         if (listeners_[i])
             listeners_[i]->deviceParameterChanged(devicePath, paramIndex, newValue);
+    }
+}
+
+void TrackManager::notifyDeviceParameterObserved(const ChainNodePath& devicePath, int paramIndex,
+                                                 float normalised, ObservationSource source) {
+    ScopedNotifyGuard guard(*this);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->deviceParameterObserved(devicePath, paramIndex, normalised, source);
     }
 }
 

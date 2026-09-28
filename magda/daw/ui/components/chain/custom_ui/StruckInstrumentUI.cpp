@@ -1,19 +1,20 @@
 #include "custom_ui/StruckInstrumentUI.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaCompiledPolyInstrument.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
 
 namespace {
-const ThemedColour kBg{DarkTheme::INSTRUMENT_BACKGROUND};
-const ThemedColour kPanel{DarkTheme::INSTRUMENT_PANEL};
-const ThemedColour kBorder{DarkTheme::INSTRUMENT_BORDER};
-const ThemedColour kText{DarkTheme::INSTRUMENT_TEXT};
-const ThemedColour kDim{DarkTheme::INSTRUMENT_TEXT_DIM};
+const ThemedColour kBg{ActiveTheme::INSTRUMENT_BACKGROUND};
+const ThemedColour kPanel{ActiveTheme::INSTRUMENT_PANEL};
+const ThemedColour kBorder{ActiveTheme::INSTRUMENT_BORDER};
+const ThemedColour kText{ActiveTheme::INSTRUMENT_TEXT};
+const ThemedColour kDim{ActiveTheme::INSTRUMENT_TEXT_DIM};
 const juce::Colour kExc{0xffd6a24c};   // exciter accent (amber)
 const juce::Colour kReso{0xff5b8fd0};  // resonator accent (blue)
 
@@ -46,19 +47,22 @@ juce::String displayLabel(const juce::String& hostName) {
 }  // namespace
 
 bool StruckInstrumentUI::handles(const juce::String& pluginId) {
-    for (const auto& d : kDevices)
-        if (pluginId.equalsIgnoreCase(d.pluginId))
-            return true;
-    return false;
+    const auto matchesPluginId = [&pluginId](const auto& d) {
+        return pluginId.equalsIgnoreCase(d.pluginId);
+    };
+    return std::ranges::any_of(kDevices, matchesPluginId);
 }
 
 StruckInstrumentUI::StruckInstrumentUI(const juce::String& pluginId)
     : kind_(pluginId.equalsIgnoreCase("magda_djembe") ? Kind::Djembe
             : pluginId.equalsIgnoreCase("magda_bell") ? Kind::Bell
                                                       : Kind::Marimba) {
-    for (const auto& d : kDevices)
-        if (pluginId.equalsIgnoreCase(d.pluginId))
-            title_ = d.title;
+    const auto matchesPluginId = [&pluginId](const auto& d) {
+        return pluginId.equalsIgnoreCase(d.pluginId);
+    };
+    const auto device = std::ranges::find_if(kDevices, matchesPluginId);
+    if (device != std::ranges::end(kDevices))
+        title_ = device->title;
 
     // Slot membership matches each device's voiceSlotInfos() order, with Gain
     // appended by MagdaCompiledPolyInstrument.
@@ -132,7 +136,7 @@ std::vector<LinkableTextSlider*> StruckInstrumentUI::getLinkableSliders() {
     return out;
 }
 
-int StruckInstrumentUI::preferredContentWidth() const {
+int StruckInstrumentUI::preferredContentWidth() {
     return 560;  // body panel + EXCITER | RESONATOR columns
 }
 
@@ -186,9 +190,11 @@ float StruckInstrumentUI::decayNorm() const {
 }
 
 // The body graphic occupies the body panel minus padding and a caption strip.
-static juce::Rectangle<float> graphicRect(juce::Rectangle<int> bodyArea) {
+namespace {
+juce::Rectangle<float> graphicRect(juce::Rectangle<int> bodyArea) {
     return bodyArea.reduced(18).withTrimmedBottom(14).toFloat();
 }
+}  // namespace
 
 juce::Point<float> StruckInstrumentUI::strikePoint() const {
     const auto gr = graphicRect(bodyArea_);

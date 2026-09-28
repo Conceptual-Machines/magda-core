@@ -1,0 +1,1294 @@
+#include <juce_audio_basics/juce_audio_basics.h>
+#include <juce_dsp/juce_dsp.h>
+
+#include <catch2/catch_approx.hpp>
+#include <catch2/catch_test_macros.hpp>
+#include <memory>
+#include <utility>
+#include <vector>
+
+#include "NullDiffGain.hpp"
+#include "core/DeviceState.hpp"
+#include "core/ParameterUtils.hpp"
+#include "core/StepPatternState.hpp"
+#include "exec/EngineDevice.hpp"
+#include "exec/PlanExecutor.hpp"
+#include "magda/daw/audio/plugins/ArpeggiatorPlugin.hpp"
+#include "magda/daw/audio/plugins/FaustPlugin.hpp"
+#include "magda/daw/audio/plugins/InternalPluginRegistry.hpp"
+#include "magda/daw/audio/plugins/PolyStepSequencerPlugin.hpp"
+#include "magda/daw/audio/plugins/StepSequencerPlugin.hpp"
+#include "magda/daw/audio/plugins/compiled/CompiledPluginRegistry.hpp"
+#include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
+#include "magda/daw/audio/plugins/engine/EngineMagdaDevice.hpp"
+#include "param/ParamBlock.hpp"
+#include "plan/PlanCompiler.hpp"
+
+/**
+ * @file test_engine_device_layer.cpp
+ * @brief The devices MAGDA ships, running under the native engine (#2174).
+ *
+ * The corpus knew one device until this slice, and it was written for the
+ * corpus: a gain implemented twice, once in each leg. What that could prove was
+ * that the two legs agree about a gain. What it could not is that either engine
+ * runs a device somebody would find in a project, which is what a real project
+ * is made of.
+ *
+ * These are the engine's half, on its own. They ask the two catalogs the app
+ * asks, they build what those catalogs return, and they run it. What the two
+ * hosts do with the same device is the corpus's question and is asked where
+ * both legs are (magda_juce_tests).
+ */
+
+namespace {
+
+namespace adapter = magda::daw::audio::engine_adapter;
+
+/// A MIDI-driven device that needs nothing set to make a sound, which is what
+/// lets a test assert on its output rather than on its parameters first.
+constexpr const char* kInstrumentId = "magda_kick";
+
+magda::engine::RenderContext contextFor(int blockSize = 512) {
+    return {.sampleRate = 48000.0, .maxBlockSize = blockSize, .numChannels = 2};
+}
+
+/// One block of silence, and the block description that goes with it.
+struct Block {
+    explicit Block(const magda::engine::RenderContext& context)
+        : buffer(context.numChannels, context.maxBlockSize) {
+        buffer.clear();
+        info.numSamples = context.maxBlockSize;
+        info.playing = true;
+        info.seconds.end = context.maxBlockSize / context.sampleRate;
+        info.beats.end = info.seconds.end * 2.0;
+    }
+
+    magda::engine::DeviceBlock deviceBlock() {
+        magda::engine::DeviceBlock block;
+        block.audio = juce::dsp::AudioBlock<float>(buffer);
+        block.block = info;
+        block.midiIn = &midi;
+        return block;
+    }
+
+    juce::AudioBuffer<float> buffer;
+    juce::MidiBuffer midi;
+    magda::engine::BlockInfo info;
+};
+
+float peakOf(const juce::AudioBuffer<float>& buffer) {
+    return buffer.getMagnitude(0, buffer.getNumSamples());
+}
+
+/// Counts what it was handed, and nothing else.
+///
+/// The adapter's MIDI path cannot be measured through a real device: what a
+/// synth does with a clock byte is its own business, and a device that ignored
+/// half its input would look exactly like an adapter that dropped half.
+class CountingDevice final : public magda::daw::audio::MagdaDevice {
+  public:
+    magda::daw::audio::DeviceProperties properties() const override {
+        magda::daw::audio::DeviceProperties properties;
+        properties.pluginId = "counting";
+        properties.name = "Counting";
+        properties.takesMidiInput = true;
+        return properties;
+    }
+
+    void process(magda::daw::audio::DeviceProcessContext& context) override {
+        received = context.midiIn != nullptr ? context.midiIn->size() : 0;
+    }
+
+    int received = 0;
+};
+
+/// Emits whatever it was told to, however big.
+///
+/// A device is where the port's budget is spent, and SysEx is where spending it
+/// stops looking like spending events: a dump is one event and hundreds of
+/// bytes, so a device can sit far inside any event count while going far past
+/// the byte budget the executor sized the port from.
+class EmittingDevice final : public magda::daw::audio::MagdaDevice {
+  public:
+    EmittingDevice(int count, int dataBytes, bool declared = true)
+        : count_(count), declared_(declared), payload_(dataBytes, 0x7f) {}
+
+    magda::daw::audio::DeviceProperties properties() const override {
+        magda::daw::audio::DeviceProperties properties;
+        properties.pluginId = "emitting";
+        properties.name = "Emitting";
+        properties.takesMidiInput = true;
+        properties.producesMidi = declared_;
+        return properties;
+    }
+
+    void process(magda::daw::audio::DeviceProcessContext& context) override {
+        if (context.midiOut == nullptr)
+            return;
+
+        for (int event = 0; event < count_; ++event)
+            context.midiOut->addEvent({juce::MidiMessage::createSysExMessage(
+                                           payload_.data(), static_cast<int>(payload_.size())),
+                                       0});
+    }
+
+  private:
+    int count_;
+    bool declared_;
+    std::vector<std::uint8_t> payload_;
+};
+
+/// Keeps each note-on's stamp, and plays one note of its own at the stamp it
+/// was given.
+class StampingDevice final : public magda::daw::audio::MagdaDevice {
+  public:
+    explicit StampingDevice(double outStamp) : outStamp_(outStamp) {}
+
+    magda::daw::audio::DeviceProperties properties() const override {
+        magda::daw::audio::DeviceProperties properties;
+        properties.pluginId = "stamping";
+        properties.name = "Stamping";
+        properties.takesMidiInput = true;
+        properties.producesMidi = true;
+        return properties;
+    }
+
+    void process(magda::daw::audio::DeviceProcessContext& context) override {
+        if (context.midiIn != nullptr)
+            for (int at = 0; at < context.midiIn->size(); ++at)
+                if (context.midiIn->message(at).isNoteOn())
+                    stamps.push_back(context.midiIn->message(at).getTimeStamp());
+
+        if (context.midiOut != nullptr)
+            context.midiOut->addEvent(
+                {juce::MidiMessage::noteOn(1, 72, 1.0f).withTimeStamp(outStamp_), 0});
+    }
+
+    std::vector<double> stamps;
+
+  private:
+    double outStamp_;
+};
+
+/// Records what the executor told it about either port, and renders nothing.
+class BoundProbe final : public magda::engine::EngineDevice {
+  public:
+    void process(magda::engine::DeviceBlock&) override {}
+
+    void setMidiInputBoundBytes(int bytes) override {
+        bound = bytes;
+    }
+
+    void setMidiOutputBoundBytes(int bytes) override {
+        outBound = bytes;
+    }
+
+    bool forwardsMidiInput() const override {
+        return forwards;
+    }
+
+    int bound = -1;
+    int outBound = -1;
+    bool forwards = false;
+};
+
+/// Copies its input to its output reversed, dropping the middle event, on
+/// messages big enough to be heap-allocated.
+///
+/// On SysEx because that is where juce::MidiMessage owns heap, so a copy that
+/// went wrong on the input-to-output leg would leak or corrupt rather than
+/// merely misbehave.
+class ForwardingDevice final : public magda::daw::audio::MagdaDevice {
+  public:
+    magda::daw::audio::DeviceProperties properties() const override {
+        magda::daw::audio::DeviceProperties properties;
+        properties.pluginId = "forwarding";
+        properties.name = "Forwarding";
+        properties.takesMidiInput = true;
+        properties.producesMidi = true;
+        return properties;
+    }
+
+    void process(magda::daw::audio::DeviceProcessContext& context) override {
+        if (context.midiIn == nullptr || context.midiOut == nullptr || context.midiIn->size() < 3)
+            return;
+
+        const auto count = context.midiIn->size();
+        for (int at = count - 1; at >= 0; --at) {
+            if (at == 1)
+                continue;
+
+            // Reversed in time as well as in order, so the port shows it.
+            auto message = context.midiIn->message(at);
+            message.setTimeStamp(context.midiIn->message(count - 1 - at).getTimeStamp());
+            context.midiOut->addEvent({std::move(message), context.midiIn->sourceId(at)});
+        }
+    }
+};
+
+/// Reads the panic it was handed and answers with one of its own.
+class PanicDevice final : public magda::daw::audio::MagdaDevice {
+  public:
+    explicit PanicDevice(bool declared = true) : declared_(declared) {}
+
+    magda::daw::audio::DeviceProperties properties() const override {
+        magda::daw::audio::DeviceProperties properties;
+        properties.pluginId = "panic";
+        properties.name = "Panic";
+        properties.takesMidiInput = true;
+        properties.producesMidi = declared_;
+        return properties;
+    }
+
+    void process(magda::daw::audio::DeviceProcessContext& context) override {
+        heard = context.midiIn != nullptr && context.midiIn->isAllNotesOff();
+        if (context.midiOut != nullptr)
+            context.midiOut->setAllNotesOff(answer);
+    }
+
+    bool heard = false;
+    bool answer = false;
+
+  private:
+    bool declared_;
+};
+
+/// What @p buffer costs against the port's budget, by the engine's own model:
+/// six bytes an event plus the event's own length.
+int budgetCostOf(const juce::MidiBuffer& buffer) {
+    int bytes = 0;
+    for (const auto metadata : buffer)
+        bytes += (magda::engine::kMidiShortMessageBytes - 3) + metadata.numBytes;
+    return bytes;
+}
+
+/// The slot @p device calls @p name, or -1.
+int slotNamed(const magda::daw::audio::MagdaDevice& device, const juce::String& name) {
+    for (int slot = 0; slot < device.parameterCount(); ++slot)
+        if (device.parameterInfo(slot).name == name)
+            return slot;
+    return -1;
+}
+
+/// Set a slot from its display value rather than its normalised position, so a
+/// test reads in the units the device documents.
+void setDisplayValue(magda::daw::audio::MagdaDevice& device, int slot, float displayValue) {
+    const auto info = device.parameterInfo(slot);
+    device.setParameterValue(slot, magda::ParameterUtils::realToNormalized(displayValue, info));
+}
+
+}  // namespace
+
+TEST_CASE("the engine can run every device that has moved to the SDK", "[engine][devices][2174]") {
+    // The rule rather than a list of names, so a device migrating to the SDK
+    // does not have to remember to come back here: what the factory answers is
+    // exactly what the catalog carries, in both directions. A device with no
+    // createDevice is one the engine cannot run, and saying so is the point --
+    // the alternative is a stand-in that passes signal while the incumbent runs
+    // the real thing.
+    int sdkDevices = 0;
+
+    for (const auto* spec : magda::daw::audio::getAllInternalPluginSpecs()) {
+        REQUIRE(spec != nullptr);
+        REQUIRE(spec->pluginId != nullptr);
+
+        const auto expected = spec->createDevice != nullptr;
+        INFO("internal device " << spec->pluginId);
+        CHECK(adapter::canCreateEngineDevice(spec->pluginId) == expected);
+
+        if (expected) {
+            ++sdkDevices;
+            magda::DeviceInfo model;
+            model.pluginId = spec->pluginId;
+            CHECK(adapter::createEngineDevice(model) != nullptr);
+        }
+    }
+
+    for (const auto* spec : magda::daw::audio::compiled::getAllCompiledPluginSpecs()) {
+        REQUIRE(spec != nullptr);
+        REQUIRE(spec->pluginId != nullptr);
+
+        // A compiled device is not in the internal registry, only its parameter
+        // aliases are, so the factory has to ask both catalogs. Asserted here
+        // because a factory that asked one would answer no for every compiled
+        // device, which is most of the fleet.
+        const auto expected = spec->createDevice != nullptr;
+        INFO("compiled device " << spec->pluginId);
+        CHECK(adapter::canCreateEngineDevice(spec->pluginId) == expected);
+
+        if (expected) {
+            ++sdkDevices;
+            magda::DeviceInfo model;
+            model.pluginId = spec->pluginId;
+            CHECK(adapter::createEngineDevice(model) != nullptr);
+        }
+    }
+
+    // The rule above is satisfied by a build where nothing has moved to the SDK
+    // at all, which is a green test over an empty set.
+    CHECK(sdkDevices > 0);
+}
+
+TEST_CASE("the engine plays a Drum Grid it never builds", "[engine][devices][2659]") {
+    // The plan compiler expands a pad device into its pads, so the grid itself
+    // never reaches the factory and is still a device the engine plays.
+    CHECK_FALSE(adapter::canCreateEngineDevice("drumgrid"));
+    CHECK(adapter::engineRendersDevice("drumgrid"));
+
+    CHECK_FALSE(adapter::engineRendersDevice("not_a_device"));
+}
+
+TEST_CASE("a device the catalogs do not have is refused rather than stood in for",
+          "[engine][devices][2174]") {
+    CHECK_FALSE(adapter::canCreateEngineDevice("not_a_device"));
+
+    magda::DeviceInfo model;
+    model.pluginId = "not_a_device";
+    CHECK(adapter::createEngineDevice(model) == nullptr);
+
+    // An external plugin reaches the factory as a pluginId nothing registered,
+    // and gets the same answer for the same reason: nothing hosts VST3 in the
+    // engine yet (#1893).
+    model.pluginId = "VST3-1234567890";
+    CHECK(adapter::createEngineDevice(model) == nullptr);
+}
+
+TEST_CASE("a shipped instrument renders through the engine's device op",
+          "[engine][devices][2174]") {
+    magda::DeviceInfo model;
+    model.pluginId = kInstrumentId;
+
+    auto device = adapter::createEngineDevice(model);
+    REQUIRE(device != nullptr);
+
+    const auto context = contextFor();
+    device->prepare(context);
+
+    Block silent(context);
+    auto silentBlock = silent.deviceBlock();
+    device->process(silentBlock);
+    CHECK(peakOf(silent.buffer) == 0.0f);
+
+    Block played(context);
+    played.midi.addEvent(juce::MidiMessage::noteOn(1, 36, 1.0f), 0);
+    auto playedBlock = played.deviceBlock();
+    device->process(playedBlock);
+
+    // What is asserted is that the note reached the DSP and the DSP wrote into
+    // the executor's own buffer, which is the whole of what the adapter is for.
+    // What it sounds like is the device's business and is pinned by its own
+    // tests.
+    CHECK(peakOf(played.buffer) > 0.0f);
+}
+
+TEST_CASE("the plan's resolved values reach the device's parameters", "[engine][devices][2174]") {
+    magda::DeviceInfo model;
+    model.pluginId = kInstrumentId;
+
+    auto device = adapter::createEngineDevice(model);
+    REQUIRE(device != nullptr);
+
+    auto* hosted = dynamic_cast<adapter::EngineMagdaDevice*>(device.get());
+    REQUIRE(hosted != nullptr);
+    REQUIRE(hosted->device().parameterCount() > 0);
+
+    const auto info = hosted->device().parameterInfo(0);
+    const auto context = contextFor();
+    device->prepare(context);
+
+    // The table the executor publishes, built by hand: one parameter, holding
+    // one value for the block, in the parameter's own units and read through
+    // its own scale. Which is what a device gets from the value layer, and the
+    // adapter's job is to turn it back into the normalised position the SDK
+    // takes without either end having an opinion about the scale.
+    const auto target = info.minValue + 0.75f * (info.maxValue - info.minValue);
+
+    magda::engine::ResolvedParams table;
+    table.prepare(1);
+    table.beginBlock(context.maxBlockSize);
+    table.setDomain(0, magda::ParameterUtils::domainOf(info));
+
+    const auto position = magda::ParameterUtils::realToNormalized(target, info);
+    auto* slot = table.slotFor(0);
+    REQUIRE(slot != nullptr);
+    slot[0] = {.startSample = 0, .startValue = position, .endValue = position};
+    table.setSegmentCount(0, 1);
+
+    Block block(context);
+    auto deviceBlock = block.deviceBlock();
+    const std::vector<int> slots{0};
+    const std::vector<std::uint8_t> driven{0};
+    deviceBlock.params = table.device(0, 1, slots, driven);
+    device->process(deviceBlock);
+
+    CHECK(hosted->device().parameterValue(0) == Catch::Approx(position).margin(1.0e-5));
+}
+
+TEST_CASE("a live state restore has the adapter write every parameter again",
+          "[engine][devices][2786]") {
+    magda::DeviceInfo model;
+    model.pluginId = kInstrumentId;
+
+    auto device = adapter::createEngineDevice(model);
+    REQUIRE(device != nullptr);
+
+    auto* hosted = dynamic_cast<adapter::EngineMagdaDevice*>(device.get());
+    REQUIRE(hosted != nullptr);
+    REQUIRE(hosted->device().parameterCount() > 0);
+
+    const auto info = hosted->device().parameterInfo(0);
+    const auto context = contextFor();
+    device->prepare(context);
+
+    magda::engine::ResolvedParams table;
+    table.prepare(1);
+    table.beginBlock(context.maxBlockSize);
+    table.setDomain(0, magda::ParameterUtils::domainOf(info));
+
+    const auto position = magda::ParameterUtils::realToNormalized(
+        info.minValue + 0.75f * (info.maxValue - info.minValue), info);
+    auto* slot = table.slotFor(0);
+    REQUIRE(slot != nullptr);
+    slot[0] = {.startSample = 0, .startValue = position, .endValue = position};
+    table.setSegmentCount(0, 1);
+
+    Block block(context);
+    const std::vector<int> slots{0};
+    const std::vector<std::uint8_t> driven{0};
+    const auto run = [&] {
+        auto deviceBlock = block.deviceBlock();
+        deviceBlock.params = table.device(0, 1, slots, driven);
+        device->process(deviceBlock);
+    };
+
+    run();
+    REQUIRE(hosted->device().parameterValue(0) == Catch::Approx(position).margin(1.0e-5));
+
+    // What a restore on the running instance does, with no prepare() after it.
+    const auto reset = position > 0.5f ? 0.0f : 1.0f;
+    hosted->device().setParameterValue(0, reset);
+    hosted->invalidateParameterWrites();
+
+    run();
+    CHECK(hosted->device().parameterValue(0) == Catch::Approx(position).margin(1.0e-5));
+}
+
+TEST_CASE("the MIDI scratch holds every stream the port's budget admits",
+          "[engine][devices][2174]") {
+    // The budget is bytes and the cheapest event is one byte of data, so the
+    // most events a legal block can carry is the budget divided by that, not by
+    // what a note costs. A scratch sized from the note is three quarters of the
+    // way there, and the quarter it is short by is a stream the adapter would
+    // have to grow the vector for -- an allocation on the audio thread, for
+    // input that broke no rule.
+    //
+    // Realtime bytes are what makes this reachable rather than theoretical: a
+    // clock at speed is exactly this shape.
+    constexpr int kEventOverheadBytes = magda::engine::kMidiShortMessageBytes - 3;
+    constexpr int kWorstCaseEvents =
+        magda::engine::kMaxMidiBytesPerPort / (kEventOverheadBytes + 1);
+
+    auto counting = std::make_unique<CountingDevice>();
+    auto* device = counting.get();
+
+    adapter::EngineMagdaDevice hosted(std::move(counting), /*offlineRender=*/false);
+    const auto context = contextFor();
+    hosted.prepare(context);
+
+    Block block(context);
+    for (int event = 0; event < kWorstCaseEvents; ++event)
+        block.midi.addEvent(juce::MidiMessage::midiClock(), event % context.maxBlockSize);
+
+    // What was really encoded, checked rather than assumed: the assertion below
+    // is only about the adapter if the buffer it reads is as full as the budget
+    // allows.
+    REQUIRE(block.midi.data.size() <= magda::engine::kMaxMidiBytesPerPort);
+    REQUIRE(block.midi.getNumEvents() == kWorstCaseEvents);
+
+    auto deviceBlock = block.deviceBlock();
+    hosted.process(deviceBlock);
+
+    CHECK(device->received == kWorstCaseEvents);
+}
+
+TEST_CASE("a device writing past the port's byte budget is cut off at the bytes",
+          "[engine][devices][2174]") {
+    // Sixty-six raw bytes an event, so seventy-two against the budget: fifty-six
+    // fit and the fifty-seventh does not. Nothing near the event cap the scratch
+    // is sized by, which is the point -- a guard counting events would let every
+    // one of these through and hand the port ten times what it reserved for.
+    constexpr int kPayloadBytes = 64;
+    constexpr int kEmitted = 200;
+
+    auto emitting = std::make_unique<EmittingDevice>(kEmitted, kPayloadBytes);
+    adapter::EngineMagdaDevice hosted(std::move(emitting), /*offlineRender=*/false);
+
+    const auto context = contextFor();
+    hosted.prepare(context);
+
+    Block block(context);
+    juce::MidiBuffer out;
+
+    auto deviceBlock = block.deviceBlock();
+    deviceBlock.midiOut = &out;
+    hosted.process(deviceBlock);
+
+    // Every event that landed is whole, and what landed fits the budget.
+    CHECK(budgetCostOf(out) <= magda::engine::kMaxMidiBytesPerPort);
+
+    // And it really was the bytes that stopped it, not the event cap: fewer
+    // events arrived than were emitted, and far fewer than the cap allows.
+    CHECK(out.getNumEvents() < kEmitted);
+    CHECK(out.getNumEvents() > 0);
+}
+
+TEST_CASE("a step sequencer's MIDI output is its own", "[engine][devices][2345]") {
+    // What the sequencer's MIDI output port carries is what it played, and
+    // nothing it was handed. Thru is the plan's merge behind the device
+    // (DeviceInfo::midiInThru); the device used to do it as well, so a
+    // thru-enabled sequencer sent every note twice (#2345).
+    //
+    // The densest legal block, and no denser: a clock is one byte of data and
+    // costs seven against the budget, a note costs nine, so a note-on, 582
+    // clocks and a note-off come to 4092 of the 4096 a port allows. Dense
+    // because the adapter decodes all of it before the device can drop it -- a
+    // scratch sized by events rather than bytes would truncate here, and the
+    // sequencer would never see the tail it reads for step recording (#2335).
+    constexpr int kClocks = 582;
+
+    const auto runOneBlock = [](std::unique_ptr<magda::daw::audio::MagdaDevice> sequencer,
+                                juce::MidiBuffer& out) {
+        adapter::EngineMagdaDevice hosted(std::move(sequencer), /*offlineRender=*/false);
+        const auto context = contextFor();
+        hosted.prepare(context);
+
+        // What the executor tells a device fed by one producer, now that a
+        // device is a producer and only a producer: a port's worth in, and a
+        // port's worth out for what it makes of its own (#2341, #2345).
+        hosted.setMidiInputBoundBytes(magda::engine::kMaxMidiBytesPerPort);
+        hosted.setMidiOutputBoundBytes(magda::engine::kMaxMidiBytesPerPort);
+
+        Block block(context);
+        // Stopped, so the sequencer plays nothing and what comes out is
+        // whatever it decided to pass on.
+        block.info.playing = false;
+        block.midi.addEvent(juce::MidiMessage::noteOn(1, 64, 1.0f), 0);
+        for (int i = 0; i < kClocks; ++i)
+            block.midi.addEvent(juce::MidiMessage::midiClock(), i % context.maxBlockSize);
+        block.midi.addEvent(juce::MidiMessage::noteOff(1, 64), context.maxBlockSize - 1);
+
+        REQUIRE(budgetCostOf(block.midi) <= magda::engine::kMaxMidiBytesPerPort);
+        REQUIRE(block.midi.getNumEvents() == kClocks + 2);
+
+        auto deviceBlock = block.deviceBlock();
+        deviceBlock.midiOut = &out;
+        hosted.process(deviceBlock);
+    };
+
+    // Everything on the port that did not come from the device itself. The
+    // all-notes-off a freshly prepared device owes is its own, and is counted
+    // apart so its absence cannot pass for a port that was written correctly.
+    const auto carriedAndOwn = [](const juce::MidiBuffer& out) {
+        std::pair<int, int> counts{0, 0};
+        for (const auto metadata : out) {
+            if (metadata.getMessage().isAllNotesOff())
+                ++counts.second;
+            else
+                ++counts.first;
+        }
+        return counts;
+    };
+
+    SECTION("mono") {
+        juce::MidiBuffer out;
+        runOneBlock(std::make_unique<magda::daw::audio::StepSequencerPlugin>(), out);
+
+        const auto [carried, own] = carriedAndOwn(out);
+        CHECK(carried == 0);
+        CHECK(own == 1);
+    }
+
+    SECTION("poly") {
+        juce::MidiBuffer out;
+        runOneBlock(std::make_unique<magda::daw::audio::PolyStepSequencerPlugin>(), out);
+
+        const auto [carried, own] = carriedAndOwn(out);
+        CHECK(carried == 0);
+        CHECK(own == 1);
+    }
+}
+
+TEST_CASE("a device nothing feeds still emits its whole producer's worth",
+          "[engine][devices][2341]") {
+    // The output scratch is sized from the output bound, not the input's: a
+    // step sequencer on a track with no MIDI source would otherwise have room
+    // for nothing and play silence.
+    //
+    // A payload rather than a bare short message, so what is filled is the byte
+    // budget rather than an event count that happens to match it.
+    constexpr int kPayloadBytes = 3;
+    constexpr int kSysExRawBytes = kPayloadBytes + 2;  // the 0xF0 and the 0xF7
+    constexpr int kCostPerEvent = (magda::engine::kMidiShortMessageBytes - 3) + kSysExRawBytes;
+    constexpr int kEvents = magda::engine::kMaxMidiBytesPerPort / kCostPerEvent;
+
+    auto emitting = std::make_unique<EmittingDevice>(kEvents, kPayloadBytes);
+    adapter::EngineMagdaDevice hosted(std::move(emitting), /*offlineRender=*/false);
+    const auto context = contextFor();
+    hosted.prepare(context);
+    hosted.setMidiInputBoundBytes(0);
+    hosted.setMidiOutputBoundBytes(magda::engine::kMaxMidiBytesPerPort);
+
+    Block block(context);
+    juce::MidiBuffer out;
+    auto deviceBlock = block.deviceBlock();
+    deviceBlock.midiOut = &out;
+    hosted.process(deviceBlock);
+
+    CHECK(out.getNumEvents() == kEvents);
+    CHECK(budgetCostOf(out) <= magda::engine::kMaxMidiBytesPerPort);
+}
+
+TEST_CASE("the adapter carries a merged input, not one producer's worth",
+          "[engine][devices][2174]") {
+    // kMaxMidiBytesPerPort is what one producer may write. A device's input
+    // port is often a merge, and the executor sums the bound through the MIDI
+    // graph for exactly that reason, so a scratch sized from the constant drops
+    // the tail of anything arriving on a track with more than one source. The
+    // adapter has to size from what it is told.
+    constexpr int kEventOverheadBytes = magda::engine::kMidiShortMessageBytes - 3;
+    constexpr int kBound = 3 * magda::engine::kMaxMidiBytesPerPort;
+    constexpr int kEvents = kBound / (kEventOverheadBytes + 1);
+
+    auto counting = std::make_unique<CountingDevice>();
+    auto* device = counting.get();
+
+    adapter::EngineMagdaDevice hosted(std::move(counting), /*offlineRender=*/false);
+    const auto context = contextFor();
+    hosted.prepare(context);
+    hosted.setMidiInputBoundBytes(kBound);
+
+    Block block(context);
+    for (int event = 0; event < kEvents; ++event)
+        block.midi.addEvent(juce::MidiMessage::midiClock(), event % context.maxBlockSize);
+
+    REQUIRE(block.midi.getNumEvents() == kEvents);
+    REQUIRE(kEvents > magda::engine::kMaxMidiBytesPerPort / (kEventOverheadBytes + 1));
+
+    auto deviceBlock = block.deviceBlock();
+    hosted.process(deviceBlock);
+
+    CHECK(device->received == kEvents);
+}
+
+TEST_CASE("the executor tells a device what can reach its MIDI input", "[engine][devices][2174]") {
+    // The bound is the engine's fact and no device can work it out for itself,
+    // so it has to arrive. Asserted at the boundary rather than through a
+    // render: what would go wrong silently is nobody saying anything.
+    magda::TrackInfo instrument;
+    instrument.id = 1;
+    instrument.type = magda::TrackType::Media;
+    instrument.name = "Instrument";
+    instrument.chain.fxChainElements.emplace_back(magda::nulldiff::synthDevice(10));
+
+    magda::TrackInfo effect;
+    effect.id = 2;
+    effect.type = magda::TrackType::Media;
+    effect.name = "Effect";
+    effect.chain.fxChainElements.emplace_back(magda::nulldiff::gainDevice(20));
+
+    magda::TrackInfo master;
+    master.id = magda::MASTER_TRACK_ID;
+    master.type = magda::TrackType::Master;
+    master.name = "Master";
+
+    const auto plan = magda::engine::compileRenderPlan({instrument, effect}, master);
+
+    BoundProbe synthProbe;
+    BoundProbe gainProbe;
+
+    magda::engine::PlanBindings bindings;
+    for (const auto& op : plan.ops)
+        if (op.kind == magda::engine::OpKind::Device)
+            bindings.devices[op.key.deviceKey()] =
+                op.key.deviceId == 10 ? static_cast<magda::engine::EngineDevice*>(&synthProbe)
+                                      : static_cast<magda::engine::EngineDevice*>(&gainProbe);
+
+    magda::engine::PlanExecutor executor;
+    executor.prepare(plan, bindings, contextFor(), nullptr, nullptr);
+    REQUIRE(executor.isPrepared());
+
+    // The instrument is fed through the track's MIDI merge, so it is told what
+    // that merge can carry. The gain has no MIDI input at all and is told so,
+    // rather than being left at whatever it assumed.
+    CHECK(synthProbe.bound >= magda::engine::kMaxMidiBytesPerPort);
+    CHECK(gainProbe.bound == 0);
+}
+
+TEST_CASE("the executor tells a device what it may write, apart from what it may read",
+          "[engine][devices][2341][2345]") {
+    // The other half of the same fact, and the half nothing used to say. The
+    // two figures are independent: a device's input port is often a merge and
+    // its output port is one producer's worth, because a device emits what it
+    // made and thru is the plan's merge behind it (#2345).
+    //
+    // Clips, the session launcher and a hardware input all merge onto this
+    // track, so what reaches the device is three producers' worth -- the sum a
+    // device could not have worked out for itself, and the figure it must not
+    // size its own writing from. Session sources joined the merge in #2318.
+    magda::TrackInfo instrument;
+    instrument.id = 1;
+    instrument.type = magda::TrackType::Media;
+    instrument.name = "Instrument";
+    instrument.recordArmed = true;  // what makes the input route active
+    instrument.midiInputDevice = "midi-hardware";
+
+    auto synth = magda::nulldiff::synthDevice(10);
+    synth.producesMidi = true;  // so the plan gives the op a MIDI output port
+    instrument.chain.fxChainElements.emplace_back(synth);
+
+    magda::TrackInfo effect;
+    effect.id = 2;
+    effect.type = magda::TrackType::Media;
+    effect.name = "Effect";
+    effect.chain.fxChainElements.emplace_back(magda::nulldiff::gainDevice(20));
+
+    magda::TrackInfo master;
+    master.id = magda::MASTER_TRACK_ID;
+    master.type = magda::TrackType::Master;
+    master.name = "Master";
+
+    const auto plan = magda::engine::compileRenderPlan({instrument, effect}, master);
+
+    BoundProbe synthProbe;
+    BoundProbe gainProbe;
+
+    magda::engine::PlanBindings bindings;
+    for (const auto& op : plan.ops)
+        if (op.kind == magda::engine::OpKind::Device)
+            bindings.devices[op.key.deviceKey()] =
+                op.key.deviceId == 10 ? static_cast<magda::engine::EngineDevice*>(&synthProbe)
+                                      : static_cast<magda::engine::EngineDevice*>(&gainProbe);
+
+    magda::engine::PlanExecutor executor;
+    executor.prepare(plan, bindings, contextFor(), nullptr, nullptr);
+    REQUIRE(executor.isPrepared());
+
+    REQUIRE(synthProbe.bound == 3 * magda::engine::kMaxMidiBytesPerPort);
+    CHECK(synthProbe.outBound == magda::engine::kMaxMidiBytesPerPort);
+
+    // The gain emits no MIDI at all, and is told so rather than being left at
+    // whatever it assumed.
+    CHECK(gainProbe.outBound == 0);
+}
+
+TEST_CASE("the executor budgets a forwarding device's output for its input as well",
+          "[engine][devices][2417]") {
+    // The exception to the case above. A MIDI FX that consumes notes hands the
+    // rest of the channel on, since thru would bring the notes back with it,
+    // so its port holds what reached it as well as what it makes. Same three
+    // producers as above, so the two figures can be read against each other.
+    magda::TrackInfo instrument;
+    instrument.id = 1;
+    instrument.type = magda::TrackType::Media;
+    instrument.name = "Instrument";
+    instrument.recordArmed = true;  // what makes the input route active
+    instrument.midiInputDevice = "midi-hardware";
+
+    auto arp = magda::nulldiff::synthDevice(10);
+    arp.producesMidi = true;  // so the plan gives the op a MIDI output port
+    instrument.chain.fxChainElements.emplace_back(arp);
+
+    magda::TrackInfo master;
+    master.id = magda::MASTER_TRACK_ID;
+    master.type = magda::TrackType::Master;
+    master.name = "Master";
+
+    const auto plan = magda::engine::compileRenderPlan({instrument}, master);
+
+    BoundProbe probe;
+    probe.forwards = true;
+
+    magda::engine::PlanBindings bindings;
+    for (const auto& op : plan.ops)
+        if (op.kind == magda::engine::OpKind::Device)
+            bindings.devices[op.key.deviceKey()] = &probe;
+
+    magda::engine::PlanExecutor executor;
+    executor.prepare(plan, bindings, contextFor(), nullptr, nullptr);
+    REQUIRE(executor.isPrepared());
+
+    REQUIRE(probe.bound == 3 * magda::engine::kMaxMidiBytesPerPort);
+    CHECK(probe.outBound == probe.bound + magda::engine::kMaxMidiBytesPerPort);
+}
+
+TEST_CASE("a device forwards long messages by copying them, never in place",
+          "[engine][devices][2174][2347]") {
+    // juce::MidiMessage keeps anything past eight bytes on the heap, and its
+    // move assignment overwrites a live destination without freeing it. The
+    // input view is read-only and the output view only push_backs, so the
+    // input-to-output leg is copies and move-constructs; this checks they
+    // arrive whole and in the order the device chose.
+    auto forwarding = std::make_unique<ForwardingDevice>();
+    adapter::EngineMagdaDevice hosted(std::move(forwarding), /*offlineRender=*/false);
+
+    const auto context = contextFor();
+    hosted.prepare(context);
+
+    // Distinguishable payloads, long enough to be heap-allocated.
+    const std::vector<std::uint8_t> first(32, 0x11);
+    const std::vector<std::uint8_t> second(32, 0x22);
+    const std::vector<std::uint8_t> third(32, 0x33);
+
+    Block block(context);
+    block.midi.addEvent(juce::MidiMessage::createSysExMessage(first.data(), 32), 0);
+    block.midi.addEvent(juce::MidiMessage::createSysExMessage(second.data(), 32), 1);
+    block.midi.addEvent(juce::MidiMessage::createSysExMessage(third.data(), 32), 2);
+
+    juce::MidiBuffer out;
+    auto deviceBlock = block.deviceBlock();
+    deviceBlock.midiOut = &out;
+    hosted.process(deviceBlock);
+
+    // Reversed, with the middle one dropped: third, first.
+    std::vector<std::uint8_t> marks;
+    for (const auto metadata : out) {
+        const auto message = metadata.getMessage();
+        REQUIRE(message.isSysEx());
+        REQUIRE(message.getSysExDataSize() == 32);
+        marks.push_back(message.getSysExData()[0]);
+    }
+
+    CHECK(marks == std::vector<std::uint8_t>{0x33, 0x11});
+}
+
+TEST_CASE("a device's input never reaches its MIDI output port", "[engine][devices][2347]") {
+    // The output port carries only what the device wrote. A device that reads
+    // its input and writes nothing sends nothing, so thru is the plan's merge
+    // behind it and never a device doing nothing (#2347).
+    auto counting = std::make_unique<CountingDevice>();
+    auto* device = counting.get();
+
+    adapter::EngineMagdaDevice hosted(std::move(counting), /*offlineRender=*/false);
+    const auto context = contextFor();
+    hosted.prepare(context);
+
+    Block block(context);
+    block.midi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
+    block.midi.addEvent(juce::MidiMessage::noteOn(1, 64, 1.0f), 16);
+    block.midi.addEvent(juce::MidiMessage::noteOff(1, 60), 128);
+    block.midi.addEvent(juce::MidiMessage::noteOff(1, 64), context.maxBlockSize - 1);
+    REQUIRE(block.midi.getNumEvents() == 4);
+
+    juce::MidiBuffer out;
+    auto deviceBlock = block.deviceBlock();
+    deviceBlock.midiOut = &out;
+    hosted.process(deviceBlock);
+
+    CHECK(device->received == 4);
+    CHECK(out.getNumEvents() == 0);
+    CHECK(budgetCostOf(out) == 0);
+}
+
+TEST_CASE("a note-on reaches a device at its fraction, and leaves at its own",
+          "[engine][devices][2741]") {
+    const auto context = contextFor();
+    auto stamping = std::make_unique<StampingDevice>(200.3 / context.sampleRate);
+    auto* device = stamping.get();
+
+    adapter::EngineMagdaDevice hosted(std::move(stamping), /*offlineRender=*/false);
+    hosted.prepare(context);
+    hosted.setMidiOutputBoundBytes(magda::engine::kMaxMidiBytesPerPort);
+
+    // 100.6 samples in, beside a controller on the same sample that has none.
+    Block block(context);
+    block.midi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 100);
+    block.midi.addEvent(juce::MidiMessage::controllerEvent(1, 1, 64), 100);
+    magda::engine::NoteFractions in(4);
+    in.add(100, 1, 60, 0.6f);
+
+    juce::MidiBuffer out;
+    magda::engine::NoteFractions outFractions(4);
+    auto deviceBlock = block.deviceBlock();
+    deviceBlock.midiInFractions = &in;
+    deviceBlock.midiOut = &out;
+    deviceBlock.midiOutFractions = &outFractions;
+    hosted.process(deviceBlock);
+
+    REQUIRE(device->stamps.size() == 1);
+    const auto arrived =
+        magda::daw::audio::midiEventPosition(device->stamps.front(), context.sampleRate);
+    CHECK(arrived.sample == 100);
+    CHECK(arrived.fraction == Catch::Approx(0.6f).margin(1e-4));
+
+    // What the device stamped 200.3 in lands on sample 200, and keeps the rest.
+    REQUIRE(out.getNumEvents() == 1);
+    CHECK((*out.cbegin()).samplePosition == 200);
+    CHECK(outFractions.at(200, 1, 72) == Catch::Approx(0.3f).margin(1e-4));
+}
+
+TEST_CASE("two note-ons of one pitch inside one sample keep their own fractions",
+          "[engine][devices][2741]") {
+    const auto context = contextFor();
+    auto stamping = std::make_unique<StampingDevice>(0.0);
+    auto* device = stamping.get();
+
+    adapter::EngineMagdaDevice hosted(std::move(stamping), /*offlineRender=*/false);
+    hosted.prepare(context);
+
+    // 100.2 and 100.8, with a note of another pitch between them.
+    Block block(context);
+    block.midi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 100);
+    block.midi.addEvent(juce::MidiMessage::noteOn(1, 64, 1.0f), 100);
+    block.midi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 100);
+    magda::engine::NoteFractions in(4);
+    in.add(100, 1, 60, 0.2f);
+    in.add(100, 1, 64, 0.5f);
+    in.add(100, 1, 60, 0.8f);
+
+    auto deviceBlock = block.deviceBlock();
+    deviceBlock.midiInFractions = &in;
+    hosted.process(deviceBlock);
+
+    REQUIRE(device->stamps.size() == 3);
+    CHECK(device->stamps[0] * context.sampleRate == Catch::Approx(100.2).margin(1e-4));
+    CHECK(device->stamps[1] * context.sampleRate == Catch::Approx(100.5).margin(1e-4));
+    CHECK(device->stamps[2] * context.sampleRate == Catch::Approx(100.8).margin(1e-4));
+}
+
+TEST_CASE("a device that declares no MIDI output cannot emit any", "[engine][devices][2347]") {
+    // The plan may still give the op a MIDI output port (the model's view of the
+    // device, not the device's own). What an undeclared emitter writes is
+    // dropped, as the Tracktion adapter drops it.
+    auto emitting = std::make_unique<EmittingDevice>(3, 16, /*declared=*/false);
+    adapter::EngineMagdaDevice hosted(std::move(emitting), /*offlineRender=*/false);
+
+    const auto context = contextFor();
+    hosted.prepare(context);
+
+    Block block(context);
+    juce::MidiBuffer out;
+    auto deviceBlock = block.deviceBlock();
+    deviceBlock.midiOut = &out;
+    hosted.process(deviceBlock);
+
+    CHECK(out.getNumEvents() == 0);
+}
+
+TEST_CASE("one note-off releases a pitch that was pressed many times", "[engine][devices][2192]") {
+    // The mono and legato voice keeps a stack of what is held, and a note-on
+    // for a pitch already on it moves that pitch to the top rather than adding
+    // a second copy. Two things rest on that.
+    //
+    // The audible one is here: a pitch held twice would need two note-offs to
+    // be let go, and an unbalanced stream sends one. Those streams are ordinary
+    // -- a recorded clip playing back merged with the live input that fed it
+    // sends every note twice -- and the poly path has releasePolyVoicesForPitch()
+    // for exactly this. The mono path had nothing, so the note hung.
+    //
+    // The other is that the stack is then bounded by the MIDI range and can be
+    // sized once, off the audio thread, instead of growing under process().
+    // That is what the repeat count below is for: it is past any bound the
+    // stack could be given, so a stack that appended would have grown.
+    magda::DeviceInfo model;
+    model.pluginId = "magda_fm";
+
+    auto device = adapter::createEngineDevice(model);
+    REQUIRE(device != nullptr);
+
+    auto* hosted = dynamic_cast<adapter::EngineMagdaDevice*>(device.get());
+    REQUIRE(hosted != nullptr);
+    auto& sdk = hosted->device();
+
+    const int voiceModeSlot = slotNamed(sdk, "Voice Mode");
+    const int sustainSlot = slotNamed(sdk, "Amp Sustain");
+    const int releaseSlot = slotNamed(sdk, "Amp Release");
+    const int attackSlot = slotNamed(sdk, "Amp Attack");
+    REQUIRE(voiceModeSlot >= 0);
+    REQUIRE(sustainSlot >= 0);
+    REQUIRE(releaseSlot >= 0);
+    REQUIRE(attackSlot >= 0);
+
+    const auto context = contextFor();
+    device->prepare(context);
+
+    // Mono, held at full sustain so a note that never releases stays audible,
+    // with the envelope's ends short enough to settle inside a few blocks.
+    setDisplayValue(sdk, voiceModeSlot, 1.0f);  // Poly / Mono / Legato
+    setDisplayValue(sdk, sustainSlot, 1.0f);
+    setDisplayValue(sdk, attackSlot, 1.0f);
+    setDisplayValue(sdk, releaseSlot, 1.0f);
+
+    constexpr int kNote = 60;
+    constexpr int kRepeats = 400;
+
+    Block pressed(context);
+    for (int repeat = 0; repeat < kRepeats; ++repeat)
+        pressed.midi.addEvent(juce::MidiMessage::noteOn(1, kNote, 1.0f), 0);
+    auto pressedBlock = pressed.deviceBlock();
+    device->process(pressedBlock);
+
+    Block held(context);
+    auto heldBlock = held.deviceBlock();
+    device->process(heldBlock);
+    const float heldPeak = peakOf(held.buffer);
+
+    // The note has to be sounding, or the release below proves nothing.
+    REQUIRE(heldPeak > 0.0f);
+
+    Block lifted(context);
+    lifted.midi.addEvent(juce::MidiMessage::noteOff(1, kNote), 0);
+    auto liftedBlock = lifted.deviceBlock();
+    device->process(liftedBlock);
+
+    float releasedPeak = 0.0f;
+    for (int block = 0; block < 8; ++block) {
+        Block quiet(context);
+        auto quietBlock = quiet.deviceBlock();
+        device->process(quietBlock);
+        releasedPeak = peakOf(quiet.buffer);
+    }
+
+    // One note-off, four hundred note-ons: the voice is released. A stack that
+    // appended would still be holding three hundred and ninety-nine of them and
+    // sitting at full sustain here.
+    CHECK(releasedPeak < heldPeak * 0.05f);
+}
+
+TEST_CASE("a device built for the engine gets the state the project saved",
+          "[engine][devices][2192]") {
+    // Parameters reach a device through the plan's value layer, so for most
+    // devices there is nothing else to carry and the factory carried nothing.
+    // The runtime Faust device breaks that: its dsp source is state, not a
+    // parameter, and a device built without it runs the default passthrough.
+    // That is a render of a project nobody saved, which is the one thing the
+    // factory must not do quietly.
+    constexpr const char* kSource = R"FAUST(
+// Self-contained test DSP. The literal "stdfaust.lib" in this comment is
+// load-bearing: the compile step only skips its automatic import when the
+// source already mentions the library.
+process = *(0.25), *(0.25);
+)FAUST";
+
+    magda::device_state::Doc doc;
+    doc.deviceType = "faust";
+    doc.root.props.set("dspSource", kSource);
+    doc.root.props.set("dspName", "Saved patch");
+
+    magda::DeviceInfo model;
+    model.pluginId = "faust";
+    model.pluginState = magda::device_state::encode(doc);
+    REQUIRE(model.pluginState.isNotEmpty());
+
+    auto device = adapter::createEngineDevice(model);
+    REQUIRE(device != nullptr);
+
+    auto* hosted = dynamic_cast<adapter::EngineMagdaDevice*>(device.get());
+    REQUIRE(hosted != nullptr);
+
+    auto* faust = dynamic_cast<magda::daw::audio::FaustPlugin*>(&hosted->device());
+    REQUIRE(faust != nullptr);
+
+    CHECK(faust->getDspSource().contains("*(0.25)"));
+    CHECK(faust->getDspName() == juce::String("Saved patch"));
+}
+
+TEST_CASE("an engine-built arpeggiator gets the settings the model saved",
+          "[engine][devices][2299]") {
+    // Ramp cycles / quantize / hard angle are device state, not parameters, so
+    // the only way they reach a native render is through the model's saved
+    // document. The faceplate edit path captures into DeviceInfo.pluginState;
+    // this pins the other half: a device built from that state actually holds
+    // the values.
+    magda::device_state::Doc doc;
+    doc.deviceType = "arpeggiator";
+    doc.root.props.set("arpRampCycles", 5);
+    doc.root.props.set("arpQuantize", 0.75f);
+    doc.root.props.set("arpQuantizeSub", 32);
+    doc.root.props.set("arpHardAngle", true);
+
+    magda::DeviceInfo model;
+    model.pluginId = "arpeggiator";
+    model.pluginState = magda::device_state::encode(doc);
+    REQUIRE(model.pluginState.isNotEmpty());
+
+    auto device = adapter::createEngineDevice(model);
+    REQUIRE(device != nullptr);
+
+    auto* hosted = dynamic_cast<adapter::EngineMagdaDevice*>(device.get());
+    REQUIRE(hosted != nullptr);
+
+    auto* arp = dynamic_cast<magda::daw::audio::ArpeggiatorPlugin*>(&hosted->device());
+    REQUIRE(arp != nullptr);
+
+    CHECK(arp->rampCycles.load() == 5);
+    CHECK(arp->quantize.load() == Catch::Approx(0.75f));
+    CHECK(arp->quantizeSub.load() == 32);
+    CHECK(arp->hardAngle.load());
+}
+
+TEST_CASE("a device saved as the engine's own XML is restored too", "[engine][devices][2602]") {
+    // Every other fixture here builds its state with device_state::encode, so
+    // they all exercise the one format that already worked. Most internal
+    // devices in a project folder are still saved as the engine's v1 XML,
+    // which decode() refuses by design: read only v2 and every one of them
+    // came up running its defaults (#2602).
+    magda::DeviceInfo model;
+    model.pluginId = "arpeggiator";
+    model.pluginState = R"(<PLUGIN type="arpeggiator" id="1042" arpRampCycles="5"
+                                  arpQuantize="0.75" arpQuantizeSub="32" arpHardAngle="1">
+                             <MODIFIERASSIGNMENTS/>
+                           </PLUGIN>)";
+    REQUIRE(magda::device_state::looksLikeLegacyEngineState(model.pluginState));
+
+    auto device = adapter::createEngineDevice(model);
+    REQUIRE(device != nullptr);
+
+    auto* hosted = dynamic_cast<adapter::EngineMagdaDevice*>(device.get());
+    REQUIRE(hosted != nullptr);
+
+    auto* arp = dynamic_cast<magda::daw::audio::ArpeggiatorPlugin*>(&hosted->device());
+    REQUIRE(arp != nullptr);
+
+    CHECK(arp->rampCycles.load() == 5);
+    CHECK(arp->quantize.load() == Catch::Approx(0.75f));
+    CHECK(arp->quantizeSub.load() == 32);
+    CHECK(arp->hardAngle.load());
+}
+
+TEST_CASE("a step sequencer's pattern is read out of either format", "[engine][devices][2602]") {
+    // The faceplate reads the pattern from the model rather than the running
+    // device, so reading only v2 drew an empty pattern over a sequencer that
+    // was playing the right one.
+    const auto pattern = magda::step_pattern::monoPatternOf(
+        R"(<PLUGIN type="stepsequencer" id="9" seqNumSteps="4">
+             <STEP idx="0" note="62" gate="1" accent="1"/>
+             <STEP idx="1" note="65" gate="1"/>
+           </PLUGIN>)");
+
+    CHECK(pattern.length == 4);
+    CHECK(pattern.steps[0].noteNumber == 62);
+    CHECK(pattern.steps[0].accent);
+    CHECK(pattern.steps[1].noteNumber == 65);
+}
+
+TEST_CASE("the engine's own ids and assignments do not reach the device",
+          "[engine][devices][2602]") {
+    // The id the engine stamps on every node and the assignments MAGDA rebuilds
+    // from its own modifier list are the engine's, not the device's.
+    const auto tree = magda::device_state::legacyEngineStateTree(
+        R"(<PLUGIN type="arpeggiator" id="1042" arpRampCycles="5">
+             <MODIFIERASSIGNMENTS><LFO id="7"/></MODIFIERASSIGNMENTS>
+             <NESTED id="99" keep="yes"/>
+           </PLUGIN>)");
+
+    REQUIRE(tree.isValid());
+    CHECK_FALSE(tree.hasProperty("id"));
+    CHECK(tree.getProperty("arpRampCycles").toString() == "5");
+    CHECK(tree.getChildWithName("MODIFIERASSIGNMENTS") == juce::ValueTree{});
+
+    const auto nested = tree.getChildWithName("NESTED");
+    REQUIRE(nested.isValid());
+    CHECK_FALSE(nested.hasProperty("id"));
+    CHECK(nested.getProperty("keep").toString() == "yes");
+}
+
+TEST_CASE("the Rings resonator renders through the engine's device op", "[engine][devices][2299]") {
+    // The first hand-written device to cross for #2299. What earns it a named
+    // case next to the generic sweep above is its shape: a MIDI-excited synth
+    // with no note-off gate, whose voice keeps ringing after the strum -- the
+    // sweep proves the factory builds it, not that MIDI reaches the exciter.
+    magda::DeviceInfo model;
+    model.pluginId = "magda_rings";
+
+    auto device = adapter::createEngineDevice(model);
+    REQUIRE(device != nullptr);
+
+    const auto context = contextFor();
+    device->prepare(context);
+
+    Block silent(context);
+    auto silentBlock = silent.deviceBlock();
+    device->process(silentBlock);
+    CHECK(peakOf(silent.buffer) == 0.0f);
+
+    Block struck(context);
+    struck.midi.addEvent(juce::MidiMessage::noteOn(1, 48, 1.0f), 0);
+    auto struckBlock = struck.deviceBlock();
+    device->process(struckBlock);
+    CHECK(peakOf(struck.buffer) > 0.0f);
+
+    // Rings has no gate: the resonator decays per its Damping control, so the
+    // block after the strum still carries the tail.
+    Block ringing(context);
+    auto ringingBlock = ringing.deviceBlock();
+    device->process(ringingBlock);
+    CHECK(peakOf(ringing.buffer) > 0.0f);
+}
+
+TEST_CASE("the adapter hands a device the panic the port carried", "[engine][devices][2418]") {
+    // The engine's juce::MidiBuffer has no flag beside its events, so the port
+    // carries one and the adapter reads it into the SDK's input view.
+    auto panic = std::make_unique<PanicDevice>();
+    auto* device = panic.get();
+    adapter::EngineMagdaDevice hosted(std::move(panic), /*offlineRender=*/false);
+
+    const auto context = contextFor();
+    hosted.prepare(context);
+
+    Block block(context);
+    juce::MidiBuffer out;
+
+    auto quiet = block.deviceBlock();
+    quiet.midiOut = &out;
+    hosted.process(quiet);
+    CHECK_FALSE(device->heard);
+
+    auto jumped = block.deviceBlock();
+    jumped.midiOut = &out;
+    jumped.midiInAllNotesOff = true;
+    hosted.process(jumped);
+    CHECK(device->heard);
+}
+
+TEST_CASE("the adapter puts a device's panic back on its output port", "[engine][devices][2418]") {
+    // On an empty block as much as a busy one: the flag is the device's answer
+    // whether or not it wrote an event, and a panic with no events is exactly
+    // what a device raises when it has nothing left to say.
+    auto panic = std::make_unique<PanicDevice>();
+    auto* device = panic.get();
+    device->answer = true;
+    adapter::EngineMagdaDevice hosted(std::move(panic), /*offlineRender=*/false);
+
+    const auto context = contextFor();
+    hosted.prepare(context);
+
+    Block block(context);
+    juce::MidiBuffer out;
+    auto deviceBlock = block.deviceBlock();
+    deviceBlock.midiOut = &out;
+    hosted.process(deviceBlock);
+
+    CHECK(out.getNumEvents() == 0);
+    CHECK(deviceBlock.midiOutAllNotesOff);
+}
+
+TEST_CASE("a device that declares no MIDI output cannot raise a panic either",
+          "[engine][devices][2418]") {
+    // The same rule its events get: what an undeclared emitter writes is
+    // dropped, and the flag is part of what it writes.
+    auto panic = std::make_unique<PanicDevice>(/*declared=*/false);
+    auto* device = panic.get();
+    device->answer = true;
+    adapter::EngineMagdaDevice hosted(std::move(panic), /*offlineRender=*/false);
+
+    const auto context = contextFor();
+    hosted.prepare(context);
+
+    Block block(context);
+    juce::MidiBuffer out;
+    auto deviceBlock = block.deviceBlock();
+    deviceBlock.midiOut = &out;
+    hosted.process(deviceBlock);
+
+    CHECK_FALSE(deviceBlock.midiOutAllNotesOff);
+}

@@ -394,7 +394,7 @@ ResolvedGesture GestureRouter::resolve(GestureContext context, GestureArea area,
 
     GestureInput input{wheel.isSmooth ? GestureInputKind::SmoothWheel : GestureInputKind::Wheel,
                        area, axis, gestureModifierMaskFrom(mods)};
-    auto* binding = findBinding(context, input);
+    const auto* binding = findBinding(context, input);
     // Existing contexts intentionally need no duplicate smooth rows. They use
     // the ordinary wheel binding unless a context provides a distinct smooth
     // default/override (currently the EQ curve editor).

@@ -1,13 +1,16 @@
 #include "custom_ui/StepSequencerUI.hpp"
 
-#include "audio/transport/StepClock.hpp"
 #include "ui/themes/SmallComboBoxLookAndFeel.hpp"
 
 namespace magda::daw::ui {
 
 using SeqPlugin = daw::audio::StepSequencerPlugin;
 
-static const char* NOTE_NAMES[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+std::atomic<int> StepSequencerUI::nextPatternGesture_{magda::kNoStepPatternGesture + 1};
+
+namespace {
+const char* NOTE_NAMES[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+}  // namespace
 
 juce::String StepSequencerUI::noteNameShort(int noteNumber) {
     if (noteNumber < 0 || noteNumber > 127)
@@ -31,8 +34,7 @@ StepSequencerUI::StepSequencerUI() {
     });
     rateSlider_.setValueParser([](const juce::String&) { return 1.0; });
     rateSlider_.onValueChanged = [this](double value) {
-        if (plugin_)
-            plugin_->rate = juce::roundToInt(value);
+        sendChange(SeqPlugin::kRate, static_cast<float>(juce::roundToInt(value)));
     };
 
     setupLabel(stepsLabel_, "STEPS");
@@ -40,31 +42,37 @@ StepSequencerUI::StepSequencerUI() {
     stepsSlider_.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v)); });
     stepsSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
     stepsSlider_.onValueChanged = [this](double value) {
-        if (plugin_) {
-            int steps = juce::roundToInt(value);
-            plugin_->numSteps = steps;
-            rampCurveDisplay_.setNumTicks(steps);
-            // Clamp cycles to num steps
-            cyclesSlider_.setRange(1.0, static_cast<double>(steps), 1.0);
-            if (cyclesSlider_.getValue() > steps)
-                cyclesSlider_.setValue(static_cast<double>(steps), juce::sendNotificationSync);
-            repaint();
-        }
+        const int steps = juce::jlimit(1, SeqPlugin::MAX_STEPS, juce::roundToInt(value));
+        // How many steps play is part of the pattern, so it is a pattern edit.
+        // A drag writes one on every mouse move, so those coalesce into the one
+        // undo entry the drag deserves rather than ~28 of them; a typed or
+        // clicked value is a single edit and stays discrete (#2335).
+        editPattern(
+            "Set Step Count", [steps](step_pattern::MonoPattern& p) { p.length = steps; },
+            stepsSlider_.isBeingDragged() ? magda::StepPatternGesture::Continuous
+                                          : magda::StepPatternGesture::Discrete);
+        rampCurveDisplay_.setNumTicks(steps);
+        // Clamp cycles to num steps
+        cyclesSlider_.setRange(1.0, static_cast<double>(steps), 1.0);
+        if (cyclesSlider_.getValue() > steps)
+            cyclesSlider_.setValue(static_cast<double>(steps), juce::sendNotificationSync);
+        repaint();
     };
+    stepsSlider_.getSlider().onDragEnd = [this] { endPatternGesture(); };
 
     setupLabel(dirLabel_, "DIR");
     dirCombo_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
     dirCombo_.setColour(juce::ComboBox::backgroundColourId,
-                        DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
-    dirCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-    dirCombo_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+                        ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.1f));
+    dirCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
+    dirCombo_.setColour(juce::ComboBox::outlineColourId,
+                        ActiveTheme::getColour(ActiveTheme::BORDER));
     dirCombo_.addItem("Forward", 1);
     dirCombo_.addItem("Reverse", 2);
     dirCombo_.addItem("Ping-Pong", 3);
     dirCombo_.addItem("Random", 4);
     dirCombo_.onChange = [this] {
-        if (plugin_)
-            plugin_->direction = dirCombo_.getSelectedId() - 1;
+        sendChange(SeqPlugin::kDirection, static_cast<float>(dirCombo_.getSelectedId() - 1));
     };
     addAndMakeVisible(dirCombo_);
 
@@ -75,8 +83,7 @@ StepSequencerUI::StepSequencerUI() {
     swingSlider_.setValueParser(
         [](const juce::String& t) { return t.replace("%", "").trim().getDoubleValue() / 100.0; });
     swingSlider_.onValueChanged = [this](double value) {
-        if (plugin_)
-            plugin_->swing = static_cast<float>(value);
+        sendChange(SeqPlugin::kSwing, static_cast<float>(value));
     };
 
     setupLabel(glideLabel_, "GATE");
@@ -86,18 +93,17 @@ StepSequencerUI::StepSequencerUI() {
     glideSlider_.setValueParser(
         [](const juce::String& t) { return t.replace("%", "").trim().getDoubleValue() / 100.0; });
     glideSlider_.onValueChanged = [this](double value) {
-        if (plugin_)
-            plugin_->gateLength = static_cast<float>(value);
+        sendChange(SeqPlugin::kGateLength, static_cast<float>(value));
     };
 
     // --- Ramp curve (time warp) ---
     setupLabel(rampLabel_, "TIME BEND");
     addAndMakeVisible(rampCurveDisplay_);
     rampCurveDisplay_.onCurveChanged = [this](float depth, float skew) {
-        if (plugin_) {
-            plugin_->ramp = depth;
-            plugin_->skew = skew;
-        }
+        sendChange(SeqPlugin::kRamp, depth);
+        sendChange(SeqPlugin::kSkew, skew);
+        depthSlider_.setValue(depth, juce::dontSendNotification);
+        skewSlider_.setValue(skew, juce::dontSendNotification);
     };
 
     setupLabel(depthLabel_, "DEPTH");
@@ -108,10 +114,9 @@ StepSequencerUI::StepSequencerUI() {
     depthSlider_.setValueParser(
         [](const juce::String& t) { return t.trim().getDoubleValue() / 100.0; });
     depthSlider_.onValueChanged = [this](double value) {
-        if (plugin_) {
-            plugin_->ramp = static_cast<float>(value);
-            rampCurveDisplay_.setValues(static_cast<float>(value), plugin_->skew.get());
-        }
+        sendChange(SeqPlugin::kRamp, static_cast<float>(value));
+        rampCurveDisplay_.setValues(static_cast<float>(value),
+                                    static_cast<float>(skewSlider_.getValue()));
     };
 
     setupLabel(skewLabel_, "SKEW");
@@ -121,25 +126,21 @@ StepSequencerUI::StepSequencerUI() {
     skewSlider_.setValueParser(
         [](const juce::String& t) { return t.trim().getDoubleValue() / 100.0; });
     skewSlider_.onValueChanged = [this](double value) {
-        if (plugin_) {
-            plugin_->skew = static_cast<float>(value);
-            rampCurveDisplay_.setValues(plugin_->ramp.get(), static_cast<float>(value));
-        }
+        sendChange(SeqPlugin::kSkew, static_cast<float>(value));
+        rampCurveDisplay_.setValues(static_cast<float>(depthSlider_.getValue()),
+                                    static_cast<float>(value));
     };
 
     setupLabel(cyclesLabel_, "CYCLES");
     setupSlider(cyclesSlider_, 1.0, static_cast<double>(SeqPlugin::MAX_STEPS), 1.0);
     cyclesSlider_.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v)); });
     cyclesSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
-    cyclesSlider_.onValueChanged = [this](double value) {
-        if (plugin_)
-            plugin_->rampCycles = juce::roundToInt(value);
-    };
+    cyclesSlider_.onValueChanged = [this](double) { settingsEdited(); };
 
     // Hard angle toggle (right-click on control point)
     rampCurveDisplay_.onHardAngleChanged = [this](bool hardAngle) {
-        if (plugin_)
-            plugin_->hardAngle = hardAngle;
+        hardAngle_ = hardAngle;
+        settingsEdited();
     };
 
     // Quantize slider (adaptive snap strength 0-100%)
@@ -150,10 +151,7 @@ StepSequencerUI::StepSequencerUI() {
         [](double v) { return juce::String(juce::roundToInt(v * 100)) + "%"; });
     quantizeSlider_.setValueParser(
         [](const juce::String& t) { return t.replace("%", "").trim().getDoubleValue() / 100.0; });
-    quantizeSlider_.onValueChanged = [this](double value) {
-        if (plugin_)
-            plugin_->quantize = static_cast<float>(value);
-    };
+    quantizeSlider_.onValueChanged = [this](double) { settingsEdited(); };
 
     // Quantize subdivisions (grid resolution, multiples of 16)
     setupLabel(quantizeSubLabel_, "SUB");
@@ -162,10 +160,7 @@ StepSequencerUI::StepSequencerUI() {
         [](double v) { return juce::String(juce::roundToInt(v)); });
     quantizeSubSlider_.setValueParser(
         [](const juce::String& t) { return t.trim().getDoubleValue(); });
-    quantizeSubSlider_.onValueChanged = [this](double value) {
-        if (plugin_)
-            plugin_->quantizeSub = juce::roundToInt(value);
-    };
+    quantizeSubSlider_.onValueChanged = [this](double) { settingsEdited(); };
 
     // MIDI thru, step record and pattern randomize live in the device-slot
     // header (next to the AI button), owned by DeviceSlotComponent — not in
@@ -174,98 +169,162 @@ StepSequencerUI::StepSequencerUI() {
 
 StepSequencerUI::~StepSequencerUI() {
     stopTimer();
-    if (watchedState_.isValid())
-        watchedState_.removeListener(this);
     dirCombo_.setLookAndFeel(nullptr);
 }
 
 // =============================================================================
-// Plugin binding
+// Model and device binding
 // =============================================================================
 
-void StepSequencerUI::setPlugin(daw::audio::StepSequencerPlugin* plugin) {
+void StepSequencerUI::setSequencer(daw::audio::StepSequencerPlugin* device) {
     stopTimer();
-    if (watchedState_.isValid())
-        watchedState_.removeListener(this);
+    device_ = device;
 
-    plugin_ = plugin;
-
-    if (plugin_) {
-        watchedState_ = plugin_->state;
-        watchedState_.addListener(this);
-        syncFromPlugin();
+    if (device_ != nullptr) {
+        syncSettingsFromDevice();
         startTimerHz(30);
     }
 }
 
-void StepSequencerUI::syncFromPlugin() {
-    if (!plugin_)
-        return;
+void StepSequencerUI::updateFromParameters(const std::vector<magda::ParameterInfo>& params) {
+    // By paramIndex, not array position: the model's list is in the saved
+    // document's order and need not be complete, so a positional read draws one
+    // slot's value on another's control (#2335).
+    const auto display = [&params](int index, float fallback) {
+        for (const auto& parameter : params)
+            if (parameter.paramIndex == index)
+                return parameter.currentValue;
+        return fallback;
+    };
 
-    rateSlider_.setValue(static_cast<double>(plugin_->rate.get()), juce::dontSendNotification);
-    stepsSlider_.setValue(static_cast<double>(plugin_->numSteps.get()), juce::dontSendNotification);
-    dirCombo_.setSelectedId(plugin_->direction.get() + 1, juce::dontSendNotification);
-    swingSlider_.setValue(static_cast<double>(plugin_->swing.get()), juce::dontSendNotification);
-    glideSlider_.setValue(static_cast<double>(plugin_->gateLength.get()),
+    rateSlider_.setValue(static_cast<double>(display(SeqPlugin::kRate, 7.0f)),
+                         juce::dontSendNotification);
+    dirCombo_.setSelectedId(juce::roundToInt(display(SeqPlugin::kDirection, 0.0f)) + 1,
+                            juce::dontSendNotification);
+    swingSlider_.setValue(static_cast<double>(display(SeqPlugin::kSwing, 0.0f)),
                           juce::dontSendNotification);
-    depthSlider_.setValue(static_cast<double>(plugin_->ramp.get()), juce::dontSendNotification);
-    skewSlider_.setValue(static_cast<double>(plugin_->skew.get()), juce::dontSendNotification);
-    rampCurveDisplay_.setValues(plugin_->ramp.get(), plugin_->skew.get());
-    rampCurveDisplay_.setHardAngle(plugin_->hardAngle.get());
-    int steps = plugin_->numSteps.get();
-    rampCurveDisplay_.setNumTicks(steps);
-    cyclesSlider_.setRange(1.0, static_cast<double>(steps), 1.0);
-    quantizeSlider_.setValue(static_cast<double>(plugin_->quantize.get()),
-                             juce::dontSendNotification);
-    quantizeSubSlider_.setValue(static_cast<double>(plugin_->quantizeSub.get()),
-                                juce::dontSendNotification);
-    cyclesSlider_.setValue(static_cast<double>(juce::jlimit(1, steps, plugin_->rampCycles.get())),
-                           juce::dontSendNotification);
+    glideSlider_.setValue(static_cast<double>(display(SeqPlugin::kGateLength, 0.8f)),
+                          juce::dontSendNotification);
+
+    const float depth = display(SeqPlugin::kRamp, 0.0f);
+    const float skew = display(SeqPlugin::kSkew, 0.0f);
+    depthSlider_.setValue(static_cast<double>(depth), juce::dontSendNotification);
+    skewSlider_.setValue(static_cast<double>(skew), juce::dontSendNotification);
+    rampCurveDisplay_.setValues(depth, skew);
+
+    syncSettingsFromDevice();
     repaint();
 }
 
-void StepSequencerUI::valueTreePropertyChanged(juce::ValueTree&, const juce::Identifier&) {
-    juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer(this)] {
-        if (safeThis)
-            safeThis->syncFromPlugin();
-    });
+void StepSequencerUI::setPattern(const step_pattern::MonoPattern& pattern) {
+    // The controls are written whether or not the pattern moved. Returning
+    // early on an unchanged pattern left them at their own defaults for a
+    // pattern that happens to equal the default one, which reads as a 16-step
+    // pattern under a Steps of 1 (#2602). Only the repaint is worth skipping.
+    const bool changed = !(pattern == pattern_);
+
+    pattern_ = pattern;
+    const int steps = pattern_.playingLength();
+    stepsSlider_.setValue(static_cast<double>(steps), juce::dontSendNotification);
+    rampCurveDisplay_.setNumTicks(steps);
+    cyclesSlider_.setRange(1.0, static_cast<double>(steps), 1.0);
+
+    if (changed)
+        repaint();
 }
 
-void StepSequencerUI::valueTreeChildAdded(juce::ValueTree&, juce::ValueTree&) {
-    juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer(this)] {
-        if (safeThis)
-            safeThis->syncFromPlugin();
-    });
+void StepSequencerUI::syncSettingsFromDevice() {
+    if (device_ == nullptr)
+        return;
+
+    const int steps = pattern_.playingLength();
+    hardAngle_ = device_->hardAngle.load(std::memory_order_relaxed);
+    rampCurveDisplay_.setHardAngle(hardAngle_);
+    quantizeSlider_.setValue(static_cast<double>(device_->quantize.load(std::memory_order_relaxed)),
+                             juce::dontSendNotification);
+    quantizeSubSlider_.setValue(
+        static_cast<double>(device_->quantizeSub.load(std::memory_order_relaxed)),
+        juce::dontSendNotification);
+    cyclesSlider_.setValue(static_cast<double>(juce::jlimit(
+                               1, steps, device_->rampCycles.load(std::memory_order_relaxed))),
+                           juce::dontSendNotification);
 }
 
-void StepSequencerUI::valueTreeChildRemoved(juce::ValueTree&, juce::ValueTree&, int) {
-    juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer(this)] {
-        if (safeThis)
-            safeThis->syncFromPlugin();
-    });
+void StepSequencerUI::sendChange(int paramIndex, float value) {
+    if (onParameterChanged)
+        onParameterChanged(paramIndex, value);
+}
+
+void StepSequencerUI::settingsEdited() {
+    if (!onSettingsEdited)
+        return;
+
+    // The full settings set, from the controls, in the device's own state
+    // vocabulary. The owner patches these onto the model's document; the device
+    // itself is updated by the projection, not by this UI.
+    using IDs = daw::audio::StepSequencerPlugin::SettingIDs;
+    juce::NamedValueSet settings;
+    settings.set(IDs::rampCycles, juce::roundToInt(cyclesSlider_.getValue()));
+    settings.set(IDs::quantize, static_cast<float>(quantizeSlider_.getValue()));
+    settings.set(IDs::quantizeSub, juce::roundToInt(quantizeSubSlider_.getValue()));
+    settings.set(IDs::hardAngle, hardAngle_);
+    onSettingsEdited(settings);
+}
+
+void StepSequencerUI::editPattern(const juce::String& description,
+                                  std::function<void(step_pattern::MonoPattern&)> edit,
+                                  magda::StepPatternGesture gesture) {
+    if (!onPatternEdited)
+        return;
+    onPatternEdited(description, std::move(edit), gesture);
+}
+
+void StepSequencerUI::drainRecordedSteps() {
+    if (device_ == nullptr)
+        return;
+
+    // The device heard the notes; the model is where they are written.
+    daw::audio::StepSequencerPlugin::RecordedStep recorded;
+    while (device_->popRecordedStep(recorded)) {
+        editPattern("Record Step", [recorded](step_pattern::MonoPattern& p) {
+            if (recorded.stepIndex < 0 || recorded.stepIndex >= daw::audio::sequencer::kMaxSteps)
+                return;
+            auto& step = p.steps[static_cast<size_t>(recorded.stepIndex)];
+            step.noteNumber = juce::jlimit(0, 127, recorded.noteNumber);
+            step.octaveShift = 0;
+            step.gate = true;
+        });
+    }
 }
 
 void StepSequencerUI::timerCallback() {
-    if (!plugin_)
+    if (device_ == nullptr)
         return;
 
-    int step = plugin_->currentPlayStep_.load(std::memory_order_relaxed);
+    drainRecordedSteps();
+
+    // The device is the model's projection, so polling it catches every way a
+    // pattern can change - this faceplate, an undo, an agent, a preset load -
+    // without decoding the model's document 30 times a second. setPattern()
+    // early-outs when nothing moved.
+    setPattern(device_->pattern());
+
+    const int numSteps = pattern_.playingLength();
+    int step = device_->currentPlayStep_.load(std::memory_order_relaxed);
     bool needsRepaint = false;
     if (step != currentPlayStep_) {
         currentPlayStep_ = step;
         needsRepaint = true;
         // Update curve display sweep
-        int numSteps = juce::jlimit(1, SeqPlugin::MAX_STEPS, plugin_->numSteps.get());
         float pos = (step >= 0) ? static_cast<float>(step) / static_cast<float>(numSteps) : -1.0f;
-        rampCurveDisplay_.setPlaybackPosition(pos,
-                                              juce::jlimit(1, numSteps, plugin_->rampCycles.get()));
+        rampCurveDisplay_.setPlaybackPosition(
+            pos, juce::jlimit(1, numSteps, device_->rampCycles.load(std::memory_order_relaxed)));
     }
     // Track step record position for highlight + parent header banner
-    bool isRec = plugin_->isStepRecording();
+    bool isRec = device_->isStepRecording();
     if (isRec) {
-        int numSteps = juce::jlimit(1, SeqPlugin::MAX_STEPS, plugin_->numSteps.get());
         int recPos = juce::jlimit(0, numSteps - 1,
-                                  plugin_->stepRecordPosition_.load(std::memory_order_relaxed));
+                                  device_->stepRecordPosition_.load(std::memory_order_relaxed));
         if (recPos != selectedStep_) {
             selectedStep_ = recPos;
             needsRepaint = true;
@@ -404,20 +463,20 @@ void StepSequencerUI::paint(juce::Graphics& g) {
 // Step ruler above the grid: a tick per step, heavier + numbered every 4, with
 // the playing step highlighted. Columns align with the step boxes below.
 void StepSequencerUI::drawTimeline(juce::Graphics& g, juce::Rectangle<int> area) {
-    if (!plugin_ || area.isEmpty())
+    if (area.isEmpty())
         return;
 
-    const int count = juce::jlimit(1, SeqPlugin::MAX_STEPS, plugin_->numSteps.get());
+    const int count = pattern_.playingLength();
     const float colW = static_cast<float>(area.getWidth()) / static_cast<float>(count);
-    const float top = static_cast<float>(area.getY());
-    const float bottom = static_cast<float>(area.getBottom());
+    const auto top = static_cast<float>(area.getY());
+    const auto bottom = static_cast<float>(area.getBottom());
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.04f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.04f));
     g.fillRect(area);
 
     // Highlight the playing step.
     if (currentPlayStep_ >= 0 && currentPlayStep_ < count) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.45f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.45f));
         g.fillRect(
             juce::Rectangle<float>(area.getX() + currentPlayStep_ * colW, top, colW, bottom - top));
     }
@@ -426,10 +485,10 @@ void StepSequencerUI::drawTimeline(juce::Graphics& g, juce::Rectangle<int> area)
     for (int i = 0; i < count; ++i) {
         const float x = area.getX() + i * colW;
         const bool group = (i % 4 == 0);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(group ? 0.5f : 0.2f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(group ? 0.5f : 0.2f));
         g.drawVerticalLine(juce::roundToInt(x), group ? top : top + 4.0f, bottom);
         if (group) {
-            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.setColour(ActiveTheme::getSecondaryTextColour());
             g.drawText(
                 juce::String(i + 1),
                 juce::Rectangle<float>(x + 2.0f, top, colW - 2.0f, bottom - top).toNearestInt(),
@@ -437,34 +496,34 @@ void StepSequencerUI::drawTimeline(juce::Graphics& g, juce::Rectangle<int> area)
         }
     }
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.4f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.4f));
     g.drawHorizontalLine(area.getBottom() - 1, static_cast<float>(area.getX()),
                          static_cast<float>(area.getRight()));
 }
 
 void StepSequencerUI::drawStepBoxes(juce::Graphics& g, juce::Rectangle<int> area) {
-    if (!plugin_ || area.isEmpty())
+    if (area.isEmpty())
         return;
 
-    int count = juce::jlimit(1, SeqPlugin::MAX_STEPS, plugin_->numSteps.get());
+    int count = pattern_.playingLength();
     float boxW = static_cast<float>(area.getWidth()) / static_cast<float>(count);
     auto font = FontManager::getInstance().getUIFont(8.0f);
     g.setFont(font);
 
     for (int i = 0; i < count; ++i) {
-        auto step = plugin_->getStep(i);
+        const auto& step = pattern_.step(i);
         float x = area.getX() + i * boxW;
         auto boxRect = juce::Rectangle<float>(x + 0.5f, static_cast<float>(area.getY()),
                                               boxW - 1.0f, static_cast<float>(area.getHeight()));
 
         // Background
-        juce::Colour bg = DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.08f);
+        juce::Colour bg = ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.08f);
         if (i == currentPlayStep_)
-            bg = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.3f);
+            bg = ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.3f);
         if (i == selectedStep_)
             bg = bg.brighter(0.15f);
         if (i == dragTargetStep_ && dragSourceStep_ >= 0 && i != dragSourceStep_)
-            bg = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f);
+            bg = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f);
         if (!step.gate)
             bg = bg.darker(0.3f);
 
@@ -472,15 +531,15 @@ void StepSequencerUI::drawStepBoxes(juce::Graphics& g, juce::Rectangle<int> area
         g.fillRoundedRectangle(boxRect, 2.0f);
 
         // Border
-        juce::Colour border = DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.4f);
+        juce::Colour border = ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.4f);
         if (i == selectedStep_)
-            border = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE);
+            border = ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE);
         g.setColour(border);
         g.drawRoundedRectangle(boxRect, 2.0f, 0.5f);
 
         // Note name
         if (step.gate) {
-            g.setColour(DarkTheme::getTextColour());
+            g.setColour(ActiveTheme::getTextColour());
             g.drawText(noteNameShort(step.noteNumber + step.octaveShift * 12),
                        boxRect.toNearestInt(), juce::Justification::centred);
         }
@@ -488,73 +547,73 @@ void StepSequencerUI::drawStepBoxes(juce::Graphics& g, juce::Rectangle<int> area
 }
 
 void StepSequencerUI::drawAccentRow(juce::Graphics& g, juce::Rectangle<int> area) {
-    if (!plugin_ || area.isEmpty())
+    if (area.isEmpty())
         return;
 
-    int count = juce::jlimit(1, SeqPlugin::MAX_STEPS, plugin_->numSteps.get());
+    int count = pattern_.playingLength();
     float boxW = static_cast<float>(area.getWidth()) / static_cast<float>(count);
     auto font = FontManager::getInstance().getUIFont(7.0f);
     g.setFont(font);
 
     // Row label
-    g.setColour(DarkTheme::getSecondaryTextColour());
+    g.setColour(ActiveTheme::getSecondaryTextColour());
     g.drawText("ACC", area.removeFromLeft(24), juce::Justification::centredLeft);
 
-    float startX = static_cast<float>(area.getX());
+    auto startX = static_cast<float>(area.getX());
     boxW = static_cast<float>(area.getWidth()) / static_cast<float>(count);
 
     for (int i = 0; i < count; ++i) {
-        auto step = plugin_->getStep(i);
+        const auto& step = pattern_.step(i);
         float x = startX + i * boxW;
         auto rect =
             juce::Rectangle<float>(x + 1.0f, static_cast<float>(area.getY()) + 1.0f, boxW - 2.0f,
                                    static_cast<float>(area.getHeight()) - 2.0f);
 
         if (step.accent) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.7f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.7f));
             g.fillRoundedRectangle(rect, 2.0f);
-            g.setColour(DarkTheme::getTextColour());
+            g.setColour(ActiveTheme::getTextColour());
             g.drawText("A", rect.toNearestInt(), juce::Justification::centred);
         } else {
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.2f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.2f));
             g.fillRoundedRectangle(rect, 2.0f);
         }
     }
 }
 
 void StepSequencerUI::drawGlideTieRow(juce::Graphics& g, juce::Rectangle<int> area) {
-    if (!plugin_ || area.isEmpty())
+    if (area.isEmpty())
         return;
 
-    int count = juce::jlimit(1, SeqPlugin::MAX_STEPS, plugin_->numSteps.get());
+    int count = pattern_.playingLength();
     auto font = FontManager::getInstance().getUIFont(7.0f);
     g.setFont(font);
 
     // Row label
-    g.setColour(DarkTheme::getSecondaryTextColour());
+    g.setColour(ActiveTheme::getSecondaryTextColour());
     g.drawText("G/T", area.removeFromLeft(24), juce::Justification::centredLeft);
 
     float boxW = static_cast<float>(area.getWidth()) / static_cast<float>(count);
 
     for (int i = 0; i < count; ++i) {
-        auto step = plugin_->getStep(i);
+        const auto& step = pattern_.step(i);
         float x = static_cast<float>(area.getX()) + i * boxW;
         auto rect =
             juce::Rectangle<float>(x + 1.0f, static_cast<float>(area.getY()) + 1.0f, boxW - 2.0f,
                                    static_cast<float>(area.getHeight()) - 2.0f);
 
         if (step.tie) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.7f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.7f));
             g.fillRoundedRectangle(rect, 2.0f);
-            g.setColour(DarkTheme::getTextColour());
+            g.setColour(ActiveTheme::getTextColour());
             g.drawText("T", rect.toNearestInt(), juce::Justification::centred);
         } else if (step.glide) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.7f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.7f));
             g.fillRoundedRectangle(rect, 2.0f);
-            g.setColour(DarkTheme::getTextColour());
+            g.setColour(ActiveTheme::getTextColour());
             g.drawText("~", rect.toNearestInt(), juce::Justification::centred);
         } else {
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.2f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.2f));
             g.fillRoundedRectangle(rect, 2.0f);
         }
     }
@@ -570,7 +629,7 @@ void StepSequencerUI::drawKeyboard(juce::Graphics& g, juce::Rectangle<int> area)
     static constexpr int NUM_OCTAVES = 2;
     int totalWhiteKeys = WHITE_KEYS_PER_OCTAVE * NUM_OCTAVES;
     float whiteKeyW = static_cast<float>(area.getWidth()) / static_cast<float>(totalWhiteKeys);
-    float whiteKeyH = static_cast<float>(area.getHeight());
+    auto whiteKeyH = static_cast<float>(area.getHeight());
     float blackKeyW = whiteKeyW * 0.65f;
     float blackKeyH = whiteKeyH * 0.6f;
 
@@ -578,11 +637,8 @@ void StepSequencerUI::drawKeyboard(juce::Graphics& g, juce::Rectangle<int> area)
     g.setFont(font);
 
     // Get the selected step's resolved note (including octave shift) for highlighting
-    int selectedNote = -1;
-    if (plugin_) {
-        auto step = plugin_->getStep(selectedStep_);
-        selectedNote = step.noteNumber + step.octaveShift * 12;
-    }
+    const auto& selectedStepData = pattern_.step(selectedStep_);
+    const int selectedNote = selectedStepData.noteNumber + (selectedStepData.octaveShift * 12);
 
     // Draw white keys
     int whiteIdx = 0;
@@ -597,16 +653,17 @@ void StepSequencerUI::drawKeyboard(juce::Graphics& g, juce::Rectangle<int> area)
         int midiNote = keyboardBaseNote_ + note;
         bool isSelected = (midiNote == selectedNote);
 
-        g.setColour(isSelected ? DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.4f)
-                               : juce::Colours::white.withAlpha(0.85f));
+        g.setColour(isSelected
+                        ? ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.4f)
+                        : juce::Colours::white.withAlpha(0.85f));
         g.fillRoundedRectangle(keyRect, 1.0f);
 
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.3f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.3f));
         g.drawRoundedRectangle(keyRect, 1.0f, 0.5f);
 
         // Note label on C keys
         if (note % 12 == 0) {
-            g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
             g.drawText(noteNameShort(midiNote),
                        keyRect.toNearestInt().withTrimmedTop(static_cast<int>(whiteKeyH * 0.6f)),
                        juce::Justification::centred);
@@ -629,11 +686,12 @@ void StepSequencerUI::drawKeyboard(juce::Graphics& g, juce::Rectangle<int> area)
         int midiNote = keyboardBaseNote_ + note;
         bool isSelected = (midiNote == selectedNote);
 
-        g.setColour(isSelected ? DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.6f)
-                               : juce::Colours::black.withAlpha(0.85f));
+        g.setColour(isSelected
+                        ? ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.6f)
+                        : juce::Colours::black.withAlpha(0.85f));
         g.fillRoundedRectangle(keyRect, 1.0f);
 
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.2f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.2f));
         g.drawRoundedRectangle(keyRect, 1.0f, 0.5f);
     }
 }
@@ -646,16 +704,16 @@ void StepSequencerUI::drawOctaveArrow(juce::Graphics& g, juce::Rectangle<int> ar
     bool canShift =
         isLeft ? (keyboardBaseNote_ > MIN_BASE_NOTE) : (keyboardBaseNote_ < MAX_BASE_NOTE);
 
-    g.setColour(canShift ? DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.15f)
-                         : DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
+    g.setColour(canShift ? ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.15f)
+                         : ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
     g.fillRoundedRectangle(btn.toFloat(), 2.0f);
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.3f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.3f));
     g.drawRoundedRectangle(btn.toFloat(), 2.0f, 0.5f);
 
     // Draw arrow triangle
-    g.setColour(canShift ? DarkTheme::getTextColour()
-                         : DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
+    g.setColour(canShift ? ActiveTheme::getTextColour()
+                         : ActiveTheme::getSecondaryTextColour().withAlpha(0.3f));
     float cx = btn.getCentreX();
     float cy = btn.getCentreY();
     float arrowSize = 5.0f;
@@ -675,10 +733,8 @@ void StepSequencerUI::drawOctaveArrow(juce::Graphics& g, juce::Rectangle<int> ar
 // =============================================================================
 
 void StepSequencerUI::mouseDown(const juce::MouseEvent& e) {
-    if (!plugin_)
-        return;
     auto pos = e.getPosition();
-    int count = juce::jlimit(1, SeqPlugin::MAX_STEPS, plugin_->numSteps.get());
+    int count = pattern_.playingLength();
 
     // Step boxes — select step, toggle gate (right-click), or start shift+drag copy
     if (stepBoxArea_.contains(pos)) {
@@ -705,8 +761,10 @@ void StepSequencerUI::mouseDown(const juce::MouseEvent& e) {
         auto contentArea = accentArea_.withTrimmedLeft(24);
         int step = getStepAtX(pos.x, contentArea.getX(), contentArea.getWidth(), count);
         if (step >= 0 && step < count) {
-            auto s = plugin_->getStep(step);
-            plugin_->setStepAccent(step, !s.accent);
+            editPattern("Toggle Step Accent", [step](step_pattern::MonoPattern& p) {
+                auto& target = p.steps[static_cast<size_t>(step)];
+                target.accent = !target.accent;
+            });
             repaint();
         }
         return;
@@ -717,16 +775,21 @@ void StepSequencerUI::mouseDown(const juce::MouseEvent& e) {
         auto contentArea = glideTieArea_.withTrimmedLeft(24);
         int step = getStepAtX(pos.x, contentArea.getX(), contentArea.getWidth(), count);
         if (step >= 0 && step < count) {
-            auto s = plugin_->getStep(step);
-            if (e.mods.isShiftDown()) {
-                plugin_->setStepTie(step, !s.tie);
-                if (!s.tie)
-                    plugin_->setStepGlide(step, false);  // Tie and glide are mutually exclusive
-            } else {
-                plugin_->setStepGlide(step, !s.glide);
-                if (!s.glide)
-                    plugin_->setStepTie(step, false);  // Tie and glide are mutually exclusive
-            }
+            const bool tieGesture = e.mods.isShiftDown();
+            editPattern(tieGesture ? "Toggle Step Tie" : "Toggle Step Glide",
+                        [step, tieGesture](step_pattern::MonoPattern& p) {
+                            auto& target = p.steps[static_cast<size_t>(step)];
+                            // Tie and glide are mutually exclusive.
+                            if (tieGesture) {
+                                target.tie = !target.tie;
+                                if (target.tie)
+                                    target.glide = false;
+                            } else {
+                                target.glide = !target.glide;
+                                if (target.glide)
+                                    target.tie = false;
+                            }
+                        });
             repaint();
         }
         return;
@@ -754,8 +817,12 @@ void StepSequencerUI::mouseDown(const juce::MouseEvent& e) {
     if (keyboardArea_.contains(pos)) {
         int note = getKeyboardNoteAtPosition(pos, keyboardArea_);
         if (note >= 0 && note <= 127) {
-            plugin_->setStepNote(selectedStep_, note);
-            plugin_->setStepOctaveShift(selectedStep_, 0);
+            const int target = selectedStep_;
+            editPattern("Set Step Note", [target, note](step_pattern::MonoPattern& p) {
+                auto& step = p.steps[static_cast<size_t>(target)];
+                step.noteNumber = note;
+                step.octaveShift = 0;
+            });
             repaint();
         }
         return;
@@ -763,11 +830,11 @@ void StepSequencerUI::mouseDown(const juce::MouseEvent& e) {
 }
 
 void StepSequencerUI::mouseDrag(const juce::MouseEvent& e) {
-    if (!plugin_ || dragSourceStep_ < 0)
+    if (dragSourceStep_ < 0)
         return;
 
     auto pos = e.getPosition();
-    int count = juce::jlimit(1, SeqPlugin::MAX_STEPS, plugin_->numSteps.get());
+    int count = pattern_.playingLength();
 
     if (stepBoxArea_.contains(pos)) {
         int step = getStepAtX(pos.x, stepBoxArea_.getX(), stepBoxArea_.getWidth(), count);
@@ -779,23 +846,21 @@ void StepSequencerUI::mouseDrag(const juce::MouseEvent& e) {
 }
 
 void StepSequencerUI::mouseUp(const juce::MouseEvent&) {
-    if (!plugin_ || dragSourceStep_ < 0) {
+    if (dragSourceStep_ < 0) {
         dragSourceStep_ = -1;
         dragTargetStep_ = -1;
         return;
     }
 
-    int count = juce::jlimit(1, SeqPlugin::MAX_STEPS, plugin_->numSteps.get());
+    int count = pattern_.playingLength();
 
     // Copy source step to target if they differ
     if (dragTargetStep_ >= 0 && dragTargetStep_ < count && dragTargetStep_ != dragSourceStep_) {
-        auto src = plugin_->getStep(dragSourceStep_);
-        plugin_->setStepNote(dragTargetStep_, src.noteNumber);
-        plugin_->setStepOctaveShift(dragTargetStep_, src.octaveShift);
-        plugin_->setStepGate(dragTargetStep_, src.gate);
-        plugin_->setStepAccent(dragTargetStep_, src.accent);
-        plugin_->setStepGlide(dragTargetStep_, src.glide);
-        plugin_->setStepTie(dragTargetStep_, src.tie);
+        const int from = dragSourceStep_;
+        const int to = dragTargetStep_;
+        editPattern("Copy Step", [from, to](step_pattern::MonoPattern& p) {
+            p.steps[static_cast<size_t>(to)] = p.steps[static_cast<size_t>(from)];
+        });
         selectedStep_ = dragTargetStep_;
     }
 
@@ -808,7 +873,7 @@ void StepSequencerUI::mouseUp(const juce::MouseEvent&) {
 // Hit testing helpers
 // =============================================================================
 
-int StepSequencerUI::getStepAtX(int x, int areaX, int areaWidth, int numSteps) const {
+int StepSequencerUI::getStepAtX(int x, int areaX, int areaWidth, int numSteps) {
     if (numSteps <= 0 || areaWidth <= 0)
         return -1;
     int relX = x - areaX;
@@ -866,14 +931,11 @@ int StepSequencerUI::getKeyboardNoteAtPosition(juce::Point<int> pos,
 // =============================================================================
 
 void StepSequencerUI::showStepContextMenu(int stepIndex) {
-    if (!plugin_)
-        return;
-
-    int count = juce::jlimit(1, SeqPlugin::MAX_STEPS, plugin_->numSteps.get());
+    int count = pattern_.playingLength();
     if (stepIndex < 0 || stepIndex >= count)
         return;
 
-    auto step = plugin_->getStep(stepIndex);
+    const auto& step = pattern_.step(stepIndex);
 
     juce::PopupMenu menu;
     menu.addItem(1, step.gate ? "Mute Step" : "Unmute Step");
@@ -882,39 +944,38 @@ void StepSequencerUI::showStepContextMenu(int stepIndex) {
     menu.addSeparator();
     menu.addItem(4, "Clear Pattern");
 
-    menu.showMenuAsync(juce::PopupMenu::Options(), [this, stepIndex, count](int result) {
-        if (!plugin_)
+    menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis = juce::Component::SafePointer(this),
+                                                    stepIndex, count](int result) {
+        if (safeThis == nullptr)
             return;
         switch (result) {
-            case 1: {
-                auto s = plugin_->getStep(stepIndex);
-                plugin_->setStepGate(stepIndex, !s.gate);
+            case 1:
+                safeThis->editPattern("Mute Step", [stepIndex](step_pattern::MonoPattern& p) {
+                    auto& target = p.steps[static_cast<size_t>(stepIndex)];
+                    target.gate = !target.gate;
+                });
                 break;
-            }
-            case 2: {
-                auto src = plugin_->getStep(stepIndex);
-                for (int i = 0; i < count; ++i) {
-                    if (i == stepIndex)
-                        continue;
-                    plugin_->setStepNote(i, src.noteNumber);
-                    plugin_->setStepOctaveShift(i, src.octaveShift);
-                    plugin_->setStepGate(i, src.gate);
-                    plugin_->setStepAccent(i, src.accent);
-                    plugin_->setStepGlide(i, src.glide);
-                    plugin_->setStepTie(i, src.tie);
-                }
+            case 2:
+                safeThis->editPattern(
+                    "Copy Step to All", [stepIndex, count](step_pattern::MonoPattern& p) {
+                        const auto source = p.steps[static_cast<size_t>(stepIndex)];
+                        for (int i = 0; i < count; ++i)
+                            p.steps[static_cast<size_t>(i)] = source;
+                    });
                 break;
-            }
             case 3:
-                plugin_->clearStep(stepIndex);
+                safeThis->editPattern("Clear Step", [stepIndex](step_pattern::MonoPattern& p) {
+                    p.steps[static_cast<size_t>(stepIndex)] = {};
+                });
                 break;
             case 4:
-                plugin_->clearPattern();
+                safeThis->editPattern("Clear Pattern",
+                                      [](step_pattern::MonoPattern& p) { p.steps.fill({}); });
                 break;
             default:
                 return;
         }
-        repaint();
+        safeThis->repaint();
     });
 }
 
@@ -925,7 +986,7 @@ void StepSequencerUI::showStepContextMenu(int stepIndex) {
 void StepSequencerUI::setupLabel(juce::Label& label, const juce::String& text) {
     label.setText(text, juce::dontSendNotification);
     label.setFont(FontManager::getInstance().getUIFont(9.0f));
-    label.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    label.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     label.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(label);
 }
@@ -940,12 +1001,13 @@ void StepSequencerUI::lookAndFeelChanged() {
     for (auto* label :
          {&rateLabel_, &stepsLabel_, &dirLabel_, &swingLabel_, &glideLabel_, &rampLabel_,
           &depthLabel_, &skewLabel_, &cyclesLabel_, &quantizeLabel_, &quantizeSubLabel_})
-        label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
 
     dirCombo_.setColour(juce::ComboBox::backgroundColourId,
-                        DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
-    dirCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-    dirCombo_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+                        ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.1f));
+    dirCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
+    dirCombo_.setColour(juce::ComboBox::outlineColourId,
+                        ActiveTheme::getColour(ActiveTheme::BORDER));
 
     repaint();
 }
@@ -954,11 +1016,11 @@ std::vector<LinkableTextSlider*> StepSequencerUI::getLinkableSliders() {
     magda::ChainNodePath dummy;
     // Param indices match AutomatableParameter registration order:
     // 0=rate, 1=direction, 2=swing, 3=glidetime, 4=accentvel, 5=normalvel, 6=ramp, 7=skew
-    rateSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 0, dummy);
-    swingSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 2, dummy);
-    glideSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 3, dummy);
-    depthSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 6, dummy);
-    skewSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 7, dummy);
+    rateSlider_.setLinkContext(magda::INVALID_DEVICE_ID, SeqPlugin::kRate, dummy);
+    swingSlider_.setLinkContext(magda::INVALID_DEVICE_ID, SeqPlugin::kSwing, dummy);
+    glideSlider_.setLinkContext(magda::INVALID_DEVICE_ID, SeqPlugin::kGateLength, dummy);
+    depthSlider_.setLinkContext(magda::INVALID_DEVICE_ID, SeqPlugin::kRamp, dummy);
+    skewSlider_.setLinkContext(magda::INVALID_DEVICE_ID, SeqPlugin::kSkew, dummy);
     return {&rateSlider_, &swingSlider_, &glideSlider_, &depthSlider_, &skewSlider_};
 }
 

@@ -1,0 +1,428 @@
+#pragma once
+
+#include <juce_core/juce_core.h>
+
+#include <atomic>
+#include <cstdint>
+#include <functional>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <vector>
+
+#include "ControlExecutor.hpp"
+#include "PluginAssignments.hpp"
+#include "core/HostedParameterEdit.hpp"
+#include "plan/RenderPlan.hpp"
+#include "plugin_manager/ExternalPluginState.hpp"
+
+/**
+ * @file DeviceControl.hpp
+ * @brief Everything that is not rendering, addressed the way rendering is.
+ *
+ * Location transparency is a goal from day one (#1893): running a plugin in
+ * another process later should be an add-on, not a rework. The realtime half
+ * already has it -- EngineDevice says nothing about where a device lives --
+ * but editor windows and state captures used to reach the plugin directly via
+ * its juce::AudioPluginInstance, the one thing a plugin in another process
+ * can't hand over.
+ *
+ * This is an endpoint rather than an accessor because a bare instance pointer
+ * is also how the "reading state and rendering must not overlap" rule loses
+ * its owner: control and audio each reaching the plugin directly caused two
+ * races of the same shape (#2268). Behind an endpoint, only the object
+ * owning the instance can touch it, from either side.
+ *
+ * Keyed by magda::engine::DeviceKey rather than a live reference. Async and
+ * fallible, since a remote implementation has IPC, a timeout, and a device
+ * that can go away mid-call. Everything runs and answers on the plane's
+ * ControlExecutor (ControlExecutor.hpp), which serializes every operation
+ * against every other -- including reads that suspend/resume a plugin, which
+ * can't be done safely by checking a thread on a headless host.
+ *
+ * Nothing here writes a model directly: a capture comes back as data, and
+ * the caller checks the assignment it was read from still holds before
+ * writing it -- the same boundary completeExternalPluginLoad() applies on
+ * the load path (#2270).
+ */
+
+namespace magda::daw::audio::engine_adapter {
+
+class EngineExternalDevice;
+
+/**
+ * @brief What a capture came back with: a snapshot, or a reason there is none.
+ *
+ * Exactly one of the two, enforced by the type rather than a comment -- this
+ * matters most at the boundary this is built for, where an out-of-process
+ * implementation decodes one of these from bytes and a both-or-neither
+ * aggregate would read a "success with an ignored reason" as fine.
+ *
+ * A failure is a string, not an enum: every one of them is something to tell
+ * a person (no device here, plugin wouldn't describe itself, timed out), not
+ * to branch on.
+ */
+class CaptureOutcome {
+  public:
+    /// What the plugin held.
+    static CaptureOutcome taken(magda::ExternalPluginSnapshot snapshot);
+
+    /// Why it did not.
+    static CaptureOutcome failed(juce::String reason);
+
+    bool ok() const {
+        return snapshot_.has_value();
+    }
+
+    /// The snapshot. Only when ok().
+    const magda::ExternalPluginSnapshot& snapshot() const;
+
+    /// Why there is none. Empty when ok().
+    const juce::String& failure() const {
+        return failure_;
+    }
+
+  private:
+    CaptureOutcome() = default;
+
+    std::optional<magda::ExternalPluginSnapshot> snapshot_;
+    juce::String failure_;
+};
+
+/**
+ * @brief What an editor request came back with: its window, or why not (#2580).
+ *
+ * "Showing" because that is what the caller asks next -- the slot's light. A
+ * plugin with no editor of its own is not showing rather than a failure:
+ * nothing went wrong, there is nothing to open.
+ */
+class EditorOutcome {
+  public:
+    /// Whether the plugin's window is on screen now.
+    static EditorOutcome showing(bool isShowing);
+
+    /// Why there is no answer: the device, its runtime, or the plane has gone.
+    static EditorOutcome failed(juce::String reason);
+
+    bool ok() const {
+        return failure_.isEmpty();
+    }
+
+    bool isShowing() const {
+        return showing_;
+    }
+
+    /// Why nothing was asked. Empty when ok().
+    const juce::String& failure() const {
+        return failure_;
+    }
+
+  private:
+    EditorOutcome() = default;
+
+    bool showing_ = false;
+    juce::String failure_;
+};
+
+/// What to do with a device's editor window (#2580).
+enum class EditorAction {
+    Show,
+    Hide,
+    Toggle,
+
+    /// Ask without touching it, which is what a slot redrawing wants.
+    Query,
+};
+
+/// Programs and portable preset files, serialized with other state operations.
+enum class PresetAction { Programs, SelectProgram, LoadFile, SaveFile };
+struct PresetRequest {
+    PresetAction action = PresetAction::Programs;
+    int programIndex = -1;
+    juce::File file;
+    std::optional<AssignmentRequest> assignment;
+};
+struct PresetOutcome {
+    std::optional<magda::PluginPrograms> programs;
+    std::optional<magda::ExternalPluginSnapshot> snapshot;
+    juce::String failure;
+    bool ok() const {
+        return failure.isEmpty();
+    }
+};
+
+/**
+ * @brief Where a host asks a device for anything that is not a block.
+ *
+ * One implementation runs the plugin in this process; another asks a process
+ * that is not this one. Which a host holds is the whole difference between
+ * an in-process and a sandboxed plugin, and nothing above this needs to know
+ * which (#1899).
+ */
+class DeviceControlPlane {
+  public:
+    /// @p executor is where this plane's work runs and its answers arrive.
+    /// Held by shared_ptr because a remote implementation's reply comes back
+    /// long after the call that sent it.
+    explicit DeviceControlPlane(std::shared_ptr<ControlExecutor> executor);
+
+    virtual ~DeviceControlPlane() = default;
+
+    DeviceControlPlane(const DeviceControlPlane&) = delete;
+    DeviceControlPlane& operator=(const DeviceControlPlane&) = delete;
+    DeviceControlPlane(DeviceControlPlane&&) = delete;
+    DeviceControlPlane& operator=(DeviceControlPlane&&) = delete;
+
+    /// What a capture is answered with, on this plane's executor.
+    using CaptureCallback = std::function<void(CaptureOutcome)>;
+
+    /**
+     * @brief Ask the device at @p key what its plugin holds.
+     *
+     * Asked from any thread, answered on the executor, always later than
+     * this returns -- so a caller writing a project's model in the callback
+     * is always on the thread it's entitled to write from.
+     *
+     * @return whether the request was accepted. False means the plane is
+     *         closing: @p completed will not be called, and the caller is
+     *         told so synchronously rather than by a callback arriving from
+     *         an unexpected thread.
+     *
+     * An accepted request calls @p completed exactly once, on the executor,
+     * with either the capture or a failure saying the plane closed first.
+     * The callback outlives the call: whatever it captures must still be
+     * there when it runs, or held weakly and checked.
+     */
+    virtual bool captureState(magda::engine::DeviceKey key, CaptureCallback completed) = 0;
+
+    using PresetCallback = std::function<void(PresetOutcome)>;
+    /// Mutations return the resulting snapshot; saving a file fences preceding edits.
+    virtual bool pluginPreset(magda::engine::DeviceKey key, PresetRequest request,
+                              PresetCallback completed) = 0;
+
+    /**
+     * @brief Write @p saved into the plugin at @p key, then read the plugin back.
+     *
+     * For a preset applied to a slot whose plugin is already loaded (#2573).
+     * @p saved is by value because the work runs after this returns.
+     *
+     * The callback receives the plugin's state after the write, not a success
+     * flag: a state chunk can change parameters the model's array does not
+     * list, and the caller must store the snapshot or the plan will send the
+     * stale array back on the next block.
+     */
+    virtual bool applyState(magda::engine::DeviceKey key, magda::DeviceInfo saved,
+                            CaptureCallback completed) = 0;
+
+    /// A one-off value for one of a device's parameters, and the assignment
+    /// it was accepted against.
+    struct ParameterEdit {
+        int slot = -1;
+        float normalised = 0.0f;
+
+        /// Checked before the write: a key can be live again under a
+        /// different plugin by the time this runs.
+        AssignmentRequest request;
+    };
+
+    /// What a delivery is answered with: whether the adapter took the write,
+    /// and what the parameter read after it.
+    using EditCallback = std::function<void(magda::EditCompletion)>;
+
+    /**
+     * @brief Deliver @p edit to the plugin at @p key.
+     *
+     * The ordinary edit of a parameter the plugin owns
+     * (docs/specs/hosted-plugin-parameter-control.md). Reaches the instance
+     * through the endpoint, so a device with no render op still takes it.
+     *
+     * Same contract as @ref captureState, answered once the plugin has applied
+     * the edit at a block, or from the control side when nothing renders it.
+     * A later edit to the same slot applied first answers this one superseded.
+     *
+     * @return Accepted, or Busy when as many edits are outstanding as the plane
+     *         holds, or Closing; @p completed is called only for Accepted.
+     */
+    virtual magda::EditStatus editParameter(magda::engine::DeviceKey key, ParameterEdit edit,
+                                            EditCallback completed) = 0;
+
+    /// What an editor request is answered with, on this plane's executor.
+    using EditorCallback = std::function<void(EditorOutcome)>;
+
+    /**
+     * @brief Show, hide, toggle or ask after the editor of the device at @p key.
+     *
+     * Same contract as @ref captureState, on an executor that is the message
+     * thread's -- which is where a window may be opened at all (#2580).
+     */
+    virtual bool editorWindow(magda::engine::DeviceKey key, EditorAction action,
+                              EditorCallback completed) = 0;
+
+    /// Where this plane's work runs, for a host that has something else to
+    /// put on the same thread.
+    const std::shared_ptr<ControlExecutor>& executor() const {
+        return executor_;
+    }
+
+  private:
+    std::shared_ptr<ControlExecutor> executor_;
+};
+
+/**
+ * @brief The devices a plane can reach, owned by whoever runs them (#2270).
+ *
+ * A plane's work runs later than the call that queued it, so between the two
+ * a project can close and a device can leave the chain it was in. The
+ * registry itself is held weakly (a registry that won't lock is a runtime
+ * that's gone); what find() returns is a lease that carries the device
+ * rather than pointing at it, so a device removed or destroyed mid-capture
+ * is one the capture is still holding. Same shape the load path already
+ * uses for the same problem (PluginAssignments.hpp).
+ */
+class DeviceRegistry {
+  public:
+    virtual ~DeviceRegistry() = default;
+
+    DeviceRegistry() = default;
+    DeviceRegistry(const DeviceRegistry&) = delete;
+    DeviceRegistry& operator=(const DeviceRegistry&) = delete;
+    DeviceRegistry(DeviceRegistry&&) = delete;
+    DeviceRegistry& operator=(DeviceRegistry&&) = delete;
+
+    /**
+     * @brief A lease on the device at @p key, or nothing.
+     *
+     * A lease rather than a bare pointer: holding the registry alive only
+     * says the registry is alive, not that a given device wasn't removed or
+     * destroyed from under it. The lifetime comes back with the answer, and
+     * the operation holds it until finished -- which is why a runtime owns
+     * its external devices by shared_ptr. Empty for a key nothing is bound
+     * to (including one still loading). Called on the control executor.
+     */
+    virtual std::shared_ptr<EngineExternalDevice> find(magda::engine::DeviceKey key) const = 0;
+};
+
+/**
+ * @brief The plane for plugins running in this process.
+ *
+ * Owns nothing: the runtime's registry is held weakly, so a project closing
+ * between a request and its turn is a failure with a reason rather than a
+ * dereference of something gone.
+ */
+class LocalDeviceControlPlane final : public DeviceControlPlane {
+  public:
+    LocalDeviceControlPlane(std::shared_ptr<ControlExecutor> executor,
+                            std::weak_ptr<const DeviceRegistry> devices);
+
+    bool captureState(magda::engine::DeviceKey key, CaptureCallback completed) override;
+    bool pluginPreset(magda::engine::DeviceKey key, PresetRequest request,
+                      PresetCallback completed) override;
+    bool applyState(magda::engine::DeviceKey key, magda::DeviceInfo saved,
+                    CaptureCallback completed) override;
+    bool editorWindow(magda::engine::DeviceKey key, EditorAction action,
+                      EditorCallback completed) override;
+    magda::EditStatus editParameter(magda::engine::DeviceKey key, ParameterEdit edit,
+                                    EditCallback completed) override;
+
+    /// Answers whatever is still waiting, as not delivered.
+    ~LocalDeviceControlPlane() override;
+
+    /**
+     * @brief Complete the edits the devices have applied.
+     *
+     * For the host to call when a device has applied edits or stopped
+     * rendering. One run on the executor per burst, and none while nothing
+     * waits. Any thread.
+     */
+    void settleParameterEdits();
+
+    /// Edits submitted and not yet answered, past which a submission is Busy.
+    static constexpr int kMaxOutstandingEdits = 1024;
+
+  private:
+    struct SubmittedEdit {
+        magda::engine::DeviceKey key;
+        ParameterEdit edit;
+        EditCallback completed;
+
+        /// Which pump takes it. A state operation closes the batch, so an edit
+        /// submitted after one is queued after it too.
+        std::uint64_t batch = 0;
+    };
+
+    struct WaitingEdit {
+        magda::engine::DeviceKey key;
+        int slot = -1;
+        std::uint32_t sequence = 0;
+        AssignmentRequest request;
+        EditCallback completed;
+
+        /// Set from the device's outcome record, answered on the same settle.
+        std::optional<bool> refused;
+    };
+
+    /// Shared with the work that outlives a call.
+    struct Waiting {
+        Waiting();
+
+        /// Any thread, under @ref submitLock. One pump job at most is queued
+        /// for them, and it takes the whole batch.
+        std::mutex submitLock;
+        std::vector<SubmittedEdit> submitted;
+        std::uint64_t openBatch = 0;
+        bool pumpQueued = false;
+
+        /// Executor only: the batch a pump took, and the edits waiting for a block.
+        std::vector<SubmittedEdit> taken;
+        std::vector<WaitingEdit> edits;
+
+        std::atomic<int> outstanding{0};
+        std::atomic<bool> settleQueued{false};
+    };
+
+    /// Queue batch @p batch of @p waiting's submitted edits into their devices. Executor.
+    static void pump(Waiting& waiting, const std::weak_ptr<const DeviceRegistry>& devices,
+                     std::uint64_t batch, bool closing);
+
+    /// Queue @p work behind every edit submitted before it, and ahead of every
+    /// edit submitted after.
+    bool runAtBatchBoundary(ControlExecutor::Work work);
+
+    static void settle(Waiting& waiting, const std::weak_ptr<const DeviceRegistry>& devices,
+                       bool closing);
+
+    std::weak_ptr<const DeviceRegistry> devices_;
+    std::shared_ptr<Waiting> waiting_;
+};
+
+/**
+ * @brief The device a key names now, to write onto.
+ *
+ * The write-side twin of CurrentDeviceLookup on the load path: asked at
+ * completion, not when the capture was requested, so a model that changed in
+ * between isn't clobbered. Null for a key whose device is gone, which is a
+ * commit that does not happen.
+ */
+using MutableDeviceLookup = std::function<magda::DeviceInfo*(magda::engine::DeviceKey)>;
+
+/**
+ * @brief Write @p snapshot onto the device @p request was made for, if that
+ *        is still the device it was read from.
+ *
+ * The commit half of a capture: between reading a snapshot and writing it, a
+ * slot can have been given a different plugin, emptied, or the runtime can
+ * be gone -- writing anyway would put one plugin's patch onto another's
+ * device. The device is resolved here, from @p request's own key through
+ * @p device, rather than accepted as a separate argument, so a caller can't
+ * validate one device and write another. @p request is what
+ * PluginAssignments::request() returned when the capture was asked for, and
+ * is checked here rather than at each call site (same owner as the
+ * equivalent check in completeExternalPluginLoad).
+ *
+ * @return whether anything was written.
+ */
+bool commitCapturedState(const AssignmentRequest& request,
+                         const magda::ExternalPluginSnapshot& snapshot,
+                         const MutableDeviceLookup& device);
+
+}  // namespace magda::daw::audio::engine_adapter

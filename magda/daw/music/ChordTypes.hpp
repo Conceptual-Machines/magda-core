@@ -2,6 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <algorithm>
 #include <vector>
 
 #include "ChordEnums.hpp"
@@ -40,13 +41,7 @@ struct Chord {
     std::vector<int> missingIntervals;   // intervals present in ideal chord but absent in input
     std::vector<int> extraPitchClasses;  // pitch classes in input but not in ideal chord
 
-    Chord()
-        : root(ChordRoot::C),
-          quality(ChordQuality::Major),
-          inversion(0),
-          notes({}),
-          rootNoteNumber(-1),
-          degree(std::nullopt) {}
+    Chord() : notes({}), degree(std::nullopt) {}
 
     Chord(juce::String chordName) {  // NOLINT(google-explicit-constructor)
         auto parsedSpec = ChordUtils::stringToChordSpec(chordName);
@@ -54,7 +49,7 @@ struct Chord {
         quality = parsedSpec.quality;
         inversion = parsedSpec.inversion;
         displayName = chordName.contains(" + ") ? chordName : juce::String();
-        name = chordName;
+        name = std::move(chordName);
         notes = {};
         rootNoteNumber = -1;
         degree = std::nullopt;
@@ -79,7 +74,7 @@ struct Chord {
         quality = parsedSpec.quality;
         inversion = chordInversion;
         displayName = chordName.contains(" + ") ? chordName : juce::String();
-        name = chordName;
+        name = std::move(chordName);
         notes = chordNotes;
         rootNoteNumber = rootNote;
         degree = chordDegree;
@@ -95,8 +90,8 @@ struct Chord {
             a.push_back(n.noteNumber);
         for (const auto& n : other.notes)
             b.push_back(n.noteNumber);
-        std::sort(a.begin(), a.end());
-        std::sort(b.begin(), b.end());
+        std::ranges::sort(a);
+        std::ranges::sort(b);
         return a == b;
     }
 

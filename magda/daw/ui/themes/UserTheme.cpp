@@ -11,6 +11,12 @@ namespace magda {
 
 namespace {
 
+// Theme lists are presented alphabetically, case-insensitively, by display name.
+constexpr auto byNameIgnoringCase = [](const juce::String& a, const juce::String& b) {
+    return a.compareIgnoreCase(b) < 0;
+};
+constexpr auto themeName = [](const auto& entry) { return juce::String(entry.name); };
+
 std::string resolveBaseId(const juce::var& baseVar, std::vector<std::string>& warnings) {
     if (!baseVar.isString())
         return ThemeManager::kDarkThemeId;
@@ -128,10 +134,7 @@ const std::vector<FactoryThemeEntry>& factoryThemes() {
                 entry.name = loaded->name;
             list.push_back(std::move(entry));
         }
-        std::sort(list.begin(), list.end(),
-                  [](const FactoryThemeEntry& a, const FactoryThemeEntry& b) {
-                      return juce::String(a.name).compareIgnoreCase(juce::String(b.name)) < 0;
-                  });
+        std::ranges::sort(list, byNameIgnoringCase, themeName);
         return list;
     }();
     return entries;
@@ -170,9 +173,7 @@ std::vector<ThemeFileEntry> scanUserThemes() {
         entries.push_back(std::move(entry));
     }
 
-    std::sort(entries.begin(), entries.end(), [](const ThemeFileEntry& a, const ThemeFileEntry& b) {
-        return juce::String(a.name).compareIgnoreCase(juce::String(b.name)) < 0;
-    });
+    std::ranges::sort(entries, byNameIgnoringCase, themeName);
     return entries;
 }
 
@@ -208,7 +209,7 @@ bool writeThemeTemplate(const juce::File& dest, const std::string& baseId,
     return dest.replaceWithText(juce::JSON::toString(juce::var(root.get())));
 }
 
-DarkTheme::SyntaxPalette deriveSyntaxPalette(const DarkTheme::Palette& palette) {
+ActiveTheme::SyntaxPalette deriveSyntaxPalette(const ActiveTheme::Palette& palette) {
     const auto role = [&palette](ColourRole r) {
         return juce::Colour(palette[static_cast<std::size_t>(r)]);
     };
@@ -221,7 +222,7 @@ DarkTheme::SyntaxPalette deriveSyntaxPalette(const DarkTheme::Palette& palette) 
     const auto accentInfo = role(ColourRole::ACCENT_INFO);
     const auto statusBackground = accentInfo;
 
-    DarkTheme::SyntaxPalette syntax{};
+    ActiveTheme::SyntaxPalette syntax{};
     const auto set = [&syntax](SyntaxColourRole r, juce::Colour colour) {
         syntax[static_cast<std::size_t>(r)] = colour.getARGB();
     };
@@ -283,8 +284,8 @@ ThemeApplyResult applyThemeById(const std::string& themeId) {
 
     const auto file = paths::themesDir().getChildFile(juce::String(themeId) + ".json");
     if (auto loaded = loadThemeFile(file)) {
-        DarkTheme::setActivePalette(loaded->palette);
-        DarkTheme::setActiveSyntaxPalette(loaded->syntaxPalette);
+        ActiveTheme::setActivePalette(loaded->palette);
+        ActiveTheme::setActiveSyntaxPalette(loaded->syntaxPalette);
         result.ok = true;
         result.isUserTheme = true;
         result.sourceFile = file;
@@ -295,8 +296,8 @@ ThemeApplyResult applyThemeById(const std::string& themeId) {
     // Factory themes resolve after the user file so a same-id file in the
     // Themes folder overrides the embedded copy (and stays hot-reloadable).
     if (auto factory = loadFactoryTheme(themeId)) {
-        DarkTheme::setActivePalette(factory->palette);
-        DarkTheme::setActiveSyntaxPalette(factory->syntaxPalette);
+        ActiveTheme::setActivePalette(factory->palette);
+        ActiveTheme::setActiveSyntaxPalette(factory->syntaxPalette);
         result.ok = true;
         result.warnings = std::move(factory->warnings);
         return result;
@@ -306,7 +307,7 @@ ThemeApplyResult applyThemeById(const std::string& themeId) {
     // candidate user-file path anyway so the caller can keep watching it and
     // recover the moment a valid file appears (built-in ids returned above).
     result.sourceFile = file;
-    DarkTheme::resetToDarkPalette();
+    ThemeManager::setActiveBuiltInTheme(ThemeManager::kDarkThemeId);
     return result;
 }
 
@@ -315,8 +316,8 @@ std::optional<std::vector<std::string>> reapplyUserThemeFile(const juce::File& f
     if (!loaded)
         return std::nullopt;
 
-    DarkTheme::setActivePalette(loaded->palette);
-    DarkTheme::setActiveSyntaxPalette(loaded->syntaxPalette);
+    ActiveTheme::setActivePalette(loaded->palette);
+    ActiveTheme::setActiveSyntaxPalette(loaded->syntaxPalette);
     return std::move(loaded->warnings);
 }
 

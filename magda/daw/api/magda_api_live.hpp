@@ -86,6 +86,16 @@ class MagdaApiLive : public MagdaApi {
         project_.setEngineTimeSignatureWriter(std::move(writer));
     }
 
+    /** Wire loop-range writes through the owning engine before ProjectInfo is updated. */
+    void setProjectLoopRangeWriter(std::function<void(double, double)> writer) {
+        project_.setEngineLoopRangeWriter(std::move(writer));
+    }
+
+    /** Wire the owning engine's tempo map, read on each call. */
+    void setProjectTempoMap(std::function<const TempoMap*()> getter) {
+        project_.setEngineTempoMap(std::move(getter));
+    }
+
     /** Wire the current-Edit accessor into the live TransportApi. */
     void setEditAccessor(TransportApiLive::EditGetter g) {
         transport_.setEditGetter(std::move(g));
@@ -102,6 +112,21 @@ class MagdaApiLive : public MagdaApi {
     }
     void setTransportLoopDispatcher(std::function<void(bool)> fn) {
         transport_.setLoopDispatcher(std::move(fn));
+    }
+    void setTransportSeekDispatcher(std::function<void(double)> fn) {
+        transport_.setSeekDispatcher(std::move(fn));
+    }
+    void setTransportRecordDispatcher(std::function<void(bool)> fn) {
+        transport_.setRecordDispatcher(std::move(fn));
+    }
+    void setTransportEngineState(TransportApiLive::EngineState state) {
+        transport_.setEngineState(std::move(state));
+    }
+    void notifyTransportStateChanged() {
+        transport_.notifyStateChanged();
+    }
+    void setProjectLoopRangeDispatcher(std::function<void(double, double)> fn) {
+        project_.setLoopRangeDispatcher(std::move(fn));
     }
 
   private:

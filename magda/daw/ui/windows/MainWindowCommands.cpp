@@ -1,3 +1,6 @@
+#include <algorithm>
+#include <ranges>
+
 #include "../../core/AutomationCommands.hpp"
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
@@ -18,10 +21,10 @@
 #include "../views/MixerView.hpp"
 #include "../views/SessionView.hpp"
 #include "MainWindow.hpp"
-#include "audio/AudioBridge.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/ViewModeController.hpp"
 #include "engine/AudioEngine.hpp"
+#include "engine/TempoSequenceRipple.hpp"
 #include "project/ProjectManager.hpp"
 
 namespace magda {
@@ -64,17 +67,23 @@ ViewMode getNextCycledViewMode(ViewMode mode, bool forward) {
 bool canNudgeSelectedClips() {
     auto& clipManager = ClipManager::getInstance();
     auto& trackManager = TrackManager::getInstance();
-    bool found = false;
-    for (ClipId clipId : SelectionManager::getInstance().getSelectedClips()) {
-        const auto* clip = clipManager.getClip(clipId);
-        if (clip == nullptr || clip->view != ClipView::Arrangement)
-            continue;
+
+    const auto toClip = [&clipManager](ClipId id) { return clipManager.getClip(id); };
+    const auto isArrangementClip = [](const ClipInfo* clip) {
+        return clip != nullptr && clip->view == ClipView::Arrangement;
+    };
+
+    const auto& selected = SelectionManager::getInstance().getSelectedClips();
+    auto arrangementClips =
+        selected | std::views::transform(toClip) | std::views::filter(isArrangementClip);
+
+    const auto onFrozenTrack = [&](const ClipInfo* clip) {
         const auto* track = trackManager.getTrack(clip->trackId);
-        if (track != nullptr && track->frozen)
-            return false;
-        found = true;
-    }
-    return found;
+        return track != nullptr && track->frozen;
+    };
+
+    return !std::ranges::empty(arrangementClips) &&
+           std::ranges::none_of(arrangementClips, onFrozenTrack);
 }
 
 bool containsTimelineTime(const ClipInfo& clip, double timeSeconds, double bpm) {
@@ -92,12 +101,10 @@ bool overlapsTimelineRange(const ClipInfo& clip, double startSeconds, double end
 // edit. These are edit-wide, so callers gate this to all-tracks (global) ops.
 // Must be enqueued AFTER the clip-shifting commands in the compound op so the
 // remapper snapshot sees clips at their final beats.
-void rippleTempoSequence(AudioEngine* audioEngine, TempoSequenceRippleMode mode, double startBeat,
-                         double endBeat) {
-    if (audioEngine)
-        if (auto command = audioEngine->createTempoSequenceRippleCommand(
-                mode, BeatPosition{startBeat}, BeatPosition{endBeat}))
-            UndoManager::getInstance().executeCommand(std::move(command));
+void rippleTempoSequence(TempoSequenceRippleMode mode, double startBeat, double endBeat) {
+    if (auto command =
+            makeTempoSequenceRippleCommand(mode, BeatPosition{startBeat}, BeatPosition{endBeat}))
+        UndoManager::getInstance().executeCommand(std::move(command));
 }
 
 }  // namespace
@@ -555,7 +562,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
         auto visibleTracks = TrackManager::getInstance().getVisibleTracks(
             ViewModeController::getInstance().getViewMode());
         if (sel.isAllTracks()) {
-            trackIds = visibleTracks;
+            trackIds = std::move(visibleTracks);
         } else {
             for (int idx : sel.trackIndices) {
                 if (idx >= 0 && idx < static_cast<int>(visibleTracks.size()))
@@ -715,8 +722,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                             double editCursorBeats = state.editCursorBeats;
                             double clipStartBeats = targetClip->getStartBeats(bpm);
                             pasteOffset = editCursorBeats - clipStartBeats;
-                            if (pasteOffset < 0)
-                                pasteOffset = 0;
+                            pasteOffset = std::max<double>(pasteOffset, 0);
                         }
                     }
                     const auto& clipboard = clipManager.getNoteClipboard();
@@ -1180,8 +1186,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             if (!sel.automationOnly && sel.isAllTracks()) {
                 UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                     RippleMarkersCommand::Mode::Insert, startBeat, sel.endBeats));
-                rippleTempoSequence(getAudioEngine(), TempoSequenceRippleMode::Insert, startBeat,
-                                    sel.endBeats);
+                rippleTempoSequence(TempoSequenceRippleMode::Insert, startBeat, sel.endBeats);
             }
             UndoManager::getInstance().endCompoundOperation();
             return true;
@@ -1238,8 +1243,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             if (!sel.automationOnly && sel.isAllTracks()) {
                 UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                     RippleMarkersCommand::Mode::Duplicate, startBeat, endBeat));
-                rippleTempoSequence(getAudioEngine(), TempoSequenceRippleMode::Duplicate, startBeat,
-                                    endBeat);
+                rippleTempoSequence(TempoSequenceRippleMode::Duplicate, startBeat, endBeat);
             }
             UndoManager::getInstance().endCompoundOperation();
 
@@ -1302,8 +1306,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             // Loop ops are global, so markers and tempo/pitch always ripple.
             UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                 RippleMarkersCommand::Mode::Duplicate, startBeat, endBeat));
-            rippleTempoSequence(getAudioEngine(), TempoSequenceRippleMode::Duplicate, startBeat,
-                                endBeat);
+            rippleTempoSequence(TempoSequenceRippleMode::Duplicate, startBeat, endBeat);
 
             UndoManager::getInstance().endCompoundOperation();
 
@@ -1360,8 +1363,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             if (rippleMarkers) {
                 UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                     RippleMarkersCommand::Mode::Delete, startBeat, endBeat));
-                rippleTempoSequence(getAudioEngine(), TempoSequenceRippleMode::Delete, startBeat,
-                                    endBeat);
+                rippleTempoSequence(TempoSequenceRippleMode::Delete, startBeat, endBeat);
                 UndoManager::getInstance().endCompoundOperation();
             }
             // Collapse the selection to the deletion point.
@@ -1402,8 +1404,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 std::make_unique<RippleDeleteRangeCommand>(startBeat, endBeat, allTracks, bpm));
             UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                 RippleMarkersCommand::Mode::Delete, startBeat, endBeat));
-            rippleTempoSequence(getAudioEngine(), TempoSequenceRippleMode::Delete, startBeat,
-                                endBeat);
+            rippleTempoSequence(TempoSequenceRippleMode::Delete, startBeat, endBeat);
             UndoManager::getInstance().endCompoundOperation();
             return true;
         }
@@ -1440,8 +1441,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             // Paste ripples all tracks, so markers and tempo/pitch shift too.
             UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                 RippleMarkersCommand::Mode::Insert, targetBeat, targetBeat + span));
-            rippleTempoSequence(getAudioEngine(), TempoSequenceRippleMode::Insert, targetBeat,
-                                targetBeat + span);
+            rippleTempoSequence(TempoSequenceRippleMode::Insert, targetBeat, targetBeat + span);
             UndoManager::getInstance().endCompoundOperation();
             return true;
         }
@@ -1453,6 +1453,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 const auto* clip = clipManager.getClip(clipId);
                 if (clip && clip->isMidi()) {
                     std::vector<size_t> allIndices;
+                    allIndices.reserve(clip->midiNotes.size());
                     for (size_t i = 0; i < clip->midiNotes.size(); ++i)
                         allIndices.push_back(i);
                     selectionManager.selectNotes(clipId, allIndices);
@@ -1474,15 +1475,12 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 double tempo =
                     mainView ? mainView->getTimelineController().getState().tempo.bpm : 120.0;
 
-                // Sort clips by start time
                 std::vector<ClipId> sortedClips(selectedClips.begin(), selectedClips.end());
-                std::sort(sortedClips.begin(), sortedClips.end(), [&](ClipId a, ClipId b) {
-                    auto* ca = clipManager.getClip(a);
-                    auto* cb = clipManager.getClip(b);
-                    if (!ca || !cb)
-                        return false;
-                    return timelineStartSeconds(*ca, tempo) < timelineStartSeconds(*cb, tempo);
-                });
+                const auto startSeconds = [&clipManager, tempo](ClipId id) {
+                    const auto* clip = clipManager.getClip(id);
+                    return clip != nullptr ? timelineStartSeconds(*clip, tempo) : 0.0;
+                };
+                std::ranges::sort(sortedClips, {}, startSeconds);
 
                 // Join sequentially: left absorbs right, then result absorbs next, etc.
                 if (sortedClips.size() > 2) {
@@ -1685,7 +1683,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
 
             std::vector<TrackId> trackIds;
             if (state.selection.isAllTracks()) {
-                trackIds = visibleTracks;
+                trackIds = std::move(visibleTracks);
             } else {
                 for (int idx : state.selection.trackIndices) {
                     if (idx >= 0 && idx < static_cast<int>(visibleTracks.size()))
@@ -1958,7 +1956,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
 
         case newAudioTrack: {
             TrackId selectedTrack = SelectionManager::getInstance().getSelectedTrack();
-            auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Audio, juce::String(),
+            auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Media, juce::String(),
                                                             selectedTrack);
             UndoManager::getInstance().executeCommand(std::move(cmd));
             return true;
@@ -1983,7 +1981,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
 
         case uiScaleUp:
         case uiScaleDown: {
-            const double current =
+            const auto current =
                 static_cast<double>(juce::Desktop::getInstance().getGlobalScaleFactor());
             const int direction = (info.commandID == uiScaleUp) ? +1 : -1;
             applyUIScale(stepUIScale(current, direction));

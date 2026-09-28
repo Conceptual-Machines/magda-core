@@ -9,8 +9,7 @@
 #include "remote_api.hpp"
 #include "remote_changes.hpp"
 
-namespace magda {
-namespace remote {
+namespace magda::remote {
 
 class RemoteApiService;
 class SubscriptionHub;
@@ -362,7 +361,7 @@ class McpEndpoint {
     std::vector<Topic> topicsFor(const ListenFilter& filter) const;
 
     /// `notifications/subscriptions/acknowledged`, carrying the honoured filter.
-    juce::var acknowledgment(const ListenFilter& filter, const juce::var& subscriptionId) const;
+    static juce::var acknowledgment(const ListenFilter& filter, const juce::var& subscriptionId);
 
     /// `notifications/resources/updated` for one URI. `subscriptionId` is void
     /// in the legacy era, which has no such correlation.
@@ -380,8 +379,8 @@ class McpEndpoint {
     }
 
   private:
-    void callTool(const Call& call, Completion onComplete);
-    void readResource(const Call& call, Completion onComplete);
+    void callTool(const Call& call, const Completion& onComplete);
+    void readResource(const Call& call, const Completion& onComplete);
 
     /// Build the dispatcher context from `_meta`. Nullopt when a field is
     /// present but unusable, which is a client error rather than a default to
@@ -396,5 +395,4 @@ class McpEndpoint {
     std::vector<McpResource> resources_;
 };
 
-}  // namespace remote
-}  // namespace magda
+}  // namespace magda::remote

@@ -21,7 +21,7 @@ inline constexpr int kVst3PresetClassIdLength = 32;
 // ExtensionsVisitor::VST3Client::getPreset()). Returns an empty string if
 // the blob is too small, lacks the 'VST3' magic, or the id isn't valid hex.
 inline juce::String classIdFromPreset(const juce::MemoryBlock& preset) {
-    if (preset.getSize() < static_cast<size_t>(kVst3PresetClassIdOffset + kVst3PresetClassIdLength))
+    if (preset.getSize() < static_cast<size_t>(kVst3PresetClassIdOffset) + kVst3PresetClassIdLength)
         return {};
 
     const auto* bytes = static_cast<const char*>(preset.getData());

@@ -54,6 +54,11 @@ class AutomationManagerListener {
     virtual void automationValueChanged(AutomationLaneId laneId, double normalizedValue) {
         juce::ignoreUnused(laneId, normalizedValue);
     }
+
+    // Called when the transport's automation mode changes
+    virtual void automationModeChanged(AutomationMode mode) {
+        juce::ignoreUnused(mode);
+    }
 };
 
 /**
@@ -224,14 +229,19 @@ class AutomationManager : public TrackManagerListener {
      */
     AutomationVisualState getVisualState(const AutomationTarget& target) const;
 
-    // Query the real automation-write mode from AudioBridge so controls don't
-    // depend on a duplicated UI-side cache that can drift out of sync.
-    bool isWriteModeEnabled() const;
+    /// The transport's recording mode; the rendering engine records by it (#2760).
+    void setAutomationMode(AutomationMode mode);
+    AutomationMode getAutomationMode() const {
+        return automationMode_;
+    }
+    bool isWriteModeEnabled() const {
+        return automationMode_ != AutomationMode::Off;
+    }
 
     // Current live normalized value for a target, independent of whether its
     // automation lane is active. Used by disabled lanes to show where the
     // manual value sits against the stored curve.
-    std::optional<double> getCurrentTargetValue(const AutomationTarget& target) const;
+    static std::optional<double> getCurrentTargetValue(const AutomationTarget& target);
 
     using AuthorityStateListener =
         std::function<void(AutomationLaneId, AutomationAuthorityState, AutomationAuthorityState)>;
@@ -426,7 +436,8 @@ class AutomationManager : public TrackManagerListener {
      *        (linear/tension, bezier, step, hard corner) — the model's exact
      *        curve for renderers working outside lane/clip lookups.
      */
-    double interpolatePoints(const std::vector<AutomationPoint>& points, double beatPosition) const;
+    static double interpolatePoints(const std::vector<AutomationPoint>& points,
+                                    double beatPosition);
 
     // ========================================================================
     // Listener Management
@@ -450,7 +461,14 @@ class AutomationManager : public TrackManagerListener {
             AutomationManager::getInstance().beginNotificationBatch();
         }
         ~BatchScope() {
-            AutomationManager::getInstance().endNotificationBatch();
+            try {
+                AutomationManager::getInstance().endNotificationBatch();
+            } catch (const std::exception& e) {
+                juce::Logger::writeToLog(juce::String("[AutomationManager::BatchScope] ") +
+                                         e.what());
+            } catch (...) {
+                juce::Logger::writeToLog("[AutomationManager::BatchScope] unknown exception");
+            }
         }
         BatchScope(const BatchScope&) = delete;
         BatchScope& operator=(const BatchScope&) = delete;
@@ -497,6 +515,9 @@ class AutomationManager : public TrackManagerListener {
      * @brief Restore a clip from deserialized data (project load)
      */
     void restoreClip(AutomationClipInfo& clip);
+
+    /** Restore every property of an existing clip, preserving its id and lane. */
+    bool restoreClipState(const AutomationClipInfo& clip);
 
     /**
      * @brief Update ID counters to avoid collisions after restoring lanes/clips
@@ -551,7 +572,7 @@ class AutomationManager : public TrackManagerListener {
 
   private:
     AutomationManager();
-    ~AutomationManager();
+    ~AutomationManager() override;
 
     std::vector<AutomationLaneInfo> lanes_;
     std::vector<AutomationClipInfo> clips_;
@@ -559,6 +580,7 @@ class AutomationManager : public TrackManagerListener {
 
     bool playbackActive_ = false;
     bool applyingAutomationWrite_ = false;
+    AutomationMode automationMode_ = AutomationMode::Off;
 
     // Targets under an active user touch gesture (mouseDown..mouseUp on a
     // DraggableValueLabel / TextSlider bound to this target). Separate from
@@ -590,10 +612,11 @@ class AutomationManager : public TrackManagerListener {
     // Interpolation helpers
 
     // Point management helpers
-    AutomationPoint* findPoint(std::vector<AutomationPoint>& points, AutomationPointId pointId);
-    const AutomationPoint* findPoint(const std::vector<AutomationPoint>& points,
-                                     AutomationPointId pointId) const;
-    void sortPoints(std::vector<AutomationPoint>& points);
+    static AutomationPoint* findPoint(std::vector<AutomationPoint>& points,
+                                      AutomationPointId pointId);
+    static const AutomationPoint* findPoint(const std::vector<AutomationPoint>& points,
+                                            AutomationPointId pointId);
+    static void sortPoints(std::vector<AutomationPoint>& points);
 };
 
 }  // namespace magda

@@ -2,11 +2,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <ranges>
 #include <utility>
 
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda {
 
@@ -182,23 +183,21 @@ void LFOCurveEditor::syncFromModInfo() {
 
     // Update local points from modInfo->curvePoints without rebuilding components
     // This is used for syncing with external editor during drag
-    for (size_t i = 0; i < points_.size() && i < modInfo_->curvePoints.size(); ++i) {
-        points_[i].x = static_cast<double>(modInfo_->curvePoints[i].phase);
-        points_[i].y = static_cast<double>(modInfo_->curvePoints[i].value);
-        points_[i].tension = static_cast<double>(modInfo_->curvePoints[i].tension);
-        points_[i].curveType = intToCurveType(modInfo_->curvePoints[i].curveType);
-        points_[i].inHandle.x = static_cast<double>(modInfo_->curvePoints[i].inHandleX);
-        points_[i].inHandle.y = static_cast<double>(modInfo_->curvePoints[i].inHandleY);
-        points_[i].outHandle.x = static_cast<double>(modInfo_->curvePoints[i].outHandleX);
-        points_[i].outHandle.y = static_cast<double>(modInfo_->curvePoints[i].outHandleY);
+    for (auto&& [point, source] : std::views::zip(points_, modInfo_->curvePoints)) {
+        point.x = static_cast<double>(source.phase);
+        point.y = static_cast<double>(source.value);
+        point.tension = static_cast<double>(source.tension);
+        point.curveType = intToCurveType(source.curveType);
+        point.inHandle.x = static_cast<double>(source.inHandleX);
+        point.inHandle.y = static_cast<double>(source.inHandleY);
+        point.outHandle.x = static_cast<double>(source.outHandleX);
+        point.outHandle.y = static_cast<double>(source.outHandleY);
     }
 
     // Update point component positions
-    for (size_t i = 0; i < pointComponents_.size() && i < points_.size(); ++i) {
-        pointComponents_[i]->updateFromPoint(points_[i]);
-        int px = xToPixel(points_[i].x);
-        int py = yToPixel(points_[i].y);
-        pointComponents_[i]->setCentrePosition(px, py);
+    for (auto&& [component, point] : std::views::zip(pointComponents_, points_)) {
+        component->updateFromPoint(point);
+        component->setCentrePosition(xToPixel(point.x), yToPixel(point.y));
     }
 
     updateTensionHandlePositions();
@@ -256,8 +255,7 @@ void LFOCurveEditor::setModInfo(ModInfo* mod) {
             points_.push_back(point);
         }
         // Sort by x position
-        std::sort(points_.begin(), points_.end(),
-                  [](const CurvePoint& a, const CurvePoint& b) { return a.x < b.x; });
+        std::ranges::sort(points_, {}, &CurvePoint::x);
         // Ensure first and last points are pinned to edges
         if (!points_.empty()) {
             points_.front().x = 0.0;
@@ -433,8 +431,7 @@ void LFOCurveEditor::onPointMoved(uint32_t pointId, double newX, double newY) {
     }
 
     // Re-sort points by x position
-    std::sort(points_.begin(), points_.end(),
-              [](const CurvePoint& a, const CurvePoint& b) { return a.x < b.x; });
+    std::ranges::sort(points_, {}, &CurvePoint::x);
 
     rebuildPointComponents();
     repaint();  // Force full repaint after structural change
@@ -450,9 +447,7 @@ void LFOCurveEditor::onPointDeleted(uint32_t pointId) {
     const auto beforePoints = snapshotCurvePoints();
     const auto beforePreset = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
 
-    points_.erase(std::remove_if(points_.begin(), points_.end(),
-                                 [pointId](const CurvePoint& p) { return p.id == pointId; }),
-                  points_.end());
+    std::erase_if(points_, [pointId](const CurvePoint& p) { return p.id == pointId; });
 
     if (selectedPointId_ == pointId) {
         selectedPointId_ = INVALID_CURVE_POINT_ID;
@@ -478,14 +473,12 @@ void LFOCurveEditor::onDeleteSelectedPoints(const std::set<uint32_t>& pointIds) 
     const auto beforePreset = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
 
     size_t deleted = 0;
-    points_.erase(std::remove_if(points_.begin(), points_.end(),
-                                 [&](const CurvePoint& p) {
-                                     if (deleted >= deletable || pointIds.count(p.id) == 0)
-                                         return false;
-                                     ++deleted;
-                                     return true;
-                                 }),
-                  points_.end());
+    std::erase_if(points_, [&](const CurvePoint& p) {
+        if (deleted >= deletable || pointIds.count(p.id) == 0)
+            return false;
+        ++deleted;
+        return true;
+    });
 
     if (deleted == 0)
         return;
@@ -788,7 +781,7 @@ juce::Rectangle<int> LFOCurveEditor::getIndicatorBounds() const {
 
     // Return a small region around the indicator dot
     constexpr int margin = 8;
-    return juce::Rectangle<int>(x - margin, y - margin, margin * 2, margin * 2);
+    return {x - margin, y - margin, margin * 2, margin * 2};
 }
 
 void LFOCurveEditor::paint(juce::Graphics& g) {
@@ -796,7 +789,7 @@ void LFOCurveEditor::paint(juce::Graphics& g) {
     CurveEditorBase::paint(g);
 
     if (drawContentBorder_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_GUIDE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_GUIDE));
         g.drawRect(getContentBounds(), 1);
     }
 
@@ -856,8 +849,8 @@ void LFOCurveEditor::paintPhaseIndicator(juce::Graphics& g) {
 
 void LFOCurveEditor::paintGrid(juce::Graphics& g) {
     auto bounds = getLocalBounds();
-    float width = static_cast<float>(bounds.getWidth());
-    float height = static_cast<float>(bounds.getHeight());
+    auto width = static_cast<float>(bounds.getWidth());
+    auto height = static_cast<float>(bounds.getHeight());
 
     // Horizontal grid lines (value divisions) - placed using the padded y mapping
     // so they align with the curve and point positions.
@@ -867,7 +860,7 @@ void LFOCurveEditor::paintGrid(juce::Graphics& g) {
         int y = static_cast<int>(yToPixelF(value));
         // Center line is brighter
         bool isCenter = (i * 2 == gridDivisionsY_);
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT)
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT)
                         .withAlpha((isCenter ? 0x20 : 0x10) / 255.0f));
         g.drawHorizontalLine(y, 0.0f, width);
     }
@@ -878,7 +871,7 @@ void LFOCurveEditor::paintGrid(juce::Graphics& g) {
         double phase = static_cast<double>(i) / gridDivisionsX_;
         int x = static_cast<int>(xToPixelF(phase));
         bool isCenter = (i * 2 == gridDivisionsX_);
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT)
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT)
                         .withAlpha((isCenter ? 0x20 : 0x10) / 255.0f));
         g.drawVerticalLine(x, 0.0f, height);
     }
@@ -894,11 +887,11 @@ void LFOCurveEditor::paintLoopRegion(juce::Graphics& g) {
         return;
 
     auto content = getContentBounds();
-    float loopStartX = static_cast<float>(xToPixelF(static_cast<double>(modInfo_->loopStart)));
-    float loopEndX = static_cast<float>(xToPixelF(static_cast<double>(modInfo_->loopEnd)));
+    auto loopStartX = static_cast<float>(xToPixelF(static_cast<double>(modInfo_->loopStart)));
+    auto loopEndX = static_cast<float>(xToPixelF(static_cast<double>(modInfo_->loopEnd)));
 
     // Shade areas outside the loop region
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DARK).withAlpha(0x30 / 255.0f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DARK).withAlpha(0x30 / 255.0f));
     if (loopStartX > content.getX()) {
         g.fillRect(juce::Rectangle<float>(
             static_cast<float>(content.getX()), static_cast<float>(content.getY()),
@@ -966,7 +959,7 @@ void LFOCurveEditor::mouseDown(const juce::MouseEvent& e) {
 void LFOCurveEditor::mouseDrag(const juce::MouseEvent& e) {
     if (draggingLoopMarker_ != 0 && modInfo_) {
         constexpr float kMinGap = 0.02f;
-        float phase = static_cast<float>(juce::jlimit(0.0, 1.0, pixelToX(e.x)));
+        auto phase = static_cast<float>(juce::jlimit(0.0, 1.0, pixelToX(e.x)));
         if (snapLoop_ && gridDivisionsX_ > 1) {
             const double step = 1.0 / gridDivisionsX_;
             phase = static_cast<float>(juce::jlimit(0.0, 1.0, std::round(phase / step) * step));
@@ -1127,8 +1120,7 @@ void LFOCurveEditor::loadCurvePoints(const std::vector<CurvePointData>& points) 
         points_.push_back(point);
     }
 
-    std::sort(points_.begin(), points_.end(),
-              [](const CurvePoint& a, const CurvePoint& b) { return a.x < b.x; });
+    std::ranges::sort(points_, {}, &CurvePoint::x);
 
     if (points_.size() < 2) {
         loadPreset(CurvePreset::Triangle);

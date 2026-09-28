@@ -2,19 +2,19 @@
 
 #include <cmath>
 
-#include "../../../audio/AudioBridge.hpp"
 #include "../../../audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "../../../engine/AudioEngine.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/MixerMetrics.hpp"
 #include "../../utils/SelectionPolicy.hpp"
 #include "../common/MasterSpeakerButton.hpp"
 #include "BinaryData.h"
 #include "LevelMeterScale.hpp"
-#include "components/chain/custom_ui/PluginTelemetrySources.hpp"
+#include "components/chain/custom_ui/DeviceTelemetrySources.hpp"
 #include "core/ChainNodePath.hpp"
 #include "core/Config.hpp"
+#include "core/DeviceStateCommands.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/StringTable.hpp"
 #include "core/TechnicalText.hpp"
@@ -23,6 +23,33 @@
 #include "core/UndoManager.hpp"
 
 namespace magda {
+
+namespace {
+
+constexpr const char* kOscilloscopeId = "oscilloscope";
+constexpr const char* kSpectrumId = "spectrumanalyzer";
+
+/// The device the engine renders for the master's mixer-analysis slot (#2585).
+std::shared_ptr<daw::audio::MagdaDevice> renderedAnalyser(const char* pluginId) {
+    auto& tracks = TrackManager::getInstance();
+    const auto deviceId = tracks.findMixerAnalysisDevice(MASTER_TRACK_ID, pluginId);
+    auto* engine = tracks.getAudioEngine();
+    if (deviceId == INVALID_DEVICE_ID || engine == nullptr)
+        return {};
+
+    return engine->renderedDevice(ChainNodePath::mixerAnalysisDevice(MASTER_TRACK_ID, deviceId));
+}
+
+/// Patch the analyser's own document, which is what persists its settings (#2663).
+void editAnalyserSettings(const char* pluginId, const juce::NamedValueSet& settings) {
+    const auto deviceId =
+        TrackManager::getInstance().findMixerAnalysisDevice(MASTER_TRACK_ID, pluginId);
+    if (deviceId != INVALID_DEVICE_ID)
+        writeDeviceSettings(ChainNodePath::mixerAnalysisDevice(MASTER_TRACK_ID, deviceId),
+                            settings);
+}
+
+}  // namespace
 
 // dB conversion helpers
 namespace {
@@ -70,8 +97,8 @@ class MasterChannelStrip::ResizeHandle : public juce::Component {
     }
 
     void paint(juce::Graphics& g) override {
-        g.setColour(isHovering_ ? DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)
-                                : DarkTheme::getColour(DarkTheme::SEPARATOR));
+        g.setColour(isHovering_ ? ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)
+                                : ActiveTheme::getColour(ActiveTheme::SEPARATOR));
         int y = getHeight() / 2;
         g.fillRect(4, y, getWidth() - 8, 2);
     }
@@ -142,7 +169,7 @@ class MasterChannelStrip::DbScale : public juce::Component {
         float paddingBottom = metrics.labelTextHeight / 2.0f;
         float top = paddingTop;
         float height = static_cast<float>(bounds.getHeight()) - paddingTop - paddingBottom;
-        float totalWidth = static_cast<float>(bounds.getWidth());
+        auto totalWidth = static_cast<float>(bounds.getWidth());
 
         const float tickShort = metrics.tickWidth();
         const float tickLong = tickShort * 1.8f;
@@ -167,7 +194,8 @@ class MasterChannelStrip::DbScale : public juce::Component {
             float tickHeight = metrics.tickHeight();
             float tickW = isZero ? tickLong : tickShort;
 
-            g.setColour(DarkTheme::getColour(isZero ? DarkTheme::TEXT_PRIMARY : DarkTheme::BORDER));
+            g.setColour(
+                ActiveTheme::getColour(isZero ? ActiveTheme::TEXT_PRIMARY : ActiveTheme::BORDER));
             g.fillRect(0.0f, y - tickHeight / 2.0f, tickW, tickHeight);
 
             juce::String labelText;
@@ -179,8 +207,8 @@ class MasterChannelStrip::DbScale : public juce::Component {
             }
 
             g.setFont(isZero ? boldFont : baseFont);
-            g.setColour(
-                DarkTheme::getColour(isZero ? DarkTheme::TEXT_PRIMARY : DarkTheme::TEXT_SECONDARY));
+            g.setColour(ActiveTheme::getColour(isZero ? ActiveTheme::TEXT_PRIMARY
+                                                      : ActiveTheme::TEXT_SECONDARY));
 
             float textHeight = metrics.labelTextHeight;
             float textY = y - textHeight / 2.0f;
@@ -206,56 +234,50 @@ MasterChannelStrip::~MasterChannelStrip() {
 }
 
 void MasterChannelStrip::refreshMiniAnalyzers() {
-    auto& tm = TrackManager::getInstance();
-    auto* engine = tm.getAudioEngine();
-    auto* bridge = engine ? engine->getAudioBridge() : nullptr;
-
+    // The same shape as the track strips': a query per faceplate, answered by
+    // whichever engine renders the master's analysis device (#2585).
     if (miniOscilloscopeUI_) {
-        tracktion::engine::Plugin::Ptr pluginPtr;
-        DeviceId id = INVALID_DEVICE_ID;
-        if (bridge) {
-            id = tm.findMixerAnalysisDevice(MASTER_TRACK_ID, "oscilloscope");
-            if (id != INVALID_DEVICE_ID)
-                pluginPtr =
-                    bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(MASTER_TRACK_ID, id));
-        }
-
-        if (daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::OscilloscopePlugin>(
-                pluginPtr.get()) == nullptr)
-            pluginPtr = nullptr;
-
-        if (pluginPtr.get() != miniOscilloscopeTelemetryPlugin_) {
-            miniOscilloscopeTelemetryPlugin_ = pluginPtr.get();
-            miniOscilloscopeTelemetry_ =
-                pluginPtr != nullptr
-                    ? std::make_shared<daw::ui::OscilloscopePluginTelemetrySource>(pluginPtr)
-                    : nullptr;
+        if (miniOscilloscopeTelemetry_ == nullptr) {
+            miniOscilloscopeTelemetry_ = std::make_shared<daw::ui::DeviceOscilloscopeTelemetry>(
+                [] { return renderedAnalyser(kOscilloscopeId); });
+            miniOscilloscopeUI_->onSettingsEdited = [](const juce::NamedValueSet& settings) {
+                editAnalyserSettings(kOscilloscopeId, settings);
+            };
         }
         miniOscilloscopeUI_->setTelemetrySource(miniOscilloscopeTelemetry_);
     }
 
     if (miniSpectrumUI_) {
-        tracktion::engine::Plugin::Ptr pluginPtr;
-        DeviceId id = INVALID_DEVICE_ID;
-        if (bridge) {
-            id = tm.findMixerAnalysisDevice(MASTER_TRACK_ID, "spectrumanalyzer");
-            if (id != INVALID_DEVICE_ID)
-                pluginPtr =
-                    bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(MASTER_TRACK_ID, id));
-        }
-
-        if (daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::SpectrumAnalyzerPlugin>(
-                pluginPtr.get()) == nullptr)
-            pluginPtr = nullptr;
-
-        if (pluginPtr.get() != miniSpectrumTelemetryPlugin_) {
-            miniSpectrumTelemetryPlugin_ = pluginPtr.get();
-            miniSpectrumTelemetry_ =
-                pluginPtr != nullptr
-                    ? std::make_shared<daw::ui::SpectrumPluginTelemetrySource>(pluginPtr)
-                    : nullptr;
+        if (miniSpectrumTelemetry_ == nullptr) {
+            miniSpectrumTelemetry_ = std::make_shared<daw::ui::DeviceSpectrumTelemetry>(
+                [] { return renderedAnalyser(kSpectrumId); });
+            miniSpectrumUI_->onSettingsEdited = [](const juce::NamedValueSet& settings) {
+                editAnalyserSettings(kSpectrumId, settings);
+            };
         }
         miniSpectrumUI_->setTelemetrySource(miniSpectrumTelemetry_);
+    }
+
+    refreshAnalyserSettings();
+}
+
+void MasterChannelStrip::refreshAnalyserSettings() {
+    // The controls show what the device holds, and the device is published
+    // after the model change that added it (#2663).
+    if (miniOscilloscopeUI_) {
+        const auto* device = renderedAnalyser(kOscilloscopeId).get();
+        if (device != miniOscilloscopeDevice_) {
+            miniOscilloscopeDevice_ = device;
+            miniOscilloscopeUI_->refreshSettingsFromSource();
+        }
+    }
+
+    if (miniSpectrumUI_) {
+        const auto* device = renderedAnalyser(kSpectrumId).get();
+        if (device != miniSpectrumDevice_) {
+            miniSpectrumDevice_ = device;
+            miniSpectrumUI_->refreshSettingsFromSource();
+        }
     }
 }
 
@@ -263,7 +285,8 @@ void MasterChannelStrip::setupControls() {
     // Title label
     titleLabel = std::make_unique<juce::Label>(
         "Master", magda::technicalText(magda::TechnicalTextToken::Master));
-    titleLabel->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    titleLabel->setColour(juce::Label::textColourId,
+                          ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     titleLabel->setFont(FontManager::getInstance().getUIFont(12.0f));
     titleLabel->setJustificationType(juce::Justification::centredLeft);
     titleLabel->setInterceptsMouseClicks(false, false);
@@ -279,7 +302,7 @@ void MasterChannelStrip::setupControls() {
     peakValueLabel->setText("-inf", juce::dontSendNotification);
     peakValueLabel->setJustificationType(juce::Justification::centred);
     peakValueLabel->setColour(juce::Label::textColourId,
-                              DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                              ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     peakValueLabel->setFont(FontManager::getInstance().getMonoFont(10.0f));
     peakValueLabel->setTooltip("Click to reset peak");
     peakValueLabel->onClick = [this]() { resetPeak(); };
@@ -299,7 +322,7 @@ void MasterChannelStrip::setupControls() {
             return "-inf";
         if (std::abs(db) < 0.05f)
             db = 0.0f;
-        return juce::String(db, 1);
+        return {db, 1};
     });
 
     // Custom parser: user input text -> normalized position (0-1)
@@ -450,7 +473,7 @@ void MasterChannelStrip::setupControls() {
     auto hpIcon = juce::Drawable::createFromImageData(BinaryData::headphones_svg,
                                                       BinaryData::headphones_svgSize);
     if (hpIcon)
-        DarkTheme::applyToSvgIcon(*hpIcon);
+        ActiveTheme::applyToSvgIcon(*hpIcon);
     headphoneIcon_ =
         std::make_unique<juce::DrawableButton>("Headphones", juce::DrawableButton::ImageFitted);
     headphoneIcon_->setImages(hpIcon.get());
@@ -473,7 +496,7 @@ void MasterChannelStrip::setupControls() {
             return "-inf";
         if (std::abs(db) < 0.05f)
             db = 0.0f;
-        return juce::String(db, 1);
+        return {db, 1};
     });
 
     cueVolumeSlider_->setValueParser([](const juce::String& text) -> double {
@@ -501,10 +524,10 @@ void MasterChannelStrip::setupControls() {
 }
 
 void MasterChannelStrip::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
 
     // Draw border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(getLocalBounds(), 1);
 
     auto ownBounds = getLocalBounds();
@@ -514,7 +537,7 @@ void MasterChannelStrip::paint(juce::Graphics& g) {
         g.setColour(juce::Colours::black);
         g.fillRect(1, 1, ownBounds.getWidth() - 2, labelRowBottom);
     }
-    g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
     g.fillRect(1, labelRowBottom, ownBounds.getWidth() - 2, 1);
 }
 
@@ -525,10 +548,10 @@ void MasterChannelStrip::lookAndFeelChanged() {
     if (titleLabel)
         titleLabel->setColour(juce::Label::textColourId,
                               selected_ ? juce::Colours::white
-                                        : DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                                        : ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     if (peakValueLabel)
         peakValueLabel->setColour(juce::Label::textColourId,
-                                  DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                                  ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
 }
 
 void MasterChannelStrip::setSelected(bool shouldBeSelected) {
@@ -536,7 +559,7 @@ void MasterChannelStrip::setSelected(bool shouldBeSelected) {
         selected_ = shouldBeSelected;
         titleLabel->setColour(juce::Label::textColourId,
                               selected_ ? juce::Colours::white
-                                        : DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                                        : ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         repaint();
     }
 }

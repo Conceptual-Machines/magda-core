@@ -1,11 +1,9 @@
 #include "compiled/CompiledClipperCurveView.hpp"
 
-#include <algorithm>
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaClipperCompiledPlugin.hpp"
-#include "ui/themes/DarkTheme.hpp"
-#include "ui/themes/FontManager.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -83,13 +81,14 @@ CompiledClipperCurveView::CompiledClipperCurveView(juce::String /*pluginId*/) {
 }
 
 void CompiledClipperCurveView::setCompiledPlugin(
-    magda::daw::audio::compiled::MagdaClipperCompiledPlugin* plugin) {
-    compiledPlugin_ = plugin;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaClipperCompiledPlugin> plugin) {
+    compiledPlugin_ = std::move(plugin);
 }
 
-void CompiledClipperCurveView::bindPlugin(te::Plugin* plugin) {
+void CompiledClipperCurveView::bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) {
     setCompiledPlugin(
-        dynamic_cast<magda::daw::audio::compiled::MagdaClipperCompiledPlugin*>(plugin));
+        std::dynamic_pointer_cast<magda::daw::audio::compiled::MagdaClipperCompiledPlugin>(
+            std::move(device)));
 }
 
 void CompiledClipperCurveView::updateFromDevice(const magda::DeviceInfo& device) {
@@ -104,13 +103,11 @@ void CompiledClipperCurveView::timerCallback() {
     auto readPluginSlot = [this](int slot, float fallback) {
         if (compiledPlugin_ == nullptr)
             return fallback;
-        if (auto* p = compiledPlugin_->getSlotParameter(slot))
-            return compiledPlugin_->nativeValueToDisplayValue(slot, p->getCurrentValue());
-        return fallback;
+        return compiledPlugin_->slotDisplayValue(slot);
     };
 
     float drive = driveDb_;
-    float modeF = static_cast<float>(mode_);
+    auto modeF = static_cast<float>(mode_);
 
     if (compiledPlugin_ != nullptr) {
         drive = readPluginSlot(Clip::kDriveSlot, drive);
@@ -143,15 +140,15 @@ void CompiledClipperCurveView::resampleFromDevice() {
 
 void CompiledClipperCurveView::paint(juce::Graphics& g) {
     const auto bounds = getLocalBounds();
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).darker(0.06f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).darker(0.06f));
     g.fillRect(bounds);
 
     auto plot = bounds.toFloat().reduced(kPlotPad, kPlotPad);
     if (plot.getWidth() < 32.0f || plot.getHeight() < 32.0f)
         return;
 
-    const auto border = DarkTheme::getColour(DarkTheme::BORDER);
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION);
+    const auto border = ActiveTheme::getColour(ActiveTheme::BORDER);
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION);
 
     g.setColour(border.withAlpha(0.55f));
     g.drawRect(plot, 1.0f);
@@ -214,7 +211,7 @@ void CompiledClipperCurveView::paint(juce::Graphics& g) {
     const float drivenAmp = smoothedInputAmp_ * driveLin;
     const float dotX = xToScreen(drivenAmp);
     const float dotY = yToScreen(clipForMode(mode_, drivenAmp));
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.95f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.95f));
     g.fillEllipse(dotX - 3.5f, dotY - 3.5f, 7.0f, 7.0f);
 }
 

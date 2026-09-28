@@ -1,0 +1,289 @@
+#include "launch/SessionLauncher.hpp"
+
+#include <algorithm>
+
+#include "clip/ClipSnapshot.hpp"
+#include "launch/FollowActions.hpp"
+
+namespace magda::engine {
+
+std::pair<const LaunchHandleTable::Entry*, const LaunchHandleTable::Entry*>
+LaunchHandleTable::rangeFor(TrackId trackId) const {
+    const auto byTrack = [](const Entry& entry, TrackId id) { return entry.key.trackId < id; };
+    const auto trackFirst = [](TrackId id, const Entry& entry) { return id < entry.key.trackId; };
+
+    const auto* begin = entries.data();
+    const auto* end = begin + entries.size();
+
+    const auto* from = std::lower_bound(begin, end, trackId, byTrack);
+    const auto* to = std::upper_bound(from, end, trackId, trackFirst);
+    return {from, to};
+}
+
+const LaunchHandleTable::Entry* LaunchHandleTable::findEntry(const SlotKey& key) const {
+    const auto [from, to] = rangeFor(key.trackId);
+
+    const auto* found =
+        std::lower_bound(from, to, key, [](const Entry& entry, const SlotKey& wanted) {
+            return entry.key < wanted;
+        });
+
+    return found != to && found->key == key ? found : nullptr;
+}
+
+LaunchHandle* LaunchHandleTable::find(const SlotKey& key) const {
+    const auto* entry = findEntry(key);
+    return entry != nullptr ? entry->handle : nullptr;
+}
+
+namespace {
+
+/**
+ * @brief Apply @p request against the table that is live now.
+ *
+ * Dropped when the slot has gone, and equally when it was emptied and refilled:
+ * that is the same key on a different clip, and launching it would start
+ * something the user never clicked. The incarnation is what tells those apart,
+ * and it is a number rather than a pointer, so nothing here can name a retired
+ * handle.
+ */
+void apply(const LaunchRequest& request, const LaunchHandleTable& table) {
+    const auto* entry = table.findEntry(request.key);
+    if (entry == nullptr || entry->handle == nullptr || entry->incarnation != request.incarnation)
+        return;
+
+    auto* handle = entry->handle;
+
+    switch (request.kind) {
+        case LaunchRequest::Kind::play:
+            if (request.syncTo) {
+                // A slot and not a run, so the run joined is the one the leader
+                // holds now rather than where it was when the gesture was made.
+                if (const auto* with = table.find(*request.syncTo); with != nullptr) {
+                    // A leader with a launch of its own still queued has no run
+                    // to join yet, and the one it is about to begin is the one
+                    // the follower means. Both then begin on the same instant,
+                    // which is the same origin (#2336); joining what it is
+                    // playing would leave a relaunched scene out of phase with
+                    // itself.
+                    if (with->queuedState() == LaunchHandle::QueueState::playQueued) {
+                        handle->play(with->queuedPosition());
+                        return;
+                    }
+
+                    handle->playSynced(*with, request.position);
+                    return;
+                }
+
+                // The leader's slot was emptied in between, so there is nothing
+                // left to be in phase with.
+            }
+
+            handle->play(request.position);
+            return;
+
+        case LaunchRequest::Kind::stop:
+            handle->stop(request.position);
+            return;
+
+        case LaunchRequest::Kind::backToArrangement:
+            handle->releaseSection(request.position);
+            return;
+
+        case LaunchRequest::Kind::loop:
+            handle->setLooping(request.position);
+            return;
+    }
+}
+
+/**
+ * @brief End the runs that reach their end inside @p range, and start what
+ *        follows them (#2304).
+ *
+ * Before the advance, so the stop and the launch it triggers land on one beat
+ * inside this block rather than on the next callback boundary.
+ *
+ * A slot with anything queued is left alone: a handle holds one pending request,
+ * so writing a stop over it would drop what the user asked for.
+ */
+void applyDueFollowActions(const LaunchHandleTable& table, const SyncRange& range) {
+    for (const auto& entry : table.entries) {
+        if (entry.handle == nullptr ||
+            entry.handle->playState() != LaunchHandle::PlayState::playing)
+            continue;
+
+        if (entry.handle->queuedState())
+            continue;
+
+        const auto due = followDueBeat(*entry.handle, entry.follow);
+        if (!due || *due >= range.monotonic.end)
+            continue;
+
+        // A run whose end was already behind this block: one shorter than a
+        // callback, whose launch was this block's one event and left the end
+        // nowhere to go. The handle clamps it to the first sample here, and the
+        // block it slipped is counted rather than left silent (#2304 review).
+        if (*due < range.monotonic.start)
+            entry.handle->noteLateRunEnd();
+
+        auto* target = followTarget(table, entry.key, entry.follow, *due);
+
+        // Asked before the stop below, so a slot following itself is not turned
+        // away by the stop this pass is about to write. A target already spoken
+        // for keeps what it was asked: a handle holds one pending request, and
+        // the user's outranks this one.
+        const auto spokenFor = target != nullptr && target->queuedState().has_value();
+
+        entry.handle->stop(due);
+
+        if (target != nullptr && !spokenFor)
+            target->play(due);
+    }
+}
+
+/**
+ * @brief Publish what @p status said about @p entry's run. Audio thread.
+ *
+ * Ended before began, which is the order they happened in: a re-launch ends one
+ * run and begins another on the same sample, and they are two takes.
+ *
+ * Every face is taken from the sample the edge landed on, through the range
+ * that cut the block, so the capture places a run where the audio actually
+ * started rather than where a poll noticed it (#2464).
+ */
+CaptureSource sourceFor(const ClipSnapshot* clips, const SlotKey& key) {
+    if (clips != nullptr)
+        if (const auto* track = clips->find(key.trackId); track != nullptr)
+            if (const auto* slot = track->slot(key.sceneIndex); slot != nullptr)
+                return slot->captureSource;
+    return {};
+}
+
+void publishRunEdges(SlotRunQueue& runs, const LaunchHandleTable::Entry& entry,
+                     const SyncRange& range, const SplitStatus& status,
+                     CaptureSource publishedSource, bool playingBefore, double elapsedBefore) {
+    auto active =
+        entry.runSource != nullptr ? entry.runSource->active : std::optional<CaptureSource>{};
+    const auto edge = [&](SlotRunEvent::Kind kind, int sample, CaptureSource source,
+                          double offsetBeats = 0.0) {
+        const auto at = range.atSample(sample);
+
+        runs.push(SlotRunEvent{.key = entry.key,
+                               .kind = kind,
+                               .incarnation = entry.incarnation,
+                               .source = source,
+                               .offsetBeats = offsetBeats,
+                               .at = at.monotonic,
+                               .timelineBeat = range.timelineBeatAt(at),
+                               .monotonicBeat = range.monotonicBeatAt(at)});
+    };
+
+    const auto endedAtZero = status.runEndedAt && status.runEndedAt->value == 0;
+    if (playingBefore && active && *active != publishedSource && !endedAtZero) {
+        edge(SlotRunEvent::Kind::ended, 0, *active);
+        edge(SlotRunEvent::Kind::began, 0, publishedSource, elapsedBefore);
+        active = publishedSource;
+    }
+
+    if (status.runEndedAt) {
+        edge(SlotRunEvent::Kind::ended, status.runEndedAt->value, active.value_or(publishedSource));
+        active.reset();
+    }
+
+    if (status.runBeganAt) {
+        edge(SlotRunEvent::Kind::began, status.runBeganAt->value, publishedSource);
+        active = publishedSource;
+    }
+
+    if (entry.runSource != nullptr)
+        entry.runSource->active = active;
+}
+
+SlotRunBoundary boundaryAtEnd(const SyncRange& range) {
+    const auto at = range.atSample(range.numSamples);
+    return {.at = at.monotonic,
+            .timelineBeat = range.timelineBeatAt(at),
+            .monotonicBeat = range.monotonicBeatAt(at)};
+}
+
+}  // namespace
+
+void advanceLaunchHandles(LaunchHandleFeed& handles, LaunchRequestQueue& requests,
+                          const BlockInfo& block, SlotRunQueue* runs, const ClipSnapshot* clips,
+                          const SlotRunBoundary* completedBoundary) {
+    const LaunchHandleFeed::Reader table(handles);
+    const auto range = syncRangeFor(block);
+    const auto boundary = completedBoundary != nullptr ? *completedBoundary : boundaryAtEnd(range);
+
+    // Drained whether or not there is a table to apply it to: a queue left
+    // filling would deliver a launch made minutes ago at whatever moment a
+    // session appeared.
+    if (!table) {
+        requests.drain([](const LaunchRequest&) {});
+
+        // Still reported: how far the lane has got is a property of the
+        // transport, not of there being anything to launch.
+        if (runs != nullptr)
+            runs->reached(boundary);
+
+        return;
+    }
+
+    // The same pinned snapshot the sources render below. Adopt it before the
+    // request lane, so an explicit setLooping made after the publish remains
+    // the last word for this block and every unchanged block after it.
+    if (clips != nullptr)
+        for (const auto& entry : table->entries)
+            if (entry.handle != nullptr)
+                if (const auto* track = clips->find(entry.key.trackId); track != nullptr)
+                    if (const auto* slot = track->slot(entry.key.sceneIndex); slot != nullptr)
+                        entry.handle->adoptPublishedLooping(slot->loopBeats);
+
+    // Every request before any advance, so a scene reaches all of its handles
+    // on the same block.
+    requests.drain([&table](const LaunchRequest& request) { apply(request, *table.get()); });
+
+    // After the requests, so a launch made in this block beats the follow
+    // action of the run it replaces.
+    applyDueFollowActions(*table.get(), range);
+
+    for (const auto& entry : table->entries)
+        if (entry.handle != nullptr) {
+            const auto playingBefore =
+                entry.handle->playState() == LaunchHandle::PlayState::playing;
+            const auto playedBefore = entry.handle->playedMonotonicRange();
+            const auto status = entry.handle->advance(range);
+
+            // Published by the block that decided it, so the UI is never a
+            // frame behind the audio and has nothing to poll (#2303).
+            if (entry.tap != nullptr)
+                entry.tap->write(*entry.handle);
+
+            if (runs != nullptr)
+                publishRunEdges(*runs, entry, range, status, sourceFor(clips, entry.key),
+                                playingBefore, playedBefore ? playedBefore->length() : 0.0);
+        }
+
+    // After every edge this block reported, which is what lets a capture end a
+    // run here without cutting one whose end it has not seen (SlotRuns.hpp).
+    if (runs != nullptr)
+        runs->reached(boundary);
+}
+
+SlotRun slotRun(const SlotRunTarget& target) {
+    if (target.handles == nullptr)
+        return {.gone = true};
+
+    const LaunchHandleFeed::Reader table(*target.handles);
+    if (!table)
+        return {.gone = true};
+
+    const auto* entry = table->findEntry(target.key);
+    if (entry == nullptr || entry->handle == nullptr || entry->incarnation != target.incarnation)
+        return {.gone = true};
+
+    const auto& status = entry->handle->blockStatus();
+    return {.endedAt = status.runEndedAt, .beganAt = status.runBeganAt};
+}
+
+}  // namespace magda::engine

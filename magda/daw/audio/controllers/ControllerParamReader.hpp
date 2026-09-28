@@ -57,10 +57,10 @@ class AudioBridge;
  *    `TrackManager` holds, and the round trip would not close.
  *  - Macros are normalized on both sides, so `MacroInfo::value` is the answer
  *    already.
- *  - A plugin parameter takes whichever of the writer's two paths its own
- *    `ParameterInfo` selects: a display-mapped internal parameter inverts
- *    through `ParameterUtils`, and everything else inverts through the TE
- *    parameter's value range, which is what the writer mapped it into.
+ *  - A plugin parameter uses the same model/live catalog description as the
+ *    writer. Addressed hosted slots read their normalized model base directly;
+ *    unaddressed slots read the active engine's catalog value. Internal
+ *    parameters invert through `ParameterUtils` in their declared domain.
  *
  * `ModParam` is the one kind with no reading. Its forward path resolves a
  * modifier's tempo-sync flag and then writes either a rate in Hz or a discrete
@@ -74,7 +74,9 @@ class AudioBridge;
  */
 class DefaultControllerParamReader : public ControllerParamReader {
   public:
-    explicit DefaultControllerParamReader(AudioBridge& bridge) : bridge_(bridge) {}
+    DefaultControllerParamReader() = default;
+    // Source compatibility for callers that still have an incumbent bridge.
+    explicit DefaultControllerParamReader(AudioBridge&) {}
 
     std::optional<float> read(const ResolveResult& resolved) override;
 
@@ -83,8 +85,6 @@ class DefaultControllerParamReader : public ControllerParamReader {
     static std::optional<float> readSendLevel(const ControlTarget& target);
     static std::optional<float> readMacro(const ControlTarget& target);
     std::optional<float> readPluginParam(const ControlTarget& target);
-
-    AudioBridge& bridge_;
 };
 
 }  // namespace magda

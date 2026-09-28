@@ -17,6 +17,9 @@ struct LlamaModelManagerTestAccess;
 
 class LlamaModelManager {
   public:
+    LlamaModelManager(const LlamaModelManager&) = delete;
+    LlamaModelManager& operator=(const LlamaModelManager&) = delete;
+
     static LlamaModelManager& getInstance();
 
     struct Config {
@@ -47,7 +50,7 @@ class LlamaModelManager {
 
     using TokenCallback = std::function<bool(const std::string& token)>;
 
-    InferenceResult infer(const InferenceRequest& req, TokenCallback onToken = nullptr);
+    InferenceResult infer(const InferenceRequest& req, const TokenCallback& onToken = nullptr);
 
   private:
 #ifdef MAGDA_ENABLE_TEST_HOOKS
@@ -56,9 +59,6 @@ class LlamaModelManager {
 
     LlamaModelManager() = default;
     ~LlamaModelManager();
-
-    LlamaModelManager(const LlamaModelManager&) = delete;
-    LlamaModelManager& operator=(const LlamaModelManager&) = delete;
 
     static std::string cpuCompatibilityError(bool isIntel, bool hasSSE42, bool hasAVX);
     static std::string currentCpuCompatibilityError();

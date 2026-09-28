@@ -63,7 +63,7 @@ PluginPreferences::PluginPreferences() {
 bool PluginPreferences::prefersDrumGrid(const juce::String& pluginIdentifier) const {
     if (pluginIdentifier.isEmpty() || pluginIdentifier == kInstrumentRackWrapperId)
         return false;
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     if (drumGridPlugins_.find(pluginIdentifier) != drumGridPlugins_.end())
         return true;
     // Built-in default: MAGDA's DrumGrid plugin opens in the drum-grid view
@@ -77,7 +77,7 @@ void PluginPreferences::setPrefersDrumGrid(const juce::String& pluginIdentifier,
 
     bool changed = false;
     {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::scoped_lock lock(mutex_);
         changed = prefer ? drumGridPlugins_.insert(pluginIdentifier).second
                          : drumGridPlugins_.erase(pluginIdentifier) > 0;
         if (changed)
@@ -101,7 +101,7 @@ void PluginPreferences::setTreatsAsMidiFx(const juce::String& pluginIdentifier,
 bool PluginPreferences::aiSoundDesignerEnabled(const juce::String& pluginIdentifier) const {
     if (pluginIdentifier.isEmpty() || pluginIdentifier == kInstrumentRackWrapperId)
         return true;
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     return aiSoundDesignerHidden_.find(pluginIdentifier) == aiSoundDesignerHidden_.end();
 }
 
@@ -112,7 +112,7 @@ void PluginPreferences::setAiSoundDesignerEnabled(const juce::String& pluginIden
 
     bool changed = false;
     {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::scoped_lock lock(mutex_);
         changed = enabled ? aiSoundDesignerHidden_.erase(pluginIdentifier) > 0
                           : aiSoundDesignerHidden_.insert(pluginIdentifier).second;
         if (changed)
@@ -128,7 +128,7 @@ juce::String PluginPreferences::browserCategoryOverride(
     if (pluginIdentifier.isEmpty() || pluginIdentifier == kInstrumentRackWrapperId)
         return {};
 
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     auto it = categoryOverrides_.find(pluginIdentifier);
     return it == categoryOverrides_.end() ? juce::String() : it->second;
 }
@@ -138,7 +138,7 @@ void PluginPreferences::setBrowserCategoryOverride(const juce::String& pluginIde
     if (pluginIdentifier.isEmpty() || pluginIdentifier == kInstrumentRackWrapperId)
         return;
 
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     const auto normalized = categoryOverride.trim();
     bool changed = false;
     if (normalized.isEmpty()) {
@@ -154,7 +154,7 @@ void PluginPreferences::setBrowserCategoryOverride(const juce::String& pluginIde
 }
 
 PluginFormat PluginPreferences::externalPluginFormatPreference() const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     return externalFormatPreference_;
 }
 
@@ -162,7 +162,7 @@ void PluginPreferences::setExternalPluginFormatPreference(PluginFormat preferenc
     preference = preference == PluginFormat::AU ? PluginFormat::AU : PluginFormat::VST3;
     bool changed = false;
     {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::scoped_lock lock(mutex_);
         if (externalFormatPreference_ == preference)
             return;
         externalFormatPreference_ = preference;
@@ -241,7 +241,7 @@ std::vector<magda::KitRow> PluginPreferences::defaultKitRows(
     const juce::String& pluginIdentifier) const {
     if (pluginIdentifier.isEmpty() || !hasGlobalKitDefault(pluginIdentifier))
         return {};
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     auto it = defaultKits_.find(pluginIdentifier);
     if (it == defaultKits_.end())
         return {};
@@ -252,7 +252,7 @@ void PluginPreferences::setDefaultKitRows(const juce::String& pluginIdentifier,
                                           const std::vector<KitRow>& rows) {
     if (pluginIdentifier.isEmpty() || !hasGlobalKitDefault(pluginIdentifier))
         return;
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     if (rows.empty())
         defaultKits_.erase(pluginIdentifier);
     else

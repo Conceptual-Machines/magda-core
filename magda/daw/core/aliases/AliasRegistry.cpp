@@ -237,7 +237,7 @@ juce::var AliasRegistry::saveUserGlobal() const {
     for (const auto& [name, alias] : userGlobalLayer_) {
         obj->setProperty(name, serializeStoredAlias(alias));
     }
-    return juce::var(obj);
+    return {obj};
 }
 
 // ============================================================================
@@ -268,7 +268,7 @@ juce::var AliasRegistry::toProjectJson() const {
     for (const auto& [name, alias] : userProjectLayer_) {
         obj->setProperty(name, serializeStoredAlias(alias));
     }
-    return juce::var(obj);
+    return {obj};
 }
 
 // ============================================================================
@@ -304,7 +304,7 @@ juce::var serializeStoredAlias(const StoredAlias& alias) {
     if (alias.path.has_value())
         obj->setProperty("path", toVar(*alias.path));
 
-    return juce::var(obj);
+    return {obj};
 }
 
 bool deserializeStoredAlias(const juce::var& v, StoredAlias& out) {

@@ -2,6 +2,7 @@
 
 #include <array>
 #include <atomic>
+#include <cmath>
 
 #include "../core/TypeIds.hpp"
 

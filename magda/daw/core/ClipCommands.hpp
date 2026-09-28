@@ -253,14 +253,16 @@ class DeleteClipCommand : public SnapshotCommand<ClipInfo> {
 /**
  * @brief Command for creating a new clip
  *
- * For undo, deletes the created clip.
+ * For undo, deletes the created clip. A Session clip is placed in sceneIndex,
+ * which must be an empty slot.
  */
 class CreateClipCommand : public ValidatedCommand {
   public:
     CreateClipCommand(ClipType type, TrackId trackId, BeatPosition startBeat,
-                      BeatDuration lengthBeats, const juce::String& audioFilePath = {},
-                      ClipView view = ClipView::Arrangement, double tempo = 0.0,
-                      ClipOverlapPolicy overlapPolicy = ClipOverlapPolicy::PreserveExisting);
+                      BeatDuration lengthBeats, juce::String audioFilePath = {},
+                      ClipView view = ClipView::Arrangement,
+                      ClipOverlapPolicy overlapPolicy = ClipOverlapPolicy::PreserveExisting,
+                      int sceneIndex = -1);
 
     juce::String getDescription() const override {
         return type_ == ClipType::Audio ? "Create Audio Clip" : "Create MIDI Clip";
@@ -281,8 +283,8 @@ class CreateClipCommand : public ValidatedCommand {
     double lengthBeats_;
     juce::String audioFilePath_;
     ClipView view_;
-    double tempo_;
     ClipOverlapPolicy overlapPolicy_;
+    int sceneIndex_;
     ClipId createdClipId_ = INVALID_CLIP_ID;
     std::vector<ClipInfo> arrangementSnapshot_;
 };
@@ -427,7 +429,7 @@ class JoinClipsCommand : public SnapshotCommand<JoinClipsState> {
  */
 class StretchClipCommand : public UndoableCommand {
   public:
-    StretchClipCommand(ClipId clipId, const ClipInfo& beforeState);
+    StretchClipCommand(ClipId clipId, ClipInfo beforeState);
 
     juce::String getDescription() const override {
         return "Stretch Clip";
@@ -452,7 +454,7 @@ class StretchClipCommand : public UndoableCommand {
  */
 class SetFadeCommand : public UndoableCommand {
   public:
-    SetFadeCommand(ClipId clipId, const ClipInfo& beforeState);
+    SetFadeCommand(ClipId clipId, ClipInfo beforeState);
 
     juce::String getDescription() const override {
         return "Adjust Fade";
@@ -489,12 +491,12 @@ class SetCrossfadeCommand : public UndoableCommand {
     void undo() override;
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const SetCrossfadeCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetCrossfadeCommand*>(other))
             return o->leftId_ == leftId_ && o->rightId_ == rightId_;
         return false;
     }
     void mergeWith(const UndoableCommand* other) override {
-        auto* o = static_cast<const SetCrossfadeCommand*>(other);
+        const auto* o = static_cast<const SetCrossfadeCommand*>(other);
         startBeat_ = o->startBeat_;
         endBeat_ = o->endBeat_;
         tempo_ = o->tempo_;
@@ -521,7 +523,7 @@ class SetCrossfadeCommand : public UndoableCommand {
  */
 class SetVolumeCommand : public UndoableCommand {
   public:
-    SetVolumeCommand(ClipId clipId, const ClipInfo& beforeState);
+    SetVolumeCommand(ClipId clipId, ClipInfo beforeState);
 
     juce::String getDescription() const override {
         return "Adjust Volume";
@@ -914,8 +916,6 @@ class RecordSessionToArrangementCommand : public UndoableCommand {
 // Slice Utilities
 // ============================================================================
 
-class AudioBridge;
-
 /**
  * @brief Split a clip at multiple sorted ascending times as one undo step.
  *
@@ -931,7 +931,7 @@ void sliceClipAtTimes(ClipId clipId, const std::vector<double>& splitTimes, doub
  * Disables warp, converts each marker's sourceTime to a linear timeline
  * position, and calls sliceClipAtTimes.
  */
-void sliceClipAtWarpMarkers(ClipId clipId, double tempo, AudioBridge* bridge);
+void sliceClipAtWarpMarkers(ClipId clipId, double tempo);
 
 /**
  * @brief Slice a clip at regular grid intervals.
@@ -940,24 +940,25 @@ void sliceClipAtWarpMarkers(ClipId clipId, double tempo, AudioBridge* bridge);
  *
  * Disables warp if enabled, then splits at each grid line inside the clip.
  */
-void sliceClipAtGrid(ClipId clipId, double gridInterval, double tempo, AudioBridge* bridge);
+void sliceClipAtGrid(ClipId clipId, double gridInterval, double tempo);
 
 /**
  * @brief Create a DrumGrid track from an audio clip's warp markers.
  *
  * Each warp marker boundary becomes a pad in a new DrumGridPlugin.
  * A MIDI clip is created with notes that trigger each pad in sequence
- * to reproduce the original pattern.
+ * to reproduce the original pattern. Only while the fork renders: the pad
+ * macros are linked through its plugin.
  */
-void sliceWarpMarkersToDrumGrid(ClipId clipId, double tempo, AudioBridge* bridge);
+void sliceWarpMarkersToDrumGrid(ClipId clipId, double tempo);
 
 /**
  * @brief Create a DrumGrid track from an audio clip sliced at grid intervals.
  *
  * Each grid-aligned region becomes a pad in a new DrumGridPlugin.
  * A MIDI clip is created with notes that trigger each pad in sequence
- * to reproduce the original pattern.
+ * to reproduce the original pattern. Only while the fork renders, as above.
  */
-void sliceAtGridToDrumGrid(ClipId clipId, double gridInterval, double tempo, AudioBridge* bridge);
+void sliceAtGridToDrumGrid(ClipId clipId, double gridInterval, double tempo);
 
 }  // namespace magda

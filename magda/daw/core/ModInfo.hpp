@@ -433,7 +433,6 @@ struct ModInfo {
     explicit ModInfo(int index)
         : id(index),
           name(getDefaultName(index, ModType::LFO)),
-          type(ModType::LFO),
           tapPoint(defaultModTapPoint(ModType::LFO)) {}
 
     /// Become @p t, and take the tap point that goes with it. What
@@ -522,7 +521,7 @@ inline ModArray createDefaultMods(int numMods = NUM_MODS) {
     ModArray mods;
     mods.reserve(numMods);
     for (int i = 0; i < numMods; ++i) {
-        mods.push_back(ModInfo(i));
+        mods.emplace_back(i);
     }
     return mods;
 }
@@ -533,7 +532,7 @@ inline ModArray createDefaultMods(int numMods = NUM_MODS) {
 inline void addModPage(ModArray& mods) {
     int startIndex = static_cast<int>(mods.size());
     for (int i = 0; i < MODS_PER_PAGE; ++i) {
-        mods.push_back(ModInfo(startIndex + i));
+        mods.emplace_back(startIndex + i);
     }
 }
 

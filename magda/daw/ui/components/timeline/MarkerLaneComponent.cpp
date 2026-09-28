@@ -3,9 +3,9 @@
 #include <algorithm>
 #include <cmath>
 
-#include "../../../core/Config.hpp"
+#include "../../../project/ProjectManager.hpp"
 #include "../../layout/LayoutConfig.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 
 namespace magda {
@@ -40,10 +40,10 @@ void MarkerLaneComponent::setController(TimelineController* controller) {
 }
 
 void MarkerLaneComponent::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::TIMELINE_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::TIMELINE_BACKGROUND));
 
     auto bounds = getLocalBounds();
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.65f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.65f));
     g.fillRect(bounds.removeFromTop(1));
     g.fillRect(bounds.removeFromBottom(1));
 
@@ -60,22 +60,23 @@ void MarkerLaneComponent::paint(juce::Graphics& g) {
         auto colour = marker.colour;
 
         juce::Path flag;
-        flag.addTriangle(static_cast<float>(x - kFlagWidth / 2), static_cast<float>(kLaneTopInset),
-                         static_cast<float>(x + kFlagWidth / 2), static_cast<float>(kLaneTopInset),
-                         static_cast<float>(x), static_cast<float>(kLaneTopInset + 12));
+        flag.addTriangle(
+            static_cast<float>(x) - kFlagWidth / 2.0f, static_cast<float>(kLaneTopInset),
+            static_cast<float>(x) + kFlagWidth / 2.0f, static_cast<float>(kLaneTopInset),
+            static_cast<float>(x), static_cast<float>(kLaneTopInset + 12));
         g.setColour(colour.withAlpha(selected || hovered ? 1.0f : 0.82f));
         g.fillPath(flag);
 
         g.setColour(selected ? juce::Colours::white.withAlpha(0.85f)
-                             : DarkTheme::getColour(DarkTheme::BORDER).brighter(0.3f));
+                             : ActiveTheme::getColour(ActiveTheme::BORDER).brighter(0.3f));
         g.strokePath(flag, juce::PathStrokeType(selected ? 1.4f : 1.0f));
 
         const int labelX = x + 8;
         const int labelW = juce::jmax(0, getWidth() - labelX - 4);
         if (labelW > 20) {
-            auto labelColour = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+            auto labelColour = ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY);
             if (selected || hovered)
-                labelColour = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
+                labelColour = ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY);
             g.setColour(labelColour);
             g.drawFittedText(marker.name, labelX, kLaneTopInset + 1, juce::jmin(96, labelW), 16,
                              juce::Justification::centredLeft, 1);
@@ -196,8 +197,7 @@ int MarkerLaneComponent::markerAt(juce::Point<int> point) const {
 }
 
 const TimelineMarker* MarkerLaneComponent::findMarker(int markerId) const {
-    auto it = std::find_if(markers_.begin(), markers_.end(),
-                           [&](const TimelineMarker& marker) { return marker.id == markerId; });
+    const auto it = std::ranges::find(markers_, markerId, &TimelineMarker::id);
     return it != markers_.end() ? &*it : nullptr;
 }
 
@@ -212,8 +212,7 @@ void MarkerLaneComponent::showMarkerMenu(int markerId, juce::Point<int> screenPo
     menu.addItem(4, "Edit Position...");
     menu.addSeparator();
 
-    // Colour submenu built from the shared track/clip palette (default +
-    // user-defined custom colours) rather than a hardcoded marker-only set.
+    // Colour submenu uses the palette captured by this project.
     auto makeChip = [](juce::Colour colour) {
         juce::Image chip(juce::Image::ARGB, 14, 14, true);
         juce::Graphics cg(chip);
@@ -225,22 +224,12 @@ void MarkerLaneComponent::showMarkerMenu(int markerId, juce::Point<int> screenPo
     };
 
     juce::PopupMenu colourMenu;
-    for (size_t i = 0; i < Config::defaultColourPalette.size(); ++i) {
-        auto colour = juce::Colour(Config::defaultColourPalette[i].colour);
-        colourMenu.addItem(kColourMenuBase + static_cast<int>(i),
-                           Config::defaultColourPalette[i].name, true, false, makeChip(colour));
-    }
-
-    const auto customPalette = Config::getInstance().getTrackColourPalette();
-    const int customColourBase =
-        kColourMenuBase + static_cast<int>(Config::defaultColourPalette.size());
-    if (!customPalette.empty()) {
-        colourMenu.addSeparator();
-        for (size_t i = 0; i < customPalette.size(); ++i) {
-            auto colour = juce::Colour(customPalette[i].colour);
-            colourMenu.addItem(customColourBase + static_cast<int>(i),
-                               juce::String(customPalette[i].name), true, false, makeChip(colour));
-        }
+    const auto palette =
+        ProjectManager::getInstance().getCurrentProjectInfo().defaults.colourPalette;
+    for (size_t i = 0; i < palette.size(); ++i) {
+        const auto colour = juce::Colour(palette[i].colour);
+        colourMenu.addItem(kColourMenuBase + static_cast<int>(i), palette[i].name, true, false,
+                           makeChip(colour));
     }
     menu.addSubMenu("Colour", colourMenu);
     menu.addSeparator();
@@ -250,7 +239,7 @@ void MarkerLaneComponent::showMarkerMenu(int markerId, juce::Point<int> screenPo
     menu.showMenuAsync(
         juce::PopupMenu::Options().withTargetScreenArea({screenPosition.x, screenPosition.y, 1, 1}),
         [safeThis = juce::Component::SafePointer<MarkerLaneComponent>(this), markerId, snapshot,
-         customPalette](int result) {
+         palette](int result) {
             if (safeThis == nullptr || result == 0)
                 return;
             auto* tc = safeThis->timelineListener_.get();
@@ -264,17 +253,10 @@ void MarkerLaneComponent::showMarkerMenu(int markerId, juce::Point<int> screenPo
             } else if (result == 4) {
                 safeThis->showEditPositionDialog(markerId, snapshot);
             } else if (result >= kColourMenuBase) {
-                const int defaultCount = static_cast<int>(Config::defaultColourPalette.size());
-                const int idx = result - kColourMenuBase;
-                juce::Colour colour;
-                if (idx < defaultCount) {
-                    colour = juce::Colour(Config::getDefaultColour(idx));
-                } else {
-                    const size_t customIdx = static_cast<size_t>(idx - defaultCount);
-                    if (customIdx >= customPalette.size())
-                        return;
-                    colour = juce::Colour(customPalette[customIdx].colour);
-                }
+                const auto idx = static_cast<size_t>(result - kColourMenuBase);
+                if (idx >= palette.size())
+                    return;
+                const auto colour = juce::Colour(palette[idx].colour);
                 tc->dispatch(
                     UpdateMarkerEvent{markerId, snapshot.positionBeats, snapshot.name, colour});
             }
@@ -291,10 +273,10 @@ void MarkerLaneComponent::showLaneMenu(juce::Point<int> screenPosition) {
     const auto& state = controller->getState();
     const double playheadBeats = state.playhead.getCurrentPositionBeats();
     constexpr double kSamePositionEpsilon = 1e-6;
-    const bool markerAtPlayhead =
-        std::any_of(state.markers.begin(), state.markers.end(), [&](const TimelineMarker& m) {
-            return std::abs(m.positionBeats - playheadBeats) <= kSamePositionEpsilon;
-        });
+    const auto sitsAtPlayhead = [playheadBeats](const TimelineMarker& marker) {
+        return std::abs(marker.positionBeats - playheadBeats) <= kSamePositionEpsilon;
+    };
+    const bool markerAtPlayhead = std::ranges::any_of(state.markers, sitsAtPlayhead);
     if (markerAtPlayhead)
         return;
 
@@ -345,13 +327,14 @@ void MarkerLaneComponent::showEditPositionDialog(int markerId, const TimelineMar
     if (!controller)
         return;
 
-    const int beatsPerBar = juce::jmax(1, controller->getState().tempo.timeSignatureNumerator);
+    const double beatsPerBar = controller->getState().tempo.beatsPerBar();
+    const double sigBeat = controller->getState().tempo.signatureBeatLength();
 
     // Present the position as 1-indexed bar.beat (beat 1.0 == the downbeat) to
     // match the ruler and transport. positionBeats is 0-indexed absolute beats.
     const int bar = static_cast<int>(marker.positionBeats / beatsPerBar) + 1;
     const double beatInBar =
-        marker.positionBeats - static_cast<double>(bar - 1) * beatsPerBar + 1.0;
+        (marker.positionBeats - static_cast<double>(bar - 1) * beatsPerBar) / sigBeat + 1.0;
 
     auto* alert =
         new juce::AlertWindow("Edit Marker Position", "", juce::MessageBoxIconType::NoIcon);
@@ -362,8 +345,8 @@ void MarkerLaneComponent::showEditPositionDialog(int markerId, const TimelineMar
 
     juce::Component::SafePointer<MarkerLaneComponent> safeThis(this);
     alert->enterModalState(
-        true, juce::ModalCallbackFunction::create([alert, safeThis, markerId, marker,
-                                                   beatsPerBar](int result) {
+        true, juce::ModalCallbackFunction::create([alert, safeThis, markerId, marker, beatsPerBar,
+                                                   sigBeat](int result) {
             if (result != 1) {
                 delete alert;
                 return;
@@ -376,8 +359,8 @@ void MarkerLaneComponent::showEditPositionDialog(int markerId, const TimelineMar
             if (safeThis == nullptr)
                 return;
 
-            const double positionBeats =
-                juce::jmax(0.0, static_cast<double>(bar - 1) * beatsPerBar + (beat - 1.0));
+            const double positionBeats = juce::jmax(
+                0.0, static_cast<double>(bar - 1) * beatsPerBar + (beat - 1.0) * sigBeat);
             if (auto* tc = safeThis->timelineListener_.get()) {
                 tc->dispatch(
                     UpdateMarkerEvent{markerId, positionBeats, marker.name, marker.colour});

@@ -17,7 +17,7 @@ class LeftPanel : public daw::ui::TabbedPanel {
     ~LeftPanel() override = default;
 
     // Legacy API for compatibility
-    void setCollapsed(bool collapsed);
+    static void setCollapsed(bool collapsed);
 
   private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LeftPanel)

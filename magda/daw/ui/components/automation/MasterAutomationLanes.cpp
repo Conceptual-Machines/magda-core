@@ -2,9 +2,14 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
+#include <iterator>
+#include <memory>
+#include <ranges>
 
 #include "AutomationLaneComponent.hpp"
 #include "core/AutomationInfo.hpp"
+#include "core/RangesHelpers.hpp"
 
 namespace magda {
 
@@ -17,6 +22,11 @@ int laneHeightPx(const AutomationLaneInfo& lane, double verticalZoom) {
                          : AutomationLaneComponent::HEADER_HEIGHT;
 }
 
+/** @brief The lane a header-button row belongs to. */
+AutomationLaneId laneIdOf(const std::unique_ptr<AutoLaneHeaderButtons>& entry) {
+    return entry->laneId;
+}
+
 }  // namespace
 
 std::vector<AutomationLaneId> visibleMasterAutomationLanes() {
@@ -26,29 +36,30 @@ std::vector<AutomationLaneId> visibleMasterAutomationLanes() {
     // per-track lanes, so the toggle affects the master band too.
     if (!manager.isGlobalLaneVisibilityEnabled())
         return result;
+
+    const auto isVisible = [&manager](AutomationLaneId laneId) {
+        const auto* lane = manager.getLane(laneId);
+        return lane != nullptr && lane->visible;
+    };
+
     // Edit-scoped lanes (Tempo) are project-global concerns and live at the top
     // of the master band rather than in a separate pinned block.
-    for (auto laneId : manager.getEditScopedLanes()) {
-        const auto* lane = manager.getLane(laneId);
-        if (lane && lane->visible)
-            result.push_back(laneId);
-    }
-    for (auto laneId : manager.getLanesForTrack(MASTER_TRACK_ID)) {
-        const auto* lane = manager.getLane(laneId);
-        if (lane && lane->visible)
-            result.push_back(laneId);
-    }
+    const auto editScoped = manager.getEditScopedLanes();
+    const auto onMaster = manager.getLanesForTrack(MASTER_TRACK_ID);
+    std::ranges::copy(editScoped | std::views::filter(isVisible), std::back_inserter(result));
+    std::ranges::copy(onMaster | std::views::filter(isVisible), std::back_inserter(result));
     return result;
 }
 
 int masterAutomationBandHeight(double verticalZoom) {
     auto& manager = AutomationManager::getInstance();
-    int total = 0;
-    for (auto laneId : visibleMasterAutomationLanes()) {
-        if (const auto* lane = manager.getLane(laneId))
-            total += laneHeightPx(*lane, verticalZoom);
-    }
-    return total;
+    const auto heightOf = [&manager, verticalZoom](AutomationLaneId laneId) {
+        const auto* lane = manager.getLane(laneId);
+        return lane == nullptr ? 0 : laneHeightPx(*lane, verticalZoom);
+    };
+
+    return std::ranges::fold_left(visibleMasterAutomationLanes() | std::views::transform(heightOf),
+                                  0, std::plus{});
 }
 
 // ============================================================================
@@ -110,18 +121,13 @@ void MasterAutomationHeaderPanel::rebuildButtons() {
     auto wanted = visibleMasterAutomationLanes();
 
     // Drop orphans.
-    buttons_.erase(std::remove_if(buttons_.begin(), buttons_.end(),
-                                  [&](const std::unique_ptr<AutoLaneHeaderButtons>& entry) {
-                                      return std::find(wanted.begin(), wanted.end(),
-                                                       entry->laneId) == wanted.end();
-                                  }),
-                   buttons_.end());
+    std::erase_if(buttons_, [&](const std::unique_ptr<AutoLaneHeaderButtons>& entry) {
+        return !std::ranges::contains(wanted, entry->laneId);
+    });
 
     auto& manager = AutomationManager::getInstance();
     for (auto laneId : wanted) {
-        auto existing = std::find_if(
-            buttons_.begin(), buttons_.end(),
-            [&](const std::unique_ptr<AutoLaneHeaderButtons>& e) { return e->laneId == laneId; });
+        const auto existing = std::ranges::find(buttons_, laneId, laneIdOf);
         if (existing == buttons_.end())
             buttons_.push_back(makeAutoLaneHeaderButtons(laneId, *this));
     }
@@ -139,9 +145,7 @@ void MasterAutomationHeaderPanel::layoutButtons() {
         const auto* lane = manager.getLane(laneId);
         if (!lane)
             continue;
-        auto it = std::find_if(
-            buttons_.begin(), buttons_.end(),
-            [&](const std::unique_ptr<AutoLaneHeaderButtons>& e) { return e->laneId == laneId; });
+        const auto it = std::ranges::find(buttons_, laneId, laneIdOf);
         if (it != buttons_.end())
             layoutAutoLaneHeaderButtons(**it, *lane, y, getWidth(),
                                         AutomationLaneComponent::RESIZE_HANDLE_HEIGHT);

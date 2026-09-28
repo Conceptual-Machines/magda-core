@@ -300,6 +300,16 @@ std::string lowerForSort(std::string value) {
     return value;
 }
 
+/**
+ * @brief Orders two values the way std::string::compare reports it.
+ */
+template <typename T> int compareForSort(const T& a, const T& b) {
+    if (a < b) {
+        return -1;
+    }
+    return b < a ? 1 : 0;
+}
+
 std::string keyForSort(const QueryResult& r) {
     std::string key = r.keyRoot.value_or("");
     if (r.keyScale && !r.keyScale->empty()) {
@@ -352,13 +362,13 @@ void sortResults(std::vector<QueryResult>& rows, QuerySort sort) {
                 cmp = lowerForSort(a.shape).compare(lowerForSort(b.shape));
                 break;
             case QuerySortField::Bpm:
-                cmp = (*a.bpm < *b.bpm) ? -1 : ((*a.bpm > *b.bpm) ? 1 : 0);
+                cmp = compareForSort(*a.bpm, *b.bpm);
                 break;
             case QuerySortField::Key:
                 cmp = keyForSort(a).compare(keyForSort(b));
                 break;
             case QuerySortField::Duration:
-                cmp = (*a.durationS < *b.durationS) ? -1 : ((*a.durationS > *b.durationS) ? 1 : 0);
+                cmp = compareForSort(*a.durationS, *b.durationS);
                 break;
             case QuerySortField::Tags:
                 cmp = tagsTextForSort(a).compare(tagsTextForSort(b));
@@ -589,12 +599,8 @@ std::vector<QueryResult> MediaDbQuery::search(const std::optional<std::string>& 
                                               QueryWeights weights, QuerySort sort) const {
     sqlite3* sql = db_.handle();
     const BuiltWhere where = buildWhere(filters);
-    if (limit < 0) {
-        limit = 0;
-    }
-    if (offset < 0) {
-        offset = 0;
-    }
+    limit = std::max(limit, 0);
+    offset = std::max(offset, 0);
 
     if (!text || text->empty()) {
         return filterOnly(sql, where, limit, offset, sort);
@@ -676,8 +682,8 @@ std::vector<QueryResult> MediaDbQuery::search(const std::optional<std::string>& 
         }
         combined.emplace_back(weights.audio * a + weights.text * t, id);
     }
-    std::sort(combined.begin(), combined.end(),
-              [](const auto& a, const auto& b) { return a.first > b.first; });
+    const auto scoreOf = [](const auto& entry) { return entry.first; };
+    std::ranges::sort(combined, std::ranges::greater{}, scoreOf);
     if (sort.field != QuerySortField::Default) {
         auto sorted = hydrate(sql, combined);
         sortResults(sorted, sort);
@@ -708,12 +714,8 @@ std::vector<QueryResult> MediaDbQuery::similarTo(std::int64_t seedFileId,
                                                  const QueryFilters& filters, int limit, int offset,
                                                  QuerySort sort) const {
     sqlite3* sql = db_.handle();
-    if (limit < 0) {
-        limit = 0;
-    }
-    if (offset < 0) {
-        offset = 0;
-    }
+    limit = std::max(limit, 0);
+    offset = std::max(offset, 0);
 
     // Pull the seed's embedding. similarTo is a no-op if the seed wasn't
     // indexed with an audio model (no embedding row).
@@ -761,8 +763,8 @@ std::vector<QueryResult> MediaDbQuery::similarTo(std::int64_t seedFileId,
         }
         ranked.emplace_back(s, id);
     }
-    std::sort(ranked.begin(), ranked.end(),
-              [](const auto& a, const auto& b) { return a.first > b.first; });
+    const auto similarityOf = [](const auto& entry) { return entry.first; };
+    std::ranges::sort(ranked, std::ranges::greater{}, similarityOf);
     if (sort.field != QuerySortField::Default) {
         auto sorted = hydrate(sql, ranked);
         sortResults(sorted, sort);

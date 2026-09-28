@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -11,78 +12,98 @@
 #include <vector>
 
 #include "../audio/midi/RecordingNoteQueue.hpp"
+#include "../audio/plugin_manager/ExternalPluginState.hpp"
+#include "../core/ChainNodePath.hpp"
 #include "../core/ClipTypes.hpp"
-#include "../core/ParameterDetector.hpp"
+#include "../core/HostedParameterEdit.hpp"
 #include "../core/TempoMap.hpp"
 #include "../core/TimeTypes.hpp"
+#include "AudioEngineChoice.hpp"
 #include "AudioEngineListener.hpp"
-#include "PluginExclusions.hpp"
 
 namespace juce {
 class AudioDeviceManager;
 }
 
+namespace magda::daw::audio {
+class MagdaDevice;
+class TrackMeasurementTap;
+}  // namespace magda::daw::audio
+
 namespace magda {
 
-class AudioBridge;
-class InsertRenderCaptureService;
+struct SessionRecordingCapabilities {
+    bool slotRecording = false;
+    bool performanceCapture = false;
+    bool slotCancellation = false;
+    bool performanceCaptureCancellation = false;
+    bool slotStopStopsTransport = false;
+
+    bool operator==(const SessionRecordingCapabilities&) const = default;
+};
+
+class DeviceMeters;
+class AudioIOControl;
+class InsertRenderCapture;
+
 class MagdaApi;
-class MidiBridge;
-class PluginWindowManager;
+struct TrackMeters;
 class UndoableCommand;
-
-enum class PluginScanPhase {
-    Discovering,
-    UpToDate,
-    Scanning,
-};
-
-struct GrooveTemplateData {
-    juce::String name;
-    int notesPerBeat = 2;
-    bool parameterized = true;
-    std::vector<float> latenessProportions;
-};
-
-struct ScannedPluginParameter {
-    juce::String name;
-    float defaultValue = 0.5f;
-    juce::String unit;
-    float rangeMin = 0.0f;
-    float rangeMax = 1.0f;
-    float rangeCenter = 0.5f;
-    ParameterScale scale = ParameterScale::Linear;
-    std::vector<juce::String> valueTable;
-    ParameterScanInput scanInput;
-};
 
 enum class OfflineRenderFormat {
     Wav,
     Flac,
 };
 
-enum class TempoSequenceRippleMode {
-    Insert,
-    Delete,
-    Duplicate,
+/** @brief What a fixed-point render is dithered with before it is rounded. */
+enum class OfflineRenderDither {
+    None,
+    Tpdf,
+    Shaped,
 };
+
+/** @brief TPDF for 16 and 24 bit, nothing for 32-bit float. */
+inline OfflineRenderDither defaultOfflineRenderDither(int bitDepth) {
+    return bitDepth >= 32 ? OfflineRenderDither::None : OfflineRenderDither::Tpdf;
+}
 
 struct OfflineRenderRequest {
     juce::File destination;
     OfflineRenderFormat format = OfflineRenderFormat::Wav;
     int bitDepth = 24;
+
+    /// Unset lets the bit depth decide (defaultOfflineRenderDither).
+    std::optional<OfflineRenderDither> dither;
+
     double sampleRate = 44100.0;
     int blockSize = 512;
     bool shouldNormalise = false;
     float normaliseToLevelDb = 0.0f;
     bool useMasterPlugins = true;
     bool usePlugins = true;
-    bool checkNodesForAudio = false;
+
+    /// False renders a track's instruments without the effects after them.
+    bool useTrackEffects = true;
+
     bool realTimeRender = false;
-    RenderTimeRange range;
+    BeatRange range;
+
+    /// Whether this file is intended as a one-shot rather than a loop.
+    std::optional<bool> oneShot;
+
+    /// Rendered past the range's end, for reverb and delay tails. Unset renders
+    /// the longest tail the rendered devices declare.
+    std::optional<double> tailSeconds = 0.0;
+
+    /// Silence written ahead of the range.
+    double leadInSeconds = 0.0;
+
     std::vector<TrackId> trackIds;
     std::vector<TrackId> excludedTrackIds;
     std::vector<ClipId> clipIds;
+
+    /// The track a freeze renders: up to its fader, unmuted, with no track soloed.
+    TrackId freezeTrackId = INVALID_TRACK_ID;
 };
 
 struct OfflineRenderResult {
@@ -90,16 +111,34 @@ struct OfflineRenderResult {
     juce::String error;
 };
 
-struct SamplerMediaReference {
-    juce::File source;
-    std::function<void(const juce::File&)> replace;
+struct MasterCaptureRequest {
+    juce::File destination;
+    OfflineRenderFormat format = OfflineRenderFormat::Wav;
+    int bitDepth = 24;
+    bool overwriteExisting = false;
+};
+
+enum class MasterCaptureStartStatus { Started, Unsupported, Busy, Unavailable, Failed };
+
+struct MasterCaptureResult {
+    bool success = false;
+    juce::String error;
+};
+
+struct MasterCaptureState {
+    bool supported = false;
+    bool active = false;
+    bool failed = false;
 };
 
 class OfflineRenderTask {
   public:
     virtual ~OfflineRenderTask() = default;
-    virtual OfflineRenderResult run(const std::function<bool()>& shouldCancel = {},
-                                    const std::function<void(float)>& onProgress = {}) = 0;
+    virtual OfflineRenderResult run(const std::function<bool()>& shouldCancel,
+                                    const std::function<void(float)>& onProgress) = 0;
+    OfflineRenderResult run() {
+        return run({}, {});
+    }
 };
 
 /**
@@ -129,6 +168,14 @@ struct AudioEngineOptions {
 class AudioEngine : public AudioEngineListener {
   public:
     ~AudioEngine() override = default;
+
+    /// Which engine this is, for the about box (#2559). Asked of the engine
+    /// that was built rather than of chosenAudioEngine(), whose answer moves
+    /// the moment the setting changes and only means anything at the next
+    /// start.
+    virtual juce::String engineName() const {
+        return nameOf(AudioEngineChoice::Tracktion);
+    }
 
     // ===== Lifecycle =====
     virtual bool initialize() = 0;
@@ -177,6 +224,15 @@ class AudioEngine : public AudioEngineListener {
     /** Stop all session clips, clear active state, revert to arrangement. */
     virtual void deactivateAllSessionClips() = 0;
 
+    /** Launch scene @p sceneIndex across @p trackIds: each track's slot, or a
+        stop for a track whose slot is empty.
+
+        One call rather than a loop of launches, because a scene is one event:
+        the native engine puts every slot of it on the audio thread together,
+        and slots launched one at a time can land on two sides of a boundary
+        (#2552). */
+    virtual void launchSessionScene(const std::vector<TrackId>& trackIds, int sceneIndex) = 0;
+
     /** Mark an empty session slot as the target for recording. */
     virtual void armSessionSlotRecording(TrackId /*trackId*/, int /*sceneIndex*/) {}
 
@@ -190,6 +246,16 @@ class AudioEngine : public AudioEngineListener {
 
     /** True while the given session slot is actively recording. */
     virtual bool isSessionSlotRecording(TrackId /*trackId*/, int /*sceneIndex*/) const {
+        return false;
+    }
+
+    /** Recording features implemented by this engine. */
+    virtual SessionRecordingCapabilities sessionRecordingCapabilities() const {
+        return {};
+    }
+
+    /** Stop one slot take, committing it when requested. */
+    virtual bool stopSessionSlotRecording(TrackId /*trackId*/, bool /*commit*/) {
         return false;
     }
 
@@ -223,67 +289,178 @@ class AudioEngine : public AudioEngineListener {
     // ===== Session State Events (audio thread → message thread) =====
     virtual void processSessionStateEvents() = 0;
 
-    // ===== Device Management =====
-    virtual juce::AudioDeviceManager* getDeviceManager() = 0;
-    virtual juce::BigInteger getEnabledWaveChannels(bool input) const = 0;
-    virtual void setEnabledWaveChannels(bool input, const juce::BigInteger& channels) = 0;
-    virtual void rescanWaveDevices(bool enableInputs, bool enableOutputs) = 0;
-    virtual bool isDevicesLoading() const = 0;
-    virtual void setDevicesLoadingCallback(
-        std::function<void(bool, const juce::String&)> callback) = 0;
+    /** @brief The audio interface: what the routing menus read and Audio Settings drives. */
+    virtual AudioIOControl* getAudioIO() = 0;
+
+    // ===== Startup hooks =====
+    //
+    // What the application asks of an engine while it is coming up. On the
+    // interface rather than on one implementation's public fields, because the
+    // app owns the startup sequence and must not have to know which engine it
+    // was given -- naming a concrete type there is what made the choice
+    // unreachable from the running app (#2551).
+
+    /** Fires the first time MIDI devices become available, and on subsequent
+        device-list changes. Work needing MIDI output ports open waits for this:
+        a SysEx send issued before JUCE opens the port is dropped. */
+    virtual void setMidiDevicesReadyCallback(std::function<void()> callback) = 0;
 
     // ===== Audio Management =====
-    virtual AudioBridge* getAudioBridge() = 0;
-    virtual const AudioBridge* getAudioBridge() const = 0;
+    /// Track and master meters and MIDI activity, from an engine-neutral
+    /// object both engines feed (#2579).
+    virtual TrackMeters& meters() = 0;
+    virtual const TrackMeters& meters() const = 0;
 
-    // ===== MIDI Management =====
-    virtual MidiBridge* getMidiBridge() = 0;
-    virtual const MidiBridge* getMidiBridge() const = 0;
+    /// Per-slot device and rack meters, from the same kind of neutral object
+    /// as the track meters above (#2570).
+    virtual DeviceMeters& deviceMeters() = 0;
+    virtual const DeviceMeters& deviceMeters() const = 0;
+
+    /**
+     * @brief The MAGDA device rendering at @p devicePath, or null (#2585).
+     *
+     * What a faceplate reads its telemetry off: the oscilloscope's ring, the
+     * sequencer's playing step, a compiled device's own DSP figures. The
+     * instance is the one filling those, so it comes from whichever engine is
+     * rendering -- the fork's plugin under Tracktion, the plan's device under
+     * magda -- and never from a parallel instance nothing renders.
+     *
+     * Held open for as long as the handle lives, so a UI reading a ring cannot
+     * be left on an instance a rebuild freed. Message thread. Null for a path
+     * nothing renders yet, and for a device that is not one of MAGDA's own.
+     */
+    virtual std::shared_ptr<daw::audio::MagdaDevice> renderedDevice(
+        const ChainNodePath& /*devicePath*/) const {
+        return {};
+    }
+
+    /**
+     * @brief Every parameter the plugin at @p devicePath reports (#2629).
+     *
+     * Message thread. Empty for a path this engine holds no instance for.
+     */
+    virtual HostParameters describeDeviceParameters(const ChainNodePath& /*devicePath*/) const {
+        return {};
+    }
+
+    /// What the plugin last reported for this parameter, if anything. A value
+    /// the document holds nothing for still has to be drawable.
+    virtual std::optional<float> observedParameter(const ChainNodePath& /*devicePath*/,
+                                                   int /*paramIndex*/) const {
+        return std::nullopt;
+    }
+
+    /// @p trackId's post-fader measurement tap, created on first ask; null where this engine
+    /// has none (#1388).
+    virtual daw::audio::TrackMeasurementTap* ensureTrackMeasurementTap(TrackId /*trackId*/) {
+        return nullptr;
+    }
+    virtual daw::audio::TrackMeasurementTap* trackMeasurementTap(TrackId /*trackId*/) const {
+        return nullptr;
+    }
+    virtual void removeTrackMeasurementTap(TrackId /*trackId*/) {}
+
+    /// The latency the instance at @p devicePath reports, in seconds; zero when this engine
+    /// holds none or cannot say.
+    virtual double deviceLatencySeconds(const ChainNodePath& /*devicePath*/) const {
+        return 0.0;
+    }
+
+    /// Whether an edit to this parameter was accepted and has not completed.
+    /// Its completion publishes a reading of its own.
+    virtual bool hostedEditPending(const ChainNodePath& /*devicePath*/, int /*paramIndex*/) const {
+        return false;
+    }
+
+    /**
+     * @brief Deliver a one-off @p normalised position to a hosted parameter.
+     *
+     * The plugin owns its ordinary parameters, so this is a command to it
+     * rather than a document edit: it needs no DeviceInfo entry, no table
+     * entry and no plan rebuild
+     * (docs/specs/hosted-plugin-parameter-control.md). Message thread.
+     *
+     * An engine that cannot deliver says so in the receipt, which is what
+     * keeps a knob from silently doing nothing.
+     */
+    /// @p completed says whether the adapter took the write and what the
+    /// parameter read after it, on the message thread and later than this returns.
+    virtual EditReceipt editHostedParameter(
+        const ChainNodePath& /*devicePath*/, int /*paramIndex*/, float normalised,
+        EditOrigin /*origin*/, std::function<void(EditCompletion)> /*completed*/ = {}) {
+        return {.status = EditStatus::Unavailable, .requested = normalised};
+    }
+
+    // ===== The plugins' own windows (#2580) =====
+    //
+    // The editor belongs to the instance that renders, so the same split as the
+    // state above. Message thread; each answers whether the window is showing
+    // afterwards, which is what the slot draws.
+
+    /// Plugin programs and preset files belong to the instance that renders.
+    virtual std::optional<PluginPrograms> getPluginPrograms(const ChainNodePath&) {
+        return std::nullopt;
+    }
+    virtual bool setPluginCurrentProgram(const ChainNodePath&, int) {
+        return false;
+    }
+    virtual bool loadPluginPresetFile(const ChainNodePath&, const juce::File&) {
+        return false;
+    }
+    virtual bool savePluginPresetFile(const ChainNodePath&, const juce::File&) {
+        return false;
+    }
+
+    virtual bool showDeviceEditor(const ChainNodePath& devicePath) = 0;
+    virtual bool hideDeviceEditor(const ChainNodePath& devicePath) = 0;
+    virtual bool toggleDeviceEditor(const ChainNodePath& devicePath) = 0;
+    virtual bool isDeviceEditorOpen(const ChainNodePath& devicePath) const = 0;
 
     // ===== Application Services =====
     virtual MagdaApi& getMagdaApi() = 0;
-    virtual PluginWindowManager* getPluginWindowManager() = 0;
-    virtual const PluginWindowManager* getPluginWindowManager() const = 0;
-    virtual InsertRenderCaptureService* getInsertRenderCaptureService() = 0;
-
-    // ===== Plugin Discovery =====
-    virtual juce::Array<juce::PluginDescription> getKnownPluginTypes() const = 0;
-    virtual juce::Array<juce::PluginDescription> getPreferredPluginTypes() const = 0;
-    virtual void addPluginListChangeListener(juce::ChangeListener* listener) = 0;
-    virtual void removePluginListChangeListener(juce::ChangeListener* listener) = 0;
-    virtual void startPluginScan(
-        std::function<void(float, const juce::String&)> progressCallback = nullptr) = 0;
-    virtual void abortPluginScan() = 0;
-    virtual void detectNewPlugins(
-        std::function<void(PluginScanPhase, const juce::String&)> statusCallback = nullptr,
-        std::function<void(bool, int, int, const juce::StringArray&)> completionCallback =
-            nullptr) = 0;
-    virtual void setPluginScanCompletionCallback(
-        std::function<void(bool, int, const juce::StringArray&)> callback) = 0;
-    virtual bool isPluginScanRunning() const = 0;
-    virtual std::vector<ExcludedPlugin> getExcludedPlugins() const = 0;
-    virtual void setExcludedPlugins(const std::vector<ExcludedPlugin>& excludedPlugins) = 0;
-    virtual juce::File getPluginScanReportFile() const = 0;
-    virtual std::vector<std::string> getSystemPluginSearchPaths() const = 0;
-
-    // ===== Plugin Parameter Discovery =====
-    virtual std::vector<ScannedPluginParameter> scanPluginParameters(const juce::String& pluginId,
-                                                                     bool internalPlugin) = 0;
-
-    // ===== Groove Templates =====
-    virtual bool upsertGrooveTemplate(const GrooveTemplateData& groove) = 0;
-    virtual juce::StringArray getGrooveTemplateNames() const = 0;
+    virtual InsertRenderCapture* getInsertRenderCapture() = 0;
 
     // ===== Offline Rendering =====
     virtual std::unique_ptr<OfflineRenderSession> createOfflineRenderSession(
         bool resumePlaybackWhenFinished) = 0;
 
-    // ===== Project Media =====
-    virtual std::vector<SamplerMediaReference> getSamplerMediaReferences() = 0;
+    virtual MasterCaptureStartStatus startMasterCapture(const MasterCaptureRequest&) {
+        return MasterCaptureStartStatus::Unsupported;
+    }
+    virtual MasterCaptureResult stopMasterCapture() {
+        return {false, "Master capture is unsupported"};
+    }
+    virtual void cancelMasterCapture() {}
+    virtual MasterCaptureState masterCaptureState() const {
+        return {};
+    }
 
-    // ===== Edit-Wide Tempo Sequences =====
-    virtual std::unique_ptr<UndoableCommand> createTempoSequenceRippleCommand(
-        TempoSequenceRippleMode mode, BeatPosition start, BeatPosition end) = 0;
+    /**
+     * @brief Freeze or unfreeze @p trackId. Message thread.
+     *
+     * A freeze renders the track before its flag flips, modally with progress,
+     * and leaves it unfrozen when there is nothing to render or the render fails.
+     */
+    virtual void setTrackFrozen(TrackId trackId, bool frozen) = 0;
+
+    /** @brief The render that freezes a track, or why there is none. */
+    struct TrackFreezePlan {
+        std::shared_ptr<OfflineRenderRequest> request;
+        juce::String refusal;
+    };
+
+    /**
+     * @brief What freezing @p trackId renders, for a caller that runs the render itself.
+     *
+     * Message thread. The default refuses: an engine that freezes only through
+     * setTrackFrozen offers no plan.
+     */
+    virtual TrackFreezePlan planTrackFreeze(TrackId /*trackId*/) {
+        return {.request = nullptr, .refusal = "this engine does not plan freezes"};
+    }
+
+    /** @brief Take a finished freeze render as what @p trackId plays, and mark it frozen. */
+    virtual void adoptTrackFreeze(TrackId /*trackId*/, const OfflineRenderRequest& /*request*/) {}
 
     // ===== MIDI Preview =====
     /**

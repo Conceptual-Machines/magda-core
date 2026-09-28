@@ -20,6 +20,11 @@ class SplashScreen : public juce::DocumentWindow {
     void dismiss();
     void setStatus(const juce::String& text);
 
+    /// Name the engine beside the version, once it has been built (#2559).
+    /// Called with what the engine calls itself, so the splash reports the one
+    /// that is running rather than the one the setting currently names.
+    void setEngine(const juce::String& engineName);
+
     static std::unique_ptr<SplashScreen> create();
 
   private:

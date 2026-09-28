@@ -25,7 +25,7 @@ ScopeSet RemoteClientRegistry::scopesFor(const juce::String& clientName) {
     bool created = false;
     ScopeSet scopes;
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         auto found = grants_.find(key);
         if (found == grants_.end()) {
             ClientGrant grant;
@@ -52,7 +52,7 @@ ScopeSet RemoteClientRegistry::scopesFor(const juce::String& clientName) {
 
 std::optional<ScopeSet> RemoteClientRegistry::peekScopes(const juce::String& clientName) const {
     const auto key = normaliseClientName(clientName).toStdString();
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     const auto found = grants_.find(key);
     if (found == grants_.end())
         return std::nullopt;
@@ -68,7 +68,7 @@ void RemoteClientRegistry::setScopes(const juce::String& clientName, ScopeSet sc
     scopes.add(Scope::Read);
 
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         auto& grant = grants_[key];
         if (grant.name.isEmpty()) {
             grant.name = juce::String(key);
@@ -76,7 +76,20 @@ void RemoteClientRegistry::setScopes(const juce::String& clientName, ScopeSet sc
         }
         if (grant.scopes == scopes)
             return;  // Nothing changed; do not churn the config file.
+        for (const auto scope : allScopeValues()) {
+            if (scopes.has(scope))
+                grant.dismissedPrompts.remove(scope);
+            else if (grant.scopes.has(scope))
+                grant.dismissedPrompts.add(scope);
+        }
         grant.scopes = scopes;
+        if (auto pending = pendingPermissions_.find(key); pending != pendingPermissions_.end()) {
+            for (const auto scope : allScopeValues())
+                if (scopes.has(scope))
+                    pending->second.scopes.remove(scope);
+            if (pending->second.scopes.empty() && !pending->second.presenting)
+                pendingPermissions_.erase(pending);
+        }
     }
 
     notifyChanged();
@@ -85,20 +98,95 @@ void RemoteClientRegistry::setScopes(const juce::String& clientName, ScopeSet sc
 void RemoteClientRegistry::forget(const juce::String& clientName) {
     const auto key = normaliseClientName(clientName).toStdString();
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         if (grants_.erase(key) == 0)
             return;
+        pendingPermissions_.erase(key);
     }
     notifyChanged();
 }
 
 std::vector<ClientGrant> RemoteClientRegistry::grants() const {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     std::vector<ClientGrant> result;
     result.reserve(grants_.size());
     for (const auto& [key, grant] : grants_)
         result.push_back(grant);
     return result;
+}
+
+void RemoteClientRegistry::notePermissionDenied(const juce::String& clientName,
+                                                const juce::String& transport, Scope scope) {
+    if (clientName.isEmpty() || scope == Scope::Read)
+        return;
+    const auto key = normaliseClientName(clientName).toStdString();
+    const std::scoped_lock lock(mutex_);
+    const auto found = grants_.find(key);
+    if (found == grants_.end() || found->second.scopes.has(scope) ||
+        found->second.dismissedPrompts.has(scope))
+        return;
+    auto& pending = pendingPermissions_[key];
+    pending.scopes.add(scope);
+    if (transport.isNotEmpty())
+        pending.transports.addIfNotAlreadyThere(transport);
+}
+
+std::optional<PermissionRequest> RemoteClientRegistry::nextPermissionRequest() {
+    const std::scoped_lock lock(mutex_);
+    for (auto& [key, pending] : pendingPermissions_) {
+        if (pending.presenting)
+            continue;
+        const auto grant = grants_.find(key);
+        if (grant == grants_.end())
+            continue;
+        ScopeSet requested;
+        for (const auto scope : allScopeValues()) {
+            if (pending.scopes.has(scope) && !grant->second.scopes.has(scope) &&
+                !grant->second.dismissedPrompts.has(scope))
+                requested.add(scope);
+        }
+        if (requested.empty())
+            continue;
+        pending.presenting = true;
+        return PermissionRequest{juce::String(key), pending.transports, requested};
+    }
+    return std::nullopt;
+}
+
+void RemoteClientRegistry::resolvePermissionRequest(const juce::String& clientName,
+                                                    ScopeSet presentedScopes, bool allow) {
+    const auto key = normaliseClientName(clientName).toStdString();
+    bool changed = false;
+    {
+        const std::scoped_lock lock(mutex_);
+        auto grant = grants_.find(key);
+        if (grant == grants_.end())
+            return;
+        for (const auto scope : allScopeValues()) {
+            if (!presentedScopes.has(scope))
+                continue;
+            if (allow) {
+                if (!grant->second.scopes.has(scope)) {
+                    grant->second.scopes.add(scope);
+                    changed = true;
+                }
+                grant->second.dismissedPrompts.remove(scope);
+            } else if (!grant->second.dismissedPrompts.has(scope)) {
+                grant->second.dismissedPrompts.add(scope);
+                changed = true;
+            }
+        }
+        if (auto pending = pendingPermissions_.find(key); pending != pendingPermissions_.end()) {
+            for (const auto scope : allScopeValues())
+                if (presentedScopes.has(scope))
+                    pending->second.scopes.remove(scope);
+            pending->second.presenting = false;
+            if (pending->second.scopes.empty())
+                pendingPermissions_.erase(pending);
+        }
+    }
+    if (changed)
+        notifyChanged();
 }
 
 // ===========================================================================
@@ -110,14 +198,12 @@ void RemoteClientRegistry::noteConnected(ConnectedClient client) {
     if (client.connectedAtMs == 0)
         client.connectedAtMs = nowMs();
 
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     // Replace rather than append on a repeated id. A transport that reuses one
     // would otherwise leave a phantom row that no disconnect could clear,
     // because `noteDisconnected` removes a single entry.
-    const auto found = std::find_if(connections_.begin(), connections_.end(),
-                                    [&](const ConnectedClient& existing) {
-                                        return existing.connectionId == client.connectionId;
-                                    });
+    const auto found =
+        std::ranges::find(connections_, client.connectionId, &ConnectedClient::connectionId);
     if (found != connections_.end())
         *found = std::move(client);
     else
@@ -125,27 +211,25 @@ void RemoteClientRegistry::noteConnected(ConnectedClient client) {
 }
 
 void RemoteClientRegistry::noteDisconnected(const juce::String& connectionId) {
-    const std::lock_guard<std::mutex> lock(mutex_);
-    connections_.erase(std::remove_if(connections_.begin(), connections_.end(),
-                                      [&](const ConnectedClient& client) {
-                                          return client.connectionId == connectionId;
-                                      }),
-                       connections_.end());
+    const std::scoped_lock lock(mutex_);
+    std::erase_if(connections_, [&](const ConnectedClient& client) {
+        return client.connectionId == connectionId;
+    });
 }
 
 std::vector<ConnectedClient> RemoteClientRegistry::connections() const {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     return connections_;
 }
 
 int RemoteClientRegistry::connectionCount() const {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     return static_cast<int>(connections_.size());
 }
 
 void RemoteClientRegistry::setDisconnectHandler(const juce::String& transport,
                                                 DisconnectHandler handler) {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     if (handler)
         disconnectHandlers_[transport.toStdString()] = std::move(handler);
     else
@@ -155,10 +239,9 @@ void RemoteClientRegistry::setDisconnectHandler(const juce::String& transport,
 bool RemoteClientRegistry::disconnect(const juce::String& connectionId) {
     DisconnectHandler handler;
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
-        const auto found = std::find_if(
-            connections_.begin(), connections_.end(),
-            [&](const ConnectedClient& client) { return client.connectionId == connectionId; });
+        const std::scoped_lock lock(mutex_);
+        const auto found =
+            std::ranges::find(connections_, connectionId, &ConnectedClient::connectionId);
         if (found == connections_.end())
             return false;
 
@@ -182,7 +265,7 @@ int RemoteClientRegistry::disconnectClient(const juce::String& clientName) {
     // Snapshot the ids under the lock, close outside it, for the reason above.
     std::vector<juce::String> ids;
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         for (const auto& client : connections_) {
             if (client.name == name)
                 ids.push_back(client.connectionId);
@@ -207,6 +290,8 @@ juce::var RemoteClientRegistry::grantsToJson() const {
         auto* entry = new juce::DynamicObject();
         entry->setProperty("name", grant.name);
         entry->setProperty("scopes", scopesToJson(grant.scopes));
+        if (!grant.dismissedPrompts.empty())
+            entry->setProperty("dismissedPrompts", scopesToJson(grant.dismissedPrompts));
         if (grant.firstSeenMs != 0)
             entry->setProperty("firstSeenMs", grant.firstSeenMs);
         if (grant.lastSeenMs != 0)
@@ -229,14 +314,16 @@ void RemoteClientRegistry::loadGrantsFromJson(const juce::var& value) {
             grant.name = name;
             grant.scopes = scopesFromJson(entry["scopes"]);
             grant.scopes.add(Scope::Read);
+            grant.dismissedPrompts = scopesFromJson(entry["dismissedPrompts"]);
             grant.firstSeenMs = static_cast<juce::int64>(entry["firstSeenMs"]);
             grant.lastSeenMs = static_cast<juce::int64>(entry["lastSeenMs"]);
         }
     }
 
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         grants_ = std::move(loaded);
+        pendingPermissions_.clear();
     }
     // Deliberately silent. This runs during startup, from the same code that
     // would answer the notification by writing the config back out — which would
@@ -244,14 +331,14 @@ void RemoteClientRegistry::loadGrantsFromJson(const juce::var& value) {
 }
 
 void RemoteClientRegistry::setChangeHandler(std::function<void()> onChanged) {
-    const std::lock_guard<std::mutex> lock(changeHandlerMutex_);
+    const std::scoped_lock lock(changeHandlerMutex_);
     onChanged_ = std::move(onChanged);
 }
 
 void RemoteClientRegistry::notifyChanged() {
     std::function<void()> handler;
     {
-        const std::lock_guard<std::mutex> lock(changeHandlerMutex_);
+        const std::scoped_lock lock(changeHandlerMutex_);
         handler = onChanged_;
     }
     // Copied and called outside both locks: a handler is free to read grants

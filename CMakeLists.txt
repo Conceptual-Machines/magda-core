@@ -5,6 +5,18 @@ if(APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 endif()
 
+# Naming the SDK puts -isysroot into compile_commands.json. Apple's /usr/bin/c++
+# finds the SDK through xcrun and so records nothing, which leaves Homebrew's
+# clang-tidy unable to find <vector>. Tools that read the database cannot compute
+# the path themselves, so it has to be written down here.
+# Empty rather than undefined is the normal state here: CMake declares the cache
+# entry and leaves it blank when the compiler resolves the SDK by itself, so a
+# plain NOT DEFINED guard never fires and a non-FORCE set() cannot fill it in.
+# Only fills a blank value, so an explicitly chosen SDK still wins.
+if(APPLE AND NOT CMAKE_OSX_SYSROOT)
+    set(CMAKE_OSX_SYSROOT "macosx" CACHE STRING "macOS SDK for the compile database" FORCE)
+endif()
+
 # Windows has no system libxml2 (see vcpkg.json); it comes from vcpkg, which CI
 # wires in via -DCMAKE_TOOLCHAIN_FILE. For local dev (CLion, plain cmake, the
 # Makefile) auto-detect a vcpkg install from the VCPKG_ROOT environment variable
@@ -66,8 +78,8 @@ project(Magda VERSION ${MAGDA_BUNDLE_VERSION} LANGUAGES C CXX)
 #     message(STATUS "Using ccache: ${CCACHE_PROGRAM}")
 # endif()
 
-# Set C++ standard (required for Tracktion Engine)
-set(CMAKE_CXX_STANDARD 20)
+# Set C++ standard (milestone 28: the declarative lane needs ranges::to)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -125,6 +137,14 @@ option(MAGDA_BUILD_FAUST_VEC_BENCH "Build the Faust scalar-vs-vector codegen ben
 # The native engine (epic #1882) is dark: built and tested, never linked into
 # the app. On by default so it cannot drift away from the model it compiles.
 option(MAGDA_BUILD_NATIVE_ENGINE "Build the native audio engine target" ON)
+# The parity envelope bench (#2082), in a tree of its own with tests off (make parity-bench).
+option(MAGDA_BUILD_PARITY_BENCH "Build the native-against-Tracktion parity bench" OFF)
+
+# JUCE_LOG_ASSERTIONS changes juce::ListenerList's layout, and so juce::ValueTree's. magda_daw
+# sets it for tests; outside Debug, where JUCE does not, every target in the tree has to agree.
+if(MAGDA_BUILD_TESTS)
+    add_compile_definitions($<$<NOT:$<CONFIG:Debug>>:JUCE_LOG_ASSERTIONS=1>)
+endif()
 
 # CLAP semantic-search backend (ONNX Runtime). Forced off on Intel macOS because
 # upstream ORT dropped osx-x86_64 prebuilts in 1.26. The rest of the media DB
@@ -214,19 +234,22 @@ else()
     set(GGML_F16C   OFF CACHE BOOL "" FORCE)
     set(GGML_BMI2   OFF CACHE BOOL "" FORCE)
 endif()
+# Vendored llama.cpp is a C++17 codebase and pins no standard of its own, so it
+# inherits this project's. It does not compile at ours: C++23 clang rejects its
+# explicit specialisations after instantiation, and MSVC its char8_t use. Build
+# it at the standard it targets.
+set(MAGDA_CXX_STANDARD ${CMAKE_CXX_STANDARD})
+set(CMAKE_CXX_STANDARD 17)
 add_subdirectory(third_party/llama.cpp)
+set(CMAKE_CXX_STANDARD ${MAGDA_CXX_STANDARD})
 
-# llama.cpp doesn't need C++20; building as C++17 avoids MSVC char8_t errors
-if(MSVC)
-    set_target_properties(llama PROPERTIES CXX_STANDARD 17)
+if(MSVC AND TARGET llama)
     # Vendored llama.cpp leans on implicit numeric conversions (size_t->int,
     # double->float, etc.), so MSVC emits ~750 benign C4244/C4267/C4305
     # warnings from src/ and src/models/. Not our code, not actionable, and the
     # diagnostic volume slows the build; silence them on the llama target.
     # C4101 = unreferenced local variable (also upstream, also benign).
-    if(TARGET llama)
-        target_compile_options(llama PRIVATE /wd4244 /wd4267 /wd4305 /wd4101)
-    endif()
+    target_compile_options(llama PRIVATE /wd4244 /wd4267 /wd4305 /wd4101)
 endif()
 
 include(magda/daw/audio/DevicesDependencies.cmake)
@@ -373,6 +396,10 @@ endif()
 if(MAGDA_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+endif()
+
+if(MAGDA_BUILD_PARITY_BENCH AND MAGDA_BUILD_NATIVE_ENGINE)
+    add_subdirectory(tests/parity)
 endif()
 
 # Faust scalar-vs-vector codegen benchmark (#1397). Dispatch-only; it doubles

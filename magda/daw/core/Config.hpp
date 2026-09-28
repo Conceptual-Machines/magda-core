@@ -6,10 +6,12 @@
 #include <array>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "ClipTypes.hpp"
+#include "DefaultColourPalette.hpp"
 
 namespace magda {
 
@@ -17,6 +19,24 @@ class ConfigListener {
   public:
     virtual ~ConfigListener() = default;
     virtual void configChanged() = 0;
+};
+
+/**
+ * @brief The audio interface the user chose, as AudioIOService saves it (#2746).
+ *
+ * Channels are explicit indices, never a count: what opens is exactly these,
+ * less any the interface does not have.
+ */
+struct AudioIOSettings {
+    std::string backend;
+    std::string inputInterface;
+    std::string outputInterface;
+    double sampleRate = 0.0;  // 0 = the interface's current rate
+    int bufferSize = 0;       // 0 = the interface's default
+    std::vector<int> inputChannels;
+    std::vector<int> outputChannels;
+
+    bool operator==(const AudioIOSettings&) const = default;
 };
 
 /**
@@ -56,7 +76,7 @@ class Config {
         listeners_.erase(std::remove(listeners_.begin(), listeners_.end(), l), listeners_.end());
     }
 
-    // Timeline Configuration (stored in bars)
+    // Defaults for newly created projects (stored in bars).
     int getDefaultTimelineLengthBars() const {
         return defaultTimelineLengthBars;
     }
@@ -121,6 +141,23 @@ class Config {
     }
     void setTransportShowBothFormats(bool show) {
         transportShowBothFormats = show;
+    }
+
+    /// Whether the 4OSC conversion prompt has been turned off for good
+    /// (#2437). Set by the "don't ask again" tickbox on the prompt itself.
+    bool getSkipFourOscConversionPrompt() const {
+        return skipFourOscConversionPrompt;
+    }
+    void setSkipFourOscConversionPrompt(bool skip) {
+        skipFourOscConversionPrompt = skip;
+    }
+
+    /// Whether the launch-time offer of the MAGDA engine has been turned off.
+    bool getSkipMagdaEnginePrompt() const {
+        return skipMagdaEnginePrompt;
+    }
+    void setSkipMagdaEnginePrompt(bool skip) {
+        skipMagdaEnginePrompt = skip;
     }
 
     bool getOpenPluginWindowOnDrop() const {
@@ -347,6 +384,17 @@ class Config {
         preferredOutputDevice = deviceName;
     }
 
+    /// Which engine renders, as the word MAGDA_AUDIO_ENGINE takes (#2559). A
+    /// word rather than the enum because core does not depend on the engine
+    /// layer and the file stores a word either way; parseAudioEngine and
+    /// settingWordFor in AudioEngineChoice.hpp are the only two conversions.
+    std::string getAudioEngine() const {
+        return audioEngine;
+    }
+    void setAudioEngine(const std::string& word) {
+        audioEngine = word;
+    }
+
     int getPreferredInputChannels() const {
         return preferredInputChannels;
     }
@@ -360,6 +408,23 @@ class Config {
     void setPreferredOutputChannels(int channels) {
         preferredOutputChannels = channels;
     }
+
+    /** @brief Empty until the user has chosen, or Tracktion's choice has been migrated. */
+    const std::optional<AudioIOSettings>& getAudioIO() const {
+        return audioIO;
+    }
+    void setAudioIO(std::optional<AudioIOSettings> settings) {
+        audioIO = std::move(settings);
+    }
+
+    /** @brief MIDI inputs switched off in Audio Settings, by name: no track lists or hears them. */
+    const std::vector<std::string>& getInactiveMidiInputs() const {
+        return inactiveMidiInputs;
+    }
+    void setInactiveMidiInputs(std::vector<std::string> names) {
+        inactiveMidiInputs = std::move(names);
+    }
+    bool isMidiInputActive(const juce::String& name) const;
 
     // Custom Plugin Paths
     std::vector<std::string> getCustomPluginPaths() const {
@@ -430,8 +495,7 @@ class Config {
         followPlayhead = enabled;
     }
 
-    // Whether a newly created chord track auditions its progression on playback
-    // by default (the chord-track speaker toggle, which is the track's mute).
+    // Seed for a newly created project's chord-track audition default.
     bool getChordPreviewOnByDefault() const {
         return chordPreviewOnByDefault;
     }
@@ -439,9 +503,7 @@ class Config {
         chordPreviewOnByDefault = enabled;
     }
 
-    // Whether newly created audio clips get AUTO-XFADE enabled (#1499): their
-    // overlaps with other auto-crossfade audio clips play as crossfades
-    // instead of being trimmed away.
+    // Seed for a newly created project's AUTO-XFADE default (#1499).
     bool getAutoCrossfadeByDefault() const {
         return autoCrossfadeByDefault;
     }
@@ -449,9 +511,7 @@ class Config {
         autoCrossfadeByDefault = enabled;
     }
 
-    // Which side of the track fader a NEW track's post-FX stage (and its mixer
-    // analysis rail) starts on (#2094). Per track from then on, via the fader
-    // tag on the post-FX panel. The master track is always pre-fader.
+    // Seed for a newly created project's post-FX fader-side default (#2094).
     bool getPostFxPostFaderByDefault() const {
         return postFxPostFaderByDefault;
     }
@@ -459,8 +519,7 @@ class Config {
         postFxPostFaderByDefault = postFader;
     }
 
-    // What NEW clips start with (#2003): whether they play through an overlap
-    // rather than the stack silencing one side. Per clip from then on.
+    // Seed for a newly created project's clip-overlap default (#2003).
     void setClipOverlapPlaysBoth(bool playBoth) {
         clipOverlapPlaysBoth = playBoth;
     }
@@ -808,6 +867,23 @@ class Config {
         renderFilePattern = pattern;
     }
 
+    /**
+     * Per-install seeds for a new project's credit fields, keyed by
+     * ProjectMetadataField::key ("artist", "composer", ...).
+     *
+     * A map rather than one member per field because the field list lives in
+     * ProjectInfo.hpp, which is a layer Config does not know about: keying by
+     * the same string the project format uses lets the two stay in step without
+     * Config having to name them. Only the fields flagged seededFromDefaults
+     * ever appear; the rest describe the work, not the person.
+     */
+    const std::map<std::string, std::string>& getProjectMetadataDefaults() const {
+        return projectMetadataDefaults;
+    }
+    void setProjectMetadataDefaults(std::map<std::string, std::string> defaults) {
+        projectMetadataDefaults = std::move(defaults);
+    }
+
     std::string getBounceFilePattern() const {
         return bounceFilePattern;
     }
@@ -865,6 +941,19 @@ class Config {
     }
     void setAgentInferenceConfig(const std::string& agentRole, const AgentInferenceConfig& config) {
         agentInferenceConfigs[agentRole] = config;
+    }
+
+    /**
+     * Whether console agents run the tool-calling loop (AgentRuntime over
+     * RemoteApiService, #2295) instead of the DSL/IR workflows. Off by
+     * default: the tool loop needs a provider with native tool calling, and
+     * the DSL paths stay the shipped behaviour until it has soaked.
+     */
+    bool getAgentToolLoopEnabled() const {
+        return agentToolLoopEnabled;
+    }
+    void setAgentToolLoopEnabled(bool enabled) {
+        agentToolLoopEnabled = enabled;
     }
 
     // Temporary backend-specific bridge for existing LLM agents and settings
@@ -1018,27 +1107,9 @@ class Config {
         setLLMModel(model);
     }
 
-    // Unified default colour palette (tracks + clips share the same palette)
-    struct ColourEntry {
-        uint32_t colour;
-        const char* name;
-    };
-
-    static constexpr std::array<ColourEntry, 8> defaultColourPalette = {{
-        {0xFF5588AA, "Blue"},
-        {0xFF55AA88, "Teal"},
-        {0xFF88AA55, "Green"},
-        {0xFFAAAA55, "Yellow"},
-        {0xFFAA8855, "Orange"},
-        {0xFFAA5555, "Red"},
-        {0xFFAA55AA, "Purple"},
-        {0xFF5555AA, "Indigo"},
-    }};
-
-    static uint32_t getDefaultColour(int index) {
-        return defaultColourPalette[static_cast<size_t>(index) % defaultColourPalette.size()]
-            .colour;
-    }
+    // Palette used to seed newly created projects (tracks + clips share it).
+    using ColourEntry = DefaultColourEntry;
+    static constexpr auto defaultColourPalette = kDefaultColourPalette;
 
     // Custom colour palette (user-defined via Preferences)
     struct TrackColourEntry {
@@ -1053,7 +1124,7 @@ class Config {
         trackColourPalette = palette;
     }
 
-    // Clip colour mode: how new clips get their colour
+    // New-project seed for how new clips get their colour.
     // 0 = inherit from parent track, 1 = cycle through default palette
     int getClipColourMode() const {
         return clipColourMode;
@@ -1093,14 +1164,6 @@ class Config {
     }
     void setAutoMonitorSelectedTrack(bool enabled) {
         autoMonitorSelectedTrack = enabled;
-    }
-
-    // Device chain behaviour
-    bool getOpenMacrosOnSelect() const {
-        return openMacrosOnSelect;
-    }
-    void setOpenMacrosOnSelect(bool enabled) {
-        openMacrosOnSelect = enabled;
     }
 
     // Mixer view-toggle rail: per-toggle visibility for the mixer's optional
@@ -1179,11 +1242,16 @@ class Config {
     // own saved colour in pluginState.
     struct OscilloscopeDefaults {
         float timebaseMs = 10.0f;
+        /// Index into the analyzer palette. Carried here because the track
+        /// header's toggle deletes the device, so nothing device-scoped
+        /// survives turning an analyser off and on (#2663).
+        int traceColour = 0;
     };
     struct SpectrumDefaults {
         int fftOrder = 11;  // 11 = 2048, 12 = 4096
         float slopeDbPerOct = 4.5f;
         float smoothing = 0.5f;
+        int traceColour = 0;
     };
 
     OscilloscopeDefaults getOscilloscopeDefaults() const {
@@ -1204,8 +1272,7 @@ class Config {
         return previewOutputChannel;
     }
     void setPreviewOutputChannel(int channel) {
-        if (channel < 0)
-            channel = 0;
+        channel = std::max(channel, 0);
         // Snap to even (stereo pair boundary)
         channel &= ~1;
         previewOutputChannel = channel;
@@ -1361,6 +1428,8 @@ class Config {
 
     // Open a device's editor window automatically when it is dropped into a chain
     bool openPluginWindowOnDrop = false;
+    bool skipFourOscConversionPrompt = false;
+    bool skipMagdaEnginePrompt = false;
     bool transportDefaultBarsBeats = true;  // Default to bars/beats (false = seconds)
 
     // Panel visibility settings
@@ -1396,7 +1465,6 @@ class Config {
     bool autoMonitorSelectedTrack = false;  // Auto-enable input monitor on selected track
 
     // Device chain behaviour
-    bool openMacrosOnSelect = true;  // Open macro panel when selecting a device/rack
 
     // Mixer view-toggle rail (default all off; users opt in via the rail)
     bool mixerShowSends_ = false;
@@ -1498,7 +1566,7 @@ class Config {
 
     // Browser favorites and default directory
     std::vector<std::string> browserFavorites;
-    std::string browserDefaultDirectory = "";  // empty = user home
+    std::string browserDefaultDirectory;  // empty = user home
 
     // Which view the media explorer should restore on startup.
     // "filesystem" → file browser at browserDefaultDirectory.
@@ -1510,11 +1578,11 @@ class Config {
 
     // Optional override for the Sample Tagger ONNX bundle location.
     // Empty = use the default dataDir/MediaDB/models.
-    std::string sampleTaggerModelsDir = "";
+    std::string sampleTaggerModelsDir;
 
     // Optional override for the command-model ONNX bundle location.
     // Empty = use the default dataDir/CommandModel/models.
-    std::string commandModelModelsDir = "";
+    std::string commandModelModelsDir;
 
     // Eagerly load the Sample Tagger encoders + tokenizer at startup
     // (vs lazy on first query).
@@ -1522,10 +1590,10 @@ class Config {
 
     // Optional override for the media DB directory. Empty = default
     // (dataDir/MediaDB).
-    std::string mediaDbDir = "";
+    std::string mediaDbDir;
 
     // External sample editor executable/application path.
-    std::string externalAudioEditorPath = "";
+    std::string externalAudioEditorPath;
 
     // Auto-update check
     bool autoCheckUpdates = true;          // Check GitHub for newer releases on startup
@@ -1558,30 +1626,35 @@ class Config {
 
     // Configurable user-data path overrides (resolved by magda::paths).
     // Empty = OS default. Persisted in config.json.
-    std::string dataDir = "";     // userApplicationDataDirectory/MAGDA/
-    std::string presetsDir = "";  // userDocumentsDirectory/MAGDA/Presets/
+    std::string dataDir;     // userApplicationDataDirectory/MAGDA/
+    std::string presetsDir;  // userDocumentsDirectory/MAGDA/Presets/
 
     // Render settings
-    std::string renderFolder = "";  // Custom render output folder (empty = renders/ beside source)
+    std::string renderFolder;  // Custom render output folder (empty = renders/ beside source)
     double renderSampleRate = 44100.0;  // 44100, 48000, 96000, 192000
     int renderBitDepth = 24;            // 16, 24, 32
     // File naming pattern tokens: <project-name>, <clip-name>, <track-name>, <date-time>
+    std::map<std::string, std::string> projectMetadataDefaults;
     std::string renderFilePattern = "<project-name>_<date-time>";
     std::string bounceFilePattern = "<clip-name>_<date-time>";
     int bounceBitDepth = 32;  // 16, 24, 32 — default 32-bit for internal bounces
 
     // Audio device settings
-    std::string preferredAudioDevice = "";   // Preferred audio interface (empty = system default)
-    std::string preferredInputDevice = "";   // Preferred input device (empty = system default)
-    std::string preferredOutputDevice = "";  // Preferred output device (empty = system default)
+    std::string preferredAudioDevice;       // Preferred audio interface (empty = system default)
+    std::string preferredInputDevice;       // Preferred input device (empty = system default)
+    std::string preferredOutputDevice;      // Preferred output device (empty = system default)
+    std::string audioEngine = "tracktion";  // Which engine renders (#2559)
     int preferredInputChannels = 0;   // Preferred input channel count (0 = use device default)
     int preferredOutputChannels = 0;  // Preferred output channel count (0 = use device default)
+    std::optional<AudioIOSettings> audioIO;
+    std::vector<std::string> inactiveMidiInputs;  // Names, so a new port starts active
 
     // Language
     std::string language = "en";  // Language code, matches lang/<code>.json
 
     // AI settings
     std::string aiPreset = "local_embedded";
+    bool agentToolLoopEnabled = false;
     std::map<std::string, AgentInferenceConfig> agentInferenceConfigs = {
         {"command", {"llm", {"llama_local", "", "", ""}}},
         {"music", {"llm", {"llama_local", "", "", ""}}},

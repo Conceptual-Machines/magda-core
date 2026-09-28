@@ -3,10 +3,13 @@
 #include <juce_core/juce_core.h>
 #include <juce_graphics/juce_graphics.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <string>
+#include <unordered_set>
 #include <variant>
 #include <vector>
 
@@ -52,6 +55,14 @@ struct MidiPitchExpressionPoint {
     double beat = 0.0;       // Position relative to note start (0..note length)
     double semitones = 0.0;  // Pitch offset in semitones (-48..+48)
 
+    // Shape of the segment running from this point to the next one, in the same
+    // -3..+3 scale every other curve in the app uses (CurvePoint::tension,
+    // MidiCCData::tension). Zero is the straight line this used to always be,
+    // so a glide authored before #2198 reads back unchanged. Owned by the left
+    // point, as segments are everywhere else here; the last point's value is
+    // carried but never shapes anything.
+    double tension = 0.0;
+
     bool operator==(const MidiPitchExpressionPoint&) const = default;
 };
 
@@ -67,6 +78,12 @@ struct MidiNote {
 
     // Per-note pitch glide (MPE). Sorted by beat. Empty = no expression.
     std::vector<MidiPitchExpressionPoint> pitchExpression;
+
+    // A keyswitch is still an ordinary MIDI note on the wire. Keeping its
+    // authored role lets remote clients and editors distinguish articulation
+    // triggers from musical notes without changing playback semantics.
+    bool keyswitch = false;
+    EventId id = INVALID_EVENT_ID;
 
     bool hasPitchExpression() const {
         return !pitchExpression.empty();
@@ -102,6 +119,7 @@ struct MidiCCData {
     double tension = 0.0;  // -3 to +3 curve shape
     MidiCurveHandle inHandle;
     MidiCurveHandle outHandle;
+    EventId id = INVALID_EVENT_ID;
 
     bool operator==(const MidiCCData&) const = default;
 };
@@ -116,8 +134,40 @@ struct MidiPitchBendData {
     double tension = 0.0;  // -3 to +3 curve shape
     MidiCurveHandle inHandle;
     MidiCurveHandle outHandle;
+    EventId id = INVALID_EVENT_ID;
 
     bool operator==(const MidiPitchBendData&) const = default;
+};
+
+/** @brief One channel-pressure event. */
+struct MidiChannelPressureData {
+    int value = 0;              // 0-127
+    double beatPosition = 0.0;  // Position in beats within clip
+    EventId id = INVALID_EVENT_ID;
+
+    bool operator==(const MidiChannelPressureData&) const = default;
+};
+
+/** @brief One polyphonic-aftertouch event, addressed to a note number. */
+struct MidiPolyAftertouchData {
+    int noteNumber = 60;        // 0-127
+    int value = 0;              // 0-127
+    double beatPosition = 0.0;  // Position in beats within clip
+    EventId id = INVALID_EVENT_ID;
+
+    bool operator==(const MidiPolyAftertouchData&) const = default;
+};
+
+/** The complete editable MIDI-event state of one clip. */
+struct MidiEventState {
+    std::vector<MidiNote> notes;
+    std::vector<MidiCCData> cc;
+    std::vector<MidiPitchBendData> pitchBend;
+    std::vector<MidiChannelPressureData> channelPressure;
+    std::vector<MidiPolyAftertouchData> polyAftertouch;
+    EventId nextEventId = 1;
+
+    bool operator==(const MidiEventState&) const = default;
 };
 
 /**
@@ -134,6 +184,8 @@ struct ClipPlacement {
     double endBeat() const {
         return startBeat + lengthBeats;
     }
+
+    bool operator==(const ClipPlacement&) const = default;
 };
 
 /**
@@ -151,6 +203,31 @@ struct WarpMarker {
     bool operator==(const WarpMarker&) const = default;
 };
 
+/// Who last wrote an interpretation value (#2674). A value the user set is
+/// replaced only by the user; anything else gives way to a newer answer.
+enum class Provenance { None, FileMetadata, Analysis, User };
+
+/// What the loop region covers. WholeSource and Interpretation are derived
+/// from the file and the interpretation; only Explicit is a range of its own.
+enum class RegionExtent { WholeSource, Interpretation, Explicit };
+
+/// Which unit remains authoritative when an explicit loop length is
+/// reinterpreted at another source tempo (#2675).
+enum class LoopLengthIntent { Source, Musical };
+
+struct LoopLengthState {
+    int64_t samples = 0;
+    RegionExtent extent = RegionExtent::WholeSource;
+    LoopLengthIntent intent = LoopLengthIntent::Source;
+    double musicalBeats = 0.0;
+
+    bool operator==(const LoopLengthState&) const = default;
+};
+
+/// What the user asked of beat mode. Whether it is active is autoTempo, which
+/// also needs a tempo (#2676).
+enum class PlaybackIntent { Free, Beat };
+
 /**
  * @brief Placement of a source inside a clip (#1901).
  *
@@ -159,11 +236,9 @@ struct WarpMarker {
  * about the timeline: its geometry is relative to the owning clip's start, and
  * the clip's bounds are a window that crops it.
  *
- * Coordinate rule: everything geometric is beats; the only source-domain values
- * are the anchor and the loop region, which are samples at the source's own
- * rate. Storing those in samples (rather than seconds or beats) is what makes a
- * source-BPM reinterpretation leave the audible region untouched and simply
- * re-read its musical length.
+ * Coordinate rule: everything geometric is beats; source positions and
+ * source-authored loop lengths are samples at the source's own rate. A loop
+ * authored in beats keeps that beat length across source-BPM corrections.
  */
 struct AudioEvent {
     EventId id = INVALID_EVENT_ID;
@@ -185,7 +260,10 @@ struct AudioEvent {
     /// own file. Whether it loops at all is ClipInfo::loopEnabled, which both
     /// content types share and which did not move.
     int64_t loopStartSamples = 0;
-    int64_t loopLengthSamples = 0;  // 0 = derive from the event's own length
+    int64_t loopLengthSamples = 0;  // 0 = whole source, until phase 4 of #2674
+    RegionExtent loopExtent = RegionExtent::WholeSource;
+    LoopLengthIntent loopLengthIntent = LoopLengthIntent::Source;
+    double musicalLoopLengthBeats = 0.0;
 
     /// Source seconds mapped through the warp markers.
     ///
@@ -235,7 +313,7 @@ struct AudioEvent {
     double sourceInstantToTimelineBeats(double sourceSeconds, double projectBpm) const {
         const double warped = warpedSourceSeconds(sourceSeconds);
 
-        if ((autoTempo || warpEnabled) && interpBpm > 0.0)
+        if ((autoTempo || warpEnabled) && hasInterpretedBpm())
             return warped * interpBpm / 60.0;
 
         return isValidBpm(projectBpm) ? sourceToTimeline(warped) * projectBpm / 60.0 : 0.0;
@@ -263,8 +341,9 @@ struct AudioEvent {
     // ---- Interpretation (seeded from the Source, then owned by the user) ---
 
     double interpBpm = 0.0;
+    Provenance bpmFrom = Provenance::None;
     double interpTotalBeats = 0.0;
-    bool interpTotalBeatsLocked = false;
+    Provenance beatsFrom = Provenance::None;
 
     /// Musical key this event is interpreted in. Empty = unknown. keyRoot is
     /// "C" / "C#" / ... / "B"; keyScale is "major" / "minor". Inspector edits
@@ -272,7 +351,8 @@ struct AudioEvent {
     std::string keyRoot;
     std::string keyScale;
 
-    bool autoTempo = false;
+    PlaybackIntent playbackIntent = PlaybackIntent::Free;
+    bool autoTempo = false;  // granted: the intent asks and a tempo exists
     double speedRatio = 1.0;
     int timeStretchMode = 0;
     bool warpEnabled = false;
@@ -329,21 +409,165 @@ struct AudioEvent {
 
     // ---- Source-domain conversions ----------------------------------------
     //
-    // Samples are authoritative. Seconds and beats are views onto them, so a
-    // change to interpBpm moves the beat view and leaves the audio alone.
+    // Source-authored lengths use samples; musical lengths retain beats and
+    // materialize samples at the current interpretation tempo.
+
+    /// Whether this event has been interpreted at a tempo. Every beat view
+    /// below is zero without one, and beat mode is a claim nothing can honour
+    /// (#2676).
+    bool hasInterpretedBpm() const {
+        return interpBpm > 0.0;
+    }
+
+    int64_t secondsToSourceSamples(double seconds) const {
+        return static_cast<int64_t>(std::llround(juce::jmax(0.0, seconds) * sourceSampleRate()));
+    }
+
+    void afterInterpretationChange() {
+        if (loopExtent == RegionExtent::Interpretation)
+            fitRegionToInterpretation();
+        else if (loopExtent == RegionExtent::Explicit &&
+                 loopLengthIntent == LoopLengthIntent::Musical)
+            fitRegionToMusicalLength();
+        resolveBeatMode();
+    }
+
+    // ---- Playback intent ---------------------------------------------------
+
+    bool wantsBeatMode() const {
+        return playbackIntent != PlaybackIntent::Free;
+    }
+
+    /// Beat mode is granted only with a tempo behind it: every beat view
+    /// answers zero without one and the engine declines the beat face anyway
+    /// (EventPlacement.cpp: usesBeatFace, #2676).
+    void resolveBeatMode() {
+        autoTempo = wantsBeatMode() && hasInterpretedBpm();
+    }
+
+    void setPlaybackIntent(PlaybackIntent intent) {
+        playbackIntent = intent;
+        resolveBeatMode();
+    }
+
+    /// The BEAT toggle: a plain yes or no from the user.
+    void setBeatMode(bool enabled) {
+        setPlaybackIntent(enabled ? PlaybackIntent::Beat : PlaybackIntent::Free);
+    }
+
+    // ---- Interpretation writes ---------------------------------------------
+
+    static bool provenanceAllows(Provenance existing, Provenance incoming) {
+        return existing != Provenance::User || incoming == Provenance::User;
+    }
+
+    /// Write the tempo unless the user owns it. A region sized by the
+    /// interpretation follows, and beat mode is re-resolved.
+    bool adoptBpm(double bpm, Provenance from) {
+        if (bpm <= 0.0 || !provenanceAllows(bpmFrom, from))
+            return false;
+        interpBpm = bpm;
+        bpmFrom = from;
+        afterInterpretationChange();
+        return true;
+    }
+
+    bool adoptTotalBeats(double beats, Provenance from) {
+        if (beats <= 0.0 || !provenanceAllows(beatsFrom, from))
+            return false;
+        interpTotalBeats = beats;
+        beatsFrom = from;
+        afterInterpretationChange();
+        return true;
+    }
+
+    /// Take another event's interpretation with its ownership, as a copy or
+    /// paste does. Goes through adoption so a value the user owns here stays.
+    void adoptInterpretationFrom(const AudioEvent& src) {
+        adoptBpm(src.interpBpm, src.bpmFrom);
+        adoptTotalBeats(src.interpTotalBeats, src.beatsFrom);
+    }
+
+    // ---- Region extent -----------------------------------------------------
+
+    /// The region is totalBeats at bpm from its start; no-op until both exist.
+    void fitRegionToInterpretation() {
+        if (hasInterpretedBpm() && interpTotalBeats > 0.0)
+            loopLengthSamples = secondsToSourceSamples(interpTotalBeats * 60.0 / interpBpm);
+    }
+
+    void fitRegionToMusicalLength() {
+        if (hasInterpretedBpm() && musicalLoopLengthBeats >= 0.0)
+            loopLengthSamples = secondsToSourceSamples(musicalLoopLengthBeats * 60.0 / interpBpm);
+    }
+
+    void setLoopExtent(RegionExtent extent) {
+        loopExtent = extent;
+        if (extent != RegionExtent::Explicit) {
+            loopLengthIntent = LoopLengthIntent::Source;
+            musicalLoopLengthBeats = 0.0;
+        }
+        if (extent == RegionExtent::WholeSource)
+            loopLengthSamples = 0;
+        else if (extent == RegionExtent::Interpretation)
+            fitRegionToInterpretation();
+    }
+
+    /// A whole-source region becomes the beat count once there is one to
+    /// follow. Callers gate on the clip looping: a non-looping clip reads to
+    /// the file end and has no cycle to size.
+    void followInterpretationIfWholeSource() {
+        if (loopExtent == RegionExtent::WholeSource && hasInterpretedBpm() &&
+            interpTotalBeats > 0.0)
+            setLoopExtent(RegionExtent::Interpretation);
+    }
+
+    LoopLengthState loopLengthState() const {
+        return {loopLengthSamples, loopExtent, loopLengthIntent, musicalLoopLengthBeats};
+    }
+
+    /// Put an undo or serialized snapshot back without changing its intent.
+    void restoreLoopLength(const LoopLengthState& state) {
+        loopLengthSamples = juce::jmax<int64_t>(0, state.samples);
+        loopExtent = state.extent;
+        loopLengthIntent = state.intent;
+        musicalLoopLengthBeats =
+            std::isfinite(state.musicalBeats) ? juce::jmax(0.0, state.musicalBeats) : 0.0;
+        if (loopExtent != RegionExtent::Explicit || loopLengthIntent == LoopLengthIntent::Source) {
+            loopLengthIntent = LoopLengthIntent::Source;
+            musicalLoopLengthBeats = 0.0;
+        }
+    }
+
+    void restoreLoopLength(int64_t lengthSamples, RegionExtent extent) {
+        restoreLoopLength({lengthSamples, extent, LoopLengthIntent::Source, 0.0});
+    }
+
+    /// Keep source-authored explicit ranges inside the file. Derived and
+    /// musical ranges may overrun it; the reader handles that (#2674).
+    void clampLoopRegionToSource(double fileDurationSeconds) {
+        if (fileDurationSeconds <= 0.0)
+            return;
+        setLoopStartSeconds(juce::jlimit(0.0, fileDurationSeconds, loopStartSeconds()));
+        if (loopExtent != RegionExtent::Explicit || loopLengthIntent == LoopLengthIntent::Musical)
+            return;
+        const double available = fileDurationSeconds - loopStartSeconds();
+        if (loopLengthSeconds() > available)
+            loopLengthSamples = secondsToSourceSamples(juce::jmax(0.0, available));
+    }
 
     double anchorSeconds() const {
         return static_cast<double>(sourceAnchorSamples) / sourceSampleRate();
     }
     double anchorBeats() const {
-        return interpBpm > 0.0 ? anchorSeconds() * interpBpm / 60.0 : 0.0;
+        return hasInterpretedBpm() ? anchorSeconds() * interpBpm / 60.0 : 0.0;
     }
     void setAnchorSeconds(double seconds) {
         sourceAnchorSamples =
             static_cast<int64_t>(std::llround(juce::jmax(0.0, seconds) * sourceSampleRate()));
     }
     void setAnchorBeats(double beats) {
-        if (interpBpm > 0.0)
+        if (hasInterpretedBpm())
             setAnchorSeconds(juce::jmax(0.0, beats) * 60.0 / interpBpm);
     }
 
@@ -354,26 +578,43 @@ struct AudioEvent {
         return static_cast<double>(loopLengthSamples) / sourceSampleRate();
     }
     double loopStartBeats() const {
-        return interpBpm > 0.0 ? loopStartSeconds() * interpBpm / 60.0 : 0.0;
+        return hasInterpretedBpm() ? loopStartSeconds() * interpBpm / 60.0 : 0.0;
     }
     double loopLengthBeats() const {
-        return interpBpm > 0.0 ? loopLengthSeconds() * interpBpm / 60.0 : 0.0;
+        if (loopExtent == RegionExtent::Explicit && loopLengthIntent == LoopLengthIntent::Musical)
+            return musicalLoopLengthBeats;
+        return hasInterpretedBpm() ? loopLengthSeconds() * interpBpm / 60.0 : 0.0;
     }
     void setLoopStartSeconds(double seconds) {
-        loopStartSamples =
-            static_cast<int64_t>(std::llround(juce::jmax(0.0, seconds) * sourceSampleRate()));
+        loopStartSamples = secondsToSourceSamples(seconds);
     }
+    /// A length set directly is a range of its own: the extent becomes
+    /// Explicit and stops following the interpretation.
     void setLoopLengthSeconds(double seconds) {
-        loopLengthSamples =
-            static_cast<int64_t>(std::llround(juce::jmax(0.0, seconds) * sourceSampleRate()));
+        const double length = std::isfinite(seconds) ? juce::jmax(0.0, seconds) : 0.0;
+        loopLengthSamples = secondsToSourceSamples(length);
+        loopExtent = RegionExtent::Explicit;
+        loopLengthIntent = LoopLengthIntent::Source;
+        musicalLoopLengthBeats = 0.0;
     }
     void setLoopStartBeats(double beats) {
-        if (interpBpm > 0.0)
+        if (hasInterpretedBpm())
             setLoopStartSeconds(juce::jmax(0.0, beats) * 60.0 / interpBpm);
     }
     void setLoopLengthBeats(double beats) {
-        if (interpBpm > 0.0)
-            setLoopLengthSeconds(juce::jmax(0.0, beats) * 60.0 / interpBpm);
+        musicalLoopLengthBeats = std::isfinite(beats) ? juce::jmax(0.0, beats) : 0.0;
+        loopExtent = RegionExtent::Explicit;
+        loopLengthIntent = LoopLengthIntent::Musical;
+        fitRegionToMusicalLength();
+    }
+
+    int64_t resolvedLoopLengthSamples(double sampleRate) const {
+        if (loopExtent == RegionExtent::Explicit && loopLengthIntent == LoopLengthIntent::Musical &&
+            hasInterpretedBpm() && std::isfinite(sampleRate) && sampleRate > 0.0) {
+            return static_cast<int64_t>(
+                std::llround(musicalLoopLengthBeats * 60.0 / interpBpm * sampleRate));
+        }
+        return loopLengthSamples;
     }
 
     /// Phase of the read position within the loop region (source seconds).
@@ -414,7 +655,10 @@ struct AudioEvent {
     /// Source seconds consumed by the event: the loop region if one is set,
     /// otherwise whatever the event's own timeline extent asks for.
     double sourceLengthSeconds(double eventTimelineSeconds) const {
-        return loopLengthSamples > 0 ? loopLengthSeconds() : timelineToSource(eventTimelineSeconds);
+        const double sampleRate = sourceSampleRate();
+        const auto lengthSamples = resolvedLoopLengthSamples(sampleRate);
+        return lengthSamples > 0 ? static_cast<double>(lengthSamples) / sampleRate
+                                 : timelineToSource(eventTimelineSeconds);
     }
 
     /// Offset handed to the engine, in timeline seconds. Looped: the phase
@@ -437,32 +681,30 @@ struct AudioEvent {
         return sourceToTimeline(loopStartSeconds() + sourceLengthSeconds(eventTimelineSeconds));
     }
 
-    /// Seed the interpretation from an external analysis (Tracktion loopInfo,
-    /// a detection pass). Only fills gaps, so re-analysing a file can never
-    /// rewrite what the user set.
-    ///
-    /// numBeats is only taken when a BPM is known too: a beat count without an
-    /// anchoring tempo claims musical content the file does not carry, and it
-    /// renders as a plausible-looking integer that never gets corrected once a
-    /// real BPM arrives.
-    void seedInterpretation(double numBeats, double bpm) {
-        if (bpm > 0.0 && interpBpm <= 0.0)
-            interpBpm = bpm;
-        if (numBeats > 0.0 && bpm > 0.0 && interpTotalBeats <= 0.0)
-            interpTotalBeats = numBeats;
+    /// Seed the interpretation from what the file itself says (Tracktion
+    /// loopInfo, an ACID chunk). Fills gaps only: TE reports a project default
+    /// when the file says nothing, so a value already here always wins. A beat
+    /// count without a tempo is not taken.
+    void seedInterpretation(double numBeats, double bpm, Provenance from) {
+        if (bpm <= 0.0)
+            return;
+        if (!hasInterpretedBpm())
+            adoptBpm(bpm, from);
+        if (interpTotalBeats <= 0.0)
+            adoptTotalBeats(numBeats, from);
     }
 
-    /// Seed interpretation from the pooled source. Only fills gaps: a value the
-    /// user (or a previous seed) already set is never overwritten, so
-    /// re-analysing a file cannot rewrite an interpretation.
+    /// Seed from the pooled source's analysis. Beats are counted at whatever
+    /// tempo the event ends up with, which may be the user's rather than the
+    /// source's.
     void seedInterpretationFromSource() {
         const auto* src = source();
         if (src == nullptr)
             return;
-        if (interpBpm <= 0.0 && src->detectedBpm > 0.0)
-            interpBpm = src->detectedBpm;
-        if (interpTotalBeats <= 0.0 && interpBpm > 0.0 && src->durationSeconds > 0.0)
-            interpTotalBeats = src->durationSeconds * interpBpm / 60.0;
+        adoptBpm(src->detectedBpm, Provenance::Analysis);
+        if (hasInterpretedBpm() && src->durationSeconds > 0.0)
+            adoptTotalBeats(beatCountForDuration(src->durationSeconds, interpBpm),
+                            Provenance::Analysis);
         if (keyRoot.empty())
             keyRoot = src->detectedKeyRoot;
         if (keyScale.empty())
@@ -514,6 +756,10 @@ struct AudioClipModel {
     // on later. The model, serialization and engine bridge all handle N.
     std::vector<AudioEvent> events;
     int nextEventId = 1;
+
+    // The source clip edges used by fades and speed ramps. Captured material
+    // keeps this window while its placement crops the recorded interval.
+    std::optional<ClipPlacement> envelopeWindow;
 
     // Loop-record takes, one per pass. Empty for ordinary single-source clips.
     // When non-empty, the primary event's source mirrors
@@ -575,6 +821,8 @@ struct MidiTake {
     std::vector<MidiNote> notes;
     std::vector<MidiCCData> cc;
     std::vector<MidiPitchBendData> pitchBend;
+    std::vector<MidiChannelPressureData> channelPressure;
+    std::vector<MidiPolyAftertouchData> polyAftertouch;
 
     bool operator==(const MidiTake&) const = default;
 };
@@ -605,6 +853,11 @@ struct MidiClipModel {
     // takes[currentTakeIndex] into the primary event's source.
     std::vector<MidiTake> takes;
     int currentTakeIndex = 0;
+
+    // One id space across every active MIDI event kind. IDs are stable across
+    // reordering and undo/redo, and are what remote update/delete operations
+    // address. Takes inherit the IDs of the active events mirrored into them.
+    EventId nextEventId = 1;
 
     // Comping. When compActive, the authoritative event vectors are assembled
     // from `comp` (each section assigns a take to a beat range) instead of a
@@ -715,6 +968,9 @@ struct ClipInfo {
         midiNotes = m.takes[static_cast<size_t>(idx)].notes;
         midiCCData = m.takes[static_cast<size_t>(idx)].cc;
         midiPitchBendData = m.takes[static_cast<size_t>(idx)].pitchBend;
+        midiChannelPressureData = m.takes[static_cast<size_t>(idx)].channelPressure;
+        midiPolyAftertouchData = m.takes[static_cast<size_t>(idx)].polyAftertouch;
+        ensureMidiEventIds();
     }
 
     // Transient UI: whether the loop-record take lanes are expanded in the
@@ -722,14 +978,8 @@ struct ClipInfo {
     // Not serialized.
     bool takesExpanded = true;
 
-    // Derived timeline seconds cache. Kept only for bridge/UI call sites that
-    // have not moved to beats yet; do not treat these as model authority.
-    double startTime = 0.0;
-    double length = 4.0;
-
     // Transitional mirrors for call sites that still access beat fields directly.
-    // Keep in sync via setPlacementBeats / deriveTimesFromBeats while the refactor
-    // removes direct field access.
+    // Kept in sync by setPlacementBeats.
     double startBeats = 0.0;
 
     // =========================================================================
@@ -803,6 +1053,18 @@ struct ClipInfo {
                event->sourceInstantToTimelineBeats(start, projectBpm);
     }
 
+    /**
+     * @brief @ref loopLengthBeats, or the whole clip when it carries a zero.
+     *
+     * A v1 project can still hold the 0 sentinel, which would otherwise ask the
+     * engine to loop nothing. Read straight from the field rather than through
+     * loopLengthInBeats() above: the callers are MIDI clips, whose loop is
+     * already in clip beats and needs no source-region mapping.
+     */
+    double effectiveLoopLengthBeats() const {
+        return loopLengthBeats > 0.0 ? loopLengthBeats : getLengthInBeats();
+    }
+
     // =========================================================================
     // Clip-level placement and mix
     //
@@ -833,6 +1095,87 @@ struct ClipInfo {
     std::vector<MidiNote> midiNotes;
     std::vector<MidiCCData> midiCCData;
     std::vector<MidiPitchBendData> midiPitchBendData;
+    std::vector<MidiChannelPressureData> midiChannelPressureData;
+    std::vector<MidiPolyAftertouchData> midiPolyAftertouchData;
+
+    MidiEventState midiEventState() const {
+        MidiEventState state;
+        state.notes = midiNotes;
+        state.cc = midiCCData;
+        state.pitchBend = midiPitchBendData;
+        state.channelPressure = midiChannelPressureData;
+        state.polyAftertouch = midiPolyAftertouchData;
+        state.nextEventId = isMidi() ? midi().nextEventId : 1;
+        return state;
+    }
+
+    void setMidiEventState(MidiEventState state) {
+        if (!isMidi())
+            return;
+        midiNotes = std::move(state.notes);
+        midiCCData = std::move(state.cc);
+        midiPitchBendData = std::move(state.pitchBend);
+        midiChannelPressureData = std::move(state.channelPressure);
+        midiPolyAftertouchData = std::move(state.polyAftertouch);
+        midi().nextEventId = state.nextEventId;
+        ensureMidiEventIds();
+    }
+
+    /** Assign ids to legacy/imported events and advance the per-clip allocator. */
+    void ensureMidiEventIds() {
+        if (!isMidi())
+            return;
+
+        auto& next = midi().nextEventId;
+        const auto observe = [&next](const auto& events) {
+            for (const auto& event : events)
+                if (event.id != INVALID_EVENT_ID)
+                    next = std::max(next, event.id + 1);
+        };
+        observe(midiNotes);
+        observe(midiCCData);
+        observe(midiPitchBendData);
+        observe(midiChannelPressureData);
+        observe(midiPolyAftertouchData);
+
+        // IDs only need to be unique in the active event set. A take mirrors
+        // that set while it is active, so identical IDs in inactive takes are
+        // intentional rather than collisions.
+        std::unordered_set<EventId> seen;
+
+        const auto assign = [&next, &seen](auto& events) {
+            for (auto& event : events) {
+                if (event.id == INVALID_EVENT_ID || !seen.insert(event.id).second) {
+                    event.id = next++;
+                    seen.insert(event.id);
+                }
+            }
+        };
+        assign(midiNotes);
+        assign(midiCCData);
+        assign(midiPitchBendData);
+        assign(midiChannelPressureData);
+        assign(midiPolyAftertouchData);
+
+        auto& model = midi();
+        if (!model.compActive && !model.takes.empty()) {
+            const auto index =
+                std::clamp(model.currentTakeIndex, 0, static_cast<int>(model.takes.size()) - 1);
+            auto& active = model.takes[static_cast<std::size_t>(index)];
+            active.notes = midiNotes;
+            active.cc = midiCCData;
+            active.pitchBend = midiPitchBendData;
+            active.channelPressure = midiChannelPressureData;
+            active.polyAftertouch = midiPolyAftertouchData;
+        }
+    }
+
+    EventId allocateMidiEventId() {
+        if (!isMidi())
+            return INVALID_EVENT_ID;
+        ensureMidiEventIds();
+        return midi().nextEventId++;
+    }
 
     // Chord annotations (displayed in piano roll chord row)
     struct ChordAnnotation {
@@ -901,7 +1244,7 @@ struct ClipInfo {
         if (!isAudio())
             return;
         auto& list = audio().events;
-        if (list.size() != 1)
+        if (list.size() != 1 || audio().envelopeWindow.has_value())
             return;
         list.front().startBeat = 0.0;
         list.front().lengthBeats = placement.lengthBeats;
@@ -915,10 +1258,12 @@ struct ClipInfo {
     static void copySharedEventFieldsFrom(AudioEvent& dst, const AudioEvent& src) {
         dst.sourceId = src.sourceId;
         dst.interpBpm = src.interpBpm;
+        dst.bpmFrom = src.bpmFrom;
         dst.interpTotalBeats = src.interpTotalBeats;
-        dst.interpTotalBeatsLocked = src.interpTotalBeatsLocked;
+        dst.beatsFrom = src.beatsFrom;
         dst.keyRoot = src.keyRoot;
         dst.keyScale = src.keyScale;
+        dst.playbackIntent = src.playbackIntent;
         dst.autoTempo = src.autoTempo;
         dst.timeStretchMode = src.timeStretchMode;
         dst.warpEnabled = src.warpEnabled;
@@ -931,13 +1276,16 @@ struct ClipInfo {
         dst.reversed = src.reversed;
         dst.autoDetectBeats = src.autoDetectBeats;
         dst.beatSensitivity = src.beatSensitivity;
+        // The region stays per-instance, but one sized by the interpretation
+        // has to follow the interpretation it just received.
+        dst.afterInterpretationChange();
     }
 
     static bool sharedEventFieldsEqual(const AudioEvent& a, const AudioEvent& b) {
-        return a.sourceId == b.sourceId && a.interpBpm == b.interpBpm &&
-               a.interpTotalBeats == b.interpTotalBeats &&
-               a.interpTotalBeatsLocked == b.interpTotalBeatsLocked && a.keyRoot == b.keyRoot &&
-               a.keyScale == b.keyScale && a.autoTempo == b.autoTempo &&
+        return a.sourceId == b.sourceId && a.interpBpm == b.interpBpm && a.bpmFrom == b.bpmFrom &&
+               a.interpTotalBeats == b.interpTotalBeats && a.beatsFrom == b.beatsFrom &&
+               a.keyRoot == b.keyRoot && a.keyScale == b.keyScale &&
+               a.playbackIntent == b.playbackIntent && a.autoTempo == b.autoTempo &&
                a.timeStretchMode == b.timeStretchMode && a.warpEnabled == b.warpEnabled &&
                a.warpMarkers == b.warpMarkers && a.autoPitch == b.autoPitch &&
                a.analogPitch == b.analogPitch && a.autoPitchMode == b.autoPitchMode &&
@@ -958,6 +1306,7 @@ struct ClipInfo {
     /// event list is taken wholesale: the structure itself changed, and there
     /// is no per-instance state on an event that does not exist yet.
     void copySharedContentFrom(const ClipInfo& src) {
+        const EventId previousMidiNextEventId = isMidi() ? midi().nextEventId : 1;
         name = src.name;
 
         if (isAudio() && src.isAudio() && events().size() == src.events().size()) {
@@ -985,9 +1334,18 @@ struct ClipInfo {
             content = src.content;
         }
 
+        // MIDI ids are copied with the shared event vectors below, but the
+        // allocator remains per clip instance and must never move backwards.
+        // Otherwise a ghost with a longer edit history could reuse an id on
+        // its next local add after receiving a sibling update.
+        if (isMidi() && src.isMidi())
+            midi().nextEventId = juce::jmax(previousMidiNextEventId, src.midi().nextEventId);
+
         midiNotes = src.midiNotes;
         midiCCData = src.midiCCData;
         midiPitchBendData = src.midiPitchBendData;
+        midiChannelPressureData = src.midiChannelPressureData;
+        midiPolyAftertouchData = src.midiPolyAftertouchData;
         chordAnnotations = src.chordAnnotations;
         nextChordGroupId = src.nextChordGroupId;
         grooveTemplate = src.grooveTemplate;
@@ -1001,9 +1359,21 @@ struct ClipInfo {
     bool sharedContentEquals(const ClipInfo& src) const {
         if (name != src.name || midiNotes != src.midiNotes || midiCCData != src.midiCCData ||
             midiPitchBendData != src.midiPitchBendData ||
+            midiChannelPressureData != src.midiChannelPressureData ||
+            midiPolyAftertouchData != src.midiPolyAftertouchData ||
             chordAnnotations != src.chordAnnotations || nextChordGroupId != src.nextChordGroupId ||
             grooveTemplate != src.grooveTemplate || grooveStrength != src.grooveStrength) {
             return false;
+        }
+
+        if (isMidi() && src.isMidi()) {
+            auto a = midi();
+            auto b = src.midi();
+            // Allocation history is intentionally per-instance and is not
+            // shared content. Ignore it once all persisted MIDI content has
+            // otherwise been compared.
+            a.nextEventId = b.nextEventId;
+            return a == b;
         }
 
         if (!isAudio() || !src.isAudio())
@@ -1022,33 +1392,14 @@ struct ClipInfo {
         return true;
     }
 
-    /// Derive startTime/length from placement beats using the given BPM.
-    void deriveTimesFromBeats(double bpm) {
-        if (isValidBpm(bpm)) {
-            if (placement.lengthBeats <= 0.0 && lengthBeats > 0.0)
-                setPlacementBeats(startBeats, lengthBeats);
-            if (placement.lengthBeats > 0.0) {
-                startTime = (placement.startBeat * 60.0) / bpm;
-                length = (placement.lengthBeats * 60.0) / bpm;
-            }
-        }
-    }
-
     /// Get end position in beats without BPM conversion (beats are always valid for MIDI)
     double getEndBeatsRaw() const {
         return placement.endBeat();
     }
 
-    /// Convert clip length to beats (using current tempo)
-    double getLengthInBeats(double bpm) const {
-        juce::ignoreUnused(bpm);
+    /// The clip's length, which is already in beats (#2563).
+    double getLengthInBeats() const {
         return placement.lengthBeats;
-    }
-
-    /// Set clip length from beats (updates placement and derived seconds cache)
-    void setLengthFromBeats(double beats, double bpm) {
-        setPlacementBeats(placement.startBeat, beats);
-        deriveTimesFromBeats(bpm);
     }
 
     /// Get clip start position in project beats.
@@ -1064,31 +1415,19 @@ struct ClipInfo {
     }
 
     // =========================================================================
-    // Robust seconds accessors (issue #1157)
-    //
-    // For autoTempo audio clips and MIDI clips, beats are AUTHORITATIVE — the
-    // seconds fields (length, startTime, offset, loopStart, loopLength) are
-    // derived caches that go stale every time projectBPM or source interpretation BPM changes.
-    // Renderers, sync code, and inspector readouts that go through these
-    // accessors compute the live value from beats and never depend on cache
-    // freshness. The cached fields are still maintained (so non-migrated
-    // readers stay correct), but new code should prefer the accessors.
+    // Timeline seconds, derived from placement beats. A clip stores no
+    // timeline seconds (#2791); the TempoMap overloads are right under a
+    // tempo change, the scalar ones only at a constant tempo.
     // =========================================================================
 
-    /// Timeline-domain seconds for the clip's length, derived from placement.
+    /// Timeline-domain seconds for the clip's length at a constant tempo.
     double getTimelineLength(double projectBPM) const {
-        if (placement.lengthBeats > 0.0 && isValidBpm(projectBPM)) {
-            return placement.lengthBeats * 60.0 / projectBPM;
-        }
-        return length;
+        return isValidBpm(projectBPM) ? placement.lengthBeats * 60.0 / projectBPM : 0.0;
     }
 
-    /// Timeline-domain seconds for the clip's start position, derived from placement.
+    /// Timeline-domain seconds for the clip's start at a constant tempo.
     double getTimelineStart(double projectBPM) const {
-        if (isValidBpm(projectBPM)) {
-            return placement.startBeat * 60.0 / projectBPM;
-        }
-        return startTime;
+        return isValidBpm(projectBPM) ? placement.startBeat * 60.0 / projectBPM : 0.0;
     }
 
     /// Timeline-domain end position (start + length).
@@ -1127,15 +1466,31 @@ struct ClipInfo {
     /// placement.lengthBeats; use this (not getTimelineLength) for the slot
     /// progress overlay so the bar and the playhead stay consistent.
     double getTimelineLoopLength(double projectBPM) const {
-        if (loopEnabled && isValidBpm(projectBPM)) {
-            // MIDI keeps its loop length in clip beats; an audio clip's is the
-            // beat view of its event's source region.
-            const auto* event = primaryEvent();
-            const double beats = event != nullptr ? event->loopLengthBeats() : loopLengthBeats;
-            if (beats > 0.0)
-                return beats * 60.0 / projectBPM;
-        }
+        if (loopEnabled && isValidBpm(projectBPM))
+            return sessionCycleBeats(projectBPM) * 60.0 / projectBPM;
         return getTimelineLength(projectBPM);
+    }
+
+    /// What one pass of a session slot is worth, in project beats: the loop
+    /// region when the clip loops, else the placement. The launcher retriggers
+    /// on it and the playhead wraps on it (#2674). An audio region is its two
+    /// boundaries mapped through the warp (loopLengthInBeats); a free-playing
+    /// clip with no region set loops the whole file at its own rate.
+    double sessionCycleBeats(double projectBpm) const {
+        if (loopEnabled) {
+            const auto* event = primaryEvent();
+            if (event == nullptr) {
+                if (loopLengthBeats > 0.0)
+                    return loopLengthBeats;
+            } else if (const double beats = loopLengthInBeats(projectBpm); beats > 0.0) {
+                return beats;
+            } else if (!event->autoTempo && isValidBpm(projectBpm) &&
+                       event->loopLengthSamples <= 0) {
+                if (const double seconds = event->sourceDurationSeconds(); seconds > 0.0)
+                    return event->sourceToTimeline(seconds) * projectBpm / 60.0;
+            }
+        }
+        return placement.lengthBeats;
     }
 };
 

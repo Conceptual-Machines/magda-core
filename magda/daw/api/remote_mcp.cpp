@@ -9,8 +9,7 @@
 #include "remote_service.hpp"
 #include "remote_subscriptions.hpp"
 
-namespace magda {
-namespace remote {
+namespace magda::remote {
 
 namespace {
 
@@ -53,7 +52,7 @@ constexpr const char* kInstructions =
     "conditional on the project not having changed since the revision you last saw.";
 
 juce::var makeObject() {
-    return juce::var(new juce::DynamicObject());
+    return {new juce::DynamicObject()};
 }
 
 void setProperty(juce::var& object, const char* name, const juce::var& value) {
@@ -230,7 +229,7 @@ McpEra eraForVersion(const juce::String& version) {
 
 bool isSupportedVersion(const juce::String& version) {
     const auto& versions = mcpProtocolVersions();
-    return std::find(versions.begin(), versions.end(), version) != versions.end();
+    return std::ranges::contains(versions, version);
 }
 
 const juce::String& latestProtocolVersion() {
@@ -329,7 +328,7 @@ McpEndpoint::McpEndpoint(RemoteApiService& service, Options options, Subscriptio
 
     resources_ = {
         {"magda://project/current", "", "project", "Project",
-         "Tempo, time signature, key, and loop for the open project", "project.get",
+         "Open state, tempo, time signature, key, and loop for the current project", "project.get",
          Topic::Project},
         {"magda://tracks", "", "tracks", "Tracks", "Every track in the project, in order",
          "tracks.list", Topic::Tracks},
@@ -340,6 +339,8 @@ McpEndpoint::McpEndpoint(RemoteApiService& service, Options options, Subscriptio
         {"magda://session", "", "session", "Session",
          "The session clip grid: which slot holds which clip, and what it is doing", "session.get",
          Topic::Session},
+        {"magda://jobs", "", "jobs", "Jobs", "Asynchronous jobs owned by this MCP session",
+         "jobs.list", Topic::Jobs},
         {"magda://devices", "", "devices", "Devices",
          "The device, rack, and chain graph for every track", "devices.list", Topic::Devices},
         // No topic: the catalogue changes only when plugins are rescanned, which
@@ -494,7 +495,7 @@ bool McpEndpoint::ListenFilter::wantsAnything() const {
 
 McpEndpoint::ListenFilter McpEndpoint::parseListenFilter(const juce::var& params) const {
     ListenFilter filter;
-    const auto notifications = params["notifications"];
+    const auto& notifications = params["notifications"];
     if (notifications.getDynamicObject() == nullptr)
         return filter;
 
@@ -516,8 +517,7 @@ McpEndpoint::ListenFilter McpEndpoint::parseListenFilter(const juce::var& params
             // waiting on a stream for an event with no source.
             if (!topicForResource(uri).has_value())
                 continue;
-            if (std::find(filter.resourceSubscriptions.begin(), filter.resourceSubscriptions.end(),
-                          uri) == filter.resourceSubscriptions.end()) {
+            if (!std::ranges::contains(filter.resourceSubscriptions, uri)) {
                 filter.resourceSubscriptions.push_back(uri);
             }
         }
@@ -529,7 +529,7 @@ std::vector<Topic> McpEndpoint::topicsFor(const ListenFilter& filter) const {
     std::vector<Topic> topics;
     for (const auto& uri : filter.resourceSubscriptions) {
         if (const auto topic = topicForResource(uri)) {
-            if (std::find(topics.begin(), topics.end(), *topic) == topics.end())
+            if (!std::ranges::contains(topics, *topic))
                 topics.push_back(*topic);
         }
     }
@@ -546,8 +546,7 @@ std::vector<juce::String> McpEndpoint::urisAffectedBy(Topic topic,
     return uris;
 }
 
-juce::var McpEndpoint::acknowledgment(const ListenFilter& filter,
-                                      const juce::var& subscriptionId) const {
+juce::var McpEndpoint::acknowledgment(const ListenFilter& filter, const juce::var& subscriptionId) {
     juce::Array<juce::var> uris;
     for (const auto& uri : filter.resourceSubscriptions)
         uris.add(uri);
@@ -739,7 +738,7 @@ void McpEndpoint::handle(const Call& call, Completion onComplete) {
         McpReply::fail(MCP_METHOD_NOT_FOUND, "Unknown method: " + call.method, modern ? 404 : 200));
 }
 
-void McpEndpoint::callTool(const Call& call, Completion onComplete) {
+void McpEndpoint::callTool(const Call& call, const Completion& onComplete) {
     const auto nameValue = call.params["name"];
     if (!nameValue.isString() || nameValue.toString().isEmpty()) {
         onComplete(McpReply::fail(MCP_INVALID_PARAMS, "tools/call requires a string params.name"));
@@ -777,7 +776,8 @@ void McpEndpoint::callTool(const Call& call, Completion onComplete) {
     const auto wrapResult = hasArrayOutput(*operation);
 
     service_.dispatch(
-        name, arguments, *context, [onComplete, modern, info, wrapResult](Response response) {
+        name, arguments, *context,
+        [onComplete, modern, info, wrapResult](const Response& response) {
             auto result = makeObject();
             if (modern)
                 setProperty(result, "resultType", "complete");
@@ -827,7 +827,7 @@ void McpEndpoint::callTool(const Call& call, Completion onComplete) {
         });
 }
 
-void McpEndpoint::readResource(const Call& call, Completion onComplete) {
+void McpEndpoint::readResource(const Call& call, const Completion& onComplete) {
     const auto uriValue = call.params["uri"];
     if (!uriValue.isString() || uriValue.toString().isEmpty()) {
         onComplete(
@@ -856,7 +856,7 @@ void McpEndpoint::readResource(const Call& call, Completion onComplete) {
 
     service_.dispatch(
         resolved->operation, resolved->input, *context,
-        [onComplete, uri, modern, info](Response response) {
+        [onComplete, uri, modern, info](const Response& response) {
             if (!response.ok) {
                 // A read has no `isError` channel, so a failure is
                 // a JSON-RPC error whatever caused it. The MAGDA
@@ -906,7 +906,7 @@ std::optional<RequestContext> McpEndpoint::requestContext(const Call& call, McpE
     if (meta.getDynamicObject() == nullptr)
         return context;
 
-    if (const auto expected = meta[MAGDA_META_EXPECTED_REVISION]; !expected.isVoid()) {
+    if (const auto& expected = meta[MAGDA_META_EXPECTED_REVISION]; !expected.isVoid()) {
         const auto revision = jsonInteger(expected, 0, std::numeric_limits<juce::int64>::max());
         if (!revision) {
             error = McpError{MCP_INVALID_PARAMS,
@@ -932,7 +932,7 @@ std::optional<RequestContext> McpEndpoint::requestContext(const Call& call, McpE
     // So a client that wants retry safety supplies its own key and is
     // responsible for its uniqueness (a UUID). The `mcp:` prefix keeps this
     // namespace clear of the WebSocket's in the shared cache.
-    if (const auto requestId = meta[MAGDA_META_REQUEST_ID]; !requestId.isVoid()) {
+    if (const auto& requestId = meta[MAGDA_META_REQUEST_ID]; !requestId.isVoid()) {
         if (!requestId.isString() || requestId.toString().isEmpty()) {
             error = McpError{MCP_INVALID_PARAMS,
                              juce::String(MAGDA_META_REQUEST_ID) + " must be a non-empty string",
@@ -946,5 +946,4 @@ std::optional<RequestContext> McpEndpoint::requestContext(const Call& call, McpE
     return context;
 }
 
-}  // namespace remote
-}  // namespace magda
+}  // namespace magda::remote

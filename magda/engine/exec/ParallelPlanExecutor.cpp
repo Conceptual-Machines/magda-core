@@ -1,30 +1,45 @@
 #include "exec/ParallelPlanExecutor.hpp"
 
+#include <algorithm>
+#include <vector>
+
+#include "exec/BlockProfile.hpp"
+
 namespace magda::engine {
 namespace {
+/// The widest level of the plan's DAG, levelled from its baked schedule.
+int widthOf(const RenderPlan& plan) {
+    const auto numOps = plan.ops.size();
+    std::vector<int> level(numOps, 0);
+    std::vector<std::uint16_t> pending(plan.dependencyCounts.begin(), plan.dependencyCounts.end());
+    std::vector<int> perLevel;
+    std::vector<OpId> ready(plan.initialReadyOps.begin(), plan.initialReadyOps.end());
 
-/// Failed pops before a thread stops asking and lets the scheduler have the
-/// core. The block is not over (something is still running, or nothing would be
-/// waiting), so leaving is not an option; what this decides is only how hard a
-/// thread with nothing to do leans on the ready set while it waits.
-constexpr int kSpinsBeforeYield = 200;
+    while (!ready.empty()) {
+        const auto index = static_cast<std::size_t>(ready.back());
+        ready.pop_back();
 
-constexpr std::uint64_t packReady(OpId op, std::uint32_t tag) {
-    return (static_cast<std::uint64_t>(tag) << 32) | static_cast<std::uint32_t>(op);
+        const auto depth = static_cast<std::size_t>(level[index]);
+        if (depth >= perLevel.size())
+            perLevel.resize(depth + 1, 0);
+        ++perLevel[depth];
+
+        for (auto edge = plan.consumerOffsets[index]; edge < plan.consumerOffsets[index + 1];
+             ++edge) {
+            const auto consumer = plan.consumerEdges[static_cast<std::size_t>(edge)];
+            const auto at = static_cast<std::size_t>(consumer);
+            level[at] = std::max(level[at], level[index] + 1);
+            if (--pending[at] == 0)
+                ready.push_back(consumer);
+        }
+    }
+
+    return perLevel.empty() ? 1 : *std::max_element(perLevel.begin(), perLevel.end());
 }
-
-constexpr OpId readyOp(std::uint64_t packed) {
-    return static_cast<OpId>(static_cast<std::int32_t>(packed & 0xffffffffULL));
-}
-
-constexpr std::uint32_t readyTag(std::uint64_t packed) {
-    return static_cast<std::uint32_t>(packed >> 32);
-}
-
-static_assert(packReady(INVALID_OP_ID, 0) == kEmptyReadyStack,
-              "an executor that has not started a block must not look like one with op 0 ready");
 
 }  // namespace
+
+ParallelPlanExecutor::ParallelPlanExecutor(RenderThreadPool* pool) : pool_(pool) {}
 
 void ParallelPlanExecutor::letGoOfPool() {
     // A worker can still be inside the last block's takeWork(): render() returns
@@ -49,7 +64,7 @@ std::vector<std::string> ParallelPlanExecutor::prepare(const RenderPlan& plan,
                                                        const PlanBindings& bindings,
                                                        const RenderContext& context,
                                                        const ParallelPlanExecutor* previous,
-                                                       const ParamTable* params) {
+                                                       const PlanValues* values) {
     // Everything below reallocates what a worker still finishing the last block
     // would read, so this comes first, the same as at destruction.
     letGoOfPool();
@@ -57,9 +72,10 @@ std::vector<std::string> ParallelPlanExecutor::prepare(const RenderPlan& plan,
     plan_ = nullptr;
     outputOps_.clear();
     modSourceOps_.clear();
+    insertSendOps_.clear();
 
     auto messages = core_.prepare(plan, bindings, context,
-                                  previous != nullptr ? &previous->core_ : nullptr, params);
+                                  previous != nullptr ? &previous->core_ : nullptr, values);
     if (!core_.isPrepared())
         return messages;
 
@@ -75,7 +91,7 @@ std::vector<std::string> ParallelPlanExecutor::prepare(const RenderPlan& plan,
     // constants disagree with its ops did not come from the compiler.
     if (!carriesSchedule(plan)) {
         core_.reset();
-        messages.push_back(
+        messages.emplace_back(
             "plan does not carry the schedule its topology implies: its dependency counts, "
             "consumer edges or initially-ready set are missing or disagree with its ops, so it "
             "cannot be scheduled");
@@ -84,118 +100,144 @@ std::vector<std::string> ParallelPlanExecutor::prepare(const RenderPlan& plan,
 
     const auto numOps = plan.ops.size();
     pending_ = std::vector<std::atomic<std::uint16_t>>(numOps);
-    nextReady_ = std::vector<std::atomic<OpId>>(numOps);
+    ready_ = std::make_unique<rigtorp::MPMCQueue<OpId>>(std::max<std::size_t>(1, numOps));
 
     for (std::size_t i = 0; i < numOps; ++i) {
         if (plan.ops[i].kind == OpKind::Output)
             outputOps_.push_back(static_cast<OpId>(i));
         else if (plan.ops[i].kind == OpKind::ModSource)
             modSourceOps_.push_back(static_cast<OpId>(i));
+        else if (plan.ops[i].kind == OpKind::InsertSend)
+            insertSendOps_.push_back(static_cast<OpId>(i));
     }
 
+    parallelism_ = widthOf(plan);
     plan_ = &plan;
     return messages;
 }
 
-void ParallelPlanExecutor::push(OpId op) {
-    const auto index = static_cast<std::size_t>(op);
-    auto top = readyTop_.load(std::memory_order_relaxed);
-    std::uint64_t pushed = 0;
-
-    do {
-        nextReady_[index].store(readyOp(top), std::memory_order_relaxed);
-        pushed = packReady(op, readyTag(top) + 1);
-    } while (!readyTop_.compare_exchange_weak(top, pushed, std::memory_order_release,
-                                              std::memory_order_relaxed));
+void ParallelPlanExecutor::enqueue(OpId op) {
+    // Queued before it is counted, so a worker that sees the count finds the op.
+    ready_->push(op);
+    pool_->noteQueued(1);
 }
 
-OpId ParallelPlanExecutor::pop() {
-    auto top = readyTop_.load(std::memory_order_acquire);
+void ParallelPlanExecutor::renderInPlanOrder() {
+    for (std::size_t index = 0; index < plan_->ops.size(); ++index)
+        if (const auto op = static_cast<OpId>(index); rendersInDrain(op))
+            renderProfiled(op);
+}
 
-    for (;;) {
-        const auto op = readyOp(top);
-        if (op == INVALID_OP_ID)
-            return INVALID_OP_ID;
+void ParallelPlanExecutor::renderProfiled(OpId op) {
+    const auto kind = plan_->ops[static_cast<std::size_t>(op)].kind;
+    const ProfileScope timed([kind](auto elapsed) { BlockProfile::addOp(kind, elapsed); });
+    core_.renderOp(op, valueOf(op), block_, *output_);
+}
 
-        // Read under the tag: if the top is still the word this came from, the
-        // link is the one whoever pushed it wrote, and if it is not, the swap
-        // below fails and none of this counted.
-        const auto next = nextReady_[static_cast<std::size_t>(op)].load(std::memory_order_relaxed);
-        if (readyTop_.compare_exchange_weak(top, packReady(next, readyTag(top) + 1),
-                                            std::memory_order_acquire, std::memory_order_acquire))
-            return op;
+void ParallelPlanExecutor::runChain(OpId op) {
+    int ran = 0;
+    while (op != INVALID_OP_ID) {
+        if (rendersInDrain(op))
+            renderProfiled(op);
+        ++ran;
+
+        const auto first = plan_->consumerOffsets[static_cast<std::size_t>(op)];
+        const auto last = plan_->consumerOffsets[static_cast<std::size_t>(op) + 1];
+        auto next = INVALID_OP_ID;
+        for (auto edge = first; edge < last; ++edge) {
+            const auto consumer = plan_->consumerEdges[static_cast<std::size_t>(edge)];
+
+            // Acquire-release: the thread that takes the count to zero has seen everything its
+            // other producers wrote, and the queue's release passes it on.
+            if (pending_[static_cast<std::size_t>(consumer)].fetch_sub(
+                    1, std::memory_order_acq_rel) != 1)
+                continue;
+
+            if (last - first == 1 || edge == last - 1) {
+                next = consumer;
+                break;
+            }
+            enqueue(consumer);
+        }
+        op = next;
     }
+
+    // After the queueing: the block is finished when this reaches zero, and it must not while
+    // work this chain released is still on its way into the queue.
+    remaining_.fetch_sub(ran, std::memory_order_acq_rel);
 }
 
-OpId ParallelPlanExecutor::runOp(OpId op) {
+bool ParallelPlanExecutor::takeOne() {
+    auto op = INVALID_OP_ID;
+    if (!ready_->try_pop(op))
+        return false;
+
+    pool_->noteQueued(-1);
+    runChain(op);
+    return true;
+}
+
+void ParallelPlanExecutor::finishOnCaller() {
+    while (remaining_.load(std::memory_order_acquire) > 0)
+        if (!takeOne())
+            RenderThreadPool::pause();
+}
+
+int ParallelPlanExecutor::startSchedule() {
+    const auto numOps = plan_->ops.size();
+    for (std::size_t i = 0; i < numOps; ++i)
+        pending_[i].store(plan_->dependencyCounts[i], std::memory_order_relaxed);
+
+    // Before anything is queued, so no op can finish and count against a total not yet set.
+    remaining_.store(static_cast<int>(numOps), std::memory_order_relaxed);
+
+    // A worker is woken only for an op it would render: one this thread renders itself
+    // (the MIDI prefix, outputs, taps) only releases its consumers, and a worker woken for it
+    // spins through its wait for nothing.
+    int renderable = 0;
+    for (const auto op : plan_->initialReadyOps) {
+        enqueue(op);
+        if (rendersInDrain(op))
+            ++renderable;
+    }
+
+    if (BlockProfile::enabled()) {
+        const auto ready = static_cast<int>(plan_->initialReadyOps.size());
+        BlockProfile::count(BlockProfile::InitialReady, ready);
+        BlockProfile::count(BlockProfile::InitialReadyCallerOnly, ready - renderable);
+    }
+    return renderable;
+}
+
+bool ParallelPlanExecutor::rendersInDrain(OpId op) const {
     // Two kinds are left for the thread that drove the block, and both for the
     // same reason: each shares a buffer with the others of its kind rather than
     // owning one. Output ops add into the one buffer reaching the hardware, and
     // modulation taps detect through one scratch buffer apiece on the executor
     // and on the runtime, so two taps running at once, which two listened-to
     // tracks with disjoint subgraphs make schedulable, would corrupt each
-    // other's detection. Counted here anyway, because what waits on what is the
+    // other's detection. Counted anyway, because what waits on what is the
     // plan's business and not this decision's; neither can stall the block,
     // because nothing consumes either.
     const auto kind = plan_->ops[static_cast<std::size_t>(op)].kind;
-    if (kind != OpKind::Output && kind != OpKind::ModSource && !core_.inMidiPrefix(op))
-        core_.renderOp(op, valueOf(op), block_, *output_);
-
-    OpId carryOn = INVALID_OP_ID;
-
-    const auto first = plan_->consumerOffsets[static_cast<std::size_t>(op)];
-    const auto last = plan_->consumerOffsets[static_cast<std::size_t>(op) + 1];
-    for (auto edge = first; edge < last; ++edge) {
-        const auto consumer = plan_->consumerEdges[static_cast<std::size_t>(edge)];
-
-        // Acquire-release, not relaxed: this is where a consumer inherits
-        // everything its other producers wrote, whichever threads they ran on.
-        // The thread that takes the count to zero has seen all of it, and the
-        // release on the push (or the hand-over below) passes it on.
-        if (pending_[static_cast<std::size_t>(consumer)].fetch_sub(1, std::memory_order_acq_rel) !=
-            1)
-            continue;
-
-        if (carryOn == INVALID_OP_ID)
-            carryOn = consumer;
-        else
-            push(consumer);
-    }
-
-    // Last, and after the pushes: a block is finished when this reaches zero,
-    // and it must not reach zero while work this op released is still on its
-    // way into the ready set. An op carried on with is still counted, so a
-    // thread holding one cannot be the thread that says the block is over.
-    remaining_.fetch_sub(1, std::memory_order_acq_rel);
-    return carryOn;
-}
-
-void ParallelPlanExecutor::takeWork() {
-    int emptyPops = 0;
-
-    while (remaining_.load(std::memory_order_acquire) > 0) {
-        auto op = pop();
-        if (op == INVALID_OP_ID) {
-            // Nothing ready, and the block is not over: something is running
-            // that will release more. Spin for a while, because the wait is
-            // usually shorter than the system call that avoids it, then stand
-            // aside for whatever is holding the block up.
-            if (++emptyPops >= kSpinsBeforeYield) {
-                emptyPops = 0;
-                juce::Thread::yield();
-            }
-            continue;
-        }
-
-        emptyPops = 0;
-        while (op != INVALID_OP_ID)
-            op = runOp(op);
-    }
+    return kind != OpKind::Output && kind != OpKind::ModSource && kind != OpKind::InsertSend &&
+           !core_.inMidiPrefix(op);
 }
 
 void ParallelPlanExecutor::process(const PlanValues& values, const BlockInfo& requestedBlock,
                                    juce::AudioBuffer<float>& output) {
-    const auto start = core_.beginBlock(values, requestedBlock, output);
+    // This thread's share of the block (#2240). The workers set their own, in
+    // RenderThreadPool::Worker, since the mode is per thread and a worker only
+    // ever renders.
+    const juce::ScopedNoDenormals noDenormals;
+    const ProfileScope whole(
+        [](auto elapsed) { BlockProfile::addPhase(BlockProfile::WholeBlock, elapsed); });
+
+    const auto start = [&] {
+        const ProfileScope timed(
+            [](auto elapsed) { BlockProfile::addPhase(BlockProfile::BeginBlock, elapsed); });
+        return core_.beginBlock(values, requestedBlock, output);
+    }();
     if (!start.render || plan_ == nullptr)
         return;
 
@@ -208,43 +250,43 @@ void ParallelPlanExecutor::process(const PlanValues& values, const BlockInfo& re
     // exactly as they would be otherwise; what the schedule skips is running
     // them a second time, the same way it skips the outputs it renders at the
     // end. Anything else would consume a live input queue twice.
-    core_.renderMidiPrefix(values, start.block);
-    core_.resolveParameters(values, start.block);
+    {
+        const ProfileScope timed(
+            [](auto elapsed) { BlockProfile::addPhase(BlockProfile::MidiPrefix, elapsed); });
+        core_.renderMidiPrefix(values, start.block);
+    }
+    {
+        const ProfileScope timed(
+            [](auto elapsed) { BlockProfile::addPhase(BlockProfile::ResolveParameters, elapsed); });
+        core_.resolveParameters(values, start.block);
+    }
 
     block_ = start.block;
     values_ = &values;
     applyValues_ = start.applyValues;
     output_ = &output;
 
-    const auto numOps = plan_->ops.size();
-    for (std::size_t i = 0; i < numOps; ++i)
-        pending_[i].store(plan_->dependencyCounts[i], std::memory_order_relaxed);
-
-    // Emptied, but the tag carries on from wherever the last block left it: a
-    // thread that read the top of the previous block's stack and has not looked
-    // since must not find a word it recognises.
-    readyTop_.store(
-        packReady(INVALID_OP_ID, readyTag(readyTop_.load(std::memory_order_relaxed)) + 1),
-        std::memory_order_relaxed);
-
-    // Before the ready set is seeded, so nothing can finish an op and count it
-    // against a total that has not been set yet.
-    remaining_.store(static_cast<int>(numOps), std::memory_order_relaxed);
-
-    for (const auto op : plan_->initialReadyOps)
-        push(op);
-
-    if (pool_ != nullptr) {
-        handedToPool_.store(true, std::memory_order_relaxed);
-        pool_->render(*this);
-    } else {
-        takeWork();
+    {
+        const ProfileScope timed(
+            [](auto elapsed) { BlockProfile::addPhase(BlockProfile::Drain, elapsed); });
+        if (pool_ != nullptr && pool_->numThreads() > 1 && parallelism_ > 1) {
+            const auto ready = startSchedule();
+            handedToPool_.store(true, std::memory_order_relaxed);
+            pool_->render(*this, ready);
+        } else {
+            renderInPlanOrder();
+        }
     }
+    const ProfileScope tail(
+        [](auto elapsed) { BlockProfile::addPhase(BlockProfile::SerialTail, elapsed); });
 
     // The graph has drained, so this thread is the only one with anything to
     // do. In plan order: the taps detect one at a time, and the sum reaching
     // the hardware is compiled like every other sum in the plan.
     for (const auto op : modSourceOps_)
+        core_.renderOp(op, valueOf(op), block_, output);
+
+    for (const auto op : insertSendOps_)
         core_.renderOp(op, valueOf(op), block_, output);
 
     for (const auto op : outputOps_)

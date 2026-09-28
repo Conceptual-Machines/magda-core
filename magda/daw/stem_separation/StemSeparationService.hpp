@@ -42,7 +42,7 @@ class StemSeparationService {
     // True when the engine can run right now (backend compiled in and, for
     // model-based engines, weights installed). UI uses this to enable items
     // or deep-link to the model download instead.
-    [[nodiscard]] bool isEngineAvailable(Engine engine);
+    [[nodiscard]] static bool isEngineAvailable(Engine engine);
 
     // True while a split is running or queued; the UI shows progress for it.
     [[nodiscard]] bool isBusy() const;

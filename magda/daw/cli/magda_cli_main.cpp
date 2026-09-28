@@ -16,7 +16,6 @@
 #include "api/project_api.hpp"
 #include "api/remote_api.hpp"
 #include "api/track_api.hpp"
-#include "audio/AudioBridge.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"
 #include "project/ProjectInfo.hpp"
@@ -29,7 +28,7 @@ void printUsage(std::ostream& out);
 
 juce::File fileFromArg(const juce::String& path) {
     if (juce::File::isAbsolutePath(path))
-        return juce::File(path);
+        return {path};
     return juce::File::getCurrentWorkingDirectory().getChildFile(path);
 }
 
@@ -106,7 +105,7 @@ std::optional<int> parsePositiveInt(const juce::String& text) {
 std::optional<magda::TrackType> parseTrackType(const juce::String& text) {
     auto normalized = text.trim().toLowerCase();
     if (normalized == "audio" || normalized == "midi")
-        return magda::TrackType::Audio;
+        return magda::TrackType::Media;
     if (normalized == "group")
         return magda::TrackType::Group;
     if (normalized == "aux")
@@ -135,7 +134,9 @@ juce::var trackToJson(magda::MagdaApi& api, const magda::TrackInfo& track) {
 
 juce::String dumpProjectJson(magda::MagdaApi& api) {
     const auto& project = api.project().getCurrentProjectInfo();
-    auto value = magda::remote::toJson(magda::remote::makeProjectDto(project));
+    auto value = magda::remote::toJson(magda::remote::makeProjectDto(
+        project, api.project().hasOpenProject(), api.project().isDirty(),
+        api.project().hasSaveTarget(), api.project().getCurrentProjectPath()));
     auto* root = value.getDynamicObject();
 
     juce::Array<juce::var> tracks;
@@ -200,7 +201,7 @@ class CommandDispatcher {
         if (index >= static_cast<size_t>(tokens.size()))
             return {};
 
-        const auto command = tokens[static_cast<int>(index++)];
+        const auto& command = tokens[static_cast<int>(index++)];
         for (const auto& spec : commandSpecs())
             if (command == spec.name)
                 return (this->*spec.handler)(tokens, index);
@@ -228,7 +229,7 @@ class CommandDispatcher {
         if (index >= static_cast<size_t>(tokens.size()))
             return fail("add-track requires <audio|group|aux|chord>");
 
-        const auto typeToken = tokens[static_cast<int>(index++)];
+        const auto& typeToken = tokens[static_cast<int>(index++)];
         auto type = parseTrackType(typeToken);
         if (!type)
             return fail("Unsupported track type: " + typeToken);
@@ -364,14 +365,14 @@ class CommandDispatcher {
         if (index >= static_cast<size_t>(tokens.size()))
             return fail("add-internal-instrument requires <plugin-id>");
 
-        const auto pluginId = tokens[static_cast<int>(index++)];
+        const auto& pluginId = tokens[static_cast<int>(index++)];
         auto name = pluginId;
         if (index < static_cast<size_t>(tokens.size()) &&
             !isCommand(tokens[static_cast<int>(index)]))
             name = tokens[static_cast<int>(index++)];
 
         magda::DeviceInfo device;
-        device.name = name;
+        device.name = std::move(name);
         device.manufacturer = "MAGDA";
         device.pluginId = pluginId;
         device.uniqueId = pluginId;
@@ -598,7 +599,10 @@ void printUsage(std::ostream& out) {
         << "  magda-cli run <project.mgd> [--out <out.mgd>]\n"
         << "  magda-cli run <project.mgd> --cmds <cmds.txt> [--out <out.mgd>] [--dump-json]\n"
         << "  magda-cli exec <project.mgd> <commands...> [--out <out.mgd>] [--dump-json]\n"
-        << "  magda-cli render <project.mgd> --wav <out.wav> [--from <time>] [--to <time>]\n"
+        << "  magda-cli render <project.mgd> (--wav <out.wav> | --flac <out.flac>) [--from "
+           "<time>]\n"
+        << "                   [--to <time>] [--sample-rate <hz>] [--bit-depth <bits>]\n"
+        << "                   [--dither off|tpdf|shaped]\n"
         << "\n"
         << "Commands:\n";
 
@@ -618,11 +622,13 @@ struct RunOptions {
 
 struct RenderOptions {
     juce::File input;
-    juce::File wavOutput;
-    std::optional<double> fromSeconds;
-    std::optional<double> toSeconds;
+    juce::File output;
+    magda::OfflineRenderFormat format = magda::OfflineRenderFormat::Wav;
+    std::optional<double> fromBeat;
+    std::optional<double> toBeat;
     std::optional<double> sampleRate;
     std::optional<int> bitDepth;
+    std::optional<magda::OfflineRenderDither> dither;
 };
 
 bool loadProjectForCli(const juce::File& input, HeadlessEngineSession& session) {
@@ -636,48 +642,52 @@ bool loadProjectForCli(const juce::File& input, HeadlessEngineSession& session) 
     return true;
 }
 
-std::optional<double> parseRenderTime(const juce::String& text, const magda::ProjectInfo& info) {
+/**
+ * @brief A render position in beats, from "4bars", "16beats" or seconds ("12.5s", "12.5").
+ *
+ * Seconds go through @p tempo, which is the map the project loaded with.
+ */
+std::optional<double> parseRenderBeat(const juce::String& text, const magda::ProjectInfo& info,
+                                      const magda::TempoMap& tempo) {
     auto token = text.trim().toLowerCase();
-    if (token.endsWith("bars")) {
-        auto bars = parseDouble(token.dropLastCharacters(4));
-        if (!bars)
-            return std::nullopt;
-        const double beats = *bars * info.timeSignatureNumerator;
-        return beats * 60.0 / info.tempo;
-    }
-    if (token.endsWith("bar")) {
-        auto bars = parseDouble(token.dropLastCharacters(3));
-        if (!bars)
-            return std::nullopt;
-        const double beats = *bars * info.timeSignatureNumerator;
-        return beats * 60.0 / info.tempo;
-    }
-    if (token.endsWith("beats")) {
-        auto beats = parseDouble(token.dropLastCharacters(5));
-        if (!beats)
-            return std::nullopt;
-        return *beats * 60.0 / info.tempo;
-    }
-    if (token.endsWith("beat")) {
-        auto beats = parseDouble(token.dropLastCharacters(4));
-        if (!beats)
-            return std::nullopt;
-        return *beats * 60.0 / info.tempo;
-    }
+
+    for (const auto* suffix : {"bars", "bar"})
+        if (token.endsWith(suffix)) {
+            const auto bars = parseDouble(token.dropLastCharacters(juce::String(suffix).length()));
+            return bars ? std::optional(*bars * magda::beatsPerBar(info.timeSignatureNumerator,
+                                                                   info.timeSignatureDenominator))
+                        : std::nullopt;
+        }
+
+    for (const auto* suffix : {"beats", "beat"})
+        if (token.endsWith(suffix))
+            return parseDouble(token.dropLastCharacters(juce::String(suffix).length()));
+
     if (token.endsWith("s"))
         token = token.dropLastCharacters(1);
-    return parseDouble(token);
+
+    const auto seconds = parseDouble(token);
+    return seconds ? std::optional(tempo.timeToBeat(*seconds)) : std::nullopt;
 }
 
-double defaultRenderEndSeconds(magda::AudioEngine& engine, const magda::ProjectInfo& info) {
-    const auto editLength = engine.getEditLengthBeats();
-    if (editLength.value > 0.0)
-        if (const auto* tempoMap = engine.tempoMap())
-            return tempoMap->beatToTime(editLength.value);
+double defaultRenderEndBeat(magda::AudioEngine& engine, const magda::ProjectInfo& info) {
+    if (const auto editLength = engine.getEditLengthBeats(); editLength.value > 0.0)
+        return editLength.value;
 
-    const double beats = static_cast<double>(info.timelineLengthBars) * info.timeSignatureNumerator;
-    const double seconds = beats * 60.0 / info.tempo;
-    return juce::jmax(1.0, seconds);
+    return juce::jmax(
+        1.0, static_cast<double>(info.timelineLengthBars) *
+                 magda::beatsPerBar(info.timeSignatureNumerator, info.timeSignatureDenominator));
+}
+
+std::optional<magda::OfflineRenderDither> parseDither(const juce::String& text) {
+    const auto token = text.trim().toLowerCase();
+    if (token == "off")
+        return magda::OfflineRenderDither::None;
+    if (token == "tpdf")
+        return magda::OfflineRenderDither::Tpdf;
+    if (token == "shaped")
+        return magda::OfflineRenderDither::Shaped;
+    return std::nullopt;
 }
 
 bool prepareOutputFile(const juce::File& file) {
@@ -695,41 +705,37 @@ bool prepareOutputFile(const juce::File& file) {
     return true;
 }
 
-bool renderWav(magda::AudioEngine& engine, const RenderOptions& options) {
+bool renderProjectAudio(magda::AudioEngine& engine, const RenderOptions& options) {
     if (!engine.hasActiveEdit()) {
         std::cerr << "No edit is loaded for rendering\n";
         return false;
     }
 
-    if (!prepareOutputFile(options.wavOutput))
+    if (!prepareOutputFile(options.output))
         return false;
 
     const auto& projectInfo = magda::ProjectManager::getInstance().getCurrentProjectInfo();
-    const double startSeconds = options.fromSeconds.value_or(0.0);
-    const double endSeconds =
-        options.toSeconds.value_or(defaultRenderEndSeconds(engine, projectInfo));
-    if (startSeconds < 0.0 || endSeconds <= startSeconds) {
+    const double startBeat = options.fromBeat.value_or(0.0);
+    const double endBeat = options.toBeat.value_or(defaultRenderEndBeat(engine, projectInfo));
+    if (startBeat < 0.0 || endBeat <= startBeat) {
         std::cerr << "Render range must have --to greater than --from\n";
         return false;
     }
 
+    magda::OfflineRenderRequest request;
+    request.destination = options.output;
+    request.format = options.format;
+    request.bitDepth = options.bitDepth.value_or(projectInfo.renderBitDepth);
+    request.dither = options.dither;
+    request.sampleRate = options.sampleRate.value_or(projectInfo.sampleRate);
+    request.range = {{startBeat}, {endBeat}};
+    if (!options.fromBeat && !options.toBeat)
+        request.oneShot = true;
+
     auto session = engine.createOfflineRenderSession(false);
-    auto task = session ? session->createTask({
-                              .destination = options.wavOutput,
-                              .format = magda::OfflineRenderFormat::Wav,
-                              .bitDepth = options.bitDepth.value_or(projectInfo.renderBitDepth),
-                              .sampleRate = options.sampleRate.value_or(projectInfo.sampleRate),
-                              .blockSize = 512,
-                              .shouldNormalise = false,
-                              .useMasterPlugins = true,
-                              .usePlugins = true,
-                              .checkNodesForAudio = false,
-                              .realTimeRender = false,
-                              .range = {{startSeconds}, {endSeconds}, {}},
-                          })
-                        : nullptr;
+    auto task = session ? session->createTask(request) : nullptr;
     if (task == nullptr) {
-        std::cerr << "Audio engine does not support offline rendering\n";
+        std::cerr << "Audio engine could not prepare an offline render\n";
         return false;
     }
 
@@ -738,13 +744,12 @@ bool renderWav(magda::AudioEngine& engine, const RenderOptions& options) {
         std::cerr << "Render failed: " << result.error << "\n";
         return false;
     }
-    if (!options.wavOutput.existsAsFile() || options.wavOutput.getSize() <= 0) {
-        std::cerr << "Render did not produce a WAV file: " << options.wavOutput.getFullPathName()
-                  << "\n";
+    if (!options.output.existsAsFile() || options.output.getSize() <= 0) {
+        std::cerr << "Render did not produce a file: " << options.output.getFullPathName() << "\n";
         return false;
     }
 
-    std::cout << "Rendered " << options.wavOutput.getFullPathName() << "\n";
+    std::cout << "Rendered " << options.output.getFullPathName() << "\n";
     return true;
 }
 
@@ -886,12 +891,24 @@ int renderProject(const juce::StringArray& args) {
     juce::String fromToken;
     juce::String toToken;
     for (int i = 2; i < args.size(); ++i) {
-        if (args[i] == "--wav") {
+        if (args[i] == "--wav" || args[i] == "--flac") {
+            options.format = args[i] == "--flac" ? magda::OfflineRenderFormat::Flac
+                                                 : magda::OfflineRenderFormat::Wav;
             if (++i >= args.size()) {
                 printUsage(std::cerr);
                 return 2;
             }
-            options.wavOutput = fileFromArg(args[i]);
+            options.output = fileFromArg(args[i]);
+        } else if (args[i] == "--dither") {
+            if (++i >= args.size()) {
+                printUsage(std::cerr);
+                return 2;
+            }
+            options.dither = parseDither(args[i]);
+            if (!options.dither) {
+                std::cerr << "--dither takes off, tpdf or shaped\n";
+                return 2;
+            }
         } else if (args[i] == "--from") {
             if (++i >= args.size()) {
                 printUsage(std::cerr);
@@ -930,8 +947,8 @@ int renderProject(const juce::StringArray& args) {
         }
     }
 
-    if (options.wavOutput.getFullPathName().isEmpty()) {
-        std::cerr << "render requires --wav <out.wav>\n";
+    if (options.output.getFullPathName().isEmpty()) {
+        std::cerr << "render requires --wav <out.wav> or --flac <out.flac>\n";
         return 2;
     }
 
@@ -945,22 +962,28 @@ int renderProject(const juce::StringArray& args) {
         return 1;
 
     const auto& info = magda::ProjectManager::getInstance().getCurrentProjectInfo();
+    const auto* tempo = session.engine().tempoMap();
+    if (tempo == nullptr) {
+        std::cerr << "The audio engine has no tempo map\n";
+        return 1;
+    }
+
     if (fromToken.isNotEmpty()) {
-        options.fromSeconds = parseRenderTime(fromToken, info);
-        if (!options.fromSeconds) {
+        options.fromBeat = parseRenderBeat(fromToken, info, *tempo);
+        if (!options.fromBeat) {
             std::cerr << "Invalid --from time: " << fromToken << "\n";
             return 2;
         }
     }
     if (toToken.isNotEmpty()) {
-        options.toSeconds = parseRenderTime(toToken, info);
-        if (!options.toSeconds) {
+        options.toBeat = parseRenderBeat(toToken, info, *tempo);
+        if (!options.toBeat) {
             std::cerr << "Invalid --to time: " << toToken << "\n";
             return 2;
         }
     }
 
-    return renderWav(session.engine(), options) ? 0 : 1;
+    return renderProjectAudio(session.engine(), options) ? 0 : 1;
 }
 
 int execCommands(const juce::StringArray& args) {
@@ -1009,32 +1032,37 @@ int bootOnly() {
 }  // namespace
 
 int main(int argc, char* argv[]) {
-    juce::ScopedJuceInitialiser_GUI juceInit;
+    try {
+        juce::ScopedJuceInitialiser_GUI juceInit;
 
-    juce::StringArray args;
-    for (int i = 0; i < argc; ++i)
-        args.add(juce::String(argv[i]));
+        juce::StringArray args;
+        for (int i = 0; i < argc; ++i)
+            args.add(juce::String(argv[i]));
 
-    if (args.size() < 2 || args[1] == "--help" || args[1] == "-h") {
-        printUsage(args.size() < 2 ? std::cerr : std::cout);
-        return args.size() < 2 ? 2 : 0;
+        if (args.size() < 2 || args[1] == "--help" || args[1] == "-h") {
+            printUsage(args.size() < 2 ? std::cerr : std::cout);
+            return args.size() < 2 ? 2 : 0;
+        }
+
+        const auto command = args[1];
+        args.remove(0);
+
+        if (command == "boot")
+            return bootOnly();
+        if (command == "init")
+            return initProject(args);
+        if (command == "run")
+            return runRoundTrip(args);
+        if (command == "exec")
+            return execCommands(args);
+        if (command == "render")
+            return renderProject(args);
+
+        std::cerr << "Unknown command: " << command << "\n";
+        printUsage(std::cerr);
+        return 2;
+    } catch (const std::exception& e) {
+        std::cerr << "Fatal error: " << e.what() << "\n";
+        return 1;
     }
-
-    const auto command = args[1];
-    args.remove(0);
-
-    if (command == "boot")
-        return bootOnly();
-    if (command == "init")
-        return initProject(args);
-    if (command == "run")
-        return runRoundTrip(args);
-    if (command == "exec")
-        return execCommands(args);
-    if (command == "render")
-        return renderProject(args);
-
-    std::cerr << "Unknown command: " << command << "\n";
-    printUsage(std::cerr);
-    return 2;
 }

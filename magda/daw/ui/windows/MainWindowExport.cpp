@@ -1,10 +1,12 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include <algorithm>
+#include <utility>
+
 #include "../dialogs/ExportAudioDialog.hpp"
 #include "../dialogs/ExportMidiDialog.hpp"
 #include "MainWindow.hpp"
-#include "audio/AudioBridge.hpp"
-#include "audio/insert_capture/InsertRenderCaptureService.hpp"
+#include "audio/insert_capture/InsertRenderCapture.hpp"
 #include "core/ClipManager.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
@@ -36,24 +38,19 @@ double timelineEndBeats(const ClipInfo& clip, double bpm) {
 class ExportProgressWindow : public juce::ThreadWithProgressWindow {
   public:
     ExportProgressWindow(std::unique_ptr<OfflineRenderSession> renderSession,
-                         const OfflineRenderRequest& request, const juce::File& outputFile,
-                         std::function<void()> onComplete, double prerollSeconds = 0.0,
-                         double leadInSilence = 0.0)
+                         const OfflineRenderRequest& request, juce::File outputFile,
+                         std::function<void()> onComplete)
         : ThreadWithProgressWindow(trEllipsis("export.progress.exporting_audio"), true, true),
           renderSession_(std::move(renderSession)),
           renderTask_(renderSession_ ? renderSession_->createTask(request) : nullptr),
-          outputFile_(outputFile),
+          outputFile_(std::move(outputFile)),
           onComplete_(std::move(onComplete)),
-          prerollSeconds_(prerollSeconds),
-          leadInSilence_(leadInSilence),
           // Snapshot every string run() needs on the message thread. StringTable
           // isn't thread-safe and the user can change language mid-export, so
           // reading it from the background thread would data-race.
           strRendering_(tr("export.progress.rendering")),
-          strTrimming_(trEllipsis("export.progress.trimming")),
           strComplete_(tr("export.progress.complete")),
           strFailed_(tr("export.progress.failed")),
-          errTrimFailed_(tr("export.error.trim_failed")),
           errFileNotCreated_(tr("export.error.file_not_created")),
           errRenderFailed_(tr("export.error.render_failed")),
           errCancelled_(tr("export.error.cancelled")) {
@@ -81,14 +78,6 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
             errorMessage_ = errFileNotCreated_;
             setStatusMessage(strFailed_);
             return;
-        }
-        if (prerollSeconds_ > 0.0) {
-            setStatusMessage(strTrimming_);
-            if (!trimPreroll()) {
-                errorMessage_ = errTrimFailed_;
-                setStatusMessage(strFailed_);
-                return;
-            }
         }
         success_ = true;
         setStatusMessage(strComplete_);
@@ -140,66 +129,18 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
     }
 
   private:
-    // Trims the warmup preroll from the start, keeping any portion
-    // that overlaps with the user-requested lead-in silence.
-    bool trimPreroll() {
-        juce::AudioFormatManager formatManager;
-        formatManager.registerBasicFormats();
-
-        std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(outputFile_));
-        if (!reader)
-            return false;
-
-        // Keep lead-in silence from the preroll (don't trim it)
-        auto effectiveTrim = std::max(0.0, prerollSeconds_ - leadInSilence_);
-        auto samplesToSkip = (juce::int64)(effectiveTrim * reader->sampleRate);
-        auto samplesToKeep = reader->lengthInSamples - samplesToSkip;
-        if (samplesToKeep <= 0)
-            return false;
-
-        auto tempFile = outputFile_.getSiblingFile(outputFile_.getFileNameWithoutExtension() +
-                                                   "_tmp" + outputFile_.getFileExtension());
-
-        std::unique_ptr<juce::AudioFormat> format;
-        if (outputFile_.hasFileExtension(".flac"))
-            format = std::make_unique<juce::FlacAudioFormat>();
-        else
-            format = std::make_unique<juce::WavAudioFormat>();
-
-        std::unique_ptr<juce::OutputStream> outputStream =
-            std::make_unique<juce::FileOutputStream>(tempFile);
-        auto writerOptions = juce::AudioFormatWriterOptions()
-                                 .withSampleRate(reader->sampleRate)
-                                 .withNumChannels((int)reader->numChannels)
-                                 .withBitsPerSample((int)reader->bitsPerSample);
-        auto writer = format->createWriterFor(outputStream, writerOptions);
-        if (!writer)
-            return false;
-
-        writer->writeFromAudioReader(*reader, samplesToSkip, samplesToKeep);
-        writer.reset();
-        reader.reset();
-
-        outputFile_.deleteFile();
-        return tempFile.moveFileTo(outputFile_);
-    }
-
     std::unique_ptr<OfflineRenderSession> renderSession_;
     std::unique_ptr<OfflineRenderTask> renderTask_;
     juce::File outputFile_;
     std::function<void()> onComplete_;
-    double prerollSeconds_ = 0.0;
-    double leadInSilence_ = 0.0;
     bool success_ = false;
     juce::String errorMessage_;
 
     // Translated strings snapshotted at construction — safe for run() to read
     // from the background thread while the message thread may mutate StringTable.
     const juce::String strRendering_;
-    const juce::String strTrimming_;
     const juce::String strComplete_;
     const juce::String strFailed_;
-    const juce::String errTrimFailed_;
     const juce::String errFileNotCreated_;
     const juce::String errRenderFailed_;
     const juce::String errCancelled_;
@@ -213,7 +154,7 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
  */
 class InsertCaptureProgressBox : private juce::Timer {
   public:
-    explicit InsertCaptureProgressBox(magda::InsertRenderCaptureService& service)
+    explicit InsertCaptureProgressBox(magda::InsertRenderCapture& service)
         : service_(service),
           window_(tr("export.capture.title"), tr("export.capture.body"),
                   juce::MessageBoxIconType::InfoIcon) {
@@ -235,7 +176,7 @@ class InsertCaptureProgressBox : private juce::Timer {
         progress_ = service_.getProgress();
     }
 
-    magda::InsertRenderCaptureService& service_;
+    magda::InsertRenderCapture& service_;
     double progress_ = 0.0;
     juce::AlertWindow window_;
 };
@@ -306,7 +247,7 @@ void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings,
                 file = file.withFileExtension(extension);
             }
 
-            // Export range stays musical until the renderer/capture boundary.
+            // The render takes beats; only the capture pass below takes seconds.
             BeatRange requestedRange{{0.0}, {engine->getEditLengthBeats().value}};
             using ExportRange = ExportAudioDialog::ExportRange;
             switch (settings.exportRange) {
@@ -340,19 +281,25 @@ void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings,
 
             // The offline render itself, launched directly or after the capture
             // pass below has recorded the external inserts' returns.
-            auto launchRender = [this, settings, engine, file, requestedStart, requestedEnd,
+            auto launchRender = [this, settings, engine, file, requestedRange,
                                  resumePlaybackAfterRender]() {
                 OfflineRenderRequest request;
                 request.destination = file;
                 request.format = settings.format == "FLAC" ? OfflineRenderFormat::Flac
                                                            : OfflineRenderFormat::Wav;
                 request.bitDepth = getBitDepthForFormat(settings.format);
+                request.dither = settings.dither;
                 request.sampleRate = settings.sampleRate;
                 request.shouldNormalise = settings.normalize;
                 request.useMasterPlugins = true;
                 request.usePlugins = true;
                 request.realTimeRender = settings.realTimeRender;
-                request.range = {{requestedStart}, {requestedEnd}, {}};
+                request.range = requestedRange;
+                if (settings.exportRange == ExportAudioDialog::ExportRange::EntireSong)
+                    request.oneShot = true;
+                else if (settings.exportRange == ExportAudioDialog::ExportRange::LoopRegion)
+                    request.oneShot = false;
+                request.leadInSeconds = settings.leadInSilence;
 
                 // The chord track is monitor-only: exclude it from the bounce so its
                 // notes never reach the master render.
@@ -360,28 +307,24 @@ void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings,
                     chordId != magda::INVALID_TRACK_ID)
                     request.excludedTrackIds = {chordId};
 
-                // Add preroll for offline renders to let plugins settle.
-                // Even with the default 512 block size, some plugins need extra
-                // warmup time. The preroll is rendered then trimmed off.
-                constexpr double prerollSeconds = 2.0;
-                double actualPreroll = 0.0;
-                if (!settings.realTimeRender) {
-                    actualPreroll = prerollSeconds;
-                    request.range.start.seconds -= actualPreroll;
-                }
-
                 // Launch progress window with background rendering (non-blocking)
                 // The window will delete itself via threadComplete() callback.
-                auto* captureService = engine->getInsertRenderCaptureService();
+                auto* captureService = engine->getInsertRenderCapture();
+                auto renderSession = engine->createOfflineRenderSession(resumePlaybackAfterRender);
+                if (!renderSession) {
+                    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                           tr("dialogs.export_audio"),
+                                                           tr("export.error.render_failed"));
+                    fileChooser_.reset();
+                    return;
+                }
                 auto* progressWindow = new ExportProgressWindow(
-                    engine->createOfflineRenderSession(resumePlaybackAfterRender), request, file,
-                    [captureService]() {
+                    std::move(renderSession), request, file, [captureService]() {
                         // Remove the hidden capture taps + temp files (no-op when
                         // no capture pass ran).
                         if (captureService)
                             captureService->cleanupAfterRender();
-                    },
-                    actualPreroll, settings.leadInSilence);
+                    });
                 progressWindow->launchThread();
             };
 
@@ -390,9 +333,9 @@ void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings,
             // the export range once through the live engine while hidden taps
             // record each insert's return; during the render the same taps
             // substitute the recordings at the insert position.
-            auto* captureService = engine->getInsertRenderCaptureService();
+            auto* captureService = engine->getInsertRenderCapture();
             if (captureService != nullptr && captureService->exportNeedsCapturePass()) {
-                using PassError = InsertRenderCaptureService::PassError;
+                using PassError = InsertRenderCapture::PassError;
                 auto* progressBox = new InsertCaptureProgressBox(*captureService);
                 const bool started = captureService->startCapturePass(
                     requestedStart, requestedEnd, settings.sampleRate,
@@ -437,7 +380,7 @@ void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings,
         });
 }
 
-juce::String MainWindow::getFileExtensionForFormat(const juce::String& format) const {
+juce::String MainWindow::getFileExtensionForFormat(const juce::String& format) {
     if (format.startsWith("WAV"))
         return ".wav";
     else if (format == "FLAC")
@@ -445,7 +388,7 @@ juce::String MainWindow::getFileExtensionForFormat(const juce::String& format) c
     return ".wav";  // Default
 }
 
-int MainWindow::getBitDepthForFormat(const juce::String& format) const {
+int MainWindow::getBitDepthForFormat(const juce::String& format) {
     if (format == "WAV16")
         return 16;
     if (format == "WAV24")
@@ -489,8 +432,7 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
     for (const auto& clip : clips) {
         if (clip.isMidi()) {
             double endBeats = timelineEndBeats(clip, projectTempo);
-            if (endBeats > rangeEndBeats)
-                rangeEndBeats = endBeats;
+            rangeEndBeats = std::max(rangeEndBeats, endBeats);
         }
     }
 
@@ -621,12 +563,10 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
             for (const auto& note : clip.midiNotes) {
                 double startTick = beatsToTicks(clipStartBeats + note.startBeat);
                 double endTick = beatsToTicks(clipStartBeats + note.startBeat + note.lengthBeats);
-                if (startTick < 0.0)
-                    startTick = 0.0;
+                startTick = std::max(startTick, 0.0);
                 if (startTick >= rangeEndTick)
                     continue;
-                if (endTick > rangeEndTick)
-                    endTick = rangeEndTick;
+                endTick = std::min(endTick, rangeEndTick);
 
                 auto noteOn = juce::MidiMessage::noteOn(channel, note.noteNumber,
                                                         static_cast<juce::uint8>(note.velocity));
@@ -642,8 +582,7 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
 
             for (const auto& cc : clip.midiCCData) {
                 double tick = beatsToTicks(clipStartBeats + cc.beatPosition);
-                if (tick < 0.0)
-                    tick = 0.0;
+                tick = std::max(tick, 0.0);
                 if (tick >= rangeEndTick)
                     continue;
                 auto msg = juce::MidiMessage::controllerEvent(channel, cc.controller, cc.value);
@@ -654,8 +593,7 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
 
             for (const auto& pb : clip.midiPitchBendData) {
                 double tick = beatsToTicks(clipStartBeats + pb.beatPosition);
-                if (tick < 0.0)
-                    tick = 0.0;
+                tick = std::max(tick, 0.0);
                 if (tick >= rangeEndTick)
                     continue;
                 auto msg = juce::MidiMessage::pitchWheel(channel, pb.value);

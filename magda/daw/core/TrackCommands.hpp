@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ClipInfo.hpp"
+#include "ReferenceImpact.hpp"
 #include "TrackManager.hpp"
 #include "UndoManager.hpp"
 
@@ -11,8 +12,8 @@ namespace magda {
  */
 class CreateTrackCommand : public UndoableCommand {
   public:
-    explicit CreateTrackCommand(TrackType type = TrackType::Audio,
-                                const juce::String& name = juce::String(),
+    explicit CreateTrackCommand(TrackType type = TrackType::Media,
+                                juce::String name = juce::String(),
                                 TrackId afterTrackId = INVALID_TRACK_ID);
 
     void execute() override;
@@ -31,6 +32,96 @@ class CreateTrackCommand : public UndoableCommand {
     bool executed_ = false;
 };
 
+/** Replace a preflighted set of track routes as one undoable graph edit. */
+class SetTrackRoutingCommand : public UndoableCommand {
+  public:
+    SetTrackRoutingCommand(std::vector<TrackRoutingState> before,
+                           std::vector<TrackRoutingState> after);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Set Track Routing";
+    }
+
+    bool didApply() const {
+        return applied_;
+    }
+
+  private:
+    std::vector<TrackRoutingState> before_;
+    std::vector<TrackRoutingState> after_;
+    bool applied_ = false;
+};
+
+/** Replace one track's complete send set as a single undoable graph edit. */
+class SetTrackSendsCommand : public UndoableCommand {
+  public:
+    SetTrackSendsCommand(TrackId trackId, std::vector<SendInfo> before,
+                         std::vector<SendInfo> after);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Set Track Sends";
+    }
+
+    bool didApply() const {
+        return applied_;
+    }
+
+  private:
+    void remapTargets(const std::vector<SendInfo>& from, const std::vector<SendInfo>& to);
+
+    TrackId trackId_ = INVALID_TRACK_ID;
+    std::vector<SendInfo> before_;
+    std::vector<SendInfo> after_;
+    bool applied_ = false;
+};
+
+/** Create the singleton chord track when it is absent. */
+class EnsureChordTrackCommand : public UndoableCommand {
+  public:
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Ensure Chord Track";
+    }
+
+    TrackId getChordTrackId() const {
+        return chordTrackId_;
+    }
+
+  private:
+    TrackId chordTrackId_ = INVALID_TRACK_ID;
+    bool created_ = false;
+};
+
+/** Create and fully populate one track from a saved track-chain preset. */
+class CreateTrackFromPresetCommand : public UndoableCommand {
+  public:
+    CreateTrackFromPresetCommand(TrackInfo presetTrack, juce::String name);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Create Track from Preset";
+    }
+
+    TrackId getCreatedTrackId() const {
+        return createdTrackId_;
+    }
+
+  private:
+    TrackInfo presetTrack_;
+    juce::String name_;
+    TrackId createdTrackId_ = INVALID_TRACK_ID;
+    TrackInfo materialisedTrack_;
+    TrackRestorePosition materialisedPosition_;
+    bool hasMaterialisedTrack_ = false;
+    bool executed_ = false;
+};
+
 /**
  * @brief Command for deleting a track
  */
@@ -45,9 +136,32 @@ class DeleteTrackCommand : public UndoableCommand {
     }
 
   private:
+    /// One deleted track, with everything needed to put it back as it was.
+    struct DeletedTrack {
+        TrackInfo track;
+        /// Where it stood -- in the project and among its group's children --
+        /// so undo puts it back there rather than at the end of either.
+        TrackRestorePosition position;
+        std::vector<ClipInfo> clips;
+    };
+
+    /// @p trackId and everything under it, each with where it stood and what
+    /// it held, ordered by their places in the project.
+    static std::vector<DeletedTrack> collectSubtree(TrackId trackId);
+
     TrackId trackId_;
-    TrackInfo storedTrack_;
-    std::vector<ClipInfo> storedClips_;
+    /// The whole subtree, in the order it stood in the project.
+    ///
+    /// Deleting a group deletes its children with it, so storing only the track
+    /// the user named restored the group alone: its tracks, their devices and
+    /// their clips were gone for good, and the restored group listed children
+    /// that no longer existed (#2229).
+    std::vector<DeletedTrack> storedTracks_;
+    /// What the deletion cleared on the tracks that outlived it: their sends
+    /// into the subtree, their inputs listening to it, their sidechains on it.
+    /// None of that is inside the subtree, so restoring the subtree alone left
+    /// a project that had permanently lost them (#2229).
+    ExternalTrackRouting storedRouting_;
     bool executed_ = false;
 };
 
@@ -80,6 +194,16 @@ class DuplicateTrackCommand : public UndoableCommand {
     bool duplicateContent_;
     bool duplicateDevices_;
     TrackId duplicatedTrackId_ = INVALID_TRACK_ID;
+    /// What the first run actually made, ids and position included.
+    ///
+    /// A redo restores this rather than duplicating again. Duplicating again
+    /// allocates a fresh TrackId and fresh device, rack and chain ids, so an
+    /// undo followed by a redo would orphan every link, automation lane and
+    /// alias made against the first duplicate -- the same reason a paste
+    /// replays what it materialised and a wrap reuses its rack's id (#2229).
+    TrackInfo storedTrack_;
+    std::vector<ClipInfo> storedClips_;
+    TrackRestorePosition storedPosition_;
     bool executed_ = false;
 };
 
@@ -88,7 +212,7 @@ class DuplicateTrackCommand : public UndoableCommand {
  */
 class AddDeviceToTrackCommand : public UndoableCommand {
   public:
-    AddDeviceToTrackCommand(TrackId trackId, const DeviceInfo& device);
+    AddDeviceToTrackCommand(TrackId trackId, DeviceInfo device);
 
     void execute() override;
     void undo() override;
@@ -108,33 +232,12 @@ class AddDeviceToTrackCommand : public UndoableCommand {
 };
 
 /**
- * @brief Command for removing a device from a track (undoable)
- */
-class RemoveDeviceFromTrackCommand : public UndoableCommand {
-  public:
-    RemoveDeviceFromTrackCommand(TrackId trackId, DeviceId deviceId);
-
-    void execute() override;
-    void undo() override;
-    juce::String getDescription() const override {
-        return "Remove Device from Track";
-    }
-
-  private:
-    TrackId trackId_;
-    DeviceId deviceId_;
-    DeviceInfo savedDevice_;
-    int savedIndex_ = -1;
-    bool executed_ = false;
-};
-
-/**
  * @brief Command for moving a chain element within/between track and rack chains.
  */
 class MoveChainElementCommand : public UndoableCommand {
   public:
-    MoveChainElementCommand(const ChainNodePath& sourceElementPath,
-                            const ChainNodePath& destinationChainPath, int insertIndex);
+    MoveChainElementCommand(ChainNodePath sourceElementPath, ChainNodePath destinationChainPath,
+                            int insertIndex);
 
     void execute() override;
     void undo() override;
@@ -166,7 +269,7 @@ class MoveChainElementCommand : public UndoableCommand {
 class MoveChainElementsCommand : public UndoableCommand {
   public:
     MoveChainElementsCommand(std::vector<ChainNodePath> sourceElementPaths,
-                             const ChainNodePath& destinationChainPath, int insertIndex);
+                             ChainNodePath destinationChainPath, int insertIndex);
 
     void execute() override;
     void undo() override;
@@ -197,7 +300,7 @@ class MoveChainElementsCommand : public UndoableCommand {
 
 class PasteChainElementsCommand : public UndoableCommand {
   public:
-    PasteChainElementsCommand(const ChainNodePath& destinationChainPath,
+    PasteChainElementsCommand(ChainNodePath destinationChainPath,
                               std::vector<ChainElement> elements, int insertIndex);
 
     void execute() override;
@@ -213,6 +316,13 @@ class PasteChainElementsCommand : public UndoableCommand {
   private:
     ChainNodePath destinationChainPath_;
     std::vector<ChainElement> templateElements_;
+    /// What the first execute actually produced, ids included.
+    ///
+    /// A redo replays this rather than re-copying the template: the template is
+    /// re-keyed on the way in, so re-deriving it would give every pasted device
+    /// a fresh id and orphan the links, automation lanes and aliases made
+    /// against the first paste (#2221).
+    std::vector<ChainElement> materialised_;
     std::vector<ChainNodePath> insertedPaths_;
     int insertIndex_ = 0;
     bool executed_ = false;
@@ -240,12 +350,18 @@ class WrapChainElementsInRackCommand : public UndoableCommand {
     RackId rackId_ = INVALID_RACK_ID;
     ChainId chainId_ = INVALID_CHAIN_ID;
     int sourceIndex_ = -1;
+    /// Where each wrapped element stood, ascending.
+    ///
+    /// A selection need not be contiguous. Remembering only the lowest index and
+    /// reinserting everything from there closed the gaps, so wrapping the first
+    /// and third of three and undoing reordered the chain (#2221).
+    std::vector<int> sourceIndices_;
     bool executed_ = false;
 };
 
 class SetMacroNameCommand : public UndoableCommand {
   public:
-    SetMacroNameCommand(const ChainNodePath& path, int macroIndex, const juce::String& newName);
+    SetMacroNameCommand(ChainNodePath path, int macroIndex, juce::String newName);
 
     void execute() override;
     void undo() override;
@@ -265,7 +381,7 @@ class SetMacroNameCommand : public UndoableCommand {
 
 class SetModNameCommand : public UndoableCommand {
   public:
-    SetModNameCommand(const ChainNodePath& path, int modIndex, const juce::String& newName);
+    SetModNameCommand(ChainNodePath path, int modIndex, juce::String newName);
 
     void execute() override;
     void undo() override;
@@ -288,8 +404,7 @@ class SetModNameCommand : public UndoableCommand {
  */
 class CreateTrackWithDeviceCommand : public UndoableCommand {
   public:
-    CreateTrackWithDeviceCommand(const juce::String& trackName, TrackType type,
-                                 const DeviceInfo& device);
+    CreateTrackWithDeviceCommand(juce::String trackName, TrackType type, DeviceInfo device);
 
     void execute() override;
     void undo() override;
@@ -315,13 +430,13 @@ class CreateTrackWithDeviceCommand : public UndoableCommand {
  *
  * The track-level `AddDeviceToTrackCommand` above cannot reach into a rack, and
  * a `(trackId, rackId, chainId)` triple stops at one level of nesting. This
- * takes the parent path — track-level for the main FX chain, or a chain path at
- * any depth — so anything the model can express is reachable.
+ * takes the parent path — track-level for the main FX chain, a chain path at
+ * any depth, or one of the two flat sections — so anything the model can
+ * express is reachable (#2232).
  */
 class AddDeviceByPathCommand : public UndoableCommand {
   public:
-    AddDeviceByPathCommand(const ChainNodePath& parentPath, const DeviceInfo& device,
-                           int insertIndex = -1);
+    AddDeviceByPathCommand(ChainNodePath parentPath, DeviceInfo device, int insertIndex = -1);
 
     void execute() override;
     void undo() override;
@@ -344,6 +459,251 @@ class AddDeviceByPathCommand : public UndoableCommand {
     int insertIndex_ = -1;
     DeviceId createdDeviceId_ = INVALID_DEVICE_ID;
     ChainNodePath createdDevicePath_;
+    /// What the first run actually made, replayed by a redo rather than added
+    /// again. The add path stamps a fresh DeviceId, so re-adding would give the
+    /// device a different identity each time round the stack and orphan
+    /// everything named against the first one -- the reason paste and wrap
+    /// replay what they materialised (#2228).
+    DeviceInfo materialised_;
+    bool executed_ = false;
+};
+
+/** Stage a replacement, then atomically exchange it with a device in the same slot. */
+class ReplaceDeviceByPathCommand : public UndoableCommand {
+  public:
+    ReplaceDeviceByPathCommand(ChainNodePath devicePath, DeviceInfo replacement,
+                               std::vector<ReferenceTargetMapping> referenceRemaps = {},
+                               std::optional<DeviceInfo> presetState = std::nullopt,
+                               std::optional<juce::File> pluginPresetFile = std::nullopt);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Replace Device";
+    }
+    bool didMutate() const override {
+        return executed_;
+    }
+
+    const ChainNodePath& getReplacementPath() const {
+        return replacementPath_;
+    }
+
+  private:
+    ChainNodePath devicePath_;
+    ChainNodePath parentPath_;
+    ChainNodePath replacementPath_;
+    DeviceInfo replacement_;
+    DeviceInfo previousDevice_;
+    DeviceInfo materialisedReplacement_;
+    std::vector<ReferenceTargetMapping> referenceRemaps_;
+    std::optional<DeviceInfo> presetState_;
+    std::optional<juce::File> pluginPresetFile_;
+    int insertIndex_ = -1;
+    bool captured_ = false;
+    bool executed_ = false;
+};
+
+/** Set one device's bypass state while preserving delta-solo across undo. */
+class SetDeviceBypassedCommand : public UndoableCommand {
+  public:
+    SetDeviceBypassedCommand(ChainNodePath devicePath, bool bypassed);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return bypassed_ ? "Bypass Device" : "Enable Device";
+    }
+
+    bool didSet() const {
+        return executed_;
+    }
+
+  private:
+    ChainNodePath devicePath_;
+    bool bypassed_ = false;
+    bool previousBypassed_ = false;
+    bool previousDeltaSolo_ = false;
+    bool captured_ = false;
+    bool executed_ = false;
+};
+
+/** Atomically replace one path-addressed device or rack sidechain configuration. */
+class SetSidechainConfigCommand : public UndoableCommand {
+  public:
+    SetSidechainConfigCommand(ChainNodePath ownerPath, SidechainConfig sidechain);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Set Sidechain";
+    }
+    bool didMutate() const override {
+        return executed_;
+    }
+
+  private:
+    ChainNodePath ownerPath_;
+    SidechainConfig sidechain_;
+    SidechainConfig previous_;
+    bool captured_ = false;
+    bool executed_ = false;
+};
+
+/** Replace one device's state while keeping its identity and slot. */
+class ApplyDevicePresetCommand : public UndoableCommand {
+  public:
+    ApplyDevicePresetCommand(ChainNodePath devicePath, DeviceInfo presetState,
+                             std::vector<std::pair<int, int>> parameterRemaps = {});
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Apply Device Preset";
+    }
+
+    bool didApply() const {
+        return executed_;
+    }
+
+  private:
+    ChainNodePath devicePath_;
+    DeviceInfo presetState_;
+    DeviceInfo previousState_;
+    std::vector<std::pair<int, int>> parameterRemaps_;
+    bool captured_ = false;
+    bool executed_ = false;
+};
+
+/** Replace a track's preset-owned chain state while preserving the track itself. */
+class ApplyTrackPresetCommand : public UndoableCommand {
+  public:
+    ApplyTrackPresetCommand(TrackId trackId, TrackInfo presetState,
+                            std::vector<ReferenceTargetMapping> referenceRemaps = {});
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Apply Track Preset";
+    }
+
+    bool didApply() const {
+        return executed_;
+    }
+
+  private:
+    TrackId trackId_ = INVALID_TRACK_ID;
+    TrackInfo presetState_;
+    TrackInfo previousState_;
+    std::vector<ReferenceTargetMapping> referenceRemaps_;
+    bool captured_ = false;
+    bool executed_ = false;
+};
+
+/** Add a rack to the track FX chain or to a rack chain at any depth. */
+class AddRackByPathCommand : public UndoableCommand {
+  public:
+    AddRackByPathCommand(ChainNodePath parentPath, juce::String name);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Add Rack";
+    }
+
+    RackId getCreatedRackId() const {
+        return createdRackId_;
+    }
+
+  private:
+    ChainNodePath parentPath_;
+    ChainNodePath createdRackPath_;
+    juce::String name_;
+    RackId createdRackId_ = INVALID_RACK_ID;
+    RackInfo materialisedRack_;
+    int insertIndex_ = -1;
+    bool hasMaterialisedRack_ = false;
+    bool executed_ = false;
+};
+
+/** Add a chain to a rack at any depth. */
+class AddChainByPathCommand : public UndoableCommand {
+  public:
+    AddChainByPathCommand(ChainNodePath rackPath, juce::String name);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Add Rack Chain";
+    }
+
+    ChainId getCreatedChainId() const {
+        return createdChainId_;
+    }
+
+  private:
+    ChainNodePath rackPath_;
+    ChainNodePath createdChainPath_;
+    juce::String name_;
+    ChainId createdChainId_ = INVALID_CHAIN_ID;
+    ChainInfo materialisedChain_;
+    int insertIndex_ = -1;
+    bool hasMaterialisedChain_ = false;
+    bool executed_ = false;
+};
+
+struct RackPropertyPatch {
+    std::optional<bool> bypassed;
+    std::optional<float> volumeDb;
+};
+
+/** Apply one atomic rack property patch at any nesting depth. */
+class SetRackPropertiesByPathCommand : public UndoableCommand {
+  public:
+    SetRackPropertiesByPathCommand(ChainNodePath rackPath, RackPropertyPatch patch);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Update Rack";
+    }
+
+  private:
+    ChainNodePath rackPath_;
+    RackPropertyPatch patch_;
+    bool previousBypassed_ = false;
+    bool previousDeltaSolo_ = false;
+    float previousVolumeDb_ = 0.0f;
+    bool captured_ = false;
+    bool executed_ = false;
+};
+
+struct ChainPropertyPatch {
+    std::optional<juce::String> name;
+    std::optional<int> outputIndex;
+    std::optional<bool> muted;
+    std::optional<bool> solo;
+    std::optional<bool> bypassed;
+    std::optional<float> volumeDb;
+    std::optional<float> pan;
+};
+
+/** Apply one atomic chain property patch at any nesting depth. */
+class SetChainPropertiesByPathCommand : public UndoableCommand {
+  public:
+    SetChainPropertiesByPathCommand(ChainNodePath chainPath, ChainPropertyPatch patch);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Update Rack Chain";
+    }
+
+  private:
+    ChainNodePath chainPath_;
+    ChainPropertyPatch patch_;
+    ChainInfo previous_;
+    bool captured_ = false;
     bool executed_ = false;
 };
 
@@ -371,6 +731,68 @@ class RemoveDeviceByPathCommand : public UndoableCommand {
     ChainNodePath devicePath_;
     ChainNodePath parentPath_;
     DeviceInfo savedDevice_;
+    int savedIndex_ = -1;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Remove a rack addressed by path, restoring the whole subtree on undo.
+ *
+ * The chain view used to call `removeRackFromChainByPath()` straight off the
+ * model, so deleting a rack -- with every device, nested rack, macro and mod it
+ * held -- could not be undone at all. It was the one operation the structural
+ * matrix had to exclude by name rather than assert (#2232).
+ *
+ * Captures the live plugin state of every device beneath the rack first, so
+ * undo restores them as they sounded, and restores under the ids they had so
+ * the links naming them still resolve.
+ */
+class RemoveRackByPathCommand : public UndoableCommand {
+  public:
+    explicit RemoveRackByPathCommand(const ChainNodePath& rackPath);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Remove Rack";
+    }
+
+    bool didRemove() const {
+        return executed_;
+    }
+
+  private:
+    ChainNodePath rackPath_;
+    ChainNodePath parentPath_;
+    RackInfo savedRack_;
+    int savedIndex_ = -1;
+    bool executed_ = false;
+};
+
+/**
+ * @brief Remove one chain from a rack, restoring it in place on undo.
+ *
+ * Same gap as the rack above, one level down: the chain row's X went straight
+ * to `removeChainByPath()`, and a chain carries devices (#2232).
+ */
+class RemoveChainByPathCommand : public UndoableCommand {
+  public:
+    explicit RemoveChainByPathCommand(const ChainNodePath& chainPath);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Remove Chain";
+    }
+
+    bool didRemove() const {
+        return executed_;
+    }
+
+  private:
+    ChainNodePath chainPath_;
+    ChainNodePath rackPath_;
+    ChainInfo savedChain_;
     int savedIndex_ = -1;
     bool executed_ = false;
 };

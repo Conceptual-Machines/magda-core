@@ -1,0 +1,2424 @@
+#include <algorithm>
+#include <atomic>
+#include <catch2/catch_test_macros.hpp>
+#include <chrono>
+#include <cmath>
+#include <thread>
+#include <vector>
+
+#include "MockMagdaApi.hpp"
+#include "RemoteTestScopes.hpp"
+#include "magda/daw/api/remote_diagnostics.hpp"
+#include "magda/daw/api/remote_service.hpp"
+#include "magda/daw/audio/TrackMeters.hpp"
+#include "magda/daw/core/DrumGridPads.hpp"
+
+using namespace magda;
+using namespace magda::remote;
+using magda::test::fullyGrantedContext;
+using magda::test::MockMagdaApi;
+
+namespace {
+
+/// Reads MagdaApi live state, which asserts the message thread. The Catch2
+/// runner has no MessageManager, so suspend that assertion for the file — the
+/// same accommodation the existing projection tests make.
+struct MessageThreadRelaxation {
+    ScopedMessageThreadAssertionDisabler disabler;
+};
+
+juce::var emptyInput() {
+    return juce::var(new juce::DynamicObject());
+}
+
+juce::var object(std::initializer_list<std::pair<const char*, juce::var>> fields) {
+    auto* result = new juce::DynamicObject();
+    for (const auto& [key, value] : fields)
+        result->setProperty(key, value);
+    return result;
+}
+
+/// Runs one operation to completion and returns the response. Dispatch executes
+/// inline when there is no message thread to hop to, so this is synchronous.
+Response run(RemoteApiService& service, const juce::String& name, const juce::var& input,
+             RequestContext context = fullyGrantedContext()) {
+    Response captured;
+    int completions = 0;
+    service.dispatch(name, input, context, [&](Response response) {
+        captured = std::move(response);
+        ++completions;
+    });
+    REQUIRE(completions == 1);
+    return captured;
+}
+
+juce::String errorCodeOf(const Response& response) {
+    return toString(response.error.code);
+}
+
+}  // namespace
+
+TEST_CASE("Diagnostic reads are bounded, schema-valid, and revision neutral",
+          "[remote][service][diagnostics]") {
+    const MessageThreadRelaxation relaxation;
+    struct FakeDiagnostics final : DiagnosticsSource {
+        int resets = 0;
+        juce::var health() override {
+            return object({{"engine", "Native"},
+                           {"observedAtMs", 1000.0},
+                           {"sinceMs", 500.0},
+                           {"projectBound", true},
+                           {"audioDeviceOpen", true},
+                           {"xrunCount", 2},
+                           {"dropoutCount", juce::var()},
+                           {"callbackLoad", 0.25},
+                           {"problemCoverage", "audioIoObservations"},
+                           {"problems", juce::Array<juce::var>{}},
+                           {"discardedProblemCount", 0}});
+        }
+        juce::var meters(const std::vector<TrackId>& ids) override {
+            REQUIRE(ids == std::vector<TrackId>{3});
+            return object({{"observedAtMs", 1000.0},
+                           {"tracks", juce::Array<juce::var>{object({{"trackId", 3},
+                                                                     {"available", true},
+                                                                     {"peakL", 0.5},
+                                                                     {"peakR", 0.4},
+                                                                     {"clipped", false}})}},
+                           {"truncatedTrackCount", 0},
+                           {"master", object({{"available", false},
+                                              {"peakL", juce::var()},
+                                              {"peakR", juce::var()},
+                                              {"clipped", juce::var()}})}});
+        }
+        void projectReplaced() override {
+            ++resets;
+        }
+    };
+
+    MockMagdaApi api;
+    TrackInfo track;
+    track.id = 3;
+    api.tracks_.tracks.push_back(track);
+    RemoteApiService service(api);
+    auto source = std::make_unique<FakeDiagnostics>();
+    auto* observer = source.get();
+    service.setDiagnosticsSource(std::move(source));
+
+    for (const auto* name : {"engine.health", "meters.read"}) {
+        const auto response = run(service, name, emptyInput());
+        REQUIRE(response.ok);
+        REQUIRE(response.revision == INITIAL_REVISION);
+        const auto* operation = OperationRegistry::instance().find(name);
+        REQUIRE(operation != nullptr);
+        REQUIRE(operation->access == OperationAccess::Read);
+        REQUIRE(validateJson(response.result, operation->outputSchema).empty());
+    }
+    service.projectReplaced();
+    REQUIRE(observer->resets == 1);
+}
+
+TEST_CASE("Diagnostic reads report unavailable metrics without an engine",
+          "[remote][service][diagnostics]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    const auto health = run(service, "engine.health", emptyInput());
+    REQUIRE(health.ok);
+    REQUIRE(health.result["xrunCount"].isVoid());
+    REQUIRE(health.result["callbackLoad"].isVoid());
+    REQUIRE(validateJson(health.result,
+                         OperationRegistry::instance().find("engine.health")->outputSchema)
+                .empty());
+    for (int id = 0; id < 130; ++id) {
+        TrackInfo track;
+        track.id = id;
+        api.tracks_.tracks.push_back(track);
+    }
+    const auto meters = run(service, "meters.read", emptyInput());
+    REQUIRE(meters.ok);
+    REQUIRE(meters.result["tracks"].getArray()->size() == 128);
+    REQUIRE(static_cast<int>(meters.result["truncatedTrackCount"]) == 2);
+    REQUIRE_FALSE(static_cast<bool>(meters.result["master"]["available"]));
+    REQUIRE(
+        validateJson(meters.result, OperationRegistry::instance().find("meters.read")->outputSchema)
+            .empty());
+}
+
+TEST_CASE("Remote meter storage keeps the newest peak without a reader", "[remote][diagnostics]") {
+    TrackMeters meters;
+    for (int i = 0; i < 100; ++i)
+        meters.setRemotePeak(7, MeterData{.peakL = static_cast<float>(i) / 100.0f, .peakR = 0.25f});
+    const auto& latest = meters.remoteLatest[7];
+    REQUIRE(latest.available.load());
+    REQUIRE(latest.peakL.load() == 0.99f);
+    meters.clearRemotePeaks();
+    REQUIRE_FALSE(latest.available.load());
+}
+
+TEST_CASE("Every declared operation has a handler", "[remote][service][registry]") {
+    // The property the handler-on-descriptor design exists to guarantee: before
+    // it, the registry declared 36 operations and implemented none, and nothing
+    // detected that.
+    //
+    // Transport-scoped operations (#1857) are the one deliberate exception, and
+    // the assertion is two-way rather than a carve-out: an operation with no
+    // handler must say it is the transport's, and one that claims to be the
+    // transport's must not also carry a handler here.
+    const auto& operations = OperationRegistry::instance().operations();
+    REQUIRE_FALSE(operations.empty());
+    for (const auto& operation : operations) {
+        INFO("operation: " << operation.name);
+        REQUIRE((operation.handler != nullptr) == !operation.transportScoped);
+    }
+}
+
+TEST_CASE("An unknown operation is rejected without touching the model",
+          "[remote][service][errors]") {
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    const auto response = run(service, "tracks.summonDragon", emptyInput());
+
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(errorCodeOf(response) == "unknown_operation");
+    REQUIRE(api.tracks_.created.empty());
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+}
+
+TEST_CASE("Schema-invalid input is rejected before execution", "[remote][service][errors]") {
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    // tempo is required and bounded to 20..400 by the operation's input schema.
+    const auto missing = run(service, "project.setTempo", emptyInput());
+    REQUIRE_FALSE(missing.ok);
+    REQUIRE(errorCodeOf(missing) == "validation_failed");
+
+    const auto outOfRange = run(service, "project.setTempo", object({{"tempo", 10000.0}}));
+    REQUIRE_FALSE(outOfRange.ok);
+    REQUIRE(errorCodeOf(outOfRange) == "validation_failed");
+
+    // Nothing reached the facade, and no revision was burned on a bad request.
+    REQUIRE(api.project_.info.tempo != 10000.0);
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+}
+
+TEST_CASE("A read executes and leaves the revision alone", "[remote][service]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.project_.info.name = "Demo";
+    api.project_.info.tempo = 128.0;
+    api.project_.dirty = true;
+    api.project_.saveTarget = true;
+    api.project_.currentPath = "/tmp/Demo/Demo.mgd";
+    RemoteApiService service(api);
+
+    const auto response = run(service, "project.get", emptyInput());
+
+    REQUIRE(response.ok);
+    REQUIRE(response.result["name"].toString() == "Demo");
+    REQUIRE(static_cast<double>(response.result["tempo"]) == 128.0);
+    REQUIRE(static_cast<bool>(response.result["dirty"]));
+    REQUIRE(static_cast<bool>(response.result["hasSaveTarget"]));
+    REQUIRE(response.result["path"].toString() == api.project_.currentPath);
+    REQUIRE(response.revision == INITIAL_REVISION);
+    // A read must not open an undo step.
+    REQUIRE(api.undo_.compoundDescriptions.empty());
+}
+
+TEST_CASE("project.save writes only to an existing target and is revision-neutral",
+          "[remote][service][project]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.project_.dirty = true;
+    api.project_.saveTarget = true;
+    RemoteApiService service(api);
+
+    const auto saved = run(service, "project.save", emptyInput());
+
+    REQUIRE(saved.ok);
+    REQUIRE(api.project_.saveCalls == 1);
+    REQUIRE_FALSE(static_cast<bool>(saved.result["dirty"]));
+    REQUIRE(static_cast<bool>(saved.result["hasSaveTarget"]));
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+    REQUIRE(api.undo_.executeCalls == 0);
+
+    api.project_.saveTarget = false;
+    const auto untitled = run(service, "project.save", emptyInput());
+    REQUIRE_FALSE(untitled.ok);
+    REQUIRE(errorCodeOf(untitled) == "conflict");
+    REQUIRE(api.project_.saveCalls == 1);
+}
+
+TEST_CASE("Project lifecycle refuses dirty state unless discard is explicit",
+          "[remote][service][project][2833]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.project_.info.name = "Existing";
+    api.project_.dirty = true;
+    RemoteApiService service(api);
+
+    const auto initial = run(service, "project.get", emptyInput());
+    REQUIRE(initial.ok);
+    REQUIRE(static_cast<bool>(initial.result["open"]));
+
+    const auto refused = run(service, "project.new", emptyInput());
+    REQUIRE_FALSE(refused.ok);
+    REQUIRE(errorCodeOf(refused) == "conflict");
+    REQUIRE(api.project_.newCalls == 0);
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+
+    const auto created = run(service, "project.new", object({{"discardUnsavedChanges", true}}));
+    REQUIRE(created.ok);
+    REQUIRE(created.revision == INITIAL_REVISION + 1);
+    REQUIRE(static_cast<bool>(created.result["open"]));
+    REQUIRE_FALSE(static_cast<bool>(created.result["dirty"]));
+    REQUIRE(api.project_.newCalls == 1);
+    REQUIRE(api.undo_.compoundDescriptions.empty());
+
+    api.project_.dirty = true;
+    const auto closeRefused = run(service, "project.close", emptyInput());
+    REQUIRE_FALSE(closeRefused.ok);
+    REQUIRE(errorCodeOf(closeRefused) == "conflict");
+    REQUIRE(api.project_.closeCalls == 0);
+
+    const auto closed = run(service, "project.close", object({{"discardUnsavedChanges", true}}));
+    REQUIRE(closed.ok);
+    REQUIRE(closed.revision == INITIAL_REVISION + 2);
+    REQUIRE_FALSE(static_cast<bool>(closed.result["open"]));
+    REQUIRE_FALSE(static_cast<bool>(closed.result["dirty"]));
+    REQUIRE(api.project_.closeCalls == 1);
+    REQUIRE(api.undo_.compoundDescriptions.empty());
+
+    const auto alreadyClosed = run(service, "project.close", emptyInput());
+    REQUIRE(alreadyClosed.ok);
+    REQUIRE(alreadyClosed.revision == closed.revision);
+    REQUIRE(api.project_.closeCalls == 1);
+}
+
+TEST_CASE("Project boundaries clear old request IDs and reject stale revisions",
+          "[remote][service][project][2833]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    auto context = fullyGrantedContext();
+    context.clientId = "lifecycle-client";
+    context.requestId = "old-edit";
+    REQUIRE(run(service, "project.setTempo", object({{"tempo", 95.0}}), context).ok);
+
+    context.requestId = "new-project";
+    context.expectedRevision = service.currentRevision();
+    const auto created = run(service, "project.new", emptyInput(), context);
+    REQUIRE(created.ok);
+    REQUIRE(created.revision == 2);
+
+    const auto replay = run(service, "project.new", emptyInput(), context);
+    REQUIRE(replay.ok);
+    REQUIRE(replay.revision == created.revision);
+    REQUIRE(api.project_.newCalls == 1);
+
+    context.requestId = "old-edit";
+    context.expectedRevision = 2;
+    REQUIRE(run(service, "project.setTempo", object({{"tempo", 130.0}}), context).ok);
+    REQUIRE(api.project_.info.tempo == 130.0);
+
+    context.requestId = "stale";
+    context.expectedRevision = 1;
+    const auto stale = run(service, "project.close", emptyInput(), context);
+    REQUIRE_FALSE(stale.ok);
+    REQUIRE(errorCodeOf(stale) == "conflict");
+    REQUIRE(api.project_.open);
+}
+
+TEST_CASE("Project transitions invalidate every discrete subscription topic",
+          "[remote][service][project][changes][2833]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    std::vector<ChangeSource::Change> seen;
+    service.changes().addListener([&](const std::vector<ChangeSource::Change>& changes) {
+        seen.insert(seen.end(), changes.begin(), changes.end());
+    });
+
+    const auto created = run(service, "project.new", emptyInput());
+    REQUIRE(created.ok);
+    service.changes().flush();
+    for (std::size_t index = 0; index < TOPIC_COUNT; ++index) {
+        const auto topic = static_cast<Topic>(index);
+        const auto count = std::count_if(seen.begin(), seen.end(), [&](const auto& change) {
+            return change.topic == topic && change.revision == created.revision;
+        });
+        REQUIRE(count == (isContinuousTopic(topic) ? 0 : 1));
+    }
+}
+
+TEST_CASE("A committed write advances the revision by exactly one", "[remote][service]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    const auto first = run(service, "project.setTempo", object({{"tempo", 90.0}}));
+    REQUIRE(first.ok);
+    REQUIRE(first.revision == INITIAL_REVISION + 1);
+    REQUIRE(api.project_.info.tempo == 90.0);
+
+    const auto second = run(service, "project.setTempo", object({{"tempo", 100.0}}));
+    REQUIRE(second.revision == INITIAL_REVISION + 2);
+    REQUIRE(service.currentRevision() == INITIAL_REVISION + 2);
+}
+
+TEST_CASE("Session scene edits are one revision and scene no-ops are revision neutral",
+          "[remote][service][session][scenes][2842]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.project_.info.scenes = {{10, "Intro", 0}, {20, "Drop", 0}};
+    api.project_.info.nextSceneId = 21;
+    api.session_.sceneState = {api.project_.info.scenes, 21, {}};
+    RemoteApiService service(api);
+
+    const auto noOp = run(service, "session.moveScene", object({{"sceneId", 10}, {"toIndex", 0}}));
+    REQUIRE(noOp.ok);
+    CHECK(noOp.revision == INITIAL_REVISION);
+    CHECK(api.undo_.executeCalls == 0);
+
+    const auto changed =
+        run(service, "session.updateScene", object({{"sceneId", 10}, {"name", "Count In"}}));
+    REQUIRE(changed.ok);
+    CHECK(changed.revision == INITIAL_REVISION + 1);
+    CHECK(api.undo_.executeCalls == 1);
+    CHECK(api.undo_.compoundDescriptions.size() == 2);
+    CHECK(api.undo_.compoundDepth == 0);
+}
+
+TEST_CASE("Session clip settings are one atomic edit and handoff is revision neutral",
+          "[remote][service][session][2848]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    TrackInfo track;
+    track.id = 7;
+    track.playbackMode = TrackPlaybackMode::Session;
+    track.activeSessionClipId = 50;
+    api.tracks_.tracks.push_back(track);
+    ClipInfo clip;
+    clip.id = 50;
+    clip.trackId = 7;
+    clip.view = ClipView::Session;
+    clip.sceneIndex = 0;
+    api.clips_.clips.emplace(clip.id, clip);
+    api.session_.slots[{7, 0}] = 50;
+    RemoteApiService service(api);
+
+    const auto updated = run(service, "session.updateClipSettings",
+                             object({{"clipId", 50},
+                                     {"launchMode", "toggle"},
+                                     {"launchQuantize", "1/16"},
+                                     {"followAction", "again"},
+                                     {"followActionDelayBeats", 2.0},
+                                     {"followActionLoopCount", 3}}));
+    REQUIRE(updated.ok);
+    CHECK(updated.revision == INITIAL_REVISION + 1);
+    CHECK(api.undo_.executeCalls == 1);
+    REQUIRE(api.undo_.commands.size() == 1);
+    api.undo_.commands.front()->execute();
+    REQUIRE(api.session_.launchSettings.contains(50));
+    CHECK(api.session_.launchSettings.at(50) ==
+          SessionClipLaunchSettings{LaunchMode::Toggle, LaunchQuantize::SixteenthBar,
+                                    FollowAction::PlayAgain, 2.0, 3});
+
+    const auto handedBack = run(service, "session.returnToArrangement", object({{"trackId", 7}}));
+    REQUIRE(handedBack.ok);
+    CHECK(handedBack.revision == INITIAL_REVISION + 1);
+    CHECK(service.currentRevision() == INITIAL_REVISION + 1);
+    CHECK(api.undo_.executeCalls == 1);
+    REQUIRE(api.session_.arrangementReturns.size() == 1);
+    CHECK(api.session_.arrangementReturns.front() == std::optional<TrackId>{7});
+}
+
+TEST_CASE("Session slot recording controls stay neutral and commit through one job revision",
+          "[remote][service][session][recording][2841]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    TrackInfo track;
+    track.id = 7;
+    api.tracks_.tracks.push_back(track);
+    api.project_.info.scenes = {{10, "Take", 0}};
+    RemoteApiService service(api);
+    auto context = fullyGrantedContext();
+    context.clientId = "recording-client";
+
+    const auto capabilities = run(service, "session.recordingCapabilities", emptyInput(), context);
+    REQUIRE(capabilities.ok);
+    CHECK(static_cast<bool>(capabilities.result["slotRecording"]));
+    CHECK(static_cast<bool>(capabilities.result["performanceCapture"]));
+    CHECK(capabilities.revision == INITIAL_REVISION);
+
+    const auto arm =
+        run(service, "session.armSlotRecording",
+            object({{"trackId", 7}, {"sceneId", 10}, {"armed", true}, {"occupiedPolicy", "fail"}}),
+            context);
+    REQUIRE(arm.ok);
+    CHECK(arm.revision == INITIAL_REVISION);
+    CHECK(api.session_.armedSlots.contains({7, 0}));
+
+    const auto begin =
+        run(service, "session.beginSlotRecording",
+            object({{"trackId", 7}, {"sceneId", 10}, {"occupiedPolicy", "fail"}}), context);
+    REQUIRE(begin.ok);
+    CHECK(begin.revision == INITIAL_REVISION);
+    CHECK(begin.result["kind"].toString() == "session.slotRecording");
+    CHECK(begin.result["state"].toString() == "running");
+    CHECK(api.session_.recordingSlots.contains({7, 0}));
+    CHECK(api.transport_.recording);
+
+    const auto stop = run(service, "session.stopSlotRecording",
+                          object({{"jobId", begin.result["id"].toString()}}), context);
+    REQUIRE(stop.ok);
+    CHECK(stop.revision == INITIAL_REVISION + 1);
+    CHECK(api.session_.slots.at({7, 0}) == api.session_.nextRecordedClipId - 1);
+    CHECK_FALSE(api.session_.armedSlots.contains({7, 0}));
+    CHECK(api.undo_.compoundDepth == 0);
+
+    service.pollSessionRecordings();
+    const auto completed =
+        run(service, "jobs.get", object({{"jobId", begin.result["id"].toString()}}), context);
+    REQUIRE(completed.ok);
+    CHECK(completed.result["state"].toString() == "completed");
+    CHECK(static_cast<ClipId>(static_cast<int>(completed.result["result"]["clipId"])) ==
+          api.session_.nextRecordedClipId - 1);
+    CHECK(static_cast<juce::int64>(completed.result["completionRevision"]) ==
+          static_cast<juce::int64>(INITIAL_REVISION + 1));
+}
+
+TEST_CASE("Occupied Session slots reject recording without changing revision",
+          "[remote][service][session][recording][2841]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    TrackInfo track;
+    track.id = 7;
+    api.tracks_.tracks.push_back(track);
+    api.project_.info.scenes = {{10, "Occupied", 0}};
+    api.session_.slots[{7, 0}] = 50;
+    RemoteApiService service(api);
+
+    const auto response =
+        run(service, "session.beginSlotRecording",
+            object({{"trackId", 7}, {"sceneId", 10}, {"occupiedPolicy", "fail"}}));
+    REQUIRE_FALSE(response.ok);
+    CHECK(errorCodeOf(response) == "conflict");
+    CHECK(response.revision == INITIAL_REVISION);
+    CHECK(service.jobs().list("test-client", allScopes()).empty());
+}
+
+TEST_CASE("Session performance capture returns its arrangement clips in one job commit",
+          "[remote][service][session][recording][2841]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    auto context = fullyGrantedContext();
+    context.clientId = "performance-client";
+
+    const auto begin = run(service, "session.beginPerformanceCapture", emptyInput(), context);
+    REQUIRE(begin.ok);
+    CHECK(begin.revision == INITIAL_REVISION);
+    CHECK(begin.result["state"].toString() == "running");
+
+    api.transport_.recordingChanged = [&](bool recording) {
+        if (recording)
+            return;
+        ClipInfo captured;
+        captured.id = 80;
+        captured.trackId = 7;
+        captured.view = ClipView::Arrangement;
+        api.clips_.arrangement.push_back(captured);
+    };
+    const auto stop = run(service, "session.stopPerformanceCapture",
+                          object({{"jobId", begin.result["id"].toString()}}), context);
+    REQUIRE(stop.ok);
+    CHECK(stop.revision == INITIAL_REVISION + 1);
+
+    service.pollSessionRecordings();
+    const auto completed =
+        run(service, "jobs.get", object({{"jobId", begin.result["id"].toString()}}), context);
+    REQUIRE(completed.ok);
+    CHECK(completed.result["state"].toString() == "completed");
+    REQUIRE(completed.result["result"]["clipIds"].getArray() != nullptr);
+    CHECK(completed.result["result"]["clipIds"].getArray()->size() == 1);
+    CHECK(static_cast<int>(completed.result["result"]["clipIds"][0]) == 80);
+}
+
+TEST_CASE("Session slot job cancellation discards the take without a revision",
+          "[remote][service][session][recording][2841]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    TrackInfo track;
+    track.id = 7;
+    api.tracks_.tracks.push_back(track);
+    api.project_.info.scenes = {{10, "Cancel", 0}};
+    RemoteApiService service(api);
+    auto context = fullyGrantedContext();
+    context.clientId = "cancel-client";
+
+    const auto begin =
+        run(service, "session.beginSlotRecording",
+            object({{"trackId", 7}, {"sceneId", 10}, {"occupiedPolicy", "fail"}}), context);
+    REQUIRE(begin.ok);
+    const auto cancelled =
+        run(service, "jobs.cancel", object({{"jobId", begin.result["id"].toString()}}), context);
+    REQUIRE(cancelled.ok);
+    CHECK(cancelled.result["state"].toString() == "cancelled");
+    CHECK(cancelled.revision == INITIAL_REVISION);
+    CHECK_FALSE(api.session_.slots.contains({7, 0}));
+    CHECK_FALSE(api.session_.armedSlots.contains({7, 0}));
+    CHECK_FALSE(api.session_.recordingSlots.contains({7, 0}));
+}
+
+TEST_CASE("Deleting a populated scene with fail policy changes nothing",
+          "[remote][service][session][scenes][2842]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.project_.info.scenes = {{10, "Intro", 0}, {20, "Drop", 0}};
+    ClipInfo clip;
+    clip.id = 50;
+    clip.trackId = 7;
+    clip.view = ClipView::Session;
+    clip.sceneIndex = 0;
+    api.session_.sceneState = {api.project_.info.scenes, 21, {clip}};
+    RemoteApiService service(api);
+
+    const auto response =
+        run(service, "session.deleteScene", object({{"sceneId", 10}, {"populatedPolicy", "fail"}}));
+    REQUIRE_FALSE(response.ok);
+    CHECK(errorCodeOf(response) == "conflict");
+    CHECK(response.revision == INITIAL_REVISION);
+    CHECK(api.undo_.executeCalls == 0);
+}
+
+TEST_CASE("A failed write does not advance the revision", "[remote][service]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    // Schema-valid but semantically wrong: no such track.
+    const auto response = run(service, "tracks.delete", object({{"trackId", 999}}));
+
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(errorCodeOf(response) == "not_found");
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+    // Otherwise every rejected request would invalidate other clients'
+    // expectedRevision for no reason.
+    REQUIRE(response.revision == INITIAL_REVISION);
+}
+
+TEST_CASE("One mutating request opens one named undo step", "[remote][service][undo]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    // Uses a write with no command behind it, so this stays a test of the
+    // dispatcher's compound bracketing. That a command-backed write is actually
+    // undoable is asserted against the real UndoManager in the live tests — a
+    // stub cannot answer that question, since it does not run commands.
+    const auto response = run(service, "project.setTempo", object({{"tempo", 90.0}}));
+
+    REQUIRE(response.ok);
+    REQUIRE(api.undo_.compoundDescriptions.size() == 1);
+    REQUIRE(api.undo_.maxCompoundDepth == 1);
+    // Balanced: a leaked compound would swallow the user's next edits.
+    REQUIRE(api.undo_.compoundDepth == 0);
+    // Named, so the user sees what the remote client did rather than "Undo".
+    REQUIRE(api.undo_.compoundDescriptions[0].isNotEmpty());
+}
+
+TEST_CASE("A write that fails inside the handler still closes its undo step",
+          "[remote][service][undo]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    const auto response = run(service, "tracks.delete", object({{"trackId", 4242}}));
+
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(api.undo_.compoundDepth == 0);
+}
+
+TEST_CASE("A stale expected revision is rejected as a conflict", "[remote][service][revisions]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    REQUIRE(run(service, "project.setTempo", object({{"tempo", 90.0}})).ok);
+
+    auto stale = fullyGrantedContext();
+    stale.expectedRevision = INITIAL_REVISION;  // what the client saw before the write above
+    const auto response = run(service, "project.setTempo", object({{"tempo", 140.0}}), stale);
+
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(errorCodeOf(response) == "conflict");
+    REQUIRE(api.project_.info.tempo == 90.0);
+
+    // The matching revision succeeds, so a client can recover by re-reading.
+    auto current = fullyGrantedContext();
+    current.expectedRevision = service.currentRevision();
+    REQUIRE(run(service, "project.setTempo", object({{"tempo", 140.0}}), current).ok);
+    REQUIRE(api.project_.info.tempo == 140.0);
+}
+
+TEST_CASE("Retrying a completed write does not apply it twice", "[remote][service][idempotency]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    auto context = fullyGrantedContext();
+    context.clientId = "client-a";
+    context.requestId = "req-1";
+
+    const auto first = run(service, "project.setTempo", object({{"tempo", 90.0}}), context);
+    REQUIRE(first.ok);
+    REQUIRE(api.project_.info.tempo == 90.0);
+
+    // The client never saw the response and retried the same request id. The
+    // payload differs to make replay observable: if this executed rather than
+    // replaying, the tempo would move.
+    const auto retry = run(service, "project.setTempo", object({{"tempo", 140.0}}), context);
+    REQUIRE(retry.ok);
+    REQUIRE(api.project_.info.tempo == 90.0);
+    // The replay is the original response verbatim, so the client's view stays
+    // consistent.
+    REQUIRE(static_cast<double>(retry.result["tempo"]) == 90.0);
+    REQUIRE(retry.revision == first.revision);
+    REQUIRE(service.currentRevision() == first.revision);
+
+    context.deadline = std::chrono::steady_clock::now() - std::chrono::milliseconds(1);
+    const auto lateRetry = run(service, "project.setTempo", object({{"tempo", 150.0}}), context);
+    REQUIRE(lateRetry.ok);
+    REQUIRE(lateRetry.revision == first.revision);
+    REQUIRE(api.project_.info.tempo == 90.0);
+}
+
+TEST_CASE("Idempotency keys are scoped per client", "[remote][service][idempotency]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    auto first = fullyGrantedContext();
+    first.clientId = "client-a";
+    first.requestId = "req-1";
+    auto second = fullyGrantedContext();
+    second.clientId = "client-b";
+    second.requestId = "req-1";  // same id, different client
+
+    REQUIRE(run(service, "project.setTempo", object({{"tempo", 90.0}}), first).ok);
+    REQUIRE(run(service, "project.setTempo", object({{"tempo", 140.0}}), second).ok);
+
+    // Both executed: one client must never replay another's response.
+    REQUIRE(api.project_.info.tempo == 140.0);
+    REQUIRE(service.currentRevision() == INITIAL_REVISION + 2);
+}
+
+TEST_CASE("Reads are not served from the idempotency cache", "[remote][service][idempotency]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.project_.info.tempo = 120.0;
+    RemoteApiService service(api);
+
+    auto context = fullyGrantedContext();
+    context.clientId = "client-a";
+    context.requestId = "req-read";
+
+    const auto first = run(service, "project.get", emptyInput(), context);
+    REQUIRE(static_cast<double>(first.result["tempo"]) == 120.0);
+
+    api.project_.info.tempo = 145.0;
+
+    // Caching a read would serve state that has since changed.
+    const auto second = run(service, "project.get", emptyInput(), context);
+    REQUIRE(static_cast<double>(second.result["tempo"]) == 145.0);
+}
+
+TEST_CASE("The idempotency cache is bounded", "[remote][service][idempotency]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    service.setIdempotencyCacheCapacity(2);
+
+    const auto writeWithId = [&](const juce::String& requestId, double tempo) {
+        auto context = fullyGrantedContext();
+        context.clientId = "client-a";
+        context.requestId = requestId;
+        return run(service, "project.setTempo", object({{"tempo", tempo}}), context);
+    };
+
+    writeWithId("r1", 90.0);
+    writeWithId("r2", 100.0);
+    writeWithId("r3", 110.0);  // evicts r1
+    REQUIRE(api.project_.info.tempo == 110.0);
+    REQUIRE(service.currentRevision() == INITIAL_REVISION + 3);
+
+    // r1 has aged out, so its retry re-executes rather than replaying. That is
+    // the accepted trade: a bounded cache cannot promise idempotency forever,
+    // and unbounded growth is the worse failure for a long-lived session.
+    writeWithId("r1", 120.0);
+    REQUIRE(api.project_.info.tempo == 120.0);
+    REQUIRE(service.currentRevision() == INITIAL_REVISION + 4);
+
+    // r3 is still cached, so this replays instead of applying 130.
+    writeWithId("r3", 130.0);
+    REQUIRE(api.project_.info.tempo == 120.0);
+    REQUIRE(service.currentRevision() == INITIAL_REVISION + 4);
+}
+
+TEST_CASE("Concurrent retries of one request id apply the mutation once",
+          "[remote][service][idempotency][stress]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    // The pre-queue cache lookup cannot catch this on its own: both requests can
+    // pass it before either has finished. The recheck inside the serialized
+    // execution path is what makes the duplicate replay instead of re-applying.
+    constexpr int threadCount = 8;
+    std::atomic<int> okCount{0};
+    std::vector<std::thread> workers;
+    workers.reserve(threadCount);
+    for (int worker = 0; worker < threadCount; ++worker) {
+        workers.emplace_back([&] {
+            auto context = fullyGrantedContext();
+            context.clientId = "client-a";
+            context.requestId = "req-1";
+            service.dispatch("project.setTempo", object({{"tempo", 90.0}}), context,
+                             [&](Response response) {
+                                 if (response.ok)
+                                     ++okCount;
+                             });
+        });
+    }
+    for (auto& worker : workers)
+        worker.join();
+
+    // Every caller gets a success, but only one of them was a real mutation.
+    REQUIRE(okCount.load() == threadCount);
+    REQUIRE(service.currentRevision() == INITIAL_REVISION + 1);
+}
+
+TEST_CASE("Selection ids are checked against the model", "[remote][service][selection]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    const auto selection = [](std::initializer_list<std::pair<const char*, juce::var>> overrides) {
+        auto* result = new juce::DynamicObject();
+        result->setProperty("trackId", juce::var());
+        result->setProperty("clipId", juce::var());
+        result->setProperty("clipIds", juce::Array<juce::var>{});
+        result->setProperty("automationLaneId", juce::var());
+        result->setProperty("automationClipId", juce::var());
+        result->setProperty("noteClipId", juce::var());
+        result->setProperty("noteIndices", juce::Array<juce::var>{});
+        for (const auto& [key, value] : overrides)
+            result->setProperty(key, value);
+        return juce::var(result);
+    };
+
+    // SelectionManager accepts ids without checking they exist, so an
+    // unvalidated request would leave the session pointing at nothing and still
+    // report success.
+    const auto badTrack = run(service, "selection.set", selection({{"trackId", 999}}));
+    REQUIRE_FALSE(badTrack.ok);
+    REQUIRE(errorCodeOf(badTrack) == "not_found");
+
+    const auto badClip = run(service, "selection.set", selection({{"clipId", 777}}));
+    REQUIRE_FALSE(badClip.ok);
+    REQUIRE(errorCodeOf(badClip) == "not_found");
+
+    // Nothing was applied on the way to the error.
+    REQUIRE(api.selection_.trackSelections.empty());
+    REQUIRE(api.selection_.clipSelections.empty());
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+}
+
+TEST_CASE("An empty selection clears the whole selection", "[remote][service][selection]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    auto* empty = new juce::DynamicObject();
+    empty->setProperty("trackId", juce::var());
+    empty->setProperty("clipId", juce::var());
+    empty->setProperty("clipIds", juce::Array<juce::var>{});
+    empty->setProperty("automationLaneId", juce::var());
+    empty->setProperty("automationClipId", juce::var());
+    empty->setProperty("noteClipId", juce::var());
+    empty->setProperty("noteIndices", juce::Array<juce::var>{});
+
+    const auto response = run(service, "selection.set", juce::var(empty));
+
+    REQUIRE(response.ok);
+    // clearNoteSelection alone is a no-op outside note mode, so it cannot
+    // express "select nothing" for a track or clip selection.
+    REQUIRE(api.selection_.clearSelectionCalls == 1);
+}
+
+TEST_CASE("An expired deadline fails with timeout instead of executing late",
+          "[remote][service][errors]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    auto context = fullyGrantedContext();
+    context.deadline = std::chrono::steady_clock::now() - std::chrono::milliseconds(1);
+
+    const auto response = run(service, "project.setTempo", object({{"tempo", 90.0}}), context);
+
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(errorCodeOf(response) == "timeout");
+    REQUIRE(api.project_.info.tempo != 90.0);
+}
+
+TEST_CASE("A shut-down service accepts nothing", "[remote][service][lifecycle]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    service.shutdown();
+    REQUIRE(service.isShutdown());
+
+    const auto response = run(service, "project.setTempo", object({{"tempo", 90.0}}));
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(errorCodeOf(response) == "cancelled");
+    REQUIRE(api.project_.info.tempo != 90.0);
+}
+
+TEST_CASE("Shutdown is idempotent", "[remote][service][lifecycle]") {
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    service.shutdown();
+    service.shutdown();
+    REQUIRE(service.isShutdown());
+}
+
+TEST_CASE("Replacing the project invalidates outstanding revisions",
+          "[remote][service][lifecycle]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    const auto before = service.currentRevision();
+    service.projectReplaced();
+    REQUIRE(service.currentRevision() > before);
+
+    // A client holding the pre-swap revision is now stale by construction,
+    // rather than writing into a project that no longer exists.
+    auto context = fullyGrantedContext();
+    context.expectedRevision = before;
+    const auto response = run(service, "project.setTempo", object({{"tempo", 90.0}}), context);
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(errorCodeOf(response) == "conflict");
+}
+
+TEST_CASE("Replacing the project clears the idempotency cache", "[remote][service][lifecycle]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    auto context = fullyGrantedContext();
+    context.clientId = "client-a";
+    context.requestId = "req-1";
+    REQUIRE(run(service, "project.setTempo", object({{"tempo", 90.0}}), context).ok);
+    REQUIRE(api.project_.info.tempo == 90.0);
+
+    service.projectReplaced();
+
+    // The cached response describes the outgoing project, so replaying it would
+    // answer for state that no longer exists. This must execute instead.
+    REQUIRE(run(service, "project.setTempo", object({{"tempo", 140.0}}), context).ok);
+    REQUIRE(api.project_.info.tempo == 140.0);
+}
+
+TEST_CASE("Committed writes notify the matching change topic", "[remote][service][changes]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    std::vector<ChangeSource::Change> seen;
+    service.changes().addListener([&](const std::vector<ChangeSource::Change>& changes) {
+        seen.insert(seen.end(), changes.begin(), changes.end());
+    });
+
+    REQUIRE(run(service, "project.setTempo", object({{"tempo", 90.0}})).ok);
+    service.changes().flush();
+
+    REQUIRE(seen.size() == 1);
+    REQUIRE(seen[0].topic == Topic::Project);
+    REQUIRE(seen[0].revision == service.currentRevision());
+}
+
+TEST_CASE("Reads emit no change notifications", "[remote][service][changes]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    std::vector<ChangeSource::Change> seen;
+    service.changes().addListener([&](const std::vector<ChangeSource::Change>& changes) {
+        seen.insert(seen.end(), changes.begin(), changes.end());
+    });
+
+    REQUIRE(run(service, "project.get", emptyInput()).ok);
+    REQUIRE(run(service, "tracks.list", emptyInput()).ok);
+    service.changes().flush();
+
+    REQUIRE(seen.empty());
+}
+
+TEST_CASE("dispatchSync returns the response directly", "[remote][service]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.project_.info.tempo = 111.0;
+    RemoteApiService service(api);
+
+    const auto response = service.dispatchSync("project.get", emptyInput(), fullyGrantedContext());
+
+    REQUIRE(response.ok);
+    REQUIRE(static_cast<double>(response.result["tempo"]) == 111.0);
+}
+
+TEST_CASE("A local committed change bumps the revision", "[remote][service][changes]") {
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    std::vector<ChangeSource::Change> seen;
+    service.changes().addListener([&](const std::vector<ChangeSource::Change>& changes) {
+        seen.insert(seen.end(), changes.begin(), changes.end());
+    });
+
+    service.noteModelChanged(Topic::Tracks);
+    service.changes().flush();
+
+    REQUIRE(service.currentRevision() == INITIAL_REVISION + 1);
+    REQUIRE(seen.size() == 1);
+    REQUIRE(seen[0].topic == Topic::Tracks);
+}
+
+TEST_CASE("Continuous motion notifies without bumping the revision", "[remote][service][changes]") {
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    std::vector<ChangeSource::Change> seen;
+    service.changes().addListener([&](const std::vector<ChangeSource::Change>& changes) {
+        seen.insert(seen.end(), changes.begin(), changes.end());
+    });
+
+    // A parameter following an LFO fires continuously while the transport
+    // rolls. Bumping the revision for it would leave every client's
+    // expectedRevision permanently stale during playback.
+    for (int index = 0; index < 200; ++index)
+        service.noteModelActivity(Topic::Devices);
+    service.changes().flush();
+
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+    REQUIRE(seen.size() == 1);
+    REQUIRE(seen[0].topic == Topic::Devices);
+
+    // And a write with the pre-motion revision still succeeds, which is the
+    // property that makes remote control usable during playback.
+    auto context = fullyGrantedContext();
+    context.expectedRevision = INITIAL_REVISION;
+    const ScopedMessageThreadAssertionDisabler disabler;
+    REQUIRE(run(service, "project.setTempo", object({{"tempo", 90.0}}), context).ok);
+}
+
+TEST_CASE("A shut-down service records no further model changes", "[remote][service][lifecycle]") {
+    MockMagdaApi api;
+    RemoteApiService service(api);
+    service.shutdown();
+
+    std::vector<ChangeSource::Change> seen;
+    service.changes().addListener([&](const std::vector<ChangeSource::Change>& changes) {
+        seen.insert(seen.end(), changes.begin(), changes.end());
+    });
+
+    service.noteModelChanged(Topic::Tracks);
+    service.noteModelActivity(Topic::Devices);
+    service.changes().flush();
+
+    REQUIRE(seen.empty());
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+}
+
+TEST_CASE("The response envelope carries the revision", "[remote][service]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    const auto response = run(service, "project.setTempo", object({{"tempo", 90.0}}));
+    const auto envelope = response.toEnvelope();
+
+    REQUIRE(static_cast<bool>(envelope["ok"]));
+    REQUIRE(static_cast<juce::int64>(envelope["revision"]) == 1);
+    REQUIRE(envelope["apiVersion"].toString() == juce::String(API_VERSION.data()));
+
+    const auto failed = run(service, "tracks.delete", object({{"trackId", 999}}));
+    const auto failureEnvelope = failed.toEnvelope();
+    REQUIRE_FALSE(static_cast<bool>(failureEnvelope["ok"]));
+    REQUIRE(failureEnvelope["error"]["code"].toString() == "not_found");
+    REQUIRE(static_cast<juce::int64>(failureEnvelope["revision"]) == 1);
+}
+
+TEST_CASE("Concurrent dispatch from many threads keeps revisions unique",
+          "[remote][service][stress]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    constexpr int threadCount = 8;
+    constexpr int perThread = 25;
+
+    std::mutex revisionMutex;
+    std::vector<Revision> revisions;
+    std::atomic<int> failures{0};
+
+    std::vector<std::thread> workers;
+    workers.reserve(threadCount);
+    for (int worker = 0; worker < threadCount; ++worker) {
+        workers.emplace_back([&, worker] {
+            for (int index = 0; index < perThread; ++index) {
+                auto context = fullyGrantedContext();
+                context.clientId = "client-" + juce::String(worker);
+                context.requestId = juce::String(index);
+                service.dispatch("project.setTempo", object({{"tempo", 100.0}}), context,
+                                 [&](Response response) {
+                                     if (!response.ok) {
+                                         ++failures;
+                                         return;
+                                     }
+                                     const std::lock_guard<std::mutex> lock(revisionMutex);
+                                     revisions.push_back(response.revision);
+                                 });
+            }
+        });
+    }
+    for (auto& worker : workers)
+        worker.join();
+
+    REQUIRE(failures.load() == 0);
+    REQUIRE(revisions.size() == static_cast<std::size_t>(threadCount * perThread));
+
+    // Every committed write got its own revision — none reused, none skipped.
+    std::sort(revisions.begin(), revisions.end());
+    REQUIRE(std::adjacent_find(revisions.begin(), revisions.end()) == revisions.end());
+    REQUIRE(revisions.front() == 1);
+    REQUIRE(revisions.back() == static_cast<Revision>(threadCount * perThread));
+    REQUIRE(service.currentRevision() == static_cast<Revision>(threadCount * perThread));
+}
+
+TEST_CASE("Concurrent change marks never lose the newest revision",
+          "[remote][service][stress][changes]") {
+    ChangeSource changes;
+    std::vector<ChangeSource::Change> seen;
+    changes.addListener([&](const std::vector<ChangeSource::Change>& batch) {
+        seen.insert(seen.end(), batch.begin(), batch.end());
+    });
+
+    constexpr int threadCount = 4;
+    constexpr Revision perThread = 500;
+
+    std::vector<std::thread> workers;
+    workers.reserve(threadCount);
+    for (int worker = 0; worker < threadCount; ++worker) {
+        workers.emplace_back([&changes, worker] {
+            for (Revision revision = 1; revision <= perThread; ++revision)
+                changes.markChanged(Topic::Meters,
+                                    revision + static_cast<Revision>(worker) * perThread);
+        });
+    }
+    for (auto& worker : workers)
+        worker.join();
+
+    changes.flush();
+
+    REQUIRE(seen.size() == 1);
+    REQUIRE(seen[0].topic == Topic::Meters);
+    // Latest-value-wins has to hold under contention, not just single-threaded.
+    REQUIRE(seen[0].revision == perThread * threadCount);
+}
+
+namespace {
+
+/// An external plugin with two parameters, only the first opted in to AI
+/// control — the shape devices.setParameter's allowlist gate cares about.
+DeviceInfo makeFilterDevice() {
+    DeviceInfo device;
+    device.id = 5;
+    device.name = "Filter";
+    device.format = PluginFormat::VST3;
+    device.parameters.emplace_back(0, "Cutoff", "Hz", 20.0f, 20000.0f, 800.0f);
+    device.parameters.emplace_back(1, "Drive", "%", 0.0f, 100.0f, 0.0f);
+    device.parameters[0].currentValue = 800.0f;
+    device.aiSoundDesignerParameters = {0};
+    return device;
+}
+
+juce::var pathInput(const ChainNodePath& path) {
+    return object({{"devicePath", toJson(makeDevicePathDto(path))}});
+}
+
+}  // namespace
+
+TEST_CASE("devices.listParameters returns the device's parameters", "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    RemoteApiService service(api);
+
+    const auto response = run(service, "devices.listParameters", pathInput(path));
+
+    REQUIRE(response.ok);
+    const auto* items = response.result.getArray();
+    REQUIRE(items != nullptr);
+    REQUIRE(items->size() == 2);
+    REQUIRE((*items)[0]["name"].toString() == "Cutoff");
+    REQUIRE(static_cast<bool>((*items)[0]["aiAgentEnabled"]));
+    REQUIRE_FALSE(static_cast<bool>((*items)[1]["aiAgentEnabled"]));
+    // A read burns no revision.
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+
+    const auto missing =
+        run(service, "devices.listParameters", pathInput(ChainNodePath::topLevelDevice(1, 99)));
+    REQUIRE_FALSE(missing.ok);
+    REQUIRE(errorCodeOf(missing) == "not_found");
+}
+
+TEST_CASE("devicePresets.list returns opaque path-free metadata",
+          "[remote][service][devices][presets]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    api.devices_.presets[path] = {{"device-preset:abc", "Init", "", "magda"},
+                                  {"plugin-preset:def", "Wide Pad", "Factory/Pads", "plugin"}};
+    RemoteApiService service(api);
+
+    const auto response = run(service, "devicePresets.list", pathInput(path));
+
+    REQUIRE(response.ok);
+    const auto* presets = response.result.getArray();
+    REQUIRE(presets != nullptr);
+    REQUIRE(presets->size() == 2);
+    CHECK((*presets)[0]["id"].toString() == "device-preset:abc");
+    CHECK((*presets)[1]["category"].toString() == "Factory/Pads");
+    CHECK_FALSE(juce::JSON::toString(response.result).containsIgnoreCase("path"));
+
+    const auto missing =
+        run(service, "devicePresets.list", pathInput(ChainNodePath::topLevelDevice(1, 99)));
+    REQUIRE_FALSE(missing.ok);
+    REQUIRE(errorCodeOf(missing) == "not_found");
+}
+
+TEST_CASE("tracks.applyPreset commits once, reports impacts, and supports replay and no-op",
+          "[remote][service][tracks][presets][2839]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    TrackInfo track;
+    track.id = 1;
+    track.name = "Existing";
+    api.tracks_.tracks.push_back(track);
+
+    ReferenceDescriptor preserved;
+    preserved.kind = ReferenceKind::Routing;
+    preserved.source.kind = ReferenceAddressKind::Routing;
+    preserved.source.trackId = 1;
+    preserved.target.kind = ReferenceAddressKind::Track;
+    preserved.target.trackId = 2;
+    api.tracks_.applyPresetResult.referenceImpact.preserved.push_back(
+        {preserved, ReferenceImpactReason::PolicyPreserve});
+
+    RemoteApiService service(api);
+    const auto input = object({{"trackId", 1}, {"presetId", "track-preset:abc"}});
+    auto context = fullyGrantedContext();
+    context.requestId = "apply-track-preset-1";
+    context.expectedRevision = INITIAL_REVISION;
+    const auto changed = run(service, "tracks.applyPreset", input, context);
+
+    REQUIRE(changed.ok);
+    REQUIRE(api.tracks_.appliedPresets.size() == 1);
+    CHECK(api.tracks_.appliedPresets.front().first == 1);
+    CHECK(api.tracks_.appliedPresets.front().second == "track-preset:abc");
+    CHECK(static_cast<int>(changed.result["trackId"]) == 1);
+    CHECK(changed.result["deviceGraph"].isObject());
+    REQUIRE(changed.result["referenceImpact"]["preservedReferences"].isArray());
+    CHECK(changed.result["referenceImpact"]["preservedReferences"].getArray()->size() == 1);
+    CHECK(changed.revision == INITIAL_REVISION + 1);
+
+    const auto replayed = run(service, "tracks.applyPreset", input, context);
+    REQUIRE(replayed.ok);
+    CHECK(api.tracks_.appliedPresets.size() == 1);
+    CHECK(replayed.revision == changed.revision);
+
+    api.tracks_.applyPresetResult.status = ApplyTrackPresetStatus::Unchanged;
+    context.requestId = "apply-track-preset-2";
+    context.expectedRevision = changed.revision;
+    const auto unchanged = run(service, "tracks.applyPreset", input, context);
+    REQUIRE(unchanged.ok);
+    CHECK(api.tracks_.appliedPresets.size() == 2);
+    CHECK(unchanged.revision == changed.revision);
+}
+
+TEST_CASE("tracks.applyPreset rejects missing presets and reference conflicts without mutation",
+          "[remote][service][tracks][presets][2839]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    TrackInfo track;
+    track.id = 1;
+    api.tracks_.tracks.push_back(track);
+    RemoteApiService service(api);
+    const auto input = object({{"trackId", 1}, {"presetId", "track-preset:missing"}});
+
+    api.tracks_.applyPresetResult.status = ApplyTrackPresetStatus::PresetNotFound;
+    const auto missing = run(service, "tracks.applyPreset", input);
+    REQUIRE_FALSE(missing.ok);
+    CHECK(errorCodeOf(missing) == "not_found");
+    CHECK(service.currentRevision() == INITIAL_REVISION);
+
+    api.tracks_.applyPresetResult.status = ApplyTrackPresetStatus::Incompatible;
+    const auto incompatible = run(service, "tracks.applyPreset", input);
+    REQUIRE_FALSE(incompatible.ok);
+    CHECK(errorCodeOf(incompatible) == "conflict");
+    CHECK(service.currentRevision() == INITIAL_REVISION);
+
+    ReferenceDescriptor rejectedReference;
+    rejectedReference.kind = ReferenceKind::Automation;
+    rejectedReference.target.kind = ReferenceAddressKind::Parameter;
+    rejectedReference.target.devicePath = ChainNodePath::topLevelDevice(1, 5);
+    api.tracks_.applyPresetResult.status = ApplyTrackPresetStatus::ReferenceConflict;
+    api.tracks_.applyPresetResult.referenceImpact.rejected.push_back(
+        {rejectedReference, ReferenceImpactReason::NoProvenRemap});
+    const auto rejected = run(service, "tracks.applyPreset", input);
+    REQUIRE_FALSE(rejected.ok);
+    CHECK(errorCodeOf(rejected) == "conflict");
+    REQUIRE(rejected.error.details["referenceImpact"]["rejectedReferences"].isArray());
+    CHECK(rejected.error.details["referenceImpact"]["rejectedReferences"].getArray()->size() == 1);
+    CHECK(service.currentRevision() == INITIAL_REVISION);
+
+    const auto noTrack = run(service, "tracks.applyPreset",
+                             object({{"trackId", 99}, {"presetId", "track-preset:missing"}}));
+    REQUIRE_FALSE(noTrack.ok);
+    CHECK(errorCodeOf(noTrack) == "not_found");
+    CHECK(service.currentRevision() == INITIAL_REVISION);
+}
+
+TEST_CASE("devices.applyPreset commits once, reports impacts, and detects a no-op",
+          "[remote][service][devices][presets]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+
+    ReferenceDescriptor preserved;
+    preserved.kind = ReferenceKind::Automation;
+    preserved.source.kind = ReferenceAddressKind::AutomationLane;
+    preserved.source.automationLaneId = 9;
+    preserved.target.kind = ReferenceAddressKind::Parameter;
+    preserved.target.devicePath = path;
+    preserved.target.parameterIndex = 0;
+    api.devices_.applyPresetResult.referenceImpact.preserved.push_back(
+        {preserved, ReferenceImpactReason::PolicyPreserve});
+
+    RemoteApiService service(api);
+    auto input = pathInput(path);
+    input.getDynamicObject()->setProperty("presetId", "device-preset:abc");
+    auto context = fullyGrantedContext();
+    context.requestId = "apply-preset-1";
+    context.expectedRevision = INITIAL_REVISION;
+    const auto changed = run(service, "devices.applyPreset", input, context);
+
+    REQUIRE(changed.ok);
+    REQUIRE(api.devices_.appliedPresets.size() == 1);
+    CHECK(api.devices_.appliedPresets.front().second == "device-preset:abc");
+    CHECK(changed.result["deviceGraph"].isObject());
+    REQUIRE(changed.result["referenceImpact"]["preservedReferences"].isArray());
+    CHECK(changed.result["referenceImpact"]["preservedReferences"].getArray()->size() == 1);
+    CHECK(changed.revision == INITIAL_REVISION + 1);
+
+    const auto replayed = run(service, "devices.applyPreset", input, context);
+    REQUIRE(replayed.ok);
+    CHECK(api.devices_.appliedPresets.size() == 1);
+    CHECK(replayed.revision == changed.revision);
+
+    api.devices_.applyPresetResult.status = ApplyDevicePresetStatus::Unchanged;
+    context.requestId = "apply-preset-2";
+    context.expectedRevision = changed.revision;
+    const auto unchanged = run(service, "devices.applyPreset", input, context);
+    REQUIRE(unchanged.ok);
+    CHECK(api.devices_.appliedPresets.size() == 2);
+    CHECK(unchanged.revision == INITIAL_REVISION + 1);
+}
+
+TEST_CASE("devices.applyPreset rejects unavailable and incompatible presets without a revision",
+          "[remote][service][devices][presets]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    RemoteApiService service(api);
+    auto input = pathInput(path);
+    input.getDynamicObject()->setProperty("presetId", "device-preset:missing");
+
+    api.devices_.applyPresetResult.status = ApplyDevicePresetStatus::PresetNotFound;
+    const auto missing = run(service, "devices.applyPreset", input);
+    REQUIRE_FALSE(missing.ok);
+    CHECK(errorCodeOf(missing) == "not_found");
+    CHECK(service.currentRevision() == INITIAL_REVISION);
+
+    api.devices_.applyPresetResult.status = ApplyDevicePresetStatus::Incompatible;
+    const auto incompatible = run(service, "devices.applyPreset", input);
+    REQUIRE_FALSE(incompatible.ok);
+    CHECK(errorCodeOf(incompatible) == "conflict");
+    CHECK(service.currentRevision() == INITIAL_REVISION);
+
+    ReferenceDescriptor rejectedReference;
+    rejectedReference.kind = ReferenceKind::Automation;
+    rejectedReference.target.kind = ReferenceAddressKind::Parameter;
+    rejectedReference.target.devicePath = path;
+    api.devices_.applyPresetResult.status = ApplyDevicePresetStatus::ReferenceConflict;
+    api.devices_.applyPresetResult.referenceImpact.rejected.push_back(
+        {rejectedReference, ReferenceImpactReason::NoProvenRemap});
+    const auto rejected = run(service, "devices.applyPreset", input);
+    REQUIRE_FALSE(rejected.ok);
+    CHECK(errorCodeOf(rejected) == "conflict");
+    REQUIRE(rejected.error.details["referenceImpact"]["rejectedReferences"].isArray());
+    CHECK(rejected.error.details["referenceImpact"]["rejectedReferences"].getArray()->size() == 1);
+    CHECK(service.currentRevision() == INITIAL_REVISION);
+}
+
+TEST_CASE("devices.replace returns the new path and commits exactly once",
+          "[remote][service][devices][replace]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto oldPath = ChainNodePath::topLevelDevice(1, 5);
+    const auto newPath = ChainNodePath::topLevelDevice(1, 8);
+    api.devices_.devices[oldPath] = makeFilterDevice();
+    api.devices_.catalog.push_back({"new-filter", "New Filter"});
+    api.devices_.replaceDeviceResult.devicePath = newPath;
+
+    ReferenceDescriptor dropped;
+    dropped.kind = ReferenceKind::Sidechain;
+    dropped.source.kind = ReferenceAddressKind::Sidechain;
+    dropped.source.devicePath = oldPath;
+    api.devices_.replaceDeviceResult.referenceImpact.dropped.push_back(
+        {dropped, ReferenceImpactReason::PolicyDrop});
+
+    RemoteApiService service(api);
+    auto input = pathInput(oldPath);
+    input.getDynamicObject()->setProperty("catalogId", "new-filter");
+    input.getDynamicObject()->setProperty("presetId", "device-preset:abc");
+    auto context = fullyGrantedContext();
+    context.requestId = "replace-device-1";
+    context.expectedRevision = INITIAL_REVISION;
+    const auto changed = run(service, "devices.replace", input, context);
+
+    REQUIRE(changed.ok);
+    REQUIRE(api.devices_.replacements.size() == 1);
+    CHECK(api.devices_.replacements.front().catalogId == "new-filter");
+    REQUIRE(api.devices_.replacements.front().presetId.has_value());
+    CHECK(*api.devices_.replacements.front().presetId == "device-preset:abc");
+    CHECK(toChainNodePath(devicePathFromJson(changed.result["devicePath"])) == newPath);
+    REQUIRE(changed.result["referenceImpact"]["droppedReferences"].isArray());
+    CHECK(changed.result["referenceImpact"]["droppedReferences"].getArray()->size() == 1);
+    CHECK(changed.revision == INITIAL_REVISION + 1);
+
+    const auto replayed = run(service, "devices.replace", input, context);
+    REQUIRE(replayed.ok);
+    CHECK(api.devices_.replacements.size() == 1);
+    CHECK(replayed.revision == changed.revision);
+}
+
+TEST_CASE("devices.replace reports reference conflicts without a revision",
+          "[remote][service][devices][replace]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    api.devices_.catalog.push_back({"new-filter", "New Filter"});
+    ReferenceDescriptor rejected;
+    rejected.kind = ReferenceKind::Automation;
+    rejected.target.kind = ReferenceAddressKind::Parameter;
+    rejected.target.devicePath = path;
+    api.devices_.replaceDeviceResult.status = ReplaceDeviceStatus::ReferenceConflict;
+    api.devices_.replaceDeviceResult.referenceImpact.rejected.push_back(
+        {rejected, ReferenceImpactReason::NoProvenRemap});
+
+    RemoteApiService service(api);
+    auto input = pathInput(path);
+    input.getDynamicObject()->setProperty("catalogId", "new-filter");
+    const auto response = run(service, "devices.replace", input);
+    REQUIRE_FALSE(response.ok);
+    CHECK(errorCodeOf(response) == "conflict");
+    REQUIRE(response.error.details["referenceImpact"]["rejectedReferences"].isArray());
+    CHECK(service.currentRevision() == INITIAL_REVISION);
+}
+
+TEST_CASE("devices.setBypassed updates once and treats an identical write as a no-op",
+          "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    RemoteApiService service(api);
+
+    auto input = pathInput(path);
+    input.getDynamicObject()->setProperty("bypassed", true);
+    const auto changed = run(service, "devices.setBypassed", input);
+    REQUIRE(changed.ok);
+    REQUIRE(api.devices_.bypassed.size() == 1);
+    REQUIRE(api.devices_.devices[path].bypassed);
+    REQUIRE(changed.revision == INITIAL_REVISION + 1);
+
+    const auto unchanged = run(service, "devices.setBypassed", input);
+    REQUIRE(unchanged.ok);
+    REQUIRE(api.devices_.bypassed.size() == 1);
+    REQUIRE(unchanged.revision == INITIAL_REVISION + 1);
+}
+
+TEST_CASE("devices.setParameter writes an allowed parameter and echoes the model",
+          "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    RemoteApiService service(api);
+
+    auto input = pathInput(path);
+    input.getDynamicObject()->setProperty("parameterIndex", 0);
+    input.getDynamicObject()->setProperty("value", 1200.0);
+    const auto response = run(service, "devices.setParameter", input);
+
+    REQUIRE(response.ok);
+    REQUIRE(static_cast<double>(response.result["currentValue"]) == 1200.0);
+    REQUIRE(api.devices_.parameterWrites.size() == 1);
+    REQUIRE(std::get<2>(api.devices_.parameterWrites.front()) == 1200.0f);
+}
+
+TEST_CASE("devices.setParameter refuses a parameter the user did not enable",
+          "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    RemoteApiService service(api);
+
+    // Drive exists but is not on the device's AI allowlist: the remote surface
+    // must refuse rather than bypass the in-app safeguard.
+    auto input = pathInput(path);
+    input.getDynamicObject()->setProperty("parameterIndex", 1);
+    input.getDynamicObject()->setProperty("value", 50.0);
+    const auto response = run(service, "devices.setParameter", input);
+
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(errorCodeOf(response) == "permission_denied");
+    REQUIRE(api.devices_.parameterWrites.empty());
+}
+
+TEST_CASE("devices.setParameter rejects an out-of-range value rather than clamping",
+          "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    RemoteApiService service(api);
+
+    auto input = pathInput(path);
+    input.getDynamicObject()->setProperty("parameterIndex", 0);
+    input.getDynamicObject()->setProperty("value", 99999.0);
+    const auto response = run(service, "devices.setParameter", input);
+
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(errorCodeOf(response) == "validation_failed");
+    REQUIRE(api.devices_.parameterWrites.empty());
+}
+
+TEST_CASE("devices.openEditor opens the editor without burning a revision",
+          "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    RemoteApiService service(api);
+
+    const auto response = run(service, "devices.openEditor", pathInput(path));
+
+    REQUIRE(response.ok);
+    REQUIRE(static_cast<bool>(response.result["accepted"]));
+    REQUIRE(api.devices_.openedEditors.size() == 1);
+    // A window is not project content; the revision must not move.
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+
+    const auto missing =
+        run(service, "devices.openEditor", pathInput(ChainNodePath::topLevelDevice(1, 99)));
+    REQUIRE_FALSE(missing.ok);
+    REQUIRE(errorCodeOf(missing) == "not_found");
+}
+
+TEST_CASE("devices.setParameterConfig updates the customization and echoes the parameters",
+          "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    RemoteApiService service(api);
+
+    auto input = pathInput(path);
+    juce::Array<juce::var> aiSelection;
+    aiSelection.add(0);
+    aiSelection.add(1);
+    input.getDynamicObject()->setProperty("aiAgentParameters", aiSelection);
+    input.getDynamicObject()->setProperty("aiPrompt", "Deep bass");
+    const auto response = run(service, "devices.setParameterConfig", input);
+
+    REQUIRE(response.ok);
+    const auto* items = response.result.getArray();
+    REQUIRE(items != nullptr);
+    REQUIRE(items->size() == 2);
+    // Both parameters are now agent-controllable, and the device holds the
+    // update — the next setParameter on Drive must succeed.
+    REQUIRE(static_cast<bool>((*items)[1]["aiAgentEnabled"]));
+    const auto& device = api.devices_.devices.at(path);
+    REQUIRE(device.aiSoundDesignerParameters == std::vector<int>{0, 1});
+    REQUIRE(device.aiSoundDesignerPrompt == "Deep bass");
+    REQUIRE(api.devices_.configUpdates.size() == 1);
+}
+
+TEST_CASE("devices.setParameterConfig refuses unknown indices and internal devices",
+          "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    const auto internalPath = ChainNodePath::topLevelDevice(1, 6);
+    auto internalDevice = makeFilterDevice();
+    internalDevice.format = PluginFormat::Internal;
+    api.devices_.devices[internalPath] = internalDevice;
+    RemoteApiService service(api);
+
+    auto unknownIndex = pathInput(path);
+    juce::Array<juce::var> selection;
+    selection.add(7);
+    unknownIndex.getDynamicObject()->setProperty("aiAgentParameters", selection);
+    const auto badIndex = run(service, "devices.setParameterConfig", unknownIndex);
+    REQUIRE_FALSE(badIndex.ok);
+    REQUIRE(errorCodeOf(badIndex) == "validation_failed");
+
+    const auto empty = run(service, "devices.setParameterConfig", pathInput(path));
+    REQUIRE_FALSE(empty.ok);
+    REQUIRE(errorCodeOf(empty) == "validation_failed");
+
+    auto internalInput = pathInput(internalPath);
+    internalInput.getDynamicObject()->setProperty("aiAgentParameters", juce::Array<juce::var>());
+    const auto internalResponse = run(service, "devices.setParameterConfig", internalInput);
+    REQUIRE_FALSE(internalResponse.ok);
+    REQUIRE(errorCodeOf(internalResponse) == "validation_failed");
+
+    REQUIRE(api.devices_.configUpdates.empty());
+}
+
+TEST_CASE("devices.setParameter converts display units to the model domain",
+          "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    DeviceInfo device;
+    device.id = 5;
+    device.format = PluginFormat::VST3;
+    ParameterInfo gain(0, "Gain", "dB", -24.0f, 24.0f, 0.0f);
+    gain.valueConvention = ParameterValueConvention::Normalized;
+    gain.teMinValue = 0.0f;
+    gain.teMaxValue = 1.0f;
+    gain.displayText = std::make_shared<ParameterInfo::DisplayTextProvider>();
+    gain.currentValue = 0.5f;
+    device.parameters.push_back(gain);
+    device.aiSoundDesignerParameters = {0};
+    api.devices_.devices[path] = device;
+    RemoteApiService service(api);
+
+    auto input = pathInput(path);
+    input.getDynamicObject()->setProperty("parameterIndex", 0);
+    input.getDynamicObject()->setProperty("value", 12.0);
+    const auto response = run(service, "devices.setParameter", input);
+
+    REQUIRE(response.ok);
+    // The echo speaks display units; the model write is TE-native.
+    REQUIRE(std::abs(static_cast<double>(response.result["currentValue"]) - 12.0) < 1e-4);
+    REQUIRE(std::abs(static_cast<double>(response.result["normalizedValue"]) - 0.75) < 1e-6);
+    REQUIRE(api.devices_.parameterWrites.size() == 1);
+    REQUIRE(std::abs(std::get<2>(api.devices_.parameterWrites.front()) - 0.75f) < 1e-6f);
+}
+
+TEST_CASE("devices.add creates a device and returns its address", "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    TrackInfo track;
+    track.id = 1;
+    api.tracks_.tracks.push_back(track);
+    api.devices_.catalog.push_back({"internal.filter", "Filter", "", "", "", PluginFormat::Internal,
+                                    DeviceType::Effect, false});
+    RemoteApiService service(api);
+
+    const auto response =
+        run(service, "devices.add", object({{"trackId", 1}, {"catalogId", "internal.filter"}}));
+
+    REQUIRE(response.ok);
+    const auto id = static_cast<int>(response.result["id"]);
+    REQUIRE(id != INVALID_DEVICE_ID);
+    // The returned address is the canonical top-level spelling.
+    REQUIRE(static_cast<int>(response.result["devicePath"]["topLevelDeviceId"]) == id);
+    REQUIRE(response.result["devicePath"]["section"].toString() == "fx");
+    REQUIRE(api.devices_.added.size() == 1);
+    REQUIRE(api.devices_.added.front().catalogId == "internal.filter");
+
+    const auto unknown =
+        run(service, "devices.add", object({{"trackId", 1}, {"catalogId", "no.such.device"}}));
+    REQUIRE_FALSE(unknown.ok);
+    REQUIRE(errorCodeOf(unknown) == "not_found");
+}
+
+TEST_CASE("pads.list reads all slots without exposing sampler state", "[remote][service][pads]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 7);
+    DeviceInfo grid;
+    grid.id = 7;
+    grid.pluginId = "drumgrid";
+    auto& pad = ensurePadChain(ensurePads(grid), 0);
+    DeviceInfo sampler;
+    sampler.id = 8;
+    sampler.name = "Kick";
+    sampler.pluginState = "secret absolute path";
+    pad.elements.push_back(makeDeviceElement(sampler));
+    api.devices_.devices[path] = grid;
+    RemoteApiService service(api);
+
+    const auto response =
+        run(service, "pads.list", object({{"gridPath", toJson(makeDevicePathDto(path))}}));
+    REQUIRE(response.ok);
+    REQUIRE(response.result.isArray());
+    REQUIRE(response.result.getArray()->size() == 64);
+    const auto& first = (*response.result.getArray())[0];
+    REQUIRE(static_cast<bool>(first["populated"]));
+    REQUIRE(first["devicePaths"].getArray()->size() == 1);
+    REQUIRE_FALSE(juce::JSON::toString(response.result).contains("secret absolute path"));
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+
+    const auto missing = run(
+        service, "pads.list",
+        object({{"gridPath", toJson(makeDevicePathDto(ChainNodePath::topLevelDevice(1, 99)))}}));
+    REQUIRE_FALSE(missing.ok);
+    REQUIRE(errorCodeOf(missing) == "not_found");
+}
+
+TEST_CASE("devices.remove and devices.move act on resolvable paths only",
+          "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    RemoteApiService service(api);
+
+    auto move = pathInput(path);
+    move.getDynamicObject()->setProperty("toIndex", 2);
+    const auto moved = run(service, "devices.move", move);
+    REQUIRE(moved.ok);
+    REQUIRE(api.devices_.moved.size() == 1);
+
+    const auto removed = run(service, "devices.remove", pathInput(path));
+    REQUIRE(removed.ok);
+    REQUIRE(static_cast<bool>(removed.result["accepted"]));
+    REQUIRE(api.devices_.removed.size() == 1);
+
+    const auto missing =
+        run(service, "devices.remove", pathInput(ChainNodePath::topLevelDevice(1, 99)));
+    REQUIRE_FALSE(missing.ok);
+    REQUIRE(errorCodeOf(missing) == "not_found");
+}
+
+TEST_CASE("devices.setParameterConfig applies detection overrides", "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    RemoteApiService service(api);
+
+    auto* override_ = new juce::DynamicObject();
+    override_->setProperty("index", 1);
+    override_->setProperty("unit", "dB");
+    override_->setProperty("scale", "logarithmic");
+    override_->setProperty("minValue", 1.0);
+    override_->setProperty("maxValue", 100.0);
+    juce::Array<juce::var> overrides;
+    overrides.add(juce::var(override_));
+    auto input = pathInput(path);
+    input.getDynamicObject()->setProperty("parameterOverrides", overrides);
+    const auto response = run(service, "devices.setParameterConfig", input);
+
+    REQUIRE(response.ok);
+    const auto* items = response.result.getArray();
+    REQUIRE(items != nullptr);
+    // The echo speaks the new detection data immediately.
+    REQUIRE((*items)[1]["unit"].toString() == "dB");
+    REQUIRE((*items)[1]["scale"].toString() == "logarithmic");
+    REQUIRE(static_cast<double>((*items)[1]["minValue"]) == 1.0);
+    REQUIRE(static_cast<double>((*items)[1]["maxValue"]) == 100.0);
+    REQUIRE(api.devices_.configUpdates.size() == 1);
+
+    // An empty or inverted display range is refused before anything persists.
+    auto* bad = new juce::DynamicObject();
+    bad->setProperty("index", 0);
+    bad->setProperty("minValue", 500.0);
+    bad->setProperty("maxValue", 100.0);
+    juce::Array<juce::var> badOverrides;
+    badOverrides.add(juce::var(bad));
+    auto badInput = pathInput(path);
+    badInput.getDynamicObject()->setProperty("parameterOverrides", badOverrides);
+    const auto refused = run(service, "devices.setParameterConfig", badInput);
+    REQUIRE_FALSE(refused.ok);
+    REQUIRE(errorCodeOf(refused) == "validation_failed");
+    REQUIRE(api.devices_.configUpdates.size() == 1);
+}
+
+// ===========================================================================
+// Content operations (#2297): clips.update / transpose / quantize / sliceNotes,
+// tracks.group / move, grooves, focused macros, hardware MIDI out
+// ===========================================================================
+
+namespace {
+
+/// A MIDI clip with two notes, seeded into the mock under `clipId`.
+void seedMidiClip(MockMagdaApi& api, ClipId clipId) {
+    ClipInfo clip;
+    clip.id = clipId;
+    clip.name = "Riff";
+    MidiNote first;
+    first.startBeat = 0.1;
+    first.noteNumber = 60;
+    first.lengthBeats = 0.9;
+    MidiNote second;
+    second.startBeat = 1.6;
+    second.noteNumber = 64;
+    second.lengthBeats = 1.0;
+    clip.midiNotes = {first, second};
+    clip.ensureMidiEventIds();
+    api.clips_.clips[clipId] = clip;
+}
+
+juce::var integerArray(std::initializer_list<int> values) {
+    juce::Array<juce::var> array;
+    for (const auto value : values)
+        array.add(value);
+    return array;
+}
+
+}  // namespace
+
+TEST_CASE("clips.update patches name, enabled, and groove as one undo step",
+          "[remote][service][clips]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    seedMidiClip(api, 7);
+    api.grooves_.names.add("Swing 16");
+    RemoteApiService service(api);
+
+    const auto response = run(
+        service, "clips.update",
+        object(
+            {{"clipId", 7}, {"name", "Hook"}, {"enabled", false}, {"grooveTemplate", "Swing 16"}}));
+
+    REQUIRE(response.ok);
+    // Three field changes, three commands, one compound for the request.
+    REQUIRE(api.undo_.executeCalls == 3);
+    REQUIRE(api.undo_.maxCompoundDepth == 1);
+    REQUIRE(service.currentRevision() == INITIAL_REVISION + 1);
+}
+
+TEST_CASE("clips.update restating current state mutates nothing", "[remote][service][clips]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    seedMidiClip(api, 7);
+    RemoteApiService service(api);
+
+    const auto response = run(service, "clips.update", object({{"clipId", 7}, {"name", "Riff"}}));
+
+    REQUIRE(response.ok);
+    REQUIRE(api.undo_.executeCalls == 0);
+    // A no-op patch must not advance the revision.
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+}
+
+TEST_CASE("clips.update refuses a groove template that does not exist",
+          "[remote][service][clips]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    seedMidiClip(api, 7);
+    RemoteApiService service(api);
+
+    const auto response =
+        run(service, "clips.update", object({{"clipId", 7}, {"grooveTemplate", "No Such Groove"}}));
+
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(errorCodeOf(response) == "not_found");
+    REQUIRE(api.undo_.executeCalls == 0);
+}
+
+TEST_CASE("clips.update with an unknown groove applies none of the patch",
+          "[remote][service][clips]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    seedMidiClip(api, 7);
+    RemoteApiService service(api);
+
+    // The rename is valid on its own; the groove is not. A failed handler does
+    // not roll back the compound, so the groove has to be refused before the
+    // rename runs — otherwise the request fails after changing the project.
+    const auto response =
+        run(service, "clips.update",
+            object({{"clipId", 7}, {"name", "Hook"}, {"grooveTemplate", "No Such Groove"}}));
+
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(errorCodeOf(response) == "not_found");
+    REQUIRE(api.undo_.executeCalls == 0);
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+}
+
+TEST_CASE("clips.transpose shifts every note and echoes the clip", "[remote][service][clips]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    seedMidiClip(api, 7);
+    RemoteApiService service(api);
+
+    const auto response =
+        run(service, "clips.transpose", object({{"clipId", 7}, {"semitones", 5}}));
+
+    REQUIRE(response.ok);
+    const auto* notes = response.result["notes"].getArray();
+    REQUIRE(notes != nullptr);
+    REQUIRE(static_cast<int>((*notes)[0]["note"]) == 65);
+    REQUIRE(static_cast<int>((*notes)[1]["note"]) == 69);
+}
+
+TEST_CASE("clips.quantize defaults to every note and snaps to the grid",
+          "[remote][service][clips]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    seedMidiClip(api, 7);
+    RemoteApiService service(api);
+
+    const auto response =
+        run(service, "clips.quantize", object({{"clipId", 7}, {"gridResolution", 0.5}}));
+
+    REQUIRE(response.ok);
+    REQUIRE(api.clips_.quantizeCalls.size() == 1);
+    REQUIRE(api.clips_.quantizeCalls.front().noteIndices == std::vector<size_t>{0, 1});
+    const auto* notes = response.result["notes"].getArray();
+    REQUIRE(notes != nullptr);
+    REQUIRE(static_cast<double>((*notes)[0]["startBeat"]) == 0.0);
+    REQUIRE(static_cast<double>((*notes)[1]["startBeat"]) == 1.5);
+}
+
+TEST_CASE("clips.quantize refuses an index that names no note", "[remote][service][clips]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    seedMidiClip(api, 7);
+    RemoteApiService service(api);
+
+    const auto response = run(
+        service, "clips.quantize",
+        object({{"clipId", 7}, {"gridResolution", 0.5}, {"noteIndices", integerArray({0, 9})}}));
+
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(errorCodeOf(response) == "validation_failed");
+    REQUIRE(api.clips_.quantizeCalls.empty());
+}
+
+TEST_CASE("clips.sliceNotes subdivides the addressed notes", "[remote][service][clips]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    seedMidiClip(api, 7);
+    RemoteApiService service(api);
+
+    const auto response =
+        run(service, "clips.sliceNotes",
+            object({{"clipId", 7}, {"subdivisions", 2}, {"noteIndices", integerArray({1})}}));
+
+    REQUIRE(response.ok);
+    const auto* notes = response.result["notes"].getArray();
+    REQUIRE(notes != nullptr);
+    // One untouched note plus one sliced into two.
+    REQUIRE(notes->size() == 3);
+}
+
+TEST_CASE("Note operations refuse a clip that is not MIDI", "[remote][service][clips]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    ClipInfo audio;
+    audio.id = 9;
+    audio.content = AudioClipModel{};
+    api.clips_.clips[9] = audio;
+    RemoteApiService service(api);
+
+    const auto response =
+        run(service, "clips.transpose", object({{"clipId", 9}, {"semitones", 2}}));
+
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(errorCodeOf(response) == "conflict");
+}
+
+TEST_CASE("tracks.group goes through the undo stack, not the facade", "[remote][service][tracks]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.tracks_.createTrack("Drums", TrackType::Media);
+    api.tracks_.createTrack("Bass", TrackType::Media);
+    const auto first = api.tracks_.tracks[0].id;
+    const auto second = api.tracks_.tracks[1].id;
+    RemoteApiService service(api);
+
+    run(service, "tracks.group",
+        object({{"trackIds", integerArray({static_cast<int>(first), static_cast<int>(second)})},
+                {"name", "Rhythm"}}));
+
+    // One command enqueued and no direct facade write: the grouping lands on
+    // the undo stack. The stub retains commands without executing them (they
+    // act on the real singletons), so the created id — and the success path —
+    // are asserted where the singletons are live, in the WebSocket live suite.
+    REQUIRE(api.undo_.executeCalls == 1);
+    REQUIRE(api.tracks_.groupWrites.empty());
+
+    const auto missing = run(service, "tracks.group",
+                             object({{"trackIds", integerArray({9999})}, {"name", "Ghost"}}));
+    REQUIRE_FALSE(missing.ok);
+    REQUIRE(errorCodeOf(missing) == "not_found");
+    REQUIRE(api.undo_.executeCalls == 1);
+}
+
+TEST_CASE("tracks.move goes through the undo stack, not the facade", "[remote][service][tracks]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.tracks_.createTrack("Drums", TrackType::Media);
+    const auto id = api.tracks_.tracks[0].id;
+    RemoteApiService service(api);
+
+    const auto response =
+        run(service, "tracks.move", object({{"trackId", static_cast<int>(id)}, {"position", 1}}));
+
+    REQUIRE(response.ok);
+    REQUIRE(api.undo_.executeCalls == 1);
+    REQUIRE(api.tracks_.moveWrites.empty());
+}
+
+TEST_CASE("Routing endpoints and current state are projected without internal identifiers",
+          "[remote][service][routing][2832]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto trackId = api.tracks_.createTrack("Audio", TrackType::Media);
+    auto* track = api.tracks_.getTrack(trackId);
+    REQUIRE(track != nullptr);
+    track->audioInputDevice = "/private/backend/input-1";
+    const auto publicId =
+        routingEndpointId(RoutingMedia::Audio, RoutingDirection::Input, track->audioInputDevice);
+    api.tracks_.routingEndpoints.push_back({publicId, "Input 1", RoutingMedia::Audio,
+                                            RoutingDirection::Input, RoutingEndpointKind::Hardware,
+                                            true, 1, std::nullopt, track->audioInputDevice});
+    RemoteApiService service(api);
+
+    const auto listed = run(service, "routing.endpoints.list", emptyInput());
+    REQUIRE(listed.ok);
+    REQUIRE(listed.result.getArray()->size() == 1);
+    const auto endpoint = listed.result.getArray()->getReference(0);
+    CHECK(endpoint["id"].toString() == publicId);
+    CHECK(endpoint["name"].toString() == "Input 1");
+    CHECK_FALSE(juce::JSON::toString(endpoint).contains("/private/backend"));
+
+    const auto current =
+        run(service, "routing.get", object({{"trackId", static_cast<int>(trackId)}}));
+    REQUIRE(current.ok);
+    CHECK(current.result["audioInputEndpointId"].toString() == publicId);
+    CHECK_FALSE(static_cast<bool>(current.result["recordArmed"]));
+    CHECK(service.currentRevision() == INITIAL_REVISION);
+}
+
+TEST_CASE("routing.set reports cascaded drops and is revision-neutral on no-op or failure",
+          "[remote][service][routing][2832]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto trackId = api.tracks_.createTrack("Audio", TrackType::Media);
+    api.tracks_.routingEndpoints.push_back({"none:audio:input",
+                                            "None",
+                                            RoutingMedia::Audio,
+                                            RoutingDirection::Input,
+                                            RoutingEndpointKind::None,
+                                            true,
+                                            0,
+                                            std::nullopt,
+                                            {}});
+    api.tracks_.routingResult.droppedConnections.push_back(
+        {trackId, "midiInputEndpointId", "all", "replaced_by_requested_route"});
+    RemoteApiService service(api);
+
+    const auto changed = run(service, "routing.set",
+                             object({{"trackId", static_cast<int>(trackId)},
+                                     {"audioInputEndpointId", "none:audio:input"}}));
+    REQUIRE(changed.ok);
+    REQUIRE(changed.result["droppedConnections"].getArray()->size() == 1);
+    CHECK(changed.result["droppedConnections"][0]["field"].toString() == "midiInputEndpointId");
+    CHECK(api.tracks_.routingWrites.size() == 1);
+    CHECK(service.currentRevision() == INITIAL_REVISION + 1);
+
+    api.tracks_.routingResult = {SetTrackRoutingStatus::Unchanged, {}};
+    const auto unchanged =
+        run(service, "routing.set", object({{"trackId", static_cast<int>(trackId)}}));
+    REQUIRE(unchanged.ok);
+    CHECK(service.currentRevision() == INITIAL_REVISION + 1);
+
+    api.tracks_.routingResult = {SetTrackRoutingStatus::FeedbackCycle, {}};
+    const auto rejected =
+        run(service, "routing.set",
+            object({{"trackId", static_cast<int>(trackId)}, {"audioOutputEndpointId", "track:2"}}));
+    REQUIRE_FALSE(rejected.ok);
+    CHECK(errorCodeOf(rejected) == "conflict");
+    CHECK(service.currentRevision() == INITIAL_REVISION + 1);
+}
+
+TEST_CASE("Send lifecycle is atomic and revisioned through the shared service",
+          "[remote][service][sends][2837]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto source = api.tracks_.createTrack("Source", TrackType::Media);
+    const auto firstDestination = api.tracks_.createTrack("Delay", TrackType::Aux);
+    const auto secondDestination = api.tracks_.createTrack("Reverb", TrackType::Aux);
+    api.tracks_.routingEndpoints.push_back({"track:" + juce::String(firstDestination),
+                                            "Delay",
+                                            RoutingMedia::Audio,
+                                            RoutingDirection::Input,
+                                            RoutingEndpointKind::Track,
+                                            true,
+                                            2,
+                                            firstDestination,
+                                            {}});
+    api.tracks_.routingEndpoints.push_back({"track:" + juce::String(secondDestination),
+                                            "Reverb",
+                                            RoutingMedia::Audio,
+                                            RoutingDirection::Input,
+                                            RoutingEndpointKind::Track,
+                                            true,
+                                            2,
+                                            secondDestination,
+                                            {}});
+    RemoteApiService service(api);
+
+    const auto created =
+        run(service, "sends.create",
+            object({{"trackId", static_cast<int>(source)},
+                    {"destinationEndpointId", "track:" + juce::String(firstDestination)},
+                    {"level", 0.4},
+                    {"enabled", false},
+                    {"position", "pre_fader"}}));
+    REQUIRE(created.ok);
+    const auto sendId = created.result["send"]["id"].toString();
+    CHECK(sendId.startsWith("send:"));
+    CHECK(created.result["send"]["destinationEndpointId"].toString() ==
+          "track:" + juce::String(firstDestination));
+    CHECK(created.result["send"]["position"].toString() == "pre_fader");
+    CHECK(service.currentRevision() == INITIAL_REVISION + 1);
+
+    const auto listed = run(service, "sends.list", object({{"trackId", static_cast<int>(source)}}));
+    REQUIRE(listed.ok);
+    REQUIRE(listed.result.getArray()->size() == 1);
+    CHECK(listed.result[0]["id"].toString() == sendId);
+    CHECK(service.currentRevision() == INITIAL_REVISION + 1);
+
+    api.tracks_.sendStatusOverride = TrackSendMutationStatus::Unchanged;
+    const auto unchanged =
+        run(service, "sends.update", object({{"sendId", sendId}, {"level", 0.4}}));
+    REQUIRE(unchanged.ok);
+    CHECK(service.currentRevision() == INITIAL_REVISION + 1);
+
+    api.tracks_.sendStatusOverride.reset();
+    const auto updated =
+        run(service, "sends.update",
+            object({{"sendId", sendId},
+                    {"destinationEndpointId", "track:" + juce::String(secondDestination)},
+                    {"level", 0.8},
+                    {"enabled", true},
+                    {"position", "post_fader"}}));
+    REQUIRE(updated.ok);
+    REQUIRE(updated.result["invalidatedConnections"].getArray()->size() == 1);
+    CHECK(updated.result["invalidatedConnections"][0]["reason"].toString() ==
+          "destination_replaced");
+    CHECK(service.currentRevision() == INITIAL_REVISION + 2);
+
+    const auto removed = run(service, "sends.remove", object({{"sendId", sendId}}));
+    REQUIRE(removed.ok);
+    CHECK(removed.result["removedSendId"].toString() == sendId);
+    REQUIRE(removed.result["invalidatedConnections"].getArray()->size() == 1);
+    CHECK(removed.result["invalidatedConnections"][0]["reason"].toString() == "send_removed");
+    CHECK(service.currentRevision() == INITIAL_REVISION + 3);
+
+    api.tracks_.sendStatusOverride = TrackSendMutationStatus::FeedbackCycle;
+    const auto rejected =
+        run(service, "sends.create",
+            object({{"trackId", static_cast<int>(source)},
+                    {"destinationEndpointId", "track:" + juce::String(firstDestination)}}));
+    REQUIRE_FALSE(rejected.ok);
+    CHECK(errorCodeOf(rejected) == "conflict");
+    CHECK(service.currentRevision() == INITIAL_REVISION + 3);
+}
+
+TEST_CASE("sidechains.get and set use owner paths, logical sources, and no-op revisions",
+          "[remote][service][sidechains][2838]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto ownerPath = ChainNodePath::rack(1, 4);
+    SidechainView initial;
+    initial.ownerPath = ownerPath;
+    initial.ownerKind = SidechainOwnerKind::Rack;
+    initial.capabilities.audio = true;
+    initial.capabilities.midi = true;
+    api.devices_.sidechains.emplace(ownerPath, initial);
+
+    RemoteApiService service(api);
+    const auto ownerJson = toJson(makeDevicePathDto(ownerPath));
+    const auto listed = run(service, "sidechains.list", emptyInput());
+    REQUIRE(listed.ok);
+    REQUIRE(listed.result.getArray()->size() == 1);
+    CHECK(listed.result[0]["ownerType"].toString() == "rack");
+    const auto inspected = run(service, "sidechains.get", object({{"ownerPath", ownerJson}}));
+    REQUIRE(inspected.ok);
+    CHECK(inspected.result["ownerType"].toString() == "rack");
+    CHECK(inspected.result["sourceEndpointId"].isVoid());
+    CHECK(inspected.result["supportedTypes"].getArray()->size() == 2);
+
+    auto updated = initial;
+    updated.sourceEndpointId = "track:2";
+    updated.type = SidechainConfig::Type::Audio;
+    updated.enabled = true;
+    api.devices_.setSidechainResult = {SetSidechainStatus::Applied, updated, {}};
+    const auto changed = run(service, "sidechains.set",
+                             object({{"ownerPath", ownerJson},
+                                     {"sourceEndpointId", "track:2"},
+                                     {"type", "audio"},
+                                     {"enabled", true}}));
+    REQUIRE(changed.ok);
+    CHECK(changed.result["sidechain"]["sourceEndpointId"].toString() == "track:2");
+    CHECK_FALSE(changed.result["sidechain"].hasProperty("sourceTrackId"));
+    REQUIRE(api.devices_.sidechainWrites.size() == 1);
+    REQUIRE(api.devices_.sidechainWrites.back().second.sourceEndpointId.has_value());
+    CHECK(*api.devices_.sidechainWrites.back().second.sourceEndpointId ==
+          std::optional<juce::String>{"track:2"});
+    CHECK(service.currentRevision() == INITIAL_REVISION + 1);
+
+    api.devices_.setSidechainResult = {SetSidechainStatus::Unchanged, updated, {}};
+    const auto unchanged = run(service, "sidechains.set", object({{"ownerPath", ownerJson}}));
+    REQUIRE(unchanged.ok);
+    CHECK(service.currentRevision() == INITIAL_REVISION + 1);
+
+    api.devices_.setSidechainResult = {SetSidechainStatus::Applied, initial, {}};
+    const auto cleared = run(service, "sidechains.set",
+                             object({{"ownerPath", ownerJson}, {"sourceEndpointId", juce::var()}}));
+    REQUIRE(cleared.ok);
+    REQUIRE(api.devices_.sidechainWrites.back().second.sourceEndpointId.has_value());
+    CHECK_FALSE(api.devices_.sidechainWrites.back().second.sourceEndpointId->has_value());
+}
+
+TEST_CASE("grooves.upsert then grooves.list round-trips the template name",
+          "[remote][service][grooves]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    juce::Array<juce::var> lateness;
+    lateness.add(0.0);
+    lateness.add(0.25);
+    const auto upsert = run(service, "grooves.upsert",
+                            object({{"name", "Swing 8"},
+                                    {"notesPerBeat", 2},
+                                    {"latenessProportions", juce::var(lateness)}}));
+    REQUIRE(upsert.ok);
+
+    const auto list = run(service, "grooves.list", emptyInput());
+    REQUIRE(list.ok);
+    const auto* names = list.result.getArray();
+    REQUIRE(names != nullptr);
+    REQUIRE(names->size() == 1);
+    REQUIRE((*names)[0].toString() == "Swing 8");
+}
+
+TEST_CASE("focused.get answers safely with nothing focused", "[remote][service][focused]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    const auto response = run(service, "focused.get", emptyInput());
+
+    REQUIRE(response.ok);
+    REQUIRE_FALSE(static_cast<bool>(response.result["hasFocus"]));
+    REQUIRE(response.result["macros"].getArray()->isEmpty());
+}
+
+TEST_CASE("focused.setMacro writes the focused device's macro", "[remote][service][focused]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.focused_.focused = true;
+    api.focused_.focusedName = "Poly Synth";
+    api.focused_.macroNames = {"Cutoff"};
+    api.focused_.macroValues = {0.25f};
+    RemoteApiService service(api);
+
+    const auto response = run(service, "focused.setMacro", object({{"index", 0}, {"value", 0.75}}));
+
+    REQUIRE(response.ok);
+    REQUIRE(api.focused_.macroWrites.size() == 1);
+    REQUIRE(api.focused_.macroWrites.front().idx == 0);
+    REQUIRE(api.focused_.macroWrites.front().value == 0.75f);
+    REQUIRE(response.result["name"].toString() == "Poly Synth");
+}
+
+TEST_CASE("focused.setMacro refuses when nothing is focused", "[remote][service][focused]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    const auto response = run(service, "focused.setMacro", object({{"index", 0}, {"value", 0.5}}));
+
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(errorCodeOf(response) == "conflict");
+    REQUIRE(api.focused_.macroWrites.empty());
+}
+
+TEST_CASE("midi.send delivers a channel message to the named port", "[remote][service][midi]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    const auto response =
+        run(service, "midi.send",
+            object({{"port", "Launchkey"}, {"bytes", integerArray({0x90, 60, 100})}}));
+
+    REQUIRE(response.ok);
+    REQUIRE(api.midi_.sends.size() == 1);
+    REQUIRE(api.midi_.sends.front().port == "Launchkey");
+    REQUIRE(api.midi_.sends.front().msg.isNoteOn());
+    // Hardware delivery is not a project mutation: no revision bump, no undo
+    // step.
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+    REQUIRE(api.undo_.executeCalls == 0);
+}
+
+TEST_CASE("midi.send refuses a length that contradicts the status byte",
+          "[remote][service][midi]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    // A note-on promises three bytes; sending two would make MidiMessage
+    // assert rather than refuse.
+    const auto response = run(service, "midi.send",
+                              object({{"port", "Launchkey"}, {"bytes", integerArray({0x90, 60})}}));
+
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(errorCodeOf(response) == "validation_failed");
+    REQUIRE(api.midi_.sends.empty());
+}
+
+TEST_CASE("midi.sendSysEx delivers the unframed payload", "[remote][service][midi]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.midi_.outputPortNames = {"Launchkey"};
+    RemoteApiService service(api);
+
+    const auto ports = run(service, "midi.listOutputPorts", emptyInput());
+    REQUIRE(ports.ok);
+    REQUIRE(ports.result.getArray()->size() == 1);
+
+    const auto response = run(service, "midi.sendSysEx",
+                              object({{"port", "Launchkey"}, {"bytes", integerArray({1, 2, 3})}}));
+    REQUIRE(response.ok);
+    REQUIRE(api.midi_.sends.size() == 1);
+    REQUIRE(api.midi_.sends.front().msg.isSysEx());
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+    REQUIRE(api.undo_.executeCalls == 0);
+}
+
+TEST_CASE("Device mods and macros are discoverable and respect the parameter allowlist",
+          "[remote][service][modulation][2294]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    RemoteApiService service(api);
+    const auto address = toJson(makeDevicePathDto(path));
+
+    const auto empty = run(service, "mods.list", object({{"devicePath", address}}));
+    REQUIRE(empty.ok);
+    REQUIRE(empty.result.getArray()->isEmpty());
+
+    // A refused target must leave no half-created mod in the model.
+    const auto denied = run(
+        service, "mods.create",
+        object({{"devicePath", address}, {"type", "lfo"}, {"parameterIndex", 1}, {"amount", 0.6}}));
+    REQUIRE_FALSE(denied.ok);
+    REQUIRE(errorCodeOf(denied) == "permission_denied");
+    REQUIRE(api.devices_.devices[path].mods.empty());
+
+    const auto created = run(service, "mods.create",
+                             object({{"devicePath", address},
+                                     {"type", "lfo"},
+                                     {"waveform", "triangle"},
+                                     {"rate", 2.5},
+                                     {"parameterIndex", 0},
+                                     {"amount", 0.6}}));
+    REQUIRE(created.ok);
+    REQUIRE(static_cast<int>(created.result["modId"]) == 0);
+    REQUIRE(created.result["waveform"].toString() == "triangle");
+    REQUIRE(created.result["links"].getArray()->size() == 1);
+    REQUIRE(std::abs(static_cast<double>(created.result["links"][0]["amount"]) - 0.6) < 1e-6);
+
+    const auto updated =
+        run(service, "mods.update",
+            object({{"devicePath", address}, {"modId", 0}, {"rate", 4.0}, {"enabled", false}}));
+    REQUIRE(updated.ok);
+    REQUIRE(static_cast<double>(updated.result["rate"]) == 4.0);
+    REQUIRE_FALSE(static_cast<bool>(updated.result["enabled"]));
+
+    const auto blockedLink = run(
+        service, "mods.link",
+        object({{"devicePath", address}, {"modId", 0}, {"parameterIndex", 1}, {"amount", 0.8}}));
+    REQUIRE_FALSE(blockedLink.ok);
+    REQUIRE(errorCodeOf(blockedLink) == "permission_denied");
+    REQUIRE_FALSE(api.devices_.linkDeviceMod(path, 0, 1, 0.8f, false));
+
+    const auto macros = run(service, "macros.list", object({{"devicePath", address}}));
+    REQUIRE(macros.ok);
+    REQUIRE(macros.result.getArray()->size() == NUM_MACROS);
+    const auto macroDenied = run(
+        service, "macros.link",
+        object(
+            {{"devicePath", address}, {"macroIndex", 0}, {"parameterIndex", 1}, {"amount", 0.5}}));
+    REQUIRE_FALSE(macroDenied.ok);
+    REQUIRE(errorCodeOf(macroDenied) == "permission_denied");
+    const auto linked = run(
+        service, "macros.link",
+        object(
+            {{"devicePath", address}, {"macroIndex", 0}, {"parameterIndex", 0}, {"amount", 0.5}}));
+    REQUIRE(linked.ok);
+    REQUIRE(linked.result["links"].getArray()->size() == 1);
+    const auto value = run(service, "macros.setValue",
+                           object({{"devicePath", address}, {"macroIndex", 0}, {"value", 0.75}}));
+    REQUIRE(value.ok);
+    REQUIRE(static_cast<double>(value.result["value"]) == 0.75);
+
+    REQUIRE(run(service, "mods.unlink",
+                object({{"devicePath", address}, {"modId", 0}, {"parameterIndex", 0}}))
+                .ok);
+    REQUIRE(run(service, "macros.unlink",
+                object({{"devicePath", address}, {"macroIndex", 0}, {"parameterIndex", 0}}))
+                .ok);
+    REQUIRE(run(service, "mods.remove", object({{"devicePath", address}, {"modId", 0}})).ok);
+    REQUIRE(api.devices_.devices[path].mods.empty());
+}

@@ -20,7 +20,7 @@ std::size_t indexOf(Topic topic) {
 }
 
 juce::var makeObject() {
-    return juce::var(new juce::DynamicObject());
+    return {new juce::DynamicObject()};
 }
 
 void setProperty(const juce::var& object, const char* name, const juce::var& value) {
@@ -94,6 +94,7 @@ std::vector<const char*> keyFieldsFor(Topic topic) {
         case Topic::Devices:
         case Topic::Selection:
         case Topic::Transport:
+        case Topic::Jobs:
         case Topic::Meters:
         case Topic::Playhead:
             break;
@@ -167,8 +168,8 @@ Diff diffElements(Topic topic, const juce::var& previous, const juce::var& curre
         beforeByKey.reserve(static_cast<std::size_t>(before->size()));
         for (const auto& element : *before)
             beforeByKey.emplace_back(keyOf(element, fields), &element);
-        std::sort(beforeByKey.begin(), beforeByKey.end(),
-                  [](const auto& lhs, const auto& rhs) { return lhs.first < rhs.first; });
+        const auto keyPart = [](const auto& entry) { return entry.first; };
+        std::ranges::sort(beforeByKey, {}, keyPart);
     }
 
     const auto find = [&beforeByKey](const juce::String& key) -> const juce::var* {
@@ -193,9 +194,9 @@ Diff diffElements(Topic topic, const juce::var& previous, const juce::var& curre
         seen.push_back(std::move(key));
     }
 
-    std::sort(seen.begin(), seen.end());
+    std::ranges::sort(seen);
     for (const auto& [key, element] : beforeByKey)
-        if (!std::binary_search(seen.begin(), seen.end(), key))
+        if (!std::ranges::binary_search(seen, key))
             diff.removed.add(identityOf(*element, fields));
 
     return diff;
@@ -222,6 +223,8 @@ const char* snapshotOperationFor(Topic topic) {
             return "session.get";
         case Topic::Automation:
             return "automation.listLanes";
+        case Topic::Jobs:
+            return "jobs.list";
         case Topic::Meters:
         case Topic::Playhead:
             break;
@@ -260,6 +263,8 @@ struct SubscriptionHub::Client {
     ClientId id = 0;
     Sink sink;
     Disconnect disconnect;
+    juce::String ownerClientId;
+    ScopeProvider scopes;
     std::array<bool, TOPIC_COUNT> subscribed{};
     /// Set when a delivery was refused: the client has no baseline for the
     /// delta it just missed, so the next thing it takes has to be complete.
@@ -282,6 +287,8 @@ struct SubscriptionHub::Client {
      */
     bool refusedThisFlush = false;
     bool acceptedThisFlush = false;
+    bool hasJobsBaseline = false;
+    juce::var jobsBaseline;
 };
 
 /**
@@ -344,13 +351,13 @@ void SubscriptionHub::shutdown() {
     // until any flush already inside publish() has finished, and that flush
     // needs mutex_ to finish.
     {
-        const std::lock_guard<std::mutex> lock(gate_->mutex);
+        const std::scoped_lock lock(gate_->mutex);
         gate_->hub = nullptr;
     }
 
     int token = 0;
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         if (shutdown_)
             return;
         shutdown_ = true;
@@ -366,24 +373,33 @@ void SubscriptionHub::shutdown() {
         service_.changes().removeListener(token);
 }
 
-SubscriptionHub::ClientId SubscriptionHub::addClient(Sink sink, Disconnect disconnect) {
-    const std::lock_guard<std::mutex> lock(mutex_);
+SubscriptionHub::ClientId SubscriptionHub::addClient(Sink sink, Disconnect disconnect,
+                                                     juce::String ownerClientId,
+                                                     ScopeProvider scopes) {
+    const std::scoped_lock lock(mutex_);
     if (shutdown_)
         return 0;
 
     const auto id = nextClientId_++;
-    clients_.push_back(Client{id, std::move(sink), std::move(disconnect), {}, {}, 0});
+    if (ownerClientId.isEmpty())
+        ownerClientId = "subscription:" + juce::String(id);
+    if (!scopes)
+        scopes = [] { return allScopes(); };
+    Client client;
+    client.id = id;
+    client.sink = std::move(sink);
+    client.disconnect = std::move(disconnect);
+    client.ownerClientId = std::move(ownerClientId);
+    client.scopes = std::move(scopes);
+    clients_.push_back(std::move(client));
     return id;
 }
 
 void SubscriptionHub::removeClient(ClientId client) {
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
-        const auto found = std::remove_if(clients_.begin(), clients_.end(),
-                                          [client](const Client& c) { return c.id == client; });
-        if (found == clients_.end())
+        const std::scoped_lock lock(mutex_);
+        if (std::erase_if(clients_, [client](const Client& c) { return c.id == client; }) == 0)
             return;
-        clients_.erase(found, clients_.end());
         releaseIdleTopicsLocked();
     }
     // This runs on the departing connection's own thread, so the timers are
@@ -392,12 +408,12 @@ void SubscriptionHub::removeClient(ClientId client) {
 }
 
 int SubscriptionHub::clientCount() const {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     return static_cast<int>(clients_.size());
 }
 
-void SubscriptionHub::setMeterSource(std::unique_ptr<MeterSource> source) {
-    const std::lock_guard<std::mutex> lock(mutex_);
+void SubscriptionHub::setMeterSource(std::shared_ptr<MeterSource> source) {
+    const std::scoped_lock lock(mutex_);
     meters_ = std::move(source);
 }
 
@@ -406,15 +422,14 @@ bool SubscriptionHub::isSubscriptionMethod(const juce::String& method) {
 }
 
 SubscriptionHub::Client* SubscriptionHub::findLocked(ClientId client) {
-    const auto found = std::find_if(clients_.begin(), clients_.end(),
-                                    [client](const Client& c) { return c.id == client; });
+    const auto found = std::ranges::find(clients_, client, &Client::id);
     return found == clients_.end() ? nullptr : &*found;
 }
 
 bool SubscriptionHub::anySubscriberLocked(Topic topic) const {
     const auto index = indexOf(topic);
-    return std::any_of(clients_.begin(), clients_.end(),
-                       [index](const Client& client) { return client.subscribed[index]; });
+    const auto isSubscribed = [index](const Client& client) { return client.subscribed[index]; };
+    return std::ranges::any_of(clients_, isSubscribed);
 }
 
 void SubscriptionHub::releaseIdleTopicsLocked() {
@@ -444,7 +459,7 @@ void SubscriptionHub::applyTopology() {
     bool wantSampler = false;
     int existing = 0;
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         topologyPending_ = false;
         if (shutdown_)
             return;
@@ -476,14 +491,14 @@ void SubscriptionHub::applyTopology() {
         auto gate = gate_;
         const auto token = service_.changes().addListener(
             [gate](const std::vector<ChangeSource::Change>& changes) {
-                const std::lock_guard<std::mutex> lock(gate->mutex);
+                const std::scoped_lock lock(gate->mutex);
                 if (gate->hub != nullptr)
                     gate->hub->publish(changes);
             });
 
         bool keep = false;
         {
-            const std::lock_guard<std::mutex> lock(mutex_);
+            const std::scoped_lock lock(mutex_);
             // Shutdown may have landed while the listener was being attached,
             // in which case this token is surplus.
             if (!shutdown_ && changeToken_ == 0) {
@@ -498,7 +513,7 @@ void SubscriptionHub::applyTopology() {
 
     int token = 0;
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         token = changeToken_;
         changeToken_ = 0;
     }
@@ -516,7 +531,7 @@ void SubscriptionHub::scheduleTopology() {
     }
 
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         if (shutdown_ || topologyPending_)
             return;
         topologyPending_ = true;
@@ -524,13 +539,13 @@ void SubscriptionHub::scheduleTopology() {
 
     auto gate = gate_;
     if (!juce::MessageManager::callAsync([gate] {
-            const std::lock_guard<std::mutex> lock(gate->mutex);
+            const std::scoped_lock lock(gate->mutex);
             if (gate->hub != nullptr)
                 gate->hub->applyTopology();
         })) {
         // The message loop is going away, so nothing will reconcile anything
         // again; shutdown() detaches everything regardless.
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         topologyPending_ = false;
     }
 }
@@ -539,7 +554,14 @@ void SubscriptionHub::scheduleTopology() {
 // Projection
 // ---------------------------------------------------------------------------
 
-juce::var SubscriptionHub::projectTopic(Topic topic) {
+juce::var SubscriptionHub::projectTopic(Topic topic, const juce::String& ownerClientId,
+                                        ScopeSet scopes) {
+    if (topic == Topic::Jobs) {
+        juce::Array<juce::var> jobs;
+        for (const auto& job : service_.jobs().list(ownerClientId, scopes))
+            jobs.add(toJson(job));
+        return jobs;
+    }
     const auto* name = snapshotOperationFor(topic);
     if (name == nullptr)
         return {};
@@ -632,12 +654,17 @@ void SubscriptionHub::foldFlushOutcomesLocked() {
 
 bool SubscriptionHub::owesSnapshotLocked(Topic topic) const {
     const auto index = indexOf(topic);
-    return std::any_of(clients_.begin(), clients_.end(), [index](const Client& client) {
+    const auto owesSnapshot = [index](const Client& client) {
         return client.subscribed[index] && client.needsSnapshot[index];
-    });
+    };
+    return std::ranges::any_of(clients_, owesSnapshot);
 }
 
-void SubscriptionHub::publishTopicLocked(Topic topic, Revision revision) {
+void SubscriptionHub::publishTopicLocked(Topic topic, Revision revision, bool reset) {
+    if (topic == Topic::Jobs) {
+        publishJobsLocked(revision, reset);
+        return;
+    }
     const auto index = indexOf(topic);
 
     // A client that refused an event is owed complete state, and it is owed it
@@ -650,10 +677,13 @@ void SubscriptionHub::publishTopicLocked(Topic topic, Revision revision) {
 
     auto current = projectTopic(topic);
     auto& state = topics_[index];
-    const bool hadBaseline = state.hasBaseline;
+    // A project boundary invalidates the meaning of every cached ID. Even an
+    // identical-looking empty project needs a fresh snapshot at the new revision.
+    const bool hadBaseline = state.hasBaseline && !reset;
 
     SubscriptionEvent delta{topic, SubscriptionEvent::Type::Delta, revision, {}};
     bool changed = !hadBaseline;
+    bool sessionEnvelopeChanged = false;
 
     if (hadBaseline) {
         if (!keyFieldsFor(topic).empty()) {
@@ -661,6 +691,11 @@ void SubscriptionHub::publishTopicLocked(Topic topic, Revision revision) {
             changed = difference.changed();
             if (changed)
                 delta.payload = difference.toJson();
+            if (topic == Topic::Session) {
+                sessionEnvelopeChanged = !deepEquals(state.baseline["scenes"], current["scenes"]) ||
+                                         !deepEquals(state.baseline["tracks"], current["tracks"]);
+                changed = changed || sessionEnvelopeChanged;
+            }
         } else {
             changed = !deepEquals(state.baseline, current);
             if (changed)
@@ -683,7 +718,7 @@ void SubscriptionHub::publishTopicLocked(Topic topic, Revision revision) {
     for (auto& client : clients_) {
         if (!client.subscribed[index])
             continue;
-        if (client.needsSnapshot[index] || !hadBaseline) {
+        if (client.needsSnapshot[index] || !hadBaseline || sessionEnvelopeChanged) {
             deliverLocked(client, snapshot);
             continue;
         }
@@ -691,6 +726,26 @@ void SubscriptionHub::publishTopicLocked(Topic topic, Revision revision) {
         // only for the ones that are behind.
         if (changed)
             deliverLocked(client, delta);
+    }
+}
+
+void SubscriptionHub::publishJobsLocked(Revision revision, bool reset) {
+    const auto index = indexOf(Topic::Jobs);
+    for (auto& client : clients_) {
+        if (!client.subscribed[index])
+            continue;
+        const auto current = projectTopic(Topic::Jobs, client.ownerClientId,
+                                          client.scopes ? client.scopes() : ScopeSet{});
+        const bool changed =
+            reset || !client.hasJobsBaseline || !deepEquals(client.jobsBaseline, current);
+        if (!changed && !client.needsSnapshot[index])
+            continue;
+        const auto type = reset || client.needsSnapshot[index] || !client.hasJobsBaseline
+                              ? SubscriptionEvent::Type::Snapshot
+                              : SubscriptionEvent::Type::Delta;
+        deliverLocked(client, {Topic::Jobs, type, revision, current});
+        client.jobsBaseline = current;
+        client.hasJobsBaseline = true;
     }
 }
 
@@ -702,7 +757,7 @@ void SubscriptionHub::publish(const std::vector<ChangeSource::Change>& changes) 
     bool dropped = false;
     std::vector<Topic> stillOwed;
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         if (shutdown_)
             return;
 
@@ -718,7 +773,7 @@ void SubscriptionHub::publish(const std::vector<ChangeSource::Change>& changes) 
                 continue;
             if (!anySubscriberLocked(change.topic))
                 continue;
-            publishTopicLocked(change.topic, change.revision);
+            publishTopicLocked(change.topic, change.revision, change.reset);
         }
 
         // Once per client per flush, after every topic has had its turn, so the
@@ -752,7 +807,7 @@ void SubscriptionHub::publish(const std::vector<ChangeSource::Change>& changes) 
 }
 
 void SubscriptionHub::sampleNow() {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     if (shutdown_)
         return;
 
@@ -790,10 +845,8 @@ bool SubscriptionHub::dropAbandonedLocked() {
         if (abandoned(client) && client.disconnect != nullptr)
             departing.push_back(client.disconnect);
 
-    const auto removed = std::remove_if(clients_.begin(), clients_.end(), abandoned);
-    if (removed == clients_.end())
+    if (std::erase_if(clients_, abandoned) == 0)
         return false;
-    clients_.erase(removed, clients_.end());
 
     for (const auto& disconnect : departing)
         disconnect("subscriber is not consuming events");
@@ -813,7 +866,8 @@ void SubscriptionHub::sendSnapshotsLocked(Client& client, const std::vector<Topi
             continue;
 
         const auto index = indexOf(topic);
-        auto current = projectTopic(topic);
+        auto current =
+            projectTopic(topic, client.ownerClientId, client.scopes ? client.scopes() : ScopeSet{});
 
         // Deliberately does not overwrite an existing baseline. Another client
         // may still be current against it, and moving it forward here would
@@ -821,7 +875,10 @@ void SubscriptionHub::sendSnapshotsLocked(Client& client, const std::vector<Topi
         // subscriber may therefore receive a delta covering ground its snapshot
         // already had, which is harmless: added and updated are upserts keyed by
         // id, so applying one twice lands in the same place.
-        if (!topics_[index].hasBaseline) {
+        if (topic == Topic::Jobs) {
+            client.jobsBaseline = current;
+            client.hasJobsBaseline = true;
+        } else if (!topics_[index].hasBaseline) {
             topics_[index].baseline = current;
             topics_[index].hasBaseline = true;
         }
@@ -867,7 +924,7 @@ bool SubscriptionHub::handle(ClientId client, const juce::String& method, const 
                                              "unknown topic: " + entry.toString(), revision));
                 return true;
             }
-            if (std::find(requested.begin(), requested.end(), *topic) == requested.end())
+            if (!std::ranges::contains(requested, *topic))
                 requested.push_back(*topic);
         }
     }
@@ -881,7 +938,7 @@ bool SubscriptionHub::handle(ClientId client, const juce::String& method, const 
                 onComplete = std::move(onComplete)]() mutable {
         Response response;
         {
-            const std::lock_guard<std::mutex> lock(gate->mutex);
+            const std::scoped_lock lock(gate->mutex);
             response = gate->hub != nullptr
                            ? gate->hub->execute(client, method, params, requested, topicsGiven)
                            : Response::failure(ErrorCode::Cancelled, "subscriptions are shut down",
@@ -912,7 +969,7 @@ Response SubscriptionHub::execute(ClientId client, const juce::String& method,
 
     Response response;
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         if (shutdown_)
             return Response::failure(ErrorCode::Cancelled, "remote API service is shut down",
                                      revision);
@@ -942,7 +999,7 @@ Response SubscriptionHub::execute(ClientId client, const juce::String& method,
             // continuity would need a second, per-topic cursor on the wire, and
             // being wrong about it leaves a client silently stale, which is the
             // failure this whole design is meant to make impossible.
-            const auto wanted = params["snapshot"];
+            const auto& wanted = params["snapshot"];
             const bool asked = wanted.isVoid() || static_cast<bool>(wanted);
 
             if (asked)
@@ -950,16 +1007,22 @@ Response SubscriptionHub::execute(ClientId client, const juce::String& method,
             else
                 for (const auto topic : requested)
                     if (!isContinuousTopic(topic) && !topics_[indexOf(topic)].hasBaseline) {
-                        topics_[indexOf(topic)].baseline = projectTopic(topic);
-                        topics_[indexOf(topic)].hasBaseline = true;
+                        if (topic == Topic::Jobs) {
+                            entry->jobsBaseline =
+                                projectTopic(topic, entry->ownerClientId,
+                                             entry->scopes ? entry->scopes() : ScopeSet{});
+                            entry->hasJobsBaseline = true;
+                        } else {
+                            topics_[indexOf(topic)].baseline = projectTopic(topic);
+                            topics_[indexOf(topic)].hasBaseline = true;
+                        }
                     }
         } else if (method == kUnsubscribe) {
             // No topics means all of them: the shape a client uses when it is
             // going away rather than narrowing what it watches.
             for (std::size_t index = 0; index < TOPIC_COUNT; ++index) {
                 const auto topic = static_cast<Topic>(index);
-                if (!topicsGiven ||
-                    std::find(requested.begin(), requested.end(), topic) != requested.end())
+                if (!topicsGiven || std::ranges::contains(requested, topic))
                     entry->subscribed[index] = false;
             }
             releaseIdleTopicsLocked();
@@ -969,8 +1032,7 @@ Response SubscriptionHub::execute(ClientId client, const juce::String& method,
                 const auto topic = static_cast<Topic>(index);
                 if (!entry->subscribed[index])
                     continue;
-                if (topicsGiven &&
-                    std::find(requested.begin(), requested.end(), topic) == requested.end())
+                if (topicsGiven && !std::ranges::contains(requested, topic))
                     continue;
                 targets.push_back(topic);
             }

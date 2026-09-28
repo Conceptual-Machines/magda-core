@@ -58,7 +58,7 @@ class ChainRowComponent : public juce::Component,
     void mouseUp(const juce::MouseEvent& event) override;
     void mouseDoubleClick(const juce::MouseEvent& event) override;
 
-    int getPreferredHeight() const;
+    static int getPreferredHeight();
     magda::ChainId getChainId() const {
         return chainId_;
     }

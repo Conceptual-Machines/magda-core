@@ -21,6 +21,9 @@ namespace magda::daw::ui {
  */
 struct MockParameterInfo {
     juce::String name;
+    /// The parameter's own id, carried from the scan so the config this dialog
+    /// writes is addressed by identity rather than by row.
+    juce::String stableId;
     float defaultValue = 0.5f;
     bool isVisible = true;
     juce::String unit;  // Hz, dB, ms, %, semitones, custom
@@ -49,7 +52,7 @@ class ParameterConfigDialog : public juce::Component,
                               public juce::TableListBoxModel,
                               private juce::Timer {
   public:
-    ParameterConfigDialog(const juce::String& pluginName);
+    ParameterConfigDialog(juce::String pluginName);
     ~ParameterConfigDialog() override;
 
     void paint(juce::Graphics& g) override;
@@ -74,17 +77,6 @@ class ParameterConfigDialog : public juce::Component,
     // Show dialog for a specific plugin (loads real parameters)
     static void showForPlugin(const juce::String& uniqueId, const juce::String& pluginName,
                               juce::Component* parent);
-
-    // Load saved parameter configuration and apply to DeviceInfo
-    static bool applyConfigToDevice(const juce::String& uniqueId, magda::DeviceInfo& device);
-
-    // True when an external plugin has at least one parameter explicitly
-    // selected for the generic AI sound designer.
-    static bool hasAiSoundDesignerParameters(const juce::String& uniqueId);
-
-#ifdef MAGDA_ENABLE_TEST_HOOKS
-    static void refreshLiveDevicesForParameterConfigForTest(const juce::String& uniqueId);
-#endif
 
   private:
     juce::String pluginName_;

@@ -1,12 +1,27 @@
 #include "FaustResources.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <regex>
 #include <string>
 
 #include "core/AppPaths.hpp"
 
 namespace magda::daw::audio {
+
+namespace {
+
+std::atomic<bool> faustLibraryImportsOff{false};
+
+}  // namespace
+
+void disallowFaustLibraryImports() {
+    faustLibraryImportsOff.store(true, std::memory_order_relaxed);
+}
+
+bool faustLibraryImportsDisallowed() {
+    return faustLibraryImportsOff.load(std::memory_order_relaxed);
+}
 
 namespace {
 
@@ -28,6 +43,20 @@ juce::String readCustomViewName(const juce::String& source) {
     return readDeclare(source, "magda_view");
 }
 
+magda::SidechainPort readSidechainPort(const juce::String& source, int inputCount,
+                                       int outputCount) {
+    if (!readDeclare(source, "magda_sidechain").equalsIgnoreCase("audio"))
+        return {};
+
+    // A patch that asks for a key and leaves it nowhere to arrive has declared
+    // nothing the host can route: the dsp reads the key off its own inputs.
+    const int channels = inputCount - outputCount;
+    if (channels <= 0)
+        return {};
+
+    return {.kind = magda::SidechainPort::Kind::Audio, .channels = std::min(channels, 2)};
+}
+
 FaustPatchInfo readPatchInfo(const juce::String& source) {
     FaustPatchInfo info;
     info.author = readDeclare(source, "author");
@@ -41,8 +70,18 @@ juce::File getFaustLibrariesPath() {
 #if JUCE_MAC
     // currentApplicationFile is the .app bundle on macOS. Libraries live in
     // Contents/Resources/faustlibraries (matches CMake's POST_BUILD copy).
-    return juce::File::getSpecialLocation(juce::File::currentApplicationFile)
-        .getChildFile("Contents/Resources/faustlibraries");
+    const auto bundled = juce::File::getSpecialLocation(juce::File::currentApplicationFile)
+                             .getChildFile("Contents/Resources/faustlibraries");
+    if (bundled.isDirectory())
+        return bundled;
+
+    // Not everything that hosts a device on macOS is a bundle. currentApplicationFile
+    // is the executable itself for a plain one, so the path above becomes
+    // `magda_juce_tests/Contents/Resources/faustlibraries` and every
+    // import("stdfaust.lib") fails -- silently, because a device whose DSP will
+    // not compile passes audio through. The same staging every other
+    // exe-adjacent resource directory uses is what to fall back to.
+    return magda::paths::executableDir().getChildFile("faustlibraries");
 #else
     // On Windows/Linux, libraries sit next to the executable. Go through
     // paths::executableDir() rather than currentApplicationFile so this

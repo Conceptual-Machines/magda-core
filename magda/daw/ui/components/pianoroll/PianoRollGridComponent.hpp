@@ -169,11 +169,8 @@ class PianoRollGridComponent : public juce::Component,
         return pitchExpressionMode_;
     }
 
-    // Playhead position (for drawing playhead line during playback)
-    void setPlayheadPosition(double positionSeconds);
-    double getPlayheadPosition() const {
-        return playheadPosition_;
-    }
+    // Transport position in timeline beats while playing; negative hides the playhead.
+    void setPlayheadBeat(double timelineBeat);
     // Grid-local x of the playhead exactly as drawn over the note grid (incl.
     // loop wrap / relative-mode mapping). Lets the chord lane above the grid
     // draw a matching playhead line that stays locked while scrolling. Returns
@@ -192,7 +189,7 @@ class PianoRollGridComponent : public juce::Component,
     bool isSnapEnabled() const {
         return snapEnabled_;
     }
-    void setTimeSignatureNumerator(int numerator);
+    void setTimeSignature(int numerator, int denominator);
 
     // Coordinate conversion
     int beatToPixel(double beat) const;
@@ -347,6 +344,7 @@ class PianoRollGridComponent : public juce::Component,
     double gridResolutionBeats_ = 0.25;  // Default 1/16 note
     bool snapEnabled_ = true;
     int timeSignatureNumerator_ = DEFAULT_TIME_SIGNATURE_NUMERATOR;
+    int timeSignatureDenominator_ = DEFAULT_TIME_SIGNATURE_DENOMINATOR;
 
     // Clip position and display mode
     double clipStartBeats_ = 0.0;        // Clip's start position on timeline (in beats)
@@ -355,7 +353,7 @@ class PianoRollGridComponent : public juce::Component,
     bool relativeMode_ = true;  // true = notes at beat 0, false = notes at absolute position
 
     // Playhead position (in seconds)
-    double playheadPosition_ = -1.0;  // -1 = not playing, hide playhead
+    double playheadBeat_ = -1.0;
 
     // Edit cursor position (in seconds)
     double editCursorPosition_ = -1.0;  // -1 = hidden
@@ -467,6 +465,11 @@ class PianoRollGridComponent : public juce::Component,
     int expressionDragPointIndex_ = -1;
     bool isExpressionDragging_ = false;
 
+    // Bending a segment rather than moving a point (#2198): the index of the
+    // segment's left point, which is the point that owns its shape. -1 when the
+    // drag is an ordinary point move.
+    int expressionTensionSegmentIndex_ = -1;
+
     static constexpr int EXPRESSION_POINT_HIT_RADIUS = 6;
     static constexpr double MAX_PITCH_EXPRESSION_SEMITONES = 48.0;
 
@@ -500,14 +503,40 @@ class PianoRollGridComponent : public juce::Component,
     std::optional<ExpressionHit> hitTestExpressionPoint(juce::Point<int> pos) const;
     std::optional<ExpressionHit> hitTestExpressionNote(juce::Point<int> pos) const;
 
+    /// Cursor while editing glides: the bend glyph when the gesture would take
+    /// effect here, the ordinary pointer otherwise (#2198).
+    void updateExpressionCursor(const juce::ModifierKeys& mods, juce::Point<int> pos);
+
+    /// Whether @p mods ask for a segment bend rather than a point move (#2198).
+    /// Alt, which is what Bitwig uses and the one modifier free here: Shift
+    /// already means "do not snap to semitones" on the other two gestures.
+    /// Hard-coded rather than routed through GestureRouter, whose action codes
+    /// are persisted and whose only discrete drag actions today are the clip
+    /// duplicates; worth revisiting if a second such gesture appears.
+    static bool isBendExpressionGesture(const juce::ModifierKeys& mods) {
+        return mods.isAltDown();
+    }
+
+    /// Reshape the segment being dragged so its curve passes under the cursor.
+    void bendExpressionSegment(const MidiNote& note, const juce::MouseEvent& e);
+
+    /// The segment under @p pos, reported as its left point's index (#2198).
+    /// Only segments between two authored points: the flat runs before the
+    /// first point and after the last are the note's own pitch, not a glide.
+    std::optional<ExpressionHit> hitTestExpressionSegment(juce::Point<int> pos) const;
+
     // Point under the mouse (for the pitch value label)
     std::optional<ExpressionHit> hoveredExpressionPoint_;
     void paintExpressionPointLabel(juce::Graphics& g, const MidiNote& note,
                                    const MidiPitchExpressionPoint& point,
                                    juce::Point<float> screen);
 
-    // Grid snap helper
+    // Grid snap helpers. snapBeatToGrid rounds to the nearest grid line (drag,
+    // resize, playhead); snapBeatToGridFloor returns the display beat of the
+    // rendered cell containing the clicked pixel, so a pencil click anywhere
+    // in a cell's painted span inserts on that cell (#2266).
     double snapBeatToGrid(double beat) const;
+    double snapBeatToGridFloor(int mouseX) const;
 
     // Note management
     void createNoteComponents();
@@ -532,10 +561,11 @@ class PianoRollGridComponent : public juce::Component,
     };
     std::optional<NoteInsertPosition> getNoteInsertPosition(juce::Point<int> localPos) const;
     double displayBeatForClipBeat(ClipId clipId, double clipBeat) const;
-    double clipBeatForDisplayX(ClipId clipId, int mouseX) const;
+    double clipBeatForDisplayBeat(ClipId clipId, double displayBeat) const;
+    double clipBeatForDisplayX(ClipId clipId, int mouseX, bool floorToCell = false) const;
     double absolutePlayheadBeatForDisplayX(int mouseX) const;
     void updateEmptyGridCursor(const juce::ModifierKeys& mods, int mouseX);
-    bool isBlackKey(int noteNumber) const;
+    static bool isBlackKey(int noteNumber);
     juce::Colour getClipColour() const;
     juce::Colour getColourForClip(ClipId clipId) const;
     bool isClipSelected(ClipId clipId) const;

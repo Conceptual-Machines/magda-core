@@ -4,8 +4,7 @@
 
 #include <vector>
 
-namespace magda {
-namespace remote {
+namespace magda::remote {
 
 /**
  * @brief The admission rules every remote transport shares.
@@ -52,5 +51,4 @@ bool isAuthorised(const juce::String& authorizationHeader, const juce::String& t
 bool isOriginAllowed(bool originPresent, const juce::String& origin,
                      const std::vector<juce::String>& allowedOrigins);
 
-}  // namespace remote
-}  // namespace magda
+}  // namespace magda::remote

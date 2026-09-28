@@ -1,5 +1,7 @@
 #include "racks/InstrumentRackManager.hpp"
 
+#include <utility>
+
 #include "plugins/InstrumentMeterTapPlugin.hpp"
 
 namespace magda {
@@ -13,7 +15,7 @@ te::Plugin::Ptr createMeterTapPlugin(te::Edit& edit) {
     return edit.getPluginCache().createNewPlugin(pluginState);
 }
 
-te::Plugin::Ptr findMeterTapPlugin(te::RackType::Ptr rackType) {
+te::Plugin::Ptr findMeterTapPlugin(const te::RackType::Ptr& rackType) {
     if (!rackType)
         return nullptr;
 
@@ -29,8 +31,8 @@ te::Plugin::Ptr findMeterTapPlugin(te::RackType::Ptr rackType) {
 
 InstrumentRackManager::InstrumentRackManager(te::Edit& edit) : edit_(edit) {}
 
-te::Plugin::Ptr InstrumentRackManager::wrapInstrument(te::Plugin::Ptr instrument,
-                                                      bool passRawMidiInput) {
+te::Plugin::Ptr InstrumentRackManager::wrapInstrument(const te::Plugin::Ptr& instrument,
+                                                      const routing::ChainRoutingNode& routing) {
     if (!instrument) {
         return nullptr;
     }
@@ -77,18 +79,21 @@ te::Plugin::Ptr InstrumentRackManager::wrapInstrument(te::Plugin::Ptr instrument
     // MIDI: rack input pin 0 --> synth pin 0
     rackType->addConnection(rackIOId, 0, synthId, 0);
 
-    // A wrapped plugin's OWN MIDI output always flows to the rack output, so a
+    // A wrapped plugin's OWN MIDI output flows to the rack output, so a
     // MIDI-producing plugin (sequencer, arpeggiator -- e.g. Stochas) triggers
-    // instruments downstream of it in the chain. This is unconditional: a plain
-    // synth emits no MIDI, so the connection simply carries nothing.
-    rackType->addConnection(synthId, 0, rackIOId, 0);
+    // instruments downstream of it in the chain. Only for a device that declares
+    // a MIDI output: TE's PluginNode passes on whatever the plugin left in the
+    // buffer it was handed, so for a plain synth pin 0 would carry the rack's own
+    // input back out and double every note against the passthrough below (#2346).
+    if (routing.outputsPluginMidi())
+        rackType->addConnection(synthId, 0, rackIOId, 0);
 
     // The rack's raw MIDI INPUT passes straight through (bypassing the plugin) so
     // the notes keep flowing to every downstream device - that is how a
     // MIDI-triggered modulation after an instrument still sees the trigger. The
     // decision comes from ChainRoutingModel: a plain instrument always forwards
     // (RawInputOnly); a MIDI-output device follows its midiInThru flag.
-    if (passRawMidiInput)
+    if (routing.passesRawMidiInput())
         rackType->addConnection(rackIOId, 0, rackIOId, 0);
 
     // Audio passthrough: rack input pin 1 --> rack output pin 1 (left)
@@ -121,11 +126,11 @@ te::Plugin::Ptr InstrumentRackManager::wrapInstrument(te::Plugin::Ptr instrument
     return rackInstance;
 }
 
-te::Plugin::Ptr InstrumentRackManager::wrapMultiOutInstrument(te::Plugin::Ptr instrument,
-                                                              int numOutputChannels,
-                                                              bool passRawMidiInput) {
+te::Plugin::Ptr InstrumentRackManager::wrapMultiOutInstrument(
+    const te::Plugin::Ptr& instrument, int numOutputChannels,
+    const routing::ChainRoutingNode& routing) {
     if (!instrument || numOutputChannels <= 2) {
-        return wrapInstrument(instrument, passRawMidiInput);  // Fallback to normal wrapping
+        return wrapInstrument(instrument, routing);  // Fallback to normal wrapping
     }
 
     // 1. Create a new RackType in the edit
@@ -171,12 +176,13 @@ te::Plugin::Ptr InstrumentRackManager::wrapMultiOutInstrument(te::Plugin::Ptr in
     // MIDI: rack input pin 0 --> synth pin 0
     rackType->addConnection(rackIOId, 0, synthId, 0);
 
-    // Plugin's own MIDI output always flows downstream (see wrapInstrument).
-    rackType->addConnection(synthId, 0, rackIOId, 0);
+    // Plugin's own MIDI output, for a device that declares one (see wrapInstrument).
+    if (routing.outputsPluginMidi())
+        rackType->addConnection(synthId, 0, rackIOId, 0);
 
     // Raw input bypassing the plugin so notes reach downstream devices (see
     // wrapInstrument).
-    if (passRawMidiInput)
+    if (routing.passesRawMidiInput())
         rackType->addConnection(rackIOId, 0, rackIOId, 0);
 
     // Audio passthrough: rack input pin 1 --> rack output pin 1 (left)
@@ -308,8 +314,9 @@ void InstrumentRackManager::unwrap(DeviceId deviceId) {
 }
 
 void InstrumentRackManager::recordWrapping(const ChainNodePath& devicePath,
-                                           te::RackType::Ptr rackType, te::Plugin::Ptr innerPlugin,
-                                           te::Plugin::Ptr rackInstance, bool isMultiOut,
+                                           const te::RackType::Ptr& rackType,
+                                           te::Plugin::Ptr innerPlugin,
+                                           const te::Plugin::Ptr& rackInstance, bool isMultiOut,
                                            int numOutputChannels) {
     const auto deviceId = devicePath.getDeviceId();
     te::Plugin::Ptr meterTap;
@@ -332,8 +339,9 @@ void InstrumentRackManager::recordWrapping(const ChainNodePath& devicePath,
             << deviceId);
     }
 
-    wrapped_[deviceId] = {rackType,          innerPlugin, rackInstance, meterTap, isMultiOut,
-                          numOutputChannels, {}};
+    wrapped_[deviceId] = {
+        rackType, std::move(innerPlugin), rackInstance, meterTap, isMultiOut, numOutputChannels,
+        {}};
 }
 
 te::Plugin* InstrumentRackManager::getInnerPlugin(DeviceId deviceId) const {
@@ -394,19 +402,27 @@ te::RackType::Ptr InstrumentRackManager::getRackType(DeviceId deviceId) const {
     return nullptr;
 }
 
-void InstrumentRackManager::setMidiInThru(DeviceId deviceId, bool enabled) {
+void InstrumentRackManager::updateMidiRouting(DeviceId deviceId,
+                                              const routing::ChainRoutingNode& routing) {
     auto it = wrapped_.find(deviceId);
     if (it == wrapped_.end() || !it->second.rackType)
         return;
 
-    // Toggle the raw-input-passthrough connection (rack MIDI in --> rack MIDI
-    // out) live. The plugin's own MIDI output (synth pin 0 --> rack out) is
-    // wired unconditionally at wrap time and is untouched here.
+    // Both paths to the rack's MIDI output are re-derived from the routing node,
+    // so a device that gains a MIDI sidechain stops emitting into the chain the
+    // same way a midiInThru toggle stops the raw passthrough.
     auto rackIOId = te::EditItemID();  // rack I/O
     auto& rackType = *it->second.rackType;
+
     rackType.removeConnection(rackIOId, 0, rackIOId, 0);
-    if (enabled)
+    if (routing.passesRawMidiInput())
         rackType.addConnection(rackIOId, 0, rackIOId, 0);
+
+    if (auto* innerPlugin = it->second.innerPlugin.get()) {
+        rackType.removeConnection(innerPlugin->itemID, 0, rackIOId, 0);
+        if (routing.outputsPluginMidi())
+            rackType.addConnection(innerPlugin->itemID, 0, rackIOId, 0);
+    }
 }
 
 void InstrumentRackManager::clear() {

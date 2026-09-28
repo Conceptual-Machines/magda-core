@@ -1,9 +1,10 @@
 #include "DraggableValueLabel.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "ValueEditGesture.hpp"
 #include "core/AutomationManager.hpp"
@@ -127,18 +128,12 @@ juce::String DraggableValueLabel::formatValue(double val) const {
         }
 
         case Format::BarsBeats: {
-            constexpr int TICKS_PER_BEAT = 480;
-            int wholeBars = static_cast<int>(val / beatsPerBar_);
-            double remaining = std::fmod(val, static_cast<double>(beatsPerBar_));
-            if (remaining < 0.0)
-                remaining = 0.0;
-            int wholeBeats = static_cast<int>(remaining);
-            int ticks = static_cast<int>((remaining - wholeBeats) * TICKS_PER_BEAT);
+            const auto position = toBarsBeatsTicks(val, numerator_, denominator_);
             int offset = barsBeatsIsPosition_ ? 1 : 0;
             char buffer[32];
-            std::snprintf(buffer, sizeof(buffer), "%d.%d.%03d", wholeBars + offset,
-                          wholeBeats + offset, ticks);
-            return juce::String(buffer);
+            std::snprintf(buffer, sizeof(buffer), "%d.%d.%03d", position.bars + offset,
+                          position.beats + offset, position.ticks);
+            return {buffer};
         }
 
         case Format::Raw:
@@ -243,7 +238,6 @@ double DraggableValueLabel::parseValue(const juce::String& text) const {
         }
 
         case Format::BarsBeats: {
-            constexpr int TICKS_PER_BEAT = 480;
             int offset = barsBeatsIsPosition_ ? 1 : 0;
             auto parts = juce::StringArray::fromTokens(trimmed, ".", "");
             int bar = 0, beat = 0, ticks = 0;
@@ -253,13 +247,10 @@ double DraggableValueLabel::parseValue(const juce::String& text) const {
                 beat = parts[1].getIntValue() - offset;
             if (parts.size() >= 3)
                 ticks = parts[2].getIntValue();
-            if (bar < 0)
-                bar = 0;
-            if (beat < 0)
-                beat = 0;
-            if (ticks < 0)
-                ticks = 0;
-            return bar * beatsPerBar_ + beat + ticks / static_cast<double>(TICKS_PER_BEAT);
+            bar = std::max(bar, 0);
+            beat = std::max(beat, 0);
+            ticks = std::max(ticks, 0);
+            return fromBarsBeatsTicks({bar, beat, ticks}, numerator_, denominator_);
         }
 
         case Format::Raw:
@@ -319,7 +310,7 @@ void DraggableValueLabel::beginAutomationGesture(double baselineValue) {
     mgr.beginTargetGesture(automationTarget_);
     mgr.setTargetUserTouched(automationTarget_, true);
     const auto info = getParameterInfoForTarget(automationTarget_);
-    const double normalized = static_cast<double>(
+    const auto normalized = static_cast<double>(
         ParameterUtils::realToNormalized(static_cast<float>(baselineValue), info));
     mgr.setTouchBaseline(automationTarget_, normalized);
 }
@@ -342,7 +333,7 @@ void DraggableValueLabel::mouseDrag(const juce::MouseEvent& e) {
     // Calculate delta (dragging up increases value)
     int deltaY = dragStartY_ - e.y;
 
-    double deltaValue;
+    double deltaValue = NAN;
     if (format_ == Format::BarsBeats) {
         // BarsBeats: 1 beat per ~30px, shift = fine control (0.25 beats)
         double beatsPerPixel = 1.0 / 30.0;

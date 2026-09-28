@@ -3,7 +3,7 @@
 #include <cmath>
 
 #include "core/GestureRouter.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -114,7 +114,7 @@ void DrumVoiceUI::ensureControls(int count) {
 
         c.label = std::make_unique<juce::Label>();
         c.label->setFont(FontManager::getInstance().getUIFont(10.0f));
-        c.label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        c.label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
         c.label->setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(*c.label);
 
@@ -189,10 +189,10 @@ void DrumVoiceUI::layoutGrid(juce::Rectangle<int> area, const std::vector<int>& 
 }
 
 void DrumVoiceUI::paint(juce::Graphics& g) {
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
     g.fillRect(getLocalBounds());
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.setFont(FontManager::getInstance().getUIFont(11.0f));
 
     auto titleArea = getLocalBounds().removeFromTop(kSectionTitleH).reduced(kCellPad, 0);
@@ -205,7 +205,7 @@ void DrumVoiceUI::paint(juce::Graphics& g) {
     // section's decay never rescales another's graph.
     for (size_t i = 0; i < sectionTitleAreas_.size() && i < sections_.size(); ++i) {
         const auto& s = sections_[i];
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.setFont(FontManager::getInstance().getUIFont(11.0f));
         g.drawText(s.title, sectionTitleAreas_[i].reduced(2, 0), juce::Justification::centredLeft,
                    false);
@@ -279,7 +279,7 @@ void DrumVoiceUI::drawEnvelope(juce::Graphics& g, juce::Rectangle<int> area, con
         (s.attackSlot >= 0 && s.attackSlot < static_cast<int>(controls_.size()))
             ? static_cast<float>(controls_[static_cast<size_t>(s.attackSlot)].slider->getValue())
             : 0.0f;
-    const float decayMs =
+    const auto decayMs =
         static_cast<float>(controls_[static_cast<size_t>(s.decaySlot)].slider->getValue());
 
     // Curve knob (-50..50) -> decay exponent 8^(-c/50), matching the dsp. 0 (or no
@@ -309,7 +309,7 @@ void DrumVoiceUI::drawEnvelope(juce::Graphics& g, juce::Rectangle<int> area, con
         p.lineTo(xA + (xD - xA) * pn, bot - (bot - top) * e);
     }
 
-    auto accent = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
+    auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
     g.setColour(accent.withAlpha(0.18f));
     juce::Path fill = p;
     fill.lineTo(r.getX(), bot);
@@ -347,7 +347,7 @@ bool DrumVoiceUI::envHandles(int i, juce::Point<float>& peak, juce::Point<float>
         (s.attackSlot >= 0 && s.attackSlot < static_cast<int>(controls_.size()))
             ? static_cast<float>(controls_[static_cast<size_t>(s.attackSlot)].slider->getValue())
             : 0.0f;
-    const float dMs =
+    const auto dMs =
         static_cast<float>(controls_[static_cast<size_t>(s.decaySlot)].slider->getValue());
     const float xA = r.getX() + r.getWidth() * (aMs / axis);
     const float xD = juce::jmin(r.getRight(), r.getX() + r.getWidth() * ((aMs + dMs) / axis));
@@ -431,7 +431,7 @@ void DrumVoiceUI::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWhe
             continue;
         if (!sectionEnvAreas_[static_cast<size_t>(i)].toFloat().contains(e.position))
             continue;
-        const float cur =
+        const auto cur =
             static_cast<float>(controls_[static_cast<size_t>(s.curveSlot)].slider->getValue());
         // Scroll down bends the curve down (toward fast/negative); up = swelled/positive.
         const float delta = gesture.magnitude * 60.0f;

@@ -4,7 +4,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaSaturatorCompiledPlugin.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -46,8 +46,8 @@ CompiledSaturatorCurveView::CompiledSaturatorCurveView(juce::String /*pluginId*/
 }
 
 void CompiledSaturatorCurveView::setCompiledPlugin(
-    magda::daw::audio::compiled::MagdaSaturatorCompiledPlugin* plugin) {
-    compiledPlugin_ = plugin;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaSaturatorCompiledPlugin> plugin) {
+    compiledPlugin_ = std::move(plugin);
 }
 
 void CompiledSaturatorCurveView::updateFromDevice(const magda::DeviceInfo& device) {
@@ -66,19 +66,17 @@ void CompiledSaturatorCurveView::timerCallback() {
     int mode = modeIndex_;
 
     if (compiledPlugin_ != nullptr) {
-        if (auto* p = compiledPlugin_->getSlotParameter(Sat::kDriveSlot))
-            drive =
-                compiledPlugin_->nativeValueToDisplayValue(Sat::kDriveSlot, p->getCurrentValue());
-        if (auto* p = compiledPlugin_->getSlotParameter(Sat::kBiasSlot))
-            bias = compiledPlugin_->nativeValueToDisplayValue(Sat::kBiasSlot, p->getCurrentValue());
-        if (auto* p = compiledPlugin_->getSlotParameter(Sat::kOutputSlot))
-            output =
-                compiledPlugin_->nativeValueToDisplayValue(Sat::kOutputSlot, p->getCurrentValue());
-        if (auto* p = compiledPlugin_->getSlotParameter(Sat::kMixSlot))
-            mix = compiledPlugin_->nativeValueToDisplayValue(Sat::kMixSlot, p->getCurrentValue());
-        if (auto* p = compiledPlugin_->getSlotParameter(Sat::kModeSlot))
+        if (auto p = compiledPlugin_->getSlotParameter(Sat::kDriveSlot))
+            drive = compiledPlugin_->nativeValueToDisplayValue(Sat::kDriveSlot, p.currentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(Sat::kBiasSlot))
+            bias = compiledPlugin_->nativeValueToDisplayValue(Sat::kBiasSlot, p.currentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(Sat::kOutputSlot))
+            output = compiledPlugin_->nativeValueToDisplayValue(Sat::kOutputSlot, p.currentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(Sat::kMixSlot))
+            mix = compiledPlugin_->nativeValueToDisplayValue(Sat::kMixSlot, p.currentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(Sat::kModeSlot))
             mode = static_cast<int>(std::round(
-                compiledPlugin_->nativeValueToDisplayValue(Sat::kModeSlot, p->getCurrentValue())));
+                compiledPlugin_->nativeValueToDisplayValue(Sat::kModeSlot, p.currentValue())));
     } else {
         drive = valueForSlot(deviceSnapshot_, Sat::kDriveSlot, drive);
         bias = valueForSlot(deviceSnapshot_, Sat::kBiasSlot, bias);
@@ -144,14 +142,14 @@ float CompiledSaturatorCurveView::shapeSample(Mode mode, float x) {
 
 void CompiledSaturatorCurveView::paint(juce::Graphics& g) {
     const auto bounds = getLocalBounds();
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).darker(0.06f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).darker(0.06f));
     g.fillRect(bounds);
 
     auto plot = bounds.toFloat().reduced(kPlotPadX, kPlotPadY);
     if (plot.getWidth() < 8.0f || plot.getHeight() < 8.0f)
         return;
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.55f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.55f));
     g.drawRect(plot, 1.0f);
 
     const float midX = plot.getCentreX();
@@ -162,11 +160,11 @@ void CompiledSaturatorCurveView::paint(juce::Graphics& g) {
     // Axes — slightly brighter centre crosshair plus quarter rules. Same
     // grid the legacy MagdaDriveCurveView used so the visual reads
     // familiar.
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.4f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.4f));
     g.drawHorizontalLine(static_cast<int>(std::round(midY)), plot.getX(), plot.getRight());
     g.drawVerticalLine(static_cast<int>(std::round(midX)), plot.getY(), plot.getBottom());
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.18f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.18f));
     for (float t : {-0.5f, 0.5f}) {
         const float x = midX + t * halfW;
         const float y = midY - t * halfH;
@@ -209,7 +207,7 @@ void CompiledSaturatorCurveView::paint(juce::Graphics& g) {
     fillPath.lineTo(plot.getRight(), midY);
     fillPath.closeSubPath();
 
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE);
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE);
     g.setColour(accent.withAlpha(0.13f));
     g.fillPath(fillPath);
     g.setColour(accent.withAlpha(0.9f));
@@ -229,9 +227,11 @@ const CompiledPresentationSpec& getMagdaSaturatorPresentation() {
     return kSpec;
 }
 
-void CompiledSaturatorCurveView::bindPlugin(te::Plugin* plugin) {
+void CompiledSaturatorCurveView::bindDevice(
+    std::shared_ptr<magda::daw::audio::MagdaDevice> device) {
     setCompiledPlugin(
-        dynamic_cast<magda::daw::audio::compiled::MagdaSaturatorCompiledPlugin*>(plugin));
+        std::dynamic_pointer_cast<magda::daw::audio::compiled::MagdaSaturatorCompiledPlugin>(
+            std::move(device)));
 }
 
 }  // namespace magda::daw::ui

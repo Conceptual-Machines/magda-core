@@ -1,7 +1,7 @@
 #include "TimelineHeaderPanel.hpp"
 
 #include "../components/timeline/TimelineComponent.hpp"
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/FontManager.hpp"
 
 namespace magda {
@@ -27,20 +27,20 @@ void TimelineHeaderPanel::paint(juce::Graphics& g) {
 
     // Fill left section with left panel background color
     auto leftSection = bounds.removeFromLeft(leftDivider);
-    g.setColour(DarkTheme::getPanelBackgroundColour());
+    g.setColour(ActiveTheme::getPanelBackgroundColour());
     g.fillRect(leftSection);
 
     // Fill right section with right panel background color
     auto rightSection = bounds.removeFromRight(rightPanelWidth);
-    g.setColour(DarkTheme::getPanelBackgroundColour());
+    g.setColour(ActiveTheme::getPanelBackgroundColour());
     g.fillRect(rightSection);
 
     // Fill center section with timeline background color
-    g.setColour(DarkTheme::getColour(DarkTheme::TIMELINE_BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TIMELINE_BACKGROUND));
     g.fillRect(bounds);
 
     // Draw section dividers
-    g.setColour(DarkTheme::getBorderColour());
+    g.setColour(ActiveTheme::getBorderColour());
     g.drawVerticalLine(leftDivider, 0, getHeight());
     g.drawVerticalLine(rightDivider, 0, getHeight());
 
@@ -51,7 +51,7 @@ void TimelineHeaderPanel::paint(juce::Graphics& g) {
     g.drawHorizontalLine(getHeight() - 1, 0, getWidth());
 
     // Draw subtle inner borders for the side panels to match the actual panels
-    g.setColour(DarkTheme::getBorderColour().withAlpha(0.5f));
+    g.setColour(ActiveTheme::getBorderColour().withAlpha(0.5f));
 
     // Left panel inner border
     g.drawRect(0, 0, leftDivider, getHeight(), 1);
@@ -60,7 +60,7 @@ void TimelineHeaderPanel::paint(juce::Graphics& g) {
     g.drawRect(rightDivider, 0, rightPanelWidth, getHeight(), 1);
 
     // Draw section labels
-    g.setColour(DarkTheme::getSecondaryTextColour());
+    g.setColour(ActiveTheme::getSecondaryTextColour());
     g.setFont(FontManager::getInstance().getUIFont(10.0f));
 
     // Left section label

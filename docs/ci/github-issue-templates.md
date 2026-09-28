@@ -79,7 +79,7 @@ bool AudioBridge::consumeMidiActivity(TrackId trackId) {
 
 ### Test Case
 
-See `tests/test_audiobridge_track_limit_bug.cpp` for documented test case.
+See `tests/audio/test_audiobridge_track_limit_bug.cpp` for documented test case.
 
 ### Additional Info
 
@@ -151,7 +151,7 @@ plugin->deleteFromParent();
 
 ### Test Case
 
-See `tests/test_audiobridge_plugin_cleanup_bug.cpp` for:
+See `tests/audio/test_audiobridge_plugin_cleanup_bug.cpp` for:
 - Documentation of the pattern
 - Explanation of why it's fragile
 - Best practices for bidirectional maps

@@ -53,10 +53,10 @@ Five words, shared by both transports. An operation requires exactly one.
 | Scope | Covers |
 | --- | --- |
 | `read` | Every read operation, and subscribing to any topic. Every client has this — it is what being admitted means. |
-| `edit` | Project content: tempo, time signature, tracks, clips, notes, devices, racks, automation, and the user's selection. |
+| `edit` | Project content and lifecycle: new, open, close, save, Save As, rendering and capture, tempo, time signature, tracks, routing and sends, clips, notes, session clip launch settings, devices, racks, grooves, automation, and the user's selection. Device parameter writes, focused-macro writes, and opening plugin editor windows are edits too. |
 | `transport` | The timeline: play, stop, record-arm, loop, seek. |
-| `session` | Launching and stopping session clips and scenes. |
-| `hardware-midi` | Physical MIDI ports, including SysEx. |
+| `session` | Launching and stopping session clips and scenes, including returning tracks to arrangement playback. |
+| `hardware-midi` | Physical MIDI ports: `midi.send` and `midi.sendSysEx`. |
 
 The split is by what a user would regret, not by which manager the code calls.
 Driving the transport is separate from editing because a remote that only starts
@@ -68,13 +68,29 @@ changes no project content and does not move the playhead.
 user is looking at and what their next keystroke acts on, which is not something
 a read-only client should reach.
 
-**`hardware-midi` has no operations yet.** The registry exposes no hardware MIDI
-surface. The scope is declared now because grants are persisted: a word invented
-later would read as "not granted" on every existing client — the correct answer,
-but only if the word already exists when those grants are written. It also gives
-the settings UI a stable place to show the permission before there is anything
-behind it. When a MIDI-out or SysEx operation lands, it declares this scope and
-the enforcement already works.
+`jobs.list` and `jobs.get` use `read`. `jobs.cancel` is a special control action:
+it first requires ownership, then dynamically requires the scope captured when
+the producing operation accepted the job. Cancelling a render therefore cannot
+be used to bypass the render operation's grant, and revoking that grant takes
+effect before cancellation just as it does before an idempotent replay. Job
+control never creates undo history or advances the project revision.
+
+`project.open`, `project.saveAs`, `engine.renderRange`, and master-capture
+start/stop require `edit` and accept absolute local filesystem paths. This adds
+no sandbox boundary: both endpoints are loopback-only and token-gated, and the
+permission model already assumes a client is a local process running as the
+user. Master-capture status requires only `read`; it withholds another
+connection's job id. Cancelling either job through `jobs.cancel` dynamically
+requires the job's captured `edit` scope as usual.
+
+**`hardware-midi` gates `midi.send` and `midi.sendSysEx`** (#2297). The scope
+was declared before any operation required it, because grants are persisted: a
+word invented later would read as "not granted" on every existing client — the
+correct answer, but only if the word already exists when those grants are
+written. That bet paid out exactly as designed: when these operations landed,
+every existing grant read as "not granted" and the enforcement already worked.
+`midi.listOutputPorts` is a plain read — port names reveal hardware, not
+project content, and a client that may send needs to know where.
 
 ### Where the mapping lives
 
@@ -84,10 +100,12 @@ because the question a reviewer needs to answer is not "does this operation
 declare a scope" but "is the whole division of the API into scopes the one we
 meant" — and that is only answerable by reading the policy in one piece.
 
-Reads are absent from the table: `read` is the descriptor default. Writes are
+Reads are absent from the table: `read` is the descriptor default. Project writes are
 never absent — one that is keeps the default, and the registry constructor turns
 that into a startup failure. `test_remote_permissions.cpp` asserts the same
-property in release builds, where `jassert` is a no-op.
+property in release builds, where `jassert` is a no-op. Ephemeral control is
+represented separately from a project write so it can be idempotent without
+opening an undo compound or consuming a revision.
 
 `system.describe` publishes `requiredScope` per operation, so a client can tell
 the user what to grant *before* it tries something rather than after being
@@ -123,6 +141,16 @@ about two processes presenting the same token.
 first asks for anything, so it appears in the settings list — read-only —
 straight away rather than only once the user goes looking.
 
+When a client first attempts an operation outside that grant, the request is
+denied immediately. MAGDA then shows a non-blocking permission sheet with the
+normalised client name, its transport, and only the scopes it attempted to use.
+The user can grant those scopes for future requests, keep the client read-only,
+or open the Clients page to review every scope. Granting never retries the
+denied operation. Several denied scopes arriving together are shown in one
+sheet; unrelated scopes are never preselected. A refusal suppresses further
+prompts for those scopes, including after restart. The Clients page remains the
+place to change or revoke a grant later.
+
 **Grants persist**, in `config.json` under `remoteApi.clients`:
 
 ```json
@@ -139,6 +167,10 @@ file being copied between machines or committed by accident grants nothing that
 is not already the user's decision. Unknown scope names are dropped on load
 rather than rejected, so a config from a newer MAGDA downgrades to the scopes
 this build understands.
+
+A row may also contain `dismissedPrompts` as scope names after the user chooses
+to keep a requested permission read-only. This only suppresses repeat sheets;
+it grants nothing, and forgetting the client clears it.
 
 ### Revocation is immediate
 

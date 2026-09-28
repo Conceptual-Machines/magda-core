@@ -4,6 +4,8 @@
 
 #include <functional>
 
+#include "../../engine/AudioEngine.hpp"
+
 namespace magda {
 
 /**
@@ -12,6 +14,7 @@ namespace magda {
  * Provides options for:
  * - Audio format (WAV 16/24/32-bit, FLAC)
  * - Sample rate (44.1kHz, 48kHz, 96kHz, 192kHz)
+ * - Dither (off, TPDF, noise shaped) for fixed-point formats
  * - Normalization (peak to 0dB)
  * - Time range (entire arrangement or selection)
  */
@@ -23,6 +26,7 @@ class ExportAudioDialog : public juce::Component {
         juce::File outputFile;
         juce::String format;  // "WAV16", "WAV24", "WAV32", "FLAC"
         double sampleRate = 48000.0;
+        OfflineRenderDither dither = OfflineRenderDither::Tpdf;
         bool normalize = false;
         bool realTimeRender = false;
         double leadInSilence = 0.0;  // Seconds of silence before audio (0-2s)
@@ -69,6 +73,10 @@ class ExportAudioDialog : public juce::Component {
     // Bit depth (auto-populated based on format)
     juce::Label bitDepthLabel_;
     juce::Label bitDepthValueLabel_;
+
+    // Dither, for the formats that round to a fixed-point grid
+    juce::Label ditherLabel_;
+    juce::ComboBox ditherComboBox_;
 
     // Normalization option
     juce::ToggleButton normalizeCheckbox_;

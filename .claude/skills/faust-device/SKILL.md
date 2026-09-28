@@ -52,7 +52,7 @@ Three places must agree on slot indices:
 - The UI exposes `std::vector<LinkableTextSlider*> getLinkableSliders()`; each slider carries its slot via `setParamIndex()`. `DeviceSlotComponent::setupCustomUILinking()` wires mod/macro/automation/MIDI-Learn off that list. Any control that must be linkable has to be a `LinkableTextSlider` in that list.
 - To present a slot as something else (e.g. segmented buttons for a menu): keep the hidden `LinkableTextSlider` in `controls_`/`getLinkableSliders()` (carries value + linking) and drive it from the custom widget. Set selection **explicitly** for segmented buttons (`setToggleState(i==sel)`), not via JUCE radio groups (radio exclusivity left two segments lit).
 - Theme-font buttons: `setLookAndFeel(&FlatTabButtonLookAndFeel::getInstance())` (flat tab) or `SmallButtonLookAndFeel` (rounded), both in `themes/SmallButtonLookAndFeel.hpp`; clear with `setLookAndFeel(nullptr)` in the destructor.
-- Labels/fonts: `FontManager::getInstance().getUIFont(...)`, colours via `DarkTheme::getColour(...)`.
+- Labels/fonts: `FontManager::getInstance().getUIFont(...)`, colours via `ActiveTheme::getColour(...)`.
 
 ## Reusing a curve view across devices
 

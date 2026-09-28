@@ -16,6 +16,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <map>
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -37,6 +38,7 @@
 #include "magda/daw/api/undo_api.hpp"
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipTypes.hpp"
+#include "magda/daw/core/ParameterUtils.hpp"
 #include "magda/daw/core/TrackInfo.hpp"
 #include "magda/daw/core/TrackTypes.hpp"
 #include "magda/daw/core/TypeIds.hpp"
@@ -273,6 +275,13 @@ class MockSelectionApi : public SelectionApi {
 class MockTrackApi : public TrackApi {
   public:
     std::vector<TrackInfo> tracks;
+    ApplyTrackPresetResult applyPresetResult{ApplyTrackPresetStatus::Applied, {}};
+    std::vector<std::pair<TrackId, juce::String>> appliedPresets;
+    std::vector<RoutingEndpoint> routingEndpoints;
+    SetTrackRoutingResult routingResult{SetTrackRoutingStatus::Applied, {}};
+    std::vector<std::pair<TrackId, TrackRoutingPatch>> routingWrites;
+    std::optional<TrackSendMutationStatus> sendStatusOverride;
+    int nextSendId = 1;
 
     struct VolumeWrite {
         TrackId id;
@@ -380,6 +389,161 @@ class MockTrackApi : public TrackApi {
             if (t.id == id)
                 return &t;
         return nullptr;
+    }
+    ApplyTrackPresetResult applyPreset(TrackId id, const juce::String& presetId) override {
+        appliedPresets.emplace_back(id, presetId);
+        return applyPresetResult;
+    }
+    std::vector<RoutingEndpoint> getRoutingEndpoints() const override {
+        return routingEndpoints;
+    }
+    std::optional<TrackRoutingView> getRouting(TrackId id) const override {
+        const auto* track = getTrack(id);
+        if (track == nullptr)
+            return std::nullopt;
+        juce::String midiOutput = track->midiOutputDevice;
+        const auto source = "track:" + juce::String(id);
+        for (const auto& candidate : tracks)
+            if (candidate.midiInputDevice == source) {
+                midiOutput = "track:" + juce::String(candidate.id);
+                break;
+            }
+        const auto publicId = [](RoutingMedia media, RoutingDirection direction,
+                                 const juce::String& internalId) {
+            if (internalId.isNotEmpty())
+                return routingEndpointId(media, direction, internalId);
+            return "none:" + juce::String(media == RoutingMedia::Audio ? "audio" : "midi") + ":" +
+                   (direction == RoutingDirection::Input ? "input" : "output");
+        };
+        return TrackRoutingView{
+            id,
+            publicId(RoutingMedia::Audio, RoutingDirection::Input, track->audioInputDevice),
+            publicId(RoutingMedia::Midi, RoutingDirection::Input, track->midiInputDevice),
+            publicId(RoutingMedia::Audio, RoutingDirection::Output, track->audioOutputDevice),
+            publicId(RoutingMedia::Midi, RoutingDirection::Output, midiOutput),
+            track->recordArmed,
+            track->inputMonitor};
+    }
+    SetTrackRoutingResult setRouting(TrackId id, const TrackRoutingPatch& patch) override {
+        routingWrites.emplace_back(id, patch);
+        if (routingResult.status != SetTrackRoutingStatus::Applied &&
+            routingResult.status != SetTrackRoutingStatus::Unchanged)
+            return routingResult;
+        auto* track = getTrack(id);
+        if (track == nullptr)
+            return {SetTrackRoutingStatus::TrackNotFound, {}};
+        const auto resolve = [&](const std::optional<juce::String>& endpointId, RoutingMedia media,
+                                 RoutingDirection direction) -> std::optional<juce::String> {
+            if (!endpointId)
+                return std::nullopt;
+            const auto found = std::ranges::find_if(routingEndpoints, [&](const auto& endpoint) {
+                return endpoint.id == *endpointId && endpoint.media == media &&
+                       endpoint.direction == direction;
+            });
+            return found == routingEndpoints.end() ? std::optional<juce::String>(*endpointId)
+                                                   : std::optional<juce::String>(found->internalId);
+        };
+        if (const auto value =
+                resolve(patch.audioInputEndpointId, RoutingMedia::Audio, RoutingDirection::Input))
+            track->audioInputDevice = *value;
+        if (const auto value =
+                resolve(patch.midiInputEndpointId, RoutingMedia::Midi, RoutingDirection::Input))
+            track->midiInputDevice = *value;
+        if (const auto value =
+                resolve(patch.audioOutputEndpointId, RoutingMedia::Audio, RoutingDirection::Output))
+            track->audioOutputDevice = *value;
+        if (const auto value =
+                resolve(patch.midiOutputEndpointId, RoutingMedia::Midi, RoutingDirection::Output))
+            track->midiOutputDevice = *value;
+        return routingResult;
+    }
+    std::vector<TrackSendView> getSends(TrackId id) const override {
+        const auto* track = getTrack(id);
+        if (track == nullptr)
+            return {};
+        std::vector<TrackSendView> result;
+        for (const auto& send : track->sends)
+            result.push_back({trackSendId(id, send), id, "track:" + juce::String(send.destTrackId),
+                              send.level, send.enabled, send.preFader});
+        return result;
+    }
+    TrackSendMutationResult createSend(TrackId id, const TrackSendPatch& patch) override {
+        if (sendStatusOverride && *sendStatusOverride != TrackSendMutationStatus::Applied)
+            return {*sendStatusOverride, std::nullopt, {}};
+        auto* track = getTrack(id);
+        if (track == nullptr)
+            return {TrackSendMutationStatus::TrackNotFound, std::nullopt, {}};
+        if (!patch.destinationEndpointId)
+            return {TrackSendMutationStatus::EndpointNotFound, std::nullopt, {}};
+        const auto endpoint =
+            std::ranges::find(routingEndpoints, *patch.destinationEndpointId, &RoutingEndpoint::id);
+        if (endpoint == routingEndpoints.end() || !endpoint->trackId)
+            return {TrackSendMutationStatus::EndpointNotFound, std::nullopt, {}};
+        SendInfo send;
+        send.busIndex = static_cast<int>(track->sends.size());
+        send.level = patch.level.value_or(1.0f);
+        send.preFader = patch.preFader.value_or(false);
+        send.destTrackId = *endpoint->trackId;
+        send.enabled = patch.enabled.value_or(true);
+        send.id = "send:mock:" + juce::String(nextSendId++);
+        track->sends.push_back(send);
+        return {TrackSendMutationStatus::Applied,
+                TrackSendView{send.id, id, *patch.destinationEndpointId, send.level, send.enabled,
+                              send.preFader},
+                {}};
+    }
+    TrackSendMutationResult updateSend(const juce::String& sendId,
+                                       const TrackSendPatch& patch) override {
+        if (sendStatusOverride && *sendStatusOverride != TrackSendMutationStatus::Applied &&
+            *sendStatusOverride != TrackSendMutationStatus::Unchanged)
+            return {*sendStatusOverride, std::nullopt, {}};
+        for (auto& track : tracks) {
+            const auto found = std::ranges::find_if(track.sends, [&](const auto& send) {
+                return trackSendId(track.id, send) == sendId;
+            });
+            if (found == track.sends.end())
+                continue;
+            const auto oldDestination = "track:" + juce::String(found->destTrackId);
+            std::vector<InvalidatedSendConnection> invalidated;
+            if (patch.destinationEndpointId) {
+                const auto endpoint = std::ranges::find(
+                    routingEndpoints, *patch.destinationEndpointId, &RoutingEndpoint::id);
+                if (endpoint == routingEndpoints.end() || !endpoint->trackId)
+                    return {TrackSendMutationStatus::EndpointNotFound, std::nullopt, {}};
+                if (found->destTrackId != *endpoint->trackId)
+                    invalidated.push_back({sendId, oldDestination, "destination_replaced"});
+                found->destTrackId = *endpoint->trackId;
+            }
+            if (patch.level)
+                found->level = *patch.level;
+            if (patch.enabled)
+                found->enabled = *patch.enabled;
+            if (patch.preFader)
+                found->preFader = *patch.preFader;
+            const auto status = sendStatusOverride.value_or(TrackSendMutationStatus::Applied);
+            return {status,
+                    TrackSendView{sendId, track.id, "track:" + juce::String(found->destTrackId),
+                                  found->level, found->enabled, found->preFader},
+                    std::move(invalidated)};
+        }
+        return {TrackSendMutationStatus::SendNotFound, std::nullopt, {}};
+    }
+    TrackSendMutationResult removeSend(const juce::String& sendId) override {
+        if (sendStatusOverride && *sendStatusOverride != TrackSendMutationStatus::Applied)
+            return {*sendStatusOverride, std::nullopt, {}};
+        for (auto& track : tracks) {
+            const auto found = std::ranges::find_if(track.sends, [&](const auto& send) {
+                return trackSendId(track.id, send) == sendId;
+            });
+            if (found == track.sends.end())
+                continue;
+            const auto destination = "track:" + juce::String(found->destTrackId);
+            track.sends.erase(found);
+            return {TrackSendMutationStatus::Applied,
+                    std::nullopt,
+                    {{sendId, destination, "send_removed"}}};
+        }
+        return {TrackSendMutationStatus::SendNotFound, std::nullopt, {}};
     }
     void setTrackName(TrackId id, const juce::String& name) override {
         nameWrites.push_back({id, name});
@@ -867,6 +1031,7 @@ class MockSessionApi : public SessionApi {
     std::vector<TrackId> stoppedTracks;
     std::vector<int> launchedScenes;
     int stopAllCalls = 0;
+    std::vector<std::optional<TrackId>> arrangementReturns;
     std::unordered_map<TrackId, ClipId> activeOnTrack;
 
     void launchClip(ClipId id) override {
@@ -902,13 +1067,235 @@ class MockSessionApi : public SessionApi {
         auto it = clipStates.find(clipId);
         return it != clipStates.end() ? it->second : SessionClipPlayState::Stopped;
     }
+
+    std::set<std::pair<TrackId, int>> armedSlots;
+    std::set<std::pair<TrackId, int>> recordingSlots;
+    SessionRecordingCapabilities recordingSupport{true, true, true, false, false};
+    SessionSceneState sceneState;
+    bool isSlotRecordArmed(TrackId trackId, int sceneIndex) const override {
+        return armedSlots.contains({trackId, sceneIndex});
+    }
+    bool isSlotRecording(TrackId trackId, int sceneIndex) const override {
+        return recordingSlots.contains({trackId, sceneIndex});
+    }
+    SessionRecordingCapabilities recordingCapabilities() const override {
+        return recordingSupport;
+    }
+    bool setSlotRecordArmed(TrackId trackId, int sceneIndex, bool armed) override {
+        const auto key = std::pair{trackId, sceneIndex};
+        if (armed)
+            armedSlots.insert(key);
+        else
+            armedSlots.erase(key);
+        return true;
+    }
+    bool beginSlotRecording(TrackId trackId, int sceneIndex) override {
+        const auto key = std::pair{trackId, sceneIndex};
+        if (!armedSlots.contains(key))
+            return false;
+        recordingSlots.insert(key);
+        return true;
+    }
+    bool stopSlotRecording(TrackId trackId, int sceneIndex, bool commit) override {
+        const auto key = std::pair{trackId, sceneIndex};
+        if (!armedSlots.contains(key))
+            return false;
+        armedSlots.erase(key);
+        recordingSlots.erase(key);
+        if (commit && !slots.contains(key))
+            slots[key] = nextRecordedClipId++;
+        return true;
+    }
+    ClipId nextRecordedClipId = 10000;
+    bool setClipLaunchSettings(ClipId clipId, const SessionClipLaunchSettings& settings) override {
+        launchSettings[clipId] = settings;
+        return true;
+    }
+    bool returnToArrangement(std::optional<TrackId> trackId) override {
+        arrangementReturns.push_back(trackId);
+        return true;
+    }
+    std::unordered_map<ClipId, SessionClipLaunchSettings> launchSettings;
+    SessionSceneState captureSceneState() const override {
+        return sceneState;
+    }
+    void restoreSceneState(const SessionSceneState& state) override {
+        sceneState = state;
+    }
+    SceneId createScene(int index, const juce::String& name, std::uint32_t colourArgb) override {
+        if (index < 0 || index > static_cast<int>(sceneState.scenes.size()))
+            return INVALID_SCENE_ID;
+        const auto id = sceneState.nextSceneId++;
+        sceneState.scenes.insert(sceneState.scenes.begin() + index, {id, name, colourArgb});
+        return id;
+    }
+    bool updateScene(SceneId id, const juce::String& name, std::uint32_t colourArgb) override {
+        auto it = std::ranges::find(sceneState.scenes, id, &ProjectScene::id);
+        if (it == sceneState.scenes.end() || (it->name == name && it->colourArgb == colourArgb))
+            return false;
+        it->name = name;
+        it->colourArgb = colourArgb;
+        return true;
+    }
+    bool moveScene(SceneId id, int toIndex) override {
+        auto it = std::ranges::find(sceneState.scenes, id, &ProjectScene::id);
+        if (it == sceneState.scenes.end() || toIndex < 0 ||
+            toIndex >= static_cast<int>(sceneState.scenes.size()))
+            return false;
+        const auto from = static_cast<int>(it - sceneState.scenes.begin());
+        if (from == toIndex)
+            return false;
+        auto scene = *it;
+        sceneState.scenes.erase(it);
+        sceneState.scenes.insert(sceneState.scenes.begin() + toIndex, std::move(scene));
+        return true;
+    }
+    SceneId duplicateScene(SceneId id, bool) override {
+        auto it = std::ranges::find(sceneState.scenes, id, &ProjectScene::id);
+        if (it == sceneState.scenes.end())
+            return INVALID_SCENE_ID;
+        const auto index = static_cast<int>(it - sceneState.scenes.begin());
+        auto copy = *it;
+        copy.id = sceneState.nextSceneId++;
+        copy.name += " Copy";
+        sceneState.scenes.insert(sceneState.scenes.begin() + index + 1, copy);
+        return copy.id;
+    }
+    bool deleteScene(SceneId id, PopulatedScenePolicy, SceneId) override {
+        auto it = std::ranges::find(sceneState.scenes, id, &ProjectScene::id);
+        if (it == sceneState.scenes.end() || sceneState.scenes.size() <= 1)
+            return false;
+        sceneState.scenes.erase(it);
+        return true;
+    }
 };
 
 class MockProjectApi : public ProjectApi {
   public:
     ProjectInfo info;
+    bool open = true;
+    bool dirty = false;
+    bool saveTarget = false;
+    bool saveSucceeds = true;
+    int saveCalls = 0;
+    int newCalls = 0;
+    int closeCalls = 0;
+    int openAsyncCalls = 0;
+    int saveAsAsyncCalls = 0;
+    bool deferOpenAsync = false;
+    bool deferSaveAsAsync = false;
+    ProjectFileOperationResult openAsyncResult = succeededFileOperation();
+    ProjectFileOperationResult saveAsAsyncResult = succeededFileOperation();
+    ProjectOpenOptions lastOpenOptions;
+    ProjectSaveAsOptions lastSaveAsOptions;
+    ProjectFileOperationCallback pendingOpenCallback;
+    ProjectFileOperationCallback pendingSaveAsCallback;
+    juce::File lastOpenSource;
+    juce::File lastSaveAsDestination;
+    juce::String currentPath;
+    const TempoMap* map = nullptr;
+    static ProjectFileOperationResult succeededFileOperation() {
+        ProjectFileOperationResult result;
+        result.status = ProjectFileOperationStatus::Succeeded;
+        return result;
+    }
+    const TempoMap* tempoMap() const override {
+        return map;
+    }
     const ProjectInfo& getCurrentProjectInfo() const override {
         return info;
+    }
+    bool hasOpenProject() const override {
+        return open;
+    }
+    bool isDirty() const override {
+        return dirty;
+    }
+    bool hasSaveTarget() const override {
+        return saveTarget;
+    }
+    juce::String getCurrentProjectPath() const override {
+        return currentPath;
+    }
+    juce::File saveTargetFor(const juce::File& requested) const override {
+        const auto projectName = requested.getFileNameWithoutExtension();
+        const auto parent = requested.getParentDirectory();
+        return parent.getFileName() == projectName
+                   ? requested
+                   : parent.getChildFile(projectName).getChildFile(requested.getFileName());
+    }
+    bool saveProject() override {
+        ++saveCalls;
+        if (!saveSucceeds)
+            return false;
+        dirty = false;
+        return true;
+    }
+    bool newProject(bool discardUnsavedChanges) override {
+        ++newCalls;
+        if (dirty && !discardUnsavedChanges)
+            return false;
+        info = ProjectInfo{};
+        info.name = "Untitled";
+        open = true;
+        dirty = false;
+        saveTarget = false;
+        currentPath.clear();
+        return true;
+    }
+    bool closeProject(bool discardUnsavedChanges) override {
+        ++closeCalls;
+        if (dirty && !discardUnsavedChanges)
+            return false;
+        info = ProjectInfo{};
+        open = false;
+        dirty = false;
+        saveTarget = false;
+        currentPath.clear();
+        return true;
+    }
+    void openProjectAsync(const juce::File& source, ProjectOpenOptions options,
+                          ProjectFileOperationCallback onComplete) override {
+        ++openAsyncCalls;
+        lastOpenSource = source;
+        lastOpenOptions = std::move(options);
+        if (deferOpenAsync) {
+            pendingOpenCallback = std::move(onComplete);
+            return;
+        }
+        if (openAsyncResult.status == ProjectFileOperationStatus::Succeeded) {
+            open = true;
+            dirty = openAsyncResult.recoveredAutosave;
+            saveTarget = true;
+            currentPath = source.getFullPathName();
+            openAsyncResult.project = info;
+            openAsyncResult.projectOpen = open;
+            openAsyncResult.projectDirty = dirty;
+            openAsyncResult.hasSaveTarget = saveTarget;
+            openAsyncResult.path = currentPath;
+        }
+        onComplete(openAsyncResult);
+    }
+    void saveProjectAsAsync(const juce::File& destination, ProjectSaveAsOptions options,
+                            ProjectFileOperationCallback onComplete) override {
+        ++saveAsAsyncCalls;
+        lastSaveAsDestination = destination;
+        lastSaveAsOptions = std::move(options);
+        if (deferSaveAsAsync) {
+            pendingSaveAsCallback = std::move(onComplete);
+            return;
+        }
+        if (saveAsAsyncResult.status == ProjectFileOperationStatus::Succeeded) {
+            dirty = false;
+            saveTarget = true;
+            currentPath = destination.getFullPathName();
+            saveAsAsyncResult.project = info;
+            saveAsAsyncResult.projectOpen = open;
+            saveAsAsyncResult.projectDirty = dirty;
+            saveAsAsyncResult.hasSaveTarget = saveTarget;
+            saveAsAsyncResult.path = currentPath;
+        }
+        onComplete(saveAsAsyncResult);
     }
     void setTempo(double bpm) override {
         info.tempo = bpm;
@@ -916,6 +1303,10 @@ class MockProjectApi : public ProjectApi {
     void setTimeSignature(int numerator, int denominator) override {
         info.timeSignatureNumerator = numerator;
         info.timeSignatureDenominator = denominator;
+    }
+    void setLoopRange(double startBeats, double endBeats) override {
+        info.loopStartBeats = startBeats;
+        info.loopEndBeats = endBeats;
     }
 };
 
@@ -977,6 +1368,7 @@ class MockTransportApi : public TransportApi {
     int playCalls = 0;
     int stopCalls = 0;
     int refreshStateSourceCalls = 0;
+    std::function<void(bool)> recordingChanged;
 
     void play() override {
         ++playCalls;
@@ -989,6 +1381,8 @@ class MockTransportApi : public TransportApi {
     }
     void setRecording(bool r) override {
         recording = r;
+        if (recordingChanged)
+            recordingChanged(r);
     }
     bool isPlaying() const override {
         return playing;
@@ -1130,8 +1524,21 @@ class MockPluginApi : public PluginApi {
 class MockDeviceApi : public DeviceApi {
   public:
     std::vector<DeviceCatalogEntry> catalog;
+    std::map<ChainNodePath, std::vector<DevicePresetEntry>> presets;
+    std::vector<std::pair<ChainNodePath, juce::String>> appliedPresets;
+    ApplyDevicePresetResult applyPresetResult{ApplyDevicePresetStatus::Applied, {}};
+    struct ReplaceCall {
+        ChainNodePath devicePath;
+        juce::String catalogId;
+        std::optional<juce::String> presetId;
+    };
+    std::vector<ReplaceCall> replacements;
+    ReplaceDeviceResult replaceDeviceResult{ReplaceDeviceStatus::Replaced, {}, {}};
     // Live devices, keyed by the path that addresses them.
     std::map<ChainNodePath, DeviceInfo> devices;
+    std::map<ChainNodePath, SidechainView> sidechains;
+    std::vector<std::pair<ChainNodePath, SidechainPatch>> sidechainWrites;
+    SetSidechainResult setSidechainResult{SetSidechainStatus::Applied, std::nullopt, {}};
 
     std::vector<DeviceCatalogEntry> getCatalog() const override {
         return catalog;
@@ -1148,6 +1555,24 @@ class MockDeviceApi : public DeviceApi {
         const auto it = devices.find(devicePath);
         return it != devices.end() ? &it->second : nullptr;
     }
+    ChainId createPad(const ChainNodePath&, int) override {
+        return INVALID_CHAIN_ID;
+    }
+    DeviceId setPadVoice(const ChainNodePath&, int, const juce::String&) override {
+        return INVALID_DEVICE_ID;
+    }
+    DeviceId setPadSample(const ChainNodePath&, int, const juce::String&) override {
+        return INVALID_DEVICE_ID;
+    }
+    bool clearPad(const ChainNodePath&, int) override {
+        return false;
+    }
+    bool swapPads(const ChainNodePath&, int, int) override {
+        return false;
+    }
+    bool updatePad(const ChainNodePath&, int, const PadUpdate&) override {
+        return false;
+    }
     std::vector<DeviceParameter> getDeviceParameters(
         const ChainNodePath& devicePath) const override {
         const auto* device = getDevice(devicePath);
@@ -1156,10 +1581,169 @@ class MockDeviceApi : public DeviceApi {
         std::vector<DeviceParameter> parameters;
         for (const auto& info : device->parameters) {
             parameters.push_back({info.paramIndex, info.stableId, info.name, info.unit,
-                                  info.minValue, info.maxValue, info.defaultValue,
-                                  info.currentValue});
+                                  info.minValue, info.maxValue,
+                                  ParameterUtils::modelToRealValue({info.defaultValue}, info),
+                                  ParameterUtils::modelToRealValue({info.currentValue}, info)});
         }
         return parameters;
+    }
+    std::vector<DevicePresetEntry> getDevicePresets(
+        const ChainNodePath& devicePath) const override {
+        const auto it = presets.find(devicePath);
+        return it != presets.end() ? it->second : std::vector<DevicePresetEntry>{};
+    }
+    ApplyDevicePresetResult applyPreset(const ChainNodePath& devicePath,
+                                        const juce::String& presetId) override {
+        if (!devices.contains(devicePath))
+            return {ApplyDevicePresetStatus::DeviceNotFound, {}};
+        appliedPresets.emplace_back(devicePath, presetId);
+        return applyPresetResult;
+    }
+    ReplaceDeviceResult replaceDevice(
+        const ChainNodePath& devicePath, const juce::String& catalogId,
+        const std::optional<juce::String>& presetId = std::nullopt) override {
+        if (!devices.contains(devicePath))
+            return {ReplaceDeviceStatus::DeviceNotFound, {}, {}};
+        replacements.push_back({devicePath, catalogId, presetId});
+        return replaceDeviceResult;
+    }
+
+    std::vector<ModInfo> getDeviceMods(const ChainNodePath& path) const override {
+        const auto* device = getDevice(path);
+        return device && !path.isPostFx() ? device->mods : std::vector<ModInfo>{};
+    }
+    std::vector<MacroInfo> getDeviceMacros(const ChainNodePath& path) const override {
+        const auto* device = getDevice(path);
+        return device && !path.isPostFx() ? device->macros : std::vector<MacroInfo>{};
+    }
+    ModId createDeviceMod(const ChainNodePath& path, ModType type, LFOWaveform waveform) override {
+        auto it = devices.find(path);
+        if (it == devices.end() || path.isPostFx())
+            return INVALID_MOD_ID;
+        auto& mods = it->second.mods;
+        const auto id = static_cast<ModId>(mods.size());
+        mods.emplace_back(id);
+        mods.back().setType(type);
+        mods.back().waveform = waveform;
+        mods.back().name = ModInfo::getDefaultName(id, type);
+        return id;
+    }
+    bool updateDeviceMod(const ChainNodePath& path, ModId id,
+                         const DeviceModUpdate& update) override {
+        auto it = devices.find(path);
+        if (it == devices.end() || path.isPostFx() || id < 0 ||
+            id >= static_cast<int>(it->second.mods.size()))
+            return false;
+        auto& mod = it->second.mods[static_cast<size_t>(id)];
+        if (update.type)
+            mod.setType(*update.type);
+        if (update.name)
+            mod.name = *update.name;
+        if (update.waveform)
+            mod.waveform = *update.waveform;
+        if (update.rate)
+            mod.rate = *update.rate;
+        if (update.enabled)
+            mod.enabled = *update.enabled;
+        if (update.tempoSync)
+            mod.tempoSync = *update.tempoSync;
+        if (update.syncDivision)
+            mod.syncDivision = *update.syncDivision;
+        if (update.oneShot)
+            mod.oneShot = *update.oneShot;
+        if (update.attackMs)
+            mod.envAttackMs = *update.attackMs;
+        if (update.decayMs)
+            mod.envDecayMs = *update.decayMs;
+        if (update.sustain)
+            mod.envSustain = *update.sustain;
+        if (update.releaseMs)
+            mod.envReleaseMs = *update.releaseMs;
+        return true;
+    }
+    bool removeDeviceMod(const ChainNodePath& path, ModId id) override {
+        auto it = devices.find(path);
+        if (it == devices.end() || path.isPostFx() || id < 0 ||
+            id >= static_cast<int>(it->second.mods.size()))
+            return false;
+        auto& mods = it->second.mods;
+        mods.erase(mods.begin() + id);
+        for (int i = id; i < static_cast<int>(mods.size()); ++i)
+            mods[static_cast<size_t>(i)].id = i;
+        return true;
+    }
+    bool mayLink(const ChainNodePath& path, int index) const {
+        const auto* device = getDevice(path);
+        if (device == nullptr || path.isPostFx() ||
+            !std::ranges::contains(device->parameters, index, &ParameterInfo::paramIndex))
+            return false;
+        return device->format == PluginFormat::Internal ||
+               std::ranges::contains(device->aiSoundDesignerParameters, index);
+    }
+    bool linkDeviceMod(const ChainNodePath& path, ModId id, int index, float amount,
+                       bool bipolar) override {
+        auto it = devices.find(path);
+        if (it == devices.end() || id < 0 || id >= static_cast<int>(it->second.mods.size()) ||
+            !mayLink(path, index) || !std::isfinite(amount) || amount < -1 || amount > 1)
+            return false;
+        auto& mod = it->second.mods[static_cast<size_t>(id)];
+        const auto target = ControlTarget::pluginParam(path, index);
+        if (auto* link = mod.getLink(target)) {
+            link->amount = amount;
+            link->bipolar = bipolar;
+        } else {
+            mod.links.push_back({target, amount, bipolar, true});
+        }
+        return true;
+    }
+    bool unlinkDeviceMod(const ChainNodePath& path, ModId id, int index) override {
+        auto it = devices.find(path);
+        if (it == devices.end() || id < 0 || id >= static_cast<int>(it->second.mods.size()))
+            return false;
+        auto& mod = it->second.mods[static_cast<size_t>(id)];
+        const auto target = ControlTarget::pluginParam(path, index);
+        if (mod.getLink(target) == nullptr)
+            return false;
+        mod.removeLink(target);
+        return true;
+    }
+    bool setDeviceMacroValue(const ChainNodePath& path, int index, float value) override {
+        auto it = devices.find(path);
+        if (it == devices.end() || path.isPostFx() || index < 0 ||
+            index >= static_cast<int>(it->second.macros.size()) || !std::isfinite(value) ||
+            value < 0 || value > 1)
+            return false;
+        it->second.macros[static_cast<size_t>(index)].value = value;
+        return true;
+    }
+    bool linkDeviceMacro(const ChainNodePath& path, int macroIndex, int index, float amount,
+                         bool bipolar) override {
+        auto it = devices.find(path);
+        if (it == devices.end() || macroIndex < 0 ||
+            macroIndex >= static_cast<int>(it->second.macros.size()) || !mayLink(path, index) ||
+            !std::isfinite(amount) || amount < -1 || amount > 1)
+            return false;
+        auto& macro = it->second.macros[static_cast<size_t>(macroIndex)];
+        const auto target = ControlTarget::pluginParam(path, index);
+        if (auto* link = macro.getLink(target)) {
+            link->amount = amount;
+            link->bipolar = bipolar;
+        } else {
+            macro.links.push_back({target, amount, bipolar});
+        }
+        return true;
+    }
+    bool unlinkDeviceMacro(const ChainNodePath& path, int macroIndex, int index) override {
+        auto it = devices.find(path);
+        if (it == devices.end() || macroIndex < 0 ||
+            macroIndex >= static_cast<int>(it->second.macros.size()))
+            return false;
+        auto& macro = it->second.macros[static_cast<size_t>(macroIndex)];
+        const auto target = ControlTarget::pluginParam(path, index);
+        if (macro.getLink(target) == nullptr)
+            return false;
+        macro.removeLink(target);
+        return true;
     }
 
     // Recorded mutations, for asserting what a caller invoked.
@@ -1195,24 +1779,119 @@ class MockDeviceApi : public DeviceApi {
         return true;
     }
     bool setDeviceBypassed(const ChainNodePath& devicePath, bool value) override {
-        if (getDevice(devicePath) == nullptr)
+        const auto it = devices.find(devicePath);
+        if (it == devices.end())
             return false;
+        it->second.bypassed = value;
+        if (value)
+            it->second.deltaSolo = false;
         bypassed.emplace_back(devicePath, value);
         return true;
     }
+    std::optional<SidechainView> getSidechain(const ChainNodePath& ownerPath) const override {
+        const auto found = sidechains.find(ownerPath);
+        return found == sidechains.end() ? std::nullopt
+                                         : std::optional<SidechainView>{found->second};
+    }
+    std::vector<SidechainView> getSidechains(
+        std::optional<TrackId> trackId = std::nullopt) const override {
+        std::vector<SidechainView> result;
+        for (const auto& [path, sidechain] : sidechains)
+            if (!trackId || path.trackId == *trackId)
+                result.push_back(sidechain);
+        return result;
+    }
+    SetSidechainResult setSidechain(const ChainNodePath& ownerPath,
+                                    const SidechainPatch& patch) override {
+        sidechainWrites.emplace_back(ownerPath, patch);
+        return setSidechainResult;
+    }
     bool setDeviceParameter(const ChainNodePath& devicePath, int paramIndex, float value) override {
-        const auto* device = getDevice(devicePath);
-        if (device == nullptr)
+        const auto it = devices.find(devicePath);
+        if (it == devices.end())
             return false;
-        for (const auto& info : device->parameters) {
+        for (auto& info : it->second.parameters) {
             if (info.paramIndex != paramIndex)
                 continue;
             if (value < info.minValue || value > info.maxValue)
                 return false;
-            parameterWrites.emplace_back(devicePath, paramIndex, value);
+            // The live manager updates the model synchronously — and stores the
+            // model-domain value, which for a configured external parameter is
+            // TE-native, not the display value the caller sent.
+            const auto model = ParameterUtils::realToModelValue(value, info);
+            info.currentValue = model.value;
+            parameterWrites.emplace_back(devicePath, paramIndex, model.value);
             return true;
         }
         return false;
+    }
+
+    // Mirrors the live semantics: each provided list replaces that selection
+    // on the stored device, exactly what refreshLiveDevices would produce.
+    std::vector<std::pair<ChainNodePath, DeviceParameterConfigUpdate>> configUpdates;
+
+    bool setDeviceParameterConfig(const ChainNodePath& devicePath,
+                                  const DeviceParameterConfigUpdate& update) override {
+        const auto it = devices.find(devicePath);
+        if (it == devices.end())
+            return false;
+        auto& device = it->second;
+        if (device.format == PluginFormat::Internal)
+            return false;
+        const auto count = static_cast<int>(device.parameters.size());
+        for (const auto* indices :
+             {&update.visibleParameters, &update.miniMixerParameters, &update.aiAgentParameters}) {
+            if (!indices->has_value())
+                continue;
+            for (const int index : **indices) {
+                if (index < 0 || index >= count)
+                    return false;
+            }
+        }
+        if (update.parameterOverrides) {
+            for (const auto& override_ : *update.parameterOverrides) {
+                if (override_.index < 0 || override_.index >= count)
+                    return false;
+                const auto& info = device.parameters[static_cast<size_t>(override_.index)];
+                if (override_.minValue.value_or(info.minValue) >=
+                    override_.maxValue.value_or(info.maxValue))
+                    return false;
+            }
+        }
+        if (update.visibleParameters)
+            device.visibleParameters = *update.visibleParameters;
+        if (update.miniMixerParameters)
+            device.miniMixerParameters = *update.miniMixerParameters;
+        if (update.aiAgentParameters)
+            device.aiSoundDesignerParameters = *update.aiAgentParameters;
+        if (update.aiPrompt)
+            device.aiSoundDesignerPrompt = *update.aiPrompt;
+        if (update.parameterOverrides) {
+            for (const auto& override_ : *update.parameterOverrides) {
+                auto& info = device.parameters[static_cast<size_t>(override_.index)];
+                if (override_.unit)
+                    info.unit = *override_.unit;
+                if (override_.scale)
+                    info.scale = *override_.scale;
+                if (override_.minValue)
+                    info.minValue = *override_.minValue;
+                if (override_.maxValue)
+                    info.maxValue = *override_.maxValue;
+                if (override_.choices)
+                    info.choices = *override_.choices;
+            }
+        }
+        configUpdates.emplace_back(devicePath, update);
+        return true;
+    }
+
+    std::vector<ChainNodePath> openedEditors;
+
+    bool openDeviceEditor(const ChainNodePath& devicePath) override {
+        if (getDevice(devicePath) == nullptr)
+            return false;
+        openedEditors.push_back(devicePath);
+        return true;
     }
 };
 

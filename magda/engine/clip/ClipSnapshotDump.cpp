@@ -40,8 +40,8 @@ const char* curveName(FadeCurve curve) {
 }
 
 std::string spanText(const SnapshotSpan& span) {
-    return fixed(span.startBeat, 3) + ".." + fixed(span.endBeat, 3) + "b " +
-           fixed(span.startSeconds, 3) + ".." + fixed(span.endSeconds, 3) + "s";
+    return fixed(span.beats.start, 3) + ".." + fixed(span.beats.end, 3) + "b " +
+           fixed(span.seconds.start, 3) + ".." + fixed(span.seconds.end, 3) + "s";
 }
 
 void dumpHoles(std::ostringstream& out, const std::vector<SnapshotSpan>& holes) {
@@ -102,8 +102,10 @@ void dumpEvent(std::ostringstream& out, const AudioEventPlayback& event) {
 }
 
 void dumpAudioClip(std::ostringstream& out, const AudioClipPlayback& clip) {
-    out << "  audio clip=" << clip.clipId << " span=" << spanText(clip.span)
-        << " fade=" << fixed(clip.fadeInSeconds, 3) << "/" << fixed(clip.fadeOutSeconds, 3)
+    out << "  audio clip=" << clip.clipId << " span=" << spanText(clip.span);
+    if (clip.envelope)
+        out << " envelope=" << spanText(*clip.envelope);
+    out << " fade=" << fixed(clip.fadeInSeconds, 3) << "/" << fixed(clip.fadeOutSeconds, 3)
         << " curve=" << curveName(clip.fadeInCurve) << "/" << curveName(clip.fadeOutCurve)
         << " behaviour=" << clip.fadeInBehaviour << "/" << clip.fadeOutBehaviour
         << " gain=" << fixed(clip.gainDb, 1) << " pan=" << fixed(clip.pan, 2)
@@ -160,11 +162,26 @@ std::string dumpClipSnapshot(const ClipSnapshot& snapshot) {
 
     for (const auto& track : snapshot.tracks) {
         out << "track " << track.trackId << " audio=" << track.audio.size()
-            << " midi=" << track.midi.size() << "\n";
+            << " midi=" << track.midi.size() << " session=" << track.session.size() << " mode="
+            << (track.playbackMode == TrackPlaybackMode::Session ? "session" : "arrangement")
+            << "\n";
         for (const auto& clip : track.audio)
             dumpAudioClip(out, clip);
         for (const auto& clip : track.midi)
             dumpMidiClip(out, clip);
+
+        // The session, in the same detail as the arrangement. A dump that
+        // printed only the counts would let two materially different session
+        // snapshots compare identical, which is the one thing this file exists
+        // to prevent (#2301).
+        for (const auto& slot : track.session) {
+            out << "  slot scene=" << slot.sceneIndex << " length=" << fixed(slot.lengthBeats, 3)
+                << "b audio=" << slot.audio.size() << " midi=" << slot.midi.size() << "\n";
+            for (const auto& clip : slot.audio)
+                dumpAudioClip(out, clip);
+            for (const auto& clip : slot.midi)
+                dumpMidiClip(out, clip);
+        }
     }
 
     for (const auto& diagnostic : snapshot.diagnostics)

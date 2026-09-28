@@ -5,6 +5,7 @@
 #include <atomic>
 
 #include "analysis/BandSpectrum.hpp"
+#include "analysis/TrackMeasurementTap.hpp"
 #include "analysis/TrackMeasurer.hpp"
 
 namespace magda::daw::audio {
@@ -25,7 +26,7 @@ namespace te = tracktion::engine;
  * instance (persisted): the manager enables it on the master only, where
  * inter-sample peaks matter, and leaves per-track on sample peak.
  */
-class TrackMeasurementPlugin : public te::Plugin {
+class TrackMeasurementPlugin : public te::Plugin, public TrackMeasurementTap {
   public:
     explicit TrackMeasurementPlugin(const te::PluginCreationInfo& info) : te::Plugin(info) {
         measureTruePeakValue_.referTo(state, juce::Identifier("measureTruePeak"), getUndoManager(),
@@ -55,7 +56,7 @@ class TrackMeasurementPlugin : public te::Plugin {
 
     /// Dormant-until-consumed. Cheap to flip from the message thread; the audio
     /// thread reads it relaxed each block.
-    void setMeasurementEnabled(bool shouldMeasure) noexcept {
+    void setMeasurementEnabled(bool shouldMeasure) noexcept override {
         if (shouldMeasure && !enabled_.exchange(true, std::memory_order_acq_rel))
             pendingReset_.store(true, std::memory_order_release);
         else
@@ -75,28 +76,28 @@ class TrackMeasurementPlugin : public te::Plugin {
     }
 
     /// Message thread. Latest measurements (lock-free).
-    TrackMeasurementSnapshot getSnapshot() const noexcept {
+    TrackMeasurementSnapshot getSnapshot() const noexcept override {
         return measurer_.read();
     }
 
     /// Enable/disable mono signal capture for masking band analysis (heavier; on
     /// only during a masking pass). Message thread.
-    void setSpectrumCaptureEnabled(bool shouldCapture) noexcept {
+    void setSpectrumCaptureEnabled(bool shouldCapture) noexcept override {
         measurer_.setSpectrumCaptureEnabled(shouldCapture);
     }
 
     /// Message thread. Compute the current per-band energy (dB) for masking.
-    void getMaskingBandsDb(std::array<float, kNumMaskingBands>& out) const {
+    void getMaskingBandsDb(std::array<float, kNumMaskingBands>& out) const override {
         computeMaskingBandsDb(measurer_.getSpectrumRing(), measurer_.sampleRate(), out);
     }
 
     /// Message thread. Copy the latest numSamples of captured mono signal (the
     /// masking spectrum ring) into dest, for a full-resolution overlay FFT
     /// (#1400). Returns the ring's running sample count (0 while still empty).
-    size_t readLatestSpectrumSamples(float* dest, int numSamples) const noexcept {
+    size_t readLatestSpectrumSamples(float* dest, int numSamples) const noexcept override {
         return measurer_.getSpectrumRing().readLatest(dest, numSamples);
     }
-    double getSampleRate() const noexcept {
+    double getSampleRate() const noexcept override {
         return measurer_.sampleRate();
     }
 

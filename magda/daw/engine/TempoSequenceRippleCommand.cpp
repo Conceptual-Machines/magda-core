@@ -116,7 +116,29 @@ juce::String TempoSequenceRippleCommand::getDescription() const {
     return "Ripple Tempo Sequence";
 }
 
-std::unique_ptr<UndoableCommand> TracktionEngineWrapper::createTempoSequenceRippleCommand(
+namespace {
+TempoSequenceRippleBuilder& rippleBuilder() {
+    static TempoSequenceRippleBuilder builder;
+    return builder;
+}
+}  // namespace
+
+void setTempoSequenceRippleBuilder(TempoSequenceRippleBuilder builder) {
+    rippleBuilder() = std::move(builder);
+}
+
+void forgetTempoSequenceRippleBuilder() {
+    rippleBuilder() = nullptr;
+}
+
+std::unique_ptr<UndoableCommand> makeTempoSequenceRippleCommand(TempoSequenceRippleMode mode,
+                                                                BeatPosition start,
+                                                                BeatPosition end) {
+    const auto& builder = rippleBuilder();
+    return builder ? builder(mode, start, end) : nullptr;
+}
+
+std::unique_ptr<UndoableCommand> TracktionEngineWrapper::buildTempoSequenceRipple(
     TempoSequenceRippleMode mode, BeatPosition start, BeatPosition end) {
     if (!currentEdit_)
         return nullptr;

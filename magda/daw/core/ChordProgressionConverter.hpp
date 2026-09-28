@@ -18,6 +18,9 @@ struct ExtractedChord {
     // without re-parsing the (octave-bearing) display name.
     music::ChordRoot root = music::ChordRoot::C;
     music::ChordQuality quality = music::ChordQuality::Major;
+    bool exactMatch = true;
+    double confidence = 1.0;
+    std::vector<juce::String> warnings;
     std::vector<size_t> noteIndices;  // Indices into the scanned notes vector
 };
 
@@ -30,7 +33,11 @@ struct ExtractedChord {
  * in-editor "detect chords" action and the "extract to chord track" feature.
  */
 std::vector<ExtractedChord> extractChordsFromNotes(const std::vector<MidiNote>& notes,
-                                                   int beatsPerBar);
+                                                   double beatsPerBar);
+
+std::vector<ExtractedChord> extractChordsFromNotes(const std::vector<MidiNote>& notes,
+                                                   double startBeat, double endBeat,
+                                                   double windowBeats);
 
 /**
  * @brief Build a canonical root-position voicing for a chord.

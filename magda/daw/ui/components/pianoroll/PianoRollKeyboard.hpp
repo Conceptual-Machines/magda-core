@@ -84,8 +84,8 @@ class PianoRollKeyboard : public juce::Component {
     int currentPlayingNote_ = -1;
     bool isPlayingNote_ = false;
 
-    bool isBlackKey(int noteNumber) const;
-    juce::String getNoteName(int noteNumber) const;
+    static bool isBlackKey(int noteNumber);
+    static juce::String getNoteName(int noteNumber);
     int yToNoteNumber(int y) const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PianoRollKeyboard)

@@ -10,15 +10,36 @@ namespace magda {
 class ProjectApiLive : public ProjectApi {
   public:
     const ProjectInfo& getCurrentProjectInfo() const override;
+    bool hasOpenProject() const override;
+    bool isDirty() const override;
+    bool hasSaveTarget() const override;
+    juce::String getCurrentProjectPath() const override;
+    juce::File saveTargetFor(const juce::File& requested) const override;
+    bool saveProject() override;
+    bool newProject(bool discardUnsavedChanges) override;
+    bool closeProject(bool discardUnsavedChanges) override;
+    void openProjectAsync(const juce::File& source, ProjectOpenOptions options,
+                          ProjectFileOperationCallback onComplete) override;
+    void saveProjectAsAsync(const juce::File& destination, ProjectSaveAsOptions options,
+                            ProjectFileOperationCallback onComplete) override;
     void setTempo(double bpm) override;
     void setTimeSignature(int numerator, int denominator) override;
+    void setLoopRange(double startBeats, double endBeats) override;
+    const TempoMap* tempoMap() const override;
 
     void setEngineTempoWriter(std::function<void(double)> writer);
     void setEngineTimeSignatureWriter(std::function<void(int, int)> writer);
+    void setEngineLoopRangeWriter(std::function<void(double, double)> writer);
+    /** Route loop-range writes through the timeline controller, which updates the engine too. */
+    void setLoopRangeDispatcher(std::function<void(double, double)> dispatch);
+    void setEngineTempoMap(std::function<const TempoMap*()> getter);
 
   private:
     std::function<void(double)> engineTempoWriter_;
     std::function<void(int, int)> engineTimeSignatureWriter_;
+    std::function<void(double, double)> engineLoopRangeWriter_;
+    std::function<void(double, double)> loopRangeDispatch_;
+    std::function<const TempoMap*()> engineTempoMap_;
 };
 
 }  // namespace magda

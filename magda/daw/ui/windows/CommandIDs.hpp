@@ -1,7 +1,6 @@
 #pragma once
 
-namespace magda {
-namespace CommandIDs {
+namespace magda::CommandIDs {
 
 enum {
     // File menu
@@ -92,5 +91,4 @@ enum {
     about = 0x5001
 };
 
-}  // namespace CommandIDs
-}  // namespace magda
+}  // namespace magda::CommandIDs

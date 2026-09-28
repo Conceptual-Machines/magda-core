@@ -1,6 +1,6 @@
 #include "StyledText.hpp"
 
-#include "DarkTheme.hpp"
+#include "ActiveTheme.hpp"
 
 namespace magda {
 
@@ -22,7 +22,7 @@ StyledTextRun buildRunFromStack(const juce::String& text, const std::vector<Styl
             run.bold = true;
         } else if (tag == StyleTag::Warning) {
             run.hasColour = true;
-            run.colour = DarkTheme::getColour(DarkTheme::STATUS_WARNING);
+            run.colour = ActiveTheme::getColour(ActiveTheme::STATUS_WARNING);
         }
     }
     return run;

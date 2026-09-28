@@ -186,7 +186,7 @@ void ModRuntime::buildListenerRouting(const ParamTable& table) {
         if (modifier.source == magda::INVALID_TRACK_ID)
             continue;
 
-        if (std::find(listened_.begin(), listened_.end(), modifier.source) == listened_.end())
+        if (!std::ranges::contains(listened_, modifier.source))
             listened_.push_back(modifier.source);
     }
 
@@ -207,7 +207,7 @@ void ModRuntime::buildListenerRouting(const ParamTable& table) {
 }
 
 std::span<const int> ModRuntime::listenersOf(magda::TrackId track) const {
-    const auto found = std::find(listened_.begin(), listened_.end(), track);
+    const auto found = std::ranges::find(listened_, track);
     if (found == listened_.end())
         return {};
 
@@ -218,14 +218,14 @@ std::span<const int> ModRuntime::listenersOf(magda::TrackId track) const {
     return std::span<const int>{listeners_}.subspan(first, last - first);
 }
 
-bool ModRuntime::drivenFromElsewhere(int index, const ParamTable& table) const {
+bool ModRuntime::drivenFromElsewhere(int index, const ParamTable& table) {
     if (index < 0 || index >= static_cast<int>(table.modifiers.size()))
         return false;
 
     return isDrivenFromElsewhere(table.modifiers[static_cast<std::size_t>(index)]);
 }
 
-ModListen ModRuntime::listensFor(int index, const ParamTable& table) const {
+ModListen ModRuntime::listensFor(int index, const ParamTable& table) {
     if (index < 0 || index >= static_cast<int>(table.modifiers.size()))
         return ModListen::Nothing;
 
@@ -342,7 +342,7 @@ ModState* ModRuntime::mutableState(int index) {
 }
 
 int ModRuntime::indexOf(const ParamKey& key) const {
-    const auto found = std::find(keys_.begin(), keys_.end(), key);
+    const auto found = std::ranges::find(keys_, key);
     return found == keys_.end() ? -1 : static_cast<int>(std::distance(keys_.begin(), found));
 }
 

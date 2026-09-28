@@ -2,12 +2,14 @@
 
 #include <algorithm>
 #include <cmath>
+#include <ranges>
 
 #include "AutomationLaneComponent.hpp"
 #include "core/AutomationCommands.hpp"
 #include "core/ParameterUtils.hpp"
+#include "core/RangesHelpers.hpp"
 #include "core/UndoManager.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda {
@@ -60,7 +62,7 @@ AutomationCurveEditor::AutomationCurveEditor(AutomationLaneId laneId) : laneId_(
 void AutomationCurveEditor::refreshCurveColour() {
     const auto* lane = AutomationManager::getInstance().getLane(laneId_);
     const bool disabled = lane && isAutomationPersistentlyDisabled(lane->authorityState);
-    setCurveColour(disabled ? DarkTheme::TEXT_DISABLED : DarkTheme::ACCENT_MODULATION);
+    setCurveColour(disabled ? ActiveTheme::TEXT_DISABLED : ActiveTheme::ACCENT_MODULATION);
 }
 
 AutomationCurveEditor::~AutomationCurveEditor() {
@@ -210,7 +212,7 @@ void AutomationCurveEditor::paintGrid(juce::Graphics& g) {
         if (res > 0.0 && res * pixelsPerBeat_ >= 4.0) {
             const double domainStart = pixelToX(0);
             const double domainEnd = pixelToX(getWidth());
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0x14 / 255.0f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0x14 / 255.0f));
             for (double beat = std::ceil(domainStart / res - 1.0e-9) * res; beat <= domainEnd;
                  beat += res) {
                 g.drawVerticalLine(xToPixel(beat), 0.0f, static_cast<float>(getHeight()));
@@ -229,40 +231,41 @@ void AutomationCurveEditor::paintGrid(juce::Graphics& g) {
     auto paramInfo = getParameterInfoForTarget(lane->target);
 
     // Build list of normalized grid positions based on parameter type
+    const auto tickAt = [&paramInfo](double realValue) {
+        return static_cast<double>(
+            ParameterUtils::realToNormalized(static_cast<float>(realValue), paramInfo));
+    };
+
     std::vector<double> gridNorms;
 
     if (paramInfo.scale == ParameterScale::FaderDB) {
         // dB values that make sense for a fader
-        const double dbValues[] = {6.0, 3.0, 0.0, -6.0, -12.0, -18.0, -24.0, -36.0, -48.0, -60.0};
-        for (double db : dbValues) {
-            float norm = ParameterUtils::realToNormalized(static_cast<float>(db), paramInfo);
-            gridNorms.push_back(static_cast<double>(norm));
-        }
+        static constexpr double kDbTicks[] = {6.0,   3.0,   0.0,   -6.0,  -12.0,
+                                              -18.0, -24.0, -36.0, -48.0, -60.0};
+        gridNorms = kDbTicks | std::views::transform(tickAt) | toStd<std::vector<double>>();
     } else if (lane->target.kind == ControlTarget::Kind::TrackPan) {
         // Pan: fine divisions from -1 to +1
-        for (double pan = -1.0; pan <= 1.0; pan += 0.25) {
-            float norm = ParameterUtils::realToNormalized(static_cast<float>(pan), paramInfo);
-            gridNorms.push_back(static_cast<double>(norm));
-        }
+        const auto panAt = [&tickAt](int step) { return tickAt(-1.0 + step * 0.25); };
+        gridNorms =
+            std::views::iota(0, 9) | std::views::transform(panAt) | toStd<std::vector<double>>();
     } else if (paramInfo.isBipolar()) {
         // Symmetric real-value grid so 0 lands exactly at mid-lane.
         // Quarter + half divisions give a readable ±max, ±50%, 0 grid.
-        float absMax = std::max(std::abs(paramInfo.minValue), std::abs(paramInfo.maxValue));
-        const double frac[] = {-1.0, -0.5, 0.0, 0.5, 1.0};
-        for (double f : frac) {
-            float norm =
-                ParameterUtils::realToNormalized(static_cast<float>(f * absMax), paramInfo);
-            gridNorms.push_back(static_cast<double>(norm));
-        }
+        const float absMax = std::max(std::abs(paramInfo.minValue), std::abs(paramInfo.maxValue));
+        static constexpr double kFractions[] = {-1.0, -0.5, 0.0, 0.5, 1.0};
+        const auto scaledTickAt = [&tickAt, absMax](double fraction) {
+            return tickAt(fraction * absMax);
+        };
+        gridNorms = kFractions | std::views::transform(scaledTickAt) | toStd<std::vector<double>>();
     } else {
         // Generic: 10% increments
-        for (int i = 1; i < 10; ++i) {
-            gridNorms.push_back(i / 10.0);
-        }
+        const auto tenthStep = [](int step) { return step / 10.0; };
+        gridNorms = std::views::iota(1, 10) | std::views::transform(tenthStep) |
+                    toStd<std::vector<double>>();
     }
 
     auto bounds = getLocalBounds();
-    float width = static_cast<float>(bounds.getWidth());
+    auto width = static_cast<float>(bounds.getWidth());
 
     // For bipolar parameters the neutral-value line (0 dB, 0 st, …) should
     // read as the rest position. Draw it noticeably brighter than the rest
@@ -277,7 +280,7 @@ void AutomationCurveEditor::paintGrid(juce::Graphics& g) {
             continue;
         int y = yToPixel(norm);
         bool isZeroLine = zeroNorm >= 0.0 && std::abs(norm - zeroNorm) < 0.002;
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT)
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT)
                         .withAlpha(isZeroLine ? 0x50 / 255.0f : 0x18 / 255.0f));
         g.drawHorizontalLine(y, 0.0f, width);
     }
@@ -311,7 +314,7 @@ void AutomationCurveEditor::paintClipBorders(juce::Graphics& g) {
     const int endX = xToPixel(clipOffset_ + span);
 
     // Same colour language as the piano roll's clip boundaries.
-    g.setColour(DarkTheme::getColour(DarkTheme::CLIP_BOUNDARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::CLIP_BOUNDARY));
     g.fillRect(startX, 0, 1, getHeight());
     g.fillRect(endX, 0, 1, getHeight());
 }
@@ -373,15 +376,16 @@ void AutomationCurveEditor::showPointValueEditor(uint32_t pointId) {
         valueEditor_->setSelectAllWhenFocused(true);
         valueEditor_->setFont(FontManager::getInstance().getUIFont(11.0f));
         valueEditor_->setColour(juce::TextEditor::backgroundColourId,
-                                DarkTheme::getColour(DarkTheme::INPUT_BACKGROUND));
-        valueEditor_->setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
+                                ActiveTheme::getColour(ActiveTheme::INPUT_BACKGROUND));
+        valueEditor_->setColour(juce::TextEditor::textColourId, ActiveTheme::getTextColour());
         valueEditor_->setColour(juce::TextEditor::outlineColourId,
-                                DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                                ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         valueEditor_->setColour(juce::TextEditor::focusedOutlineColourId,
-                                DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
-        valueEditor_->setColour(juce::CaretComponent::caretColourId, DarkTheme::getTextColour());
-        valueEditor_->setColour(juce::TextEditor::highlightColourId,
-                                DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.4f));
+                                ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+        valueEditor_->setColour(juce::CaretComponent::caretColourId, ActiveTheme::getTextColour());
+        valueEditor_->setColour(
+            juce::TextEditor::highlightColourId,
+            ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.4f));
         valueEditor_->onReturnKey = [this]() { commitPointValueEdit(); };
         valueEditor_->onEscapeKey = [this]() { hidePointValueEditor(); };
         valueEditor_->onFocusLost = [this]() { commitPointValueEdit(); };
@@ -473,7 +477,7 @@ void AutomationCurveEditor::paintOverChildren(juce::Graphics& g) {
             constexpr float dotRadius = dotSize / 2.0f;
             g.setColour(getCurveColour());
             g.fillEllipse(x - dotRadius, y - dotRadius, dotSize, dotSize);
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT));
             g.drawEllipse(x - dotRadius, y - dotRadius, dotSize, dotSize, 1.5f);
         }
     }
@@ -497,7 +501,8 @@ void AutomationCurveEditor::paintOverrideOverlay(juce::Graphics& g) {
         return;
 
     const int y = yToPixel(*currentValue);
-    const auto overlayColour = DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).withAlpha(0.65f);
+    const auto overlayColour =
+        ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).withAlpha(0.65f);
 
     g.setColour(overlayColour.withAlpha(0.12f));
     g.fillRect(content.withY(y - 2).withHeight(4));
@@ -515,7 +520,7 @@ void AutomationCurveEditor::paintOverrideOverlay(juce::Graphics& g) {
     const int ty = juce::jlimit(content.getY(), content.getBottom() - textH, y - textH - 4);
     auto labelRect = juce::Rectangle<int>(tx, ty, textW, textH);
 
-    g.setColour(DarkTheme::getColour(DarkTheme::TOOLTIP_BACKGROUND).withAlpha(0xDD / 255.0f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TOOLTIP_BACKGROUND).withAlpha(0xDD / 255.0f));
     g.fillRoundedRectangle(labelRect.toFloat(), 3.0f);
     g.setColour(overlayColour.brighter(0.2f));
     g.drawRoundedRectangle(labelRect.toFloat(), 3.0f, 1.0f);
@@ -802,8 +807,7 @@ void AutomationCurveEditor::syncSelectionState() {
     for (auto& pc : pointComponents_) {
         bool isSelected = false;
         if (isOurSelection) {
-            isSelected = std::find(selection.pointIds.begin(), selection.pointIds.end(),
-                                   pc->getPointId()) != selection.pointIds.end();
+            isSelected = std::ranges::contains(selection.pointIds, pc->getPointId());
         }
         pc->setSelected(isSelected);
         if (isSelected)
@@ -888,8 +892,8 @@ void AutomationCurveEditor::onDeleteSelectedPoints(const std::set<uint32_t>& poi
 
     {
         CompoundOperationScope scope("Delete Automation Points");
-        for (auto it = pointIds.rbegin(); it != pointIds.rend(); ++it) {
-            onPointDeleted(*it);
+        for (unsigned int pointId : std::views::reverse(pointIds)) {
+            onPointDeleted(pointId);
         }
     }
 

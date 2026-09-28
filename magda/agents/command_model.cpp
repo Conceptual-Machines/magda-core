@@ -6,8 +6,10 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
+#include <ranges>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -31,25 +33,25 @@ namespace d = cmdmodel::data;
 // inputs the model sees).
 // ---------------------------------------------------------------------------
 bool isCore(char c) {
-    unsigned char u = static_cast<unsigned char>(c);
+    auto u = static_cast<unsigned char>(c);
     return (u >= 'A' && u <= 'Z') || (u >= 'a' && u <= 'z') || (u >= '0' && u <= '9') || c == '_' ||
            c == '\'' || c == '-';
 }
 
 bool isWordChar(char c) {  // Python regex \w (ASCII)
-    unsigned char u = static_cast<unsigned char>(c);
+    auto u = static_cast<unsigned char>(c);
     return (u >= 'A' && u <= 'Z') || (u >= 'a' && u <= 'z') || (u >= '0' && u <= '9') || c == '_';
 }
 
 char lowerCh(char c) {
-    unsigned char u = static_cast<unsigned char>(c);
+    auto u = static_cast<unsigned char>(c);
     if (u >= 'A' && u <= 'Z')
         return static_cast<char>(u - 'A' + 'a');
     return c;
 }
 
 char upperCh(char c) {
-    unsigned char u = static_cast<unsigned char>(c);
+    auto u = static_cast<unsigned char>(c);
     if (u >= 'a' && u <= 'z')
         return static_cast<char>(u - 'a' + 'A');
     return c;
@@ -91,7 +93,7 @@ std::string join(const std::vector<std::string>& parts, const std::string& sep) 
 bool isLowerWord(const std::string& w) {
     bool anyLower = false;
     for (char c : w) {
-        unsigned char u = static_cast<unsigned char>(c);
+        auto u = static_cast<unsigned char>(c);
         if (u >= 'A' && u <= 'Z')
             return false;
         if (u >= 'a' && u <= 'z')
@@ -187,7 +189,7 @@ bool splitGluedUnit(const std::string& tok, std::string& num, std::string& unit)
 // ---------------------------------------------------------------------------
 bool splitGluedTrack(const std::string& tok, std::string& word, std::string& digits) {
     size_t i = 0;
-    while (i < tok.size() && !(tok[i] >= '0' && tok[i] <= '9'))
+    while (i < tok.size() && (tok[i] < '0' || tok[i] > '9'))
         ++i;
     if (i == 0 || i == tok.size())
         return false;
@@ -195,7 +197,7 @@ bool splitGluedTrack(const std::string& tok, std::string& word, std::string& dig
     if (head != "track" && head != "tracks")
         return false;
     for (size_t j = i; j < tok.size(); ++j)
-        if (!(tok[j] >= '0' && tok[j] <= '9'))
+        if (tok[j] < '0' || tok[j] > '9')
             return false;
     word = tok.substr(0, i);
     digits = tok.substr(i);
@@ -331,7 +333,7 @@ double parseNumber(const std::string& text) {
 std::string fmtG(double v) {
     char buf[64];
     std::snprintf(buf, sizeof(buf), "%g", v);
-    return std::string(buf);
+    return {buf};
 }
 
 struct Phrase {
@@ -388,9 +390,8 @@ std::string canonPitch(const std::string& text) {
     size_t b = text.find_last_not_of(" \t\r\n");
     std::string t = (a == std::string::npos) ? "" : text.substr(a, b - a + 1);
     // all digits → MIDI number, unchanged
-    if (!t.empty() && std::all_of(t.begin(), t.end(), [](char c) {
-            return std::isdigit(static_cast<unsigned char>(c));
-        }))
+    const auto isDigit = [](char c) { return std::isdigit(static_cast<unsigned char>(c)) != 0; };
+    if (!t.empty() && std::ranges::all_of(t, isDigit))
         return t;
     // [a-gA-G][b]?[0-9]
     if (t.size() == 2 || t.size() == 3) {
@@ -521,13 +522,10 @@ int subseq(const std::vector<std::string>& lower, const std::vector<std::string>
     if (words.size() > lower.size())
         return -1;
     for (size_t i = 0; i + words.size() <= lower.size(); ++i) {
-        bool ok = true;
-        for (size_t j = 0; j < words.size(); ++j)
-            if (lower[i + j] != words[j]) {
-                ok = false;
-                break;
-            }
-        if (ok)
+        const auto window =
+            std::ranges::subrange(lower.begin() + static_cast<long>(i),
+                                  lower.begin() + static_cast<long>(i + words.size()));
+        if (std::ranges::equal(window, words))
             return static_cast<int>(i);
     }
     return -1;
@@ -535,6 +533,7 @@ int subseq(const std::vector<std::string>& lower, const std::vector<std::string>
 
 std::string renameTargetFromTokens(const std::vector<std::string>& tokens) {
     std::vector<std::string> lower;
+    lower.reserve(tokens.size());
     for (const auto& t : tokens)
         lower.push_back(toLower(t));
     static const std::vector<std::vector<std::string>> phrases = {
@@ -555,7 +554,7 @@ std::vector<std::string> pluginsFromTokens(const std::vector<std::string>& token
     for (const auto& t : tokens) {
         if (!t.empty() && t[0] == '@') {
             std::string tok = aliasToken(t);
-            if (std::find(out.begin(), out.end(), tok) == out.end())
+            if (!std::ranges::contains(out, tok))
                 out.push_back(tok);
         }
     }
@@ -649,16 +648,16 @@ CommandModel::Prediction CommandModel::predict(const std::string& text) const {
     // Embedding → [E][ML] (channel-major, matching the .transpose(1,2)).
     std::vector<float> e(E * ML, 0.0f);
     for (int t = 0; t < ML; ++t) {
-        const float* row = &d::kEmbedWeight[ids[t] * E];
+        const float* row = &d::kEmbedWeight[static_cast<std::size_t>(ids[t]) * E];
         for (int c = 0; c < E; ++c)
             e[c * ML + t] = row[c];
     }
 
     auto conv = [&](const std::vector<float>& in, int ci, int co, const float* W, const float* B,
                     int dilation) {
-        std::vector<float> out(co * ML, 0.0f);
+        std::vector<float> out(static_cast<std::size_t>(co) * ML, 0.0f);
         for (int oc = 0; oc < co; ++oc) {
-            const float* wOc = &W[oc * ci * 3];
+            const float* wOc = &W[static_cast<std::size_t>(oc) * ci * 3];
             for (int t = 0; t < ML; ++t) {
                 float acc = B[oc];
                 for (int k = 0; k < 3; ++k) {
@@ -685,7 +684,7 @@ CommandModel::Prediction CommandModel::predict(const std::string& text) const {
         float bestVal = 0.0f;
         for (int tag = 0; tag < d::kNumTags; ++tag) {
             float acc = d::kSlotBias[tag];
-            const float* w = &d::kSlotWeight[tag * H];
+            const float* w = &d::kSlotWeight[static_cast<std::size_t>(tag) * H];
             for (int c = 0; c < H; ++c)
                 acc += w[c] * h[c * ML + t];
             if (tag == 0 || acc > bestVal) {
@@ -708,7 +707,7 @@ CommandModel::Prediction CommandModel::predict(const std::string& text) const {
     float bestIntentVal = 0.0f;
     for (int i = 0; i < d::kNumIntents; ++i) {
         float acc = d::kIntentBias[i];
-        const float* w = &d::kIntentWeight[i * H];
+        const float* w = &d::kIntentWeight[static_cast<std::size_t>(i) * H];
         for (int c = 0; c < H; ++c)
             acc += w[c] * pooled[c];
         if (i == 0 || acc > bestIntentVal) {
@@ -901,6 +900,7 @@ std::string CommandModel::renderPrediction(const Prediction& p) {
             groupName = "Group";
         int anchor = ids.empty() ? 0 : ids[0];
         std::vector<std::string> idStrs;
+        idStrs.reserve(ids.size());
         for (int x : ids)
             idStrs.push_back(std::to_string(x));
         lines.push_back("track(id=" + std::to_string(anchor) + ").track.group(name=" +
@@ -1000,7 +1000,7 @@ std::string CommandModel::renderPrediction(const Prediction& p) {
         lines.push_back("groove.set(template=" + q(tmpl) +
                         ", strength=" + fmtG(valueOrFirstNumber(s, tokens)) + ")");
     } else if (intent == "groove_list") {
-        lines.push_back("groove.list()");
+        lines.emplace_back("groove.list()");
     } else {
         return "";  // unknown intent
     }

@@ -1,0 +1,239 @@
+#pragma once
+
+#include <atomic>
+#include <cstdint>
+#include <farbot/RealtimeObject.hpp>
+#include <memory>
+#include <optional>
+#include <utility>
+#include <vector>
+
+#include "core/TypeIds.hpp"
+#include "exec/RenderContext.hpp"
+#include "launch/FollowActions.hpp"
+#include "launch/LaunchHandle.hpp"
+#include "launch/LaunchRequests.hpp"
+#include "launch/SlotRuns.hpp"
+#include "tap/LaunchTap.hpp"
+
+/**
+ * @file SessionLauncher.hpp
+ * @brief How a slot's handle reaches the audio thread, and who advances it (#2301).
+ *
+ * The store owns the handles; the sources are on the audio thread. Between them
+ * is an immutable table published whole, the same channel ClipStreamFeed.hpp
+ * uses. Keyed by slot, because a slot's state has to survive another slot on
+ * the same track playing in between.
+ *
+ * A slot has two sources and `LaunchHandle::advance` must see each block
+ * exactly once, so nothing that renders advances anything: @ref
+ * advanceLaunchHandles runs over the whole table before the plan, and the
+ * sources read `LaunchHandle::blockStatus`. That also keeps a scene coherent,
+ * since every handle sees the same block.
+ *
+ * Requests arrive on the queue in LaunchRequests.hpp and are applied in that
+ * same pass, which is why it is one call and not two: a request applied after
+ * a handle had already been advanced would take effect a block late, and one
+ * applied to some handles and not others would split a scene.
+ */
+
+namespace magda::engine {
+
+struct ClipSnapshot;
+
+/// Which of a track's two bodies of material a source plays (#2302). Stated
+/// rather than inferred from having a handle feed, because both sources need
+/// one: the arrangement's reads it to know when the session has taken the track.
+enum class Section : std::uint8_t { Arrangement, Session };
+
+/// Capture identity of the run a handle is currently rendering. Audio-thread
+/// state owned beside the handle so clip publishes do not restart playback.
+struct SlotRunSourceState {
+    std::optional<CaptureSource> active;
+};
+
+/// Every slot's handle, at one moment. Sorted by slot key, so a source finds
+/// its track's range without hashing. Not owned: the store keeps them alive for
+/// as long as a published table can name them.
+struct LaunchHandleTable {
+    struct Entry {
+        SlotKey key;
+        LaunchHandle* handle = nullptr;
+
+        /// Which handle this slot is on: a slot emptied and refilled is the
+        /// same key on a different clip. Assigned by
+        /// RuntimeStateStore::publishHandles, and never reused (#2305).
+        std::uint64_t incarnation = 0;
+
+        /// Where this slot's state is published for the UI to read (#2303).
+        /// Owned by the store, like the handle beside it.
+        LaunchTap* tap = nullptr;
+
+        SlotRunSourceState* runSource = nullptr;
+
+        /// What ends this slot's run, and what starts next (#2304). Here rather
+        /// than looked up in the snapshot beside it, because the audio thread
+        /// already has this table and the two publish separately.
+        SlotFollow follow;
+
+        bool operator==(const Entry&) const = default;
+    };
+
+    std::vector<Entry> entries;
+
+    /**
+     * @brief The half-open range of entries belonging to @p trackId, in scene
+     *        order, or an empty range for a track with no slots.
+     *
+     * On the audio thread: a binary search over a sorted vector.
+     */
+    std::pair<const Entry*, const Entry*> rangeFor(TrackId trackId) const;
+
+    /// @brief The handle for @p key, or null.
+    LaunchHandle* find(const SlotKey& key) const;
+
+    /// @brief The whole entry for @p key, or null, for a caller that has to
+    ///        check the incarnation as well as find the handle.
+    const Entry* findEntry(const SlotKey& key) const;
+};
+
+class LaunchHandleFeed {
+    using Published = farbot::RealtimeObject<std::shared_ptr<const LaunchHandleTable>,
+                                             farbot::RealtimeObjectOptions::nonRealtimeMutatable>;
+
+  public:
+    /// Make @p table the one the audio thread reads. On the publishing thread,
+    /// and it waits for the block the callback is in: once it returns, a handle
+    /// the previous table named and this one does not is unreachable.
+    void publish(std::shared_ptr<const LaunchHandleTable> table) {
+        published_.nonRealtimeReplace(std::move(table));
+    }
+
+    /// What is live, for as long as this exists. On the audio thread. Null
+    /// until something has been published, which is a session whose slots have
+    /// no handles yet rather than an error.
+    class Reader {
+      public:
+        /// Inside a BlockScope, what it pinned; outside one, the table acquired for itself.
+        explicit Reader(LaunchHandleFeed& feed) {
+            if (feed.pinned_.load(std::memory_order_acquire)) {
+                table_ = feed.live_.load(std::memory_order_relaxed);
+                return;
+            }
+            access_.emplace(feed.published_);
+            table_ = (*access_)->get();
+        }
+
+        const LaunchHandleTable* get() const noexcept {
+            return table_;
+        }
+        const LaunchHandleTable* operator->() const noexcept {
+            return get();
+        }
+        explicit operator bool() const noexcept {
+            return get() != nullptr;
+        }
+
+      private:
+        std::optional<Published::ScopedAccess<farbot::ThreadType::realtime>> access_;
+        const LaunchHandleTable* table_ = nullptr;
+    };
+
+    /// The block's one acquisition, opened by the callback before any op renders. The table
+    /// may be read by only one thread at a time, and a block spread across workers reads it
+    /// from every one of them.
+    class BlockScope {
+      public:
+        explicit BlockScope(LaunchHandleFeed& feed) : feed_(feed) {
+            feed_.live_.store(feed_.published_.realtimeAcquire().get(), std::memory_order_relaxed);
+            feed_.pinned_.store(true, std::memory_order_release);
+        }
+
+        ~BlockScope() {
+            feed_.pinned_.store(false, std::memory_order_release);
+            feed_.live_.store(nullptr, std::memory_order_relaxed);
+            feed_.published_.realtimeRelease();
+        }
+
+        BlockScope(const BlockScope&) = delete;
+        BlockScope& operator=(const BlockScope&) = delete;
+
+      private:
+        LaunchHandleFeed& feed_;
+    };
+
+  private:
+    Published published_;
+    std::atomic<bool> pinned_{false};
+    std::atomic<const LaunchHandleTable*> live_{nullptr};
+};
+
+/// Which slot's run a take follows, instead of the transport (#2464).
+struct SlotRunTarget {
+    /// Not owned, and outlives the take: the session's, like the clip feed.
+    LaunchHandleFeed* handles = nullptr;
+
+    SlotKey key;
+
+    /// The handle the take was made for. A slot emptied and refilled is the
+    /// same key on a different clip, and the take does not follow it.
+    std::uint64_t incarnation = 0;
+};
+
+/// What one block of a slot's run gives a take.
+struct SlotRun {
+    /// Where the run sounding when the block opened ended, if it did.
+    std::optional<EdgeSample> endedAt;
+
+    /// Where a new run began, if one did. The take that starts here is not the
+    /// one that ended above: a re-launch is a second take, not a longer one.
+    std::optional<EventSample> beganAt;
+
+    /// Whether the slot is still published under the incarnation the take was
+    /// made for. A retired or refilled slot ends the take where it stood.
+    bool gone = false;
+};
+
+/**
+ * @brief @p target's run over the block the launcher last advanced.
+ *
+ * On the audio thread, after @ref advanceLaunchHandles has run over this block:
+ * a handle's block status is written there, once, and everything that acts on
+ * it reads that one answer.
+ */
+SlotRun slotRun(const SlotRunTarget& target);
+
+/// The block as the launcher names it, from the one place its faces were
+/// derived together (RenderContext.hpp).
+inline SyncRange syncRangeFor(const BlockInfo& block) {
+    return SyncRange{block.beats,      block.monotonicBeats, block.seconds, block.monotonicSamples,
+                     block.numSamples, block.rate(),         block.tempo};
+}
+
+/**
+ * @brief Apply what has been asked, then advance every handle over @p block.
+ *
+ * On the audio thread, once per block, before anything renders. Every handle,
+ * because a stopped one may have a launch queued inside this block.
+ *
+ * One call rather than two: @p requests is drained whole first, so a launch
+ * lands in the block it was asked in and a scene reaches every handle before
+ * any of them has moved.
+ *
+ * @p runs takes the edges each handle reported, for the capture off the audio
+ * thread (SlotRuns.hpp). Null for a caller that does not capture.
+ *
+ * @p clips is the snapshot pinned around the sources that render this block.
+ * When present, its loop configuration is adopted before requests are drained,
+ * so the handle and its material change cycle on the same block. Null keeps
+ * the generic/manual handle API unchanged.
+ *
+ * @p completedBoundary overrides the block's continuous endpoint when the
+ * transport cursor jumps there, such as a callback segment ending at a loop.
+ */
+void advanceLaunchHandles(LaunchHandleFeed& handles, LaunchRequestQueue& requests,
+                          const BlockInfo& block, SlotRunQueue* runs = nullptr,
+                          const ClipSnapshot* clips = nullptr,
+                          const SlotRunBoundary* completedBoundary = nullptr);
+
+}  // namespace magda::engine

@@ -128,7 +128,7 @@ class CCLaneComponent : public CurveEditorBase {
     double valueToNormalized(int value) const;
 
     // Find the index of a CC/PB event by its point ID
-    size_t pointIdToEventIndex(uint32_t pointId) const;
+    static size_t pointIdToEventIndex(uint32_t pointId);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CCLaneComponent)
 };

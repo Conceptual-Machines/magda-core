@@ -1,7 +1,7 @@
 #include "GridOverlayComponent.hpp"
 
 #include "../../layout/LayoutConfig.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 
 namespace magda {
 
@@ -172,11 +172,11 @@ void GridOverlayComponent::drawSecondsGrid(juce::Graphics& g, juce::Rectangle<in
             }
 
             if (isMajor) {
-                g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).brighter(0.3f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::GRID_LINE).brighter(0.3f));
                 g.drawLine(static_cast<float>(x), static_cast<float>(area.getY()),
                            static_cast<float>(x), static_cast<float>(area.getBottom()), 1.0f);
             } else {
-                g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).brighter(0.1f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::GRID_LINE).brighter(0.1f));
                 g.drawLine(static_cast<float>(x), static_cast<float>(area.getY()),
                            static_cast<float>(x), static_cast<float>(area.getBottom()), 0.5f);
             }
@@ -190,15 +190,16 @@ void GridOverlayComponent::drawBarsBeatsGrid(juce::Graphics& g, juce::Rectangle<
 
     double markerIntervalBeats = 1.0;
 
+    const double barLengthBeats = beatsPerBar(timeSignatureNumerator, timeSignatureDenominator);
+    const double sigBeat = signatureBeatLength(timeSignatureDenominator);
     markerIntervalBeats = GridConstants::computeGridInterval(
-        gridQuantize, currentZoom, timeSignatureNumerator, minPixelSpacing);
+        gridQuantize, currentZoom, barLengthBeats, sigBeat, minPixelSpacing);
 
     double totalTimelineBeats = timelineLength * tempoBPM / 60.0;
-    double barLengthBeats = static_cast<double>(timeSignatureNumerator);
 
     // Check if grid interval aligns with bar and beat boundaries
     bool alignsWithBars = GridConstants::gridAlignsWithBars(markerIntervalBeats, barLengthBeats);
-    bool alignsWithBeats = GridConstants::gridAlignsWithBeats(markerIntervalBeats);
+    bool alignsWithBeats = GridConstants::gridAlignsWithBeats(markerIntervalBeats, sigBeat);
 
     // Compute visible beat range to avoid iterating the entire timeline
     double firstVisibleBeat =
@@ -216,24 +217,24 @@ void GridOverlayComponent::drawBarsBeatsGrid(juce::Graphics& g, juce::Rectangle<
         if (alignsWithBars && alignsWithBeats) {
             // Grid aligns with musical structure — classify normally
             auto [isBarLine, isBeatLine] =
-                GridConstants::classifyBeatPosition(beat, barLengthBeats);
+                GridConstants::classifyBeatPosition(beat, barLengthBeats, sigBeat);
 
             if (isBarLine) {
-                g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).brighter(0.4f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::GRID_LINE).brighter(0.4f));
                 g.drawLine(static_cast<float>(x), static_cast<float>(area.getY()),
                            static_cast<float>(x), static_cast<float>(area.getBottom()), 1.5f);
             } else if (isBeatLine) {
-                g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).brighter(0.2f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::GRID_LINE).brighter(0.2f));
                 g.drawLine(static_cast<float>(x), static_cast<float>(area.getY()),
                            static_cast<float>(x), static_cast<float>(area.getBottom()), 1.0f);
             } else {
-                g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).brighter(0.05f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::GRID_LINE).brighter(0.05f));
                 g.drawLine(static_cast<float>(x), static_cast<float>(area.getY()),
                            static_cast<float>(x), static_cast<float>(area.getBottom()), 0.5f);
             }
         } else {
             // Grid doesn't align — draw all grid lines as subdivision style
-            g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).brighter(0.05f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::GRID_LINE).brighter(0.05f));
             g.drawLine(static_cast<float>(x), static_cast<float>(area.getY()),
                        static_cast<float>(x), static_cast<float>(area.getBottom()), 0.5f);
         }
@@ -250,11 +251,11 @@ void GridOverlayComponent::drawBarsBeatsGrid(juce::Graphics& g, juce::Rectangle<
             bool isBarLine = barRemainder < 0.001;
 
             if (isBarLine) {
-                g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).brighter(0.4f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::GRID_LINE).brighter(0.4f));
                 g.drawLine(static_cast<float>(x), static_cast<float>(area.getY()),
                            static_cast<float>(x), static_cast<float>(area.getBottom()), 1.5f);
             } else {
-                g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).brighter(0.2f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::GRID_LINE).brighter(0.2f));
                 g.drawLine(static_cast<float>(x), static_cast<float>(area.getY()),
                            static_cast<float>(x), static_cast<float>(area.getBottom()), 1.0f);
             }
@@ -269,7 +270,7 @@ void GridOverlayComponent::drawBeatOverlay(juce::Graphics& g, juce::Rectangle<in
     }
 
     // Draw beat subdivisions using actual tempo
-    g.setColour(DarkTheme::getColour(DarkTheme::GRID_LINE).withAlpha(0.5f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::GRID_LINE).withAlpha(0.5f));
 
     // currentZoom is ppb - one beat = currentZoom pixels
     const int beatPixelSpacing = static_cast<int>(currentZoom);

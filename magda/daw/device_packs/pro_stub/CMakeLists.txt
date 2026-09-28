@@ -4,7 +4,7 @@ add_library(magda_pro_devices STATIC
     ProStubPlugin.hpp
 )
 
-target_compile_features(magda_pro_devices PRIVATE cxx_std_20)
+target_compile_features(magda_pro_devices PRIVATE cxx_std_23)
 target_include_directories(magda_pro_devices PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
 )

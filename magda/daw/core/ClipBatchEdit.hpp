@@ -29,7 +29,7 @@ class ClipBatchEdit {
     ClipBatchEdit(const ClipBatchEdit&) = delete;
     ClipBatchEdit& operator=(const ClipBatchEdit&) = delete;
 
-    void execute(std::unique_ptr<UndoableCommand> command) {
+    static void execute(std::unique_ptr<UndoableCommand> command) {
         UndoManager::getInstance().executeCommand(std::move(command));
     }
 

@@ -3,8 +3,11 @@
 #include "../audio/AudioBridge.hpp"
 #include "../audio/plugins/DrumGridPlugin.hpp"
 #include "../audio/plugins/MagdaSamplerPlugin.hpp"
+#include "../audio/plugins/tracktion/SamplerHostBinding.hpp"
 #include "../audio/session/SessionClipAudioMonitor.hpp"
 #include "../audio/session/SessionClipScheduler.hpp"
+#include "../core/ClipManager.hpp"
+#include "../core/TrackManager.hpp"
 
 namespace magda {
 
@@ -12,7 +15,7 @@ namespace magda {
 // PDC Query Methods
 // =============================================================================
 
-double TracktionEngineWrapper::getPluginLatencySeconds(const std::string& effect_id) const {
+double TracktionEngineWrapper::getPluginLatencySeconds(const std::string& effect_id) {
     // TODO: Implement when we have effect tracking
     // For now, iterate all tracks and their plugins to find by ID
     juce::ignoreUnused(effect_id);
@@ -98,24 +101,50 @@ void TracktionEngineWrapper::deactivateAllSessionClips() {
         sessionScheduler_->deactivateAllSessionClips();
 }
 
+// A launch each, which is what a scene has always been on this side: the
+// scheduler quantizes every one of them to the same boundary, so they arrive
+// together whether or not they were asked for together.
+void TracktionEngineWrapper::launchSessionScene(const std::vector<TrackId>& trackIds,
+                                                int sceneIndex) {
+    auto& clips = ClipManager::getInstance();
+
+    for (const auto trackId : trackIds) {
+        const auto clipId = clips.getClipInSlot(trackId, sceneIndex);
+
+        if (clipId != INVALID_CLIP_ID)
+            clips.triggerClip(clipId);
+        else
+            stopSessionTrack(trackId);
+    }
+}
+
+// The bridge turns the flag into a Tracktion freeze, which renders on its own.
+void TracktionEngineWrapper::setTrackFrozen(TrackId trackId, bool frozen) {
+    TrackManager::getInstance().setTrackFrozen(trackId, frozen);
+}
+
 std::vector<SamplerMediaReference> TracktionEngineWrapper::getSamplerMediaReferences() {
     std::vector<SamplerMediaReference> references;
     if (!currentEdit_)
         return references;
 
     auto addSampler = [&references](tracktion::Plugin* plugin) {
-        auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin);
+        auto* sampler =
+            daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MagdaSamplerPlugin>(plugin);
         if (sampler == nullptr)
             return;
-        tracktion::Plugin::Ptr keepAlive(sampler);
-        references.push_back(
-            {sampler->getSampleFile(), [keepAlive](const juce::File& replacement) {
-                 if (auto* live = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(keepAlive.get()))
-                     live->loadSample(replacement);
-             }});
+        // The PLUGIN is what is reference counted; the device lives inside it.
+        tracktion::Plugin::Ptr keepAlive(plugin);
+        references.push_back({sampler->getSampleFile(), [keepAlive](const juce::File& replacement) {
+                                  // relocateSamplerSample, not loadSamplerSample: the file
+                                  // moved, the user's root note and trim/loop markers did not.
+                                  if (keepAlive != nullptr)
+                                      daw::audio::tracktion_adapter::relocateSamplerSample(
+                                          *keepAlive, replacement);
+                              }});
     };
 
-    for (auto plugin : tracktion::getAllPlugins(*currentEdit_, true)) {
+    for (auto* plugin : tracktion::getAllPlugins(*currentEdit_, true)) {
         addSampler(plugin);
         if (auto* drumGrid = dynamic_cast<daw::audio::DrumGridPlugin*>(plugin))
             for (const auto& chain : drumGrid->getChains())

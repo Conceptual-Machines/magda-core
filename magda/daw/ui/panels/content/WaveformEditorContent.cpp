@@ -2,13 +2,13 @@
 
 #include <cmath>
 #include <limits>
+#include <utility>
 
 #include "../../state/TimelineController.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/CursorManager.hpp"
-#include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallButtonLookAndFeel.hpp"
-#include "audio/AudioBridge.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "audio/CompService.hpp"
 #include "core/ClipCommands.hpp"
@@ -19,7 +19,7 @@
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "core/WarpMarkerCommands.hpp"
-#include "engine/AudioEngine.hpp"
+#include "engine/TracktionFork.hpp"
 
 namespace magda::daw::ui {
 
@@ -77,10 +77,11 @@ class WaveformEditorContent::ScrollNotifyingViewport : public juce::Viewport {
 class WaveformEditorContent::ButtonLookAndFeel : public juce::LookAndFeel_V4 {
   public:
     ButtonLookAndFeel() {
-        setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-        setColour(juce::TextButton::buttonOnColourId, DarkTheme::getAccentColour().withAlpha(0.3f));
-        setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
-        setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+        setColour(juce::TextButton::buttonColourId, ActiveTheme::getColour(ActiveTheme::SURFACE));
+        setColour(juce::TextButton::buttonOnColourId,
+                  ActiveTheme::getAccentColour().withAlpha(0.3f));
+        setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
+        setColour(juce::TextButton::textColourOnId, ActiveTheme::getAccentColour());
     }
 
     juce::Font getTextButtonFont(juce::TextButton&, int /*buttonHeight*/) override {
@@ -103,7 +104,7 @@ class WaveformEditorContent::ButtonLookAndFeel : public juce::LookAndFeel_V4 {
         g.setColour(baseColour);
         g.fillRoundedRectangle(bounds, 3.0f);
 
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRoundedRectangle(bounds, 3.0f, 1.0f);
     }
 
@@ -181,7 +182,7 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
         if (editPos >= clipStart && editPos <= clipEnd) {
             int editX = arrangementToSourceX(editPos);
             if (editX >= 0 && editX < getWidth()) {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
                 juce::Path triangle;
                 triangle.addTriangle(static_cast<float>(editX - 5), 0.0f,
                                      static_cast<float>(editX + 5), 0.0f, static_cast<float>(editX),
@@ -200,7 +201,7 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
                     displayPositionToX(di.sessionPlayheadToDisplayPosition(sessionPos));
 
                 if (playX >= 0 && playX < getWidth()) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
                     g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
                                static_cast<float>(getHeight()), 1.5f);
                 }
@@ -225,7 +226,7 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
                 double sourcePos = di.loopRegionStartSource + wrapped;
                 int playX = sourcePositionToX(sourcePos);
                 if (playX >= 0 && playX < getWidth()) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
                     g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
                                static_cast<float>(getHeight()), 1.5f);
                 }
@@ -234,7 +235,7 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
 
             int playX = arrangementToSourceX(playPos);
             if (playX >= 0 && playX < getWidth()) {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
                 g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
                            static_cast<float>(getHeight()), 1.5f);
             }
@@ -321,11 +322,29 @@ WaveformEditorContent::WaveformEditorContent() {
         };
 
         double newLoopStart = timelineToSrc(displayStart);
-        double newLoopLength = timelineToSrc(displayEnd - displayStart);
+        const double displayLength = displayEnd - displayStart;
+        const double newLoopLength = timelineToSrc(displayLength);
+        const bool movedWithoutResizing =
+            std::abs(displayLength - cachedDisplayInfo_.loopLengthSeconds) <= 1.0e-6;
 
-        magda::UndoManager::getInstance().executeCommand(
-            std::make_unique<magda::SetClipLoopRangeCommand>(editingClipId_, newLoopStart,
-                                                             newLoopLength, bpm));
+        if (movedWithoutResizing) {
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::MoveClipLoopRegionCommand>(editingClipId_, newLoopStart));
+        } else if (magda::audioEventRef(*clip).autoTempo &&
+                   magda::audioEventRef(*clip).hasInterpretedBpm()) {
+            const double newLoopLengthBeats =
+                newLoopLength * magda::audioEventRef(*clip).interpBpm / 60.0;
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetMusicalClipLoopRangeCommand>(
+                    editingClipId_, newLoopStart, newLoopLengthBeats));
+        } else {
+            // Free playback edits a source region. Tagging its ruler beats as
+            // musical would change the selected audio immediately when source and project BPM
+            // differ.
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetClipLoopRangeCommand>(editingClipId_, newLoopStart,
+                                                                 newLoopLength, bpm));
+        }
     };
 
     // Push every drag tick through to ClipManager so the looped audio reflects the new region
@@ -333,7 +352,6 @@ WaveformEditorContent::WaveformEditorContent() {
     // switchover, so even a fast drag produces smooth audio (the previous "flickering rebuild"
     // concern was masking TE #8 — the bleed made each rebuild sound different).
     timeRuler_->onLoopRegionChanged = commitLoopFromDisplay;
-    timeRuler_->onLoopDragEnded = commitLoopFromDisplay;
 
     addAndMakeVisible(timeRuler_.get());
 
@@ -366,7 +384,7 @@ WaveformEditorContent::WaveformEditorContent() {
         std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::Integer);
     gridNumeratorLabel_->setRange(1.0, 128.0, 1.0);
     gridNumeratorLabel_->setValue(static_cast<double>(gridNumerator_), juce::dontSendNotification);
-    gridNumeratorLabel_->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+    gridNumeratorLabel_->setTextColour(ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
     gridNumeratorLabel_->setShowFillIndicator(false);
     gridNumeratorLabel_->setFontSize(12.0f);
     gridNumeratorLabel_->setDoubleClickResetsValue(true);
@@ -378,7 +396,7 @@ WaveformEditorContent::WaveformEditorContent() {
 
     gridSlashLabel_ = std::make_unique<juce::Label>("gridSlash", "/");
     gridSlashLabel_->setFont(magda::FontManager::getInstance().getUIFont(11.0f));
-    gridSlashLabel_->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    gridSlashLabel_->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     gridSlashLabel_->setJustificationType(juce::Justification::centred);
     addAndMakeVisible(gridSlashLabel_.get());
 
@@ -387,7 +405,7 @@ WaveformEditorContent::WaveformEditorContent() {
     gridDenominatorLabel_->setRange(2.0, 32.0, 4.0);
     gridDenominatorLabel_->setValue(static_cast<double>(gridDenominator_),
                                     juce::dontSendNotification);
-    gridDenominatorLabel_->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+    gridDenominatorLabel_->setTextColour(ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
     gridDenominatorLabel_->setShowFillIndicator(false);
     gridDenominatorLabel_->setFontSize(12.0f);
     gridDenominatorLabel_->setDoubleClickResetsValue(true);
@@ -417,11 +435,11 @@ WaveformEditorContent::WaveformEditorContent() {
     snapButton_->setClickingTogglesState(true);
     snapButton_->setToggleState(false, juce::dontSendNotification);
     snapButton_->setColour(juce::TextButton::buttonColourId,
-                           DarkTheme::getColour(DarkTheme::SURFACE).darker(0.2f));
+                           ActiveTheme::getColour(ActiveTheme::SURFACE).darker(0.2f));
     snapButton_->setColour(juce::TextButton::buttonOnColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).darker(0.3f));
+                           ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).darker(0.3f));
     snapButton_->setColour(juce::TextButton::textColourOffId,
-                           DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                           ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     snapButton_->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
     snapButton_->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
                                    juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
@@ -435,11 +453,11 @@ WaveformEditorContent::WaveformEditorContent() {
     gridButton_->setClickingTogglesState(true);
     gridButton_->setToggleState(gridVisible_, juce::dontSendNotification);
     gridButton_->setColour(juce::TextButton::buttonColourId,
-                           DarkTheme::getColour(DarkTheme::SURFACE).darker(0.2f));
+                           ActiveTheme::getColour(ActiveTheme::SURFACE).darker(0.2f));
     gridButton_->setColour(juce::TextButton::buttonOnColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).darker(0.3f));
+                           ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).darker(0.3f));
     gridButton_->setColour(juce::TextButton::textColourOffId,
-                           DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                           ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     gridButton_->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
     gridButton_->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
                                    juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
@@ -550,28 +568,25 @@ WaveformEditorContent::WaveformEditorContent() {
 
     // Warp marker callbacks — route through UndoManager for undo support
     gridComponent_->onWarpMarkerAdd = [this](double sourceTime, double warpTime) {
-        auto* bridge = getBridge();
-        if (bridge) {
-            UndoManager::getInstance().executeCommand(std::make_unique<AddWarpMarkerCommand>(
-                bridge, editingClipId_, sourceTime, warpTime));
+        if (editingClipId_ != magda::INVALID_CLIP_ID) {
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<AddWarpMarkerCommand>(editingClipId_, sourceTime, warpTime));
             refreshWarpMarkers();
         }
     };
 
     gridComponent_->onWarpMarkerMove = [this](int index, double newWarpTime) {
-        auto* bridge = getBridge();
-        if (bridge) {
-            UndoManager::getInstance().executeCommand(std::make_unique<MoveWarpMarkerCommand>(
-                bridge, editingClipId_, index, newWarpTime));
+        if (editingClipId_ != magda::INVALID_CLIP_ID) {
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<MoveWarpMarkerCommand>(editingClipId_, index, newWarpTime));
             refreshWarpMarkers();
         }
     };
 
     gridComponent_->onWarpMarkerRemove = [this](int index) {
-        auto* bridge = getBridge();
-        if (bridge) {
+        if (editingClipId_ != magda::INVALID_CLIP_ID) {
             UndoManager::getInstance().executeCommand(
-                std::make_unique<RemoveWarpMarkerCommand>(bridge, editingClipId_, index));
+                std::make_unique<RemoveWarpMarkerCommand>(editingClipId_, index));
             refreshWarpMarkers();
         }
     };
@@ -579,13 +594,20 @@ WaveformEditorContent::WaveformEditorContent() {
     // Warp marker reposition callback (Alt+drag: remove + add at new position)
     gridComponent_->onWarpMarkerReposition = [this](int index, double newSourceTime,
                                                     double newWarpTime) {
-        auto* bridge = getBridge();
-        if (bridge) {
+        if (editingClipId_ != magda::INVALID_CLIP_ID) {
+            const auto markers = magda::getClipWarpMarkers(editingClipId_);
+            // Keep the dragged marker's index stable and never remove it
+            // before an invalid replacement (including a boundary) is rejected.
+            if (index <= 0 || index + 1 >= static_cast<int>(markers.size()) ||
+                !std::isfinite(newSourceTime) || !std::isfinite(newWarpTime) ||
+                newSourceTime <= markers[static_cast<size_t>(index - 1)].sourceTime ||
+                newSourceTime >= markers[static_cast<size_t>(index + 1)].sourceTime)
+                return;
             CompoundOperationScope scope("Reposition Warp Marker");
             UndoManager::getInstance().executeCommand(
-                std::make_unique<RemoveWarpMarkerCommand>(bridge, editingClipId_, index));
-            UndoManager::getInstance().executeCommand(std::make_unique<AddWarpMarkerCommand>(
-                bridge, editingClipId_, newSourceTime, newWarpTime));
+                std::make_unique<RemoveWarpMarkerCommand>(editingClipId_, index));
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<AddWarpMarkerCommand>(editingClipId_, newSourceTime, newWarpTime));
             refreshWarpMarkers();
         }
     };
@@ -685,7 +707,7 @@ WaveformEditorContent::~WaveformEditorContent() {
 void WaveformEditorContent::paint(juce::Graphics& g) {
     if (getWidth() <= 0 || getHeight() <= 0)
         return;
-    g.fillAll(DarkTheme::getPanelBackgroundColour());
+    g.fillAll(ActiveTheme::getPanelBackgroundColour());
 }
 
 void WaveformEditorContent::paintOverChildren(juce::Graphics& g) {
@@ -693,12 +715,12 @@ void WaveformEditorContent::paintOverChildren(juce::Graphics& g) {
     // list what is selected instead. Editing happens in the properties panel.
     if (!multiClipNames_.isEmpty()) {
         auto bounds = getLocalBounds();
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         g.setFont(FontManager::getInstance().getUIFont(14.0f));
         auto headline = juce::String(multiClipNames_.size()) + " clips selected";
         auto textArea = bounds.withSizeKeepingCentre(bounds.getWidth() - 40, 60);
         g.drawText(headline, textArea.removeFromTop(24), juce::Justification::centred);
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.6f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.6f));
         g.setFont(FontManager::getInstance().getUIFont(12.0f));
         g.drawText(multiClipNames_.joinIntoString(", "), textArea, juce::Justification::centredTop,
                    true);
@@ -720,9 +742,9 @@ void WaveformEditorContent::paintOverChildren(juce::Graphics& g) {
     if (area.isEmpty())
         return;
 
-    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).withAlpha(0.88f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE).withAlpha(0.88f));
     g.fillRoundedRectangle(area.toFloat(), 6.0f);
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.9f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.9f));
     g.drawRoundedRectangle(area.toFloat().reduced(0.5f), 6.0f, 1.0f);
 
     auto spinnerArea = area.removeFromLeft(32).reduced(8).toFloat();
@@ -733,11 +755,11 @@ void WaveformEditorContent::paintOverChildren(juce::Graphics& g) {
         const float angle = transientSpinnerPhase_ + t * juce::MathConstants<float>::twoPi;
         const float alpha = 0.18f + 0.72f * t;
         const auto p = centre + juce::Point<float>(std::cos(angle), std::sin(angle)) * radius;
-        g.setColour(DarkTheme::getAccentColour().withAlpha(alpha));
+        g.setColour(ActiveTheme::getAccentColour().withAlpha(alpha));
         g.fillEllipse(p.x - 1.6f, p.y - 1.6f, 3.2f, 3.2f);
     }
 
-    g.setColour(DarkTheme::getTextColour());
+    g.setColour(ActiveTheme::getTextColour());
     g.setFont(FontManager::getInstance().getUIFont(12.0f));
     g.drawText("Updating transients", area.reduced(0, 1), juce::Justification::centredLeft, false);
 }
@@ -946,27 +968,19 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
             bool warpEnabled = magda::audioEventRef(*clip).warpEnabled;
             gridComponent_->setWarpMode(warpEnabled);
 
-            if (warpEnabled) {
-                auto* bridge = getBridge();
-                if (bridge) {
-                    if (!wasWarpEnabled_) {
-                        bridge->enableWarp(editingClipId_);
-                        auto markers = bridge->getWarpMarkers(editingClipId_);
-                        gridComponent_->setWarpMarkers(markers);
-                    }
-                }
-            } else if (wasWarpEnabled_) {
-                auto* bridge = getBridge();
-                if (bridge) {
-                    bridge->disableWarp(editingClipId_);
-                }
-            }
-            wasWarpEnabled_ = warpEnabled;
+            // Latched first: the edit below notifies, and lands back here.
+            const bool wasWarpEnabled = std::exchange(wasWarpEnabled_, warpEnabled);
+            if (warpEnabled && !wasWarpEnabled)
+                magda::seedWarpMarkersFromTransients(editingClipId_,
+                                                     cachedBpm_ > 0.0 ? cachedBpm_ : 120.0);
+            else if (!warpEnabled && wasWarpEnabled)
+                magda::clearWarpMarkers(editingClipId_);
+            refreshWarpMarkers();
         }
 
         // Check if cached transients were invalidated (e.g. sensitivity changed)
         if (clip->isAudio() && !magda::audioEventRef(*clip).sourceFilePath().isEmpty()) {
-            auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
+            const auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
                 magda::audioEventRef(*clip).sourceFilePath());
             if (cached) {
                 gridComponent_->setTransientTimes(*cached);
@@ -997,7 +1011,7 @@ void WaveformEditorContent::transientsChanged(const juce::String& filePath) {
     }
     if (magda::audioEventRef(*clip).sourceFilePath() != filePath)
         return;
-    auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(filePath);
+    const auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(filePath);
     if (cached) {
         double bpm = 120.0;
         if (auto* controller = magda::TimelineController::getCurrent())
@@ -1121,7 +1135,7 @@ void WaveformEditorContent::setMultiClipSelection(
     if (names == multiClipNames_)
         return;
 
-    multiClipNames_ = names;
+    multiClipNames_ = std::move(names);
     if (!multiClipNames_.isEmpty()) {
         setClip(magda::INVALID_CLIP_ID);
         setTransientsUpdating(false);
@@ -1185,21 +1199,12 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
             gridComponent_->setWarpMode(warpEnabled);
             wasWarpEnabled_ = warpEnabled;
 
-            if (warpEnabled) {
-                auto* bridge = getBridge();
-                if (bridge) {
-                    // Read existing markers from TE — don't call enableWarp()
-                    // which would destroy user-placed markers and re-populate
-                    // from transients.
-                    auto markers = bridge->getWarpMarkers(editingClipId_);
-                    gridComponent_->setWarpMarkers(markers);
-                }
-            }
+            refreshWarpMarkers();
         }
 
         // Check for cached transients or request async detection.
         if (clip && clip->isAudio() && !magda::audioEventRef(*clip).sourceFilePath().isEmpty()) {
-            auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
+            const auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
                 magda::audioEventRef(*clip).sourceFilePath());
             if (cached) {
                 gridComponent_->setTransientTimes(*cached);
@@ -1478,25 +1483,9 @@ void WaveformEditorContent::zoomToTimeRange(double startTime, double endTime) {
 // ============================================================================
 
 void WaveformEditorContent::refreshWarpMarkers() {
-    auto* bridge = getBridge();
-    if (bridge && editingClipId_ != magda::INVALID_CLIP_ID) {
-        auto markers = bridge->getWarpMarkers(editingClipId_);
-        gridComponent_->setWarpMarkers(markers);
-
-        // Warp markers live in TE's WarpTimeManager, not in ClipInfo, so editing
-        // them doesn't fire a clip-property change. The arrangement ClipComponent
-        // draws the warped waveform live (re-fetching markers each paint), so it
-        // just needs a repaint nudge -- otherwise the arrangement preview keeps
-        // showing the pre-edit warp until some other property change repaints it.
-        magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(editingClipId_);
-    }
-}
-
-magda::AudioBridge* WaveformEditorContent::getBridge() {
-    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-    if (!audioEngine)
-        return nullptr;
-    return audioEngine->getAudioBridge();
+    if (editingClipId_ == magda::INVALID_CLIP_ID)
+        return;
+    gridComponent_->setWarpMarkers(magda::getClipWarpMarkers(editingClipId_));
 }
 
 void WaveformEditorContent::requestTransientDetection() {
@@ -1505,19 +1494,15 @@ void WaveformEditorContent::requestTransientDetection() {
     if (editingClipId_ == magda::INVALID_CLIP_ID)
         return;
 
-    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-    if (!audioEngine)
-        return;
-
-    auto* bridge = audioEngine->getAudioBridge();
-    if (!bridge)
+    // Detection is the fork's until transients have an engine-neutral home.
+    if (!magda::tracktion_fork::isRendering())
         return;
 
     setTransientsUpdating(true);
-    if (bridge->getTransientTimes(editingClipId_)) {
+    if (magda::tracktion_fork::detectTransients(editingClipId_)) {
         const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
         if (clip && !magda::audioEventRef(*clip).sourceFilePath().isEmpty()) {
-            auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
+            const auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
                 magda::audioEventRef(*clip).sourceFilePath());
             if (cached) {
                 gridComponent_->setTransientTimes(*cached);
@@ -1563,7 +1548,7 @@ void WaveformEditorContent::sliceAtWarpMarkers() {
         return;
 
     double tempo = cachedBpm_ > 0.0 ? cachedBpm_ : 120.0;
-    magda::sliceClipAtWarpMarkers(editingClipId_, tempo, getBridge());
+    magda::sliceClipAtWarpMarkers(editingClipId_, tempo);
 
     editingClipId_ = magda::INVALID_CLIP_ID;
     gridComponent_->setClip(magda::INVALID_CLIP_ID);
@@ -1579,7 +1564,7 @@ void WaveformEditorContent::sliceAtGrid() {
         return;
 
     double gridInterval = gridBeats * 60.0 / bpm;
-    magda::sliceClipAtGrid(editingClipId_, gridInterval, bpm, getBridge());
+    magda::sliceClipAtGrid(editingClipId_, gridInterval, bpm);
 
     editingClipId_ = magda::INVALID_CLIP_ID;
     gridComponent_->setClip(magda::INVALID_CLIP_ID);
@@ -1590,7 +1575,7 @@ void WaveformEditorContent::sliceWarpMarkersToDrumGrid() {
         return;
 
     double tempo = cachedBpm_ > 0.0 ? cachedBpm_ : 120.0;
-    magda::sliceWarpMarkersToDrumGrid(editingClipId_, tempo, getBridge());
+    magda::sliceWarpMarkersToDrumGrid(editingClipId_, tempo);
 }
 
 void WaveformEditorContent::sliceAtGridToDrumGrid() {
@@ -1603,7 +1588,7 @@ void WaveformEditorContent::sliceAtGridToDrumGrid() {
         return;
 
     double gridInterval = gridBeats * 60.0 / bpm;
-    magda::sliceAtGridToDrumGrid(editingClipId_, gridInterval, bpm, getBridge());
+    magda::sliceAtGridToDrumGrid(editingClipId_, gridInterval, bpm);
 }
 
 }  // namespace magda::daw::ui

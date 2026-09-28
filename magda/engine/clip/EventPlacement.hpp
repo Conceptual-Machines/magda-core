@@ -43,6 +43,11 @@ SourceRead sourceReadFor(const AudioEventPlayback& event, double deviceSampleRat
 /// reading delivers and what the callback consumes one of per output sample.
 ClipPlacement placementFor(const AudioEventPlayback& event, double deviceSampleRate);
 
+/// Whether the event begins between the two boundaries of its resolved reading.
+/// Reverse, loop phase and warp are included by resolving the same placement
+/// playback uses rather than inspecting the model's forward-file anchor.
+bool startsInsideSourceMaterial(const AudioEventPlayback& event, double deviceSampleRate);
+
 /**
  * @brief Reading samples consumed per output sample, at @p event's usual rate.
  *
@@ -58,6 +63,14 @@ ClipPlacement placementFor(const AudioEventPlayback& event, double deviceSampleR
  * sized for before the callback.
  */
 double readingRateOf(const AudioEventPlayback& event);
+
+/**
+ * @brief The fastest @p event can be read anywhere, which is what buffers are sized for.
+ *
+ * Its usual rate, or for a warped event the steepest stretch a marker may be
+ * given. Fixed while markers move, so editing them keeps the running stretcher.
+ */
+double peakReadingRateOf(const AudioEventPlayback& event);
 
 /**
  * @brief Where in the reading @p event is at one instant of the timeline.
@@ -82,6 +95,15 @@ double readingRateOf(const AudioEventPlayback& event);
  */
 double readingPositionAt(const AudioClipPlayback& clip, const AudioEventPlayback& event,
                          double seconds, double beat, double deviceSampleRate);
+
+/**
+ * @brief The beat face of a moment inside @p event's span, without a tempo map.
+ *
+ * Linear between the span's two resolved faces, exact at its ends. What a cue
+ * works from, since the pool is handed seconds and a beat-face event's position
+ * is a question about beats.
+ */
+double beatAlongSpan(const AudioEventPlayback& event, double seconds);
 
 /// What @p event needs stretching with, or a setup no stretcher is made for
 /// when it plays at its file's own speed with nothing asked of its pitch.

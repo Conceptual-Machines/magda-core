@@ -10,8 +10,8 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <tuple>
 
-#include "../../core/Config.hpp"
 #include "../../core/ParameterUtils.hpp"
 #include "../../core/TempoUtils.hpp"
 #include "version.hpp"
@@ -21,6 +21,27 @@ namespace {
 
 juce::String idFor(const char* prefix, int value) {
     return juce::String(prefix) + juce::String(value);
+}
+
+juce::String sendIdForDawProject(const juce::String& sendId) {
+    if (sendId.isEmpty())
+        return {};
+    return "magda_send_" +
+           juce::String::toHexString(sendId.toRawUTF8(), sendId.getNumBytesAsUTF8(), 0);
+}
+
+juce::String sendIdFromDawProject(const juce::String& xmlId) {
+    constexpr auto prefix = "magda_send_";
+    if (!xmlId.startsWith(prefix))
+        return xmlId;
+    const auto encoded = xmlId.substring(static_cast<int>(std::strlen(prefix)));
+    if (encoded.isEmpty() || encoded.length() % 2 != 0 ||
+        !encoded.containsOnly("0123456789abcdefABCDEF"))
+        return xmlId;
+    juce::MemoryBlock bytes;
+    bytes.loadFromHexString(encoded);
+    return juce::String::fromUTF8(static_cast<const char*>(bytes.getData()),
+                                  static_cast<int>(bytes.getSize()));
 }
 
 juce::String colourToDawProject(const juce::Colour colour) {
@@ -164,12 +185,12 @@ void addAutomationPoints(juce::XmlElement& parent, const juce::String& id,
 void addTrackAutomation(juce::XmlElement& trackLanes, const ProjectDocument& document,
                         const TrackInfo& track) {
     const auto volumeTarget = ControlTarget::trackVolume(track.id);
-    if (auto* lane = findAbsoluteLane(document, volumeTarget))
+    if (const auto* lane = findAbsoluteLane(document, volumeTarget))
         addAutomationPoints(trackLanes, idFor("volumeAutomation", track.id),
                             idFor("volume", track.id), *lane);
 
     const auto panTarget = ControlTarget::trackPan(track.id);
-    if (auto* lane = findAbsoluteLane(document, panTarget))
+    if (const auto* lane = findAbsoluteLane(document, panTarget))
         addAutomationPoints(trackLanes, idFor("panAutomation", track.id), idFor("pan", track.id),
                             *lane);
 }
@@ -362,7 +383,7 @@ std::optional<DeviceStateFile> deviceStateFile(const DeviceInfo& device) {
             return DeviceStateFile{base + ".vstpreset", decoded.getMemoryBlock()};
     }
 
-    if (device.pluginState.isNotEmpty()) {
+    if (device.hasPluginState()) {
         const auto* utf8 = device.pluginState.toRawUTF8();
         return DeviceStateFile{base + ".bin", juce::MemoryBlock(utf8, std::strlen(utf8))};
     }
@@ -558,7 +579,7 @@ void addBuiltinParam(DeviceInfo& device, int slot, juce::StringRef name, double 
 // explicit ms unit just in case a host writes one.
 double dawSecondsToMs(const juce::XmlElement& e) {
     const double v = e.getDoubleAttribute("value");
-    const auto unit = e.getStringAttribute("unit");
+    const auto& unit = e.getStringAttribute("unit");
     return (unit == "milliseconds" || unit == "ms") ? v : v * 1000.0;
 }
 
@@ -863,7 +884,7 @@ ClipInfo clipFromXml(const juce::XmlElement& clipElement, TrackId trackId, ClipI
     if (auto* warps = clipElement.getChildByName("Warps")) {
         clip.setAudioContent();
         auto& event = clip.audio().addEvent({});
-        event.autoTempo = true;
+        event.playbackIntent = PlaybackIntent::Beat;  // granted once a tempo is adopted
         if (auto* audioElement = warps->getChildByName("Audio")) {
             if (auto* fileElement = audioElement->getChildByName("File"))
                 event.sourceId =
@@ -876,18 +897,16 @@ ClipInfo clipFromXml(const juce::XmlElement& clipElement, TrackId trackId, ClipI
             maxBeats = juce::jmax(maxBeats, w->getDoubleAttribute("time", 0.0));
             maxSeconds = juce::jmax(maxSeconds, w->getDoubleAttribute("contentTime", 0.0));
         }
-        event.interpTotalBeats = maxBeats;
+        event.adoptTotalBeats(maxBeats, Provenance::FileMetadata);
         if (maxSeconds > 0.0)
-            event.interpBpm = maxBeats * 60.0 / maxSeconds;
+            event.adoptBpm(maxBeats * 60.0 / maxSeconds, Provenance::FileMetadata);
 
-        // The beat setters below all convert through interpBpm, so without one
-        // they are silent no-ops: the anchor and region would stay at zero
-        // while loopEnabled was set, and the clip would loop the whole source
-        // instead of the region the file states. The imported project's own
-        // tempo is the best stand-in, and is what the old beat-field import
-        // effectively played at.
+        // The beat setters below convert through interpBpm, so without one the
+        // anchor and region would stay at zero. The project's tempo is a guess,
+        // adopted as Analysis so anything better can replace it.
         if (!isValidBpm(event.interpBpm) && maxBeats > 0.0)
-            event.interpBpm = isValidBpm(projectTempo) ? projectTempo : DEFAULT_BPM;
+            event.adoptBpm(isValidBpm(projectTempo) ? projectTempo : DEFAULT_BPM,
+                           Provenance::Analysis);
 
         const bool regionApplicable = isValidBpm(event.interpBpm);
 
@@ -957,8 +976,7 @@ juce::String DawProjectXmlAdapter::toProjectXml(const ProjectDocument& document)
     // master track is actually present in the document (it isn't for partial
     // documents built outside a full capture).
     const bool hasMaster =
-        std::any_of(document.tracks.begin(), document.tracks.end(),
-                    [](const TrackInfo& t) { return t.type == TrackType::Master; });
+        std::ranges::contains(document.tracks, TrackType::Master, &TrackInfo::type);
 
     auto* structure = project.createNewChildElement("Structure");
     std::map<TrackId, const TrackInfo*> tracksById;
@@ -1028,11 +1046,14 @@ juce::String DawProjectXmlAdapter::toProjectXml(const ProjectDocument& document)
                     if (send.destTrackId == INVALID_TRACK_ID)
                         continue;
                     auto* sendEl = sends->createNewChildElement("Send");
-                    const auto sendId = idFor("send", track.id) + "_" + juce::String(sendCounter++);
+                    const auto generatedId =
+                        idFor("send", track.id) + "_" + juce::String(sendCounter++);
+                    const auto sendId =
+                        send.id.isNotEmpty() ? sendIdForDawProject(send.id) : generatedId;
                     sendEl->setAttribute("destination", idFor("channel", send.destTrackId));
                     sendEl->setAttribute("type", send.preFader ? "pre" : "post");
                     sendEl->setAttribute("id", sendId);
-                    addBoolParameter(*sendEl, "Enable", sendId + "_en", "Enable", true);
+                    addBoolParameter(*sendEl, "Enable", sendId + "_en", "Enable", send.enabled);
                     addRealParameter(*sendEl, "Volume", sendId + "_vol", "Send", "linear",
                                      send.level, 0.0, 1.0);
                 }
@@ -1076,15 +1097,21 @@ juce::String DawProjectXmlAdapter::toProjectXml(const ProjectDocument& document)
     }
 
     auto* scenes = project.createNewChildElement("Scenes");
-    std::set<int> sceneIndices;
+    auto sceneInfo = document.info;
+    int highestSceneIndex = -1;
     for (const auto& clip : document.clips)
         if (clip.view == ClipView::Session && clip.sceneIndex >= 0)
-            sceneIndices.insert(clip.sceneIndex);
+            highestSceneIndex = std::max(highestSceneIndex, clip.sceneIndex);
+    ensureProjectSceneCount(sceneInfo, highestSceneIndex + 1);
 
-    for (int sceneIndex : sceneIndices) {
+    for (int sceneIndex = 0; sceneIndex < static_cast<int>(sceneInfo.scenes.size()); ++sceneIndex) {
+        const auto& sceneInfoItem = sceneInfo.scenes[static_cast<std::size_t>(sceneIndex)];
         auto* scene = scenes->createNewChildElement("Scene");
-        scene->setAttribute("id", idFor("scene", sceneIndex));
-        scene->setAttribute("name", "Scene " + juce::String(sceneIndex + 1));
+        scene->setAttribute("id", idFor("magdaScene", sceneInfoItem.id));
+        scene->setAttribute("name", sceneInfoItem.name);
+        if (sceneInfoItem.colourArgb != 0)
+            scene->setAttribute("color",
+                                colourToDawProject(juce::Colour(sceneInfoItem.colourArgb)));
 
         auto* sceneLanes = scene->createNewChildElement("Lanes");
         sceneLanes->setAttribute("id", idFor("sceneLanes", sceneIndex));
@@ -1109,7 +1136,8 @@ juce::String DawProjectXmlAdapter::toProjectXml(const ProjectDocument& document)
 }
 
 bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocument& outDocument,
-                                          juce::String& error) {
+                                          juce::String& error,
+                                          const ProjectDefaults* creationDefaults) {
     auto root = juce::parseXML(xml);
     if (!root || !root->hasTagName("Project")) {
         error = "DAWproject XML does not contain a Project root";
@@ -1117,6 +1145,8 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
     }
 
     ProjectDocument document;
+    if (creationDefaults != nullptr)
+        document.info.defaults = *creationDefaults;
     document.info.version = MAGDA_VERSION;
     document.info.name = "Imported DAWproject";
 
@@ -1147,6 +1177,8 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
         juce::String destChannel;
         float level;
         bool preFader;
+        bool enabled;
+        juce::String id;
     };
     struct PendingOutput {
         size_t sourceTrackIndex;
@@ -1164,8 +1196,8 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
                 track.name =
                     trackElement->getStringAttribute("name", "Track " + juce::String(track.id));
                 track.colour = colourFromDawProject(trackElement->getStringAttribute("color"));
-                const auto contentType = trackElement->getStringAttribute("contentType");
-                track.type = contentType.contains("tracks") ? TrackType::Group : TrackType::Audio;
+                const auto& contentType = trackElement->getStringAttribute("contentType");
+                track.type = contentType.contains("tracks") ? TrackType::Group : TrackType::Media;
                 track.parentId = parentId;
                 const size_t trackIndex = document.tracks.size();
 
@@ -1194,22 +1226,23 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
                     if (destination.isNotEmpty())
                         pendingOutputs.push_back({trackIndex, destination});
 
-                    // Sends to aux/effect channels. Skip disabled sends (Bitwig
-                    // writes a default disabled send from every track to every
-                    // effect bus); resolve the destination bus in the second pass.
+                    // Sends to aux/effect channels. Disabled connections remain
+                    // first-class model sends so their level and identity survive
+                    // a round trip; resolve the destination bus in the second pass.
                     if (auto* sends = channel->getChildByName("Sends")) {
                         for (auto* sendEl : sends->getChildWithTagNameIterator("Send")) {
-                            if (auto* en = sendEl->getChildByName("Enable");
-                                en != nullptr && !en->getBoolAttribute("value", true))
-                                continue;
                             const auto dest = sendEl->getStringAttribute("destination");
                             if (dest.isEmpty())
                                 continue;
                             float level = 1.0f;
                             if (auto* vol = sendEl->getChildByName("Volume"))
                                 level = static_cast<float>(vol->getDoubleAttribute("value", 1.0));
-                            pendingSends.push_back({trackIndex, dest, level,
-                                                    sendEl->getStringAttribute("type") == "pre"});
+                            const auto* enable = sendEl->getChildByName("Enable");
+                            pendingSends.push_back(
+                                {trackIndex, dest, level,
+                                 sendEl->getStringAttribute("type") == "pre",
+                                 enable == nullptr || enable->getBoolAttribute("value", true),
+                                 sendEl->getStringAttribute("id")});
                         }
                     }
 
@@ -1252,7 +1285,7 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
                                     parseEqualizerDevice(*devEl, device);
                                 if (auto* enabled = devEl->getChildByName("Enabled"))
                                     device.bypassed = !enabled->getBoolAttribute("value", true);
-                                track.chain.fxChainElements.push_back(std::move(device));
+                                track.chain.fxChainElements.emplace_back(std::move(device));
                                 continue;
                             }
 
@@ -1283,7 +1316,7 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
                             if (auto* state = devEl->getChildByName("State"))
                                 device.pluginState = state->getStringAttribute("path");
 
-                            track.chain.fxChainElements.push_back(std::move(device));
+                            track.chain.fxChainElements.emplace_back(std::move(device));
                         }
                     }
                 }
@@ -1319,6 +1352,8 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
         send.busIndex = busIt->second;
         send.level = ps.level;
         send.preFader = ps.preFader;
+        send.enabled = ps.enabled;
+        send.id = sendIdFromDawProject(ps.id);
         if (const auto idxIt = channelToTrackIndex.find(ps.destChannel);
             idxIt != channelToTrackIndex.end())
             send.destTrackId = document.tracks[idxIt->second].id;
@@ -1354,7 +1389,7 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
         for (const auto& track : document.tracks)
             if (track.id == trackId && !track.colour.isTransparent())
                 return track.colour;
-        return juce::Colour(Config::getDefaultColour(0));
+        return juce::Colour(document.info.defaults.colourForIndex(0));
     };
 
     ClipId nextClipId = 1;
@@ -1407,7 +1442,10 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
                     }
 
                     if (!lane.absolutePoints.empty()) {
-                        std::sort(lane.absolutePoints.begin(), lane.absolutePoints.end());
+                        const auto beatThenId = [](const AutomationPoint& point) {
+                            return std::tuple{point.beatPosition, point.id};
+                        };
+                        std::ranges::sort(lane.absolutePoints, {}, beatThenId);
                         document.automationLanes.push_back(std::move(lane));
                     }
                 }
@@ -1416,12 +1454,35 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
     }
 
     if (auto* scenes = root->getChildByName("Scenes")) {
+        document.info.scenes.clear();
+        document.info.nextSceneId = 1;
         int sceneOrdinal = 0;
         for (auto* sceneElement : scenes->getChildWithTagNameIterator("Scene")) {
             const auto sceneId = sceneElement->getStringAttribute("id");
-            const int sceneIndex = sceneId.startsWith("scene") && sceneId.length() > 5
-                                       ? sceneId.substring(5).getIntValue()
-                                       : sceneOrdinal;
+            const bool hasMagdaIdentity = sceneId.startsWith("magdaScene");
+            const int sceneIndex =
+                !hasMagdaIdentity && sceneId.startsWith("scene") && sceneId.length() > 5
+                    ? sceneId.substring(5).getIntValue()
+                    : sceneOrdinal;
+            ensureProjectSceneCount(document.info, sceneIndex + 1);
+            auto& scene = document.info.scenes[static_cast<std::size_t>(sceneIndex)];
+            if (hasMagdaIdentity) {
+                const auto stableId = sceneId.substring(10).getIntValue();
+                const bool duplicate = std::ranges::any_of(
+                    document.info.scenes, [stableId, &scene](const ProjectScene& candidate) {
+                        return &candidate != &scene && candidate.id == stableId;
+                    });
+                if (stableId >= 0 && !duplicate)
+                    scene.id = stableId;
+            }
+            const auto importedName = sceneElement->getStringAttribute("name");
+            if (importedName.isNotEmpty())
+                scene.name = importedName;
+            const auto importedColour =
+                colourFromDawProject(sceneElement->getStringAttribute("color"));
+            if (!importedColour.isTransparent())
+                scene.colourArgb = importedColour.getARGB();
+            document.info.nextSceneId = std::max(document.info.nextSceneId, scene.id + 1);
             std::function<void(juce::XmlElement*, juce::String)> parseSceneTimeline =
                 [&](juce::XmlElement* timeline, juce::String inheritedTrackRef) {
                     if (timeline == nullptr)
@@ -1454,6 +1515,7 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
                 parseSceneTimeline(slot, {});
             ++sceneOrdinal;
         }
+        ensureProjectSceneCount(document.info, 1);
     }
 
     outDocument = std::move(document);

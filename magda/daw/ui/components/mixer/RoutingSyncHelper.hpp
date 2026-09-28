@@ -4,16 +4,17 @@
 
 #include <algorithm>
 #include <map>
+#include <optional>
 #include <utility>
 #include <vector>
 
 #include "../../../audio/MidiBridge.hpp"
+#include "../../../audio/io/HardwareChannels.hpp"
+#include "../../utils/ChannelLabels.hpp"
 #include "RoutingSelector.hpp"
 #include "core/TechnicalText.hpp"
 #include "core/TrackInfo.hpp"
 #include "core/TrackManager.hpp"
-
-namespace magda {
 
 /**
  * @brief Free functions for populating and syncing routing selectors.
@@ -21,24 +22,44 @@ namespace magda {
  * Shared by TrackHeadersPanel and TrackInspector to avoid duplicating
  * ~200 lines of routing UI logic.
  */
-namespace RoutingSyncHelper {
+namespace magda::RoutingSyncHelper {
 
-inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODevice* device,
+/// The entry for a saved hardware route that no open channel carries, past every other id.
+constexpr int kMissingRouteId = 100000;
+
+/**
+ * @brief Offer @p route as missing and return its id, so the menu shows where the track
+ * still points rather than a channel it does not use (#2748).
+ */
+inline int addMissingRoute(RoutingSelector& selector, const juce::String& route,
+                           std::map<int, juce::String>& channelMapping) {
+    const auto name = route.startsWith("stereo:") ? route.substring(7) : route;
+    selector.addOption({0, "", true});
+    selector.addOption({kMissingRouteId, name + " (missing)"});
+    channelMapping[kMissingRouteId] = route;
+    return kMissingRouteId;
+}
+
+/** @brief One direction of @p hardware, or nothing when no interface is open. */
+inline std::optional<HardwareChannels::Direction> openDirection(const HardwareChannels* hardware,
+                                                                bool inputs) {
+    if (hardware == nullptr || !hardware->isOpen())
+        return std::nullopt;
+    return inputs ? hardware->inputs() : hardware->outputs();
+}
+
+inline void populateAudioInputOptions(RoutingSelector* selector,
+                                      const std::optional<HardwareChannels::Direction>& inputs,
                                       TrackId currentTrackId = INVALID_TRACK_ID,
                                       std::map<int, TrackId>* outInputTrackMapping = nullptr,
-                                      juce::BigInteger enabledInputChannels = {},
-                                      std::map<int, juce::String>* outChannelMapping = nullptr,
-                                      const std::map<int, juce::String>& teDeviceNames = {}) {
+                                      std::map<int, juce::String>* outChannelMapping = nullptr) {
     if (!selector)
         return;
 
     std::vector<RoutingSelector::RoutingOption> options;
 
-    if (device) {
-        // Use enabled channels if provided (from TE WaveDevices), otherwise fall back
-        // to JUCE active channels (which may show all channels)
-        auto activeInputChannels =
-            enabledInputChannels.isZero() ? device->getActiveInputChannels() : enabledInputChannels;
+    if (inputs) {
+        const auto& activeInputChannels = inputs->open;
         options.push_back({1, "None"});
 
         int numActiveChannels = activeInputChannels.countNumberOfSetBits();
@@ -56,23 +77,26 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
             if (outChannelMapping)
                 outChannelMapping->clear();
 
-            // Helper: get the TE device name for a channel index, fall back to "In N"
+            // The name a saved route stores for a channel, falling back to "In N".
             auto getDeviceName = [&](int channelIndex) -> juce::String {
-                auto it = teDeviceNames.find(channelIndex);
-                if (it != teDeviceNames.end())
+                auto it = inputs->routeNames.find(channelIndex);
+                if (it != inputs->routeNames.end())
                     return it->second;
                 return "In " + juce::String(channelIndex + 1);
             };
+
+            const auto& channelNames = inputs->channelNames;
 
             // Stereo pairs (ID 10+)
             int id = 10;
             for (int i = 0; i < activeIndices.size(); i += 2) {
                 if (i + 1 < activeIndices.size()) {
-                    int ch1 = activeIndices[i] + 1;
-                    int ch2 = activeIndices[i + 1] + 1;
-                    juce::String pairName = juce::String(ch1) + "-" + juce::String(ch2);
-                    options.push_back({id, pairName});
-                    // Use actual TE device name for routing
+                    options.push_back(
+                        {id,
+                         ChannelLabels::pair(channelNames, activeIndices[i], activeIndices[i + 1]),
+                         false,
+                         {activeIndices[i], activeIndices[i + 1]}});
+                    // The name a saved route stores
                     if (outChannelMapping)
                         (*outChannelMapping)[id] = "stereo:" + getDeviceName(activeIndices[i]);
                     ++id;
@@ -85,11 +109,11 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
 
             // Mono channels (ID 100+)
             id = 100;
-            for (int i = 0; i < activeIndices.size(); ++i) {
-                int channelNum = activeIndices[i] + 1;
-                options.push_back({id, juce::String(channelNum) + " (mono)"});
+            for (int activeIndice : activeIndices) {
+                options.push_back(
+                    {id, ChannelLabels::mono(channelNames, activeIndice), false, {activeIndice}});
                 if (outChannelMapping)
-                    (*outChannelMapping)[id] = getDeviceName(activeIndices[i]);
+                    (*outChannelMapping)[id] = getDeviceName(activeIndice);
                 ++id;
             }
         }
@@ -114,11 +138,11 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
         for (const auto& t : allTracks) {
             if (t.id == currentTrackId)
                 continue;
-            if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
+            if (std::ranges::contains(descendants, t.id))
                 continue;
             if (trackManager.wouldCreateInputRoutingCycle(currentTrackId, t.id))
                 continue;
-            if (t.type == TrackType::Audio || t.type == TrackType::Group ||
+            if (t.type == TrackType::Media || t.type == TrackType::Group ||
                 t.type == TrackType::Aux) {
                 trackOptions.push_back({id, t.name});
                 if (outInputTrackMapping)
@@ -137,11 +161,14 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
 }
 
 inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId currentTrackId,
-                                       juce::AudioIODevice* device,
+                                       const std::optional<HardwareChannels::Direction>& outputs,
                                        std::map<int, TrackId>& outTrackMapping,
-                                       juce::BigInteger enabledOutputChannels = {}) {
+                                       std::map<int, juce::String>* outChannelMapping = nullptr) {
     if (!selector)
         return;
+
+    if (outChannelMapping)
+        outChannelMapping->clear();
 
     std::vector<RoutingSelector::RoutingOption> options;
     options.push_back({1, technicalText(TechnicalTextToken::Master)});
@@ -162,7 +189,7 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
         int id = 200;
         for (const auto& t : allTracks) {
             if (t.type == TrackType::Group && t.id != currentTrackId) {
-                if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
+                if (std::ranges::contains(descendants, t.id))
                     continue;
                 groupOptions.push_back({id++, t.name});
             }
@@ -204,12 +231,12 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
         }
 
         for (const auto& t : allTracks) {
-            if (t.type != TrackType::Audio || t.id == currentTrackId)
+            if (t.type != TrackType::Media || t.id == currentTrackId)
                 continue;
             // Hide source track from its own multi-out tracks
             if (t.id == multiOutSourceId)
                 continue;
-            if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
+            if (std::ranges::contains(descendants, t.id))
                 continue;
             trackOptions.push_back({id++, t.name});
         }
@@ -221,15 +248,12 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
     }
 
     // Hardware output channels
-    if (device) {
-        auto activeOutputChannels = enabledOutputChannels.isZero()
-                                        ? device->getActiveOutputChannels()
-                                        : enabledOutputChannels;
+    if (outputs) {
+        const auto& activeOutputChannels = outputs->open;
+        const auto& routeNames = outputs->routeNames;
         int numActiveChannels = activeOutputChannels.countNumberOfSetBits();
 
         if (numActiveChannels > 0) {
-            options.push_back({0, "", true});
-
             juce::Array<int> activeIndices;
             for (int i = 0; i < activeOutputChannels.getHighestBit() + 1; ++i) {
                 if (activeOutputChannels[i]) {
@@ -237,24 +261,69 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
                 }
             }
 
-            int id = 10;
-            for (int i = 0; i < activeIndices.size(); i += 2) {
-                if (i + 1 < activeIndices.size()) {
-                    int ch1 = activeIndices[i] + 1;
-                    int ch2 = activeIndices[i + 1] + 1;
-                    juce::String pairName = juce::String(ch1) + "-" + juce::String(ch2);
-                    options.push_back({id++, pairName});
+            // Group channels by route name: consecutive open channels sharing
+            // one form a stereo pair or a mono channel. Only whole groups are
+            // offered, so a "mono" option only exists where a mono group does.
+            struct DeviceGroup {
+                juce::String name;
+                juce::Array<int> channels;
+            };
+            std::vector<DeviceGroup> groups;
+            if (!routeNames.empty()) {
+                for (int idx : activeIndices) {
+                    auto it = routeNames.find(idx);
+                    juce::String name =
+                        it != routeNames.end() ? it->second : "Out " + juce::String(idx + 1);
+                    if (!groups.empty() && groups.back().name == name &&
+                        groups.back().channels.size() < 2)
+                        groups.back().channels.add(idx);
+                    else
+                        groups.push_back({name, {idx}});
+                }
+            } else {
+                // No route names: assume the default stereo pairing
+                for (int i = 0; i < activeIndices.size(); ++i) {
+                    juce::String name = "Out " + juce::String(activeIndices[i] + 1);
+                    if (i + 1 < activeIndices.size()) {
+                        groups.push_back({name, {activeIndices[i], activeIndices[i + 1]}});
+                        ++i;
+                    } else {
+                        groups.push_back({name, {activeIndices[i]}});
+                    }
                 }
             }
 
-            if (activeIndices.size() > 1) {
+            options.push_back({0, "", true});
+
+            int stereoCount = 0, monoCount = 0;
+            for (const auto& g : groups)
+                (g.channels.size() == 2 ? stereoCount : monoCount)++;
+
+            const auto& channelNames = outputs->channelNames;
+
+            int id = 10;
+            for (const auto& g : groups) {
+                if (g.channels.size() != 2)
+                    continue;
+                options.push_back(
+                    {id, ChannelLabels::pair(channelNames, g.channels[0], g.channels[1])});
+                if (outChannelMapping)
+                    (*outChannelMapping)[id] = "stereo:" + g.name;
+                ++id;
+            }
+
+            if (stereoCount > 0 && monoCount > 0) {
                 options.push_back({0, "", true});
             }
 
             id = 100;
-            for (int i = 0; i < activeIndices.size(); ++i) {
-                int channelNum = activeIndices[i] + 1;
-                options.push_back({id++, juce::String(channelNum) + " (mono)"});
+            for (const auto& g : groups) {
+                if (g.channels.size() != 1)
+                    continue;
+                options.push_back({id, ChannelLabels::mono(channelNames, g.channels[0])});
+                if (outChannelMapping)
+                    (*outChannelMapping)[id] = g.name;
+                ++id;
             }
         }
     }
@@ -265,7 +334,7 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
         int id = 200;
         for (const auto& t : allTracks) {
             if (t.type == TrackType::Group && t.id != currentTrackId) {
-                if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
+                if (std::ranges::contains(descendants, t.id))
                     continue;
                 outTrackMapping[id++] = t.id;
             }
@@ -278,8 +347,8 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
         }
         id = 400;
         for (const auto& t : allTracks) {
-            if (t.type == TrackType::Audio && t.id != currentTrackId) {
-                if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
+            if (t.type == TrackType::Media && t.id != currentTrackId) {
+                if (std::ranges::contains(descendants, t.id))
                     continue;
                 outTrackMapping[id++] = t.id;
             }
@@ -289,13 +358,13 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
     selector->setOptions(options);
 }
 
-inline void populateMidiInputOptions(RoutingSelector* selector, MidiBridge* midiBridge,
+inline void populateMidiInputOptions(RoutingSelector* selector,
                                      TrackId currentTrackId = INVALID_TRACK_ID,
                                      std::map<int, TrackId>* outMidiInputTrackMapping = nullptr) {
-    if (!selector || !midiBridge)
+    if (!selector)
         return;
 
-    auto midiInputs = midiBridge->getAvailableMidiInputs();
+    auto midiInputs = MidiBridge::getInstance().getAvailableMidiInputs();
 
     std::vector<RoutingSelector::RoutingOption> options;
     options.push_back({1, "All Inputs"});
@@ -324,7 +393,7 @@ inline void populateMidiInputOptions(RoutingSelector* selector, MidiBridge* midi
                 continue;
             // Chord tracks are valid MIDI sources: their progression clip
             // plays live and drives instrument tracks (issue #1507)
-            if (t.type != TrackType::Audio && t.type != TrackType::Chord)
+            if (t.type != TrackType::Media && t.type != TrackType::Chord)
                 continue;
             if (trackManager.wouldCreateInputRoutingCycle(currentTrackId, t.id))
                 continue;
@@ -342,13 +411,13 @@ inline void populateMidiInputOptions(RoutingSelector* selector, MidiBridge* midi
     selector->setOptions(options);
 }
 
-inline void populateMidiOutputOptions(RoutingSelector* selector, MidiBridge* midiBridge,
+inline void populateMidiOutputOptions(RoutingSelector* selector,
                                       std::map<int, TrackId>& outTrackMapping,
                                       TrackId currentTrackId = INVALID_TRACK_ID) {
-    if (!selector || !midiBridge)
+    if (!selector)
         return;
 
-    auto midiOutputs = midiBridge->getAvailableMidiOutputs();
+    auto midiOutputs = MidiBridge::getAvailableMidiOutputs();
 
     std::vector<RoutingSelector::RoutingOption> options;
     options.push_back({1, "None"});
@@ -374,7 +443,7 @@ inline void populateMidiOutputOptions(RoutingSelector* selector, MidiBridge* mid
         for (const auto& t : allTracks) {
             if (t.id == currentTrackId)
                 continue;
-            if (t.type != TrackType::Audio)
+            if (t.type != TrackType::Media)
                 continue;
             // The edge created is candidate ← current (candidate listens to
             // the current track), so the candidate is the destination here.
@@ -394,16 +463,19 @@ inline void populateMidiOutputOptions(RoutingSelector* selector, MidiBridge* mid
     selector->setOptions(options);
 }
 
-inline void syncSelectorsFromTrack(
-    const TrackInfo& track, RoutingSelector* audioInSelector, RoutingSelector* midiInSelector,
-    RoutingSelector* audioOutSelector, RoutingSelector* midiOutSelector, MidiBridge* midiBridge,
-    juce::AudioIODevice* device, TrackId currentTrackId, std::map<int, TrackId>& outputTrackMapping,
-    std::map<int, TrackId>& midiOutputTrackMapping,
-    std::map<int, TrackId>* inputTrackMapping = nullptr, juce::BigInteger enabledInputChannels = {},
-    juce::BigInteger enabledOutputChannels = {},
-    std::map<int, juce::String>* inputChannelMapping = nullptr,
-    const std::map<int, juce::String>& teDeviceNames = {},
-    std::map<int, TrackId>* midiInputTrackMapping = nullptr) {
+inline void syncSelectorsFromTrack(const TrackInfo& track, RoutingSelector* audioInSelector,
+                                   RoutingSelector* midiInSelector,
+                                   RoutingSelector* audioOutSelector,
+                                   RoutingSelector* midiOutSelector,
+                                   const HardwareChannels* hardware, TrackId currentTrackId,
+                                   std::map<int, TrackId>& outputTrackMapping,
+                                   std::map<int, TrackId>& midiOutputTrackMapping,
+                                   std::map<int, TrackId>* inputTrackMapping = nullptr,
+                                   std::map<int, juce::String>* inputChannelMapping = nullptr,
+                                   std::map<int, TrackId>* midiInputTrackMapping = nullptr,
+                                   std::map<int, juce::String>* outputChannelMapping = nullptr) {
+    const auto inputs = openDirection(hardware, true);
+    const auto outputs = openDirection(hardware, false);
     bool hasAudioInput = !track.audioInputDevice.isEmpty();
     bool hasMidiInput = !track.midiInputDevice.isEmpty();
 
@@ -412,8 +484,8 @@ inline void syncSelectorsFromTrack(
         // Always re-populate with the current track context so internal-track
         // options are available before any track input is selected — otherwise
         // the first "track:" selection could never be made.
-        populateAudioInputOptions(audioInSelector, device, currentTrackId, inputTrackMapping,
-                                  enabledInputChannels, inputChannelMapping, teDeviceNames);
+        populateAudioInputOptions(audioInSelector, inputs, currentTrackId, inputTrackMapping,
+                                  inputChannelMapping);
         if (hasAudioInput) {
             if (track.audioInputDevice.startsWith("track:") && inputTrackMapping) {
                 // Track-as-input: find the matching option ID
@@ -439,8 +511,11 @@ inline void syncSelectorsFromTrack(
                 }
                 if (optionId > 0) {
                     audioInSelector->setSelectedId(optionId);
+                } else if (track.audioInputDevice != "default") {
+                    audioInSelector->setSelectedId(addMissingRoute(
+                        *audioInSelector, track.audioInputDevice, *inputChannelMapping));
                 } else {
-                    // Fallback to first channel option
+                    // "default" reads the first channel, which is what the host plays
                     int firstChannel = audioInSelector->getFirstChannelOptionId();
                     audioInSelector->setSelectedId(firstChannel > 0 ? firstChannel : 1);
                 }
@@ -458,7 +533,7 @@ inline void syncSelectorsFromTrack(
     // Update MIDI Input selector
     if (midiInSelector) {
         // Always re-populate with the current track context (see audio note above).
-        populateMidiInputOptions(midiInSelector, midiBridge, currentTrackId, midiInputTrackMapping);
+        populateMidiInputOptions(midiInSelector, currentTrackId, midiInputTrackMapping);
         if (!hasMidiInput) {
             midiInSelector->setSelectedId(2);  // "None"
             midiInSelector->setEnabled(false);
@@ -477,8 +552,8 @@ inline void syncSelectorsFromTrack(
             }
             midiInSelector->setSelectedId(selectedId);
             midiInSelector->setEnabled(selectedId != 2);
-        } else if (midiBridge) {
-            auto midiInputs = midiBridge->getAvailableMidiInputs();
+        } else {
+            auto midiInputs = MidiBridge::getInstance().getAvailableMidiInputs();
             int selectedId = 2;
             for (size_t i = 0; i < midiInputs.size(); ++i) {
                 if (midiInputs[i].id == track.midiInputDevice) {
@@ -493,8 +568,8 @@ inline void syncSelectorsFromTrack(
 
     // Update Audio Output selector
     if (audioOutSelector) {
-        populateAudioOutputOptions(audioOutSelector, currentTrackId, device, outputTrackMapping,
-                                   enabledOutputChannels);
+        populateAudioOutputOptions(audioOutSelector, currentTrackId, outputs, outputTrackMapping,
+                                   outputChannelMapping);
         juce::String currentAudioOutput = track.audioOutputDevice;
         if (currentAudioOutput.isEmpty()) {
             audioOutSelector->setSelectedId(2);  // "None"
@@ -517,6 +592,68 @@ inline void syncSelectorsFromTrack(
             }
             audioOutSelector->setEnabled(true);
         } else {
+            // Hardware output device — find the option whose mapped device
+            // string matches so the dropdown doesn't snap back to Master
+            if (outputChannelMapping) {
+                int optionId = -1;
+                for (const auto& [oid, name] : *outputChannelMapping) {
+                    if (name == currentAudioOutput) {
+                        optionId = oid;
+                        break;
+                    }
+                }
+
+                juce::String canonicalAlias;
+                if (optionId < 0) {
+                    const auto pairAlias = "stereo:" + currentAudioOutput;
+                    if (std::ranges::any_of(*outputChannelMapping, [&](const auto& entry) {
+                            return entry.second == pairAlias;
+                        })) {
+                        canonicalAlias = pairAlias;
+                    }
+                }
+
+                if (optionId < 0 && canonicalAlias.isEmpty() && outputs &&
+                    !outputs->routeNames.empty()) {
+                    const auto& active = outputs->open;
+                    const auto& routeNames = outputs->routeNames;
+                    juce::Array<int> channels;
+                    for (auto channel = 0; channel <= active.getHighestBit(); ++channel)
+                        if (active[channel])
+                            channels.add(channel);
+
+                    for (auto index = 0; index + 1 < channels.size(); index += 2) {
+                        const auto first = channels[index];
+                        if (currentAudioOutput != "stereo:Out " + juce::String(first + 1))
+                            continue;
+
+                        const auto left = routeNames.find(first);
+                        const auto right = routeNames.find(channels[index + 1]);
+                        if (left != routeNames.end() && right != routeNames.end() &&
+                            left->second == right->second)
+                            canonicalAlias = "stereo:" + left->second;
+                        break;
+                    }
+                }
+
+                if (optionId < 0 && canonicalAlias.isNotEmpty()) {
+                    auto aliasOption = -1;
+                    for (const auto& [oid, name] : *outputChannelMapping) {
+                        if (name == canonicalAlias) {
+                            if (aliasOption > 0) {
+                                aliasOption = -1;
+                                break;
+                            }
+                            aliasOption = oid;
+                        }
+                    }
+                    optionId = aliasOption;
+                }
+                if (optionId < 0)
+                    optionId = addMissingRoute(*audioOutSelector, currentAudioOutput,
+                                               *outputChannelMapping);
+                audioOutSelector->setSelectedId(optionId);
+            }
             audioOutSelector->setEnabled(true);
         }
     }
@@ -524,8 +661,7 @@ inline void syncSelectorsFromTrack(
     // Update MIDI Output selector
     if (midiOutSelector) {
         // Always re-populate with the current track context (see audio note above).
-        populateMidiOutputOptions(midiOutSelector, midiBridge, midiOutputTrackMapping,
-                                  currentTrackId);
+        populateMidiOutputOptions(midiOutSelector, midiOutputTrackMapping, currentTrackId);
 
         // Mirror view of internal MIDI routing: if another track listens to
         // this track ("track:<id>" MIDI input), show that destination on the
@@ -555,8 +691,8 @@ inline void syncSelectorsFromTrack(
             midiOutSelector->setEnabled(selectedId != 1);
         } else if (currentMidiOutput.isEmpty()) {
             midiOutSelector->setSelectedId(1);  // "None"
-        } else if (midiBridge) {
-            auto midiOutputs = midiBridge->getAvailableMidiOutputs();
+        } else {
+            auto midiOutputs = MidiBridge::getAvailableMidiOutputs();
             int selectedId = 1;
             for (size_t i = 0; i < midiOutputs.size(); ++i) {
                 if (midiOutputs[i].id == currentMidiOutput) {
@@ -570,5 +706,4 @@ inline void syncSelectorsFromTrack(
     }
 }
 
-}  // namespace RoutingSyncHelper
-}  // namespace magda
+}  // namespace magda::RoutingSyncHelper

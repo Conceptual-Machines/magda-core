@@ -4,12 +4,10 @@
 
 #include "../ui/components/common/FloatingHostWindow.hpp"
 
-namespace tracktion {
-inline namespace engine {
+namespace tracktion::inline engine {
 class Plugin;
 struct PluginWindowState;
-}  // namespace engine
-}  // namespace tracktion
+}  // namespace tracktion::inline engine
 
 namespace magda {
 

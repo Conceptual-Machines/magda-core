@@ -1,6 +1,6 @@
 #include "QwertyKeyboardPopup.hpp"
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 
 namespace magda {
@@ -48,13 +48,13 @@ QwertyKeyboardPopup::QwertyKeyboardPopup(QwertyMidiKeyboard& keyboard) : keyboar
     addAndMakeVisible(octaveUpButton_);
 
     octaveLabel_.setFont(FontManager::getInstance().getUIFontMedium(12.0f));
-    octaveLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    octaveLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     octaveLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(octaveLabel_);
 
     hintLabel_.setText("Modifier combos and space always pass through", juce::dontSendNotification);
     hintLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
-    hintLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    hintLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     hintLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(hintLabel_);
 
@@ -67,8 +67,8 @@ QwertyKeyboardPopup::~QwertyKeyboardPopup() {
 }
 
 void QwertyKeyboardPopup::lookAndFeelChanged() {
-    octaveLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
-    hintLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    octaveLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
+    hintLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     octaveLabel_.repaint();
     hintLabel_.repaint();
     repaint();
@@ -84,7 +84,7 @@ void QwertyKeyboardPopup::timerCallback() {
     auto octave = keyboard_.getBaseOctave();
     if (octave != lastBaseOctave_ || held != lastHeldNotes_) {
         lastBaseOctave_ = octave;
-        lastHeldNotes_ = held;
+        lastHeldNotes_ = std::move(held);
         octaveLabel_.setText("Base octave: " + juce::String(octave), juce::dontSendNotification);
         repaint();
     }
@@ -114,25 +114,25 @@ void QwertyKeyboardPopup::resized() {
 }
 
 juce::Rectangle<float> QwertyKeyboardPopup::whiteKeyBounds(size_t index) const {
-    const float total = static_cast<float>(kWhiteKeys_.size());
+    const auto total = static_cast<float>(kWhiteKeys_.size());
     const float w = keyboardArea_.getWidth() / total;
-    return juce::Rectangle<float>(keyboardArea_.getX() + static_cast<float>(index) * w,
-                                  static_cast<float>(keyboardArea_.getY()), w,
-                                  static_cast<float>(keyboardArea_.getHeight()));
+    return {keyboardArea_.getX() + static_cast<float>(index) * w,
+            static_cast<float>(keyboardArea_.getY()), w,
+            static_cast<float>(keyboardArea_.getHeight())};
 }
 
 juce::Rectangle<float> QwertyKeyboardPopup::blackKeyBounds(const BlackKey& bk) const {
     auto anchor = whiteKeyBounds(static_cast<size_t>(bk.anchorWhiteIndex));
     const float w = anchor.getWidth() * 0.62f;
     const float h = anchor.getHeight() * (kBlackKeyHeightRatio / 100.0f);
-    return juce::Rectangle<float>(anchor.getRight() - w * 0.5f, anchor.getY(), w, h);
+    return {anchor.getRight() - w * 0.5f, anchor.getY(), w, h};
 }
 
 void QwertyKeyboardPopup::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
 
     // Outer border
-    g.setColour(DarkTheme::getBorderColour());
+    g.setColour(ActiveTheme::getBorderColour());
     g.drawRect(getLocalBounds(), 1);
 
     if (keyboardArea_.isEmpty())
@@ -145,11 +145,11 @@ void QwertyKeyboardPopup::paint(juce::Graphics& g) {
     auto letterFont = fm.getUIFontBold(13.0f);
     auto noteFont = fm.getUIFont(9.0f);
 
-    const auto whiteFill = DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0.92f);
-    const auto whiteHeld = DarkTheme::getAccentColour().brighter(0.2f);
-    const auto blackFill = DarkTheme::getColour(DarkTheme::PIANO_ROLL_BACKGROUND);
-    const auto blackHeld = DarkTheme::getAccentColour().darker(0.4f);
-    const auto borderCol = DarkTheme::getBorderColour();
+    const auto whiteFill = ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0.92f);
+    const auto whiteHeld = ActiveTheme::getAccentColour().brighter(0.2f);
+    const auto blackFill = ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_BACKGROUND);
+    const auto blackHeld = ActiveTheme::getAccentColour().darker(0.4f);
+    const auto borderCol = ActiveTheme::getBorderColour();
 
     auto noteFromCell = [baseOctave](int semitone, int octaveOffset) {
         return (baseOctave + octaveOffset) * 12 + semitone;
@@ -168,7 +168,7 @@ void QwertyKeyboardPopup::paint(juce::Graphics& g) {
         g.drawRect(rect, 1.0f);
 
         // Note label near the bottom of the key.
-        g.setColour(DarkTheme::getColour(DarkTheme::QWERTY_WHITE_KEY_NOTE_TEXT));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::QWERTY_WHITE_KEY_NOTE_TEXT));
         g.setFont(noteFont);
         auto noteLabelRect = rect.removeFromBottom(14.0f).reduced(2.0f, 2.0f);
         g.drawText(formatNoteName(key.semitone, baseOctave + key.octaveOffset),
@@ -176,7 +176,7 @@ void QwertyKeyboardPopup::paint(juce::Graphics& g) {
 
         // QWERTY letter near the middle-top of the key, scaled up for visibility.
         g.setFont(letterFont);
-        g.setColour(DarkTheme::getColour(DarkTheme::INPUT_BACKGROUND));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::INPUT_BACKGROUND));
         auto letterRect = rect;
         g.drawText(juce::String::charToString(key.letter), letterRect.toNearestInt(),
                    juce::Justification::centred);
@@ -195,14 +195,14 @@ void QwertyKeyboardPopup::paint(juce::Graphics& g) {
 
         // Note label
         g.setFont(noteFont);
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0.75f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0.75f));
         auto noteLabelRect = rect.removeFromBottom(12.0f).reduced(2.0f, 1.0f);
         g.drawText(sharpAccidental(bk.semitone), noteLabelRect.toNearestInt(),
                    juce::Justification::centred);
 
         // QWERTY letter
         g.setFont(letterFont);
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT));
         g.drawText(juce::String::charToString(bk.letter), rect.toNearestInt(),
                    juce::Justification::centred);
     }

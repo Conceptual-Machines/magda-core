@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "project": "multi-out.mgd",
+  "cluster": "multi-out instruments",
+  "range": { "startBeat": 0, "endBeat": 8 },
+  "requires": { "plugins": [], "hardware": [] },
+  "tracks": [
+    { "name": "Drums", "sound": true, "peakDb": { "min": -48, "max": 0 } },
+    { "name": "Drum Grid: Snare", "sound": true, "peakDb": { "min": -48, "max": 0 } }
+  ],
+  "listen": "Kick on every beat from the grid's own mix, snare on 2 and 4 through its bus track: muting the Drum Grid: Snare track takes the snare out and leaves the kick."
+}

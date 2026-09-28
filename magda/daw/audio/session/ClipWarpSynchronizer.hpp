@@ -13,7 +13,6 @@
 namespace magda {
 
 class WarpMarkerManager;
-struct WarpMarkerInfo;
 
 class ClipWarpSynchronizer {
   public:
@@ -24,12 +23,6 @@ class ClipWarpSynchronizer {
 
     void setTransientSensitivity(ClipId clipId, float sensitivity);
     bool getTransientTimes(ClipId clipId);
-    void enableWarp(ClipId clipId);
-    void disableWarp(ClipId clipId);
-    std::vector<WarpMarkerInfo> getWarpMarkers(ClipId clipId);
-    int addWarpMarker(ClipId clipId, double sourceTime, double warpTime);
-    double moveWarpMarker(ClipId clipId, int markerIndex, double newWarpTime);
-    void removeWarpMarker(ClipId clipId, int markerIndex);
 
   private:
     std::map<ClipId, std::string> buildClipMap(ClipId clipId) const;

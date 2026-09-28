@@ -26,6 +26,11 @@ jobs:
 
     - name: Install analysis tools
       run: |
+        # The runner image ships a Google Chrome apt source that intermittently serves an
+        # index whose hash does not match, which fails the whole update. Nothing here
+        # installs from it. Match on the host rather than a file name: the image writes
+        # it as .list or .sources depending on the version.
+        sudo grep -rlZ 'dl\.google\.com' /etc/apt/sources.list.d/ 2>/dev/null | sudo xargs -0 -r rm -f
         sudo apt-get update
         sudo apt-get install -y cloc grep ripgrep
 

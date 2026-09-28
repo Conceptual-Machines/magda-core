@@ -1,5 +1,7 @@
 #include "modulation/ModulatorEditorPanel.hpp"
 
+#include <utility>
+
 #include "BinaryData.h"
 #include "core/AutomationInfo.hpp"
 #include "core/AutomationManager.hpp"
@@ -10,7 +12,7 @@
 #include "modulation/FollowerEditorPanel.hpp"
 #include "ui/components/chain/modulation/SyncDivisionUi.hpp"
 #include "ui/components/chain/params/ParamLinkResolver.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 #include "ui/themes/SmallComboBoxLookAndFeel.hpp"
@@ -27,8 +29,8 @@ void ModMatrixContent::setLinks(const std::vector<LinkRow>& links) {
     repaint();
 }
 
-bool ModMatrixContent::updateLinkState(magda::ControlTarget target, float amount, bool bipolar,
-                                       bool enabled) {
+bool ModMatrixContent::updateLinkState(const magda::ControlTarget& target, float amount,
+                                       bool bipolar, bool enabled) {
     for (auto& link : links_) {
         if (link.target == target) {
             bool changed =
@@ -53,32 +55,33 @@ void ModMatrixContent::paint(juce::Graphics& g) {
 
         // Alternating row background
         if (i % 2 == 0) {
-            g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).withAlpha(0.3f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE).withAlpha(0.3f));
             g.fillRect(rowBounds);
         }
 
         auto remaining = rowBounds.reduced(2, 0);
 
         const auto rowTextColour =
-            link.enabled ? DarkTheme::getTextColour() : DarkTheme::getSecondaryTextColour();
+            link.enabled ? ActiveTheme::getTextColour() : ActiveTheme::getSecondaryTextColour();
 
         // Delete button (X) on right - 14px
         auto deleteBounds = remaining.removeFromRight(14);
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.drawText("x", deleteBounds, juce::Justification::centred);
         remaining.removeFromRight(2);
 
         // Enable toggle - 18px
         auto enabledBounds = remaining.removeFromRight(18);
-        g.setColour(link.enabled ? DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION)
-                                 : DarkTheme::getSecondaryTextColour());
+        g.setColour(link.enabled ? ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION)
+                                 : ActiveTheme::getSecondaryTextColour());
         g.drawText(link.enabled ? "On" : "Off", enabledBounds, juce::Justification::centred);
         remaining.removeFromRight(2);
 
         // Bipolar toggle - 16px
         auto bipolarBounds = remaining.removeFromRight(16);
-        g.setColour(link.enabled && link.bipolar ? DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION)
-                                                 : DarkTheme::getSecondaryTextColour());
+        g.setColour(link.enabled && link.bipolar
+                        ? ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION)
+                        : ActiveTheme::getSecondaryTextColour());
         g.drawText(link.bipolar ? "Bi" : "Un", bipolarBounds, juce::Justification::centred);
         remaining.removeFromRight(2);
 
@@ -95,7 +98,7 @@ void ModMatrixContent::paint(juce::Graphics& g) {
     }
 
     if (links_.empty()) {
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.drawText("No links", getLocalBounds(), juce::Justification::centred);
     }
 }
@@ -177,7 +180,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
 
     // Name label at top
     nameLabel_.setFont(FontManager::getInstance().getUIFontBold(10.0f));
-    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     nameLabel_.setJustificationType(juce::Justification::centred);
     nameLabel_.setText("No Mod Selected", juce::dontSendNotification);
     nameLabel_.setEditable(false, false, false);
@@ -192,10 +195,10 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     waveformCombo_.addItem("Reverse Saw", static_cast<int>(magda::LFOWaveform::ReverseSaw) + 1);
     waveformCombo_.setSelectedId(1, juce::dontSendNotification);
     waveformCombo_.setColour(juce::ComboBox::backgroundColourId,
-                             DarkTheme::getColour(DarkTheme::SURFACE));
-    waveformCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+                             ActiveTheme::getColour(ActiveTheme::SURFACE));
+    waveformCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
     waveformCombo_.setColour(juce::ComboBox::outlineColourId,
-                             DarkTheme::getColour(DarkTheme::BORDER));
+                             ActiveTheme::getColour(ActiveTheme::BORDER));
     waveformCombo_.setJustificationType(juce::Justification::centredLeft);
     waveformCombo_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
     waveformCombo_.onChange = [this]() {
@@ -212,7 +215,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     // Curve editor (for curve mode - bezier editing with integrated phase indicator)
     curveEditor_.setName("miniLFO");
     curveEditor_.setVisible(false);
-    curveEditor_.setCurveColour(DarkTheme::ACCENT_ATTENTION);
+    curveEditor_.setCurveColour(ActiveTheme::ACCENT_ATTENTION);
     curveEditor_.onWaveformChanged = [this]() {
         DBG("[HardCorner] ModulatorEditorPanel embedded curve onWaveformChanged");
         // Curve points are stored directly in ModInfo by LFOCurveEditor
@@ -242,10 +245,11 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     // Button to open external curve editor window
     curveEditorButton_ = std::make_unique<magda::SvgButton>("Edit Curve", BinaryData::curve_svg,
                                                             BinaryData::curve_svgSize);
-    curveEditorButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-    curveEditorButton_->setHoverColor(DarkTheme::getTextColour());
-    curveEditorButton_->setActiveColor(DarkTheme::getColour(DarkTheme::BACKGROUND));
-    curveEditorButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+    curveEditorButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
+    curveEditorButton_->setHoverColor(ActiveTheme::getTextColour());
+    curveEditorButton_->setActiveColor(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
+    curveEditorButton_->setActiveBackgroundColor(
+        ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
     curveEditorButton_->onClick = [this]() {
         if (!curveEditorWindow_) {
             auto* modInfo = const_cast<magda::ModInfo*>(liveModPtr_ ? liveModPtr_ : &currentMod_);
@@ -343,10 +347,10 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     curvePresetCombo_.addItem("Log", static_cast<int>(magda::CurvePreset::Logarithmic) + 1);
     curvePresetCombo_.setTextWhenNothingSelected("Preset");
     curvePresetCombo_.setColour(juce::ComboBox::backgroundColourId,
-                                DarkTheme::getColour(DarkTheme::SURFACE));
-    curvePresetCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+                                ActiveTheme::getColour(ActiveTheme::SURFACE));
+    curvePresetCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
     curvePresetCombo_.setColour(juce::ComboBox::outlineColourId,
-                                DarkTheme::getColour(DarkTheme::BORDER));
+                                ActiveTheme::getColour(ActiveTheme::BORDER));
     curvePresetCombo_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
     curvePresetCombo_.onChange = [this]() {
         int id = curvePresetCombo_.getSelectedId();
@@ -367,8 +371,8 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     // Save preset button (shown in curve mode next to preset combo)
     savePresetButton_ = std::make_unique<magda::SvgButton>("Save Preset", BinaryData::save_svg,
                                                            BinaryData::save_svgSize);
-    savePresetButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-    savePresetButton_->setHoverColor(DarkTheme::getTextColour());
+    savePresetButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
+    savePresetButton_->setHoverColor(ActiveTheme::getTextColour());
     savePresetButton_->onClick = []() {
         // TODO: Show save preset dialog
     };
@@ -377,12 +381,12 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     // Sync toggle button (small square button style)
     syncToggle_.setButtonText("Free");
     syncToggle_.setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
+                          ActiveTheme::getColour(ActiveTheme::SURFACE));
     syncToggle_.setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
-    syncToggle_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+                          ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
+    syncToggle_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
     syncToggle_.setColour(juce::TextButton::textColourOnId,
-                          DarkTheme::getColour(DarkTheme::BACKGROUND));
+                          ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     syncToggle_.setClickingTogglesState(true);
     syncToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     syncToggle_.onClick = [safeThis = juce::Component::SafePointer(this)]() {
@@ -452,10 +456,10 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     triggerModeCombo_.setSelectedId(static_cast<int>(magda::LFOTriggerMode::Free) + 1,
                                     juce::dontSendNotification);
     triggerModeCombo_.setColour(juce::ComboBox::backgroundColourId,
-                                DarkTheme::getColour(DarkTheme::SURFACE));
-    triggerModeCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+                                ActiveTheme::getColour(ActiveTheme::SURFACE));
+    triggerModeCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
     triggerModeCombo_.setColour(juce::ComboBox::outlineColourId,
-                                DarkTheme::getColour(DarkTheme::BORDER));
+                                ActiveTheme::getColour(ActiveTheme::BORDER));
     triggerModeCombo_.setJustificationType(juce::Justification::centredLeft);
     triggerModeCombo_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
     triggerModeCombo_.onChange = [this]() {
@@ -511,7 +515,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     // Time sliders fold their label into the value text (e.g. "A 10 ms") so
     // they don't need separate label components or hand-painted captions.
     auto setupEnvTimeSlider = [this](TextSlider& s, const juce::String& tag, double def,
-                                     std::function<float&()> field) {
+                                     const std::function<float&()>& field) {
         s.setRange(0.0, 30000.0, 1.0);
         s.setSkewForCentre(500.0);
         s.setValue(def, juce::dontSendNotification);
@@ -544,7 +548,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     addChildComponent(envSustainSlider_);
 
     auto setupCurveSlider = [this](TextSlider& s, const juce::String& tag,
-                                   std::function<float&()> field) {
+                                   const std::function<float&()>& field) {
         s.setRange(-0.5, 0.5, 0.01);
         s.setValue(0.0, juce::dontSendNotification);
         s.setFont(FontManager::getInstance().getUIFont(9.0f));
@@ -570,10 +574,10 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     randomTypeCombo_.addItem("Noise", 2);
     randomTypeCombo_.setSelectedId(1, juce::dontSendNotification);
     randomTypeCombo_.setColour(juce::ComboBox::backgroundColourId,
-                               DarkTheme::getColour(DarkTheme::SURFACE));
-    randomTypeCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+                               ActiveTheme::getColour(ActiveTheme::SURFACE));
+    randomTypeCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
     randomTypeCombo_.setColour(juce::ComboBox::outlineColourId,
-                               DarkTheme::getColour(DarkTheme::BORDER));
+                               ActiveTheme::getColour(ActiveTheme::BORDER));
     randomTypeCombo_.setJustificationType(juce::Justification::centredLeft);
     randomTypeCombo_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
     randomTypeCombo_.onChange = [this]() {
@@ -587,7 +591,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
 
     // Random 0..1 sliders fold their label into the value text (e.g. "Shp 0.50").
     auto setupRandomSlider = [this](TextSlider& s, const juce::String& tag,
-                                    std::function<float&()> field) {
+                                    const std::function<float&()>& field) {
         s.setRange(0.0, 1.0, 0.01);
         s.setFont(FontManager::getInstance().getUIFont(9.0f));
         s.setShowFillIndicator(false);
@@ -608,8 +612,8 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     // Advanced settings button
     advancedButton_ = std::make_unique<magda::SvgButton>("Advanced", BinaryData::settings_nobg_svg,
                                                          BinaryData::settings_nobg_svgSize);
-    advancedButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-    advancedButton_->setHoverColor(DarkTheme::getTextColour());
+    advancedButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
+    advancedButton_->setHoverColor(ActiveTheme::getTextColour());
     advancedButton_->onClick = [this]() {
         if (onAdvancedClicked)
             onAdvancedClicked();
@@ -623,22 +627,22 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
 
     modMatrixContent_.onDeleteLink = [this](magda::ControlTarget target) {
         if (selectedModIndex_ >= 0 && onModLinkDeleted) {
-            onModLinkDeleted(selectedModIndex_, target);
+            onModLinkDeleted(selectedModIndex_, std::move(target));
         }
     };
     modMatrixContent_.onToggleBipolar = [this](magda::ControlTarget target, bool bipolar) {
         if (selectedModIndex_ >= 0 && onModLinkBipolarChanged) {
-            onModLinkBipolarChanged(selectedModIndex_, target, bipolar);
+            onModLinkBipolarChanged(selectedModIndex_, std::move(target), bipolar);
         }
     };
     modMatrixContent_.onToggleEnabled = [this](magda::ControlTarget target, bool enabled) {
         if (selectedModIndex_ >= 0 && onModLinkEnabledChanged) {
-            onModLinkEnabledChanged(selectedModIndex_, target, enabled);
+            onModLinkEnabledChanged(selectedModIndex_, std::move(target), enabled);
         }
     };
     modMatrixContent_.onAmountChanged = [this](magda::ControlTarget target, float amount) {
         if (selectedModIndex_ >= 0 && onModLinkAmountChanged) {
-            onModLinkAmountChanged(selectedModIndex_, target, amount);
+            onModLinkAmountChanged(selectedModIndex_, std::move(target), amount);
         }
     };
 
@@ -661,22 +665,22 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     };
     followerEditorPanel_->onModLinkDeleted = [this](int idx, magda::ControlTarget target) {
         if (onModLinkDeleted)
-            onModLinkDeleted(idx, target);
+            onModLinkDeleted(idx, std::move(target));
     };
     followerEditorPanel_->onModLinkBipolarChanged = [this](int idx, magda::ControlTarget target,
                                                            bool bipolar) {
         if (onModLinkBipolarChanged)
-            onModLinkBipolarChanged(idx, target, bipolar);
+            onModLinkBipolarChanged(idx, std::move(target), bipolar);
     };
     followerEditorPanel_->onModLinkEnabledChanged = [this](int idx, magda::ControlTarget target,
                                                            bool enabled) {
         if (onModLinkEnabledChanged)
-            onModLinkEnabledChanged(idx, target, enabled);
+            onModLinkEnabledChanged(idx, std::move(target), enabled);
     };
     followerEditorPanel_->onModLinkAmountChanged = [this](int idx, magda::ControlTarget target,
                                                           float amount) {
         if (onModLinkAmountChanged)
-            onModLinkAmountChanged(idx, target, amount);
+            onModLinkAmountChanged(idx, std::move(target), amount);
     };
     addChildComponent(*followerEditorPanel_);
 }
@@ -1150,14 +1154,14 @@ void ModulatorEditorPanel::paintOverChildren(juce::Graphics& g) {
             auto r = sb.toFloat();
             juce::Rectangle<float> dot(r.getRight() - margin - dotSize, r.getY() + margin, dotSize,
                                        dotSize);
-            g.setColour(DarkTheme::getColour(DarkTheme::MIDI_LEARN).withAlpha(0.85f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_LEARN).withAlpha(0.85f));
             g.fillEllipse(dot);
         }
         if (!sb.isEmpty() && isRateInMidiLearnMode_) {
             float phase = std::fmod(
                 static_cast<float>(juce::Time::getMillisecondCounterHiRes() * 0.003), 1.0f);
             float alpha = 0.7f + 0.3f * std::sin(phase * juce::MathConstants<float>::twoPi);
-            g.setColour(DarkTheme::getColour(DarkTheme::MIDI_LEARN).withAlpha(alpha));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_LEARN).withAlpha(alpha));
             g.drawRoundedRectangle(sb.toFloat().reduced(0.5f), 2.0f, 1.5f);
         }
     }
@@ -1171,8 +1175,8 @@ void ModulatorEditorPanel::paintOverChildren(juce::Graphics& g) {
         if (!sb.isEmpty()) {
             auto& lmm = magda::LinkModeManager::getInstance();
             bool macro = (lmm.getLinkModeType() == magda::LinkModeType::Macro);
-            auto colour = (macro ? DarkTheme::getColour(DarkTheme::ACCENT_MODULATION)
-                                 : DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION))
+            auto colour = (macro ? ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION)
+                                 : ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION))
                               .withAlpha(0.18f);
             g.setColour(colour);
             g.fillRoundedRectangle(sb.toFloat(), 2.0f);
@@ -1251,7 +1255,7 @@ void ModulatorEditorPanel::paintOverChildren(juce::Graphics& g) {
     float currentNorm = 0.0f;
     if (currentMod_.tempoSync) {
         constexpr float kSyncMin = 0.0f;
-        const float kSyncMax = static_cast<float>(std::size(kSyncDivisionOrder) - 1);
+        const auto kSyncMax = static_cast<float>(std::size(kSyncDivisionOrder) - 1);
         if (kSyncMax > kSyncMin)
             currentNorm = juce::jlimit(0.0f, 1.0f,
                                        (static_cast<float>(visibleSlider.getValue()) - kSyncMin) /
@@ -1289,45 +1293,46 @@ void ModulatorEditorPanel::paintOverChildren(juce::Graphics& g) {
     // Macro bar at top (purple), mod bar at bottom (orange) — same convention
     // as ParamModulationPainter on every other parameter slider in MAGDA.
     drawBar(macroTotal, sb.getY() + 2,
-            DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).withAlpha(0.6f));
+            ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).withAlpha(0.6f));
     drawBar(modTotal, sb.getBottom() - barHeight - 2,
-            DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.6f));
+            ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.6f));
 }
 
 void ModulatorEditorPanel::lookAndFeelChanged() {
     // Re-apply cached theme colours after a live theme switch.
-    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
 
     for (auto* combo :
          {&waveformCombo_, &curvePresetCombo_, &triggerModeCombo_, &randomTypeCombo_}) {
         combo->setColour(juce::ComboBox::backgroundColourId,
-                         DarkTheme::getColour(DarkTheme::SURFACE));
-        combo->setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-        combo->setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+                         ActiveTheme::getColour(ActiveTheme::SURFACE));
+        combo->setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
+        combo->setColour(juce::ComboBox::outlineColourId,
+                         ActiveTheme::getColour(ActiveTheme::BORDER));
     }
 
     syncToggle_.setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
+                          ActiveTheme::getColour(ActiveTheme::SURFACE));
     syncToggle_.setColour(juce::TextButton::buttonOnColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
-    syncToggle_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+                          ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
+    syncToggle_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
     syncToggle_.setColour(juce::TextButton::textColourOnId,
-                          DarkTheme::getColour(DarkTheme::BACKGROUND));
+                          ActiveTheme::getColour(ActiveTheme::BACKGROUND));
 
     if (curveEditorButton_) {
-        curveEditorButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-        curveEditorButton_->setHoverColor(DarkTheme::getTextColour());
-        curveEditorButton_->setActiveColor(DarkTheme::getColour(DarkTheme::BACKGROUND));
+        curveEditorButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
+        curveEditorButton_->setHoverColor(ActiveTheme::getTextColour());
+        curveEditorButton_->setActiveColor(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
         curveEditorButton_->setActiveBackgroundColor(
-            DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+            ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
     }
     if (savePresetButton_) {
-        savePresetButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-        savePresetButton_->setHoverColor(DarkTheme::getTextColour());
+        savePresetButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
+        savePresetButton_->setHoverColor(ActiveTheme::getTextColour());
     }
     if (advancedButton_) {
-        advancedButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-        advancedButton_->setHoverColor(DarkTheme::getTextColour());
+        advancedButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
+        advancedButton_->setHoverColor(ActiveTheme::getTextColour());
     }
 
     repaint();
@@ -1335,11 +1340,11 @@ void ModulatorEditorPanel::lookAndFeelChanged() {
 
 void ModulatorEditorPanel::paint(juce::Graphics& g) {
     // Background
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.03f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.03f));
     g.fillRect(getLocalBounds());
 
     // Border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(getLocalBounds());
 
     // Follower mode: the embedded FollowerEditorPanel paints everything.
@@ -1351,7 +1356,7 @@ void ModulatorEditorPanel::paint(juce::Graphics& g) {
 
     // Envelope mode draws its own caption flow that mirrors the resized() layout.
     if (isEnvelopeMode_) {
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.setFont(FontManager::getInstance().getUIFont(8.0f));
         bounds.removeFromTop(18 + 6);  // name + gap
         bounds.removeFromTop(56 + 6);  // envelope display + gap
@@ -1367,7 +1372,7 @@ void ModulatorEditorPanel::paint(juce::Graphics& g) {
 
     // Random mode draws its own caption flow that mirrors the resized() layout.
     if (isRandomMode_) {
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.setFont(FontManager::getInstance().getUIFont(8.0f));
         bounds.removeFromTop(18 + 6);  // name + gap
         bounds.removeFromTop(46 + 6);  // random display + gap
@@ -1385,7 +1390,7 @@ void ModulatorEditorPanel::paint(juce::Graphics& g) {
     bounds.removeFromTop(18 + 6);  // Skip name label + gap
 
     // Skip the area below name - different for curve vs LFO mode
-    g.setColour(DarkTheme::getSecondaryTextColour());
+    g.setColour(ActiveTheme::getSecondaryTextColour());
     g.setFont(FontManager::getInstance().getUIFont(8.0f));
     if (isCurveMode_) {
         bounds.removeFromTop(18 + 4);  // Skip preset combo + gap
@@ -1424,7 +1429,7 @@ void ModulatorEditorPanel::paint(juce::Graphics& g) {
         }
 
         linkLabelBounds.removeFromTop(8);  // gap before Links label
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.setFont(FontManager::getInstance().getUIFont(8.0f));
         g.drawText("Links", linkLabelBounds.removeFromTop(12), juce::Justification::centredLeft);
     }
@@ -1445,7 +1450,7 @@ void ModulatorEditorPanel::paint(juce::Graphics& g) {
         labelBounds.removeFromTop(12 + 18);            // trigger label + trigger row
         labelBounds.removeFromTop(6);                  // gap
 
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.setFont(FontManager::getInstance().getUIFont(8.0f));
         g.drawText("Attack (ms)", labelBounds.removeFromTop(10), juce::Justification::centredLeft);
         labelBounds.removeFromTop(18 + 4);  // slider + gap
@@ -1653,9 +1658,7 @@ void ModulatorEditorPanel::resized() {
 }
 
 bool ModulatorEditorPanel::keyPressed(const juce::KeyPress& key) {
-    if (key == juce::KeyPress::returnKey)
-        return true;
-    return false;
+    return key == juce::KeyPress::returnKey;
 }
 
 void ModulatorEditorPanel::mouseDown(const juce::MouseEvent& e) {
@@ -1712,27 +1715,29 @@ void ModulatorEditorPanel::mouseDown(const juce::MouseEvent& e) {
 
             if (lmm.getLinkModeType() == magda::LinkModeType::Macro) {
                 const auto& sel = lmm.getMacroInLinkMode();
-                if (auto* macros = findMacrosAt(sel.parentPath)) {
+                if (const auto* macros = findMacrosAt(sel.parentPath)) {
                     if (sel.macroIndex >= 0 && sel.macroIndex < static_cast<int>(macros->size())) {
                         magda::ControlTarget t;
                         t.kind = magda::ControlTarget::Kind::ModParam;
                         t.devicePath = ownerDevicePath_;
                         t.modId = currentMod_.id;
                         t.modParamIndex = 0;
-                        if (auto* link = (*macros)[static_cast<size_t>(sel.macroIndex)].getLink(t))
+                        if (const auto* link =
+                                (*macros)[static_cast<size_t>(sel.macroIndex)].getLink(t))
                             initialAmount = link->amount;
                     }
                 }
             } else if (lmm.getLinkModeType() == magda::LinkModeType::Mod) {
                 const auto& sel = lmm.getModInLinkMode();
-                if (auto* mods = findModsAt(sel.parentPath)) {
+                if (const auto* mods = findModsAt(sel.parentPath)) {
                     if (sel.modIndex >= 0 && sel.modIndex < static_cast<int>(mods->size())) {
                         magda::ControlTarget t;
                         t.kind = magda::ControlTarget::Kind::ModParam;
                         t.devicePath = ownerDevicePath_;
                         t.modId = currentMod_.id;
                         t.modParamIndex = 0;
-                        if (auto* link = (*mods)[static_cast<size_t>(sel.modIndex)].getLink(t))
+                        if (const auto* link =
+                                (*mods)[static_cast<size_t>(sel.modIndex)].getLink(t))
                             initialAmount = link->amount;
                     }
                 }
@@ -1748,14 +1753,14 @@ void ModulatorEditorPanel::mouseDown(const juce::MouseEvent& e) {
             // of this panel. Doing label work first means we never touch a
             // freed `this` after the link write.
             bool macroSrc = (lmm.getLinkModeType() == magda::LinkModeType::Macro);
-            auto bg = (macroSrc ? DarkTheme::getColour(DarkTheme::ACCENT_MODULATION)
-                                : DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION))
+            auto bg = (macroSrc ? ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION)
+                                : ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION))
                           .withAlpha(0.95f);
             int percent = static_cast<int>(std::round(initialAmount * 100.0f));
             linkModeAmountLabel_.setText(juce::String(percent) + "%", juce::dontSendNotification);
             linkModeAmountLabel_.setColour(juce::Label::backgroundColourId, bg);
             linkModeAmountLabel_.setColour(juce::Label::textColourId,
-                                           DarkTheme::getColour(DarkTheme::BACKGROUND));
+                                           ActiveTheme::getColour(ActiveTheme::BACKGROUND));
             linkModeAmountLabel_.setJustificationType(juce::Justification::centred);
             linkModeAmountLabel_.setFont(FontManager::getInstance().getUIFontBold(9.0f));
             if (!linkModeAmountLabel_.isOnDesktop()) {

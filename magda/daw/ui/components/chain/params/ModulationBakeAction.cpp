@@ -17,7 +17,7 @@ magda::ChainNodePath enclosingRackPath(const magda::ChainNodePath& devicePath) {
     auto path = devicePath;
     path.isTrackLevel = false;
     path.topLevelDeviceId = magda::INVALID_DEVICE_ID;
-    while (!path.steps.empty() && path.steps.back().type != magda::ChainStepType::Rack)
+    while (!path.steps.empty() && !magda::isRackStep(path.steps.back().type))
         path.steps.pop_back();
     return path;
 }

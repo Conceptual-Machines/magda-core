@@ -2,6 +2,8 @@
 // Apple's libc++ does not ship the std::atomic<std::shared_ptr> replacement, so
 // they remain the only portable option. Silence MSVC's STL4029 deprecation
 // warning; must be defined before any standard header is included.
+// MSVC defines this name, so it has to be spelled exactly.
+// NOLINTNEXTLINE(bugprone-reserved-identifier)
 #define _SILENCE_CXX20_OLD_SHARED_PTR_ATOMIC_SUPPORT_DEPRECATION_WARNING
 
 #include "llama_model_manager.hpp"
@@ -58,7 +60,7 @@ bool LlamaModelManager::loadModel(const Config& config, std::string* errorMessag
         }
     } loadingReset{loading_};
 
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
 
     // Status reads happen on the message thread, so publish state via the lock-free
     // snapshot instead of the mutex held across model loading and inference.
@@ -103,7 +105,7 @@ bool LlamaModelManager::loadModel(const Config& config, std::string* errorMessag
 }
 
 void LlamaModelManager::unloadModel() {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
 
     std::atomic_store_explicit(&loadedPathSnapshot_, std::shared_ptr<const std::string>{},
                                std::memory_order_release);
@@ -149,12 +151,12 @@ std::string LlamaModelManager::applyTemplate(const std::string& systemPrompt,
     std::vector<char> buf(static_cast<size_t>(len) + 1);
     llama_chat_apply_template(tmpl, messages, 2, true, buf.data(),
                               static_cast<int32_t>(buf.size()));
-    return std::string(buf.data(), static_cast<size_t>(len));
+    return {buf.data(), static_cast<size_t>(len)};
 }
 
 LlamaModelManager::InferenceResult LlamaModelManager::infer(const InferenceRequest& req,
-                                                            TokenCallback onToken) {
-    std::lock_guard<std::mutex> lock(mutex_);
+                                                            const TokenCallback& onToken) {
+    std::scoped_lock lock(mutex_);
     InferenceResult result;
 
     if (model_ == nullptr || ctx_ == nullptr) {

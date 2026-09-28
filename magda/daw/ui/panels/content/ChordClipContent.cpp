@@ -4,7 +4,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <memory>
+#include <ranges>
 #include <vector>
 
 #include "../../state/TimelineController.hpp"
@@ -16,8 +18,9 @@
 #include "music/ChordEngine.hpp"
 #include "music/ChordEnums.hpp"
 #include "ui/components/common/InternalFileDrag.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/InspectorComboBoxLookAndFeel.hpp"
+#include "ui/utils/AudioFileTypes.hpp"
 
 namespace magda::daw::ui {
 
@@ -99,6 +102,24 @@ std::pair<int, int> partsFromQuality(ChordQuality q) {
     return {0, 0};
 }
 
+/** @brief A predicate matching the notes linked to a chord group; group 0 links none. */
+auto isInChordGroup(int group) {
+    return [group](const magda::MidiNote& note) { return group != 0 && note.chordGroup == group; };
+}
+
+/** @brief A chord group's note indices, highest first so deleting keeps them valid. */
+std::vector<size_t> noteIndicesInChordGroup(const magda::ClipInfo& clip, int group) {
+    const auto isInGroup = [&clip, group](size_t i) {
+        return isInChordGroup(group)(clip.midiNotes[i]);
+    };
+    std::vector<size_t> indices;
+    std::ranges::copy(std::views::iota(size_t{0}, clip.midiNotes.size()) |
+                          std::views::filter(isInGroup),
+                      std::back_inserter(indices));
+    std::ranges::reverse(indices);
+    return indices;
+}
+
 /// Root / base-quality / extension / octave / inversion editor (CallOutBox).
 class ChordEditorPopup : public juce::Component {
   public:
@@ -110,10 +131,11 @@ class ChordEditorPopup : public juce::Component {
         auto style = [this](juce::ComboBox& c) {
             c.setLookAndFeel(&laf_);
             c.setColour(juce::ComboBox::backgroundColourId,
-                        DarkTheme::getColour(DarkTheme::SURFACE));
+                        ActiveTheme::getColour(ActiveTheme::SURFACE));
             c.setColour(juce::ComboBox::textColourId,
-                        DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-            c.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+                        ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+            c.setColour(juce::ComboBox::outlineColourId,
+                        ActiveTheme::getColour(ActiveTheme::BORDER));
             addAndMakeVisible(c);
         };
 
@@ -327,6 +349,7 @@ void ChordClipContent::commitBlockDrag() {
     if (copyDrag_) {
         if (moved) {
             std::vector<int> pitches;
+            pitches.reserve(dragNotes_.size());
             for (const auto& dn : dragNotes_)
                 pitches.push_back(dn.note);
             insertChordAtBeat(dragNewStart_, pitches);
@@ -430,11 +453,15 @@ bool ChordClipContent::keyPressed(const juce::KeyPress& key) {
         selectedGroup_ != 0) {
         const auto* clip = magda::ClipManager::getInstance().getClip(getEditingClipId());
         if (clip != nullptr) {
-            for (int i = 0; i < static_cast<int>(clip->chordAnnotations.size()); ++i)
-                if (clip->chordAnnotations[static_cast<size_t>(i)].chordGroup == selectedGroup_) {
-                    deleteChord(i);
-                    return true;
-                }
+            const auto isSelectedGroup = [this](const magda::ClipInfo::ChordAnnotation& ann) {
+                return ann.chordGroup == selectedGroup_;
+            };
+            const auto& annotations = clip->chordAnnotations;
+            if (const auto it = std::ranges::find_if(annotations, isSelectedGroup);
+                it != annotations.end()) {
+                deleteChord(static_cast<int>(std::ranges::distance(annotations.begin(), it)));
+                return true;
+            }
         }
     }
     return PianoRollContent::keyPressed(key);
@@ -452,7 +479,7 @@ void ChordClipContent::paintOverChildren(juce::Graphics& g) {
         return;
 
     const juce::Rectangle<int> ghost(x1 + 1, chordRowTop() + 2, x2 - x1 - 2, chordRowHeight() - 4);
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
     g.setColour(accent.withAlpha(0.22f));
     g.fillRoundedRectangle(ghost.toFloat(), 4.0f);
     g.setColour(accent.withAlpha(0.7f));
@@ -505,13 +532,10 @@ void ChordClipContent::openChordEditor(int annIndex) {
     const auto spec = magda::music::ChordEngine::parseChordName(ann.chordName);
 
     // Derive the octave from the chord's lowest linked note.
-    int octave = 4;
-    int lowest = 128;
-    for (const auto& n : clip->midiNotes)
-        if (ann.chordGroup != 0 && n.chordGroup == ann.chordGroup)
-            lowest = std::min(lowest, n.noteNumber);
-    if (lowest <= 127)
-        octave = lowest / 12 - 1;
+    auto groupPitches = clip->midiNotes | std::views::filter(isInChordGroup(ann.chordGroup)) |
+                        std::views::transform(&magda::MidiNote::noteNumber);
+    const int octave =
+        std::ranges::empty(groupPitches) ? 4 : std::ranges::min(groupPitches) / 12 - 1;
 
     // Anchor the editor at the block; capture the bar (stable across edits, where
     // the annotation index is not).
@@ -528,6 +552,7 @@ void ChordClipContent::openChordEditor(int annIndex) {
         const auto chord =
             magda::music::ChordEngine::getInstance().buildChordInversion(r, q, inv, oct);
         std::vector<int> pitches;
+        pitches.reserve(chord.notes.size());
         for (const auto& note : chord.notes)
             pitches.push_back(note.noteNumber);
         const int idx = annotationIndexAtBeat(bar + 0.001);
@@ -552,13 +577,9 @@ void ChordClipContent::replaceChordNotes(int annIndex, const std::vector<int>& p
 
     auto& undo = magda::UndoManager::getInstance();
 
-    // Delete the chord's existing notes (highest index first so earlier indices
-    // stay valid), then insert the new voicing at the same bar/length.
-    std::vector<size_t> indices;
-    for (size_t i = 0; i < clip->midiNotes.size(); ++i)
-        if (group != 0 && clip->midiNotes[i].chordGroup == group)
-            indices.push_back(i);
-    std::sort(indices.rbegin(), indices.rend());
+    // Delete the chord's existing notes, then insert the new voicing at the same
+    // bar/length.
+    const auto indices = noteIndicesInChordGroup(*clip, group);
     for (size_t idx : indices)
         undo.executeCommand(std::make_unique<magda::DeleteMidiNoteCommand>(clipId, idx));
 
@@ -577,9 +598,9 @@ std::vector<int> ChordClipContent::chordPitches(int annIndex) const {
         annIndex >= static_cast<int>(clip->chordAnnotations.size()))
         return pitches;
     const int group = clip->chordAnnotations[static_cast<size_t>(annIndex)].chordGroup;
-    for (const auto& n : clip->midiNotes)
-        if (group != 0 && n.chordGroup == group)
-            pitches.push_back(n.noteNumber);
+    std::ranges::copy(clip->midiNotes | std::views::filter(isInChordGroup(group)) |
+                          std::views::transform(&magda::MidiNote::noteNumber),
+                      std::back_inserter(pitches));
     return pitches;
 }
 
@@ -619,11 +640,7 @@ void ChordClipContent::deleteChord(int annIndex) {
         return;
     const int group = clip->chordAnnotations[static_cast<size_t>(annIndex)].chordGroup;
 
-    std::vector<size_t> indices;
-    for (size_t i = 0; i < clip->midiNotes.size(); ++i)
-        if (group != 0 && clip->midiNotes[i].chordGroup == group)
-            indices.push_back(i);
-    std::sort(indices.rbegin(), indices.rend());
+    const auto indices = noteIndicesInChordGroup(*clip, group);
 
     auto& undo = magda::UndoManager::getInstance();
     for (size_t idx : indices)
@@ -645,10 +662,10 @@ void ChordClipContent::duplicateChord(int annIndex) {
         return;
     const auto& ann = clip->chordAnnotations[static_cast<size_t>(annIndex)];
 
-    int beatsPerBar = magda::DEFAULT_TIME_SIGNATURE_NUMERATOR;
+    double beatsPerBar = 4.0;
     if (auto* controller = magda::TimelineController::getCurrent())
-        beatsPerBar = controller->getState().tempo.timeSignatureNumerator;
-    const double bar = std::max(1, beatsPerBar);
+        beatsPerBar = controller->getState().tempo.beatsPerBar();
+    const double bar = beatsPerBar;
 
     // Drop the copy in the next free bar after the chord.
     double t = ann.beatPosition + std::max(bar, ann.lengthBeats);
@@ -702,18 +719,19 @@ bool ChordClipContent::insertChordAtBeat(double clipRelativeBeat, const std::vec
 
     // Chords snap to the bar so the per-bar chord detection picks them up
     // cleanly. A chord defaults to one bar long.
-    int beatsPerBar = magda::DEFAULT_TIME_SIGNATURE_NUMERATOR;
+    double beatsPerBar = 4.0;
     if (auto* controller = magda::TimelineController::getCurrent())
-        beatsPerBar = controller->getState().tempo.timeSignatureNumerator;
-    const double barBeats = std::max(1, beatsPerBar);
+        beatsPerBar = controller->getState().tempo.beatsPerBar();
+    const double barBeats = beatsPerBar;
     const double bar = std::max(0.0, std::round(clipRelativeBeat / barBeats) * barBeats);
     constexpr int kDefaultVelocity = 100;
 
     // A bar that already has a chord is for editing it, not stacking a new one.
-    for (const auto& ann : clip->chordAnnotations) {
-        if (bar >= ann.beatPosition && bar < ann.beatPosition + ann.lengthBeats)
-            return false;
-    }
+    const auto coversBar = [bar](const magda::ClipInfo::ChordAnnotation& ann) {
+        return bar >= ann.beatPosition && bar < ann.beatPosition + ann.lengthBeats;
+    };
+    if (std::ranges::any_of(clip->chordAnnotations, coversBar))
+        return false;
 
     // Insert the notes, then detection builds the (linked) chord-lane block, so
     // later note edits re-sync the chord via syncChordAnnotations().
@@ -732,6 +750,7 @@ bool ChordClipContent::onChordRowClicked(double clipRelativeBeat) {
     const auto chord = magda::music::ChordEngine::getInstance().buildChordInRootPosition(
         magda::music::ChordRoot::C, magda::music::ChordQuality::Major, 4);
     std::vector<int> pitches;
+    pitches.reserve(chord.notes.size());
     for (const auto& note : chord.notes)
         pitches.push_back(note.noteNumber);
 
@@ -740,10 +759,7 @@ bool ChordClipContent::onChordRowClicked(double clipRelativeBeat) {
 }
 
 bool ChordClipContent::isInterestedInFileDrag(const juce::StringArray& files) {
-    for (const auto& f : files)
-        if (f.endsWithIgnoreCase(".mid") || f.endsWithIgnoreCase(".midi"))
-            return true;
-    return false;
+    return std::ranges::any_of(files, isMidiFile);
 }
 
 void ChordClipContent::filesDropped(const juce::StringArray& files, int x, int y) {
@@ -752,7 +768,7 @@ void ChordClipContent::filesDropped(const juce::StringArray& files, int x, int y
         return;
 
     for (const auto& f : files) {
-        if (!f.endsWithIgnoreCase(".mid") && !f.endsWithIgnoreCase(".midi"))
+        if (!isMidiFile(f))
             continue;
 
         juce::FileInputStream stream{juce::File(f)};

@@ -38,8 +38,8 @@ class MidiInputRouter : private juce::AsyncUpdater {
     juce::String getTrackMidiInput(TrackId trackId) const;
     bool setSessionSlotMidiRecordingTarget(TrackId trackId, int sceneIndex, bool enabled);
 
-    void setSurfaceOnlyMidiInputPort(const juce::String& midiDeviceIdOrName);
-    void clearSurfaceOnlyMidiInputPorts();
+    /** @brief Drop and reapply routes after Audio Settings changed which inputs are active. */
+    void refreshActiveMidiInputs();
 
     void updateMidiInputRouting();
 
@@ -135,9 +135,9 @@ class MidiInputRouter : private juce::AsyncUpdater {
     /// slots) back to the owning MAGDA track id.
     TrackId resolveTargetTrackId(te::EditItemID targetID) const;
 
-    bool isSurfaceOnlyMidiInput(const juce::String& liveIdentifier,
-                                const juce::String& liveName) const;
-    void removeSurfaceOnlyMidiInputTargets();
+    /** @brief A port no track hears: a control surface's, or one Audio Settings switched off. */
+    bool isUnheardMidiInput(const juce::String& liveIdentifier, const juce::String& liveName) const;
+    void removeUnheardMidiInputTargets();
 
     /// Feedback guard (#1623): true when this input port belongs to the
     /// hardware an External Instrument on this track sends MIDI to — routing
@@ -146,7 +146,7 @@ class MidiInputRouter : private juce::AsyncUpdater {
     /// port naming ("monologue KBD/KNOB" vs "monologue MIDI OUT"). Applied to
     /// "All Inputs" routing only — an explicitly selected port is respected,
     /// so the synth's keyboard can still be recorded (Local Control off).
-    bool isExternalInstrumentSendbackInput(TrackId trackId, const juce::String& inputName) const;
+    static bool isExternalInstrumentSendbackInput(TrackId trackId, const juce::String& inputName);
 
     void handleAsyncUpdate() override;
 
@@ -156,9 +156,6 @@ class MidiInputRouter : private juce::AsyncUpdater {
 
     std::shared_ptr<te::MidiInputDevice> qwertyMidiDevice_;
     bool qwertyNeedsContextRefresh_ = false;
-
-    juce::StringArray surfaceOnlyMidiInputPorts_;
-    mutable juce::CriticalSection surfaceOnlyMidiInputLock_;
 
     std::vector<std::pair<TrackId, juce::String>> pendingMidiRoutes_;
     te::EditPlaybackContext* lastPlaybackContext_ = nullptr;

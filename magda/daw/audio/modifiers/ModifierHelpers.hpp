@@ -415,7 +415,7 @@ inline void triggerLFONoteOnWithReset(te::LFOModifier* lfo, bool forceZeroValue 
  * from dereferencing a dangling userData pointer in evaluateCallback.
  */
 inline void clearLFOCustomWaveCallbacks(const std::vector<te::Modifier::Ptr>& modifiers) {
-    for (auto& mod : modifiers) {
+    for (const auto& mod : modifiers) {
         if (auto* lfo = dynamic_cast<te::LFOModifier*>(mod.get())) {
             lfo->customWaveFunction.store(nullptr, std::memory_order_release);
             lfo->customWaveUserData.store(nullptr, std::memory_order_release);

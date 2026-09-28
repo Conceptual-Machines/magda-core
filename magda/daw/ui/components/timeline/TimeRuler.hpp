@@ -37,8 +37,11 @@ class TimeRuler : public juce::Component, private juce::Timer {
         return tempo;
     }
     void setTimeSignature(int numerator, int denominator);
-    int getTimeSigNumerator() const {
-        return timeSigNumerator;
+    double getBeatsPerBar() const {
+        return beatsPerBar(timeSigNumerator, timeSigDenominator);
+    }
+    int getTimeSigDenominator() const {
+        return timeSigDenominator;
     }
 
     // Grid resolution for subdivision alignment (in beats, e.g. 0.25 = 1/16)
@@ -92,7 +95,7 @@ class TimeRuler : public juce::Component, private juce::Timer {
     // Loop phase marker (shows where playback phase is within the loop)
     void setLoopPhaseMarker(double positionSeconds, bool visible);
 
-    // Playhead position (for drawing playhead line during playback)
+    // Playhead line position in this ruler's display seconds; negative hides it.
     void setPlayheadPosition(double positionSeconds);
     double getPlayheadPosition() const {
         return playheadPosition;
@@ -117,7 +120,7 @@ class TimeRuler : public juce::Component, private juce::Timer {
     }
 
     // Get preferred height (from LayoutConfig)
-    int getPreferredHeight() const;
+    static int getPreferredHeight();
 
     // Mouse interaction - click to set playhead, drag to zoom, wheel to scroll
     void mouseDown(const juce::MouseEvent& event) override;
@@ -189,10 +192,10 @@ class TimeRuler : public juce::Component, private juce::Timer {
     static constexpr int LOOP_STRIP_HEIGHT = LayoutConfig::loopStripHeight;
 
     // Tick heights sourced from LayoutConfig for consistency with TimelineComponent
-    int tickHeightMajor() const {
+    static int tickHeightMajor() {
         return LayoutConfig::getInstance().rulerMajorTickHeight;
     }
-    int tickHeightMinor() const {
+    static int tickHeightMinor() {
         return LayoutConfig::getInstance().rulerMinorTickHeight;
     }
 
@@ -200,7 +203,7 @@ class TimeRuler : public juce::Component, private juce::Timer {
     void drawSecondsMode(juce::Graphics& g);
     void drawBarsBeatsMode(juce::Graphics& g);
     double calculateMarkerInterval() const;
-    juce::String formatTimeLabel(double time, double interval) const;
+    static juce::String formatTimeLabel(double time, double interval);
     juce::String formatBarsBeatsLabel(double time) const;
 
     // Coordinate conversion

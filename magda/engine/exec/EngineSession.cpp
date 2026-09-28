@@ -1,10 +1,44 @@
 #include "exec/EngineSession.hpp"
 
 #include <algorithm>
+#include <optional>
 
 #include "clip/ClipVoicePool.hpp"
+#include "clip/SessionPlayback.hpp"
 
 namespace magda::engine {
+
+namespace {
+
+/// Closes the feed's callback however process() leaves, so a source reached
+/// between callbacks reads nothing rather than the last one's samples.
+struct ScopedLiveInput {
+    explicit ScopedLiveInput(LiveInputFeed& feed) : feed_(feed) {}
+
+    ~ScopedLiveInput() {
+        feed_.endCallback();
+    }
+
+    ScopedLiveInput(const ScopedLiveInput&) = delete;
+    ScopedLiveInput& operator=(const ScopedLiveInput&) = delete;
+
+    LiveInputFeed& feed_;
+};
+
+struct ScopedLiveOutput {
+    explicit ScopedLiveOutput(LiveOutputFeed& feed) : feed_(feed) {}
+
+    ~ScopedLiveOutput() {
+        feed_.endCallback();
+    }
+
+    ScopedLiveOutput(const ScopedLiveOutput&) = delete;
+    ScopedLiveOutput& operator=(const ScopedLiveOutput&) = delete;
+
+    LiveOutputFeed& feed_;
+};
+
+}  // namespace
 
 EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> plan,
                                              const RenderContext& context,
@@ -16,6 +50,10 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     prepared->plan = std::move(plan);
     prepared->values = std::move(values);
     prepared->context = context;
+
+    // Sorted already: a std::set of them is ordered by the same operator< the
+    // block's lookup uses.
+    prepared->takes.assign(modelIds.takes.begin(), modelIds.takes.end());
 
     // The metronome is prepared against the device, not the plan, so it is
     // shared with the epoch it replaces unless the device changed. Sharing is
@@ -45,7 +83,7 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     // resolved from one model against one plan.
     auto messages = prepared->executor.prepare(*prepared->plan, bindings, context,
                                                live_ == nullptr ? nullptr : &live_->executor,
-                                               prepared->values.params.get());
+                                               &prepared->values);
     if (!prepared->executor.isPrepared())
         return {false, std::move(messages)};
 
@@ -55,12 +93,22 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     // why. Asked of the executor rather than worked out here, so that the
     // answer cannot differ from the one the block itself will get.
     if (!prepared->executor.appliesValues(prepared->values)) {
-        messages.push_back(
+        messages.emplace_back(
             "the values published with this plan are not values it can render: they were "
             "resolved against a different plan, or against this one before it was whole. "
             "It is not published, because it would have rendered at unity");
         return {false, std::move(messages)};
     }
+
+    prepared->outputChannels = std::max(1, context.numChannels);
+    for (const auto output : prepared->plan->outputOps) {
+        if (output < 0 || output >= static_cast<OpId>(prepared->plan->ops.size()))
+            continue;
+        const auto& route = prepared->plan->ops[static_cast<std::size_t>(output)].hardwareOutput;
+        prepared->outputChannels =
+            std::max(prepared->outputChannels, std::max(route.leftChannel, route.rightChannel) + 1);
+    }
+    prepared->segmentOutput.setSize(prepared->outputChannels, 1);
 
     // The epoch's values become the ones in flight as well. Matching
     // fingerprints say two tables fit the same structure, which is not the same
@@ -72,8 +120,16 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     // goes live.
     values_.nonRealtimeReplace(prepared->values);
 
+    // The panics this plan owes devices it rerouted, written now that nothing
+    // can refuse it and before it renders a block. The epoch is what keeps the
+    // one still playing from spending them: it is carrying the old route, and
+    // a note played through that route between here and the swap is released
+    // by this plan rather than by that one (#2418).
+    prepared->executor.commitReroutes(++planEpoch_);
+
     // The swap. This blocks until the audio thread is out of the block it was
     // in, then hands the previous epoch back here, where its destructor runs.
+    // Modelled in specs/tla/plan_swap.
     published_.nonRealtimeReplace(prepared);
 
     // Only now: until the swap, the epoch this replaces was the one rendering,
@@ -91,6 +147,13 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     // it would be counting from one again by its next block (#2122).
     live_->executor.clearUnboundValueTaps();
 
+    if (betweenPlanAndTakesForTest)
+        betweenPlanAndTakesForTest();
+
+    // The takes this edit ended (#2465). After the swap, since the edit only
+    // counts once its plan is playing.
+    closeUnnamedTakes(modelIds);
+
     // Safe only now: before the swap, everything about to be destroyed was
     // still reachable from the plan the audio thread was rendering. The plan
     // that is live goes in as well, so what it names survives however stale
@@ -100,6 +163,106 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     store_.releaseDeleted(*livePlan_, modelIds, live_->values.params.get());
 
     return {true, std::move(messages)};
+}
+
+void EngineSession::publishTakes() {
+    recording_.publish(std::make_shared<const RecordingTakes>(store_.liveTakes()));
+}
+
+void EngineSession::startTake(const TakeKey& key, const RecordTapSettings& settings,
+                              const std::function<std::unique_ptr<TakeCapture>(RecordTap&)>& make) {
+    // Whatever this key was already recording, closed first. Its tap leaves
+    // with it, so the take built below gets a fresh one.
+    if (auto displaced = stopTake(key); displaced.take != nullptr)
+        closed_.push_back(std::move(displaced));
+
+    auto take = make(store_.realiseTakeTap(key, settings));
+    if (take == nullptr)
+        return;
+
+    store_.holdTake(key, std::move(take));
+    publishTakes();
+}
+
+ClosedTake EngineSession::stopTake(const TakeKey& key) {
+    deferredTakes_.erase(key);
+    auto released = store_.releaseTake(key);
+    if (released.take == nullptr)
+        return {};
+
+    // The set without it, published before the caller has it. Once this
+    // returns the callback is out of the take, so finishing it is safe.
+    publishTakes();
+    return ClosedTake{key, std::move(released.take), std::move(released.tap)};
+}
+
+EngineSession::StopTakeResult EngineSession::stopTakeAfterPostRoll(const TakeKey& key) {
+    auto* take = store_.take(key);
+    if (take == nullptr)
+        return {};
+
+    if (take->requestPostRoll()) {
+        deferredTakes_.insert(key);
+        return {.deferred = true};
+    }
+
+    return {.closed = stopTake(key)};
+}
+
+void EngineSession::closeCompletedTakes() {
+    std::vector<TakeKey> completed;
+    for (const auto& key : deferredTakes_)
+        if (const auto* take = store_.take(key); take == nullptr || take->readyToClose())
+            completed.push_back(key);
+
+    if (completed.empty())
+        return;
+
+    std::vector<ClosedTake> closed;
+    closed.reserve(completed.size());
+    for (const auto& key : completed) {
+        deferredTakes_.erase(key);
+        auto released = store_.releaseTake(key);
+        if (released.take != nullptr)
+            closed.push_back(ClosedTake{key, std::move(released.take), std::move(released.tap)});
+    }
+
+    publishTakes();
+    for (auto& take : closed)
+        closed_.push_back(std::move(take));
+}
+
+std::vector<ClosedTake> EngineSession::takeClosedTakes() {
+    takeCompletionPending_.store(false, std::memory_order_release);
+    closeCompletedTakes();
+    return std::exchange(closed_, {});
+}
+
+void EngineSession::closeUnnamedTakes(const RuntimeStateIds& modelIds) {
+    const auto unnamed = store_.unnamedTakes(modelIds);
+    if (unnamed.empty())
+        return;
+
+    // All immediate closes out of the store, then one publish: a scene of
+    // armed tracks deleted together costs one wait rather than one each.
+    std::vector<ClosedTake> closed;
+    closed.reserve(unnamed.size());
+    for (const auto& key : unnamed) {
+        if (deferredTakes_.contains(key))
+            continue;
+        if (auto* take = store_.take(key); take != nullptr && take->requestPostRoll()) {
+            deferredTakes_.insert(key);
+            continue;
+        }
+        auto released = store_.releaseTake(key);
+        closed.push_back(ClosedTake{key, std::move(released.take), std::move(released.tap)});
+    }
+
+    if (!closed.empty())
+        publishTakes();
+
+    for (auto& take : closed)
+        closed_.push_back(std::move(take));
 }
 
 EngineSession::Result EngineSession::publishValues(PlanValues values) {
@@ -116,8 +279,12 @@ EngineSession::Result EngineSession::publishValues(PlanValues values) {
                  "published: the plan they belong to has to be published with them"}};
 
     if (live_->executor.fitsParameters(values)) {
+        // Asked before the swap and of the values themselves: a switch that
+        // makes an input audible arrives here, with no prepare to notice that
+        // nothing is bound to it (#2612).
+        auto messages = live_->executor.reportUnboundInputs(&values);
         values_.nonRealtimeReplace(std::move(values));
-        return {true, {}};
+        return {true, std::move(messages)};
     }
 
     // The parameter set changed without the plan changing. See the header: this
@@ -131,6 +298,8 @@ EngineSession::Result EngineSession::publishValues(PlanValues values) {
 }
 
 void EngineSession::publishTransport(TransportSnapshot transport) {
+    if (voices_ != nullptr)
+        voices_->setTransport(transport.loop, transport.tempo);
     transport_.nonRealtimeReplace(std::move(transport));
 }
 
@@ -142,16 +311,20 @@ void EngineSession::publishClips(std::shared_ptr<const ClipSnapshot> clips) {
     if (voices_ != nullptr)
         voices_->setSnapshot(clips);
 
+    // Handles first: a table naming slots the callback cannot see yet is
+    // silent, while a snapshot naming a slot with no handle is a launch the
+    // block in between cannot honour.
+    //
+    // A null snapshot publishes an empty table rather than skipping, or the
+    // previous one would keep handles for slots the engine no longer knows.
+    static const ClipSnapshot kNothing;
+    store_.publishHandles(clips != nullptr ? *clips : kNothing, handles_, requests_, &retired_);
+
     clips_.publish(std::move(clips));
 }
 
-void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output) {
-    output.clear();
-
-    PublishedRender::ScopedAccess<farbot::ThreadType::realtime> render(published_);
-    if (*render == nullptr || numSamples <= 0)
-        return;
-
+void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
+                            const LiveInputBlock& input) {
     // The executor asserts on a block longer than the plan was prepared for.
     // Here the same number also says how much buffer there is to write into, so
     // it is held to what the caller actually provided rather than trusted: the
@@ -159,6 +332,38 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output) {
     // of it is not a wrong answer, it is someone else's memory.
     jassert(numSamples <= output.getNumSamples());
     numSamples = std::min(numSamples, output.getNumSamples());
+
+    // Before the clear, and before anything else touches the output: a host may
+    // hand the same memory for input and output, and the feed's copy is what
+    // makes that the caller's business rather than a silent loss of the take.
+    liveInputs_.beginCallback(input, numSamples);
+    const ScopedLiveInput scopedInput(liveInputs_);
+    const ScopedLiveOutput scopedOutput(liveOutputs_);
+    liveOutputs_.beginCallback(output);
+
+    output.clear();
+
+    PublishedRender::ScopedAccess<farbot::ThreadType::realtime> render(published_);
+
+    // Nothing to launch into. Dropped rather than kept: holding a request until
+    // a plan appeared would start a clip at whatever moment that turned out to
+    // be.
+    if (*render == nullptr) {
+        requests_.drain([](const LaunchRequest&) {});
+        return;
+    }
+
+    // The host prepares this width with the plan. Refuse a narrower callback
+    // rather than growing the segment view on the realtime thread.
+    if (output.getNumChannels() < (*render)->outputChannels) {
+        jassertfalse;
+        return;
+    }
+
+    // A callback of no samples is not a block, so whatever has been asked is
+    // still asked at the next real one.
+    if (numSamples <= 0)
+        return;
 
     // Values and plans travel separately and are swapped one after the other,
     // so for the moment between the two the ones in flight can belong to the
@@ -174,33 +379,159 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output) {
 
     PublishedTransport::ScopedAccess<farbot::ThreadType::realtime> transport(transport_);
 
+    // Held for the callback rather than fetched per block: what is being
+    // recorded cannot change in the middle of one.
+    const RecordingFeed::Reader takes(recording_);
+
     // One callback is one or more stretches of timeline. It is more than one
     // exactly when a loop wraps inside it, and the pieces are rendered as
     // separate blocks so that nothing downstream has to know a wrap can happen
     // in the middle of a buffer. Everything below the plan is block-size
     // independent already, which is what makes cutting a callback free.
-    for (const auto& segment :
-         clock_.advance(*transport, (*render)->context.sampleRate, numSamples)) {
-        // A view on the output, not a copy: same channels, same memory, offset
-        // to where this piece belongs.
-        juce::AudioBuffer<float> piece(output.getArrayOfWritePointers(), output.getNumChannels(),
-                                       segment.startSample, segment.block.numSamples);
+    const auto segments = clock_.advance(*transport, (*render)->context.sampleRate, numSamples);
+    const auto callbackEnd = clock_.syncPoint();
+    for (std::size_t index = 0; index < segments.size(); ++index) {
+        const auto& segment = segments[index];
+        if (transport->punch.recordingGeneration != punchCaptureGeneration_) {
+            punchCaptureEnded_ = false;
+            punchCaptureActive_ = false;
+        }
+        const auto afterPunch = transport->punch.valid() && transport->punch.punchOutEnabled &&
+                                !segment.insidePunch &&
+                                segment.block.openingBeat() >= transport->punch.endBeat;
+        if (transport->punch.recordingRequested && afterPunch)
+            punchCaptureEnded_ = true;
+        const auto captureWanted = transport->punch.recordingRequested && segment.block.playing &&
+                                   !segment.countingIn && !punchCaptureEnded_ &&
+                                   (segment.insidePunch || punchCaptureActive_);
+        if (captureWanted != punchCaptureActive_ ||
+            transport->punch.recordingGeneration != punchCaptureGeneration_) {
+            runs_.push({.kind = captureWanted ? SlotRunEvent::Kind::captureBegan
+                                              : SlotRunEvent::Kind::captureEnded,
+                        .at = segment.block.monotonicSamples.start,
+                        .timelineBeat = segment.block.beats.start,
+                        .monotonicBeat = segment.block.monotonicBeats.start,
+                        .recordingGeneration = transport->punch.recordingGeneration});
+            punchCaptureActive_ = captureWanted;
+            punchCaptureGeneration_ = transport->punch.recordingGeneration;
+        }
+        if (transport->punch.recordingRequested && afterPunch)
+            punchOutGeneration_.store(transport->punch.recordingGeneration,
+                                      std::memory_order_release);
+        auto& piece = (*render)->segmentOutput;
+        piece.setDataToReferTo(output.getArrayOfWritePointers(), (*render)->outputChannels,
+                               segment.startSample, segment.block.numSamples);
+
+        liveInputs_.beginSegment(segment.startSample, segment.block.numSamples);
+        liveOutputs_.beginSegment(segment.startSample, segment.block.numSamples);
+
+        // Before the plan, and over every handle rather than the ones this plan
+        // renders: a handle must see each block exactly once and a slot has two
+        // sources reading it. What has been asked since the last block is
+        // applied in the same pass, ahead of every advance (SessionLauncher.hpp).
+        //
+        // Before the takes as well, because a take following a slot starts on
+        // the sample its launch fired on and that is decided here (#2464).
+        // The block's one acquisition of the clips, held while it renders
+        // (#2490): a track's two sources play one publish rather than each
+        // taking whichever was live when it happened to read. Pinned before
+        // the handles advance so a live edit changes a slot's cycle and its
+        // material together for this block.
+        const ClipSnapshotFeed::BlockScope clips(clips_);
+        const LaunchHandleFeed::BlockScope handles(handles_);
+        std::optional<ClipStreamFeed::BlockScope> streams;
+        if (voices_ != nullptr)
+            streams.emplace(voices_->feed());
+        const auto boundary =
+            index + 1 < segments.size()
+                ? SlotRunBoundary{.at = segment.block.monotonicSamples.end,
+                                  .timelineBeat = segments[index + 1].block.beats.start,
+                                  .monotonicBeat = segments[index + 1].block.monotonicBeats.start}
+                : SlotRunBoundary{.at = segment.block.monotonicSamples.end,
+                                  .timelineBeat = callbackEnd.beat,
+                                  .monotonicBeat = callbackEnd.monotonicBeat};
+        advanceLaunchHandles(handles_, requests_, segment.block, &runs_, clips_.live(), &boundary);
+
+        if (transport->punch.recordingRequested && afterPunch && takes)
+            for (const auto& entry : *takes.get())
+                if (std::binary_search((*render)->takes.begin(), (*render)->takes.end(), entry.key))
+                    entry.take->punchOut();
+
+        // Before the plan and outside it: a take holds the input the device
+        // captured, not what the track's chain went on to make of it.
+        //
+        // The set says which takes exist and the epoch says which may record,
+        // and the epoch is the one this block is rendering. So an edit that
+        // ended a take stops feeding it on the block that first renders its
+        // plan, rather than on whichever later block the publishing thread got
+        // the reduced set out by (#2465).
+        if (takes)
+            for (const auto& entry : *takes.get()) {
+                const auto named =
+                    std::binary_search((*render)->takes.begin(), (*render)->takes.end(), entry.key);
+                if (named || entry.take->capturesPostRoll()) {
+                    entry.take->capture(segment.block,
+                                        segment.countingIn ||
+                                            (entry.take->followsArrangement() &&
+                                             transport->punch.recordingRequested && !captureWanted),
+                                        transport->loop);
+                    if (entry.take->readyToClose())
+                        takeCompletionPending_.store(true, std::memory_order_release);
+                }
+            }
+
+        const auto reachesPunchOut = transport->punch.recordingRequested &&
+                                     transport->punch.valid() && transport->punch.punchOutEnabled &&
+                                     segment.insidePunch && !punchCaptureEnded_ &&
+                                     segment.block.beats.end >= transport->punch.endBeat;
+        if (reachesPunchOut) {
+            if (takes)
+                for (const auto& entry : *takes.get())
+                    if (std::binary_search((*render)->takes.begin(), (*render)->takes.end(),
+                                           entry.key))
+                        entry.take->punchOut();
+            runs_.push({.kind = SlotRunEvent::Kind::captureEnded,
+                        .at = segment.block.monotonicSamples.end,
+                        .timelineBeat = segment.block.beats.end,
+                        .monotonicBeat = segment.block.monotonicBeats.end,
+                        .recordingGeneration = transport->punch.recordingGeneration});
+            runs_.reached({.at = segment.block.monotonicSamples.end,
+                           .timelineBeat = segment.block.beats.end,
+                           .monotonicBeat = segment.block.monotonicBeats.end});
+            punchCaptureActive_ = false;
+            punchCaptureEnded_ = true;
+            punchOutGeneration_.store(transport->punch.recordingGeneration,
+                                      std::memory_order_release);
+        }
 
         // Where the transport is, for the thread that reads ahead of it. A
         // relaxed store of a double, before the block rather than after: the
         // pool's window starts here, and a clip inside it has until the next
         // round to be given a reader.
         if (voices_ != nullptr)
-            voices_->setPosition(segment.block.startSeconds);
+            voices_->setPosition(segment.block.seconds.start, segment.block.playing);
+
+        // Beside the handles and for the same reason: what gates a track's
+        // arrangement is resolved once, before either of its sources renders.
+        advanceTrackSections(clips_.sections(), clips_.live(), &handles_, segment.block);
+        if (voices_ != nullptr)
+            voices_->announceHandBacks(clips_.sections(), segment.block);
 
         (*render)->executor.process(table, segment.block, piece);
 
         // After the plan and outside it. The metronome is not in the graph: it
         // is never recorded, never routed, and not the master fader's to
         // attenuate.
-        if ((*render)->click != nullptr)
-            (*render)->click->render(transport->tempo, transport->click, segment.block,
-                                     segment.countingIn, output, segment.startSample);
+        if ((*render)->click != nullptr) {
+            const auto clickChannels =
+                std::min(output.getNumChannels(), (*render)->context.numChannels);
+            if (clickChannels > 0) {
+                juce::AudioBuffer<float> clickOutput(output.getArrayOfWritePointers(),
+                                                     clickChannels, 0, output.getNumSamples());
+                (*render)->click->render(transport->tempo, transport->click, segment.block,
+                                         segment.countingIn, clickOutput, segment.startSample);
+            }
+        }
     }
 }
 

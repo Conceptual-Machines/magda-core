@@ -374,7 +374,8 @@ class ModMatrixContent : public juce::Component {
     bool isDragging() const {
         return draggingRow_ >= 0;
     }
-    bool updateLinkState(magda::ControlTarget target, float amount, bool bipolar, bool enabled);
+    bool updateLinkState(const magda::ControlTarget& target, float amount, bool bipolar,
+                         bool enabled);
 
     // Callbacks
     std::function<void(magda::ControlTarget target)> onDeleteLink;

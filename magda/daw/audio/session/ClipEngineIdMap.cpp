@@ -23,7 +23,7 @@ std::optional<ClipId> ClipEngineIdMap::getClipId(const std::string& engineId) co
     return it->second;
 }
 
-void ClipEngineIdMap::set(ClipId clipId, std::string engineId) {
+void ClipEngineIdMap::set(ClipId clipId, const std::string& engineId) {
     juce::ScopedLock lock(lock_);
 
     if (auto existing = clipIdToEngineId_.find(clipId); existing != clipIdToEngineId_.end())

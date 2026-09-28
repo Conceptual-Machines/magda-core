@@ -21,7 +21,7 @@ class Command {
     /**
      * @brief Construct a command with the given type
      */
-    explicit Command(const std::string& command_type);
+    explicit Command(std::string command_type);
 
     /**
      * @brief Construct a command from JSON
@@ -91,7 +91,7 @@ class CommandResponse {
   public:
     enum class Status { Success, Error, Pending };
 
-    CommandResponse(Status status, const std::string& message = "");
+    CommandResponse(Status status, std::string message = "");
 
     Status getStatus() const {
         return status_;

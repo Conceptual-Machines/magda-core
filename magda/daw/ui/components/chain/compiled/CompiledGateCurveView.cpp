@@ -5,7 +5,7 @@
 
 #include "audio/plugins/compiled/MagdaGateExpanderCompiledPlugin.hpp"
 #include "core/GestureRouter.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -42,8 +42,8 @@ CompiledGateCurveView::CompiledGateCurveView(juce::String /*pluginId*/) {
 }
 
 void CompiledGateCurveView::setCompiledPlugin(
-    magda::daw::audio::compiled::MagdaGateExpanderCompiledPlugin* plugin) {
-    compiledPlugin_ = plugin;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaGateExpanderCompiledPlugin> plugin) {
+    compiledPlugin_ = std::move(plugin);
 }
 
 void CompiledGateCurveView::updateFromDevice(const magda::DeviceInfo& device) {
@@ -58,8 +58,8 @@ void CompiledGateCurveView::timerCallback() {
     auto read = [this](int slot, float fallback) -> float {
         if (compiledPlugin_ == nullptr)
             return fallback;
-        if (auto* p = compiledPlugin_->getSlotParameter(slot))
-            return compiledPlugin_->nativeValueToDisplayValue(slot, p->getCurrentValue());
+        if (auto p = compiledPlugin_->getSlotParameter(slot))
+            return compiledPlugin_->nativeValueToDisplayValue(slot, p.currentValue());
         return fallback;
     };
 
@@ -188,16 +188,16 @@ void CompiledGateCurveView::mouseWheelMove(const juce::MouseEvent& e,
 }
 
 void CompiledGateCurveView::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::TEXT_DARK));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::TEXT_DARK));
 
     plotArea_ = getLocalBounds().toFloat().reduced(kPlotPad);
     if (plotArea_.getWidth() < 16.0f || plotArea_.getHeight() < 16.0f)
         return;
 
-    const auto borderColour = DarkTheme::getColour(DarkTheme::AUTOMATION_DIVIDER_LIGHT);
-    const auto gridColour = DarkTheme::getColour(DarkTheme::AUTOMATION_DIVIDER);
-    const auto curveColour = DarkTheme::getColour(DarkTheme::GATE_CURVE);
-    const auto threshColour = DarkTheme::getColour(DarkTheme::GATE_THRESHOLD);
+    const auto borderColour = ActiveTheme::getColour(ActiveTheme::AUTOMATION_DIVIDER_LIGHT);
+    const auto gridColour = ActiveTheme::getColour(ActiveTheme::AUTOMATION_DIVIDER);
+    const auto curveColour = ActiveTheme::getColour(ActiveTheme::GATE_CURVE);
+    const auto threshColour = ActiveTheme::getColour(ActiveTheme::GATE_THRESHOLD);
 
     g.setColour(borderColour);
     g.drawRect(plotArea_, 1.0f);
@@ -254,7 +254,7 @@ void CompiledGateCurveView::paint(juce::Graphics& g) {
     // Labels
     auto font = FontManager::getInstance().getUIFont(9.0f);
     g.setFont(font);
-    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_SCALE_TEXT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_SCALE_TEXT));
     g.drawFittedText("THR " + juce::String(thresholdDb_, 1) + " dB  R " + juce::String(ratio_, 1),
                      plotArea_.toNearestInt().reduced(5, 4), juce::Justification::topLeft, 1);
 }
@@ -271,9 +271,10 @@ const CompiledPresentationSpec& getMagdaGatePresentation() {
     return kSpec;
 }
 
-void CompiledGateCurveView::bindPlugin(te::Plugin* plugin) {
+void CompiledGateCurveView::bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) {
     setCompiledPlugin(
-        dynamic_cast<magda::daw::audio::compiled::MagdaGateExpanderCompiledPlugin*>(plugin));
+        std::dynamic_pointer_cast<magda::daw::audio::compiled::MagdaGateExpanderCompiledPlugin>(
+            std::move(device)));
 }
 
 }  // namespace magda::daw::ui

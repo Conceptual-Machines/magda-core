@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <utility>
 
 #include "TrackManager.hpp"
 #include "UndoManager.hpp"
@@ -51,7 +52,7 @@ class SetTrackVolumeCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const SetTrackVolumeCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetTrackVolumeCommand*>(other))
             return o->trackId_ == trackId_;
         return false;
     }
@@ -88,7 +89,7 @@ class SetTrackPanCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const SetTrackPanCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetTrackPanCommand*>(other))
             return o->trackId_ == trackId_;
         return false;
     }
@@ -122,7 +123,7 @@ class SetTrackMixerChannelWidthCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const SetTrackMixerChannelWidthCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetTrackMixerChannelWidthCommand*>(other))
             return o->trackId_ == trackId_;
         return false;
     }
@@ -157,7 +158,7 @@ class SetTrackMixerFaderTopInsetCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const SetTrackMixerFaderTopInsetCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetTrackMixerFaderTopInsetCommand*>(other))
             return o->trackId_ == trackId_;
         return false;
     }
@@ -222,6 +223,33 @@ class SetTrackSoloCommand : public UndoableCommand {
   private:
     TrackId trackId_;
     bool oldSoloed_ = false, newSoloed_;
+};
+
+/**
+ * @brief Command for setting track record-arm state
+ */
+class SetTrackRecordArmedCommand : public UndoableCommand {
+  public:
+    SetTrackRecordArmedCommand(TrackId trackId, bool newArmed)
+        : trackId_(trackId), newArmed_(newArmed) {
+        auto* track = TrackManager::getInstance().getTrack(trackId);
+        if (track)
+            oldArmed_ = track->recordArmed;
+    }
+
+    void execute() override {
+        TrackManager::getInstance().setTrackRecordArmed(trackId_, newArmed_);
+    }
+    void undo() override {
+        TrackManager::getInstance().setTrackRecordArmed(trackId_, oldArmed_);
+    }
+    juce::String getDescription() const override {
+        return "Set Track Record Arm";
+    }
+
+  private:
+    TrackId trackId_;
+    bool oldArmed_ = false, newArmed_;
 };
 
 /**
@@ -487,8 +515,8 @@ class RemoveTrackFromGroupCommand : public UndoableCommand {
  */
 class SetTrackNameCommand : public UndoableCommand {
   public:
-    SetTrackNameCommand(TrackId trackId, const juce::String& newName)
-        : trackId_(trackId), newName_(newName) {
+    SetTrackNameCommand(TrackId trackId, juce::String newName)
+        : trackId_(trackId), newName_(std::move(newName)) {
         auto* track = TrackManager::getInstance().getTrack(trackId);
         if (track)
             oldName_ = track->name;
@@ -538,7 +566,7 @@ class SetSendLevelCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const SetSendLevelCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetSendLevelCommand*>(other))
             return o->trackId_ == trackId_ && o->busIndex_ == busIndex_;
         return false;
     }

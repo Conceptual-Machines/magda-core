@@ -19,6 +19,7 @@
 #include "TrackControlsLayout.hpp"
 #include "TrackControlsPolicy.hpp"
 #include "audio/MidiBridge.hpp"
+#include "audio/io/AudioIOControl.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
@@ -36,7 +37,8 @@ class TrackHeadersPanel : public juce::Component,
                           public SelectionManagerListener,
                           public ViewModeListener,
                           public AutomationManagerListener,
-                          public MidiBridge::Listener {
+                          public MidiBridge::Listener,
+                          private HardwareChannels::Listener {
   public:
     static constexpr int TRACK_HEADER_WIDTH = 200;
     static constexpr int DEFAULT_TRACK_HEIGHT = 83;
@@ -50,7 +52,7 @@ class TrackHeadersPanel : public juce::Component,
     void timerCallback() override;
 
     // TrackManagerListener
-    void tracksChanged() override;
+    void tracksChanged() final;
     void trackPropertyChanged(int trackId) override;
     void trackDevicesChanged(magda::TrackId trackId) override;
     void devicePropertyChanged(const magda::ChainNodePath& devicePath) override;
@@ -69,6 +71,9 @@ class TrackHeadersPanel : public juce::Component,
 
     // MidiBridge::Listener
     void midiDeviceListChanged() override;
+
+    /** @brief Rebuild every header's routing menus against what is open now (#2748). */
+    void hardwareChannelsChanged() override;
     void automationValueChanged(AutomationLaneId laneId, double normalizedValue) override;
 
     // DragAndDropTarget implementation (plugin drops)
@@ -317,6 +322,7 @@ class TrackHeadersPanel : public juce::Component,
     std::map<int, TrackId> inputTrackMapping_;
     std::map<int, TrackId> midiInputTrackMapping_;
     std::map<int, juce::String> inputChannelMapping_;
+    std::map<int, juce::String> outputChannelMapping_;
 
     // Flip name-label text colour on the near-white selected fill
     void updateHeaderSelectionColours();
@@ -330,27 +336,30 @@ class TrackHeadersPanel : public juce::Component,
     void rebuildSendLabels(TrackHeader& header, TrackId trackId);
     void paintTrackHeader(juce::Graphics& g, const TrackHeader& header, juce::Rectangle<int> area,
                           bool isSelected);
-    void paintResizeHandle(juce::Graphics& g, juce::Rectangle<int> area);
-    void updateCollapseButtonIcon(TrackHeader& header);
+    static void paintResizeHandle(juce::Graphics& g, juce::Rectangle<int> area);
+    static void updateCollapseButtonIcon(TrackHeader& header);
     int getVisibleHeaderIndex(TrackId trackId) const;
     juce::Rectangle<int> getTrackHeaderArea(int trackIndex) const;
     juce::Rectangle<int> getResizeHandleArea(int trackIndex) const;
+    /** @brief Non-master header under @p point, or -1; master drops make a new track. */
+    int droppableHeaderIndexAt(juce::Point<int> point) const;
+
     bool isResizeHandleArea(const juce::Point<int>& point, int& trackIndex) const;
     void updateTrackHeaderLayout();
-    void layoutMeterColumn(TrackHeader& header, juce::Rectangle<int>& workArea,
-                           const SideColumn& outer);
+    static void layoutMeterColumn(TrackHeader& header, juce::Rectangle<int>& workArea,
+                                  const SideColumn& outer);
     void layoutControlArea(TrackHeader& header, juce::Rectangle<int>& tcpArea,
                            const SideColumn& inner, int trackHeight);
     // Master-only compact block: volume + speaker mute, horizontal meter with
     // the back-to-arrangement button, peak readout.
-    void layoutMasterControlArea(TrackHeader& header, juce::Rectangle<int>& tcpArea,
-                                 const SideColumn& inner);
+    static void layoutMasterControlArea(TrackHeader& header, juce::Rectangle<int>& tcpArea,
+                                        const SideColumn& inner);
     // Hides every control the control-area layout may place, so each layout
     // pass starts from a clean slate and only shows what fits.
-    void hideControlAreaComponents(TrackHeader& header);
+    static void hideControlAreaComponents(TrackHeader& header);
     // Builds the policy-driven mix cluster (gain/pan/buttons/automation) for
     // the shared track_controls layout.
-    track_controls::MixControls mixControlsFor(TrackHeader& header) const;
+    static track_controls::MixControls mixControlsFor(TrackHeader& header);
 
     // Automation lane height helpers
     int getTrackTotalHeight(int trackIndex) const;

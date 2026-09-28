@@ -23,7 +23,7 @@ inline bool containsLocalizedUIFontText(const juce::String& text) {
     return false;
 }
 
-inline juce::Font withLocalizedUIFontScale(juce::Font font) {
+inline juce::Font withLocalizedUIFontScale(const juce::Font& font) {
     return font.withHeight(font.getHeight() *
                            static_cast<float>(Config::getInstance().getLocalizedUIFontScale()));
 }

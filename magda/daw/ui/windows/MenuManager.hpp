@@ -10,11 +10,15 @@ namespace magda {
 
 class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
   public:
+    MenuManager(const MenuManager&) = delete;
+    MenuManager& operator=(const MenuManager&) = delete;
+
     // Menu callbacks
     struct MenuCallbacks {
         // File menu
         std::function<void()> onNewProject;
         std::function<void()> onOpenProject;
+        std::function<void()> onRecoverProject;
         std::function<void()> onCloseProject;
         std::function<void()> onSaveProject;
         std::function<void()> onSaveProjectAs;
@@ -151,11 +155,7 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
 
   private:
     MenuManager();
-    ~MenuManager();
-
-    // Non-copyable
-    MenuManager(const MenuManager&) = delete;
-    MenuManager& operator=(const MenuManager&) = delete;
+    ~MenuManager() override;
 
     // MenuBarModel implementation
     juce::StringArray getMenuBarNames() override;
@@ -182,6 +182,7 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         ExportDawProject,
         CollectFiles = 115,
         ProjectSettings = 116,
+        RecoverProject = 117,
         RecentProjectBase = 150,  // 150-159 reserved for recent projects
         Quit = 199,
 

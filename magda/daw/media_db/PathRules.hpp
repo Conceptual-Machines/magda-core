@@ -19,6 +19,11 @@
 
 namespace magda::media {
 
+// The spelling media_file.path stores and is looked up by: an absolute path with
+// its symlinks resolved, so one file has one row however it was reached (#2687).
+// Relative paths come back unchanged.
+std::filesystem::path libraryPath(const std::filesystem::path& path);
+
 // Family inferred from path keywords ("vocal", "drum", "kick", "/Snares/"...).
 // Walks path components LEAF-FIRST so the immediate parent folder dominates
 // pack-name ancestors (e.g. ".../LAUT 'Drum & Bass Toolkit'/Snares/x.wav"
@@ -53,6 +58,19 @@ struct ParsedKey {
     std::optional<std::string> scale;  // "major", "minor", or nullopt
 };
 std::optional<ParsedKey> parseKeyFromPath(const std::filesystem::path& path);
+
+// What a producer called the file: a one-shot or a loop. The words are better
+// evidence than the audio, which is why this exists -- a 60 second drone named
+// "FX_Oneshot_Factory_Drones" is a one-shot however many transients it has, and
+// a 2.5 second "Vocal_Shot" is not a loop because it lasted more than two
+// seconds.
+//
+// Leaf-first, like pathFamilyHint: the filename decides before its folders do.
+// Within one name "loop" wins over "shot", because "drum_loop_hit_05" is a loop
+// containing a hit rather than a hit.
+//
+// Returns "one-shot", "loop", or nullopt when the name says neither.
+std::optional<std::string> pathShapeHint(const std::filesystem::path& path);
 
 // Producer-encoded BPM parsed from the filename: "kick_120bpm.wav",
 // "120_BPM_loop.wav", "house_128.5BPM.wav". The "bpm" suffix is required —

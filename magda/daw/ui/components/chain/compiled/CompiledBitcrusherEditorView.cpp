@@ -3,7 +3,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaBitcrusherCompiledPlugin.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -34,13 +34,15 @@ CompiledBitcrusherEditorView::CompiledBitcrusherEditorView(juce::String /*plugin
 }
 
 void CompiledBitcrusherEditorView::setCompiledPlugin(
-    magda::daw::audio::compiled::MagdaBitcrusherCompiledPlugin* plugin) {
-    compiledPlugin_ = plugin;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaBitcrusherCompiledPlugin> plugin) {
+    compiledPlugin_ = std::move(plugin);
 }
 
-void CompiledBitcrusherEditorView::bindPlugin(te::Plugin* plugin) {
+void CompiledBitcrusherEditorView::bindDevice(
+    std::shared_ptr<magda::daw::audio::MagdaDevice> device) {
     setCompiledPlugin(
-        dynamic_cast<magda::daw::audio::compiled::MagdaBitcrusherCompiledPlugin*>(plugin));
+        std::dynamic_pointer_cast<magda::daw::audio::compiled::MagdaBitcrusherCompiledPlugin>(
+            std::move(device)));
 }
 
 void CompiledBitcrusherEditorView::updateFromDevice(const magda::DeviceInfo& device) {
@@ -57,8 +59,8 @@ void CompiledBitcrusherEditorView::resampleFromDevice() {
 void CompiledBitcrusherEditorView::timerCallback() {
     if (compiledPlugin_ != nullptr) {
         auto read = [this](int slot, float fallback) {
-            if (auto* p = compiledPlugin_->getSlotParameter(slot))
-                return compiledPlugin_->nativeValueToDisplayValue(slot, p->getCurrentValue());
+            if (auto p = compiledPlugin_->getSlotParameter(slot))
+                return compiledPlugin_->nativeValueToDisplayValue(slot, p.currentValue());
             return fallback;
         };
         bits_ = read(Plugin::kBitsSlot, bits_);
@@ -69,15 +71,15 @@ void CompiledBitcrusherEditorView::timerCallback() {
 
 void CompiledBitcrusherEditorView::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds().toFloat();
-    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
     g.fillRoundedRectangle(bounds, 4.0f);
 
     auto plot = bounds.reduced(kPadX, kPadY);
     if (plot.getWidth() < 32.0f || plot.getHeight() < 16.0f)
         return;
 
-    const auto textColour = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_INFO);
+    const auto textColour = ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY);
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_INFO);
 
     // Centre axis.
     g.setColour(textColour.withAlpha(0.15f));

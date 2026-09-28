@@ -3,15 +3,24 @@
 #include <juce_data_structures/juce_data_structures.h>
 
 #include <algorithm>
+#include <functional>
+#include <map>
+#include <set>
 #include <unordered_set>
 
+#include "../../audio/plugins/DeviceStateHydration.hpp"
+#include "../../core/AddressedParameters.hpp"
 #include "../../core/AutomationManager.hpp"
 #include "../../core/ClipManager.hpp"
 #include "../../core/DeviceParamMigrations.hpp"
+#include "../../core/DrumGridPads.hpp"
 #include "../../core/LegacyDeviceAliases.hpp"
+#include "../../core/OpenProjectAddressing.hpp"
+#include "../../core/PadPathMigration.hpp"
 #include "../../core/SelectionManager.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../core/ViewModeState.hpp"
+#include "../ProjectManager.hpp"
 #include "DawProjectArchive.hpp"
 #include "NativeProjectDocumentAdapter.hpp"
 
@@ -23,6 +32,69 @@ thread_local juce::String ProjectSerializer::lastError_;
 // File I/O with gzip compression
 // ============================================================================
 
+namespace {
+
+/// Written relative by this project, not an absolute path from another platform: a
+/// macOS "/Volumes/..." path is not absolute to Windows, and must not be re-rooted.
+bool isProjectRelative(const juce::String& path) {
+    return path.isNotEmpty() && !path.startsWithChar('/') && !path.startsWithChar('\\') &&
+           !path.startsWithChar('~') && !(path.length() > 1 && path[1] == ':');
+}
+
+/// @p path as saved in @p projectFile: relative when it is inside the project's folder.
+juce::String toProjectPath(const juce::File& projectFile, const juce::String& path) {
+    if (projectFile == juce::File() || !juce::File::isAbsolutePath(path))
+        return path;
+    const juce::File file(path);
+    if (!file.isAChildOf(projectFile.getParentDirectory()))
+        return path;
+    return file.getRelativePathFrom(projectFile.getParentDirectory()).replaceCharacter('\\', '/');
+}
+
+/// @p path as read from @p projectFile: a relative one resolves against its folder.
+juce::String fromProjectPath(const juce::File& projectFile, const juce::String& path) {
+    if (projectFile == juce::File() || !isProjectRelative(path))
+        return path;
+    return projectFile.getParentDirectory().getChildFile(path).getFullPathName();
+}
+
+/// Take paths are the clip serializer's to write; they follow the same rule as sources.
+void mapTakePaths(juce::var& clips, const std::function<juce::String(const juce::String&)>& map) {
+    for (auto& clip : clips.isArray() ? *clips.getArray() : juce::Array<juce::var>{}) {
+        const auto takes = clip["audio"]["takes"];
+        for (auto& take : takes.isArray() ? *takes.getArray() : juce::Array<juce::var>{})
+            if (auto* object = take.getDynamicObject())
+                object->setProperty("filePath", map(object->getProperty("filePath").toString()));
+    }
+}
+
+/// A Sampler's file is the `source` of its device state, at any depth of the chain.
+void mapSamplerSources(const juce::var& tree,
+                       const std::function<juce::String(const juce::String&)>& map) {
+    if (const auto* array = tree.getArray()) {
+        for (const auto& item : *array)
+            mapSamplerSources(item, map);
+        return;
+    }
+    auto* object = tree.getDynamicObject();
+    if (object == nullptr)
+        return;
+    if (object->getProperty("pluginId").toString() == "magdasampler") {
+        if (auto doc = device_state::decode(object->getProperty("pluginState").toString())) {
+            const auto path = doc->root.props["source"].toString();
+            const auto mapped = map(path);
+            if (path.isNotEmpty() && mapped != path) {
+                doc->root.props.set("source", mapped);
+                object->setProperty("pluginState", device_state::encode(*doc));
+            }
+        }
+    }
+    for (const auto& property : object->getProperties())
+        mapSamplerSources(property.value, map);
+}
+
+}  // namespace
+
 bool ProjectSerializer::saveToFile(const juce::File& file, const ProjectInfo& info) {
     try {
         auto parentDir = file.getParentDirectory();
@@ -32,7 +104,7 @@ bool ProjectSerializer::saveToFile(const juce::File& file, const ProjectInfo& in
         }
 
         // Serialize to JSON
-        auto json = serializeProject(info);
+        auto json = serializeProject(info, file);
 
         // Convert to pretty-printed string
         juce::String jsonString = juce::JSON::toString(json, true);
@@ -90,7 +162,7 @@ bool ProjectSerializer::exportToDawProject(const juce::File& file, const Project
     juce::String error;
 
     if (!DawProjectArchive::writeToFile(file, document, error)) {
-        lastError_ = error;
+        lastError_ = std::move(error);
         return false;
     }
 
@@ -99,19 +171,232 @@ bool ProjectSerializer::exportToDawProject(const juce::File& file, const Project
 
 bool ProjectSerializer::loadDawProjectAndStage(const juce::File& file, StagedProjectData& outData,
                                                const juce::File& audioExtractionDir) {
+    return loadDawProjectAndStage(file, outData, audioExtractionDir,
+                                  ProjectManager::captureCreationSettingsFromConfig());
+}
+
+bool ProjectSerializer::loadDawProjectAndStage(const juce::File& file, StagedProjectData& outData,
+                                               const juce::File& audioExtractionDir,
+                                               const ProjectCreationSettings& creationSettings) {
     ProjectDocument document;
     juce::String error;
 
-    if (!DawProjectArchive::readFromFile(file, document, error, audioExtractionDir)) {
-        lastError_ = error;
+    if (!DawProjectArchive::readFromFile(file, document, error, audioExtractionDir,
+                                         &creationSettings.defaults)) {
+        lastError_ = std::move(error);
         return false;
     }
 
     outData = NativeProjectDocumentAdapter::toStagedProjectData(document);
+    // DAWproject has no MAGDA defaults block. An import is a new, unsaved
+    // project, so snapshot this installation's new-project preferences once.
+    outData.info.timelineLengthBars = creationSettings.timelineLengthBars;
+    outData.info.defaults = creationSettings.defaults;
     return true;
 }
 
+namespace {
+
+/// Give every pad device with no id one, from a counter past every DeviceId the
+/// staged project already names.
+///
+/// Self-contained: staging has no TrackManager behind it, and the ids only have
+/// to be unique within the project. `refreshIdCountersFromTracks` reads them at
+/// commit and moves the live counter past them (#2207).
+void allocateStagedPadDeviceIds(std::vector<TrackInfo>& tracks, TrackInfo* masterTrack) {
+    DeviceId next = 0;
+    std::vector<DeviceInfo*> unkeyed;
+
+    std::function<void(std::vector<ChainElement>&)> walk =
+        [&](std::vector<ChainElement>& elements) {
+            for (auto& element : elements) {
+                if (isRack(element)) {
+                    for (auto& chain : getRack(element).chains)
+                        walk(chain.elements);
+                    continue;
+                }
+
+                auto& device = getDevice(element);
+                next = std::max(next, device.id + 1);
+
+                if (!device.pads)
+                    continue;
+
+                stampPadRackId(device);
+                for (auto& pad : device.pads->chains) {
+                    for (auto& padElement : pad.elements) {
+                        if (!isDevice(padElement))
+                            continue;
+                        auto& padDevice = getDevice(padElement);
+                        if (padDevice.id == INVALID_DEVICE_ID)
+                            unkeyed.push_back(&padDevice);
+                        else
+                            next = std::max(next, padDevice.id + 1);
+                    }
+                }
+            }
+        };
+
+    const auto walkTrack = [&](TrackInfo& track) {
+        walk(track.chain.fxChainElements);
+        for (auto& element : track.chain.postFxChainElements)
+            next = std::max(next, element.device.id + 1);
+        for (auto& element : track.chain.mixerAnalysisElements)
+            next = std::max(next, element.device.id + 1);
+    };
+
+    for (auto& track : tracks)
+        walkTrack(track);
+    if (masterTrack != nullptr)
+        walkTrack(*masterTrack);
+
+    for (auto* device : unkeyed)
+        device->id = next++;
+}
+
+/// Read the credits block out of a serialized "project" object.
+///
+/// Shared because loadAndStage() and deserializeProject() parse the same JSON in
+/// two separate passes, and a metadata field that only one of them knew about
+/// would go missing down whichever path the caller happened to take.
+ProjectMetadata readProjectMetadata(juce::DynamicObject& projectObj) {
+    ProjectMetadata metadata;
+
+    // Absent in every project saved before the block existed, and absent again
+    // in any project nobody credited, so no object simply means no credits.
+    if (auto* metadataObj = projectObj.getProperty("metadata").getDynamicObject())
+        for (const auto& field : kProjectMetadataFields)
+            metadata.*field.member = metadataObj->getProperty(field.key).toString();
+
+    return metadata;
+}
+
+ProjectDefaults readProjectDefaults(juce::DynamicObject& projectObj, ProjectDefaults defaults) {
+    // An old project has no defaults object. Seed every value from the current
+    // new-project preferences first, then let whatever the file carries win.
+    auto* defaultsObj = projectObj.getProperty("defaults").getDynamicObject();
+    if (defaultsObj == nullptr)
+        return defaults;
+
+    if (defaultsObj->hasProperty("zoomViewBars"))
+        defaults.zoomViewBars = defaultsObj->getProperty("zoomViewBars");
+    if (defaultsObj->hasProperty("autoCrossfade"))
+        defaults.autoCrossfade = defaultsObj->getProperty("autoCrossfade");
+    if (defaultsObj->hasProperty("overlapPlaysBoth"))
+        defaults.overlapPlaysBoth = defaultsObj->getProperty("overlapPlaysBoth");
+    if (defaultsObj->hasProperty("chordPreview"))
+        defaults.chordPreview = defaultsObj->getProperty("chordPreview");
+    if (defaultsObj->hasProperty("postFxPostFader"))
+        defaults.postFxPostFader = defaultsObj->getProperty("postFxPostFader");
+    if (defaultsObj->hasProperty("clipColourMode"))
+        defaults.clipColourMode = defaultsObj->getProperty("clipColourMode");
+
+    if (defaultsObj->hasProperty("colourPalette")) {
+        const auto paletteVar = defaultsObj->getProperty("colourPalette");
+        const auto* palette = paletteVar.getArray();
+        if (palette == nullptr)
+            return defaults;
+        std::vector<ProjectColourEntry> parsed;
+        parsed.reserve(static_cast<std::size_t>(palette->size()));
+        for (int i = 0; i < palette->size(); ++i) {
+            const auto& item = (*palette)[i];
+            auto encoded = item.toString();
+            auto name = "Colour " + juce::String(i + 1);
+            if (auto* entryObj = item.getDynamicObject()) {
+                encoded = entryObj->getProperty("colour").toString();
+                const auto savedName = entryObj->getProperty("name").toString();
+                if (savedName.isNotEmpty())
+                    name = savedName;
+            }
+            const bool validColour =
+                encoded.length() == 8 && encoded.containsOnly("0123456789abcdefABCDEF");
+            parsed.push_back({validColour ? juce::Colour::fromString(encoded).getARGB()
+                                          : ProjectColourEntry{}.colour,
+                              name});
+        }
+        defaults.colourPalette = std::move(parsed);
+    }
+    return defaults;
+}
+
+void readProjectScenes(juce::DynamicObject& projectObj, ProjectInfo& info) {
+    if (!projectObj.hasProperty("scenes"))
+        return;  // Legacy project: keep the eight historical UI rows.
+
+    info.scenes.clear();
+    info.nextSceneId = 1;
+    std::set<SceneId> ids;
+    if (const auto* scenes = projectObj.getProperty("scenes").getArray()) {
+        for (const auto& value : *scenes) {
+            const auto* object = value.getDynamicObject();
+            if (object == nullptr)
+                continue;
+
+            const auto id = static_cast<SceneId>(static_cast<int>(object->getProperty("id")));
+            if (id < 0 || !ids.insert(id).second)
+                continue;
+
+            ProjectScene scene;
+            scene.id = id;
+            scene.name = object->getProperty("name").toString();
+            const auto colour = object->getProperty("colour").toString();
+            if (colour.isNotEmpty())
+                scene.colourArgb = juce::Colour::fromString(colour).getARGB();
+            info.scenes.push_back(std::move(scene));
+            info.nextSceneId = std::max(info.nextSceneId, id + 1);
+        }
+    }
+
+    if (projectObj.hasProperty("nextSceneId"))
+        info.nextSceneId =
+            std::max(info.nextSceneId,
+                     static_cast<SceneId>(static_cast<int>(projectObj.getProperty("nextSceneId"))));
+    ensureProjectSceneCount(info, 1);
+}
+
+/**
+ * Give old/unassigned Session clips one deterministic slot and make sure every
+ * referenced scene has durable metadata. A second clip saved into an occupied
+ * slot is migrated to the first free row on that track rather than remaining
+ * an ambiguous grid collision.
+ */
+void reconcileProjectScenes(ProjectInfo& info, std::vector<ClipInfo>& clips) {
+    ensureProjectSceneCount(info, 1);
+
+    std::vector<ClipInfo*> sessionClips;
+    for (auto& clip : clips) {
+        if (clip.view == ClipView::Session)
+            sessionClips.push_back(&clip);
+        else
+            clip.sceneIndex = -1;
+    }
+    std::ranges::sort(sessionClips, {}, [](const ClipInfo* clip) {
+        return std::tuple{clip->trackId, clip->id};
+    });
+
+    std::map<TrackId, std::set<int>> occupied;
+    for (auto* clip : sessionClips) {
+        auto& trackSlots = occupied[clip->trackId];
+        auto sceneIndex = clip->sceneIndex;
+        if (sceneIndex < 0 || trackSlots.contains(sceneIndex)) {
+            sceneIndex = 0;
+            while (trackSlots.contains(sceneIndex))
+                ++sceneIndex;
+            clip->sceneIndex = sceneIndex;
+        }
+        trackSlots.insert(sceneIndex);
+        ensureProjectSceneCount(info, sceneIndex + 1);
+    }
+}
+
+}  // namespace
+
 bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& outData) {
+    return loadAndStage(file, outData, ProjectManager::captureCreationSettingsFromConfig());
+}
+
+bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& outData,
+                                     const ProjectCreationSettings& creationSettings) {
     try {
         // Check file exists
         if (!file.existsAsFile()) {
@@ -155,11 +440,16 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
             return false;
         }
 
+        outData.info.createdAt = juce::Time::fromISO8601(obj->getProperty("createdAt").toString());
+
         // Parse timestamp
         juce::String timeStr = obj->getProperty("lastModified").toString();
         if (timeStr.isNotEmpty()) {
             outData.info.lastModified = juce::Time::fromISO8601(timeStr);
         }
+
+        // Internal recovery metadata. Ordinary project files omit it.
+        outData.info.autosaveMediaDirectory = obj->getProperty("autosaveMediaDirectory").toString();
 
         // Parse project settings
         auto projectVar = obj->getProperty("project");
@@ -186,8 +476,12 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
 
         if (projectObj->hasProperty("sampleRate"))
             outData.info.sampleRate = projectObj->getProperty("sampleRate");
+        outData.info.timelineLengthBars = creationSettings.timelineLengthBars;
         if (projectObj->hasProperty("timelineLengthBars"))
             outData.info.timelineLengthBars = projectObj->getProperty("timelineLengthBars");
+        outData.info.defaults = readProjectDefaults(*projectObj, creationSettings.defaults);
+        if (projectObj->hasProperty("savedWithEngine"))
+            outData.info.savedWithEngine = projectObj->getProperty("savedWithEngine").toString();
         if (projectObj->hasProperty("renderBitDepth"))
             outData.info.renderBitDepth = projectObj->getProperty("renderBitDepth");
         if (projectObj->hasProperty("bounceBitDepth"))
@@ -196,6 +490,9 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
             outData.info.keyRoot = projectObj->getProperty("keyRoot");
         if (projectObj->hasProperty("keyQuality"))
             outData.info.keyQuality = projectObj->getProperty("keyQuality");
+
+        outData.info.metadata = readProjectMetadata(*projectObj);
+        readProjectScenes(*projectObj, outData.info);
 
         // Named timeline markers
         outData.info.markers.clear();
@@ -251,6 +548,11 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
         }
 
         // Stage tracks, clips, and automation
+        const auto fromProject = [&file](const juce::String& path) {
+            return fromProjectPath(file, path);
+        };
+        mapSamplerSources(obj->getProperty("tracks"), fromProject);
+        mapSamplerSources(obj->getProperty("masterTrack"), fromProject);
         if (!deserializeTracksToStaging(obj->getProperty("tracks"), outData.tracks)) {
             return false;
         }
@@ -258,12 +560,16 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
         // Parsed only. Installing them is a commit-phase job: this runs on a
         // background thread, the staging steps below can still fail, and the
         // still-open project's clips are reading the live pool meanwhile.
-        deserializeSourcesToStaging(obj->getProperty("sources"), outData.sources);
+        deserializeSourcesToStaging(obj->getProperty("sources"), outData.sources, file);
 
-        if (!deserializeClipsToStaging(obj->getProperty("clips"), outData.clips, outData.info.tempo,
+        auto clips = obj->getProperty("clips");
+        mapTakePaths(clips,
+                     [&file](const juce::String& path) { return fromProjectPath(file, path); });
+        if (!deserializeClipsToStaging(clips, outData.clips, outData.info.tempo,
                                        &outData.legacySources)) {
             return false;
         }
+        reconcileProjectScenes(outData.info, outData.clips);
 
         if (!deserializeAutomationToStaging(obj->getProperty("automation"), outData.automationLanes,
                                             outData.automationClips)) {
@@ -289,6 +595,13 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
                                                        outData.automationLanes,
                                                        outData.automationClips);
 
+        // Then the Chord Engine's declared role (#2427). It was created as a
+        // DeviceType::MIDI device, which is the role of one that produces MIDI,
+        // and it produces none. Before the parameter migrations for no reason
+        // of its own; it touches nothing they read.
+        legacy_devices::normalizeChordEngineRoleInProject(outData.tracks,
+                                                          outData.masterTrack.get());
+
         // Then any device that renumbered its parameters, so a saved link still
         // addresses the parameter it was made against (#2079). After the
         // aliases: a device rewritten onto its successor is already the
@@ -296,6 +609,26 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
         device_param_migrations::applyParamIndexMigrations(
             outData.tracks, outData.masterTrack.get(), outData.automationLanes,
             outData.automationClips);
+
+        // Then an id for every pad device saved before pads had them. On the
+        // staged model, not at commit: a pad with no id cannot be keyed, so the
+        // plan refuses it, and everything that reads a staged project without
+        // committing one -- the null-diff survey, the corpus tests -- would see
+        // a Drum Grid with no pads at all (#2207).
+        allocateStagedPadDeviceIds(outData.tracks, outData.masterTrack.get());
+
+        // Then the pad addresses saved before pad ownership was a step type.
+        // After the id allocation above, because a pad chain is matched by the
+        // id of the device that owns it (#2219).
+        pad_paths::migrateLegacyPadPaths(outData.tracks, outData.masterTrack.get(),
+                                         outData.automationLanes);
+
+        // Then the retired duplicate parameter record (#2317): hydrate what
+        // the model's parameter array is missing out of the old document's
+        // `params`, once, before either engine projection is built. After the
+        // aliases and index migrations so ids and indices are current.
+        daw::audio::device_state_hydration::hydrateStagedProject(
+            outData.tracks, outData.masterTrack.get(), outData.info.version);
 
         // Parameter aliases (UserProject layer -- opaque pass-through to AliasRegistry)
         if (obj->hasProperty("paramAliases"))
@@ -354,13 +687,17 @@ void ProjectSerializer::commitStaged(StagedProjectData& data) {
 // Project-level serialization
 // ============================================================================
 
-juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
+juce::var ProjectSerializer::serializeProject(const ProjectInfo& info,
+                                              const juce::File& projectFile) {
     auto* obj = new juce::DynamicObject();
 
     // Version and metadata
     obj->setProperty("magdaVersion", info.version);
     obj->setProperty("schemaVersion", kProjectSchemaVersion);
     obj->setProperty("lastModified", info.lastModified.toISO8601(true));
+    obj->setProperty("createdAt", info.createdAt.toISO8601(true));
+    if (info.autosaveMediaDirectory.isNotEmpty())
+        obj->setProperty("autosaveMediaDirectory", info.autosaveMediaDirectory);
 
     // Project settings
     auto* projectObj = new juce::DynamicObject();
@@ -375,10 +712,41 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
     projectObj->setProperty("projectLength", info.projectLength);
     projectObj->setProperty("sampleRate", info.sampleRate);
     projectObj->setProperty("timelineLengthBars", info.timelineLengthBars);
+
+    auto* defaultsObj = new juce::DynamicObject();
+    defaultsObj->setProperty("zoomViewBars", info.defaults.zoomViewBars);
+    defaultsObj->setProperty("autoCrossfade", info.defaults.autoCrossfade);
+    defaultsObj->setProperty("overlapPlaysBoth", info.defaults.overlapPlaysBoth);
+    defaultsObj->setProperty("chordPreview", info.defaults.chordPreview);
+    defaultsObj->setProperty("postFxPostFader", info.defaults.postFxPostFader);
+    defaultsObj->setProperty("clipColourMode", info.defaults.clipColourMode);
+    juce::Array<juce::var> colourPalette;
+    for (const auto& entry : info.defaults.colourPalette) {
+        auto* entryObj = new juce::DynamicObject();
+        entryObj->setProperty("colour", juce::Colour(entry.colour).toDisplayString(true));
+        entryObj->setProperty("name", entry.name);
+        colourPalette.add(juce::var(entryObj));
+    }
+    defaultsObj->setProperty("colourPalette", juce::var(colourPalette));
+    projectObj->setProperty("defaults", juce::var(defaultsObj));
+
+    projectObj->setProperty("savedWithEngine", info.savedWithEngine);
     projectObj->setProperty("renderBitDepth", info.renderBitDepth);
     projectObj->setProperty("bounceBitDepth", info.bounceBitDepth);
     projectObj->setProperty("keyRoot", info.keyRoot);
     projectObj->setProperty("keyQuality", info.keyQuality);
+
+    // Title and credits. Only the fields that were filled in are written, so a
+    // project nobody has credited carries no "metadata" object at all.
+    if (!info.metadata.isEmpty()) {
+        auto* metadataObj = new juce::DynamicObject();
+        for (const auto& field : kProjectMetadataFields) {
+            const auto& value = info.metadata.*field.member;
+            if (value.isNotEmpty())
+                metadataObj->setProperty(field.key, value);
+        }
+        projectObj->setProperty("metadata", juce::var(metadataObj));
+    }
 
     // Named timeline markers
     if (!info.markers.empty()) {
@@ -393,6 +761,17 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
         }
         projectObj->setProperty("markers", juce::var(markersArray));
     }
+
+    juce::Array<juce::var> scenesArray;
+    for (const auto& scene : info.scenes) {
+        auto* sceneObj = new juce::DynamicObject();
+        sceneObj->setProperty("id", scene.id);
+        sceneObj->setProperty("name", scene.name);
+        sceneObj->setProperty("colour", colourToString(juce::Colour(scene.colourArgb)));
+        scenesArray.add(juce::var(sceneObj));
+    }
+    projectObj->setProperty("scenes", juce::var(scenesArray));
+    projectObj->setProperty("nextSceneId", info.nextSceneId);
 
     // Loop settings
     auto* loopObj = new juce::DynamicObject();
@@ -425,9 +804,22 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
 
     // Serialize tracks, clips, and automation. Sources go before clips: a clip's
     // events reference them by id (#1901).
-    obj->setProperty("tracks", serializeTracks());
-    obj->setProperty("sources", serializeSources());
-    obj->setProperty("clips", serializeClips());
+    // Only what something addresses of a hosted plugin's values: its chunk
+    // carries the rest (#2636).
+    const auto addressed = addressedInOpenProject();
+
+    const auto tracks = serializeTracks(addressed);
+    mapSamplerSources(tracks, [&projectFile](const juce::String& path) {
+        return toProjectPath(projectFile, path);
+    });
+    obj->setProperty("tracks", tracks);
+    obj->setProperty("sources", serializeSources(projectFile));
+    const auto toProject = [&projectFile](const juce::String& path) {
+        return toProjectPath(projectFile, path);
+    };
+    auto clips = serializeClips();
+    mapTakePaths(clips, toProject);
+    obj->setProperty("clips", clips);
     obj->setProperty("automation", serializeAutomation());
 
     // Serialize master track separately (its chain elements hold master bus plugins)
@@ -435,7 +827,13 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
     if (masterTrack && (!masterTrack->chain.fxChainElements.empty() ||
                         !masterTrack->chain.postFxChainElements.empty() ||
                         !masterTrack->chain.mixerAnalysisElements.empty())) {
-        obj->setProperty("masterTrack", serializeTrackInfo(*masterTrack));
+        auto saved = *masterTrack;
+        dropUnaddressedHostedParameters(saved, addressed);
+        auto master = serializeTrackInfo(saved);
+        mapSamplerSources(master, [&projectFile](const juce::String& path) {
+            return toProjectPath(projectFile, path);
+        });
+        obj->setProperty("masterTrack", master);
     }
 
     // Parameter aliases (UserProject layer -- opaque pass-through)
@@ -446,7 +844,7 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
     if (!info.projectBindings.isVoid())
         obj->setProperty("projectBindings", info.projectBindings);
 
-    return juce::var(obj);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& outInfo) {
@@ -468,11 +866,14 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
         return false;
     }
 
+    outInfo.createdAt = juce::Time::fromISO8601(obj->getProperty("createdAt").toString());
+
     // Parse timestamp
     juce::String timeStr = obj->getProperty("lastModified").toString();
     if (timeStr.isNotEmpty()) {
         outInfo.lastModified = juce::Time::fromISO8601(timeStr);
     }
+    outInfo.autosaveMediaDirectory = obj->getProperty("autosaveMediaDirectory").toString();
 
     // Parse project settings
     auto projectVar = obj->getProperty("project");
@@ -499,8 +900,13 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
 
     if (projectObj->hasProperty("sampleRate"))
         outInfo.sampleRate = projectObj->getProperty("sampleRate");
+    auto creationSettings = ProjectManager::captureCreationSettingsFromConfig();
+    outInfo.timelineLengthBars = creationSettings.timelineLengthBars;
     if (projectObj->hasProperty("timelineLengthBars"))
         outInfo.timelineLengthBars = projectObj->getProperty("timelineLengthBars");
+    outInfo.defaults = readProjectDefaults(*projectObj, std::move(creationSettings.defaults));
+    if (projectObj->hasProperty("savedWithEngine"))
+        outInfo.savedWithEngine = projectObj->getProperty("savedWithEngine").toString();
     if (projectObj->hasProperty("renderBitDepth"))
         outInfo.renderBitDepth = projectObj->getProperty("renderBitDepth");
     if (projectObj->hasProperty("bounceBitDepth"))
@@ -509,6 +915,9 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
         outInfo.keyRoot = projectObj->getProperty("keyRoot");
     if (projectObj->hasProperty("keyQuality"))
         outInfo.keyQuality = projectObj->getProperty("keyQuality");
+
+    outInfo.metadata = readProjectMetadata(*projectObj);
+    readProjectScenes(*projectObj, outInfo);
 
     // Named timeline markers
     outInfo.markers.clear();
@@ -584,6 +993,7 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
                                    &stagedLegacySources)) {
         return false;  // Failed - no state modified
     }
+    reconcileProjectScenes(outInfo, stagedClips);
 
     if (!deserializeAutomationToStaging(obj->getProperty("automation"), stagedAutomation,
                                         stagedAutomationClips)) {
@@ -608,6 +1018,14 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
     device_param_migrations::applyParamIndexMigrations(
         stagedTracks, hasMasterTrack ? &stagedMasterTrack : nullptr, stagedAutomation,
         stagedAutomationClips);
+
+    // Then the pad addresses saved before pad ownership was a step type (#2219).
+    pad_paths::migrateLegacyPadPaths(stagedTracks, hasMasterTrack ? &stagedMasterTrack : nullptr,
+                                     stagedAutomation);
+
+    // Then the retired duplicate parameter record (#2317), same as loadAndStage.
+    daw::audio::device_state_hydration::hydrateStagedProject(
+        stagedTracks, hasMasterTrack ? &stagedMasterTrack : nullptr, outInfo.version);
 
     // Stage 2: All components validated successfully - now commit to managers atomically
     installStagedSources(stagedSources, stagedLegacySources, stagedClips);
@@ -668,19 +1086,9 @@ void ProjectSerializer::commitStagedData(std::vector<TrackInfo>& stagedTracks,
         clipManager.clearAllClips();
         automationManager.clearAll();
 
-        // Tear down the previous project's tracks OUTSIDE the restore batch, so
-        // clearAllTracks()'s notifyTracksChanged() fires immediately and runs
-        // AudioBridge::syncAll() against an empty track set. That removes the old
-        // TE AudioTracks and their synced plugins. If the clear is coalesced into
-        // the restore batch below, syncAll only ever sees the FINAL state, so the
-        // additive, path-keyed plugin sync finds Track[N] > Device[M] still
-        // present -- track/device IDs reset to 1 every project, so the paths
-        // collide across projects -- and skips recreating the plugin (it only
-        // creates devices whose path is absent). The device then becomes a dead
-        // husk: no editor, no processing. This is the "open A, open B, open A
-        // again -> VST has no UI and does nothing" bug. clearAllTracks fires a
-        // single teardown notification, so it does not reintroduce the O(N^2)
-        // fan-out the restore batch guards against.
+        // Drop the previous project's tracks. What listened for the runtime gap
+        // here now hears ProjectManagerListener::projectTeardown() instead
+        // (#2576), so this is a plain clear rather than a signal.
         trackManager.clearAllTracks();
 
         // Restore tracks in their own batch that closes BEFORE clips are
@@ -734,18 +1142,20 @@ void ProjectSerializer::commitStagedData(std::vector<TrackInfo>& stagedTracks,
 // Component-level serialization
 // ============================================================================
 
-juce::var ProjectSerializer::serializeTracks() {
+juce::var ProjectSerializer::serializeTracks(const AddressedParameters& addressed) {
     juce::Array<juce::var> tracksArray;
 
     auto& trackManager = TrackManager::getInstance();
     for (const auto& track : trackManager.getTracks()) {
-        tracksArray.add(serializeTrackInfo(track));
+        auto saved = track;
+        dropUnaddressedHostedParameters(saved, addressed);
+        tracksArray.add(serializeTrackInfo(saved));
     }
 
-    return juce::var(tracksArray);
+    return {tracksArray};
 }
 
-juce::var ProjectSerializer::serializeSources() {
+juce::var ProjectSerializer::serializeSources(const juce::File& projectFile) {
     // Only sources some clip still references are written. This filters the
     // emitted snapshot and deliberately does NOT prune the live pool: the pool
     // is additive within a session precisely so an undone delete, or a paste
@@ -766,7 +1176,7 @@ juce::var ProjectSerializer::serializeSources() {
 
         auto* sourceObj = new juce::DynamicObject();
         sourceObj->setProperty("id", source.id);
-        sourceObj->setProperty("filePath", source.filePath);
+        sourceObj->setProperty("filePath", toProjectPath(projectFile, source.filePath));
         sourceObj->setProperty("durationSeconds", source.durationSeconds);
         sourceObj->setProperty("sampleRate", source.sampleRate);
         if (source.detectedBpm > 0.0)
@@ -777,11 +1187,11 @@ juce::var ProjectSerializer::serializeSources() {
             sourceObj->setProperty("detectedKeyScale", juce::String(source.detectedKeyScale));
         sourcesArray.add(juce::var(sourceObj));
     }
-    return juce::var(sourcesArray);
+    return {sourcesArray};
 }
 
-void ProjectSerializer::deserializeSourcesToStaging(const juce::var& json,
-                                                    std::vector<Source>& out) {
+void ProjectSerializer::deserializeSourcesToStaging(const juce::var& json, std::vector<Source>& out,
+                                                    const juce::File& projectFile) {
     if (!json.isArray())
         return;
 
@@ -791,7 +1201,8 @@ void ProjectSerializer::deserializeSourcesToStaging(const juce::var& json,
             continue;
         Source source;
         source.id = sourceObj->getProperty("id");
-        source.filePath = sourceObj->getProperty("filePath").toString();
+        source.filePath =
+            fromProjectPath(projectFile, sourceObj->getProperty("filePath").toString());
         source.durationSeconds = sourceObj->getProperty("durationSeconds");
         source.sampleRate = sourceObj->getProperty("sampleRate");
         source.detectedBpm = sourceObj->getProperty("detectedBpm");
@@ -904,14 +1315,13 @@ juce::var ProjectSerializer::serializeClips() {
     // order every time - the file changes with nothing in the project changing,
     // and no diff of two saves means anything.
     auto clips = clipManager.getClips();
-    std::sort(clips.begin(), clips.end(),
-              [](const ClipInfo& a, const ClipInfo& b) { return a.id < b.id; });
+    std::ranges::sort(clips, {}, &ClipInfo::id);
 
     for (const auto& clip : clips) {
         clipsArray.add(serializeClipInfo(clip));
     }
 
-    return juce::var(clipsArray);
+    return {clipsArray};
 }
 
 juce::var ProjectSerializer::serializeAutomation() {
@@ -931,7 +1341,7 @@ juce::var ProjectSerializer::serializeAutomation() {
     obj->setProperty("lanes", juce::var(lanesArray));
     obj->setProperty("clips", juce::var(clipsArray));
 
-    return juce::var(obj);
+    return {obj};
 }
 
 // ============================================================================

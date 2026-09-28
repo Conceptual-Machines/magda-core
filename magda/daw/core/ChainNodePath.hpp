@@ -11,22 +11,44 @@ namespace magda {
 /**
  * @brief Type of element in a chain path step
  *
- * Segment is appended last so the persisted integer values of Rack/Chain/
- * Device (serialized in automation targets) stay stable.
+ * New values are appended so the persisted integer values of the existing ones
+ * (serialized in automation targets) stay stable. Never renumber.
+ *
+ * `PadRack` and `PadChain` address the pad rack a Drum Grid owns. They exist so
+ * an owner id in a path says what it is: a `PadRack` step carries the owning
+ * grid's DeviceId, where a `Rack` step carries a RackId. Rack ids and device ids
+ * come out of counters that both start at 1, so without the distinction `Rack(1)`
+ * is as much rack 1 as it is Drum Grid 1's pads, and generic resolvers and
+ * remappers had to guess from the path's shape (#2219).
  */
-enum class ChainStepType { Rack, Chain, Device, Segment };
+enum class ChainStepType { Rack, Chain, Device, Segment, PadRack, PadChain };
 
 /**
  * @brief A single step in a chain node path
  */
 struct ChainPathStep {
     ChainStepType type;
-    int id;  // RackId, ChainId, or DeviceId depending on type
+    // RackId, ChainId or DeviceId depending on type. A PadRack step carries the
+    // owning device's DeviceId; a PadChain step carries a rack-local ChainId.
+    int id;
 
     bool operator==(const ChainPathStep& other) const {
         return type == other.type && id == other.id;
     }
 };
+
+/// True for the two step types that name the rack a chain belongs to: an
+/// allocated `Rack`, or the `PadRack` a Drum Grid owns. Use this wherever the
+/// question is "which rack encloses this?"; use an explicit `== Rack` only
+/// where the answer has to be a real RackId.
+inline bool isRackStep(ChainStepType type) {
+    return type == ChainStepType::Rack || type == ChainStepType::PadRack;
+}
+
+/// True for the two step types that name a chain. Both carry a ChainId.
+inline bool isChainStep(ChainStepType type) {
+    return type == ChainStepType::Chain || type == ChainStepType::PadChain;
+}
 
 /**
  * @brief Type of the selected chain node (derived from path)
@@ -72,8 +94,10 @@ struct ChainNodePath {
 
         switch (steps.back().type) {
             case ChainStepType::Rack:
+            case ChainStepType::PadRack:
                 return ChainNodeType::Rack;
             case ChainStepType::Chain:
+            case ChainStepType::PadChain:
                 return ChainNodeType::Chain;
             case ChainStepType::Device:
                 return ChainNodeType::Device;
@@ -92,6 +116,29 @@ struct ChainNodePath {
     bool isPostFx() const {
         return !steps.empty() && steps.front().type == ChainStepType::Segment &&
                steps.front().id == static_cast<int>(ChainSegment::PostFx);
+    }
+
+    // True when this path descends into the pad rack a Drum Grid owns.
+    //
+    // A pad path is rooted at the track whatever the grid is nested in, because
+    // `PadRack` names the grid by its DeviceId rather than by a route to it, so
+    // the pad steps are always the first two.
+    bool isPadOwned() const {
+        return !steps.empty() && steps.front().type == ChainStepType::PadRack;
+    }
+
+    // The DeviceId of the Drum Grid owning this path's pads, or INVALID_DEVICE_ID
+    // when the path is not pad-owned.
+    DeviceId getPadOwnerDeviceId() const {
+        return isPadOwned() ? steps.front().id : INVALID_DEVICE_ID;
+    }
+
+    // The pad chain this path descends through, or INVALID_CHAIN_ID when the
+    // path is not pad-owned.
+    ChainId getPadChainId() const {
+        if (steps.size() > 1 && isPadOwned() && steps[1].type == ChainStepType::PadChain)
+            return steps[1].id;
+        return INVALID_CHAIN_ID;
     }
 
     bool isMixerAnalysis() const {
@@ -142,8 +189,11 @@ struct ChainNodePath {
         return INVALID_RACK_ID;
     }
 
+    // Both Chain and PadChain steps carry a ChainId: a pad chain is an ordinary
+    // chain of the rack its grid owns. Only the *owner* spelling differs, which
+    // is what getRackIdAt() stays strict about.
     ChainId getChainIdAt(size_t index) const {
-        if (index < steps.size() && steps[index].type == ChainStepType::Chain)
+        if (index < steps.size() && isChainStep(steps[index].type))
             return steps[index].id;
         return INVALID_CHAIN_ID;
     }
@@ -205,6 +255,35 @@ struct ChainNodePath {
         return p;
     }
 
+    // A pad chain of the Drum Grid @p owner. Flat by construction and rooted at
+    // the track, whatever the grid itself is nested in:
+    //   Track > PadRack(ownerDeviceId) > PadChain(padChainId)
+    static ChainNodePath padChain(TrackId track, DeviceId owner, ChainId padChainId) {
+        ChainNodePath p;
+        p.trackId = track;
+        p.steps.push_back({ChainStepType::PadRack, owner});
+        p.steps.push_back({ChainStepType::PadChain, padChainId});
+        return p;
+    }
+
+    // The track's post-fader FX list itself, as a container: Track >
+    // Segment(PostFx). What an insert into that list is addressed by, the way a
+    // chain path addresses an insert into a chain (#2232).
+    static ChainNodePath postFxSection(TrackId track) {
+        ChainNodePath p;
+        p.trackId = track;
+        p.steps.push_back({ChainStepType::Segment, static_cast<int>(ChainSegment::PostFx)});
+        return p;
+    }
+
+    // The rail-managed mixer-analysis section itself, as a container.
+    static ChainNodePath mixerAnalysisSection(TrackId track) {
+        ChainNodePath p;
+        p.trackId = track;
+        p.steps.push_back({ChainStepType::Segment, static_cast<int>(ChainSegment::MixerAnalysis)});
+        return p;
+    }
+
     // A device in the track's post-fader FX list. Flat by construction:
     //   Track > Segment(PostFx) > Device
     static ChainNodePath postFxDevice(TrackId track, DeviceId device) {
@@ -225,23 +304,58 @@ struct ChainNodePath {
         return p;
     }
 
-    // Create a path by extending an existing path
-    ChainNodePath withRack(RackId r) const {
+    // Create a path by extending an existing path.
+    //
+    // Extending clears `isTrackLevel`: a path that descends into a step names
+    // something inside the track rather than the track itself, and a path
+    // claiming both is answered as track-level by `getType()` whatever its
+    // steps say. `trackLevel(t).withRack(r)` used to build exactly that, so a
+    // rack pasted into a track's own list was recorded under a path that read
+    // back as the track, and undo left it standing (#2229).
+    ChainNodePath extendedWith(ChainPathStep step) const {
         ChainNodePath p = *this;
-        p.steps.push_back({ChainStepType::Rack, r});
+        // Both of the step-free representations are dropped, not just the
+        // track-level flag. A path carrying a step and one of these says where
+        // it points twice, `getType()` picks between them by precedence, and
+        // the accessors then disagree with each other -- which is exactly the
+        // shape `parseChainNodePath()` refuses to load as corrupt. #2230
+        // cleared `isTrackLevel` here and left `topLevelDeviceId`, so the
+        // invariant held for one of the two (#2204).
+        p.isTrackLevel = false;
+        p.topLevelDeviceId = INVALID_DEVICE_ID;
+        p.steps.push_back(step);
         return p;
+    }
+
+    ChainNodePath withRack(RackId r) const {
+        return extendedWith({ChainStepType::Rack, r});
     }
 
     ChainNodePath withChain(ChainId c) const {
-        ChainNodePath p = *this;
-        p.steps.push_back({ChainStepType::Chain, c});
-        return p;
+        return extendedWith({ChainStepType::Chain, c});
+    }
+
+    ChainNodePath withPadChain(ChainId c) const {
+        return extendedWith({ChainStepType::PadChain, c});
     }
 
     ChainNodePath withDevice(DeviceId d) const {
-        ChainNodePath p = *this;
-        p.steps.push_back({ChainStepType::Device, d});
-        return p;
+        return extendedWith({ChainStepType::Device, d});
+    }
+
+    /**
+     * @brief The canonical spelling of this address.
+     *
+     * A top-level FX device can be written two ways — `topLevelDeviceId` on
+     * the root, or a single Device step — and the model layer accepts both.
+     * Map keys must not: this collapses the step spelling onto the
+     * `topLevelDevice` form and leaves every other path untouched.
+     */
+    ChainNodePath normalized() const {
+        if (topLevelDeviceId == INVALID_DEVICE_ID && !isTrackLevel && steps.size() == 1 &&
+            steps.front().type == ChainStepType::Device)
+            return topLevelDevice(trackId, steps.front().id);
+        return *this;
     }
 
     // Get the parent path (without the last step)
@@ -287,6 +401,12 @@ struct ChainNodePath {
                     break;
                 case ChainStepType::Device:
                     result += " > Device[" + juce::String(step.id) + "]";
+                    break;
+                case ChainStepType::PadRack:
+                    result += " > PadRack[" + juce::String(step.id) + "]";
+                    break;
+                case ChainStepType::PadChain:
+                    result += " > PadChain[" + juce::String(step.id) + "]";
                     break;
                 case ChainStepType::Segment: {
                     auto seg = static_cast<ChainSegment>(step.id);

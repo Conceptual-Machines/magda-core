@@ -90,6 +90,35 @@ std::span<const magda::AutomationPoint> ParamTable::curveFor(ParamId param) cons
     return std::span<const magda::AutomationPoint>{curvePoints}.subspan(first, last - first);
 }
 
+std::span<const int> ParamTable::slotsIn(const DeviceWindow& window) const {
+    if (window.count <= 0 || window.first < 0 ||
+        window.first + window.count > static_cast<ParamId>(slots.size()))
+        return {};
+
+    return std::span<const int>{slots}.subspan(static_cast<std::size_t>(window.first),
+                                               static_cast<std::size_t>(window.count));
+}
+
+std::span<const std::uint8_t> ParamTable::drivenIn(const DeviceWindow& window) const {
+    if (window.count <= 0 || window.first < 0 ||
+        window.first + window.count > static_cast<ParamId>(driven.size()))
+        return {};
+
+    return std::span<const std::uint8_t>{driven}.subspan(static_cast<std::size_t>(window.first),
+                                                         static_cast<std::size_t>(window.count));
+}
+
+ParamId ParamTable::deviceParam(const DeviceKey& device, int slot) const {
+    const auto window = windowFor(device);
+    const auto carried = slotsIn(window);
+
+    const auto found = std::ranges::lower_bound(carried, slot);
+    if (found == carried.end() || *found != slot)
+        return INVALID_PARAM_ID;
+
+    return window.first + static_cast<ParamId>(std::distance(carried.begin(), found));
+}
+
 std::span<const magda::CurvePointData> ParamTable::modCurveFor(int modifier) const {
     if (modifier < 0 || modifier + 1 >= static_cast<int>(modCurveOffsets.size()))
         return {};

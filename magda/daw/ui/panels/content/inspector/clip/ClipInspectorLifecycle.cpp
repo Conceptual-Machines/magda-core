@@ -1,4 +1,4 @@
-#include "../../../../themes/DarkTheme.hpp"
+#include "../../../../themes/ActiveTheme.hpp"
 #include "../ClipInspector.hpp"
 
 namespace magda::daw::ui {
@@ -12,14 +12,14 @@ void ClipInspector::onDeactivated() {
 }
 
 void ClipInspector::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getBackgroundColour());
+    g.fillAll(ActiveTheme::getBackgroundColour());
 
     // Segmented chip behind the view|type indicator icons in the name row.
     if (clipTypeIcon_ && clipTypeIcon_->isVisible() && !viewTypeChipBounds_.isEmpty()) {
         auto chip = viewTypeChipBounds_.toFloat();
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
         g.fillRoundedRectangle(chip, 4.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRoundedRectangle(chip.reduced(0.5f), 4.0f, 1.0f);
         if (clipViewIcon_ && clipViewIcon_->isVisible()) {
             g.drawLine(chip.getCentreX(), chip.getY() + 4.0f, chip.getCentreX(),
@@ -29,11 +29,11 @@ void ClipInspector::paint(juce::Graphics& g) {
 }
 
 void ClipInspector::lookAndFeelChanged() {
-    const auto primary = DarkTheme::getTextColour();
-    const auto secondary = DarkTheme::getSecondaryTextColour();
-    const auto surface = DarkTheme::getColour(DarkTheme::SURFACE);
-    const auto border = DarkTheme::getColour(DarkTheme::BORDER);
-    const auto accent = DarkTheme::getAccentColour();
+    const auto primary = ActiveTheme::getTextColour();
+    const auto secondary = ActiveTheme::getSecondaryTextColour();
+    const auto surface = ActiveTheme::getColour(ActiveTheme::SURFACE);
+    const auto border = ActiveTheme::getColour(ActiveTheme::BORDER);
+    const auto accent = ActiveTheme::getAccentColour();
 
     clipNameValue_.setColour(juce::Label::textColourId, primary);
     clipNameValue_.setColour(juce::Label::backgroundColourId, surface);
@@ -114,7 +114,7 @@ void ClipInspector::lookAndFeelChanged() {
         button->setColour(juce::TextButton::textColourOffId, primary);
     }
     saveLibraryButton_.setColour(juce::TextButton::buttonColourId,
-                                 DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                                 ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
     saveLibraryButton_.setColour(juce::TextButton::textColourOffId, primary);
 
     repaint();

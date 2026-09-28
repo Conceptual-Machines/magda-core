@@ -2,10 +2,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <ranges>
 
 #include "BinaryData.h"
 #include "audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "core/RangesHelpers.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
@@ -34,10 +36,10 @@ PolySynthUI::PolySynthUI() {
     // the oscillator number, so these are bare control names.
     for (int osc = 0; osc < kNumOscillators; ++osc) {
         const int base = osc * kOscSlotCount;
-        labels_[static_cast<size_t>(base + 0)] = "Wave";
-        labels_[static_cast<size_t>(base + 1)] = "Level";
-        labels_[static_cast<size_t>(base + 2)] = "Coarse";
-        labels_[static_cast<size_t>(base + 3)] = "Fine";
+        labels_[static_cast<size_t>(base) + 0] = "Wave";
+        labels_[static_cast<size_t>(base) + 1] = "Level";
+        labels_[static_cast<size_t>(base) + 2] = "Coarse";
+        labels_[static_cast<size_t>(base) + 3] = "Fine";
     }
     labels_[kFilterTypeSlot] = "Type";
     labels_[kCutoffSlot] = "Cutoff";
@@ -68,7 +70,7 @@ PolySynthUI::PolySynthUI() {
         c.label = std::make_unique<juce::Label>();
         c.label->setText(labels_[static_cast<size_t>(i)], juce::dontSendNotification);
         c.label->setFont(FontManager::getInstance().getUIFont(10.0f));
-        c.label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+        c.label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
         c.label->setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(*c.label);
 
@@ -103,7 +105,7 @@ PolySynthUI::PolySynthUI() {
     addAndMakeVisible(*filterGraph_);
 
     filterCurve_ = std::make_unique<CompiledFilterCurveView>("magda_polysynth");
-    filterCurve_->setCurveColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    filterCurve_->setCurveColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     addAndMakeVisible(*filterCurve_);
     pushFilterCurve();
 
@@ -118,10 +120,10 @@ PolySynthUI::PolySynthUI() {
         // group / click-toggle, which left two segments lit at once).
         btn->setClickingTogglesState(false);
         btn->setColour(juce::TextButton::buttonColourId,
-                       DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
+                       ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.10f));
         btn->setColour(juce::TextButton::buttonOnColourId,
-                       DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
-        btn->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+                       ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+        btn->setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
         btn->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
         btn->setConnectedEdges((t > 0 ? juce::Button::ConnectedOnLeft : 0) |
                                (t < kNumFilterTypes - 1 ? juce::Button::ConnectedOnRight : 0));
@@ -136,10 +138,10 @@ PolySynthUI::PolySynthUI() {
         btn->setLookAndFeel(&FlatTabButtonLookAndFeel::getInstance());
         btn->setClickingTogglesState(false);
         btn->setColour(juce::TextButton::buttonColourId,
-                       DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
+                       ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.10f));
         btn->setColour(juce::TextButton::buttonOnColourId,
-                       DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
-        btn->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+                       ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+        btn->setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
         btn->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
         btn->setConnectedEdges(s == 0 ? juce::Button::ConnectedOnRight
                                       : juce::Button::ConnectedOnLeft);
@@ -155,10 +157,10 @@ PolySynthUI::PolySynthUI() {
         btn->setLookAndFeel(&FlatTabButtonLookAndFeel::getInstance());
         btn->setClickingTogglesState(false);
         btn->setColour(juce::TextButton::buttonColourId,
-                       DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
+                       ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.10f));
         btn->setColour(juce::TextButton::buttonOnColourId,
-                       DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
-        btn->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+                       ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+        btn->setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
         btn->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
         btn->setConnectedEdges((v > 0 ? juce::Button::ConnectedOnLeft : 0) |
                                (v < kNumVoiceModes - 1 ? juce::Button::ConnectedOnRight : 0));
@@ -181,10 +183,10 @@ PolySynthUI::PolySynthUI() {
         en->setLookAndFeel(&FlatTabButtonLookAndFeel::getInstance());
         en->setClickingTogglesState(false);
         en->setColour(juce::TextButton::buttonColourId,
-                      DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
+                      ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.10f));
         en->setColour(juce::TextButton::buttonOnColourId,
-                      DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
-        en->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+                      ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+        en->setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
         en->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
         en->setTooltip("Enable / disable this oscillator");
         en->onClick = [this, osc]() { setOscEnable(osc, !oscEnabled_[static_cast<size_t>(osc)]); };
@@ -195,10 +197,10 @@ PolySynthUI::PolySynthUI() {
         rst->setLookAndFeel(&FlatTabButtonLookAndFeel::getInstance());
         rst->setClickingTogglesState(false);
         rst->setColour(juce::TextButton::buttonColourId,
-                       DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
+                       ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.10f));
         rst->setColour(juce::TextButton::buttonOnColourId,
-                       DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
-        rst->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+                       ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+        rst->setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
         rst->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
         rst->setTooltip("Reset oscillator phase on note-on");
         rst->onClick = [this, osc]() { setOscReset(osc, !oscReset_[static_cast<size_t>(osc)]); };
@@ -218,8 +220,9 @@ PolySynthUI::PolySynthUI() {
     for (int osc = 0; osc < kNumOscillators; ++osc) {
         // Icon selector / enable + reset toggles replace the value boxes; hide the
         // underlying sliders and the wave/reset labels (the toggles are labelled).
-        controls_[osc * kOscSlotCount].slider->setVisible(false);
-        controls_[osc * kOscSlotCount].label->setVisible(false);
+        const auto waveSlot = static_cast<std::size_t>(osc) * kOscSlotCount;
+        controls_[waveSlot].slider->setVisible(false);
+        controls_[waveSlot].label->setVisible(false);
         controls_[kOscResetBaseSlot + osc].slider->setVisible(false);
         controls_[kOscResetBaseSlot + osc].label->setVisible(false);
         controls_[kOscEnableBaseSlot + osc].slider->setVisible(false);
@@ -373,7 +376,7 @@ void PolySynthUI::applyOscColumnEnabled(int osc) {
     // enable toggle itself, which stays live so the column can be re-enabled.
     const int base = osc * kOscSlotCount;
     for (int p = 0; p < kOscSlotCount; ++p) {
-        auto& c = controls_[static_cast<size_t>(base + p)];
+        auto& c = controls_[static_cast<size_t>(base) + p];
         c.slider->setEnabled(on);
         c.slider->setAlpha(alpha);
         if (c.label)
@@ -386,7 +389,7 @@ void PolySynthUI::applyOscColumnEnabled(int osc) {
         rst->setEnabled(on);
         rst->setAlpha(alpha);
     }
-    if (auto& rlabel = controls_[static_cast<size_t>(kOscResetBaseSlot + osc)].label)
+    if (auto& rlabel = controls_[static_cast<size_t>(kOscResetBaseSlot) + osc].label)
         rlabel->setAlpha(alpha);
 }
 
@@ -403,8 +406,9 @@ void PolySynthUI::setOscWave(int osc, int wave) {
 
 void PolySynthUI::updateWaveSelectors() {
     for (int osc = 0; osc < kNumOscillators; ++osc) {
+        const auto waveSlot = static_cast<std::size_t>(osc) * kOscSlotCount;
         const int wave = juce::jlimit(
-            0, 3, static_cast<int>(std::round(controls_[osc * kOscSlotCount].slider->getValue())));
+            0, 3, static_cast<int>(std::round(controls_[waveSlot].slider->getValue())));
         waveSelectors_[static_cast<size_t>(osc)].setSelectedIndex(wave, juce::dontSendNotification);
     }
 }
@@ -430,8 +434,8 @@ void PolySynthUI::timerCallback() {
         return;
 
     const auto readDisplayValue = [this](int slot, float fallback) {
-        if (auto* parameter = livePlugin_->getSlotParameter(slot)) {
-            return livePlugin_->nativeValueToDisplayValue(slot, parameter->getCurrentValue());
+        if (auto parameter = livePlugin_->getSlotParameter(slot)) {
+            return livePlugin_->nativeValueToDisplayValue(slot, parameter.currentValue());
         }
         return fallback;
     };
@@ -515,6 +519,7 @@ void PolySynthUI::updateFromParameters(const std::vector<magda::ParameterInfo>& 
         }
         c.slider->setValue(info.currentValue, juce::dontSendNotification);
 
+        syncGraphFromParam(idx, info.currentValue);
         syncFilterCurveFromParam(idx, info.currentValue);
         if (idx < kNumOscillators * kOscSlotCount && (idx % kOscSlotCount) == 0)
             updateWaveSelectors();  // wave slot -> dropdown
@@ -546,11 +551,9 @@ void PolySynthUI::updateFromParameters(const std::vector<magda::ParameterInfo>& 
 }
 
 std::vector<LinkableTextSlider*> PolySynthUI::getLinkableSliders() {
-    std::vector<LinkableTextSlider*> sliders;
-    sliders.reserve(kNumParams);
-    for (auto& c : controls_)
-        sliders.push_back(c.slider.get());
-    return sliders;
+    const auto sliderOf = [](const auto& control) { return control.slider.get(); };
+
+    return controls_ | std::views::transform(sliderOf) | toStd<std::vector<LinkableTextSlider*>>();
 }
 
 void PolySynthUI::layoutOscSection() {
@@ -589,7 +592,7 @@ void PolySynthUI::layoutOscSection() {
         const int boxH = col.getHeight() / 3;
         for (int p = 1; p < kOscSlotCount; ++p) {  // Level / Coarse / Fine
             auto cell = col.removeFromTop(boxH).reduced(0, 1);
-            auto& c = controls_[static_cast<size_t>(osc * kOscSlotCount + p)];
+            auto& c = controls_[static_cast<size_t>(osc) * kOscSlotCount + p];
             c.label->setBounds(cell.removeFromTop(kCellLabelH));
             c.slider->setBounds(cell);
         }
@@ -729,19 +732,19 @@ void PolySynthUI::lookAndFeelChanged() {
     // Re-apply cached theme colours after a live theme switch.
     for (auto& c : controls_)
         if (c.label)
-            c.label->setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+            c.label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
 
     if (filterCurve_)
-        filterCurve_->setCurveColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        filterCurve_->setCurveColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
 
     auto refreshSegmentButton = [](juce::TextButton* btn) {
         if (!btn)
             return;
         btn->setColour(juce::TextButton::buttonColourId,
-                       DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.10f));
+                       ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.10f));
         btn->setColour(juce::TextButton::buttonOnColourId,
-                       DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
-        btn->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+                       ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+        btn->setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
         btn->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
     };
     for (auto& btn : typeButtons_)
@@ -759,11 +762,11 @@ void PolySynthUI::lookAndFeelChanged() {
 }
 
 void PolySynthUI::paint(juce::Graphics& g) {
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
     g.fillRect(getLocalBounds());
 
-    const auto border = DarkTheme::getColour(DarkTheme::BORDER);
-    const auto titleColour = DarkTheme::getTextColour();
+    const auto border = ActiveTheme::getColour(ActiveTheme::BORDER);
+    const auto titleColour = ActiveTheme::getTextColour();
     const auto titleFont = FontManager::getInstance().getUIFont(11.0f);
 
     auto drawSection = [&](const juce::Rectangle<int>& area, const juce::String& title) {

@@ -1,19 +1,20 @@
 #include "slot/DeviceSlotParameterPaging.hpp"
 
+#include <algorithm>
 #include <utility>
 
 #include "compiled/CompiledPluginPresentation.hpp"
+#include "core/ParameterUtils.hpp"
 #include "core/TrackManager.hpp"
 #include "params/ParamHostComponent.hpp"
 #include "slot/DeviceParameterChangeHandler.hpp"
 #include "slot/DeviceSlotTraits.hpp"
-#include "ui/dialogs/ParameterConfigDialog.hpp"
 
 namespace magda::daw::ui {
 
 namespace {
 
-void reloadPage(DeviceSlotParameterPagingCallbacks callbacks) {
+void reloadPage(const DeviceSlotParameterPagingCallbacks& callbacks) {
     if (callbacks.reloadParameterSlots)
         callbacks.reloadParameterSlots();
     if (callbacks.updateParamModulation)
@@ -28,7 +29,7 @@ void updateDeviceSlotParameterSlots(magda::DeviceInfo& device, const magda::Chai
                                     ParamHostComponent& paramGrid,
                                     CompiledDevicePanel* compiledPanel,
                                     const DeviceSlotTraits& traits,
-                                    DeviceSlotParameterPagingCallbacks callbacks) {
+                                    const DeviceSlotParameterPagingCallbacks& callbacks) {
     // Each parameter slot stores a copy of this callback and invokes it on a
     // later mouse drag, so it must NOT capture the function-local `compiledPanel`
     // pointer / `callbacks` struct by reference - those die when this function
@@ -42,13 +43,24 @@ void updateDeviceSlotParameterSlots(magda::DeviceInfo& device, const magda::Chai
             if (!nodePath.isValid())
                 return;
 
-            if (auto* param = device.findParameterByIndex(paramIndex))
-                param->currentValue = static_cast<float>(value);
+            // Model units: ParamSlotComponent converts its own display value
+            // before it reports one.
+            const auto model = magda::ParameterModelValue{static_cast<float>(value)};
+            auto* param = device.findParameterByIndex(paramIndex);
+            if (param != nullptr)
+                param->currentValue = model.value;
             if (compiledPanel != nullptr)
                 compiledPanel->updateFromDevice(device);
 
-            magda::TrackManager::getInstance().setDeviceParameterValue(nodePath, paramIndex,
-                                                                       static_cast<float>(value));
+            // Described from this slot's own list, which holds every parameter
+            // the plugin has: the model holds only the ones a host control
+            // drives, and the rest are the plugin's to be told
+            // (docs/specs/hosted-plugin-parameter-control.md).
+            if (param != nullptr)
+                magda::TrackManager::getInstance().setDeviceParameterValue(nodePath, *param, model);
+            else
+                magda::TrackManager::getInstance().setDeviceParameterValue(
+                    nodePath, paramIndex, static_cast<float>(value));
             if (traits.compiledPresentation &&
                 refreshEngineAwareCompiledSlots(device, nodePath, paramIndex, paramGrid)) {
                 if (callbacks.reloadParameterSlots)
@@ -67,42 +79,6 @@ void updateDeviceSlotParameterValues(const magda::DeviceInfo& device,
     paramGrid.updateParameterValues(device, paramGrid.getCurrentPage());
 }
 
-bool applyDeviceSlotSavedParameterConfig(magda::DeviceInfo& device,
-                                         const magda::ChainNodePath& nodePath,
-                                         ParamHostComponent* paramGrid) {
-    if (paramGrid == nullptr || device.uniqueId.isEmpty() || device.parameters.empty())
-        return false;
-
-    magda::DeviceInfo tempDevice = device;
-    if (!ParameterConfigDialog::applyConfigToDevice(tempDevice.uniqueId, tempDevice))
-        return false;
-
-    if (!tempDevice.visibleParameters.empty()) {
-        if (nodePath.isValid())
-            magda::TrackManager::getInstance().setDeviceVisibleParameters(
-                nodePath, tempDevice.visibleParameters);
-        device.visibleParameters = tempDevice.visibleParameters;
-    }
-
-    if (nodePath.isValid())
-        magda::TrackManager::getInstance().setDeviceMiniMixerParameters(
-            nodePath, tempDevice.miniMixerParameters);
-    device.miniMixerParameters = tempDevice.miniMixerParameters;
-
-    if (nodePath.isValid())
-        magda::TrackManager::getInstance().setDeviceAiSoundDesignerParameters(
-            nodePath, tempDevice.aiSoundDesignerParameters);
-    device.aiSoundDesignerParameters = tempDevice.aiSoundDesignerParameters;
-
-    if (nodePath.isValid())
-        magda::TrackManager::getInstance().setDeviceAiSoundDesignerPrompt(
-            nodePath, tempDevice.aiSoundDesignerPrompt);
-    device.aiSoundDesignerPrompt = tempDevice.aiSoundDesignerPrompt;
-
-    device.parameters = tempDevice.parameters;
-    return true;
-}
-
 void updateDeviceSlotParameterPagination(const magda::DeviceInfo& device,
                                          ParamHostComponent* paramGrid) {
     if (paramGrid == nullptr)
@@ -112,8 +88,7 @@ void updateDeviceSlotParameterPagination(const magda::DeviceInfo& device,
     int currentPage = device.currentParameterPage;
     if (currentPage >= totalPages)
         currentPage = totalPages - 1;
-    if (currentPage < 0)
-        currentPage = 0;
+    currentPage = std::max(currentPage, 0);
     paramGrid->updatePageControls(device, currentPage, totalPages);
 }
 

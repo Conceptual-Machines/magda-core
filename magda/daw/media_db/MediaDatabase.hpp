@@ -22,8 +22,8 @@ namespace magda::media {
 //
 // History: v4 user-override columns, v5 warp markers, v6 display_name,
 // v7 total_beats/beat_mode, v8 preset_kind, v9 kind='progression' (extends
-// the kind CHECK via a table rebuild).
-inline constexpr int kSchemaVersion = 9;
+// the kind CHECK via a table rebuild), v10 canonical paths (one row per file).
+inline constexpr int kSchemaVersion = 10;
 
 using MediaDatabaseError = sqlite::Error;
 

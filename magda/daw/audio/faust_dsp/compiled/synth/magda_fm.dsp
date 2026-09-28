@@ -4,6 +4,7 @@ declare license "GPL-3.0";
 declare version "1.0";
 
 import("stdfaust.lib");
+msm = library("magda_smoothing.lib");
 
 // ============================================================================
 // Reserved per-voice MIDI controls
@@ -69,12 +70,12 @@ wave(3) = nentry("Op4 Wave [idx:31]", 0, 0, 4, 1);
 // is perceptually immediate but removes that discontinuity. The host forces
 // Glide to 0 on poly voices, so they receive only this anti-click floor.
 glide = hslider("Glide [unit:ms] [idx:32]", 0, 0, 2000, 1) / 1000.0;
-freqG = freq : si.smooth(ba.tau2pole(max(0.0005, glide)));
+freqG = freq : msm.smooth(ba.tau2pole(max(0.0005, glide)));
 
 // Velocity -> amplitude depth. 0 = ignore velocity (every note full level); 1 =
 // full velocity range. The per-voice `gain` zone carries the note velocity.
 velAmt  = hslider("Vel Amount [idx:33]", 1.0, 0.0, 1.0, 0.001);
-gainG = gain : si.smooth(ba.tau2pole(0.0005));
+gainG = gain : msm.smooth(ba.tau2pole(0.0005));
 velGain = (1.0 - velAmt) + velAmt * gainG;
 
 // Per-operator phase reset: restart that operator's phasor at 0 on note-on (a
@@ -120,7 +121,9 @@ opEn(3) = nentry("Op4 Enable [idx:41] [style:menu{'Off':0;'On':1}]", 1, 0, 1, 1)
 // glides instead of stepping per block (the stepped values were the zipper noise
 // on tweak). Wave is discrete and the envelope times are per-note, so they are
 // left unsmoothed.
-sm(x) = x : si.smoo;
+// Gate-keyed: see magda_polysynth. freqG and gainG stay time-smoothed -
+// glide is the point of one and the other is already half a millisecond.
+sm(x) = x : msm.polySmoo(gate);
 
 operators(y0, y1, y2, y3) = op(0), op(1), op(2), op(3)
 with {

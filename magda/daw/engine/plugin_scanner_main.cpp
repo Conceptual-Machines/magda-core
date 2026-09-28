@@ -18,10 +18,11 @@
 
 // Global log file for debugging - scanner stdout isn't visible when run as child process
 // Uses juce::FileOutputStream for Unicode-safe paths on Windows
-static std::unique_ptr<juce::FileOutputStream> g_logStream;
-static juce::File g_logFile;
+namespace {
+std::unique_ptr<juce::FileOutputStream> g_logStream;
+juce::File g_logFile;
 
-static void initLog() {
+void initLog() {
     // Use a unique temp file per instance (random suffix)
     auto suffix = juce::String(juce::Random::getSystemRandom().nextInt64());
     auto tempDir = juce::File::getSpecialLocation(juce::File::tempDirectory);
@@ -29,13 +30,13 @@ static void initLog() {
     g_logStream = g_logFile.createOutputStream();
 }
 
-static void cleanupLog() {
+void cleanupLog() {
     g_logStream.reset();
     if (g_logFile.existsAsFile())
         g_logFile.deleteFile();
 }
 
-static void log(const std::string& msg) {
+void log(const std::string& msg) {
     if (g_logStream) {
         g_logStream->writeText(msg + "\n", false, false, nullptr);
         g_logStream->flush();
@@ -43,6 +44,7 @@ static void log(const std::string& msg) {
     std::cout << msg << std::endl;
     std::cout.flush();
 }
+}  // namespace
 
 namespace ScannerIPC {
 constexpr const char* MSG_SCAN_ONE = "SCNO";

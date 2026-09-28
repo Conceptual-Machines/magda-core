@@ -71,13 +71,12 @@ struct ChainRoutingPlan {
 };
 
 inline bool usesExternalMidiSidechain(const DeviceInfo& device) {
-    return device.sidechain.type == SidechainConfig::Type::MIDI &&
-           device.sidechain.sourceTrackId != INVALID_TRACK_ID;
+    return device.sidechain.type == SidechainConfig::Type::MIDI && device.sidechain.isActive();
 }
 
 inline ChainRoutingNode makeRoutingNode(const DeviceInfo& device) {
     const auto externalMidiSidechain = usesExternalMidiSidechain(device);
-    const auto outputsMidi = device.producesMidi || device.deviceType == DeviceType::MIDI;
+    const auto outputsMidi = device.emitsMidi();
 
     ChainRoutingNode node;
     node.kind = ChainRoutingNodeKind::Device;
@@ -88,8 +87,17 @@ inline ChainRoutingNode makeRoutingNode(const DeviceInfo& device) {
     if (externalMidiSidechain) {
         node.midiOutput = MidiOutputPolicy::RawInputOnly;
     } else if (outputsMidi) {
-        node.midiOutput = device.midiInThru ? MidiOutputPolicy::MergeRawInputAndPluginOutput
-                                            : MidiOutputPolicy::PluginOutputOnly;
+        // The whole of MIDI thru, wherever it is honoured: a merge the host
+        // puts behind the device, never something the device does inside
+        // itself. No plugin format lets a plugin hand its MIDI input back --
+        // every one replaces the host's buffer with what the plugin declared --
+        // so a host that offers thru offers the raw stream itself, and a device
+        // that also passed its input on would make every note a pair (#2345).
+        // A device that forwards its input has already passed on all but the
+        // notes it consumed, so thru would only bring those back.
+        node.midiOutput = device.midiInThru && !device.forwardsMidiInput
+                              ? MidiOutputPolicy::MergeRawInputAndPluginOutput
+                              : MidiOutputPolicy::PluginOutputOnly;
     } else {
         node.midiOutput = MidiOutputPolicy::RawInputOnly;
     }

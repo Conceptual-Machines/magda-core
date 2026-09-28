@@ -2,7 +2,9 @@
 
 #include <juce_llm/juce_llm.h>
 
+#include <algorithm>
 #include <array>
+#include <ranges>
 #include <utility>
 
 #include "../../../agents/llama_model_manager.hpp"
@@ -13,10 +15,10 @@
 #include "../../core/AppPaths.hpp"
 #include "../../core/Config.hpp"
 #include "../../media_db/MediaDbContext.hpp"
-#include "../../media_db/SampleTaggerDownloader.hpp"
+#include "../../media_db/MediaModelDownloader.hpp"
 #include "../../stem_separation/DemucsSeparator.hpp"
 #include "../../stem_separation/StemModelDownloader.hpp"
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
 #include "magda/agents/command_model_downloader.hpp"
@@ -31,24 +33,27 @@ namespace {
 
 void styleLabel(juce::Label& label, float size = 12.0f) {
     label.setFont(FontManager::getInstance().getUIFont(size));
-    label.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    label.setColour(juce::Label::textColourId, ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     label.setJustificationType(juce::Justification::centredLeft);
 }
 
 void styleEditor(juce::TextEditor& ed, const juce::String& placeholder, bool password = false) {
     ed.setFont(FontManager::getInstance().getUIFont(12.0f));
-    ed.setTextToShowWhenEmpty(placeholder, DarkTheme::getColour(DarkTheme::TEXT_DIM));
-    ed.setColour(juce::TextEditor::backgroundColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-    ed.setColour(juce::TextEditor::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    ed.setColour(juce::TextEditor::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+    ed.setTextToShowWhenEmpty(placeholder, ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+    ed.setColour(juce::TextEditor::backgroundColourId,
+                 ActiveTheme::getColour(ActiveTheme::SURFACE));
+    ed.setColour(juce::TextEditor::textColourId, ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+    ed.setColour(juce::TextEditor::outlineColourId, ActiveTheme::getColour(ActiveTheme::BORDER));
     if (password)
         ed.setPasswordCharacter(static_cast<juce::juce_wchar>('*'));
 }
 
 void styleCombo(juce::ComboBox& combo) {
-    combo.setColour(juce::ComboBox::backgroundColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-    combo.setColour(juce::ComboBox::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    combo.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+    combo.setColour(juce::ComboBox::backgroundColourId,
+                    ActiveTheme::getColour(ActiveTheme::SURFACE));
+    combo.setColour(juce::ComboBox::textColourId,
+                    ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+    combo.setColour(juce::ComboBox::outlineColourId, ActiveTheme::getColour(ActiveTheme::BORDER));
 }
 
 // Known cloud providers
@@ -82,7 +87,7 @@ std::unique_ptr<juce::Drawable> createProviderIcon(const ProviderInfo& info) {
     auto icon =
         juce::Drawable::createFromImageData(info.iconData, static_cast<size_t>(info.iconDataSize));
     if (icon)
-        DarkTheme::applyToSvgIcon(*icon);
+        ActiveTheme::applyToSvgIcon(*icon);
     return icon;
 }
 
@@ -225,7 +230,7 @@ class AISettingsDialog::CloudPage : public juce::Component {
         // Status label
         styleLabel(statusLabel_, 11.0f);
         statusLabel_.setColour(juce::Label::textColourId,
-                               DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                               ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         addAndMakeVisible(statusLabel_);
 
         // Add/Save button
@@ -237,7 +242,7 @@ class AISettingsDialog::CloudPage : public juce::Component {
         registeredLabel_.setText("Registered Providers", juce::dontSendNotification);
         styleLabel(registeredLabel_, 11.0f);
         registeredLabel_.setColour(juce::Label::textColourId,
-                                   DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                                   ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         addAndMakeVisible(registeredLabel_);
 
         addAndMakeVisible(listContainer_);
@@ -282,9 +287,9 @@ class AISettingsDialog::CloudPage : public juce::Component {
     }
 
     void paint(juce::Graphics& g) override {
-        auto borderColour = DarkTheme::getColour(DarkTheme::BORDER);
+        auto borderColour = ActiveTheme::getColour(ActiveTheme::BORDER);
         float left = 12.0f;
-        float right = static_cast<float>(getWidth() - 12);
+        auto right = static_cast<float>(getWidth() - 12);
 
         // Separator above registered list
         if (registeredLabel_.isVisible()) {
@@ -372,6 +377,14 @@ class AISettingsDialog::CloudPage : public juce::Component {
         }
     };
 
+    /** @brief The registered-list row for a provider, or entries_.end(). */
+    auto findListEntry(const std::string& providerId) {
+        const auto isForProvider = [&providerId](const ListEntry& entry) {
+            return entry.providerId == providerId;
+        };
+        return std::ranges::find_if(entries_, isForProvider);
+    }
+
     std::string getSelectedProviderId() const {
         int idx = providerCombo_.getSelectedId() - 1;
         const auto& providers = getKnownProviders();
@@ -393,19 +406,12 @@ class AISettingsDialog::CloudPage : public juce::Component {
         // Store credential
         credentials_[providerId] = key;
 
-        // Check if already in list, update; otherwise add
-        bool found = false;
-        for (auto& entry : entries_) {
-            if (entry.providerId == providerId) {
-                entry.statusLabel->setText("Updated", juce::dontSendNotification);
-                entry.statusLabel->setColour(juce::Label::textColourId, juce::Colours::yellow);
-                found = true;
-                break;
-            }
-        }
-
-        if (!found)
+        if (auto entry = findListEntry(providerId); entry != entries_.end()) {
+            entry->statusLabel->setText("Updated", juce::dontSendNotification);
+            entry->statusLabel->setColour(juce::Label::textColourId, juce::Colours::yellow);
+        } else {
             addListEntry(providerId);
+        }
 
         keyEditor_.clear();
         statusLabel_.setText("Added", juce::dontSendNotification);
@@ -417,24 +423,20 @@ class AISettingsDialog::CloudPage : public juce::Component {
     void removeProvider(const std::string& providerId) {
         credentials_.erase(providerId);
 
-        // Remove list entry
-        for (auto it = entries_.begin(); it != entries_.end(); ++it) {
-            if (it->providerId == providerId) {
-                listContainer_.removeChildComponent(it->iconComp);
-                listContainer_.removeChildComponent(it->nameLabel);
-                listContainer_.removeChildComponent(it->statusLabel);
-                listContainer_.removeChildComponent(it->removeBtn);
-                entries_.erase(it);
-                updateProviderComboState();
-                break;
-            }
+        if (auto entry = findListEntry(providerId); entry != entries_.end()) {
+            listContainer_.removeChildComponent(entry->iconComp);
+            listContainer_.removeChildComponent(entry->nameLabel);
+            listContainer_.removeChildComponent(entry->statusLabel);
+            listContainer_.removeChildComponent(entry->removeBtn);
+            entries_.erase(entry);
+            updateProviderComboState();
         }
 
         resized();
     }
 
     void addListEntry(const std::string& providerId) {
-        auto* info = findProviderInfo(providerId);
+        const auto* info = findProviderInfo(providerId);
         if (!info)
             return;
 
@@ -462,7 +464,7 @@ class AISettingsDialog::CloudPage : public juce::Component {
         statusLabel->setText(masked, juce::dontSendNotification);
         styleLabel(*statusLabel, 11.0f);
         statusLabel->setColour(juce::Label::textColourId,
-                               DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                               ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         statusLabel->setJustificationType(juce::Justification::centredRight);
         listContainer_.addAndMakeVisible(*statusLabel);
         entry.statusLabel = statusLabel.get();
@@ -471,7 +473,7 @@ class AISettingsDialog::CloudPage : public juce::Component {
         // Remove button
         auto removeBtn =
             std::make_unique<juce::TextButton>(juce::String::charToString(0x2715));  // ✕
-        auto pid = providerId;
+        const auto& pid = providerId;
         removeBtn->onClick = [this, pid]() { removeProvider(pid); };
         listContainer_.addAndMakeVisible(*removeBtn);
         entry.removeBtn = removeBtn.get();
@@ -490,12 +492,12 @@ class AISettingsDialog::CloudPage : public juce::Component {
         // If current selection is disabled, select the first enabled one
         auto selectedId = providerCombo_.getSelectedId();
         if (selectedId > 0 && !providerCombo_.isItemEnabled(selectedId)) {
-            for (int i = 0; i < static_cast<int>(providers.size()); ++i) {
-                if (providerCombo_.isItemEnabled(i + 1)) {
-                    providerCombo_.setSelectedId(i + 1, juce::dontSendNotification);
-                    break;
-                }
-            }
+            const auto isEnabled = [this](int itemId) {
+                return providerCombo_.isItemEnabled(itemId);
+            };
+            const auto itemIds = std::views::iota(1, static_cast<int>(providers.size()) + 1);
+            if (const auto first = std::ranges::find_if(itemIds, isEnabled); first != itemIds.end())
+                providerCombo_.setSelectedId(*first, juce::dontSendNotification);
         }
     }
 
@@ -509,14 +511,14 @@ class AISettingsDialog::CloudPage : public juce::Component {
             return;
         }
 
-        auto* info = findProviderInfo(providerId);
+        const auto* info = findProviderInfo(providerId);
         if (!info)
             return;
 
         testBtn_.setEnabled(false);
         statusLabel_.setText("Testing...", juce::dontSendNotification);
         statusLabel_.setColour(juce::Label::textColourId,
-                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                               ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
 
         auto testProvider = std::string(info->testProvider);
         auto testBaseUrl = std::string(info->testBaseUrl);
@@ -637,13 +639,13 @@ class AISettingsDialog::LocalPage : public juce::Component {
         // Status
         styleLabel(statusLabel_, 11.0f);
         statusLabel_.setColour(juce::Label::textColourId,
-                               DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                               ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         addAndMakeVisible(statusLabel_);
 
         // Load on startup toggle
         loadOnStartupToggle_.setButtonText("Load model on startup");
         loadOnStartupToggle_.setColour(juce::ToggleButton::textColourId,
-                                       DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                       ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         addAndMakeVisible(loadOnStartupToggle_);
 
         updateStatus();
@@ -704,7 +706,7 @@ class AISettingsDialog::LocalPage : public juce::Component {
         config.setLoadModelOnStartup(loadOnStartupToggle_.getToggleState());
     }
 
-    bool isModelLoaded() const {
+    static bool isModelLoaded() {
         return LlamaModelManager::getInstance().isLoaded();
     }
 
@@ -833,7 +835,7 @@ class AISettingsDialog::LocalPage : public juce::Component {
             loadButton_.setButtonText("Load Model");
             statusLabel_.setText("No model loaded", juce::dontSendNotification);
             statusLabel_.setColour(juce::Label::textColourId,
-                                   DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                                   ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         }
     }
 
@@ -957,7 +959,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         modelNameLabel_.setText("No model loaded", juce::dontSendNotification);
         styleLabel(modelNameLabel_);
         modelNameLabel_.setColour(juce::Label::textColourId,
-                                  DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                                  ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         addAndMakeVisible(modelNameLabel_);
 
         // Local-server model picker (shown when Source = Local server). Lives
@@ -976,7 +978,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
 
         styleLabel(serverStatusLabel_, 11.0f);
         serverStatusLabel_.setColour(juce::Label::textColourId,
-                                     DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                                     ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         addAndMakeVisible(serverStatusLabel_);
 
         modeCombo_.setSelectedId(1, juce::dontSendNotification);
@@ -986,14 +988,14 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         mcpSectionLabel_.setText("MCP Tools", juce::dontSendNotification);
         mcpSectionLabel_.setFont(FontManager::getInstance().getUIFont(13.0f));
         mcpSectionLabel_.setColour(juce::Label::textColourId,
-                                   DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                                   ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         addAndMakeVisible(mcpSectionLabel_);
 
         faustMcpToggle_.setButtonText("Faust DSP");
         faustMcpToggle_.setColour(juce::ToggleButton::textColourId,
-                                  DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                                  ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         faustMcpToggle_.setColour(juce::ToggleButton::tickColourId,
-                                  DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                                  ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         addAndMakeVisible(faustMcpToggle_);
 
         faustMcpHint_.setText("Validates AI-generated Faust code before loading. Requires npx "
@@ -1001,7 +1003,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
                               juce::dontSendNotification);
         faustMcpHint_.setFont(FontManager::getInstance().getUIFont(10.5f));
         faustMcpHint_.setColour(juce::Label::textColourId,
-                                DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                                ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         addAndMakeVisible(faustMcpHint_);
 
         // One link rather than three sets of per-OS steps: the official
@@ -1012,7 +1014,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         nodeDownloadLink_.setFont(FontManager::getInstance().getUIFont(10.5f), false,
                                   juce::Justification::centredLeft);
         nodeDownloadLink_.setColour(juce::HyperlinkButton::textColourId,
-                                    DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                                    ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         addAndMakeVisible(nodeDownloadLink_);
 
         // Advanced per-agent grid: one row per agent role.
@@ -1021,7 +1023,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
                                    juce::dontSendNotification);
         advancedHintLabel_.setFont(FontManager::getInstance().getUIFont(10.5f));
         advancedHintLabel_.setColour(juce::Label::textColourId,
-                                     DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                                     ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         addAndMakeVisible(advancedHintLabel_);
 
         static constexpr std::array<std::pair<const char*, const char*>, 6> kRoles = {{
@@ -1052,7 +1054,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         updateSetupUI();
     }
 
-    void resized() override {
+    void resized() final {
         auto bounds = getLocalBounds().reduced(12);
         const int rowH = 28;
         const int labelW = 80;
@@ -1142,7 +1144,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         int nextId = 1;
         if (cloudPage) {
             for (const auto& pid : cloudPage->getConfiguredProviders()) {
-                auto* info = findProviderInfo(pid);
+                const auto* info = findProviderInfo(pid);
                 if (info)
                     providerCombo_.addItem(info->displayName, nextId++);
             }
@@ -1168,7 +1170,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         std::vector<std::pair<std::string, juce::String>> opts;
         if (cloudPage) {
             for (const auto& pid : cloudPage->getConfiguredProviders())
-                if (auto* info = findProviderInfo(pid))
+                if (const auto* info = findProviderInfo(pid))
                     opts.emplace_back(pid, juce::String(info->displayName));
         }
         opts.emplace_back(magda::provider::LLAMA_LOCAL, juce::String("Local"));
@@ -1180,7 +1182,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
                id == magda::provider::FAST_INFERENCE;
     }
 
-    std::string rowProviderGroupId(const AgentRow& row) const {
+    static std::string rowProviderGroupId(const AgentRow& row) {
         int idx = row.providerCombo.getSelectedId() - 1;
         if (idx >= 0 && idx < static_cast<int>(row.providerIds.size()))
             return row.providerIds[static_cast<size_t>(idx)];
@@ -1202,7 +1204,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
     // Select the combo item matching a provider id. openai_responses and
     // openai_chat share one "OpenAI" entry, and all local backends share one
     // "Local" entry.
-    void selectRowProviderById(AgentRow& row, std::string id) {
+    static void selectRowProviderById(AgentRow& row, std::string id) {
         if (id == magda::provider::OPENAI_RESPONSES)
             id = magda::provider::OPENAI_CHAT;
         if (isLocalProviderId(id))
@@ -1444,7 +1446,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         serverRefreshBtn_.setEnabled(false);
         serverStatusLabel_.setText("Loading models...", juce::dontSendNotification);
         serverStatusLabel_.setColour(juce::Label::textColourId,
-                                     DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                     ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
 
         auto safeThis = juce::Component::SafePointer<ConfigPage>(this);
         juce::Thread::launch([safeThis, url, key, current]() {
@@ -1558,13 +1560,13 @@ class AISettingsDialog::ConfigPage : public juce::Component {
             // Local: embedded GGUF or OpenAI-compatible server.
             outPresetId = (localSourceCombo_.getSelectedId() == 2) ? magda::preset::LOCAL_SERVER
                                                                    : magda::preset::LOCAL_EMBEDDED;
-            if (auto* preset = magda::findPreset(outPresetId))
+            if (const auto* preset = magda::findPreset(outPresetId))
                 for (const auto& [role, cfg] : preset->agents)
                     out[role] = cfg;
         } else if (mode == 2) {
             // Cloud
             outPresetId = presetId;
-            if (auto* preset = magda::findPreset(presetId)) {
+            if (const auto* preset = magda::findPreset(presetId)) {
                 for (const auto& [role, presetCfg] : preset->agents) {
                     auto cfg = presetCfg;
                     cfg.apiKey = "";
@@ -1672,7 +1674,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
 
     static Config::AgentLLMConfig makeCloudConfig(const std::string& role,
                                                   const std::string& presetId) {
-        if (auto* preset = magda::findPreset(presetId)) {
+        if (const auto* preset = magda::findPreset(presetId)) {
             auto it = preset->agents.find(role);
             if (it != preset->agents.end()) {
                 auto cfg = it->second;
@@ -1724,7 +1726,7 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
   public:
     SampleTaggerPage() {
         statusLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
-        statusLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        statusLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
         statusLabel_.setJustificationType(juce::Justification::topLeft);
         addAndMakeVisible(statusLabel_);
 
@@ -1751,9 +1753,9 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
         addAndMakeVisible(resetLocationButton_);
 
         progressBar_.setColour(juce::ProgressBar::backgroundColourId,
-                               DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
+                               ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
         progressBar_.setColour(juce::ProgressBar::foregroundColourId,
-                               DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                               ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         progressBar_.setPercentageDisplay(false);
         progressBar_.setVisible(false);
         addAndMakeVisible(progressBar_);
@@ -1774,7 +1776,7 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
         // the ~5s load cost.
         loadOnStartupToggle_.setButtonText("Load on startup");
         loadOnStartupToggle_.setColour(juce::ToggleButton::textColourId,
-                                       DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                       ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         loadOnStartupToggle_.onClick = [this]() {
             magda::Config::getInstance().setLoadSampleTaggerOnStartup(
                 loadOnStartupToggle_.getToggleState());
@@ -1785,7 +1787,7 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
         refreshStatus();
     }
 
-    void resized() override {
+    void resized() final {
         auto bounds = getLocalBounds().reduced(12);
         const int rowH = 24;
         const int labelW = 110;
@@ -1828,7 +1830,8 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
             juce::String(magda::media::MediaDbContext::getInstance().modelsDir().string());
         locationField_.setText(currentDir, juce::dontSendNotification);
 
-        const bool installed = magda::media::SampleTaggerDownloader::isInstalled();
+        const bool installed = magda::media::MediaModelDownloader::isInstalled(
+            magda::media::MediaModelDownloader::Bundle::SampleTagger);
         auto& ctx = magda::media::MediaDbContext::getInstance();
         const bool loaded =
             ctx.isAudioEncoderLoaded() && ctx.isTextEncoderLoaded() && ctx.isTokenizerLoaded();
@@ -1844,8 +1847,9 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
             actionButton_.setButtonText("Remove");
             progressBar_.setVisible(false);
         } else {
-            const auto totalMb =
-                magda::media::SampleTaggerDownloader::expectedTotalBytes() / (1024.0 * 1024.0);
+            const auto totalMb = magda::media::MediaModelDownloader::expectedTotalBytes(
+                                     magda::media::MediaModelDownloader::Bundle::SampleTagger) /
+                                 (1024.0 * 1024.0);
             statusLabel_.setText(
                 "Sample Analyzer is not installed.\n\nDownload (~" + juce::String(totalMb, 0) +
                     " MB) to enable text search over indexed samples. Without it, the media "
@@ -1911,7 +1915,8 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
             downloader_.cancel();
             return;
         }
-        if (magda::media::SampleTaggerDownloader::isInstalled()) {
+        if (magda::media::MediaModelDownloader::isInstalled(
+                magda::media::MediaModelDownloader::Bundle::SampleTagger)) {
             removeInstalledFiles();
             refreshStatus();
             return;
@@ -1930,8 +1935,8 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
         });
     }
 
-    void onProgress(const magda::media::SampleTaggerDownloader::Progress& p) {
-        using Phase = magda::media::SampleTaggerDownloader::Phase;
+    void onProgress(const magda::media::MediaModelDownloader::Progress& p) {
+        using Phase = magda::media::MediaModelDownloader::Phase;
         switch (p.phase) {
             case Phase::Downloading:
             case Phase::Verifying: {
@@ -1966,14 +1971,8 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
     }
 
     static void removeInstalledFiles() {
-        // Re-use the downloader's manifest by querying isInstalled state; we
-        // don't bother re-implementing the file list here — just nuke the
-        // models dir's known filenames.
-        auto dir = juce::File(
-            juce::String(magda::media::MediaDbContext::getInstance().modelsDir().string()));
-        for (const auto* name : {"clap_audio.onnx", "clap_text.onnx", "tokenizer.json"}) {
-            dir.getChildFile(name).deleteFile();
-        }
+        magda::media::MediaModelDownloader::remove(
+            magda::media::MediaModelDownloader::Bundle::SampleTagger);
     }
 
     juce::Label statusLabel_;
@@ -1990,7 +1989,141 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
     juce::TextButton loadButton_;
     juce::ToggleButton loadOnStartupToggle_;
     bool loadInFlight_ = false;
-    magda::media::SampleTaggerDownloader downloader_;
+    magda::media::MediaModelDownloader downloader_{
+        magda::media::MediaModelDownloader::Bundle::SampleTagger};
+};
+
+// ============================================================================
+// BeatTrackerPage — the model behind the measured BPM tier (issue #2674)
+// ============================================================================
+
+class AISettingsDialog::BeatTrackerPage : public juce::Component {
+  public:
+    using Bundle = magda::media::MediaModelDownloader::Bundle;
+
+    BeatTrackerPage() {
+        statusLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
+        statusLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
+        statusLabel_.setJustificationType(juce::Justification::topLeft);
+        addAndMakeVisible(statusLabel_);
+
+        sourceLink_.setButtonText("huggingface.co/ConceptualMachines/magda-beat-tracker");
+        sourceLink_.setURL(
+            juce::URL(magda::media::MediaModelDownloader::sourceUrl(Bundle::BeatTracker)));
+        sourceLink_.setFont(FontManager::getInstance().getUIFont(11.0f), false);
+        addAndMakeVisible(sourceLink_);
+
+        actionButton_.onClick = [this]() { handleActionClick(); };
+        addAndMakeVisible(actionButton_);
+
+        progressBar_.setVisible(false);
+        addAndMakeVisible(progressBar_);
+
+        refreshStatus();
+    }
+
+    void resized() final {
+        auto bounds = getLocalBounds().reduced(12);
+        statusLabel_.setBounds(bounds.removeFromTop(96));
+        bounds.removeFromTop(4);
+        sourceLink_.setBounds(bounds.removeFromTop(18));
+        bounds.removeFromTop(8);
+        auto row = bounds.removeFromTop(28);
+        actionButton_.setBounds(row.removeFromLeft(200).reduced(0, 1));
+        if (progressBar_.isVisible()) {
+            bounds.removeFromTop(8);
+            progressBar_.setBounds(bounds.removeFromTop(20));
+        }
+    }
+
+    void apply(magda::Config&) const {}
+
+  private:
+    void refreshStatus() {
+        const bool installed = magda::media::MediaModelDownloader::isInstalled(Bundle::BeatTracker);
+        if (installed) {
+            statusLabel_.setText(
+                "Beat tracker is installed.\n\nA sample whose filename and header say nothing "
+                "about its tempo has one measured from the audio when the library indexes it, "
+                "and a clip can be put into beat mode without typing a BPM. Remove it to free "
+                "the disk space; tempo then falls back to a weaker estimate.",
+                juce::dontSendNotification);
+            actionButton_.setButtonText("Remove");
+        } else {
+            const auto totalMb =
+                magda::media::MediaModelDownloader::expectedTotalBytes(Bundle::BeatTracker) /
+                (1024.0 * 1024.0);
+            statusLabel_.setText(
+                "Beat tracker is not installed.\n\nDownload (~" + juce::String(totalMb, 0) +
+                    " MB) to measure the tempo of samples whose filename and header do not "
+                    "carry one. Without it MAGDA falls back to an estimate that is right far "
+                    "less often, and says nothing when it cannot tell.",
+                juce::dontSendNotification);
+            actionButton_.setButtonText("Download Beat Tracker");
+        }
+        progressBar_.setVisible(false);
+        actionButton_.setEnabled(true);
+        resized();
+    }
+
+    void handleActionClick() {
+        if (magda::media::MediaModelDownloader::isInstalled(Bundle::BeatTracker)) {
+            magda::media::MediaModelDownloader::remove(Bundle::BeatTracker);
+            refreshStatus();
+            return;
+        }
+
+        actionButton_.setEnabled(false);
+        progressValue_ = 0.0;
+        progressBar_.setVisible(true);
+        resized();
+
+        const juce::Component::SafePointer<BeatTrackerPage> self(this);
+        downloader_.start([self](const magda::media::MediaModelDownloader::Progress& p) {
+            if (self != nullptr) {
+                self->onProgress(p);
+            }
+        });
+    }
+
+    void onProgress(const magda::media::MediaModelDownloader::Progress& p) {
+        using Phase = magda::media::MediaModelDownloader::Phase;
+        switch (p.phase) {
+            case Phase::Downloading:
+            case Phase::Verifying:
+                if (p.totalBytesAll > 0) {
+                    progressValue_ =
+                        static_cast<double>(p.bytesDoneAll) / static_cast<double>(p.totalBytesAll);
+                }
+                statusLabel_.setText(
+                    juce::String(p.phase == Phase::Verifying ? "Verifying " : "Downloading ") +
+                        p.currentFilename,
+                    juce::dontSendNotification);
+                break;
+            case Phase::Done:
+                refreshStatus();
+                break;
+            case Phase::Failed:
+                statusLabel_.setText("Download failed: " + p.errorMessage,
+                                     juce::dontSendNotification);
+                actionButton_.setEnabled(true);
+                progressBar_.setVisible(false);
+                break;
+            case Phase::Cancelled:
+            case Phase::Idle:
+                refreshStatus();
+                break;
+        }
+    }
+
+    juce::Label statusLabel_;
+    juce::HyperlinkButton sourceLink_;
+    // ProgressBar holds a reference to the value, so the value is declared
+    // first to be constructed first.
+    double progressValue_ = 0.0;
+    juce::ProgressBar progressBar_{progressValue_};
+    juce::TextButton actionButton_;
+    magda::media::MediaModelDownloader downloader_{Bundle::BeatTracker};
 };
 
 // ============================================================================
@@ -2001,7 +2134,7 @@ class AISettingsDialog::StemSeparationPage : public juce::Component {
   public:
     StemSeparationPage() {
         statusLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
-        statusLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        statusLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
         statusLabel_.setJustificationType(juce::Justification::topLeft);
         statusLabel_.setText(
             "Split into Stems (right-click an audio clip) separates audio onto new tracks. "
@@ -2061,7 +2194,7 @@ class AISettingsDialog::StemSeparationPage : public juce::Component {
         ModelRow(magda::stems::StemModel model, juce::String blurb)
             : model_(model), blurb_(std::move(blurb)), downloader_(model) {
             nameLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
-            nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+            nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
             addAndMakeVisible(nameLabel_);
 
             // Where the weights come from, as a clickable HuggingFace link.
@@ -2071,13 +2204,13 @@ class AISettingsDialog::StemSeparationPage : public juce::Component {
             sourceLink_->setFont(FontManager::getInstance().getUIFont(11.0f), false,
                                  juce::Justification::centredLeft);
             sourceLink_->setColour(juce::HyperlinkButton::textColourId,
-                                   DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                                   ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
             addAndMakeVisible(*sourceLink_);
 
             progressBar_.setColour(juce::ProgressBar::backgroundColourId,
-                                   DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
+                                   ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
             progressBar_.setColour(juce::ProgressBar::foregroundColourId,
-                                   DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                                   ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
             progressBar_.setPercentageDisplay(false);
             progressBar_.setVisible(false);
             addAndMakeVisible(progressBar_);
@@ -2181,7 +2314,7 @@ class AISettingsDialog::CommandModelPage : public juce::Component {
   public:
     CommandModelPage() {
         blurbLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
-        blurbLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        blurbLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
         blurbLabel_.setJustificationType(juce::Justification::topLeft);
         blurbLabel_.setText(
             "Fast Inference runs Command requests locally and works immediately with MAGDA's "
@@ -2211,7 +2344,7 @@ class AISettingsDialog::CommandModelPage : public juce::Component {
         addAndMakeVisible(resetLocationButton_);
 
         nameLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
-        nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
         addAndMakeVisible(nameLabel_);
 
         const juce::String url = magda::CommandModelDownloader::sourceUrl();
@@ -2220,13 +2353,13 @@ class AISettingsDialog::CommandModelPage : public juce::Component {
         sourceLink_->setFont(FontManager::getInstance().getUIFont(11.0f), false,
                              juce::Justification::centredLeft);
         sourceLink_->setColour(juce::HyperlinkButton::textColourId,
-                               DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                               ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         addAndMakeVisible(*sourceLink_);
 
         progressBar_.setColour(juce::ProgressBar::backgroundColourId,
-                               DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
+                               ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
         progressBar_.setColour(juce::ProgressBar::foregroundColourId,
-                               DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                               ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         progressBar_.setPercentageDisplay(false);
         progressBar_.setVisible(false);
         addAndMakeVisible(progressBar_);
@@ -2379,9 +2512,11 @@ class AISettingsDialog::CommandModelPage : public juce::Component {
 class AISettingsDialog::ModelDownloadsPage : public juce::Component {
   public:
     ModelDownloadsPage(LocalPage& localPage, SampleTaggerPage* samplePage,
-                       StemSeparationPage* stemsPage, CommandModelPage* commandPage)
+                       BeatTrackerPage* beatPage, StemSeparationPage* stemsPage,
+                       CommandModelPage* commandPage)
         : localPage_(localPage),
           samplePage_(samplePage),
+          beatPage_(beatPage),
           stemsPage_(stemsPage),
           commandPage_(commandPage) {
         categoryLabel_.setText("Category", juce::dontSendNotification);
@@ -2391,6 +2526,8 @@ class AISettingsDialog::ModelDownloadsPage : public juce::Component {
         categoryCombo_.addItem("Local LLM", kLocal);
         if (samplePage_ != nullptr)
             categoryCombo_.addItem("Sample analysis", kSampleAnalyzer);
+        if (beatPage_ != nullptr)
+            categoryCombo_.addItem("Tempo detection", kBeatTracker);
         if (stemsPage_ != nullptr)
             categoryCombo_.addItem("Stem separation", kStems);
         if (commandPage_ != nullptr)
@@ -2403,6 +2540,8 @@ class AISettingsDialog::ModelDownloadsPage : public juce::Component {
         addAndMakeVisible(localPage_);
         if (samplePage_ != nullptr)
             addAndMakeVisible(*samplePage_);
+        if (beatPage_ != nullptr)
+            addAndMakeVisible(*beatPage_);
         if (stemsPage_ != nullptr)
             addAndMakeVisible(*stemsPage_);
         if (commandPage_ != nullptr)
@@ -2410,7 +2549,7 @@ class AISettingsDialog::ModelDownloadsPage : public juce::Component {
         updateVisiblePage();
     }
 
-    void resized() override {
+    void resized() final {
         auto bounds = getLocalBounds().reduced(12);
         auto categoryRow = bounds.removeFromTop(28);
         categoryLabel_.setBounds(categoryRow.removeFromLeft(80));
@@ -2420,6 +2559,8 @@ class AISettingsDialog::ModelDownloadsPage : public juce::Component {
         localPage_.setBounds(bounds);
         if (samplePage_ != nullptr)
             samplePage_->setBounds(bounds);
+        if (beatPage_ != nullptr)
+            beatPage_->setBounds(bounds);
         if (stemsPage_ != nullptr)
             stemsPage_->setBounds(bounds);
         if (commandPage_ != nullptr)
@@ -2444,13 +2585,15 @@ class AISettingsDialog::ModelDownloadsPage : public juce::Component {
     }
 
   private:
-    enum Category { kLocal = 1, kSampleAnalyzer, kStems, kCommandModel };
+    enum Category { kLocal = 1, kSampleAnalyzer, kBeatTracker, kStems, kCommandModel };
 
     void updateVisiblePage() {
         const int category = categoryCombo_.getSelectedId();
         localPage_.setVisible(category == kLocal);
         if (samplePage_ != nullptr)
             samplePage_->setVisible(category == kSampleAnalyzer);
+        if (beatPage_ != nullptr)
+            beatPage_->setVisible(category == kBeatTracker);
         if (stemsPage_ != nullptr)
             stemsPage_->setVisible(category == kStems);
         if (commandPage_ != nullptr)
@@ -2460,6 +2603,7 @@ class AISettingsDialog::ModelDownloadsPage : public juce::Component {
 
     LocalPage& localPage_;
     SampleTaggerPage* samplePage_;
+    BeatTrackerPage* beatPage_;
     StemSeparationPage* stemsPage_;
     CommandModelPage* commandPage_;
     juce::Label categoryLabel_;
@@ -2480,6 +2624,7 @@ AISettingsDialog::AISettingsDialog() {
         samplePage_ = std::make_unique<SampleTaggerPage>();
     }
     if constexpr (magda::stems::DemucsSeparator::backendAvailable()) {
+        beatTrackerPage_ = std::make_unique<BeatTrackerPage>();
         stemsPage_ = std::make_unique<StemSeparationPage>();
     }
     // The encoder command model runs on ONNX Runtime, same availability gate
@@ -2487,14 +2632,15 @@ AISettingsDialog::AISettingsDialog() {
     if constexpr (magda::media::clapBackendAvailable()) {
         commandModelPage_ = std::make_unique<CommandModelPage>();
     }
-    modelDownloadsPage_ = std::make_unique<ModelDownloadsPage>(
-        *localPage_, samplePage_.get(), stemsPage_.get(), commandModelPage_.get());
+    modelDownloadsPage_ =
+        std::make_unique<ModelDownloadsPage>(*localPage_, samplePage_.get(), beatTrackerPage_.get(),
+                                             stemsPage_.get(), commandModelPage_.get());
 
     // Wire config page to sibling pages
     configPage_->cloudPage = cloudPage_.get();
     configPage_->localPage = localPage_.get();
 
-    auto tabBg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+    auto tabBg = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
     tabbedComponent_.addTab("Cloud", tabBg, cloudPage_.get(), false);
     tabbedComponent_.addTab("Config", tabBg, configPage_.get(), false);
     tabbedComponent_.addTab("Models", tabBg, modelDownloadsPage_.get(), false);
@@ -2530,7 +2676,7 @@ AISettingsDialog::~AISettingsDialog() {
 }
 
 void AISettingsDialog::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
 }
 
 void AISettingsDialog::lookAndFeelChanged() {
@@ -2598,7 +2744,7 @@ void AISettingsDialog::showDialog(juce::Component* parent, const juce::String& i
 
     juce::DialogWindow::LaunchOptions options;
     options.dialogTitle = "AI Settings";
-    options.dialogBackgroundColour = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+    options.dialogBackgroundColour = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
     options.content.setOwned(dialog);
     options.escapeKeyTriggersCloseButton = true;
     options.useNativeTitleBar = true;

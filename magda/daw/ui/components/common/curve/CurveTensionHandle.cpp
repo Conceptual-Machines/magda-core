@@ -1,6 +1,6 @@
 #include "CurveTensionHandle.hpp"
 
-#include "magda/daw/ui/themes/DarkTheme.hpp"
+#include "magda/daw/ui/themes/ActiveTheme.hpp"
 
 namespace magda {
 
@@ -11,15 +11,15 @@ CurveTensionHandle::CurveTensionHandle(uint32_t pointId) : pointId_(pointId) {
 
 void CurveTensionHandle::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds().toFloat().reduced(1.25f);
-    const auto accent = DarkTheme::getColour(DarkTheme::CURVE_POINT);
+    const auto accent = ActiveTheme::getColour(ActiveTheme::CURVE_POINT);
 
     const float lineW = isDragging_ || isHovered_ ? 1.4f : 1.1f;
     const auto strokeColour =
         isDragging_ ? accent
-                    : (isHovered_ ? DarkTheme::getColour(DarkTheme::TEXT_BRIGHT)
-                                  : DarkTheme::getColour(DarkTheme::CURVE_HANDLE_NORMAL));
+                    : (isHovered_ ? ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT)
+                                  : ActiveTheme::getColour(ActiveTheme::CURVE_HANDLE_NORMAL));
 
-    g.setColour(DarkTheme::getColour(DarkTheme::CURVE_HANDLE_BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::CURVE_HANDLE_BACKGROUND));
     if (isHardCorner_) {
         // Square to signal a hard-corner segment (minimal rounding so it reads
         // clearly as a square, not a circle).

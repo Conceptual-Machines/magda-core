@@ -1,22 +1,13 @@
 #include "plugins/MidiStrumPlugin.hpp"
 
 #include <algorithm>
-#include <cmath>
+#include <ranges>
+
+#include "core/RangesHelpers.hpp"
 
 namespace magda::daw::audio {
 
 const char* MidiStrumPlugin::xmlTypeName = "magda_strum";
-
-namespace StrumIDs {
-static const juce::Identifier trigger("strumTrigger");
-static const juce::Identifier order("strumOrder");
-static const juce::Identifier shape("strumShape");
-static const juce::Identifier cycles("strumCycles");
-static const juce::Identifier loopSync("strumLoopSync");
-static const juce::Identifier loopRate("strumLoopRate");
-static const juce::Identifier strumLength("strumLength");
-static const juce::Identifier syncInterval("strumSyncInterval");
-}  // namespace StrumIDs
 
 namespace {
 
@@ -60,7 +51,7 @@ void buildLut(int shapeIdx, std::array<float, 1024>& lut) {
     int si = 0;
     for (int i = 0; i < 1024; ++i) {
         const float x = static_cast<float>(i) / 1023.0f;
-        while (si + 1 <= K && xs[static_cast<size_t>(si + 1)] < x)
+        while (si + 1 <= K && xs[static_cast<size_t>(si) + 1] < x)
             ++si;
         const int j = std::min(si + 1, K);
         const float span = xs[static_cast<size_t>(j)] - xs[static_cast<size_t>(si)];
@@ -89,55 +80,122 @@ float sampleCycled(const std::array<float, 1024>& lut, float u, int cycles) noex
            static_cast<float>(cycles);
 }
 
+/// One slot's metadata. The ids, order and display ranges are pinned to what
+/// the retired host-native plugin registered, because saved links address the
+/// slots by index and projects store parameter values in display units.
+ParameterInfo slotInfo(int index) {
+    ParameterInfo info;
+    info.paramIndex = index;
+
+    const auto discrete = [&info](const char* id, const char* name, float def,
+                                  std::vector<juce::String> choices) {
+        info.stableId = id;
+        info.name = name;
+        info.scale = ParameterScale::Discrete;
+        info.minValue = 0.0f;
+        info.maxValue = static_cast<float>(choices.size() - 1);
+        info.defaultValue = def;
+        info.choices = std::move(choices);
+    };
+
+    switch (index) {
+        case MidiStrumPlugin::kTrigger:
+            discrete("trigger", "Trigger", 0.0f, {"Chord", "Loop"});
+            break;
+
+        case MidiStrumPlugin::kOrder:
+            discrete("order", "Order", 0.0f, {"Up", "Down", "Up/Down", "As Played"});
+            break;
+
+        case MidiStrumPlugin::kShape: {
+            const auto nameOf = [](const auto& shape) { return juce::String(shape.name); };
+            auto names =
+                shapes() | std::views::transform(nameOf) | toStd<std::vector<juce::String>>();
+            discrete("shape", "Shape", 1.0f, std::move(names));  // Ease In
+            break;
+        }
+
+        case MidiStrumPlugin::kCycles:
+            discrete("cycles", "Cycles", 0.0f, {"1", "2", "3", "4", "5", "6", "7", "8"});
+            break;
+
+        case MidiStrumPlugin::kLoopSync:
+            discrete("loopsync", "Loop Sync", 0.0f, {"Time", "Beat"});
+            break;
+
+        case MidiStrumPlugin::kLoopRate:
+            discrete("looprate", "Loop Rate", 2.0f,  // 1/4
+                     {"1/1", "1/2", "1/4", "1/4T", "1/8", "1/8T", "1/16", "1/16T"});
+            break;
+
+        case MidiStrumPlugin::kStrumLength:
+            info.stableId = "strumlength";
+            info.name = "Strum Length";
+            info.unit = "ms";
+            info.minValue = 1.0f;
+            info.maxValue = 400.0f;
+            info.defaultValue = 90.0f;
+            break;
+
+        case MidiStrumPlugin::kSyncInterval:
+            info.stableId = "syncinterval";
+            info.name = "Sync Interval";
+            info.unit = "ms";
+            info.minValue = 60.0f;
+            info.maxValue = 2000.0f;
+            info.defaultValue = 500.0f;
+            break;
+
+        default:
+            break;
+    }
+
+    return info;
+}
+
 }  // namespace
 
 // ===========================================================================
 
-MidiStrumPlugin::MidiStrumPlugin(const te::PluginCreationInfo& info) : MidiDevicePlugin(info) {
-    auto um = getUndoManager();
-    trigger.referTo(state, StrumIDs::trigger, um, 0);
-    order.referTo(state, StrumIDs::order, um, 0);
-    shape.referTo(state, StrumIDs::shape, um, 1);  // Ease In
-    cycles.referTo(state, StrumIDs::cycles, um, 0);
-    loopSync.referTo(state, StrumIDs::loopSync, um, 0);  // Time (free ms)
-    loopRate.referTo(state, StrumIDs::loopRate, um, 2);  // 1/4
-    strumLength.referTo(state, StrumIDs::strumLength, um, 90.0f);
-    syncInterval.referTo(state, StrumIDs::syncInterval, um, 500.0f);
+MidiStrumPlugin::MidiStrumPlugin() {
+    for (int index = 0; index < kNumParams; ++index) {
+        const auto info = slotInfo(index);
+        domains_[static_cast<size_t>(index)] = ParameterUtils::domainOf(info);
+        values_[static_cast<size_t>(index)] =
+            ParameterUtils::realToNormalized(info.defaultValue, info);
+    }
 
-    triggerParam = addParam("trigger", "Trigger", {0.0f, 1.0f, 1.0f});
-    orderParam = addParam("order", "Order", {0.0f, 3.0f, 1.0f});
-    shapeParam = addParam("shape", "Shape", {0.0f, 7.0f, 1.0f});
-    cyclesParam = addParam("cycles", "Cycles", {0.0f, 7.0f, 1.0f});
-    loopSyncParam = addParam("loopsync", "Loop Sync", {0.0f, 1.0f, 1.0f});
-    loopRateParam =
-        addParam("looprate", "Loop Rate", {0.0f, static_cast<float>(kNumLoopRates - 1), 1.0f});
-    strumLengthParam = addParam("strumlength", "Strum Length", {1.0f, 400.0f});
-    syncIntervalParam = addParam("syncinterval", "Sync Interval", {60.0f, 2000.0f});
-
-    triggerParam->setParameterFromHost(static_cast<float>(trigger.get()),
-                                       juce::dontSendNotification);
-    orderParam->setParameterFromHost(static_cast<float>(order.get()), juce::dontSendNotification);
-    shapeParam->setParameterFromHost(static_cast<float>(shape.get()), juce::dontSendNotification);
-    cyclesParam->setParameterFromHost(static_cast<float>(cycles.get()), juce::dontSendNotification);
-    loopSyncParam->setParameterFromHost(static_cast<float>(loopSync.get()),
-                                        juce::dontSendNotification);
-    loopRateParam->setParameterFromHost(static_cast<float>(loopRate.get()),
-                                        juce::dontSendNotification);
-    strumLengthParam->setParameterFromHost(strumLength.get(), juce::dontSendNotification);
-    syncIntervalParam->setParameterFromHost(syncInterval.get(), juce::dontSendNotification);
-
-    buildLut(shape.get(), lut_);
-    lutShape_ = shape.get();
-    held_.reserve(16);
-    pending_.reserve(128);
-    sounding_.reserve(32);
-
-    state.addListener(&paramSyncListener_);
+    buildLut(displayIndex(kShape), lut_);
+    lutShape_ = displayIndex(kShape);
 }
 
-MidiStrumPlugin::~MidiStrumPlugin() {
-    state.removeListener(&paramSyncListener_);
-    notifyListenersOfDeletion();
+MidiStrumPlugin::~MidiStrumPlugin() = default;
+
+ParameterInfo MidiStrumPlugin::parameterInfo(int index) const {
+    if (index < 0 || index >= kNumParams)
+        return {};
+    return slotInfo(index);
+}
+
+float MidiStrumPlugin::parameterValue(int index) const {
+    if (index < 0 || index >= kNumParams)
+        return 0.0f;
+    return values_[static_cast<size_t>(index)];
+}
+
+void MidiStrumPlugin::setParameterValue(int index, float value) {
+    if (index < 0 || index >= kNumParams)
+        return;
+    values_[static_cast<size_t>(index)] = juce::jlimit(0.0f, 1.0f, value);
+}
+
+float MidiStrumPlugin::displayValue(int index) const {
+    return ParameterUtils::normalizedToReal(values_[static_cast<size_t>(index)],
+                                            domains_[static_cast<size_t>(index)]);
+}
+
+int MidiStrumPlugin::displayIndex(int index) const {
+    return juce::roundToInt(displayValue(index));
 }
 
 double MidiStrumPlugin::loopRateToBeats(int rateIndex) {
@@ -165,50 +223,23 @@ double MidiStrumPlugin::loopRateToBeats(int rateIndex) {
     }
 }
 
-int MidiStrumPlugin::loopIntervalSamples(const te::PluginRenderContext& fc) const {
-    const auto mode = static_cast<LoopSync>(controlIndex(loopSyncParam.get(), loopSync));
+int MidiStrumPlugin::loopIntervalSamples(const DeviceProcessContext& context) const {
+    const auto mode = static_cast<LoopSync>(displayIndex(kLoopSync));
     if (mode == LoopSync::Beat) {
-        const double beats = loopRateToBeats(controlIndex(loopRateParam.get(), loopRate));
-        const double bpm = juce::jmax(1.0, edit.tempoSequence.getBpmAt(fc.editTime.getStart()));
+        const double beats = loopRateToBeats(displayIndex(kLoopRate));
+        const double bpm =
+            context.tempoMap != nullptr
+                ? juce::jmax(1.0, context.tempoMap->bpmAtSeconds(context.timelineStartSeconds))
+                : 120.0;
         const double secs = beats * 60.0 / bpm;
         return static_cast<int>(secs * sampleRate_);
     }
-    const float ms = controlValue(syncIntervalParam.get(), syncInterval);
+    const float ms = displayValue(kSyncInterval);
     return static_cast<int>(ms * 0.001f * sampleRate_);
 }
 
-void MidiStrumPlugin::syncParamFromProperty(const juce::Identifier& property) {
-    if (property == StrumIDs::trigger && triggerParam)
-        triggerParam->setParameterFromHost(static_cast<float>(trigger.get()),
-                                           juce::dontSendNotification);
-    else if (property == StrumIDs::order && orderParam)
-        orderParam->setParameterFromHost(static_cast<float>(order.get()),
-                                         juce::dontSendNotification);
-    else if (property == StrumIDs::shape && shapeParam)
-        shapeParam->setParameterFromHost(static_cast<float>(shape.get()),
-                                         juce::dontSendNotification);
-    else if (property == StrumIDs::cycles && cyclesParam)
-        cyclesParam->setParameterFromHost(static_cast<float>(cycles.get()),
-                                          juce::dontSendNotification);
-    else if (property == StrumIDs::loopSync && loopSyncParam)
-        loopSyncParam->setParameterFromHost(static_cast<float>(loopSync.get()),
-                                            juce::dontSendNotification);
-    else if (property == StrumIDs::loopRate && loopRateParam)
-        loopRateParam->setParameterFromHost(static_cast<float>(loopRate.get()),
-                                            juce::dontSendNotification);
-    else if (property == StrumIDs::strumLength && strumLengthParam)
-        strumLengthParam->setParameterFromHost(strumLength.get(), juce::dontSendNotification);
-    else if (property == StrumIDs::syncInterval && syncIntervalParam)
-        syncIntervalParam->setParameterFromHost(syncInterval.get(), juce::dontSendNotification);
-}
-
-void MidiStrumPlugin::initialise(const te::PluginInitialisationInfo& info) {
-    MidiDevicePlugin::initialise(info);
-    resetStrumState();
-}
-
-void MidiStrumPlugin::deinitialise() {
-    MidiDevicePlugin::deinitialise();
+void MidiStrumPlugin::prepare(const DevicePrepareContext& context) {
+    MidiMagdaDevice::prepare(context);
     resetStrumState();
 }
 
@@ -217,121 +248,145 @@ void MidiStrumPlugin::reset() {
 }
 
 void MidiStrumPlugin::resetStrumState() {
-    held_.clear();
-    pending_.clear();
-    sounding_.clear();
+    heldCount_ = 0;
+    pendingCount_ = 0;
+    soundingCount_ = 0;
     clock_ = 0;
     collectLeft_ = -1;
     syncLeft_ = 0;
 }
 
-float MidiStrumPlugin::controlValue(te::AutomatableParameter* p,
-                                    const juce::CachedValue<float>& cv) const {
-    return p ? p->getCurrentValue() : cv.get();
+void MidiStrumPlugin::addHeld(int note, int velocity, std::uint32_t sourceId) {
+    removeHeld(note);
+    if (heldCount_ < MAX_HELD)
+        held_[static_cast<size_t>(heldCount_++)] = {note, velocity, noteOrder_++, sourceId};
 }
 
-int MidiStrumPlugin::controlIndex(te::AutomatableParameter* p,
-                                  const juce::CachedValue<int>& cv) const {
-    return p ? juce::roundToInt(p->getCurrentValue()) : cv.get();
+void MidiStrumPlugin::removeHeld(int note) {
+    int keep = 0;
+    for (int i = 0; i < heldCount_; ++i)
+        if (held_[static_cast<size_t>(i)].note != note)
+            held_[static_cast<size_t>(keep++)] = held_[static_cast<size_t>(i)];
+    heldCount_ = keep;
+}
+
+void MidiStrumPlugin::queuePending(const Pending& event) {
+    if (pendingCount_ < MAX_PENDING)
+        pending_[static_cast<size_t>(pendingCount_++)] = event;
 }
 
 void MidiStrumPlugin::scheduleReleaseAll() {
-    for (int note : sounding_)
-        pending_.push_back({clock_, note, 0, false});
+    // Note-ons still waiting belong to a chord that is over, so they are
+    // dropped rather than fired and left hanging until the next release.
+    int keep = 0;
+    for (int i = 0; i < pendingCount_; ++i)
+        if (!pending_[static_cast<size_t>(i)].gateOn)
+            pending_[static_cast<size_t>(keep++)] = pending_[static_cast<size_t>(i)];
+    pendingCount_ = keep;
+
+    for (int i = 0; i < soundingCount_; ++i) {
+        const auto& note = sounding_[static_cast<size_t>(i)];
+        queuePending({clock_, note.note, 0, false, note.sourceId});
+    }
+    // Every sounding note now has its note-off queued for this block, so a
+    // second call in the same block must not queue a duplicate.
+    soundingCount_ = 0;
 }
 
 void MidiStrumPlugin::scheduleStrum() {
-    if (held_.empty())
+    if (heldCount_ == 0)
         return;
 
-    // Loop re-strum: stop whatever is currently ringing before the new pass.
-    if (static_cast<Trigger>(controlIndex(triggerParam.get(), trigger)) == Trigger::Loop)
-        scheduleReleaseAll();
+    // A strum supersedes the pass before it in both modes: what that pass left
+    // ringing is released, and what it had not played yet is dropped. Chord
+    // mode used to re-strum straight over the sounding notes, so a chord change
+    // gave a downstream instrument a second note-on per pitch with no note-off
+    // between them, and one hung voice each (#2363).
+    scheduleReleaseAll();
 
-    std::vector<Held> notes = held_;
-    const int ord = controlIndex(orderParam.get(), order);
+    auto begin = ordered_.begin();
+    auto end = begin + heldCount_;
+    std::copy(held_.begin(), held_.begin() + heldCount_, begin);
+
+    const int ord = displayIndex(kOrder);
     if (ord == 0)  // Up
-        std::sort(notes.begin(), notes.end(),
-                  [](const Held& a, const Held& b) { return a.note < b.note; });
+        std::sort(begin, end, [](const Held& a, const Held& b) { return a.note < b.note; });
     else if (ord == 1)  // Down
-        std::sort(notes.begin(), notes.end(),
-                  [](const Held& a, const Held& b) { return a.note > b.note; });
+        std::sort(begin, end, [](const Held& a, const Held& b) { return a.note > b.note; });
     else if (ord == 2) {  // Up-Down
-        std::sort(notes.begin(), notes.end(),
-                  [](const Held& a, const Held& b) { return a.note < b.note; });
-        for (int i = static_cast<int>(notes.size()) - 2; i >= 1; --i)
-            notes.push_back(notes[static_cast<size_t>(i)]);
+        std::sort(begin, end, [](const Held& a, const Held& b) { return a.note < b.note; });
+        for (int i = heldCount_ - 2; i >= 1; --i)
+            *end++ = ordered_[static_cast<size_t>(i)];
     } else  // As Played
-        std::sort(notes.begin(), notes.end(),
-                  [](const Held& a, const Held& b) { return a.order < b.order; });
+        std::sort(begin, end, [](const Held& a, const Held& b) { return a.order < b.order; });
 
-    const int N = static_cast<int>(notes.size());
-    const float W = controlValue(strumLengthParam.get(), strumLength) * 0.001f *
-                    static_cast<float>(sampleRate_);
-    const int cyc = controlIndex(cyclesParam.get(), cycles) + 1;  // index 0..7 -> 1..8
+    const int N = static_cast<int>(end - begin);
+    const float W = displayValue(kStrumLength) * 0.001f * static_cast<float>(sampleRate_);
+    const int cyc = displayIndex(kCycles) + 1;  // index 0..7 -> 1..8
 
     for (int i = 0; i < N; ++i) {
         const float u = (N == 1) ? 0.0f : static_cast<float>(i) / static_cast<float>(N - 1);
         const float onset = juce::jlimit(0.0f, W, sampleCycled(lut_, u, cyc) * W);
-        const int note = notes[static_cast<size_t>(i)].note;
-        const int vel = juce::jlimit(1, 127, notes[static_cast<size_t>(i)].velocity);
-        pending_.push_back({clock_ + static_cast<std::int64_t>(onset), note, vel, true});
+        const auto& source = ordered_[static_cast<size_t>(i)];
+        queuePending({clock_ + static_cast<std::int64_t>(onset), source.note,
+                      juce::jlimit(1, 127, source.velocity), true, source.sourceId});
     }
 }
 
-void MidiStrumPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
-    if (!fc.bufferForMidiMessages)
+void MidiStrumPlugin::process(DeviceProcessContext& context) {
+    if (context.midiIn == nullptr || context.midiOut == nullptr || context.numSamples <= 0)
         return;
-    auto& midi = *fc.bufferForMidiMessages;
-    const int n = fc.bufferNumSamples;
-    if (n <= 0)
-        return;
+    const auto& in = *context.midiIn;
+    auto& midi = *context.midiOut;
+    const int n = context.numSamples;
 
     // Stop mid-strum: the upstream clip stops sending note-offs, so release
     // everything sounding and drop the latched chord on the playing->stopped
     // edge to avoid hung notes downstream. (The note-offs queued here fire in
     // step 3 below.)
-    if (wasPlaying_ && !fc.isPlaying) {
+    if (wasPlaying_ && !context.isPlaying) {
         scheduleReleaseAll();
-        held_.clear();
+        heldCount_ = 0;
         collectLeft_ = -1;
         syncLeft_ = 0;
     }
-    wasPlaying_ = fc.isPlaying;
+    wasPlaying_ = context.isPlaying;
 
     // Rebuild the curve LUT when Shape changes.
-    const int shp = controlIndex(shapeParam.get(), shape);
+    const int shp = displayIndex(kShape);
     if (shp != lutShape_) {
         buildLut(shp, lut_);
         lutShape_ = shp;
     }
 
-    const bool chordMode =
-        static_cast<Trigger>(controlIndex(triggerParam.get(), trigger)) == Trigger::Chord;
+    const bool chordMode = static_cast<Trigger>(displayIndex(kTrigger)) == Trigger::Chord;
 
-    // --- 1. Latch the held chord from incoming MIDI, then swallow the input.
-    const bool wasEmpty = held_.empty();
-    for (const auto& msg : midi) {
+    // The host's panic travels beside the events (#2418). It ends the chord the
+    // way the stop edge does, and is passed on to whatever sits behind.
+    if (in.isAllNotesOff()) {
+        scheduleReleaseAll();
+        heldCount_ = 0;
+        collectLeft_ = -1;
+        syncLeft_ = 0;
+        midi.setAllNotesOff(true);
+    }
+
+    // --- 1. Latch the held chord from incoming MIDI.
+    const bool wasEmpty = heldCount_ == 0;
+    for (int eventIndex = 0; eventIndex < in.size(); ++eventIndex) {
+        const auto& msg = in.message(eventIndex);
         if (msg.isNoteOn()) {
-            const int note = msg.getNoteNumber();
-            held_.erase(std::remove_if(held_.begin(), held_.end(),
-                                       [note](const Held& h) { return h.note == note; }),
-                        held_.end());
-            held_.push_back({note, msg.getVelocity(), noteOrder_++});
+            addHeld(msg.getNoteNumber(), msg.getVelocity(), in.sourceId(eventIndex));
             collectLeft_ = juce::jmax(1, static_cast<int>(0.03 * sampleRate_));
         } else if (msg.isNoteOff()) {
-            const int note = msg.getNoteNumber();
-            held_.erase(std::remove_if(held_.begin(), held_.end(),
-                                       [note](const Held& h) { return h.note == note; }),
-                        held_.end());
+            removeHeld(msg.getNoteNumber());
         } else if (msg.isAllNotesOff() || msg.isAllSoundOff()) {
-            held_.clear();
+            heldCount_ = 0;
         }
     }
-    midi.clear();  // the strum replaces the raw chord
 
-    // Chord released -> let everything sounding ring off.
-    if (held_.empty() && !wasEmpty) {
+    // Chord released -> end what the strum is still holding or owes.
+    if (heldCount_ == 0 && !wasEmpty) {
         scheduleReleaseAll();
         collectLeft_ = -1;
         syncLeft_ = 0;
@@ -346,78 +401,97 @@ void MidiStrumPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
                 collectLeft_ = -1;
             }
         }
-    } else if (!held_.empty()) {
+    } else if (heldCount_ != 0) {
         syncLeft_ -= n;
         if (syncLeft_ <= 0) {
             scheduleStrum();
-            syncLeft_ = juce::jmax(1, loopIntervalSamples(fc));
+            syncLeft_ = juce::jmax(1, loopIntervalSamples(context));
         }
     }
 
     // --- 3. Emit pending events that fall in this block, in time order
     //        (note-offs before note-ons at the same instant, so retriggers work).
     const double blockSecs = static_cast<double>(n) / sampleRate_;
-    std::vector<Pending> due;
-    for (auto it = pending_.begin(); it != pending_.end();) {
-        if (it->fireAt < clock_ + n) {
-            due.push_back(*it);
-            it = pending_.erase(it);
-        } else {
-            ++it;
-        }
+    dueCount_ = 0;
+    int stillPending = 0;
+    for (int i = 0; i < pendingCount_; ++i) {
+        const auto& event = pending_[static_cast<size_t>(i)];
+        if (event.fireAt < clock_ + n)
+            due_[static_cast<size_t>(dueCount_++)] = event;
+        else
+            pending_[static_cast<size_t>(stillPending++)] = event;
     }
-    std::sort(due.begin(), due.end(), [](const Pending& a, const Pending& b) {
+    pendingCount_ = stillPending;
+
+    auto* dueBegin = due_.data();
+    auto* dueEnd = dueBegin + dueCount_;
+    std::sort(dueBegin, dueEnd, [](const Pending& a, const Pending& b) {
         if (a.fireAt != b.fireAt)
             return a.fireAt < b.fireAt;
         return a.gateOn < b.gateOn;  // false (note-off) before true (note-on)
     });
 
     int lastDisplayNote = -1, lastDisplayVel = 0;
-    for (const auto& p : due) {
+    for (auto* p = dueBegin; p != dueEnd; ++p) {
         const double tib =
-            juce::jlimit(0.0, blockSecs, static_cast<double>(p.fireAt - clock_) / sampleRate_);
-        if (p.gateOn) {
-            midi.addMidiMessage(
-                juce::MidiMessage::noteOn(1, p.note, static_cast<juce::uint8>(p.velocity)), tib,
-                te::MPESourceID{});
-            if (std::find(sounding_.begin(), sounding_.end(), p.note) == sounding_.end())
-                sounding_.push_back(p.note);
-            lastDisplayNote = p.note;
-            lastDisplayVel = p.velocity;
+            juce::jlimit(0.0, blockSecs, static_cast<double>(p->fireAt - clock_) / sampleRate_);
+        if (p->gateOn) {
+            // Up/Down sounds the inner notes twice in one pass. Close the first
+            // one here, or the buffer carries two note-ons a pitch and only the
+            // single note-off `sounding_` tracks (#2363).
+            auto* soundingBegin = sounding_.data();
+            auto* soundingEnd = soundingBegin + soundingCount_;
+            auto* held = std::find_if(soundingBegin, soundingEnd,
+                                      [p](const Sounding& s) { return s.note == p->note; });
+            if (held != soundingEnd) {
+                auto release = juce::MidiMessage::noteOff(1, p->note);
+                release.setTimeStamp(tib);
+                midi.addEvent({std::move(release), held->sourceId});
+                held->sourceId = p->sourceId;
+            } else if (soundingCount_ < MAX_HELD) {
+                sounding_[static_cast<size_t>(soundingCount_++)] = {p->note, p->sourceId};
+            }
+
+            auto message =
+                juce::MidiMessage::noteOn(1, p->note, static_cast<juce::uint8>(p->velocity));
+            message.setTimeStamp(tib);
+            midi.addEvent({std::move(message), p->sourceId});
+            lastDisplayNote = p->note;
+            lastDisplayVel = p->velocity;
         } else {
-            midi.addMidiMessage(juce::MidiMessage::noteOff(1, p.note), tib, te::MPESourceID{});
-            sounding_.erase(std::remove(sounding_.begin(), sounding_.end(), p.note),
-                            sounding_.end());
+            auto message = juce::MidiMessage::noteOff(1, p->note);
+            message.setTimeStamp(tib);
+            midi.addEvent({std::move(message), p->sourceId});
+            int keep = 0;
+            for (int i = 0; i < soundingCount_; ++i)
+                if (sounding_[static_cast<size_t>(i)].note != p->note)
+                    sounding_[static_cast<size_t>(keep++)] = sounding_[static_cast<size_t>(i)];
+            soundingCount_ = keep;
         }
     }
     if (lastDisplayNote >= 0)
         setMidiOutDisplay(lastDisplayNote, lastDisplayVel);
-    else if (sounding_.empty())
+    else if (soundingCount_ == 0)
         clearMidiOutDisplay();
 
     clock_ += n;
 }
 
-void MidiStrumPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
-    tracktion::copyPropertiesToCachedValues(v, trigger, order, shape, cycles, loopSync, loopRate,
-                                            strumLength, syncInterval);
-}
-
-std::vector<float> MidiStrumPlugin::curveOnsetPreview(int count) const {
-    std::vector<float> out;
+std::vector<float> MidiStrumPlugin::curveOnsetPreview(int shapeIndex, int cyclesIndex, int count) {
     if (count <= 0)
-        return out;
+        return {};
 
     std::array<float, 1024> lut{};
-    buildLut(shape.get(), lut);
-    const int cyc = cycles.get() + 1;  // index 0..7 -> 1..8
+    buildLut(shapeIndex, lut);
+    const int cyc = juce::jlimit(0, 7, cyclesIndex) + 1;  // index 0..7 -> 1..8
 
-    out.reserve(static_cast<size_t>(count));
-    for (int i = 0; i < count; ++i) {
+    const auto onsetAt = [&lut, count, cyc](int i) {
         const float u = (count == 1) ? 0.0f : static_cast<float>(i) / static_cast<float>(count - 1);
-        out.push_back(juce::jlimit(0.0f, 1.0f, sampleCycled(lut, u, cyc)));
-    }
-    return out;
+        return juce::jlimit(0.0f, 1.0f, sampleCycled(lut, u, cyc));
+    };
+
+    return std::views::iota(0, count) | std::views::transform(onsetAt) |
+           toStd<std::vector<float>>();
 }
 
 }  // namespace magda::daw::audio

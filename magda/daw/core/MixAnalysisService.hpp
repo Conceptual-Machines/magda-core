@@ -65,10 +65,10 @@ class MixAnalysisService {
 
     /// Human-readable scope from the current mixer selection: "the full mix"
     /// (nothing or the master selected) or "N selected channels". For menus.
-    juce::String scopeDescription() const;
+    static juce::String scopeDescription();
     /// Human-readable time range an offline run will cover: "loop region" when the
     /// transport is looping (only that part is rendered), else "whole song".
-    juce::String rangeDescription() const;
+    static juce::String rangeDescription();
 
     bool isBusy() const {
         return busy_;
@@ -101,7 +101,7 @@ class MixAnalysisService {
     void store(Mode mode, MixAnalysisData input);
     void setBusy(bool busy, Mode mode);
     void restoreCaptureState();  // undo what startLiveCapture armed
-    MixAnalysisData buildLiveInput() const;
+    static MixAnalysisData buildLiveInput();
 
     bool busy_ = false;
     Mode busyMode_ = Mode::Offline;

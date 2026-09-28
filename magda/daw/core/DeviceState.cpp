@@ -9,6 +9,7 @@ namespace {
 const juce::Identifier kKeySchema("schema");
 const juce::Identifier kKeyDevice("device");
 const juce::Identifier kKeyParams("params");
+const juce::Identifier kKeyParamsDomain("paramsDomain");
 const juce::Identifier kKeyProps("props");
 const juce::Identifier kKeyChildren("children");
 const juce::Identifier kKeyType("type");
@@ -34,14 +35,14 @@ juce::var encodeValue(const juce::var& value) {
             obj->setProperty(kBinaryTag, block->toBase64Encoding());
         else
             obj->setProperty(kBinaryTag, juce::String());
-        return juce::var(obj);
+        return {obj};
     }
 
     if (const auto* array = value.getArray()) {
         juce::Array<juce::var> encoded;
         for (const auto& entry : *array)
             encoded.add(encodeValue(entry));
-        return juce::var(encoded);
+        return {encoded};
     }
 
     return value;
@@ -52,7 +53,7 @@ juce::var decodeValue(const juce::var& value) {
         if (obj->hasProperty(kBinaryTag)) {
             juce::MemoryBlock block;
             block.fromBase64Encoding(obj->getProperty(kBinaryTag).toString());
-            return juce::var(block);
+            return {block};
         }
         return value;
     }
@@ -61,7 +62,7 @@ juce::var decodeValue(const juce::var& value) {
         juce::Array<juce::var> decoded;
         for (const auto& entry : *array)
             decoded.add(decodeValue(entry));
-        return juce::var(decoded);
+        return {decoded};
     }
 
     return value;
@@ -71,7 +72,7 @@ juce::var encodeProps(const juce::NamedValueSet& props) {
     auto* obj = new juce::DynamicObject();
     for (int i = 0; i < props.size(); ++i)
         obj->setProperty(props.getName(i), encodeValue(props.getValueAt(i)));
-    return juce::var(obj);
+    return {obj};
 }
 
 void decodeProps(const juce::var& value, juce::NamedValueSet& outProps) {
@@ -94,7 +95,7 @@ juce::var encodeNode(const Node& node) {
             children.add(encodeNode(child));
         obj->setProperty(kKeyChildren, juce::var(children));
     }
-    return juce::var(obj);
+    return {obj};
 }
 
 Node decodeNode(const juce::var& value) {
@@ -131,6 +132,8 @@ juce::String encode(const Doc& doc) {
             params.add(juce::var(paramObj));
         }
         obj->setProperty(kKeyParams, juce::var(params));
+        if (doc.paramsAreDisplayDomain)
+            obj->setProperty(kKeyParamsDomain, "display");
     }
 
     if (doc.root.props.size() > 0)
@@ -173,6 +176,8 @@ std::optional<Doc> decode(const juce::String& text) {
     if (doc.deviceType.isEmpty())
         return std::nullopt;
 
+    doc.paramsAreDisplayDomain = obj->getProperty(kKeyParamsDomain).toString() == "display";
+
     if (auto* params = obj->getProperty(kKeyParams).getArray()) {
         for (const auto& entry : *params) {
             auto* paramObj = entry.getDynamicObject();
@@ -193,6 +198,82 @@ std::optional<Doc> decode(const juce::String& text) {
             doc.root.children.push_back(decodeNode(child));
 
     return doc;
+}
+
+namespace {
+
+/// The engine's own, on a v1 tree: the object id it stamps on every node, and
+/// the assignments MAGDA rebuilds from its own modifier list after a restore.
+void dropEngineOwned(juce::ValueTree tree) {
+    static const juce::Identifier kObjectId("id");
+    static const juce::Identifier kModifierAssignments("MODIFIERASSIGNMENTS");
+
+    tree.removeProperty(kObjectId, nullptr);
+
+    for (auto index = tree.getNumChildren() - 1; index >= 0; --index) {
+        auto child = tree.getChild(index);
+        if (child.hasType(kModifierAssignments))
+            tree.removeChild(index, nullptr);
+        else
+            dropEngineOwned(child);
+    }
+}
+
+}  // namespace
+
+namespace {
+
+Node nodeFrom(const juce::ValueTree& tree) {
+    Node node;
+    node.type = tree.getType().toString();
+
+    for (int i = 0; i < tree.getNumProperties(); ++i) {
+        const auto name = tree.getPropertyName(i);
+        node.props.set(name, tree.getProperty(name));
+    }
+
+    for (int i = 0; i < tree.getNumChildren(); ++i)
+        node.children.push_back(nodeFrom(tree.getChild(i)));
+
+    return node;
+}
+
+}  // namespace
+
+std::optional<Doc> decodeSavedState(const juce::String& text) {
+    if (!looksLikeLegacyEngineState(text))
+        return decode(text);
+
+    const auto tree = legacyEngineStateTree(text);
+    if (!tree.isValid())
+        return std::nullopt;
+
+    static const juce::Identifier kType("type");
+
+    Doc doc;
+    doc.version = 1;
+    doc.deviceType = tree.getProperty(kType).toString();
+    doc.root = nodeFrom(tree);
+    // The root element name is the engine's, not the device's, which is what
+    // v2 records in deviceType.
+    doc.root.type = {};
+    return doc;
+}
+
+juce::ValueTree legacyEngineStateTree(const juce::String& text) {
+    if (!looksLikeLegacyEngineState(text))
+        return {};
+
+    const auto xml = juce::parseXML(text);
+    if (xml == nullptr)
+        return {};
+
+    auto tree = juce::ValueTree::fromXml(*xml);
+    if (!tree.isValid())
+        return {};
+
+    dropEngineOwned(tree);
+    return tree;
 }
 
 bool looksLikeLegacyEngineState(const juce::String& text) {
@@ -227,6 +308,17 @@ void forEachNode(const Node& root, const std::function<void(const Node&)>& visit
     visit(root);
     for (const auto& child : root.children)
         forEachNode(child, visit);
+}
+
+juce::ValueTree toValueTree(const Node& node) {
+    juce::ValueTree tree(node.type.isNotEmpty() ? juce::Identifier(node.type)
+                                                : juce::Identifier("PLUGIN"));
+    for (int i = 0; i < node.props.size(); ++i)
+        tree.setProperty(node.props.getName(i), node.props.getValueAt(i), nullptr);
+    for (const auto& child : node.children)
+        if (child.type.isNotEmpty())
+            tree.appendChild(toValueTree(child), nullptr);
+    return tree;
 }
 
 }  // namespace magda::device_state

@@ -4,6 +4,7 @@
 #include <cmath>
 #include <limits>
 
+#include "../core/PluginParameterConfigStore.hpp"
 #include "remote_handlers.hpp"
 
 namespace magda::remote {
@@ -19,9 +20,12 @@ bool schemaDeclaresType(const juce::var& schema, const char* expected) {
     const auto type = object->getProperty("type");
     if (type.isString())
         return type.toString() == expected;
-    if (auto* types = type.getArray())
-        return std::any_of(types->begin(), types->end(),
-                           [&](const auto& candidate) { return candidate.toString() == expected; });
+    if (auto* types = type.getArray()) {
+        const auto namesExpected = [&expected](const juce::var& candidate) {
+            return candidate.toString() == expected;
+        };
+        return std::ranges::any_of(*types, namesExpected);
+    }
     return false;
 }
 
@@ -101,7 +105,7 @@ juce::var emptyObjectSchema() {
 }
 
 juce::var arraySchema(const juce::var& itemSchema) {
-    auto schema = new juce::DynamicObject();
+    auto* schema = new juce::DynamicObject();
     schema->setProperty("type", "array");
     schema->setProperty("items", itemSchema);
     return schema;
@@ -122,10 +126,109 @@ const juce::var& midiNoteSchema() {
     return value;
 }
 
+const juce::var& midiEventSchema() {
+    static const auto value = parseSchema(R"json({"oneOf":[
+        {"type":"object","properties":{
+            "id":{"type":"integer","minimum":1},
+            "type":{"type":"string","const":"note"},
+            "note":{"type":"integer","minimum":0,"maximum":127},
+            "velocity":{"type":"integer","minimum":1,"maximum":127},
+            "beat":{"type":"number","minimum":0},
+            "lengthBeats":{"type":"number","exclusiveMinimum":0},
+            "keyswitch":{"type":"boolean"}},
+         "required":["id","type","note","velocity","beat","lengthBeats","keyswitch"],
+         "additionalProperties":false},
+        {"type":"object","properties":{
+            "id":{"type":"integer","minimum":1},
+            "type":{"type":"string","const":"controlChange"},
+            "controller":{"type":"integer","minimum":0,"maximum":127},
+            "value":{"type":"integer","minimum":0,"maximum":127},
+            "beat":{"type":"number","minimum":0}},
+         "required":["id","type","controller","value","beat"],
+         "additionalProperties":false},
+        {"type":"object","properties":{
+            "id":{"type":"integer","minimum":1},
+            "type":{"type":"string","const":"pitchBend"},
+            "value":{"type":"integer","minimum":0,"maximum":16383},
+            "beat":{"type":"number","minimum":0}},
+         "required":["id","type","value","beat"],"additionalProperties":false},
+        {"type":"object","properties":{
+            "id":{"type":"integer","minimum":1},
+            "type":{"type":"string","const":"channelPressure"},
+            "value":{"type":"integer","minimum":0,"maximum":127},
+            "beat":{"type":"number","minimum":0}},
+         "required":["id","type","value","beat"],"additionalProperties":false},
+        {"type":"object","properties":{
+            "id":{"type":"integer","minimum":1},
+            "type":{"type":"string","const":"polyAftertouch"},
+            "note":{"type":"integer","minimum":0,"maximum":127},
+            "value":{"type":"integer","minimum":0,"maximum":127},
+            "beat":{"type":"number","minimum":0}},
+         "required":["id","type","note","value","beat"],"additionalProperties":false}
+    ]})json");
+    return value;
+}
+
+const juce::var& midiEventCreateSchema() {
+    static const auto value = parseSchema(R"json({"oneOf":[
+        {"type":"object","properties":{
+            "type":{"type":"string","const":"note"},
+            "note":{"type":"integer","minimum":0,"maximum":127},
+            "velocity":{"type":"integer","minimum":1,"maximum":127},
+            "beat":{"type":"number","minimum":0},
+            "lengthBeats":{"type":"number","exclusiveMinimum":0},
+            "keyswitch":{"type":"boolean"}},
+         "required":["type","note","velocity","beat","lengthBeats"],
+         "additionalProperties":false},
+        {"type":"object","properties":{
+            "type":{"type":"string","const":"controlChange"},
+            "controller":{"type":"integer","minimum":0,"maximum":127},
+            "value":{"type":"integer","minimum":0,"maximum":127},
+            "beat":{"type":"number","minimum":0}},
+         "required":["type","controller","value","beat"],
+         "additionalProperties":false},
+        {"type":"object","properties":{
+            "type":{"type":"string","const":"pitchBend"},
+            "value":{"type":"integer","minimum":0,"maximum":16383},
+            "beat":{"type":"number","minimum":0}},
+         "required":["type","value","beat"],"additionalProperties":false},
+        {"type":"object","properties":{
+            "type":{"type":"string","const":"channelPressure"},
+            "value":{"type":"integer","minimum":0,"maximum":127},
+            "beat":{"type":"number","minimum":0}},
+         "required":["type","value","beat"],"additionalProperties":false},
+        {"type":"object","properties":{
+            "type":{"type":"string","const":"polyAftertouch"},
+            "note":{"type":"integer","minimum":0,"maximum":127},
+            "value":{"type":"integer","minimum":0,"maximum":127},
+            "beat":{"type":"number","minimum":0}},
+         "required":["type","note","value","beat"],"additionalProperties":false}
+    ]})json");
+    return value;
+}
+
+juce::var midiEventMutationInputSchema(const juce::var& eventSchema, bool allowEmpty) {
+    auto schema = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "clipId":{"type":"integer","minimum":0},
+            "events":{"type":"array","maxItems":4096,"items":{}}
+        },
+        "required":["clipId","events"],"additionalProperties":false
+    })json");
+    auto* events = schema["properties"]["events"].getDynamicObject();
+    events->setProperty("items", eventSchema);
+    if (!allowEmpty)
+        events->setProperty("minItems", 1);
+    return schema;
+}
+
 const juce::var& projectSchema() {
     static const auto value = parseSchema(R"json({
         "type":"object",
         "properties":{
+            "open":{"type":"boolean"},
+            "path":{"type":["string","null"]},
             "name":{"type":"string"},
             "tempo":{"type":"number","minimum":20,"maximum":400},
             "timeSignatureNumerator":{"type":"integer","minimum":1,"maximum":32},
@@ -136,11 +239,13 @@ const juce::var& projectSchema() {
             "keyQuality":{"type":"string","enum":["major","minor"]},
             "loopEnabled":{"type":"boolean"},
             "loopStartBeats":{"type":"number","minimum":0},
-            "loopEndBeats":{"type":"number","minimum":0}
+            "loopEndBeats":{"type":"number","minimum":0},
+            "dirty":{"type":"boolean"},
+            "hasSaveTarget":{"type":"boolean"}
         },
-        "required":["name","tempo","timeSignatureNumerator","timeSignatureDenominator",
+        "required":["open","path","name","tempo","timeSignatureNumerator","timeSignatureDenominator",
                     "sampleRate","timelineLengthBars","keyRoot","keyQuality","loopEnabled",
-                    "loopStartBeats","loopEndBeats"],
+                    "loopStartBeats","loopEndBeats","dirty","hasSaveTarget"],
         "additionalProperties":false
     })json");
     return value;
@@ -162,6 +267,7 @@ const juce::var& trackSchema() {
             "muted":{"type":"boolean"},
             "soloed":{"type":"boolean"},
             "recordArmed":{"type":"boolean"},
+            "inputMonitor":{"type":"string","enum":["off","in","auto"]},
             "frozen":{"type":"boolean"},
             "audioInputDevice":{"type":"string"},
             "midiInputDevice":{"type":"string"},
@@ -169,8 +275,181 @@ const juce::var& trackSchema() {
             "midiOutputDevice":{"type":"string"}
         },
         "required":["id","type","name","colourArgb","parentId","childIds","volume","pan",
-                    "muted","soloed","recordArmed","frozen","audioInputDevice","midiInputDevice",
-                    "audioOutputDevice","midiOutputDevice"],
+                    "muted","soloed","recordArmed","inputMonitor","frozen","audioInputDevice",
+                    "midiInputDevice","audioOutputDevice","midiOutputDevice"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
+const juce::var& routingEndpointSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "id":{"type":"string"},
+            "name":{"type":"string"},
+            "media":{"type":"string","enum":["audio","midi"]},
+            "direction":{"type":"string","enum":["input","output"]},
+            "kind":{"type":"string","enum":["none","hardware","track","master","all_midi_inputs"]},
+            "available":{"type":"boolean"},
+            "channelCount":{"type":"integer","minimum":0},
+            "trackId":{"type":["integer","null"],"minimum":0}
+        },
+        "required":["id","name","media","direction","kind","available","channelCount","trackId"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
+const juce::var& trackRoutingSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "trackId":{"type":"integer","minimum":0},
+            "audioInputEndpointId":{"type":"string"},
+            "midiInputEndpointId":{"type":"string"},
+            "audioOutputEndpointId":{"type":"string"},
+            "midiOutputEndpointId":{"type":"string"},
+            "recordArmed":{"type":"boolean"},
+            "inputMonitor":{"type":"string","enum":["off","in","auto"]}
+        },
+        "required":["trackId","audioInputEndpointId","midiInputEndpointId",
+                    "audioOutputEndpointId","midiOutputEndpointId","recordArmed","inputMonitor"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
+const juce::var& droppedRoutingConnectionSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "trackId":{"type":"integer","minimum":0},
+            "field":{"type":"string","enum":["audioInputEndpointId","midiInputEndpointId",
+                                                   "audioOutputEndpointId","midiOutputEndpointId"]},
+            "endpointId":{"type":"string","minLength":1},
+            "reason":{"type":"string","enum":["replaced_by_requested_route"]}
+        },
+        "required":["trackId","field","endpointId","reason"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
+const juce::var& trackSendSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "id":{"type":"string","minLength":1},
+            "sourceTrackId":{"type":"integer","minimum":0},
+            "destinationEndpointId":{"type":"string","minLength":1},
+            "level":{"type":"number","minimum":0,"maximum":1},
+            "enabled":{"type":"boolean"},
+            "position":{"type":"string","enum":["pre_fader","post_fader"]}
+        },
+        "required":["id","sourceTrackId","destinationEndpointId","level","enabled","position"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
+const juce::var& invalidatedSendConnectionSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "sendId":{"type":"string","minLength":1},
+            "destinationEndpointId":{"type":"string","minLength":1},
+            "reason":{"type":"string","enum":["destination_replaced","send_removed"]}
+        },
+        "required":["sendId","destinationEndpointId","reason"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
+const juce::var& chordEntrySchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "clipId":{"type":"integer","minimum":0},
+            "clipBeat":{"type":"number","minimum":0},
+            "startBeat":{"type":"number","minimum":0},
+            "lengthBeats":{"type":"number","exclusiveMinimum":0},
+            "name":{"type":"string"}
+        },
+        "required":["clipId","clipBeat","startBeat","lengthBeats","name"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
+const juce::var& chordTrackSchema() {
+    static const auto value = [] {
+        auto schema = parseSchema(R"json({
+            "type":"object",
+            "properties":{
+                "track":{"anyOf":[{}, {"type":"null"}]},
+                "chords":{"type":"array","items":{}}
+            },
+            "required":["track","chords"],
+            "additionalProperties":false
+        })json");
+        schema["properties"]["track"]["anyOf"].getArray()->set(0, trackSchema());
+        schema["properties"]["chords"].getDynamicObject()->setProperty("items", chordEntrySchema());
+        return schema;
+    }();
+    return value;
+}
+
+const juce::var& detectedChordSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "startBeat":{"type":"number","minimum":0},
+            "lengthBeats":{"type":"number","exclusiveMinimum":0},
+            "root":{"type":"string","enum":["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"]},
+            "quality":{"type":"string","minLength":1,"maxLength":32},
+            "name":{"type":"string","minLength":1},
+            "confidence":{"type":"number","minimum":0,"maximum":1},
+            "warnings":{"type":"array","items":{"type":"string","enum":[
+                "partial_match","missing_chord_tones","extra_pitch_classes"]}}
+        },
+        "required":["startBeat","lengthBeats","root","quality","name","confidence","warnings"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
+const juce::var& chordDetectionResultSchema() {
+    static const auto value = [] {
+        auto schema = parseSchema(R"json({
+            "type":"object",
+            "properties":{
+                "sourceClipId":{"type":"integer","minimum":0},
+                "startBeat":{"type":"number","minimum":0},
+                "endBeat":{"type":"number","exclusiveMinimum":0},
+                "chords":{"type":"array","maxItems":256,"items":{}},
+                "warnings":{"type":"array","items":{"type":"string","enum":["no_supported_chords"]}}
+            },
+            "required":["sourceClipId","startBeat","endBeat","chords","warnings"],
+            "additionalProperties":false
+        })json");
+        schema["properties"]["chords"].getDynamicObject()->setProperty("items",
+                                                                       detectedChordSchema());
+        return schema;
+    }();
+    return value;
+}
+
+const juce::var& trackPresetSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "id":{"type":"string"},
+            "name":{"type":"string"},
+            "category":{"type":"string"}
+        },
+        "required":["id","name","category"],
         "additionalProperties":false
     })json");
     return value;
@@ -195,10 +474,14 @@ const juce::var& clipSchema() {
                 "launchQuantize":{"type":"string","enum":["none","8_bars","4_bars","2_bars",
                     "1_bar","1/2","1/4","1/8","1/16"]},
                 "followAction":{"type":"string","enum":["none","next","previous","random","stop","again"]},
-                "notes":{"type":"array","maxItems":100000}
+                "followActionDelayBeats":{"type":"number","minimum":0,"maximum":1000000},
+                "followActionLoopCount":{"type":"integer","minimum":1,"maximum":100000},
+                "notes":{"type":"array","maxItems":100000},
+                "midiEvents":{"type":"array","maxItems":100000}
             },
             "required":["id","trackId","type","view","name","colourArgb","startBeat","lengthBeats",
-                        "enabled","sceneIndex","launchMode","launchQuantize","followAction","notes"],
+                        "enabled","sceneIndex","launchMode","launchQuantize","followAction",
+                        "followActionDelayBeats","followActionLoopCount","notes","midiEvents"],
             "additionalProperties":false
         })json");
         schema.getDynamicObject()
@@ -207,8 +490,44 @@ const juce::var& clipSchema() {
             ->getProperty("notes")
             .getDynamicObject()
             ->setProperty("items", midiNoteSchema());
+        schema.getDynamicObject()
+            ->getProperty("properties")
+            .getDynamicObject()
+            ->getProperty("midiEvents")
+            .getDynamicObject()
+            ->setProperty("items", midiEventSchema());
         return schema;
     }();
+    return value;
+}
+
+const juce::var& clipDestinationSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "oneOf":[
+            {
+                "type":"object",
+                "properties":{
+                    "view":{"type":"string","const":"arrangement"},
+                    "trackId":{"type":"integer","minimum":0},
+                    "startBeat":{"type":"number","minimum":0}
+                },
+                "required":["view","trackId","startBeat"],
+                "additionalProperties":false
+            },
+            {
+                "type":"object",
+                "properties":{
+                    "view":{"type":"string","const":"session"},
+                    "trackId":{"type":"integer","minimum":0},
+                    "sceneId":{"type":"integer","minimum":0},
+                    "occupiedPolicy":{"type":"string","enum":["fail","swap","replace"]}
+                },
+                "required":["view","trackId","sceneId","occupiedPolicy"],
+                "additionalProperties":false
+            }
+        ]
+    })json");
     return value;
 }
 
@@ -224,7 +543,7 @@ const juce::var& devicePathSchema() {
             "steps":{"type":"array","items":{
                 "type":"object",
                 "properties":{
-                    "type":{"type":"string","enum":["rack","chain","device"]},
+                    "type":{"type":"string","enum":["rack","chain","device","pad_rack","pad_chain"]},
                     "id":{"type":"integer","minimum":0}
                 },
                 "required":["type","id"],
@@ -234,6 +553,152 @@ const juce::var& devicePathSchema() {
         "required":["trackId","section","trackLevel","topLevelDeviceId","steps"],
         "additionalProperties":false
     })json");
+    return value;
+}
+
+const juce::var& sidechainViewSchema() {
+    static auto value = [] {
+        auto schema = parseSchema(R"json({
+            "type":"object",
+            "properties":{
+                "ownerPath":{},
+                "ownerType":{"type":"string","enum":["device","rack"]},
+                "supportedTypes":{"type":"array","items":{"type":"string","enum":["audio","midi"]}},
+                "audioChannels":{"type":"integer","minimum":0},
+                "supportedTapPoints":{"type":"array","items":{"type":"string","enum":["preFx","postFader"]}},
+                "supportsGain":{"type":"boolean"},
+                "gainDbMin":{"type":"number"},
+                "gainDbMax":{"type":"number"},
+                "supportsListen":{"type":"boolean"},
+                "supportedChannelMappings":{"type":"array","items":{"type":"string","enum":["automatic"]}},
+                "sourceEndpointId":{"type":["string","null"]},
+                "type":{"type":"string","enum":["none","audio","midi"]},
+                "tapPoint":{"type":"string","enum":["preFx","postFader"]},
+                "gainDb":{"type":"number"},
+                "enabled":{"type":"boolean"},
+                "listen":{"type":"boolean"},
+                "channelMapping":{"type":"string","enum":["automatic"]}
+            },
+            "required":["ownerPath","ownerType","supportedTypes","audioChannels",
+                        "supportedTapPoints","supportsGain","gainDbMin","gainDbMax",
+                        "supportsListen","supportedChannelMappings","sourceEndpointId","type",
+                        "tapPoint","gainDb","enabled","listen","channelMapping"],
+            "additionalProperties":false
+        })json");
+        schema["properties"].getDynamicObject()->setProperty("ownerPath", devicePathSchema());
+        return schema;
+    }();
+    return value;
+}
+
+const juce::var& referenceAddressSchema() {
+    static const auto value = [] {
+        auto schema = parseSchema(R"json({
+            "type":"object",
+            "properties":{
+                "kind":{"type":"string","enum":["track","device","parameter","automation_lane",
+                    "macro","macro_link","modulator","modulator_link","controller_binding",
+                    "sidechain","routing"]},
+                "trackId":{"type":["integer","null"],"minimum":-2},
+                "devicePath":{"anyOf":[{}, {"type":"null"}]},
+                "automationLaneId":{"type":["integer","null"],"minimum":0},
+                "macroId":{"type":["integer","null"],"minimum":0},
+                "modId":{"type":["integer","null"],"minimum":0},
+                "linkIndex":{"type":["integer","null"],"minimum":0},
+                "parameterIndex":{"type":["integer","null"],"minimum":0},
+                "parameterStableId":{"type":"string"},
+                "bindingId":{"type":"string"},
+                "route":{"anyOf":[
+                    {"type":"string","enum":["audio_input","midi_input","send","multi_output",
+                        "track_volume","track_pan","tempo"]},
+                    {"type":"null"}]},
+                "routeIndex":{"type":["integer","null"],"minimum":0}
+            },
+            "required":["kind","trackId","devicePath","automationLaneId","macroId","modId",
+                "linkIndex","parameterIndex","parameterStableId","bindingId","route","routeIndex"],
+            "additionalProperties":false
+        })json");
+        auto* alternatives = schema["properties"]["devicePath"]["anyOf"].getArray();
+        alternatives->set(0, devicePathSchema());
+        return schema;
+    }();
+    return value;
+}
+
+const juce::var& referenceImpactEntrySchema() {
+    static const auto value = [] {
+        auto schema = parseSchema(R"json({
+            "type":"object",
+            "properties":{
+                "referenceKind":{"type":"string","enum":["automation","macro_link",
+                    "modulator_link","controller_binding","sidechain","routing"]},
+                "source":{},"target":{},
+                "reason":{"type":"string","enum":["policy_preserve","stable_identity_match",
+                    "policy_drop","policy_reject","no_proven_remap","missing_stable_identity",
+                    "stable_identity_mismatch"]}
+            },
+            "required":["referenceKind","source","target","reason"],
+            "additionalProperties":false
+        })json");
+        auto* properties = schema["properties"].getDynamicObject();
+        properties->setProperty("source", referenceAddressSchema());
+        properties->setProperty("target", referenceAddressSchema());
+        return schema;
+    }();
+    return value;
+}
+
+const juce::var& remappedReferenceSchema() {
+    static const auto value = [] {
+        auto schema = parseSchema(R"json({
+            "type":"object",
+            "properties":{
+                "referenceKind":{"type":"string","enum":["automation","macro_link",
+                    "modulator_link","controller_binding","sidechain","routing"]},
+                "source":{},"target":{},"newTarget":{},
+                "reason":{"type":"string","const":"stable_identity_match"}
+            },
+            "required":["referenceKind","source","target","newTarget","reason"],
+            "additionalProperties":false
+        })json");
+        auto* properties = schema["properties"].getDynamicObject();
+        properties->setProperty("source", referenceAddressSchema());
+        properties->setProperty("target", referenceAddressSchema());
+        properties->setProperty("newTarget", referenceAddressSchema());
+        return schema;
+    }();
+    return value;
+}
+
+const juce::var& referenceImpactResultSchemaValue() {
+    static const auto value = [] {
+        auto schema = parseSchema(R"json({
+            "type":"object",
+            "properties":{
+                "preservedReferences":{"type":"array"},
+                "remappedReferences":{"type":"array"},
+                "droppedReferences":{"type":"array"},
+                "rejectedReferences":{"type":"array"}
+            },
+            "required":["preservedReferences","remappedReferences","droppedReferences",
+                "rejectedReferences"],
+            "additionalProperties":false
+        })json");
+        auto* properties = schema["properties"].getDynamicObject();
+        properties->getProperty("preservedReferences")
+            .getDynamicObject()
+            ->setProperty("items", referenceImpactEntrySchema());
+        properties->getProperty("remappedReferences")
+            .getDynamicObject()
+            ->setProperty("items", remappedReferenceSchema());
+        properties->getProperty("droppedReferences")
+            .getDynamicObject()
+            ->setProperty("items", referenceImpactEntrySchema());
+        properties->getProperty("rejectedReferences")
+            .getDynamicObject()
+            ->setProperty("items", referenceImpactEntrySchema());
+        return schema;
+    }();
     return value;
 }
 
@@ -252,10 +717,25 @@ const juce::var& deviceSchema() {
                 "format":{"type":"string","enum":["vst3","au","lv2","internal"]},
                 "instrument":{"type":"boolean"},
                 "bypassed":{"type":"boolean"},
-                "gainDb":{"type":"number"}
+                "gainDb":{"type":"number"},
+                "sidechain":{
+                    "type":"object",
+                    "properties":{
+                        "port":{"type":"string","enum":["none","audio","midi"]},
+                        "portChannels":{"type":"integer","minimum":0},
+                        "type":{"type":"string","enum":["none","audio","midi"]},
+                        "sourceTrackId":{"type":["integer","null"]},
+                        "tapPoint":{"type":"string","enum":["preFx","postFader"]},
+                        "gainDb":{"type":"number"},
+                        "listen":{"type":"boolean"}
+                    },
+                    "required":["port","portChannels","type","sourceTrackId","tapPoint","gainDb",
+                                "listen"],
+                    "additionalProperties":false
+                }
             },
             "required":["id","trackId","rackId","chainId","devicePath","name","type","format",
-                        "instrument","bypassed","gainDb"],
+                        "instrument","bypassed","gainDb","sidechain"],
             "additionalProperties":false
         })json");
         schema["properties"].getDynamicObject()->setProperty("devicePath", devicePathSchema());
@@ -265,11 +745,13 @@ const juce::var& deviceSchema() {
 }
 
 const juce::var& chainSchema() {
-    static const auto value = parseSchema(R"json({
+    static const auto value = [] {
+        auto schema = parseSchema(R"json({
         "type":"object",
         "properties":{
             "id":{"type":"integer","minimum":0},
             "rackId":{"type":"integer","minimum":0},
+            "nodePath":{},
             "name":{"type":"string"},
             "outputIndex":{"type":"integer","minimum":0},
             "muted":{"type":"boolean"},
@@ -280,33 +762,43 @@ const juce::var& chainSchema() {
             "deviceIds":{"type":"array","items":{"type":"integer","minimum":0}},
             "nestedRackIds":{"type":"array","items":{"type":"integer","minimum":0}}
         },
-        "required":["id","rackId","name","outputIndex","muted","solo","bypassed","volumeDb",
+        "required":["id","rackId","nodePath","name","outputIndex","muted","solo","bypassed","volumeDb",
                     "pan","deviceIds","nestedRackIds"],
         "additionalProperties":false
     })json");
+        schema["properties"].getDynamicObject()->setProperty("nodePath", devicePathSchema());
+        return schema;
+    }();
     return value;
 }
 
 const juce::var& rackSchema() {
-    static const auto value = parseSchema(R"json({
+    static const auto value = [] {
+        auto schema = parseSchema(R"json({
         "type":"object",
         "properties":{
             "id":{"type":"integer","minimum":0},
             "trackId":{"type":"integer","minimum":0},
             "parentRackId":{"type":["integer","null"]},
             "parentChainId":{"type":["integer","null"]},
+            "nodePath":{},
             "name":{"type":"string"},
             "bypassed":{"type":"boolean"},
             "volumeDb":{"type":"number"},
             "pan":{"type":"number","minimum":-1,"maximum":1},
             "chainIds":{"type":"array","items":{"type":"integer","minimum":0}}
         },
-        "required":["id","trackId","parentRackId","parentChainId","name","bypassed",
+        "required":["id","trackId","parentRackId","parentChainId","nodePath","name","bypassed",
                     "volumeDb","pan","chainIds"],
         "additionalProperties":false
     })json");
+        schema["properties"].getDynamicObject()->setProperty("nodePath", devicePathSchema());
+        return schema;
+    }();
     return value;
 }
+
+const juce::var& padSchema();
 
 const juce::var& deviceGraphSchema() {
     static auto value = [] {
@@ -315,17 +807,135 @@ const juce::var& deviceGraphSchema() {
             "properties":{
                 "devices":{"type":"array"},
                 "racks":{"type":"array"},
-                "chains":{"type":"array"}
+                "chains":{"type":"array"},
+                "pads":{"type":"array"}
             },
-            "required":["devices","racks","chains"],
+            "required":["devices","racks","chains","pads"],
             "additionalProperties":false
         })json");
         auto* properties = schema["properties"].getDynamicObject();
         properties->getProperty("devices").getDynamicObject()->setProperty("items", deviceSchema());
         properties->getProperty("racks").getDynamicObject()->setProperty("items", rackSchema());
         properties->getProperty("chains").getDynamicObject()->setProperty("items", chainSchema());
+        properties->getProperty("pads").getDynamicObject()->setProperty("items", padSchema());
         return schema;
     }();
+    return value;
+}
+
+const juce::var& padSchema() {
+    static auto value = [] {
+        auto schema = parseSchema(R"json({
+            "type":"object",
+            "properties":{
+                "gridPath":{},
+                "index":{"type":"integer","minimum":0,"maximum":63},
+                "midiNote":{"type":"integer","minimum":0,"maximum":127},
+                "populated":{"type":"boolean"},
+                "chainId":{"type":["integer","null"],"minimum":0},
+                "chainPath":{"type":["object","null"]},
+                "lowNote":{"type":"integer","minimum":0,"maximum":127},
+                "highNote":{"type":"integer","minimum":0,"maximum":127},
+                "rootNote":{"type":"integer","minimum":0,"maximum":127},
+                "name":{"type":"string"},
+                "levelDb":{"type":"number"},
+                "pan":{"type":"number","minimum":-1,"maximum":1},
+                "muted":{"type":"boolean"},
+                "solo":{"type":"boolean"},
+                "bypassed":{"type":"boolean"},
+                "outputBus":{"type":"integer","minimum":0,"maximum":31},
+                "devicePaths":{"type":"array"}
+            },
+            "required":["gridPath","index","midiNote","populated","chainId","chainPath","lowNote",
+                        "highNote","rootNote","name","levelDb","pan","muted","solo",
+                        "bypassed","outputBus","devicePaths"],
+            "additionalProperties":false
+        })json");
+        auto* properties = schema["properties"].getDynamicObject();
+        properties->setProperty("gridPath", devicePathSchema());
+        properties->getProperty("devicePaths")
+            .getDynamicObject()
+            ->setProperty("items", devicePathSchema());
+        return schema;
+    }();
+    return value;
+}
+
+const juce::var& deviceParameterSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "index":{"type":"integer","minimum":0},
+            "stableId":{"type":"string"},
+            "name":{"type":"string"},
+            "unit":{"type":"string"},
+            "minValue":{"type":"number"},
+            "maxValue":{"type":"number"},
+            "defaultValue":{"type":"number"},
+            "currentValue":{"type":"number"},
+            "normalizedValue":{"type":"number","minimum":0,"maximum":1},
+            "scale":{"type":"string",
+                     "enum":["linear","logarithmic","exponential","discrete","boolean","fader_db"]},
+            "choices":{"type":"array","items":{"type":"string"}},
+            "visible":{"type":"boolean"},
+            "miniMixer":{"type":"boolean"},
+            "aiAgentEnabled":{"type":"boolean"}
+        },
+        "required":["index","stableId","name","unit","minValue","maxValue","defaultValue",
+                    "currentValue","normalizedValue","scale","choices","visible","miniMixer",
+                    "aiAgentEnabled"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
+const juce::var& deviceModSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "modId":{"type":"integer","minimum":0},
+            "name":{"type":"string"},
+            "type":{"type":"string","enum":["lfo","envelope","random","follower"]},
+            "waveform":{"type":"string","enum":["sine","triangle","square","saw","reverse_saw","custom"]},
+            "enabled":{"type":"boolean"},
+            "rate":{"type":"number"},
+            "tempoSync":{"type":"boolean"},
+            "syncDivision":{"type":"integer"},
+            "oneShot":{"type":"boolean"},
+            "attackMs":{"type":"number"},
+            "decayMs":{"type":"number"},
+            "sustain":{"type":"number"},
+            "releaseMs":{"type":"number"},
+            "links":{"type":"array","items":{
+                "type":"object",
+                "properties":{"target":{},"amount":{"type":"number"},
+                              "bipolar":{"type":"boolean"},"enabled":{"type":"boolean"}},
+                "required":["target","amount","bipolar","enabled"],"additionalProperties":false
+            }}
+        },
+        "required":["modId","name","type","waveform","enabled","rate","tempoSync",
+                    "syncDivision","oneShot","attackMs","decayMs","sustain","releaseMs","links"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
+const juce::var& deviceMacroSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "macroIndex":{"type":"integer","minimum":0},
+            "name":{"type":"string"},
+            "value":{"type":"number","minimum":0,"maximum":1},
+            "links":{"type":"array","items":{
+                "type":"object",
+                "properties":{"target":{},"amount":{"type":"number"},
+                              "bipolar":{"type":"boolean"}},
+                "required":["target","amount","bipolar"],"additionalProperties":false
+            }}
+        },
+        "required":["macroIndex","name","value","links"],"additionalProperties":false
+    })json");
     return value;
 }
 
@@ -344,6 +954,21 @@ const juce::var& deviceCatalogEntrySchema() {
         },
         "required":["catalogId","name","manufacturer","category","description","format","type",
                     "instrument"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
+const juce::var& devicePresetSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "id":{"type":"string","minLength":1},
+            "name":{"type":"string"},
+            "category":{"type":"string"},
+            "source":{"type":"string","enum":["magda","plugin"]}
+        },
+        "required":["id","name","category","source"],
         "additionalProperties":false
     })json");
     return value;
@@ -384,30 +1009,117 @@ const juce::var& transportSchema() {
     return value;
 }
 
-const juce::var& sessionSlotSchema() {
+const juce::var& sessionSceneSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "id":{"type":"integer","minimum":0},
+            "sceneIndex":{"type":"integer","minimum":0},
+            "displayIndex":{"type":"integer","minimum":1},
+            "name":{"type":"string"},
+            "colourArgb":{"type":"integer","minimum":0,"maximum":4294967295}
+        },
+        "required":["id","sceneIndex","displayIndex","name","colourArgb"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
+const juce::var& sessionTrackSchema() {
     static const auto value = parseSchema(R"json({
         "type":"object",
         "properties":{
             "trackId":{"type":"integer","minimum":0},
-            "sceneIndex":{"type":"integer","minimum":0},
-            "clipId":{"type":"integer","minimum":0},
-            "state":{"type":"string","enum":["stopped","queued","playing"]}
+            "activeClipId":{"type":["integer","null"],"minimum":0},
+            "playbackMode":{"type":"string","enum":["arrangement","session"]}
         },
-        "required":["trackId","sceneIndex","clipId","state"],
+        "required":["trackId","activeClipId","playbackMode"],
         "additionalProperties":false
     })json");
+    return value;
+}
+
+const juce::var& sessionClipLaunchSettingsSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "launchMode":{"type":"string","enum":["trigger","toggle"]},
+            "launchQuantize":{"type":"string","enum":["none","8_bars","4_bars","2_bars",
+                "1_bar","1/2","1/4","1/8","1/16"]},
+            "followAction":{"type":"string","enum":["none","next","previous","random","stop","again"]},
+            "followActionDelayBeats":{"type":"number","minimum":0,"maximum":1000000},
+            "followActionLoopCount":{"type":"integer","minimum":1,"maximum":100000}
+        },
+        "required":["launchMode","launchQuantize","followAction","followActionDelayBeats",
+                    "followActionLoopCount"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
+const juce::var& sessionSlotSchema() {
+    static const auto value = [] {
+        auto schema = parseSchema(R"json({
+            "type":"object",
+            "properties":{
+                "trackId":{"type":"integer","minimum":0},
+                "sceneId":{"type":"integer","minimum":0},
+                "sceneIndex":{"type":"integer","minimum":0},
+                "clipId":{"type":["integer","null"],"minimum":0},
+                "state":{"type":"string","enum":["empty","stopped","queued","playing"]},
+                "recordArmed":{"type":"boolean"},
+                "recording":{"type":"boolean"},
+                "launchSettings":{"anyOf":[{"type":"null"},{}]}
+            },
+            "required":["trackId","sceneId","sceneIndex","clipId","state","recordArmed",
+                        "recording","launchSettings"],
+            "additionalProperties":false
+        })json");
+        schema["properties"]["launchSettings"]["anyOf"].getArray()->set(
+            1, sessionClipLaunchSettingsSchema());
+        return schema;
+    }();
     return value;
 }
 
 const juce::var& sessionSchema() {
     static auto value = [] {
         auto schema = parseSchema(R"json({
-            "type":"object","properties":{"slots":{"type":"array"}},"required":["slots"],
+            "type":"object",
+            "properties":{
+                "scenes":{"type":"array"},
+                "tracks":{"type":"array"},
+                "slots":{"type":"array"}
+            },
+            "required":["scenes","tracks","slots"],
             "additionalProperties":false
         })json");
+        schema["properties"]["scenes"].getDynamicObject()->setProperty("items",
+                                                                       sessionSceneSchema());
+        schema["properties"]["tracks"].getDynamicObject()->setProperty("items",
+                                                                       sessionTrackSchema());
         schema["properties"]["slots"].getDynamicObject()->setProperty("items", sessionSlotSchema());
         return schema;
     }();
+    return value;
+}
+
+const juce::var& sessionRecordingCapabilitiesSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "slotRecording":{"type":"boolean"},
+            "performanceCapture":{"type":"boolean"},
+            "slotCancellation":{"type":"boolean"},
+            "performanceCaptureCancellation":{"type":"boolean"},
+            "slotStopStopsTransport":{"type":"boolean"},
+            "occupiedSlotPolicies":{"type":"array","items":{"type":"string","enum":["fail"]}}
+        },
+        "required":["slotRecording","performanceCapture","slotCancellation",
+                    "performanceCaptureCancellation","slotStopStopsTransport",
+                    "occupiedSlotPolicies"],
+        "additionalProperties":false
+    })json");
     return value;
 }
 
@@ -455,6 +1167,20 @@ const juce::var& automationPointSchema() {
     return value;
 }
 
+const juce::var& automationPointInputSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "beatPosition":{"type":"number","minimum":0},
+            "value":{"type":"number","minimum":0,"maximum":1},
+            "curve":{"type":"string","enum":["linear","bezier","step","hard_corner"]}
+        },
+        "required":["beatPosition","value","curve"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
 const juce::var& automationLaneSchema() {
     static auto value = [] {
         auto schema = parseSchema(R"json({
@@ -479,6 +1205,69 @@ const juce::var& automationLaneSchema() {
     return value;
 }
 
+const juce::var& automationClipSchema() {
+    static auto value = [] {
+        auto schema = parseSchema(R"json({
+            "type":"object",
+            "properties":{
+                "id":{"type":"integer","minimum":0},
+                "laneId":{"type":"integer","minimum":0},
+                "name":{"type":"string"},
+                "colourArgb":{"type":"integer","minimum":0,"maximum":4294967295},
+                "startBeat":{"type":"number","minimum":0},
+                "lengthBeats":{"type":"number","minimum":0.1},
+                "looping":{"type":"boolean"},
+                "loopLengthBeats":{"type":"number","minimum":0.1},
+                "points":{"type":"array","maxItems":100000}
+            },
+            "required":["id","laneId","name","colourArgb","startBeat","lengthBeats",
+                        "looping","loopLengthBeats","points"],
+            "additionalProperties":false
+        })json");
+        schema["properties"]["points"].getDynamicObject()->setProperty("items",
+                                                                       automationPointSchema());
+        return schema;
+    }();
+    return value;
+}
+
+const juce::var& remoteJobSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "id":{"type":"string","minLength":1},
+            "kind":{"type":"string","minLength":1},
+            "state":{"type":"string","enum":["accepted","running","completed","cancelled",
+                                                   "failed","unsupported"]},
+            "progress":{"type":"number","minimum":0,"maximum":1},
+            "cancellable":{"type":"boolean"},
+            "cancelRequested":{"type":"boolean"},
+            "projectBound":{"type":"boolean"},
+            "revisionPolicy":{"type":"string","enum":["stable_until_completion",
+                                                            "check_at_start_only"]},
+            "acceptedRevision":{"type":"integer","minimum":0},
+            "completionRevision":{"type":["integer","null"],"minimum":0},
+            "createdAtMs":{"type":"number","minimum":0},
+            "startedAtMs":{"type":["number","null"],"minimum":0},
+            "finishedAtMs":{"type":["number","null"],"minimum":0},
+            "result":{"type":["object","null"]},
+            "error":{"type":["object","null"]},
+            "artifacts":{"type":"array","maxItems":64,"items":{
+                "type":"object","properties":{
+                    "id":{"type":"string","minLength":1},
+                    "kind":{"type":"string","minLength":1},
+                    "mediaType":{"type":"string"}
+                },"required":["id","kind","mediaType"],"additionalProperties":false
+            }}
+        },
+        "required":["id","kind","state","progress","cancellable","cancelRequested",
+                    "projectBound","revisionPolicy","acceptedRevision","completionRevision",
+                    "createdAtMs","startedAtMs","finishedAtMs","result","error","artifacts"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
 // ---------------------------------------------------------------------------
 // Subscription schemas (#1857)
 // ---------------------------------------------------------------------------
@@ -486,9 +1275,9 @@ const juce::var& automationLaneSchema() {
 /// The topic names, spelled once. Kept in step with `magda::remote::Topic` by
 /// the round-trip test over `parseTopic`, which fails the moment the two drift.
 const char* kTopicEnumJson =
-    R"json({"type":"array","minItems":1,"maxItems":10,
+    R"json({"type":"array","minItems":1,"maxItems":11,
             "items":{"type":"string","enum":["project","tracks","clips","devices","selection",
-                                             "transport","session","automation","meters",
+                                             "transport","session","automation","jobs","meters",
                                              "playhead"]}})json";
 
 juce::var topicListSchema() {
@@ -594,8 +1383,10 @@ bool typeMatches(const juce::var& value, const juce::var& declaredType) {
     if (declaredType.isString())
         return matchesType(value, declaredType.toString());
     if (auto* types = declaredType.getArray()) {
-        return std::any_of(types->begin(), types->end(),
-                           [&](const auto& type) { return matchesType(value, type.toString()); });
+        const auto matchesOneType = [&value](const juce::var& type) {
+            return matchesType(value, type.toString());
+        };
+        return std::ranges::any_of(*types, matchesOneType);
     }
     return true;
 }
@@ -623,17 +1414,26 @@ void validateValue(const juce::var& value, const juce::var& schema, const juce::
 
     if (auto* alternatives = schemaObject->getProperty("anyOf").getArray()) {
         std::vector<ValidationIssue> branchIssues;
+        bool matched = false;
         for (int index = 0; index < alternatives->size(); ++index) {
             std::vector<ValidationIssue> candidateIssues;
             validateValue(value, (*alternatives)[index],
                           path + "<anyOf:" + juce::String(index) + ">", candidateIssues);
-            if (candidateIssues.empty())
-                return;
-            branchIssues.insert(branchIssues.end(), candidateIssues.begin(), candidateIssues.end());
+            if (candidateIssues.empty()) {
+                matched = true;
+            } else {
+                branchIssues.insert(branchIssues.end(), candidateIssues.begin(),
+                                    candidateIssues.end());
+            }
         }
-        addIssue(issues, path, "any_of", "Value does not match any allowed schema");
-        issues.insert(issues.end(), branchIssues.begin(), branchIssues.end());
-        return;
+        // Composition keywords do not replace their sibling constraints. A
+        // successful branch still has to satisfy this schema's properties,
+        // bounds, and additionalProperties policy.
+        if (!matched) {
+            addIssue(issues, path, "any_of", "Value does not match any allowed schema");
+            issues.insert(issues.end(), branchIssues.begin(), branchIssues.end());
+            return;
+        }
     }
 
     // Exactly one branch, where anyOf wants at least one. Implemented rather
@@ -685,9 +1485,7 @@ void validateValue(const juce::var& value, const juce::var& schema, const juce::
         addIssue(issues, path, "const", "Value does not match the required constant");
 
     if (auto* allowed = schemaObject->getProperty("enum").getArray()) {
-        const auto found = std::any_of(allowed->begin(), allowed->end(),
-                                       [&](const auto& candidate) { return candidate == value; });
-        if (!found)
+        if (!std::ranges::contains(*allowed, value))
             addIssue(issues, path, "enum", "Value is not one of the allowed values");
     }
 
@@ -710,6 +1508,9 @@ void validateValue(const juce::var& value, const juce::var& schema, const juce::
     }
 
     if (value.isString()) {
+        const auto minLength = schemaObject->getProperty("minLength");
+        if (!minLength.isVoid() && value.toString().length() < static_cast<int>(minLength))
+            addIssue(issues, path, "min_length", "String is shorter than the allowed length");
         const auto maxLength = schemaObject->getProperty("maxLength");
         if (!maxLength.isVoid() && value.toString().length() > static_cast<int>(maxLength))
             addIssue(issues, path, "max_length", "String exceeds the allowed length");
@@ -778,7 +1579,7 @@ int readInt(const juce::var& object, const char* property) {
 
 template <typename Id>
 std::optional<Id> readNullableId(const juce::var& object, const char* property) {
-    const auto value = object[property];
+    const auto& value = object[property];
     if (value.isVoid())
         return std::nullopt;
     return decodeBoundedInt<Id>(value);
@@ -816,6 +1617,10 @@ juce::var operationInputSchema(const char* json) {
 }
 
 }  // namespace
+
+const juce::var& referenceImpactResultSchema() {
+    return referenceImpactResultSchemaValue();
+}
 
 // Shared by device listings, automation targets, and operation handlers: all
 // three address a device the same way, and must not drift apart. Defined
@@ -861,33 +1666,35 @@ juce::String toString(ErrorCode code) {
 }
 
 juce::var toJson(const Error& error) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("code", toString(error.code));
     object->setProperty("message", error.message);
     juce::Array<juce::var> issues;
     for (const auto& issue : error.issues) {
-        auto issueObject = new juce::DynamicObject();
+        auto* issueObject = new juce::DynamicObject();
         issueObject->setProperty("path", issue.path);
         issueObject->setProperty("code", issue.code);
         issueObject->setProperty("message", issue.message);
         issues.add(issueObject);
     }
     object->setProperty("issues", issues);
+    if (!error.details.isVoid())
+        object->setProperty("details", error.details);
     return object;
 }
 
 juce::var successEnvelope(const juce::var& result) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("ok", true);
-    object->setProperty("apiVersion", juce::String(API_VERSION.data()));
+    object->setProperty("apiVersion", juce::String(API_VERSION.data(), API_VERSION.size()));
     object->setProperty("result", result);
     return object;
 }
 
 juce::var errorEnvelope(const Error& error) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("ok", false);
-    object->setProperty("apiVersion", juce::String(API_VERSION.data()));
+    object->setProperty("apiVersion", juce::String(API_VERSION.data(), API_VERSION.size()));
     object->setProperty("error", toJson(error));
     return object;
 }
@@ -940,7 +1747,7 @@ std::optional<Error> validateOperationInput(const OperationDescriptor& operation
 }
 
 juce::var toJson(const MidiNoteDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("note", dto.note);
     object->setProperty("velocity", dto.velocity);
     object->setProperty("startBeat", dto.startBeat);
@@ -948,8 +1755,35 @@ juce::var toJson(const MidiNoteDto& dto) {
     return object;
 }
 
+juce::var toJson(const MidiEventDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("id", dto.id);
+    object->setProperty("type", dto.type);
+    if (dto.type == "note") {
+        object->setProperty("note", dto.note);
+        object->setProperty("velocity", dto.velocity);
+        object->setProperty("beat", dto.beat);
+        object->setProperty("lengthBeats", dto.lengthBeats);
+        object->setProperty("keyswitch", dto.keyswitch);
+    } else if (dto.type == "controlChange") {
+        object->setProperty("controller", dto.controller);
+        object->setProperty("value", dto.value);
+        object->setProperty("beat", dto.beat);
+    } else if (dto.type == "polyAftertouch") {
+        object->setProperty("note", dto.note);
+        object->setProperty("value", dto.value);
+        object->setProperty("beat", dto.beat);
+    } else {
+        object->setProperty("value", dto.value);
+        object->setProperty("beat", dto.beat);
+    }
+    return object;
+}
+
 juce::var toJson(const ProjectDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
+    object->setProperty("open", dto.open);
+    object->setProperty("path", dto.path ? juce::var(*dto.path) : juce::var());
     object->setProperty("name", dto.name);
     object->setProperty("tempo", dto.tempo);
     object->setProperty("timeSignatureNumerator", dto.timeSignatureNumerator);
@@ -961,11 +1795,13 @@ juce::var toJson(const ProjectDto& dto) {
     object->setProperty("loopEnabled", dto.loopEnabled);
     object->setProperty("loopStartBeats", dto.loopStartBeats);
     object->setProperty("loopEndBeats", dto.loopEndBeats);
+    object->setProperty("dirty", dto.dirty);
+    object->setProperty("hasSaveTarget", dto.hasSaveTarget);
     return object;
 }
 
 juce::var toJson(const TrackDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("id", dto.id);
     object->setProperty("type", dto.type);
     object->setProperty("name", dto.name);
@@ -977,6 +1813,7 @@ juce::var toJson(const TrackDto& dto) {
     object->setProperty("muted", dto.muted);
     object->setProperty("soloed", dto.soloed);
     object->setProperty("recordArmed", dto.recordArmed);
+    object->setProperty("inputMonitor", dto.inputMonitor);
     object->setProperty("frozen", dto.frozen);
     object->setProperty("audioInputDevice", dto.audioInputDevice);
     object->setProperty("midiInputDevice", dto.midiInputDevice);
@@ -985,8 +1822,81 @@ juce::var toJson(const TrackDto& dto) {
     return object;
 }
 
+juce::var toJson(const RoutingEndpointDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("id", dto.id);
+    object->setProperty("name", dto.name);
+    object->setProperty("media", dto.media);
+    object->setProperty("direction", dto.direction);
+    object->setProperty("kind", dto.kind);
+    object->setProperty("available", dto.available);
+    object->setProperty("channelCount", dto.channelCount);
+    object->setProperty("trackId", nullableId(dto.trackId));
+    return object;
+}
+
+juce::var toJson(const TrackRoutingDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("trackId", dto.trackId);
+    object->setProperty("audioInputEndpointId", dto.audioInputEndpointId);
+    object->setProperty("midiInputEndpointId", dto.midiInputEndpointId);
+    object->setProperty("audioOutputEndpointId", dto.audioOutputEndpointId);
+    object->setProperty("midiOutputEndpointId", dto.midiOutputEndpointId);
+    object->setProperty("recordArmed", dto.recordArmed);
+    object->setProperty("inputMonitor", dto.inputMonitor);
+    return object;
+}
+
+juce::var toJson(const DroppedRoutingConnectionDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("trackId", dto.trackId);
+    object->setProperty("field", dto.field);
+    object->setProperty("endpointId", dto.endpointId);
+    object->setProperty("reason", dto.reason);
+    return object;
+}
+
+juce::var toJson(const TrackSendDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("id", dto.id);
+    object->setProperty("sourceTrackId", dto.sourceTrackId);
+    object->setProperty("destinationEndpointId", dto.destinationEndpointId);
+    object->setProperty("level", dto.level);
+    object->setProperty("enabled", dto.enabled);
+    object->setProperty("position", dto.position);
+    return object;
+}
+
+juce::var toJson(const InvalidatedSendConnectionDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("sendId", dto.sendId);
+    object->setProperty("destinationEndpointId", dto.destinationEndpointId);
+    object->setProperty("reason", dto.reason);
+    return object;
+}
+
+juce::var toJson(const ChordEntryDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("clipId", dto.clipId);
+    object->setProperty("clipBeat", dto.clipBeat);
+    object->setProperty("startBeat", dto.startBeat);
+    object->setProperty("lengthBeats", dto.lengthBeats);
+    object->setProperty("name", dto.name);
+    return object;
+}
+
+juce::var toJson(const ChordTrackDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("track", dto.track ? toJson(*dto.track) : juce::var());
+    juce::Array<juce::var> chords;
+    for (const auto& chord : dto.chords)
+        chords.add(toJson(chord));
+    object->setProperty("chords", chords);
+    return object;
+}
+
 juce::var toJson(const ClipDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("id", dto.id);
     object->setProperty("trackId", dto.trackId);
     object->setProperty("type", dto.type);
@@ -1000,15 +1910,33 @@ juce::var toJson(const ClipDto& dto) {
     object->setProperty("launchMode", dto.launchMode);
     object->setProperty("launchQuantize", dto.launchQuantize);
     object->setProperty("followAction", dto.followAction);
+    object->setProperty("followActionDelayBeats", dto.followActionDelayBeats);
+    object->setProperty("followActionLoopCount", dto.followActionLoopCount);
     juce::Array<juce::var> notes;
     for (const auto& note : dto.notes)
         notes.add(toJson(note));
     object->setProperty("notes", notes);
+    juce::Array<juce::var> midiEvents;
+    for (const auto& event : dto.midiEvents)
+        midiEvents.add(toJson(event));
+    object->setProperty("midiEvents", midiEvents);
+    return object;
+}
+
+juce::var toJson(const DeviceSidechainDto& dto) {
+    auto object = new juce::DynamicObject();
+    object->setProperty("port", dto.port);
+    object->setProperty("portChannels", dto.portChannels);
+    object->setProperty("type", dto.type);
+    object->setProperty("sourceTrackId", nullableId(dto.sourceTrackId));
+    object->setProperty("tapPoint", dto.tapPoint);
+    object->setProperty("gainDb", dto.gainDb);
+    object->setProperty("listen", dto.listen);
     return object;
 }
 
 juce::var toJson(const DeviceDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("id", dto.id);
     object->setProperty("trackId", dto.trackId);
     object->setProperty("rackId", nullableId(dto.rackId));
@@ -1020,13 +1948,15 @@ juce::var toJson(const DeviceDto& dto) {
     object->setProperty("instrument", dto.instrument);
     object->setProperty("bypassed", dto.bypassed);
     object->setProperty("gainDb", dto.gainDb);
+    object->setProperty("sidechain", toJson(dto.sidechain));
     return object;
 }
 
 juce::var toJson(const ChainDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("id", dto.id);
     object->setProperty("rackId", dto.rackId);
+    object->setProperty("nodePath", toJson(dto.nodePath));
     object->setProperty("name", dto.name);
     object->setProperty("outputIndex", dto.outputIndex);
     object->setProperty("muted", dto.muted);
@@ -1040,11 +1970,12 @@ juce::var toJson(const ChainDto& dto) {
 }
 
 juce::var toJson(const RackDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("id", dto.id);
     object->setProperty("trackId", dto.trackId);
     object->setProperty("parentRackId", nullableId(dto.parentRackId));
     object->setProperty("parentChainId", nullableId(dto.parentChainId));
+    object->setProperty("nodePath", toJson(dto.nodePath));
     object->setProperty("name", dto.name);
     object->setProperty("bypassed", dto.bypassed);
     object->setProperty("volumeDb", dto.volumeDb);
@@ -1054,24 +1985,53 @@ juce::var toJson(const RackDto& dto) {
 }
 
 juce::var toJson(const DeviceGraphDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     juce::Array<juce::var> devices;
     juce::Array<juce::var> racks;
     juce::Array<juce::var> chains;
+    juce::Array<juce::var> pads;
     for (const auto& device : dto.devices)
         devices.add(toJson(device));
     for (const auto& rack : dto.racks)
         racks.add(toJson(rack));
     for (const auto& chain : dto.chains)
         chains.add(toJson(chain));
+    for (const auto& pad : dto.pads)
+        pads.add(toJson(pad));
     object->setProperty("devices", devices);
     object->setProperty("racks", racks);
     object->setProperty("chains", chains);
+    object->setProperty("pads", pads);
+    return object;
+}
+
+juce::var toJson(const PadDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("gridPath", toJson(dto.gridPath));
+    object->setProperty("index", dto.index);
+    object->setProperty("midiNote", dto.midiNote);
+    object->setProperty("populated", dto.populated);
+    object->setProperty("chainId", nullableId(dto.chainId));
+    object->setProperty("chainPath", dto.chainPath ? toJson(*dto.chainPath) : juce::var());
+    object->setProperty("lowNote", dto.lowNote);
+    object->setProperty("highNote", dto.highNote);
+    object->setProperty("rootNote", dto.rootNote);
+    object->setProperty("name", dto.name);
+    object->setProperty("levelDb", dto.levelDb);
+    object->setProperty("pan", dto.pan);
+    object->setProperty("muted", dto.muted);
+    object->setProperty("solo", dto.solo);
+    object->setProperty("bypassed", dto.bypassed);
+    object->setProperty("outputBus", dto.outputBus);
+    juce::Array<juce::var> paths;
+    for (const auto& path : dto.devicePaths)
+        paths.add(toJson(path));
+    object->setProperty("devicePaths", paths);
     return object;
 }
 
 juce::var toJson(const DeviceCatalogEntryDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("catalogId", dto.catalogId);
     object->setProperty("name", dto.name);
     object->setProperty("manufacturer", dto.manufacturer);
@@ -1083,8 +2043,39 @@ juce::var toJson(const DeviceCatalogEntryDto& dto) {
     return object;
 }
 
+juce::var toJson(const DevicePresetDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("id", dto.id);
+    object->setProperty("name", dto.name);
+    object->setProperty("category", dto.category);
+    object->setProperty("source", dto.source);
+    return object;
+}
+
+juce::var toJson(const DeviceParameterDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("index", dto.index);
+    object->setProperty("stableId", dto.stableId);
+    object->setProperty("name", dto.name);
+    object->setProperty("unit", dto.unit);
+    object->setProperty("minValue", dto.minValue);
+    object->setProperty("maxValue", dto.maxValue);
+    object->setProperty("defaultValue", dto.defaultValue);
+    object->setProperty("currentValue", dto.currentValue);
+    object->setProperty("normalizedValue", dto.normalizedValue);
+    object->setProperty("scale", PluginParameterConfigStore::scaleToString(dto.scale));
+    juce::Array<juce::var> choices;
+    for (const auto& choice : dto.choices)
+        choices.add(choice);
+    object->setProperty("choices", choices);
+    object->setProperty("visible", dto.visible);
+    object->setProperty("miniMixer", dto.miniMixer);
+    object->setProperty("aiAgentEnabled", dto.aiAgentEnabled);
+    return object;
+}
+
 juce::var toJson(const SelectionDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("trackId", nullableId(dto.trackId));
     object->setProperty("clipId", nullableId(dto.clipId));
     object->setProperty("clipIds", integerArray(dto.clipIds));
@@ -1096,7 +2087,7 @@ juce::var toJson(const SelectionDto& dto) {
 }
 
 juce::var toJson(const TransportDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("playing", dto.playing);
     object->setProperty("recording", dto.recording);
     object->setProperty("loopEnabled", dto.loopEnabled);
@@ -1104,17 +2095,58 @@ juce::var toJson(const TransportDto& dto) {
     return object;
 }
 
-juce::var toJson(const SessionSlotDto& dto) {
-    auto object = new juce::DynamicObject();
-    object->setProperty("trackId", dto.trackId);
+juce::var toJson(const SessionSceneDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("id", dto.id);
     object->setProperty("sceneIndex", dto.sceneIndex);
-    object->setProperty("clipId", dto.clipId);
+    object->setProperty("displayIndex", dto.displayIndex);
+    object->setProperty("name", dto.name);
+    object->setProperty("colourArgb", static_cast<juce::int64>(dto.colourArgb));
+    return object;
+}
+
+juce::var toJson(const SessionTrackDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("trackId", dto.trackId);
+    object->setProperty("activeClipId", nullableId(dto.activeClipId));
+    object->setProperty("playbackMode", dto.playbackMode);
+    return object;
+}
+
+juce::var toJson(const SessionClipLaunchSettingsDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("launchMode", dto.launchMode);
+    object->setProperty("launchQuantize", dto.launchQuantize);
+    object->setProperty("followAction", dto.followAction);
+    object->setProperty("followActionDelayBeats", dto.followActionDelayBeats);
+    object->setProperty("followActionLoopCount", dto.followActionLoopCount);
+    return object;
+}
+
+juce::var toJson(const SessionSlotDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("trackId", dto.trackId);
+    object->setProperty("sceneId", dto.sceneId);
+    object->setProperty("sceneIndex", dto.sceneIndex);
+    object->setProperty("clipId", nullableId(dto.clipId));
     object->setProperty("state", dto.state);
+    object->setProperty("recordArmed", dto.recordArmed);
+    object->setProperty("recording", dto.recording);
+    object->setProperty("launchSettings",
+                        dto.launchSettings ? toJson(*dto.launchSettings) : juce::var());
     return object;
 }
 
 juce::var toJson(const SessionDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
+    juce::Array<juce::var> scenes;
+    for (const auto& scene : dto.scenes)
+        scenes.add(toJson(scene));
+    object->setProperty("scenes", scenes);
+    juce::Array<juce::var> tracks;
+    for (const auto& track : dto.tracks)
+        tracks.add(toJson(track));
+    object->setProperty("tracks", tracks);
     juce::Array<juce::var> slots;
     for (const auto& slot : dto.slots)
         slots.add(toJson(slot));
@@ -1123,7 +2155,7 @@ juce::var toJson(const SessionDto& dto) {
 }
 
 juce::var toJson(const AutomationPointDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("id", dto.id);
     object->setProperty("beatPosition", dto.beatPosition);
     object->setProperty("value", dto.value);
@@ -1132,7 +2164,7 @@ juce::var toJson(const AutomationPointDto& dto) {
 }
 
 juce::var toJson(const DevicePathDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("trackId", dto.trackId);
     object->setProperty("section", dto.section);
     object->setProperty("trackLevel", dto.trackLevel);
@@ -1150,7 +2182,7 @@ juce::var toJson(const DevicePathDto& dto) {
 }
 
 juce::var toJson(const AutomationTargetDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("kind", dto.kind);
     object->setProperty("devicePath",
                         dto.devicePath.has_value() ? toJson(*dto.devicePath) : juce::var());
@@ -1162,7 +2194,7 @@ juce::var toJson(const AutomationTargetDto& dto) {
 }
 
 juce::var toJson(const AutomationLaneDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("id", dto.id);
     object->setProperty("type", dto.type);
     object->setProperty("name", dto.name);
@@ -1175,6 +2207,74 @@ juce::var toJson(const AutomationLaneDto& dto) {
     return object;
 }
 
+juce::var toJson(const AutomationClipDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("id", dto.id);
+    object->setProperty("laneId", dto.laneId);
+    object->setProperty("name", dto.name);
+    object->setProperty("colourArgb", static_cast<juce::int64>(dto.colourArgb));
+    object->setProperty("startBeat", dto.startBeat);
+    object->setProperty("lengthBeats", dto.lengthBeats);
+    object->setProperty("looping", dto.looping);
+    object->setProperty("loopLengthBeats", dto.loopLengthBeats);
+    juce::Array<juce::var> points;
+    for (const auto& point : dto.points)
+        points.add(toJson(point));
+    object->setProperty("points", points);
+    return object;
+}
+
+juce::var toJson(const ReferenceAddressDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("kind", dto.kind);
+    object->setProperty("trackId", nullableId(dto.trackId));
+    object->setProperty("devicePath", dto.devicePath ? toJson(*dto.devicePath) : juce::var());
+    object->setProperty("automationLaneId", nullableId(dto.automationLaneId));
+    object->setProperty("macroId", nullableId(dto.macroId));
+    object->setProperty("modId", nullableId(dto.modId));
+    object->setProperty("linkIndex", nullableId(dto.linkIndex));
+    object->setProperty("parameterIndex", nullableId(dto.parameterIndex));
+    object->setProperty("parameterStableId", dto.parameterStableId);
+    object->setProperty("bindingId", dto.bindingId);
+    object->setProperty("route", dto.route ? juce::var(*dto.route) : juce::var());
+    object->setProperty("routeIndex", nullableId(dto.routeIndex));
+    return object;
+}
+
+juce::var toJson(const ReferenceImpactEntryDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("referenceKind", dto.referenceKind);
+    object->setProperty("source", toJson(dto.source));
+    object->setProperty("target", toJson(dto.target));
+    object->setProperty("reason", dto.reason);
+    return object;
+}
+
+juce::var toJson(const RemappedReferenceDto& dto) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("referenceKind", dto.referenceKind);
+    object->setProperty("source", toJson(dto.source));
+    object->setProperty("target", toJson(dto.target));
+    object->setProperty("newTarget", toJson(dto.newTarget));
+    object->setProperty("reason", dto.reason);
+    return object;
+}
+
+juce::var toJson(const ReferenceImpactResultDto& dto) {
+    auto* object = new juce::DynamicObject();
+    const auto entries = [](const auto& values) {
+        juce::Array<juce::var> result;
+        for (const auto& value : values)
+            result.add(toJson(value));
+        return result;
+    };
+    object->setProperty("preservedReferences", entries(dto.preservedReferences));
+    object->setProperty("remappedReferences", entries(dto.remappedReferences));
+    object->setProperty("droppedReferences", entries(dto.droppedReferences));
+    object->setProperty("rejectedReferences", entries(dto.rejectedReferences));
+    return object;
+}
+
 std::optional<MidiNoteDto> midiNoteFromJson(const juce::var& json, Error& error) {
     if (!prepareDecode(json, midiNoteSchema(), error))
         return std::nullopt;
@@ -1183,10 +2283,40 @@ std::optional<MidiNoteDto> midiNoteFromJson(const juce::var& json, Error& error)
                        static_cast<double>(json["lengthBeats"])};
 }
 
+std::optional<MidiEventDto> midiEventFromJson(const juce::var& json, Error& error) {
+    if (!prepareDecode(json, midiEventSchema(), error))
+        return std::nullopt;
+    MidiEventDto dto;
+    dto.id = readInt(json, "id");
+    dto.type = json["type"].toString();
+    if (dto.type == "note") {
+        dto.note = readInt(json, "note");
+        dto.velocity = readInt(json, "velocity");
+        dto.beat = static_cast<double>(json["beat"]);
+        dto.lengthBeats = static_cast<double>(json["lengthBeats"]);
+        dto.keyswitch = static_cast<bool>(json["keyswitch"]);
+    } else if (dto.type == "controlChange") {
+        dto.controller = readInt(json, "controller");
+        dto.value = readInt(json, "value");
+        dto.beat = static_cast<double>(json["beat"]);
+    } else if (dto.type == "polyAftertouch") {
+        dto.note = readInt(json, "note");
+        dto.value = readInt(json, "value");
+        dto.beat = static_cast<double>(json["beat"]);
+    } else {
+        dto.value = readInt(json, "value");
+        dto.beat = static_cast<double>(json["beat"]);
+    }
+    return dto;
+}
+
 std::optional<ProjectDto> projectFromJson(const juce::var& json, Error& error) {
     if (!prepareDecode(json, projectSchema(), error))
         return std::nullopt;
     ProjectDto dto;
+    dto.open = static_cast<bool>(json["open"]);
+    if (!json["path"].isVoid())
+        dto.path = json["path"].toString();
     dto.name = json["name"].toString();
     dto.tempo = static_cast<double>(json["tempo"]);
     dto.timeSignatureNumerator = readInt(json, "timeSignatureNumerator");
@@ -1198,6 +2328,8 @@ std::optional<ProjectDto> projectFromJson(const juce::var& json, Error& error) {
     dto.loopEnabled = static_cast<bool>(json["loopEnabled"]);
     dto.loopStartBeats = static_cast<double>(json["loopStartBeats"]);
     dto.loopEndBeats = static_cast<double>(json["loopEndBeats"]);
+    dto.dirty = static_cast<bool>(json["dirty"]);
+    dto.hasSaveTarget = static_cast<bool>(json["hasSaveTarget"]);
     return dto;
 }
 
@@ -1216,11 +2348,54 @@ std::optional<TrackDto> trackFromJson(const juce::var& json, Error& error) {
     dto.muted = static_cast<bool>(json["muted"]);
     dto.soloed = static_cast<bool>(json["soloed"]);
     dto.recordArmed = static_cast<bool>(json["recordArmed"]);
+    dto.inputMonitor = json["inputMonitor"].toString();
     dto.frozen = static_cast<bool>(json["frozen"]);
     dto.audioInputDevice = json["audioInputDevice"].toString();
     dto.midiInputDevice = json["midiInputDevice"].toString();
     dto.audioOutputDevice = json["audioOutputDevice"].toString();
     dto.midiOutputDevice = json["midiOutputDevice"].toString();
+    return dto;
+}
+
+std::optional<RoutingEndpointDto> routingEndpointFromJson(const juce::var& json, Error& error) {
+    if (!prepareDecode(json, routingEndpointSchema(), error))
+        return std::nullopt;
+    RoutingEndpointDto dto;
+    dto.id = json["id"].toString();
+    dto.name = json["name"].toString();
+    dto.media = json["media"].toString();
+    dto.direction = json["direction"].toString();
+    dto.kind = json["kind"].toString();
+    dto.available = static_cast<bool>(json["available"]);
+    dto.channelCount = readInt(json, "channelCount");
+    dto.trackId = readNullableId<TrackId>(json, "trackId");
+    return dto;
+}
+
+std::optional<TrackRoutingDto> trackRoutingFromJson(const juce::var& json, Error& error) {
+    if (!prepareDecode(json, trackRoutingSchema(), error))
+        return std::nullopt;
+    TrackRoutingDto dto;
+    dto.trackId = readInt(json, "trackId");
+    dto.audioInputEndpointId = json["audioInputEndpointId"].toString();
+    dto.midiInputEndpointId = json["midiInputEndpointId"].toString();
+    dto.audioOutputEndpointId = json["audioOutputEndpointId"].toString();
+    dto.midiOutputEndpointId = json["midiOutputEndpointId"].toString();
+    dto.recordArmed = static_cast<bool>(json["recordArmed"]);
+    dto.inputMonitor = json["inputMonitor"].toString();
+    return dto;
+}
+
+std::optional<TrackSendDto> trackSendFromJson(const juce::var& json, Error& error) {
+    if (!prepareDecode(json, trackSendSchema(), error))
+        return std::nullopt;
+    TrackSendDto dto;
+    dto.id = json["id"].toString();
+    dto.sourceTrackId = readInt(json, "sourceTrackId");
+    dto.destinationEndpointId = json["destinationEndpointId"].toString();
+    dto.level = static_cast<double>(json["level"]);
+    dto.enabled = static_cast<bool>(json["enabled"]);
+    dto.position = json["position"].toString();
     return dto;
 }
 
@@ -1241,12 +2416,22 @@ std::optional<ClipDto> clipFromJson(const juce::var& json, Error& error) {
     dto.launchMode = json["launchMode"].toString();
     dto.launchQuantize = json["launchQuantize"].toString();
     dto.followAction = json["followAction"].toString();
+    dto.followActionDelayBeats = static_cast<double>(json["followActionDelayBeats"]);
+    dto.followActionLoopCount = readInt(json, "followActionLoopCount");
     if (auto* notes = json["notes"].getArray()) {
         for (const auto& note : *notes) {
             auto decoded = midiNoteFromJson(note, error);
             if (!decoded)
                 return std::nullopt;
             dto.notes.push_back(*decoded);
+        }
+    }
+    if (auto* events = json["midiEvents"].getArray()) {
+        for (const auto& event : *events) {
+            auto decoded = midiEventFromJson(event, error);
+            if (!decoded)
+                return std::nullopt;
+            dto.midiEvents.push_back(*decoded);
         }
     }
     return dto;
@@ -1267,6 +2452,15 @@ std::optional<DeviceDto> deviceFromJson(const juce::var& json, Error& error) {
     dto.instrument = static_cast<bool>(json["instrument"]);
     dto.bypassed = static_cast<bool>(json["bypassed"]);
     dto.gainDb = static_cast<double>(json["gainDb"]);
+
+    const auto& sidechain = json["sidechain"];
+    dto.sidechain.port = sidechain["port"].toString();
+    dto.sidechain.portChannels = readInt(sidechain, "portChannels");
+    dto.sidechain.type = sidechain["type"].toString();
+    dto.sidechain.sourceTrackId = readNullableId<TrackId>(sidechain, "sourceTrackId");
+    dto.sidechain.tapPoint = sidechain["tapPoint"].toString();
+    dto.sidechain.gainDb = static_cast<double>(sidechain["gainDb"]);
+    dto.sidechain.listen = static_cast<bool>(sidechain["listen"]);
     return dto;
 }
 
@@ -1276,6 +2470,7 @@ std::optional<ChainDto> chainFromJson(const juce::var& json, Error& error) {
     ChainDto dto;
     dto.id = readInt(json, "id");
     dto.rackId = readInt(json, "rackId");
+    dto.nodePath = devicePathFromJson(json["nodePath"]);
     dto.name = json["name"].toString();
     dto.outputIndex = readInt(json, "outputIndex");
     dto.muted = static_cast<bool>(json["muted"]);
@@ -1296,11 +2491,38 @@ std::optional<RackDto> rackFromJson(const juce::var& json, Error& error) {
     dto.trackId = readInt(json, "trackId");
     dto.parentRackId = readNullableId<RackId>(json, "parentRackId");
     dto.parentChainId = readNullableId<ChainId>(json, "parentChainId");
+    dto.nodePath = devicePathFromJson(json["nodePath"]);
     dto.name = json["name"].toString();
     dto.bypassed = static_cast<bool>(json["bypassed"]);
     dto.volumeDb = static_cast<double>(json["volumeDb"]);
     dto.pan = static_cast<double>(json["pan"]);
     dto.chainIds = readIntegerArray<ChainId>(json["chainIds"]);
+    return dto;
+}
+
+std::optional<PadDto> padFromJson(const juce::var& json, Error& error) {
+    if (!prepareDecode(json, padSchema(), error))
+        return std::nullopt;
+    PadDto dto;
+    dto.gridPath = devicePathFromJson(json["gridPath"]);
+    dto.index = readInt(json, "index");
+    dto.midiNote = readInt(json, "midiNote");
+    dto.populated = static_cast<bool>(json["populated"]);
+    dto.chainId = readNullableId<ChainId>(json, "chainId");
+    if (json["chainPath"].isObject())
+        dto.chainPath = devicePathFromJson(json["chainPath"]);
+    dto.lowNote = readInt(json, "lowNote");
+    dto.highNote = readInt(json, "highNote");
+    dto.rootNote = readInt(json, "rootNote");
+    dto.name = json["name"].toString();
+    dto.levelDb = static_cast<double>(json["levelDb"]);
+    dto.pan = static_cast<double>(json["pan"]);
+    dto.muted = static_cast<bool>(json["muted"]);
+    dto.solo = static_cast<bool>(json["solo"]);
+    dto.bypassed = static_cast<bool>(json["bypassed"]);
+    dto.outputBus = readInt(json, "outputBus");
+    for (const auto& path : *json["devicePaths"].getArray())
+        dto.devicePaths.push_back(devicePathFromJson(path));
     return dto;
 }
 
@@ -1326,6 +2548,12 @@ std::optional<DeviceGraphDto> deviceGraphFromJson(const juce::var& json, Error& 
             return std::nullopt;
         dto.chains.push_back(*decoded);
     }
+    for (const auto& item : *json["pads"].getArray()) {
+        auto decoded = padFromJson(item, error);
+        if (!decoded)
+            return std::nullopt;
+        dto.pads.push_back(*decoded);
+    }
     return dto;
 }
 
@@ -1342,6 +2570,41 @@ std::optional<DeviceCatalogEntryDto> deviceCatalogEntryFromJson(const juce::var&
     dto.format = json["format"].toString();
     dto.type = json["type"].toString();
     dto.instrument = static_cast<bool>(json["instrument"]);
+    return dto;
+}
+
+std::optional<DevicePresetDto> devicePresetFromJson(const juce::var& json, Error& error) {
+    if (!prepareDecode(json, devicePresetSchema(), error))
+        return std::nullopt;
+    DevicePresetDto dto;
+    dto.id = json["id"].toString();
+    dto.name = json["name"].toString();
+    dto.category = json["category"].toString();
+    dto.source = json["source"].toString();
+    return dto;
+}
+
+std::optional<DeviceParameterDto> deviceParameterFromJson(const juce::var& json, Error& error) {
+    if (!prepareDecode(json, deviceParameterSchema(), error))
+        return std::nullopt;
+    DeviceParameterDto dto;
+    dto.index = readInt(json, "index");
+    dto.stableId = json["stableId"].toString();
+    dto.name = json["name"].toString();
+    dto.unit = json["unit"].toString();
+    dto.minValue = static_cast<double>(json["minValue"]);
+    dto.maxValue = static_cast<double>(json["maxValue"]);
+    dto.defaultValue = static_cast<double>(json["defaultValue"]);
+    dto.currentValue = static_cast<double>(json["currentValue"]);
+    dto.normalizedValue = static_cast<double>(json["normalizedValue"]);
+    dto.scale = PluginParameterConfigStore::scaleFromString(json["scale"].toString());
+    if (const auto* choices = json["choices"].getArray()) {
+        for (const auto& choice : *choices)
+            dto.choices.push_back(choice.toString());
+    }
+    dto.visible = static_cast<bool>(json["visible"]);
+    dto.miniMixer = static_cast<bool>(json["miniMixer"]);
+    dto.aiAgentEnabled = static_cast<bool>(json["aiAgentEnabled"]);
     return dto;
 }
 
@@ -1371,12 +2634,39 @@ std::optional<SessionDto> sessionFromJson(const juce::var& json, Error& error) {
     if (!prepareDecode(json, sessionSchema(), error))
         return std::nullopt;
     SessionDto dto;
+    for (const auto& item : *json["scenes"].getArray()) {
+        SessionSceneDto scene;
+        scene.id = readInt(item, "id");
+        scene.sceneIndex = readInt(item, "sceneIndex");
+        scene.displayIndex = readInt(item, "displayIndex");
+        scene.name = item["name"].toString();
+        scene.colourArgb = decodeBoundedInt<std::uint32_t>(item["colourArgb"]);
+        dto.scenes.push_back(std::move(scene));
+    }
+    for (const auto& item : *json["tracks"].getArray()) {
+        SessionTrackDto track;
+        track.trackId = readInt(item, "trackId");
+        track.activeClipId = readNullableId<ClipId>(item, "activeClipId");
+        track.playbackMode = item["playbackMode"].toString();
+        dto.tracks.push_back(std::move(track));
+    }
     for (const auto& item : *json["slots"].getArray()) {
         SessionSlotDto slot;
         slot.trackId = readInt(item, "trackId");
+        slot.sceneId = readInt(item, "sceneId");
         slot.sceneIndex = readInt(item, "sceneIndex");
-        slot.clipId = readInt(item, "clipId");
+        slot.clipId = readNullableId<ClipId>(item, "clipId");
         slot.state = item["state"].toString();
+        slot.recordArmed = static_cast<bool>(item["recordArmed"]);
+        slot.recording = static_cast<bool>(item["recording"]);
+        if (!item["launchSettings"].isVoid()) {
+            const auto& settings = item["launchSettings"];
+            slot.launchSettings = SessionClipLaunchSettingsDto{
+                settings["launchMode"].toString(), settings["launchQuantize"].toString(),
+                settings["followAction"].toString(),
+                static_cast<double>(settings["followActionDelayBeats"]),
+                readInt(settings, "followActionLoopCount")};
+        }
         dto.slots.push_back(std::move(slot));
     }
     return dto;
@@ -1389,9 +2679,9 @@ std::optional<AutomationLaneDto> automationLaneFromJson(const juce::var& json, E
     dto.id = readInt(json, "id");
     dto.type = json["type"].toString();
     dto.name = json["name"].toString();
-    const auto target = json["target"];
+    const auto& target = json["target"];
     dto.target.kind = target["kind"].toString();
-    if (const auto path = target["devicePath"]; path.isObject())
+    if (const auto& path = target["devicePath"]; path.isObject())
         dto.target.devicePath = devicePathFromJson(path);
     dto.target.parameterIndex = readInt(target, "parameterIndex");
     dto.target.modId = readInt(target, "modId");
@@ -1406,6 +2696,76 @@ std::optional<AutomationLaneDto> automationLaneFromJson(const juce::var& json, E
         dto.points.push_back(std::move(point));
     }
     dto.clipIds = readIntegerArray<AutomationClipId>(json["clipIds"]);
+    return dto;
+}
+
+std::optional<AutomationClipDto> automationClipFromJson(const juce::var& json, Error& error) {
+    if (!prepareDecode(json, automationClipSchema(), error))
+        return std::nullopt;
+    AutomationClipDto dto;
+    dto.id = readInt(json, "id");
+    dto.laneId = readInt(json, "laneId");
+    dto.name = json["name"].toString();
+    dto.colourArgb = decodeBoundedInt<std::uint32_t>(json["colourArgb"]);
+    dto.startBeat = static_cast<double>(json["startBeat"]);
+    dto.lengthBeats = static_cast<double>(json["lengthBeats"]);
+    dto.looping = static_cast<bool>(json["looping"]);
+    dto.loopLengthBeats = static_cast<double>(json["loopLengthBeats"]);
+    for (const auto& item : *json["points"].getArray()) {
+        dto.points.push_back({readInt(item, "id"), static_cast<double>(item["beatPosition"]),
+                              static_cast<double>(item["value"]), item["curve"].toString()});
+    }
+    return dto;
+}
+
+namespace {
+
+ReferenceAddressDto referenceAddressFromJson(const juce::var& json) {
+    ReferenceAddressDto dto;
+    dto.kind = json["kind"].toString();
+    dto.trackId = readNullableId<TrackId>(json, "trackId");
+    if (json["devicePath"].isObject())
+        dto.devicePath = devicePathFromJson(json["devicePath"]);
+    dto.automationLaneId = readNullableId<AutomationLaneId>(json, "automationLaneId");
+    dto.macroId = readNullableId<MacroId>(json, "macroId");
+    dto.modId = readNullableId<ModId>(json, "modId");
+    dto.linkIndex = readNullableId<int>(json, "linkIndex");
+    dto.parameterIndex = readNullableId<int>(json, "parameterIndex");
+    dto.parameterStableId = json["parameterStableId"].toString();
+    dto.bindingId = json["bindingId"].toString();
+    if (const auto& route = json["route"]; route.isString())
+        dto.route = route.toString();
+    dto.routeIndex = readNullableId<int>(json, "routeIndex");
+    return dto;
+}
+
+ReferenceImpactEntryDto referenceImpactEntryFromJson(const juce::var& json) {
+    return {json["referenceKind"].toString(), referenceAddressFromJson(json["source"]),
+            referenceAddressFromJson(json["target"]), json["reason"].toString()};
+}
+
+RemappedReferenceDto remappedReferenceFromJson(const juce::var& json) {
+    return {json["referenceKind"].toString(), referenceAddressFromJson(json["source"]),
+            referenceAddressFromJson(json["target"]), referenceAddressFromJson(json["newTarget"]),
+            json["reason"].toString()};
+}
+
+}  // namespace
+
+std::optional<ReferenceImpactResultDto> referenceImpactResultFromJson(const juce::var& json,
+                                                                      Error& error) {
+    if (!prepareDecode(json, referenceImpactResultSchema(), error))
+        return std::nullopt;
+
+    ReferenceImpactResultDto dto;
+    const auto readEntries = [](const juce::var& value, auto& destination, auto decode) {
+        for (const auto& item : *value.getArray())
+            destination.push_back(decode(item));
+    };
+    readEntries(json["preservedReferences"], dto.preservedReferences, referenceImpactEntryFromJson);
+    readEntries(json["remappedReferences"], dto.remappedReferences, remappedReferenceFromJson);
+    readEntries(json["droppedReferences"], dto.droppedReferences, referenceImpactEntryFromJson);
+    readEntries(json["rejectedReferences"], dto.rejectedReferences, referenceImpactEntryFromJson);
     return dto;
 }
 
@@ -1443,8 +2803,175 @@ OperationRegistry::OperationRegistry() {
             "additionalProperties":false
         })json"));
 
+    add("engine.health", "Read engine binding, callback load, xruns, and recent problems",
+        OperationAccess::Read, &handlers::engineHealth, emptyObjectSchema(), parseSchema(R"json({
+            "type":"object","properties":{
+                "engine":{"type":"string"},
+                "observedAtMs":{"type":"number","minimum":0},
+                "sinceMs":{"type":["number","null"],"minimum":0},
+                "projectBound":{"type":["boolean","null"]},
+                "audioDeviceOpen":{"type":["boolean","null"]},
+                "xrunCount":{"type":["integer","null"],"minimum":0},
+                "dropoutCount":{"type":["integer","null"],"minimum":0},
+                "callbackLoad":{"type":["number","null"],"minimum":0},
+                "problemCoverage":{"type":"string","enum":["audioIoObservations","unavailable"]},
+                "problems":{"type":"array","maxItems":32,"items":{
+                    "type":"object","properties":{
+                        "code":{"type":"string","enum":["audio_xrun","xrun_counter_reset",
+                                                        "audio_device_unavailable"]},
+                        "atMs":{"type":"number","minimum":0},
+                        "count":{"type":"integer","minimum":1}
+                    },"required":["code","atMs","count"],"additionalProperties":false
+                }},
+                "discardedProblemCount":{"type":"integer","minimum":0}
+            },
+            "required":["engine","observedAtMs","sinceMs","projectBound",
+                        "audioDeviceOpen","xrunCount","dropoutCount","callbackLoad",
+                        "problemCoverage","problems","discardedProblemCount"],
+            "additionalProperties":false
+        })json"));
+
+    add("meters.read", "Read one bounded track and master peak snapshot", OperationAccess::Read,
+        &handlers::metersRead, emptyObjectSchema(), parseSchema(R"json({
+            "type":"object","properties":{
+                "observedAtMs":{"type":"number","minimum":0},
+                "tracks":{"type":"array","maxItems":128,"items":{
+                    "type":"object","properties":{
+                        "trackId":{"type":"integer","minimum":0},
+                        "available":{"type":"boolean"},
+                        "peakL":{"type":["number","null"],"minimum":0},
+                        "peakR":{"type":["number","null"],"minimum":0},
+                        "clipped":{"type":["boolean","null"]}
+                    },"required":["trackId","available","peakL","peakR","clipped"],
+                    "additionalProperties":false
+                }},
+                "truncatedTrackCount":{"type":"integer","minimum":0},
+                "master":{"type":"object","properties":{
+                    "available":{"type":"boolean"},
+                    "peakL":{"type":["number","null"],"minimum":0},
+                    "peakR":{"type":["number","null"],"minimum":0},
+                    "clipped":{"type":["boolean","null"]}
+                },"required":["available","peakL","peakR","clipped"],
+                "additionalProperties":false}
+            },"required":["observedAtMs","tracks","truncatedTrackCount","master"],
+            "additionalProperties":false
+        })json"));
+
+    const auto jobIdInput = operationInputSchema(R"json({
+        "type":"object","properties":{"jobId":{"type":"string","minLength":1,"maxLength":128}},
+        "required":["jobId"],"additionalProperties":false
+    })json");
+    add("jobs.list", "List asynchronous jobs owned by this connection", OperationAccess::Read,
+        &handlers::jobsList, emptyObjectSchema(), arraySchema(remoteJobSchema()));
+    add("jobs.get", "Inspect one asynchronous job owned by this connection", OperationAccess::Read,
+        &handlers::jobsGet, jobIdInput, remoteJobSchema());
+    add("jobs.cancel", "Cancel one owned asynchronous job", OperationAccess::Control,
+        &handlers::jobsCancel, jobIdInput, remoteJobSchema());
+
+    add("engine.renderRange", "Render an explicit project range to an absolute path",
+        OperationAccess::Control, &handlers::engineRenderRange, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "path":{"type":"string","minLength":1,"maxLength":4096},
+                "range":{"type":"object","properties":{
+                    "unit":{"type":"string","enum":["beats","seconds"]},
+                    "start":{"type":"number","minimum":0,"maximum":1000000},
+                    "end":{"type":"number","exclusiveMinimum":0,"maximum":1000000}
+                },"required":["unit","start","end"],"additionalProperties":false},
+                "format":{"type":"string","enum":["wav","flac"]},
+                "sampleRate":{"type":"integer","enum":[44100,48000,88200,96000,176400,192000]},
+                "bitDepth":{"type":"integer","enum":[16,24,32]},
+                "dither":{"type":"string","enum":["none","tpdf","shaped"]},
+                "normalise":{"type":"boolean"},
+                "normaliseToDb":{"type":"number","minimum":-60,"maximum":0},
+                "includeMasterEffects":{"type":"boolean"},
+                "includeTrackEffects":{"type":"boolean"},
+                "realTime":{"type":"boolean"},
+                "tailSeconds":{"type":"number","minimum":0,"maximum":60},
+                "overwritePolicy":{"type":"string","enum":["fail","replace"]}
+            },
+            "required":["path","range","format","sampleRate","bitDepth","dither",
+                        "normalise","normaliseToDb","includeMasterEffects","includeTrackEffects",
+                        "realTime","tailSeconds","overwritePolicy"],
+            "additionalProperties":false
+        })json"),
+        remoteJobSchema());
+    const auto trackIdInput = operationInputSchema(R"json({
+        "type":"object","properties":{"trackId":{"type":"integer","minimum":0}},
+        "required":["trackId"],"additionalProperties":false
+    })json");
+    add("tracks.freeze", "Freeze a track: render it offline and play the render in its place",
+        OperationAccess::Control, &handlers::tracksFreeze, trackIdInput, remoteJobSchema());
+    add("tracks.unfreeze", "Unfreeze a track so its devices play live again",
+        OperationAccess::Write, &handlers::tracksUnfreeze, trackIdInput, trackSchema());
+    const auto masterCaptureInput = operationInputSchema(R"json({
+        "type":"object","properties":{
+            "path":{"type":"string","minLength":1,"maxLength":4096},
+            "format":{"type":"string","enum":["wav","flac"]},
+            "bitDepth":{"type":"integer","enum":[16,24,32]},
+            "overwritePolicy":{"type":"string","enum":["fail","replace"]}
+        },
+        "required":["path","format","bitDepth","overwritePolicy"],
+        "additionalProperties":false
+    })json");
+    add("engine.masterCapture.start", "Capture the true master callback output",
+        OperationAccess::Control, &handlers::engineMasterCaptureStart, masterCaptureInput,
+        remoteJobSchema());
+    add("engine.masterCapture.stop", "Stop and finalise one owned master capture",
+        OperationAccess::Control, &handlers::engineMasterCaptureStop, jobIdInput,
+        remoteJobSchema());
+    add("engine.masterCapture.status", "Read master-capture capability and activity",
+        OperationAccess::Read, &handlers::engineMasterCaptureStatus, emptyObjectSchema(),
+        parseSchema(R"json({
+            "type":"object","properties":{
+                "supported":{"type":"boolean"},
+                "active":{"type":"boolean"},
+                "failed":{"type":"boolean"},
+                "jobId":{"type":["string","null"]}
+            },"required":["supported","active","failed","jobId"],
+            "additionalProperties":false
+        })json"));
+
     add("project.get", "Get safe project metadata", OperationAccess::Read, &handlers::projectGet,
         emptyObjectSchema(), projectSchema());
+    const auto projectTransitionInput = operationInputSchema(R"json({
+        "type":"object",
+        "properties":{"discardUnsavedChanges":{"type":"boolean"}},
+        "additionalProperties":false
+    })json");
+    add("project.new", "Create an untitled project", OperationAccess::Write, &handlers::projectNew,
+        projectTransitionInput, projectSchema());
+    add("project.close", "Close the current project", OperationAccess::Write,
+        &handlers::projectClose, projectTransitionInput, projectSchema());
+    add("project.open", "Open a project from an absolute path", OperationAccess::Control,
+        &handlers::projectOpen, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "path":{"type":"string","minLength":1,"maxLength":4096},
+                "dirtyPolicy":{"type":"string","enum":["fail","discard"]},
+                "autosavePolicy":{"type":"string","enum":["fail","recover","ignore"]},
+                "missingMediaPolicy":{"type":"string","enum":["fail","allow"]},
+                "unavailableDevicePolicy":{"type":"string","enum":["fail","allow"]}
+            },
+            "required":["path","dirtyPolicy","autosavePolicy","missingMediaPolicy",
+                        "unavailableDevicePolicy"],
+            "additionalProperties":false
+        })json"),
+        remoteJobSchema());
+    add("project.save", "Save the project to its existing target", OperationAccess::Write,
+        &handlers::projectSave, emptyObjectSchema(), projectSchema());
+    add("project.saveAs", "Save to an absolute path", OperationAccess::Control,
+        &handlers::projectSaveAs, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "path":{"type":"string","minLength":1,"maxLength":4096},
+                "overwritePolicy":{"type":"string","enum":["fail","replace"]},
+                "mediaPolicy":{"type":"string","enum":["copy","move"]}
+            },
+            "required":["path","overwritePolicy","mediaPolicy"],
+            "additionalProperties":false
+        })json"),
+        remoteJobSchema());
     add("project.setTempo", "Set the project tempo", OperationAccess::Write,
         &handlers::projectSetTempo, operationInputSchema(R"json({
             "type":"object","properties":{"tempo":{"type":"number","minimum":20,"maximum":400}},
@@ -1461,6 +2988,104 @@ OperationRegistry::OperationRegistry() {
             "required":["numerator","denominator"],"additionalProperties":false
         })json"),
         projectSchema());
+    add("project.setLoopRange", "Set the project loop range in beats", OperationAccess::Write,
+        &handlers::projectSetLoopRange, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "startBeat":{"type":"number","minimum":0},
+                "endBeat":{"type":"number","exclusiveMinimum":0}
+            },
+            "required":["startBeat","endBeat"],"additionalProperties":false
+        })json"),
+        projectSchema());
+
+    add("trackPresets.list", "List saved track-chain presets by opaque id", OperationAccess::Read,
+        &handlers::trackPresetsList, emptyObjectSchema(), arraySchema(trackPresetSchema()));
+
+    add("chordTrack.get", "Get the singleton chord track and ordered progression",
+        OperationAccess::Read, &handlers::chordTrackGet, emptyObjectSchema(), chordTrackSchema());
+    add("chordTrack.ensure", "Create the singleton chord track when absent", OperationAccess::Write,
+        &handlers::chordTrackEnsure, emptyObjectSchema(), chordTrackSchema());
+    add("chordTrack.replaceProgression", "Replace the chord track's structured progression",
+        OperationAccess::Write, &handlers::chordTrackReplaceProgression,
+        operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "chords":{"type":"array","maxItems":256,"items":{
+                    "type":"object","properties":{
+                        "startBeat":{"type":"number","minimum":0,"maximum":1000000},
+                        "lengthBeats":{"type":"number","exclusiveMinimum":0,"maximum":1000000},
+                        "root":{"type":"string","enum":["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"]},
+                        "quality":{"type":"string","minLength":1,"maxLength":32}
+                    },"required":["startBeat","lengthBeats","root","quality"],
+                    "additionalProperties":false
+                }},
+                "voicing":{"type":"string","const":"root"},
+                "inversion":{"type":"integer","const":0},
+                "octave":{"type":"integer","minimum":0,"maximum":6}
+            },"required":["chords"],"additionalProperties":false
+        })json"),
+        chordTrackSchema());
+    add("chordTrack.detect", "Detect a structured progression in a MIDI clip range",
+        OperationAccess::Read, &handlers::chordTrackDetect, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "sourceClipId":{"type":"integer","minimum":0},
+                "startBeat":{"type":"number","minimum":0,"maximum":1000000},
+                "endBeat":{"type":"number","exclusiveMinimum":0,"maximum":1000000},
+                "windowBeats":{"type":"number","exclusiveMinimum":0,"maximum":64}
+            },
+            "required":["sourceClipId","startBeat","endBeat","windowBeats"],
+            "additionalProperties":false
+        })json"),
+        chordDetectionResultSchema());
+    auto extractOutput = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "detection":{},
+            "createdClipId":{"type":["integer","null"],"minimum":0},
+            "chordTrack":{}
+        },
+        "required":["detection","createdClipId","chordTrack"],
+        "additionalProperties":false
+    })json");
+    extractOutput["properties"].getDynamicObject()->setProperty("detection",
+                                                                chordDetectionResultSchema());
+    extractOutput["properties"].getDynamicObject()->setProperty("chordTrack", chordTrackSchema());
+    add("chordTrack.extract", "Detect and atomically materialise a chord-track progression",
+        OperationAccess::Write, &handlers::chordTrackExtract, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "sourceClipId":{"type":"integer","minimum":0},
+                "startBeat":{"type":"number","minimum":0,"maximum":1000000},
+                "endBeat":{"type":"number","exclusiveMinimum":0,"maximum":1000000},
+                "windowBeats":{"type":"number","exclusiveMinimum":0,"maximum":64},
+                "destinationStartBeat":{"type":"number","minimum":0,"maximum":1000000},
+                "populatedPolicy":{"type":"string","enum":["fail","replace","merge"]},
+                "voicing":{"type":"string","const":"root"},
+                "octave":{"type":"integer","minimum":0,"maximum":6}
+            },
+            "required":["sourceClipId","startBeat","endBeat","windowBeats",
+                        "destinationStartBeat","populatedPolicy","voicing","octave"],
+            "additionalProperties":false
+        })json"),
+        extractOutput);
+    add("chordTrack.sendToTrack", "Bake an addressed progression to a normal MIDI track",
+        OperationAccess::Write, &handlers::chordTrackSendToTrack, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "sourceClipId":{"type":"integer","minimum":0},
+                "targetTrackId":{"type":"integer","minimum":0},
+                "startBeat":{"type":"number","minimum":0,"maximum":1000000},
+                "occupiedPolicy":{"type":"string","enum":["fail","replace"]},
+                "voicing":{"type":"string","const":"source"},
+                "instrumentPolicy":{"type":"string","enum":["preserve_target","require_existing"]}
+            },
+            "required":["sourceClipId","targetTrackId","startBeat","occupiedPolicy",
+                        "voicing","instrumentPolicy"],
+            "additionalProperties":false
+        })json"),
+        clipSchema());
 
     add("tracks.list", "List tracks", OperationAccess::Read, &handlers::tracksList,
         emptyObjectSchema(), arraySchema(trackSchema()));
@@ -1481,7 +3106,43 @@ OperationRegistry::OperationRegistry() {
             "required":["name","type"],"additionalProperties":false
         })json"),
         idResult);
-    add("tracks.update", "Update track mixer or display fields", OperationAccess::Write,
+    add("tracks.createFromPreset", "Create a track from a saved track-chain preset",
+        OperationAccess::Write, &handlers::tracksCreateFromPreset, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{"presetId":{"type":"string","minLength":1}},
+            "required":["presetId"],"additionalProperties":false
+        })json"),
+        parseSchema(R"json({
+            "type":"object",
+            "properties":{
+                "trackId":{"type":"integer","minimum":0},
+                "deviceGraph":{}
+            },
+            "required":["trackId","deviceGraph"],"additionalProperties":false
+        })json"));
+    operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
+        "deviceGraph", deviceGraphSchema());
+    add("tracks.applyPreset", "Apply an opaque chain preset to an existing track",
+        OperationAccess::Write, &handlers::tracksApplyPreset, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "trackId":{"type":"integer","minimum":0},
+                "presetId":{"type":"string","minLength":1}
+            },
+            "required":["trackId","presetId"],"additionalProperties":false
+        })json"),
+        parseSchema(R"json({
+            "type":"object",
+            "properties":{"trackId":{"type":"integer","minimum":0},
+                          "deviceGraph":{},"referenceImpact":{}},
+            "required":["trackId","deviceGraph","referenceImpact"],
+            "additionalProperties":false
+        })json"));
+    operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
+        "deviceGraph", deviceGraphSchema());
+    operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
+        "referenceImpact", referenceImpactResultSchema());
+    add("tracks.update", "Update track mixer, display, or input state", OperationAccess::Write,
         &handlers::tracksUpdate, operationInputSchema(R"json({
             "type":"object",
             "properties":{
@@ -1490,7 +3151,10 @@ OperationRegistry::OperationRegistry() {
                 "volume":{"type":"number","minimum":0},
                 "pan":{"type":"number","minimum":-1,"maximum":1},
                 "muted":{"type":"boolean"},
-                "soloed":{"type":"boolean"}
+                "soloed":{"type":"boolean"},
+                "colourArgb":{"type":"integer","minimum":0,"maximum":4294967295},
+                "recordArmed":{"type":"boolean"},
+                "inputMonitor":{"type":"string","enum":["off","in","auto"]}
             },
             "required":["trackId"],"additionalProperties":false
         })json"),
@@ -1501,6 +3165,161 @@ OperationRegistry::OperationRegistry() {
             "required":["trackId"],"additionalProperties":false
         })json"),
         okResult);
+    add("tracks.group", "Group tracks under a new group track", OperationAccess::Write,
+        &handlers::tracksGroup, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "trackIds":{"type":"array","minItems":1,
+                            "items":{"type":"integer","minimum":0}},
+                "name":{"type":"string"}
+            },
+            "required":["trackIds","name"],"additionalProperties":false
+        })json"),
+        idResult);
+    add("tracks.move", "Move a track to a one-based position in the track list",
+        OperationAccess::Write, &handlers::tracksMove, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "trackId":{"type":"integer","minimum":0},
+                "position":{"type":"integer","minimum":1}
+            },
+            "required":["trackId","position"],"additionalProperties":false
+        })json"),
+        okResult);
+
+    add("routing.endpoints.list", "List safe audio and MIDI routing endpoints",
+        OperationAccess::Read, &handlers::routingListEndpoints, emptyObjectSchema(),
+        arraySchema(routingEndpointSchema()));
+    add("routing.get", "Get one track's audio and MIDI routing", OperationAccess::Read,
+        &handlers::routingGet, operationInputSchema(R"json({
+            "type":"object","properties":{"trackId":{"type":"integer","minimum":0}},
+            "required":["trackId"],"additionalProperties":false
+        })json"),
+        trackRoutingSchema());
+    add("routing.set", "Atomically set track audio and MIDI routes", OperationAccess::Write,
+        &handlers::routingSet, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "trackId":{"type":"integer","minimum":0},
+                "audioInputEndpointId":{"type":"string","minLength":1},
+                "midiInputEndpointId":{"type":"string","minLength":1},
+                "audioOutputEndpointId":{"type":"string","minLength":1},
+                "midiOutputEndpointId":{"type":"string","minLength":1}
+            },
+            "required":["trackId"],"additionalProperties":false
+        })json"),
+        parseSchema(R"json({
+            "type":"object",
+            "properties":{"routing":{},"droppedConnections":{"type":"array"}},
+            "required":["routing","droppedConnections"],"additionalProperties":false
+        })json"));
+    operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
+        "routing", trackRoutingSchema());
+    operations_.back()
+        .outputSchema["properties"]["droppedConnections"]
+        .getDynamicObject()
+        ->setProperty("items", droppedRoutingConnectionSchema());
+
+    add("sends.list", "List one track's sends", OperationAccess::Read, &handlers::sendsList,
+        operationInputSchema(R"json({
+            "type":"object","properties":{"trackId":{"type":"integer","minimum":0}},
+            "required":["trackId"],"additionalProperties":false
+        })json"),
+        arraySchema(trackSendSchema()));
+    const auto sendMutationOutput = [] {
+        auto schema = parseSchema(R"json({
+            "type":"object",
+            "properties":{"send":{},"invalidatedConnections":{"type":"array"}},
+            "required":["send","invalidatedConnections"],"additionalProperties":false
+        })json");
+        schema["properties"].getDynamicObject()->setProperty("send", trackSendSchema());
+        schema["properties"]["invalidatedConnections"].getDynamicObject()->setProperty(
+            "items", invalidatedSendConnectionSchema());
+        return schema;
+    }();
+    add("sends.create", "Create an atomic track send", OperationAccess::Write,
+        &handlers::sendsCreate, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "trackId":{"type":"integer","minimum":0},
+                "destinationEndpointId":{"type":"string","minLength":1},
+                "level":{"type":"number","minimum":0,"maximum":1},
+                "enabled":{"type":"boolean"},
+                "position":{"type":"string","enum":["pre_fader","post_fader"]}
+            },
+            "required":["trackId","destinationEndpointId"],"additionalProperties":false
+        })json"),
+        sendMutationOutput);
+    add("sends.update", "Update an atomic track send", OperationAccess::Write,
+        &handlers::sendsUpdate, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "sendId":{"type":"string","minLength":1},
+                "destinationEndpointId":{"type":"string","minLength":1},
+                "level":{"type":"number","minimum":0,"maximum":1},
+                "enabled":{"type":"boolean"},
+                "position":{"type":"string","enum":["pre_fader","post_fader"]}
+            },
+            "required":["sendId"],"additionalProperties":false
+        })json"),
+        sendMutationOutput);
+    auto sendRemoveOutput = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "removedSendId":{"type":"string","minLength":1},
+            "invalidatedConnections":{"type":"array"}
+        },
+        "required":["removedSendId","invalidatedConnections"],"additionalProperties":false
+    })json");
+    sendRemoveOutput["properties"]["invalidatedConnections"].getDynamicObject()->setProperty(
+        "items", invalidatedSendConnectionSchema());
+    add("sends.remove", "Remove an atomic track send", OperationAccess::Write,
+        &handlers::sendsRemove, operationInputSchema(R"json({
+            "type":"object","properties":{"sendId":{"type":"string","minLength":1}},
+            "required":["sendId"],"additionalProperties":false
+        })json"),
+        sendRemoveOutput);
+    add("sidechains.list", "List device and rack sidechains and their capabilities",
+        OperationAccess::Read, &handlers::sidechainsList, operationInputSchema(R"json({
+            "type":"object","properties":{"trackId":{"anyOf":[
+                {"type":"integer","const":-2},{"type":"integer","minimum":0}]}},
+            "additionalProperties":false
+        })json"),
+        arraySchema(sidechainViewSchema()));
+    add("sidechains.get", "Inspect one device or rack sidechain and its capabilities",
+        OperationAccess::Read, &handlers::sidechainsGet, operationInputSchema(R"json({
+            "type":"object","properties":{"ownerPath":{}},
+            "required":["ownerPath"],"additionalProperties":false
+        })json"),
+        sidechainViewSchema());
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "ownerPath", devicePathSchema());
+    add("sidechains.set", "Atomically configure or clear one device or rack sidechain",
+        OperationAccess::Write, &handlers::sidechainsSet, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "ownerPath":{},
+                "sourceEndpointId":{"anyOf":[{"type":"string","minLength":1},{"type":"null"}]},
+                "type":{"type":"string","enum":["audio","midi"]},
+                "tapPoint":{"type":"string","enum":["preFx","postFader"]},
+                "gainDb":{"type":"number","minimum":-60,"maximum":24},
+                "enabled":{"type":"boolean"},
+                "listen":{"type":"boolean"},
+                "channelMapping":{"type":"string","enum":["automatic"]}
+            },
+            "required":["ownerPath"],"additionalProperties":false
+        })json"),
+        parseSchema(R"json({
+            "type":"object",
+            "properties":{"sidechain":{},"referenceImpact":{}},
+            "required":["sidechain","referenceImpact"],"additionalProperties":false
+        })json"));
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "ownerPath", devicePathSchema());
+    operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
+        "sidechain", sidechainViewSchema());
+    operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
+        "referenceImpact", referenceImpactResultSchema());
 
     add("clips.list", "List clips with optional track and view filters", OperationAccess::Read,
         &handlers::clipsList, operationInputSchema(R"json({
@@ -1522,15 +3341,28 @@ OperationRegistry::OperationRegistry() {
         &handlers::clipsCreateMidi, operationInputSchema(R"json({
             "type":"object",
             "properties":{
-                "trackId":{"type":"integer","minimum":0},
-                "startBeat":{"type":"number","minimum":0},
                 "lengthBeats":{"type":"number","exclusiveMinimum":0},
-                "view":{"type":"string","enum":["arrangement","session"]}
+                "placement":{}
             },
-            "required":["trackId","startBeat","lengthBeats","view"],
+            "required":["lengthBeats","placement"],
             "additionalProperties":false
         })json"),
         idResult);
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "placement", clipDestinationSchema());
+    add("clips.loadSample", "Load an audio file as a clip, as a drop onto a track does",
+        OperationAccess::Write, &handlers::clipsLoadSample, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "samplePath":{"type":"string","minLength":1,"maxLength":4096},
+                "placement":{}
+            },
+            "required":["samplePath","placement"],
+            "additionalProperties":false
+        })json"),
+        idResult);
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "placement", clipDestinationSchema());
     add("clips.addMidiNote", "Add a note to a MIDI clip", OperationAccess::Write,
         &handlers::clipsAddMidiNote, operationInputSchema(R"json({
             "type":"object",
@@ -1545,12 +3377,138 @@ OperationRegistry::OperationRegistry() {
             "additionalProperties":false
         })json"),
         clipSchema());
+    add("clips.listMidiEvents", "List every expressive MIDI event in a clip", OperationAccess::Read,
+        &handlers::clipsListMidiEvents, operationInputSchema(R"json({
+            "type":"object","properties":{"clipId":{"type":"integer","minimum":0}},
+            "required":["clipId"],"additionalProperties":false
+        })json"),
+        arraySchema(midiEventSchema()));
+    add("clips.addMidiEvents", "Atomically add MIDI events", OperationAccess::Write,
+        &handlers::clipsAddMidiEvents, midiEventMutationInputSchema(midiEventCreateSchema(), false),
+        clipSchema());
+    add("clips.updateMidiEvents", "Atomically update MIDI events by id", OperationAccess::Write,
+        &handlers::clipsUpdateMidiEvents, midiEventMutationInputSchema(midiEventSchema(), false),
+        clipSchema());
+    add("clips.replaceMidiEvents", "Atomically replace every MIDI event in a clip",
+        OperationAccess::Write, &handlers::clipsReplaceMidiEvents,
+        midiEventMutationInputSchema(midiEventCreateSchema(), true), clipSchema());
+    add("clips.deleteMidiEvents", "Atomically delete MIDI events by id", OperationAccess::Write,
+        &handlers::clipsDeleteMidiEvents, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "eventIds":{"type":"array","minItems":1,"maxItems":4096,
+                            "items":{"type":"integer","minimum":1}}
+            },
+            "required":["clipId","eventIds"],"additionalProperties":false
+        })json"),
+        clipSchema());
     add("clips.delete", "Delete a clip", OperationAccess::Write, &handlers::clipsDelete,
         operationInputSchema(R"json({
             "type":"object","properties":{"clipId":{"type":"integer","minimum":0}},
             "required":["clipId"],"additionalProperties":false
         })json"),
         okResult);
+    add("clips.move", "Move a clip to an arrangement position or session slot",
+        OperationAccess::Write, &handlers::clipsMove, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "destination":{}
+            },
+            "required":["clipId","destination"],"additionalProperties":false
+        })json"),
+        clipSchema());
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "destination", clipDestinationSchema());
+    add("clips.resize", "Resize a clip from its start or end edge", OperationAccess::Write,
+        &handlers::clipsResize, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "lengthBeats":{"type":"number","exclusiveMinimum":0},
+                "edge":{"type":"string","enum":["start","end"]}
+            },
+            "required":["clipId","lengthBeats","edge"],"additionalProperties":false
+        })json"),
+        clipSchema());
+    add("clips.duplicate", "Duplicate a clip to an arrangement position or session slot",
+        OperationAccess::Write, &handlers::clipsDuplicate, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "destination":{}
+            },
+            "required":["clipId","destination"],"additionalProperties":false
+        })json"),
+        clipSchema());
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "destination", clipDestinationSchema());
+    add("clips.update", "Update clip name, enabled state, or groove template assignment",
+        OperationAccess::Write, &handlers::clipsUpdate, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "name":{"type":"string"},
+                "enabled":{"type":"boolean"},
+                "grooveTemplate":{"type":"string"}
+            },
+            "required":["clipId"],"additionalProperties":false
+        })json"),
+        clipSchema());
+    add("clips.updateAudio",
+        "Update an audio clip's playback mode, source tempo, stretch, reverse, and fades",
+        OperationAccess::Write, &handlers::clipsUpdateAudio, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "playback":{"type":"string","enum":["free","beat"]},
+                "sourceBpm":{"type":"number","minimum":20,"maximum":999},
+                "stretch":{"type":"string","enum":["off","signalsmith","soundtouch","soundtouch_hq"]},
+                "reversed":{"type":"boolean"},
+                "fadeInSeconds":{"type":"number","minimum":0,"maximum":600},
+                "fadeOutSeconds":{"type":"number","minimum":0,"maximum":600},
+                "fadeInCurve":{"type":"string","enum":["linear","convex","concave","s_curve"]},
+                "fadeOutCurve":{"type":"string","enum":["linear","convex","concave","s_curve"]}
+            },
+            "required":["clipId"],"additionalProperties":false
+        })json"),
+        clipSchema());
+    add("clips.transpose", "Transpose every note in a MIDI clip by semitones",
+        OperationAccess::Write, &handlers::clipsTranspose, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "semitones":{"type":"integer","minimum":-127,"maximum":127}
+            },
+            "required":["clipId","semitones"],"additionalProperties":false
+        })json"),
+        clipSchema());
+    add("clips.quantize",
+        "Quantize a MIDI clip's notes to a beat grid; all notes when noteIndices is absent",
+        OperationAccess::Write, &handlers::clipsQuantize, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "gridResolution":{"type":"number","exclusiveMinimum":0,"maximum":16},
+                "noteIndices":{"type":"array","items":{"type":"integer","minimum":0}},
+                "mode":{"type":"string","enum":["start","length","start_and_length"]}
+            },
+            "required":["clipId","gridResolution"],"additionalProperties":false
+        })json"),
+        clipSchema());
+    add("clips.sliceNotes",
+        "Slice a MIDI clip's notes into equal subdivisions; all notes when noteIndices is absent",
+        OperationAccess::Write, &handlers::clipsSliceNotes, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "subdivisions":{"type":"integer","minimum":2,"maximum":64},
+                "noteIndices":{"type":"array","items":{"type":"integer","minimum":0}}
+            },
+            "required":["clipId","subdivisions"],"additionalProperties":false
+        })json"),
+        clipSchema());
 
     add("devices.list", "List safe device and rack graph metadata", OperationAccess::Read,
         &handlers::devicesList, operationInputSchema(R"json({
@@ -1558,39 +3516,443 @@ OperationRegistry::OperationRegistry() {
             "additionalProperties":false
         })json"),
         deviceGraphSchema());
+    auto addPadOperation = [&](const char* name, const char* summary, OperationAccess access,
+                               OperationHandler handler, const char* inputJson, juce::var output) {
+        add(name, summary, access, handler, operationInputSchema(inputJson), output);
+        operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+            "gridPath", devicePathSchema());
+    };
+    addPadOperation("pads.list", "List all 64 slots of a Drum Grid", OperationAccess::Read,
+                    &handlers::padsList, R"json({
+        "type":"object","properties":{"gridPath":{}},
+        "required":["gridPath"],"additionalProperties":false
+    })json",
+                    arraySchema(padSchema()));
+    addPadOperation("pads.create", "Create an empty pad chain", OperationAccess::Write,
+                    &handlers::padsCreate, R"json({
+        "type":"object","properties":{"gridPath":{},"padIndex":{"type":"integer","minimum":0,"maximum":63}},
+        "required":["gridPath","padIndex"],"additionalProperties":false
+    })json",
+                    padSchema());
+    addPadOperation("pads.setDevice", "Replace a pad voice with a catalogue device",
+                    OperationAccess::Write, &handlers::padsSetDevice, R"json({
+        "type":"object","properties":{"gridPath":{},"padIndex":{"type":"integer","minimum":0,"maximum":63},
+        "catalogId":{"type":"string","minLength":1}},
+        "required":["gridPath","padIndex","catalogId"],"additionalProperties":false
+    })json",
+                    padSchema());
+    addPadOperation("pads.setSample",
+                    "Replace a pad voice with a sampler using a host-local audio file",
+                    OperationAccess::Write, &handlers::padsSetSample, R"json({
+        "type":"object","properties":{"gridPath":{},"padIndex":{"type":"integer","minimum":0,"maximum":63},
+        "samplePath":{"type":"string","minLength":1}},
+        "required":["gridPath","padIndex","samplePath"],"additionalProperties":false
+    })json",
+                    padSchema());
+    addPadOperation("pads.clear", "Clear one pad", OperationAccess::Write, &handlers::padsClear,
+                    R"json({
+        "type":"object","properties":{"gridPath":{},"padIndex":{"type":"integer","minimum":0,"maximum":63}},
+        "required":["gridPath","padIndex"],"additionalProperties":false
+    })json",
+                    okResult);
+    addPadOperation("pads.swap", "Swap two single-note pads", OperationAccess::Write,
+                    &handlers::padsSwap, R"json({
+        "type":"object","properties":{"gridPath":{},"padA":{"type":"integer","minimum":0,"maximum":63},
+        "padB":{"type":"integer","minimum":0,"maximum":63}},
+        "required":["gridPath","padA","padB"],"additionalProperties":false
+    })json",
+                    okResult);
+    addPadOperation("pads.update", "Edit pad notes, level, pan, switches, and output bus",
+                    OperationAccess::Write, &handlers::padsUpdate, R"json({
+        "type":"object","properties":{"gridPath":{},"padIndex":{"type":"integer","minimum":0,"maximum":63},
+        "lowNote":{"type":"integer","minimum":24,"maximum":87},
+        "highNote":{"type":"integer","minimum":24,"maximum":87},
+        "rootNote":{"type":"integer","minimum":0,"maximum":127},
+        "levelDb":{"type":"number","minimum":-60,"maximum":6},
+        "pan":{"type":"number","minimum":-1,"maximum":1},
+        "muted":{"type":"boolean"},"solo":{"type":"boolean"},
+        "bypassed":{"type":"boolean"},
+        "outputBus":{"type":"integer","minimum":0,"maximum":31}},
+        "required":["gridPath","padIndex"],"additionalProperties":false
+    })json",
+                    padSchema());
     // The kinds a client may add, as opposed to devices.list's instances. Read
     // rather than write, and answered from the same catalogue `addDevice` takes
     // its `catalogId` from — so what this lists is exactly what can be asked for.
     add("devices.catalog", "List devices that can be added, by catalogue id", OperationAccess::Read,
         &handlers::devicesCatalog, emptyObjectSchema(), arraySchema(deviceCatalogEntrySchema()));
-    add("racks.create", "Create a top-level rack", OperationAccess::Write, &handlers::racksCreate,
-        operationInputSchema(R"json({
-            "type":"object",
-            "properties":{"trackId":{"type":"integer","minimum":0},"name":{"type":"string"}},
-            "required":["trackId","name"],"additionalProperties":false
+    add("devicePresets.list", "List presets for a device by opaque id", OperationAccess::Read,
+        &handlers::devicePresetsList, operationInputSchema(R"json({
+            "type":"object","properties":{"devicePath":{}},
+            "required":["devicePath"],"additionalProperties":false
         })json"),
-        idResult);
-    add("racks.remove", "Remove a top-level rack", OperationAccess::Write, &handlers::racksRemove,
-        operationInputSchema(R"json({
+        arraySchema(devicePresetSchema()));
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "devicePath", devicePathSchema());
+    add("devices.applyPreset", "Apply an opaque preset to an existing device",
+        OperationAccess::Write, &handlers::devicesApplyPreset, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{"devicePath":{},"presetId":{"type":"string","minLength":1}},
+            "required":["devicePath","presetId"],"additionalProperties":false
+        })json"),
+        parseSchema(R"json({
+            "type":"object",
+            "properties":{"deviceGraph":{},"referenceImpact":{}},
+            "required":["deviceGraph","referenceImpact"],"additionalProperties":false
+        })json"));
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "devicePath", devicePathSchema());
+    operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
+        "deviceGraph", deviceGraphSchema());
+    operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
+        "referenceImpact", referenceImpactResultSchema());
+    add("devices.replace", "Atomically replace a device while preserving its chain slot",
+        OperationAccess::Write, &handlers::devicesReplace, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "devicePath":{},
+                "catalogId":{"type":"string","minLength":1},
+                "presetId":{"type":"string","minLength":1}
+            },
+            "required":["devicePath","catalogId"],"additionalProperties":false
+        })json"),
+        parseSchema(R"json({
+            "type":"object",
+            "properties":{"devicePath":{},"deviceGraph":{},"referenceImpact":{}},
+            "required":["devicePath","deviceGraph","referenceImpact"],
+            "additionalProperties":false
+        })json"));
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "devicePath", devicePathSchema());
+    operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
+        "devicePath", devicePathSchema());
+    operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
+        "deviceGraph", deviceGraphSchema());
+    operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
+        "referenceImpact", referenceImpactResultSchema());
+    add("devices.add", "Add a device from the catalogue to a track's FX chain or a rack chain",
+        OperationAccess::Write, &handlers::devicesAdd, operationInputSchema(R"json({
             "type":"object",
             "properties":{
                 "trackId":{"type":"integer","minimum":0},
-                "rackId":{"type":"integer","minimum":0}
+                "parentPath":{},
+                "catalogId":{"type":"string","minLength":1},
+                "index":{"type":"integer","minimum":-1}
             },
-            "required":["trackId","rackId"],"additionalProperties":false
+            "required":["catalogId"],"additionalProperties":false
+        })json"),
+        parseSchema(R"json({
+            "type":"object",
+            "properties":{"id":{"type":"integer","minimum":0},"devicePath":{}},
+            "required":["id","devicePath"],"additionalProperties":false
+        })json"));
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "parentPath", devicePathSchema());
+    operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
+        "devicePath", devicePathSchema());
+    add("devices.remove", "Remove a device", OperationAccess::Write, &handlers::devicesRemove,
+        operationInputSchema(R"json({
+            "type":"object","properties":{"devicePath":{}},
+            "required":["devicePath"],"additionalProperties":false
         })json"),
         okResult);
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "devicePath", devicePathSchema());
+    add("devices.setBypassed", "Set a device's bypass state", OperationAccess::Write,
+        &handlers::devicesSetBypassed, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{"devicePath":{},"bypassed":{"type":"boolean"}},
+            "required":["devicePath","bypassed"],"additionalProperties":false
+        })json"),
+        okResult);
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "devicePath", devicePathSchema());
+    add("devices.move", "Move a device within its chain", OperationAccess::Write,
+        &handlers::devicesMove, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "devicePath":{},
+                "toIndex":{"type":"integer","minimum":0}
+            },
+            "required":["devicePath","toIndex"],"additionalProperties":false
+        })json"),
+        okResult);
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "devicePath", devicePathSchema());
+    // Parameter discovery and direct control (#2274). Values are real units on
+    // both sides — discovery reports what a knob shows and setParameter takes
+    // the same number back — with `normalizedValue` alongside so a client can
+    // compose with automation.addPoint's 0..1 domain.
+    add("devices.listParameters",
+        "List a device's parameters, in real units, with customization flags",
+        OperationAccess::Read, &handlers::devicesListParameters, operationInputSchema(R"json({
+            "type":"object","properties":{"devicePath":{}},
+            "required":["devicePath"],"additionalProperties":false
+        })json"),
+        arraySchema(deviceParameterSchema()));
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "devicePath", devicePathSchema());
+    add("devices.setParameter", "Set one device parameter, in real units", OperationAccess::Write,
+        &handlers::devicesSetParameter, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "devicePath":{},
+                "parameterIndex":{"type":"integer","minimum":0},
+                "value":{"type":"number"}
+            },
+            "required":["devicePath","parameterIndex","value"],"additionalProperties":false
+        })json"),
+        deviceParameterSchema());
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "devicePath", devicePathSchema());
+    add("devices.setParameterConfig",
+        "Update a device's saved parameter customization: the visible / mini-mixer / AI-agent "
+        "selections and the per-plugin AI prompt",
+        OperationAccess::Write, &handlers::devicesSetParameterConfig, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "devicePath":{},
+                "visibleParameters":{"type":"array","items":{"type":"integer","minimum":0}},
+                "miniMixerParameters":{"type":"array","items":{"type":"integer","minimum":0}},
+                "aiAgentParameters":{"type":"array","items":{"type":"integer","minimum":0}},
+                "aiPrompt":{"type":"string"},
+                "parameterOverrides":{"type":"array","items":{
+                    "type":"object",
+                    "properties":{
+                        "index":{"type":"integer","minimum":0},
+                        "unit":{"type":"string"},
+                        "scale":{"type":"string","enum":["linear","logarithmic","exponential",
+                                                          "discrete","boolean","fader_db"]},
+                        "minValue":{"type":"number"},
+                        "maxValue":{"type":"number"},
+                        "choices":{"type":"array","items":{"type":"string"}}
+                    },
+                    "required":["index"],"additionalProperties":false
+                }}
+            },
+            "required":["devicePath"],"additionalProperties":false
+        })json"),
+        arraySchema(deviceParameterSchema()));
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "devicePath", devicePathSchema());
+    add("devices.openEditor", "Open a device's plugin editor window", OperationAccess::Write,
+        &handlers::devicesOpenEditor, operationInputSchema(R"json({
+            "type":"object","properties":{"devicePath":{}},
+            "required":["devicePath"],"additionalProperties":false
+        })json"),
+        okResult);
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "devicePath", devicePathSchema());
+    // Device-owned mods and macros (#2294). The operation registry is shared by
+    // WebSocket and MCP, so both transports expose exactly this contract.
+    const auto addModulationOperation = [&](const char* name, const char* summary,
+                                            OperationAccess access, OperationHandler handler,
+                                            juce::var input, juce::var output) {
+        add(name, summary, access, handler, std::move(input), std::move(output));
+        operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+            "devicePath", devicePathSchema());
+    };
+    addModulationOperation("mods.list", "List modulators on a device", OperationAccess::Read,
+                           &handlers::modsList, operationInputSchema(R"json({
+        "type":"object","properties":{"devicePath":{}},
+        "required":["devicePath"],"additionalProperties":false
+    })json"),
+                           arraySchema(deviceModSchema()));
+    addModulationOperation("mods.create", "Create a device modulator", OperationAccess::Write,
+                           &handlers::modsCreate, operationInputSchema(R"json({
+        "type":"object","properties":{
+            "devicePath":{},
+            "type":{"type":"string","enum":["lfo","envelope","random","follower"]},
+            "waveform":{"type":"string","enum":["sine","triangle","square","saw","reverse_saw","custom"]},
+            "name":{"type":"string"},
+            "rate":{"type":"number","exclusiveMinimum":0},
+            "enabled":{"type":"boolean"},"tempoSync":{"type":"boolean"},
+            "syncDivision":{"type":"integer","enum":[1,2,3,4,6,8,12,16,24,32,33,48,66,132,200,264,400,528,800,1600]},
+            "oneShot":{"type":"boolean"},
+            "attackMs":{"type":"number","minimum":0,"maximum":30000},
+            "decayMs":{"type":"number","minimum":0,"maximum":30000},
+            "sustain":{"type":"number","minimum":0,"maximum":1},
+            "releaseMs":{"type":"number","minimum":0,"maximum":30000},
+            "parameterIndex":{"type":"integer","minimum":0},
+            "amount":{"type":"number","minimum":-1,"maximum":1},
+            "bipolar":{"type":"boolean"}
+        },"required":["devicePath","type"],"additionalProperties":false
+    })json"),
+                           deviceModSchema());
+    addModulationOperation("mods.update", "Update a device modulator", OperationAccess::Write,
+                           &handlers::modsUpdate, operationInputSchema(R"json({
+        "type":"object","properties":{
+            "devicePath":{},"modId":{"type":"integer","minimum":0},
+            "name":{"type":"string"},
+            "type":{"type":"string","enum":["lfo","envelope","random","follower"]},
+            "waveform":{"type":"string","enum":["sine","triangle","square","saw","reverse_saw","custom"]},
+            "rate":{"type":"number","exclusiveMinimum":0},
+            "enabled":{"type":"boolean"},"tempoSync":{"type":"boolean"},
+            "syncDivision":{"type":"integer","enum":[1,2,3,4,6,8,12,16,24,32,33,48,66,132,200,264,400,528,800,1600]},
+            "oneShot":{"type":"boolean"},
+            "attackMs":{"type":"number","minimum":0,"maximum":30000},
+            "decayMs":{"type":"number","minimum":0,"maximum":30000},
+            "sustain":{"type":"number","minimum":0,"maximum":1},
+            "releaseMs":{"type":"number","minimum":0,"maximum":30000}
+        },"required":["devicePath","modId"],"additionalProperties":false
+    })json"),
+                           deviceModSchema());
+    addModulationOperation("mods.remove", "Remove a device modulator", OperationAccess::Write,
+                           &handlers::modsRemove, operationInputSchema(R"json({
+        "type":"object","properties":{"devicePath":{},"modId":{"type":"integer","minimum":0}},
+        "required":["devicePath","modId"],"additionalProperties":false
+    })json"),
+                           okResult);
+    addModulationOperation("mods.link", "Link a modulator to an AI-enabled device parameter",
+                           OperationAccess::Write, &handlers::modsLink,
+                           operationInputSchema(R"json({
+        "type":"object","properties":{
+            "devicePath":{},"modId":{"type":"integer","minimum":0},
+            "parameterIndex":{"type":"integer","minimum":0},
+            "amount":{"type":"number","minimum":-1,"maximum":1},
+            "bipolar":{"type":"boolean"}
+        },"required":["devicePath","modId","parameterIndex","amount"],
+        "additionalProperties":false
+    })json"),
+                           deviceModSchema());
+    addModulationOperation("mods.unlink", "Remove a modulator's parameter link",
+                           OperationAccess::Write, &handlers::modsUnlink,
+                           operationInputSchema(R"json({
+        "type":"object","properties":{"devicePath":{},"modId":{"type":"integer","minimum":0},
+                                        "parameterIndex":{"type":"integer","minimum":0}},
+        "required":["devicePath","modId","parameterIndex"],"additionalProperties":false
+    })json"),
+                           okResult);
+    addModulationOperation("macros.list", "List device macros and their links",
+                           OperationAccess::Read, &handlers::macrosList,
+                           operationInputSchema(R"json({
+        "type":"object","properties":{"devicePath":{}},
+        "required":["devicePath"],"additionalProperties":false
+    })json"),
+                           arraySchema(deviceMacroSchema()));
+    addModulationOperation("macros.setValue", "Set a device macro value", OperationAccess::Write,
+                           &handlers::macrosSetValue, operationInputSchema(R"json({
+        "type":"object","properties":{"devicePath":{},"macroIndex":{"type":"integer","minimum":0},
+                                        "value":{"type":"number","minimum":0,"maximum":1}},
+        "required":["devicePath","macroIndex","value"],"additionalProperties":false
+    })json"),
+                           deviceMacroSchema());
+    addModulationOperation("macros.link", "Link a macro to an AI-enabled device parameter",
+                           OperationAccess::Write, &handlers::macrosLink,
+                           operationInputSchema(R"json({
+        "type":"object","properties":{
+            "devicePath":{},"macroIndex":{"type":"integer","minimum":0},
+            "parameterIndex":{"type":"integer","minimum":0},
+            "amount":{"type":"number","minimum":-1,"maximum":1},
+            "bipolar":{"type":"boolean"}
+        },"required":["devicePath","macroIndex","parameterIndex","amount"],
+        "additionalProperties":false
+    })json"),
+                           deviceMacroSchema());
+    addModulationOperation("macros.unlink", "Remove a macro's parameter link",
+                           OperationAccess::Write, &handlers::macrosUnlink,
+                           operationInputSchema(R"json({
+        "type":"object","properties":{"devicePath":{},"macroIndex":{"type":"integer","minimum":0},
+                                        "parameterIndex":{"type":"integer","minimum":0}},
+        "required":["devicePath","macroIndex","parameterIndex"],"additionalProperties":false
+    })json"),
+                           okResult);
+    add("racks.create", "Create a rack on a track or inside a rack chain", OperationAccess::Write,
+        &handlers::racksCreate, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "trackId":{"type":"integer","minimum":0},
+                "parentPath":{},
+                "name":{"type":"string"}
+            },
+            "required":["name"],
+            "oneOf":[{"required":["trackId"]},{"required":["parentPath"]}],
+            "additionalProperties":false
+        })json"),
+        idResult);
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "parentPath", devicePathSchema());
+    add("racks.remove", "Remove a rack at any nesting depth", OperationAccess::Write,
+        &handlers::racksRemove, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "trackId":{"type":"integer","minimum":0},
+                "rackId":{"type":"integer","minimum":0},
+                "rackPath":{}
+            },
+            "oneOf":[{"required":["trackId","rackId"]},{"required":["rackPath"]}],
+            "additionalProperties":false
+        })json"),
+        okResult);
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "rackPath", devicePathSchema());
     add("racks.setBypassed", "Set rack bypass", OperationAccess::Write, &handlers::racksSetBypassed,
         operationInputSchema(R"json({
             "type":"object",
             "properties":{
                 "trackId":{"type":"integer","minimum":0},
                 "rackId":{"type":"integer","minimum":0},
+                "rackPath":{},
                 "bypassed":{"type":"boolean"}
             },
-            "required":["trackId","rackId","bypassed"],"additionalProperties":false
+            "required":["bypassed"],
+            "oneOf":[{"required":["trackId","rackId"]},{"required":["rackPath"]}],
+            "additionalProperties":false
         })json"),
         rackSchema());
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "rackPath", devicePathSchema());
+    add("racks.update", "Update a rack at any nesting depth", OperationAccess::Write,
+        &handlers::racksUpdate, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "rackPath":{},
+                "bypassed":{"type":"boolean"},
+                "volumeDb":{"type":"number"}
+            },
+            "required":["rackPath"],
+            "additionalProperties":false
+        })json"),
+        rackSchema());
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "rackPath", devicePathSchema());
+
+    add("chains.create", "Create a chain inside a rack at any nesting depth",
+        OperationAccess::Write, &handlers::chainsCreate, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{"rackPath":{},"name":{"type":"string"}},
+            "required":["rackPath","name"],"additionalProperties":false
+        })json"),
+        idResult);
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "rackPath", devicePathSchema());
+    add("chains.remove", "Remove a chain from a rack at any nesting depth", OperationAccess::Write,
+        &handlers::chainsRemove, operationInputSchema(R"json({
+            "type":"object","properties":{"chainPath":{}},
+            "required":["chainPath"],"additionalProperties":false
+        })json"),
+        okResult);
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "chainPath", devicePathSchema());
+    add("chains.update", "Update a chain at any nesting depth", OperationAccess::Write,
+        &handlers::chainsUpdate, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "chainPath":{},
+                "name":{"type":"string"},
+                "outputIndex":{"type":"integer","minimum":0},
+                "muted":{"type":"boolean"},
+                "solo":{"type":"boolean"},
+                "bypassed":{"type":"boolean"},
+                "volumeDb":{"type":"number"},
+                "pan":{"type":"number","minimum":-1,"maximum":1}
+            },
+            "required":["chainPath"],
+            "additionalProperties":false
+        })json"),
+        chainSchema());
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "chainPath", devicePathSchema());
 
     add("selection.get", "Get the current selection", OperationAccess::Read,
         &handlers::selectionGet, emptyObjectSchema(), selectionSchema());
@@ -1633,8 +3995,85 @@ OperationRegistry::OperationRegistry() {
         })json"),
         transportSchema());
 
-    add("session.get", "Get occupied session slots and play states", OperationAccess::Read,
+    add("session.get", "Get scenes, tracks, and every session slot state", OperationAccess::Read,
         &handlers::sessionGet, emptyObjectSchema(), sessionSchema());
+    add("session.createScene", "Create a durable session scene", OperationAccess::Write,
+        &handlers::sessionCreateScene, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "index":{"type":"integer","minimum":0},
+                "name":{"type":"string","maxLength":256},
+                "colourArgb":{"type":"integer","minimum":0,"maximum":4294967295}
+            },
+            "additionalProperties":false
+        })json"),
+        sessionSchema());
+    add("session.updateScene", "Atomically update session scene metadata", OperationAccess::Write,
+        &handlers::sessionUpdateScene, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "sceneId":{"type":"integer","minimum":0},
+                "name":{"type":"string","maxLength":256},
+                "colourArgb":{"type":"integer","minimum":0,"maximum":4294967295}
+            },
+            "required":["sceneId"],
+            "anyOf":[{"required":["name"]},{"required":["colourArgb"]}],
+            "additionalProperties":false
+        })json"),
+        sessionSchema());
+    add("session.moveScene", "Move a session scene by stable id", OperationAccess::Write,
+        &handlers::sessionMoveScene, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "sceneId":{"type":"integer","minimum":0},
+                "toIndex":{"type":"integer","minimum":0}
+            },
+            "required":["sceneId","toIndex"],"additionalProperties":false
+        })json"),
+        sessionSchema());
+    add("session.duplicateScene", "Duplicate a scene with explicit clip-copy behaviour",
+        OperationAccess::Write, &handlers::sessionDuplicateScene, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "sceneId":{"type":"integer","minimum":0},
+                "copyClips":{"type":"boolean"}
+            },
+            "required":["sceneId","copyClips"],"additionalProperties":false
+        })json"),
+        sessionSchema());
+    add("session.deleteScene", "Delete a scene with an explicit populated-slot policy",
+        OperationAccess::Write, &handlers::sessionDeleteScene, operationInputSchema(R"json({
+            "type":"object",
+            "oneOf":[
+                {
+                    "type":"object",
+                    "properties":{
+                        "sceneId":{"type":"integer","minimum":0},
+                        "populatedPolicy":{"const":"fail"}
+                    },
+                    "required":["sceneId","populatedPolicy"],"additionalProperties":false
+                },
+                {
+                    "type":"object",
+                    "properties":{
+                        "sceneId":{"type":"integer","minimum":0},
+                        "populatedPolicy":{"const":"deleteClips"}
+                    },
+                    "required":["sceneId","populatedPolicy"],"additionalProperties":false
+                },
+                {
+                    "type":"object",
+                    "properties":{
+                        "sceneId":{"type":"integer","minimum":0},
+                        "populatedPolicy":{"const":"moveClips"},
+                        "destinationSceneId":{"type":"integer","minimum":0}
+                    },
+                    "required":["sceneId","populatedPolicy","destinationSceneId"],
+                    "additionalProperties":false
+                }
+            ]
+        })json"),
+        sessionSchema());
     add("session.launchClip", "Launch a session clip", OperationAccess::Write,
         &handlers::sessionLaunchClip, operationInputSchema(R"json({
             "type":"object","properties":{"clipId":{"type":"integer","minimum":0}},
@@ -1661,6 +4100,78 @@ OperationRegistry::OperationRegistry() {
             "required":["sceneIndex"],"additionalProperties":false
         })json"),
         sessionSchema());
+    add("session.updateClipSettings", "Atomically update session clip launch behaviour",
+        OperationAccess::Write, &handlers::sessionUpdateClipSettings, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "launchMode":{"type":"string","enum":["trigger","toggle"]},
+                "launchQuantize":{"type":"string","enum":["none","8_bars","4_bars",
+                    "2_bars","1_bar","1/2","1/4","1/8","1/16"]},
+                "followAction":{"type":"string","enum":["none","next","previous",
+                    "random","stop","again"]},
+                "followActionDelayBeats":{"type":"number","minimum":0,"maximum":1000000},
+                "followActionLoopCount":{"type":"integer","minimum":1,"maximum":100000}
+            },
+            "required":["clipId"],
+            "anyOf":[{"required":["launchMode"]},{"required":["launchQuantize"]},
+                     {"required":["followAction"]},{"required":["followActionDelayBeats"]},
+                     {"required":["followActionLoopCount"]}],
+            "additionalProperties":false
+        })json"),
+        clipSchema());
+    add("session.returnToArrangement", "Return one or every track to arrangement playback",
+        OperationAccess::Control, &handlers::sessionReturnToArrangement,
+        operationInputSchema(R"json({
+            "type":"object",
+            "properties":{"trackId":{"type":"integer","minimum":0}},
+            "additionalProperties":false
+        })json"),
+        sessionSchema());
+    add("session.recordingCapabilities", "Inspect Session recording support and stop policy",
+        OperationAccess::Read, &handlers::sessionRecordingCapabilities, emptyObjectSchema(),
+        sessionRecordingCapabilitiesSchema());
+    add("session.armSlotRecording", "Arm or unarm an empty addressed Session slot",
+        OperationAccess::Control, &handlers::sessionArmSlotRecording, operationInputSchema(R"json({
+            "type":"object","properties":{
+                "trackId":{"type":"integer","minimum":0},
+                "sceneId":{"type":"integer","minimum":0},
+                "armed":{"type":"boolean"},
+                "occupiedPolicy":{"const":"fail"}
+            },
+            "required":["trackId","sceneId","armed","occupiedPolicy"],
+            "additionalProperties":false
+        })json"),
+        sessionSchema());
+    add("session.beginSlotRecording", "Begin a queued slot take as an asynchronous job",
+        OperationAccess::Control, &handlers::sessionBeginSlotRecording,
+        operationInputSchema(R"json({
+            "type":"object","properties":{
+                "trackId":{"type":"integer","minimum":0},
+                "sceneId":{"type":"integer","minimum":0},
+                "occupiedPolicy":{"const":"fail"}
+            },
+            "required":["trackId","sceneId","occupiedPolicy"],
+            "additionalProperties":false
+        })json"),
+        remoteJobSchema());
+    add("session.stopSlotRecording", "Stop a slot take and complete its recording job",
+        OperationAccess::Write, &handlers::sessionStopSlotRecording, operationInputSchema(R"json({
+            "type":"object","properties":{"jobId":{"type":"string","minLength":1}},
+            "required":["jobId"],"additionalProperties":false
+        })json"),
+        remoteJobSchema());
+    add("session.beginPerformanceCapture",
+        "Capture launched Session performance into Arrangement as an asynchronous job",
+        OperationAccess::Control, &handlers::sessionBeginPerformanceCapture, emptyObjectSchema(),
+        remoteJobSchema());
+    add("session.stopPerformanceCapture", "Stop and commit a Session performance capture",
+        OperationAccess::Write, &handlers::sessionStopPerformanceCapture,
+        operationInputSchema(R"json({
+            "type":"object","properties":{"jobId":{"type":"string","minLength":1}},
+            "required":["jobId"],"additionalProperties":false
+        })json"),
+        remoteJobSchema());
 
     add("automation.listLanes", "List every automation lane in the project", OperationAccess::Read,
         &handlers::automationListLanes, emptyObjectSchema(), arraySchema(automationLaneSchema()));
@@ -1695,12 +4206,188 @@ OperationRegistry::OperationRegistry() {
             "additionalProperties":false
         })json"),
         automationLaneSchema());
+    add("automation.setPoints", "Replace every point on an absolute automation lane",
+        OperationAccess::Write, &handlers::automationSetPoints, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "laneId":{"type":"integer","minimum":0},
+                "points":{"type":"array","maxItems":100000}
+            },
+            "required":["laneId","points"],
+            "additionalProperties":false
+        })json"),
+        automationLaneSchema());
+    operations_.back().inputSchema["properties"]["points"].getDynamicObject()->setProperty(
+        "items", automationPointInputSchema());
     add("automation.clearLane", "Remove all points from an automation lane", OperationAccess::Write,
         &handlers::automationClearLane, operationInputSchema(R"json({
             "type":"object","properties":{"laneId":{"type":"integer","minimum":0}},
             "required":["laneId"],"additionalProperties":false
         })json"),
         automationLaneSchema());
+    add("automation.deleteLane", "Delete an automation lane and its clips", OperationAccess::Write,
+        &handlers::automationDeleteLane, operationInputSchema(R"json({
+            "type":"object","properties":{"laneId":{"type":"integer","minimum":0}},
+            "required":["laneId"],"additionalProperties":false
+        })json"),
+        okResult);
+    add("automation.listClips", "List automation clips, optionally filtered by lane",
+        OperationAccess::Read, &handlers::automationListClips, operationInputSchema(R"json({
+            "type":"object","properties":{"laneId":{"type":"integer","minimum":0}},
+            "additionalProperties":false
+        })json"),
+        arraySchema(automationClipSchema()));
+    add("automation.getClip", "Get an automation clip", OperationAccess::Read,
+        &handlers::automationGetClip, operationInputSchema(R"json({
+            "type":"object","properties":{"clipId":{"type":"integer","minimum":0}},
+            "required":["clipId"],"additionalProperties":false
+        })json"),
+        automationClipSchema());
+    add("automation.createClip", "Create a clip on a clip-based automation lane",
+        OperationAccess::Write, &handlers::automationCreateClip, operationInputSchema(R"json({
+            "type":"object","properties":{
+                "laneId":{"type":"integer","minimum":0},
+                "startBeat":{"type":"number","minimum":0},
+                "lengthBeats":{"type":"number","minimum":0.1}
+            },
+            "required":["laneId","startBeat","lengthBeats"],"additionalProperties":false
+        })json"),
+        automationClipSchema());
+    add("automation.deleteClip", "Delete an automation clip", OperationAccess::Write,
+        &handlers::automationDeleteClip, operationInputSchema(R"json({
+            "type":"object","properties":{"clipId":{"type":"integer","minimum":0}},
+            "required":["clipId"],"additionalProperties":false
+        })json"),
+        okResult);
+    add("automation.moveClip", "Move an automation clip", OperationAccess::Write,
+        &handlers::automationMoveClip, operationInputSchema(R"json({
+            "type":"object","properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "startBeat":{"type":"number","minimum":0}
+            },
+            "required":["clipId","startBeat"],"additionalProperties":false
+        })json"),
+        automationClipSchema());
+    add("automation.resizeClip", "Resize an automation clip from either edge",
+        OperationAccess::Write, &handlers::automationResizeClip, operationInputSchema(R"json({
+            "type":"object","properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "lengthBeats":{"type":"number","minimum":0.1},
+                "edge":{"type":"string","enum":["start","end"]}
+            },
+            "required":["clipId","lengthBeats","edge"],"additionalProperties":false
+        })json"),
+        automationClipSchema());
+    add("automation.duplicateClip", "Duplicate an automation clip after its source",
+        OperationAccess::Write, &handlers::automationDuplicateClip, operationInputSchema(R"json({
+            "type":"object","properties":{"clipId":{"type":"integer","minimum":0}},
+            "required":["clipId"],"additionalProperties":false
+        })json"),
+        automationClipSchema());
+    add("automation.updateClip", "Update automation clip metadata, looping, or points",
+        OperationAccess::Write, &handlers::automationUpdateClip, operationInputSchema(R"json({
+            "type":"object","properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "name":{"type":"string"},
+                "colourArgb":{"type":"integer","minimum":0,"maximum":4294967295},
+                "looping":{"type":"boolean"},
+                "loopLengthBeats":{"type":"number","minimum":0.1},
+                "points":{"type":"array","maxItems":100000}
+            },
+            "required":["clipId"],"additionalProperties":false
+        })json"),
+        automationClipSchema());
+    operations_.back().inputSchema["properties"]["points"].getDynamicObject()->setProperty(
+        "items", automationPointInputSchema());
+
+    const auto stringArraySchema = arraySchema(parseSchema(R"json({"type":"string"})json"));
+    add("grooves.list", "List groove template names", OperationAccess::Read, &handlers::groovesList,
+        emptyObjectSchema(), stringArraySchema);
+    add("grooves.upsert",
+        "Create or replace a groove template; latenessProportions is one entry per grid slot, "
+        "-1..1 of the slot length",
+        OperationAccess::Write, &handlers::groovesUpsert, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "name":{"type":"string","minLength":1},
+                "notesPerBeat":{"type":"integer","minimum":1,"maximum":16},
+                "parameterized":{"type":"boolean"},
+                "latenessProportions":{"type":"array","minItems":1,
+                                       "items":{"type":"number","minimum":-1,"maximum":1}}
+            },
+            "required":["name","notesPerBeat","latenessProportions"],
+            "additionalProperties":false
+        })json"),
+        okResult);
+
+    // The focused device's macro page — the same surface controller scripts
+    // drive. Reads answer safely with hasFocus=false when nothing is focused.
+    const auto focusedSchema = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "hasFocus":{"type":"boolean"},
+            "name":{"type":"string"},
+            "macros":{"type":"array","items":{
+                "type":"object",
+                "properties":{
+                    "index":{"type":"integer"},
+                    "name":{"type":"string"},
+                    "value":{"type":"number"}
+                },
+                "required":["index","name","value"],
+                "additionalProperties":false
+            }}
+        },
+        "required":["hasFocus","name","macros"],
+        "additionalProperties":false
+    })json");
+    add("focused.get", "Get the focused device or rack and its macro page", OperationAccess::Read,
+        &handlers::focusedGet, emptyObjectSchema(), focusedSchema);
+    add("focused.setMacro", "Write a normalized value to a macro on the focused device",
+        OperationAccess::Write, &handlers::focusedSetMacro, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "index":{"type":"integer","minimum":0,"maximum":15},
+                "value":{"type":"number","minimum":0,"maximum":1}
+            },
+            "required":["index","value"],"additionalProperties":false
+        })json"),
+        focusedSchema);
+    add("focused.cycleDevice", "Move device focus to the previous or next top-level chain node",
+        OperationAccess::Write, &handlers::focusedCycleDevice, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{"direction":{"type":"integer","enum":[-1,1]}},
+            "required":["direction"],"additionalProperties":false
+        })json"),
+        focusedSchema);
+
+    // Hardware MIDI out — the first operations behind the `hardware-midi`
+    // scope, which was declared ahead of them (#1860) precisely so existing
+    // grants read as "not granted" when these landed.
+    add("midi.listOutputPorts", "List available MIDI output port names", OperationAccess::Read,
+        &handlers::midiListOutputPorts, emptyObjectSchema(), stringArraySchema);
+    add("midi.send", "Send one channel message to a MIDI output, as status-first raw bytes",
+        OperationAccess::Write, &handlers::midiSend, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "port":{"type":"string","minLength":1},
+                "bytes":{"type":"array","minItems":1,"maxItems":3,
+                         "items":{"type":"integer","minimum":0,"maximum":255}}
+            },
+            "required":["port","bytes"],"additionalProperties":false
+        })json"),
+        okResult);
+    add("midi.sendSysEx", "Send a SysEx payload to a MIDI output; F0/F7 framing is added",
+        OperationAccess::Write, &handlers::midiSendSysEx, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "port":{"type":"string","minLength":1},
+                "bytes":{"type":"array","minItems":1,"maxItems":4096,
+                         "items":{"type":"integer","minimum":0,"maximum":127}}
+            },
+            "required":["port","bytes"],"additionalProperties":false
+        })json"),
+        okResult);
 
     // -----------------------------------------------------------------------
     // Subscriptions (#1857)
@@ -1762,19 +4449,105 @@ OperationRegistry::OperationRegistry() {
         // acts on, which is not something a read-only client should reach.
         {"project.setTempo", Scope::Edit},
         {"project.setTimeSignature", Scope::Edit},
+        {"project.setLoopRange", Scope::Edit},
+        {"project.new", Scope::Edit},
+        {"project.close", Scope::Edit},
+        {"project.open", Scope::Edit},
+        {"project.save", Scope::Edit},
+        {"project.saveAs", Scope::Edit},
+        {"engine.renderRange", Scope::Edit},
+        {"tracks.freeze", Scope::Edit},
+        {"tracks.unfreeze", Scope::Edit},
+        {"engine.masterCapture.start", Scope::Edit},
+        {"engine.masterCapture.stop", Scope::Edit},
+        {"chordTrack.ensure", Scope::Edit},
+        {"chordTrack.replaceProgression", Scope::Edit},
+        {"chordTrack.extract", Scope::Edit},
+        {"chordTrack.sendToTrack", Scope::Edit},
         {"tracks.create", Scope::Edit},
+        {"tracks.createFromPreset", Scope::Edit},
+        {"tracks.applyPreset", Scope::Edit},
         {"tracks.update", Scope::Edit},
         {"tracks.delete", Scope::Edit},
+        {"tracks.group", Scope::Edit},
+        {"tracks.move", Scope::Edit},
+        {"routing.set", Scope::Edit},
+        {"sends.create", Scope::Edit},
+        {"sends.update", Scope::Edit},
+        {"sends.remove", Scope::Edit},
+        {"sidechains.set", Scope::Edit},
         {"clips.createMidi", Scope::Edit},
+        {"clips.loadSample", Scope::Edit},
+        {"clips.updateAudio", Scope::Edit},
         {"clips.addMidiNote", Scope::Edit},
+        {"clips.addMidiEvents", Scope::Edit},
+        {"clips.updateMidiEvents", Scope::Edit},
+        {"clips.replaceMidiEvents", Scope::Edit},
+        {"clips.deleteMidiEvents", Scope::Edit},
         {"clips.delete", Scope::Edit},
+        {"clips.move", Scope::Edit},
+        {"clips.resize", Scope::Edit},
+        {"clips.duplicate", Scope::Edit},
+        {"clips.update", Scope::Edit},
+        {"clips.transpose", Scope::Edit},
+        {"clips.quantize", Scope::Edit},
+        {"clips.sliceNotes", Scope::Edit},
+        {"grooves.upsert", Scope::Edit},
+        // Focused-macro writes edit device state; cycling focus changes what
+        // the user is looking at, the same reasoning as selection.set.
+        {"focused.setMacro", Scope::Edit},
+        {"focused.cycleDevice", Scope::Edit},
         {"racks.create", Scope::Edit},
         {"racks.remove", Scope::Edit},
         {"racks.setBypassed", Scope::Edit},
+        {"racks.update", Scope::Edit},
+        {"chains.create", Scope::Edit},
+        {"chains.remove", Scope::Edit},
+        {"chains.update", Scope::Edit},
+        {"devices.add", Scope::Edit},
+        {"devices.applyPreset", Scope::Edit},
+        {"devices.replace", Scope::Edit},
+        {"pads.create", Scope::Edit},
+        {"pads.setDevice", Scope::Edit},
+        {"pads.setSample", Scope::Edit},
+        {"pads.clear", Scope::Edit},
+        {"pads.swap", Scope::Edit},
+        {"pads.update", Scope::Edit},
+        {"devices.remove", Scope::Edit},
+        {"devices.move", Scope::Edit},
+        {"devices.setBypassed", Scope::Edit},
+        {"devices.setParameter", Scope::Edit},
+        {"devices.setParameterConfig", Scope::Edit},
+        {"mods.create", Scope::Edit},
+        {"mods.update", Scope::Edit},
+        {"mods.remove", Scope::Edit},
+        {"mods.link", Scope::Edit},
+        {"mods.unlink", Scope::Edit},
+        {"macros.setValue", Scope::Edit},
+        {"macros.link", Scope::Edit},
+        {"macros.unlink", Scope::Edit},
+        // Opening a plugin editor changes no project content, but it takes
+        // over part of the user's screen — an edit-grade intrusion, not
+        // something a read-only client should reach.
+        {"devices.openEditor", Scope::Edit},
         {"selection.set", Scope::Edit},
         {"automation.createLane", Scope::Edit},
         {"automation.addPoint", Scope::Edit},
+        {"automation.setPoints", Scope::Edit},
         {"automation.clearLane", Scope::Edit},
+        {"automation.deleteLane", Scope::Edit},
+        {"automation.createClip", Scope::Edit},
+        {"automation.deleteClip", Scope::Edit},
+        {"automation.moveClip", Scope::Edit},
+        {"automation.resizeClip", Scope::Edit},
+        {"automation.duplicateClip", Scope::Edit},
+        {"automation.updateClip", Scope::Edit},
+        {"session.createScene", Scope::Edit},
+        {"session.updateScene", Scope::Edit},
+        {"session.moveScene", Scope::Edit},
+        {"session.duplicateScene", Scope::Edit},
+        {"session.deleteScene", Scope::Edit},
+        {"session.updateClipSettings", Scope::Edit},
 
         // The timeline. Separable from editing because a remote that only
         // starts and stops playback is a thing people actually want, and it
@@ -1794,12 +4567,22 @@ OperationRegistry::OperationRegistry() {
         {"session.stopTrack", Scope::Session},
         {"session.stopAll", Scope::Session},
         {"session.launchScene", Scope::Session},
+        {"session.returnToArrangement", Scope::Session},
+        {"session.armSlotRecording", Scope::Session},
+        {"session.beginSlotRecording", Scope::Session},
+        {"session.stopSlotRecording", Scope::Session},
+        {"session.beginPerformanceCapture", Scope::Session},
+        {"session.stopPerformanceCapture", Scope::Session},
+
+        // Physical MIDI ports. The scope existed before any operation did
+        // (#1860); these are the operations it was declared for.
+        {"midi.send", Scope::HardwareMidi},
+        {"midi.sendSysEx", Scope::HardwareMidi},
     };
 
     for (const auto& [name, scope] : kWriteScopes) {
         const auto found =
-            std::find_if(operations_.begin(), operations_.end(),
-                         [&](const OperationDescriptor& op) { return op.name == name; });
+            std::ranges::find(operations_, juce::String(name), &OperationDescriptor::name);
         // A policy entry naming an operation that does not exist is a rename
         // that updated one side. Silently ignoring it would leave the renamed
         // operation on the `read` default, which the check below catches — but
@@ -1830,8 +4613,11 @@ OperationRegistry::OperationRegistry() {
         if (!operation.transportScoped && operation.handler == nullptr)
             juce::Logger::writeToLog("Remote API operation has no handler: " + operation.name);
 
+        // Project writes may never ride the read grant. A control operation can:
+        // `jobs.cancel` first requires ownership and then dynamically requires
+        // the scope captured by the job it addresses.
         const bool writeNeedsMoreThanRead =
-            operation.access == OperationAccess::Read || operation.requiredScope != Scope::Read;
+            operation.access != OperationAccess::Write || operation.requiredScope != Scope::Read;
         jassert(writeNeedsMoreThanRead);
         if (!writeNeedsMoreThanRead)
             juce::Logger::writeToLog("Remote API write operation has no scope: " + operation.name);
@@ -1848,17 +4634,16 @@ const std::vector<OperationDescriptor>& OperationRegistry::operations() const {
 }
 
 const OperationDescriptor* OperationRegistry::find(const juce::String& name) const {
-    const auto found = std::find_if(operations_.begin(), operations_.end(),
-                                    [&](const auto& operation) { return operation.name == name; });
+    const auto found = std::ranges::find(operations_, name, &OperationDescriptor::name);
     return found == operations_.end() ? nullptr : &*found;
 }
 
 juce::var OperationRegistry::describe() const {
-    auto result = new juce::DynamicObject();
-    result->setProperty("apiVersion", juce::String(API_VERSION.data()));
+    auto* result = new juce::DynamicObject();
+    result->setProperty("apiVersion", juce::String(API_VERSION.data(), API_VERSION.size()));
     juce::Array<juce::var> operations;
     for (const auto& operation : operations_) {
-        auto object = new juce::DynamicObject();
+        auto* object = new juce::DynamicObject();
         object->setProperty("name", operation.name);
         object->setProperty("summary", operation.summary);
         object->setProperty("access", operation.access == OperationAccess::Read ? "read" : "write");

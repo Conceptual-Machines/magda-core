@@ -2,7 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/MainLookAndFeel.hpp"
 
 namespace magda::daw::ui {
@@ -25,7 +25,7 @@ class FloatingHostWindow : public juce::DocumentWindow {
     explicit FloatingHostWindow(const juce::String& name,
                                 int buttons = juce::DocumentWindow::minimiseButton |
                                               juce::DocumentWindow::closeButton)
-        : juce::DocumentWindow(name, DarkTheme::getColour(DarkTheme::BACKGROUND), buttons) {
+        : juce::DocumentWindow(name, ActiveTheme::getColour(ActiveTheme::BACKGROUND), buttons) {
         setUsingNativeTitleBar(false);
         setTitleBarHeight(MainLookAndFeel::kTitleBarHeight);
         setAlwaysOnTop(true);
@@ -36,7 +36,7 @@ class FloatingHostWindow : public juce::DocumentWindow {
     // window left open across a theme switch keeps the old palette.
     void lookAndFeelChanged() override {
         juce::DocumentWindow::lookAndFeelChanged();
-        setBackgroundColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+        setBackgroundColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     }
 };
 

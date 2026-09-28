@@ -6,13 +6,15 @@
 #include <utility>
 
 #include "ai/AIPanelComponent.hpp"
-#include "audio/AudioBridge.hpp"
+#include "audio/DeviceMeters.hpp"
+#include "audio/DeviceParameterList.hpp"
 #include "audio/plugin_manager/PluginManager.hpp"
 #include "audio/plugins/InternalPluginRegistry.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
+#include "core/ParameterUtils.hpp"
 #include "core/PluginCapabilities.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
@@ -42,7 +44,6 @@
 #include "slot/DeviceSlotHeaderControls.hpp"
 #include "slot/DeviceSlotInlineUiFactory.hpp"
 #include "slot/DeviceSlotMidiActivity.hpp"
-#include "slot/DeviceSlotMidiUiBinding.hpp"
 #include "slot/DeviceSlotModMacroCommands.hpp"
 #include "slot/DeviceSlotModulationContext.hpp"
 #include "slot/DeviceSlotMultiOutControls.hpp"
@@ -53,7 +54,7 @@
 #include "slot/DeviceSlotTraits.hpp"
 #include "slot/SequencerDeviceControls.hpp"
 #include "ui/components/mixer/LevelMeterScale.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
@@ -73,27 +74,27 @@ void DeviceSlotComponent::wireSharedModMacroLinkCallbacks(LinkTarget& target,
 
     DeviceLinkCallbackContext context;
     context.getNodePath = [safeThis]() {
-        auto self = safeThis;
+        const auto& self = safeThis;
         return self ? self->nodePath_ : magda::ChainNodePath{};
     };
     context.onMacroTargetChanged = [safeThis](int macroIndex, magda::ControlTarget target) {
-        if (auto self = safeThis)
-            self->onMacroTargetChangedInternal(macroIndex, target);
+        if (const auto& self = safeThis)
+            self->onMacroTargetChangedInternal(macroIndex, std::move(target));
     };
     context.updateParamModulation = [safeThis]() {
-        if (auto self = safeThis)
+        if (const auto& self = safeThis)
             self->updateParamModulation();
     };
     context.updateModsPanel = [safeThis]() {
-        if (auto self = safeThis)
+        if (const auto& self = safeThis)
             self->updateModsPanel();
     };
     context.updateMacroPanel = [safeThis]() {
-        if (auto self = safeThis)
+        if (const auto& self = safeThis)
             self->updateMacroPanel();
     };
     context.expandModPanelForDirectLink = [safeThis]() {
-        auto self = safeThis;
+        const auto& self = safeThis;
         if (!self || self->modPanelVisible_)
             return;
 
@@ -102,7 +103,7 @@ void DeviceSlotComponent::wireSharedModMacroLinkCallbacks(LinkTarget& target,
         self->setModPanelVisible(true);
     };
     context.expandMacroPanelForDirectLink = [safeThis]() {
-        auto self = safeThis;
+        const auto& self = safeThis;
         if (!self || self->paramPanelVisible_)
             return;
 
@@ -184,14 +185,11 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         auto callback = onDeviceDeleted;
         detachInlineUiFromLivePlugin();
         juce::MessageManager::callAsync([pathToDelete, callback]() {
-            // Top-level devices use undoable command; nested devices fall back to direct removal
-            if (pathToDelete.topLevelDeviceId != magda::INVALID_DEVICE_ID) {
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::RemoveDeviceFromTrackCommand>(
-                        pathToDelete.trackId, pathToDelete.topLevelDeviceId));
-            } else {
-                magda::TrackManager::getInstance().removeDeviceFromChainByPath(pathToDelete);
-            }
+            // Every depth through the same undoable command. A nested device
+            // used to fall back to a direct model call, so deleting one out of
+            // a rack chain could not be undone (#2232).
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::RemoveDeviceByPathCommand>(pathToDelete));
             if (callback) {
                 callback();
             }
@@ -231,7 +229,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // Mod button (toggle mod panel) - bare sine icon
     modButton_ = std::make_unique<magda::SvgButton>("Mod", BinaryData::iconmodsboldm_svg,
                                                     BinaryData::iconmodsboldm_svgSize);
-    applyHeaderIconStyle(*modButton_, DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+    applyHeaderIconStyle(*modButton_, ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
     modButton_->setToggleState(modPanelVisible_, juce::dontSendNotification);
     modButton_->setActive(modPanelVisible_);
     modButton_->onClick = [this]() {
@@ -245,7 +243,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // Macro button (toggle macro panel) - knob icon
     macroButton_ =
         std::make_unique<magda::SvgButton>("Macro", BinaryData::knob_svg, BinaryData::knob_svgSize);
-    applyHeaderIconStyle(*macroButton_, DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+    applyHeaderIconStyle(*macroButton_, ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
     macroButton_->setToggleState(paramPanelVisible_, juce::dontSendNotification);
     macroButton_->setActive(paramPanelVisible_);
     macroButton_->onClick = [this]() {
@@ -261,7 +259,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // updated in the resizedHeaderExtra path so it tracks device changes.
     aiButton_ =
         std::make_unique<magda::SvgButton>("AI", BinaryData::ai_svg, BinaryData::ai_svgSize);
-    applyHeaderIconStyle(*aiButton_, DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    applyHeaderIconStyle(*aiButton_, ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     aiButton_->setToggleState(aiPanelVisible_, juce::dontSendNotification);
     aiButton_->setActive(aiPanelVisible_);
     aiButton_->onClick = [this]() {
@@ -290,7 +288,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                                            BinaryData::iconpresetsroundboldm_svgSize);
     // Indigo sits between ACCENT_PRIMARY and ACCENT_MODULATION — distinct from both
     // utility blue (ui/multiOut) and macro purple, signals "MAGDA presets".
-    applyHeaderIconStyle(*presetButton_, DarkTheme::getColour(DarkTheme::PRESET_INDIGO),
+    applyHeaderIconStyle(*presetButton_, ActiveTheme::getColour(ActiveTheme::PRESET_INDIGO),
                          /*toggling*/ false);
     // Permanent "active" treatment: indigo pill + white icon. Using setActive()
     // (not normalBackgroundColor) so hover/pressed don't wipe out the pill —
@@ -321,7 +319,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // When a sidechain is active, fill the button background orange (white glyph),
     // matching the old SC button.
     scButton_->setActiveBackgroundColor(
-        DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).darker(0.3f));
+        ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).darker(0.3f));
     scButton_->setActiveColor(juce::Colours::white);
     scButton_->onClick = [this]() { showSidechainMenu(); };
     scButton_->setVisible(!traits_.isDrumGrid && supportsSidechainRoutingMenu(device_));
@@ -331,7 +329,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // Multi-output routing button (only visible for multi-out plugins)
     multiOutButton_ = std::make_unique<magda::SvgButton>("MultiOut", BinaryData::multiout_svg,
                                                          BinaryData::multiout_svgSize);
-    applyHeaderIconStyle(*multiOutButton_, DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY),
+    applyHeaderIconStyle(*multiOutButton_, ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY),
                          /*toggling*/ false);
     multiOutButton_->onClick = [this]() { showMultiOutMenu(); };
     multiOutButton_->setVisible(device_.multiOut.isMultiOut);
@@ -340,27 +338,27 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // UI button (toggle plugin window) - open in new icon
     uiButton_ = std::make_unique<magda::SvgButton>("UI", BinaryData::open_in_new_svg,
                                                    BinaryData::open_in_new_svgSize);
-    applyHeaderIconStyle(*uiButton_, DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    applyHeaderIconStyle(*uiButton_, ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     uiButton_->onClick = [this]() {
         // Analysis devices have no native editor; pop their UI into a floating window.
         if (audio::isInternalAnalysisPlugin(device_.pluginId)) {
             toggleAnalyzerWindow();
             return;
         }
-        // Get the audio bridge and toggle plugin window
+        // Asked of whichever engine is rendering: the window opens onto the
+        // instance that makes the sound (#2580).
         auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-        if (audioEngine) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                bool isOpen = bridge->togglePluginWindow(nodePath_);
-                uiButton_->setToggleState(isOpen, juce::dontSendNotification);
-                uiButton_->setActive(isOpen);
-                learnButton_->setEnabled(isOpen);
-                if (!isOpen && learnButton_->getToggleState()) {
-                    learnButton_->setToggleState(false, juce::dontSendNotification);
-                    learnButton_->setActive(false);
-                    paramGrid_->setLearnMode(false);
-                }
-            }
+        if (audioEngine == nullptr)
+            return;
+
+        const bool isOpen = audioEngine->toggleDeviceEditor(nodePath_);
+        uiButton_->setToggleState(isOpen, juce::dontSendNotification);
+        uiButton_->setActive(isOpen);
+        learnButton_->setEnabled(isOpen);
+        if (!isOpen && learnButton_->getToggleState()) {
+            learnButton_->setToggleState(false, juce::dontSendNotification);
+            learnButton_->setActive(false);
+            paramGrid_->setLearnMode(false);
         }
     };
     addAndMakeVisible(*uiButton_);
@@ -368,7 +366,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // Learn button (parameter pick mode)
     learnButton_ = std::make_unique<magda::SvgButton>("Learn", BinaryData::learn_svg,
                                                       BinaryData::learn_svgSize);
-    applyHeaderIconStyle(*learnButton_, DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+    applyHeaderIconStyle(*learnButton_, ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
     learnButton_->setEnabled(false);
     learnButton_->onClick = [this]() {
         bool active = learnButton_->getToggleState();
@@ -386,10 +384,10 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     onButton_->setClickingTogglesState(true);
     onButton_->setToggleState(!device.bypassed, juce::dontSendNotification);
     onButton_->setOriginalColor(juce::Colour(0xFFE6E6E6));
-    onButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+    onButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
     onButton_->setActiveColor(juce::Colours::white);
     onButton_->setActiveBackgroundColor(
-        DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).darker(0.3f));
+        ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).darker(0.3f));
     onButton_->setActive(!device.bypassed);
     onButton_->onClick = [this]() {
         bool active = onButton_->getToggleState();
@@ -412,10 +410,11 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     deltaButton_->setTooltip("Delta Solo: processed signal minus dry input");
     deltaButton_->setLookAndFeel(&node_header::getDeltaSoloButtonLookAndFeel());
     deltaButton_->setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE));
+                            ActiveTheme::getColour(ActiveTheme::SURFACE));
     deltaButton_->setColour(juce::TextButton::buttonOnColourId,
-                            DarkTheme::getColour(DarkTheme::ACCENT_INFO).darker(0.3f));
-    deltaButton_->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+                            ActiveTheme::getColour(ActiveTheme::ACCENT_INFO).darker(0.3f));
+    deltaButton_->setColour(juce::TextButton::textColourOffId,
+                            ActiveTheme::getSecondaryTextColour());
     deltaButton_->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
     deltaButton_->onClick = [this]() {
         const bool enabled = deltaButton_->getToggleState();
@@ -434,7 +433,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     if (traits_.isStepSequencer || traits_.isPolyStepSequencer) {
         exportClipButton_ = std::make_unique<magda::SvgButton>("ExportClip", BinaryData::copy_svg,
                                                                BinaryData::copy_svgSize);
-        applyHeaderIconStyle(*exportClipButton_, DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE),
+        applyHeaderIconStyle(*exportClipButton_,
+                             ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE),
                              /*toggling*/ false);
         exportClipButton_->setTooltip("Click to copy pattern, drag to timeline");
         exportClipButton_->addMouseListener(this, false);
@@ -450,7 +450,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     if (traits_.isStepSequencer || traits_.isPolyStepSequencer) {
         randomButton_ = std::make_unique<magda::SvgButton>("Random", BinaryData::random_svg,
                                                            BinaryData::random_svgSize);
-        applyHeaderIconStyle(*randomButton_, DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY),
+        applyHeaderIconStyle(*randomButton_, ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY),
                              /*toggling*/ false);
         randomButton_->setTooltip("Randomize pattern");
         randomButton_->onClick = [this]() { randomizeSequencerPattern(traits_, customUI_); };
@@ -460,7 +460,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         stepRecordButton_ = std::make_unique<magda::SvgButton>(
             "StepRecord", BinaryData::record_circle_svg, BinaryData::record_circle_svgSize);
         stepRecordButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-        stepRecordButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STEP_RECORD));
+        stepRecordButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::STEP_RECORD));
         stepRecordButton_->setTooltip("Step record: play notes to fill steps");
         stepRecordButton_->setToggleable(true);
         stepRecordButton_->onClick = [this]() {
@@ -478,7 +478,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                                                              BinaryData::compare_svgSize);
         midiThruButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
         midiThruButton_->setNormalColor(juce::Colour(0xFFB3B3B3));
-        midiThruButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
+        midiThruButton_->setActiveColor(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE));
         midiThruButton_->setTooltip("MIDI thru: merge raw input with this device's MIDI output");
         midiThruButton_->setToggleable(true);
         midiThruButton_->setActive(device.midiInThru);
@@ -512,8 +512,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
 
         // Wire up mod/macro linking callbacks
         paramSlot->onModLinked = [safeThis = juce::Component::SafePointer(this)](
-                                     int modIndex, magda::ControlTarget target) {
-            auto self = safeThis;
+                                     int modIndex, const magda::ControlTarget& target) {
+            const auto& self = safeThis;
             if (!self)
                 return;
             self->onModTargetChangedInternal(modIndex, target);
@@ -523,7 +523,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         wireSharedModMacroLinkCallbacks(*paramSlot, true);
         paramSlot->onMacroValueChanged = [safeThis = juce::Component::SafePointer(this)](
                                              int macroIndex, float value) {
-            auto self = safeThis;
+            const auto& self = safeThis;
             if (!self)
                 return;
             magda::TrackManager::getInstance().setMacroValue(self->nodePath_, macroIndex, value);
@@ -531,14 +531,12 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                 self->updateParamModulation();
         };
         paramSlot->onShowAutomationLane = [safeThis = juce::Component::SafePointer(this), i]() {
-            if (auto self = safeThis)
+            if (const auto& self = safeThis)
                 if (auto* slot = self->paramGrid_->getSlot(i))
                     self->showAutomationLaneForParam(slot->getParamIndex());
         };
     }
 
-    updateParameterPagination();
-    applySavedParameterConfig();
     updateParameterPagination();
 
     // Load parameters for current page
@@ -574,48 +572,49 @@ void DeviceSlotComponent::lookAndFeelChanged() {
     NodeComponent::lookAndFeelChanged();
 
     if (modButton_)
-        applyHeaderIconStyle(*modButton_, DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+        applyHeaderIconStyle(*modButton_, ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
     if (macroButton_)
-        applyHeaderIconStyle(*macroButton_, DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+        applyHeaderIconStyle(*macroButton_, ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
     if (aiButton_)
-        applyHeaderIconStyle(*aiButton_, DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        applyHeaderIconStyle(*aiButton_, ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     if (presetButton_)
-        applyHeaderIconStyle(*presetButton_, DarkTheme::getColour(DarkTheme::PRESET_INDIGO), false);
+        applyHeaderIconStyle(*presetButton_, ActiveTheme::getColour(ActiveTheme::PRESET_INDIGO),
+                             false);
     if (multiOutButton_)
-        applyHeaderIconStyle(*multiOutButton_, DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY),
+        applyHeaderIconStyle(*multiOutButton_, ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY),
                              false);
     if (uiButton_)
-        applyHeaderIconStyle(*uiButton_, DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        applyHeaderIconStyle(*uiButton_, ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     if (learnButton_)
-        applyHeaderIconStyle(*learnButton_, DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+        applyHeaderIconStyle(*learnButton_, ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
     if (exportClipButton_)
-        applyHeaderIconStyle(*exportClipButton_, DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE),
-                             false);
+        applyHeaderIconStyle(*exportClipButton_,
+                             ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE), false);
     if (randomButton_)
-        applyHeaderIconStyle(*randomButton_, DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY),
+        applyHeaderIconStyle(*randomButton_, ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY),
                              false);
 
     if (scButton_)
         scButton_->setActiveBackgroundColor(
-            DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).darker(0.3f));
+            ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).darker(0.3f));
     if (onButton_) {
-        onButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+        onButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
         onButton_->setActiveBackgroundColor(
-            DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).darker(0.3f));
+            ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).darker(0.3f));
     }
     if (deltaButton_) {
         deltaButton_->setColour(juce::TextButton::buttonColourId,
-                                DarkTheme::getColour(DarkTheme::SURFACE));
+                                ActiveTheme::getColour(ActiveTheme::SURFACE));
         deltaButton_->setColour(juce::TextButton::buttonOnColourId,
-                                DarkTheme::getColour(DarkTheme::ACCENT_INFO).darker(0.3f));
+                                ActiveTheme::getColour(ActiveTheme::ACCENT_INFO).darker(0.3f));
         deltaButton_->setColour(juce::TextButton::textColourOffId,
-                                DarkTheme::getSecondaryTextColour());
+                                ActiveTheme::getSecondaryTextColour());
     }
     if (stepRecordButton_)
-        stepRecordButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STEP_RECORD));
+        stepRecordButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::STEP_RECORD));
     if (midiThruButton_) {
-        midiThruButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-        midiThruButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
+        midiThruButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
+        midiThruButton_->setActiveColor(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE));
     }
 
     repaint();
@@ -639,23 +638,25 @@ void DeviceSlotComponent::aiSoundDesignerPreferenceChanged(const juce::String& p
 }
 
 void DeviceSlotComponent::timerCallback() {
-    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-    if (!audioEngine)
+    auto* engine = magda::TrackManager::getInstance().getAudioEngine();
+    if (!engine)
         return;
 
-    auto* bridge = audioEngine->getAudioBridge();
-    if (!bridge)
-        return;
-
-    if (compiledPanel_ != nullptr || traits_.isAnalysis)
+    // A faceplate bound to anything but the device rendering now rebinds here:
+    // the slot is built before the plan that holds it, and a session remade for
+    // a new sample rate rebuilds every device without the model moving (#2585).
+    if (compiledPanel_ != nullptr || traits_.isAnalysis || customUI_.needsDeviceRebind())
         refreshInlinePluginBindings();
+    // A patch load rebuilds a Faust device under the native engine (#2659).
+    if (faustUI_ != nullptr)
+        bindFaustHeader();
 
     // Update UI button state to match the actual window state.
     if (uiButton_) {
         // Analysis devices use the popout AnalyzerWindow, not a native plugin window.
         const bool isOpen = audio::isInternalAnalysisPlugin(device_.pluginId)
                                 ? (analyzerWindow_ != nullptr && analyzerWindow_->isVisible())
-                                : bridge->isPluginWindowOpen(nodePath_);
+                                : engine->isDeviceEditorOpen(nodePath_);
         bool currentState = uiButton_->getToggleState();
 
         // Only update if state changed to avoid unnecessary repaints
@@ -689,12 +690,43 @@ void DeviceSlotComponent::timerCallback() {
             }
         }
     } else {
-        // Poll device peak levels for right-side meter strip
-        magda::DeviceMeteringManager::DeviceMeterData data;
-        if (bridge->getDeviceMetering().getLatestLevels(nodePath_, data)) {
-            levelMeter_.setLevels(data.peakL, data.peakR);
-        }
+        // Poll device peak levels for right-side meter strip. Off the engine's
+        // own meters rather than the fork's, which is null under the native
+        // engine (#2570).
+        magda::DeviceMeters::Levels levels;
+        if (engine->deviceMeters().devicePeak(nodePath_, levels))
+            levelMeter_.setLevels(levels.peakL, levels.peakR);
     }
+}
+
+void DeviceSlotComponent::deviceParameterObserved(const magda::ChainNodePath& devicePath,
+                                                  int paramIndex, float normalised,
+                                                  magda::ObservationSource source) {
+    if (devicePath != nodePath_)
+        return;
+
+    // Only a confirmed editor gesture: readback includes echoes of host writes,
+    // which would hold the lock and starve a real touch.
+    if (source == magda::ObservationSource::EditorGesture)
+        applyLearnModeParameterHighlight(device_, *paramGrid_, paramIndex, normalised,
+                                         learnHighlight_, [this]() {
+                                             updateParameterSlots();
+                                             updateParamModulation();
+                                         });
+
+    // A slot the document holds draws its base, which deviceParameterChanged
+    // carries; what the plugin reports there is the effective value.
+    const auto* held = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
+    if (held != nullptr && held->findParameterByIndex(paramIndex) != nullptr)
+        return;
+
+    // The cache first: the grid rebuilds from it on a page change, so a widget
+    // updated on its own loses the value as soon as the page turns, and a
+    // parameter on another page never records one at all.
+    updateCachedParameterValue(device_, paramIndex, normalised);
+
+    if (auto* slot = currentPageParameterSlot(device_, *paramGrid_, paramIndex))
+        slot->setObservedValue(normalised);
 }
 
 void DeviceSlotComponent::deviceParameterChanged(const magda::ChainNodePath& devicePath,
@@ -718,6 +750,9 @@ void DeviceSlotComponent::deviceParameterChanged(const magda::ChainNodePath& dev
                                          updateParamModulation();
                                      });
 
+    // In the units the slot is drawn against, not the model's: a hosted
+    // plugin's value is a position whatever its range reads in, and a slider
+    // ranged in Hz clamps one to the bottom of the range.
     updateCurrentPageParameterSlotValue(device_, *paramGrid_, paramIndex, newValue);
     paramGrid_->refreshEnabledStates(device_, paramGrid_->getCurrentPage());
 }
@@ -762,15 +797,19 @@ void DeviceSlotComponent::syncModMacroControlsAvailability() {
     }
 }
 
+void DeviceSlotComponent::adoptParameterList() {
+    device_.parameters = magda::deviceParameterList(device_, nodePath_);
+}
+
 void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     NodeComponent::setNodePath(path);
+
+    // The path is what reaches the plugin (#2634).
+    adoptParameterList();
+
     customUI_.setDevicePath(path);
     updateDeviceSlotInlineUi(device_, compiledPanel_.get(), customUI_);
 
-    if (applySavedParameterConfig()) {
-        updateParameterPagination();
-        updateParameterSlots();
-    }
     refreshDeviceTraits(device_);
 
     // Hide power / preset / delete for post-FX analysis devices (the getters
@@ -795,23 +834,14 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
         aiPanel_->setDevicePluginId(device_.pluginId);
     }
     // Same story for FaustUI: createCustomUI ran before nodePath_ was
-    // valid, so resolve the live plugin again once the path is known.
-    bindDeviceSlotFaustInlineUi(nodePath_, faustUI_.get(),
-                                [this](std::function<float(int)> source) {
-                                    if (faustMeterPanel_ == nullptr) {
-                                        faustMeterPanel_ = std::make_unique<FaustMeterPanel>();
-                                        addChildComponent(*faustMeterPanel_);
-                                    }
-                                    faustMeterPanel_->setMeterSource(std::move(source));
-                                });
+    // valid, so resolve the device again once the path is known.
+    bindFaustHeader();
 
     // Initial compute for the controller indicator dots — listeners only fire
     // on change, so a slot built after the binding was added wouldn't otherwise
     // pick up the current state.
     refreshControllerIndicators();
 
-    // Update MIDI custom UIs with the now-valid trackId (createCustomUI runs before setNodePath).
-    bindDeviceSlotMidiCustomUIs(customUI_, nodePath_);
     refreshInlinePluginBindings();
 }
 
@@ -821,15 +851,6 @@ int DeviceSlotComponent::getCustomUITabIndex() const {
 
 void DeviceSlotComponent::setCustomUITabIndex(int index) {
     customUI_.setCustomUITabIndex(index);
-}
-
-std::vector<tracktion::engine::Plugin*> DeviceSlotComponent::getDrumPadCollapsedPlugins() const {
-    return drum_grid_slot::getCollapsedPlugins(customUI_.getDrumGridUI());
-}
-
-void DeviceSlotComponent::setDrumPadCollapsedPlugins(
-    const std::vector<tracktion::engine::Plugin*>& plugins) {
-    drum_grid_slot::setCollapsedPlugins(customUI_.getDrumGridUI(), plugins);
 }
 
 int DeviceSlotComponent::getPreferredWidth() const {
@@ -901,9 +922,9 @@ void DeviceSlotComponent::refreshDeviceTraits(const magda::DeviceInfo& device) {
                                                              BinaryData::fadlogotracktion_svgSize);
         if (tracktionLogo_)
             tracktionLogo_->replaceColour(juce::Colours::black,
-                                          DarkTheme::getSecondaryTextColour());
+                                          ActiveTheme::getSecondaryTextColour());
         if (tracktionLogo_)
-            DarkTheme::applyToSvgIcon(*tracktionLogo_);
+            ActiveTheme::applyToSvgIcon(*tracktionLogo_);
     } else if (!traits_.isTracktionDevice) {
         tracktionLogo_.reset();
     }
@@ -924,6 +945,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     }
 
     device_ = device;
+    adoptParameterList();
     refreshDeviceTraits(device);
     syncModMacroControlsAvailability();
     drum_grid_slot::applySlotName(*this, traits_.isDrumGrid, device.name);
@@ -950,8 +972,6 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     // Update multi-out button visibility
     if (multiOutButton_)
         multiOutButton_->setVisible(device_.multiOut.isMultiOut);
-
-    applySavedParameterConfig();
 
     // Update pagination based on visible parameter count, then clamp current page
     updateParameterPagination();
@@ -985,12 +1005,8 @@ void DeviceSlotComponent::updateParamModulation() {
                                       context.selectedMacroIndex);
 
     if (compiledPanel_) {
-        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(nodePath_);
-                compiledPanel_->bindPlugin(plugin.get());
-            }
-        }
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine())
+            compiledPanel_->bindDevice(audioEngine->renderedDevice(nodePath_));
         ParamLinkContext curveLinkContext{device_.id,
                                           -1,
                                           nodePath_,
@@ -1076,7 +1092,7 @@ void DeviceSlotComponent::paintOverChildren(juce::Graphics& g) {
     if (collecting) {
         // During analysis: highlight the WHOLE device and read out the live
         // captured peak, sitting to the left of the device's gain control.
-        const auto colour = DarkTheme::getColour(DarkTheme::STATUS_DANGER);
+        const auto colour = ActiveTheme::getColour(ActiveTheme::STATUS_DANGER);
         auto bounds = getLocalBounds().toFloat().reduced(1.0f);
         g.setColour(colour.withAlpha(0.10f));
         g.fillRoundedRectangle(bounds, 4.0f);
@@ -1118,8 +1134,8 @@ void DeviceSlotComponent::paintOverChildren(juce::Graphics& g) {
 
     // Staging only trims, so applied is normally negative (amber); a cooler hue
     // covers the rare non-negative case.
-    const auto colour = *applied < -0.05f ? DarkTheme::getColour(DarkTheme::STATUS_WARNING)
-                                          : DarkTheme::getColour(DarkTheme::ACCENT_INFO);
+    const auto colour = *applied < -0.05f ? ActiveTheme::getColour(ActiveTheme::STATUS_WARNING)
+                                          : ActiveTheme::getColour(ActiveTheme::ACCENT_INFO);
     auto r = meterArea.toFloat().expanded(1.0f);
     g.setColour(colour.withAlpha(0.16f));
     g.fillRoundedRectangle(r, 2.0f);
@@ -1324,22 +1340,17 @@ const magda::MacroArray* DeviceSlotComponent::getMacrosData() const {
 std::vector<std::pair<magda::DeviceId, juce::String>> DeviceSlotComponent::getAvailableDevices()
     const {
     std::vector<std::pair<magda::DeviceId, juce::String>> result = {{device_.id, device_.name}};
-    drum_grid_slot::appendAvailableDevices(customUI_.getDrumGridUI(), result);
+    drum_grid_slot::appendAvailableDevices(
+        magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_), result);
     return result;
 }
 
 std::map<magda::DeviceId, std::vector<juce::String>> DeviceSlotComponent::getDeviceParamNames()
     const {
-    std::vector<juce::String> names;
-    for (const auto& param : device_.parameters) {
-        if (param.paramIndex < 0)
-            continue;
-        if (param.paramIndex >= static_cast<int>(names.size()))
-            names.resize(static_cast<size_t>(param.paramIndex + 1));
-        names[static_cast<size_t>(param.paramIndex)] = param.name;
-    }
-    std::map<magda::DeviceId, std::vector<juce::String>> result = {{device_.id, std::move(names)}};
-    drum_grid_slot::appendDeviceParamNames(customUI_.getDrumGridUI(), result);
+    std::map<magda::DeviceId, std::vector<juce::String>> result = {
+        {device_.id, device_.paramNamesByIndex()}};
+    drum_grid_slot::appendDeviceParamNames(
+        magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_), result);
     return result;
 }
 
@@ -1539,10 +1550,6 @@ void DeviceSlotComponent::updateParameterValues() {
     updateDeviceSlotParameterValues(device_, *paramGrid_);
 }
 
-bool DeviceSlotComponent::applySavedParameterConfig() {
-    return applyDeviceSlotSavedParameterConfig(device_, nodePath_, paramGrid_.get());
-}
-
 void DeviceSlotComponent::updateParameterPagination() {
     updateDeviceSlotParameterPagination(device_, paramGrid_.get());
 }
@@ -1565,26 +1572,6 @@ void DeviceSlotComponent::goToNextPage() {
 // ============================================================================
 // SelectionManagerListener
 // ============================================================================
-
-void DeviceSlotComponent::chainNodeSelectionChanged(const magda::ChainNodePath& path) {
-    // SelectionManager deliberately notifies listeners when the current node is selected again.
-    // NodeComponent uses that reselection to support header-click collapse/expand, but it must not
-    // be treated as a fresh selection by the "open macros on select" preference.
-    const bool wasAlreadySelected = isSelected();
-    NodeComponent::chainNodeSelectionChanged(path);
-
-    // Likewise skip it when this selection is part of a header-bar collapse
-    // gesture — opening the macro panel on the click that collapses the device
-    // is the opposite of what the user asked for.
-    if (wasAlreadySelected || isCollapseGestureActive() || !nodePath_.isValid() ||
-        path != nodePath_) {
-        return;
-    }
-
-    openDeviceSlotMacroPanelForSelectionIfNeeded(
-        nodePath_, paramPanelVisible_, exposesDeviceModulation(), macroButton_.get(),
-        {.setParamPanelVisible = [this](bool visible) { setParamPanelVisible(visible); }});
-}
 
 void DeviceSlotComponent::selectionTypeChanged(magda::SelectionType newType) {
     // Call base class first (handles node deselection)
@@ -1631,22 +1618,7 @@ void DeviceSlotComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
-    // Check for double-click
-    if (e.getNumberOfClicks() == 2) {
-        // Toggle the editor / analyzer window on double-click.
-        if (audio::isInternalAnalysisPlugin(device_.pluginId)) {
-            toggleAnalyzerWindow();
-        } else if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                bool isOpen = bridge->togglePluginWindow(nodePath_);
-                uiButton_->setToggleState(isOpen, juce::dontSendNotification);
-                uiButton_->setActive(isOpen);
-            }
-        }
-    } else {
-        // Pass to base class for normal click handling
-        NodeComponent::mouseDown(e);
-    }
+    NodeComponent::mouseDown(e);
 }
 
 void DeviceSlotComponent::showMultiOutMenu() {
@@ -1733,14 +1705,28 @@ void DeviceSlotComponent::createCustomUI() {
 
 void DeviceSlotComponent::detachInlineUiFromLivePlugin() {
     if (compiledPanel_ != nullptr)
-        compiledPanel_->bindPlugin(nullptr);
+        compiledPanel_->bindDevice(nullptr);
     if (faustUI_ != nullptr)
-        faustUI_->setPlugin(nullptr);
+        faustUI_->setDevice(nullptr);
     // The meter supplier holds a reference to the plugin so its pool cannot
     // vanish mid-poll; dropping it here is what lets the plugin go.
     if (faustMeterPanel_ != nullptr)
         faustMeterPanel_->setMeterSource(nullptr);
     customUI_.detachFromLivePlugin();
+}
+
+void DeviceSlotComponent::bindFaustHeader() {
+    const auto rebound =
+        bindDeviceSlotFaustInlineUi(nodePath_, faustUI_.get(), faustCustomView_, *this,
+                                    [this](std::function<float(int)> source) {
+                                        if (faustMeterPanel_ == nullptr) {
+                                            faustMeterPanel_ = std::make_unique<FaustMeterPanel>();
+                                            addChildComponent(*faustMeterPanel_);
+                                        }
+                                        faustMeterPanel_->setMeterSource(std::move(source));
+                                    });
+    if (rebound)
+        resized();
 }
 
 void DeviceSlotComponent::refreshInlinePluginBindings() {
@@ -1801,7 +1787,7 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
     };
     callbacks.onMacroTargetChanged = [safeThis](int macroIndex, magda::ControlTarget target) {
         if (safeThis != nullptr)
-            safeThis->onMacroTargetChangedInternal(macroIndex, target);
+            safeThis->onMacroTargetChangedInternal(macroIndex, std::move(target));
     };
     callbacks.showAutomationLaneForParam = [safeThis](int paramIndex) {
         if (safeThis != nullptr)
@@ -1821,14 +1807,14 @@ void DeviceSlotComponent::setupCustomUILinking() {
     configureDeviceSlotLinkableSliders(
         sliders, device_, nodePath_, context,
         [safeThis = juce::Component::SafePointer(this)](LinkableTextSlider& slider) {
-            auto self = safeThis;
+            const auto& self = safeThis;
             if (!self)
                 return;
 
             self->wireSharedModMacroLinkCallbacks(slider, false);
             auto* sliderPtr = &slider;
             slider.onShowAutomationLane = [safeThis, sliderPtr]() {
-                auto self = safeThis;
+                const auto& self = safeThis;
                 if (!self || sliderPtr == nullptr)
                     return;
                 self->showAutomationLaneForParam(sliderPtr->getParamIndex());

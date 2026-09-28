@@ -44,7 +44,7 @@ void ModelDownloader::startDownload(const juce::String& url, const juce::File& t
             .withResponseHeaders(&responseHeaders));
     if (probeStream) {
         // Content-Range: bytes 0-0/<total>
-        auto contentRange = responseHeaders["Content-Range"];
+        const auto& contentRange = responseHeaders["Content-Range"];
         if (contentRange.contains("/")) {
             auto totalStr = contentRange.fromLastOccurrenceOf("/", false, false).trim();
             auto parsed = totalStr.getLargeIntValue();

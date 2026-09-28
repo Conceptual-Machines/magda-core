@@ -91,8 +91,8 @@ class MediaDbContext {
     // Path helpers. The DB file is fixed at dataDir/MediaDB/media.db; model
     // files live in dataDir/MediaDB/models/ (Phase F's download UI will place
     // them there).
-    [[nodiscard]] std::filesystem::path dbPath() const;
-    [[nodiscard]] std::filesystem::path modelsDir() const;
+    [[nodiscard]] static std::filesystem::path dbPath();
+    [[nodiscard]] static std::filesystem::path modelsDir();
     [[nodiscard]] std::filesystem::path midiClipsDir() const;
     [[nodiscard]] std::filesystem::path progressionsDir() const;
     [[nodiscard]] std::filesystem::path audioModelPath() const;

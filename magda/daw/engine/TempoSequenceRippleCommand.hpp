@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "../core/UndoManager.hpp"
+#include "TempoSequenceRipple.hpp"
 #include "TempoSequenceRippleMath.hpp"
 
 namespace magda {

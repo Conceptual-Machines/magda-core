@@ -1,6 +1,7 @@
 #include "slot/DeviceSlotHeaderControls.hpp"
 
 #include <algorithm>
+#include <ranges>
 
 #include "slot/DeviceSlotHeaderSpec.hpp"
 
@@ -71,9 +72,8 @@ void layoutExpandedDeviceSlotHeader(juce::Rectangle<int>& headerArea,
     const auto visibility = getHeaderControlVisibility(traits, device, isInternalDevice);
     auto specs = buildHeaderControlSpecs(traits, device, isInternalDevice,
                                          getHeaderControlComponents(controls));
-    std::sort(specs.begin(), specs.end(), [](const auto& lhs, const auto& rhs) {
-        return lhs.expandedOrder < rhs.expandedOrder;
-    });
+    constexpr auto expandedOrder = [](const auto& spec) { return spec.expandedOrder; };
+    std::ranges::sort(specs, {}, expandedOrder);
 
     setVisibleIfPresent(controls.powerButton, visibility.power);
     setVisibleIfPresent(controls.presetButton, visibility.preset);
@@ -85,10 +85,11 @@ void layoutExpandedDeviceSlotHeader(juce::Rectangle<int>& headerArea,
             placeLeft(headerArea, spec.component, buttonSize);
     }
 
-    for (auto it = specs.rbegin(); it != specs.rend(); ++it) {
-        if (it->side == HeaderControlSide::Right && it->expandedVisible)
-            placeRight(headerArea, it->component, buttonSize);
-    }
+    const auto placedRight = [](const auto& spec) {
+        return spec.side == HeaderControlSide::Right && spec.expandedVisible;
+    };
+    for (auto& spec : specs | std::views::reverse | std::views::filter(placedRight))
+        placeRight(headerArea, spec.component, buttonSize);
 }
 
 void layoutCollapsedDeviceSlotControls(juce::Rectangle<int>& area,
@@ -112,9 +113,8 @@ void layoutCollapsedDeviceSlotControls(juce::Rectangle<int>& area,
 
     auto specs = buildHeaderControlSpecs(traits, device, isInternalDevice,
                                          getHeaderControlComponents(controls.headerControls));
-    std::sort(specs.begin(), specs.end(), [](const auto& lhs, const auto& rhs) {
-        return lhs.collapsedOrder < rhs.collapsedOrder;
-    });
+    constexpr auto collapsedOrder = [](const auto& spec) { return spec.collapsedOrder; };
+    std::ranges::sort(specs, {}, collapsedOrder);
 
     for (auto& spec : specs) {
         placeCollapsedButtonIfVisible(area, spec.component, spec.collapsedVisible, buttonSize);
@@ -124,7 +124,10 @@ void layoutCollapsedDeviceSlotControls(juce::Rectangle<int>& area,
 void applyMidiOnlyDeviceHeaderVisibility(const DeviceSlotTraits& traits,
                                          const magda::DeviceInfo& device,
                                          juce::Component* modButton, juce::Component* macroButton) {
-    if (device.deviceType != magda::DeviceType::MIDI)
+    // The Chord Engine by name as well as by type: it stopped being a
+    // DeviceType::MIDI device when it was declared for what it is (#2427), and
+    // what it has to modulate did not change -- nothing.
+    if (device.deviceType != magda::DeviceType::MIDI && !traits.isChordEngine)
         return;
 
     setVisibleIfPresent(modButton, false);

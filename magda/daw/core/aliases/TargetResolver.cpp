@@ -40,22 +40,30 @@ ResolveResult TargetResolver::resolve(const Target& target) const {
 
                 // Path absent -- try to materialise against focused chain
                 auto devices = chainContext_.devicesInFocusedChain();
-                for (const auto& dw : devices) {
-                    if (dw.device == nullptr)
-                        continue;
-                    auto alias = pluginNameToAlias(dw.device->name);
-                    if (alias == stored->pluginTypeKey) {
-                        int paramIdx = findParamByKey(*dw.device, normalizeParamName(t.name));
-                        if (paramIdx < 0)
-                            paramIdx = stored->paramIndex;  // fallback to stored index
+                const auto matchesPluginType = [&](const ChainContext::DeviceWithPath& dw) {
+                    return dw.device != nullptr &&
+                           pluginNameToAlias(dw.device->name) == stored->pluginTypeKey;
+                };
+                if (const auto found = std::ranges::find_if(devices, matchesPluginType);
+                    found != devices.end()) {
+                    // By name only. The device was matched on its name, and
+                    // the stored index counts positions in whatever plugin the
+                    // alias was made against: lending it to this one moves the
+                    // alias onto a neighbouring control, which is the silent
+                    // corruption DeviceParamMigrations.hpp exists to stop.
+                    const int paramIdx = findParamByKey(chainContext_.parametersAt(found->path),
+                                                        normalizeParamName(t.name));
+                    if (paramIdx < 0)
+                        return ResolveResult::failure("Alias materialised on " +
+                                                      found->device->name +
+                                                      " but it has no parameter named: " + t.name);
 
-                        ResolveResult r;
-                        r.target.devicePath = dw.path;
-                        r.target.paramIndex = paramIdx;
-                        r.sourceLabel = "@" + t.name + " (materialised)";
-                        r.resolved = true;
-                        return r;
-                    }
+                    ResolveResult r;
+                    r.target.devicePath = found->path;
+                    r.target.paramIndex = paramIdx;
+                    r.sourceLabel = "@" + t.name + " (materialised)";
+                    r.resolved = true;
+                    return r;
                 }
 
                 return ResolveResult::failure("Alias path absent and no matching device in "
@@ -142,13 +150,14 @@ ResolveResult TargetResolver::resolveAt(const ParsedSigil& sigil) const {
             if (device == nullptr)
                 return ResolveResult::failure("@focused.* -- device not found at path");
 
-            int paramIdx = findParamByKey(*device, normalizeParamName(sigil.paramKey));
+            int paramIdx = findParamByKey(chainContext_.parametersAt(devicePath),
+                                          normalizeParamName(sigil.paramKey));
             if (paramIdx < 0)
                 return ResolveResult::failure("@focused." + sigil.paramKey +
                                               " -- param not found on focused device");
 
             ResolveResult r;
-            r.target.devicePath = devicePath;
+            r.target.devicePath = std::move(devicePath);
             r.target.paramIndex = paramIdx;
             r.sourceLabel = "@focused." + sigil.paramKey;
             r.resolved = true;
@@ -165,7 +174,8 @@ ResolveResult TargetResolver::resolveAt(const ParsedSigil& sigil) const {
         auto devices = chainContext_.devicesForTrack(selTrack);
         const auto* match = findFirstMatchingDevice(devices, sigil.pluginKey);
         if (match != nullptr && match->device != nullptr) {
-            int paramIdx = findParamByKey(*match->device, normalizeParamName(sigil.paramKey));
+            int paramIdx = findParamByKey(chainContext_.parametersAt(match->path),
+                                          normalizeParamName(sigil.paramKey));
             if (paramIdx >= 0) {
                 ResolveResult r;
                 r.target.devicePath = match->path;
@@ -200,22 +210,26 @@ ResolveResult TargetResolver::resolveAt(const ParsedSigil& sigil) const {
 
     // Path absent -> scan focused chain for matching plugin type
     auto devices = chainContext_.devicesInFocusedChain();
-    for (const auto& dw : devices) {
-        if (dw.device == nullptr)
-            continue;
-        auto alias = pluginNameToAlias(dw.device->name);
-        if (alias == stored->pluginTypeKey) {
-            int paramIdx = findParamByKey(*dw.device, normalizeParamName(sigil.paramKey));
-            if (paramIdx < 0)
-                paramIdx = stored->paramIndex;
+    const auto matchesPluginType = [&](const ChainContext::DeviceWithPath& dw) {
+        return dw.device != nullptr && pluginNameToAlias(dw.device->name) == stored->pluginTypeKey;
+    };
+    if (const auto found = std::ranges::find_if(devices, matchesPluginType);
+        found != devices.end()) {
+        // By name only, as above: the device was matched on its name, which
+        // says nothing about its parameter order.
+        const int paramIdx = findParamByKey(chainContext_.parametersAt(found->path),
+                                            normalizeParamName(sigil.paramKey));
+        if (paramIdx < 0)
+            return ResolveResult::failure("@" + sigil.pluginKey + "." + sigil.paramKey +
+                                          ": materialised on " + found->device->name +
+                                          ", which has no parameter of that name");
 
-            ResolveResult r;
-            r.target.devicePath = dw.path;
-            r.target.paramIndex = paramIdx;
-            r.sourceLabel = "@" + sigil.pluginKey + "." + sigil.paramKey + " (chain scan)";
-            r.resolved = true;
-            return r;
-        }
+        ResolveResult r;
+        r.target.devicePath = found->path;
+        r.target.paramIndex = paramIdx;
+        r.sourceLabel = "@" + sigil.pluginKey + "." + sigil.paramKey + " (chain scan)";
+        r.resolved = true;
+        return r;
     }
 
     return ResolveResult::failure("@" + sigil.pluginKey + "." + sigil.paramKey +
@@ -229,18 +243,15 @@ ResolveResult TargetResolver::resolveAt(const ParsedSigil& sigil) const {
 // static
 const ChainContext::DeviceWithPath* TargetResolver::findFirstMatchingDevice(
     const std::vector<ChainContext::DeviceWithPath>& devices, const juce::String& pluginKey) {
-    for (const auto& dw : devices) {
+    const auto matchesName = [&pluginKey](const ChainContext::DeviceWithPath& dw) {
         if (dw.device == nullptr)
-            continue;
-
+            return false;
         // Match against normalised plugin alias OR normalised device name
-        auto alias = pluginNameToAlias(dw.device->name);
-        bool nameMatch = (alias == pluginKey) || (normalizeParamName(dw.device->name) == pluginKey);
-
-        if (nameMatch)
-            return &dw;
-    }
-    return nullptr;
+        const auto alias = pluginNameToAlias(dw.device->name);
+        return alias == pluginKey || normalizeParamName(dw.device->name) == pluginKey;
+    };
+    const auto found = std::ranges::find_if(devices, matchesName);
+    return found == devices.end() ? nullptr : &(*found);
 }
 
 // ============================================================================
@@ -248,17 +259,22 @@ const ChainContext::DeviceWithPath* TargetResolver::findFirstMatchingDevice(
 // ============================================================================
 
 // static
-int TargetResolver::findParamByKey(const DeviceInfo& device, const juce::String& paramKey) {
+int TargetResolver::findParamByKey(const std::vector<ParameterInfo>& parameters,
+                                   const juce::String& paramKey) {
     // First: exact normalised match
-    for (const auto& p : device.parameters) {
-        if (normalizeParamName(p.name) == paramKey)
-            return p.paramIndex;
-    }
+    const auto matchesExact = [&paramKey](const ParameterInfo& p) {
+        return normalizeParamName(p.name) == paramKey;
+    };
+    if (const auto found = std::ranges::find_if(parameters, matchesExact);
+        found != parameters.end())
+        return found->paramIndex;
     // Second: prefix match (paramKey is a prefix of the normalised param name)
-    for (const auto& p : device.parameters) {
-        if (normalizeParamName(p.name).startsWith(paramKey))
-            return p.paramIndex;
-    }
+    const auto matchesPrefix = [&paramKey](const ParameterInfo& p) {
+        return normalizeParamName(p.name).startsWith(paramKey);
+    };
+    if (const auto found = std::ranges::find_if(parameters, matchesPrefix);
+        found != parameters.end())
+        return found->paramIndex;
     return -1;
 }
 

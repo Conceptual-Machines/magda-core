@@ -10,8 +10,8 @@
  * @brief What a file says about its own tempo, before anyone interprets it.
  *
  * The model seeds an event's interpretation from this and then owns it:
- * `AudioEvent::seedInterpretation` takes a beat count and a bpm, and never
- * overwrites what the user set. Where those two came from was Tracktion
+ * `AudioEvent::seedInterpretation` takes a beat count, a bpm and their
+ * provenance, and never overwrites what the user set. Where those two came from was Tracktion
  * (`te::LoopInfo`), and it is not an analysis at all -- the fork reads them out
  * of `juce::AudioFormatReader::metadataValues`, the acid chunk that loop
  * libraries write and that JUCE's `WavAudioFormat` already parses.

@@ -32,7 +32,7 @@ class AutomationLaneComponent : public juce::Component,
     void paint(juce::Graphics& g) override;
     void paintOverChildren(juce::Graphics& g) override;
     void modifierKeysChanged(const juce::ModifierKeys& modifiers) override;
-    void resized() override;
+    void resized() final;
 
     // Mouse interaction
     void mouseDown(const juce::MouseEvent& e) override;
@@ -187,7 +187,7 @@ class AutomationLaneComponent : public juce::Component,
     // Scale label helpers
     void paintScaleLabels(juce::Graphics& g, juce::Rectangle<int> area);
     juce::String formatScaleValue(double normalizedValue) const;
-    int valueToPixel(double value, int areaHeight) const;
+    static int valueToPixel(double value, int areaHeight);
 };
 
 }  // namespace magda

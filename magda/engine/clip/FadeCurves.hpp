@@ -62,10 +62,9 @@ double fadeRampPosition(FadeCurve curve, double alpha, bool rising);
  * intact. A gain fade would flatten the transient along with the step.
  *
  * What it is for is the discontinuity of starting mid-material: a locate into
- * the middle of a clip, a loop wrap into one, a voice that begins where the
- * file happens to be at full swing. A clip starting at its own edge has no
- * offset to remove and this costs it nothing, which is why it can be applied
- * wherever a voice begins rather than only where somebody decided it clicks.
+ * the middle of a clip, a loop wrap into one, or a trimmed clip edge. The
+ * caller bypasses it at a resolved source boundary so the source's own attack
+ * remains intact (#2040, #2457).
  *
  * It carries across blocks, which is why it is a small object rather than a
  * function. A ramp that stopped at the end of the block it started in would
@@ -109,6 +108,64 @@ class StartDeClick {
     void applyFrom(juce::dsp::AudioBlock<float> audio, int alreadyDone);
 
     std::array<float, kMaxChannels> offsets_{};
+    int length_ = 0;
+    int done_ = 0;
+};
+
+/**
+ * @brief Return the end of a voice to zero without fading what came before it.
+ *
+ * StartDeClick read backwards: the last sample that sounded is held and decayed
+ * to zero over the ramp, added on top of the silence that follows, so the
+ * material itself is never attenuated.
+ *
+ * Carries across blocks for the reason StartDeClick does, or the same stop
+ * would come out differently at 128 samples a block and at 1024. A held value
+ * of zero costs nothing, so a source can stop through this unconditionally.
+ */
+class StopDeClick {
+  public:
+    /// The most channels one source renders, as StartDeClick sizes it.
+    static constexpr std::size_t kMaxChannels = StartDeClick::kMaxChannels;
+
+    /**
+     * @brief Remember where @p audio ended.
+     *
+     * The contract: call this with what you rendered, before anything corrects
+     * it. Push a buffer a ramp was added to and the remembered sample is part
+     * correction; push one somebody else wrote into and it is their signal too.
+     * So a voice pushes its own region and a source pushes its own output.
+     */
+    void push(juce::dsp::AudioBlock<float> audio);
+
+    /// Start decaying into @p audio from @p offset, over @p fadeSamples. What
+    /// it decays is what @ref push remembered, never anything read back out of
+    /// @p audio, which by then may hold other voices or an earlier ramp.
+    void begin(juce::dsp::AudioBlock<float> audio, int offset, int fadeSamples);
+
+    /// Carry on from the start of @p audio. Does nothing once the ramp has run
+    /// out, so a caller can ask every block without checking.
+    void advance(juce::dsp::AudioBlock<float> audio);
+
+    /// Whether there is any decay left to add.
+    bool active() const {
+        return done_ < length_;
+    }
+
+    /// Forget the ramp and what it was decaying, for a source starting over.
+    void reset() {
+        held_.fill(0.0f);
+        length_ = 0;
+        done_ = 0;
+    }
+
+  private:
+    /// Remember the sample before @p upTo, whatever a ramp is doing.
+    void hold(juce::dsp::AudioBlock<float> audio, int upTo);
+
+    void applyFrom(juce::dsp::AudioBlock<float> audio, int offset, int alreadyDone);
+
+    std::array<float, kMaxChannels> held_{};
     int length_ = 0;
     int done_ = 0;
 };

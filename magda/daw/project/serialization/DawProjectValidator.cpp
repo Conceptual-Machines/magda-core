@@ -30,7 +30,7 @@ juce::File schemaDirectory() {
     if (bundled.isDirectory())
         return bundled;
 
-    return juce::File(MAGDA_DAWPROJECT_SCHEMA_DIR);
+    return {MAGDA_DAWPROJECT_SCHEMA_DIR};
 }
 
 void appendLibXmlError(void* context, const char* message, ...) {
@@ -38,6 +38,9 @@ void appendLibXmlError(void* context, const char* message, ...) {
         return;
 
     char buffer[2048];
+    // va_list is an array type outside arm64, so `= nullptr` builds here and
+    // nowhere else.
+    // NOLINTNEXTLINE(cppcoreguidelines-init-variables)
     va_list args;
     va_start(args, message);
     std::vsnprintf(buffer, sizeof(buffer), message, args);

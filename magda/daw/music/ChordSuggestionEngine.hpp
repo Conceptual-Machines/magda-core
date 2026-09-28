@@ -48,15 +48,15 @@ class ChordSuggestionEngine {
     juce::String getContextTailString(int maxChords = 8) const;
 
     std::optional<std::pair<juce::String, juce::String>> inferKeyModeFromHistogram() const;
-    std::pair<juce::String, juce::String> inferKeyModeFromContext(
-        const std::vector<Chord>& recentChords) const;
+    static std::pair<juce::String, juce::String> inferKeyModeFromContext(
+        const std::vector<Chord>& recentChords);
     std::optional<std::pair<juce::String, juce::String>> inferKeyModeFromScaleDetection() const;
 
     juce::String getDetectedScalesString(float novelty = 0.3f) const;
     std::vector<std::pair<juce::String, juce::String>> getTopDetectedScales(
         int maxScales = 3, float novelty = 0.3f) const;
 
-    int calculateTargetOctave(const std::vector<Chord>& recentChords) const;
+    static int calculateTargetOctave(const std::vector<Chord>& recentChords);
 
     Chord buildChordObject(const juce::String& root, const juce::String& quality, int targetOctave,
                            float inversionStrength, const std::vector<Chord>& recentChords) const;
@@ -83,11 +83,11 @@ class ChordSuggestionEngine {
     static const std::array<juce::String, 12> NOTE_NAMES;
 
     std::array<double, 12> getDecayedHistogram(double currentTimeSeconds) const;
-    double dotProduct(const std::array<double, 12>& a, const std::array<double, 12>& b) const;
-    std::array<double, 12> rotateProfile(const std::array<double, 12>& profile, int shift) const;
+    static double dotProduct(const std::array<double, 12>& a, const std::array<double, 12>& b);
+    static std::array<double, 12> rotateProfile(const std::array<double, 12>& profile, int shift);
 
-    std::vector<SuggestionItem> filterRecentChords(const std::vector<SuggestionItem>& candidates,
-                                                   const std::vector<Chord>& recentChords) const;
+    static std::vector<SuggestionItem> filterRecentChords(
+        const std::vector<SuggestionItem>& candidates, const std::vector<Chord>& recentChords);
 
     std::vector<SuggestionItem> generateDiatonicCandidates(
         const juce::String& key, const juce::String& mode, bool add7ths, bool add9ths,
@@ -98,18 +98,18 @@ class ChordSuggestionEngine {
         const juce::String& key, const juce::String& mode, bool addAlterations, bool addSlashChords,
         int targetOctave, float inversionStrength, const std::vector<Chord>& recentChords) const;
 
-    std::vector<SuggestionItem> mixCandidates(const std::vector<SuggestionItem>& diatonic,
-                                              const std::vector<SuggestionItem>& nonDiatonic,
-                                              float novelty, int topK) const;
+    static std::vector<SuggestionItem> mixCandidates(const std::vector<SuggestionItem>& diatonic,
+                                                     const std::vector<SuggestionItem>& nonDiatonic,
+                                                     float novelty, int topK);
 
     juce::String noteAtSemitone(const juce::String& root, int semitones) const;
-    int noteToSemitone(const juce::String& note) const;
-    bool chordsAreEquivalent(const Chord& a, const Chord& b) const;
+    static int noteToSemitone(const juce::String& note);
+    static bool chordsAreEquivalent(const Chord& a, const Chord& b);
 
     Chord optimizeVoicing(const Chord& chord, float inversionStrength,
                           const std::vector<Chord>& recentChords) const;
-    std::vector<Chord> generateInversions(const Chord& chord) const;
-    double calculateCentroid(const Chord& chord) const;
+    static std::vector<Chord> generateInversions(const Chord& chord);
+    static double calculateCentroid(const Chord& chord);
 };
 
 }  // namespace magda::music

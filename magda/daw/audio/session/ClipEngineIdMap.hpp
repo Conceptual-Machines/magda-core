@@ -18,7 +18,7 @@ class ClipEngineIdMap {
     std::optional<std::string> getEngineId(ClipId clipId) const;
     std::optional<ClipId> getClipId(const std::string& engineId) const;
 
-    void set(ClipId clipId, std::string engineId);
+    void set(ClipId clipId, const std::string& engineId);
     void erase(ClipId clipId);
     Snapshot snapshot() const;
 

@@ -1,6 +1,6 @@
 #include "TensionHandleComponent.hpp"
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 
 namespace magda {
 
@@ -28,18 +28,18 @@ void TensionHandleComponent::paint(juce::Graphics& g) {
     // Fill color based on state
     juce::Colour fillColour;
     if (isDragging_) {
-        fillColour = DarkTheme::getColour(DarkTheme::STATUS_WARNING);
+        fillColour = ActiveTheme::getColour(ActiveTheme::STATUS_WARNING);
     } else if (isHovered_) {
-        fillColour = DarkTheme::getColour(DarkTheme::AUTOMATION_TENSION_HOVER);
+        fillColour = ActiveTheme::getColour(ActiveTheme::AUTOMATION_TENSION_HOVER);
     } else {
-        fillColour = DarkTheme::getColour(DarkTheme::AUTOMATION_SCALE_TEXT);
+        fillColour = ActiveTheme::getColour(ActiveTheme::AUTOMATION_SCALE_TEXT);
     }
 
     g.setColour(fillColour);
     g.fillPath(diamond);
 
     // Border
-    g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_TEXT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_TEXT));
     g.strokePath(diamond, juce::PathStrokeType(1.0f));
 }
 

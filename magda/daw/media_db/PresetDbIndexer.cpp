@@ -11,6 +11,7 @@
 #include <system_error>
 
 #include "MediaDatabase.hpp"
+#include "PathRules.hpp"
 
 namespace magda::media {
 
@@ -211,17 +212,18 @@ PresetDbIndexer::Stats PresetDbIndexer::indexAll(const std::filesystem::path& pr
                 continue;
             }
 
-            const auto meta = statFile(entry.path());
+            const auto path = libraryPath(entry.path());
+            const auto meta = statFile(path);
             if (!meta) {
                 ++stats.failed;
                 continue;
             }
-            const auto presetKind = presetKindFromPath(presetsRoot, entry.path());
+            const auto presetKind = presetKindFromPath(presetsRoot, path);
             if (presetKind.empty()) {
                 continue;  // outside the recognized subtree
             }
 
-            const std::string pathStr = entry.path().string();
+            const std::string pathStr = path.string();
             const auto existing = lookupExisting(handle, pathStr);
             const bool unchanged = existing && existing->mtimeNs == meta->mtimeNs &&
                                    existing->sizeBytes == meta->sizeBytes;
@@ -230,12 +232,12 @@ PresetDbIndexer::Stats PresetDbIndexer::indexAll(const std::filesystem::path& pr
                 continue;
             }
 
-            const auto id = upsertPresetRow(handle, entry.path(), presetKind, *meta);
+            const auto id = upsertPresetRow(handle, path, presetKind, *meta);
             if (id < 0) {
                 ++stats.failed;
                 continue;
             }
-            upsertFts(handle, id, buildPathText(entry.path()));
+            upsertFts(handle, id, buildPathText(path));
             if (existing) {
                 ++stats.updated;
             } else {
@@ -249,7 +251,8 @@ PresetDbIndexer::Stats PresetDbIndexer::indexAll(const std::filesystem::path& pr
 }
 
 bool PresetDbIndexer::upsertOne(const std::filesystem::path& presetsRoot,
-                                const std::filesystem::path& path) {
+                                const std::filesystem::path& presetPath) {
+    const auto path = libraryPath(presetPath);
     const auto meta = statFile(path);
     if (!meta) {
         return false;
@@ -272,7 +275,7 @@ bool PresetDbIndexer::upsertOne(const std::filesystem::path& presetsRoot,
 
 bool PresetDbIndexer::removeOne(const std::filesystem::path& path) {
     sqlite3* handle = db_.handle();
-    const std::string pathStr = path.string();
+    const std::string pathStr = libraryPath(path).string();
 
     // Look up id so we can drop the FTS row too — the FTS5 table is
     // contentless and doesn't follow FKs, so the media_file CASCADE

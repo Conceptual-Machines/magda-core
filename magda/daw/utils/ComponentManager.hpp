@@ -57,11 +57,10 @@ class ManagedDrawable {
         return managed;
     }
 
-    // Destructor - RAII cleanup (like Python's __exit__)
-    ~ManagedDrawable() {
-        // Let unique_ptr handle destruction naturally
-        // No manual deleteAllChildren needed - Component destructor handles it correctly
-    }
+    // Destructor - RAII cleanup (like Python's __exit__). Let unique_ptr handle
+    // destruction naturally; no manual deleteAllChildren needed - Component's
+    // destructor handles it correctly.
+    ~ManagedDrawable() = default;
 
     // Move-only (like Python context managers)
     ManagedDrawable(ManagedDrawable&&) noexcept = default;
@@ -116,7 +115,7 @@ class ManagedDrawable {
  * @endcode
  */
 template <typename ComponentType> class ManagedChild {
-    static_assert(std::is_base_of<juce::Component, ComponentType>::value,
+    static_assert(std::is_base_of_v<juce::Component, ComponentType>,
                   "ManagedChild only works with JUCE Components");
 
   public:
@@ -201,7 +200,7 @@ template <typename ComponentType> class ManagedChild {
  */
 template <typename T> class ScopedComponentGuard {
   public:
-    explicit ScopedComponentGuard(T* component) : component_(component), released_(false) {}
+    explicit ScopedComponentGuard(T* component) : component_(component) {}
 
     static ScopedComponentGuard create(T* component) {
         return ScopedComponentGuard(component);
@@ -209,7 +208,7 @@ template <typename T> class ScopedComponentGuard {
 
     ~ScopedComponentGuard() {
         if (!released_ && component_) {
-            if constexpr (std::is_base_of<juce::Component, T>::value) {
+            if constexpr (std::is_base_of_v<juce::Component, T>) {
                 auto* parent = component_->getParentComponent();
                 if (parent) {
                     parent->removeChildComponent(component_);
@@ -260,7 +259,7 @@ template <typename T> class ScopedComponentGuard {
 
   private:
     T* component_;
-    bool released_;
+    bool released_{false};
 };
 
 }  // namespace magda

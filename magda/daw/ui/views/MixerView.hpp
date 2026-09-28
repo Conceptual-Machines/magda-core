@@ -24,11 +24,16 @@
 #include "../themes/MixerLookAndFeel.hpp"
 #include "../themes/MixerMetrics.hpp"
 #include "audio/MidiBridge.hpp"
+#include "audio/io/AudioIOControl.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
 
 namespace magda {
+
+namespace daw::audio {
+class MagdaDevice;
+}
 
 // Forward declarations
 class AudioEngine;
@@ -48,7 +53,8 @@ class MixerView : public juce::Component,
                   public TrackManagerListener,
                   public SelectionManagerListener,
                   public ViewModeListener,
-                  public MidiBridge::Listener {
+                  public MidiBridge::Listener,
+                  private HardwareChannels::Listener {
   public:
     explicit MixerView(AudioEngine* audioEngine = nullptr);
     ~MixerView() override;
@@ -58,7 +64,7 @@ class MixerView : public juce::Component,
     }
 
     void paint(juce::Graphics& g) override;
-    void resized() override;
+    void resized() final;
     void lookAndFeelChanged() override;
     bool keyPressed(const juce::KeyPress& key) override;
     void mouseMove(const juce::MouseEvent& event) override;
@@ -72,11 +78,14 @@ class MixerView : public juce::Component,
     // TrackManagerListener
     void tracksChanged() override;
     void midiDeviceListChanged() override;
+
+    /** @brief Rebuild the strips' routing menus against what is open now (#2748). */
+    void hardwareChannelsChanged() override;
     void trackPropertyChanged(int trackId) override;
     void trackDevicesChanged(TrackId trackId) override;
     void devicePropertyChanged(const ChainNodePath& devicePath) override;
     void masterChannelChanged() override;
-    void trackSelectionChanged(TrackId trackId) override;
+    void trackSelectionChanged(TrackId trackId) final;
 
     // SelectionManagerListener
     void selectionTypeChanged(SelectionType newType) override;
@@ -116,7 +125,7 @@ class MixerView : public juce::Component,
 
         void paint(juce::Graphics& g) override;
         void paintOverChildren(juce::Graphics& g) override;
-        void resized() override;
+        void resized() final;
         void mouseDown(const juce::MouseEvent& event) override;
         void lookAndFeelChanged() override;
 
@@ -218,11 +227,16 @@ class MixerView : public juce::Component,
         // mixer rail toggle is on and the track has the post-FX device.
         std::unique_ptr<daw::ui::OscilloscopeUI> miniOscilloscopeUI_;
         std::unique_ptr<daw::ui::SpectrumAnalyzerUI> miniSpectrumUI_;
-        void* miniOscilloscopeTelemetryPlugin_ = nullptr;
-        void* miniSpectrumTelemetryPlugin_ = nullptr;
         std::shared_ptr<daw::ui::OscilloscopeTelemetrySource> miniOscilloscopeTelemetry_;
         std::shared_ptr<daw::ui::SpectrumTelemetrySource> miniSpectrumTelemetry_;
+        /// Which device each faceplate last read its settings off. Compared only.
+        const daw::audio::MagdaDevice* miniOscilloscopeDevice_ = nullptr;
+        const daw::audio::MagdaDevice* miniSpectrumDevice_ = nullptr;
         void refreshMiniAnalyzers();
+
+        /// Re-read the analyser controls when the device behind them changes:
+        /// the model's notification comes before the plan that holds it (#2663).
+        void refreshAnalyserSettings();
 
         // Mini FX chain: one MiniChainRow per top-level fx device on this
         // track. Built from TrackInfo::chain.fxChainElements; nested racks
@@ -241,8 +255,8 @@ class MixerView : public juce::Component,
 
         std::vector<std::unique_ptr<MiniChainRow>> miniChainRows_;
         std::vector<MiniChainRowSignatureEntry> miniChainSignature_;
-        std::vector<MiniChainRowSignatureEntry> buildMiniChainSignature(
-            const TrackInfo& track) const;
+        static std::vector<MiniChainRowSignatureEntry> buildMiniChainSignature(
+            const TrackInfo& track);
         void syncMiniChainRows(const TrackInfo& track);
         void rebuildMiniChainRows(const TrackInfo& track,
                                   std::vector<MiniChainRowSignatureEntry> signature);
@@ -251,11 +265,6 @@ class MixerView : public juce::Component,
         // state without rebuilding (safe under the synchronous devicePropertyChanged
         // that a row's own bypass toggle fires). No-op if no row matches.
         void syncMiniChainRowState(DeviceId deviceId, bool bypassed);
-
-        // Reflect a device's plugin-editor window open state on the matching
-        // row's "open editor" icon (so it un-engages when the window is closed
-        // via its X). No-op if no row matches.
-        void syncMiniChainPluginWindow(DeviceId deviceId, bool isOpen);
 
         // Send area resize handle
         class SendResizeHandle;
@@ -275,7 +284,9 @@ class MixerView : public juce::Component,
         // Routing option-to-track mappings (rebuilt when options are populated)
         std::map<int, TrackId> outputTrackMapping_;
         std::map<int, TrackId> midiOutputTrackMapping_;
+        std::map<int, juce::String> outputChannelMapping_;
         std::map<int, TrackId> inputTrackMapping_;
+        std::map<int, juce::String> inputChannelMapping_;
         std::map<int, TrackId> midiInputTrackMapping_;
 
         void setupControls();
@@ -348,14 +359,14 @@ class MixerView : public juce::Component,
     std::vector<std::unique_ptr<ChannelResizeHandle>> channelResizeHandles_;
     void wireChannelResizeHandle(ChannelResizeHandle& handle);
     void layoutChannelResizeHandles(int containerHeight);
-    int getTopLevelStripWidth(const ChannelStrip& strip) const;
+    static int getTopLevelStripWidth(const ChannelStrip& strip);
     std::vector<TrackId> getLayoutEditTargets(TrackId clickedId, bool allVisible) const;
     void applyChannelWidthDelta(TrackId clickedId, int deltaX, const juce::ModifierKeys& mods);
     void finishChannelWidthResize(const juce::ModifierKeys& mods);
     void resetChannelWidths(TrackId clickedId, const juce::ModifierKeys& mods);
     void commitChannelWidthResize();
-    void executeMixerLayoutCommands(const juce::String& description,
-                                    std::vector<std::unique_ptr<UndoableCommand>> commands);
+    static void executeMixerLayoutCommands(const juce::String& description,
+                                           std::vector<std::unique_ptr<UndoableCommand>> commands);
 
     // Left-edge vertical rail of view-toggle buttons (sends, routing, monitor,
     // mini oscilloscope, mini spectrum, mini FX chain). State persisted via
@@ -367,7 +378,7 @@ class MixerView : public juce::Component,
     void relayoutAllStrips();
     // Ensure every non-master track has (or lacks) the Oscilloscope /
     // Spectrum Analyzer post-FX device to match the mixer rail toggles.
-    void reconcileAnalysisDevices();
+    static void reconcileAnalysisDevices();
     bool isResizeDragging_ = false;
     bool wasPlaying_ = false;  // tracks transport edge to auto-reset peak holds
     bool pendingResizeUpdate_ = false;
@@ -401,7 +412,7 @@ class MixerView : public juce::Component,
     // Audio engine for metering
     AudioEngine* audioEngine_ = nullptr;
 
-    bool isInChannelResizeZone(const juce::Point<int>& pos) const;
+    static bool isInChannelResizeZone(const juce::Point<int>& pos);
 
     // Plugin drag-and-drop state
     bool showPluginDropOverlay_ = false;

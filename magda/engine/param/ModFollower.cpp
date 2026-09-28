@@ -4,6 +4,8 @@
 #include <cmath>
 #include <numbers>
 
+#include "core/BlockMath.hpp"
+
 namespace magda::engine {
 
 namespace {
@@ -35,6 +37,13 @@ bool cutoffMoved(float current, float wanted) {
 float coefficientFor(float timeMs, double sampleRate) {
     const auto samples = std::max(timeMs, kMinTimeMs) * static_cast<float>(sampleRate) * 0.001f;
     return std::exp(kTimeConstant / samples);
+}
+
+/// A one-pole run @p samples steps with a flat input: each step closes the same
+/// fraction of the gap, so the run is a geometric decay and not a loop (#2152).
+float decayed(float from, float towards, float coefficient, int samples) {
+    return towards + static_cast<float>(std::pow(static_cast<double>(coefficient), samples)) *
+                         (from - towards);
 }
 
 float decibelsToGain(float db) {
@@ -126,16 +135,12 @@ void detectFollowerSource(FollowerState& state, const FollowerSettings& settings
     // every follower: the scratch buffer is only worth filling when something
     // is going to read it back.
     if (!settings.highPass && !settings.lowPass) {
-        float peak = 0.0f;
-        for (std::size_t i = 0; i < count; ++i)
-            peak = std::max(peak, std::abs(mono[i] * gain));
-
-        state.sourcePeak = peak;
+        state.sourcePeak = gain * peakMagnitude(mono.data(), static_cast<int>(count));
         return;
     }
 
-    for (std::size_t i = 0; i < count; ++i)
-        scratch[i] = mono[i] * gain;
+    juce::FloatVectorOperations::copyWithMultiply(scratch.data(), mono.data(), gain,
+                                                  static_cast<int>(count));
 
     // High pass first and low pass second, which is the fork's order. Two
     // second-order sections do not commute exactly in floating point, so the
@@ -166,11 +171,7 @@ void detectFollowerSource(FollowerState& state, const FollowerSettings& settings
             scratch[i] = state.lowPass.process(scratch[i]);
     }
 
-    float peak = 0.0f;
-    for (std::size_t i = 0; i < count; ++i)
-        peak = std::max(peak, std::abs(scratch[i]));
-
-    state.sourcePeak = peak;
+    state.sourcePeak = peakMagnitude(scratch.data(), static_cast<int>(count));
 }
 
 float advanceFollower(FollowerState& state, const FollowerSettings& settings,
@@ -189,16 +190,32 @@ float advanceFollower(FollowerState& state, const FollowerSettings& settings,
     // the waveform: it is what the fork feeds an externally driven follower.
     const float input = std::max(state.sourcePeak, 0.0f);
 
-    for (int i = 0; i < numSamples; ++i) {
+    if (numSamples > 0) {
         if (input > state.envelope) {
-            state.envelope = (attack * (state.envelope - input)) + input;
+            // Attack, and for the whole block: a step closes a fixed fraction of
+            // what is left and never arrives, so the envelope cannot cross the
+            // input and change branch part way through.
+            //
+            // Kept under the input rather than allowed to round onto it, which
+            // is what the per-sample form did by construction. An envelope that
+            // arrived would leave this branch, and the hold is refreshed here:
+            // a source that stayed loud would then release the moment it fell.
+            state.envelope = std::min(decayed(state.envelope, input, attack, numSamples),
+                                      std::nextafter(input, 0.0f));
             state.holdLeft = holdSamples;
-        } else if (state.holdLeft > 0) {
-            --state.holdLeft;
         } else {
-            state.envelope = (release * (state.envelope - input)) + input;
+            // At or under the input, where the hold spends itself first and the
+            // release decays what is left. Release cannot take the envelope back
+            // under the input either, so the block is those two runs and no more.
+            const int held = std::min(state.holdLeft, numSamples);
+            state.holdLeft -= held;
+
+            if (const int releasing = numSamples - held; releasing > 0)
+                state.envelope = decayed(state.envelope, input, release, releasing);
         }
 
+        // Only bites where the source peaked above one, which the attack would
+        // otherwise carry the envelope towards.
         state.envelope = std::clamp(state.envelope, 0.0f, 1.0f);
     }
 

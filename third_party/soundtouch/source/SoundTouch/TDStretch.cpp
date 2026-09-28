@@ -660,7 +660,15 @@ void TDStretch::processSamples()
         {
             // apart from the very beginning of the track,
             // scan for the best overlapping position & do overlap-add
-            offset = seekBestOverlapPosition(inputBuffer.ptrBegin());
+            // At neutral tempo each output sequence consumes exactly its own
+            // length of input. Searching for a correlated overlap may still
+            // jump forward inside periodic material, which advances every
+            // later transient even though no time stretch was requested.
+            // Keep the overlap path (it makes changes through unity smooth),
+            // but make its neutral position time preserving.
+            offset = fabs(tempo - 1.0) < 1e-10
+                         ? 0
+                         : seekBestOverlapPosition(inputBuffer.ptrBegin());
 
             // Mix the samples in the 'inputBuffer' at position of 'offset' with the
             // samples in 'midBuffer' using sliding overlapping

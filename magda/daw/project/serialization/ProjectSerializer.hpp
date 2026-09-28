@@ -6,9 +6,11 @@
 #include "../../core/ClipInfo.hpp"
 #include "../../core/Source.hpp"
 #include "../../core/TrackInfo.hpp"
-#include "ProjectInfo.hpp"
+#include "../ProjectInfo.hpp"
 
 namespace magda {
+
+class AddressedParameters;
 
 /**
  * @brief Holds deserialized project data before committing to singleton managers.
@@ -41,6 +43,7 @@ struct StagedProjectData {
  *   playback fields.
  * 2: the clip hosts a list of events referencing pooled sources (#1901). Read
  *   support for 1 is permanent.
+ * 3: ordered Session scenes carry stable ids, names and colours (#2835).
  *
  * There is no version gate on the way in. Already-shipped builds validate only
  * that magdaVersion is a non-empty string and ignore keys they do not know, so
@@ -48,7 +51,7 @@ struct StagedProjectData {
  * its source, and saving from there writes that loss back. Nothing this writer
  * can emit changes that, so treat it as a one-way upgrade rather than a gate.
  */
-constexpr int kProjectSchemaVersion = 2;
+constexpr int kProjectSchemaVersion = 3;
 
 /**
  * @brief Main serialization class for Magda projects
@@ -79,12 +82,20 @@ class ProjectSerializer {
     static bool loadFromFile(const juce::File& file, ProjectInfo& outInfo);
 
     /**
-     * @brief Decompress, parse, and stage project data (thread-safe, no UI interaction)
+     * @brief Decompress, parse, and stage project data.
+     *
+     * This convenience overload captures mutable Config on the calling thread.
+     * Background loaders must capture creation settings before starting and use
+     * the overload below instead.
      * @param file Source .mgd file
      * @param outData Output staged data ready for commitStaged()
      * @return true on success, false on error (check getLastError())
      */
     static bool loadAndStage(const juce::File& file, StagedProjectData& outData);
+
+    /** Worker-safe overload: creation settings were captured before the worker started. */
+    static bool loadAndStage(const juce::File& file, StagedProjectData& outData,
+                             const ProjectCreationSettings& creationSettings);
 
     /**
      * @brief Export current project state to a .dawproject archive
@@ -95,13 +106,20 @@ class ProjectSerializer {
     static bool exportToDawProject(const juce::File& file, const ProjectInfo& info);
 
     /**
-     * @brief Read, validate, and stage a .dawproject archive
+     * @brief Read, validate, and stage a .dawproject archive.
+     *
+     * Captures mutable Config on the calling thread; background loaders use
+     * the explicit-snapshot overload below.
      * @param file Source .dawproject file
      * @param outData Output staged data ready for commitStaged()
      * @return true on success, false on error (check getLastError())
      */
     static bool loadDawProjectAndStage(const juce::File& file, StagedProjectData& outData,
                                        const juce::File& audioExtractionDir = {});
+
+    static bool loadDawProjectAndStage(const juce::File& file, StagedProjectData& outData,
+                                       const juce::File& audioExtractionDir,
+                                       const ProjectCreationSettings& creationSettings);
 
     /**
      * @brief Commit previously staged data to singleton managers (message thread only)
@@ -118,7 +136,7 @@ class ProjectSerializer {
      * @param info Project metadata
      * @return JSON var containing complete project state
      */
-    static juce::var serializeProject(const ProjectInfo& info);
+    static juce::var serializeProject(const ProjectInfo& info, const juce::File& projectFile = {});
 
     /**
      * @brief Deserialize JSON to project
@@ -135,7 +153,7 @@ class ProjectSerializer {
     /**
      * @brief Serialize all tracks to JSON array
      */
-    static juce::var serializeTracks();
+    static juce::var serializeTracks(const AddressedParameters& addressed);
 
     // ========================================================================
     // Clip serialization
@@ -144,6 +162,17 @@ class ProjectSerializer {
     // Feeding a hand-built v1 clip through the whole project path would need
     // the track and clip managers standing up around it, which buys nothing.
     // ========================================================================
+
+    /**
+     * @brief Serialize one track, its chain included.
+     *
+     * Public for the same reason `serializeClipInfo` is: it is a pure function
+     * of the value it is given, and the serialized form is the only way to state
+     * that a structural edit and its undo left the model where they found it
+     * (#2221).
+     */
+    static juce::var serializeTrackInfo(const TrackInfo& track);
+    static bool deserializeTrackInfo(const juce::var& json, TrackInfo& outTrack);
 
     static juce::var serializeClipInfo(const ClipInfo& clip);
 
@@ -163,16 +192,19 @@ class ProjectSerializer {
      * @brief Serialize the pooled media sources to a JSON array (#1901).
      *
      * Garbage-collects the pool first: only sources a clip still references are
-     * written.
+     * written. A source inside @p projectFile's folder is written relative to it,
+     * so the project folder can move.
      */
-    static juce::var serializeSources();
+    static juce::var serializeSources(const juce::File& projectFile = {});
 
     /**
      * @brief Restore pooled media sources. Must run before clips, whose events
      * reference sources by id.
      */
-    /// Parse the sources array into @p out without touching the live pool.
-    static void deserializeSourcesToStaging(const juce::var& json, std::vector<Source>& out);
+    /// Parse the sources array into @p out without touching the live pool; a relative
+    /// path resolves against @p projectFile's folder.
+    static void deserializeSourcesToStaging(const juce::var& json, std::vector<Source>& out,
+                                            const juce::File& projectFile = {});
 
     /// Replace the pool with @p sources, carrying across any entry that
     /// @p stagedClips still reference. Message thread, commit phase only.
@@ -278,9 +310,6 @@ class ProjectSerializer {
     // Track serialization helpers
     // ========================================================================
 
-    static juce::var serializeTrackInfo(const TrackInfo& track);
-    static bool deserializeTrackInfo(const juce::var& json, TrackInfo& outTrack);
-
     // serializeChainElement / DeviceInfo / RackInfo / ChainInfo are declared
     // public above so PresetManager can use them.
 
@@ -296,6 +325,14 @@ class ProjectSerializer {
 
     static juce::var serializeMidiPitchBendData(const MidiPitchBendData& data);
     static bool deserializeMidiPitchBendData(const juce::var& json, MidiPitchBendData& data);
+
+    static juce::var serializeMidiChannelPressureData(const MidiChannelPressureData& data);
+    static bool deserializeMidiChannelPressureData(const juce::var& json,
+                                                   MidiChannelPressureData& data);
+
+    static juce::var serializeMidiPolyAftertouchData(const MidiPolyAftertouchData& data);
+    static bool deserializeMidiPolyAftertouchData(const juce::var& json,
+                                                  MidiPolyAftertouchData& data);
 
     static juce::var serializeSendInfo(const SendInfo& data);
     static bool deserializeSendInfo(const juce::var& json, SendInfo& data);

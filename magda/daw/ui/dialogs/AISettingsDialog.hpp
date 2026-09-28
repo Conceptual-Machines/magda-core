@@ -36,6 +36,7 @@ class AISettingsDialog : public juce::Component {
     class LocalPage;
     class ConfigPage;
     class SampleTaggerPage;
+    class BeatTrackerPage;
     class StemSeparationPage;
     class CommandModelPage;
     class ModelDownloadsPage;
@@ -55,6 +56,7 @@ class AISettingsDialog : public juce::Component {
     std::unique_ptr<LocalPage> localPage_;
     std::unique_ptr<ConfigPage> configPage_;
     std::unique_ptr<SampleTaggerPage> samplePage_;
+    std::unique_ptr<BeatTrackerPage> beatTrackerPage_;
     std::unique_ptr<StemSeparationPage> stemsPage_;
     std::unique_ptr<CommandModelPage> commandModelPage_;
     std::unique_ptr<ModelDownloadsPage> modelDownloadsPage_;

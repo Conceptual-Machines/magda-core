@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "project": "plugin-state.mgd",
+  "cluster": "hosted plugin state restore",
+  "range": { "startBeat": 0, "endBeat": 8 },
+  "requires": { "plugins": ["Surge XT"], "hardware": [] },
+  "tracks": [
+    { "name": "Surge", "sound": true, "peakDb": { "min": -48, "max": 0 } }
+  ],
+  "parameters": [
+    {
+      "track": "Surge",
+      "device": "Surge XT",
+      "normalized": {
+        "FX A1 FX Type": 0.1757,
+        "A Osc 1 Type": 0.185,
+        "A Osc 1 Retrigger": 1.0,
+        "A Filter Configuration": 0.1464,
+        "A Filter 1 Cutoff": 0.0694,
+        "A Filter 1 Resonance": 0.2549,
+        "A Highpass": 0.3911,
+        "A Send FX 1 Level": 0.3274
+      }
+    }
+  ],
+  "listen": "An eighth-note bass line on the Surge XT patch saved with the project, not Surge's init saw."
+}

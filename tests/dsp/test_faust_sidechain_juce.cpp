@@ -1,0 +1,355 @@
+#include <juce_core/juce_core.h>
+#include <tracktion_engine/tracktion_engine.h>
+
+#include <algorithm>
+
+#include "SharedTestEngine.hpp"
+#include "magda/daw/audio/AudioBridge.hpp"
+#include "magda/daw/audio/plugins/AudioSidechainMonitorPlugin.hpp"
+#include "magda/daw/audio/plugins/FaustPlugin.hpp"
+#include "magda/daw/audio/plugins/MidiReceivePlugin.hpp"
+#include "magda/daw/audio/plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
+#include "magda/daw/audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
+#include "magda/daw/audio/processors/internal/NativeDeviceProcessors.hpp"
+#include "magda/daw/core/ParameterUtils.hpp"
+#include "magda/daw/core/TrackManager.hpp"
+#include "third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_TestUtilities.h"
+
+namespace {
+
+namespace audio = magda::daw::audio;
+namespace te = tracktion::engine;
+
+constexpr const char* kSidechainDsp = R"FAUST(
+// Self-contained test DSP. The literal "stdfaust.lib" in this comment is
+// load-bearing: compile() only skips its automatic import when the source
+// already mentions the library, and the test binary has no faustlibraries dir.
+declare magda_sidechain "audio";
+process(mainL, mainR, sideL, sideR) = mainL + sideL, mainR + sideR;
+)FAUST";
+
+/// One named control with a range nothing defaults to, so a host parameter
+/// still carrying the metadata it was built with is obvious on sight.
+constexpr const char* kNamedControlDsp = R"FAUST(
+// Self-contained test DSP; see the load-bearing "stdfaust.lib" note above.
+cutoff = hslider("Cutoff [unit:Hz] [idx:0]", 5000, 500, 9000, 1);
+process = *(cutoff / 9000.0), *(cutoff / 9000.0);
+)FAUST";
+
+constexpr const char* kStereoDsp = R"FAUST(
+// Self-contained test DSP; see the load-bearing "stdfaust.lib" note above.
+process = _, _;
+)FAUST";
+
+constexpr const char* kMonoSidechainDsp = R"FAUST(
+// Self-contained test DSP; see the load-bearing "stdfaust.lib" note above.
+declare magda_sidechain "audio";
+process(mainL, mainR, sidechain) = mainL + sidechain, mainR + sidechain;
+)FAUST";
+
+constexpr const char* kNineInputDsp = R"FAUST(
+// Self-contained test DSP; see the load-bearing "stdfaust.lib" note above.
+process(a, b, c, d, e, f, g, h, i) = a, b;
+)FAUST";
+
+/// Four inputs and no declaration: extra inputs are not a key on their own.
+constexpr const char* kUndeclaredWideDsp = R"FAUST(
+// Self-contained test DSP; see the load-bearing "stdfaust.lib" note above.
+process(mainL, mainR, extraL, extraR) = mainL + extraL, mainR + extraR;
+)FAUST";
+
+constexpr const char* kInvalidDsp = R"FAUST(
+// Self-contained test DSP; see the load-bearing "stdfaust.lib" note above.
+process = deliberatelyUndefinedProcessor;
+)FAUST";
+
+te::Plugin::Ptr createFaustEffect(te::Edit& edit) {
+    juce::ValueTree state(te::IDs::PLUGIN);
+    state.setProperty(te::IDs::type, audio::FaustPlugin::xmlTypeName, nullptr);
+    return edit.getPluginCache().createNewPlugin(state);
+}
+
+magda::DeviceInfo makeSavedFaust(magda::TrackId sourceTrackId, const juce::String& source) {
+    juce::ValueTree state(te::IDs::PLUGIN);
+    state.setProperty(te::IDs::type, audio::FaustPlugin::xmlTypeName, nullptr);
+    state.setProperty("dspSource", source, nullptr);
+    state.setProperty("dspName", "Saved test", nullptr);
+
+    magda::DeviceInfo device;
+    device.name = "Faust";
+    device.format = magda::PluginFormat::Internal;
+    device.pluginId = audio::FaustPlugin::xmlTypeName;
+    device.sidechainPort = {.kind = magda::SidechainPort::Kind::Audio, .channels = 2};
+    device.sidechain.type = magda::SidechainConfig::Type::Audio;
+    device.sidechain.sourceTrackId = sourceTrackId;
+    if (auto xml = state.createXml())
+        device.pluginState = xml->toString();
+    return device;
+}
+
+class FaustSidechainTest final : public juce::UnitTest {
+  public:
+    FaustSidechainTest() : juce::UnitTest("Faust Audio Sidechain Tests", "magda") {}
+
+    void runTest() override {
+        beginTest("Extra DSP inputs advertise and render a stereo audio sidechain");
+
+        auto& wrapper = magda::test::getSharedEngine();
+        auto edit = te::test_utilities::createTestEdit(*wrapper.getEngine(), 2);
+        expect(edit != nullptr, "Test edit should be created");
+        if (!edit)
+            return;
+
+        auto plugin = createFaustEffect(*edit);
+        // The chain holds the host's wrapper; the device is inside it. Engine
+        // calls go to `host`, device calls to `faust` (#2192).
+        auto* host = plugin.get();
+        auto* faust = audio::tracktion_adapter::deviceFromPlugin<audio::FaustPlugin>(plugin.get());
+        expect(faust != nullptr, "Runtime Faust effect should be created");
+        if (!faust)
+            return;
+
+        juce::String error;
+        const bool loaded = faust->loadDspSource("Sidechain test", kSidechainDsp, error);
+        expect(loaded, "Four-input DSP should compile: " + error);
+        if (!loaded)
+            return;
+
+        expect(host->canSidechain(), "A four-input Faust effect should accept a sidechain");
+
+        juce::StringArray inputs;
+        juce::StringArray outputs;
+        host->getChannelNames(&inputs, &outputs);
+        expectEquals(inputs.size(), 4);
+        expectEquals(outputs.size(), 2);
+        expectEquals(inputs[2], juce::String("Sidechain Left"));
+        expectEquals(inputs[3], juce::String("Sidechain Right"));
+
+        magda::DeviceInfo device;
+        magda::FaustProcessor processor(1929, plugin);
+        processor.populateParameters(device, magda::DeviceProcessor::ValueSource::Engine);
+        expect(device.sidechainPort.takesAudio(), "DeviceInfo should expose the declared port");
+        expectEquals(device.sidechainPort.channels, 2,
+                     "The declared key is as wide as the inputs past the outputs");
+
+        constexpr int kBlockSize = 64;
+        te::PluginInitialisationInfo initInfo;
+        initInfo.startTime = tracktion::TimePosition();
+        initInfo.sampleRate = 44100.0;
+        initInfo.blockSizeSamples = kBlockSize;
+        host->baseClassInitialise(initInfo);
+
+        juce::AudioBuffer<float> buffer(4, kBlockSize);
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+            std::fill_n(buffer.getWritePointer(channel), kBlockSize, 0.1f * (channel + 1));
+
+        te::MidiMessageArray midi;
+        te::PluginRenderContext context(
+            &buffer, juce::AudioChannelSet::quadraphonic(), 0, kBlockSize, &midi, 0.0,
+            tracktion::TimeRange(tracktion::TimePosition(),
+                                 tracktion::TimePosition::fromSeconds(kBlockSize / 44100.0)),
+            true, false, false, false);
+        host->applyToBuffer(context);
+
+        expectWithinAbsoluteError(buffer.getSample(0, 0), 0.4f, 0.0001f,
+                                  "Left output should include sidechain left");
+        expectWithinAbsoluteError(buffer.getSample(1, 0), 0.6f, 0.0001f,
+                                  "Right output should include sidechain right");
+
+        beginTest("A three-input DSP advertises a mono sidechain");
+
+        error.clear();
+        expect(faust->loadDspSource("Mono sidechain test", kMonoSidechainDsp, error),
+               "Three-input DSP should compile: " + error);
+        inputs.clear();
+        host->getChannelNames(&inputs, nullptr);
+        expectEquals(inputs.size(), 3);
+        expectEquals(inputs[2], juce::String("Sidechain"));
+
+        beginTest("Extra inputs without a declaration are not a key");
+
+        error.clear();
+        expect(faust->loadDspSource("Undeclared wide test", kUndeclaredWideDsp, error),
+               "Four-input DSP without a declaration should compile: " + error);
+        expect(!host->canSidechain(),
+               "More inputs than outputs is not by itself a request for a key");
+        inputs.clear();
+        host->getChannelNames(&inputs, nullptr);
+        expectEquals(inputs.size(), 4);
+        expectEquals(inputs[2], juce::String("Right"),
+                     "Undeclared inputs are the device's own, not a named key");
+
+        beginTest("A runtime patch wider than scratch capacity fails safely");
+
+        error.clear();
+        expect(faust->loadDspSource("Wide input test", kNineInputDsp, error),
+               "Nine-input DSP should compile: " + error);
+        inputs.clear();
+        host->getChannelNames(&inputs, nullptr);
+        expectEquals(inputs.size(), 9);
+        const auto& diagnostics = faust->getLastRebindDiagnostics();
+        expect(!diagnostics.empty(), "Wide runtime patch should report its scratch requirement");
+        if (!diagnostics.empty())
+            expect(diagnostics.front().containsIgnoreCase("reload"),
+                   "Wide runtime patch diagnostic should explain how to activate it");
+        const float beforeWideRender = buffer.getSample(0, 0);
+        host->applyToBuffer(context);
+        expectWithinAbsoluteError(buffer.getSample(0, 0), beforeWideRender, 0.0001f,
+                                  "An undersized scratch buffer should leave audio untouched");
+
+        beginTest("A stereo patch swap removes capability and the live source");
+
+        const auto tracks = te::getAudioTracks(*edit);
+        expect(tracks.size() >= 2, "Test edit should contain a source track");
+        if (tracks.size() < 2)
+            return;
+        host->setSidechainSourceID(tracks[1]->itemID);
+        expect(host->getSidechainSourceID().isValid(), "Sidechain source should be assigned");
+
+        error.clear();
+        expect(faust->loadDspSource("Stereo test", kStereoDsp, error),
+               "Stereo DSP should compile: " + error);
+        expect(!host->canSidechain(), "A stereo Faust effect should not accept a sidechain");
+        expect(!host->getSidechainSourceID().isValid(),
+               "Dropping extra inputs should clear the live sidechain source");
+
+        inputs.clear();
+        host->getChannelNames(&inputs, nullptr);
+        expectEquals(inputs.size(), 2);
+
+        device.sidechainPort = magda::monoAudioSidechain;
+        processor.populateParameters(device, magda::DeviceProcessor::ValueSource::Engine);
+        expect(!device.sidechainPort.declared(), "DeviceInfo should remove the stale declaration");
+
+        beginTest("A recompile is visible on the host's own parameters");
+
+        // The pool rebinds on every compile, so a slot's name, range and unit
+        // are only as old as the last source. The host builds one parameter per
+        // slot once and keeps it for the device's lifetime, which is what makes
+        // a macro or automation lane survive a recompile -- but the metadata
+        // behind it has to follow the device, or the fork formats, parses and
+        // scales the slot against a patch that is no longer loaded.
+        {
+            auto namedPlugin = createFaustEffect(*edit);
+            auto* namedHost = namedPlugin.get();
+            auto* namedFaust =
+                audio::tracktion_adapter::deviceFromPlugin<audio::FaustPlugin>(namedPlugin.get());
+            expect(namedFaust != nullptr, "Faust effect should be created");
+
+            if (namedFaust != nullptr) {
+                juce::String namedError;
+                expect(namedFaust->loadDspSource("Named control", kNamedControlDsp, namedError),
+                       "Named-control DSP should compile: " + namedError);
+
+                auto* slot = audio::compiled::tracktionParameterForSlot(namedHost, 0);
+                expect(slot != nullptr, "Slot zero should have a host parameter");
+
+                if (slot != nullptr) {
+                    // Halfway up a 500..9000 range is 4750, and the device says
+                    // so. The host parameter has to say the same thing.
+                    const auto deviceText = magda::ParameterUtils::formatValue(
+                        magda::ParameterUtils::normalizedToReal(0.5f, namedFaust->parameterInfo(0)),
+                        namedFaust->parameterInfo(0));
+                    expectEquals(slot->valueToString(0.5f), deviceText,
+                                 "Host parameter text should follow the recompiled slot");
+                    expectEquals(namedFaust->parameterInfo(0).name, juce::String("Cutoff"),
+                                 "The device should report the recompiled slot's name");
+                    expectEquals(slot->getParameterName(), juce::String("Cutoff"),
+                                 "Host parameter name should follow the recompiled slot");
+                }
+            }
+            namedPlugin->deleteFromParent();
+        }
+
+        beginTest("Project load clears a serialized sidechain from a stereo Faust DSP");
+
+        auto* bridge = wrapper.getAudioBridge();
+        expect(bridge != nullptr, "AudioBridge should be available");
+        if (!bridge)
+            return;
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        trackManager.clearAllTracks();
+        trackManager.setAudioEngine(&wrapper);
+
+        const auto sourceTrackId = trackManager.createTrack("Saved sidechain source");
+        const auto destinationTrackId = trackManager.createTrack("Saved sidechain destination");
+        const auto deviceId = trackManager.addDeviceToTrack(
+            destinationTrackId, makeSavedFaust(sourceTrackId, kStereoDsp));
+        expect(deviceId != magda::INVALID_DEVICE_ID, "Saved Faust device should be added");
+
+        if (deviceId != magda::INVALID_DEVICE_ID) {
+            const auto path = magda::ChainNodePath::topLevelDevice(destinationTrackId, deviceId);
+            bridge->syncTrackPlugins(sourceTrackId);
+            bridge->syncTrackPlugins(destinationTrackId);
+
+            auto* loadedDevice = trackManager.getDeviceInChainByPath(path);
+            expect(loadedDevice != nullptr, "Loaded Faust DeviceInfo should resolve");
+            if (loadedDevice) {
+                expect(!loadedDevice->sidechainPort.declared(),
+                       "Stereo saved DSP should clear the serialized declaration");
+                expect(!loadedDevice->sidechain.isActive(),
+                       "Stereo saved DSP should clear the serialized sidechain");
+            }
+
+            bool hasMidiReceive = false;
+            if (auto* destinationTrack = bridge->getAudioTrack(destinationTrackId)) {
+                for (int i = 0; i < destinationTrack->pluginList.size(); ++i)
+                    hasMidiReceive =
+                        hasMidiReceive || dynamic_cast<magda::MidiReceivePlugin*>(
+                                              destinationTrack->pluginList[i]) != nullptr;
+            }
+            expect(!hasMidiReceive, "Cleared project route should not inject MidiReceive");
+
+            bool hasAudioMonitor = false;
+            if (auto* sourceTrack = bridge->getAudioTrack(sourceTrackId)) {
+                for (int i = 0; i < sourceTrack->pluginList.size(); ++i)
+                    hasAudioMonitor =
+                        hasAudioMonitor || dynamic_cast<magda::AudioSidechainMonitorPlugin*>(
+                                               sourceTrack->pluginList[i]) != nullptr;
+            }
+            expect(!hasAudioMonitor,
+                   "Cleared project route should not retain an audio sidechain monitor");
+        }
+
+        trackManager.clearAllTracks();
+
+        beginTest("Project load preserves a sidechain when the saved Faust source fails");
+
+        const auto failedSourceTrackId = trackManager.createTrack("Failed sidechain source");
+        const auto failedDestinationTrackId =
+            trackManager.createTrack("Failed sidechain destination");
+        const auto failedDeviceId = trackManager.addDeviceToTrack(
+            failedDestinationTrackId, makeSavedFaust(failedSourceTrackId, kInvalidDsp));
+        expect(failedDeviceId != magda::INVALID_DEVICE_ID,
+               "Faust device with an invalid saved source should still be added");
+
+        if (failedDeviceId != magda::INVALID_DEVICE_ID) {
+            const auto failedPath =
+                magda::ChainNodePath::topLevelDevice(failedDestinationTrackId, failedDeviceId);
+            bridge->syncTrackPlugins(failedSourceTrackId);
+            bridge->syncTrackPlugins(failedDestinationTrackId);
+
+            auto failedPlugin = bridge->getPlugin(failedPath);
+            auto* failedFaust =
+                audio::tracktion_adapter::deviceFromPlugin<audio::FaustPlugin>(failedPlugin.get());
+            expect(failedFaust != nullptr, "Failed saved source should retain its Faust plugin");
+            if (failedFaust)
+                expect(!failedFaust->activeDspMatchesSource(),
+                       "Fallback DSP should not be treated as the saved source");
+
+            auto* failedDevice = trackManager.getDeviceInChainByPath(failedPath);
+            expect(failedDevice != nullptr, "Failed-source DeviceInfo should resolve");
+            if (failedDevice)
+                expect(failedDevice->sidechain.isActive(),
+                       "Compile failure should preserve the serialized sidechain");
+        }
+
+        trackManager.clearAllTracks();
+        trackManager.setAudioEngine(nullptr);
+    }
+};
+
+FaustSidechainTest faustSidechainTest;
+
+}  // namespace

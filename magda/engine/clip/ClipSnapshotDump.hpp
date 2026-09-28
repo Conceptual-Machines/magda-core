@@ -16,9 +16,9 @@ namespace magda::engine {
  *
  * Shape, with the long lines cut short here:
  *
- *     magda-clip-snapshot v1
+ *     magda-clip-snapshot v2
  *     tempo=8f3a1c02 tracks=1
- *     track 1 audio=1 midi=0
+ *     track 1 audio=1 midi=0 session=0 mode=arrangement
  *       audio clip=7 span=0.000..8.000b 0.000..4.000s fade=0.500/0.250 ...
  *         hole 2.000..3.000b 1.000..1.500s
  *         event 1 src=3 file=drums.wav rate=48000 span=... anchor=0 ...

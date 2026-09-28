@@ -1,0 +1,456 @@
+#include "PluginParameterConfigStore.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <mutex>
+#include <optional>
+#include <ranges>
+#include <string>
+#include <unordered_map>
+
+#include "AppPaths.hpp"
+#include "ChainWalk.hpp"
+#include "DeviceInfo.hpp"
+#include "RackInfo.hpp"
+#include "TrackManager.hpp"
+
+namespace magda::PluginParameterConfigStore {
+namespace {
+
+/// The id a live device's config is filed under. Older devices carry only a
+/// pluginId, so it is the fallback rather than an error.
+juce::String configIdFor(const DeviceInfo& device) {
+    return device.uniqueId.isNotEmpty() ? device.uniqueId : device.pluginId;
+}
+
+bool applyConfigToMatchingDevice(const juce::String& uniqueId, DeviceInfo& device) {
+    if (configIdFor(device) != uniqueId)
+        return false;
+    return applyToDevice(uniqueId, device);
+}
+
+bool refreshElementParameterConfig(const juce::String& uniqueId,
+                                   std::vector<ChainElement>& elements) {
+    bool changed = false;
+    // Pads entered: a device on a Drum Grid pad is configured from the same
+    // dialog as any other, and the walk is shared so that adding a container to
+    // the model does not leave this one behind (#2204).
+    chain_walk::forEachDevice(elements, {}, chain_walk::Pads::Enter,
+                              [&changed, &uniqueId](DeviceInfo& device, const ChainNodePath&) {
+                                  changed =
+                                      applyConfigToMatchingDevice(uniqueId, device) || changed;
+                                  return true;
+                              });
+    return changed;
+}
+
+bool refreshFlatParameterConfig(const juce::String& uniqueId,
+                                std::vector<PostFxChainElement>& elements) {
+    bool changed = false;
+    for (auto& element : elements)
+        changed = applyConfigToMatchingDevice(uniqueId, element.device) || changed;
+    return changed;
+}
+
+/// The entry describing `device`'s parameter at `index` as it stands now.
+PluginParameterConfigEntry entryFor(const DeviceInfo& device, size_t index) {
+    const auto& info = device.parameters[index];
+    const auto selected = [slot = info.paramIndex](const std::vector<int>& slots) {
+        return std::ranges::contains(slots, slot);
+    };
+
+    PluginParameterConfigEntry entry;
+    entry.index = static_cast<int>(index);
+    entry.id = info.stableId;
+    entry.name = info.name;
+    // Off the device, like the prompt: a caller with no saved file to overlay
+    // then starts from the truth (#2620).
+    entry.visible = selected(device.visibleParameters);
+    entry.miniMixer = selected(device.miniMixerParameters);
+    entry.aiAgent = selected(device.aiSoundDesignerParameters);
+    entry.unit = info.unit;
+    entry.scale = info.scale;
+    entry.rangeMin = info.minValue;
+    entry.rangeMax = info.maxValue;
+    entry.rangeCenter = (info.minValue + info.maxValue) * 0.5f;
+    if (!info.choices.empty())
+        entry.choices = info.choices;
+    if (!info.valueTable.empty())
+        entry.valueTable = info.valueTable;
+    return entry;
+}
+
+/** @brief What tells a config file that has not changed since it was parsed. */
+struct FileStamp {
+    juce::Time modified;
+    juce::int64 size = 0;
+
+    bool operator==(const FileStamp&) const = default;
+};
+
+/** @brief One file as it was last parsed, which may have been as unreadable. */
+struct ParsedConfig {
+    juce::String uniqueId;
+    FileStamp stamp;
+    std::optional<PluginParameterConfig> config;
+};
+
+/** @brief Parsed configs by file path, so a changed data directory misses. */
+struct ConfigCache {
+    std::mutex mutex;
+    std::unordered_map<std::string, ParsedConfig> parsed;
+
+    /// Moved by every write this store finishes. A parse that saw it move may
+    /// have read the file the write replaced, so it is not kept.
+    std::uint64_t generation = 0;
+};
+
+ConfigCache& configCache() {
+    static ConfigCache cache;
+    return cache;
+}
+
+/** @brief Drop @p file's parse. Call after the write, never before it. */
+void forget(const juce::File& file) {
+    auto& cache = configCache();
+    const std::scoped_lock lock(cache.mutex);
+    cache.parsed.erase(file.getFullPathName().toStdString());
+    ++cache.generation;
+}
+
+/** @brief @p file's config, filed under @p uniqueId. Nullopt when it does not parse. */
+std::optional<PluginParameterConfig> parse(const juce::File& file, const juce::String& uniqueId) {
+    const auto xml = juce::parseXML(file);
+    if (xml == nullptr)
+        return std::nullopt;
+
+    PluginParameterConfig config;
+    config.pluginId = xml->getStringAttribute("pluginId", uniqueId);
+    if (auto* promptElem = xml->getChildByName("AISoundDesignerPrompt"))
+        config.aiPrompt = promptElem->getAllSubText().trim();
+
+    if (auto* paramsElem = xml->getChildByName("Parameters")) {
+        for (auto* paramElem : paramsElem->getChildIterator()) {
+            PluginParameterConfigEntry entry;
+            entry.index = paramElem->getIntAttribute("index", -1);
+            if (entry.index < 0)
+                continue;
+            entry.id = paramElem->getStringAttribute("id");
+            entry.name = paramElem->getStringAttribute("name");
+            entry.visible = paramElem->getBoolAttribute("visible", false);
+            entry.miniMixer = paramElem->getBoolAttribute("mini", false);
+            entry.aiAgent = paramElem->getBoolAttribute("ai", false);
+            if (paramElem->hasAttribute("unit"))
+                entry.unit = paramElem->getStringAttribute("unit");
+            if (paramElem->hasAttribute("scale"))
+                entry.scale = scaleFromString(paramElem->getStringAttribute("scale"));
+            // A detected dB range can start at minus infinity; nothing converts
+            // through that, so the plugin's own range stands instead.
+            const auto finiteAttribute = [&](const char* name) -> std::optional<float> {
+                if (!paramElem->hasAttribute(name))
+                    return std::nullopt;
+                const auto value = static_cast<float>(paramElem->getDoubleAttribute(name));
+                return std::isfinite(value) ? std::optional<float>(value) : std::nullopt;
+            };
+            entry.rangeMin = finiteAttribute("min");
+            entry.rangeMax = finiteAttribute("max");
+            entry.rangeCenter = finiteAttribute("center");
+            if (auto* choicesElem = paramElem->getChildByName("Choices")) {
+                std::vector<juce::String> choices;
+                for (auto* choice : choicesElem->getChildIterator())
+                    choices.push_back(choice->getStringAttribute("label"));
+                entry.choices = std::move(choices);
+            }
+            if (paramElem->hasAttribute("valueTable")) {
+                std::vector<juce::String> table;
+                for (const auto& token : juce::StringArray::fromTokens(
+                         paramElem->getStringAttribute("valueTable"), "|", ""))
+                    table.push_back(token);
+                entry.valueTable = std::move(table);
+            }
+            config.entries.push_back(std::move(entry));
+        }
+    } else if (auto* visibleParams = xml->getChildByName("VisibleParameters")) {
+        // Legacy format: a bare list of visible indices, nothing else.
+        for (auto* paramElem : visibleParams->getChildIterator()) {
+            const int index = paramElem->getIntAttribute("index", -1);
+            if (index < 0)
+                continue;
+            PluginParameterConfigEntry entry;
+            entry.index = index;
+            entry.visible = true;
+            config.entries.push_back(std::move(entry));
+        }
+    }
+    return config;
+}
+
+juce::XmlElement toXml(const juce::String& uniqueId, const PluginParameterConfig& config) {
+    juce::XmlElement root("ParameterConfig");
+    root.setAttribute("pluginId", config.pluginId.isNotEmpty() ? config.pluginId : uniqueId);
+
+    auto* paramsElem = root.createNewChildElement("Parameters");
+    for (const auto& entry : config.entries) {
+        auto* paramElem = paramsElem->createNewChildElement("Param");
+        paramElem->setAttribute("index", entry.index);
+        if (entry.id.isNotEmpty())
+            paramElem->setAttribute("id", entry.id);
+        paramElem->setAttribute("name", entry.name);
+        paramElem->setAttribute("visible", entry.visible);
+        paramElem->setAttribute("mini", entry.miniMixer);
+        paramElem->setAttribute("ai", entry.aiAgent);
+        if (entry.unit)
+            paramElem->setAttribute("unit", *entry.unit);
+        if (entry.scale)
+            paramElem->setAttribute("scale", scaleToString(*entry.scale));
+        if (entry.rangeMin)
+            paramElem->setAttribute("min", static_cast<double>(*entry.rangeMin));
+        if (entry.rangeMax)
+            paramElem->setAttribute("max", static_cast<double>(*entry.rangeMax));
+        if (entry.rangeCenter)
+            paramElem->setAttribute("center", static_cast<double>(*entry.rangeCenter));
+        if (entry.choices && !entry.choices->empty()) {
+            auto* choicesElem = paramElem->createNewChildElement("Choices");
+            for (const auto& choice : *entry.choices)
+                choicesElem->createNewChildElement("Choice")->setAttribute("label", choice);
+        }
+        if (entry.valueTable && !entry.valueTable->empty()) {
+            juce::String tableStr;
+            for (size_t j = 0; j < entry.valueTable->size(); ++j) {
+                if (j > 0)
+                    tableStr += "|";
+                tableStr += (*entry.valueTable)[j];
+            }
+            paramElem->setAttribute("valueTable", tableStr);
+        }
+    }
+
+    if (config.aiPrompt.isNotEmpty())
+        root.createNewChildElement("AISoundDesignerPrompt")->addTextElement(config.aiPrompt);
+
+    return root;
+}
+
+}  // namespace
+
+juce::String scaleToString(ParameterScale scale) {
+    switch (scale) {
+        case ParameterScale::Linear:
+            return "linear";
+        case ParameterScale::Logarithmic:
+            return "logarithmic";
+        case ParameterScale::Exponential:
+            return "exponential";
+        case ParameterScale::Discrete:
+            return "discrete";
+        case ParameterScale::Boolean:
+            return "boolean";
+        case ParameterScale::FaderDB:
+            return "fader_db";
+    }
+    return "linear";
+}
+
+ParameterScale scaleFromString(const juce::String& name) {
+    if (name == "logarithmic")
+        return ParameterScale::Logarithmic;
+    if (name == "exponential")
+        return ParameterScale::Exponential;
+    if (name == "discrete")
+        return ParameterScale::Discrete;
+    if (name == "boolean")
+        return ParameterScale::Boolean;
+    if (name == "fader_db")
+        return ParameterScale::FaderDB;
+    return ParameterScale::Linear;
+}
+
+std::vector<int> entryPositions(const PluginParameterConfig& config,
+                                const std::vector<juce::String>& currentIds) {
+    std::unordered_map<std::string, int> byId;
+    for (int at = 0; at < static_cast<int>(currentIds.size()); ++at)
+        if (const auto& id = currentIds[static_cast<size_t>(at)]; id.isNotEmpty())
+            byId.emplace(id.toStdString(), at);
+
+    const auto matchable = !byId.empty();
+
+    std::vector<int> positions;
+    positions.reserve(config.entries.size());
+
+    for (const auto& entry : config.entries) {
+        if (entry.id.isEmpty() || !matchable) {
+            positions.push_back(entry.index);
+            continue;
+        }
+
+        const auto found = byId.find(entry.id.toStdString());
+        positions.push_back(found != byId.end() ? found->second : -1);
+    }
+
+    return positions;
+}
+
+juce::File configFileFor(const juce::String& uniqueId) {
+    return paths::pluginConfigsDir().getChildFile(uniqueId.replaceCharacters(":/\\,; ", "______") +
+                                                  ".xml");
+}
+
+std::optional<PluginParameterConfig> load(const juce::String& uniqueId) {
+    if (uniqueId.isEmpty())
+        return std::nullopt;
+
+    const auto file = configFileFor(uniqueId);
+    if (!file.existsAsFile())
+        return std::nullopt;
+
+    const FileStamp stamp{.modified = file.getLastModificationTime(), .size = file.getSize()};
+    const auto key = file.getFullPathName().toStdString();
+
+    auto& cache = configCache();
+    std::uint64_t generation = 0;
+
+    {
+        const std::scoped_lock lock(cache.mutex);
+        const auto cached = cache.parsed.find(key);
+        if (cached != cache.parsed.end() && cached->second.uniqueId == uniqueId &&
+            cached->second.stamp == stamp)
+            return cached->second.config;
+
+        generation = cache.generation;
+    }
+
+    auto config = parse(file, uniqueId);
+
+    const std::scoped_lock lock(cache.mutex);
+    if (cache.generation == generation)
+        cache.parsed.insert_or_assign(
+            key, ParsedConfig{.uniqueId = uniqueId, .stamp = stamp, .config = config});
+    return config;
+}
+
+bool save(const juce::String& uniqueId, const PluginParameterConfig& config) {
+    if (uniqueId.isEmpty())
+        return false;
+
+    auto configDir = paths::pluginConfigsDir();
+    if (!configDir.exists())
+        configDir.createDirectory();
+
+    // A rewrite can land in the same millisecond at the same size, which the
+    // stamp cannot tell apart.
+    const auto file = configFileFor(uniqueId);
+    const auto written = toXml(uniqueId, config).writeTo(file);
+    forget(file);
+    return written;
+}
+
+bool remove(const juce::String& uniqueId) {
+    if (uniqueId.isEmpty())
+        return false;
+
+    const auto file = configFileFor(uniqueId);
+    const auto removed = !file.existsAsFile() || file.deleteFile();
+    forget(file);
+    return removed;
+}
+
+PluginParameterConfig fromDevice(const DeviceInfo& device) {
+    PluginParameterConfig config;
+    config.pluginId = configIdFor(device);
+    config.aiPrompt = device.aiSoundDesignerPrompt;
+    config.entries.reserve(device.parameters.size());
+    for (size_t i = 0; i < device.parameters.size(); ++i)
+        config.entries.push_back(entryFor(device, i));
+    return config;
+}
+
+bool applyToDevice(const juce::String& uniqueId, DeviceInfo& device) {
+    const auto config = load(uniqueId);
+    if (!config)
+        return false;
+
+    device.visibleParameters.clear();
+    device.miniMixerParameters.clear();
+    device.aiSoundDesignerParameters.clear();
+    device.aiSoundDesignerPrompt = config->aiPrompt;
+
+    // An entry is matched by stable id, and its selection stored as the slot
+    // of the parameter it lands on (#2638).
+    const auto count = static_cast<int>(device.parameters.size());
+
+    std::vector<juce::String> currentIds;
+    currentIds.reserve(device.parameters.size());
+    for (const auto& parameter : device.parameters)
+        currentIds.push_back(parameter.stableId);
+
+    const auto positions = entryPositions(*config, currentIds);
+
+    for (size_t at = 0; at < config->entries.size(); ++at) {
+        const auto& entry = config->entries[at];
+        const auto index = positions[at];
+        if (index < 0 || index >= count)
+            continue;
+        auto& parameter = device.parameters[static_cast<size_t>(index)];
+
+        if (entry.visible)
+            device.visibleParameters.push_back(parameter.paramIndex);
+        if (entry.miniMixer)
+            device.miniMixerParameters.push_back(parameter.paramIndex);
+        if (entry.aiAgent)
+            device.aiSoundDesignerParameters.push_back(parameter.paramIndex);
+
+        if (entry.unit)
+            parameter.unit = *entry.unit;
+        if (entry.scale)
+            parameter.scale = *entry.scale;
+        if (entry.rangeMin)
+            parameter.minValue = *entry.rangeMin;
+        if (entry.rangeMax)
+            parameter.maxValue = *entry.rangeMax;
+        if (entry.choices)
+            parameter.choices = *entry.choices;
+        if (entry.valueTable)
+            parameter.valueTable = *entry.valueTable;
+    }
+    return true;
+}
+
+bool applyToDevice(DeviceInfo& device) {
+    return applyToDevice(configIdFor(device), device);
+}
+
+bool hasAiSoundDesignerParameters(const juce::String& uniqueId) {
+    const auto config = load(uniqueId);
+    if (!config)
+        return false;
+    return std::any_of(config->entries.begin(), config->entries.end(),
+                       [](const PluginParameterConfigEntry& entry) { return entry.aiAgent; });
+}
+
+void refreshLiveDevices(const juce::String& uniqueId) {
+    if (uniqueId.isEmpty())
+        return;
+
+    auto& tm = TrackManager::getInstance();
+    std::vector<TrackId> trackIds;
+    trackIds.reserve(tm.getTracks().size() + 1);
+    trackIds.push_back(MASTER_TRACK_ID);
+    for (const auto& track : tm.getTracks())
+        trackIds.push_back(track.id);
+
+    for (auto trackId : trackIds) {
+        auto* track = tm.getTrack(trackId);
+        if (track == nullptr)
+            continue;
+
+        bool changed = refreshElementParameterConfig(uniqueId, track->chain.fxChainElements);
+        changed = refreshFlatParameterConfig(uniqueId, track->chain.postFxChainElements) || changed;
+        changed =
+            refreshFlatParameterConfig(uniqueId, track->chain.mixerAnalysisElements) || changed;
+        if (changed)
+            tm.notifyTrackDevicesChanged(trackId);
+    }
+}
+
+}  // namespace magda::PluginParameterConfigStore

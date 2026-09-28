@@ -9,7 +9,7 @@ inline magda::ChainNodePath nearestRackPathForDevicePath(const magda::ChainNodeP
     rackPath.trackId = devicePath.trackId;
     int rackStepIndex = -1;
     for (int i = 0; i < static_cast<int>(devicePath.steps.size()); ++i) {
-        if (devicePath.steps[static_cast<size_t>(i)].type == magda::ChainStepType::Rack)
+        if (magda::isRackStep(devicePath.steps[static_cast<size_t>(i)].type))
             rackStepIndex = i;
     }
     if (rackStepIndex >= 0) {

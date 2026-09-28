@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <random>
+#include <ranges>
 #include <sstream>
 
 #include "../daw/api/clip_api.hpp"
@@ -17,12 +18,14 @@
 #include "../daw/api/track_api.hpp"
 #include "../daw/api/undo_api.hpp"
 #include "../daw/audio/AudioThumbnailManager.hpp"
+#include "../daw/core/ChainWalk.hpp"
 #include "../daw/core/ClipManager.hpp"
 #include "../daw/core/ClipPropertyCommands.hpp"
 #include "../daw/core/DeviceInfo.hpp"
 #include "../daw/core/MidiNoteCommands.hpp"
 #include "../daw/core/PluginAlias.hpp"
 #include "../daw/core/SelectionManager.hpp"
+#include "../daw/core/TempoMap.hpp"
 #include "../daw/core/TrackManager.hpp"
 #include "../daw/core/TrackPropertyCommands.hpp"
 #include "../daw/core/UndoManager.hpp"
@@ -55,8 +58,7 @@ juce::Colour parseDslColour(const std::string& value) {
 // Tokenizer Implementation
 // ============================================================================
 
-Tokenizer::Tokenizer(const char* input)
-    : input_(input), pos_(input), line_(1), col_(1), hasPeeked_(false) {}
+Tokenizer::Tokenizer(const char* input) : input_(input), pos_(input) {}
 
 void Tokenizer::skipWhitespace() {
     while (*pos_) {
@@ -90,8 +92,8 @@ Token Tokenizer::readIdentifier() {
         col_++;
     }
 
-    return Token(TokenType::IDENTIFIER, std::string(start, static_cast<size_t>(pos_ - start)),
-                 line_, startCol);
+    return {TokenType::IDENTIFIER, std::string(start, static_cast<size_t>(pos_ - start)), line_,
+            startCol};
 }
 
 Token Tokenizer::readString() {
@@ -135,10 +137,10 @@ Token Tokenizer::readString() {
         pos_++;
         col_++;
     } else {
-        return Token(TokenType::ERROR, "Unterminated string", line_, startCol);
+        return {TokenType::ERROR, "Unterminated string", line_, startCol};
     }
 
-    return Token(TokenType::STRING, value, line_, startCol);
+    return {TokenType::STRING, value, line_, startCol};
 }
 
 Token Tokenizer::readNumber() {
@@ -164,8 +166,8 @@ Token Tokenizer::readNumber() {
         }
     }
 
-    return Token(TokenType::NUMBER, std::string(start, static_cast<size_t>(pos_ - start)), line_,
-                 startCol);
+    return {TokenType::NUMBER, std::string(start, static_cast<size_t>(pos_ - start)), line_,
+            startCol};
 }
 
 Token Tokenizer::next() {
@@ -177,7 +179,7 @@ Token Tokenizer::next() {
     skipWhitespace();
 
     if (!*pos_)
-        return Token(TokenType::END_OF_INPUT, "", line_, col_);
+        return {TokenType::END_OF_INPUT, "", line_, col_};
 
     int startCol = col_;
     char c = *pos_;
@@ -186,71 +188,71 @@ Token Tokenizer::next() {
         case '(':
             pos_++;
             col_++;
-            return Token(TokenType::LPAREN, "(", line_, startCol);
+            return {TokenType::LPAREN, "(", line_, startCol};
         case ')':
             pos_++;
             col_++;
-            return Token(TokenType::RPAREN, ")", line_, startCol);
+            return {TokenType::RPAREN, ")", line_, startCol};
         case '[':
             pos_++;
             col_++;
-            return Token(TokenType::LBRACKET, "[", line_, startCol);
+            return {TokenType::LBRACKET, "[", line_, startCol};
         case ']':
             pos_++;
             col_++;
-            return Token(TokenType::RBRACKET, "]", line_, startCol);
+            return {TokenType::RBRACKET, "]", line_, startCol};
         case '.':
             pos_++;
             col_++;
-            return Token(TokenType::DOT, ".", line_, startCol);
+            return {TokenType::DOT, ".", line_, startCol};
         case ',':
             pos_++;
             col_++;
-            return Token(TokenType::COMMA, ",", line_, startCol);
+            return {TokenType::COMMA, ",", line_, startCol};
         case ';':
             pos_++;
             col_++;
-            return Token(TokenType::SEMICOLON, ";", line_, startCol);
+            return {TokenType::SEMICOLON, ";", line_, startCol};
         case '@':
             pos_++;
             col_++;
-            return Token(TokenType::AT, "@", line_, startCol);
+            return {TokenType::AT, "@", line_, startCol};
         case '=':
             pos_++;
             col_++;
             if (*pos_ == '=') {
                 pos_++;
                 col_++;
-                return Token(TokenType::EQUALS_EQUALS, "==", line_, startCol);
+                return {TokenType::EQUALS_EQUALS, "==", line_, startCol};
             }
-            return Token(TokenType::EQUALS, "=", line_, startCol);
+            return {TokenType::EQUALS, "=", line_, startCol};
         case '!':
             pos_++;
             col_++;
             if (*pos_ == '=') {
                 pos_++;
                 col_++;
-                return Token(TokenType::NOT_EQUALS, "!=", line_, startCol);
+                return {TokenType::NOT_EQUALS, "!=", line_, startCol};
             }
-            return Token(TokenType::ERROR, "!", line_, startCol);
+            return {TokenType::ERROR, "!", line_, startCol};
         case '>':
             pos_++;
             col_++;
             if (*pos_ == '=') {
                 pos_++;
                 col_++;
-                return Token(TokenType::GREATER_EQUALS, ">=", line_, startCol);
+                return {TokenType::GREATER_EQUALS, ">=", line_, startCol};
             }
-            return Token(TokenType::GREATER, ">", line_, startCol);
+            return {TokenType::GREATER, ">", line_, startCol};
         case '<':
             pos_++;
             col_++;
             if (*pos_ == '=') {
                 pos_++;
                 col_++;
-                return Token(TokenType::LESS_EQUALS, "<=", line_, startCol);
+                return {TokenType::LESS_EQUALS, "<=", line_, startCol};
             }
-            return Token(TokenType::LESS, "<", line_, startCol);
+            return {TokenType::LESS, "<", line_, startCol};
         default:
             break;
     }
@@ -268,7 +270,7 @@ Token Tokenizer::next() {
     // Unknown character - skip it
     pos_++;
     col_++;
-    return Token(TokenType::ERROR, std::string(1, c), line_, startCol);
+    return {TokenType::ERROR, std::string(1, c), line_, startCol};
 }
 
 Token Tokenizer::peek() {
@@ -906,7 +908,7 @@ bool Interpreter::executeNewClip(const Params& params) {
     }
 
     double lengthBars = params.getFloat("length_bars", 4.0);
-    double bar;
+    double bar = NAN;
 
     if (params.has("bar")) {
         bar = params.getFloat("bar", 1.0);
@@ -924,8 +926,7 @@ bool Interpreter::executeNewClip(const Params& params) {
             // assuming a four-beat bar through the legacy seconds cache.
             double clipEndBar = clip->placement.endBeat() / beatsPerBar + 1.0;
             double nextBar = std::ceil(clipEndBar - 0.001);  // tolerance for floating point
-            if (nextBar > bar)
-                bar = nextBar;
+            bar = std::max(bar, nextBar);
         }
     }
 
@@ -1014,7 +1015,7 @@ bool Interpreter::executeSetTrack(const Params& params) {
 
         if (params.has("volume_db")) {
             double db = params.getFloat("volume_db");
-            float vol = static_cast<float>(std::pow(10.0, db / 20.0));
+            auto vol = static_cast<float>(std::pow(10.0, db / 20.0));
             tm.setTrackVolume(trackId, vol);
         }
 
@@ -1074,7 +1075,7 @@ bool Interpreter::executeGroupTracks(const Params& params) {
                 ctx_.setError("Track " + juce::String(oneBasedIndex) + " not found");
                 return false;
             }
-            if (std::find(trackIds.begin(), trackIds.end(), trackId) == trackIds.end())
+            if (!std::ranges::contains(trackIds, trackId))
                 trackIds.push_back(trackId);
         }
     } else if (ctx_.inFilterContext) {
@@ -1141,8 +1142,8 @@ bool Interpreter::executeDelete() {
     if (ctx_.inFilterContext) {
         // Delete in reverse order to avoid index shifting issues
         auto ids = ctx_.filteredTrackIds;
-        for (auto it = ids.rbegin(); it != ids.rend(); ++it)
-            tm.deleteTrack(*it);
+        for (int& id : std::views::reverse(ids))
+            tm.deleteTrack(id);
         ctx_.addResult("Deleted " + juce::String(static_cast<int>(ids.size())) + " track(s)");
         ctx_.filteredTrackIds.clear();
     } else if (ctx_.currentTrackId >= 0) {
@@ -1254,13 +1255,14 @@ bool Interpreter::executeRenameClip(const Params& params) {
         if (!selected.empty()) {
             // Sort clips by start time so {i} numbering follows timeline order
             std::vector<ClipId> sorted(selected.begin(), selected.end());
-            std::sort(sorted.begin(), sorted.end(), [&](ClipId a, ClipId b) {
-                auto* ca = cm.getClip(a);
-                auto* cb = cm.getClip(b);
+            const auto inTimelineOrder = [&cm](ClipId a, ClipId b) {
+                const auto* ca = cm.getClip(a);
+                const auto* cb = cm.getClip(b);
                 if (!ca || !cb)
                     return a < b;
-                return ca->startTime < cb->startTime;
-            });
+                return ca->placement.startBeat < cb->placement.startBeat;
+            };
+            std::ranges::sort(sorted, inTimelineOrder);
 
             int idx = 1;
             for (auto clipId : sorted) {
@@ -1706,6 +1708,11 @@ bool Interpreter::executeSelectClips(Tokenizer& tok) {
     bool isStringField = (field.value == "name" || field.value == "type");
 
     const double beatsPerBar = barsToBeats(1.0);
+    // Seconds walk the tempo map; the constant tempo stands in only headless.
+    const TempoMap* tempoMap = api_.project().tempoMap();
+    double projectBpm = api_.project().getCurrentProjectInfo().tempo;
+    if (!isValidBpm(projectBpm))
+        projectBpm = 120.0;
 
     double numValue = isStringField ? 0.0 : std::atof(valueStr.c_str());
 
@@ -1757,9 +1764,11 @@ bool Interpreter::executeSelectClips(Tokenizer& tok) {
         else if (field.value == "start_bar")
             val = clip->placement.startBeat / beatsPerBar + 1.0;
         else if (field.value == "length")
-            val = clip->length;
+            val = tempoMap != nullptr ? clip->getTimelineLength(*tempoMap)
+                                      : clip->getTimelineLength(projectBpm);
         else if (field.value == "start")
-            val = clip->startTime;
+            val = tempoMap != nullptr ? clip->getTimelineStart(*tempoMap)
+                                      : clip->getTimelineStart(projectBpm);
         else if (field.value == "start_beats")
             val = clip->startBeats;
         else if (field.value == "id")
@@ -1822,14 +1831,14 @@ bool Interpreter::executeSelectClips(Tokenizer& tok) {
 
 TrackType Interpreter::parseTrackType(const Params& params) {
     if (!params.has("type"))
-        return TrackType::Audio;
+        return TrackType::Media;
 
     std::string typeStr = params.get("type");
     if (typeStr == "group")
         return TrackType::Group;
     if (typeStr == "aux")
         return TrackType::Aux;
-    return TrackType::Audio;
+    return TrackType::Media;
 }
 
 int Interpreter::findTrackByName(const juce::String& name) const {
@@ -1866,12 +1875,8 @@ double Interpreter::barsToTime(double bar) const {
 }
 
 double Interpreter::barsToBeats(double bars) const {
-    // Use project time signature; never assume 4/4 here — the seconds round
-    // trip is what got us into trouble under non-4/4 sigs.
-    int beatsPerBar = api_.project().getCurrentProjectInfo().timeSignatureNumerator;
-    if (beatsPerBar <= 0)
-        beatsPerBar = 4;
-    return bars * static_cast<double>(beatsPerBar);
+    const auto& project = api_.project().getCurrentProjectInfo();
+    return bars * beatsPerBar(project.timeSignatureNumerator, project.timeSignatureDenominator);
 }
 
 // ============================================================================
@@ -1913,7 +1918,7 @@ juce::var capabilitySummary(const juce::String& pluginId) {
     for (const auto& alias : capabilities.parameterAliases)
         aliases.add(alias);
     object->setProperty("parameter_aliases", aliases);
-    return juce::var(object);
+    return {object};
 }
 
 juce::var parameterSummary(const ParameterInfo& parameter) {
@@ -1929,7 +1934,7 @@ juce::var parameterSummary(const ParameterInfo& parameter) {
     if (std::isfinite(parameter.maxValue))
         object->setProperty("max", parameter.maxValue);
     object->setProperty("modulatable", parameter.modulatable);
-    return juce::var(object);
+    return {object};
 }
 
 juce::var deviceSummary(const DeviceInfo& device, const ChainNodePath& path,
@@ -1957,7 +1962,7 @@ juce::var deviceSummary(const DeviceInfo& device, const ChainNodePath& path,
         object->setProperty("parameters_truncated", static_cast<int>(device.parameters.size()) >
                                                         kMaxSelectedDeviceParameters);
     }
-    return juce::var(object);
+    return {object};
 }
 
 struct DeviceAtPath {
@@ -1965,34 +1970,15 @@ struct DeviceAtPath {
     ChainNodePath path;
 };
 
-void collectRackDevices(const RackInfo& rack, const ChainNodePath& rackPath,
-                        std::vector<DeviceAtPath>& devices) {
-    for (const auto& chain : rack.chains) {
-        const auto chainPath = rackPath.withChain(chain.id);
-        for (const auto& element : chain.elements) {
-            if (isDevice(element)) {
-                const auto& device = getDevice(element);
-                devices.push_back({&device, chainPath.withDevice(device.id)});
-            } else {
-                const auto& nestedRack = getRack(element);
-                const auto nestedPath = chainPath.withRack(nestedRack.id);
-                collectRackDevices(nestedRack, nestedPath, devices);
-            }
-        }
-    }
-}
-
 std::vector<DeviceAtPath> collectTrackDevices(const TrackInfo& track) {
     std::vector<DeviceAtPath> devices;
-    for (const auto& element : track.chain.fxChainElements) {
-        if (isDevice(element)) {
-            const auto& device = getDevice(element);
-            devices.push_back({&device, ChainNodePath::topLevelDevice(track.id, device.id)});
-        } else {
-            const auto& rack = getRack(element);
-            collectRackDevices(rack, ChainNodePath::rack(track.id, rack.id), devices);
-        }
-    }
+    // Pads skipped: the DSL addresses a track's own devices, and a pad device
+    // is reached through its grid rather than named beside it (#2204).
+    chain_walk::forEachDevice(track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
+                              chain_walk::Pads::Skip,
+                              [&devices](const DeviceInfo& device, const ChainNodePath& path) {
+                                  devices.push_back({&device, path});
+                              });
     for (const auto& element : track.chain.postFxChainElements) {
         devices.push_back(
             {&element.device, ChainNodePath::postFxDevice(track.id, element.device.id)});
@@ -2003,6 +1989,7 @@ std::vector<DeviceAtPath> collectTrackDevices(const TrackInfo& track) {
     }
     return devices;
 }
+
 }  // namespace
 
 void Interpreter::setContextEnabled(bool enabled) {
@@ -2023,7 +2010,8 @@ juce::String Interpreter::buildStateSnapshot(MagdaApi& api) {
     projectObj->setProperty("tempo_bpm", project.tempo);
     projectObj->setProperty("time_signature", juce::String(project.timeSignatureNumerator) + "/" +
                                                   juce::String(project.timeSignatureDenominator));
-    projectObj->setProperty("beats_per_bar", project.timeSignatureNumerator);
+    projectObj->setProperty("beats_per_bar", beatsPerBar(project.timeSignatureNumerator,
+                                                         project.timeSignatureDenominator));
     root->setProperty("project", juce::var(projectObj));
 
     // Tracks — lightweight: just id, name, type
@@ -2086,16 +2074,10 @@ juce::String Interpreter::buildStateSnapshot(MagdaApi& api) {
         root->setProperty("scope", "all_tracks");
     } else if (selTrack != INVALID_TRACK_ID) {
         // Find 1-based index for the selected track
-        int selIndex = 1;
-        bool found = false;
-        for (const auto& track : tm.getTracks()) {
-            if (track.id == selTrack) {
-                found = true;
-                break;
-            }
-            selIndex++;
-        }
-        if (found) {
+        const auto& tracks = tm.getTracks();
+        const auto selected = std::ranges::find(tracks, selTrack, &TrackInfo::id);
+        const int selIndex = static_cast<int>(std::ranges::distance(tracks.begin(), selected)) + 1;
+        if (selected != tracks.end()) {
             root->setProperty("selected_track_id", selIndex);
             if (const auto* selectedTrack = tm.getTrack(selTrack)) {
                 auto* selectedTrackObj = new juce::DynamicObject();
@@ -2475,7 +2457,7 @@ bool Interpreter::executeAddArpeggio(const Params& params) {
     }
 
     // Sort pitches ascending for pattern application
-    std::sort(midiNotes.begin(), midiNotes.end());
+    std::ranges::sort(midiNotes);
 
     // Apply pattern ordering
     std::vector<int> ordered;
@@ -2498,13 +2480,8 @@ bool Interpreter::executeAddArpeggio(const Params& params) {
     if (params.has("beats")) {
         fillBeats = beat + params.getFloat("beats");
     } else if (fill) {
-        auto* clip = api_.clips().getClip(clipId);
-        if (clip) {
-            double bpm = api_.project().getCurrentProjectInfo().tempo;
-            if (!isValidBpm(bpm))
-                bpm = 120.0;
-            fillBeats = clip->length * bpm / 60.0;
-        }
+        if (const auto* clip = api_.clips().getClip(clipId))
+            fillBeats = clip->placement.lengthBeats;
     }
 
     // Build MidiNote objects with sequential beat offsets
@@ -2658,6 +2635,7 @@ bool Interpreter::executeSetVelocity(const Params& params) {
     const auto& noteSelIndices = sm.getNoteSelectionIndices();
 
     std::vector<std::pair<size_t, int>> noteVelocities;
+    noteVelocities.reserve(noteSelIndices.size());
     for (auto idx : noteSelIndices)
         noteVelocities.emplace_back(idx, velocity);
 
@@ -2716,6 +2694,7 @@ bool Interpreter::executeResizeNotes(const Params& params) {
     const auto& noteSelIndices = sm.getNoteSelectionIndices();
 
     std::vector<std::pair<size_t, double>> noteLengths;
+    noteLengths.reserve(noteSelIndices.size());
     for (auto idx : noteSelIndices)
         noteLengths.emplace_back(idx, length);
 
@@ -2844,7 +2823,7 @@ bool Interpreter::executeGrooveExtract(const Params& params) {
     int resolution = params.getInt("resolution", 16);  // 8 or 16
 
     // Get clip — use param or current selection
-    ClipId clipId;
+    ClipId clipId = INVALID_CLIP_ID;
     if (params.has("clip")) {
         int clipIndex = params.getInt("clip", 0);
         // Find clip by index on current track
@@ -2907,8 +2886,8 @@ bool Interpreter::executeGrooveExtract(const Params& params) {
     std::vector<float> latenesses(static_cast<size_t>(numSteps), 0.0f);
     std::vector<bool> hasTransient(static_cast<size_t>(numSteps), false);
 
-    for (int i = 0; i < transients->size(); ++i) {
-        double transientSec = (*transients)[i] - clipStartSec;
+    for (double transient : *transients) {
+        double transientSec = transient - clipStartSec;
         if (transientSec < 0.0 || transientSec >= clipLengthSec)
             continue;
 
@@ -2926,10 +2905,10 @@ bool Interpreter::executeGrooveExtract(const Params& params) {
 
     // Determine repeating pattern length (try to find the smallest cycle)
     // Default: use all steps, but try 1 bar (notesPerBeat * beatsPerBar)
-    int beatsPerBar = api_.project().getCurrentProjectInfo().timeSignatureNumerator;
-    if (beatsPerBar <= 0)
-        beatsPerBar = 4;
-    int stepsPerBar = notesPerBeat * beatsPerBar;
+    const auto& project = api_.project().getCurrentProjectInfo();
+    const int stepsPerBar =
+        static_cast<int>(std::lround(notesPerBeat * beatsPerBar(project.timeSignatureNumerator,
+                                                                project.timeSignatureDenominator)));
     int patternLength = (numSteps >= stepsPerBar) ? stepsPerBar : numSteps;
 
     const std::vector<float> grooveLateness(latenesses.begin(), latenesses.begin() + patternLength);

@@ -4,14 +4,53 @@
 
 #include <memory>
 #include <optional>
+#include <string>
+#include <vector>
 
 #include "KitRow.hpp"
 #include "MacroInfo.hpp"
 #include "ModInfo.hpp"
 #include "ParameterInfo.hpp"
+#include "SidechainPort.hpp"
 #include "TypeIds.hpp"
 
 namespace magda {
+
+struct RackInfo;
+
+/**
+ * @brief Value-semantic owner for a device's pad chains.
+ *
+ * RackInfo is incomplete here -- RackInfo.hpp includes this header, so it
+ * cannot be included back -- and DeviceInfo is copied by value throughout the
+ * app. A bare unique_ptr would make DeviceInfo non-copyable and a shared_ptr
+ * would make two copies of a device share one set of pads. This owns the rack,
+ * copies it deep, and keeps its own rule of five out of line so DeviceInfo
+ * needs none of its own.
+ */
+class PadRack {
+  public:
+    PadRack();
+    ~PadRack();
+    PadRack(const PadRack& other);
+    PadRack& operator=(const PadRack& other);
+    PadRack(PadRack&& other) noexcept;
+    PadRack& operator=(PadRack&& other) noexcept;
+
+    explicit operator bool() const {
+        return rack_ != nullptr;
+    }
+    RackInfo* get() const {
+        return rack_.get();
+    }
+    RackInfo* operator->() const {
+        return rack_.get();
+    }
+    void reset(std::unique_ptr<RackInfo> rack);
+
+  private:
+    std::unique_ptr<RackInfo> rack_;
+};
 
 /**
  * @brief Plugin format enumeration
@@ -66,14 +105,24 @@ enum class DeviceType { Instrument, Effect, MIDI, Analysis };
 
 /**
  * @brief Describes a single stereo output pair from a multi-output plugin
+ *
+ * Declarative content only. Whether a pair is routed anywhere, and to which
+ * track, is NOT here: that is ownership of a generated child track, which
+ * belongs to one placed instance of the device rather than to the device's
+ * description of itself. A `DeviceInfo` is copied by duplication, preset import
+ * and paste, and a copy that carried `active` and `trackId` claimed the child
+ * track of the device it was copied from, leaving the copy silent while the
+ * link still named the original (#2220).
+ *
+ * The child track's `TrackInfo::multiOutLink` is the one record. Ask
+ * `TrackManager::multiOutChildTrack()` which track a pair drives, and
+ * `TrackManager::multiOutPairIsActive()` whether it drives one at all.
  */
 struct MultiOutOutputPair {
-    int outputIndex = 0;                 // 0-based pair index (0 = main 1,2)
-    juce::String name;                   // From plugin channel names, e.g. "St.3-4"
-    bool active = false;                 // User activated this pair
-    TrackId trackId = INVALID_TRACK_ID;  // Output track created for this pair
-    int firstPin = 1;                    // 1-based rack output pin for left channel
-    int numChannels = 2;                 // 1=mono, 2=stereo
+    int outputIndex = 0;  // 0-based pair index (0 = main 1,2)
+    juce::String name;    // From plugin channel names, e.g. "St.3-4"
+    int firstPin = 1;     // 1-based rack output pin for left channel
+    int numChannels = 2;  // 1=mono, 2=stereo
 };
 
 /**
@@ -86,18 +135,101 @@ struct MultiOutConfig {
 };
 
 /**
- * @brief Sidechain routing configuration for a plugin
+ * @brief Where a device's sidechain key comes from, and what happens on the way.
  *
- * Allows a plugin (e.g., compressor) to receive audio or MIDI from another track
- * as a sidechain/key input.
+ * A source rather than a track id (#2329). The track is only half of where a
+ * key is taken from: @ref tapPoint says which of the two points on that track
+ * it is taken at, @ref gainDb trims it on the edge before the device sees it,
+ * and @ref listen monitors it in place of the device's own output. Adding a
+ * kind of source later -- a hardware input, a rack chain -- is a field here
+ * rather than a rewrite of everything that carries one.
+ *
+ * RackInfo carries this struct too, for a rack's own trigger and follower
+ * source. Only @ref type and @ref sourceTrackId mean anything there.
  */
 struct SidechainConfig {
     enum class Type { None, Audio, MIDI };
     Type type = Type::None;
     TrackId sourceTrackId = INVALID_TRACK_ID;
 
+    /// A configured source may be temporarily disabled without forgetting it.
+    /// Older projects have no such field and therefore load enabled, preserving
+    /// their historical behaviour.
+    bool enabled = true;
+
+    /// Which point on the source track the key is taken at, the same two points
+    /// a modifier chooses between. PostFader is where the current engine's
+    /// sidechain send sits, so a project that predates the field sounds as it
+    /// always did.
+    ModTapPoint tapPoint = ModTapPoint::PostFader;
+
+    /// Trim on the key, applied on the edge feeding the device rather than
+    /// inside it. Filtering the key stays the device's own job.
+    float gainDb = 0.0f;
+
+    /// Monitor the key instead of what the device made of its input. A value
+    /// the plan reads per block, so turning it on rebuilds nothing.
+    bool listen = false;
+
     bool isActive() const {
+        return enabled && isConfigured();
+    }
+
+    bool isConfigured() const {
         return type != Type::None && sourceTrackId != INVALID_TRACK_ID;
+    }
+
+    /// Whether the slot actually monitors its key. Only an audio key can be
+    /// monitored: a MIDI source feeds the device's MIDI slot and leaves the
+    /// sidechain slot empty, so a device "listening" to one would put out the
+    /// silence that slot carries. Asked here rather than at each reader,
+    /// because @ref listen survives a change of source type and the model can
+    /// therefore hold the pair legitimately.
+    bool listensToKey() const {
+        return listen && isActive() && type == Type::Audio;
+    }
+    bool operator==(const SidechainConfig&) const = default;
+};
+
+/**
+ * @brief A hardware insert: what leaves the machine and what comes back (#2245).
+ *
+ * Model values rather than a plugin's state blob, and that is the point of it.
+ * The incumbent keeps this inside a te::InsertPlugin's ValueTree, so the only
+ * way to know what an insert sends to was to ask the fork; the native engine
+ * compiles an insert into a send op and a return op with the outside world
+ * between them, and it compiles from the model like everything else.
+ *
+ * Send and return are declared separately because they are separate. An
+ * external effect sends audio and gets audio back; an external instrument sends
+ * MIDI and gets audio back; a device that only listens has no send at all. The
+ * incumbent carries the same pair of types for the same reason.
+ *
+ * @ref manualAdjustMs is the user's correction on top of the measured round
+ * trip, in milliseconds, and it may be negative: an interface reports its own
+ * buffering and knows nothing about the converter and the cable past it, so the
+ * measured figure is a lower bound that somebody with a loopback puts right.
+ */
+struct InsertConfig {
+    enum class Endpoint { None, Audio, MIDI };
+
+    Endpoint sendType = Endpoint::None;
+    Endpoint returnType = Endpoint::None;
+
+    /// The hardware device each end names, as the audio settings name it. Empty
+    /// is an end that was never pointed anywhere, which is not the same as an
+    /// end that is not used: a send of type Audio with no device is an insert
+    /// somebody half configured, and it is reported rather than passed through.
+    juce::String sendDevice;
+    juce::String returnDevice;
+
+    double manualAdjustMs = 0.0;
+
+    /// Whether this device is an insert at all. False for every ordinary
+    /// device, which is what keeps the compiler from having to know a plugin id
+    /// to recognise one.
+    bool isActive() const {
+        return sendType != Endpoint::None || returnType != Endpoint::None;
     }
 };
 
@@ -148,6 +280,14 @@ struct MeterInfo {
  */
 struct DeviceInfo {
     DeviceId id = INVALID_DEVICE_ID;
+
+    // No runtime lifetime identity lives here. Which live assignment a slot
+    // holds is owned by the runtime that runs the plugins, and is a handle
+    // rather than a value (PluginAssignments.hpp): a value type cannot tell a
+    // snapshot from an undo record from a browser template from a duplicate
+    // from a new live placement, because every one of those is the same copy
+    // (#2261).
+
     juce::String name;  // Display name (e.g., "Pro-Q 3")
 
     // MAGDA's loader/model id for this device. For internal devices this is
@@ -183,6 +323,7 @@ struct DeviceInfo {
     bool gainPanelOpen = false;   // Gain panel visible
     bool paramPanelOpen = false;  // Parameter panel visible
     bool aiPanelOpen = false;     // AI sound-design panel visible
+    bool padDetailOpen = true;    // A pad device's detail panel visible
 
     // AI panel output text — transient runtime state, NOT serialized to disk.
     // Lives on DeviceInfo so the streamed prompt/result history survives slot
@@ -251,11 +392,39 @@ struct DeviceInfo {
     // new instances when they're created. See KitRow.hpp.
     std::vector<KitRow> kitRows;
 
+    /**
+     * A pad-per-chain device's pads, as chains keyed by note range (#2207).
+     *
+     * Null for every device that is not one. This is the device's pads: the
+     * project file saves them, every pad edit writes them, the plan compiler
+     * expands them, and `DrumGridPlugin` is filled from them. Nothing reads
+     * them back out of the plugin, so nothing can drift.
+     *
+     * They are chains because that is what they are. ChainInfo already carries
+     * a pad's level, pan, mute, solo, bypass and output; the note range it
+     * gained alongside this is the only thing a pad has that a rack chain does
+     * not.
+     */
+    PadRack pads;
+
     // Sidechain configuration (e.g., compressor key input)
     SidechainConfig sidechain;
-    bool canSidechain = false;    // true if TE plugin supports audio sidechain input
+
+    /// Set only on an external insert, where it is the whole device: the plan
+    /// compiles a send op and a return op from it rather than a Device op
+    /// (#2245).
+    InsertConfig insert;
+    /// What the live device declared it takes on its sidechain slot, projected
+    /// here by its processor (#2329). What the routing menu offers, what the
+    /// plan wires and what the API reports all read this one declaration.
+    SidechainPort sidechainPort;
+
     bool canReceiveMidi = false;  // true if TE plugin accepts MIDI input (for cross-track MIDI)
     bool producesMidi = false;    // true if the live plugin can output MIDI
+    /// A MAGDA device's DeviceProperties::forwardsMidiInput, copied from its
+    /// declaration whenever it enters the model. Such a device has no MIDI thru:
+    /// thru would bring back the notes it consumed (#2417).
+    bool forwardsMidiInput = false;
 
     // Audio channels the plugin reported (1 = mono, 2 = stereo), read from the
     // live plugin via getChannelNames. Stereo until it is asked. The chain
@@ -270,12 +439,14 @@ struct DeviceInfo {
     // plugin so downstream devices can receive both the original input and the
     // plugin's generated MIDI. Off means plugin MIDI output only; on means merge
     // raw input plus plugin output. Defaults on to preserve historic passthrough.
+    // Ignored on a device that forwardsMidiInput.
     bool midiInThru = true;
 
     // Multi-output configuration (for instruments with >2 output channels)
     MultiOutConfig multiOut;
 
-    // Plugin native state (base64-encoded binary blob from TE ExternalPlugin)
+    // Saved device state. An external plugin's own chunk, base64-encoded; for
+    // an internal device, a device_state document (DeviceStateHydration.cpp).
     juce::String pluginState;
 
     // VST3 class id (32-char hex FUID) for hosted VST3 plugins, captured once
@@ -314,6 +485,21 @@ struct DeviceInfo {
         return const_cast<DeviceInfo*>(this)->findParameterByIndex(paramIndex);
     }
 
+    // Parameter names positioned at their own paramIndex, so a link picker can
+    // read a name back from the index a stored target carries. paramIndex is a
+    // TE slot rather than an array position, so gaps stay empty.
+    std::vector<juce::String> paramNamesByIndex() const {
+        std::vector<juce::String> names;
+        for (const auto& param : parameters) {
+            if (param.paramIndex < 0)
+                continue;
+            if (param.paramIndex >= static_cast<int>(names.size()))
+                names.resize(static_cast<size_t>(param.paramIndex) + 1);
+            names[static_cast<size_t>(param.paramIndex)] = param.name;
+        }
+        return names;
+    }
+
     juce::String getFormatString() const {
         switch (format) {
             case PluginFormat::VST3:
@@ -336,6 +522,31 @@ struct DeviceInfo {
     bool hasEditorWindow() const {
         return format != PluginFormat::Internal;
     }
+
+    /// Whether pluginState holds anything.
+    bool hasPluginState() const {
+        return pluginState.isNotEmpty();
+    }
+
+    /// Anything upstream MIDI reaches: an instrument, a MIDI effect, or a plugin
+    /// that declared a MIDI input.
+    bool consumesMidi() const {
+        return isInstrument || canReceiveMidi || deviceType == DeviceType::MIDI;
+    }
+
+    /// Its MIDI output port carries what it produced: a MIDI effect, or a plugin
+    /// that declared a MIDI output.
+    bool emitsMidi() const {
+        return producesMidi || deviceType == DeviceType::MIDI;
+    }
+
+    /// Analysis devices are transparent passthroughs: no gain trim, no meter.
+    bool isTransparentTap() const {
+        return deviceType == DeviceType::Analysis;
+    }
+
+    /// Index of the parameter declared under @p stableId, or -1.
+    int paramIndexFor(const std::string& stableId) const;
 };
 
 }  // namespace magda

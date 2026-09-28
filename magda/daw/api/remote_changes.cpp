@@ -29,6 +29,8 @@ const char* toString(Topic topic) {
             return "session";
         case Topic::Automation:
             return "automation";
+        case Topic::Jobs:
+            return "jobs";
         case Topic::Meters:
             return "meters";
         case Topic::Playhead:
@@ -91,7 +93,7 @@ ChangeSource::~ChangeSource() = default;
 int ChangeSource::addListener(Listener listener) {
     int token = 0;
     {
-        const std::lock_guard<std::mutex> lock(listenerMutex_);
+        const std::scoped_lock lock(listenerMutex_);
         token = nextToken_++;
         listeners_.emplace_back(token, std::move(listener));
     }
@@ -101,16 +103,13 @@ int ChangeSource::addListener(Listener listener) {
 
 void ChangeSource::removeListener(int token) {
     {
-        const std::lock_guard<std::mutex> lock(listenerMutex_);
-        listeners_.erase(
-            std::remove_if(listeners_.begin(), listeners_.end(),
-                           [token](const auto& entry) { return entry.first == token; }),
-            listeners_.end());
+        const std::scoped_lock lock(listenerMutex_);
+        std::erase_if(listeners_, [token](const auto& entry) { return entry.first == token; });
     }
     stopPumpIfIdle();
 }
 
-void ChangeSource::markChanged(Topic topic, Revision revision) {
+void ChangeSource::markChanged(Topic topic, Revision revision, bool reset) {
     const auto index = static_cast<std::size_t>(topic);
 
     // Latest-value-wins. A compare-exchange loop rather than a plain store: two
@@ -123,6 +122,8 @@ void ChangeSource::markChanged(Topic topic, Revision revision) {
         // `current` is refreshed by the failed exchange; retry.
     }
 
+    if (reset)
+        resetMask_.fetch_or(bitFor(topic), std::memory_order_release);
     dirtyMask_.fetch_or(bitFor(topic), std::memory_order_release);
 }
 
@@ -130,12 +131,14 @@ void ChangeSource::flush() {
     const auto mask = dirtyMask_.exchange(0, std::memory_order_acquire);
     if (mask == 0)
         return;
+    const auto resetMask = resetMask_.fetch_and(~mask, std::memory_order_acq_rel) & mask;
 
     std::vector<Change> changes;
     for (std::size_t index = 0; index < TOPIC_COUNT; ++index) {
         const auto topic = static_cast<Topic>(index);
         if ((mask & bitFor(topic)) != 0)
-            changes.push_back({topic, revisions_[index].load(std::memory_order_relaxed)});
+            changes.push_back({topic, revisions_[index].load(std::memory_order_relaxed),
+                               (resetMask & bitFor(topic)) != 0});
     }
     if (changes.empty())
         return;
@@ -145,7 +148,7 @@ void ChangeSource::flush() {
     // invalidate the iterator mid-notification.
     std::vector<Listener> targets;
     {
-        const std::lock_guard<std::mutex> lock(listenerMutex_);
+        const std::scoped_lock lock(listenerMutex_);
         targets.reserve(listeners_.size());
         for (const auto& [token, listener] : listeners_)
             targets.push_back(listener);
@@ -156,6 +159,7 @@ void ChangeSource::flush() {
 
 void ChangeSource::discardPending() {
     dirtyMask_.store(0, std::memory_order_release);
+    resetMask_.store(0, std::memory_order_release);
 }
 
 void ChangeSource::setFlushIntervalMs(int intervalMs) {
@@ -179,7 +183,7 @@ void ChangeSource::startPumpIfNeeded() {
 }
 
 void ChangeSource::stopPumpIfIdle() {
-    const std::lock_guard<std::mutex> lock(listenerMutex_);
+    const std::scoped_lock lock(listenerMutex_);
     if (listeners_.empty())
         pump_.reset();
 }

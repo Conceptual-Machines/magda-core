@@ -5,7 +5,6 @@
 #include "../aliases/ChainContext.hpp"
 #include "../aliases/ResolverRegistry.hpp"
 #include "../aliases/TargetResolver.hpp"
-#include "ControllerRegistry.hpp"
 
 namespace magda {
 
@@ -18,16 +17,19 @@ BindingRegistry& BindingRegistry::getInstance() {
 // Internal helpers
 // ============================================================================
 
-static std::vector<Binding>& scopeVec(BindingScope scope, std::vector<Binding>& global,
-                                      std::vector<Binding>& project) {
+namespace {
+std::vector<Binding>& scopeVec(BindingScope scope, std::vector<Binding>& global,
+                               std::vector<Binding>& project) {
     return scope == BindingScope::Global ? global : project;
 }
 
-static const std::vector<Binding>& scopeVecConst(BindingScope scope,
-                                                 const std::vector<Binding>& global,
-                                                 const std::vector<Binding>& project) {
+const std::vector<Binding>& scopeVecConst(BindingScope scope, const std::vector<Binding>& global,
+                                          const std::vector<Binding>& project) {
+    // Callers pass long-lived members, never a temporary.
+    // NOLINTNEXTLINE(bugprone-return-const-ref-from-parameter)
     return scope == BindingScope::Global ? global : project;
 }
+}  // namespace
 
 // ============================================================================
 // CRUD
@@ -89,8 +91,8 @@ bool BindingRegistry::hasAnyBindingForController(const ControllerId& controllerI
     auto match = [&controllerId](const Binding& b) {
         return b.source.controllerId == controllerId;
     };
-    return std::any_of(globalBindings_.begin(), globalBindings_.end(), match) ||
-           std::any_of(projectBindings_.begin(), projectBindings_.end(), match);
+    return std::ranges::any_of(globalBindings_, match) ||
+           std::ranges::any_of(projectBindings_, match);
 }
 
 // ============================================================================
@@ -196,7 +198,7 @@ bool sourcesOverlap(const BindingSource& a, const BindingSource& b) {
 }
 
 bool isFocusedDeviceMacroResolver(const Target& t) {
-    if (auto* rr = std::get_if<ResolverRef>(&t))
+    if (const auto* rr = std::get_if<ResolverRef>(&t))
         return rr->kind == "focused.macro";
     return false;
 }
@@ -210,11 +212,9 @@ bool isFocusedDeviceMacroResolver(const Target& t) {
 // (focused.macro and any future kinds) are profile-driven defaults and
 // do not count.
 bool isExplicitPluginParamTarget(const Target& t) {
-    if (auto* st = std::get_if<ControlTarget>(&t))
+    if (const auto* st = std::get_if<ControlTarget>(&t))
         return st->kind == ControlTarget::Kind::PluginParam;
-    if (std::holds_alternative<AliasRef>(t))
-        return true;
-    return false;
+    return std::holds_alternative<AliasRef>(t);
 }
 
 }  // namespace
@@ -224,16 +224,15 @@ bool BindingRegistry::hasBindingForDevice(const ChainNodePath& devicePath,
     DefaultChainContext ctx;
     TargetResolver resolver{AliasRegistry::getInstance(), ResolverRegistry::getInstance(), ctx};
 
-    auto check = [&](const std::vector<Binding>& vec) -> bool {
-        for (const auto& b : vec) {
+    const auto check = [&](const std::vector<Binding>& vec) -> bool {
+        const auto matchesDevice = [&](const Binding& b) {
             auto resolved = resolver.resolve(b.target);
             if (!resolved.ok())
-                continue;
+                return false;
             const auto& t = resolved.target;
-            if (t.devicePath == devicePath && t.kind == owner)
-                return true;
-        }
-        return false;
+            return t.devicePath == devicePath && t.kind == owner;
+        };
+        return std::ranges::any_of(vec, matchesDevice);
     };
 
     return check(globalBindings_) || check(projectBindings_);
@@ -243,15 +242,12 @@ bool BindingRegistry::hasActiveBindingFor(const ControlTarget& query) const {
     DefaultChainContext ctx;
     TargetResolver resolver{AliasRegistry::getInstance(), ResolverRegistry::getInstance(), ctx};
 
-    auto check = [&](const std::vector<Binding>& vec) -> bool {
-        for (const auto& b : vec) {
+    const auto check = [&](const std::vector<Binding>& vec) -> bool {
+        const auto matchesQuery = [&](const Binding& b) {
             auto resolved = resolver.resolve(b.target);
-            if (!resolved.ok())
-                continue;
-            if (resolved.target == query)
-                return true;
-        }
-        return false;
+            return resolved.ok() && resolved.target == query;
+        };
+        return std::ranges::any_of(vec, matchesQuery);
     };
 
     return check(globalBindings_) || check(projectBindings_);
@@ -260,17 +256,14 @@ bool BindingRegistry::hasActiveBindingFor(const ControlTarget& query) const {
 bool BindingRegistry::hasResolverBindingForDevice(const ChainNodePath& devicePath) const {
     DefaultChainContext ctx;
     TargetResolver resolver{AliasRegistry::getInstance(), ResolverRegistry::getInstance(), ctx};
-    auto check = [&](const std::vector<Binding>& vec) -> bool {
-        for (const auto& b : vec) {
+    const auto check = [&](const std::vector<Binding>& vec) -> bool {
+        const auto matchesDevice = [&](const Binding& b) {
             if (!std::holds_alternative<ResolverRef>(b.target))
-                continue;
+                return false;
             auto resolved = resolver.resolve(b.target);
-            if (!resolved.ok())
-                continue;
-            if (resolved.target.devicePath == devicePath)
-                return true;
-        }
-        return false;
+            return resolved.ok() && resolved.target.devicePath == devicePath;
+        };
+        return std::ranges::any_of(vec, matchesDevice);
     };
     return check(globalBindings_) || check(projectBindings_);
 }
@@ -279,17 +272,15 @@ std::optional<ControllerId> BindingRegistry::resolverControllerForDevice(
     const ChainNodePath& devicePath) const {
     DefaultChainContext ctx;
     TargetResolver resolver{AliasRegistry::getInstance(), ResolverRegistry::getInstance(), ctx};
-    auto check = [&](const std::vector<Binding>& vec) -> std::optional<ControllerId> {
-        for (const auto& b : vec) {
+    const auto check = [&](const std::vector<Binding>& vec) -> std::optional<ControllerId> {
+        const auto matchesDevice = [&](const Binding& b) {
             if (!std::holds_alternative<ResolverRef>(b.target))
-                continue;
+                return false;
             auto resolved = resolver.resolve(b.target);
-            if (!resolved.ok())
-                continue;
-            if (resolved.target.devicePath == devicePath)
-                return b.source.controllerId;
-        }
-        return std::nullopt;
+            return resolved.ok() && resolved.target.devicePath == devicePath;
+        };
+        const auto found = std::ranges::find_if(vec, matchesDevice);
+        return found == vec.end() ? std::nullopt : std::make_optional(found->source.controllerId);
     };
     if (auto g = check(globalBindings_))
         return g;
@@ -300,17 +291,15 @@ std::optional<ControllerId> BindingRegistry::userMappingControllerForDevice(
     const ChainNodePath& devicePath) const {
     DefaultChainContext ctx;
     TargetResolver resolver{AliasRegistry::getInstance(), ResolverRegistry::getInstance(), ctx};
-    auto check = [&](const std::vector<Binding>& vec) -> std::optional<ControllerId> {
-        for (const auto& b : vec) {
+    const auto check = [&](const std::vector<Binding>& vec) -> std::optional<ControllerId> {
+        const auto matchesDevice = [&](const Binding& b) {
             if (std::holds_alternative<ResolverRef>(b.target))
-                continue;  // resolver bindings are profile defaults, not user mappings
+                return false;  // resolver bindings are profile defaults, not user mappings
             auto resolved = resolver.resolve(b.target);
-            if (!resolved.ok())
-                continue;
-            if (resolved.target.devicePath == devicePath)
-                return b.source.controllerId;
-        }
-        return std::nullopt;
+            return resolved.ok() && resolved.target.devicePath == devicePath;
+        };
+        const auto found = std::ranges::find_if(vec, matchesDevice);
+        return found == vec.end() ? std::nullopt : std::make_optional(found->source.controllerId);
     };
     if (auto g = check(globalBindings_))
         return g;
@@ -320,35 +309,27 @@ std::optional<ControllerId> BindingRegistry::userMappingControllerForDevice(
 bool BindingRegistry::hasUserMappingForDevice(const ChainNodePath& devicePath) const {
     DefaultChainContext ctx;
     TargetResolver resolver{AliasRegistry::getInstance(), ResolverRegistry::getInstance(), ctx};
-    auto check = [&](const std::vector<Binding>& vec) -> bool {
-        for (const auto& b : vec) {
+    const auto check = [&](const std::vector<Binding>& vec) -> bool {
+        const auto matchesDevice = [&](const Binding& b) {
             if (std::holds_alternative<ResolverRef>(b.target))
-                continue;  // resolver bindings are profile defaults, not user mappings
+                return false;  // resolver bindings are profile defaults, not user mappings
             auto resolved = resolver.resolve(b.target);
-            if (!resolved.ok())
-                continue;
-            if (resolved.target.devicePath == devicePath)
-                return true;
-        }
-        return false;
+            return resolved.ok() && resolved.target.devicePath == devicePath;
+        };
+        return std::ranges::any_of(vec, matchesDevice);
     };
     return check(globalBindings_) || check(projectBindings_);
 }
 
 bool BindingRegistry::hasActiveStaticBindingForMacro(const ChainNodePath& devicePath,
                                                      int macroIndex) const {
-    auto check = [&](const std::vector<Binding>& vec) -> bool {
-        for (const auto& b : vec) {
-            auto* st = std::get_if<ControlTarget>(&b.target);
-            if (st == nullptr)
-                continue;
-            if (st->kind != ControlTarget::Kind::DeviceMacro)
-                continue;
-            if (st->devicePath != devicePath || st->paramIndex != macroIndex)
-                continue;
-            return true;
-        }
-        return false;
+    const auto check = [&](const std::vector<Binding>& vec) -> bool {
+        const auto matchesMacro = [&](const Binding& b) {
+            const auto* st = std::get_if<ControlTarget>(&b.target);
+            return st != nullptr && st->kind == ControlTarget::Kind::DeviceMacro &&
+                   st->devicePath == devicePath && st->paramIndex == macroIndex;
+        };
+        return std::ranges::any_of(vec, matchesMacro);
     };
     return check(globalBindings_) || check(projectBindings_);
 }
@@ -358,7 +339,7 @@ int BindingRegistry::removeStaticBindingsForMacro(const ChainNodePath& devicePat
     std::vector<BindingId> toRemoveProject;
     auto collect = [&](const std::vector<Binding>& vec, std::vector<BindingId>& out) {
         for (const auto& b : vec) {
-            auto* st = std::get_if<ControlTarget>(&b.target);
+            const auto* st = std::get_if<ControlTarget>(&b.target);
             if (st == nullptr)
                 continue;
             if (st->kind != ControlTarget::Kind::DeviceMacro)
@@ -404,15 +385,16 @@ bool BindingRegistry::isAutomapShadowedForMacro(const ChainNodePath& devicePath,
         return false;
 
     // 2. Look for an active static PluginParam binding whose source overlaps.
-    auto hasOverride = [&](const std::vector<Binding>& vec) {
-        for (const auto& b : vec) {
+    const auto hasOverride = [&](const std::vector<Binding>& vec) {
+        const auto overridesAutomap = [&](const Binding& b) {
             if (!isExplicitPluginParamTarget(b.target))
-                continue;
-            for (const auto& s : automapSources)
-                if (sourcesOverlap(b.source, s))
-                    return true;
-        }
-        return false;
+                return false;
+            const auto overlapsSource = [&](const BindingSource& s) {
+                return sourcesOverlap(b.source, s);
+            };
+            return std::ranges::any_of(automapSources, overlapsSource);
+        };
+        return std::ranges::any_of(vec, overridesAutomap);
     };
     return hasOverride(globalBindings_) || hasOverride(projectBindings_);
 }
@@ -447,15 +429,16 @@ bool BindingRegistry::isPluginParamOverridingMacro(const ChainNodePath& devicePa
     //    overlapping source. The resolver does not need to currently resolve —
     //    its presence with a matching CC means the override is in effect for
     //    whichever device is focused.
-    auto hasShadowed = [&](const std::vector<Binding>& vec) {
-        for (const auto& b : vec) {
+    const auto hasShadowed = [&](const std::vector<Binding>& vec) {
+        const auto shadowsStatic = [&](const Binding& b) {
             if (!isFocusedDeviceMacroResolver(b.target))
-                continue;
-            for (const auto& s : staticSources)
-                if (sourcesOverlap(b.source, s))
-                    return true;
-        }
-        return false;
+                return false;
+            const auto overlapsSource = [&](const BindingSource& s) {
+                return sourcesOverlap(b.source, s);
+            };
+            return std::ranges::any_of(staticSources, overlapsSource);
+        };
+        return std::ranges::any_of(vec, shadowsStatic);
     };
     return hasShadowed(globalBindings_) || hasShadowed(projectBindings_);
 }
@@ -465,13 +448,8 @@ int BindingRegistry::removeFor(const ControlTarget& query) {
 
     for (const auto& b : toRemove) {
         // Determine scope by checking which vector contains this binding
-        bool inGlobal = false;
-        for (const auto& gb : globalBindings_) {
-            if (gb.id == b.id) {
-                inGlobal = true;
-                break;
-            }
-        }
+        const auto matchesId = [&b](const Binding& gb) { return gb.id == b.id; };
+        const bool inGlobal = std::ranges::any_of(globalBindings_, matchesId);
         remove(inGlobal ? BindingScope::Global : BindingScope::Project, b.id);
     }
 
@@ -497,7 +475,7 @@ juce::var BindingRegistry::encodeArray(const std::vector<Binding>& bindings) {
     juce::Array<juce::var> arr;
     for (const auto& b : bindings)
         arr.add(encodeBinding(b));
-    return juce::var(arr);
+    return {arr};
 }
 
 void BindingRegistry::loadGlobal(const juce::var& json) {

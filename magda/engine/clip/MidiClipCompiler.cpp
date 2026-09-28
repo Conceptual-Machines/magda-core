@@ -5,6 +5,9 @@
 #include <cmath>
 #include <limits>
 #include <map>
+#include <tuple>
+
+#include "core/PitchExpressionCurve.hpp"
 
 namespace magda::engine {
 
@@ -12,6 +15,7 @@ namespace {
 
 constexpr std::uint8_t kNoteOn = 0x90;
 constexpr std::uint8_t kNoteOff = 0x80;
+constexpr std::uint8_t kPolyAftertouch = 0xa0;
 constexpr std::uint8_t kControlChange = 0xb0;
 constexpr std::uint8_t kChannelPressure = 0xd0;
 constexpr std::uint8_t kPitchWheel = 0xe0;
@@ -50,6 +54,8 @@ int rankOf(std::uint8_t status) {
             return 2;
         case kNoteOff:
             return 3;
+        case kPolyAftertouch:
+            return 5;  // after a note-on authored at the same beat
         default:
             return 4;
     }
@@ -88,9 +94,7 @@ void densify(std::vector<EventType> sorted, int maxValue, double floorBeats, Emi
     if (sorted.empty())
         return;
 
-    std::stable_sort(sorted.begin(), sorted.end(), [](const EventType& a, const EventType& b) {
-        return a.beatPosition < b.beatPosition;
-    });
+    std::ranges::stable_sort(sorted, {}, &EventType::beatPosition);
 
     auto lastValue = std::numeric_limits<int>::min();
     auto lastBeat = -std::numeric_limits<double>::max();
@@ -237,12 +241,10 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
     // ---- Notes -------------------------------------------------------------
 
     auto notes = clip.midiNotes;
-    std::stable_sort(notes.begin(), notes.end(), [](const MidiNote& a, const MidiNote& b) {
-        return a.startBeat < b.startBeat;
-    });
+    std::ranges::stable_sort(notes, {}, &MidiNote::startBeat);
 
-    list.mpe = std::any_of(notes.begin(), notes.end(),
-                           [](const MidiNote& note) { return note.hasPitchExpression(); });
+    const auto hasPitchExpression = [](const MidiNote& note) { return note.hasPitchExpression(); };
+    list.mpe = std::ranges::any_of(notes, hasPitchExpression);
 
     std::array<MpeChannel, kMpeLastMemberChannel - kMpeFirstMemberChannel + 1> mpeChannels{};
     std::vector<int> channelOf(notes.size(), 1);
@@ -358,25 +360,14 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
         // which is where a coarse grid is heard most directly.
         if (list.mpe && note.hasPitchExpression()) {
             auto points = note.pitchExpression;
-            std::stable_sort(points.begin(), points.end(),
-                             [](const auto& a, const auto& b) { return a.beat < b.beat; });
+            const auto beatOf = [](const auto& point) { return point.beat; };
+            std::ranges::stable_sort(points, {}, beatOf);
 
+            // Shape from core, so what compiles is what the piano roll drew
+            // (#2198). The densification below is unchanged: it already walks
+            // each segment finely enough for a bend to survive it.
             const auto valueAt = [&points](double beat) {
-                if (beat <= points.front().beat)
-                    return points.front().semitones;
-                if (beat >= points.back().beat)
-                    return points.back().semitones;
-                for (std::size_t p = 0; p + 1 < points.size(); ++p) {
-                    const auto& a = points[p];
-                    const auto& b = points[p + 1];
-                    if (beat >= a.beat && beat <= b.beat) {
-                        const auto span = b.beat - a.beat;
-                        if (span <= 0.0)
-                            return b.semitones;
-                        return a.semitones + (beat - a.beat) / span * (b.semitones - a.semitones);
-                    }
-                }
-                return points.back().semitones;
+                return evaluatePitchExpressionCurve(points, beat);
             };
 
             auto lastValue = std::numeric_limits<int>::min();
@@ -442,11 +433,10 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
 
     {
         const auto& bend = clip.midiPitchBendData;
-        const auto allAtRest =
-            !bend.empty() &&
-            std::all_of(bend.begin(), bend.end(), [](const MidiPitchBendData& event) {
-                return event.value == kPitchWheelRest;
-            });
+        const auto atRest = [](const MidiPitchBendData& event) {
+            return event.value == kPitchWheelRest;
+        };
+        const auto allAtRest = !bend.empty() && std::ranges::all_of(bend, atRest);
 
         if (!allAtRest) {
             densify(bend, 16383, curveFloorBeats, [&](double beat, int value) {
@@ -459,14 +449,27 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
         }
     }
 
+    for (const auto& pressure : clip.midiChannelPressureData) {
+        pending.push_back(PendingEvent{
+            MidiClipEvent{pressure.beatPosition, statusFor(kChannelPressure, 1),
+                          static_cast<std::uint8_t>(std::clamp(pressure.value, 0, 127)), 0, 0.0},
+            -1});
+    }
+
+    for (const auto& aftertouch : clip.midiPolyAftertouchData) {
+        pending.push_back(PendingEvent{
+            MidiClipEvent{aftertouch.beatPosition, statusFor(kPolyAftertouch, 1),
+                          static_cast<std::uint8_t>(std::clamp(aftertouch.noteNumber, 0, 127)),
+                          static_cast<std::uint8_t>(std::clamp(aftertouch.value, 0, 127)), 0.0},
+            -1});
+    }
+
     // ---- Sort, then pair the notes up again ---------------------------------
 
-    std::stable_sort(pending.begin(), pending.end(),
-                     [](const PendingEvent& a, const PendingEvent& b) {
-                         if (a.event.beat != b.event.beat)
-                             return a.event.beat < b.event.beat;
-                         return rankOf(a.event.status) < rankOf(b.event.status);
-                     });
+    const auto beatThenRank = [](const PendingEvent& pendingEvent) {
+        return std::tuple{pendingEvent.event.beat, rankOf(pendingEvent.event.status)};
+    };
+    std::ranges::stable_sort(pending, {}, beatThenRank);
 
     list.events.reserve(pending.size());
     for (const auto& entry : pending)
@@ -490,17 +493,33 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
                                 : kind == kChannelPressure ? MidiControllerStream::kChannelPressure
                                                            : static_cast<int>(event.data1);
 
-        auto found = std::find_if(list.controllers.begin(), list.controllers.end(),
-                                  [&](const MidiControllerStream& stream) {
-                                      return stream.channel == event.channel() &&
-                                             stream.controller == controller;
-                                  });
+        const auto isThisStream = [&](const MidiControllerStream& stream) {
+            return stream.channel == event.channel() && stream.controller == controller;
+        };
+        auto found = std::ranges::find_if(list.controllers, isThisStream);
 
         if (found == list.controllers.end()) {
             list.controllers.push_back(MidiControllerStream{event.channel(), controller, {}});
             found = std::prev(list.controllers.end());
         }
 
+        found->events.push_back(static_cast<std::int32_t>(i));
+    }
+
+    for (std::size_t i = 0; i < list.events.size(); ++i) {
+        const auto& event = list.events[i];
+        if (!event.isPolyAftertouch())
+            continue;
+
+        const auto note = static_cast<int>(event.data1);
+        const auto isThisStream = [&](const MidiPolyAftertouchStream& stream) {
+            return stream.channel == event.channel() && stream.note == note;
+        };
+        auto found = std::ranges::find_if(list.polyAftertouch, isThisStream);
+        if (found == list.polyAftertouch.end()) {
+            list.polyAftertouch.push_back({event.channel(), note, {}});
+            found = std::prev(list.polyAftertouch.end());
+        }
         found->events.push_back(static_cast<std::int32_t>(i));
     }
 

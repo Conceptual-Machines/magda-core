@@ -2,7 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "DarkTheme.hpp"
+#include "ActiveTheme.hpp"
 #include "FontManager.hpp"
 #include "LocalizedText.hpp"
 
@@ -14,7 +14,7 @@ namespace magda::daw::ui {
 class DialogLookAndFeel : public juce::LookAndFeel_V4 {
   public:
     DialogLookAndFeel() : juce::LookAndFeel_V4(getDarkColourScheme()) {
-        DarkTheme::applyToLookAndFeel(*this);
+        ActiveTheme::applyToLookAndFeel(*this);
     }
     ~DialogLookAndFeel() override = default;
 
@@ -35,7 +35,7 @@ class DialogLookAndFeel : public juce::LookAndFeel_V4 {
         g.setColour(baseColour);
         g.fillRoundedRectangle(bounds, cornerRadius);
 
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRoundedRectangle(bounds, cornerRadius, 1.0f);
     }
 
@@ -109,7 +109,7 @@ class DialogLookAndFeel : public juce::LookAndFeel_V4 {
         arrow.lineTo(arrowX + arrowWidth / 2.0f, arrowY + arrowHeight / 2.0f);
         arrow.lineTo(arrowX + arrowWidth, arrowY - arrowHeight / 2.0f);
 
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.strokePath(arrow, juce::PathStrokeType(1.2f));
     }
 
@@ -135,7 +135,7 @@ class DialogLookAndFeel : public juce::LookAndFeel_V4 {
                            const juce::Drawable* icon, const juce::Colour* textColour) override {
         if (isSeparator) {
             auto separatorArea = area.reduced(5, 0).withHeight(1);
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
             g.fillRect(separatorArea);
             return;
         }
@@ -143,14 +143,14 @@ class DialogLookAndFeel : public juce::LookAndFeel_V4 {
         auto textArea = area.reduced(8, 0);
 
         if (isHighlighted && isActive) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).withAlpha(0.3f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.3f));
             g.fillRect(area);
         }
 
         const auto popupTextColour =
             textColour != nullptr
                 ? *textColour
-                : (isActive ? DarkTheme::getTextColour() : DarkTheme::getSecondaryTextColour());
+                : (isActive ? ActiveTheme::getTextColour() : ActiveTheme::getSecondaryTextColour());
         g.setColour(popupTextColour);
         g.setFont(getPopupMenuFont());
         drawLocalizedFittedText(g, text, textArea, juce::Justification::centredLeft, 1,
@@ -160,9 +160,9 @@ class DialogLookAndFeel : public juce::LookAndFeel_V4 {
     }
 
     void drawPopupMenuBackground(juce::Graphics& g, int width, int height) override {
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
         g.fillRect(0, 0, width, height);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRect(0, 0, width, height);
     }
 
@@ -222,25 +222,25 @@ class DialogLookAndFeel : public juce::LookAndFeel_V4 {
 
         // Background
         if (isFrontTab) {
-            g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
         } else if (isMouseOver) {
-            g.setColour(DarkTheme::getColour(DarkTheme::SURFACE_HOVER));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE_HOVER));
         } else {
-            g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND_ALT));
         }
         g.fillRect(area);
 
         // Bottom accent for front tab, subtle separator for others
         if (o == juce::TabbedButtonBar::TabsAtTop || o == juce::TabbedButtonBar::TabsAtBottom) {
             if (isFrontTab) {
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
                 if (o == juce::TabbedButtonBar::TabsAtTop)
                     g.fillRect(area.getX(), area.getBottom() - 2, area.getWidth(), 2);
                 else
                     g.fillRect(area.getX(), area.getY(), area.getWidth(), 2);
             } else {
                 // Bottom border for non-selected tabs
-                g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
                 if (o == juce::TabbedButtonBar::TabsAtTop)
                     g.fillRect(area.getX(), area.getBottom() - 1, area.getWidth(), 1);
                 else
@@ -250,7 +250,7 @@ class DialogLookAndFeel : public juce::LookAndFeel_V4 {
 
         // Text
         auto tabTextColour =
-            isFrontTab ? DarkTheme::getTextColour() : DarkTheme::getSecondaryTextColour();
+            isFrontTab ? ActiveTheme::getTextColour() : ActiveTheme::getSecondaryTextColour();
         if (isMouseDown)
             tabTextColour = tabTextColour.brighter(0.2f);
 

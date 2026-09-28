@@ -1,12 +1,8 @@
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
-
 #include "../../core/aliases/TargetResolver.hpp"
 
 namespace magda {
-
-namespace te = tracktion;
 
 // ============================================================================
 // ControllerParamWriter (abstract)
@@ -15,9 +11,9 @@ namespace te = tracktion;
 /**
  * @brief Abstract base for writing a normalized value to a resolved parameter target.
  *
- * The default implementation (DefaultControllerParamWriter) looks up the
- * plugin via AudioBridge::getPlugin(), then calls setParameter() on the
- * AutomatableParameter. Called on the message thread.
+ * The default implementation writes through TrackManager, using the live
+ * parameter description supplied by the active engine. Called on the message
+ * thread.
  */
 class ControllerParamWriter {
   public:
@@ -41,25 +37,22 @@ class ControllerParamWriter {
 class AudioBridge;
 
 /**
- * @brief Production param writer backed by AudioBridge.
- *
- * Resolves devicePath -> te::Plugin via AudioBridge::getPlugin(), then
- * writes value via AutomatableParameter::setParameter().
+ * @brief Production param writer shared by the incumbent and native engines.
  */
 class DefaultControllerParamWriter : public ControllerParamWriter {
   public:
-    explicit DefaultControllerParamWriter(AudioBridge& bridge) : bridge_(bridge) {}
+    DefaultControllerParamWriter() = default;
+    // Source compatibility for callers that still have an incumbent bridge.
+    explicit DefaultControllerParamWriter(AudioBridge&) {}
 
     void write(const ResolveResult& resolved, float value) override;
 
   private:
     void writePluginParam(const ControlTarget& target, float clamped);
-    void writeMacro(const ControlTarget& target, float clamped);
-    void writeModParam(const ControlTarget& target, float clamped);
-    void writeTrackLevel(const ControlTarget& target, float clamped);
-    void writeSendLevel(const ControlTarget& target, float clamped);
-
-    AudioBridge& bridge_;
+    static void writeMacro(const ControlTarget& target, float clamped);
+    static void writeModParam(const ControlTarget& target, float clamped);
+    static void writeTrackLevel(const ControlTarget& target, float clamped);
+    static void writeSendLevel(const ControlTarget& target, float clamped);
 };
 
 }  // namespace magda

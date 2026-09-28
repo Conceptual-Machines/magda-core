@@ -1,11 +1,13 @@
 #pragma once
 
+#include <map>
 #include <string>
 #include <vector>
 
 #include "clip/ClipSnapshot.hpp"
 #include "clip/GrooveTemplate.hpp"
 #include "core/ClipInfo.hpp"
+#include "core/TrackTypes.hpp"
 #include "core/TypeIds.hpp"
 #include "transport/TempoMap.hpp"
 
@@ -45,7 +47,30 @@ struct ClipSourceInfo {
  */
 struct ClipLane {
     TrackId trackId = INVALID_TRACK_ID;
+
+    /// The arrangement's clips, positioned on the timeline. A session clip here
+    /// is a diagnostic rather than a clip: the two are different questions and
+    /// the caller is the one that knows which it is asking.
     std::vector<ClipInfo> clips;
+
+    /// The track's session slots, positioned by scene rather than by beat.
+    /// Separate because they are not alternatives at the same place: a track
+    /// can carry an arrangement and a session at once, and which one sounds is
+    /// decided at launch rather than at compile (#2301).
+    std::vector<ClipInfo> session;
+
+    /// Content revisions for Session capture. A revision moves only when that
+    /// clip's model material changes, so unrelated publishes keep one identity.
+    std::map<ClipId, std::uint64_t> captureRevisions;
+
+    /// Scene indices of the empty slots this track records into (#2464). A
+    /// slot that already holds a clip is not a target and is left alone.
+    std::vector<int> recordSlots;
+
+    /// The track's TrackInfo::playbackMode. In Session mode the arrangement
+    /// clips above are silenced at render time (#2485); the compiler copies
+    /// it onto TrackClipPlayback unchanged.
+    TrackPlaybackMode playbackMode = TrackPlaybackMode::Arrangement;
 };
 
 /**

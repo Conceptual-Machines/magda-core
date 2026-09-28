@@ -1,12 +1,20 @@
 #include "TrackCommands.hpp"
 
+#include <algorithm>
+#include <functional>
 #include <limits>
+#include <ranges>
+#include <utility>
 
-#include "../audio/AudioBridge.hpp"
 #include "../engine/AudioEngine.hpp"
+#include "../engine/PluginService.hpp"
 #include "../project/ProjectManager.hpp"
+#include "AutomationManager.hpp"
+#include "ChainWalk.hpp"
 #include "ClipManager.hpp"
+#include "RangesHelpers.hpp"
 #include "TempoUtils.hpp"
+#include "controllers/BindingRegistry.hpp"
 
 namespace magda {
 
@@ -16,11 +24,272 @@ ChainNodePath parentChainOf(const ChainNodePath& path) {
 }
 
 std::vector<ChainElement> deepCopyChainElements(const std::vector<ChainElement>& elements) {
-    std::vector<ChainElement> copied;
-    copied.reserve(elements.size());
-    for (const auto& element : elements)
-        copied.push_back(deepCopyElement(element));
-    return copied;
+    return elements | std::views::transform(deepCopyElement) | toStd<std::vector<ChainElement>>();
+}
+
+/// Container order for the move records: same parent chain first, then the
+/// index each element sat at inside it.
+const auto byParentThenIndex = [](const auto& a, const auto& b) {
+    const auto& parentA = a.originalParentPath;
+    const auto& parentB = b.originalParentPath;
+    if (parentA == parentB)
+        return a.originalIndex < b.originalIndex;
+    if (parentA.trackId != parentB.trackId)
+        return parentA.trackId < parentB.trackId;
+    return parentA.toString() < parentB.toString();
+};
+
+const auto sameParent = [](const auto& a, const auto& b) {
+    return a.originalParentPath == b.originalParentPath;
+};
+
+void remapParameterTarget(ControlTarget& target, const ChainNodePath& devicePath,
+                          const std::vector<std::pair<int, int>>& remaps) {
+    if (target.kind != ControlTarget::Kind::PluginParam || target.devicePath != devicePath)
+        return;
+    const auto found = std::ranges::find(remaps, target.paramIndex, &std::pair<int, int>::first);
+    if (found != remaps.end())
+        target.paramIndex = found->second;
+}
+
+void remapLinks(MacroArray& macros, ModArray& mods, const ChainNodePath& devicePath,
+                const std::vector<std::pair<int, int>>& remaps) {
+    for (auto& macro : macros)
+        for (auto& link : macro.links)
+            remapParameterTarget(link.target, devicePath, remaps);
+    for (auto& mod : mods)
+        for (auto& link : mod.links)
+            remapParameterTarget(link.target, devicePath, remaps);
+}
+
+void remapParameterReferences(const ChainNodePath& devicePath,
+                              const std::vector<std::pair<int, int>>& remaps) {
+    if (remaps.empty())
+        return;
+
+    auto& tracks = TrackManager::getInstance();
+    tracks.forEachTrackIncludingMaster([&](TrackInfo& track) {
+        remapLinks(track.macros, track.mods, devicePath, remaps);
+        chain_walk::forEachNode(
+            track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
+            chain_walk::Pads::Enter,
+            [&](DeviceInfo& device, const ChainNodePath&) {
+                remapLinks(device.macros, device.mods, devicePath, remaps);
+            },
+            [&](RackInfo& rack, const ChainNodePath&) {
+                remapLinks(rack.macros, rack.mods, devicePath, remaps);
+                return chain_walk::Descend::Into;
+            });
+        for (auto& element : track.chain.postFxChainElements)
+            remapLinks(element.device.macros, element.device.mods, devicePath, remaps);
+        for (auto& element : track.chain.mixerAnalysisElements)
+            remapLinks(element.device.macros, element.device.mods, devicePath, remaps);
+    });
+
+    auto& automation = AutomationManager::getInstance();
+    const auto lanes = automation.getLanes();
+    for (const auto& laneSnapshot : lanes) {
+        auto* lane = automation.getLane(laneSnapshot.id);
+        if (lane == nullptr)
+            continue;
+        const auto before = lane->target;
+        remapParameterTarget(lane->target, devicePath, remaps);
+        if (lane->target != before)
+            automation.invalidateLane(lane->id);
+    }
+
+    auto& bindings = BindingRegistry::getInstance();
+    for (const auto scope : {BindingScope::Global, BindingScope::Project}) {
+        for (auto binding : bindings.bindings(scope)) {
+            auto* target = std::get_if<ControlTarget>(&binding.target);
+            if (target == nullptr)
+                continue;
+            const auto before = *target;
+            remapParameterTarget(*target, devicePath, remaps);
+            if (*target != before)
+                bindings.update(scope, binding);
+        }
+    }
+
+    tracks.notifyModulationChanged();
+}
+
+bool remapControlTarget(ControlTarget& target,
+                        const std::vector<ReferenceTargetMapping>& mappings) {
+    for (const auto& mapping : mappings) {
+        if (!mapping.from.devicePath || !mapping.to.devicePath ||
+            target.devicePath != *mapping.from.devicePath)
+            continue;
+
+        switch (target.kind) {
+            case ControlTarget::Kind::PluginParam:
+                if (mapping.from.kind != ReferenceAddressKind::Parameter ||
+                    mapping.from.parameterIndex != target.paramIndex || !mapping.to.parameterIndex)
+                    continue;
+                target.devicePath = *mapping.to.devicePath;
+                target.paramIndex = *mapping.to.parameterIndex;
+                return true;
+            case ControlTarget::Kind::DeviceMacro:
+                if (mapping.from.kind != ReferenceAddressKind::Macro ||
+                    mapping.from.macroId != target.paramIndex || !mapping.to.macroId)
+                    continue;
+                target.devicePath = *mapping.to.devicePath;
+                target.paramIndex = *mapping.to.macroId;
+                return true;
+            case ControlTarget::Kind::ModParam:
+                if (mapping.from.kind != ReferenceAddressKind::Modulator ||
+                    mapping.from.modId != target.modId ||
+                    mapping.from.parameterIndex != target.modParamIndex || !mapping.to.modId ||
+                    !mapping.to.parameterIndex)
+                    continue;
+                target.devicePath = *mapping.to.devicePath;
+                target.modId = *mapping.to.modId;
+                target.modParamIndex = *mapping.to.parameterIndex;
+                return true;
+            case ControlTarget::Kind::TrackVolume:
+            case ControlTarget::Kind::TrackPan:
+            case ControlTarget::Kind::SendLevel:
+            case ControlTarget::Kind::Tempo:
+                break;
+        }
+    }
+    return false;
+}
+
+void remapLinks(MacroArray& macros, ModArray& mods,
+                const std::vector<ReferenceTargetMapping>& mappings) {
+    for (auto& macro : macros)
+        for (auto& link : macro.links)
+            remapControlTarget(link.target, mappings);
+    for (auto& mod : mods)
+        for (auto& link : mod.links)
+            remapControlTarget(link.target, mappings);
+}
+
+void remapReferences(const std::vector<ReferenceTargetMapping>& mappings) {
+    if (mappings.empty())
+        return;
+
+    auto& tracks = TrackManager::getInstance();
+    tracks.forEachTrackIncludingMaster([&](TrackInfo& track) {
+        remapLinks(track.macros, track.mods, mappings);
+        chain_walk::forEachNode(
+            track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
+            chain_walk::Pads::Enter,
+            [&](DeviceInfo& device, const ChainNodePath&) {
+                remapLinks(device.macros, device.mods, mappings);
+            },
+            [&](RackInfo& rack, const ChainNodePath&) {
+                remapLinks(rack.macros, rack.mods, mappings);
+                return chain_walk::Descend::Into;
+            });
+        for (auto& element : track.chain.postFxChainElements)
+            remapLinks(element.device.macros, element.device.mods, mappings);
+        for (auto& element : track.chain.mixerAnalysisElements)
+            remapLinks(element.device.macros, element.device.mods, mappings);
+
+        if (track.multiOutLink) {
+            for (const auto& mapping : mappings) {
+                if (mapping.from.kind != ReferenceAddressKind::Device || !mapping.from.devicePath ||
+                    !mapping.to.devicePath)
+                    continue;
+                const auto& from = *mapping.from.devicePath;
+                if (track.multiOutLink->sourceTrackId != from.trackId ||
+                    track.multiOutLink->sourceDeviceId != from.getDeviceId())
+                    continue;
+                track.multiOutLink->sourceTrackId = mapping.to.devicePath->trackId;
+                track.multiOutLink->sourceDeviceId = mapping.to.devicePath->getDeviceId();
+                break;
+            }
+        }
+    });
+
+    auto& automation = AutomationManager::getInstance();
+    const auto lanes = automation.getLanes();
+    for (const auto& laneSnapshot : lanes) {
+        auto* lane = automation.getLane(laneSnapshot.id);
+        if (lane != nullptr && remapControlTarget(lane->target, mappings))
+            automation.invalidateLane(lane->id);
+    }
+
+    auto& bindings = BindingRegistry::getInstance();
+    for (const auto scope : {BindingScope::Global, BindingScope::Project}) {
+        for (auto binding : bindings.bindings(scope)) {
+            auto* target = std::get_if<ControlTarget>(&binding.target);
+            if (target != nullptr && remapControlTarget(*target, mappings))
+                bindings.update(scope, binding);
+        }
+    }
+
+    tracks.notifyModulationChanged();
+}
+
+bool remapSendTarget(ControlTarget& target, TrackId trackId, int fromBus, int toBus) {
+    if (target.kind != ControlTarget::Kind::SendLevel || target.devicePath.trackId != trackId ||
+        target.sendBusIndex != fromBus)
+        return false;
+    target.sendBusIndex = toBus;
+    return true;
+}
+
+void remapSendLinks(MacroArray& macros, ModArray& mods, TrackId trackId, int fromBus, int toBus) {
+    for (auto& macro : macros)
+        for (auto& link : macro.links)
+            remapSendTarget(link.target, trackId, fromBus, toBus);
+    for (auto& mod : mods)
+        for (auto& link : mod.links)
+            remapSendTarget(link.target, trackId, fromBus, toBus);
+}
+
+void remapSendReferences(TrackId trackId, int fromBus, int toBus) {
+    if (fromBus == toBus)
+        return;
+
+    auto& tracks = TrackManager::getInstance();
+    tracks.forEachTrackIncludingMaster([&](TrackInfo& track) {
+        remapSendLinks(track.macros, track.mods, trackId, fromBus, toBus);
+        chain_walk::forEachNode(
+            track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
+            chain_walk::Pads::Enter,
+            [&](DeviceInfo& device, const ChainNodePath&) {
+                remapSendLinks(device.macros, device.mods, trackId, fromBus, toBus);
+            },
+            [&](RackInfo& rack, const ChainNodePath&) {
+                remapSendLinks(rack.macros, rack.mods, trackId, fromBus, toBus);
+                return chain_walk::Descend::Into;
+            });
+        for (auto& element : track.chain.postFxChainElements)
+            remapSendLinks(element.device.macros, element.device.mods, trackId, fromBus, toBus);
+        for (auto& element : track.chain.mixerAnalysisElements)
+            remapSendLinks(element.device.macros, element.device.mods, trackId, fromBus, toBus);
+    });
+
+    auto& automation = AutomationManager::getInstance();
+    for (const auto& snapshot : automation.getLanes()) {
+        auto* lane = automation.getLane(snapshot.id);
+        if (lane != nullptr && remapSendTarget(lane->target, trackId, fromBus, toBus))
+            automation.invalidateLane(lane->id);
+    }
+
+    auto& bindings = BindingRegistry::getInstance();
+    for (const auto scope : {BindingScope::Global, BindingScope::Project}) {
+        for (auto binding : bindings.bindings(scope)) {
+            auto* target = std::get_if<ControlTarget>(&binding.target);
+            if (target != nullptr && remapSendTarget(*target, trackId, fromBus, toBus))
+                bindings.update(scope, binding);
+        }
+    }
+    tracks.notifyModulationChanged();
+}
+
+std::vector<ReferenceTargetMapping> reverseMappings(
+    const std::vector<ReferenceTargetMapping>& mappings) {
+    std::vector<ReferenceTargetMapping> reverse;
+    reverse.reserve(mappings.size());
+    for (const auto& mapping : mappings)
+        reverse.push_back(
+            {mapping.to, mapping.from, mapping.targetStableIdentity, mapping.sourceStableIdentity});
+    return reverse;
 }
 
 ChainNodePath findChainElementPathRecursive(const ChainNodePath& parentPath,
@@ -91,18 +360,100 @@ bool describeChainElementPath(const ChainNodePath& path, ChainStepType& type, in
 
     return false;
 }
+
+/// The index to hand `moveChainElement()` so @p elementPath comes to rest at
+/// @p homeIndex of @p homeChain.
+///
+/// The two are not the same number. `homeIndex` is where the element stood,
+/// counted with itself still in the list. `moveChainElement()` takes a drop
+/// position -- insert before whatever stands there now -- and drops one when
+/// the element is travelling up a list it is already in, because removing it
+/// first shifts everything past it down. So an element on its way back up its
+/// own container has to aim one slot past its home to land on it.
+///
+/// One conversion, because it was written twice and only one of them was right:
+/// the multi-element undo made the correction, the single-element one passed the
+/// home index straight through, and so undoing a drag that moved a device
+/// towards the front of its chain put it back one slot too early
+/// (#2229). `WrapChainElementsInRackCommand::undo()` makes the same correction
+/// against the standing rack.
+int dropIndexForHome(TrackManager& tm, const ChainNodePath& elementPath,
+                     const ChainNodePath& homeChain, int homeIndex) {
+    if (parentChainOf(elementPath) != homeChain)
+        return homeIndex;
+
+    const int currentIndex = tm.getChainElementIndex(elementPath);
+    return currentIndex >= 0 && currentIndex < homeIndex ? homeIndex + 1 : homeIndex;
+}
 }  // namespace
+
+// ============================================================================
+// SetTrackRoutingCommand
+// ============================================================================
+
+SetTrackRoutingCommand::SetTrackRoutingCommand(std::vector<TrackRoutingState> before,
+                                               std::vector<TrackRoutingState> after)
+    : before_(std::move(before)), after_(std::move(after)) {}
+
+void SetTrackRoutingCommand::execute() {
+    applied_ = TrackManager::getInstance().applyTrackRoutingStates(after_);
+}
+
+void SetTrackRoutingCommand::undo() {
+    if (applied_)
+        TrackManager::getInstance().applyTrackRoutingStates(before_);
+}
+
+// ============================================================================
+// SetTrackSendsCommand
+// ============================================================================
+
+SetTrackSendsCommand::SetTrackSendsCommand(TrackId trackId, std::vector<SendInfo> before,
+                                           std::vector<SendInfo> after)
+    : trackId_(trackId), before_(std::move(before)), after_(std::move(after)) {}
+
+void SetTrackSendsCommand::remapTargets(const std::vector<SendInfo>& from,
+                                        const std::vector<SendInfo>& to) {
+    for (const auto& oldSend : from) {
+        const auto found = std::ranges::find(to, oldSend.id, &SendInfo::id);
+        if (found != to.end())
+            remapSendReferences(trackId_, oldSend.busIndex, found->busIndex);
+    }
+}
+
+void SetTrackSendsCommand::execute() {
+    applied_ = TrackManager::getInstance().applyTrackSends(trackId_, after_);
+    if (applied_)
+        remapTargets(before_, after_);
+}
+
+void SetTrackSendsCommand::undo() {
+    if (!applied_)
+        return;
+    if (TrackManager::getInstance().applyTrackSends(trackId_, before_))
+        remapTargets(after_, before_);
+}
 
 // ============================================================================
 // CreateTrackCommand
 // ============================================================================
 
-CreateTrackCommand::CreateTrackCommand(TrackType type, const juce::String& name,
-                                       TrackId afterTrackId)
-    : type_(type), name_(name), afterTrackId_(afterTrackId) {}
+CreateTrackCommand::CreateTrackCommand(TrackType type, juce::String name, TrackId afterTrackId)
+    : type_(type), name_(std::move(name)), afterTrackId_(afterTrackId) {}
 
 void CreateTrackCommand::execute() {
     auto& trackManager = TrackManager::getInstance();
+
+    // TrackManager enforces the singleton too, but the command must know
+    // whether it actually created anything: undoing a no-op must never delete
+    // the chord track that was already there.
+    if (type_ == TrackType::Chord) {
+        if (const auto existing = trackManager.getChordTrackId(); existing != INVALID_TRACK_ID) {
+            createdTrackId_ = existing;
+            executed_ = false;
+            return;
+        }
+    }
 
     if (type_ == TrackType::Group) {
         createdTrackId_ = trackManager.createGroupTrack(name_);
@@ -140,7 +491,7 @@ void CreateTrackCommand::undo() {
 
 juce::String CreateTrackCommand::getDescription() const {
     switch (type_) {
-        case TrackType::Audio:
+        case TrackType::Media:
             return "Create Track";
         case TrackType::Group:
             return "Create Group Track";
@@ -154,10 +505,93 @@ juce::String CreateTrackCommand::getDescription() const {
 }
 
 // ============================================================================
+// EnsureChordTrackCommand
+// ============================================================================
+
+void EnsureChordTrackCommand::execute() {
+    auto& tracks = TrackManager::getInstance();
+    const auto existing = tracks.getChordTrackId();
+    chordTrackId_ = tracks.ensureChordTrack();
+    created_ = existing == INVALID_TRACK_ID && chordTrackId_ != INVALID_TRACK_ID;
+}
+
+void EnsureChordTrackCommand::undo() {
+    if (!created_ || chordTrackId_ == INVALID_TRACK_ID)
+        return;
+    TrackManager::getInstance().deleteTrack(chordTrackId_);
+    created_ = false;
+}
+
+// ============================================================================
+// CreateTrackFromPresetCommand
+// ============================================================================
+
+CreateTrackFromPresetCommand::CreateTrackFromPresetCommand(TrackInfo presetTrack, juce::String name)
+    : presetTrack_(std::move(presetTrack)), name_(std::move(name)) {}
+
+void CreateTrackFromPresetCommand::execute() {
+    auto& tracks = TrackManager::getInstance();
+    if (hasMaterialisedTrack_) {
+        tracks.restoreTrack(materialisedTrack_, materialisedPosition_);
+        executed_ = tracks.getTrack(createdTrackId_) != nullptr;
+        return;
+    }
+
+    createdTrackId_ = tracks.createTrackFromPreset(presetTrack_, name_);
+    if (const auto* created = tracks.getTrack(createdTrackId_)) {
+        materialisedTrack_ = *created;
+        materialisedPosition_ = tracks.restorePositionOf(createdTrackId_);
+        hasMaterialisedTrack_ = true;
+        executed_ = true;
+    }
+}
+
+void CreateTrackFromPresetCommand::undo() {
+    if (!executed_ || createdTrackId_ == INVALID_TRACK_ID)
+        return;
+    TrackManager::getInstance().deleteTrack(createdTrackId_);
+    executed_ = false;
+}
+
+// ============================================================================
 // DeleteTrackCommand
 // ============================================================================
 
 DeleteTrackCommand::DeleteTrackCommand(TrackId trackId) : trackId_(trackId) {}
+
+std::vector<DeleteTrackCommand::DeletedTrack> DeleteTrackCommand::collectSubtree(TrackId trackId) {
+    auto& tm = TrackManager::getInstance();
+    std::vector<DeletedTrack> records;
+
+    const std::function<void(TrackId)> descend = [&](TrackId id) {
+        const auto* track = tm.getTrack(id);
+        if (track == nullptr)
+            return;
+
+        DeletedTrack record;
+        record.track = *track;
+        record.position = tm.restorePositionOf(id);
+
+        auto& clipManager = ClipManager::getInstance();
+        for (auto clipId : clipManager.getClipsOnTrack(id))
+            if (const auto* clip = clipManager.getClip(clipId))
+                record.clips.push_back(*clip);
+
+        records.push_back(std::move(record));
+
+        for (auto childId : track->childIds)
+            descend(childId);
+    };
+
+    descend(trackId);
+
+    // By where each stood, so refilling the list left to right lands every one
+    // of them on its own index.
+    std::stable_sort(records.begin(), records.end(), [](const auto& a, const auto& b) {
+        return a.position.trackIndex < b.position.trackIndex;
+    });
+    return records;
+}
 
 void DeleteTrackCommand::execute() {
     // The master track is permanent. Bail before touching clips or storing undo
@@ -173,27 +607,25 @@ void DeleteTrackCommand::execute() {
         return;
     }
 
-    // Store full track info and clips for undo (only on first execute)
+    // The whole subtree, because deleteTrack() cascades into the children and
+    // takes their devices and clips with them (only on first execute).
     if (!executed_) {
-        storedTrack_ = *track;
+        storedTracks_ = collectSubtree(trackId_);
+
+        // And what it will clear on everything that outlives it.
+        std::vector<TrackId> doomed;
+        doomed.reserve(storedTracks_.size());
+        for (const auto& record : storedTracks_)
+            doomed.push_back(record.track.id);
+        storedRouting_ = trackManager.externalRoutingInto(doomed);
     }
 
-    // Store and remove all clips on this track
-    auto& clipManager = ClipManager::getInstance();
-    auto clipIds = clipManager.getClipsOnTrack(trackId_);
-    storedClips_.clear();
-    for (auto clipId : clipIds) {
-        const auto* clip = clipManager.getClip(clipId);
-        if (clip) {
-            storedClips_.push_back(*clip);
-        }
-        clipManager.deleteClip(clipId);
-    }
-
+    // deleteTrack() deletes each track's clips as it goes, children included.
     trackManager.deleteTrack(trackId_);
     executed_ = true;
 
-    DBG("UNDO: Deleted track " << trackId_);
+    DBG("UNDO: Deleted track " << trackId_ << " and " << (int)storedTracks_.size() - 1
+                               << " descendant(s)");
 }
 
 void DeleteTrackCommand::undo() {
@@ -201,15 +633,23 @@ void DeleteTrackCommand::undo() {
         return;
     }
 
-    TrackManager::getInstance().restoreTrack(storedTrack_);
-
-    // Restore clips that were on this track
+    auto& trackManager = TrackManager::getInstance();
     auto& clipManager = ClipManager::getInstance();
-    for (const auto& clip : storedClips_) {
-        clipManager.restoreClip(clip);
+
+    // Ascending by where each stood, so the list refills left to right. A child
+    // restored before its parent finds no parent to rejoin, and needs none: the
+    // parent's own stored childIds still names it.
+    for (const auto& record : storedTracks_) {
+        trackManager.restoreTrack(record.track, record.position);
+        for (const auto& clip : record.clips)
+            clipManager.restoreClip(clip);
     }
 
-    DBG("UNDO: Restored track " << trackId_);
+    // After the tracks are back, so a send, an input or a sidechain naming one
+    // of them names something that exists again.
+    trackManager.restoreExternalRouting(storedRouting_);
+
+    DBG("UNDO: Restored track " << trackId_ << " and its descendants");
 }
 
 // ============================================================================
@@ -224,21 +664,29 @@ DuplicateTrackCommand::DuplicateTrackCommand(TrackId sourceTrackId, bool duplica
 
 void DuplicateTrackCommand::execute() {
     auto& trackManager = TrackManager::getInstance();
+    auto& clipManager = ClipManager::getInstance();
+
+    // A redo puts back what the first run made rather than duplicating again:
+    // duplicating again allocates a fresh TrackId and fresh device, rack and
+    // chain ids, so undo followed by redo would leave a different project than
+    // the one the undo took away (#2229).
+    if (executed_) {
+        if (duplicatedTrackId_ == INVALID_TRACK_ID)
+            return;
+        trackManager.restoreTrack(storedTrack_, storedPosition_);
+        for (const auto& clip : storedClips_)
+            clipManager.restoreClip(clip);
+        return;
+    }
 
     // Capture current plugin state so the duplicate gets the source's live settings.
     // Skipped when we're stripping the FX chain anyway — nothing to carry over.
-    if (duplicateDevices_) {
-        if (auto* engine = trackManager.getAudioEngine()) {
-            if (auto* bridge = engine->getAudioBridge()) {
-                bridge->captureAllPluginStates();
-            }
-        }
-    }
+    if (duplicateDevices_)
+        PluginService::getInstance().captureAllPluginStates();
 
     duplicatedTrackId_ = trackManager.duplicateTrack(sourceTrackId_, duplicateDevices_);
 
     if (duplicateContent_ && duplicatedTrackId_ != INVALID_TRACK_ID) {
-        auto& clipManager = ClipManager::getInstance();
         auto clipIds = clipManager.getClipsOnTrack(sourceTrackId_);
         const double projectBpm = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
         const double bpm = isValidBpm(projectBpm) ? projectBpm : DEFAULT_BPM;
@@ -249,6 +697,16 @@ void DuplicateTrackCommand::execute() {
                                             bpm);
             }
         }
+    }
+
+    // What it made, so a redo can make exactly that again.
+    if (const auto* made = trackManager.getTrack(duplicatedTrackId_)) {
+        storedTrack_ = *made;
+        storedPosition_ = trackManager.restorePositionOf(duplicatedTrackId_);
+        storedClips_.clear();
+        for (auto clipId : clipManager.getClipsOnTrack(duplicatedTrackId_))
+            if (const auto* clip = clipManager.getClip(clipId))
+                storedClips_.push_back(*clip);
     }
 
     executed_ = true;
@@ -262,7 +720,7 @@ void DuplicateTrackCommand::undo() {
 
     // Delete all clips on the duplicated track before deleting the track
     auto& clipManager = ClipManager::getInstance();
-    auto clipIds = clipManager.getClipsOnTrack(duplicatedTrackId_);
+    const auto clipIds = clipManager.getClipsOnTrack(duplicatedTrackId_);
     for (auto clipId : clipIds) {
         clipManager.deleteClip(clipId);
     }
@@ -275,8 +733,8 @@ void DuplicateTrackCommand::undo() {
 // AddDeviceToTrackCommand
 // ============================================================================
 
-AddDeviceToTrackCommand::AddDeviceToTrackCommand(TrackId trackId, const DeviceInfo& device)
-    : trackId_(trackId), device_(device) {}
+AddDeviceToTrackCommand::AddDeviceToTrackCommand(TrackId trackId, DeviceInfo device)
+    : trackId_(trackId), device_(std::move(device)) {}
 
 void AddDeviceToTrackCommand::execute() {
     auto& trackManager = TrackManager::getInstance();
@@ -295,77 +753,14 @@ void AddDeviceToTrackCommand::undo() {
 }
 
 // ============================================================================
-// RemoveDeviceFromTrackCommand
-// ============================================================================
-
-RemoveDeviceFromTrackCommand::RemoveDeviceFromTrackCommand(TrackId trackId, DeviceId deviceId)
-    : trackId_(trackId), deviceId_(deviceId) {}
-
-void RemoveDeviceFromTrackCommand::execute() {
-    auto& tm = TrackManager::getInstance();
-
-    // Flush the plugin's live state into DeviceInfo before capturing
-    if (auto* engine = tm.getAudioEngine()) {
-        if (auto* bridge = engine->getAudioBridge()) {
-            DBG("UNDO: Capturing plugin state for device " << deviceId_);
-            bridge->getPluginManager().capturePluginState(
-                ChainNodePath::topLevelDevice(trackId_, deviceId_));
-        } else {
-            DBG("UNDO: WARNING - no AudioBridge, cannot capture plugin state");
-        }
-    } else {
-        DBG("UNDO: WARNING - no AudioEngine, cannot capture plugin state");
-    }
-
-    // Save the device info and position before removing
-    const auto& elements = tm.getChainElements(trackId_);
-    for (int i = 0; i < static_cast<int>(elements.size()); ++i) {
-        if (isDevice(elements[i]) && getDevice(elements[i]).id == deviceId_) {
-            savedDevice_ = getDevice(elements[i]);
-            savedIndex_ = i;
-            break;
-        }
-    }
-
-    if (savedIndex_ < 0)
-        return;
-
-    DBG("UNDO: Captured device state, pluginState length=" << savedDevice_.pluginState.length());
-
-    tm.removeDeviceFromTrack(trackId_, deviceId_);
-    executed_ = true;
-    DBG("UNDO: Removed device " << savedDevice_.name << " (id=" << deviceId_ << ") from track "
-                                << trackId_ << " at index " << savedIndex_);
-}
-
-void RemoveDeviceFromTrackCommand::undo() {
-    if (!executed_)
-        return;
-
-    DBG("UNDO: Restoring device " << savedDevice_.name << " (id=" << deviceId_
-                                  << "), pluginState length=" << savedDevice_.pluginState.length());
-    auto& tm = TrackManager::getInstance();
-    // Re-insert with ids preserved. addDeviceToTrack runs the device through
-    // prepareNewDevice, which stamps a fresh DeviceId, so undo would restore it
-    // under a different id and orphan every automation lane, macro link, and
-    // alias that targeted it. ChainElement is move-only, hence the push_back.
-    std::vector<ChainElement> elements;
-    elements.push_back(makeDeviceElement(savedDevice_));
-    tm.insertChainElementsByPath(ChainNodePath::topLevelDevice(trackId_, deviceId_).parentChain(),
-                                 std::move(elements), savedIndex_, /*reassignIds=*/false);
-    DBG("UNDO: Restored device " << savedDevice_.name << " (id=" << deviceId_ << ") to track "
-                                 << trackId_ << " at index " << savedIndex_);
-}
-
-// ============================================================================
 // MoveChainElementCommand
 // ============================================================================
 
-MoveChainElementCommand::MoveChainElementCommand(const ChainNodePath& sourceElementPath,
-                                                 const ChainNodePath& destinationChainPath,
+MoveChainElementCommand::MoveChainElementCommand(ChainNodePath sourceElementPath,
+                                                 ChainNodePath destinationChainPath,
                                                  int insertIndex)
-    : sourceElementPath_(sourceElementPath),
-      destinationChainPath_(destinationChainPath),
+    : sourceElementPath_(std::move(sourceElementPath)),
+      destinationChainPath_(std::move(destinationChainPath)),
       insertIndex_(insertIndex) {}
 
 ChainNodePath MoveChainElementCommand::buildMovedPath(
@@ -414,7 +809,9 @@ void MoveChainElementCommand::undo() {
     if (!executed_)
         return;
 
-    TrackManager::getInstance().moveChainElement(movedElementPath_, undoChainPath_, undoIndex_);
+    auto& tm = TrackManager::getInstance();
+    tm.moveChainElement(movedElementPath_, undoChainPath_,
+                        dropIndexForHome(tm, movedElementPath_, undoChainPath_, undoIndex_));
 }
 
 // ============================================================================
@@ -422,10 +819,10 @@ void MoveChainElementCommand::undo() {
 // ============================================================================
 
 MoveChainElementsCommand::MoveChainElementsCommand(std::vector<ChainNodePath> sourceElementPaths,
-                                                   const ChainNodePath& destinationChainPath,
+                                                   ChainNodePath destinationChainPath,
                                                    int insertIndex)
     : sourceElementPaths_(std::move(sourceElementPaths)),
-      destinationChainPath_(destinationChainPath),
+      destinationChainPath_(std::move(destinationChainPath)),
       insertIndex_(insertIndex) {}
 
 void MoveChainElementsCommand::execute() {
@@ -447,25 +844,16 @@ void MoveChainElementsCommand::execute() {
         if (index < 0)
             continue;
 
-        const bool alreadyRecorded =
-            std::any_of(records.begin(), records.end(), [type, id](const auto& record) {
-                return record.type == type && record.id == id;
-            });
-        if (alreadyRecorded)
+        const auto namesSameElement = [type, id](const auto& record) {
+            return record.type == type && record.id == id;
+        };
+        if (std::ranges::any_of(records, namesSameElement))
             continue;
 
         records.push_back({path, parentPath, index, type, id});
     }
 
-    std::stable_sort(records.begin(), records.end(), [](const auto& a, const auto& b) {
-        const auto& parentA = a.originalParentPath;
-        const auto& parentB = b.originalParentPath;
-        if (parentA == parentB)
-            return a.originalIndex < b.originalIndex;
-        if (parentA.trackId != parentB.trackId)
-            return parentA.trackId < parentB.trackId;
-        return parentA.toString() < parentB.toString();
-    });
+    std::ranges::stable_sort(records, byParentThenIndex);
 
     commands_.clear();
     commands_.reserve(records.size());
@@ -493,47 +881,31 @@ void MoveChainElementsCommand::undo() {
 
     auto& tm = TrackManager::getInstance();
     auto records = movedElements_;
-    std::stable_sort(records.begin(), records.end(), [](const auto& a, const auto& b) {
-        if (a.originalParentPath == b.originalParentPath)
-            return a.originalIndex < b.originalIndex;
-        if (a.originalParentPath.trackId != b.originalParentPath.trackId)
-            return a.originalParentPath.trackId < b.originalParentPath.trackId;
-        return a.originalParentPath.toString() < b.originalParentPath.toString();
-    });
+    std::ranges::stable_sort(records, byParentThenIndex);
 
     auto restoreRecord = [&tm](const auto& record) {
         auto currentPath = findChainElementPath(tm, record.type, record.id);
         if (!currentPath.isValid())
             return;
 
-        int insertIndex = record.originalIndex;
-        const auto currentParentPath = parentChainOf(currentPath);
-        const int currentIndex = tm.getChainElementIndex(currentPath);
-        if (currentParentPath == record.originalParentPath) {
-            if (currentIndex == record.originalIndex)
-                return;
-            if (currentIndex >= 0 && currentIndex < record.originalIndex)
-                ++insertIndex;
-        }
+        if (parentChainOf(currentPath) == record.originalParentPath &&
+            tm.getChainElementIndex(currentPath) == record.originalIndex)
+            return;
 
-        tm.moveChainElement(currentPath, record.originalParentPath, insertIndex);
+        tm.moveChainElement(
+            currentPath, record.originalParentPath,
+            dropIndexForHome(tm, currentPath, record.originalParentPath, record.originalIndex));
     };
 
-    auto begin = records.begin();
-    while (begin != records.end()) {
-        auto end = std::find_if(begin, records.end(), [&](const auto& record) {
-            return record.originalParentPath != begin->originalParentPath;
-        });
+    for (auto chunk : records | std::views::chunk_by(sameParent)) {
+        const auto originalIndexOf = [](const auto& record) { return record.originalIndex; };
+        const auto lowestOriginal = std::ranges::min_element(chunk, {}, originalIndexOf);
 
-        const auto minOriginalIt = std::min_element(begin, end, [](const auto& a, const auto& b) {
-            return a.originalIndex < b.originalIndex;
-        });
         int minCurrentIndex = std::numeric_limits<int>::max();
         bool allStillInOriginalContainer = true;
-
-        for (auto it = begin; it != end; ++it) {
-            const auto currentPath = findChainElementPath(tm, it->type, it->id);
-            if (!currentPath.isValid() || parentChainOf(currentPath) != it->originalParentPath) {
+        for (const auto& record : chunk) {
+            const auto currentPath = findChainElementPath(tm, record.type, record.id);
+            if (!currentPath.isValid() || parentChainOf(currentPath) != record.originalParentPath) {
                 allStillInOriginalContainer = false;
                 break;
             }
@@ -543,17 +915,18 @@ void MoveChainElementsCommand::undo() {
                 minCurrentIndex = std::min(minCurrentIndex, currentIndex);
         }
 
-        if (allStillInOriginalContainer && minOriginalIt != end &&
-            minCurrentIndex < minOriginalIt->originalIndex) {
-            for (auto it = std::make_reverse_iterator(end); it != std::make_reverse_iterator(begin);
-                 ++it)
-                restoreRecord(*it);
+        // The chunk sits earlier than it started, so restoring front-first
+        // would push each element past the one before it.
+        const bool restoreFromBack = allStillInOriginalContainer &&
+                                     lowestOriginal != std::ranges::end(chunk) &&
+                                     minCurrentIndex < lowestOriginal->originalIndex;
+        if (restoreFromBack) {
+            for (const auto& record : chunk | std::views::reverse)
+                restoreRecord(record);
         } else {
-            for (auto it = begin; it != end; ++it)
-                restoreRecord(*it);
+            for (const auto& record : chunk)
+                restoreRecord(record);
         }
-
-        begin = end;
     }
 }
 
@@ -561,19 +934,50 @@ void MoveChainElementsCommand::undo() {
 // PasteChainElementsCommand
 // ============================================================================
 
-PasteChainElementsCommand::PasteChainElementsCommand(const ChainNodePath& destinationChainPath,
+PasteChainElementsCommand::PasteChainElementsCommand(ChainNodePath destinationChainPath,
                                                      std::vector<ChainElement> elements,
                                                      int insertIndex)
-    : destinationChainPath_(destinationChainPath),
+    : destinationChainPath_(std::move(destinationChainPath)),
       templateElements_(std::move(elements)),
       insertIndex_(insertIndex) {}
 
 void PasteChainElementsCommand::execute() {
     auto& tm = TrackManager::getInstance();
-    auto elements = deepCopyChainElements(templateElements_);
-    const int requestedIndex = insertIndex_;
+    const bool replaying = !materialised_.empty();
+
+    // A redo replays what the first run produced, ids and all. Re-copying the
+    // template would re-key it, giving every pasted device a fresh id and
+    // orphaning the links, automation lanes and aliases made against the first
+    // paste -- the same reason the removal commands restore under the id the
+    // device had (#2221).
+    auto elements =
+        replaying ? deepCopyChainElements(materialised_) : deepCopyChainElements(templateElements_);
+    const int elementCount = static_cast<int>(elements.size());
+
+    // The index the insert will actually use, taken against the destination as
+    // it is NOW. `insertChainElementsByPath()` clamps against the pre-insertion
+    // size, so reading it back afterwards against the larger list would start
+    // the bookkeeping past what was inserted: a stale or out-of-range index
+    // recorded some of the pasted elements, or none, and undo then left them
+    // behind while redo pasted another copy (#2221).
+    const auto* destinationBefore =
+        destinationChainPath_.steps.empty() ? nullptr : tm.getChainByPath(destinationChainPath_);
+    const auto* trackBefore = tm.getTrack(destinationChainPath_.trackId);
+    // A top-level path counts the track's own chain, a nested one counts the
+    // chain it names. Either can be gone, which counts the same as empty.
+    const int destinationSizeBefore = [&]() -> int {
+        if (!destinationChainPath_.steps.empty()) {
+            return destinationBefore != nullptr
+                       ? static_cast<int>(destinationBefore->elements.size())
+                       : 0;
+        }
+        return trackBefore != nullptr ? static_cast<int>(trackBefore->chain.fxChainElements.size())
+                                      : 0;
+    }();
+    const int requestedIndex = std::clamp(insertIndex_, 0, destinationSizeBefore);
+
     executed_ = tm.insertChainElementsByPath(destinationChainPath_, std::move(elements),
-                                             requestedIndex, true);
+                                             requestedIndex, !replaying);
     insertedPaths_.clear();
     if (!executed_)
         return;
@@ -582,17 +986,23 @@ void PasteChainElementsCommand::execute() {
     if (!track)
         return;
 
-    const auto& destinationElements =
-        destinationChainPath_.steps.empty()
-            ? track->chain.fxChainElements
-            : tm.getChain(destinationChainPath_.trackId, destinationChainPath_.getRackId(),
-                          destinationChainPath_.getChainId())
-                  ->elements;
-    const int start = std::clamp(requestedIndex, 0, static_cast<int>(destinationElements.size()));
-    for (int i = 0; i < static_cast<int>(templateElements_.size()) &&
-                    start + i < static_cast<int>(destinationElements.size());
+    // By path rather than by extracted ids: the destination can be nested to any
+    // depth, and it can be a pad chain, whose owner step is a DeviceId that no
+    // rack lookup answers to (#2219).
+    const auto* destinationChain =
+        destinationChainPath_.steps.empty() ? nullptr : tm.getChainByPath(destinationChainPath_);
+    if (!destinationChainPath_.steps.empty() && destinationChain == nullptr)
+        return;
+
+    const auto& destinationElements = destinationChainPath_.steps.empty()
+                                          ? track->chain.fxChainElements
+                                          : destinationChain->elements;
+    // `requestedIndex` is already the effective one, so the inserted elements are
+    // exactly [start, start + elementCount).
+    const int start = requestedIndex;
+    for (int i = 0; i < elementCount && start + i < static_cast<int>(destinationElements.size());
          ++i) {
-        const auto& element = destinationElements[static_cast<size_t>(start + i)];
+        const auto& element = destinationElements[static_cast<size_t>(start) + i];
         if (isDevice(element)) {
             const auto deviceId = getDevice(element).id;
             insertedPaths_.push_back(
@@ -602,17 +1012,20 @@ void PasteChainElementsCommand::execute() {
         } else if (isRack(element)) {
             insertedPaths_.push_back(destinationChainPath_.withRack(getRack(element).id));
         }
+
+        if (!replaying)
+            materialised_.push_back(deepCopyElement(element));
     }
 }
 
 void PasteChainElementsCommand::undo() {
     auto& tm = TrackManager::getInstance();
-    for (auto it = insertedPaths_.rbegin(); it != insertedPaths_.rend(); ++it) {
-        if (it->getType() == ChainNodeType::TopLevelDevice ||
-            it->getType() == ChainNodeType::Device)
-            tm.removeDeviceFromChainByPath(*it);
-        else if (it->getType() == ChainNodeType::Rack)
-            tm.removeRackFromChainByPath(*it);
+    for (auto& insertedPath : std::views::reverse(insertedPaths_)) {
+        if (insertedPath.getType() == ChainNodeType::TopLevelDevice ||
+            insertedPath.getType() == ChainNodeType::Device)
+            tm.removeDeviceFromChainByPath(insertedPath);
+        else if (insertedPath.getType() == ChainNodeType::Rack)
+            tm.removeRackFromChainByPath(insertedPath);
     }
 }
 
@@ -633,6 +1046,7 @@ void WrapChainElementsInRackCommand::execute() {
 
     sourceChainPath_ = parentChainOf(sourceElementPaths_.front());
     sourceIndex_ = std::numeric_limits<int>::max();
+    sourceIndices_.clear();
     for (const auto& path : sourceElementPaths_) {
         if (parentChainOf(path) != sourceChainPath_) {
             executed_ = false;
@@ -640,15 +1054,24 @@ void WrapChainElementsInRackCommand::execute() {
         }
 
         const int index = tm.getChainElementIndex(path);
-        if (index >= 0)
+        if (index >= 0) {
             sourceIndex_ = std::min(sourceIndex_, index);
+            sourceIndices_.push_back(index);
+        }
     }
+    // Ascending, which is the order the wrap itself puts them in the rack, so an
+    // index and a child line up.
+    std::sort(sourceIndices_.begin(), sourceIndices_.end());
     if (sourceIndex_ == std::numeric_limits<int>::max()) {
         executed_ = false;
         return;
     }
 
-    rackId_ = tm.wrapChainElementsInRack(sourceElementPaths_, rackName_);
+    // A redo reuses the ids the first run allocated, so undo followed by redo
+    // leaves the rack with the identity it had rather than a fresh one (#2221).
+    const auto newRackId =
+        tm.wrapChainElementsInRack(sourceElementPaths_, rackName_, rackId_, chainId_);
+    rackId_ = newRackId;
     executed_ = rackId_ != INVALID_RACK_ID;
 
     if (executed_) {
@@ -677,9 +1100,23 @@ void WrapChainElementsInRackCommand::undo() {
             childPaths.push_back(chainPath.withRack(getRack(element).id));
     }
 
-    int insertIndex = sourceIndex_;
-    for (const auto& childPath : childPaths)
-        tm.moveChainElement(childPath, sourceChainPath_, insertIndex++);
+    // Each child goes back to the index it came from, not to a run starting at
+    // the lowest one: a selection can have gaps, and closing them reorders the
+    // chain (#2221).
+    //
+    // The rack is still standing while they move, occupying one slot at
+    // `rackIndex`, so a child whose home is past it aims one higher and lands
+    // right when the rack goes. `rackIndex` rises as children are put in front
+    // of it.
+    int rackIndex = sourceIndex_;
+    for (std::size_t i = 0; i < childPaths.size(); ++i) {
+        const int home =
+            i < sourceIndices_.size() ? sourceIndices_[i] : sourceIndex_ + static_cast<int>(i);
+        const int target = home <= rackIndex ? home : home + 1;
+        tm.moveChainElement(childPaths[i], sourceChainPath_, target);
+        if (target <= rackIndex)
+            ++rackIndex;
+    }
 
     tm.removeRackFromChainByPath(rackPath);
 }
@@ -688,9 +1125,8 @@ void WrapChainElementsInRackCommand::undo() {
 // SetMacroNameCommand / SetModNameCommand
 // ============================================================================
 
-SetMacroNameCommand::SetMacroNameCommand(const ChainNodePath& path, int macroIndex,
-                                         const juce::String& newName)
-    : path_(path), macroIndex_(macroIndex), newName_(newName) {
+SetMacroNameCommand::SetMacroNameCommand(ChainNodePath path, int macroIndex, juce::String newName)
+    : path_(std::move(path)), macroIndex_(macroIndex), newName_(std::move(newName)) {
     const auto& trackManager = TrackManager::getInstance();
     auto node = trackManager.resolveChainNode(path_);
     if (!node.valid() || node.macros == nullptr || macroIndex_ < 0 ||
@@ -717,9 +1153,8 @@ void SetMacroNameCommand::applyName(const juce::String& name) {
     TrackManager::getInstance().notifyModulationNamesChanged(path_.trackId);
 }
 
-SetModNameCommand::SetModNameCommand(const ChainNodePath& path, int modIndex,
-                                     const juce::String& newName)
-    : path_(path), modIndex_(modIndex), newName_(newName) {
+SetModNameCommand::SetModNameCommand(ChainNodePath path, int modIndex, juce::String newName)
+    : path_(std::move(path)), modIndex_(modIndex), newName_(std::move(newName)) {
     const auto& trackManager = TrackManager::getInstance();
     auto node = trackManager.resolveChainNode(path_);
     if (!node.valid() || node.mods == nullptr || modIndex_ < 0 ||
@@ -750,9 +1185,9 @@ void SetModNameCommand::applyName(const juce::String& name) {
 // CreateTrackWithDeviceCommand
 // ============================================================================
 
-CreateTrackWithDeviceCommand::CreateTrackWithDeviceCommand(const juce::String& trackName,
-                                                           TrackType type, const DeviceInfo& device)
-    : trackName_(trackName), type_(type), device_(device) {}
+CreateTrackWithDeviceCommand::CreateTrackWithDeviceCommand(juce::String trackName, TrackType type,
+                                                           DeviceInfo device)
+    : trackName_(std::move(trackName)), type_(type), device_(std::move(device)) {}
 
 void CreateTrackWithDeviceCommand::execute() {
     auto& trackManager = TrackManager::getInstance();
@@ -802,24 +1237,72 @@ void CreateTrackWithDeviceCommand::undo() {
 
 namespace {
 
-void capturePluginStateAt(const ChainNodePath& devicePath) {
-    auto& tm = TrackManager::getInstance();
-    if (auto* engine = tm.getAudioEngine()) {
-        if (auto* bridge = engine->getAudioBridge())
-            bridge->getPluginManager().capturePluginState(devicePath);
+/// Flush every live plugin under @p chainPath into the model before it is taken
+/// out, so an undo restores the subtree as it sounded rather than as it was
+/// assembled. A Drum Grid's pads ride along in its own state (#2207), so the
+/// grid device itself is the whole capture for them.
+void capturePluginStatesUnder(const std::vector<ChainElement>& elements,
+                              const ChainNodePath& chainPath) {
+    for (const auto& element : elements) {
+        if (isDevice(element)) {
+            PluginService::getInstance().capturePluginStateAt(
+                chainPath.withDevice(magda::getDevice(element).id));
+            continue;
+        }
+
+        if (!isRack(element))
+            continue;
+
+        const auto& rack = magda::getRack(element);
+        const auto rackPath = chainPath.withRack(rack.id);
+        for (const auto& chain : rack.chains)
+            capturePluginStatesUnder(chain.elements, rackPath.withChain(chain.id));
     }
 }
 
 }  // namespace
 
-AddDeviceByPathCommand::AddDeviceByPathCommand(const ChainNodePath& parentPath,
-                                               const DeviceInfo& device, int insertIndex)
-    : parentPath_(parentPath), device_(device), insertIndex_(insertIndex) {}
+AddDeviceByPathCommand::AddDeviceByPathCommand(ChainNodePath parentPath, DeviceInfo device,
+                                               int insertIndex)
+    : parentPath_(std::move(parentPath)), device_(std::move(device)), insertIndex_(insertIndex) {}
 
 void AddDeviceByPathCommand::execute() {
     auto& tm = TrackManager::getInstance();
 
-    if (parentPath_.getType() == ChainNodeType::Track) {
+    // A redo puts back what the first run made rather than adding again. Every
+    // add path stamps a fresh DeviceId, so a second run would hand the device a
+    // different identity and orphan every automation lane, macro link and alias
+    // named against the first one -- the reason paste and wrap replay what they
+    // materialised (#2228, #2232).
+    if (executed_ && createdDevicePath_.isValid()) {
+        if (createdDevicePath_.isPostFx() || createdDevicePath_.isMixerAnalysis()) {
+            tm.insertFlatSectionDeviceByPath(createdDevicePath_, materialised_, insertIndex_);
+            return;
+        }
+
+        std::vector<ChainElement> elements;
+        elements.push_back(makeDeviceElement(materialised_));
+        tm.insertChainElementsByPath(createdDevicePath_.parentChain(), std::move(elements),
+                                     insertIndex_, /*reassignIds=*/false);
+        return;
+    }
+
+    const bool postFx = parentPath_.isPostFx();
+    if (postFx || parentPath_.isMixerAnalysis()) {
+        // The two flat sections hold bare devices in their own list; neither of
+        // the chain adds can reach one, so adding an analyzer stayed off the
+        // undo stack entirely.
+        if (postFx)
+            createdDeviceId_ =
+                insertIndex_ >= 0 ? tm.addDeviceToPostFx(parentPath_.trackId, device_, insertIndex_)
+                                  : tm.addDeviceToPostFx(parentPath_.trackId, device_);
+        else
+            createdDeviceId_ = tm.addDeviceToMixerAnalysis(parentPath_.trackId, device_);
+        if (createdDeviceId_ != INVALID_DEVICE_ID)
+            createdDevicePath_ =
+                postFx ? ChainNodePath::postFxDevice(parentPath_.trackId, createdDeviceId_)
+                       : ChainNodePath::mixerAnalysisDevice(parentPath_.trackId, createdDeviceId_);
+    } else if (parentPath_.getType() == ChainNodeType::Track) {
         createdDeviceId_ = insertIndex_ >= 0
                                ? tm.addDeviceToTrack(parentPath_.trackId, device_, insertIndex_)
                                : tm.addDeviceToTrack(parentPath_.trackId, device_);
@@ -835,6 +1318,13 @@ void AddDeviceByPathCommand::execute() {
     }
 
     executed_ = createdDeviceId_ != INVALID_DEVICE_ID;
+    if (executed_) {
+        // Where it actually landed, so a redo restores that index rather than
+        // the -1 that meant "append".
+        insertIndex_ = tm.getChainElementIndex(createdDevicePath_);
+        if (const auto* added = tm.getDeviceInChainByPath(createdDevicePath_))
+            materialised_ = *added;
+    }
     DBG("UNDO: Added device by path " << parentPath_.toString() << " (deviceId=" << createdDeviceId_
                                       << ")");
 }
@@ -844,6 +1334,450 @@ void AddDeviceByPathCommand::undo() {
         return;
     TrackManager::getInstance().removeDeviceFromChainByPath(createdDevicePath_);
     DBG("UNDO: Removed added device " << createdDeviceId_);
+}
+
+ReplaceDeviceByPathCommand::ReplaceDeviceByPathCommand(
+    ChainNodePath devicePath, DeviceInfo replacement,
+    std::vector<ReferenceTargetMapping> referenceRemaps, std::optional<DeviceInfo> presetState,
+    std::optional<juce::File> pluginPresetFile)
+    : devicePath_(std::move(devicePath)),
+      parentPath_(devicePath_.parentChain()),
+      replacement_(std::move(replacement)),
+      referenceRemaps_(std::move(referenceRemaps)),
+      presetState_(std::move(presetState)),
+      pluginPresetFile_(std::move(pluginPresetFile)) {}
+
+void ReplaceDeviceByPathCommand::execute() {
+    auto& tm = TrackManager::getInstance();
+    const auto* incumbent = tm.getDeviceInChainByPath(devicePath_);
+    if (incumbent == nullptr) {
+        executed_ = false;
+        return;
+    }
+
+    const auto insertMaterialised = [&](const ChainNodePath& path, const DeviceInfo& device) {
+        if (path.isPostFx() || path.isMixerAnalysis())
+            return tm.insertFlatSectionDeviceByPath(path, device, insertIndex_);
+        std::vector<ChainElement> elements;
+        elements.push_back(makeDeviceElement(device));
+        return tm.insertChainElementsByPath(path.parentChain(), std::move(elements), insertIndex_,
+                                            /*reassignIds=*/false);
+    };
+
+    // Redo puts back the exact instance the first execution materialised. Put
+    // it beside the incumbent before taking the incumbent out, so an insertion
+    // refusal cannot turn replacement into deletion.
+    if (captured_) {
+        if (!insertMaterialised(replacementPath_, materialisedReplacement_)) {
+            executed_ = false;
+            return;
+        }
+        remapReferences(referenceRemaps_);
+        tm.removeDeviceFromChainByPath(devicePath_);
+        executed_ = tm.getDeviceInChainByPath(replacementPath_) != nullptr &&
+                    tm.getDeviceInChainByPath(devicePath_) == nullptr;
+        return;
+    }
+
+    PluginService::getInstance().capturePluginStateAt(devicePath_);
+    incumbent = tm.getDeviceInChainByPath(devicePath_);
+    if (incumbent == nullptr) {
+        executed_ = false;
+        return;
+    }
+    previousDevice_ = *incumbent;
+    insertIndex_ = tm.getChainElementIndex(devicePath_);
+    if (insertIndex_ < 0) {
+        executed_ = false;
+        return;
+    }
+
+    DeviceId replacementId = INVALID_DEVICE_ID;
+    if (devicePath_.isPostFx()) {
+        replacementId = tm.stageFlatSectionReplacement(devicePath_, replacement_, insertIndex_);
+        replacementPath_ = ChainNodePath::postFxDevice(devicePath_.trackId, replacementId);
+    } else if (devicePath_.isMixerAnalysis()) {
+        replacementId = tm.stageFlatSectionReplacement(devicePath_, replacement_, insertIndex_);
+        replacementPath_ = ChainNodePath::mixerAnalysisDevice(devicePath_.trackId, replacementId);
+    } else if (parentPath_.isPadOwned()) {
+        const auto gridPath = tm.findDevicePath(parentPath_.getPadOwnerDeviceId());
+        replacementId =
+            tm.addDeviceToPad(gridPath, parentPath_.getPadChainId(), replacement_, insertIndex_);
+        replacementPath_ = parentPath_.withDevice(replacementId);
+    } else if (devicePath_.topLevelDeviceId != INVALID_DEVICE_ID) {
+        replacementId = tm.addDeviceToTrack(devicePath_.trackId, replacement_, insertIndex_);
+        replacementPath_ = ChainNodePath::topLevelDevice(devicePath_.trackId, replacementId);
+    } else {
+        replacementId = tm.addDeviceToChainByPath(parentPath_, replacement_, insertIndex_);
+        replacementPath_ = parentPath_.withDevice(replacementId);
+    }
+
+    const auto rollbackStaged = [&] {
+        if (replacementPath_.isValid())
+            tm.removeDeviceFromChainByPath(replacementPath_);
+        replacementPath_ = {};
+        executed_ = false;
+    };
+    if (replacementId == INVALID_DEVICE_ID ||
+        tm.getChainElementIndex(replacementPath_) != insertIndex_) {
+        rollbackStaged();
+        return;
+    }
+
+    // Decode the optional preset on the replacement instance while the old
+    // device is still present. A failure removes only this staged device.
+    if (presetState_ && !tm.applyDevicePreset(replacementPath_, *presetState_)) {
+        rollbackStaged();
+        return;
+    }
+    if (pluginPresetFile_) {
+        auto* engine = tm.getAudioEngine();
+        if (engine == nullptr ||
+            !engine->loadPluginPresetFile(replacementPath_, *pluginPresetFile_)) {
+            rollbackStaged();
+            return;
+        }
+    }
+
+    PluginService::getInstance().capturePluginStateAt(replacementPath_);
+    const auto* staged = tm.getDeviceInChainByPath(replacementPath_);
+    if (staged == nullptr) {
+        rollbackStaged();
+        return;
+    }
+    materialisedReplacement_ = *staged;
+    for (auto& mapping : referenceRemaps_)
+        mapping.to.devicePath = replacementPath_;
+
+    remapReferences(referenceRemaps_);
+    tm.removeDeviceFromChainByPath(devicePath_);
+    if (tm.getDeviceInChainByPath(devicePath_) != nullptr) {
+        remapReferences(reverseMappings(referenceRemaps_));
+        rollbackStaged();
+        return;
+    }
+
+    captured_ = true;
+    executed_ = true;
+}
+
+void ReplaceDeviceByPathCommand::undo() {
+    if (!executed_ || !captured_)
+        return;
+
+    auto& tm = TrackManager::getInstance();
+    bool restored = false;
+    if (devicePath_.isPostFx() || devicePath_.isMixerAnalysis()) {
+        restored = tm.insertFlatSectionDeviceByPath(devicePath_, previousDevice_, insertIndex_);
+    } else {
+        std::vector<ChainElement> elements;
+        elements.push_back(makeDeviceElement(previousDevice_));
+        restored = tm.insertChainElementsByPath(parentPath_, std::move(elements), insertIndex_,
+                                                /*reassignIds=*/false);
+    }
+    if (!restored)
+        return;
+
+    remapReferences(reverseMappings(referenceRemaps_));
+    tm.removeDeviceFromChainByPath(replacementPath_);
+    executed_ = false;
+}
+
+SetDeviceBypassedCommand::SetDeviceBypassedCommand(ChainNodePath devicePath, bool bypassed)
+    : devicePath_(std::move(devicePath)), bypassed_(bypassed) {}
+
+void SetDeviceBypassedCommand::execute() {
+    auto& tracks = TrackManager::getInstance();
+    const auto* device = tracks.getDeviceInChainByPath(devicePath_);
+    if (device == nullptr) {
+        executed_ = false;
+        return;
+    }
+
+    if (!captured_) {
+        previousBypassed_ = device->bypassed;
+        previousDeltaSolo_ = device->deltaSolo;
+        captured_ = true;
+    }
+    tracks.setDeviceBypassedByPath(devicePath_, bypassed_);
+    executed_ = true;
+}
+
+void SetDeviceBypassedCommand::undo() {
+    if (!executed_ || !captured_)
+        return;
+    auto& tracks = TrackManager::getInstance();
+    tracks.setDeviceBypassedByPath(devicePath_, previousBypassed_);
+    tracks.setDeviceDeltaSoloByPath(devicePath_, previousDeltaSolo_);
+    executed_ = false;
+}
+
+SetSidechainConfigCommand::SetSidechainConfigCommand(ChainNodePath ownerPath,
+                                                     SidechainConfig sidechain)
+    : ownerPath_(std::move(ownerPath)), sidechain_(sidechain) {}
+
+void SetSidechainConfigCommand::execute() {
+    auto& tracks = TrackManager::getInstance();
+    const SidechainConfig* current = nullptr;
+    if (const auto* device = tracks.getDeviceInChainByPath(ownerPath_))
+        current = &device->sidechain;
+    else if (const auto* rack = tracks.getRackByPath(ownerPath_))
+        current = &rack->sidechain;
+
+    if (current == nullptr || *current == sidechain_) {
+        executed_ = false;
+        return;
+    }
+    if (!captured_) {
+        previous_ = *current;
+        captured_ = true;
+    }
+    executed_ = tracks.setSidechainConfigByPath(ownerPath_, sidechain_);
+}
+
+void SetSidechainConfigCommand::undo() {
+    if (!executed_ || !captured_)
+        return;
+    TrackManager::getInstance().setSidechainConfigByPath(ownerPath_, previous_);
+    executed_ = false;
+}
+
+ApplyDevicePresetCommand::ApplyDevicePresetCommand(ChainNodePath devicePath, DeviceInfo presetState,
+                                                   std::vector<std::pair<int, int>> parameterRemaps)
+    : devicePath_(std::move(devicePath)),
+      presetState_(std::move(presetState)),
+      parameterRemaps_(std::move(parameterRemaps)) {}
+
+void ApplyDevicePresetCommand::execute() {
+    auto& tracks = TrackManager::getInstance();
+    const auto* live = tracks.getDeviceInChainByPath(devicePath_);
+    if (live == nullptr) {
+        executed_ = false;
+        return;
+    }
+
+    if (!captured_) {
+        previousState_ = *live;
+        captured_ = true;
+    }
+
+    remapParameterReferences(devicePath_, parameterRemaps_);
+    executed_ = tracks.applyDevicePreset(devicePath_, presetState_);
+    if (!executed_) {
+        std::vector<std::pair<int, int>> reverse;
+        reverse.reserve(parameterRemaps_.size());
+        for (const auto& [from, to] : parameterRemaps_)
+            reverse.emplace_back(to, from);
+        remapParameterReferences(devicePath_, reverse);
+    }
+}
+
+void ApplyDevicePresetCommand::undo() {
+    if (!executed_ || !captured_)
+        return;
+
+    std::vector<std::pair<int, int>> reverse;
+    reverse.reserve(parameterRemaps_.size());
+    for (const auto& [from, to] : parameterRemaps_)
+        reverse.emplace_back(to, from);
+    remapParameterReferences(devicePath_, reverse);
+    TrackManager::getInstance().applyDevicePreset(devicePath_, previousState_);
+    executed_ = false;
+}
+
+ApplyTrackPresetCommand::ApplyTrackPresetCommand(
+    TrackId trackId, TrackInfo presetState, std::vector<ReferenceTargetMapping> referenceRemaps)
+    : trackId_(trackId),
+      presetState_(std::move(presetState)),
+      referenceRemaps_(std::move(referenceRemaps)) {}
+
+void ApplyTrackPresetCommand::execute() {
+    auto& tracks = TrackManager::getInstance();
+    const auto* live = tracks.getTrack(trackId_);
+    if (live == nullptr) {
+        executed_ = false;
+        return;
+    }
+
+    if (!captured_) {
+        previousState_ = *live;
+        captured_ = true;
+    }
+
+    remapReferences(referenceRemaps_);
+    executed_ = tracks.applyPreparedTrackPreset(trackId_, presetState_);
+    if (!executed_)
+        remapReferences(reverseMappings(referenceRemaps_));
+}
+
+void ApplyTrackPresetCommand::undo() {
+    if (!executed_ || !captured_)
+        return;
+
+    remapReferences(reverseMappings(referenceRemaps_));
+    TrackManager::getInstance().applyPreparedTrackPreset(trackId_, previousState_);
+    executed_ = false;
+}
+
+AddRackByPathCommand::AddRackByPathCommand(ChainNodePath parentPath, juce::String name)
+    : parentPath_(std::move(parentPath)), name_(std::move(name)) {
+    // A track-level DTO addresses the track itself, while the model's main FX
+    // container is the same track id with no node selector.
+    parentPath_.isTrackLevel = false;
+}
+
+void AddRackByPathCommand::execute() {
+    auto& tracks = TrackManager::getInstance();
+    if (hasMaterialisedRack_) {
+        std::vector<ChainElement> elements;
+        elements.push_back(makeRackElement(materialisedRack_));
+        executed_ = tracks.insertChainElementsByPath(parentPath_, std::move(elements), insertIndex_,
+                                                     /*reassignIds=*/false);
+        return;
+    }
+
+    createdRackId_ = parentPath_.steps.empty() ? tracks.addRackToTrack(parentPath_.trackId, name_)
+                                               : tracks.addRackToChainByPath(parentPath_, name_);
+    if (createdRackId_ == INVALID_RACK_ID)
+        return;
+
+    createdRackPath_ = parentPath_.withRack(createdRackId_);
+    const auto* rack = tracks.getRackByPath(createdRackPath_);
+    insertIndex_ = tracks.getChainElementIndex(createdRackPath_);
+    if (rack == nullptr || insertIndex_ < 0) {
+        tracks.removeRackFromChainByPath(createdRackPath_);
+        createdRackId_ = INVALID_RACK_ID;
+        return;
+    }
+
+    materialisedRack_ = *rack;
+    hasMaterialisedRack_ = true;
+    executed_ = true;
+}
+
+void AddRackByPathCommand::undo() {
+    if (!executed_)
+        return;
+    TrackManager::getInstance().removeRackFromChainByPath(createdRackPath_);
+    executed_ = false;
+}
+
+AddChainByPathCommand::AddChainByPathCommand(ChainNodePath rackPath, juce::String name)
+    : rackPath_(std::move(rackPath)), name_(std::move(name)) {}
+
+void AddChainByPathCommand::execute() {
+    auto& tracks = TrackManager::getInstance();
+    if (hasMaterialisedChain_) {
+        executed_ = tracks.insertChainIntoRackByPath(rackPath_, materialisedChain_, insertIndex_);
+        return;
+    }
+
+    createdChainId_ = tracks.addChainToRack(rackPath_, name_);
+    if (createdChainId_ == INVALID_CHAIN_ID)
+        return;
+
+    createdChainPath_ = rackPath_.withChain(createdChainId_);
+    const auto* chain = tracks.getChainByPath(createdChainPath_);
+    const auto* rack = tracks.getRackByPath(rackPath_);
+    if (chain == nullptr || rack == nullptr) {
+        tracks.removeChainByPath(createdChainPath_);
+        createdChainId_ = INVALID_CHAIN_ID;
+        return;
+    }
+    const auto found = std::ranges::find(rack->chains, createdChainId_, &ChainInfo::id);
+    if (found == rack->chains.end()) {
+        tracks.removeChainByPath(createdChainPath_);
+        createdChainId_ = INVALID_CHAIN_ID;
+        return;
+    }
+
+    insertIndex_ = static_cast<int>(std::distance(rack->chains.begin(), found));
+    materialisedChain_ = *chain;
+    hasMaterialisedChain_ = true;
+    executed_ = true;
+}
+
+void AddChainByPathCommand::undo() {
+    if (!executed_)
+        return;
+    TrackManager::getInstance().removeChainByPath(createdChainPath_);
+    executed_ = false;
+}
+
+SetRackPropertiesByPathCommand::SetRackPropertiesByPathCommand(ChainNodePath rackPath,
+                                                               RackPropertyPatch patch)
+    : rackPath_(std::move(rackPath)), patch_(std::move(patch)) {}
+
+void SetRackPropertiesByPathCommand::execute() {
+    auto& tracks = TrackManager::getInstance();
+    const auto* rack = tracks.getRackByPath(rackPath_);
+    if (rack == nullptr)
+        return;
+    if (!captured_) {
+        previousBypassed_ = rack->bypassed;
+        previousDeltaSolo_ = rack->deltaSolo;
+        previousVolumeDb_ = rack->volume;
+        captured_ = true;
+    }
+    if (patch_.bypassed)
+        tracks.setRackBypassedByPath(rackPath_, *patch_.bypassed);
+    if (patch_.volumeDb)
+        tracks.setRackVolume(rackPath_, *patch_.volumeDb);
+    executed_ = true;
+}
+
+void SetRackPropertiesByPathCommand::undo() {
+    if (!executed_ || !captured_)
+        return;
+    auto& tracks = TrackManager::getInstance();
+    tracks.setRackBypassedByPath(rackPath_, previousBypassed_);
+    tracks.setRackDeltaSoloByPath(rackPath_, previousDeltaSolo_);
+    tracks.setRackVolume(rackPath_, previousVolumeDb_);
+    executed_ = false;
+}
+
+SetChainPropertiesByPathCommand::SetChainPropertiesByPathCommand(ChainNodePath chainPath,
+                                                                 ChainPropertyPatch patch)
+    : chainPath_(std::move(chainPath)), patch_(std::move(patch)) {}
+
+void SetChainPropertiesByPathCommand::execute() {
+    auto& tracks = TrackManager::getInstance();
+    const auto* chain = tracks.getChainByPath(chainPath_);
+    if (chain == nullptr)
+        return;
+    if (!captured_) {
+        previous_ = *chain;
+        captured_ = true;
+    }
+    if (patch_.name)
+        tracks.setChainName(chainPath_, *patch_.name);
+    if (patch_.outputIndex)
+        tracks.setChainOutput(chainPath_, *patch_.outputIndex);
+    if (patch_.muted)
+        tracks.setChainMuted(chainPath_, *patch_.muted);
+    if (patch_.solo)
+        tracks.setChainSolo(chainPath_, *patch_.solo);
+    if (patch_.bypassed)
+        tracks.setChainBypassed(chainPath_, *patch_.bypassed);
+    if (patch_.volumeDb)
+        tracks.setChainVolume(chainPath_, *patch_.volumeDb);
+    if (patch_.pan)
+        tracks.setChainPan(chainPath_, *patch_.pan);
+    executed_ = true;
+}
+
+void SetChainPropertiesByPathCommand::undo() {
+    if (!executed_ || !captured_)
+        return;
+    auto& tracks = TrackManager::getInstance();
+    tracks.setChainName(chainPath_, previous_.name);
+    tracks.setChainOutput(chainPath_, previous_.outputIndex);
+    tracks.setChainMuted(chainPath_, previous_.muted);
+    tracks.setChainSolo(chainPath_, previous_.solo);
+    tracks.setChainBypassed(chainPath_, previous_.bypassed);
+    tracks.setChainVolume(chainPath_, previous_.volume);
+    tracks.setChainPan(chainPath_, previous_.pan);
+    executed_ = false;
 }
 
 RemoveDeviceByPathCommand::RemoveDeviceByPathCommand(const ChainNodePath& devicePath)
@@ -857,7 +1791,7 @@ void RemoveDeviceByPathCommand::execute() {
         return;
 
     // Flush live plugin state into DeviceInfo so undo restores how it sounded.
-    capturePluginStateAt(devicePath_);
+    PluginService::getInstance().capturePluginStateAt(devicePath_);
 
     device = tm.getDeviceInChainByPath(devicePath_);
     if (device == nullptr)
@@ -877,6 +1811,17 @@ void RemoveDeviceByPathCommand::undo() {
     if (!executed_)
         return;
 
+    auto& tm = TrackManager::getInstance();
+
+    // The two flat sections hold bare devices in their own list, which the
+    // chain-element insert cannot address.
+    if (devicePath_.isPostFx() || devicePath_.isMixerAnalysis()) {
+        tm.insertFlatSectionDeviceByPath(devicePath_, savedDevice_, savedIndex_);
+        DBG("UNDO: Restored flat-section device " << savedDevice_.name << " at index "
+                                                  << savedIndex_);
+        return;
+    }
+
     // Re-insert with ids preserved. The ordinary add path runs the device
     // through prepareNewDevice, which stamps a fresh DeviceId — undo would then
     // restore the device under a different id, leaving every automation lane,
@@ -885,11 +1830,105 @@ void RemoveDeviceByPathCommand::undo() {
     // from an initializer list.
     std::vector<ChainElement> elements;
     elements.push_back(makeDeviceElement(savedDevice_));
-    TrackManager::getInstance().insertChainElementsByPath(parentPath_, std::move(elements),
-                                                          savedIndex_, /*reassignIds=*/false);
+    tm.insertChainElementsByPath(parentPath_, std::move(elements), savedIndex_,
+                                 /*reassignIds=*/false);
 
     DBG("UNDO: Restored device " << savedDevice_.name << " (id=" << savedDevice_.id << ") at index "
                                  << savedIndex_);
+}
+
+RemoveRackByPathCommand::RemoveRackByPathCommand(const ChainNodePath& rackPath)
+    : rackPath_(rackPath), parentPath_(rackPath.parentChain()) {}
+
+void RemoveRackByPathCommand::execute() {
+    auto& tm = TrackManager::getInstance();
+
+    const auto* rack = tm.getRackByPath(rackPath_);
+    if (rack == nullptr)
+        return;
+
+    // The whole subtree, not the rack's own properties: every device under it
+    // goes with it, and each one's plugin holds state the model has not seen
+    // since it was last written.
+    for (const auto& chain : rack->chains)
+        capturePluginStatesUnder(chain.elements, rackPath_.withChain(chain.id));
+
+    // Capturing writes into the model, which can reallocate the container the
+    // rack lives in, so the pointer is taken again rather than reused.
+    rack = tm.getRackByPath(rackPath_);
+    if (rack == nullptr)
+        return;
+
+    savedIndex_ = tm.getChainElementIndex(rackPath_);
+    if (savedIndex_ < 0)
+        return;
+
+    savedRack_ = *rack;
+    tm.removeRackFromChainByPath(rackPath_);
+    executed_ = true;
+    DBG("UNDO: Removed rack " << savedRack_.name << " (id=" << savedRack_.id << ") at index "
+                              << savedIndex_);
+}
+
+void RemoveRackByPathCommand::undo() {
+    if (!executed_)
+        return;
+
+    // Copied rather than moved from: a redo runs execute() again, and the second
+    // removal has to have something to save. Restored with `reassignIds=false`
+    // for the reason the device command gives -- fresh ids would orphan every
+    // automation lane, macro link and alias naming what was in here.
+    std::vector<ChainElement> elements;
+    elements.push_back(makeRackElement(savedRack_));
+    TrackManager::getInstance().insertChainElementsByPath(parentPath_, std::move(elements),
+                                                          savedIndex_, /*reassignIds=*/false);
+
+    DBG("UNDO: Restored rack " << savedRack_.name << " (id=" << savedRack_.id << ") at index "
+                               << savedIndex_);
+}
+
+RemoveChainByPathCommand::RemoveChainByPathCommand(const ChainNodePath& chainPath)
+    : chainPath_(chainPath), rackPath_(chainPath.parent()) {}
+
+void RemoveChainByPathCommand::execute() {
+    auto& tm = TrackManager::getInstance();
+
+    const auto* rack = tm.getRackByPath(rackPath_);
+    if (rack == nullptr)
+        return;
+
+    const auto chainId = chainPath_.steps.empty() ? INVALID_CHAIN_ID : chainPath_.steps.back().id;
+    const auto found = std::ranges::find_if(
+        rack->chains, [chainId](const ChainInfo& chain) { return chain.id == chainId; });
+    if (found == rack->chains.end())
+        return;
+
+    capturePluginStatesUnder(found->elements, chainPath_);
+
+    rack = tm.getRackByPath(rackPath_);
+    if (rack == nullptr)
+        return;
+
+    const auto refound = std::ranges::find_if(
+        rack->chains, [chainId](const ChainInfo& chain) { return chain.id == chainId; });
+    if (refound == rack->chains.end())
+        return;
+
+    savedIndex_ = static_cast<int>(std::distance(rack->chains.begin(), refound));
+    savedChain_ = *refound;
+    tm.removeChainByPath(chainPath_);
+    executed_ = true;
+    DBG("UNDO: Removed chain " << savedChain_.name << " (id=" << savedChain_.id << ") at index "
+                               << savedIndex_);
+}
+
+void RemoveChainByPathCommand::undo() {
+    if (!executed_)
+        return;
+
+    TrackManager::getInstance().insertChainIntoRackByPath(rackPath_, savedChain_, savedIndex_);
+    DBG("UNDO: Restored chain " << savedChain_.name << " (id=" << savedChain_.id << ") at index "
+                                << savedIndex_);
 }
 
 }  // namespace magda

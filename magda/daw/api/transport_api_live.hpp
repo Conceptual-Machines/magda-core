@@ -6,11 +6,9 @@
 
 #include "transport_api.hpp"
 
-namespace tracktion {
-inline namespace engine {
+namespace tracktion::inline engine {
 class Edit;
 }
-}  // namespace tracktion
 
 namespace magda {
 
@@ -32,6 +30,33 @@ class TransportApiLive : public TransportApi {
     ~TransportApiLive() override;
 
     void setEditGetter(EditGetter g);
+
+    /** Transport state read from an engine with no Edit; preferred over the Edit when set. */
+    struct EngineState {
+        std::function<bool()> playing;
+        std::function<bool()> recording;
+        std::function<bool()> looping;
+        std::function<double()> positionBeats;
+        std::function<double()> beatsPerBar;
+    };
+    void setEngineState(EngineState state) {
+        engineState_ = std::move(state);
+    }
+
+    /** Seek through TimelineController so the next play starts where the seek put it. */
+    void setSeekDispatcher(std::function<void(double)> fn) {
+        seekDispatch_ = std::move(fn);
+    }
+
+    /** Record through TimelineController, which arms, punches, and starts playback. */
+    void setRecordDispatcher(std::function<void(bool)> fn) {
+        recordDispatch_ = std::move(fn);
+    }
+
+    /** For an engine with no Edit to observe: report a play, stop, record, or loop change. */
+    void notifyStateChanged() {
+        notifyStateListeners();
+    }
 
     /** Route play() through this callback when set, instead of going
      *  straight to Tracktion's transport. The application wires this to
@@ -85,6 +110,9 @@ class TransportApiLive : public TransportApi {
     TransportFn playDispatch_;
     TransportFn stopDispatch_;
     std::function<void(bool)> loopDispatch_;
+    std::function<void(double)> seekDispatch_;
+    std::function<void(bool)> recordDispatch_;
+    EngineState engineState_;
     std::vector<ListenerEntry> stateListeners_;
     std::unique_ptr<StateObserver> stateObserver_;
     int nextStateListenerToken_ = 1;

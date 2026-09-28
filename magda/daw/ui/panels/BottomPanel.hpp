@@ -17,6 +17,10 @@ namespace magda {
 class DraggableValueLabel;
 class SvgButton;
 
+namespace daw::audio {
+class MagdaDevice;
+}
+
 namespace daw::ui {
 class AudioClipPropertiesContent;
 class ChordPanelContent;
@@ -55,7 +59,7 @@ class BottomPanel : public daw::ui::TabbedPanel,
     void lookAndFeelChanged() override;
 
     // Legacy API for compatibility
-    void setCollapsed(bool collapsed);
+    static void setCollapsed(bool collapsed);
 
     // Get the current content type being displayed
     daw::ui::PanelContentType getActiveContentType() const;
@@ -152,7 +156,7 @@ class BottomPanel : public daw::ui::TabbedPanel,
     ClipId lastEditorClipId_ = INVALID_CLIP_ID;  // Track which clip we auto-defaulted for
 
     void onEditorTabChanged(int tabIndex);
-    void showDrumGridTabContextMenu(juce::Point<int> screenPos);
+    static void showDrumGridTabContextMenu(juce::Point<int> screenPos);
 
     // Mouse listener attached to drumGridTab_ to forward right-clicks to the
     // context-menu handler. SvgButton's onClick is left-click only.
@@ -201,7 +205,9 @@ class BottomPanel : public daw::ui::TabbedPanel,
     std::unique_ptr<PropsResizeHandle> propsResizer_;
     std::unique_ptr<magda::SvgButton> propsCollapseButton_;
 
-    // Chord analysis side panel (right side, for MIDI device tracks)
+    // Chord analysis side panel (right side, for MIDI device tracks). The engine
+    // it reads is held here, declared first so it outlives the panel.
+    std::shared_ptr<daw::audio::MagdaDevice> chordEngineDevice_;
     std::unique_ptr<daw::ui::ChordPanelContent> chordPanel_;
     bool showChordPanel_ = false;
     bool chordPanelCollapsed_ = false;

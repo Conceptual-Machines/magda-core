@@ -202,7 +202,7 @@ void MidiLearnCoordinator::onCapture(const LearnCapture& capture) {
         if (bestAlias.has_value()) {
             // Extract pluginType from the canonical name: format is "pluginType.paramName"
             // e.g. "serum.filter_cutoff" -> pluginType = "serum"
-            juce::String canonicalName = *bestAlias;
+            const juce::String& canonicalName = *bestAlias;
             juce::String pluginType;
             int dotPos = canonicalName.indexOfChar('.');
             if (dotPos > 0)

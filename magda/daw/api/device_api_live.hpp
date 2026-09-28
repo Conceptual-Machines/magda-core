@@ -14,13 +14,50 @@ class DeviceApiLive : public DeviceApi {
     const DeviceInfo* getDevice(const ChainNodePath& devicePath) const override;
     std::vector<DeviceParameter> getDeviceParameters(
         const ChainNodePath& devicePath) const override;
+    std::vector<DevicePresetEntry> getDevicePresets(const ChainNodePath& devicePath) const override;
+    ApplyDevicePresetResult applyPreset(const ChainNodePath& devicePath,
+                                        const juce::String& presetId) override;
+    ReplaceDeviceResult replaceDevice(
+        const ChainNodePath& devicePath, const juce::String& catalogId,
+        const std::optional<juce::String>& presetId = std::nullopt) override;
 
     DeviceId addDevice(const ChainNodePath& parentPath, const juce::String& catalogId,
                        int index) override;
     bool removeDevice(const ChainNodePath& devicePath) override;
     bool moveDevice(const ChainNodePath& devicePath, int toIndex) override;
+    ChainId createPad(const ChainNodePath& gridPath, int padIndex) override;
+    DeviceId setPadVoice(const ChainNodePath& gridPath, int padIndex,
+                         const juce::String& catalogId) override;
+    DeviceId setPadSample(const ChainNodePath& gridPath, int padIndex,
+                          const juce::String& samplePath) override;
+    bool clearPad(const ChainNodePath& gridPath, int padIndex) override;
+    bool swapPads(const ChainNodePath& gridPath, int padA, int padB) override;
+    bool updatePad(const ChainNodePath& gridPath, int padIndex, const PadUpdate& update) override;
     bool setDeviceBypassed(const ChainNodePath& devicePath, bool bypassed) override;
+    std::vector<SidechainView> getSidechains(
+        std::optional<TrackId> trackId = std::nullopt) const override;
+    std::optional<SidechainView> getSidechain(const ChainNodePath& ownerPath) const override;
+    SetSidechainResult setSidechain(const ChainNodePath& ownerPath,
+                                    const SidechainPatch& patch) override;
     bool setDeviceParameter(const ChainNodePath& devicePath, int paramIndex, float value) override;
+    bool setDeviceParameterConfig(const ChainNodePath& devicePath,
+                                  const DeviceParameterConfigUpdate& update) override;
+    bool openDeviceEditor(const ChainNodePath& devicePath) override;
+    std::vector<ModInfo> getDeviceMods(const ChainNodePath& devicePath) const override;
+    std::vector<MacroInfo> getDeviceMacros(const ChainNodePath& devicePath) const override;
+    ModId createDeviceMod(const ChainNodePath& devicePath, ModType type,
+                          LFOWaveform waveform) override;
+    bool updateDeviceMod(const ChainNodePath& devicePath, ModId modId,
+                         const DeviceModUpdate& update) override;
+    bool removeDeviceMod(const ChainNodePath& devicePath, ModId modId) override;
+    bool linkDeviceMod(const ChainNodePath& devicePath, ModId modId, int parameterIndex,
+                       float amount, bool bipolar) override;
+    bool unlinkDeviceMod(const ChainNodePath& devicePath, ModId modId, int parameterIndex) override;
+    bool setDeviceMacroValue(const ChainNodePath& devicePath, int macroIndex, float value) override;
+    bool linkDeviceMacro(const ChainNodePath& devicePath, int macroIndex, int parameterIndex,
+                         float amount, bool bipolar) override;
+    bool unlinkDeviceMacro(const ChainNodePath& devicePath, int macroIndex,
+                           int parameterIndex) override;
 };
 
 }  // namespace magda

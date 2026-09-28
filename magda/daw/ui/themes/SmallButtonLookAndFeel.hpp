@@ -2,7 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "DarkTheme.hpp"
+#include "ActiveTheme.hpp"
 #include "FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -90,7 +90,7 @@ class FlatTabButtonLookAndFeel : public juce::LookAndFeel_V4 {
         g.setColour(baseColour);
         g.fillRect(bounds);
 
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRect(bounds, 0.5f);
     }
 

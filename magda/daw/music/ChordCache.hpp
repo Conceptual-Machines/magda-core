@@ -60,7 +60,7 @@ class ChordCache {
         if (notes.empty())
             return "";
         std::vector<CacheNote> sortedNotes = notes;
-        std::sort(sortedNotes.begin(), sortedNotes.end());
+        std::ranges::sort(sortedNotes);
         std::ostringstream oss;
         for (size_t i = 0; i < sortedNotes.size(); ++i) {
             if (i > 0)

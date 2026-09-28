@@ -106,9 +106,7 @@ bool shouldStopRunning(const ModInfo& mod, const ModTickInputs& in) {
         return false;
     if (mod.triggerMode == LFOTriggerMode::MIDI && in.midiNoteOff)
         return true;
-    if (mod.triggerMode == LFOTriggerMode::Audio && !mod.audioGateOpen)
-        return true;
-    return false;
+    return mod.triggerMode == LFOTriggerMode::Audio && !mod.audioGateOpen;
 }
 
 }  // namespace
@@ -241,7 +239,8 @@ void TrackManager::setMacroValue(const ChainNodePath& path, int macroIndex, floa
     notifyMacroValueChanged(path.trackId, node.scope, node.notifyId(), macroIndex, clampedValue);
 }
 
-void TrackManager::setMacroTarget(const ChainNodePath& path, int macroIndex, ControlTarget target) {
+void TrackManager::setMacroTarget(const ChainNodePath& path, int macroIndex,
+                                  const ControlTarget& target) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.macros, macroIndex))
         return;
@@ -261,7 +260,7 @@ void TrackManager::setMacroTarget(const ChainNodePath& path, int macroIndex, Con
 }
 
 void TrackManager::setMacroLinkAmount(const ChainNodePath& path, int macroIndex,
-                                      ControlTarget target, float amount) {
+                                      const ControlTarget& target, float amount) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.macros, macroIndex))
         return;
@@ -289,7 +288,7 @@ void TrackManager::setMacroLinkAmount(const ChainNodePath& path, int macroIndex,
 }
 
 void TrackManager::setMacroLinkBipolar(const ChainNodePath& path, int macroIndex,
-                                       ControlTarget target, bool bipolar) {
+                                       const ControlTarget& target, bool bipolar) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.macros, macroIndex))
         return;
@@ -309,7 +308,7 @@ void TrackManager::setMacroName(const ChainNodePath& path, int macroIndex,
 }
 
 void TrackManager::removeMacroLink(const ChainNodePath& path, int macroIndex,
-                                   ControlTarget target) {
+                                   const ControlTarget& target) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.macros, macroIndex))
         return;
@@ -398,7 +397,8 @@ void TrackManager::removeMod(const ChainNodePath& path, int modIndex) {
     });
 }
 
-void TrackManager::setModTarget(const ChainNodePath& path, int modIndex, ControlTarget target) {
+void TrackManager::setModTarget(const ChainNodePath& path, int modIndex,
+                                const ControlTarget& target) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.mods, modIndex))
         return;
@@ -411,8 +411,8 @@ void TrackManager::setModTarget(const ChainNodePath& path, int modIndex, Control
     notifyDeviceModifiersChanged(path.trackId);
 }
 
-void TrackManager::setModLinkAmount(const ChainNodePath& path, int modIndex, ControlTarget target,
-                                    float amount) {
+void TrackManager::setModLinkAmount(const ChainNodePath& path, int modIndex,
+                                    const ControlTarget& target, float amount) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.mods, modIndex))
         return;
@@ -425,8 +425,8 @@ void TrackManager::setModLinkAmount(const ChainNodePath& path, int modIndex, Con
     notifyDeviceModifiersChanged(path.trackId);
 }
 
-void TrackManager::setModLinkBipolar(const ChainNodePath& path, int modIndex, ControlTarget target,
-                                     bool bipolar) {
+void TrackManager::setModLinkBipolar(const ChainNodePath& path, int modIndex,
+                                     const ControlTarget& target, bool bipolar) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.mods, modIndex))
         return;
@@ -436,8 +436,8 @@ void TrackManager::setModLinkBipolar(const ChainNodePath& path, int modIndex, Co
     }
 }
 
-void TrackManager::setModLinkEnabled(const ChainNodePath& path, int modIndex, ControlTarget target,
-                                     bool enabled) {
+void TrackManager::setModLinkEnabled(const ChainNodePath& path, int modIndex,
+                                     const ControlTarget& target, bool enabled) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.mods, modIndex))
         return;
@@ -635,7 +635,8 @@ void TrackManager::setModFollower(const ChainNodePath& path, int modIndex, const
     notifyDeviceModifiersChanged(path.trackId);
 }
 
-void TrackManager::removeModLink(const ChainNodePath& path, int modIndex, ControlTarget target) {
+void TrackManager::removeModLink(const ChainNodePath& path, int modIndex,
+                                 const ControlTarget& target) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.mods, modIndex))
         return;
@@ -676,7 +677,7 @@ void TrackManager::removeModPage(const ChainNodePath& path) {
 }
 
 void TrackManager::triggerMidiNoteOn(TrackId trackId) {
-    std::lock_guard<std::mutex> lock(midiTriggerMutex_);
+    std::scoped_lock lock(midiTriggerMutex_);
     pendingMidiNoteOns_[trackId]++;
 }
 
@@ -709,7 +710,7 @@ const ModInfo* TrackManager::getModById(TrackId trackId, ModId modId) const {
 }
 
 void TrackManager::triggerMidiNoteOff(TrackId trackId) {
-    std::lock_guard<std::mutex> lock(midiTriggerMutex_);
+    std::scoped_lock lock(midiTriggerMutex_);
     pendingMidiNoteOffs_[trackId]++;
 }
 
@@ -744,7 +745,7 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
     std::map<TrackId, int> noteOnsThisTick;
     std::map<TrackId, int> noteOffsThisTick;
     {
-        std::lock_guard<std::mutex> lock(midiTriggerMutex_);
+        std::scoped_lock lock(midiTriggerMutex_);
         noteOnsThisTick.swap(pendingMidiNoteOns_);
         noteOffsThisTick.swap(pendingMidiNoteOffs_);
     }
@@ -1055,7 +1056,7 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
             float deviceAudioPeak = audioPeak;
 
             // Cross-track sidechain: replace self triggers with source track's
-            if (device.sidechain.sourceTrackId != INVALID_TRACK_ID) {
+            if (device.sidechain.isActive()) {
                 auto srcId = device.sidechain.sourceTrackId;
                 // Replace self triggers with source track's MIDI triggers
                 deviceMidiTriggered = midiNoteOnTracks.count(srcId) > 0;

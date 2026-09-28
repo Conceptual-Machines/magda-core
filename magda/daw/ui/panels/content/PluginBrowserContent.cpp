@@ -2,9 +2,14 @@
 
 #include <BinaryData.h>
 
+#include <algorithm>
+#include <iterator>
+#include <ranges>
+#include <utility>
+
 #include "../../../../agents/sound_design_agent.hpp"
 #include "../../dialogs/ParameterConfigDialog.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallComboBoxLookAndFeel.hpp"
 #include "PluginBrowserMetadataMerge.hpp"
@@ -18,14 +23,17 @@
 #include "audio/plugins/SpectrumAnalyzerPlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
 #include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
+#include "audio/plugins/engine/EngineDeviceFactory.hpp"
 #include "core/AppPaths.hpp"
 #include "core/Config.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/PluginAlias.hpp"
+#include "core/PluginParameterConfigStore.hpp"
 #include "core/PluginPreferences.hpp"
 #include "core/TrackManager.hpp"
-#include "engine/AudioEngine.hpp"
+#include "engine/AudioEngineChoice.hpp"
 #include "engine/PluginMetadataStore.hpp"
+#include "engine/PluginService.hpp"
 
 namespace magda::daw::ui {
 
@@ -168,8 +176,8 @@ juce::String PluginBrowserInfo::generateAlias(const juce::String& pluginName) {
 //==============================================================================
 class PluginBrowserContent::PluginTreeItem : public juce::TreeViewItem {
   public:
-    PluginTreeItem(const PluginBrowserInfo& plugin, PluginBrowserContent& owner)
-        : plugin_(plugin), owner_(owner) {}
+    PluginTreeItem(PluginBrowserInfo plugin, PluginBrowserContent& owner)
+        : plugin_(std::move(plugin)), owner_(owner) {}
 
     bool mightContainSubItems() override {
         return false;
@@ -180,7 +188,7 @@ class PluginBrowserContent::PluginTreeItem : public juce::TreeViewItem {
 
         // Highlight if selected
         if (isSelected()) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
             g.fillRect(bounds);
         }
 
@@ -213,7 +221,7 @@ class PluginBrowserContent::PluginTreeItem : public juce::TreeViewItem {
         auto formatBounds = bounds.removeFromRight(40);
 
         // Plugin name
-        g.setColour(DarkTheme::getTextColour());
+        g.setColour(ActiveTheme::getTextColour());
         g.setFont(FontManager::getInstance().getUIFont(12.0f));
         auto nameBounds = bounds.reduced(4, 0);
         juce::GlyphArrangement glyphs;
@@ -225,11 +233,11 @@ class PluginBrowserContent::PluginTreeItem : public juce::TreeViewItem {
         // Alias after the name (dimmed)
         if (plugin_.alias.isNotEmpty()) {
             auto aliasBounds = nameBounds.withLeft(nameBounds.getX() + nameWidth + 6);
-            g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.5f));
+            g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(0.5f));
             g.setFont(FontManager::getInstance().getUIFont(10.0f));
             g.drawText("@" + plugin_.alias, aliasBounds, juce::Justification::centredLeft);
         }
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.setFont(FontManager::getInstance().getUIFont(9.0f));
         g.drawText(plugin_.format, formatBounds, juce::Justification::centredRight);
     }
@@ -272,7 +280,7 @@ class PluginBrowserContent::PluginTreeItem : public juce::TreeViewItem {
         // External plugin identification
         obj->setProperty("uniqueId", plugin_.uniqueId);
         obj->setProperty("fileOrIdentifier", plugin_.fileOrIdentifier);
-        return juce::var(obj);
+        return {obj};
     }
 
     bool isInterestedInDragSource(const juce::DragAndDropTarget::SourceDetails&) override {
@@ -289,8 +297,8 @@ class PluginBrowserContent::PluginTreeItem : public juce::TreeViewItem {
 //==============================================================================
 class PluginBrowserContent::CategoryTreeItem : public juce::TreeViewItem {
   public:
-    CategoryTreeItem(const juce::String& name, const juce::String& icon = "")
-        : name_(name), icon_(icon) {}
+    CategoryTreeItem(juce::String name, juce::String icon = "")
+        : name_(std::move(name)), icon_(std::move(icon)) {}
 
     bool mightContainSubItems() override {
         return true;
@@ -301,12 +309,12 @@ class PluginBrowserContent::CategoryTreeItem : public juce::TreeViewItem {
 
         // Highlight if selected
         if (isSelected()) {
-            g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
             g.fillRect(bounds);
         }
 
         // Folder icon
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         g.setFont(FontManager::getInstance().getUIFont(12.0f));
         juce::String folderIcon =
             isOpen() ? juce::String::fromUTF8("▼ ") : juce::String::fromUTF8("▶ ");
@@ -318,13 +326,13 @@ class PluginBrowserContent::CategoryTreeItem : public juce::TreeViewItem {
         }
 
         // Category name
-        g.setColour(DarkTheme::getTextColour());
+        g.setColour(ActiveTheme::getTextColour());
         g.setFont(FontManager::getInstance().getUIFontBold(12.0f));
         g.drawText(name_, bounds.reduced(4, 0), juce::Justification::centredLeft);
 
         // Item count
         auto countBounds = bounds.removeFromRight(40);
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
         g.drawText("(" + juce::String(getNumSubItems()) + ")", countBounds,
                    juce::Justification::centredRight);
@@ -467,34 +475,34 @@ PluginBrowserContent::PluginBrowserContent() {
 }
 
 void PluginBrowserContent::applyThemeColours() {
-    searchBox_.setTextToShowWhenEmpty("Search plugins...", DarkTheme::getSecondaryTextColour());
+    searchBox_.setTextToShowWhenEmpty("Search plugins...", ActiveTheme::getSecondaryTextColour());
     searchBox_.setColour(juce::TextEditor::backgroundColourId,
-                         DarkTheme::getColour(DarkTheme::SURFACE));
-    searchBox_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
+                         ActiveTheme::getColour(ActiveTheme::SURFACE));
+    searchBox_.setColour(juce::TextEditor::textColourId, ActiveTheme::getTextColour());
     searchBox_.setColour(juce::TextEditor::highlightColourId,
-                         DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.45f));
-    searchBox_.setColour(juce::TextEditor::highlightedTextColourId, DarkTheme::getTextColour());
-    searchBox_.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
+                         ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.45f));
+    searchBox_.setColour(juce::TextEditor::highlightedTextColourId, ActiveTheme::getTextColour());
+    searchBox_.setColour(juce::TextEditor::outlineColourId, ActiveTheme::getBorderColour());
 
     viewModeSelector_.setColour(juce::ComboBox::backgroundColourId,
-                                DarkTheme::getColour(DarkTheme::SURFACE));
-    viewModeSelector_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-    viewModeSelector_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getBorderColour());
+                                ActiveTheme::getColour(ActiveTheme::SURFACE));
+    viewModeSelector_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
+    viewModeSelector_.setColour(juce::ComboBox::outlineColourId, ActiveTheme::getBorderColour());
 
     pluginTree_.setColour(juce::TreeView::backgroundColourId,
-                          DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
-    pluginTree_.setColour(juce::TreeView::linesColourId, DarkTheme::getBorderColour());
+                          ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
+    pluginTree_.setColour(juce::TreeView::linesColourId, ActiveTheme::getBorderColour());
 
     loadCategoryIcons();
 }
 
 void PluginBrowserContent::loadCategoryIcons() {
-    const auto tint = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+    const auto tint = ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY);
     const auto loadIcon = [tint](const char* data, int size) {
         auto icon = juce::Drawable::createFromImageData(data, size);
         if (icon) {
             icon->replaceColour(juce::Colour(0xFFB3B3B3), tint);
-            DarkTheme::applyToSvgIcon(*icon);
+            ActiveTheme::applyToSvgIcon(*icon);
         }
         return icon;
     };
@@ -514,7 +522,7 @@ void PluginBrowserContent::lookAndFeelChanged() {
 }
 
 void PluginBrowserContent::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getPanelBackgroundColour());
+    g.fillAll(ActiveTheme::getPanelBackgroundColour());
 }
 
 void PluginBrowserContent::resized() {
@@ -533,12 +541,14 @@ void PluginBrowserContent::resized() {
 }
 
 void PluginBrowserContent::onActivated() {
-    // Get engine from TrackManager if not already set
-    if (!engine_) {
-        if (auto* engine = TrackManager::getInstance().getAudioEngine()) {
-            setEngine(engine);
-        }
-    }
+    // The known list arrives with the engine, which need not have been up when this
+    // panel was built.
+    if (listening_ || PluginService::getInstance().knownList() == nullptr)
+        return;
+
+    PluginService::getInstance().addListChangeListener(this);
+    listening_ = true;
+    refreshPluginList();
 }
 
 void PluginBrowserContent::onDeactivated() {
@@ -554,18 +564,30 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
     // Native + TE internal devices: the registry is the single source of truth.
     // A device appears here by setting showInBrowser on its InternalPluginSpec -
     // no separate hand-maintained list to keep in sync.
-    for (const auto* spec : audio::getAllInternalPluginSpecs()) {
-        if (spec->showInBrowser)
-            list.push_back(PluginBrowserInfo::createInternal(
-                spec->displayName, spec->pluginId, spec->isInstrument, spec->browserCategory,
-                searchKeywordsForInternalSpec(*spec)));
-    }
+    // Under the MAGDA engine a device it cannot play would arrive silent, so it
+    // is not offered (#2437).
+    const auto runnable = chosenAudioEngine() != AudioEngineChoice::Magda;
+    const auto listedInBrowser = [runnable](const audio::InternalPluginSpec* spec) {
+        return spec->showInBrowser &&
+               (runnable || audio::engine_adapter::engineRendersDevice(spec->pluginId));
+    };
+    const auto asBrowserEntry = [](const audio::InternalPluginSpec* spec) {
+        return PluginBrowserInfo::createInternal(spec->displayName, spec->pluginId,
+                                                 spec->isInstrument, spec->browserCategory,
+                                                 searchKeywordsForInternalSpec(*spec));
+    };
+    std::ranges::copy(audio::getAllInternalPluginSpecs() | std::views::filter(listedInBrowser) |
+                          std::views::transform(asBrowserEntry),
+                      std::back_inserter(list));
+
     // Compiled-Faust devices come from their own registry.
-    for (const auto* spec : audio::compiled::getAllCompiledPluginSpecs()) {
-        list.push_back(PluginBrowserInfo::createInternal(spec->displayName, spec->pluginId,
-                                                         spec->isInstrument, spec->browserCategory,
-                                                         searchKeywordsForCompiledSpec(*spec)));
-    }
+    const auto asCompiledBrowserEntry = [](const audio::compiled::CompiledPluginSpec* spec) {
+        return PluginBrowserInfo::createInternal(spec->displayName, spec->pluginId,
+                                                 spec->isInstrument, spec->browserCategory,
+                                                 searchKeywordsForCompiledSpec(*spec));
+    };
+    std::ranges::transform(audio::compiled::getAllCompiledPluginSpecs(), std::back_inserter(list),
+                           asCompiledBrowserEntry);
     // External hardware insert: one registry kind (te::InsertPlugin), surfaced as
     // two browser entries — External FX (audio send/return) and External
     // Instrument (MIDI send + audio return). The split is carried by isInstrument
@@ -586,11 +608,10 @@ void PluginBrowserContent::buildInternalPluginList() {
 }
 
 void PluginBrowserContent::loadExternalPlugins() {
-    if (!engine_) {
+    const auto pluginTypes = PluginService::getInstance().preferredTypes();
+    if (pluginTypes.isEmpty())
         return;
-    }
 
-    const auto pluginTypes = engine_->getPreferredPluginTypes();
     try {
         const auto records = magda::PluginMetadataStore::defaultForCurrentThread().query();
         auto mergedPlugins = mergeExternalPluginMetadata(pluginTypes, records);
@@ -609,27 +630,10 @@ void PluginBrowserContent::loadExternalPlugins() {
     DBG("Loaded " << pluginTypes.size() << " external plugins from KnownPluginList fallback");
 }
 
-void PluginBrowserContent::setEngine(magda::AudioEngine* engine) {
-    // Unregister from old engine's KnownPluginList
-    if (engine_) {
-        engine_->removePluginListChangeListener(this);
-    }
-
-    engine_ = engine;
-
-    // Register as change listener so we auto-refresh after plugin scans
-    if (engine_) {
-        engine_->addPluginListChangeListener(this);
-    }
-
-    refreshPluginList();
-}
-
 PluginBrowserContent::~PluginBrowserContent() {
     magda::PluginPreferences::getInstance().removeListener(this);
-    if (engine_) {
-        engine_->removePluginListChangeListener(this);
-    }
+    if (listening_)
+        PluginService::getInstance().removeListChangeListener(this);
     // Clear root item before TreeView destructor runs
     pluginTree_.setRootItem(nullptr);
 }
@@ -722,12 +726,12 @@ void PluginBrowserContent::rebuildTree() {
         // For nested categories (e.g., "Effect/EQ")
         if (currentViewMode_ == ViewMode::ByCategory) {
             auto parts = juce::StringArray::fromTokens(groupKey, "/", "");
-            juce::String parentKey = parts[0];
+            const juce::String& parentKey = parts[0];
             juce::String childKey = parts.size() > 1 ? parts[1] : "";
 
             // Create parent category if needed
             if (categories.find(parentKey) == categories.end()) {
-                auto parentItem = new CategoryTreeItem(parentKey);
+                auto* parentItem = new CategoryTreeItem(parentKey);
                 root->addSubItem(parentItem);
                 categories[parentKey] = parentItem;
             }
@@ -736,7 +740,7 @@ void PluginBrowserContent::rebuildTree() {
             if (childKey.isNotEmpty()) {
                 juce::String fullKey = parentKey + "/" + childKey;
                 if (categories.find(fullKey) == categories.end()) {
-                    auto childItem = new CategoryTreeItem(childKey);
+                    auto* childItem = new CategoryTreeItem(childKey);
                     categories[parentKey]->addSubItem(childItem);
                     categories[fullKey] = childItem;
                 }
@@ -747,7 +751,7 @@ void PluginBrowserContent::rebuildTree() {
         } else {
             // Single-level grouping
             if (categories.find(groupKey) == categories.end()) {
-                auto item = new CategoryTreeItem(groupKey);
+                auto* item = new CategoryTreeItem(groupKey);
                 root->addSubItem(item);
                 categories[groupKey] = item;
             }
@@ -831,7 +835,7 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
     // Internal devices with a registered agent and external plugins with an
     // explicit AI parameter selection can expose/hide the Sound Designer.
     if (magda::isSoundDesignSupported(plugin.uniqueId) ||
-        ParameterConfigDialog::hasAiSoundDesignerParameters(plugin.uniqueId)) {
+        magda::PluginParameterConfigStore::hasAiSoundDesignerParameters(plugin.uniqueId)) {
         menu.addItem(
             12, "AI Sound Designer", true,
             magda::PluginPreferences::getInstance().aiSoundDesignerEnabled(pluginIdentifier));
@@ -964,10 +968,11 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
                     prefs.setBrowserCategoryOverride(
                         pluginIdentifier,
                         currentOverride == "MIDI FX" ? juce::String() : juce::String("MIDI FX"));
-                    for (auto& p : plugins_) {
-                        if (preferenceIdentifierForPlugin(p) == pluginIdentifier)
-                            p.categoryOverride = prefs.browserCategoryOverride(pluginIdentifier);
-                    }
+                    const auto sameIdentifier = [&pluginIdentifier](const auto& p) {
+                        return preferenceIdentifierForPlugin(p) == pluginIdentifier;
+                    };
+                    for (auto& p : plugins_ | std::views::filter(sameIdentifier))
+                        p.categoryOverride = prefs.browserCategoryOverride(pluginIdentifier);
                     rebuildTree();
                     break;
                 }
@@ -1004,16 +1009,11 @@ void PluginBrowserContent::showParameterConfigDialog(const PluginBrowserInfo& pl
 }
 
 void PluginBrowserContent::toggleFavorite(const PluginBrowserInfo& plugin) {
-    // Find matching plugin in our list and toggle
-    juce::String key = plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
-
-    for (auto& p : plugins_) {
-        juce::String pKey = p.uniqueId.isNotEmpty() ? p.uniqueId : p.name;
-        if (pKey == key) {
-            p.isFavorite = !p.isFavorite;
-            DBG("Toggled favorite: " + p.name + " -> " + (p.isFavorite ? "true" : "false"));
-            break;
-        }
+    const auto match = std::ranges::find(plugins_, preferenceIdentifierForPlugin(plugin),
+                                         preferenceIdentifierForPlugin);
+    if (match != plugins_.end()) {
+        match->isFavorite = !match->isFavorite;
+        DBG("Toggled favorite: " + match->name + " -> " + (match->isFavorite ? "true" : "false"));
     }
 
     saveFavorites();
@@ -1030,7 +1030,7 @@ void PluginBrowserContent::saveFavorites() {
         std::vector<magda::PluginFavoriteUpdate> updates;
         updates.reserve(plugins_.size());
         for (const auto& plugin : plugins_) {
-            const auto key = plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+            const auto key = preferenceIdentifierForPlugin(plugin);
             updates.push_back({key, plugin.name, plugin.isFavorite});
         }
         store.saveFavorites(updates);
@@ -1045,7 +1045,7 @@ void PluginBrowserContent::loadFavorites() {
         const auto favoriteKeys =
             magda::PluginMetadataStore::defaultForCurrentThread().favoriteKeys();
         for (auto& plugin : plugins_) {
-            const auto key = plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+            const auto key = preferenceIdentifierForPlugin(plugin);
             plugin.isFavorite = favoriteKeys.contains(key);
         }
         favoritesLoaded_ = true;
@@ -1063,7 +1063,7 @@ void PluginBrowserContent::saveAliases() {
         auto& store = magda::PluginMetadataStore::defaultForCurrentThread();
         std::map<juce::String, juce::String> aliases;
         for (const auto& plugin : plugins_) {
-            const auto key = plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+            const auto key = preferenceIdentifierForPlugin(plugin);
             const auto defaultAlias = PluginBrowserInfo::generateAlias(plugin.name);
             aliases[key] = plugin.alias == defaultAlias ? juce::String() : plugin.alias;
         }
@@ -1078,7 +1078,7 @@ void PluginBrowserContent::loadAliases() {
     try {
         const auto aliasMap = magda::PluginMetadataStore::defaultForCurrentThread().aliases();
         for (auto& plugin : plugins_) {
-            const auto key = plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+            const auto key = preferenceIdentifierForPlugin(plugin);
             if (const auto it = aliasMap.find(key); it != aliasMap.end())
                 plugin.alias = it->second;
         }
@@ -1097,7 +1097,7 @@ void PluginBrowserContent::showEditAliasDialog(const PluginBrowserInfo& plugin) 
     alertWindow->addButton("Cancel", 0);
     alertWindow->addButton("Reset", 2);
 
-    juce::String pluginKey = plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+    juce::String pluginKey = preferenceIdentifierForPlugin(plugin);
     juce::String pluginName = plugin.name;
 
     alertWindow->enterModalState(
@@ -1107,25 +1107,19 @@ void PluginBrowserContent::showEditAliasDialog(const PluginBrowserInfo& plugin) 
                 // OK — apply custom alias
                 auto newAlias = alertWindow->getTextEditorContents("alias").trim();
                 if (newAlias.isNotEmpty()) {
-                    for (auto& p : plugins_) {
-                        juce::String key = p.uniqueId.isNotEmpty() ? p.uniqueId : p.name;
-                        if (key == pluginKey) {
-                            p.alias = newAlias;
-                            break;
-                        }
-                    }
+                    const auto match =
+                        std::ranges::find(plugins_, pluginKey, preferenceIdentifierForPlugin);
+                    if (match != plugins_.end())
+                        match->alias = std::move(newAlias);
                     saveAliases();
                     rebuildTree();
                 }
             } else if (result == 2) {
                 // Reset to auto-generated
-                for (auto& p : plugins_) {
-                    juce::String key = p.uniqueId.isNotEmpty() ? p.uniqueId : p.name;
-                    if (key == pluginKey) {
-                        p.alias = PluginBrowserInfo::generateAlias(pluginName);
-                        break;
-                    }
-                }
+                const auto match =
+                    std::ranges::find(plugins_, pluginKey, preferenceIdentifierForPlugin);
+                if (match != plugins_.end())
+                    match->alias = PluginBrowserInfo::generateAlias(pluginName);
                 saveAliases();
                 rebuildTree();
             }
@@ -1175,12 +1169,7 @@ void PluginBrowserContent::renameFolder(const juce::String& oldName, const juce:
 void PluginBrowserContent::deleteFolder(const juce::String& name) {
     folderNames_.removeString(name);
     // Its plugins fall back to Unfiled.
-    for (auto it = pluginFolderByKey_.begin(); it != pluginFolderByKey_.end();) {
-        if (it->second == name)
-            it = pluginFolderByKey_.erase(it);
-        else
-            ++it;
-    }
+    std::erase_if(pluginFolderByKey_, [&](const auto& entry) { return entry.second == name; });
     saveFolders();
     rebuildTree();
 }
@@ -1205,6 +1194,8 @@ void PluginBrowserContent::showFolderContextMenu(const juce::String& folderName,
                     break;
                 case 3:
                     deleteFolder(folderName);
+                    break;
+                default:  // menu dismissed
                     break;
             }
         });
@@ -1247,7 +1238,7 @@ void PluginBrowserContent::showRenameFolderDialog(const juce::String& folderName
         true);
 }
 
-juce::File PluginBrowserContent::getFoldersFile() const {
+juce::File PluginBrowserContent::getFoldersFile() {
     return magda::paths::pluginFoldersFile();
 }
 

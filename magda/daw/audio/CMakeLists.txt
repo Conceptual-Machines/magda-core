@@ -271,11 +271,18 @@ file(GLOB_RECURSE _magda_device_pack_sources CONFIGURE_DEPENDS
 )
 set(_magda_device_sdk_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceParameterHandle.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DevicePluginDefaults.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DevicePluginHandle.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceServices.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceServices.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceSessionKey.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/IFaustEditorModel.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceCatalogParameters.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceCatalogParameters.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceStateHydration.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceStateHydration.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceTiming.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceTiming.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/InternalPluginRegistry.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/InternalPluginRegistry.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/MagdaDevice.hpp"
@@ -297,6 +304,27 @@ set(_magda_tracktion_device_adapter_sources
 )
 list(REMOVE_ITEM _magda_device_pack_sources ${_magda_tracktion_device_adapter_sources})
 
+# The native engine's half of the same job (#2174): one device implementation,
+# hosted by whichever engine is running it. Kept out of the pack sweep above for
+# the same reason the Tracktion adapters are -- an adapter is host code, not a
+# device -- and out of magda_tracktion_compat_devices as well, since the whole
+# point of it is that it names no Tracktion type.
+set(_magda_engine_device_adapter_sources
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineDeviceFactory.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineDeviceFactory.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/ControlExecutor.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/ControlExecutor.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/DeviceControl.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/DeviceControl.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineExternalDevice.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineExternalDevice.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineMagdaDevice.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineMagdaDevice.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/PluginAssignments.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/PluginAssignments.hpp"
+)
+list(REMOVE_ITEM _magda_device_pack_sources ${_magda_engine_device_adapter_sources})
+
 set(_magda_base_device_support_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/FaustResources.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/FaustResources.hpp"
@@ -310,8 +338,6 @@ set(_magda_base_device_support_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/midi/MidiBroadcastBus.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/session/SessionMonitorPlugin.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/session/SessionMonitorPlugin.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/transport/StepClock.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/transport/StepClock.hpp"
 )
 file(GLOB _magda_device_dsp_sources CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/*.dsp")
@@ -319,24 +345,70 @@ set_source_files_properties(${_magda_device_dsp_sources} PROPERTIES HEADER_FILE_
 
 set(_magda_neutral_base_device_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/analysis/AudioTapBuffer.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/transport/RampCurve.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/MonoStepSequencer.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/MonoStepSequencer.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/NoteSink.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/PolyStepSequencer.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/PolyStepSequencer.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/PublishedPattern.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/StepClock.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/StepClock.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/StepPattern.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/ArpeggiatorPlugin.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/ArpeggiatorPlugin.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/AnalysisTapPlugin.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/FaustMetadataParser.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/FaustMetadataParser.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/MagdaConvolutionPlugin.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/MagdaConvolutionPlugin.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceNoteSink.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/MagdaDevice.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/MidiMagdaDevice.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/MidiStrumPlugin.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/MidiStrumPlugin.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/OscilloscopePlugin.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/OscilloscopePlugin.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/PolyStepSequencerPlugin.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/PolyStepSequencerPlugin.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/FaustParamInfo.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/FaustParamInfo.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/FaustParamPool.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/FaustParamPool.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/FaustPlugin.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/FaustPlugin.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/SidechainPlugin.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/SidechainPlugin.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/StepSequencerPlugin.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/StepSequencerPlugin.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/SpectrumAnalyzerPlugin.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/SpectrumAnalyzerPlugin.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/ToneGeneratorPlugin.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/ToneGeneratorPlugin.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/CompiledFaustInterface.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/CompiledPluginRegistry.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/MagdaCompiledEffect.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/MagdaCompiledEffect.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/MagdaCompiledPolyInstrument.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/MagdaCompiledPolyInstrument.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/mutable/MutableCloudsPlugin.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/mutable/MutableCloudsPlugin.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/mutable/MutableElementsPlugin.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/mutable/MutableElementsPlugin.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/mutable/MutableRingsPlugin.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/mutable/MutableRingsPlugin.hpp"
 )
-foreach(_magda_neutral_instrument IN ITEMS
-        Bell Clap Djembe FM Hat Kick Marimba Snare Tom)
+# Devices that are MagdaDevice implementations: one DSP, hosted by whichever
+# engine is running it (#2192). Instruments share MagdaCompiledPolyInstrument,
+# effects share MagdaCompiledEffect; both lists are just "who has crossed".
+foreach(_magda_neutral_device IN ITEMS
+        Bell Clap Djembe FM Hat Kick Marimba PolySynth Snare Tom
+        Bitcrusher Chorus Clipper Compressor Delay Dimension Filter Flanger
+        FreqShift GateExpander GrainDelay Grit Mod Phaser Pitch Reverb RingMod
+        Eq Limiter Multiband Saturator Utility)
     list(APPEND _magda_neutral_base_device_sources
-        "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/Magda${_magda_neutral_instrument}CompiledPlugin.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/Magda${_magda_neutral_instrument}CompiledPlugin.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/Magda${_magda_neutral_device}CompiledPlugin.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/Magda${_magda_neutral_device}CompiledPlugin.hpp"
     )
 endforeach()
 
@@ -366,27 +438,70 @@ target_sources(magda_tracktion_compat_devices PRIVATE
     ${_magda_legacy_tracktion_device_sources}
 )
 
+# The device layer under the native engine (#2174).
+#
+# Its own static library rather than sources in magda_daw, because the app does
+# not link the engine yet and this is the one piece of host code that has to see
+# both sides: the frozen device SDK and the engine's executor. The symmetry with
+# magda_tracktion_compat_devices is the point -- each target is one engine's
+# lifecycle adapter over the same MagdaDevice.
+#
+# It reaches findCompiledPluginSpec(), which the compatibility target still
+# owns; the declaration is in a neutral header and the definition resolves at
+# the final link, the same arrangement magda_engine has with the JUCE modules.
+if(MAGDA_BUILD_NATIVE_ENGINE)
+    add_library(magda_engine_devices STATIC ${_magda_engine_device_adapter_sources})
+    add_library(magda::engine_devices ALIAS magda_engine_devices)
+
+    target_compile_features(magda_engine_devices PRIVATE cxx_std_23)
+    target_include_directories(magda_engine_devices PRIVATE ${CMAKE_SOURCE_DIR})
+    # magda_engine is added after magda/daw (it links the model layer this
+    # directory defines), so this names it before it exists. A plain target name
+    # resolves at generate time, which is what makes that legal.
+    target_link_libraries(magda_engine_devices
+        PUBLIC
+        magda_device_sdk
+        magda_engine
+    )
+endif()
+
 target_sources(magda_daw PRIVATE
     AudioBridge.cpp
     DeviceParameterDisplayTextProvider.cpp
     DeviceParameterDisplayTextProvider.hpp
+    DeviceParameterList.cpp
+    DeviceParameterList.hpp
     ClipCommands.cpp
+    FourOscMigration.cpp
+    FourOscTranslation.cpp
     TrackMeasurementManager.cpp
     AudioBridgeMixer.cpp
     AudioBridgeMixer.hpp
     CompService.cpp
     CompService.hpp
+    # The one owner of hardware audio I/O (#2746)
+    io/AudioIOService.cpp
+    io/AudioIOService.hpp
+    io/HardwareRouteNames.cpp
+    io/HardwareRouteNames.hpp
+    io/TracktionAudioSettings.cpp
+    io/TracktionAudioSettings.hpp
     AudioThumbnailManager.cpp
     WaveformPeakCache.cpp
     DeviceMeteringManager.cpp
     analysis/MixAnalysisInput.cpp
     analysis/OfflineMixAnalysis.cpp
     MidiBridge.cpp
+    midi/ActiveMidiInputs.cpp
+    midi/ActiveMidiInputs.hpp
     midi/MidiDeviceMatch.cpp
     midi/MidiInputRouter.cpp
     midi/MidiInputRouter.hpp
-    sampling/SamplerFileLoader.cpp
-    sampling/SamplerFileLoader.hpp
+    faust/FaustModelEdits.cpp
+    faust/FaustModelEdits.hpp
+    sampling/SamplerMedia.cpp
+    sampling/SamplerModelEdits.cpp
+    sampling/SamplerModelEdits.hpp
     sidechain/SidechainRoutingManager.cpp
     sidechain/SidechainRoutingManager.hpp
     midi/QwertyMidiKeyboard.cpp
@@ -406,6 +521,16 @@ target_sources(magda_daw PRIVATE
     TrackController.cpp
     plugin_manager/PluginManager.cpp
     plugin_manager/PluginManagerSync.cpp
+    # Which installed plugin a saved device meant (#2243). One answer, asked by
+    # the sync path here and by the native engine's device factory, which
+    # resolves it at the final link the way it resolves findCompiledPluginSpec.
+    plugin_manager/ExternalPluginLookup.cpp
+    plugin_manager/ExternalPluginLookup.hpp
+    # A project's record of a plugin onto a live instance: array, then chunk,
+    # then what that left behind, for whoever owns the model (#2243). Same
+    # arrangement as the lookup above -- one answer, both engines.
+    plugin_manager/ExternalPluginState.cpp
+    plugin_manager/ExternalPluginState.hpp
     plugin_manager/PluginManagerMacros.cpp
     plugin_manager/PluginManagerModifiers.cpp
     plugin_manager/PluginManagerSidechain.cpp
@@ -447,6 +572,7 @@ target_sources(magda_daw PRIVATE
     session/SessionClipCommandQueue.hpp
     session/SessionClipStateQueue.hpp
     MeteringBuffer.hpp
+    TrackMeters.hpp
     params/ParameterQueue.hpp
     transport/TransportStateManager.hpp
     midi/MidiActivityMonitor.hpp

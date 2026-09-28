@@ -7,19 +7,19 @@
 #include "layout/NodeHeaderStyles.hpp"
 #include "ui/components/mixer/LevelMeter.hpp"
 #include "ui/components/mixer/LevelMeterScale.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
 void setupDeviceSlotGainMeterControls(
     juce::Component& parent, magda::DraggableValueLabel& gainLabel, magda::LevelMeter& levelMeter,
     std::unique_ptr<juce::Slider>& gainSlider, std::unique_ptr<juce::Slider>& mixKnob,
-    const magda::DeviceInfo& device, std::function<magda::ChainNodePath()> getNodePath) {
+    const magda::DeviceInfo& device, const std::function<magda::ChainNodePath()>& getNodePath) {
     // Gain label in header (dB format, draggable)
     gainLabel.setRange(-60.0, 12.0, 0.0);
     gainLabel.setValue(device.gainDb, juce::dontSendNotification);
     gainLabel.setFontSize(10.0f);
-    gainLabel.setFillColour(DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
+    gainLabel.setFillColour(ActiveTheme::getColour(ActiveTheme::CONTROL_VALUE_FILL));
     gainLabel.setFillProportionMapper(magda::level_meter_scale::dbFillProportion);
     gainLabel.onValueChange = [&gainLabel, getNodePath]() {
         const auto nodePath = getNodePath();
@@ -131,7 +131,7 @@ void syncDeviceSlotMixKnobFromDevice(juce::Slider* mixKnob, const magda::DeviceI
 
 void refreshDeviceSlotMixKnobFromDevice(juce::Slider* mixKnob, const magda::DeviceInfo& device,
                                         bool relayoutOnVisibilityChange,
-                                        std::function<void()> relayout) {
+                                        const std::function<void()>& relayout) {
     if (mixKnob == nullptr)
         return;
 

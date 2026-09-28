@@ -9,10 +9,12 @@
 #include <vector>
 
 #include "audio/MidiBridge.hpp"
+#include "audio/io/AudioIOControl.hpp"
 #include "core/ClipManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
+#include "project/ProjectManager.hpp"
 
 namespace magda {
 
@@ -38,16 +40,18 @@ class SessionView : public juce::Component,
                     public juce::Timer,
                     public TrackManagerListener,
                     public ClipManagerListener,
+                    public ProjectManagerListener,
                     public SelectionManagerListener,
                     public ViewModeListener,
-                    public MidiBridge::Listener {
+                    public MidiBridge::Listener,
+                    private HardwareChannels::Listener {
   public:
     SessionView();
     ~SessionView() override;
 
     void paint(juce::Graphics& g) override;
     void paintOverChildren(juce::Graphics& g) override;
-    void resized() override;
+    void resized() final;
     void lookAndFeelChanged() override;
 
     // Timer callback for meter updates
@@ -56,6 +60,9 @@ class SessionView : public juce::Component,
     // TrackManagerListener
     void tracksChanged() override;
     void midiDeviceListChanged() override;
+
+    /** @brief Rebuild the strips' routing menus against what is open now (#2748). */
+    void hardwareChannelsChanged() override;
     void trackPropertyChanged(int trackId) override;
     void trackDevicesChanged(TrackId trackId) override;
     void masterChannelChanged() override;
@@ -66,6 +73,10 @@ class SessionView : public juce::Component,
     void clipPropertyChanged(ClipId clipId) override;
     void clipSelectionChanged(ClipId clipId) override;
     void clipPlaybackStateChanged(ClipId clipId) override;
+
+    // ProjectManagerListener
+    void projectOpened(const ProjectInfo& info) override;
+    void projectPropertiesChanged() override;
 
     // SelectionManagerListener
     void selectionTypeChanged(SelectionType newType) override;
@@ -230,6 +241,7 @@ class SessionView : public juce::Component,
     void rebuildTracks();
     void applyThemeColours();
     void setupSceneButtons();
+    void syncScenesFromProject(const ProjectInfo& info);
     void addScene();
     void removeScene();
     void removeSceneAsync(int sceneIndex);
@@ -245,14 +257,14 @@ class SessionView : public juce::Component,
     void openClipEditor(int trackIndex, int sceneIndex);
     void onCreateMidiClipClicked(int trackIndex, int sceneIndex);
     ClipId duplicateSessionClipToNextEmptyScene(ClipId clipId);
-    bool deleteSelectedSessionClips();
+    static bool deleteSelectedSessionClips();
 
     // View mode state
     ViewMode currentViewMode_ = ViewMode::Live;
     std::vector<TrackId> visibleTrackIds_;
 
     // Selection
-    void selectTrack(TrackId trackId);
+    static void selectTrack(TrackId trackId);
     void updateHeaderSelectionVisuals();
 
     // Clip slot display
@@ -272,11 +284,13 @@ class SessionView : public juce::Component,
     int pluginDropTrackIndex_ = -1;
     bool showPluginDropOverlay_ = false;
     std::unique_ptr<juce::Label> dragGhostLabel_;
+    /** @brief Row of a track in the visible order, or -1 when it is not shown. */
+    int trackIndexOf(TrackId trackId) const;
+
     void updateDragHighlight(int x, int y);
     void clearDragHighlight();
     void updateDragGhost(const juce::StringArray& files, int trackIndex, int sceneIndex);
     void clearDragGhost();
-    bool isAudioFile(const juce::String& filename) const;
 
     // The media browser delivers sample drags as an internal {type:"files"}
     // payload rather than an OS file-drag on Linux, where JUCE has no Wayland
@@ -322,6 +336,10 @@ class SessionView : public juce::Component,
 
     // Session playhead position (looped, seconds). -1.0 = inactive.
     std::unordered_map<ClipId, double> clipPlayheadPositions_;
+    /// The clip a play click launched, selected once it sounds rather than at
+    /// the click: the editor follows the clip that is playing, not the one
+    /// waiting for its bar (#2674).
+    ClipId pendingEditorClip_ = INVALID_CLIP_ID;
 
     // Timeline controller for tempo access (not owned)
     TimelineController* timelineController_ = nullptr;

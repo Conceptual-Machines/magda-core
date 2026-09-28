@@ -1,0 +1,281 @@
+#include "EngineRuntimeFactory.hpp"
+
+#include <utility>
+
+#include "../../audio/plugins/InternalPluginRegistry.hpp"
+#include "../../audio/plugins/engine/EngineDeviceFactory.hpp"
+#include "clip/ClipAudioSource.hpp"
+#include "clip/ClipMidiSource.hpp"
+
+namespace magda::daw::engine_host {
+
+namespace adapter = magda::daw::audio::engine_adapter;
+
+namespace {
+
+/// Which device a slot asks for, as one string. No display name and no role,
+/// so a rename and a load's own correction are not a different device. A device
+/// whose state decides its parameters is also its state: the instance holds a
+/// copy of the parameters it was built with (#2659).
+juce::String deviceIdentityOf(const DeviceInfo& device) {
+    auto identity = device.pluginId + "|" + device.uniqueId + "|" + device.fileOrIdentifier + "|" +
+                    device.getFormatString();
+    if (const auto* spec = daw::audio::findInternalPluginSpec(device.pluginId);
+        spec != nullptr && spec->stateDefinesParameters)
+        identity << "|" << juce::String::toHexString(device.pluginState.hashCode64());
+    return identity;
+}
+
+/// What an insert's live instance is built from. The types are part of it: the same
+/// name can be an audio port or nothing, depending on what this machine has.
+juce::String insertIdentityOf(const InsertConfig& insert) {
+    return juce::String(static_cast<int>(insert.sendType)) + "|" + insert.sendDevice + "|" +
+           juce::String(static_cast<int>(insert.returnType)) + "|" + insert.returnDevice + "|" +
+           juce::String(insert.manualAdjustMs);
+}
+
+}  // namespace
+
+EngineFileReaders::EngineFileReaders() {
+    formats_.registerBasicFormats();
+}
+
+std::unique_ptr<engine::AudioFileReader> EngineFileReaders::open(const std::string& path) {
+    std::unique_ptr<juce::AudioFormatReader> reader(
+        formats_.createReaderFor(juce::File(juce::String(path))));
+    if (reader == nullptr)
+        return nullptr;
+
+    return std::make_unique<engine::JuceAudioFileReader>(std::move(reader));
+}
+
+void EngineRuntimeFactory::attach(engine::ClipSnapshotFeed& clips, engine::ClipStreamFeed& streams,
+                                  engine::LaunchHandleFeed& handles,
+                                  const engine::LiveInputFeed& liveInputs,
+                                  engine::LiveOutputFeed& liveOutputs) {
+    clips_ = &clips;
+    streams_ = &streams;
+    handles_ = &handles;
+    liveInputs_ = &liveInputs;
+    liveOutputs_ = &liveOutputs;
+}
+
+void EngineRuntimeFactory::rerouteInserts() {
+    for (const auto& [key, identity] : insertsBuilt_)
+        rebuild_.insert(key);
+}
+
+bool EngineRuntimeFactory::insertsMoved(const std::vector<TrackInfo>& tracks,
+                                        const TrackInfo& master) const {
+    if (insertsBuilt_.empty())
+        return false;
+
+    for (const auto& [key, device] : adapter::devicesIn(tracks, master))
+        if (const auto built = insertsBuilt_.find(key);
+            built != insertsBuilt_.end() && built->second != insertIdentityOf(device->insert))
+            return true;
+
+    return false;
+}
+
+std::unique_ptr<engine::EngineInsert> EngineRuntimeFactory::createInsert(engine::DeviceKey key) {
+    const auto found = devices_.find(key);
+    if (found == devices_.end() || !found->second.insert.isActive() || liveInputs_ == nullptr ||
+        liveOutputs_ == nullptr || !routeInsert_)
+        return nullptr;
+
+    // Remembered before it is tried: a port that did not resolve is one the user will
+    // correct, and a name moves no op, so only this can say the insert has to be retried.
+    const auto& config = found->second.insert;
+    insertsBuilt_[key] = insertIdentityOf(config);
+
+    auto route = routeInsert_(config);
+    if (!route.has_value())
+        return nullptr;
+
+    std::unique_ptr<engine::EngineInsert> insert =
+        std::make_unique<engine::LiveInsert>(*liveInputs_, *liveOutputs_, std::move(*route));
+    return wrapInsert_ ? wrapInsert_(key, std::move(insert)) : std::move(insert);
+}
+
+void EngineRuntimeFactory::setModel(const std::vector<TrackInfo>& tracks, const TrackInfo& master) {
+    devices_.clear();
+    unbuilt_.clear();
+
+    for (const auto& [key, device] : adapter::devicesIn(tracks, master))
+        devices_.emplace(key, *device);
+
+    // A slot whose plugin changed since its instance was built (#2572). A key
+    // the model has stopped naming is kept rather than dropped: the store
+    // evicts on a publish that succeeded, and a rejected one leaves it holding
+    // a device this would otherwise have forgotten.
+    for (const auto& [key, identity] : built_) {
+        const auto found = devices_.find(key);
+        if (found != devices_.end() && deviceIdentityOf(found->second) != identity)
+            rebuild_.insert(key);
+    }
+    for (const auto& [key, identity] : insertsBuilt_) {
+        const auto found = devices_.find(key);
+        if (found != devices_.end() && insertIdentityOf(found->second.insert) != identity)
+            rebuild_.insert(key);
+    }
+
+    // Before anything is asked for, so a device that has changed plugin since
+    // the last publish has expired the load it had in flight by the time this
+    // publish asks for one.
+    if (externals_ != nullptr)
+        externals_->syncAssignments(devices_);
+}
+
+std::vector<engine::DeviceKey> EngineRuntimeFactory::externalKeys() const {
+    std::vector<engine::DeviceKey> keys;
+
+    for (const auto& [key, device] : devices_)
+        if (adapter::isExternalDevice(device))
+            keys.push_back(key);
+
+    return keys;
+}
+
+bool EngineRuntimeFactory::isExternalKey(engine::DeviceKey key) const {
+    const auto found = devices_.find(key);
+    return found != devices_.end() && adapter::isExternalDevice(found->second);
+}
+
+void EngineRuntimeFactory::forgetBuiltDevices() {
+    for (const auto& [key, identity] : built_)
+        rebuild_.insert(key);
+    rerouteInserts();
+
+    built_.clear();
+    insertsBuilt_.clear();
+
+    if (externals_ != nullptr)
+        externals_->forgetSlots();
+}
+
+std::set<engine::DeviceKey> EngineRuntimeFactory::devicesToRebuild() {
+    // So a key the store could not realise this publish -- an external still
+    // opening -- is not asked for again against an instance that has gone.
+    for (const auto& key : rebuild_) {
+        built_.erase(key);
+        insertsBuilt_.erase(key);
+    }
+
+    return std::exchange(rebuild_, {});
+}
+
+std::unique_ptr<engine::EngineDevice> EngineRuntimeFactory::createDevice(engine::DeviceKey key) {
+    const auto found = devices_.find(key);
+    if (found == devices_.end())
+        return nullptr;
+
+    // An external plugin is a file on this machine rather than a class either
+    // catalog holds, so it is not built here and not counted as unbuilt when it
+    // is not ready: the loader answers null while it opens one, and the store
+    // asks again at the next publish (#2566).
+    if (adapter::isExternalDevice(found->second))
+        return handOver(key, found->second,
+                        externals_ != nullptr ? externals_->device(key, found->second) : nullptr);
+
+    if (auto device = adapter::createEngineDevice(found->second))
+        return handOver(key, found->second, std::move(device));
+
+    // Said out loud once per publish rather than left as silence. A device the
+    // app can build and the engine cannot is a project playing without part of
+    // itself, and the executor's own "unbound op" says a key, not a name.
+    unbuilt_.push_back(found->second.name);
+    return nullptr;
+}
+
+/// Every device this factory hands over, recorded against the model it came
+/// from and wrapped in the trace when one is on.
+std::unique_ptr<engine::EngineDevice> EngineRuntimeFactory::handOver(
+    engine::DeviceKey key, const DeviceInfo& model, std::unique_ptr<engine::EngineDevice> device) {
+    if (device == nullptr)
+        return nullptr;
+
+    built_[key] = deviceIdentityOf(model);
+
+    if (trace_ == nullptr)
+        return device;
+
+    return std::make_unique<TracingDevice>(std::move(device), *trace_);
+}
+
+/// A track's output level, its live input's (#2553), a device slot's (#2570)
+/// and a rack's (#2649).
+std::unique_ptr<engine::LevelTap> EngineRuntimeFactory::createMeter(const engine::OpKey& key) {
+    switch (key.role) {
+        case engine::OpRole::TrackMeter:
+        case engine::OpRole::LiveInputMeter:
+        case engine::OpRole::DeviceMeter:
+        case engine::OpRole::RackMeter:
+            return std::make_unique<engine::LevelTap>();
+        default:
+            return nullptr;
+    }
+}
+
+/// A pad's gate, for the pad's trigger light (#2669).
+std::unique_ptr<engine::NoteOnTap> EngineRuntimeFactory::createNoteOnTap(const engine::OpKey& key) {
+    return key.role == engine::OpRole::PadNoteGate ? std::make_unique<engine::NoteOnTap>()
+                                                   : nullptr;
+}
+
+std::unique_ptr<engine::EngineAudioSource> EngineRuntimeFactory::createClipAudioSource(
+    TrackId trackId) {
+    return audioSource(trackId, engine::Section::Arrangement);
+}
+
+std::unique_ptr<engine::EngineMidiSource> EngineRuntimeFactory::createClipMidiSource(
+    TrackId trackId) {
+    return midiSource(trackId, engine::Section::Arrangement);
+}
+
+std::unique_ptr<engine::EngineAudioSource> EngineRuntimeFactory::createSessionAudioSource(
+    TrackId trackId) {
+    return audioSource(trackId, engine::Section::Session);
+}
+
+std::unique_ptr<engine::EngineMidiSource> EngineRuntimeFactory::createSessionMidiSource(
+    TrackId trackId) {
+    return midiSource(trackId, engine::Section::Session);
+}
+
+std::unique_ptr<engine::EngineAudioSource> EngineRuntimeFactory::createAudioInput(TrackId trackId) {
+    if (liveInputs_ == nullptr)
+        return nullptr;
+
+    return std::make_unique<engine::TrackLiveAudioInput>(*liveInputs_, trackId);
+}
+
+std::unique_ptr<engine::EngineMidiSource> EngineRuntimeFactory::createMidiInput(TrackId trackId) {
+    if (liveInputs_ == nullptr)
+        return nullptr;
+
+    return std::make_unique<engine::TrackLiveMidiInput>(*liveInputs_, trackId);
+}
+
+// Both sections through the handle-reading constructor, including the
+// arrangement's. The plain one is the same source over an empty handle table,
+// so taking the feed always costs a project with no session nothing and spares
+// the factory a question it would have to ask the snapshot to answer.
+std::unique_ptr<engine::EngineAudioSource> EngineRuntimeFactory::audioSource(
+    TrackId trackId, engine::Section section) {
+    if (clips_ == nullptr || streams_ == nullptr || handles_ == nullptr)
+        return nullptr;
+
+    return std::make_unique<engine::ClipAudioSource>(trackId, *clips_, *streams_, *handles_,
+                                                     section);
+}
+
+std::unique_ptr<engine::EngineMidiSource> EngineRuntimeFactory::midiSource(
+    TrackId trackId, engine::Section section) {
+    if (clips_ == nullptr || handles_ == nullptr)
+        return nullptr;
+
+    return std::make_unique<engine::ClipMidiSource>(trackId, *clips_, *handles_, section);
+}
+
+}  // namespace magda::daw::engine_host

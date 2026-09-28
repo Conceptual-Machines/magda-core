@@ -35,20 +35,19 @@ void applyPersistedTabOrder(PanelState& panel, const std::vector<std::string>& s
         auto type = contentTypeFromId(juce::String(id));
         if (!type.has_value() || !panel.hasContentType(*type))
             continue;
-        if (std::find(ordered.begin(), ordered.end(), *type) == ordered.end())
+        if (!std::ranges::contains(ordered, *type))
             ordered.push_back(*type);
     }
 
     for (auto type : panel.tabs) {
-        if (std::find(ordered.begin(), ordered.end(), type) == ordered.end())
+        if (!std::ranges::contains(ordered, type))
             ordered.push_back(type);
     }
 
     panel.tabs = std::move(ordered);
 
     panel.activeTabIndex = panel.getTabIndex(activeType);
-    if (panel.activeTabIndex < 0)
-        panel.activeTabIndex = 0;
+    panel.activeTabIndex = std::max(panel.activeTabIndex, 0);
 }
 
 void applyPersistedActiveTab(PanelState& panel, const std::string& savedActiveTab) {
@@ -181,13 +180,13 @@ void PanelController::resetToDefaults() {
 }
 
 void PanelController::addListener(PanelStateListener* listener) {
-    if (listener && std::find(listeners_.begin(), listeners_.end(), listener) == listeners_.end()) {
+    if (listener && !std::ranges::contains(listeners_, listener)) {
         listeners_.push_back(listener);
     }
 }
 
 void PanelController::removeListener(PanelStateListener* listener) {
-    listeners_.erase(std::remove(listeners_.begin(), listeners_.end(), listener), listeners_.end());
+    std::erase(listeners_, listener);
 }
 
 void PanelController::notifyPanelChanged(PanelLocation location) {
@@ -308,17 +307,11 @@ void PanelController::handleReorderTabs(const ReorderTabsEvent& event) {
     if (event.newOrder.size() != panel.tabs.size())
         return;
 
-    for (const auto& type : panel.tabs) {
-        bool found = false;
-        for (const auto& newType : event.newOrder) {
-            if (type == newType) {
-                found = true;
-                break;
-            }
-        }
-        if (!found)
-            return;
-    }
+    const auto inNewOrder = [&event](const auto& type) {
+        return std::ranges::contains(event.newOrder, type);
+    };
+    if (!std::ranges::all_of(panel.tabs, inNewOrder))
+        return;
 
     // Remember current active type
     auto activeType = panel.getActiveContentType();
@@ -328,8 +321,7 @@ void PanelController::handleReorderTabs(const ReorderTabsEvent& event) {
 
     // Restore active tab by type
     panel.activeTabIndex = panel.getTabIndex(activeType);
-    if (panel.activeTabIndex < 0)
-        panel.activeTabIndex = 0;
+    panel.activeTabIndex = std::max(panel.activeTabIndex, 0);
 
     notifyPanelChanged(event.panel);
 }

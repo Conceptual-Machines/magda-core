@@ -21,7 +21,13 @@ PluginWindowManager::~PluginWindowManager() {
     stopTimer();
 
     // Close all remaining windows
-    closeAllWindows();
+    try {
+        closeAllWindows();
+    } catch (const std::exception& e) {
+        juce::Logger::writeToLog(juce::String("[PluginWindowManager] ") + e.what());
+    } catch (...) {
+        juce::Logger::writeToLog("[PluginWindowManager] unknown exception during teardown");
+    }
 
     DBG("PluginWindowManager destroyed");
 }
@@ -147,7 +153,7 @@ void PluginWindowManager::closeAllWindows() {
         juce::ScopedLock lock(windowLock_);
         for (const auto& [deviceId, info] : trackedWindows_) {
             if (info.plugin) {
-                windowsToClose.push_back({deviceId, info.plugin});
+                windowsToClose.emplace_back(deviceId, info.plugin);
             }
         }
     }
@@ -225,11 +231,11 @@ void PluginWindowManager::timerCallback() {
             bool currentlyShowing = extPlugin->windowState->isWindowShowing();
             if (!info.wasOpen && currentlyShowing) {
                 info.wasOpen = true;
-                stateChanges.push_back({deviceId, true});
+                stateChanges.emplace_back(deviceId, true);
             } else if (info.wasOpen && !currentlyShowing) {
                 // Window was closed (via closeButtonPressed or other means)
                 info.wasOpen = false;
-                stateChanges.push_back({deviceId, false});
+                stateChanges.emplace_back(deviceId, false);
             }
         }
     }

@@ -1,162 +1,207 @@
 # Clang-Tidy Configuration for MAGDA DAW
 # Static analysis and linting rules for C++ audio development
 
-# Enable checks - comprehensive but practical set
+# Allow-list, not a deny-list. `Checks: *` meant every LLVM upgrade silently
+# added checks and the noise buried the findings: on LLVM 20 the top three by
+# volume were misc-include-cleaner (532), performance-enum-size (466) and
+# special-member-functions (311), none of them defects. Enable a family only
+# when its findings are worth acting on.
 Checks: >-
-  *,
-  -android-*,
-  -fuchsia-*,
-  -llvm-*,
-  -zircon-*,
-  -altera-*,
-  -llvmlibc-*,
-  -abseil-*,
-  -boost-*,
-  -google-build-using-namespace,
-  -google-readability-todo,
-  -hicpp-use-auto,
-  -hicpp-vararg,
-  -modernize-use-trailing-return-type,
-  -modernize-use-ranges,
-  -readability-container-contains,
-  -readability-redundant-casting,
-  -readability-make-member-function-const,
-  -readability-identifier-naming,
-  -readability-else-after-return,
-  -readability-implicit-bool-conversion,
-  -readability-named-parameter,
-  -readability-uppercase-literal-suffix,
-  -hicpp-uppercase-literal-suffix,
-  -cppcoreguidelines-avoid-magic-numbers,
-  -readability-magic-numbers,
-  -cert-err58-cpp,
-  -misc-non-private-member-variables-in-classes,
-  -cppcoreguidelines-non-private-member-variables-in-classes,
-  -modernize-avoid-c-arrays,
-  -cppcoreguidelines-avoid-c-arrays,
-  -hicpp-avoid-c-arrays,
-  -readability-isolate-declaration,
-  -cppcoreguidelines-pro-bounds-constant-array-index,
-  -cppcoreguidelines-pro-type-vararg,
-  -hicpp-vararg,
-  -modernize-use-nodiscard,
+  -*,
+  bugprone-*,
   -bugprone-easily-swappable-parameters,
   -bugprone-narrowing-conversions,
-  -cppcoreguidelines-narrowing-conversions,
-  -misc-const-correctness,
-  -readability-identifier-length,
-  -cppcoreguidelines-avoid-do-while,
-  -clang-analyzer-deadcode.*,
-  -clang-analyzer-core.*,
-  -clang-diagnostic-unreachable-code,
+  -bugprone-chained-comparison,
+  -bugprone-suspicious-include,
+  -bugprone-exception-escape,
+  -bugprone-unchecked-optional-access,
+  -bugprone-swapped-arguments,
+  -bugprone-branch-clone,
+  -bugprone-empty-catch,
+  -bugprone-signed-char-misuse,
+  -bugprone-misplaced-widening-cast,
+  -bugprone-nondeterministic-pointer-iteration-order,
+  -bugprone-macro-parentheses,
+  -bugprone-signed-bitwise,
+  -bugprone-throwing-static-initialization,
+  -bugprone-derived-method-shadowing-base-method,
+  -bugprone-float-loop-counter,
+  -bugprone-unchecked-string-to-number-conversion,
+  cert-oop54-cpp,
+  performance-*,
+  -performance-enum-size,
   -performance-avoid-endl,
-  -readability-braces-around-statements,
-  -hicpp-braces-around-statements,
-  -google-readability-braces-around-statements,
-  -readability-function-cognitive-complexity,
-  -performance-noexcept-move-constructor,
-  -cppcoreguidelines-noexcept-move-operations,
-  -hicpp-noexcept-move,
-  -bugprone-pointer-arithmetic-on-polymorphic-object,
-  -cert-ctr56-cpp
+  misc-use-anonymous-namespace,
+  modernize-use-emplace,
+  modernize-use-default-member-init,
+  modernize-pass-by-value,
+  modernize-concat-nested-namespaces,
+  modernize-type-traits,
+  modernize-raw-string-literal,
+  cppcoreguidelines-init-variables,
+  readability-qualified-auto,
+  readability-redundant-string-init,
+  readability-redundant-member-init,
+  readability-convert-member-functions-to-static,
+  readability-use-std-min-max,
+  readability-use-anyofallof,
+  readability-simplify-boolean-expr,
+  readability-inconsistent-declaration-parameter-name
 
-# The five above are off because they crash rather than report. On Homebrew
-# LLVM 20.1.4, `performance-noexcept-move-constructor` dies with SIGILL and
-# `bugprone-pointer-arithmetic-on-polymorphic-object` with SIGSEGV, on any file
-# in this project, silently and with no backtrace. Their aliases are listed
-# separately because clang-tidy treats an alias as its own check name, so
-# disabling the primary does not disable the alias.
+# The old config disabled performance-noexcept-move-constructor and
+# bugprone-pointer-arithmetic-on-polymorphic-object as crashers, reporting SIGILL
+# and SIGSEGV on any file here. Not reproducible on LLVM 20.1.4: a sweep of all
+# 885 magda/ TUs ran to completion with both enabled, no crash, zero findings.
 #
-# `Checks: *` above is what pulled them in, and a crashing check takes the
-# whole run down — so with these enabled `make lint` and `make lint-changed`
-# exited 132/139 on every file and reported nothing at all. Worth re-testing
-# when the toolchain moves.
+# Thirteen checks are off because they were noise here, not because their findings
+# were inconvenient - 237 sites, with only branch-clone yielding any defects:
+#   suspicious-include (31)      every hit is `#include "magda_*.generated.cpp"`,
+#                                the Faust DSP pipeline, which is deliberate.
+#   cert-err33-c (35)            ignored std::fprintf(stderr, ...) returns.
+#   exception-escape (44)        callback lambdas, as the note below already said.
+#   unchecked-optional-access    guarded by ok()/failed() predicates it cannot see
+#     (10)                       through, and it drops the fact across any
+#                                non-const member call.
+#   swapped-arguments (10)       all drawVerticalLine(int, float, float), which is
+#                                JUCE's actual signature.
+#   branch-clone (55)            5 were real and are fixed; the other 50 are switch
+#                                arms and condition chains whose cases are
+#                                distinct and whose bodies coincide. RenderPlan
+#                                returns 2 for Fader, Crossfade and Subtract, each
+#                                with its own reason - merging them would delete
+#                                the explanation.
+#   use-internal-linkage (58)    its fix does not link. It reads one translation
+#                                unit, so a definition whose declaring header that
+#                                .cpp does not itself include looks file-local;
+#                                marking createInternalPluginProcessor and the
+#                                compiled-device getMagda*Spec() functions static
+#                                left every caller in another TU undefined.
+#   suspicious-call-argument     parameter-name similarity only; the calls match
+#     (10)                       their declarations.
+#
+#   empty-catch (9)              every body already carries a comment saying why
+#                                the exception is ignored.
+#   signed-char-misuse (3)       following it would break two of them: AudioFeatures
+#                                and PlanExecutor need the sign to carry a
+#                                no-pitch-class sentinel and a downward transpose.
+#   misplaced-widening-cast (3)  MIDI domains (channel 1-16, note 0-127) cannot
+#                                overflow int before the widen.
+#   nondeterministic-pointer-    ClipOcclusion sorts by a value comparator, not by
+#     iteration-order (2)        address; the other is listener registration order.
+#   macro-parentheses (2)        the argument is streamed, so parenthesising it
+#                                would evaluate the << chain before the string.
+#
+# readability-avoid-nested-conditional-operator is off. It cannot tell a chain
+# from a nesting: `a ? x : b ? y : z` is an else-if ladder, which clang-format
+# aligns here into exactly that shape, and it counts as nested because the
+# second operator sits in the first one's false branch. Of the 91 sites, all
+# but a handful are that ladder or a parenthesised sub-expression like
+# `sync ? "rateType" : "rate"`, and rewriting them as if/else or named
+# intermediates makes them longer and no clearer. The few that were genuinely
+# hard - a three-way compare written twice in MediaDbQuery, a bool folded
+# through `? 1 : 0` inside another ternary in MediaDbIndexer, and a
+# two-branches-each-nested size lookup in TrackCommands - are fixed rather than
+# suppressed.
+#
+# modernize-loop-convert is off. It found 19 sites across 2 files and both files
+# were hand-written that way on purpose. TrackManager's 13 notify methods index
+# because addListener() push_backs unguarded: the index loop re-reads size() and
+# re-indexes, so a listener registering another mid-notification is fine, while a
+# range-for caches end() and walks a freed buffer when that push_back reallocates.
+# removeListener already nullifies rather than erases during notification "to keep
+# iterators valid", so the invariant was deliberate. ClipMidiSource is audio-thread
+# code carrying a comment that opens "By index rather than by iterator".
+#
+# cppcoreguidelines-prefer-member-initializer is off. It hoists an assignment into
+# the init list without seeing what the body did first, and this codebase's
+# dominant constructor idiom is exactly that dependency: every TE plugin calls
+# CachedValue::referTo() and then reads .get(). Hoisting the read leaves it
+# bound to nothing, so the four sidechain/MIDI-source plugins silently lost
+# their persisted track on load. Of 19 files it touched, 7 carried a defect -
+# three no longer compiled (a header fix stacked, once 21 deep), MixerDebugPanel
+# read rows.size() before the body filled rows, and ChordTypes moved chordName
+# into the init list ahead of three body reads of it. The remaining 12 are
+# cosmetic. Rewriting a constructor means checking declaration order and every
+# preceding statement, so it belongs with use-anyofallof as authoring work.
+#
+# modernize-use-integer-sign-comparison is off: its 656 hits were all deliberate
+# `x < static_cast<int>(v.size())` casts, and its fixer deletes the cast text but
+# leaves the closing paren - 572 of 632 rewrites did not compile.
+#
+# bugprone-chained-comparison is off because Catch2's REQUIRE(a == b) expands to
+# `Decomposer() <= a == b`; it fired 311 times, every one of them in tests.
+#
+# bugprone-exception-escape earned its keep once, finding 20 real
+# noexcept/destructor/main sites (#2395), and this paragraph used to claim it
+# stayed enabled and reported zero. It is disabled above and reports 44, so the
+# claim was measured wrong or went stale. Re-enabling it means triaging those
+# 44 first: the ones to expect are plain callback lambdas
+# (juce::Button::onClick, callAsync, ...), where the throwing capture-by-value
+# copy happens while constructing the closure rather than inside the call
+# operator, which is outside the check's documented scope.
 
-# Warnings as errors (can be adjusted based on team preference)
+# Five checks are excluded above because they exist only on a clang-tidy newer
+# than the LLVM 20.1.4 this was swept on, where signed-bitwise is spelled
+# hicpp-. #2530 removed them from the pre-push hook on the strength of a local
+# --list-checks saying the names were unknown, and the first push to dev failed
+# on them: an unknown check name is silently ignored, so a clean sweep and an
+# absent check look exactly alike. The findings are real where they report -
+# `1 << 11`, a file-scope juce::Identifier, a float loop counter - and they stay
+# excluded: CI pins the gate to LLVM 20, so a check that only exists later is
+# out of scope by construction. Triaging them was considered and dropped
+# (2026-09-09); reviving it means moving the pin in ci.yml first.
+#
+# Off until magda/engine is written and swept (decided 2026-09-09). The tier is
+# at zero over all 705 magda/ translation units, engine included, so this is
+# ready to carry 'bugprone-*,cert-*' - but gating shipping code while the engine
+# is still being written sets a bar that moves the moment it lands, and the
+# sweeps have excluded that directory throughout.
+#
+# The gate still runs and still reports; it is advisory, via --advisory in
+# .pre-commit-config.yaml and CLANG_TIDY_ADVISORY in ci.yml. Restore all three
+# together, after the engine pass.
 WarningsAsErrors: ''
 
-# Header filter - analyze headers in project
-HeaderFilterRegex: '(daw|agents|tests)/.*\.(h|hpp)$'
+# Header filter. Anchored on a leading slash: the old unanchored `tests` matched
+# third_party/JUCE/.../unit_tests/*.h, and it never covered magda/engine at all.
+# Tests are out of scope entirely - the checks here target shipping code.
+HeaderFilterRegex: '/magda/.*\.(h|hpp)$'
+ExcludeHeaderFilterRegex: '/third_party/'
 
-# Analysis options
-# AnalyzeTemporaryDtors: false  # Not supported in this version
-
-# Check options for fine-tuning specific rules
 CheckOptions:
-  # Naming conventions
-  - key: readability-identifier-naming.NamespaceCase
-    value: lower_case
-  - key: readability-identifier-naming.ClassCase
-    value: CamelCase
-  - key: readability-identifier-naming.StructCase
-    value: CamelCase
-  - key: readability-identifier-naming.FunctionCase
-    value: camelBack
-  - key: readability-identifier-naming.VariableCase
-    value: camelBack
-  - key: readability-identifier-naming.ParameterCase
-    value: camelBack
-  - key: readability-identifier-naming.MemberCase
-    value: camelBack
-  - key: readability-identifier-naming.MemberSuffix
-    value: '_'
-  - key: readability-identifier-naming.ConstantCase
-    value: UPPER_CASE
-  - key: readability-identifier-naming.EnumCase
-    value: CamelCase
-  - key: readability-identifier-naming.EnumConstantCase
-    value: CamelCase
-  - key: readability-identifier-naming.MacroDefinitionCase
-    value: UPPER_CASE
-
-  # Function length limits
-  - key: readability-function-size.LineThreshold
-    value: '80'
-  - key: readability-function-size.StatementThreshold
-    value: '50'
-  - key: readability-function-size.BranchThreshold
-    value: '10'
-  - key: readability-function-size.ParameterThreshold
-    value: '8'
-
-  # Complexity limits
-  - key: readability-function-cognitive-complexity.Threshold
-    value: '15'
-
-  # Include sorting
-  - key: llvm-include-order.Priority
-    value: '1'
-
-  # Performance
+  # 'true' flags every auto copy in a range-for, mutated or not: of six rewrites
+  # it produced, four did not compile - three loops assign to the element and one
+  # passes it to a non-const reference.
   - key: performance-for-range-copy.WarnOnAllAutoCopies
-    value: 'true'
+    value: 'false'
   - key: performance-unnecessary-value-param.AllowedTypes
     value: 'juce::String;juce::var;std::shared_ptr;std::unique_ptr'
-
-  # Modernization
+  # Defaults to <math.h>, which it then adds next to the <cmath> these files
+  # already include. The inserter matches on spelling, so only <cmath> dedupes.
+  - key: cppcoreguidelines-init-variables.MathHeader
+    value: '<cmath>'
+  # 7 of the 19 findings were literal products that fit in int and are folded at
+  # compile time - 64 * 1024, 2 * 1024 * 1024, 24 * 60 * 60. Widening those means
+  # writing std::size_t{64} * 1024 for a constant that cannot overflow, so the
+  # check keeps only the cases where a runtime int product is widened.
+  - key: bugprone-implicit-widening-of-multiplication-result.IgnoreConstantIntExpr
+    value: 'true'
+  # static_cast<void>(p.release()) is how this codebase says the discard is
+  # deliberate, and both sites carry a comment saying the writer took ownership.
+  # The check ignores a void cast only with this set.
+  - key: bugprone-unused-return-value.AllowCastToVoid
+    value: 'true'
   - key: modernize-loop-convert.MaxCopySize
     value: '16'
   - key: modernize-loop-convert.MinConfidence
     value: 'reasonable'
-  - key: modernize-use-auto.MinTypeNameLength
-    value: '5'
-
-  # Readability
-  - key: readability-braces-around-statements.ShortStatementLines
-    value: '1'
   - key: readability-simplify-boolean-expr.ChainedConditionalReturn
     value: 'true'
   - key: readability-simplify-boolean-expr.ChainedConditionalAssignment
     value: 'true'
-
-  # Bugprone
   - key: bugprone-argument-comment.StrictMode
     value: 'false'
   - key: bugprone-suspicious-string-compare.WarnOnImplicitComparison
     value: 'true'
-
-  # CERT rules
-  - key: cert-dcl16-c.NewSuffixes # gitleaks:allow
-    value: 'L;LL;LU;LLU'
   - key: cert-oop54-cpp.WarnOnlyIfThisHasSuspiciousField
     value: 'false'

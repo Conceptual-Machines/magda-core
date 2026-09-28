@@ -2,8 +2,15 @@
 
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
+
+// clang-format off
+// rigtorp's queue uses std::aligned_storage without including <type_traits>.
+#include <type_traits>
+#include <rigtorp/MPMCQueue.h>
+// clang-format on
 
 #include "exec/PlanExecutor.hpp"
 #include "exec/RenderThreadPool.hpp"
@@ -33,11 +40,6 @@
 
 namespace magda::engine {
 
-/// An empty ready stack: no op on top, and a tag that has not moved yet. The
-/// packing is in ParallelPlanExecutor.cpp, which asserts that this is what it
-/// produces for an empty one.
-inline constexpr std::uint64_t kEmptyReadyStack = 0xffffffffULL;
-
 class ParallelPlanExecutor final : private RenderThreadPool::Job {
   public:
     /**
@@ -48,7 +50,7 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
      * degraded mode but the same executor with one thread, which is what makes
      * "identical at every thread count" a claim about one code path.
      */
-    explicit ParallelPlanExecutor(RenderThreadPool* pool = nullptr) : pool_(pool) {}
+    explicit ParallelPlanExecutor(RenderThreadPool* pool = nullptr);
     ~ParallelPlanExecutor() override;
 
     ParallelPlanExecutor(const ParallelPlanExecutor&) = delete;
@@ -69,7 +71,12 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     std::vector<std::string> prepare(const RenderPlan& plan, const PlanBindings& bindings,
                                      const RenderContext& context,
                                      const ParallelPlanExecutor* previous = nullptr,
-                                     const ParamTable* params = nullptr);
+                                     const PlanValues* values = nullptr);
+
+    /// @copydoc PlanExecutor::reportUnboundInputs
+    std::vector<std::string> reportUnboundInputs(const PlanValues* values) {
+        return core_.reportUnboundInputs(values);
+    }
 
     /**
      * @brief Render one block into @p output. On the audio thread.
@@ -82,6 +89,12 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     /// Threads a block is spread across.
     int numThreads() const {
         return pool_ != nullptr ? pool_->numThreads() : 1;
+    }
+
+    /// The most ops the prepared plan can have ready at once: the widest level of its DAG.
+    /// What decides how many workers a block wakes.
+    int parallelism() const {
+        return parallelism_;
     }
 
     /// The prepared plan, as the reference executor sees it: what it bound,
@@ -106,6 +119,9 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     }
     void clearUnboundValueTaps() {
         core_.clearUnboundValueTaps();
+    }
+    void commitReroutes(std::uint64_t epoch) {
+        core_.commitReroutes(epoch);
     }
     int audioBufferCount() const {
         return core_.audioBufferCount();
@@ -142,18 +158,32 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     }
 
   private:
-    /// Take ready ops until the block is finished. Runs on every thread of the
-    /// pool at once, and on the audio thread.
-    void takeWork() override;
+    /// One ready op and the chain it releases, on a worker (RenderThreadPool::Job).
+    bool takeOne() override;
 
-    /// Render @p op, release the ops waiting on it, and hand back one of them
-    /// for this thread to carry straight on with. A chain therefore never
-    /// touches the ready set at all: the thread that ran an op runs its
-    /// consumer, which is both the cheapest schedule and the warmest cache.
-    OpId runOp(OpId op);
+    /// Ready ops until the block is finished, on the thread that called render(), pausing
+    /// while none is ready as Tracktion's player waits for its final node.
+    void finishOnCaller() override;
 
-    void push(OpId op);
-    OpId pop();
+    /// Render @p op and everything it releases that this thread carries straight on with.
+    /// Tracktion's rule: a released consumer is carried when it is the op's only consumer or
+    /// its last one, and queued for another thread otherwise.
+    void runChain(OpId op);
+
+    /// Render @p op, counted into the profile.
+    void renderProfiled(OpId op);
+
+    /// Whether @p op renders in the drain rather than in the prefix or the serial tail.
+    bool rendersInDrain(OpId op) const;
+
+    /// The drain on this thread alone, in plan order, which is dependency order.
+    void renderInPlanOrder();
+
+    /// Seed the counts and queue the ops ready at the top of a block. Answers how many of them
+    /// a worker would render.
+    int startSchedule();
+
+    void enqueue(OpId op);
 
     /// Wait until no worker can be inside this job, so what it owns may be
     /// resized or destroyed. Off the audio thread.
@@ -165,6 +195,7 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
 
     PlanExecutor core_;
     RenderThreadPool* pool_ = nullptr;
+    int parallelism_ = 1;
 
     /// Whether the pool has ever been handed this job. Until it has, no worker
     /// can be inside it and there is nothing to wait out.
@@ -201,25 +232,19 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     /// have disjoint subgraphs.
     std::vector<OpId> modSourceOps_;
 
+    /// Hardware insert sends, rendered after the drain for the same reason: two sends add into
+    /// the same callback channels and push into the same MIDI port.
+    std::vector<OpId> insertSendOps_;
+
     /// Producers each op is still waiting for. The plan's dependencyCounts,
     /// copied in at the top of every block.
     std::vector<std::atomic<std::uint16_t>> pending_;
 
-    /// The ready set: a stack threaded through this array, one link per op.
-    /// An op is pushed at most once a block, when its last producer finishes,
-    /// so a link is written once and read once and no op can come back while
-    /// another thread is looking at it.
-    std::vector<std::atomic<OpId>> nextReady_;
+    /// The ready set, first in first out, as Tracktion's player keeps it. Sized to the plan at
+    /// prepare: an op is queued at most once a block.
+    std::unique_ptr<rigtorp::MPMCQueue<OpId>> ready_;
 
-    /// Top of the ready stack: an op and a tag, packed. The tag moves on every
-    /// push and every pop and never resets, so a thread that read the top,
-    /// stalled, and came back to find the same op there cannot mistake it for
-    /// the one it was looking at. That is the whole of the ABA argument, and it
-    /// is why the tag survives across blocks rather than starting again.
-    alignas(64) std::atomic<std::uint64_t> readyTop_{kEmptyReadyStack};
-
-    /// Ops still to finish this block. Zero is what "the block is done" means,
-    /// and it is the only thing every thread agrees to wait for.
+    /// Ops still to finish this block. Zero is what "the block is done" means.
     alignas(64) std::atomic<int> remaining_{0};
 };
 

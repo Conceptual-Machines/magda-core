@@ -1,10 +1,16 @@
 #include <algorithm>
 #include <atomic>
+#include <tuple>
 
+#include "../audio/DeviceParameterList.hpp"
 #include "../core/AutomationInfo.hpp"
 #include "../core/ClipInfo.hpp"
 #include "../core/DeviceInfo.hpp"
+#include "../core/DrumGridPads.hpp"
+#include "../core/ParameterUtils.hpp"
+#include "../core/PluginParameterConfigStore.hpp"
 #include "../core/RackInfo.hpp"
+#include "../core/ReferenceImpact.hpp"
 #include "../core/TrackInfo.hpp"
 #include "../project/ProjectInfo.hpp"
 #include "automation_api.hpp"
@@ -33,7 +39,7 @@ void assertMessageThread() {
 
 juce::String trackTypeName(TrackType type) {
     switch (type) {
-        case TrackType::Audio:
+        case TrackType::Media:
             return "audio";
         case TrackType::Group:
             return "group";
@@ -47,6 +53,18 @@ juce::String trackTypeName(TrackType type) {
             return "chord";
     }
     return "audio";
+}
+
+juce::String inputMonitorModeName(InputMonitorMode mode) {
+    switch (mode) {
+        case InputMonitorMode::Off:
+            return "off";
+        case InputMonitorMode::In:
+            return "in";
+        case InputMonitorMode::Auto:
+            return "auto";
+    }
+    return "off";
 }
 
 juce::String deviceTypeName(DeviceType type) {
@@ -149,10 +167,41 @@ juce::String curveName(AutomationCurveType curve) {
     return "linear";
 }
 
-juce::String safeRoutingId(const juce::String& id) {
-    if (id.isEmpty() || id == "all" || id == "master" || id == "default" || id.startsWith("track:"))
-        return id;
-    return {};
+const char* sidechainKindName(SidechainConfig::Type type) {
+    switch (type) {
+        case SidechainConfig::Type::Audio:
+            return "audio";
+        case SidechainConfig::Type::MIDI:
+            return "midi";
+        case SidechainConfig::Type::None:
+            break;
+    }
+    return "none";
+}
+
+const char* sidechainPortName(SidechainPort::Kind kind) {
+    switch (kind) {
+        case SidechainPort::Kind::Audio:
+            return "audio";
+        case SidechainPort::Kind::MIDI:
+            return "midi";
+        case SidechainPort::Kind::None:
+            break;
+    }
+    return "none";
+}
+
+DeviceSidechainDto makeSidechainDto(const DeviceInfo& device) {
+    DeviceSidechainDto dto;
+    dto.port = sidechainPortName(device.sidechainPort.kind);
+    dto.portChannels = device.sidechainPort.channels;
+    dto.type = sidechainKindName(device.sidechain.type);
+    if (device.sidechain.isActive())
+        dto.sourceTrackId = device.sidechain.sourceTrackId;
+    dto.tapPoint = device.sidechain.tapPoint == ModTapPoint::PreFx ? "preFx" : "postFader";
+    dto.gainDb = device.sidechain.gainDb;
+    dto.listen = device.sidechain.listen;
+    return dto;
 }
 
 DeviceDto makeDeviceDto(const DeviceInfo& device, TrackId trackId, std::optional<RackId> rackId,
@@ -169,7 +218,43 @@ DeviceDto makeDeviceDto(const DeviceInfo& device, TrackId trackId, std::optional
     dto.instrument = device.isInstrument;
     dto.bypassed = device.bypassed;
     dto.gainDb = device.gainDb;
+    dto.sidechain = makeSidechainDto(device);
     return dto;
+}
+
+void appendPadDevices(const DeviceInfo& grid, const ChainNodePath& gridPath, DeviceGraphDto& graph);
+
+void appendPadElements(const std::vector<ChainElement>& elements, const ChainNodePath& parentPath,
+                       TrackId trackId, std::optional<RackId> rackId, ChainId chainId,
+                       DeviceGraphDto& graph) {
+    for (const auto& element : elements) {
+        if (isDevice(element)) {
+            const auto& child = getDevice(element);
+            const auto childPath = parentPath.withDevice(child.id);
+            graph.devices.push_back(makeDeviceDto(child, trackId, rackId, chainId, childPath));
+            appendPadDevices(child, childPath, graph);
+        } else if (isRack(element)) {
+            const auto& rack = getRack(element);
+            const auto rackPath = parentPath.withRack(rack.id);
+            for (const auto& chain : rack.chains)
+                appendPadElements(chain.elements, rackPath.withChain(chain.id), trackId, rack.id,
+                                  chain.id, graph);
+        }
+    }
+}
+
+void appendPadDevices(const DeviceInfo& grid, const ChainNodePath& gridPath,
+                      DeviceGraphDto& graph) {
+    if (!grid.pads)
+        return;
+
+    for (auto& pad : makePadDtos(grid, gridPath))
+        graph.pads.push_back(std::move(pad));
+
+    for (const auto& pad : grid.pads->chains) {
+        const auto chainPath = ChainNodePath::padChain(gridPath.trackId, grid.id, pad.id);
+        appendPadElements(pad.elements, chainPath, gridPath.trackId, std::nullopt, pad.id, graph);
+    }
 }
 
 // `rackPath` addresses this rack; each chain and device extends it, so nesting
@@ -182,6 +267,7 @@ void appendRack(const RackInfo& rack, TrackId trackId, std::optional<RackId> par
     rackDto.trackId = trackId;
     rackDto.parentRackId = parentRackId;
     rackDto.parentChainId = parentChainId;
+    rackDto.nodePath = makeDevicePathDto(rackPath);
     rackDto.name = rack.name;
     rackDto.bypassed = rack.bypassed;
     rackDto.volumeDb = rack.volume;
@@ -194,6 +280,8 @@ void appendRack(const RackInfo& rack, TrackId trackId, std::optional<RackId> par
         ChainDto chainDto;
         chainDto.id = chain.id;
         chainDto.rackId = rack.id;
+        const auto chainPath = rackPath.withChain(chain.id);
+        chainDto.nodePath = makeDevicePathDto(chainPath);
         chainDto.name = chain.name;
         chainDto.outputIndex = chain.outputIndex;
         chainDto.muted = chain.muted;
@@ -202,13 +290,14 @@ void appendRack(const RackInfo& rack, TrackId trackId, std::optional<RackId> par
         chainDto.volumeDb = chain.volume;
         chainDto.pan = chain.pan;
 
-        const auto chainPath = rackPath.withChain(chain.id);
         for (const auto& element : chain.elements) {
             if (isDevice(element)) {
                 const auto& device = getDevice(element);
                 chainDto.deviceIds.push_back(device.id);
-                graph.devices.push_back(makeDeviceDto(device, trackId, rack.id, chain.id,
-                                                      chainPath.withDevice(device.id)));
+                const auto devicePath = chainPath.withDevice(device.id);
+                graph.devices.push_back(
+                    makeDeviceDto(device, trackId, rack.id, chain.id, devicePath));
+                appendPadDevices(device, devicePath, graph);
             } else {
                 const auto& nested = getRack(element);
                 chainDto.nestedRackIds.push_back(nested.id);
@@ -239,8 +328,12 @@ ScopedMessageThreadAssertionDisabler::~ScopedMessageThreadAssertionDisabler() {
     setMessageThreadAssertionEnabled(previous_);
 }
 
-ProjectDto makeProjectDto(const ProjectInfo& project) {
+ProjectDto makeProjectDto(const ProjectInfo& project, bool open, bool dirty, bool hasSaveTarget,
+                          juce::String path) {
     ProjectDto dto;
+    dto.open = open;
+    if (path.isNotEmpty())
+        dto.path = std::move(path);
     dto.name = project.name;
     dto.tempo = project.tempo;
     dto.timeSignatureNumerator = project.timeSignatureNumerator;
@@ -252,6 +345,8 @@ ProjectDto makeProjectDto(const ProjectInfo& project) {
     dto.loopEnabled = project.loopEnabled;
     dto.loopStartBeats = project.loopStartBeats;
     dto.loopEndBeats = project.loopEndBeats;
+    dto.dirty = dirty;
+    dto.hasSaveTarget = hasSaveTarget;
     return dto;
 }
 
@@ -269,11 +364,92 @@ TrackDto makeTrackDto(const TrackInfo& track) {
     dto.muted = track.muted;
     dto.soloed = track.soloed;
     dto.recordArmed = track.recordArmed;
+    dto.inputMonitor = inputMonitorModeName(track.inputMonitor);
     dto.frozen = track.frozen;
-    dto.audioInputDevice = safeRoutingId(track.audioInputDevice);
-    dto.midiInputDevice = safeRoutingId(track.midiInputDevice);
-    dto.audioOutputDevice = safeRoutingId(track.audioOutputDevice);
-    dto.midiOutputDevice = safeRoutingId(track.midiOutputDevice);
+    dto.audioInputDevice =
+        routingEndpointId(RoutingMedia::Audio, RoutingDirection::Input, track.audioInputDevice);
+    dto.midiInputDevice =
+        routingEndpointId(RoutingMedia::Midi, RoutingDirection::Input, track.midiInputDevice);
+    dto.audioOutputDevice =
+        routingEndpointId(RoutingMedia::Audio, RoutingDirection::Output, track.audioOutputDevice);
+    dto.midiOutputDevice =
+        routingEndpointId(RoutingMedia::Midi, RoutingDirection::Output, track.midiOutputDevice);
+    return dto;
+}
+
+RoutingEndpointDto makeRoutingEndpointDto(const RoutingEndpoint& endpoint) {
+    const auto kind = [&] {
+        switch (endpoint.kind) {
+            case RoutingEndpointKind::None:
+                return "none";
+            case RoutingEndpointKind::Hardware:
+                return "hardware";
+            case RoutingEndpointKind::Track:
+                return "track";
+            case RoutingEndpointKind::Master:
+                return "master";
+            case RoutingEndpointKind::AllMidiInputs:
+                return "all_midi_inputs";
+        }
+        return "none";
+    }();
+    return {endpoint.id,
+            endpoint.name,
+            endpoint.media == RoutingMedia::Audio ? "audio" : "midi",
+            endpoint.direction == RoutingDirection::Input ? "input" : "output",
+            kind,
+            endpoint.available,
+            endpoint.channelCount,
+            endpoint.trackId};
+}
+
+TrackRoutingDto makeTrackRoutingDto(const TrackRoutingView& routing) {
+    return {routing.trackId,
+            routing.audioInputEndpointId,
+            routing.midiInputEndpointId,
+            routing.audioOutputEndpointId,
+            routing.midiOutputEndpointId,
+            routing.recordArmed,
+            inputMonitorModeName(routing.inputMonitor)};
+}
+
+DroppedRoutingConnectionDto makeDroppedRoutingConnectionDto(
+    const DroppedRoutingConnection& connection) {
+    return {connection.trackId, connection.field, connection.endpointId, connection.reason};
+}
+
+TrackSendDto makeTrackSendDto(const TrackSendView& send) {
+    return {send.id,    send.sourceTrackId, send.destinationEndpointId,
+            send.level, send.enabled,       send.preFader ? "pre_fader" : "post_fader"};
+}
+
+InvalidatedSendConnectionDto makeInvalidatedSendConnectionDto(
+    const InvalidatedSendConnection& connection) {
+    return {connection.sendId, connection.destinationEndpointId, connection.reason};
+}
+
+ChordTrackDto makeChordTrackDto(const TrackInfo* track, ClipApi& clips) {
+    assertMessageThread();
+    ChordTrackDto dto;
+    if (track == nullptr)
+        return dto;
+
+    dto.track = makeTrackDto(*track);
+    for (const auto clipId : clips.getClipsOnTrack(track->id)) {
+        const auto* clip = clips.getClip(clipId);
+        if (clip == nullptr)
+            continue;
+        for (const auto& chord : clip->chordAnnotations) {
+            dto.chords.push_back({clip->id, chord.beatPosition,
+                                  clip->placement.startBeat + chord.beatPosition, chord.lengthBeats,
+                                  chord.chordName});
+        }
+    }
+
+    std::ranges::sort(dto.chords, [](const auto& left, const auto& right) {
+        return std::tie(left.startBeat, left.clipId, left.clipBeat) <
+               std::tie(right.startBeat, right.clipId, right.clipBeat);
+    });
     return dto;
 }
 
@@ -293,10 +469,38 @@ ClipDto makeClipDto(const ClipInfo& clip) {
     dto.launchMode = launchModeName(clip.launchMode);
     dto.launchQuantize = launchQuantizeName(clip.launchQuantize);
     dto.followAction = followActionName(clip.followAction);
+    dto.followActionDelayBeats = clip.followActionDelayBeats;
+    dto.followActionLoopCount = clip.followActionLoopCount;
     dto.notes.reserve(clip.midiNotes.size());
     for (const auto& note : clip.midiNotes)
         dto.notes.push_back({note.noteNumber, note.velocity, note.startBeat, note.lengthBeats});
+    dto.midiEvents = makeMidiEventDtos(clip);
     return dto;
+}
+
+std::vector<MidiEventDto> makeMidiEventDtos(const ClipInfo& clip) {
+    std::vector<MidiEventDto> result;
+    result.reserve(clip.midiNotes.size() + clip.midiCCData.size() + clip.midiPitchBendData.size() +
+                   clip.midiChannelPressureData.size() + clip.midiPolyAftertouchData.size());
+
+    for (const auto& note : clip.midiNotes)
+        result.push_back({note.id, "note", note.noteNumber, note.velocity, 0, 0, note.startBeat,
+                          note.lengthBeats, note.keyswitch});
+    for (const auto& cc : clip.midiCCData)
+        result.push_back({cc.id, "controlChange", 0, 0, cc.controller, cc.value, cc.beatPosition});
+    for (const auto& bend : clip.midiPitchBendData)
+        result.push_back({bend.id, "pitchBend", 0, 0, 0, bend.value, bend.beatPosition});
+    for (const auto& pressure : clip.midiChannelPressureData)
+        result.push_back(
+            {pressure.id, "channelPressure", 0, 0, 0, pressure.value, pressure.beatPosition});
+    for (const auto& aftertouch : clip.midiPolyAftertouchData)
+        result.push_back({aftertouch.id, "polyAftertouch", aftertouch.noteNumber, 0, 0,
+                          aftertouch.value, aftertouch.beatPosition});
+
+    std::ranges::stable_sort(result, [](const MidiEventDto& lhs, const MidiEventDto& rhs) {
+        return std::tie(lhs.beat, lhs.id) < std::tie(rhs.beat, rhs.id);
+    });
+    return result;
 }
 
 DeviceGraphDto makeDeviceGraphDto(const std::vector<TrackInfo>& tracks) {
@@ -305,9 +509,10 @@ DeviceGraphDto makeDeviceGraphDto(const std::vector<TrackInfo>& tracks) {
         for (const auto& element : track.chain.fxChainElements) {
             if (isDevice(element)) {
                 const auto& device = getDevice(element);
+                const auto devicePath = ChainNodePath::topLevelDevice(track.id, device.id);
                 graph.devices.push_back(
-                    makeDeviceDto(device, track.id, std::nullopt, std::nullopt,
-                                  ChainNodePath::topLevelDevice(track.id, device.id)));
+                    makeDeviceDto(device, track.id, std::nullopt, std::nullopt, devicePath));
+                appendPadDevices(device, devicePath, graph);
             } else {
                 const auto& rack = getRack(element);
                 appendRack(rack, track.id, std::nullopt, std::nullopt,
@@ -325,6 +530,43 @@ DeviceGraphDto makeDeviceGraphDto(const std::vector<TrackInfo>& tracks) {
     return graph;
 }
 
+std::vector<PadDto> makePadDtos(const DeviceInfo& grid, const ChainNodePath& gridPath) {
+    std::vector<PadDto> result;
+    result.reserve(kPadCount);
+    for (int index = 0; index < kPadCount; ++index) {
+        PadDto dto;
+        dto.gridPath = makeDevicePathDto(gridPath);
+        dto.index = index;
+        dto.midiNote = padNoteFor(index);
+        dto.lowNote = dto.highNote = dto.rootNote = dto.midiNote;
+        const auto* pad = grid.pads ? findPadChain(*grid.pads.get(), index) : nullptr;
+        if (pad != nullptr) {
+            dto.populated = true;
+            dto.chainId = pad->id;
+            const auto chainPath = ChainNodePath::padChain(gridPath.trackId, grid.id, pad->id);
+            dto.chainPath = makeDevicePathDto(chainPath);
+            dto.lowNote = pad->lowNote;
+            dto.highNote = pad->highNote;
+            dto.rootNote = pad->rootNote;
+            dto.name = padVoiceName(*pad);
+            if (dto.name.isEmpty())
+                dto.name = pad->name;
+            dto.levelDb = pad->volume;
+            dto.pan = pad->pan;
+            dto.muted = pad->muted;
+            dto.solo = pad->solo;
+            dto.bypassed = pad->bypassed;
+            dto.outputBus = pad->outputIndex;
+            for (const auto& element : pad->elements)
+                if (isDevice(element))
+                    dto.devicePaths.push_back(
+                        makeDevicePathDto(chainPath.withDevice(getDevice(element).id)));
+        }
+        result.push_back(std::move(dto));
+    }
+    return result;
+}
+
 DeviceCatalogEntryDto makeDeviceCatalogEntryDto(const DeviceCatalogEntry& entry) {
     DeviceCatalogEntryDto dto;
     dto.catalogId = entry.catalogId;
@@ -338,6 +580,50 @@ DeviceCatalogEntryDto makeDeviceCatalogEntryDto(const DeviceCatalogEntry& entry)
     return dto;
 }
 
+DevicePresetDto makeDevicePresetDto(const DevicePresetEntry& entry) {
+    return {entry.id, entry.name, entry.category, entry.source};
+}
+
+std::vector<DeviceParameterDto> makeDeviceParameterDtos(const DeviceInfo& device,
+                                                        const ChainNodePath& devicePath) {
+    const auto contains = [](const std::vector<int>& slots, int slot) {
+        return std::ranges::contains(slots, slot);
+    };
+    // The selections and the wire `index` are both slots (#2638).
+    const auto parameters = deviceParameterList(device, devicePath);
+    std::vector<DeviceParameterDto> dtos;
+    dtos.reserve(parameters.size());
+    for (size_t i = 0; i < parameters.size(); ++i) {
+        const auto& info = parameters[i];
+        const auto position = static_cast<int>(i);
+        DeviceParameterDto dto;
+        dto.index = info.paramIndex >= 0 ? info.paramIndex : position;
+        dto.stableId = info.stableId;
+        dto.name = info.name;
+        dto.unit = info.unit;
+        dto.minValue = info.minValue;
+        dto.maxValue = info.maxValue;
+        // currentValue/defaultValue are model values: for an external plugin
+        // whose saved config gave it a display range, they stay in TE's native
+        // domain while min/max describe real units. Project through the
+        // normalized domain so the wire always carries display units.
+        const auto normalized = ParameterUtils::modelToNormalizedValue({info.currentValue}, info);
+        dto.defaultValue = ParameterUtils::modelToRealValue({info.defaultValue}, info);
+        dto.currentValue = ParameterUtils::normalizedToReal(normalized.value, info);
+        dto.normalizedValue = normalized.value;
+        dto.scale = info.scale;
+        dto.choices = info.choices;
+        dto.visible = contains(device.visibleParameters, dto.index);
+        dto.miniMixer = contains(device.miniMixerParameters, dto.index);
+        // Configure Parameters offers the AI opt-in only for external plugins;
+        // internal devices accept agent writes on every parameter.
+        dto.aiAgentEnabled = device.format == PluginFormat::Internal ||
+                             contains(device.aiSoundDesignerParameters, dto.index);
+        dtos.push_back(std::move(dto));
+    }
+    return dtos;
+}
+
 SelectionDto makeSelectionDto(MagdaApi& api) {
     assertMessageThread();
 
@@ -348,7 +634,7 @@ SelectionDto makeSelectionDto(MagdaApi& api) {
     if (selection.getSelectedClip() != INVALID_CLIP_ID)
         dto.clipId = selection.getSelectedClip();
     dto.clipIds.assign(selection.getSelectedClips().begin(), selection.getSelectedClips().end());
-    std::sort(dto.clipIds.begin(), dto.clipIds.end());
+    std::ranges::sort(dto.clipIds);
     if (selection.getSelectedAutomationLaneId() != INVALID_AUTOMATION_LANE_ID)
         dto.automationLaneId = selection.getSelectedAutomationLaneId();
     if (selection.getSelectedAutomationClipId() != INVALID_AUTOMATION_CLIP_ID)
@@ -374,18 +660,48 @@ SessionDto makeSessionDto(MagdaApi& api) {
     assertMessageThread();
 
     SessionDto dto;
-    for (const auto& track : api.tracks().getTracks()) {
-        for (const auto clipId : api.clips().getClipsOnTrack(track.id)) {
-            const auto* clip = api.clips().getClip(clipId);
-            if (clip == nullptr || clip->view != ClipView::Session || clip->sceneIndex < 0)
-                continue;
-            dto.slots.push_back({track.id, clip->sceneIndex, clip->id,
-                                 sessionStateName(api.session().getClipPlayState(clip->id))});
+    const auto& scenes = api.project().getCurrentProjectInfo().scenes;
+    dto.scenes.reserve(scenes.size());
+    for (std::size_t index = 0; index < scenes.size(); ++index) {
+        const auto& scene = scenes[index];
+        dto.scenes.push_back({scene.id, static_cast<int>(index), static_cast<int>(index) + 1,
+                              scene.name, scene.colourArgb});
+    }
+
+    const auto& tracks = api.tracks().getTracks();
+    dto.tracks.reserve(tracks.size());
+    dto.slots.reserve(tracks.size() * scenes.size());
+    for (const auto& track : tracks) {
+        std::optional<ClipId> activeClipId;
+        if (track.activeSessionClipId != INVALID_CLIP_ID)
+            activeClipId = track.activeSessionClipId;
+        dto.tracks.push_back(
+            {track.id, activeClipId,
+             track.playbackMode == TrackPlaybackMode::Session ? "session" : "arrangement"});
+    }
+
+    for (std::size_t sceneIndex = 0; sceneIndex < scenes.size(); ++sceneIndex) {
+        for (const auto& track : tracks) {
+            const auto index = static_cast<int>(sceneIndex);
+            const auto clipId = api.session().getClipInSlot(track.id, index);
+            std::optional<ClipId> occupiedClip;
+            auto state = juce::String("empty");
+            if (clipId != INVALID_CLIP_ID) {
+                occupiedClip = clipId;
+                state = sessionStateName(api.session().getClipPlayState(clipId));
+            }
+            std::optional<SessionClipLaunchSettingsDto> launchSettings;
+            if (const auto* clip = api.clips().getClip(clipId)) {
+                launchSettings = SessionClipLaunchSettingsDto{
+                    launchModeName(clip->launchMode), launchQuantizeName(clip->launchQuantize),
+                    followActionName(clip->followAction), clip->followActionDelayBeats,
+                    clip->followActionLoopCount};
+            }
+            dto.slots.push_back({track.id, scenes[sceneIndex].id, index, occupiedClip, state,
+                                 api.session().isSlotRecordArmed(track.id, index),
+                                 api.session().isSlotRecording(track.id, index), launchSettings});
         }
     }
-    std::sort(dto.slots.begin(), dto.slots.end(), [](const auto& a, const auto& b) {
-        return a.sceneIndex != b.sceneIndex ? a.sceneIndex < b.sceneIndex : a.trackId < b.trackId;
-    });
     return dto;
 }
 
@@ -406,6 +722,22 @@ AutomationLaneDto makeAutomationLaneDto(const AutomationLaneInfo& lane) {
             {point.id, point.beatPosition, point.value, curveName(point.curveType)});
     }
     dto.clipIds = lane.clipIds;
+    return dto;
+}
+
+AutomationClipDto makeAutomationClipDto(const AutomationClipInfo& clip) {
+    AutomationClipDto dto;
+    dto.id = clip.id;
+    dto.laneId = clip.laneId;
+    dto.name = clip.name;
+    dto.colourArgb = clip.colour.getARGB();
+    dto.startBeat = clip.startBeats;
+    dto.lengthBeats = clip.lengthBeats;
+    dto.looping = clip.looping;
+    dto.loopLengthBeats = clip.loopLengthBeats;
+    for (const auto& point : clip.points)
+        dto.points.push_back(
+            {point.id, point.beatPosition, point.value, curveName(point.curveType)});
     return dto;
 }
 
@@ -450,6 +782,15 @@ DevicePathDto makeDevicePathDto(const ChainNodePath& path) {
             case ChainStepType::Device:
                 dto.steps.push_back({"device", step.id});
                 break;
+            case ChainStepType::PadRack:
+                // The id is the owning Drum Grid's DeviceId, not a RackId; the
+                // public step type says so rather than leaving a client to
+                // guess from position (#2219).
+                dto.steps.push_back({"pad_rack", step.id});
+                break;
+            case ChainStepType::PadChain:
+                dto.steps.push_back({"pad_chain", step.id});
+                break;
             case ChainStepType::Segment:
                 // Non-leading segments are not produced by any factory; drop
                 // rather than emit a step type the public contract lacks.
@@ -482,11 +823,62 @@ std::optional<ChainNodePath> toChainNodePath(const DevicePathDto& dto) {
             path.steps.push_back({ChainStepType::Chain, step.id});
         else if (step.type == "device")
             path.steps.push_back({ChainStepType::Device, step.id});
+        else if (step.type == "pad_rack")
+            path.steps.push_back({ChainStepType::PadRack, step.id});
+        else if (step.type == "pad_chain")
+            path.steps.push_back({ChainStepType::PadChain, step.id});
         else
             return std::nullopt;
     }
 
     return path;
+}
+
+namespace {
+
+ReferenceAddressDto makeReferenceAddressDto(const ReferenceAddress& address) {
+    ReferenceAddressDto dto;
+    dto.kind = magda::toString(address.kind);
+    dto.trackId = address.trackId;
+    if (address.devicePath)
+        dto.devicePath = makeDevicePathDto(*address.devicePath);
+    dto.automationLaneId = address.automationLaneId;
+    dto.macroId = address.macroId;
+    dto.modId = address.modId;
+    dto.linkIndex = address.linkIndex;
+    dto.parameterIndex = address.parameterIndex;
+    dto.parameterStableId = address.parameterStableId;
+    dto.bindingId = address.bindingId;
+    if (address.route)
+        dto.route = juce::String(magda::toString(*address.route));
+    dto.routeIndex = address.routeIndex;
+    return dto;
+}
+
+ReferenceImpactEntryDto makeReferenceImpactEntryDto(const PlannedReferenceImpact& impact) {
+    return {magda::toString(impact.reference.kind),
+            makeReferenceAddressDto(impact.reference.source),
+            makeReferenceAddressDto(impact.reference.target), magda::toString(impact.reason)};
+}
+
+}  // namespace
+
+ReferenceImpactResultDto makeReferenceImpactResultDto(const ReferenceImpactPlan& plan) {
+    ReferenceImpactResultDto dto;
+    for (const auto& impact : plan.preserved)
+        dto.preservedReferences.push_back(makeReferenceImpactEntryDto(impact));
+    for (const auto& impact : plan.remapped) {
+        dto.remappedReferences.push_back({magda::toString(impact.reference.kind),
+                                          makeReferenceAddressDto(impact.reference.source),
+                                          makeReferenceAddressDto(impact.reference.target),
+                                          makeReferenceAddressDto(impact.newTarget),
+                                          magda::toString(impact.reason)});
+    }
+    for (const auto& impact : plan.dropped)
+        dto.droppedReferences.push_back(makeReferenceImpactEntryDto(impact));
+    for (const auto& impact : plan.rejected)
+        dto.rejectedReferences.push_back(makeReferenceImpactEntryDto(impact));
+    return dto;
 }
 
 }  // namespace magda::remote

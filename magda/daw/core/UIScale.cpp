@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 
@@ -93,8 +94,7 @@ double stepUIScale(double current, int direction) {
     }
 
     long next = static_cast<long>(nearest) + (direction > 0 ? 1 : -1);
-    if (next < 0)
-        next = 0;
+    next = std::max<long>(next, 0);
     if (next >= static_cast<long>(kUIScaleSteps.size()))
         next = static_cast<long>(kUIScaleSteps.size()) - 1;
     return kUIScaleSteps[static_cast<size_t>(next)];

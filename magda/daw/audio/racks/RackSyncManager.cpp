@@ -1,13 +1,17 @@
 #include "racks/RackSyncManager.hpp"
 
+#include <algorithm>
+#include <ranges>
+
+#include "../../core/DrumGridPads.hpp"
 #include "TracktionHelpers.hpp"
 #include "core/ChainRoutingModel.hpp"
+#include "core/RangesHelpers.hpp"
 #include "core/TrackManager.hpp"
 #include "modifiers/CurveSnapshot.hpp"
 #include "modifiers/ModifierHelpers.hpp"
 #include "modifiers/ModifierSync.hpp"
 #include "plugin_manager/PluginManager.hpp"
-#include "plugins/MidiInThruSync.hpp"
 #include "plugins/tracktion/TracktionDeviceStateBridge.hpp"
 
 namespace magda {
@@ -33,7 +37,7 @@ std::pair<float, float> outputDbForVolumePan(float volumeDb, float pan) {
                                         static_cast<double>(rightDb)))};
 }
 
-void applyRackInstanceState(te::Plugin::Ptr rackPlugin, const RackInfo& rackInfo) {
+void applyRackInstanceState(const te::Plugin::Ptr& rackPlugin, const RackInfo& rackInfo) {
     auto* rackInstance = dynamic_cast<te::RackInstance*>(rackPlugin.get());
     if (!rackInstance)
         return;
@@ -64,11 +68,12 @@ void ensureRackOutputPair(te::RackType& rackType, int outputIndex) {
 }
 
 te::Plugin* findRackPlugin(te::RackType& rackType, te::EditItemID id) {
-    for (auto* plugin : rackType.getPlugins()) {
-        if (plugin && plugin->itemID == id)
-            return plugin;
-    }
-    return nullptr;
+    const auto plugins = rackType.getPlugins();
+    const auto matchesId = [id](const te::Plugin* plugin) {
+        return plugin && plugin->itemID == id;
+    };
+    const auto* const found = std::ranges::find_if(plugins, matchesId);
+    return found == plugins.end() ? nullptr : *found;
 }
 
 int getAudioInputCount(te::RackType& rackType, te::EditItemID id) {
@@ -200,7 +205,7 @@ void RackSyncManager::resyncRack(TrackId trackId, const RackInfo& rackInfo) {
     {
         auto connections = rackType->getConnections();
         for (int i = connections.size(); --i >= 0;) {
-            auto* conn = connections[i];
+            const auto* conn = connections[i];
             rackType->removeConnection(conn->sourceID, conn->sourcePin, conn->destID,
                                        conn->destPin);
         }
@@ -295,44 +300,30 @@ void RackSyncManager::removeRackInternal(RackId rackId, bool clearDeviceState) {
 }
 
 void RackSyncManager::removeRacksForTrack(TrackId trackId) {
-    std::vector<RackId> toRemove;
-    for (const auto& [rackId, synced] : syncedRacks_) {
-        if (synced.trackId == trackId)
-            toRemove.push_back(rackId);
-    }
-    for (auto rackId : toRemove) {
+    // Collected first: removeRack() erases from the map being walked.
+    for (auto rackId : getSyncedRackIdsForTrack(trackId))
         removeRack(rackId);
-    }
 }
 
 std::vector<RackId> RackSyncManager::getSyncedRackIds() const {
-    std::vector<RackId> ids;
-    ids.reserve(syncedRacks_.size());
-    for (const auto& [rackId, _] : syncedRacks_) {
-        ids.push_back(rackId);
-    }
-    return ids;
+    return syncedRacks_ | std::views::keys | toStd<std::vector<RackId>>();
 }
 
 std::vector<RackId> RackSyncManager::getSyncedRackIdsForTrack(TrackId trackId) const {
-    std::vector<RackId> ids;
-    for (const auto& [rackId, synced] : syncedRacks_) {
-        if (synced.trackId == trackId)
-            ids.push_back(rackId);
-    }
-    return ids;
+    const auto onTrack = [trackId](const auto& entry) { return entry.second.trackId == trackId; };
+
+    return syncedRacks_ | std::views::filter(onTrack) | std::views::keys |
+           toStd<std::vector<RackId>>();
 }
 
 std::vector<DeviceId> RackSyncManager::getInnerDeviceIdsForTrack(TrackId trackId) const {
-    std::vector<DeviceId> ids;
-    for (const auto& [rackId, synced] : syncedRacks_) {
-        if (synced.trackId != trackId)
-            continue;
-        for (const auto& [deviceId, plugin] : synced.innerPlugins) {
-            ids.push_back(deviceId);
-        }
-    }
-    return ids;
+    const auto onTrack = [trackId](const auto& entry) { return entry.second.trackId == trackId; };
+    const auto innerPluginsOf = [](const auto& entry) -> const auto& {
+        return entry.second.innerPlugins;
+    };
+
+    return syncedRacks_ | std::views::filter(onTrack) | std::views::transform(innerPluginsOf) |
+           std::views::join | std::views::keys | toStd<std::vector<DeviceId>>();
 }
 
 std::unordered_map<TrackId, RackSyncManager::TrackMeteringInfo> RackSyncManager::getMeteringMap()
@@ -371,13 +362,11 @@ std::unordered_map<TrackId, RackSyncManager::TrackMeteringInfo> RackSyncManager:
 }
 
 te::Plugin* RackSyncManager::getInnerPlugin(DeviceId deviceId) const {
-    for (const auto& [rackId, synced] : syncedRacks_) {
-        auto it = synced.innerPlugins.find(deviceId);
-        if (it != synced.innerPlugins.end()) {
-            return it->second.get();
-        }
-    }
-    return nullptr;
+    const auto hasDevice = [deviceId](const auto& entry) {
+        return entry.second.innerPlugins.contains(deviceId);
+    };
+    const auto found = std::ranges::find_if(syncedRacks_, hasDevice);
+    return found == syncedRacks_.end() ? nullptr : found->second.innerPlugins.at(deviceId).get();
 }
 
 void RackSyncManager::syncSidechains(
@@ -435,24 +424,21 @@ bool RackSyncManager::isRackInstance(te::Plugin* plugin) const {
     if (!plugin)
         return false;
 
-    for (const auto& [rackId, synced] : syncedRacks_) {
-        if (synced.rackInstance.get() == plugin) {
-            return true;
-        }
-    }
-    return false;
+    const auto matchesInstance = [plugin](const auto& entry) {
+        return entry.second.rackInstance.get() == plugin;
+    };
+    return std::ranges::any_of(syncedRacks_, matchesInstance);
 }
 
 RackId RackSyncManager::getRackIdForInstance(te::Plugin* plugin) const {
     if (!plugin)
         return INVALID_RACK_ID;
 
-    for (const auto& [rackId, synced] : syncedRacks_) {
-        if (synced.rackInstance.get() == plugin) {
-            return rackId;
-        }
-    }
-    return INVALID_RACK_ID;
+    const auto matchesInstance = [plugin](const auto& entry) {
+        return entry.second.rackInstance.get() == plugin;
+    };
+    const auto found = std::ranges::find_if(syncedRacks_, matchesInstance);
+    return found == syncedRacks_.end() ? INVALID_RACK_ID : found->first;
 }
 
 void RackSyncManager::capturePluginStates(SyncedRack& synced) {
@@ -522,6 +508,8 @@ void RackSyncManager::capturePluginStates(SyncedRack& synced) {
         }
 
         devInfo->pluginState = stateStr;
+        if (auto* drumGrid = dynamic_cast<daw::audio::DrumGridPlugin*>(plugin.get()))
+            pluginManager_.captureDrumGridPads(devicePath, *drumGrid);
         pluginManager_.refreshDeviceParameters(devicePath);
     }
 }
@@ -639,20 +627,19 @@ te::AutomatableParameter* RackSyncManager::findRackModifierParameter(RackId rack
     auto& tm = TrackManager::getInstance();
     auto resolved = tm.resolvePath(ChainNodePath::rack(rackIt->second.trackId, rackId));
     if (resolved.valid && resolved.rack) {
-        for (const auto& m : resolved.rack->mods) {
-            if (m.id == modId) {
-                sync = m.tempoSync;
-                break;
-            }
-        }
+        const auto matchesModId = [modId](const ModInfo& m) { return m.id == modId; };
+        const auto foundMod = std::ranges::find_if(resolved.rack->mods, matchesModId);
+        if (foundMod != resolved.rack->mods.end())
+            sync = foundMod->tempoSync;
     }
     const juce::String wantedID = paramIndex == 0 ? (sync ? "rateType" : "rate") : "depth";
 
-    for (auto* p : modIt->second->getAutomatableParameters()) {
-        if (p && p->paramID == wantedID)
-            return p;
-    }
-    return nullptr;
+    const auto params = modIt->second->getAutomatableParameters();
+    const auto matchesParamId = [&wantedID](const te::AutomatableParameter* p) {
+        return p && p->paramID == wantedID;
+    };
+    const auto* const foundParam = std::ranges::find_if(params, matchesParamId);
+    return foundParam == params.end() ? nullptr : *foundParam;
 }
 
 void RackSyncManager::resyncAllModifiers(TrackId trackId) {
@@ -666,7 +653,7 @@ void RackSyncManager::resyncAllModifiers(TrackId trackId) {
             if (track.id != trackId)
                 continue;
             for (const auto& element : track.chain.fxChainElements) {
-                if (auto* rackPtr = std::get_if<std::unique_ptr<RackInfo>>(&element)) {
+                if (const auto* rackPtr = std::get_if<std::unique_ptr<RackInfo>>(&element)) {
                     if (!*rackPtr || (*rackPtr)->id != rackId)
                         continue;
                     const auto& rackInfo = **rackPtr;
@@ -705,7 +692,7 @@ void RackSyncManager::updateAllModifierProperties(TrackId trackId) {
             if (track.id != trackId)
                 continue;
             for (const auto& element : track.chain.fxChainElements) {
-                if (auto* rackPtr = std::get_if<std::unique_ptr<RackInfo>>(&element)) {
+                if (const auto* rackPtr = std::get_if<std::unique_ptr<RackInfo>>(&element)) {
                     if (!*rackPtr || (*rackPtr)->id != rackId)
                         continue;
                     updateRackModulationProperties(synced, **rackPtr);
@@ -747,7 +734,6 @@ void RackSyncManager::loadRackContents(SyncedRack& synced, TrackId trackId,
                         // Apply bypass state
                         plugin->setEnabled(!device.bypassed);
                         plugin->setDeltaSoloEnabled(device.deltaSolo);
-                        daw::audio::syncPluginMidiInThru(plugin.get(), device.midiInThru);
 
                     } else {
                     }
@@ -815,13 +801,8 @@ void RackSyncManager::buildConnectionsForRack(SyncedRack& synced, const RackInfo
     auto rackIOId = te::EditItemID();  // Default = rack I/O
 
     // Determine if any chain is soloed
-    bool anySoloed = false;
-    for (const auto& chain : rackInfo.chains) {
-        if (chain.solo) {
-            anySoloed = true;
-            break;
-        }
-    }
+    const auto isSoloed = [](const ChainInfo& chain) { return chain.solo; };
+    const bool anySoloed = std::ranges::any_of(rackInfo.chains, isSoloed);
 
     bool anyChainConnectedToOutput = false;
 
@@ -965,7 +946,7 @@ te::Plugin::Ptr RackSyncManager::createPluginForRack(TrackId trackId, const Devi
     return pluginManager_.createPluginOnly(trackId, device);
 }
 
-bool RackSyncManager::structureChanged(const SyncedRack& synced, const RackInfo& rackInfo) const {
+bool RackSyncManager::structureChanged(const SyncedRack& synced, const RackInfo& rackInfo) {
     std::set<juce::String> expectedChains;
     std::set<DeviceId> expectedDevices;
     std::set<juce::String> expectedNestedRacks;
@@ -991,23 +972,26 @@ bool RackSyncManager::structureChanged(const SyncedRack& synced, const RackInfo&
 
     if (synced.chainVolPanPlugins.size() != expectedChains.size())
         return true;
-    for (const auto& chainKey : expectedChains)
-        if (synced.chainVolPanPlugins.find(chainKey) == synced.chainVolPanPlugins.end())
-            return true;
+    const auto missingChainVolPan = [&synced](const juce::String& chainKey) {
+        return !synced.chainVolPanPlugins.contains(chainKey);
+    };
+    if (std::ranges::any_of(expectedChains, missingChainVolPan))
+        return true;
 
     if (synced.innerPlugins.size() != expectedDevices.size())
         return true;
-    for (auto deviceId : expectedDevices)
-        if (synced.innerPlugins.find(deviceId) == synced.innerPlugins.end())
-            return true;
+    const auto missingInnerPlugin = [&synced](DeviceId deviceId) {
+        return !synced.innerPlugins.contains(deviceId);
+    };
+    if (std::ranges::any_of(expectedDevices, missingInnerPlugin))
+        return true;
 
     if (synced.nestedRackInstances.size() != expectedNestedRacks.size())
         return true;
-    for (const auto& key : expectedNestedRacks)
-        if (synced.nestedRackInstances.find(key) == synced.nestedRackInstances.end())
-            return true;
-
-    return false;
+    const auto missingNestedRack = [&synced](const juce::String& key) {
+        return !synced.nestedRackInstances.contains(key);
+    };
+    return std::ranges::any_of(expectedNestedRacks, missingNestedRack);
 }
 
 void RackSyncManager::updateProperties(SyncedRack& synced, const RackInfo& rackInfo) {
@@ -1025,7 +1009,7 @@ void RackSyncManager::updateProperties(SyncedRack& synced, const RackInfo& rackI
         if (rackType) {
             auto connections = rackType->getConnections();
             for (int i = connections.size(); --i >= 0;) {
-                auto* conn = connections[i];
+                const auto* conn = connections[i];
                 rackType->removeConnection(conn->sourceID, conn->sourcePin, conn->destID,
                                            conn->destPin);
             }
@@ -1057,7 +1041,6 @@ void RackSyncManager::updateElementPropertiesRecursive(SyncedRack& synced, const
                 if (pluginIt != synced.innerPlugins.end() && pluginIt->second) {
                     pluginIt->second->setEnabled(!device.bypassed);
                     pluginIt->second->setDeltaSoloEnabled(device.deltaSolo);
-                    daw::audio::syncPluginMidiInThru(pluginIt->second.get(), device.midiInThru);
                 }
             } else if (isRack(element)) {
                 const auto& nestedRack = getRack(element);
@@ -1087,7 +1070,7 @@ void RackSyncManager::rebuildConnectionsRecursive(SyncedRack& synced, const Rack
 
             auto connections = typeIt->second->getConnections();
             for (int i = connections.size(); --i >= 0;) {
-                auto* conn = connections[i];
+                const auto* conn = connections[i];
                 typeIt->second->removeConnection(conn->sourceID, conn->sourcePin, conn->destID,
                                                  conn->destPin);
             }
@@ -1097,7 +1080,7 @@ void RackSyncManager::rebuildConnectionsRecursive(SyncedRack& synced, const Rack
 
     auto connections = rackType.getConnections();
     for (int i = connections.size(); --i >= 0;) {
-        auto* conn = connections[i];
+        const auto* conn = connections[i];
         rackType.removeConnection(conn->sourceID, conn->sourcePin, conn->destID, conn->destPin);
     }
     buildConnectionsForRack(synced, rackInfo, rackPath, rackType);
@@ -1220,7 +1203,7 @@ void RackSyncManager::syncRackModulationRecursive(SyncedRack& synced, const Rack
             deviceCtx.macroList = ctx.macroList;
             deviceCtx.lookup = &lookup;
             deviceCtx.forEachScopePlugin = ctx.forEachScopePlugin;
-            deviceCtx.hasCrossTrackSidechain = device.sidechain.sourceTrackId != INVALID_TRACK_ID;
+            deviceCtx.hasCrossTrackSidechain = device.sidechain.isActive();
 
             auto& devState = innerDeviceMods[device.id];
             ModifierSyncState devSyncState{devState.modifiers, devState.curveSnapshots,
@@ -1337,21 +1320,19 @@ bool RackSyncManager::needsModifierResync(TrackId trackId) const {
     if (!trackInfo)
         return false;
 
-    for (const auto& element : trackInfo->chain.fxChainElements) {
+    const auto rackNeedsResync = [this](const ChainElement& element) {
         if (!isRack(element))
-            continue;
+            return false;
 
         const auto& rack = getRack(element);
-        auto it = syncedRacks_.find(rack.id);
-        if (it == syncedRacks_.end())
-            continue;
+        if (!syncedRacks_.contains(rack.id))
+            return false;
 
         auto storedIt = rackFingerprints_.find(rack.id);
-        if (storedIt == rackFingerprints_.end() || computeRackFingerprint(rack) != storedIt->second)
-            return true;
-    }
-
-    return false;
+        return storedIt == rackFingerprints_.end() ||
+               computeRackFingerprint(rack) != storedIt->second;
+    };
+    return std::ranges::any_of(trackInfo->chain.fxChainElements, rackNeedsResync);
 }
 
 void RackSyncManager::collectLFOModifiers(TrackId trackId,
@@ -1473,21 +1454,21 @@ void RackSyncManager::collectLFOModifiersWithModesForSidechainSource(
     };
 
     auto rackContainsSidechainSource = [&](auto&& self, const RackInfo& rack) -> bool {
-        if (rack.sidechain.sourceTrackId == sourceTrackId)
+        if (rack.sidechain.isActive() && rack.sidechain.sourceTrackId == sourceTrackId)
             return true;
 
-        for (const auto& chain : rack.chains) {
-            for (const auto& element : chain.elements) {
-                if (isDevice(element)) {
-                    if (getDevice(element).sidechain.sourceTrackId == sourceTrackId)
-                        return true;
-                } else if (isRack(element)) {
-                    if (self(self, getRack(element)))
-                        return true;
-                }
-            }
-        }
-        return false;
+        const auto elementContainsSource = [&](const ChainElement& element) {
+            if (isDevice(element))
+                return getDevice(element).sidechain.isActive() &&
+                       getDevice(element).sidechain.sourceTrackId == sourceTrackId;
+            if (isRack(element))
+                return self(self, getRack(element));
+            return false;
+        };
+        const auto chainContainsSource = [&](const ChainInfo& chain) {
+            return std::ranges::any_of(chain.elements, elementContainsSource);
+        };
+        return std::ranges::any_of(rack.chains, chainContainsSource);
     };
 
     for (const auto& entry : syncedRacks_) {
@@ -1507,8 +1488,8 @@ void RackSyncManager::collectLFOModifiersWithModesForSidechainSource(
             int collected = 0;
             const auto rackSource = rack.sidechain.sourceTrackId;
             const bool rackSourceMatches =
-                rackSource == sourceTrackId ||
-                (rackSource == INVALID_TRACK_ID &&
+                (rack.sidechain.isActive() && rackSource == sourceTrackId) ||
+                (!rack.sidechain.isActive() &&
                  rackContainsSidechainSource(rackContainsSidechainSource, rack));
 
             if (rackSourceMatches)
@@ -1519,7 +1500,8 @@ void RackSyncManager::collectLFOModifiersWithModesForSidechainSource(
                 for (auto& element : chain.elements) {
                     if (isDevice(element)) {
                         auto& device = getDevice(element);
-                        if (device.sidechain.sourceTrackId != sourceTrackId)
+                        if (!device.sidechain.isActive() ||
+                            device.sidechain.sourceTrackId != sourceTrackId)
                             continue;
                         auto devIt = deviceMods.find(device.id);
                         if (devIt != deviceMods.end())

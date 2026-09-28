@@ -5,10 +5,6 @@
 #include "core/ChainNodePath.hpp"
 #include "core/SelectionManager.hpp"
 
-namespace magda {
-class SvgButton;
-}
-
 namespace magda::daw::ui {
 
 class MacroPanelComponent;
@@ -19,14 +15,7 @@ struct DeviceSlotSelectionCallbacks {
     std::function<void()> updateParamModulation;
     std::function<void()> updateModsPanel;
     std::function<void()> updateMacroPanel;
-    std::function<void(bool)> setParamPanelVisible;
 };
-
-void openDeviceSlotMacroPanelForSelectionIfNeeded(const magda::ChainNodePath& nodePath,
-                                                  bool paramPanelVisible,
-                                                  bool exposesDeviceModulation,
-                                                  magda::SvgButton* macroButton,
-                                                  const DeviceSlotSelectionCallbacks& callbacks);
 
 void applyDeviceSlotSelectionTypeChange(magda::SelectionType newType, ParamHostComponent& paramGrid,
                                         const DeviceSlotSelectionCallbacks& callbacks);

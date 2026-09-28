@@ -54,7 +54,7 @@ class MixAnalysisAgent {
 
     /** Streaming variant of generate(): calls onToken for each token as it
      *  arrives, otherwise identical. Run off the message thread. */
-    Result generateStreaming(const Input& input, TokenCallback onToken);
+    static Result generateStreaming(const Input& input, TokenCallback onToken);
 
     /** Exposed so a harness can measure payload size without an LLM call. */
     static juce::String buildUserMessage(const Input& input);

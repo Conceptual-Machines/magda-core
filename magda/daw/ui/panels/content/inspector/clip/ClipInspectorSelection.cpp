@@ -17,11 +17,17 @@ void ClipInspector::setSelectedClip(magda::ClipId clipId) {
 }
 
 void ClipInspector::clipsChanged() {
+    if (clipBpmValue_.isBeingEdited())
+        return;
     updateFromSelectedClip();
 }
 
 void ClipInspector::clipPropertyChanged(magda::ClipId clipId) {
     if (selectedClipIds_.count(clipId) == 0)
+        return;
+    // A refresh rewrites the BPM label, and a juce::Label closes its editor
+    // when its text is set: a tempo landing mid-keystroke ate the entry.
+    if (clipBpmValue_.isBeingEdited())
         return;
 
     // When a draggable control triggers a value change, the round-trip is:
@@ -51,13 +57,15 @@ void ClipInspector::clipPropertyChanged(magda::ClipId clipId) {
         if (clip && clip->isAudio()) {
             updateAudioSourceValueDisplays(*clip);
             double projectBPM = 120.0;
-            int beatsPerBar = magda::DEFAULT_TIME_SIGNATURE_NUMERATOR;
+            int numerator = magda::DEFAULT_TIME_SIGNATURE_NUMERATOR;
+            int denominator = magda::DEFAULT_TIME_SIGNATURE_DENOMINATOR;
             if (timelineController_) {
                 const auto& state = timelineController_->getState();
                 projectBPM = state.tempo.bpm;
-                beatsPerBar = state.tempo.timeSignatureNumerator;
+                numerator = state.tempo.timeSignatureNumerator;
+                denominator = state.tempo.timeSignatureDenominator;
             }
-            updateLoopValueDisplays(*clip, projectBPM, beatsPerBar);
+            updateLoopValueDisplays(*clip, projectBPM, numerator, denominator);
 
             // PitchChange affects effective mode.
             stretchModeCombo_.setSelectedId(

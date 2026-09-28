@@ -2,6 +2,8 @@
 
 #include <utility>
 
+#include "core/PluginParameterConfigStore.hpp"
+
 namespace magda {
 
 DeviceProcessor::DeviceProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
@@ -45,7 +47,7 @@ juce::String DeviceProcessor::formatParameterValue(int index, float normalizedVa
     return cachedParams_[index]->valueToString(normalizedValue);
 }
 
-void DeviceProcessor::populateParameters(DeviceInfo& info) const {
+void DeviceProcessor::populateParametersFromEngine(DeviceInfo& info) const {
     info.parameters.clear();
     int count = getParameterCount();
     for (int i = 0; i < count; ++i) {
@@ -92,6 +94,40 @@ void DeviceProcessor::setDeltaSolo(bool deltaSolo) {
 
 bool DeviceProcessor::isDeltaSolo() const {
     return plugin_ && plugin_->isDeltaSoloEnabled();
+}
+
+void DeviceProcessor::populateParameters(DeviceInfo& info, ValueSource source) const {
+    if (source == ValueSource::Engine || info.format != PluginFormat::Internal) {
+        populateParametersFromEngine(info);
+    } else {
+        const auto model = std::move(info.parameters);
+        populateParametersFromEngine(info);
+
+        auto sameParameter = [](const ParameterInfo& kept, const ParameterInfo& fresh) {
+            if (kept.paramIndex != fresh.paramIndex)
+                return false;
+            // A minimal hydrated entry (value and saved id only, named after
+            // that id) has no metadata to compare; its frozen index is all it
+            // has.
+            if (kept.name == kept.stableId)
+                return true;
+            if (kept.stableId.isNotEmpty() && fresh.stableId.isNotEmpty())
+                return kept.stableId == fresh.stableId;
+            return kept.name == fresh.name;
+        };
+
+        for (auto& fresh : info.parameters)
+            for (const auto& kept : model)
+                if (sameParameter(kept, fresh)) {
+                    fresh.currentValue = kept.currentValue;
+                    break;
+                }
+    }
+
+    // What the plugin's parameters were detected to mean, over the bare records
+    // the engine reports. The array is rebuilt on every load, so this has to be
+    // here; EngineHost::applyLoadedDevice is the native engine's match (#2601).
+    PluginParameterConfigStore::applyToDevice(info);
 }
 
 void DeviceProcessor::syncFromDeviceInfo(const DeviceInfo& info) {

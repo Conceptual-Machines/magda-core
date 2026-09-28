@@ -162,12 +162,12 @@ class PianoRollContent : public MidiEditorContent,
     int getLeftPanelWidth() const override {
         return SIDEBAR_WIDTH + ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH;
     }
-    void updateGridSize() override;
+    void updateGridSize() final;
     void setGridPixelsPerBeat(double ppb) override;
-    void setGridPlayheadPosition(double position) override;
+    void setGridPlayheadBeat(double timelineBeat) override;
     void setGridEditCursorPosition(double positionSeconds, bool visible) override;
     void onScrollPositionChanged(int scrollX, int scrollY) override;
-    void onGridResolutionChanged() override;
+    void onGridResolutionChanged() final;
     void updateGridLoopRegion() override;
     void setGridPhasePreview(double beats, bool active) override;
 
@@ -241,19 +241,20 @@ class PianoRollContent : public MidiEditorContent,
     void setupGridCallbacks();
     void drawSidebar(juce::Graphics& g, juce::Rectangle<int> area);
     void drawChordRow(juce::Graphics& g, juce::Rectangle<int> area);
-    void drawVelocityHeader(juce::Graphics& g, juce::Rectangle<int> area);
+    static void drawVelocityHeader(juce::Graphics& g, juce::Rectangle<int> area);
     void detectChordsFromNotes();
     // Play a note then stop it after its length elapses, for double-click note
     // creation (#1705). Gated by the preview toggle; the note-off is scheduled
     // against the engine so it fires even if this panel is torn down first.
-    void auditionNoteOnce(magda::ClipId clipId, int noteNumber, int velocity, double lengthBeats);
+    static void auditionNoteOnce(magda::ClipId clipId, int noteNumber, int velocity,
+                                 double lengthBeats);
     void syncChordAnnotations(magda::ClipId clipId);
     void setNoteHeight(int height, bool persist);
     void setNoteHeightAnchored(int height, int anchorNote, int anchorScreenY, bool persist);
     void loadNoteHeightFromClip(magda::ClipId clipId);
 
     // Multi-track overlay: push the shared overlay set into the grid
-    void applyOverlayTracks() override;
+    void applyOverlayTracks() final;
 
     // Helper to get current header height based on chord row visibility
     int getHeaderHeight() const {

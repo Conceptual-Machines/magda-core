@@ -19,7 +19,7 @@ MAGDA checks the GitHub releases feed at most once every 24 hours on launch and 
 
 ## Building from Source
 
-MAGDA is built with CMake and requires a C++20 compiler. See the [README](https://github.com/Conceptual-Machines/magda-core#building) for full build instructions.
+MAGDA is built with CMake and requires a C++23 compiler. See the [README](https://github.com/Conceptual-Machines/magda-core#building) for full build instructions.
 
 ## Audio Setup
 

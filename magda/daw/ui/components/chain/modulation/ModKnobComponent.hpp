@@ -24,7 +24,7 @@ class MiniWaveformDisplay : public juce::Component, private juce::Timer {
         startTimer(33);  // 30 FPS animation
     }
 
-    ~MiniWaveformDisplay() {
+    ~MiniWaveformDisplay() override {
         stopTimer();
     }
 
@@ -274,7 +274,7 @@ class ModKnobComponent : public juce::Component, public magda::LinkModeManagerLi
     void modLinkModeChanged(bool active, const magda::ModSelection& selection) override;
 
     void showContextMenu();
-    void paintLinkIndicator(juce::Graphics& g, juce::Rectangle<int> area);
+    static void paintLinkIndicator(juce::Graphics& g, juce::Rectangle<int> area);
     void onNameLabelEdited();
     void onLinkButtonClicked();
 

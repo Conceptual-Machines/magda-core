@@ -2,12 +2,16 @@
 
 #include <BinaryData.h>
 
+#include <ranges>
+#include <utility>
+
 #include "../../utils/SelectionPolicy.hpp"
 #include "ChainNodePathDrag.hpp"
 #include "ai/AIPanelComponent.hpp"
 #include "core/AutomationInfo.hpp"
 #include "core/GestureRouter.hpp"
 #include "core/LinkModeManager.hpp"
+#include "core/RangesHelpers.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/controllers/ControllerActivation.hpp"
@@ -15,13 +19,33 @@
 #include "modulation/MacroPanelComponent.hpp"
 #include "modulation/ModsPanelComponent.hpp"
 #include "modulation/ModulatorEditorPanel.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui {
 
 namespace {
+/// The raw pointers a fade timer takes, out of a container that owns them.
+std::vector<juce::Component*> fadeTargets(const auto& owned) {
+    const auto rawPointer = [](const auto& item) -> juce::Component* { return item.get(); };
+    return owned | std::views::transform(rawPointer) | toStd<std::vector<juce::Component*>>();
+}
+
+/// The modifiers a link picker can offer: the enabled ones, by id and name.
+std::vector<std::pair<magda::ModId, juce::String>> enabledModifiers(const magda::ModArray* mods) {
+    if (mods == nullptr)
+        return {};
+
+    const auto isEnabled = [](const magda::ModInfo& mod) { return mod.enabled; };
+    const auto asEntry = [](const magda::ModInfo& mod) {
+        return std::pair{mod.id, magda::getModDisplayName(mod)};
+    };
+
+    return *mods | std::views::filter(isEnabled) | std::views::transform(asEntry) |
+           toStd<std::vector<std::pair<magda::ModId, juce::String>>>();
+}
+
 juce::Image createChainNodeDragImage(const juce::String& label, int itemCount) {
     constexpr int width = 188;
     constexpr int height = 42;
@@ -29,8 +53,8 @@ juce::Image createChainNodeDragImage(const juce::String& label, int itemCount) {
     juce::Graphics g(image);
 
     auto bounds = image.getBounds().toFloat().reduced(1.0f);
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY);
-    const auto bg = DarkTheme::getColour(DarkTheme::SURFACE).withAlpha(0.92f);
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
+    const auto bg = ActiveTheme::getColour(ActiveTheme::SURFACE).withAlpha(0.92f);
 
     g.setColour(bg);
     g.fillRoundedRectangle(bounds, 6.0f);
@@ -72,7 +96,7 @@ struct NodeComponent::PanelFadeTimer : private juce::Timer {
                 continue;
             component->setAlpha(startAlpha_);
             component->setVisible(true);
-            targets_.push_back(component);
+            targets_.emplace_back(component);
         }
 
         if (targets_.empty()) {
@@ -102,7 +126,7 @@ struct NodeComponent::PanelFadeTimer : private juce::Timer {
                 continue;
             component->setAlpha(startAlpha_);
             component->setVisible(true);
-            targets_.push_back(component);
+            targets_.emplace_back(component);
         }
 
         if (targets_.empty()) {
@@ -189,10 +213,10 @@ NodeComponent::NodeComponent() {
                                                        BinaryData::power_svgSize);
     bypassButton_->setClickingTogglesState(true);
     bypassButton_->setOriginalColor(juce::Colour(0xFFE6E6E6));
-    bypassButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+    bypassButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
     bypassButton_->setActiveColor(juce::Colours::white);
     bypassButton_->setActiveBackgroundColor(
-        DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).darker(0.3f));
+        ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).darker(0.3f));
     bypassButton_->setActive(true);  // Default: not bypassed = active
     bypassButton_->onClick = [this]() {
         bool bypassed = !bypassButton_->getToggleState();  // Toggle OFF = bypassed
@@ -205,7 +229,7 @@ NodeComponent::NodeComponent() {
 
     // Name label - clicks pass through for selection
     nameLabel_.setFont(FontManager::getInstance().getUIFontBold(10.0f));
-    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     nameLabel_.setJustificationType(juce::Justification::centredLeft);
     nameLabel_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(nameLabel_);
@@ -214,8 +238,8 @@ NodeComponent::NodeComponent() {
     deleteButton_.setButtonText(juce::String::fromUTF8("\xc3\x97"));  // × symbol
     deleteButton_.setColour(
         juce::TextButton::buttonColourId,
-        DarkTheme::getColour(DarkTheme::ACCENT_MODULATION)
-            .interpolatedWith(DarkTheme::getColour(DarkTheme::STATUS_ERROR), 0.5f)
+        ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION)
+            .interpolatedWith(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR), 0.5f)
             .darker(0.2f));
     deleteButton_.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     deleteButton_.onClick = [this]() {
@@ -227,26 +251,26 @@ NodeComponent::NodeComponent() {
     addAndMakeVisible(deleteButton_);
 
     // === MOD PANEL CONTROLS ===
-    for (int i = 0; i < 3; ++i) {
-        modSlotButtons_[i] = std::make_unique<juce::TextButton>("+");
-        modSlotButtons_[i]->setColour(juce::TextButton::buttonColourId,
-                                      DarkTheme::getColour(DarkTheme::SURFACE));
-        modSlotButtons_[i]->setColour(juce::TextButton::textColourOffId,
-                                      DarkTheme::getSecondaryTextColour());
-        modSlotButtons_[i]->onClick = [this, i]() {
+    for (auto& modSlotButton : modSlotButtons_) {
+        modSlotButton = std::make_unique<juce::TextButton>("+");
+        modSlotButton->setColour(juce::TextButton::buttonColourId,
+                                 ActiveTheme::getColour(ActiveTheme::SURFACE));
+        modSlotButton->setColour(juce::TextButton::textColourOffId,
+                                 ActiveTheme::getSecondaryTextColour());
+        modSlotButton->onClick = [this, &modSlotButton]() {
             juce::PopupMenu menu;
             menu.addItem(1, "LFO");
             menu.addItem(2, "Bezier LFO");
             menu.addItem(3, "ADSR");
             menu.addItem(4, "Envelope Follower");
-            menu.showMenuAsync(juce::PopupMenu::Options(), [this, i](int result) {
+            menu.showMenuAsync(juce::PopupMenu::Options(), [this, &modSlotButton](int result) {
                 if (result > 0) {
                     juce::StringArray types = {"", "LFO", "BEZ", "ADSR", "ENV"};
-                    modSlotButtons_[i]->setButtonText(types[result]);
+                    modSlotButton->setButtonText(types[result]);
                 }
             });
         };
-        addChildComponent(*modSlotButtons_[i]);
+        addChildComponent(*modSlotButton);
     }
 
     // === PARAM PANEL CONTROLS ===
@@ -257,9 +281,9 @@ NodeComponent::NodeComponent() {
         knob->setRange(0.0, 1.0, 0.01);
         knob->setValue(0.5);
         knob->setColour(juce::Slider::rotarySliderFillColourId,
-                        DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+                        ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
         knob->setColour(juce::Slider::rotarySliderOutlineColourId,
-                        DarkTheme::getColour(DarkTheme::SURFACE));
+                        ActiveTheme::getColour(ActiveTheme::SURFACE));
         addChildComponent(*knob);
         paramKnobs_.push_back(std::move(knob));
     }
@@ -272,26 +296,26 @@ NodeComponent::~NodeComponent() {
 }
 
 void NodeComponent::lookAndFeelChanged() {
-    bypassButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+    bypassButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
     bypassButton_->setActiveBackgroundColor(
-        DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).darker(0.3f));
-    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).darker(0.3f));
+    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     deleteButton_.setColour(
         juce::TextButton::buttonColourId,
-        DarkTheme::getColour(DarkTheme::ACCENT_MODULATION)
-            .interpolatedWith(DarkTheme::getColour(DarkTheme::STATUS_ERROR), 0.5f)
+        ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION)
+            .interpolatedWith(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR), 0.5f)
             .darker(0.2f));
 
     for (auto& button : modSlotButtons_) {
         button->setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
-        button->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+                          ActiveTheme::getColour(ActiveTheme::SURFACE));
+        button->setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
     }
     for (auto& knob : paramKnobs_) {
         knob->setColour(juce::Slider::rotarySliderFillColourId,
-                        DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+                        ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
         knob->setColour(juce::Slider::rotarySliderOutlineColourId,
-                        DarkTheme::getColour(DarkTheme::SURFACE));
+                        ActiveTheme::getColour(ActiveTheme::SURFACE));
     }
     repaint();
 }
@@ -307,9 +331,9 @@ void NodeComponent::paint(juce::Graphics& g) {
             auto paramArea = bounds.removeFromLeft(getParamPanelWidth());
             g.saveState();
             g.setOpacity(paramPanelAlpha_);
-            g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.02f));
             g.fillRect(paramArea);
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
             g.drawRect(paramArea);
             paintParamPanel(g, paramArea);
             g.restoreState();
@@ -319,9 +343,9 @@ void NodeComponent::paint(juce::Graphics& g) {
         int extraRightWidthCollapsed = getExtraRightPanelWidth();
         if (extraRightWidthCollapsed > 0) {
             auto extraRightArea = bounds.removeFromLeft(extraRightWidthCollapsed);
-            g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.02f));
             g.fillRect(extraRightArea);
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
             g.drawRect(extraRightArea);
             paintExtraRightPanel(g, extraRightArea);
         }
@@ -330,9 +354,9 @@ void NodeComponent::paint(juce::Graphics& g) {
             auto modArea = bounds.removeFromLeft(getModPanelWidth());
             g.saveState();
             g.setOpacity(modPanelAlpha_);
-            g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.02f));
             g.fillRect(modArea);
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
             g.drawRect(modArea);
             paintModPanel(g, modArea);
             g.restoreState();
@@ -342,9 +366,9 @@ void NodeComponent::paint(juce::Graphics& g) {
         int extraWidthCollapsed = getExtraLeftPanelWidth();
         if (extraWidthCollapsed > 0) {
             auto extraArea = bounds.removeFromLeft(extraWidthCollapsed);
-            g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.02f));
             g.fillRect(extraArea);
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
             g.drawRect(extraArea);
             paintExtraLeftPanel(g, extraArea);
         }
@@ -352,9 +376,9 @@ void NodeComponent::paint(juce::Graphics& g) {
         // AI panel - after mod editor, before main content
         if (aiPanelVisible_) {
             auto aiArea = bounds.removeFromLeft(getAIPanelWidth());
-            g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.02f));
             g.fillRect(aiArea);
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
             g.drawRect(aiArea);
             paintAIPanel(g, aiArea);
         }
@@ -362,25 +386,25 @@ void NodeComponent::paint(juce::Graphics& g) {
         // === RIGHT SIDE PANEL (even when collapsed) ===
         if (gainPanelVisible_) {
             auto gainArea = bounds.removeFromRight(getGainPanelWidth());
-            g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.02f));
             g.fillRect(gainArea);
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
             g.drawRect(gainArea);
             paintGainPanel(g, gainArea);
         }
 
         // === COLLAPSED MAIN STRIP (remaining bounds) ===
         // Background
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.03f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.03f));
         g.fillRoundedRectangle(bounds.toFloat(), 4.0f);
 
         // Border
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRoundedRectangle(bounds.toFloat(), 4.0f, 1.0f);
 
         // Draw name vertically (rotated 90 degrees) in the text area below buttons
         g.saveState();
-        g.setColour(DarkTheme::getTextColour());
+        g.setColour(ActiveTheme::getTextColour());
         g.setFont(FontManager::getInstance().getUIFontBold(10.0f));
 
         auto center = collapsedTextArea_.getCentre().toFloat();
@@ -388,8 +412,8 @@ void NodeComponent::paint(juce::Graphics& g) {
                                                        center.x, center.y));
         // Swapped width/height due to rotation
         juce::Rectangle<int> textBounds(
-            static_cast<int>(center.x - collapsedTextArea_.getHeight() / 2),
-            static_cast<int>(center.y - collapsedTextArea_.getWidth() / 2),
+            static_cast<int>(center.x - collapsedTextArea_.getHeight() / 2.0f),
+            static_cast<int>(center.y - collapsedTextArea_.getWidth() / 2.0f),
             collapsedTextArea_.getHeight(), collapsedTextArea_.getWidth());
         g.drawText(getCollapsedName(), textBounds, juce::Justification::centred);
         g.restoreState();
@@ -403,9 +427,9 @@ void NodeComponent::paint(juce::Graphics& g) {
         auto paramArea = bounds.removeFromLeft(getParamPanelWidth());
         g.saveState();
         g.setOpacity(paramPanelAlpha_);
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.02f));
         g.fillRect(paramArea);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRect(paramArea);
         paintParamPanel(g, paramArea);
         g.restoreState();
@@ -415,9 +439,9 @@ void NodeComponent::paint(juce::Graphics& g) {
     int extraRightWidth = getExtraRightPanelWidth();
     if (extraRightWidth > 0) {
         auto extraRightArea = bounds.removeFromLeft(extraRightWidth);
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.02f));
         g.fillRect(extraRightArea);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRect(extraRightArea);
         paintExtraRightPanel(g, extraRightArea);
     }
@@ -426,9 +450,9 @@ void NodeComponent::paint(juce::Graphics& g) {
         auto modArea = bounds.removeFromLeft(getModPanelWidth());
         g.saveState();
         g.setOpacity(modPanelAlpha_);
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.02f));
         g.fillRect(modArea);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRect(modArea);
         paintModPanel(g, modArea);
         g.restoreState();
@@ -438,9 +462,9 @@ void NodeComponent::paint(juce::Graphics& g) {
     int extraWidth = getExtraLeftPanelWidth();
     if (extraWidth > 0) {
         auto extraArea = bounds.removeFromLeft(extraWidth);
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.02f));
         g.fillRect(extraArea);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRect(extraArea);
         paintExtraLeftPanel(g, extraArea);
     }
@@ -448,9 +472,9 @@ void NodeComponent::paint(juce::Graphics& g) {
     // AI panel — sits between the mod editor and the main content
     if (aiPanelVisible_) {
         auto aiArea = bounds.removeFromLeft(getAIPanelWidth());
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.02f));
         g.fillRect(aiArea);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRect(aiArea);
         paintAIPanel(g, aiArea);
     }
@@ -458,20 +482,20 @@ void NodeComponent::paint(juce::Graphics& g) {
     // === RIGHT SIDE PANEL: [Gain] (squared corners) ===
     if (gainPanelVisible_) {
         auto gainArea = bounds.removeFromRight(getGainPanelWidth());
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.02f));
         g.fillRect(gainArea);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRect(gainArea);
         paintGainPanel(g, gainArea);
     }
 
     // === MAIN NODE AREA (remaining bounds) ===
     // Background
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.03f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.03f));
     g.fillRoundedRectangle(bounds.toFloat(), 4.0f);
 
     // Border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRoundedRectangle(bounds.toFloat(), 4.0f, 1.0f);
 
     // Header separator (only if header visible)
@@ -515,12 +539,12 @@ void NodeComponent::paintOverChildren(juce::Graphics& g) {
             float y = anchor.y - dotSize * 0.5f;
 
             if (hasAutomapBindings_) {
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.95f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.95f));
                 g.fillEllipse(x, y, dotSize, dotSize);
                 x += dotSize + gapBetweenDots;
             }
             if (hasPinnedBindings_) {
-                g.setColour(DarkTheme::getColour(DarkTheme::MIDI_LEARN).withAlpha(0.9f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_LEARN).withAlpha(0.9f));
                 g.fillEllipse(x, y, dotSize, dotSize);
             }
         }
@@ -528,7 +552,7 @@ void NodeComponent::paintOverChildren(juce::Graphics& g) {
 
     // Selection border (over everything including side panels)
     if (selected_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::AUTOMATION_SCALE_TEXT));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_SCALE_TEXT));
         g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 4.0f, 2.0f);
     }
 }
@@ -942,13 +966,13 @@ int NodeComponent::getExtraRightPanelWidth() const {
 void NodeComponent::paintModPanel(juce::Graphics& g, juce::Rectangle<int> panelArea) {
     // If we have a real mods panel, just draw the header
     if (modsPanel_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
         g.setFont(FontManager::getInstance().getUIFontBold(9.0f));
         g.drawText("MODS", panelArea.removeFromTop(16), juce::Justification::centred);
         return;
     }
     // Default: draw labeled placeholder (vertical side panel)
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
     g.setFont(FontManager::getInstance().getUIFont(8.0f));
     g.drawText("MOD", panelArea.removeFromTop(16), juce::Justification::centred);
 }
@@ -956,7 +980,7 @@ void NodeComponent::paintModPanel(juce::Graphics& g, juce::Rectangle<int> panelA
 void NodeComponent::paintExtraLeftPanel(juce::Graphics& g, juce::Rectangle<int> panelArea) {
     // Draw modulator editor panel header if visible
     if (modulatorEditorVisible_ && modulatorEditorPanel_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION).darker(0.2f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).darker(0.2f));
         g.setFont(FontManager::getInstance().getUIFontBold(9.0f));
         g.drawText("MOD EDIT", panelArea.removeFromTop(16), juce::Justification::centred);
     }
@@ -965,13 +989,13 @@ void NodeComponent::paintExtraLeftPanel(juce::Graphics& g, juce::Rectangle<int> 
 void NodeComponent::paintParamPanel(juce::Graphics& g, juce::Rectangle<int> panelArea) {
     // If we have a real macros panel, just draw the header
     if (macroPanel_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
         g.setFont(FontManager::getInstance().getUIFontBold(9.0f));
         g.drawText("MACROS", panelArea.removeFromTop(16), juce::Justification::centred);
         return;
     }
     // Default: draw labeled placeholder (vertical side panel)
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
     g.setFont(FontManager::getInstance().getUIFont(8.0f));
     g.drawText("PRM", panelArea.removeFromTop(16), juce::Justification::centred);
 }
@@ -981,7 +1005,7 @@ void NodeComponent::paintGainPanel(juce::Graphics& g, juce::Rectangle<int> panel
     auto meterArea = panelArea.reduced(4, 8);
 
     // Meter background
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     g.fillRoundedRectangle(meterArea.toFloat(), 2.0f);
 
     // Mock meter fill (would be driven by actual audio level)
@@ -990,16 +1014,16 @@ void NodeComponent::paintGainPanel(juce::Graphics& g, juce::Rectangle<int> panel
     auto fillArea = meterArea.removeFromBottom(fillHeight);
 
     // Gradient from green to yellow to red
-    juce::ColourGradient gradient(DarkTheme::getColour(DarkTheme::GAIN_METER_LOW), 0.0f,
+    juce::ColourGradient gradient(ActiveTheme::getColour(ActiveTheme::GAIN_METER_LOW), 0.0f,
                                   static_cast<float>(meterArea.getBottom()),
-                                  DarkTheme::getColour(DarkTheme::GAIN_METER_HIGH), 0.0f,
+                                  ActiveTheme::getColour(ActiveTheme::GAIN_METER_HIGH), 0.0f,
                                   static_cast<float>(meterArea.getY()), false);
-    gradient.addColour(0.7, DarkTheme::getColour(DarkTheme::GAIN_METER_WARNING));
+    gradient.addColour(0.7, ActiveTheme::getColour(ActiveTheme::GAIN_METER_WARNING));
     g.setGradientFill(gradient);
     g.fillRect(fillArea);
 
     // Border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRoundedRectangle(panelArea.reduced(4, 8).toFloat(), 2.0f, 1.0f);
 }
 
@@ -1022,9 +1046,9 @@ void NodeComponent::resizedModPanel(juce::Rectangle<int> panelArea) {
     // Default: placeholder mod slot buttons
     panelArea = panelArea.reduced(2);
     int slotHeight = (panelArea.getHeight() - 4) / 3;
-    for (int i = 0; i < 3; ++i) {
-        modSlotButtons_[i]->setBounds(panelArea.removeFromTop(slotHeight).reduced(0, 1));
-        modSlotButtons_[i]->setVisible(true);
+    for (const auto& modSlotButton : modSlotButtons_) {
+        modSlotButton->setBounds(panelArea.removeFromTop(slotHeight).reduced(0, 1));
+        modSlotButton->setVisible(true);
     }
 }
 
@@ -1079,7 +1103,7 @@ void NodeComponent::paintAIPanel(juce::Graphics& g, juce::Rectangle<int> panelAr
     // Header label — the AIPanelComponent (when mounted) draws the input/
     // output below this strip; resizedAIPanel positions it skipping the 16px
     // header band.
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     g.setFont(FontManager::getInstance().getUIFontBold(9.0f));
     g.drawText("AI", panelArea.removeFromTop(16), juce::Justification::centred);
 }
@@ -1095,7 +1119,7 @@ void NodeComponent::resizedAIPanel(juce::Rectangle<int> panelArea) {
 void NodeComponent::paintExtraRightPanel(juce::Graphics& g, juce::Rectangle<int> panelArea) {
     // Draw macro editor panel header if visible
     if (macroEditorVisible_ && macroEditorPanel_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION).darker(0.2f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).darker(0.2f));
         g.setFont(FontManager::getInstance().getUIFontBold(9.0f));
         g.drawText("MACRO EDIT", panelArea.removeFromTop(16), juce::Justification::centred);
     }
@@ -1220,7 +1244,7 @@ void NodeComponent::chainNodeSelectionChanged(const magda::ChainNodePath& /*path
 }
 
 void NodeComponent::chainNodeReselected(const magda::ChainNodePath& /*path*/) {
-    // Not used - we handle collapse toggle directly in mouseUp
+    // Reselection has no layout side effects.
 }
 
 void NodeComponent::paramSelectionChanged(const magda::ParamSelection& /*selection*/) {}
@@ -1347,13 +1371,8 @@ void NodeComponent::mouseUp(const juce::MouseEvent& e) {
         return;
     }
 
-    // While a macro/mod is in link mode, clicks bouncing up from a non-link-
-    // target child (a tab strip, the device meter, the empty space between
-    // params) shouldn't change selection or toggle the device's collapsed
-    // state — that interrupts the linking gesture and visibly collapses the
-    // device the user is trying to link into. Bail out of the selection /
-    // collapse path; the actual link target widget (ParamSlot,
-    // LinkableTextSlider) consumes its own click separately.
+    // Background clicks must not interrupt an active linking gesture by changing
+    // selection. Link targets consume their own clicks separately.
     auto& linkMgr = magda::LinkModeManager::getInstance();
     if (linkMgr.getMacroInLinkMode().isValid() || linkMgr.getModInLinkMode().isValid()) {
         mouseDownForSelection_ = false;
@@ -1366,12 +1385,15 @@ void NodeComponent::mouseUp(const juce::MouseEvent& e) {
 
         // Check if mouse is still within bounds (not a drag-away)
         if (getLocalBounds().contains(e.getPosition())) {
+            // Collapse is an explicit double-click action on the node background.
+            // Forwarded child-control events and modified selection clicks must
+            // never change layout. Do not dispatch selection for this action.
+            if (selected_ && e.getNumberOfClicks() == 2 && e.eventComponent == this &&
+                !e.mods.isAnyModifierKeyDown()) {
+                setCollapsed(!collapsed_);
+                return;
+            }
             if (nodePath_.isValid()) {
-                // Capture state BEFORE calling selectChainNode
-                // (callbacks may change these values synchronously)
-                bool wasAlreadySelected = selected_;
-                bool wasCollapsed = collapsed_;
-
                 // selectChainNode fans out to every SelectionManagerListener —
                 // some listener paths can trigger rebuildNodeComponents, which
                 // would delete *this* while we're still inside mouseUp. Guard
@@ -1381,21 +1403,6 @@ void NodeComponent::mouseUp(const juce::MouseEvent& e) {
                 const bool toggle = magda::isToggleSelectClick(e.mods) ||
                                     (e.mods.isCtrlDown() && !e.mods.isShiftDown());
                 const bool range = magda::isRangeSelectClick(e.mods);
-                // The header *background* is the collapse affordance, so a plain
-                // click there is a collapse gesture whether or not the node was
-                // already selected. Flag it across the selection dispatch:
-                // selecting a node normally auto-opens its macro panel, which
-                // on this click reads as "I asked to collapse and got macros".
-                //
-                // eventComponent must be this node. Header controls forward
-                // their events here via addMouseListener so a click on them also
-                // selects the device (the step sequencer's Export button, the
-                // drum pad's name label); those arrive with coordinates relative
-                // to the *child*, so a y of 0..buttonHeight would otherwise
-                // always land inside the header and fold the device away.
-                const bool headerClick = !toggle && !range && e.eventComponent == this &&
-                                         e.getPosition().y < getHeaderHeight();
-                collapseGestureActive_ = headerClick;
                 if (range)
                     rangeSelectFromAnchor();
                 else if (toggle)
@@ -1404,14 +1411,6 @@ void NodeComponent::mouseUp(const juce::MouseEvent& e) {
                     selection.selectChainNode(nodePath_);
                 if (safeThis == nullptr)
                     return;
-                collapseGestureActive_ = false;
-
-                // Header-bar click collapses/expands outright. Elsewhere on the
-                // node, only a collapsed one expands, and only once selected —
-                // so clicking into a device to work on it never folds it away.
-                if (headerClick || (!toggle && !range && wasAlreadySelected && wasCollapsed)) {
-                    setCollapsed(!wasCollapsed);
-                }
             }
 
             // Also call legacy callback for backward compatibility
@@ -1441,10 +1440,10 @@ void NodeComponent::initializeModsMacrosPanels() {
     // Create mods panel
     modsPanel_ = std::make_unique<ModsPanelComponent>();
     modsPanel_->onModTargetChanged = [this](int modIndex, magda::ControlTarget target) {
-        onModTargetChangedInternal(modIndex, target);
+        onModTargetChangedInternal(modIndex, std::move(target));
     };
     modsPanel_->onModLinkRemoved = [this](int modIndex, magda::ControlTarget target) {
-        onModLinkRemovedInternal(modIndex, target);
+        onModLinkRemovedInternal(modIndex, std::move(target));
         updateModsPanel();
         updateModulatorEditor();
     };
@@ -1490,13 +1489,13 @@ void NodeComponent::initializeModsMacrosPanels() {
         onMacroValueChangedInternal(macroIndex, value);
     };
     macroPanel_->onMacroTargetChanged = [this](int macroIndex, magda::ControlTarget target) {
-        onMacroTargetChangedInternal(macroIndex, target);
+        onMacroTargetChangedInternal(macroIndex, std::move(target));
     };
     macroPanel_->onMacroNameChanged = [this](int macroIndex, juce::String name) {
         onMacroNameChangedInternal(macroIndex, name);
     };
     macroPanel_->onMacroLinkRemoved = [this](int macroIndex, magda::ControlTarget target) {
-        onMacroLinkRemovedInternal(macroIndex, target);
+        onMacroLinkRemovedInternal(macroIndex, std::move(target));
         updateMacroPanel();
         updateMacroEditor();
     };
@@ -1603,19 +1602,19 @@ void NodeComponent::initializeModsMacrosPanels() {
 
         // Pick sidechain type from the selected modulator. The envelope follower
         // always sources audio; otherwise it follows the LFO's trigger mode.
-        const bool selValid = selectedModIndex_ >= 0 && selectedModIndex_ < (int)mods.size();
-        const bool isFollower =
-            selValid && mods[(size_t)selectedModIndex_].type == magda::ModType::Follower;
+        const bool selValid =
+            selectedModIndex_ >= 0 && selectedModIndex_ < static_cast<int>(mods.size());
+        const bool isFollower = selValid && mods[static_cast<size_t>(selectedModIndex_)].type ==
+                                                magda::ModType::Follower;
         const bool isAudioMode =
-            isFollower || (selValid && mods[(size_t)selectedModIndex_].triggerMode ==
+            isFollower || (selValid && mods[static_cast<size_t>(selectedModIndex_)].triggerMode ==
                                            magda::LFOTriggerMode::Audio);
         const auto sidechainType =
             isAudioMode ? magda::SidechainConfig::Type::Audio : magda::SidechainConfig::Type::MIDI;
 
         juce::PopupMenu menu;
 
-        bool hasSidechain =
-            sidechain.type == sidechainType && sidechain.sourceTrackId != magda::INVALID_TRACK_ID;
+        bool hasSidechain = sidechain.isActive() && sidechain.type == sidechainType;
 
         menu.addSectionHeader(isAudioMode ? "Audio Trigger Source" : "MIDI Trigger Source");
         menu.addItem(1, "Self", true, !hasSidechain);
@@ -1652,7 +1651,7 @@ void NodeComponent::initializeModsMacrosPanels() {
                     magda::TrackManager::getInstance().clearRackSidechain(rackPath);
             } else {
                 int index = result - 10;
-                if (index >= 0 && index < (int)trackEntries->size()) {
+                if (index >= 0 && index < static_cast<int>(trackEntries->size())) {
                     if (isDeviceTarget) {
                         magda::TrackManager::getInstance().setSidechainSource(
                             deviceId, (*trackEntries)[index].id, sidechainType);
@@ -1693,49 +1692,31 @@ void NodeComponent::initializeModsMacrosPanels() {
 
     // Mod matrix: delete link
     modulatorEditorPanel_->onModLinkDeleted = [this](int modIndex, magda::ControlTarget target) {
-        auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
-        if (device) {
-            magda::TrackManager::getInstance().removeModLink(nodePath_, modIndex, target);
-        } else {
-            // Rack mod
-            magda::TrackManager::getInstance().removeModLink(nodePath_, modIndex, target);
-        }
+        magda::TrackManager::getInstance().removeModLink(nodePath_, modIndex, std::move(target));
         updateModulatorEditor();
     };
 
     // Mod matrix: toggle bipolar
     modulatorEditorPanel_->onModLinkBipolarChanged =
         [this](int modIndex, magda::ControlTarget target, bool bipolar) {
-            auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
-            if (device) {
-                magda::TrackManager::getInstance().setModLinkBipolar(nodePath_, modIndex, target,
-                                                                     bipolar);
-            } else {
-                magda::TrackManager::getInstance().setModLinkBipolar(nodePath_, modIndex, target,
-                                                                     bipolar);
-            }
+            magda::TrackManager::getInstance().setModLinkBipolar(nodePath_, modIndex,
+                                                                 std::move(target), bipolar);
             updateModulatorEditor();
         };
 
     // Mod matrix: enable/disable link without losing its amount
-    modulatorEditorPanel_->onModLinkEnabledChanged = [this](int modIndex,
-                                                            magda::ControlTarget target,
-                                                            bool enabled) {
-        magda::TrackManager::getInstance().setModLinkEnabled(nodePath_, modIndex, target, enabled);
-        updateModulatorEditor();
-    };
+    modulatorEditorPanel_->onModLinkEnabledChanged =
+        [this](int modIndex, magda::ControlTarget target, bool enabled) {
+            magda::TrackManager::getInstance().setModLinkEnabled(nodePath_, modIndex,
+                                                                 std::move(target), enabled);
+            updateModulatorEditor();
+        };
 
     // Mod matrix: change link amount
     modulatorEditorPanel_->onModLinkAmountChanged =
         [this](int modIndex, magda::ControlTarget target, float amount) {
-            auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
-            if (device) {
-                magda::TrackManager::getInstance().setModLinkAmount(nodePath_, modIndex, target,
-                                                                    amount);
-            } else {
-                magda::TrackManager::getInstance().setModLinkAmount(nodePath_, modIndex, target,
-                                                                    amount);
-            }
+            magda::TrackManager::getInstance().setModLinkAmount(nodePath_, modIndex,
+                                                                std::move(target), amount);
         };
 
     addChildComponent(*modulatorEditorPanel_);
@@ -1754,18 +1735,18 @@ void NodeComponent::initializeModsMacrosPanels() {
     };
     macroEditorPanel_->onLinkAmountChanged = [this](magda::ControlTarget target, float amount) {
         if (selectedMacroIndex_ >= 0) {
-            onMacroLinkAmountChangedInternal(selectedMacroIndex_, target, amount);
+            onMacroLinkAmountChangedInternal(selectedMacroIndex_, std::move(target), amount);
         }
     };
     macroEditorPanel_->onLinkRemoved = [this](magda::ControlTarget target) {
         if (selectedMacroIndex_ >= 0) {
-            onMacroLinkRemovedInternal(selectedMacroIndex_, target);
+            onMacroLinkRemovedInternal(selectedMacroIndex_, std::move(target));
             updateMacroEditor();
         }
     };
     macroEditorPanel_->onLinkBipolarToggled = [this](magda::ControlTarget target, bool bipolar) {
         if (selectedMacroIndex_ >= 0) {
-            onMacroLinkBipolarChangedInternal(selectedMacroIndex_, target, bipolar);
+            onMacroLinkBipolarChangedInternal(selectedMacroIndex_, std::move(target), bipolar);
             updateMacroEditor();
         }
     };
@@ -1817,14 +1798,7 @@ void NodeComponent::updateModsPanel() {
     // Same-scope modifiers — each knob's "Link to Modulator" submenu
     // can target another mod's rate. Skip the knob's own ModId is done
     // inside the knob (it knows its own currentMod_.id).
-    std::vector<std::pair<magda::ModId, juce::String>> modList;
-    if (mods) {
-        modList.reserve(mods->size());
-        for (const auto& m : *mods)
-            if (m.enabled)
-                modList.emplace_back(m.id, magda::getModDisplayName(m));
-    }
-    modsPanel_->setAvailableModifiers(modList);
+    modsPanel_->setAvailableModifiers(enabledModifiers(mods));
 }
 
 void NodeComponent::updateMacroValueDisplay(int macroIndex, float value) {
@@ -1846,11 +1820,7 @@ void NodeComponent::fadeInParamPanelContent() {
         return;
     }
 
-    std::vector<juce::Component*> targets;
-    targets.reserve(paramKnobs_.size());
-    for (auto& knob : paramKnobs_)
-        targets.push_back(knob.get());
-    paramPanelFadeTimer_->fadeIn(targets, SIDE_PANEL_FADE_IN_MS, repaintPanel);
+    paramPanelFadeTimer_->fadeIn(fadeTargets(paramKnobs_), SIDE_PANEL_FADE_IN_MS, repaintPanel);
 }
 
 void NodeComponent::cancelParamPanelContentFade() {
@@ -1858,14 +1828,8 @@ void NodeComponent::cancelParamPanelContentFade() {
 }
 
 void NodeComponent::fadeOutParamPanelContent() {
-    std::vector<juce::Component*> targets;
-    if (macroPanel_) {
-        targets.push_back(macroPanel_.get());
-    } else {
-        targets.reserve(paramKnobs_.size());
-        for (auto& knob : paramKnobs_)
-            targets.push_back(knob.get());
-    }
+    const auto targets =
+        macroPanel_ ? std::vector<juce::Component*>{macroPanel_.get()} : fadeTargets(paramKnobs_);
 
     auto safeThis = juce::Component::SafePointer<NodeComponent>(this);
     paramPanelFadeTimer_->fadeOut(
@@ -1902,11 +1866,7 @@ void NodeComponent::fadeInModPanelContent() {
         return;
     }
 
-    std::vector<juce::Component*> targets;
-    targets.reserve(3);
-    for (auto& button : modSlotButtons_)
-        targets.push_back(button.get());
-    modPanelFadeTimer_->fadeIn(targets, SIDE_PANEL_FADE_IN_MS, repaintPanel);
+    modPanelFadeTimer_->fadeIn(fadeTargets(modSlotButtons_), SIDE_PANEL_FADE_IN_MS, repaintPanel);
 }
 
 void NodeComponent::cancelModPanelContentFade() {
@@ -1914,14 +1874,8 @@ void NodeComponent::cancelModPanelContentFade() {
 }
 
 void NodeComponent::fadeOutModPanelContent() {
-    std::vector<juce::Component*> targets;
-    if (modsPanel_) {
-        targets.push_back(modsPanel_.get());
-    } else {
-        targets.reserve(3);
-        for (auto& button : modSlotButtons_)
-            targets.push_back(button.get());
-    }
+    const auto targets =
+        modsPanel_ ? std::vector<juce::Component*>{modsPanel_.get()} : fadeTargets(modSlotButtons_);
 
     auto safeThis = juce::Component::SafePointer<NodeComponent>(this);
     modPanelFadeTimer_->fadeOut(
@@ -1970,14 +1924,7 @@ void NodeComponent::updateMacroPanel() {
 
     // Same-scope modifiers — let the macro link picker offer "Modulators →
     // <mod> → Rate" entries that resolve to the LFO's rate / rateType param.
-    std::vector<std::pair<magda::ModId, juce::String>> mods;
-    if (const auto* modsData = getModsData()) {
-        mods.reserve(modsData->size());
-        for (const auto& m : *modsData)
-            if (m.enabled)
-                mods.emplace_back(m.id, magda::getModDisplayName(m));
-    }
-    macroPanel_->setAvailableModifiers(mods);
+    macroPanel_->setAvailableModifiers(enabledModifiers(getModsData()));
 }
 
 // === Modulator Editor Panel ===

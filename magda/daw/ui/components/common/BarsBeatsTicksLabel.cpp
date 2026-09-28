@@ -1,9 +1,10 @@
 #include "BarsBeatsTicksLabel.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "ValueEditGesture.hpp"
 
@@ -36,7 +37,7 @@ void BarsBeatsTicksLabel::setTextColour(juce::Colour colour) {
 juce::Colour BarsBeatsTicksLabel::getTextColour() const {
     if (hasCustomTextColour_)
         return customTextColour_;
-    return DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
+    return ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY);
 }
 
 void BarsBeatsTicksLabel::setOverlayLabel(const juce::String& label) {
@@ -79,8 +80,9 @@ void BarsBeatsTicksLabel::setValue(double newValue, juce::NotificationType notif
     }
 }
 
-void BarsBeatsTicksLabel::setBeatsPerBar(int beatsPerBar) {
-    beatsPerBar_ = beatsPerBar;
+void BarsBeatsTicksLabel::setTimeSignature(int numerator, int denominator) {
+    numerator_ = numerator;
+    denominator_ = denominator;
     // updateSegmentTexts relayouts if the bar or beat number changes width.
     updateSegmentTexts();
     repaint();
@@ -93,29 +95,14 @@ void BarsBeatsTicksLabel::setBarsBeatsIsPosition(bool isPosition) {
 }
 
 void BarsBeatsTicksLabel::decompose(int& bars, int& beats, int& ticks) const {
-    double v = value_;
-    if (v < 0.0)
-        v = 0.0;
-
-    bars = static_cast<int>(v / beatsPerBar_);
-    double remaining = std::fmod(v, static_cast<double>(beatsPerBar_));
-    if (remaining < 0.0)
-        remaining = 0.0;
-
-    beats = static_cast<int>(remaining);
-    ticks = static_cast<int>(std::round((remaining - beats) * TICKS_PER_BEAT));
-    if (ticks >= TICKS_PER_BEAT) {
-        ticks = 0;
-        beats++;
-        if (beats >= beatsPerBar_) {
-            beats = 0;
-            bars++;
-        }
-    }
+    const auto position = toBarsBeatsTicks(value_, numerator_, denominator_);
+    bars = position.bars;
+    beats = position.beats;
+    ticks = position.ticks;
 }
 
 double BarsBeatsTicksLabel::recompose(int bars, int beats, int ticks) const {
-    return bars * beatsPerBar_ + beats + ticks / static_cast<double>(TICKS_PER_BEAT);
+    return fromBarsBeatsTicks({bars, beats, ticks}, numerator_, denominator_);
 }
 
 void BarsBeatsTicksLabel::onSegmentChanged() {
@@ -124,19 +111,16 @@ void BarsBeatsTicksLabel::onSegmentChanged() {
     int beats = beatsSegment_->getDisplayValue() - offset;
     int ticks = ticksSegment_->getDisplayValue();
 
-    if (bars < 0)
-        bars = 0;
-    if (beats < 0)
-        beats = 0;
-    if (ticks < 0)
-        ticks = 0;
+    bars = std::max(bars, 0);
+    beats = std::max(beats, 0);
+    ticks = std::max(ticks, 0);
 
     double newValue = recompose(bars, beats, ticks);
     setValue(newValue);
 }
 
 void BarsBeatsTicksLabel::updateSegmentTexts() {
-    int bars, beats, ticks;
+    int bars = 0, beats = 0, ticks = 0;
     decompose(bars, beats, ticks);
 
     int offset = barsBeatsIsPosition_ ? 1 : 0;
@@ -162,11 +146,11 @@ void BarsBeatsTicksLabel::paint(juce::Graphics& g) {
 
     if (drawBackground_) {
         // Background
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
         g.fillRoundedRectangle(bounds, 2.0f);
 
         // Border
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRoundedRectangle(bounds.reduced(0.5f), 2.0f, 1.0f);
     }
 
@@ -230,7 +214,8 @@ std::array<int, 3> BarsBeatsTicksLabel::segmentWidthsFor(double maxValue, int mi
 
     // Fewest beats per bar gives the most bars; most beats per bar gives the
     // highest beat number. Ticks are zero-padded to three digits either way.
-    const int maxBars = static_cast<int>(maxValue / lowBeatsPerBar) + offset;
+    const int maxBars =
+        static_cast<int>(maxValue / beatsPerBar(lowBeatsPerBar, MAX_TIME_SIGNATURE_VALUE)) + offset;
     const int maxBeats = highBeatsPerBar - 1 + offset;
 
     return {widthOfDigits(juce::String(maxBars).length()),
@@ -307,7 +292,7 @@ juce::String BarsBeatsTicksLabel::SegmentLabel::formatDisplay() const {
         // Zero-padded to 3 digits
         char buffer[8];
         std::snprintf(buffer, sizeof(buffer), "%03d", displayValue_);
-        return juce::String(buffer);
+        return {buffer};
     }
     return juce::String(displayValue_);
 }
@@ -383,12 +368,13 @@ void BarsBeatsTicksLabel::SegmentLabel::mouseWheelMove(const juce::MouseEvent& e
 double BarsBeatsTicksLabel::SegmentLabel::getDefaultIncrement(bool shift) const {
     switch (type_) {
         case SegmentType::Bars:
-            return shift ? 1.0 : static_cast<double>(owner_.beatsPerBar_);
+            return shift ? signatureBeatLength(owner_.denominator_)
+                         : beatsPerBar(owner_.numerator_, owner_.denominator_);
         case SegmentType::Beats:
-            return shift ? 0.25 : 1.0;
+            return shift ? 0.25 : signatureBeatLength(owner_.denominator_);
         case SegmentType::Ticks:
-            return shift ? (1.0 / TICKS_PER_BEAT)
-                         : (static_cast<double>(TICKS_PER_16TH) / TICKS_PER_BEAT);
+            return shift ? signatureBeatLength(owner_.denominator_) / TICKS_PER_SIGNATURE_BEAT
+                         : 0.25;
         default:
             return 1.0;
     }
@@ -420,17 +406,17 @@ void BarsBeatsTicksLabel::SegmentLabel::startEditing() {
     editor_->selectAll();
     editor_->setJustification(juce::Justification::centred);
     editor_->setColour(juce::TextEditor::backgroundColourId,
-                       DarkTheme::getColour(DarkTheme::SURFACE));
+                       ActiveTheme::getColour(ActiveTheme::SURFACE));
     editor_->setColour(juce::TextEditor::textColourId,
-                       DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                       ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     // The field opens with everything selected, so the accent covers the whole
     // value at an opaque strength. Text sitting on it is on-accent content, not
     // text on a surface, and TEXT_PRIMARY is the wrong end of the palette for
     // that on a light theme.
     editor_->setColour(juce::TextEditor::highlightColourId,
-                       DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                       ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     editor_->setColour(juce::TextEditor::highlightedTextColourId,
-                       DarkTheme::getColour(DarkTheme::ICON_ON_ACCENT));
+                       ActiveTheme::getColour(ActiveTheme::ICON_ON_ACCENT));
     editor_->setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
     editor_->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
 

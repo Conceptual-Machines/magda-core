@@ -1,28 +1,29 @@
 #include "MixerView.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <set>
 #include <unordered_map>
 
-#include "../../audio/AudioBridge.hpp"
 #include "../../audio/MeteringBuffer.hpp"
 #include "../../audio/MidiBridge.hpp"
+#include "../../audio/TrackMeters.hpp"
 #include "../../audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "../../core/MixerStripOrder.hpp"
 #include "../../core/RackInfo.hpp"
 #include "../../engine/AudioEngine.hpp"
-#include "../../engine/PluginWindowManager.hpp"
 #include "../../profiling/PerformanceProfiler.hpp"
 #include "../components/common/MasterSpeakerButton.hpp"
 #include "../components/mixer/LevelMeter.hpp"
 #include "../components/mixer/LevelMeterScale.hpp"
 #include "../components/mixer/RoutingSyncHelper.hpp"
-#include "../themes/DarkTheme.hpp"
+#include "../themes/ActiveTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "../utils/SelectionPolicy.hpp"
-#include "components/chain/custom_ui/PluginTelemetrySources.hpp"
+#include "components/chain/custom_ui/DeviceTelemetrySources.hpp"
 #include "core/ChainNodePath.hpp"
 #include "core/Config.hpp"
+#include "core/DeviceStateCommands.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/StringTable.hpp"
 #include "core/TechnicalText.hpp"
@@ -32,6 +33,33 @@
 #include "core/ViewModeController.hpp"
 
 namespace magda {
+
+namespace {
+
+constexpr const char* kOscilloscopeId = "oscilloscope";
+constexpr const char* kSpectrumId = "spectrumanalyzer";
+
+/// The device the engine renders for this track's mixer-analysis slot (#2585).
+std::shared_ptr<daw::audio::MagdaDevice> renderedAnalyser(TrackId trackId, const char* pluginId) {
+    auto& tracks = TrackManager::getInstance();
+    const auto deviceId = tracks.findMixerAnalysisDevice(trackId, pluginId);
+    auto* engine = tracks.getAudioEngine();
+    if (deviceId == INVALID_DEVICE_ID || engine == nullptr)
+        return {};
+
+    return engine->renderedDevice(ChainNodePath::mixerAnalysisDevice(trackId, deviceId));
+}
+
+/// Patch the analyser's own document, which is what persists its settings and
+/// what the device is rebuilt from (#2663).
+void editAnalyserSettings(TrackId trackId, const char* pluginId,
+                          const juce::NamedValueSet& settings) {
+    const auto deviceId = TrackManager::getInstance().findMixerAnalysisDevice(trackId, pluginId);
+    if (deviceId != INVALID_DEVICE_ID)
+        writeDeviceSettings(ChainNodePath::mixerAnalysisDevice(trackId, deviceId), settings);
+}
+
+}  // namespace
 
 // "Add Send" row — "Add Send" label on the left, square "+" on the right
 // aligned with the existing send rows' delete (x) button. Whole row is one
@@ -47,30 +75,37 @@ class AddSendButton : public juce::Button {
         constexpr int plusWidth = 16;  // matches send row's delete button width
         auto plusRect = bounds.removeFromRight(plusWidth);
 
-        auto textBg = DarkTheme::getColour(DarkTheme::BUTTON_NORMAL);
+        // A track already at the aux limit cannot take another send. Faded
+        // rather than only inert, because a button that looks pressable and
+        // does nothing is worse than one that says why.
+        const auto opacity = isEnabled() ? 1.0f : 0.35f;
+
+        auto textBg = ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL);
         if (isDown)
             textBg = textBg.darker(0.2f);
         else if (isHighlighted)
             textBg = textBg.brighter(0.1f);
-        g.setColour(textBg);
+        g.setColour(textBg.withMultipliedAlpha(opacity));
         g.fillRect(bounds);
 
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        g.setColour(
+            ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withMultipliedAlpha(opacity));
         g.drawText("Add Send", bounds.reduced(6, 0), juce::Justification::centredLeft);
 
         // Inverted from the Add Send row: text colour as background, button
         // background as the "+" glyph colour.
-        auto plusBg = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+        auto plusBg = ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY);
         if (isDown)
             plusBg = plusBg.darker(0.2f);
         else if (isHighlighted)
             plusBg = plusBg.brighter(0.1f);
-        g.setColour(plusBg);
+        g.setColour(plusBg.withMultipliedAlpha(opacity));
         g.fillRect(plusRect);
 
         g.setFont(FontManager::getInstance().getUIFont(11.0f));
-        g.setColour(DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+        g.setColour(
+            ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL).withMultipliedAlpha(opacity));
         g.drawText("+", plusRect, juce::Justification::centred);
     }
 };
@@ -113,7 +148,7 @@ std::vector<TrackId> getMultiEditTargets(TrackId clickedId, bool isMaster) {
     auto& sel = SelectionManager::getInstance();
     if (!isMaster && sel.isTrackSelected(clickedId) && sel.getSelectedTrackCount() > 1) {
         const auto& set = sel.getSelectedTracks();
-        return std::vector<TrackId>(set.begin(), set.end());
+        return {set.begin(), set.end()};
     }
     return {clickedId};
 }
@@ -166,8 +201,8 @@ class MixerView::ChannelStrip::SendResizeHandle : public juce::Component {
 
     void paint(juce::Graphics& g) override {
         // Single subtle line, highlights on hover
-        g.setColour(isHovering_ ? DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)
-                                : DarkTheme::getColour(DarkTheme::SEPARATOR));
+        g.setColour(isHovering_ ? ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)
+                                : ActiveTheme::getColour(ActiveTheme::SEPARATOR));
         int y = getHeight() / 2;
         g.fillRect(4, y, getWidth() - 8, 2);
     }
@@ -243,7 +278,7 @@ class MixerView::ChannelStrip::DbScale : public juce::Component {
         float paddingBottom = metrics.labelTextHeight / 2.0f;
         float top = paddingTop;
         float height = static_cast<float>(bounds.getHeight()) - paddingTop - paddingBottom;
-        float totalWidth = static_cast<float>(bounds.getWidth());
+        auto totalWidth = static_cast<float>(bounds.getWidth());
 
         const float tickShort = metrics.tickWidth();  // regular tick: ~5px
         const float tickLong = tickShort * 1.8f;      // 0 dB tick is noticeably longer
@@ -268,7 +303,8 @@ class MixerView::ChannelStrip::DbScale : public juce::Component {
             float tickHeight = metrics.tickHeight();
             float tickW = isZero ? tickLong : tickShort;
 
-            g.setColour(DarkTheme::getColour(isZero ? DarkTheme::TEXT_PRIMARY : DarkTheme::BORDER));
+            g.setColour(
+                ActiveTheme::getColour(isZero ? ActiveTheme::TEXT_PRIMARY : ActiveTheme::BORDER));
             g.fillRect(0.0f, y - tickHeight / 2.0f, tickW, tickHeight);
 
             juce::String labelText;
@@ -280,8 +316,8 @@ class MixerView::ChannelStrip::DbScale : public juce::Component {
             }
 
             g.setFont(isZero ? boldFont : baseFont);
-            g.setColour(
-                DarkTheme::getColour(isZero ? DarkTheme::TEXT_PRIMARY : DarkTheme::TEXT_SECONDARY));
+            g.setColour(ActiveTheme::getColour(isZero ? ActiveTheme::TEXT_PRIMARY
+                                                      : ActiveTheme::TEXT_SECONDARY));
 
             float textHeight = metrics.labelTextHeight;
             float textY = y - textHeight / 2.0f;
@@ -383,21 +419,11 @@ void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track, bool syncM
         // Sync routing selectors from current track state
         if (audioEngine_ && audioInSelector && audioOutSelector && midiInSelector &&
             midiOutSelector) {
-            auto* deviceManager = audioEngine_->getDeviceManager();
-            auto* device = deviceManager ? deviceManager->getCurrentAudioDevice() : nullptr;
-            auto* midiBridge = audioEngine_->getMidiBridge();
-            juce::BigInteger enabledIn, enabledOut;
-            std::map<int, juce::String> teInputDeviceNames;
-            if (auto* bridge = audioEngine_->getAudioBridge()) {
-                enabledIn = bridge->getEnabledInputChannels();
-                enabledOut = bridge->getEnabledOutputChannels();
-                teInputDeviceNames = bridge->getInputDeviceNamesByChannel();
-            }
             RoutingSyncHelper::syncSelectorsFromTrack(
                 track, audioInSelector.get(), midiInSelector.get(), audioOutSelector.get(),
-                midiOutSelector.get(), midiBridge, device, trackId_, outputTrackMapping_,
-                midiOutputTrackMapping_, &inputTrackMapping_, enabledIn, enabledOut, nullptr,
-                teInputDeviceNames, &midiInputTrackMapping_);
+                midiOutSelector.get(), audioEngine_->getAudioIO(), trackId_, outputTrackMapping_,
+                midiOutputTrackMapping_, &inputTrackMapping_, &inputChannelMapping_,
+                &midiInputTrackMapping_, &outputChannelMapping_);
         }
     }
 
@@ -411,7 +437,8 @@ void MixerView::ChannelStrip::setupControls() {
                                   : trackName_,
                         juce::dontSendNotification);
     trackLabel->setJustificationType(juce::Justification::centred);
-    trackLabel->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    trackLabel->setColour(juce::Label::textColourId,
+                          ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     trackLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     trackLabel->setFont(FontManager::getInstance().getUIFont(10.0f));
     trackLabel->setInterceptsMouseClicks(false, false);
@@ -469,7 +496,8 @@ void MixerView::ChannelStrip::setupControls() {
     peakLabel = std::make_unique<ClickableLabel>();
     peakLabel->setText("-inf", juce::dontSendNotification);
     peakLabel->setJustificationType(juce::Justification::centred);
-    peakLabel->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    peakLabel->setColour(juce::Label::textColourId,
+                         ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     peakLabel->setFont(FontManager::getInstance().getMonoFont(10.0f));
     peakLabel->setTooltip("Click to reset peak");
     peakLabel->onClick = [this]() { resetPeak(); };
@@ -488,7 +516,7 @@ void MixerView::ChannelStrip::setupControls() {
             return "-inf";
         if (std::abs(db) < 0.05f)
             db = 0.0f;
-        return juce::String(db, 1);
+        return {db, 1};
     });
     // Parse typed dB input
     volumeSlider->setValueParser([](const juce::String& text) -> double {
@@ -564,11 +592,11 @@ void MixerView::ChannelStrip::setupControls() {
     // Solo target toggle, matching the track header.
     soloButton =
         std::make_unique<magda::SvgButton>("solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
-    soloButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    soloButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    soloButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
-    soloButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
-                                          DarkTheme::ICON_ON_ACCENT);
+    soloButton->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    soloButton->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+    soloButton->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
+    soloButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
+                                          ActiveTheme::ICON_ON_ACCENT);
     soloButton->setIconPadding(5.0f);
     soloButton->setTooltip(tr("tracks.solo.tooltip"));
     soloButton->setClickingTogglesState(true);
@@ -584,11 +612,11 @@ void MixerView::ChannelStrip::setupControls() {
     if (!isMaster_) {
         recordButton = std::make_unique<magda::SvgButton>("record", BinaryData::track_record_svg,
                                                           BinaryData::track_record_svgSize);
-        recordButton->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-        recordButton->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-        recordButton->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
-        recordButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), DarkTheme::ICON_NEUTRAL,
-                                                DarkTheme::ICON_ON_ACCENT);
+        recordButton->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+        recordButton->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+        recordButton->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
+        recordButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
+                                                ActiveTheme::ICON_ON_ACCENT);
         recordButton->setIconPadding(5.0f);
         recordButton->setTooltip(tr("tracks.record.tooltip"));
         recordButton->setClickingTogglesState(true);
@@ -768,27 +796,18 @@ void MixerView::ChannelStrip::setupControls() {
 
         // Populate routing options from real data and wire callbacks
         if (audioEngine_) {
-            auto* deviceManager = audioEngine_->getDeviceManager();
-            auto* device = deviceManager ? deviceManager->getCurrentAudioDevice() : nullptr;
-            auto* midiBridge = audioEngine_->getMidiBridge();
+            const auto* hardware = audioEngine_->getAudioIO();
 
-            juce::BigInteger enabledInputChannels, enabledOutputChannels;
-            std::map<int, juce::String> teInputDeviceNames;
-            if (auto* bridge = audioEngine_->getAudioBridge()) {
-                enabledInputChannels = bridge->getEnabledInputChannels();
-                enabledOutputChannels = bridge->getEnabledOutputChannels();
-                teInputDeviceNames = bridge->getInputDeviceNamesByChannel();
-            }
-
-            RoutingSyncHelper::populateAudioInputOptions(audioInSelector.get(), device, trackId_,
-                                                         &inputTrackMapping_, enabledInputChannels,
-                                                         nullptr, teInputDeviceNames);
-            RoutingSyncHelper::populateAudioOutputOptions(audioOutSelector.get(), trackId_, device,
-                                                          outputTrackMapping_,
-                                                          enabledOutputChannels);
-            RoutingSyncHelper::populateMidiInputOptions(midiInSelector.get(), midiBridge, trackId_,
+            audioInSelector->meterInputsFrom(audioEngine_->getAudioIO());
+            RoutingSyncHelper::populateAudioInputOptions(
+                audioInSelector.get(), RoutingSyncHelper::openDirection(hardware, true), trackId_,
+                &inputTrackMapping_, &inputChannelMapping_);
+            RoutingSyncHelper::populateAudioOutputOptions(
+                audioOutSelector.get(), trackId_, RoutingSyncHelper::openDirection(hardware, false),
+                outputTrackMapping_, &outputChannelMapping_);
+            RoutingSyncHelper::populateMidiInputOptions(midiInSelector.get(), trackId_,
                                                         &midiInputTrackMapping_);
-            RoutingSyncHelper::populateMidiOutputOptions(midiOutSelector.get(), midiBridge,
+            RoutingSyncHelper::populateMidiOutputOptions(midiOutSelector.get(),
                                                          midiOutputTrackMapping_, trackId_);
         }
 
@@ -807,8 +826,6 @@ void MixerView::ChannelStrip::setupControls() {
 void MixerView::ChannelStrip::setupRoutingCallbacks() {
     if (!audioInSelector || !audioOutSelector || !midiInSelector || !midiOutSelector)
         return;
-
-    auto* midiBridge = audioEngine_ ? audioEngine_->getMidiBridge() : nullptr;
 
     // Audio input selector callbacks (mutually exclusive with MIDI input)
     audioInSelector->onEnabledChanged = [this](bool enabled) {
@@ -836,12 +853,14 @@ void MixerView::ChannelStrip::setupRoutingCallbacks() {
                                                                "track:" + juce::String(it->second));
             }
         } else if (selectedId >= 10) {
-            TrackManager::getInstance().setTrackAudioInput(trackId_, "default");
+            const auto it = inputChannelMapping_.find(selectedId);
+            TrackManager::getInstance().setTrackAudioInput(
+                trackId_, it != inputChannelMapping_.end() ? it->second : juce::String("default"));
         }
     };
 
     // MIDI input selector callbacks (mutually exclusive with audio input)
-    midiInSelector->onEnabledChanged = [this, midiBridge](bool enabled) {
+    midiInSelector->onEnabledChanged = [this](bool enabled) {
         if (enabled) {
             audioInSelector->setEnabled(false);
             TrackManager::getInstance().setTrackAudioInput(trackId_, "");
@@ -857,8 +876,8 @@ void MixerView::ChannelStrip::setupRoutingCallbacks() {
                 } else {
                     TrackManager::getInstance().setTrackMidiInput(trackId_, "all");
                 }
-            } else if (selectedId >= 10 && midiBridge) {
-                auto midiInputs = midiBridge->getAvailableMidiInputs();
+            } else if (selectedId >= 10) {
+                auto midiInputs = MidiBridge::getInstance().getAvailableMidiInputs();
                 int deviceIndex = selectedId - 10;
                 if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiInputs.size())) {
                     TrackManager::getInstance().setTrackMidiInput(trackId_,
@@ -874,7 +893,7 @@ void MixerView::ChannelStrip::setupRoutingCallbacks() {
         }
     };
 
-    midiInSelector->onSelectionChanged = [this, midiBridge](int selectedId) {
+    midiInSelector->onSelectionChanged = [this](int selectedId) {
         if (selectedId == 2) {
             TrackManager::getInstance().setTrackMidiInput(trackId_, "");
         } else if (selectedId == 1) {
@@ -886,8 +905,8 @@ void MixerView::ChannelStrip::setupRoutingCallbacks() {
                 TrackManager::getInstance().setTrackMidiInput(trackId_,
                                                               "track:" + juce::String(it->second));
             }
-        } else if (selectedId >= 10 && midiBridge) {
-            auto midiInputs = midiBridge->getAvailableMidiInputs();
+        } else if (selectedId >= 10) {
+            auto midiInputs = MidiBridge::getInstance().getAvailableMidiInputs();
             int deviceIndex = selectedId - 10;
             if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiInputs.size())) {
                 TrackManager::getInstance().setTrackMidiInput(trackId_, midiInputs[deviceIndex].id);
@@ -916,7 +935,12 @@ void MixerView::ChannelStrip::setupRoutingCallbacks() {
                     trackId_, "track:" + juce::String(it->second));
             }
         } else if (selectedId >= 10) {
-            TrackManager::getInstance().setTrackAudioOutput(trackId_, "master");
+            // Copy the string — the map can be repopulated during
+            // setTrackAudioOutput (change notification re-syncs selectors)
+            auto it = outputChannelMapping_.find(selectedId);
+            juce::String dest =
+                it != outputChannelMapping_.end() ? it->second : juce::String("master");
+            TrackManager::getInstance().setTrackAudioOutput(trackId_, dest);
         }
     };
 
@@ -927,7 +951,7 @@ void MixerView::ChannelStrip::setupRoutingCallbacks() {
         }
     };
 
-    midiOutSelector->onSelectionChanged = [this, midiBridge](int selectedId) {
+    midiOutSelector->onSelectionChanged = [this](int selectedId) {
         if (selectedId == 1) {
             TrackManager::getInstance().setTrackMidiOutput(trackId_, "");
         } else if (selectedId >= 200) {
@@ -936,8 +960,8 @@ void MixerView::ChannelStrip::setupRoutingCallbacks() {
             if (it != midiOutputTrackMapping_.end()) {
                 TrackManager::getInstance().routeMidiOutputToTrack(trackId_, it->second);
             }
-        } else if (selectedId >= 10 && midiBridge) {
-            auto midiOutputs = midiBridge->getAvailableMidiOutputs();
+        } else if (selectedId >= 10) {
+            auto midiOutputs = MidiBridge::getAvailableMidiOutputs();
             int deviceIndex = selectedId - 10;
             if (deviceIndex >= 0 && deviceIndex < static_cast<int>(midiOutputs.size())) {
                 TrackManager::getInstance().setTrackMidiOutput(trackId_,
@@ -948,7 +972,7 @@ void MixerView::ChannelStrip::setupRoutingCallbacks() {
 }
 
 std::vector<MixerView::ChannelStrip::MiniChainRowSignatureEntry>
-MixerView::ChannelStrip::buildMiniChainSignature(const TrackInfo& track) const {
+MixerView::ChannelStrip::buildMiniChainSignature(const TrackInfo& track) {
     std::vector<MiniChainRowSignatureEntry> signature;
     signature.reserve(track.chain.fxChainElements.size());
     for (const auto& element : track.chain.fxChainElements) {
@@ -1008,65 +1032,58 @@ void MixerView::ChannelStrip::syncMiniChainRowState(DeviceId deviceId, bool bypa
     }
 }
 
-void MixerView::ChannelStrip::syncMiniChainPluginWindow(DeviceId deviceId, bool isOpen) {
-    if (deviceId == INVALID_DEVICE_ID)
-        return;
-    for (auto& row : miniChainRows_) {
-        if (row->deviceId() == deviceId) {
-            row->setPluginEditorOpen(isOpen);
-            return;
-        }
-    }
-}
-
 void MixerView::ChannelStrip::refreshMiniAnalyzers() {
-    auto& tm = TrackManager::getInstance();
-    auto* bridge = audioEngine_ ? audioEngine_->getAudioBridge() : nullptr;
-
+    // One source per faceplate, over a query that finds the mixer-analysis
+    // device again on every read: whichever engine renders it answers, and a
+    // device rebuilt or removed under the strip is a rebind (#2585).
     if (miniOscilloscopeUI_) {
-        te::Plugin::Ptr pluginPtr;
-        DeviceId id = INVALID_DEVICE_ID;
-        if (bridge) {
-            id = tm.findMixerAnalysisDevice(trackId_, "oscilloscope");
-            if (id != INVALID_DEVICE_ID)
-                pluginPtr = bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(trackId_, id));
-        }
-
-        if (daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::OscilloscopePlugin>(
-                pluginPtr.get()) == nullptr)
-            pluginPtr = nullptr;
-
-        if (pluginPtr.get() != miniOscilloscopeTelemetryPlugin_) {
-            miniOscilloscopeTelemetryPlugin_ = pluginPtr.get();
-            miniOscilloscopeTelemetry_ =
-                pluginPtr != nullptr
-                    ? std::make_shared<daw::ui::OscilloscopePluginTelemetrySource>(pluginPtr)
-                    : nullptr;
+        if (miniOscilloscopeTelemetry_ == nullptr) {
+            miniOscilloscopeTelemetry_ = std::make_shared<daw::ui::DeviceOscilloscopeTelemetry>(
+                [trackId = trackId_] { return renderedAnalyser(trackId, kOscilloscopeId); });
+            // An edited setting goes to the device's own document, addressed
+            // when the edit happens: which device answers for the strip is the
+            // model's to say (#2663).
+            miniOscilloscopeUI_->onSettingsEdited =
+                [trackId = trackId_](const juce::NamedValueSet& settings) {
+                    editAnalyserSettings(trackId, kOscilloscopeId, settings);
+                };
         }
         miniOscilloscopeUI_->setTelemetrySource(miniOscilloscopeTelemetry_);
     }
 
     if (miniSpectrumUI_) {
-        te::Plugin::Ptr pluginPtr;
-        DeviceId id = INVALID_DEVICE_ID;
-        if (bridge) {
-            id = tm.findMixerAnalysisDevice(trackId_, "spectrumanalyzer");
-            if (id != INVALID_DEVICE_ID)
-                pluginPtr = bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(trackId_, id));
-        }
-
-        if (daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::SpectrumAnalyzerPlugin>(
-                pluginPtr.get()) == nullptr)
-            pluginPtr = nullptr;
-
-        if (pluginPtr.get() != miniSpectrumTelemetryPlugin_) {
-            miniSpectrumTelemetryPlugin_ = pluginPtr.get();
-            miniSpectrumTelemetry_ =
-                pluginPtr != nullptr
-                    ? std::make_shared<daw::ui::SpectrumPluginTelemetrySource>(pluginPtr)
-                    : nullptr;
+        if (miniSpectrumTelemetry_ == nullptr) {
+            miniSpectrumTelemetry_ = std::make_shared<daw::ui::DeviceSpectrumTelemetry>(
+                [trackId = trackId_] { return renderedAnalyser(trackId, kSpectrumId); });
+            miniSpectrumUI_->onSettingsEdited =
+                [trackId = trackId_](const juce::NamedValueSet& settings) {
+                    editAnalyserSettings(trackId, kSpectrumId, settings);
+                };
         }
         miniSpectrumUI_->setTelemetrySource(miniSpectrumTelemetry_);
+    }
+
+    refreshAnalyserSettings();
+}
+
+void MixerView::ChannelStrip::refreshAnalyserSettings() {
+    // The controls show what the device holds, and the device is published
+    // after the model change that added it -- so the read follows the device
+    // rather than the notification (#2663).
+    if (miniOscilloscopeUI_) {
+        const auto* device = renderedAnalyser(trackId_, kOscilloscopeId).get();
+        if (device != miniOscilloscopeDevice_) {
+            miniOscilloscopeDevice_ = device;
+            miniOscilloscopeUI_->refreshSettingsFromSource();
+        }
+    }
+
+    if (miniSpectrumUI_) {
+        const auto* device = renderedAnalyser(trackId_, kSpectrumId).get();
+        if (device != miniSpectrumDevice_) {
+            miniSpectrumDevice_ = device;
+            miniSpectrumUI_->refreshSettingsFromSource();
+        }
     }
 }
 
@@ -1121,7 +1138,7 @@ void MixerView::ChannelStrip::rebuildSendSlots(const std::vector<SendInfo>& send
         slot->nameLabel->setText(destName, juce::dontSendNotification);
         slot->nameLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
         slot->nameLabel->setColour(juce::Label::textColourId,
-                                   DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                   ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         slot->nameLabel->setJustificationType(juce::Justification::centredLeft);
         sendContainer_->addAndMakeVisible(*slot->nameLabel);
 
@@ -1145,9 +1162,9 @@ void MixerView::ChannelStrip::rebuildSendSlots(const std::vector<SendInfo>& send
             juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
             juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
         slot->removeButton->setColour(juce::TextButton::buttonColourId,
-                                      DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                                      ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
         slot->removeButton->setColour(juce::TextButton::textColourOffId,
-                                      DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                      ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         slot->removeButton->onClick = [this, busIdx]() {
             UndoManager::getInstance().executeCommand(
                 std::make_unique<RemoveSendCommand>(trackId_, busIdx));
@@ -1169,14 +1186,14 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
 
     // Background
     if (selected) {
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
     } else {
-        g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
     }
     g.fillRect(ownBounds);
 
     // Separator on right side of own column
-    g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
     g.fillRect(ownBounds.getRight() - 1, 0, 1, ownBounds.getHeight());
 
     // Channel color indicator at top — skip for group parents with children (group header provides
@@ -1187,19 +1204,19 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
         if (selected) {
             // Selected: lifted label background behind the strip (shared
             // selection fill with the arrange headers / session view).
-            g.setColour(DarkTheme::getColour(DarkTheme::TRACK_HEADER_SELECTED));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TRACK_HEADER_SELECTED));
             g.fillRect(0, 0, ownBounds.getWidth() - 1, labelRowBottom);
         }
         // Thin colour bar always shown, including when selected.
         g.setColour(trackColour_);
         g.fillRect(0, 0, ownBounds.getWidth() - 1, stripHeight);
-        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
         g.fillRect(0, labelRowBottom, ownBounds.getWidth() - 1, 1);
     }
 
     // Divider at the bottom of the sends region
     if (sendsRegionBottomY_ >= 0) {
-        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
         g.fillRect(0, sendsRegionBottomY_, ownBounds.getWidth() - 1, 1);
     }
 
@@ -1211,12 +1228,12 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
 
         if (selected) {
             // Selected: lifted header like regular channels
-            g.setColour(DarkTheme::getColour(DarkTheme::TRACK_HEADER_SELECTED));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TRACK_HEADER_SELECTED));
             g.fillRect(0, 0, fullBounds.getWidth(), groupHeaderHeight);
         } else {
             // Plain panel background, with just a thin colour bar on top (like a
             // regular channel header) — not the full-width colour flood.
-            g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
             g.fillRect(0, 0, fullBounds.getWidth(), groupHeaderHeight);
 
             g.setColour(trackColour_);
@@ -1224,7 +1241,8 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
         }
 
         // Horizontal separator below header (neutral, not the track colour)
-        g.setColour(DarkTheme::getColour(selected ? DarkTheme::BORDER : DarkTheme::SEPARATOR));
+        g.setColour(
+            ActiveTheme::getColour(selected ? ActiveTheme::BORDER : ActiveTheme::SEPARATOR));
         g.fillRect(0, groupHeaderHeight, fullBounds.getWidth(), 1);
     }
 }
@@ -1398,6 +1416,13 @@ void MixerView::ChannelStrip::resized() {
             if (addSendButton_) {
                 addSendButton_->setBounds(sendsRegion.removeFromTop(sendSlotHeight));
                 addSendButton_->setVisible(true);
+
+                // AddSendCommand would be refused past the aux limit, so the
+                // button stops offering it.
+                const auto* track = TrackManager::getInstance().getTrack(trackId_);
+                addSendButton_->setEnabled(track == nullptr ||
+                                           static_cast<int>(track->sends.size()) <
+                                               TrackManager::MAX_SENDS_PER_TRACK);
             }
             if (totalContentHeight > 0) {
                 sendsRegion.removeFromTop(1);  // 1px gap matching inter-slot spacing
@@ -1698,19 +1723,21 @@ void MixerView::ChannelStrip::lookAndFeelChanged() {
     // selection-dependent, so mirror the logic in setSelected().
     if (trackLabel)
         trackLabel->setColour(juce::Label::textColourId,
-                              DarkTheme::getColour(selected ? DarkTheme::TRACK_HEADER_SELECTED_TEXT
-                                                            : DarkTheme::TEXT_PRIMARY));
+                              ActiveTheme::getColour(selected
+                                                         ? ActiveTheme::TRACK_HEADER_SELECTED_TEXT
+                                                         : ActiveTheme::TEXT_PRIMARY));
     if (peakLabel)
         peakLabel->setColour(juce::Label::textColourId,
-                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                             ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
 }
 
 void MixerView::ChannelStrip::setSelected(bool shouldBeSelected) {
     if (selected != shouldBeSelected) {
         selected = shouldBeSelected;
         trackLabel->setColour(juce::Label::textColourId,
-                              DarkTheme::getColour(selected ? DarkTheme::TRACK_HEADER_SELECTED_TEXT
-                                                            : DarkTheme::TEXT_PRIMARY));
+                              ActiveTheme::getColour(selected
+                                                         ? ActiveTheme::TRACK_HEADER_SELECTED_TEXT
+                                                         : ActiveTheme::TEXT_PRIMARY));
         repaint();
     }
 }
@@ -1833,24 +1860,6 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
     // Get current view mode
     currentViewMode_ = ViewModeController::getInstance().getViewMode();
 
-    // Keep the mini-chain "open editor" icons in sync with the actual plugin
-    // window state. PluginWindowManager fires this on open AND on close (incl.
-    // the window's own X), so the icon un-engages when the window is closed.
-    if (audioEngine_) {
-        if (auto* pwm = audioEngine_->getPluginWindowManager()) {
-            juce::Component::SafePointer<MixerView> safeThis(this);
-            pwm->onWindowStateChanged = [safeThis](DeviceId deviceId, bool isOpen) {
-                auto* self = safeThis.getComponent();
-                if (self == nullptr)
-                    return;
-                for (auto& strip : self->channelStrips)
-                    strip->syncMiniChainPluginWindow(deviceId, isOpen);
-                for (auto& strip : self->auxChannelStrips)
-                    strip->syncMiniChainPluginWindow(deviceId, isOpen);
-            };
-        }
-    }
-
     // Create channel container
     channelContainer = std::make_unique<juce::Component>();
     channelContainer->setPaintingIsUnclipped(true);
@@ -1909,10 +1918,11 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
     // debugPanel_->onMetricsChanged = [this]() { rebuildChannelStrips(); };
     // addAndMakeVisible(*debugPanel_);
 
-    // Listen for MIDI device list changes
+    // Listen for MIDI device list changes, and for hardware channels opening or closing
+    MidiBridge::getInstance().addMidiDeviceListListener(this);
     if (audioEngine_) {
-        if (auto* mb = audioEngine_->getMidiBridge())
-            mb->addMidiDeviceListListener(this);
+        if (auto* hardware = audioEngine_->getAudioIO())
+            hardware->addListener(this);
     }
 
     // Start timer for meter animation (30fps)
@@ -1923,14 +1933,15 @@ void MixerView::midiDeviceListChanged() {
     juce::MessageManager::callAsync([this]() { tracksChanged(); });
 }
 
+void MixerView::hardwareChannelsChanged() {
+    tracksChanged();
+}
+
 MixerView::~MixerView() {
+    MidiBridge::getInstance().removeMidiDeviceListListener(this);
     if (audioEngine_) {
-        if (auto* pwm = audioEngine_->getPluginWindowManager())
-            pwm->onWindowStateChanged = nullptr;
-    }
-    if (audioEngine_) {
-        if (auto* mb = audioEngine_->getMidiBridge())
-            mb->removeMidiDeviceListListener(this);
+        if (auto* hardware = audioEngine_->getAudioIO())
+            hardware->removeListener(this);
     }
     stopTimer();
     TrackManager::getInstance().removeListener(this);
@@ -1999,9 +2010,9 @@ void MixerView::rebuildChannelStrips() {
                 juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
                 juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
             strip->expandToggle_->setColour(juce::TextButton::buttonColourId,
-                                            DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                                            ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
             strip->expandToggle_->setColour(juce::TextButton::textColourOffId,
-                                            DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                            ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
             strip->expandToggle_->onClick = [this, trackId]() {
                 auto* t = TrackManager::getInstance().getTrack(trackId);
                 if (t) {
@@ -2077,8 +2088,8 @@ void MixerView::rebuildChannelStrips() {
                 }
             }
             // Check aux strips — use negative index offset for identification
-            for (size_t i = 0; i < auxChannelStrips.size(); ++i) {
-                if (auxChannelStrips[i]->getTrackId() == trackId) {
+            for (const auto& auxChannelStrip : auxChannelStrips) {
+                if (auxChannelStrip->getTrackId() == trackId) {
                     // Select via TrackManager directly
                     SelectionManager::getInstance().selectTrack(trackId);
                     return;
@@ -2237,10 +2248,10 @@ void MixerView::masterChannelChanged() {
 
 void MixerView::paint(juce::Graphics& g) {
     MAGDA_MONITOR_SCOPE("UIFrame");
-    g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
 
     // Left border (visible when side panel is collapsed)
-    g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
     g.fillRect(0, 0, 1, getHeight());
 
     // Plugin drag overlay
@@ -2250,9 +2261,9 @@ void MixerView::paint(juce::Graphics& g) {
             // Highlight the specific strip being hovered
             auto* strip = orderedStrips_[dropTargetStripIndex_];
             auto stripBounds = getLocalArea(strip, strip->getLocalBounds());
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.25f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.25f));
             g.fillRect(stripBounds);
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.6f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.6f));
             g.drawRect(stripBounds, 2);
         } else {
             // Hovering empty area — show "new track" indicator at right edge of channel area
@@ -2260,25 +2271,24 @@ void MixerView::paint(juce::Graphics& g) {
             int indicatorWidth = DEFAULT_CHANNEL_WIDTH;
             int indicatorX = vpBounds.getRight() - indicatorWidth;
             // Clamp to viewport area
-            if (indicatorX < vpBounds.getX())
-                indicatorX = vpBounds.getX();
+            indicatorX = std::max(indicatorX, vpBounds.getX());
             auto indicatorBounds = juce::Rectangle<int>(indicatorX, vpBounds.getY(), indicatorWidth,
                                                         vpBounds.getHeight());
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.15f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.15f));
             g.fillRect(indicatorBounds);
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.4f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.4f));
             g.drawRect(indicatorBounds, 2);
 
             // Draw "+" icon
             auto centre = indicatorBounds.getCentre().toFloat();
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.7f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.7f));
             g.drawLine(centre.getX() - 10, centre.getY(), centre.getX() + 10, centre.getY(), 2.0f);
             g.drawLine(centre.getX(), centre.getY() - 10, centre.getX(), centre.getY() + 10, 2.0f);
         }
     }
 }
 
-int MixerView::getTopLevelStripWidth(const ChannelStrip& strip) const {
+int MixerView::getTopLevelStripWidth(const ChannelStrip& strip) {
     int width = strip.preferredChannelWidth();
     for (auto* child : strip.groupChildren_) {
         if (auto* childStrip = dynamic_cast<ChannelStrip*>(child))
@@ -2622,20 +2632,17 @@ void MixerView::timerCallback() {
     if (isResizeDragging_)
         return;
 
-    // Read metering data from AudioBridge
+    // Read metering data from the audio engine
     if (!audioEngine_)
         return;
 
-    auto* bridge = audioEngine_->getAudioBridge();
-    if (!bridge)
-        return;
-
-    auto& meteringBuffer = bridge->getMeteringBuffer();
+    auto& meters = audioEngine_->meters();
+    auto& meteringBuffer = meters.mixer;
 
     // Auto-clear held peaks on the rising edge of playback so the readouts
     // reflect the current take rather than the loudest-ever value. Clicking a
     // peak label resets it manually at any time (see ClickableLabel wiring).
-    const bool isPlaying = bridge->isTransportPlaying();
+    const bool isPlaying = audioEngine_->isPlaying();
     if (isPlaying && !wasPlaying_) {
         for (auto& strip : channelStrips)
             strip->resetPeak();
@@ -2645,6 +2652,15 @@ void MixerView::timerCallback() {
             masterStrip->resetPeak();
     }
     wasPlaying_ = isPlaying;
+
+    // A faceplate whose device has just been published re-reads its settings
+    // here: the model's notification ran before the publish (#2663).
+    for (auto& strip : channelStrips)
+        strip->refreshAnalyserSettings();
+    for (auto& strip : auxChannelStrips)
+        strip->refreshAnalyserSettings();
+    if (masterStrip)
+        masterStrip->refreshAnalyserSettings();
 
     // Update channel strip meters
     for (auto& strip : channelStrips) {
@@ -2666,8 +2682,8 @@ void MixerView::timerCallback() {
 
     // Update master strip meters
     if (masterStrip) {
-        float masterPeakL = bridge->getMasterPeakL();
-        float masterPeakR = bridge->getMasterPeakR();
+        float masterPeakL = meters.getMasterPeakL();
+        float masterPeakR = meters.getMasterPeakR();
         masterStrip->setPeakLevels(masterPeakL, masterPeakR);
     }
 }
@@ -2677,7 +2693,7 @@ bool MixerView::keyPressed(const juce::KeyPress& /*key*/) {
     return false;
 }
 
-bool MixerView::isInChannelResizeZone(const juce::Point<int>& /*pos*/) const {
+bool MixerView::isInChannelResizeZone(const juce::Point<int>& /*pos*/) {
     // Not used anymore - resize handle component handles this
     return false;
 }
@@ -2921,7 +2937,7 @@ void MixerView::itemDropped(const SourceDetails& details) {
         }
     } else {
         // Drop on empty area — create new track with plugin
-        TrackType trackType = TrackType::Audio;
+        TrackType trackType = TrackType::Media;
         juce::String pluginName = obj->getProperty("name").toString();
         auto cmd = std::make_unique<CreateTrackWithDeviceCommand>(pluginName, trackType, device);
         UndoManager::getInstance().executeCommand(std::move(cmd));

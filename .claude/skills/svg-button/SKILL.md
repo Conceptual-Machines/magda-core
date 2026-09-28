@@ -64,7 +64,7 @@ myButton_->setBorderThickness(float);
 myButton_->setActive(true);
 ```
 
-Default colors come from DarkTheme: normal=TEXT_SECONDARY, hover=TEXT_PRIMARY, pressed/active=ACCENT_PRIMARY.
+Default colors come from the active palette through ActiveTheme: normal=TEXT_SECONDARY, hover=TEXT_PRIMARY, pressed/active=ACCENT_PRIMARY.
 
 ## Adding an SVG to BinaryData
 

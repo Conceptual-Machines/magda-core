@@ -1,0 +1,377 @@
+#include "plugins/engine/EngineDeviceFactory.hpp"
+
+#include <utility>
+
+#include "core/ChainWalk.hpp"
+#include "core/Config.hpp"
+#include "core/DrumGridPads.hpp"
+#include "core/PluginCapabilities.hpp"
+#include "core/PluginParameterConfigStore.hpp"
+#include "plugin_manager/ExternalPluginLookup.hpp"
+#include "plugin_manager/ExternalPluginState.hpp"
+#include "plugins/DeviceCatalogParameters.hpp"
+#include "plugins/InternalPluginRegistry.hpp"
+#include "plugins/compiled/CompiledPluginRegistry.hpp"
+#include "plugins/engine/EngineExternalDevice.hpp"
+#include "plugins/engine/EngineMagdaDevice.hpp"
+
+namespace magda::daw::audio::engine_adapter {
+
+namespace {
+
+/// One track's descent over whichever constness the caller has. A flat stage
+/// is walked directly, but a device carrying pads is still descended into.
+///
+/// @p record is called with `(key, device, devicePath)` for every device,
+/// because two of them are what a caller wants: the key a Device op carries,
+/// and the address the rest of the app knows the device by (#2570).
+template <typename Track, typename Record> void walkTrackDevices(Track& track, Record&& record) {
+    const auto walkTree = [&record](auto& elements, const magda::ChainNodePath& parentPath,
+                                    magda::ChainSegment segment) {
+        magda::chain_walk::forEachDevice(
+            elements, parentPath, magda::chain_walk::Pads::Enter,
+            [&record, segment](auto& device, const magda::ChainNodePath& devicePath) {
+                record(magda::engine::DeviceKey{segment, device.id}, device, devicePath);
+            });
+    };
+
+    const auto walkFlat = [&track, &record, &walkTree](auto& elements,
+                                                       const magda::ChainNodePath& sectionPath,
+                                                       magda::ChainSegment segment) {
+        for (auto& element : elements) {
+            auto& device = element.device;
+            record(magda::engine::DeviceKey{segment, device.id}, device,
+                   magda::chain_walk::deviceIn(sectionPath, device.id));
+
+            if (!device.pads)
+                continue;
+
+            // Rooted at the pad rack rather than at the section, which is how
+            // every pad address is spelled: a PadRack step names the grid by
+            // its DeviceId, so the route to the grid is not part of it.
+            for (auto& pad : device.pads->chains)
+                walkTree(pad.elements, magda::ChainNodePath::padChain(track.id, device.id, pad.id),
+                         segment);
+        }
+    };
+
+    walkTree(track.chain.fxChainElements, magda::ChainNodePath::trackLevel(track.id),
+             magda::ChainSegment::Fx);
+    walkFlat(track.chain.postFxChainElements, magda::ChainNodePath::postFxSection(track.id),
+             magda::ChainSegment::PostFx);
+    walkFlat(track.chain.mixerAnalysisElements,
+             magda::ChainNodePath::mixerAnalysisSection(track.id),
+             magda::ChainSegment::MixerAnalysis);
+}
+
+template <typename Track, typename Devices>
+void collectTrackDevices(Track& track, Devices& devices) {
+    walkTrackDevices(track, [&devices](magda::engine::DeviceKey key, auto& device,
+                                       const magda::ChainNodePath&) { devices[key] = &device; });
+}
+
+template <typename Tracks, typename Master> auto collectDevices(Tracks& tracks, Master& master) {
+    using Device =
+        std::conditional_t<std::is_const_v<Master>, const magda::DeviceInfo, magda::DeviceInfo>;
+    std::map<magda::engine::DeviceKey, Device*> devices;
+
+    for (auto& track : tracks)
+        collectTrackDevices(track, devices);
+
+    collectTrackDevices(master, devices);
+    return devices;
+}
+
+/// The user's last-used analyser settings, which is what a device the model has
+/// no state for starts from. Read here rather than snapshotted at startup: the
+/// faceplate writes them as they are changed (#2663).
+DevicePluginDefaults hostDefaults() {
+    const auto scope = magda::Config::getInstance().getOscilloscopeDefaults();
+    const auto spectrum = magda::Config::getInstance().getSpectrumDefaults();
+
+    DevicePluginDefaults defaults;
+    defaults.oscilloscope.timebaseMs = scope.timebaseMs;
+    defaults.oscilloscope.traceColour = scope.traceColour;
+    defaults.spectrum.fftOrder = spectrum.fftOrder;
+    defaults.spectrum.slopeDbPerOct = spectrum.slopeDbPerOct;
+    defaults.spectrum.smoothing = spectrum.smoothing;
+    defaults.spectrum.traceColour = spectrum.traceColour;
+    return defaults;
+}
+
+/// Log an unreadable saved state rather than drop it silently (#2602).
+void reportUnreadableState(const juce::String& pluginId, const juce::String& savedState) {
+    if (savedState.isNotEmpty() && !deviceStateTree(savedState).isValid())
+        juce::Logger::writeToLog("EngineDeviceFactory: unreadable saved state for " + pluginId +
+                                 ", running its defaults");
+}
+
+}  // namespace
+
+std::map<magda::engine::DeviceKey, magda::DeviceInfo*> devicesIn(
+    std::vector<magda::TrackInfo>& tracks, magda::TrackInfo& master) {
+    return collectDevices(tracks, master);
+}
+
+std::map<magda::engine::DeviceKey, const magda::DeviceInfo*> devicesIn(
+    const std::vector<magda::TrackInfo>& tracks, const magda::TrackInfo& master) {
+    return collectDevices(tracks, master);
+}
+
+std::map<magda::engine::DeviceKey, magda::DeviceInfo*> devicesIn(magda::TrackInfo& track) {
+    std::map<magda::engine::DeviceKey, magda::DeviceInfo*> devices;
+    collectTrackDevices(track, devices);
+    return devices;
+}
+
+std::map<magda::engine::DeviceKey, magda::ChainNodePath> devicePathsIn(
+    const std::vector<magda::TrackInfo>& tracks, const magda::TrackInfo& master) {
+    std::map<magda::engine::DeviceKey, magda::ChainNodePath> paths;
+
+    const auto record = [&paths](magda::engine::DeviceKey key, const magda::DeviceInfo&,
+                                 const magda::ChainNodePath& devicePath) {
+        paths[key] = devicePath;
+    };
+
+    for (const auto& track : tracks)
+        walkTrackDevices(track, record);
+
+    walkTrackDevices(master, record);
+    return paths;
+}
+
+bool isExternalDevice(const magda::DeviceInfo& device) {
+    return device.format != magda::PluginFormat::Internal;
+}
+
+/// enableAllBuses first: a plugin with a disabled sidechain or second output
+/// bus reports channels it does not have, and the plan's widths are read off it.
+ExternalDeviceResult adaptExternalPluginInstance(
+    std::unique_ptr<juce::AudioPluginInstance> instance, const magda::DeviceInfo& device,
+    bool offlineRender) {
+    instance->enableAllBuses();
+
+    // Array, then preset, then chunk (ExternalPluginState.hpp), all before the
+    // adapter exists.
+    const auto restoredFrom = magda::applySavedPluginState(*instance, device);
+    if (restoredFrom == magda::SavedStateOutcome::Failed)
+        return {.device = {},
+                .failure = "external plugin \"" + device.name +
+                           "\" failed while restoring its own saved state"};
+
+    // Buses again: setStateInformation may change the bus layout, and a chunk
+    // that disabled one would leave the device narrower than the chain is wired.
+    instance->enableAllBuses();
+
+    // Scan descriptions report the format's default buses, not the enabled ones.
+    auto resolvedDevice = device;
+    resolvedDevice.audioInputChannels = instance->getTotalNumInputChannels();
+    resolvedDevice.audioOutputChannels = instance->getTotalNumOutputChannels();
+
+    // An imported .vstpreset is spent by the load that applies it; kept, it
+    // would be applied again over whatever the next save wrote.
+    if (restoredFrom == magda::SavedStateOutcome::RestoredFromPreset)
+        resolvedDevice.vst3Preset = {};
+
+    // Promote only, like the model's other writers: AudioProcessor::acceptsMidi()
+    // is narrower than what a saved true may have come from.
+    if (!resolvedDevice.isInstrument && (instance->acceptsMidi() || instance->isMidiEffect()))
+        resolvedDevice.canReceiveMidi = true;
+    resolvedDevice.producesMidi = instance->producesMidi() || instance->isMidiEffect();
+
+    // After the chunk, which may rename a parameter or move its default (#2595).
+    auto described = magda::describeHostParameters(*instance, device);
+    resolvedDevice.parameters = std::move(described.parameters);
+    resolvedDevice.wrapperParameters = std::move(described.wrapperParameters);
+
+    // Before the device is built, which copies these records.
+    magda::PluginParameterConfigStore::applyToDevice(resolvedDevice);
+
+    auto restored = magda::snapshotHostParameters(*instance);
+
+    return {.device = std::make_unique<EngineExternalDevice>(std::move(instance), resolvedDevice,
+                                                             offlineRender),
+            .failure = {},
+            .restoredParameters = std::move(restored),
+            .resolvedDevice = std::move(resolvedDevice)};
+}
+
+namespace {
+
+/// The missing-plugin failure, worded once for both entry points.
+juce::String describeMissingPlugin(const magda::DeviceInfo& device) {
+    return "external plugin \"" + device.name + "\" (" + device.getFormatString() +
+           ") is not installed on this machine";
+}
+
+/// Apply the installed role, except over MAGDA's own MIDI and Analysis roles.
+void applyInstalledRole(magda::DeviceInfo& device, bool isInstrument) {
+    if (device.deviceType == magda::DeviceType::MIDI ||
+        device.deviceType == magda::DeviceType::Analysis)
+        return;
+
+    device.isInstrument = isInstrument;
+    device.deviceType = isInstrument ? magda::DeviceType::Instrument : magda::DeviceType::Effect;
+}
+
+}  // namespace
+
+std::unique_ptr<magda::engine::EngineDevice> createEngineDevice(const magda::DeviceInfo& device,
+                                                                bool offlineRender) {
+    // Built with its state in it: EngineMagdaDevice snapshots the parameter
+    // metadata at construction, and the runtime Faust device's slots come from it.
+    // The defaults matter for a device the model has nothing saved for -- one
+    // just added -- which is every analyser the track header's toggle makes
+    // (#2663).
+    auto sdkDevice = createDetachedDevice(device.pluginId, device.pluginState, hostDefaults());
+    if (sdkDevice == nullptr)
+        return {};
+
+    reportUnreadableState(device.pluginId, device.pluginState);
+
+    return std::make_unique<EngineMagdaDevice>(std::move(sdkDevice), offlineRender);
+}
+
+bool canCreateEngineDevice(const juce::String& pluginId) {
+    if (const auto* spec = findInternalPluginSpec(pluginId); spec != nullptr)
+        return spec->createDevice != nullptr;
+
+    if (const auto* spec = compiled::findCompiledPluginSpec(pluginId); spec != nullptr)
+        return spec->createDevice != nullptr;
+
+    return false;
+}
+
+bool engineRendersDevice(const juce::String& pluginId) {
+    return canCreateEngineDevice(pluginId) || isPadRackDevice(pluginId);
+}
+
+bool isRegisteredDevice(const juce::String& pluginId) {
+    return findInternalPluginSpec(pluginId) != nullptr ||
+           compiled::findCompiledPluginSpec(pluginId) != nullptr;
+}
+
+ExternalPluginResolution resolveEngineExternalPlugin(const magda::DeviceInfo& device,
+                                                     const ExternalPluginServices& services) {
+    ExternalPluginResolution resolved{.planDevice = device};
+
+    if (services.formats == nullptr || services.knownPlugins == nullptr) {
+        // Named per device, so a project's worth of these stays attributable.
+        resolved.failure = "external plugin \"" + device.name +
+                           "\" cannot be resolved: no plugin formats or scan results were given "
+                           "to the engine";
+        return resolved;
+    }
+
+    const auto match = magda::matchInstalledPlugin(device, *services.knownPlugins);
+
+    // Unfound is refused rather than attempted, so a render never resolves a
+    // plugin by a route nothing recorded.
+    if (!match.found) {
+        resolved.failure = describeMissingPlugin(device);
+        return resolved;
+    }
+
+    resolved.description = match.description;
+    applyInstalledRole(resolved.planDevice, match.description.isInstrument);
+
+    // The project keeps its identity; the capability cache is keyed by the
+    // installed one.
+    const auto resolvedIdentifier = match.description.createIdentifierString();
+    magda::applyCachedCapabilitiesToDevice(resolved.planDevice, resolvedIdentifier);
+    return resolved;
+}
+
+bool isInstalledExternalPlugin(const magda::DeviceInfo& device,
+                               const juce::KnownPluginList& knownPlugins) {
+    return magda::matchInstalledPlugin(device, knownPlugins).found;
+}
+
+ExternalDeviceResult createEngineExternalDevice(const magda::DeviceInfo& device,
+                                                const ExternalPluginServices& services,
+                                                bool offlineRender) {
+    const auto resolved = resolveEngineExternalPlugin(device, services);
+    if (resolved.failure.isNotEmpty())
+        return {.device = {}, .failure = resolved.failure};
+
+    juce::String error;
+    auto instance = services.formats->createPluginInstance(
+        resolved.description, services.context.sampleRate, services.context.maxBlockSize, error);
+
+    if (instance == nullptr)
+        return {.device = {},
+                .failure = "external plugin \"" + device.name + "\" could not be loaded: " +
+                           (error.isNotEmpty() ? error : "no reason given")};
+
+    return adaptExternalPluginInstance(std::move(instance), resolved.planDevice, offlineRender);
+}
+
+ExternalDeviceResult completeExternalPluginLoad(std::unique_ptr<juce::AudioPluginInstance> instance,
+                                                const juce::String& error,
+                                                const RequestedPlugin& requested,
+                                                const CurrentDeviceLookup& currentDevice,
+                                                bool offlineRender) {
+    const auto& requestedName = requested.displayName;
+
+    // Whether the runtime still holds the assignment the load was started
+    // against; no copy of the model can answer that.
+    if (!requested.assignment.isStillWanted()) {
+        return {.device = {},
+                .failure =
+                    requested.assignment.keyWasReassigned()
+                        ? "the device changed plugin while \"" + requestedName + "\" was loading"
+                        : "the device was removed while \"" + requestedName + "\" was loading"};
+    }
+
+    // The model as it is now, not as it was when the load was requested.
+    const auto* device = currentDevice ? currentDevice(requested.assignment.key) : nullptr;
+
+    if (device == nullptr)
+        return {.device = {},
+                .failure = "the device was removed while \"" + requestedName + "\" was loading"};
+
+    if (instance == nullptr)
+        return {.device = {},
+                .failure = "external plugin \"" + device->name + "\" could not be loaded: " +
+                           (error.isNotEmpty() ? error : "no reason given")};
+
+    auto resolvedDevice = *device;
+    applyInstalledRole(resolvedDevice, requested.resolvedIsInstrument);
+    return adaptExternalPluginInstance(std::move(instance), resolvedDevice, offlineRender);
+}
+
+ExternalPluginResolution createEngineExternalDeviceAsync(
+    const magda::DeviceInfo& device, magda::engine::DeviceKey key,
+    const ExternalPluginServices& services, bool offlineRender,
+    const PluginAssignments& assignments, CurrentDeviceLookup currentDevice,
+    std::function<void(ExternalDeviceResult)> completed) {
+    jassert(completed != nullptr);
+    jassert(currentDevice != nullptr);
+
+    auto resolved = resolveEngineExternalPlugin(device, services);
+    if (resolved.failure.isNotEmpty()) {
+        completed({.device = {}, .failure = resolved.failure});
+        return resolved;
+    }
+
+    services.formats->createPluginInstanceAsync(
+        resolved.description, services.context.sampleRate, services.context.maxBlockSize,
+        [requested = RequestedPlugin{.assignment = assignments.request(key),
+                                     .displayName = device.name,
+                                     .resolvedIsInstrument = resolved.description.isInstrument},
+         currentDevice = std::move(currentDevice), offlineRender, completed = std::move(completed)](
+            std::unique_ptr<juce::AudioPluginInstance> instance, const juce::String& error) {
+            // JUCE runs this a turn or more later; `completed` belongs to the
+            // runtime, so a dead runtime must not be called at all. Not
+            // isStillWanted(): a deleted device is a load to refuse and report.
+            if (!requested.assignment.runtimeIsAlive())
+                return;
+
+            completed(completeExternalPluginLoad(std::move(instance), error, requested,
+                                                 currentDevice, offlineRender));
+        });
+
+    return resolved;
+}
+
+}  // namespace magda::daw::audio::engine_adapter

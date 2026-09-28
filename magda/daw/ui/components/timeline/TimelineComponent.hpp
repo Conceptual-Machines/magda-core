@@ -82,6 +82,12 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     int getTimeSignatureDenominator() const {
         return timeSignatureDenominator;
     }
+    double getBeatsPerBar() const {
+        return beatsPerBar(timeSignatureNumerator, timeSignatureDenominator);
+    }
+    double getSignatureBeatLength() const {
+        return signatureBeatLength(timeSignatureDenominator);
+    }
 
     // Conversion helpers
     double timeToBars(double timeInSeconds) const;

@@ -28,8 +28,9 @@ void showDeviceSlotMultiOutMenu(const magda::ChainNodePath& nodePath, magda::Dev
         if (pair.outputIndex == 0)
             continue;
 
-        menu.addItem(static_cast<int>(i + 1), pair.name, true, pair.active);
-        (pair.active ? anyActive : anyInactive) = true;
+        const bool active = tm.multiOutPairIsActive(trackId, deviceId, static_cast<int>(i));
+        menu.addItem(static_cast<int>(i + 1), pair.name, true, active);
+        (active ? anyActive : anyInactive) = true;
     }
 
     menu.addSeparator();
@@ -54,7 +55,8 @@ void showDeviceSlotMultiOutMenu(const magda::ChainNodePath& nodePath, magda::Dev
                         break;
 
                     const auto& pair = dev->multiOut.outputPairs[i];
-                    if (pair.outputIndex == 0 || pair.active)
+                    if (pair.outputIndex == 0 ||
+                        tm.multiOutPairIsActive(trackId, deviceId, static_cast<int>(i)))
                         continue;
                     tm.activateMultiOutPair(trackId, deviceId, static_cast<int>(i));
                 }
@@ -70,8 +72,7 @@ void showDeviceSlotMultiOutMenu(const magda::ChainNodePath& nodePath, magda::Dev
             if (pairIndex < 0 || pairIndex >= static_cast<int>(device->multiOut.outputPairs.size()))
                 return;
 
-            const auto& pair = device->multiOut.outputPairs[static_cast<size_t>(pairIndex)];
-            if (pair.active) {
+            if (tm.multiOutPairIsActive(trackId, deviceId, pairIndex)) {
                 tm.deactivateMultiOutPair(trackId, deviceId, pairIndex);
             } else {
                 tm.activateMultiOutPair(trackId, deviceId, pairIndex);

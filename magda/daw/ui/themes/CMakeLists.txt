@@ -1,5 +1,5 @@
 target_sources(magda_daw PRIVATE
-    DarkTheme.cpp
+    ActiveTheme.cpp
     ThemeSerialization.cpp
     UserTheme.cpp
     ThemePrompt.cpp
@@ -10,7 +10,7 @@ target_sources(magda_daw_app PRIVATE
     CursorManager.cpp
     MixerLookAndFeel.cpp
     StyledText.cpp
-    DarkTheme.hpp
+    ActiveTheme.hpp
     ThemeSerialization.hpp
     UserTheme.hpp
     ThemeFileWatcher.hpp

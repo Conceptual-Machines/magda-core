@@ -3,7 +3,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaDimensionCompiledPlugin.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -41,13 +41,14 @@ CompiledDimensionView::CompiledDimensionView(juce::String /*pluginId*/) {
 }
 
 void CompiledDimensionView::setCompiledPlugin(
-    magda::daw::audio::compiled::MagdaDimensionCompiledPlugin* plugin) {
-    compiledPlugin_ = plugin;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaDimensionCompiledPlugin> plugin) {
+    compiledPlugin_ = std::move(plugin);
 }
 
-void CompiledDimensionView::bindPlugin(te::Plugin* plugin) {
+void CompiledDimensionView::bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) {
     setCompiledPlugin(
-        dynamic_cast<magda::daw::audio::compiled::MagdaDimensionCompiledPlugin*>(plugin));
+        std::dynamic_pointer_cast<magda::daw::audio::compiled::MagdaDimensionCompiledPlugin>(
+            std::move(device)));
 }
 
 void CompiledDimensionView::updateFromDevice(const magda::DeviceInfo& device) {
@@ -67,8 +68,8 @@ void CompiledDimensionView::resampleFromDevice() {
 void CompiledDimensionView::timerCallback() {
     if (compiledPlugin_ != nullptr) {
         auto read = [this](int slot, float fallback) {
-            if (auto* p = compiledPlugin_->getSlotParameter(slot))
-                return compiledPlugin_->nativeValueToDisplayValue(slot, p->getCurrentValue());
+            if (auto p = compiledPlugin_->getSlotParameter(slot))
+                return compiledPlugin_->nativeValueToDisplayValue(slot, p.currentValue());
             return fallback;
         };
         engine_ = juce::jlimit(0, Plugin::kEngineCount - 1,
@@ -81,7 +82,7 @@ void CompiledDimensionView::timerCallback() {
 
 void CompiledDimensionView::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds().toFloat();
-    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
     g.fillRoundedRectangle(bounds, 4.0f);
 
     auto plot = bounds.reduced(kPadX, kPadY);
@@ -96,16 +97,16 @@ void CompiledDimensionView::paint(juce::Graphics& g) {
     const float centreX = plot.getCentreX();
     const float reach = plot.getWidth() * 0.4f * spread;
 
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.18f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.18f));
     g.drawLine(plot.getX() + 4.0f, centreY, plot.getRight() - 4.0f, centreY, 1.0f);
 
-    const auto accent = DarkTheme::getColour(DarkTheme::ACCENT_INFO);
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_INFO);
     g.setColour(accent.withAlpha(0.95f));
     g.fillEllipse(centreX - reach - 4.0f, centreY - 4.0f, 8.0f, 8.0f);
     g.fillEllipse(centreX + reach - 4.0f, centreY - 4.0f, 8.0f, 8.0f);
 
     // Engine label, top-right corner — same convention as the Reverb view.
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.55f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.55f));
     g.drawFittedText(engineLabel(engine_),
                      juce::Rectangle<int>(static_cast<int>(plot.getRight()) - 80,
                                           static_cast<int>(plot.getY()) + 2, 76, 14),

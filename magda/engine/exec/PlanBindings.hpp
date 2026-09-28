@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+#include <cstdint>
 #include <map>
 #include <unordered_map>
 
@@ -28,13 +30,55 @@ namespace magda::engine {
 struct PlanBindings {
     std::unordered_map<DeviceKey, EngineDevice*, DeviceKeyHash> devices;
 
+    /**
+     * @brief Which epoch owes this device an all-notes-off, or zero (#2418).
+     *
+     * The store's, beside the instance it is about, because that is what it is
+     * about: an instrument holding notes whose off is not coming survives
+     * every plan that replaces the one it was rerouted under. A plan epoch is
+     * the wrong owner -- two of them render across a swap, and a debt copied
+     * or handed between them is delivered twice or lost.
+     *
+     * An epoch rather than a flag, because the debt belongs to the plan that
+     * created it: the one still rendering the old route must not spend it, or
+     * a note played in the window between goes unreleased. Written when that
+     * plan is published and taken by the first epoch at or after it to render
+     * the device, which is exactly once however many publishes intervene.
+     */
+    std::unordered_map<DeviceKey, std::atomic<std::uint64_t>*, DeviceKeyHash> deviceMidiPanicEpoch;
+
     /// Arrangement and session playback for a track (ClipAudio / ClipMidi ops).
     std::unordered_map<TrackId, EngineAudioSource*> clipAudio;
     std::unordered_map<TrackId, EngineMidiSource*> clipMidi;
 
+    /// The session's sources, one per track: the source consults the track's
+    /// launch handles and renders whichever slot is playing (#2301).
+    std::unordered_map<TrackId, EngineAudioSource*> sessionAudio;
+    std::unordered_map<TrackId, EngineMidiSource*> sessionMidi;
+
     /// Live hardware input feeding a track (AudioInput / MidiInput ops).
     std::unordered_map<TrackId, EngineAudioSource*> audioInputs;
     std::unordered_map<TrackId, EngineMidiSource*> midiInputs;
+
+    /**
+     * @brief Whether anything was ever going to be listening to a microphone.
+     *
+     * An input op with nothing bound is a defect in a live session and the
+     * correct answer in an offline render, which binds no hardware by
+     * definition: a bounce, an export, the null-difference corpus. Said here
+     * rather than inferred from an empty map, because an empty map is a guess
+     * at what the host meant and this is the host saying it (#2628).
+     *
+     * Live by default, so a host that has not thought about it is the one that
+     * gets told.
+     */
+    bool liveSession = true;
+
+    /// The outside world behind each hardware insert (InsertSend / InsertReturn
+    /// ops, #2245). Keyed by DeviceKey like the devices are, and for the same
+    /// reason: an insert is a thing in the project at a place in a chain, and
+    /// its send op and return op are two halves of one binding.
+    std::unordered_map<DeviceKey, EngineInsert*, DeviceKeyHash> inserts;
 
     /**
      * @brief Where each Meter op publishes its level.
@@ -62,7 +106,8 @@ struct PlanBindings {
      * Keyed by OpKey for the same reason the meters are: this names a place in
      * the signal, not a thing in the project. The place worth binding is a
      * track's TrackMidiInput op, which is everything feeding its chain before
-     * any device sees it.
+     * any device sees it. A pad's MidiNoteGate is the other, for its trigger
+     * light (#2669).
      *
      * Optional exactly like a meter. Nothing binds these in a render nobody is
      * observing, and an unbound op is not reported.

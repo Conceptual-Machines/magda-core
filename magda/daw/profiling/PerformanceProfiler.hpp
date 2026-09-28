@@ -6,6 +6,7 @@
 #include <limits>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace magda {
@@ -60,8 +61,8 @@ class HighResTimer {
  */
 class ScopedProfiler {
   public:
-    explicit ScopedProfiler(const juce::String& name, bool enabled = true)
-        : name_(name), enabled_(enabled) {
+    explicit ScopedProfiler(juce::String name, bool enabled = true)
+        : name_(std::move(name)), enabled_(enabled) {
         if (enabled_) {
             timer_.reset();
         }
@@ -227,11 +228,17 @@ class PerformanceMonitor {
  */
 class MonitoredProfiler {
   public:
-    explicit MonitoredProfiler(const juce::String& category) : category_(category), timer_() {}
+    explicit MonitoredProfiler(juce::String category) : category_(std::move(category)) {}
 
     ~MonitoredProfiler() {
-        double elapsed = timer_.elapsedMilliseconds();
-        PerformanceMonitor::getInstance().addSample(category_, elapsed);
+        try {
+            double elapsed = timer_.elapsedMilliseconds();
+            PerformanceMonitor::getInstance().addSample(category_, elapsed);
+        } catch (const std::exception& e) {
+            juce::Logger::writeToLog(juce::String("[MonitoredProfiler] ") + e.what());
+        } catch (...) {
+            juce::Logger::writeToLog("[MonitoredProfiler] unknown exception");
+        }
     }
 
   private:

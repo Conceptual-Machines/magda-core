@@ -2,18 +2,18 @@
 
 #include <juce_core/juce_core.h>
 
+#include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <map>
+#include <ranges>
 #include <string>
 #include <vector>
-
-namespace magda {
 
 /**
  * @brief Shared music helpers used by both the DSL interpreter and compact executor.
  */
-namespace music {
+namespace magda::music {
 
 /** Parse note name (e.g. "C4", "C#4", "Bb3") or MIDI number to MIDI note number. Returns -1 on
  * error. */
@@ -22,14 +22,9 @@ inline int parseNoteName(const std::string& name) {
         return -1;
 
     // Plain number → return directly
-    bool allDigits = true;
-    size_t start = (name[0] == '-') ? 1 : 0;
-    for (size_t i = start; i < name.size(); i++) {
-        if (!std::isdigit(static_cast<unsigned char>(name[i]))) {
-            allDigits = false;
-            break;
-        }
-    }
+    const auto isDigit = [](char c) { return std::isdigit(static_cast<unsigned char>(c)) != 0; };
+    const size_t start = (name[0] == '-') ? 1 : 0;
+    const bool allDigits = std::ranges::all_of(name | std::views::drop(start), isDigit);
     if (allDigits && !name.empty())
         return std::atoi(name.c_str());
 
@@ -160,5 +155,4 @@ inline bool resolveChordNotes(const std::string& root, const std::string& qualit
     return true;
 }
 
-}  // namespace music
-}  // namespace magda
+}  // namespace magda::music

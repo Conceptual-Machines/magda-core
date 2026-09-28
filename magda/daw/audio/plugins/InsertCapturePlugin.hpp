@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <atomic>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 namespace magda {
@@ -86,7 +87,8 @@ class InsertCapturePlugin : public te::Plugin {
         plugin is inserted, before the graph rebuild runs initialise().
         Returns false if the file/writer could not be created. */
     bool startCapture(const juce::File& wavFile, double windowStartSec, double windowEndSec,
-                      double sampleRate);
+                      double sampleRate,
+                      const std::unordered_map<juce::String, juce::String>& metadata = {});
 
     /** Finalise (keepFile) or abort (!keepFile, deletes the file) the capture.
         An in-flight audio block may still hold the writer; this waits

@@ -1,21 +1,27 @@
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
+#include <juce_audio_utils/juce_audio_utils.h>
 
+#include <array>
+#include <atomic>
+#include <span>
 #include <vector>
 
-namespace magda::daw::audio {
+#include "core/ParameterUtils.hpp"
+#include "plugins/MagdaDevice.hpp"
 
-namespace te = tracktion::engine;
+namespace magda::daw::audio {
 
 //==============================================================================
 /**
  * @brief Holds loaded sample data for the sampler
  */
 struct SamplerSound : public juce::SynthesiserSound {
+    /// Immutable once the synthesiser holds it (#2384). Nothing writes a field
+    /// of an installed sound, so what crosses to the audio thread is one thing,
+    /// SamplerPlayback, rather than a mix of fields here and members there.
     juce::AudioBuffer<float> audioData;
     double sourceSampleRate = 44100.0;
-    int rootNote = 60;
 
     bool appliesToNote(int) override {
         return true;
@@ -31,11 +37,66 @@ struct SamplerSound : public juce::SynthesiserSound {
 
 //==============================================================================
 /**
+ * @brief What the audio thread reads about the loaded sound (#2384).
+ *
+ * The sampler's one cross-thread boundary. The message thread publishes here
+ * when it installs a sound or the user moves the root note; the audio thread
+ * reads it per block. An installed SamplerSound is immutable, so auditing what
+ * crosses threads means reading this class and nothing else.
+ *
+ * Three atomics rather than a snapshot behind a seqlock, which would spin the
+ * audio thread waiting on the message thread. They clamp marker ranges and
+ * pitch a note, so a triple torn across a load costs one block's clamp.
+ */
+class SamplerPlayback {
+  public:
+    struct Facts {
+        double sourceRate = 44100.0;
+        double lengthSeconds = 0.0;
+        int rootNote = 60;
+    };
+
+    /// @brief Publish @p facts. Message thread, once the synthesiser holds the
+    ///        sound they describe.
+    void publish(const Facts& facts) {
+        sourceRate_.store(facts.sourceRate, std::memory_order_relaxed);
+        lengthSeconds_.store(facts.lengthSeconds, std::memory_order_relaxed);
+        rootNote_.store(facts.rootNote, std::memory_order_relaxed);
+    }
+
+    /// @brief Republish the root note alone, which is the one field a user
+    ///        changes without loading anything. Message thread.
+    void publishRootNote(int note) {
+        rootNote_.store(note, std::memory_order_relaxed);
+    }
+
+    /// @brief What was last published. Audio thread.
+    Facts read() const {
+        return Facts{sourceRate_.load(std::memory_order_relaxed),
+                     lengthSeconds_.load(std::memory_order_relaxed),
+                     rootNote_.load(std::memory_order_relaxed)};
+    }
+
+  private:
+    std::atomic<double> sourceRate_{44100.0};
+    std::atomic<double> lengthSeconds_{0.0};
+    std::atomic<int> rootNote_{60};
+};
+
+//==============================================================================
+class SamplerSynth;
+
+/**
  * @brief Voice for sample playback with ADSR envelope and pitch control
  */
 class SamplerVoice : public juce::SynthesiserVoice {
   public:
     SamplerVoice();
+
+    /// The synthesiser that says how far into its sample a note falls.
+    explicit SamplerVoice(const SamplerSynth& synth) : SamplerVoice() {
+        synth_ = &synth;
+    }
 
     void setADSR(float attack, float decay, float sustain, float release);
     void setPitchOffset(float semitones, float cents);
@@ -43,6 +104,11 @@ class SamplerVoice : public juce::SynthesiserVoice {
                            double loopStartSeconds, double loopEndSeconds, double sourceSampleRate);
     void setVelocityAmount(float amount) {
         velAmount = amount;
+    }
+    /// The root note to pitch against. Pushed in per block from the published
+    /// facts, so the voice never reads a field of the sound (#2384).
+    void setRootNote(int note) {
+        rootNote = note;
     }
     // Portamento glide time (seconds); 0 = instant pitch change.
     void setGlideSeconds(double s) {
@@ -69,8 +135,10 @@ class SamplerVoice : public juce::SynthesiserVoice {
 
   private:
     // Pitch ratio for `midiNoteNumber`, including the pitch/fine offset, against
-    // the loaded sound's root note and sample rate.
+    // the published root note and the sound's sample rate.
     double pitchRatioForNote(int midiNoteNumber, const SamplerSound& sound) const;
+
+    int rootNote = 60;
     // Arm a glide from the current pitchRatio to targetPitchRatio over glideSeconds.
     void beginGlide();
 
@@ -92,6 +160,7 @@ class SamplerVoice : public juce::SynthesiserVoice {
 
     double sampleStartOffset = 0.0;
     double sampleEndSample = 0.0;  // 0 = play to end of file
+    const SamplerSynth* synth_ = nullptr;
     bool loopEnabled = false;
     double loopStartSample = 0.0;
     double loopEndSample = 0.0;
@@ -109,6 +178,7 @@ class SamplerVoice : public juce::SynthesiserVoice {
  */
 class SamplerSynth : public juce::Synthesiser {
   public:
+    SamplerSynth();
     enum VoiceMode { Poly = 0, Mono = 1, Legato = 2 };
 
     void setVoiceMode(int mode) {
@@ -122,8 +192,28 @@ class SamplerSynth : public juce::Synthesiser {
     void noteOff(int midiChannel, int midiNoteNumber, float velocity, bool allowTailOff) override;
     void allNotesOff(int midiChannel, bool allowTailOff) override;
 
+    /// How far into their samples the events of the next rendered buffer fall,
+    /// in the order they were added to it (#2741). Audio thread.
+    void beginBlock(std::span<const float> fractions) {
+        fractions_ = fractions;
+        nextEvent_ = 0;
+        currentFraction_ = 0.0f;
+    }
+
+    /// How far into its sample the event being handled falls.
+    float eventFraction() const {
+        return currentFraction_;
+    }
+
+  protected:
+    void handleMidiEvent(const juce::MidiMessage& message) override;
+
   private:
     SamplerVoice* monoVoice();
+
+    std::span<const float> fractions_;
+    std::size_t nextEvent_ = 0;
+    float currentFraction_ = 0.0f;
 
     int voiceMode = Poly;
     double glideSeconds = 0.0;
@@ -133,12 +223,54 @@ class SamplerSynth : public juce::Synthesiser {
 
 //==============================================================================
 /**
- * @brief Sample-based instrument plugin with ADSR, pitch/fine, and level controls
+ * @brief Sample-based instrument device with ADSR, pitch/fine, and level controls.
+ *
+ * A MagdaDevice since #2271: one DSP hosted by whichever engine is running it.
+ * A Drum Grid pad can hold one, so until it crossed, a drum kit built the
+ * ordinary way rendered as passthrough under the native engine.
+ *
+ * The slot ids, order and display ranges are the ones the retired host-native
+ * plugin registered, so saved automation, macro links and mod links survive
+ * the migration untouched.
+ *
+ * The sample is referenced by PATH, not embedded: unlike the IR the
+ * convolution device carries in its own state, a sample is arbitrarily large
+ * and the project media tree already owns relocating it (relocateSample).
  */
-class MagdaSamplerPlugin : public te::Plugin {
+class MagdaSamplerPlugin : public MagdaDevice {
   public:
-    MagdaSamplerPlugin(const te::PluginCreationInfo&);
+    MagdaSamplerPlugin();
     ~MagdaSamplerPlugin() override;
+
+    //==============================================================================
+    /// FROZEN parameter order — the compatibility surface saved automation,
+    /// macro and mod links address, and the order `syncCachedValueFromParam()`
+    /// documented on the retired plugin.
+    enum ParamIndex {
+        kAttack = 0,
+        kDecay,
+        kSustain,
+        kRelease,
+        kPitch,
+        kFine,
+        kLevel,
+        kSampleStart,
+        kSampleEnd,
+        kLoopStart,
+        kLoopEnd,
+        kVelAmount,
+        kVoiceMode,
+        kGlide,
+        kNumParams,
+    };
+
+    /// The device's own non-parameter state. The spellings are the retired
+    /// plugin's, so a saved project reads its sample back.
+    struct StateIDs {
+        static const juce::Identifier source;
+        static const juce::Identifier rootNote;
+        static const juce::Identifier loopEnabled;
+    };
 
     //==============================================================================
     static const char* getPluginName() {
@@ -146,50 +278,70 @@ class MagdaSamplerPlugin : public te::Plugin {
     }
     static const char* xmlTypeName;
 
-    juce::String getName() const override {
-        return getPluginName();
-    }
-    juce::String getPluginType() override {
-        return xmlTypeName;
-    }
-    juce::String getShortName(int) override {
-        return "Sampler";
-    }
-    juce::String getSelectableDescription() override {
-        return getName();
+    DeviceProperties properties() const override {
+        return {
+            .pluginId = xmlTypeName,
+            .name = getPluginName(),
+            .shortName = "Sampler",
+            .takesMidiInput = true,
+            .takesAudioInput = false,
+            .isSynth = true,
+            .producesAudioWithoutInput = true,
+            // A released voice rings for the length of its release stage, so an
+            // offline render or a freeze keeps the tail instead of cutting it
+            // at the last note-off.
+            .tailLengthSeconds = tailSeconds_.load(std::memory_order_relaxed),
+        };
     }
 
-    //==============================================================================
-    void initialise(const te::PluginInitialisationInfo&) override;
-    void deinitialise() override;
+    void prepare(const DevicePrepareContext& context) override;
+    void release() override;
     void reset() override;
+    void process(DeviceProcessContext& context) override;
 
-    void applyToBuffer(const te::PluginRenderContext&) override;
+    int parameterCount() const override {
+        return kNumParams;
+    }
+    ParameterInfo parameterInfo(int index) const override;
+    float parameterValue(int index) const override;
+    void setParameterValue(int index, float value) override;
+
+    /// One slot's value in its own display units (seconds, dB, semitones).
+    /// What the custom UI draws markers from, and what the retired plugin's
+    /// CachedValues held.
+    float displayValue(int index) const;
+    void setDisplayValue(int index, float value);
+
+    void flushState(juce::ValueTree& state) override;
+    void restoreState(const juce::ValueTree& state) override;
+
+    /// What choosing @p file means for a sampler, read off the file itself: the
+    /// note its metadata names and the marker span covering it. Invalid when no
+    /// sample format can read it. The model authors both when a sample is
+    /// chosen (#2379), so neither may need a loaded device.
+    struct SampleChoice {
+        bool valid = false;
+        int rootNote = 60;
+        float markerSeconds = 0.0f;
+    };
+    static SampleChoice readSampleChoice(const juce::File& file);
 
     //==============================================================================
-    bool takesMidiInput() override {
-        return true;
-    }
-    bool takesAudioInput() override {
-        return false;
-    }
-    bool isSynth() override {
-        return true;
-    }
-    bool producesAudioWhenNoAudioInput() override {
-        return true;
-    }
-    double getTailLength() const override;
-
-    void restorePluginStateFromValueTree(const juce::ValueTree&) override;
-
-    //==============================================================================
-    // Sync CachedValue from current AutomatableParameter value (for persistence)
-    void syncCachedValueFromParam(int paramIndex);
-
-    //==============================================================================
-    // Sample loading
+    // Sample loading. Message thread only.
     void loadSample(const juce::File& file);
+
+    /**
+     * @brief Point the sampler at the same audio in a new location.
+     *
+     * loadSample() treats its argument as a newly chosen sample: it re-derives
+     * the root note from file metadata and resets the sample and loop markers.
+     * That is wrong for a file that merely moved — collecting media or folding
+     * the project media tree would silently undo a custom root note or a
+     * trimmed/looped region — so this reloads the audio and puts those
+     * interpretation settings back.
+     */
+    void relocateSample(const juce::File& file);
+
     juce::File getSampleFile() const;
     const juce::AudioBuffer<float>* getWaveform() const;
     double getSampleLengthSeconds() const;
@@ -197,40 +349,88 @@ class MagdaSamplerPlugin : public te::Plugin {
     int getRootNote() const;
     void setRootNote(int note);
 
-    //==============================================================================
-    // Automatable parameters
-    juce::CachedValue<float> attackValue, decayValue, sustainValue, releaseValue;
-    juce::CachedValue<float> pitchValue, fineValue, levelValue;
-    juce::CachedValue<float> sampleStartValue, sampleEndValue, loopStartValue, loopEndValue;
-    juce::CachedValue<float> velAmountValue;
-    juce::CachedValue<float> voiceModeValue, glideValue;
+    /// Loop on/off. Never a parameter on the retired plugin either — the
+    /// faceplate writes it and it persists as device state.
+    bool loopEnabled() const {
+        return loopEnabled_.load(std::memory_order_relaxed);
+    }
+    void setLoopEnabled(bool enabled) {
+        loopEnabled_.store(enabled, std::memory_order_relaxed);
+    }
 
-    te::AutomatableParameter::Ptr attackParam, decayParam, sustainParam, releaseParam;
-    te::AutomatableParameter::Ptr pitchParam, fineParam, levelParam;
-    te::AutomatableParameter::Ptr sampleStartParam, sampleEndParam, loopStartParam, loopEndParam;
-    te::AutomatableParameter::Ptr velAmountParam;
-    te::AutomatableParameter::Ptr voiceModeParam, glideParam;
-
-    // Non-parameter state
-    juce::CachedValue<juce::String> samplePathValue;
-    juce::CachedValue<int> rootNoteValue;
-    juce::CachedValue<bool> loopEnabledValue;    // persisted state (message thread only)
-    std::atomic<bool> loopEnabledAtomic{false};  // audio-thread-safe mirror
-
-    // Playhead position (written by audio thread, read by UI)
-    std::atomic<double> currentPlaybackPosition{0.0};
+    /// Where in the sample the first sounding voice is, in seconds. Written by
+    /// the audio thread, read by the UI.
     double getPlaybackPosition() const {
-        return currentPlaybackPosition.load(std::memory_order_relaxed);
+        return currentPlaybackPosition_.load(std::memory_order_relaxed);
     }
 
   private:
     //==============================================================================
+    void updateVoiceParameters();
+
+    /// Republish what the audio thread reads of the loaded sound. Message
+    /// thread, after the synthesiser holds it (#2378).
+    void publishSoundFacts();
+    /// Put the synthesiser back to holding no audio. What an authored document
+    /// with no source means (see restoreState).
+    void unloadSample();
+
+    /// True when the audio loaded IS the file at @p path, still as it was when
+    /// it was read. The path alone cannot tell a re-projection of the same
+    /// document from a file replaced in place (#2379).
+    bool holdsAudioFrom(const juce::String& path) const;
+
     SamplerSynth synthesiser;
-    SamplerSound* currentSound = nullptr;  // owned by synthesiser
+
+    /// Where each event handed to the synthesiser falls inside its sample
+    /// (#2741). Reserved once, never grown on the audio thread.
+    std::vector<float> eventFractions_;
+
+    /// A note edge already handed over this block, for the dedup in process().
+    struct SeenEvent {
+        int note;
+        int samplePos;
+        float fraction;
+        bool isNoteOn;
+        bool operator==(const SeenEvent&) const = default;
+    };
+
+    static constexpr int kMaxBlockEvents = 1024;
+    /// Past this many note edges in one block, later duplicates are no longer caught.
+    static constexpr int kMaxSeenEdges = 256;
+
+    /// The block's events, reserved once like the fractions beside them.
+    std::vector<SeenEvent> seenEvents_;
+    juce::MidiBuffer blockMidi_;
+
+    /// Whether a voice was still sounding when the last block ended. Audio thread only.
+    bool sounding_ = false;
+
+    /// Owned by the synthesiser, and only ever read on the message thread. The
+    /// audio thread reads @ref soundSourceRate_ and @ref soundLengthSeconds_
+    /// instead: a load frees this one while a block may still be inside
+    /// applyToBuffer (#2378).
+    SamplerSound* currentSound = nullptr;
+
+    /// Everything that crosses to the audio thread (#2384).
+    SamplerPlayback playback_;
     double sampleRate = 44100.0;
     int numVoices = 8;
 
-    void updateVoiceParameters();
+    // Normalised slot values. The audio thread reads them every block while the
+    // message thread writes them, so they are atomics rather than plain floats.
+    std::array<std::atomic<float>, kNumParams> values_{};
+    std::array<ParameterUtils::ParameterDomain, kNumParams> domains_{};
+
+    std::atomic<bool> loopEnabled_{false};
+    std::atomic<double> tailSeconds_{0.1};
+    std::atomic<double> currentPlaybackPosition_{0.0};
+
+    juce::String samplePath_;
+    /// What the file looked like when its audio was read — see holdsAudioFrom().
+    juce::int64 sampleFileSize_ = 0;
+    juce::int64 sampleFileModifiedMs_ = 0;
+    int rootNote_ = 60;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MagdaSamplerPlugin)
 };

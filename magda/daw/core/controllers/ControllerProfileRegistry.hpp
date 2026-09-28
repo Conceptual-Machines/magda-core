@@ -70,7 +70,7 @@ class ControllerProfileRegistry {
      * exist. This walks the user directory and returns the file whose parsed
      * id matches. Returns an invalid juce::File when no match.
      */
-    juce::File findSourceFileForProfileId(const juce::String& id) const;
+    static juce::File findSourceFileForProfileId(const juce::String& id);
 
   private:
     ControllerProfileRegistry() = default;

@@ -9,11 +9,12 @@ class GeneralPage;
 class AppearancePage;
 class RenderingPage;
 class PathsPage;
+class DefaultsPage;
 class ShortcutsPage;
 
 /**
  * Preferences dialog for editing application configuration.
- * Organised into tabs: General, Appearance, Rendering, Paths, Shortcuts.
+ * Organised into tabs: General, Appearance, Rendering, Paths, Defaults, Shortcuts.
  */
 class PreferencesDialog : public juce::Component {
   public:
@@ -36,11 +37,13 @@ class PreferencesDialog : public juce::Component {
     juce::Viewport appearancePageViewport;
     juce::Viewport renderingPageViewport;
     juce::Viewport pathsPageViewport;
+    juce::Viewport defaultsPageViewport;
 
     std::unique_ptr<GeneralPage> generalPage;
     std::unique_ptr<AppearancePage> appearancePage;
     std::unique_ptr<RenderingPage> renderingPage;
     std::unique_ptr<PathsPage> pathsPage;
+    std::unique_ptr<DefaultsPage> defaultsPage;
     std::unique_ptr<ShortcutsPage> shortcutsPage;
 
     juce::TextButton okButton;

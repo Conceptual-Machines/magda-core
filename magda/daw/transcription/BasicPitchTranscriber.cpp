@@ -30,7 +30,7 @@ constexpr int kHalfOverlapFrames = bp::kOverlappingFrames / 2;                  
 // Resample mono PCM to 22050 Hz. Returns the resampled buffer.
 std::vector<float> resampleTo22050(const float* mono, int numSamples, int sampleRate) {
     if (sampleRate == bp::kSampleRate) {
-        return std::vector<float>(mono, mono + numSamples);
+        return {mono, mono + numSamples};
     }
     const double ratio = static_cast<double>(sampleRate) / bp::kSampleRate;
     const int outLen = static_cast<int>(std::ceil(numSamples / ratio));
@@ -148,9 +148,9 @@ struct BasicPitchTranscriber::Impl {
         Ort::RunOptions runOpts;
         auto outputs = session.Run(runOpts, inputNames, &tensor, 1, outputNames, 3);
 
-        const float* noteData = outputs[0].GetTensorData<float>();
-        const float* onsetData = outputs[1].GetTensorData<float>();
-        const float* contourData = outputs[2].GetTensorData<float>();
+        const auto* noteData = outputs[0].GetTensorData<float>();
+        const auto* onsetData = outputs[1].GetTensorData<float>();
+        const auto* contourData = outputs[2].GetTensorData<float>();
 
         note.insert(note.end(), noteData,
                     noteData + static_cast<size_t>(bp::kAnnotNFrames) * bp::kNoteFreqBins);

@@ -4,6 +4,7 @@
 
 #include <array>
 #include <functional>
+#include <memory>
 
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/DeviceInfo.hpp"
@@ -20,17 +21,18 @@ class CompiledMultibandCurveView final : public juce::Component,
   public:
     explicit CompiledMultibandCurveView(juce::String pluginId);
 
-    int getPreferredHeight() const {
+    static int getPreferredHeight() {
         return 140;
     }
 
-    void setCompiledPlugin(magda::daw::audio::compiled::MagdaMultibandCompiledPlugin* plugin);
+    void setCompiledPlugin(
+        std::shared_ptr<magda::daw::audio::compiled::MagdaMultibandCompiledPlugin> plugin);
     void updateFromDevice(const magda::DeviceInfo& device) override;
 
     juce::Component& component() override {
         return *this;
     }
-    void bindPlugin(te::Plugin* plugin) override;
+    void bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) override;
     void setOnParameterChanged(std::function<void(int, float)> cb) override {
         onParameterChanged = std::move(cb);
     }
@@ -182,10 +184,10 @@ class CompiledMultibandCurveView final : public juce::Component,
     static bool isAboveRatioHandle(Handle h);
     static bool isTimingHandle(Handle h);
     static bool isReleaseTimingHandle(Handle h);
-    int slotForHandle(Handle h) const;
+    static int slotForHandle(Handle h);
     Handle pickHandle(float x, float y) const;
 
-    magda::daw::audio::compiled::MagdaMultibandCompiledPlugin* compiledPlugin_ = nullptr;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaMultibandCompiledPlugin> compiledPlugin_;
     magda::DeviceInfo deviceSnapshot_;
 
     float lowXoHz_ = 120.0f;

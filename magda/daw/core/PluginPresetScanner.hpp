@@ -63,24 +63,24 @@ class PluginPresetScanner {
      * @brief The user-writable directory where MAGDA writes new presets for
      *        this plugin. Created on demand (only when actually written to).
      */
-    juce::File getUserPresetDirectory(const DeviceInfo& device) const;
+    static juce::File getUserPresetDirectory(const DeviceInfo& device);
 
     /**
      * @brief Filesystem extension expected for the device's plugin format
      *        (".vstpreset", ".aupreset", or empty for unsupported formats).
      */
-    juce::String getPresetExtension(const DeviceInfo& device) const;
+    static juce::String getPresetExtension(const DeviceInfo& device);
 
     /**
      * @brief All directories (user + system) scanned for the device. Useful
      *        for exposing a "Reveal in Finder" action for the user dir.
      */
-    std::vector<juce::File> getScanRoots(const DeviceInfo& device) const;
+    static std::vector<juce::File> getScanRoots(const DeviceInfo& device);
 
   private:
     PluginPresetScanner() = default;
 
-    juce::String makeCacheKey(const DeviceInfo& device) const;
+    static juce::String makeCacheKey(const DeviceInfo& device);
     PresetTree scanPlugin(const DeviceInfo& device) const;
 
     std::unordered_map<std::string, PresetTree> cache_;

@@ -1,6 +1,6 @@
 #include "MixAnalysisModal.hpp"
 
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/DialogLookAndFeel.hpp"
 #include "../../themes/FontManager.hpp"
 
@@ -67,7 +67,7 @@ void MixAnalysisModal::Spinner::paint(juce::Graphics& g) {
     juce::Path arc;
     arc.addCentredArc(cx, cy, sz * 0.5f, sz * 0.5f, 0.0f, angle,
                       angle + juce::MathConstants<float>::pi * 1.5f, true);
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_INFO).withAlpha(0.85f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_INFO).withAlpha(0.85f));
     g.strokePath(arc, juce::PathStrokeType(2.0f));
 }
 
@@ -90,13 +90,14 @@ MixAnalysisModal::MixAnalysisModal(MixAnalysisService::Mode mode) : mode_(mode) 
                             service.rangeDescription() + ")",
                         juce::dontSendNotification);
     titleLabel_.setFont(FontManager::getInstance().getUIFont(15.0f).boldened());
-    titleLabel_.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    titleLabel_.setColour(juce::Label::textColourId,
+                          ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     addAndMakeVisible(titleLabel_);
 
     statusLabel_.setJustificationType(juce::Justification::centred);
     statusLabel_.setFont(FontManager::getInstance().getUIFont(13.0f));
     statusLabel_.setColour(juce::Label::textColourId,
-                           DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                           ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     addAndMakeVisible(statusLabel_);
 
     findings_.setMultiLine(true);
@@ -105,10 +106,10 @@ MixAnalysisModal::MixAnalysisModal(MixAnalysisService::Mode mode) : mode_(mode) 
     findings_.setCaretVisible(false);
     findings_.setFont(FontManager::getInstance().getMonoFont(12.0f));
     findings_.setColour(juce::TextEditor::backgroundColourId,
-                        DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+                        ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
     findings_.setColour(juce::TextEditor::textColourId,
-                        DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    findings_.setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
+                        ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+    findings_.setColour(juce::TextEditor::outlineColourId, ActiveTheme::getBorderColour());
     addChildComponent(findings_);
 
     addChildComponent(spinner_);
@@ -237,7 +238,7 @@ void MixAnalysisModal::refresh() {
 }
 
 void MixAnalysisModal::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getPanelBackgroundColour());
+    g.fillAll(ActiveTheme::getPanelBackgroundColour());
 }
 
 void MixAnalysisModal::resized() {

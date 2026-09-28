@@ -44,7 +44,7 @@ class MixAnalysisInput {
      *                    sum of the track stems is used instead.
      * @param references  reference masters (genre targets), may be empty.
      */
-    static MixAnalysisData build(double sampleRate, const std::vector<Source>& tracks,
+    static MixAnalysisData build(double sr, const std::vector<Source>& tracks,
                                  const juce::AudioBuffer<float>* master,
                                  const std::vector<Source>& references, const Options& opts);
 
@@ -57,9 +57,8 @@ class MixAnalysisInput {
 
     /// Master-style fingerprint of one finished buffer (true-peak + tonal +
     /// spectral + whole-song correlation/width).
-    static MixAnalysisData::Track fingerprint(const juce::AudioBuffer<float>& buf,
-                                              double sampleRate, const juce::String& name,
-                                              const std::string& role);
+    static MixAnalysisData::Track fingerprint(const juce::AudioBuffer<float>& buf, double sr,
+                                              const juce::String& name, const std::string& role);
 };
 
 }  // namespace magda::daw::audio

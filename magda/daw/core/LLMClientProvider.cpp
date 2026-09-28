@@ -169,12 +169,12 @@ bool supportsOpenAICFG(const Config::AgentLLMConfig& config) {
 }
 
 void setLLMClientProvider(LLMClientProvider provider) {
-    std::lock_guard<std::mutex> lock(providerMutex());
+    std::scoped_lock lock(providerMutex());
     providerSlot() = std::move(provider);
 }
 
 void setLLMProviderShutdownHandler(LLMProviderShutdownHandler handler) {
-    std::lock_guard<std::mutex> lock(providerMutex());
+    std::scoped_lock lock(providerMutex());
     shutdownHandlerSlot() = std::move(handler);
 }
 
@@ -182,7 +182,7 @@ std::unique_ptr<llm::LLMClient> createLLMClient(const Config::AgentLLMConfig& co
                                                 const std::string& agentName) {
     LLMClientProvider provider;
     {
-        std::lock_guard<std::mutex> lock(providerMutex());
+        std::scoped_lock lock(providerMutex());
         provider = providerSlot();
     }
 
@@ -192,7 +192,7 @@ std::unique_ptr<llm::LLMClient> createLLMClient(const Config::AgentLLMConfig& co
 void shutdownLLMClientProvider() {
     LLMProviderShutdownHandler handler;
     {
-        std::lock_guard<std::mutex> lock(providerMutex());
+        std::scoped_lock lock(providerMutex());
         handler = shutdownHandlerSlot();
     }
 

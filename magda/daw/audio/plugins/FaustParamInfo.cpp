@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 
-#include "FaustInstrumentPlugin.hpp"
 #include "FaustParamPool.hpp"
 
 namespace magda::daw::audio {
@@ -29,6 +28,7 @@ constexpr const char* kHostParamGroup = "Voice";
 
 magda::ParameterInfo voiceModeInfo() {
     magda::ParameterInfo info;
+    info.stableId = "voiceMode";
     info.paramIndex = FaustParamPool::kSize;
     info.name = "Voice Mode";
     info.group = kHostParamGroup;
@@ -53,6 +53,7 @@ magda::ParameterInfo voiceModeInfo() {
 
 magda::ParameterInfo glideInfo() {
     magda::ParameterInfo info;
+    info.stableId = "glide";
     info.paramIndex = FaustParamPool::kSize + 1;
     info.name = "Glide";
     info.group = kHostParamGroup;
@@ -69,12 +70,13 @@ magda::ParameterInfo glideInfo() {
 
 magda::ParameterInfo bendRangeInfo() {
     magda::ParameterInfo info;
+    info.stableId = "bendRange";
     info.paramIndex = FaustParamPool::kSize + 2;
     info.name = "Bend Range";
     info.group = kHostParamGroup;
     info.unit = "st";
     info.minValue = 0.0f;
-    info.maxValue = FaustInstrumentPlugin::kMaxBendSemitones;
+    info.maxValue = kMaxBendSemitones;
     // 2 semitones each way is what almost every synth ships with, and what a
     // patch author will assume when they reach for the wheel.
     info.defaultValue = 2.0f;
@@ -155,7 +157,7 @@ magda::ParameterInfo discreteInfo(const FaustParamSlot& slot) {
         // an empty choice list for a menu/radio style, but if it does
         // we degrade to a single "(empty)" option so the slot is still
         // selectable.
-        info.choices.push_back("(empty)");
+        info.choices.emplace_back("(empty)");
     }
     info.minValue = 0.0f;
     info.maxValue = static_cast<float>(info.choices.size() - 1);
@@ -179,6 +181,10 @@ magda::ParameterInfo discreteInfo(const FaustParamSlot& slot) {
 
 }  // namespace
 
+// The three ids below are the retired plugin's own property spellings. The host
+// wrapper keys its CachedValue on stableId and falls back to
+// "<pluginId>_param_<n>" without one, which would neither read what flushState
+// writes nor survive a project saved before the port (#2315).
 magda::ParameterInfo faustInstrumentHostParamInfo(int hostIndex) {
     switch (hostIndex) {
         case 0:

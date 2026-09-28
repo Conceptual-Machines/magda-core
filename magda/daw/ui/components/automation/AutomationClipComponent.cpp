@@ -7,7 +7,7 @@
 #include "../../../core/UndoManager.hpp"
 #include "AutomationLaneComponent.hpp"
 #include "BinaryData.h"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda {
@@ -51,7 +51,7 @@ void AutomationClipComponent::paint(juce::Graphics& g) {
     g.fillRoundedRectangle(bounds.toFloat(), 3.0f);
 
     // Draw border (kept solid so the clip bounds stay crisp)
-    g.setColour(isSelected_ ? DarkTheme::getColour(DarkTheme::TEXT_BRIGHT)
+    g.setColour(isSelected_ ? ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT)
                             : bgColour.withAlpha(0.9f));
     g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 3.0f, 1.0f);
 
@@ -71,18 +71,18 @@ void AutomationClipComponent::paint(juce::Graphics& g) {
         if (loopIcon) {
             auto themedIcon = loopIcon->createCopy();
             themedIcon->replaceColour(juce::Colour(0xFFBCBCBC),
-                                      DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
-            DarkTheme::applyToSvgIcon(*themedIcon);
+                                      ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT));
+            ActiveTheme::applyToSvgIcon(*themedIcon);
             themedIcon->drawWithin(g, loopArea.toFloat(), juce::RectanglePlacement::centred, 1.0f);
         }
     }
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT));
     g.setFont(FontManager::getInstance().getUIFont(10.0f));
     g.drawText(clip->name, headerArea, juce::Justification::centredLeft, true);
 
     // Resize handles visual indication when hovered
     if (isHovered_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0x44 / 255.0f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0x44 / 255.0f));
         g.fillRect(0, 0, RESIZE_EDGE_WIDTH, getHeight());
         g.fillRect(getWidth() - RESIZE_EDGE_WIDTH, 0, RESIZE_EDGE_WIDTH, getHeight());
     }
@@ -95,7 +95,7 @@ void AutomationClipComponent::paint(juce::Graphics& g) {
         // hide them entirely (same threshold as MIDI/audio clip loop markers).
         constexpr double MIN_LOOP_MARKER_PIXEL_WIDTH = 32.0;
         if (stride >= MIN_LOOP_MARKER_PIXEL_WIDTH) {
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0xAA / 255.0f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0xAA / 255.0f));
             for (double x = stride; x < getWidth(); x += stride)
                 g.drawVerticalLine(static_cast<int>(std::round(x)), 0.0f,
                                    static_cast<float>(getHeight()));
@@ -131,17 +131,12 @@ void AutomationClipComponent::paintMiniCurve(juce::Graphics& g, juce::Rectangle<
     // mouse-up commit.
     std::vector<AutomationPoint> points = clip->points;
     if (previewPointId_ != INVALID_AUTOMATION_POINT_ID) {
-        for (auto& point : points) {
-            if (point.id == previewPointId_) {
-                point.beatPosition = previewPointBeat_;
-                point.value = previewPointValue_;
-                break;
-            }
+        const auto dragged = std::ranges::find(points, previewPointId_, &AutomationPoint::id);
+        if (dragged != points.end()) {
+            dragged->beatPosition = previewPointBeat_;
+            dragged->value = previewPointValue_;
         }
-        std::sort(points.begin(), points.end(),
-                  [](const AutomationPoint& a, const AutomationPoint& b) {
-                      return a.beatPosition < b.beatPosition;
-                  });
+        std::ranges::sort(points, {}, &AutomationPoint::beatPosition);
     }
 
     // Sample the model's interpolation (bezier / step / tension aware) at
@@ -174,7 +169,7 @@ void AutomationClipComponent::paintMiniCurve(juce::Graphics& g, juce::Rectangle<
 
     g.saveState();
     g.reduceClipRegion(getLocalBounds());
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT).withAlpha(0xAA / 255.0f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0xAA / 255.0f));
     g.strokePath(curvePath, juce::PathStrokeType(1.5f));
     g.restoreState();
 }
@@ -417,7 +412,7 @@ AutomationLaneComponent* AutomationClipComponent::getLane() const {
     return findParentComponentOfClass<AutomationLaneComponent>();
 }
 
-bool AutomationClipComponent::copyGestureHeld() const {
+bool AutomationClipComponent::copyGestureHeld() {
     return GestureRouter::getInstance().isDuplicateOnDrag(
         GestureContext::Arrangement, juce::ModifierKeys::getCurrentModifiers());
 }
@@ -514,8 +509,7 @@ void AutomationClipComponent::automationPointDragPreview(AutomationLaneId laneId
     const auto* clip = getClipInfo();
     if (!clip || clip->laneId != laneId)
         return;
-    const bool ours = std::any_of(clip->points.begin(), clip->points.end(),
-                                  [pointId](const AutomationPoint& p) { return p.id == pointId; });
+    const bool ours = std::ranges::contains(clip->points, pointId, &AutomationPoint::id);
     if (!ours)
         return;
     previewPointId_ = pointId;

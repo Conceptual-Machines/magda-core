@@ -12,6 +12,7 @@
 #include "remote_api.hpp"
 #include "remote_audit.hpp"
 #include "remote_changes.hpp"
+#include "remote_jobs.hpp"
 
 namespace magda {
 
@@ -45,38 +46,34 @@ struct Response {
  * @brief Executes remote operations safely against `MagdaApi`.
  *
  * The single point where a transport's thread becomes a DAW mutation. Every
- * adapter — WebSocket (#1856), MCP (#1858), and any later one — routes through
- * this rather than reaching into the facade itself, so validation, revisions,
- * undo grouping, idempotency, and error mapping exist once.
+ * adapter (WebSocket, MCP, and any later one) routes through this rather
+ * than reaching into the facade itself, so validation, revisions, undo
+ * grouping, idempotency, and error mapping exist once.
  *
  * ## Threading
  *
  * `dispatch` may be called from any thread. The work splits three ways:
+ * operation lookup and JSON-schema validation on the calling thread (pure
+ * functions of the request, so a malformed request never reaches the
+ * message thread); the handler and DTO copying on the message thread
+ * (forced, since `MagdaApi` reads live model state); serializing the DTO to
+ * bytes back on the calling thread, in the adapter.
  *
- * - **Calling thread**: operation lookup and JSON-schema validation. Both are
- *   pure functions of the request, so rejecting a malformed request never
- *   reaches the message thread at all — a client sending garbage cannot cost
- *   the DAW anything.
- * - **Message thread**: the handler, and copying results into DTOs. This is
- *   forced, not chosen: `MagdaApi` reads live model state, which is
- *   message-thread-only.
- * - **Calling thread again**: serializing the DTO to bytes, in the adapter.
+ * Handlers therefore run serially -- a real throughput ceiling inherent to
+ * the engine, not this design, since a worker pool would only queue on the
+ * same thread. Deadlines and the bounded idempotency cache are the
+ * mitigation; per-client rate/concurrency limits are separate (#1860).
  *
- * Handlers therefore run serially. That is a real throughput ceiling and is
- * inherent to the engine rather than to this design — a worker pool would only
- * queue on the same thread. Deadlines and the bounded idempotency cache are the
- * mitigation; per-client rate and concurrency limits are #1860.
- *
- * Nothing here touches the audio thread, and no `MessageManagerLock` is taken:
- * the hop is always an async post, never a blocking wait.
+ * Nothing here touches the audio thread, and no `MessageManagerLock` is
+ * taken: the hop is always an async post, never a blocking wait.
  *
  * ## Lifetime
  *
- * Queued work captures a shared cancellation token rather than `this`. After
- * `shutdown()` — which the destructor calls — any lambda still in the message
- * queue observes the cancelled token and completes with `Cancelled` without
- * dereferencing the service. `projectReplaced()` does the same for work queued
- * against a project that no longer exists.
+ * Queued work captures a shared cancellation token rather than `this`.
+ * After `shutdown()` (which the destructor calls), any lambda still in the
+ * message queue observes the cancelled token and completes with
+ * `Cancelled` without dereferencing the service. `projectReplaced()` does
+ * the same for work queued against a project that no longer exists.
  */
 class RemoteApiService {
   public:
@@ -122,6 +119,9 @@ class RemoteApiService {
      * has been replaced underneath them.
      */
     void projectReplaced();
+
+    /** Coalesce manager callbacks emitted while one project is being replaced. */
+    void projectReplacementStarted();
 
     /**
      * @brief Record a committed change that did not originate from this service.
@@ -170,32 +170,43 @@ class RemoteApiService {
     ChangeSource& changes();
     const ChangeSource& changes() const;
 
+    RemoteJobManager& jobs();
+    const RemoteJobManager& jobs() const;
+    void pollSessionRecordings();
+
+    /// Release owner-scoped jobs when a transport identity goes away.
+    void clientDisconnected(const juce::String& clientId);
+
     /// Idempotency cache capacity, in completed write responses.
     void setIdempotencyCacheCapacity(std::size_t capacity);
 
     /**
      * @brief Where every dispatched request is recorded (#1860).
      *
-     * Optional and empty by default, so a test or a headless host pays nothing
-     * for it. Set once, by `RemoteApiHost`, before any transport starts.
+     * Optional and empty by default, so a test or headless host pays
+     * nothing for it. Set once, by `RemoteApiHost`, before any transport
+     * starts.
      *
-     * Shared ownership rather than a borrowed pointer, and that is not
-     * defensive: a dispatch completion carries the log and runs on the message
-     * thread, so it can still be queued when the host is destroyed and run
-     * afterwards. Declaring the log before the service only orders destruction
-     * *within* the host — it cannot help work that outlives the whole
-     * destructor. Holding a `shared_ptr` keeps the log alive for exactly as long
-     * as something might still write to it.
+     * Shared ownership rather than a borrowed pointer, not defensively: a
+     * dispatch completion carries the log and runs on the message thread,
+     * so it can still be queued when the host is destroyed and run
+     * afterwards -- declaration order in the host only protects destruction
+     * within the host, not work that outlives it, so the `shared_ptr` is
+     * what keeps the log alive for as long as something might write to it.
      *
-     * Auditing here rather than in each adapter is the same argument as
-     * enforcing scopes here: two transports would otherwise produce two
-     * differently-shaped records of the same operation, and a third would
-     * produce none until someone noticed. What the adapters do record is what
-     * this cannot see — connections opening, closing, and being refused before
-     * they became requests.
+     * Auditing here rather than in each adapter for the same reason scopes
+     * are enforced here: two transports would otherwise produce two
+     * differently-shaped records of one operation, and a third would
+     * produce none. What the adapters record instead is what this can't
+     * see -- connections opening, closing, and being refused before they
+     * became requests.
      */
     void setAuditLog(std::shared_ptr<RemoteAuditLog> log);
     std::shared_ptr<RemoteAuditLog> auditLog() const;
+
+    /// Install the message-thread diagnostic reader used by read operations.
+    void setDiagnosticsSource(std::unique_ptr<class DiagnosticsSource> source);
+    void setEngineJobSource(std::shared_ptr<class EngineJobSource> source);
 
   private:
     struct CachedResponse {
@@ -206,17 +217,17 @@ class RemoteApiService {
     /**
      * @brief Shared gate between queued work and the service's lifetime.
      *
-     * A queued job holds a `shared_ptr` to this, never a bare `this`. It takes
-     * `mutex` and re-reads `service`: non-null means the service is alive and
-     * stays alive for the duration, because `shutdown()` clears the pointer
-     * under the same lock and therefore cannot complete while a job is running.
-     * A raw `this` guarded by a separate flag would leave a window between
-     * observing the flag and dereferencing the pointer.
+     * A queued job holds a `shared_ptr` to this, never a bare `this`. It
+     * takes `mutex` and re-reads `service`: non-null means the service is
+     * alive and stays alive for the duration, since `shutdown()` clears the
+     * pointer under the same lock and can't complete while a job is
+     * running. A raw `this` guarded by a separate flag would leave a window
+     * between observing the flag and dereferencing the pointer.
      *
-     * The same lock serializes execution. On a host with a message thread that
-     * is nearly free — handlers already run only there. On a headless host,
-     * where `dispatch` runs inline on the caller's thread, it is what preserves
-     * the one-handler-at-a-time guarantee that the model requires.
+     * The same lock serializes execution. Nearly free on a host with a
+     * message thread, where handlers already run only there; on a headless
+     * host, where `dispatch` runs inline on the caller's thread, it's what
+     * preserves the one-handler-at-a-time guarantee the model requires.
      */
     struct ExecutionState {
         std::mutex mutex;
@@ -255,9 +266,12 @@ class RemoteApiService {
 
     MagdaApi& api_;
     ChangeSource changes_;
-
-    std::atomic<Revision> revision_{INITIAL_REVISION};
+    std::shared_ptr<RemoteJobManager> jobs_ = std::make_shared<RemoteJobManager>();
+    std::shared_ptr<class RemoteSessionRecordings> sessionRecordings_;
+    std::shared_ptr<std::atomic<Revision>> revision_ =
+        std::make_shared<std::atomic<Revision>>(INITIAL_REVISION);
     std::atomic<bool> shutdown_{false};
+    std::atomic<bool> projectReplacementInProgress_{false};
 
     /// Retired on shutdown and replaced on project swap, so work queued against
     /// the outgoing project cannot run against the incoming one.
@@ -273,7 +287,7 @@ class RemoteApiService {
      * suppresses exactly those re-entrant callbacks and leaves genuine
      * concurrent UI edits alone.
      */
-    std::atomic<std::thread::id> executingThread_{};
+    std::atomic<std::thread::id> executingThread_;
 
     mutable std::mutex cacheMutex_;
     std::vector<CachedResponse> cache_;
@@ -284,6 +298,8 @@ class RemoteApiService {
     /// reader takes an owning copy, which an atomic pointer cannot give it.
     mutable std::mutex auditMutex_;
     std::shared_ptr<RemoteAuditLog> audit_;
+    std::unique_ptr<class DiagnosticsSource> diagnostics_;
+    std::shared_ptr<class EngineJobSource> engineJobs_;
 };
 
 }  // namespace remote

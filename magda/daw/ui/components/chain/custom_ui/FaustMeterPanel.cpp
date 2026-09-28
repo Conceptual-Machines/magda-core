@@ -2,7 +2,7 @@
 
 #include <cmath>
 
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
@@ -33,7 +33,7 @@ MeterWidget::MeterWidget() {
     nameLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
     valueFont_ = FontManager::getInstance().getUIFont(11.0f);
     nameLabel_.setJustificationType(juce::Justification::centredLeft);
-    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     nameLabel_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(nameLabel_);
 }
@@ -124,7 +124,7 @@ void MeterWidget::paint(juce::Graphics& g) {
     g.setFont(valueFont_);
 
     if (info_.style == magda::MeterStyle::Numerical) {
-        g.setColour(DarkTheme::getTextColour());
+        g.setColour(ActiveTheme::getTextColour());
         g.drawText(formattedValue(), readout, juce::Justification::centred, false);
         return;
     }
@@ -136,11 +136,11 @@ void MeterWidget::paint(juce::Graphics& g) {
             return;
         const auto lamp =
             juce::Rectangle<float>(diameter, diameter).withCentre(readout.toFloat().getCentre());
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.6f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.6f));
         g.drawEllipse(lamp, 1.0f);
         // Brightness tracks the value rather than switching at a threshold, so
         // a bargraph reporting a continuous quantity still reads as one.
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE)
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE)
                         .withAlpha(juce::jmax(0.08f, normalized())));
         g.fillEllipse(lamp.reduced(1.5f));
         return;
@@ -160,7 +160,7 @@ void MeterWidget::paint(juce::Graphics& g) {
         // The figure sits under a vertical bar rather than over it: a column
         // narrow enough to read as a level is too narrow to hold the text.
         auto textRow = track.removeFromBottom(juce::jmin(kVerticalValueHeight, track.getHeight()));
-        g.setColour(DarkTheme::getTextColour());
+        g.setColour(ActiveTheme::getTextColour());
         g.drawText(formattedValue(), textRow, juce::Justification::centred, false);
         track = track.withSizeKeepingCentre(juce::jmin(kVerticalBarWidth, track.getWidth()),
                                             juce::jmax(0, track.getHeight() - 2));
@@ -169,7 +169,7 @@ void MeterWidget::paint(juce::Graphics& g) {
         return;
 
     const auto trackF = track.toFloat();
-    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
     g.fillRoundedRectangle(trackF, 2.0f);
 
     // Vertical fills bottom-up, which is the only direction a level reads in.
@@ -180,15 +180,15 @@ void MeterWidget::paint(juce::Graphics& g) {
             : juce::Rectangle<float>(trackF.getX() + trackF.getWidth() * from, trackF.getY(),
                                      trackF.getWidth() * (to - from), trackF.getHeight());
     if (juce::jmax(fill.getWidth(), fill.getHeight()) > 0.5f) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.55f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(0.55f));
         g.fillRoundedRectangle(fill, 2.0f);
     }
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.5f));
     g.drawRoundedRectangle(trackF, 2.0f, 1.0f);
 
     if (!info_.vertical) {
-        g.setColour(DarkTheme::getTextColour());
+        g.setColour(ActiveTheme::getTextColour());
         g.drawText(formattedValue(), readout.reduced(3, 0), juce::Justification::centredRight,
                    false);
     }
@@ -239,7 +239,7 @@ void FaustMeterPanel::bindSources() {
 void FaustMeterPanel::paint(juce::Graphics& g) {
     // Rule between the controls and the readouts, matching the one FaustUI
     // draws between its header and credit strip, so the body reads as bands.
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawHorizontalLine(0, 0.0f, static_cast<float>(getWidth()));
 }
 

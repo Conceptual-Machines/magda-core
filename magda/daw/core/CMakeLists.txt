@@ -5,7 +5,10 @@
 target_sources(magda_daw PRIVATE
     Config.cpp
     AppPaths.cpp
+    UserAlert.cpp
     ChainNodePath.cpp
+    DeviceInfo.cpp
+    DrumGridPads.cpp
     ControlTarget.cpp
     MixerStripOrder.cpp
     UIScale.cpp
@@ -15,9 +18,13 @@ target_sources(magda_daw PRIVATE
     LLMClientProvider.cpp
     MixAnalysisService.cpp
     SessionViewState.cpp
+    PluginParameterConfigStore.cpp
+    OpenProjectAddressing.cpp
+    ReferenceImpact.cpp
     TrackManager.cpp
     TrackManagerModulation.cpp
     TrackManagerDevices.cpp
+    TrackManagerPads.cpp
     ModulatorEngine.cpp
     ClipManager.cpp
     SourcePool.cpp
@@ -30,12 +37,17 @@ target_sources(magda_daw PRIVATE
     GestureRouter.cpp
     AutomationInfo.cpp
     AutomationManager.cpp
+    TempoLane.cpp
     LinkModeManager.cpp
     GainStagingManager.cpp
     UndoManager.cpp
     ClipPropertyCommands.cpp
     WarpMarkerCommands.cpp
+    DeviceStateCommands.cpp
+    StepPatternState.cpp
+    StepPatternCommands.cpp
     TrackCommands.cpp
+    PadCommands.cpp
     TrackPropertyCommands.cpp
     AutomationCommands.cpp
     ClipLaneFlattener.cpp
@@ -45,9 +57,12 @@ target_sources(magda_daw PRIVATE
     ParameterDetector.cpp
     PresetManager.cpp
     DrumkitManager.cpp
+    GrooveStore.cpp
     DeviceCatalogMetadata.cpp
     LegacyDeviceAliases.cpp
     DeviceParamMigrations.cpp
+    PadPathMigration.cpp
+    ChainPlacement.cpp
     PluginPreferences.cpp
     PluginCapabilities.cpp
     PluginPresetScanner.cpp
@@ -74,6 +89,9 @@ target_sources(magda_daw PRIVATE
     controllers/ControllerProfileRegistry.cpp
     controllers/MidiLearnCoordinator.cpp
     # Headers (listed for IDE visibility)
+    OpenProjectAddressing.hpp
+    ReferenceImpact.hpp
+    RangesHelpers.hpp
     Config.hpp
     GridDivision.hpp
     AppPaths.hpp
@@ -107,6 +125,7 @@ target_sources(magda_daw PRIVATE
     ClipPropertyCommands.hpp
     WarpMarkerCommands.hpp
     TrackCommands.hpp
+    PadCommands.hpp
     TrackPropertyCommands.hpp
     AutomationCommands.hpp
     MidiNoteCommands.hpp
@@ -118,6 +137,7 @@ target_sources(magda_daw PRIVATE
     AutomationManager.hpp
     PresetManager.hpp
     DrumkitManager.hpp
+    GrooveStore.hpp
     DeviceCatalogMetadata.hpp
     LegacyDeviceAliases.hpp
     PluginPreferences.hpp

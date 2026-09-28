@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <utility>
 
 #include "core/ChainNodePath.hpp"
 #include "core/ControlTarget.hpp"
@@ -42,8 +43,8 @@ inline void updateDeviceLinkMacroPanel(const DeviceLinkCallbackContext& context)
 }
 
 template <typename LinkTarget>
-void wireDeviceModMacroLinkCallbacks(LinkTarget& target, DeviceLinkCallbackContext context) {
-    target.onModLinkedWithAmount = [context](int modIndex, magda::ControlTarget target,
+void wireDeviceModMacroLinkCallbacks(LinkTarget& target, const DeviceLinkCallbackContext& context) {
+    target.onModLinkedWithAmount = [context](int modIndex, const magda::ControlTarget& target,
                                              float amount) {
         auto nodePath = currentDeviceLinkNodePath(context);
         auto activeModSelection = magda::LinkModeManager::getInstance().getModInLinkMode();
@@ -73,7 +74,7 @@ void wireDeviceModMacroLinkCallbacks(LinkTarget& target, DeviceLinkCallbackConte
 
     target.onModUnlinked = [context](int modIndex, magda::ControlTarget target) {
         const auto nodePath = currentDeviceLinkNodePath(context);
-        magda::TrackManager::getInstance().removeModLink(nodePath, modIndex, target);
+        magda::TrackManager::getInstance().removeModLink(nodePath, modIndex, std::move(target));
         updateDeviceLinkParamModulation(context);
         updateDeviceLinkModsPanel(context);
     };
@@ -81,7 +82,7 @@ void wireDeviceModMacroLinkCallbacks(LinkTarget& target, DeviceLinkCallbackConte
     target.onRackModUnlinked = [context](int modIndex, magda::ControlTarget target) {
         auto rackPath = nearestRackPathForDevicePath(currentDeviceLinkNodePath(context));
         if (rackPath.isValid())
-            magda::TrackManager::getInstance().removeModLink(rackPath, modIndex, target);
+            magda::TrackManager::getInstance().removeModLink(rackPath, modIndex, std::move(target));
         updateDeviceLinkParamModulation(context);
         updateDeviceLinkModsPanel(context);
     };
@@ -91,12 +92,13 @@ void wireDeviceModMacroLinkCallbacks(LinkTarget& target, DeviceLinkCallbackConte
         auto trackId = nodePath.trackId;
         if (trackId != magda::INVALID_TRACK_ID)
             magda::TrackManager::getInstance().removeModLink(
-                magda::ChainNodePath::trackLevel(trackId), modIndex, target);
+                magda::ChainNodePath::trackLevel(trackId), modIndex, std::move(target));
         updateDeviceLinkParamModulation(context);
         updateDeviceLinkModsPanel(context);
     };
 
-    target.onModAmountChanged = [context](int modIndex, magda::ControlTarget target, float amount) {
+    target.onModAmountChanged = [context](int modIndex, const magda::ControlTarget& target,
+                                          float amount) {
         auto nodePath = currentDeviceLinkNodePath(context);
         auto activeModSelection = magda::LinkModeManager::getInstance().getModInLinkMode();
         if (activeModSelection.isValid() && activeModSelection.parentPath == nodePath) {
@@ -115,7 +117,7 @@ void wireDeviceModMacroLinkCallbacks(LinkTarget& target, DeviceLinkCallbackConte
         updateDeviceLinkParamModulation(context);
     };
 
-    target.onMacroLinkedWithAmount = [context](int macroIndex, magda::ControlTarget target,
+    target.onMacroLinkedWithAmount = [context](int macroIndex, const magda::ControlTarget& target,
                                                float amount) {
         auto nodePath = currentDeviceLinkNodePath(context);
         auto activeMacroSelection = magda::LinkModeManager::getInstance().getMacroInLinkMode();
@@ -142,7 +144,7 @@ void wireDeviceModMacroLinkCallbacks(LinkTarget& target, DeviceLinkCallbackConte
         updateDeviceLinkParamModulation(context);
     };
 
-    target.onMacroLinked = [context](int macroIndex, magda::ControlTarget target) {
+    target.onMacroLinked = [context](int macroIndex, const magda::ControlTarget& target) {
         if (context.onMacroTargetChanged)
             context.onMacroTargetChanged(macroIndex, target);
 
@@ -160,7 +162,7 @@ void wireDeviceModMacroLinkCallbacks(LinkTarget& target, DeviceLinkCallbackConte
 
     target.onMacroUnlinked = [context](int macroIndex, magda::ControlTarget target) {
         magda::TrackManager::getInstance().removeMacroLink(currentDeviceLinkNodePath(context),
-                                                           macroIndex, target);
+                                                           macroIndex, std::move(target));
         updateDeviceLinkParamModulation(context);
         updateDeviceLinkMacroPanel(context);
     };
@@ -170,7 +172,7 @@ void wireDeviceModMacroLinkCallbacks(LinkTarget& target, DeviceLinkCallbackConte
         auto trackId = nodePath.trackId;
         if (trackId != magda::INVALID_TRACK_ID)
             magda::TrackManager::getInstance().removeMacroLink(
-                magda::ChainNodePath::trackLevel(trackId), macroIndex, target);
+                magda::ChainNodePath::trackLevel(trackId), macroIndex, std::move(target));
         updateDeviceLinkParamModulation(context);
         updateDeviceLinkMacroPanel(context);
     };
@@ -178,7 +180,8 @@ void wireDeviceModMacroLinkCallbacks(LinkTarget& target, DeviceLinkCallbackConte
     target.onRackMacroLinked = [context](int macroIndex, magda::ControlTarget target) {
         auto rackPath = nearestRackPathForDevicePath(currentDeviceLinkNodePath(context));
         if (rackPath.isValid())
-            magda::TrackManager::getInstance().setMacroTarget(rackPath, macroIndex, target);
+            magda::TrackManager::getInstance().setMacroTarget(rackPath, macroIndex,
+                                                              std::move(target));
         updateDeviceLinkParamModulation(context);
     };
 
@@ -187,19 +190,20 @@ void wireDeviceModMacroLinkCallbacks(LinkTarget& target, DeviceLinkCallbackConte
         auto trackId = nodePath.trackId;
         if (trackId != magda::INVALID_TRACK_ID)
             magda::TrackManager::getInstance().setMacroTarget(
-                magda::ChainNodePath::trackLevel(trackId), macroIndex, target);
+                magda::ChainNodePath::trackLevel(trackId), macroIndex, std::move(target));
         updateDeviceLinkParamModulation(context);
     };
 
     target.onRackMacroUnlinked = [context](int macroIndex, magda::ControlTarget target) {
         auto rackPath = nearestRackPathForDevicePath(currentDeviceLinkNodePath(context));
         if (rackPath.isValid())
-            magda::TrackManager::getInstance().removeMacroLink(rackPath, macroIndex, target);
+            magda::TrackManager::getInstance().removeMacroLink(rackPath, macroIndex,
+                                                               std::move(target));
         updateDeviceLinkParamModulation(context);
         updateDeviceLinkMacroPanel(context);
     };
 
-    target.onMacroAmountChanged = [context](int macroIndex, magda::ControlTarget target,
+    target.onMacroAmountChanged = [context](int macroIndex, const magda::ControlTarget& target,
                                             float amount) {
         auto nodePath = currentDeviceLinkNodePath(context);
         auto activeMacroSelection = magda::LinkModeManager::getInstance().getMacroInLinkMode();

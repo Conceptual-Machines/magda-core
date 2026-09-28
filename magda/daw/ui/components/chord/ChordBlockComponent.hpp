@@ -20,7 +20,7 @@ namespace magda::daw::ui {
  */
 class ChordBlockComponent : public juce::Component {
   public:
-    explicit ChordBlockComponent(const magda::music::Chord& chord);
+    explicit ChordBlockComponent(magda::music::Chord chord);
 
     void paint(juce::Graphics& g) override;
     void mouseDown(const juce::MouseEvent& e) override;

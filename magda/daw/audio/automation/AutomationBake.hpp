@@ -34,4 +34,30 @@ void bakeLaneIntoCurve(te::AutomationCurve& curve, const AutomationLaneInfo& lan
                        const std::function<double(double)>& valueAtBeat,
                        const std::function<float(double)>& toParameterValue);
 
+/**
+ * @brief MAGDA's normalised 0..1 to what @p param stores, for @p target.
+ *
+ * The `toParameterValue` above, built once for a lane. Here beside the bake for
+ * the same reason the bake is here: the playback engine and the null-diff
+ * corpus both write a lane into a Tracktion curve, and a second conversion
+ * written for the corpus would be a corpus that agrees with itself about what a
+ * lane means. A device parameter's mapping is not a formula anybody would
+ * reproduce by reading the other one -- an internal plugin on a 0..1 native
+ * range with a display scale over it, an external one whose detected display
+ * range is not its native one, and a macro that is 0..1 on both sides all take
+ * a different branch.
+ *
+ * Built rather than called per point on purpose. Resolving the target's
+ * ParameterInfo walks the track and rack tree and copies choices, value tables
+ * and shared pointers; doing that inside the loop is enough to stall play and
+ * stop on any edit with automation on a plugin parameter.
+ *
+ * @param target  what the lane plays over
+ * @param param   the Tracktion parameter it resolves to, or null where the
+ *                target has none; used only for its own range, as a last
+ *                resort for a parameter whose info carries none
+ */
+std::function<float(double)> makeParameterValueConverter(const AutomationTarget& target,
+                                                         te::AutomatableParameter* param);
+
 }  // namespace magda

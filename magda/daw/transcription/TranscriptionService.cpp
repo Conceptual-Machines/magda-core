@@ -149,8 +149,12 @@ bool TranscriptionService::isAvailable() {
 }
 
 void TranscriptionService::transcribeAudioClip(ClipId sourceClipId, Completion onComplete) {
-    auto fail = [onComplete = std::move(onComplete)](const juce::String& msg) mutable {
-        auto cb = std::move(onComplete);
+    // Shared so the failure path and the pool job draw on the same callback:
+    // moving it into `fail` left the success path below with an empty one.
+    auto completion = std::make_shared<Completion>(std::move(onComplete));
+
+    auto fail = [completion](const juce::String& msg) {
+        auto cb = std::move(*completion);
         juce::MessageManager::callAsync([cb = std::move(cb), msg]() mutable {
             if (cb)
                 cb(INVALID_CLIP_ID, msg);
@@ -177,16 +181,14 @@ void TranscriptionService::transcribeAudioClip(ClipId sourceClipId, Completion o
     const juce::String sourceName = juce::File(filePath).getFileNameWithoutExtension();
     const TrackId sourceTrackId = clip->trackId;
     const ClipView view = clip->view;
+    const int sceneIndex = clip->sceneIndex;
     const double startBeat = clip->placement.startBeat;
     const double lengthBeats = clip->placement.lengthBeats;
     const double offsetSec = audioEventRef(*clip).anchorSeconds();
     const double bpm = projectBpm();
 
-    // onComplete needs to survive the lambda copy into the pool.
-    auto completion = std::make_shared<Completion>(std::move(onComplete));
-
-    pool_->addJob([this, filePath, sourceName, sourceTrackId, view, startBeat, lengthBeats,
-                   offsetSec, bpm, completion]() {
+    pool_->addJob([this, filePath, sourceName, sourceTrackId, view, sceneIndex, startBeat,
+                   lengthBeats, offsetSec, bpm, completion]() {
         int sampleRate = 0;
         std::vector<float> mono = decodeMono(filePath, sampleRate);
 
@@ -198,7 +200,7 @@ void TranscriptionService::transcribeAudioClip(ClipId sourceClipId, Completion o
         }
 
         juce::MessageManager::callAsync([notes = std::move(notes), sourceName, sourceTrackId, view,
-                                         startBeat, lengthBeats, offsetSec, bpm,
+                                         sceneIndex, startBeat, lengthBeats, offsetSec, bpm,
                                          completion]() mutable {
             auto report = [&](ClipId id, const juce::String& err) {
                 if (completion && *completion)
@@ -252,7 +254,7 @@ void TranscriptionService::transcribeAudioClip(ClipId sourceClipId, Completion o
 
             auto trackCmd = std::make_unique<magda::CreateTrackWithDeviceCommand>(
                 sourceName.isNotEmpty() ? sourceName : juce::String("Transcription"),
-                TrackType::Audio, makeFourOscDevice());
+                TrackType::Media, makeFourOscDevice());
             auto* trackPtr = trackCmd.get();
             magda::UndoManager::getInstance().executeCommand(std::move(trackCmd));
             const TrackId newTrackId = trackPtr->getCreatedTrackId();
@@ -272,7 +274,7 @@ void TranscriptionService::transcribeAudioClip(ClipId sourceClipId, Completion o
 
             auto createCmd = std::make_unique<magda::CreateClipCommand>(
                 ClipType::MIDI, newTrackId, BeatPosition{startBeat}, BeatDuration{lengthBeats},
-                juce::String(), view, bpm);
+                juce::String(), view, ClipOverlapPolicy::PreserveExisting, sceneIndex);
             auto* createPtr = createCmd.get();
             magda::UndoManager::getInstance().executeCommand(std::move(createCmd));
             const ClipId newClipId = createPtr->getCreatedClipId();

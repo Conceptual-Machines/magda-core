@@ -8,19 +8,6 @@
 namespace magda::engine {
 namespace {
 
-/// Producer ops an op waits on, each counted once however many slots it feeds.
-std::vector<OpId> distinctProducers(const PlanOp& op) {
-    std::vector<OpId> producers;
-    producers.reserve(op.inputs.size());
-    for (const auto& input : op.inputs) {
-        if (!input.valid())
-            continue;
-        if (std::ranges::find(producers, input.op) == producers.end())
-            producers.push_back(input.op);
-    }
-    return producers;
-}
-
 /// A set of ops, one bit each.
 class OpSet {
   public:
@@ -105,8 +92,20 @@ std::optional<std::size_t> inPlaceInputOf(const PlanOp& op) {
         case OpKind::ClipMidi:
         case OpKind::AudioInput:
         case OpKind::MidiInput:
+        case OpKind::SessionMidi:
         case OpKind::MergeMidi:
+        case OpKind::MidiNoteGate:
+        case OpKind::ModSource:
         case OpKind::Output:
+        // An insert's send writes nothing, and its return writes what came back
+        // rather than what it was handed, so neither has an input to write over.
+        case OpKind::InsertSend:
+        case OpKind::InsertReturn:
+        // A feedback carry is the same shape, a block apart instead of a cable
+        // apart: the send writes into storage and the return reads what was
+        // there before this block started.
+        case OpKind::FeedbackSend:
+        case OpKind::FeedbackReturn:
             return std::nullopt;
     }
 
@@ -133,7 +132,7 @@ PlanLatency resolvePlanLatency(const RenderPlan& plan, const std::vector<int>& p
     resolved.portLatency.assign(static_cast<std::size_t>(portOffsets.back()), 0);
 
     const auto flat = [&portOffsets](const PortRef& ref) {
-        return static_cast<std::size_t>(portOffsets[static_cast<std::size_t>(ref.op)] + ref.port);
+        return static_cast<std::size_t>(portOffsets[static_cast<std::size_t>(ref.op)]) + ref.port;
     };
 
     // What an input carries before its delay compensates anything. A delay op
@@ -179,7 +178,9 @@ PlanLatency resolvePlanLatency(const RenderPlan& plan, const std::vector<int>& p
         const auto produced =
             op.kind == OpKind::Crossfade && op.inputs.size() > 1 && op.inputs[1].valid()
                 ? arriving(op.inputs[1])
-                : target + (op.kind == OpKind::Device ? std::max(0, deviceLatency[i]) : 0);
+                : target + (op.kind == OpKind::Device || op.kind == OpKind::InsertReturn
+                                ? std::max(0, deviceLatency[i])
+                                : 0);
         for (std::size_t port = 0; port < op.outputs.size(); ++port)
             resolved.portLatency[static_cast<std::size_t>(portOffsets[i]) + port] = produced;
 
@@ -202,7 +203,7 @@ BufferLayout assignBuffers(const RenderPlan& plan, const std::vector<int>& portO
     layout.elided.assign(numOps, 0);
 
     const auto flat = [&portOffsets](const PortRef& ref) {
-        return static_cast<std::size_t>(portOffsets[static_cast<std::size_t>(ref.op)] + ref.port);
+        return static_cast<std::size_t>(portOffsets[static_cast<std::size_t>(ref.op)]) + ref.port;
     };
 
     // A delay holding no samples writes exactly what it read, so its output is

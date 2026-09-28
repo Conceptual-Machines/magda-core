@@ -2,8 +2,10 @@
 
 #include <BinaryData.h>
 
+#include <algorithm>
 #include <cmath>
 #include <thread>
+#include <utility>
 
 #include "../../../../agents/gain_staging_agent.hpp"
 #include "../../components/chain/ChainNodePathDrag.hpp"
@@ -13,7 +15,7 @@
 #include "../../debug/DebugSettings.hpp"
 #include "../../dialogs/ChainTreeDialog.hpp"
 #include "../../dialogs/GainStagingDialog.hpp"
-#include "../../themes/DarkTheme.hpp"
+#include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/MixerMetrics.hpp"
 #include "../../themes/SmallButtonLookAndFeel.hpp"
@@ -30,6 +32,7 @@
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
+#include "engine/PluginService.hpp"
 #include "ui/components/chain/DeviceSlotComponent.hpp"
 #include "ui/components/chain/NodeComponent.hpp"
 #include "ui/components/chain/RackComponent.hpp"
@@ -84,7 +87,7 @@ std::vector<magda::ChainNodePath> dragObjectToChainNodePaths(const juce::Dynamic
 }
 
 juce::Colour analysisToggleAccent(ColourRole role) {
-    const auto accent = DarkTheme::getColour(role);
+    const auto accent = ActiveTheme::getColour(role);
     if (ThemeManager::isLightTheme())
         return accent.withMultipliedSaturation(1.15f).darker(0.10f);
 
@@ -93,12 +96,12 @@ juce::Colour analysisToggleAccent(ColourRole role) {
 
 void applyAnalysisToggleTheme(magda::SvgButton& button, juce::Colour activeColour) {
     const bool light = ThemeManager::isLightTheme();
-    button.setNormalColor(DarkTheme::getSecondaryTextColour());
-    button.setHoverColor(DarkTheme::getTextColour());
+    button.setNormalColor(ActiveTheme::getSecondaryTextColour());
+    button.setHoverColor(ActiveTheme::getTextColour());
     button.setActiveColor(light ? activeColour.darker(0.12f) : juce::Colours::white.darker(0.18f));
     button.setActiveBackgroundColor(activeColour.withAlpha(light ? 0.10f : 0.20f));
     button.setActiveBorderColor(activeColour);
-    button.setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    button.setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
 }
 }  // namespace
 
@@ -112,13 +115,13 @@ class GainMeterComponent : public juce::Component,
     GainMeterComponent() {
         // Editable label for dB value
         dbLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-        dbLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        dbLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
         dbLabel_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
         dbLabel_.setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
         dbLabel_.setColour(juce::Label::outlineWhenEditingColourId,
-                           DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                           ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         dbLabel_.setColour(juce::Label::backgroundWhenEditingColourId,
-                           DarkTheme::getColour(DarkTheme::BACKGROUND));
+                           ActiveTheme::getColour(ActiveTheme::BACKGROUND));
         dbLabel_.setJustificationType(juce::Justification::centred);
         dbLabel_.setEditable(false, true, false);  // Single-click to edit
         dbLabel_.addListener(this);
@@ -163,7 +166,7 @@ class GainMeterComponent : public juce::Component,
         auto meterArea = bounds.removeFromTop(bounds.getHeight() - 14).reduced(2);
 
         // Background
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
         g.fillRoundedRectangle(meterArea.toFloat(), 2.0f);
 
         // Meter fill (from bottom up)
@@ -171,19 +174,19 @@ class GainMeterComponent : public juce::Component,
         auto fillArea = meterArea.removeFromBottom(static_cast<int>(fillHeight));
 
         // Gradient from green (low) to yellow to red (high)
-        juce::ColourGradient gradient(DarkTheme::getColour(DarkTheme::GAIN_METER_LOW), 0.0f,
+        juce::ColourGradient gradient(ActiveTheme::getColour(ActiveTheme::GAIN_METER_LOW), 0.0f,
                                       static_cast<float>(meterArea.getBottom()),
-                                      DarkTheme::getColour(DarkTheme::GAIN_METER_HIGH), 0.0f,
+                                      ActiveTheme::getColour(ActiveTheme::GAIN_METER_HIGH), 0.0f,
                                       static_cast<float>(meterArea.getY()), false);
-        gradient.addColour(0.7, DarkTheme::getColour(DarkTheme::GAIN_METER_WARNING));
+        gradient.addColour(0.7, ActiveTheme::getColour(ActiveTheme::GAIN_METER_WARNING));
         g.setGradientFill(gradient);
         g.fillRect(fillArea);
 
         // Gain position indicator (horizontal line)
-        float gainNormalized = static_cast<float>((gainDb_ + 60.0) / 66.0);  // -60 to +6 dB
+        auto gainNormalized = static_cast<float>((gainDb_ + 60.0) / 66.0);  // -60 to +6 dB
         int gainY =
             meterArea.getY() + static_cast<int>((1.0f - gainNormalized) * meterArea.getHeight());
-        g.setColour(DarkTheme::getTextColour());
+        g.setColour(ActiveTheme::getTextColour());
         g.drawHorizontalLine(gainY, static_cast<float>(meterArea.getX()),
                              static_cast<float>(meterArea.getRight()));
 
@@ -202,7 +205,7 @@ class GainMeterComponent : public juce::Component,
         g.fillPath(triangle);
 
         // Border
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         auto fullMeterArea = getLocalBounds().removeFromTop(getHeight() - 14).reduced(2);
         g.drawRoundedRectangle(fullMeterArea.toFloat(), 2.0f, 1.0f);
     }
@@ -304,7 +307,7 @@ class DeviceButtonLookAndFeel : public juce::LookAndFeel_V4 {
         g.setColour(baseColour);
         g.fillRoundedRectangle(bounds, cornerRadius);
 
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRoundedRectangle(bounds, cornerRadius, 1.0f);
     }
 
@@ -394,11 +397,11 @@ class TrackChainContent::ChainContainer : public juce::Component,
         const bool appendHighlighted =
             owner_.dragInsertIndex_ == static_cast<int>(owner_.nodeComponents_.size()) ||
             owner_.dropInsertIndex_ == static_cast<int>(owner_.nodeComponents_.size());
-        auto appendColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)
+        auto appendColour = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)
                                 .withAlpha(appendHighlighted ? 0.18f : 0.06f);
         g.setColour(appendColour);
         g.fillRoundedRectangle(appendZone.reduced(6, 10).toFloat(), 4.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY)
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)
                         .withAlpha(appendHighlighted ? 0.75f : 0.24f));
         g.drawRoundedRectangle(appendZone.reduced(6, 10).toFloat(), 4.0f, 1.0f);
 
@@ -407,7 +410,7 @@ class TrackChainContent::ChainContainer : public juce::Component,
             int indicatorIndex =
                 owner_.dragInsertIndex_ >= 0 ? owner_.dragInsertIndex_ : owner_.dropInsertIndex_;
             int indicatorX = owner_.calculateIndicatorX(indicatorIndex);
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
             g.fillRect(indicatorX - 2, 0, 4, getHeight());
         }
 
@@ -631,12 +634,8 @@ class TrackChainContent::ChainContainer : public juce::Component,
     }
 
     static bool anyDroppablePreset(const juce::StringArray& files) {
-        for (const auto& f : files) {
-            if (isDroppablePreset(f)) {
-                return true;
-            }
-        }
-        return false;
+        const auto isPreset = [](const auto& f) { return isDroppablePreset(f); };
+        return std::ranges::any_of(files, isPreset);
     }
 
     // Load each dropped preset onto the selected track: chain presets replace
@@ -764,9 +763,10 @@ TrackChainContent::TrackChainContent()
     addAndMakeVisible(*chainViewport_);
 
     addDeviceButton_.setButtonText("+");
-    addDeviceButton_.setColour(juce::TextButton::buttonColourId,
-                               DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.24f));
-    addDeviceButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+    addDeviceButton_.setColour(
+        juce::TextButton::buttonColourId,
+        ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.24f));
+    addDeviceButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
     addDeviceButton_.onClick = [this]() { onAddDeviceClicked(); };
     addDeviceButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     chainContainer_->addAndMakeVisible(addDeviceButton_);
@@ -775,7 +775,7 @@ TrackChainContent::TrackChainContent()
     noSelectionLabel_.setText("Select a track to view its signal chain",
                               juce::dontSendNotification);
     noSelectionLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
-    noSelectionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    noSelectionLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     noSelectionLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(noSelectionLabel_);
 
@@ -786,10 +786,11 @@ TrackChainContent::TrackChainContent()
                                                            BinaryData::iconmodsboldm_svgSize);
     globalModsButton_->setClickingTogglesState(true);
     globalModsButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    globalModsButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+    globalModsButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
     globalModsButton_->setActiveColor(juce::Colours::white);
-    globalModsButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
-    globalModsButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    globalModsButton_->setActiveBackgroundColor(
+        ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
+    globalModsButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     globalModsButton_->onClick = [this]() {
         globalModsButton_->setActive(globalModsButton_->getToggleState());
         globalModsVisible_ = globalModsButton_->getToggleState();
@@ -810,10 +811,10 @@ TrackChainContent::TrackChainContent()
         std::make_unique<magda::SvgButton>("Macro", BinaryData::knob_svg, BinaryData::knob_svgSize);
     macroButton_->setClickingTogglesState(true);
     macroButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    macroButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+    macroButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
     macroButton_->setActiveColor(juce::Colours::white);
-    macroButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
-    macroButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    macroButton_->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
+    macroButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     macroButton_->onClick = [this]() {
         macroButton_->setActive(macroButton_->getToggleState());
         globalMacrosVisible_ = macroButton_->getToggleState();
@@ -833,9 +834,10 @@ TrackChainContent::TrackChainContent()
     addRackButton_ = std::make_unique<magda::SvgButton>("Rack", BinaryData::iconracksboldm_svg,
                                                         BinaryData::iconracksboldm_svgSize);
     addRackButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));  // Match SVG fill color
-    addRackButton_->setNormalColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
-    addRackButton_->setHoverColor(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).brighter(0.2f));
-    addRackButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    addRackButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+    addRackButton_->setHoverColor(
+        ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).brighter(0.2f));
+    addRackButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     addRackButton_->onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             magda::TrackManager::getInstance().addRackToTrack(selectedTrackId_);
@@ -847,9 +849,9 @@ TrackChainContent::TrackChainContent()
     treeViewButton_ = std::make_unique<magda::SvgButton>("Tree", BinaryData::icontreeviewboldm_svg,
                                                          BinaryData::icontreeviewboldm_svgSize);
     treeViewButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    treeViewButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-    treeViewButton_->setHoverColor(DarkTheme::getTextColour());
-    treeViewButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    treeViewButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
+    treeViewButton_->setHoverColor(ActiveTheme::getTextColour());
+    treeViewButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     treeViewButton_->onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             magda::ChainTreeDialog::show(selectedTrackId_);
@@ -864,9 +866,9 @@ TrackChainContent::TrackChainContent()
         std::make_unique<magda::SvgButton>("Presets", BinaryData::iconpresetsroundboldm_svg,
                                            BinaryData::iconpresetsroundboldm_svgSize);
     presetButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    presetButton_->setNormalColor(DarkTheme::getColour(DarkTheme::PRESET_INDIGO));
-    presetButton_->setHoverColor(DarkTheme::getColour(DarkTheme::PRESET_INDIGO).brighter(0.2f));
-    presetButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    presetButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::PRESET_INDIGO));
+    presetButton_->setHoverColor(ActiveTheme::getColour(ActiveTheme::PRESET_INDIGO).brighter(0.2f));
+    presetButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     presetButton_->setTooltip("MAGDA Track Presets");
     presetButton_->onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID)
@@ -881,10 +883,10 @@ TrackChainContent::TrackChainContent()
     // (the SVG uses currentColor).
     gainStagingButton_ = std::make_unique<magda::SvgButton>(
         "GainStaging", BinaryData::gainstaging_svg, BinaryData::gainstaging_svgSize);
-    gainStagingButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-    gainStagingButton_->setHoverColor(DarkTheme::getTextColour());
+    gainStagingButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
+    gainStagingButton_->setHoverColor(ActiveTheme::getTextColour());
     gainStagingButton_->setActiveColor(juce::Colours::white.darker(0.18f));
-    gainStagingButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    gainStagingButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     gainStagingButton_->onClick = [this]() {
         if (selectedTrackId_ == magda::INVALID_TRACK_ID || aiProcessing_)
             return;
@@ -934,21 +936,22 @@ TrackChainContent::TrackChainContent()
     };
     setupAnalysisToggle(oscToggleButton_, "Oscilloscope", BinaryData::oscilloscope3_svg,
                         BinaryData::oscilloscope3_svgSize, "Oscilloscope (post-FX)", "oscilloscope",
-                        "Oscilloscope", analysisToggleAccent(DarkTheme::ACCENT_POSITIVE));
+                        "Oscilloscope", analysisToggleAccent(ActiveTheme::ACCENT_POSITIVE));
     setupAnalysisToggle(specToggleButton_, "Spectrum", BinaryData::iconspectrumboldm_svg,
                         BinaryData::iconspectrumboldm_svgSize, "Spectrum Analyzer (post-FX)",
                         "spectrumanalyzer", "Spectrum Analyzer",
-                        analysisToggleAccent(DarkTheme::ACCENT_INFO));
+                        analysisToggleAccent(ActiveTheme::ACCENT_INFO));
     setupAnalysisToggle(levelsToggleButton_, "Levels", BinaryData::iconlevelsboldm_svg,
                         BinaryData::iconlevelsboldm_svgSize, "Levels meter (post-FX)", "levels",
-                        "Levels", analysisToggleAccent(DarkTheme::ACCENT_PRIMARY));
+                        "Levels", analysisToggleAccent(ActiveTheme::ACCENT_PRIMARY));
 
     // Post-FX panel show/hide toggle. The panel itself lives in BottomPanel,
     // which wires onPostFxPanelToggled / setPostFxPanelOpen.
     postFxPanelButton_ = std::make_unique<magda::SvgButton>("PostFx", BinaryData::postfx_svg,
                                                             BinaryData::postfx_svgSize);
     postFxPanelButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    applyAnalysisToggleTheme(*postFxPanelButton_, DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+    applyAnalysisToggleTheme(*postFxPanelButton_,
+                             ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     postFxPanelButton_->setTooltip("Show/hide the post-FX panel");
     postFxPanelButton_->onClick = [this]() {
         if (onPostFxPanelToggled)
@@ -960,19 +963,19 @@ TrackChainContent::TrackChainContent()
 
     // Track name label - clicks pass through for track selection
     trackNameLabel_.setFont(FontManager::getInstance().getUIFontBold(11.0f));
-    trackNameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    trackNameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     trackNameLabel_.setJustificationType(juce::Justification::centredRight);
     trackNameLabel_.setInterceptsMouseClicks(false, false);
     addChildComponent(trackNameLabel_);
 
     // Mute button (arrange track-header style)
     muteButton_.setOriginalColor(juce::Colour(0xFFB3B3B3));
-    muteButton_.setNormalColor(DarkTheme::getSecondaryTextColour());
-    muteButton_.setHoverColor(DarkTheme::getTextColour());
-    muteButton_.setActiveColor(DarkTheme::getColour(DarkTheme::BACKGROUND));
-    muteButton_.setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    muteButton_.setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    muteButton_.setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::STATUS_WARNING));
+    muteButton_.setNormalColor(ActiveTheme::getSecondaryTextColour());
+    muteButton_.setHoverColor(ActiveTheme::getTextColour());
+    muteButton_.setActiveColor(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
+    muteButton_.setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    muteButton_.setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+    muteButton_.setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::STATUS_WARNING));
     muteButton_.setIconPadding(3.5f);
     muteButton_.setTooltip(tr("tracks.mute.tooltip"));
     muteButton_.setClickingTogglesState(true);
@@ -1003,15 +1006,15 @@ TrackChainContent::TrackChainContent()
     monitorButton_.setButtonText("-");
     monitorButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     monitorButton_.setColour(juce::TextButton::buttonColourId,
-                             DarkTheme::getColour(DarkTheme::SURFACE));
+                             ActiveTheme::getColour(ActiveTheme::SURFACE));
     monitorButton_.setColour(juce::TextButton::buttonOnColourId,
-                             DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
+                             ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE));
     monitorButton_.setColour(juce::TextButton::textColourOffId,
-                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                             ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     monitorButton_.setColour(juce::TextButton::textColourOnId,
-                             DarkTheme::getColour(DarkTheme::BACKGROUND));
+                             ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     monitorButton_.setColour(juce::ComboBox::outlineColourId,
-                             DarkTheme::getColour(DarkTheme::BORDER));
+                             ActiveTheme::getColour(ActiveTheme::BORDER));
     monitorButton_.setTooltip("Input monitoring (Off/In/Auto)");
     monitorButton_.onClick = [this]() {
         if (selectedTrackId_ == magda::INVALID_TRACK_ID)
@@ -1038,12 +1041,12 @@ TrackChainContent::TrackChainContent()
 
     // Solo button (arrange track-header style)
     soloButton_.setOriginalColor(juce::Colour(0xFFB3B3B3));
-    soloButton_.setNormalColor(DarkTheme::getSecondaryTextColour());
-    soloButton_.setHoverColor(DarkTheme::getTextColour());
-    soloButton_.setActiveColor(DarkTheme::getColour(DarkTheme::BACKGROUND));
-    soloButton_.setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    soloButton_.setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
-    soloButton_.setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+    soloButton_.setNormalColor(ActiveTheme::getSecondaryTextColour());
+    soloButton_.setHoverColor(ActiveTheme::getTextColour());
+    soloButton_.setActiveColor(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
+    soloButton_.setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    soloButton_.setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+    soloButton_.setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
     soloButton_.setIconPadding(5.0f);
     soloButton_.setTooltip(tr("tracks.solo.tooltip"));
     soloButton_.setClickingTogglesState(true);
@@ -1061,7 +1064,7 @@ TrackChainContent::TrackChainContent()
     volumeLabel_.setFillProportionMapper(magda::level_meter_scale::dbFillProportion);
     volumeLabel_.setValue(0.0, juce::dontSendNotification);  // Unity gain (0 dB)
     volumeLabel_.setFontSize(10.0f);
-    volumeLabel_.setFillColour(DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
+    volumeLabel_.setFillColour(ActiveTheme::getColour(ActiveTheme::CONTROL_VALUE_FILL));
     volumeLabel_.onValueChange = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             float gain = dbToGain(static_cast<float>(volumeLabel_.getValue()));
@@ -1075,7 +1078,7 @@ TrackChainContent::TrackChainContent()
     panLabel_.setRange(-1.0, 1.0, 0.0);
     panLabel_.setValue(0.0, juce::dontSendNotification);  // Center
     panLabel_.setFontSize(10.0f);
-    panLabel_.setFillColour(DarkTheme::getColour(DarkTheme::CONTROL_VALUE_FILL));
+    panLabel_.setFillColour(ActiveTheme::getColour(ActiveTheme::CONTROL_VALUE_FILL));
     panLabel_.onValueChange = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             magda::UndoManager::getInstance().executeCommand(
@@ -1092,10 +1095,10 @@ TrackChainContent::TrackChainContent()
     chainBypassButton_->setToggleState(true,
                                        juce::dontSendNotification);  // Start active (not bypassed)
     chainBypassButton_->setOriginalColor(juce::Colour(0xFFE6E6E6));
-    chainBypassButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+    chainBypassButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
     chainBypassButton_->setActiveColor(juce::Colours::white);
     chainBypassButton_->setActiveBackgroundColor(
-        DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).darker(0.3f));
+        ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).darker(0.3f));
     chainBypassButton_->setActive(true);  // Start active
     chainBypassButton_->onClick = [this]() {
         bool active = chainBypassButton_->getToggleState();
@@ -1118,7 +1121,7 @@ TrackChainContent::TrackChainContent()
     linkModeLabel_.setText("LINK MODE", juce::dontSendNotification);
     linkModeLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     linkModeLabel_.setColour(juce::Label::textColourId,
-                             DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+                             ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
     linkModeLabel_.setJustificationType(juce::Justification::centred);
     // The banner spans the full header. It is status-only and must not trap
     // clicks intended for the mod/macro controls underneath it.
@@ -1131,7 +1134,7 @@ TrackChainContent::TrackChainContent()
     gainStagingLabel_.setText("GAIN STAGING", juce::dontSendNotification);
     gainStagingLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     gainStagingLabel_.setColour(juce::Label::textColourId,
-                                DarkTheme::getColour(DarkTheme::STATUS_DANGER));
+                                ActiveTheme::getColour(ActiveTheme::STATUS_DANGER));
     gainStagingLabel_.setJustificationType(juce::Justification::centred);
     gainStagingLabel_.setMinimumHorizontalScale(0.5f);  // let the AI summary shrink to fit
     // The banner spans the whole header bar; it must NOT eat clicks meant for
@@ -1164,30 +1167,32 @@ TrackChainContent::TrackChainContent()
 void TrackChainContent::lookAndFeelChanged() {
     mixerLookAndFeel_.refreshThemeColours();
     if (chainBypassButton_) {
-        chainBypassButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
+        chainBypassButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
         chainBypassButton_->setActiveColor(juce::Colours::white);
         chainBypassButton_->setActiveBackgroundColor(
-            DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).darker(0.3f));
+            ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).darker(0.3f));
         chainBypassButton_->repaint();
     }
 
     if (oscToggleButton_)
         applyAnalysisToggleTheme(*oscToggleButton_,
-                                 analysisToggleAccent(DarkTheme::ACCENT_POSITIVE));
+                                 analysisToggleAccent(ActiveTheme::ACCENT_POSITIVE));
     if (specToggleButton_)
-        applyAnalysisToggleTheme(*specToggleButton_, analysisToggleAccent(DarkTheme::ACCENT_INFO));
+        applyAnalysisToggleTheme(*specToggleButton_,
+                                 analysisToggleAccent(ActiveTheme::ACCENT_INFO));
     if (levelsToggleButton_)
         applyAnalysisToggleTheme(*levelsToggleButton_,
-                                 analysisToggleAccent(DarkTheme::ACCENT_PRIMARY));
+                                 analysisToggleAccent(ActiveTheme::ACCENT_PRIMARY));
     if (postFxPanelButton_)
         applyAnalysisToggleTheme(*postFxPanelButton_,
-                                 DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+                                 ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
 
     // The add-device button captures concrete colours at construction;
     // re-apply so a live theme switch restyles it.
-    addDeviceButton_.setColour(juce::TextButton::buttonColourId,
-                               DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.24f));
-    addDeviceButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+    addDeviceButton_.setColour(
+        juce::TextButton::buttonColourId,
+        ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.24f));
+    addDeviceButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
 
     repaint();
 }
@@ -1209,12 +1214,12 @@ void TrackChainContent::initGlobalModsPanel() {
     globalModsPanel_->onModTargetChanged = [this](int modIndex, magda::ControlTarget target) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID)
             magda::TrackManager::getInstance().setModTarget(
-                ChainNodePath::trackLevel(selectedTrackId_), modIndex, target);
+                ChainNodePath::trackLevel(selectedTrackId_), modIndex, std::move(target));
     };
     globalModsPanel_->onModLinkRemoved = [this](int modIndex, magda::ControlTarget target) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             magda::TrackManager::getInstance().removeModLink(
-                ChainNodePath::trackLevel(selectedTrackId_), modIndex, target);
+                ChainNodePath::trackLevel(selectedTrackId_), modIndex, std::move(target));
             updateGlobalModsPanel();
         }
     };
@@ -1347,26 +1352,29 @@ void TrackChainContent::initGlobalModsPanel() {
     globalModEditorPanel_->onModLinkDeleted = [this](int modIndex, magda::ControlTarget target) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID)
             magda::TrackManager::getInstance().removeModLink(
-                ChainNodePath::trackLevel(selectedTrackId_), modIndex, target);
+                ChainNodePath::trackLevel(selectedTrackId_), modIndex, std::move(target));
     };
-    globalModEditorPanel_->onModLinkBipolarChanged =
-        [this](int modIndex, magda::ControlTarget target, bool bipolar) {
-            if (selectedTrackId_ != magda::INVALID_TRACK_ID)
-                magda::TrackManager::getInstance().setModLinkBipolar(
-                    ChainNodePath::trackLevel(selectedTrackId_), modIndex, target, bipolar);
-        };
-    globalModEditorPanel_->onModLinkEnabledChanged =
-        [this](int modIndex, magda::ControlTarget target, bool enabled) {
-            if (selectedTrackId_ != magda::INVALID_TRACK_ID)
-                magda::TrackManager::getInstance().setModLinkEnabled(
-                    ChainNodePath::trackLevel(selectedTrackId_), modIndex, target, enabled);
-        };
-    globalModEditorPanel_->onModLinkAmountChanged =
-        [this](int modIndex, magda::ControlTarget target, float amount) {
-            if (selectedTrackId_ != magda::INVALID_TRACK_ID)
-                magda::TrackManager::getInstance().setModLinkAmount(
-                    ChainNodePath::trackLevel(selectedTrackId_), modIndex, target, amount);
-        };
+    globalModEditorPanel_->onModLinkBipolarChanged = [this](int modIndex,
+                                                            magda::ControlTarget target,
+                                                            bool bipolar) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
+            magda::TrackManager::getInstance().setModLinkBipolar(
+                ChainNodePath::trackLevel(selectedTrackId_), modIndex, std::move(target), bipolar);
+    };
+    globalModEditorPanel_->onModLinkEnabledChanged = [this](int modIndex,
+                                                            magda::ControlTarget target,
+                                                            bool enabled) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
+            magda::TrackManager::getInstance().setModLinkEnabled(
+                ChainNodePath::trackLevel(selectedTrackId_), modIndex, std::move(target), enabled);
+    };
+    globalModEditorPanel_->onModLinkAmountChanged = [this](int modIndex,
+                                                           magda::ControlTarget target,
+                                                           float amount) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
+            magda::TrackManager::getInstance().setModLinkAmount(
+                ChainNodePath::trackLevel(selectedTrackId_), modIndex, std::move(target), amount);
+    };
     globalModEditorPanel_->setParamNameResolver(
         [this](magda::DeviceId deviceId, int paramIndex) -> juce::String {
             if (selectedTrackId_ == magda::INVALID_TRACK_ID)
@@ -1419,7 +1427,7 @@ void TrackChainContent::initGlobalMacrosPanel() {
     globalMacrosPanel_->onMacroTargetChanged = [this](int macroIndex, magda::ControlTarget target) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID)
             magda::TrackManager::getInstance().setMacroTarget(
-                ChainNodePath::trackLevel(selectedTrackId_), macroIndex, target);
+                ChainNodePath::trackLevel(selectedTrackId_), macroIndex, std::move(target));
     };
     globalMacrosPanel_->onMacroNameChanged = [this](int macroIndex, juce::String name) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID)
@@ -1430,7 +1438,7 @@ void TrackChainContent::initGlobalMacrosPanel() {
     globalMacrosPanel_->onMacroLinkRemoved = [this](int macroIndex, magda::ControlTarget target) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             magda::TrackManager::getInstance().removeMacroLink(
-                ChainNodePath::trackLevel(selectedTrackId_), macroIndex, target);
+                ChainNodePath::trackLevel(selectedTrackId_), macroIndex, std::move(target));
             updateGlobalMacrosPanel();
         }
     };
@@ -1478,13 +1486,14 @@ void TrackChainContent::initGlobalMacrosPanel() {
                                                           float amount) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalMacroIndex_ >= 0)
             magda::TrackManager::getInstance().setMacroLinkAmount(
-                ChainNodePath::trackLevel(selectedTrackId_), selectedGlobalMacroIndex_, target,
-                amount);
+                ChainNodePath::trackLevel(selectedTrackId_), selectedGlobalMacroIndex_,
+                std::move(target), amount);
     };
     globalMacroEditorPanel_->onLinkRemoved = [this](magda::ControlTarget target) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalMacroIndex_ >= 0) {
             magda::TrackManager::getInstance().removeMacroLink(
-                ChainNodePath::trackLevel(selectedTrackId_), selectedGlobalMacroIndex_, target);
+                ChainNodePath::trackLevel(selectedTrackId_), selectedGlobalMacroIndex_,
+                std::move(target));
             updateGlobalMacrosPanel();
         }
     };
@@ -1492,8 +1501,8 @@ void TrackChainContent::initGlobalMacrosPanel() {
                                                            bool bipolar) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalMacroIndex_ >= 0) {
             magda::TrackManager::getInstance().setMacroLinkBipolar(
-                ChainNodePath::trackLevel(selectedTrackId_), selectedGlobalMacroIndex_, target,
-                bipolar);
+                ChainNodePath::trackLevel(selectedTrackId_), selectedGlobalMacroIndex_,
+                std::move(target), bipolar);
             updateGlobalMacrosPanel();
         }
     };
@@ -1574,7 +1583,7 @@ void TrackChainContent::updateGlobalModsPanel() {
         for (const auto& element : elements) {
             if (magda::isDevice(element)) {
                 const auto& device = magda::getDevice(element);
-                allDevices.push_back({device.id, device.name});
+                allDevices.emplace_back(device.id, device.name);
                 std::vector<juce::String> names;
                 names.reserve(device.parameters.size());
                 for (const auto& p : device.parameters)
@@ -1636,7 +1645,7 @@ void TrackChainContent::updateGlobalMacrosPanel() {
         for (const auto& element : elements) {
             if (magda::isDevice(element)) {
                 const auto& device = magda::getDevice(element);
-                allDevices.push_back({device.id, device.name});
+                allDevices.emplace_back(device.id, device.name);
                 std::vector<juce::String> names;
                 names.reserve(device.parameters.size());
                 for (const auto& p : device.parameters) {
@@ -1743,7 +1752,7 @@ void TrackChainContent::hideGlobalMacroEditor() {
 }
 
 void TrackChainContent::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getPanelBackgroundColour());
+    g.fillAll(ActiveTheme::getPanelBackgroundColour());
 
     if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
         auto bounds = getLocalBounds();
@@ -1761,7 +1770,7 @@ void TrackChainContent::paint(juce::Graphics& g) {
 
         if (panelAreaWidth > 0) {
             // Vertical separator between panels and chain content
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
             g.drawVerticalLine(panelAreaWidth, static_cast<float>(bounds.getY()),
                                static_cast<float>(bounds.getBottom()));
         }
@@ -2016,8 +2025,12 @@ void TrackChainContent::togglePostFxAnalysisDevice(const juce::String& pluginId,
     auto& tm = magda::TrackManager::getInstance();
     const magda::DeviceId existing = tm.findPostFxDevice(selectedTrackId_, pluginId);
     if (existing != magda::INVALID_DEVICE_ID) {
-        tm.removeDeviceFromChainByPath(
-            magda::ChainNodePath::postFxDevice(selectedTrackId_, existing));
+        // Through the command, like the slot's X and the context menu: turning
+        // the header toggle off is the third way to delete an analyzer, and it
+        // was the one that still went straight to the model (#2232).
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::RemoveDeviceByPathCommand>(
+                magda::ChainNodePath::postFxDevice(selectedTrackId_, existing)));
     } else {
         magda::DeviceInfo device;
         device.name = displayName;
@@ -2025,7 +2038,11 @@ void TrackChainContent::togglePostFxAnalysisDevice(const juce::String& pluginId,
         device.pluginId = pluginId;
         device.deviceType = magda::DeviceType::Analysis;
         device.format = magda::PluginFormat::Internal;
-        tm.addDeviceToPostFx(selectedTrackId_, device);
+        // Both directions on the stack. Only the removal being undoable would
+        // mean Cmd+Z after turning a toggle on undid something else entirely.
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::AddDeviceByPathCommand>(
+                magda::ChainNodePath::postFxSection(selectedTrackId_), device));
         // Reveal the panel so the analyzer you just added is visible.
         if (onPostFxPanelToggled)
             onPostFxPanelToggled(true);
@@ -2125,7 +2142,7 @@ void TrackChainContent::modLinkModeChanged(bool active, const magda::ModSelectio
     linkModeLabel_.setVisible(active);
     if (active) {
         linkModeLabel_.setColour(juce::Label::textColourId,
-                                 DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION));
+                                 ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
     }
     resized();
 }
@@ -2135,7 +2152,7 @@ void TrackChainContent::macroLinkModeChanged(bool active,
     linkModeLabel_.setVisible(active);
     if (active) {
         linkModeLabel_.setColour(juce::Label::textColourId,
-                                 DarkTheme::getColour(DarkTheme::ACCENT_MODULATION));
+                                 ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
     }
     resized();
 }
@@ -2156,14 +2173,14 @@ void TrackChainContent::refreshGainStagingButton() {
     const bool onThisTrack = gs.getActiveTrack() == selectedTrackId_;
     const bool collecting = gs.getMode() == magda::GainStagingMode::Collecting && onThisTrack;
 
-    const auto yellow = DarkTheme::getColour(DarkTheme::STATUS_WARNING);
+    const auto yellow = ActiveTheme::getColour(ActiveTheme::STATUS_WARNING);
 
     if (aiProcessing_) {
         gainStagingButton_->setActiveBackgroundColor(yellow.withAlpha(0.20f));
         gainStagingButton_->setActiveBorderColor(yellow);
         gainStagingButton_->setTooltip("Gain staging: AI is analysing the chain...");
     } else if (collecting) {
-        const auto red = DarkTheme::getColour(DarkTheme::STATUS_DANGER);
+        const auto red = ActiveTheme::getColour(ActiveTheme::STATUS_DANGER);
         gainStagingButton_->setActiveBackgroundColor(red.withAlpha(0.20f));
         gainStagingButton_->setActiveBorderColor(red);
         gainStagingButton_->setTooltip("Gain staging: stop and apply");
@@ -2190,7 +2207,7 @@ void TrackChainContent::refreshGainStagingButton() {
     } else if (collecting) {
         gainStagingLabel_.setText("GAIN STAGING", juce::dontSendNotification);
         gainStagingLabel_.setColour(juce::Label::textColourId,
-                                    DarkTheme::getColour(DarkTheme::STATUS_DANGER));
+                                    ActiveTheme::getColour(ActiveTheme::STATUS_DANGER));
     }
 }
 
@@ -2219,7 +2236,8 @@ void TrackChainContent::runAiGainStagingPass() {
         lvl.currentGainDb = s.currentGainDb;
         lvl.suggestedGainDb = s.suggestedGainDb;
         for (const auto& p : s.params)
-            lvl.params.push_back({p.name.toStdString(), (double)p.value, p.unit.toStdString()});
+            lvl.params.push_back(
+                {p.name.toStdString(), static_cast<double>(p.value), p.unit.toStdString()});
         levels.push_back(std::move(lvl));
         paths.push_back(s.path);
     }
@@ -2245,8 +2263,8 @@ void TrackChainContent::runAiGainStagingPass() {
                 reasoning << juce::String(result.summary) << "\n\n";
             for (const auto& d : result.decisions) {
                 juce::String name;
-                if (d.index >= 0 && d.index < (int)levels.size())
-                    name = juce::String(levels[(size_t)d.index].name);
+                if (d.index >= 0 && d.index < static_cast<int>(levels.size()))
+                    name = juce::String(levels[static_cast<size_t>(d.index)].name);
                 reasoning << name << ":  " << (d.newGainDb >= 0.0f ? "+" : "")
                           << juce::String(d.newGainDb, 1) << " dB";
                 if (!d.reason.empty())
@@ -2268,8 +2286,8 @@ void TrackChainContent::runAiGainStagingPass() {
             } else {
                 std::vector<std::pair<magda::ChainNodePath, float>> moves;
                 for (const auto& d : result.decisions)
-                    if (d.index >= 0 && d.index < (int)paths.size())
-                        moves.push_back({paths[(size_t)d.index], d.newGainDb});
+                    if (d.index >= 0 && d.index < static_cast<int>(paths.size()))
+                        moves.emplace_back(paths[static_cast<size_t>(d.index)], d.newGainDb);
                 m.applyAiMoves(moves);
                 juce::Logger::writeToLog("[GainStaging] AI: " + juce::String(result.summary));
             }
@@ -2299,23 +2317,23 @@ class AiReasoningOverlay : public juce::Component {
         if (area.getWidth() > 560)
             area = area.withSizeKeepingCentre(560, area.getHeight());
 
-        g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
         g.fillRoundedRectangle(area.toFloat(), 8.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         g.drawRoundedRectangle(area.toFloat(), 8.0f, 1.5f);
 
         auto inner = area.reduced(16);
         auto titleArea = inner.removeFromTop(22);
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         g.setFont(FontManager::getInstance().getUIFontBold(15.0f));
         g.drawText("AI gain staging", titleArea, juce::Justification::topLeft);
 
         auto hintArea = inner.removeFromBottom(18);
-        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setColour(ActiveTheme::getSecondaryTextColour());
         g.setFont(FontManager::getInstance().getUIFont(11.0f));
         g.drawText("click to dismiss", hintArea, juce::Justification::topRight);
 
-        g.setColour(DarkTheme::getTextColour());
+        g.setColour(ActiveTheme::getTextColour());
         g.setFont(FontManager::getInstance().getUIFont(13.0f));
         g.drawFittedText(text_, inner, juce::Justification::topLeft, 40);
     }
@@ -2663,28 +2681,59 @@ void TrackChainContent::hideHeaderControls() {
 }
 
 void TrackChainContent::rebuildNodeComponents() {
-    // Save node states (collapsed, expanded chains) BEFORE clearing components
+    // Save node states (collapsed, expanded chains) BEFORE anything is dropped
     saveNodeStates();
 
-    // Clear existing components
-    unfocusAllComponents();
-    nodeComponents_.clear();
-
     if (selectedTrackId_ == magda::INVALID_TRACK_ID) {
+        unfocusAllComponents();
+        nodeComponents_.clear();
         return;
     }
 
     const auto& elements = magda::TrackManager::getInstance().getChainElements(selectedTrackId_);
 
-    // Create a component for each chain element
-    for (size_t i = 0; i < elements.size(); ++i) {
-        const auto& element = elements[i];
+    // Reuse the component already standing for an element, keyed by its id, and
+    // build only what is new. This used to clear the whole vector and construct
+    // every node again, so a control that wrote a device property destroyed the
+    // component tree it was inside before its own callback returned: fifty-odd
+    // TrackManager setters announce `trackDevicesChanged`, and most of them have
+    // a control behind them. `ChainPanel::rebuildElementSlots()` has always done
+    // it this way (#2214).
+    //
+    // Element ids are unique across the project, so a component never survives
+    // into a track it does not belong to: switching tracks finds no match and
+    // builds afresh.
+    std::vector<std::unique_ptr<NodeComponent>> newNodes;
 
+    auto takeExisting = [this](auto predicate) -> std::unique_ptr<NodeComponent> {
+        for (size_t i = 0; i < nodeComponents_.size(); ++i) {
+            if (predicate(nodeComponents_[i].get())) {
+                auto found = std::move(nodeComponents_[i]);
+                nodeComponents_.erase(nodeComponents_.begin() + static_cast<long>(i));
+                return found;
+            }
+        }
+        return nullptr;
+    };
+
+    for (const auto& element : elements) {
         if (magda::isDevice(element)) {
-            // Create device slot component
             const auto& device = magda::getDevice(element);
+            const auto devicePath =
+                magda::ChainNodePath::topLevelDevice(selectedTrackId_, device.id);
+
+            if (auto existing = takeExisting([&device](NodeComponent* node) {
+                    auto* slot = dynamic_cast<DeviceSlotComponent*>(node);
+                    return slot != nullptr && slot->getDeviceId() == device.id;
+                })) {
+                static_cast<DeviceSlotComponent*>(existing.get())->updateFromDevice(device);
+                existing->setNodePath(devicePath);
+                newNodes.push_back(std::move(existing));
+                continue;
+            }
+
             auto slot = std::make_unique<DeviceSlotComponent>(device);
-            slot->setNodePath(magda::ChainNodePath::topLevelDevice(selectedTrackId_, device.id));
+            slot->setNodePath(devicePath);
 
             // Wire up device-specific callbacks
             slot->onDeviceLayoutChanged = [this]() {
@@ -2692,48 +2741,25 @@ void TrackChainContent::rebuildNodeComponents() {
                 repaint();
             };
 
-            // Wire up drag-to-reorder callbacks
-            slot->onDragStart = [this](NodeComponent* node, const juce::MouseEvent&) {
-                draggedNode_ = node;
-                dragOriginalIndex_ = findNodeIndex(node);
-                dragInsertIndex_ = dragOriginalIndex_;
-                // Capture ghost image and make original semi-transparent
-                dragGhostImage_ = node->createComponentSnapshot(node->getLocalBounds());
-                node->setAlpha(0.4f);
-                startTimerHz(10);  // Start timer to detect stale drag state
-                // Re-layout to add left padding for drop indicator
-                resized();
-            };
-
-            slot->onDragMove = [this](NodeComponent*, const juce::MouseEvent& e) {
-                auto pos = e.getEventRelativeTo(chainContainer_.get()).getPosition();
-                dragInsertIndex_ = calculateInsertIndex(pos.x);
-                dragMousePos_ = pos;
-                chainContainer_->repaint();
-            };
-
-            slot->onDragEnd = [this](NodeComponent* node, const juce::MouseEvent&) {
-                // Restore alpha and clear ghost
-                node->setAlpha(1.0f);
-                dragGhostImage_ = juce::Image();
-                stopTimer();
-
-                draggedNode_ = nullptr;
-                dragOriginalIndex_ = -1;
-                dragInsertIndex_ = -1;
-
-                resized();
-                chainContainer_->repaint();
-            };
-
             chainContainer_->addAndMakeVisible(*slot);
-            nodeComponents_.push_back(std::move(slot));
+            newNodes.push_back(std::move(slot));
 
         } else if (magda::isRack(element)) {
-            // Create rack component
             const auto& rack = magda::getRack(element);
+            const auto rackPath = magda::ChainNodePath::rack(selectedTrackId_, rack.id);
+
+            if (auto existing = takeExisting([&rack](NodeComponent* node) {
+                    auto* rackComp = dynamic_cast<RackComponent*>(node);
+                    return rackComp != nullptr && rackComp->getRackId() == rack.id;
+                })) {
+                static_cast<RackComponent*>(existing.get())->updateFromRack(rack);
+                existing->setNodePath(rackPath);
+                newNodes.push_back(std::move(existing));
+                continue;
+            }
+
             auto rackComp = std::make_unique<RackComponent>(selectedTrackId_, rack);
-            rackComp->setNodePath(magda::ChainNodePath::rack(selectedTrackId_, rack.id));
+            rackComp->setNodePath(rackPath);
 
             // Wire up callbacks
             rackComp->onSelected = [this]() { selectedDeviceId_ = magda::INVALID_DEVICE_ID; };
@@ -2755,42 +2781,61 @@ void TrackChainContent::rebuildNodeComponents() {
                 }
             };
 
-            // Wire up drag-to-reorder callbacks
-            rackComp->onDragStart = [this](NodeComponent* node, const juce::MouseEvent&) {
-                draggedNode_ = node;
-                dragOriginalIndex_ = findNodeIndex(node);
-                dragInsertIndex_ = dragOriginalIndex_;
-                // Capture ghost image and make original semi-transparent
-                dragGhostImage_ = node->createComponentSnapshot(node->getLocalBounds());
-                node->setAlpha(0.4f);
-                startTimerHz(10);  // Start timer to detect stale drag state
-                // Re-layout to add left padding for drop indicator
-                resized();
-            };
-
-            rackComp->onDragMove = [this](NodeComponent*, const juce::MouseEvent& e) {
-                auto pos = e.getEventRelativeTo(chainContainer_.get()).getPosition();
-                dragInsertIndex_ = calculateInsertIndex(pos.x);
-                dragMousePos_ = pos;
-                chainContainer_->repaint();
-            };
-
-            rackComp->onDragEnd = [this](NodeComponent* node, const juce::MouseEvent&) {
-                // Restore alpha and clear ghost
-                node->setAlpha(1.0f);
-                dragGhostImage_ = juce::Image();
-                stopTimer();
-
-                draggedNode_ = nullptr;
-                dragOriginalIndex_ = -1;
-                dragInsertIndex_ = -1;
-                resized();
-                chainContainer_->repaint();
-            };
-
             chainContainer_->addAndMakeVisible(*rackComp);
-            nodeComponents_.push_back(std::move(rackComp));
+            newNodes.push_back(std::move(rackComp));
         }
+    }
+
+    // Whatever is left in nodeComponents_ stands for an element that has gone,
+    // and is about to be destroyed, so drop the focus first.
+    if (!nodeComponents_.empty())
+        unfocusAllComponents();
+    nodeComponents_ = std::move(newNodes);
+
+    // Drag-to-reorder is the same on both kinds, so it is wired once here
+    // rather than twice above. A SafePointer because a drop calls back into a
+    // move, which rebuilds and can take this panel with it.
+    auto safeThis = juce::Component::SafePointer<TrackChainContent>(this);
+    for (auto& node : nodeComponents_) {
+        node->onDragStart = [safeThis](NodeComponent* dragged, const juce::MouseEvent&) {
+            if (safeThis == nullptr)
+                return;
+            safeThis->draggedNode_ = dragged;
+            safeThis->dragOriginalIndex_ = safeThis->findNodeIndex(dragged);
+            safeThis->dragInsertIndex_ = safeThis->dragOriginalIndex_;
+            // Capture ghost image and make original semi-transparent
+            safeThis->dragGhostImage_ = dragged->createComponentSnapshot(dragged->getLocalBounds());
+            dragged->setAlpha(0.4f);
+            safeThis->startTimerHz(10);  // Start timer to detect stale drag state
+            // Re-layout to add left padding for drop indicator
+            safeThis->resized();
+        };
+
+        node->onDragMove = [safeThis](NodeComponent*, const juce::MouseEvent& e) {
+            if (safeThis == nullptr)
+                return;
+            auto pos = e.getEventRelativeTo(safeThis->chainContainer_.get()).getPosition();
+            safeThis->dragInsertIndex_ = safeThis->calculateInsertIndex(pos.x);
+            safeThis->dragMousePos_ = pos;
+            safeThis->chainContainer_->repaint();
+        };
+
+        node->onDragEnd = [safeThis](NodeComponent* dragged, const juce::MouseEvent&) {
+            if (safeThis == nullptr)
+                return;
+
+            // Restore alpha and clear ghost
+            dragged->setAlpha(1.0f);
+            safeThis->dragGhostImage_ = juce::Image();
+            safeThis->stopTimer();
+
+            safeThis->draggedNode_ = nullptr;
+            safeThis->dragOriginalIndex_ = -1;
+            safeThis->dragInsertIndex_ = -1;
+
+            safeThis->resized();
+            safeThis->chainContainer_->repaint();
+        };
     }
 
     // Set frozen + chain-power state on all nodes. Chain power off greys the
@@ -2887,10 +2932,7 @@ void TrackChainContent::onAddDeviceClicked() {
     }
     menu.addSubMenu("Internal", internalMenu);
 
-    juce::Array<juce::PluginDescription> externalPlugins;
-    if (auto* engine = magda::TrackManager::getInstance().getAudioEngine()) {
-        externalPlugins = engine->getPreferredPluginTypes();
-    }
+    const auto externalPlugins = magda::PluginService::getInstance().preferredTypes();
 
     if (!externalPlugins.isEmpty()) {
         std::map<juce::String, juce::PopupMenu> byManufacturer;
@@ -3086,7 +3128,6 @@ void TrackChainContent::saveNodeStates() {
     savedExpandedChains_.clear();
     savedParamPanelStates_.clear();
     savedCustomUITabStates_.clear();
-    savedDrumPadCollapsedPlugins_.clear();
 
     for (const auto& node : nodeComponents_) {
         const auto& path = node->getNodePath();
@@ -3107,11 +3148,6 @@ void TrackChainContent::saveNodeStates() {
                 int tabIndex = device->getCustomUITabIndex();
                 if (tabIndex > 0)
                     savedCustomUITabStates_[path.toString()] = tabIndex;
-
-                // Save DrumGrid pad chain collapsed plugins
-                auto collapsed = device->getDrumPadCollapsedPlugins();
-                if (!collapsed.empty())
-                    savedDrumPadCollapsedPlugins_[path.toString()] = std::move(collapsed);
             }
 
             // Save expanded chain for racks
@@ -3145,12 +3181,6 @@ void TrackChainContent::restoreNodeStates() {
                 auto tabIt = savedCustomUITabStates_.find(path.toString());
                 if (tabIt != savedCustomUITabStates_.end()) {
                     device->setCustomUITabIndex(tabIt->second);
-                }
-
-                // Restore DrumGrid pad chain collapsed plugins
-                auto collapsedIt = savedDrumPadCollapsedPlugins_.find(path.toString());
-                if (collapsedIt != savedDrumPadCollapsedPlugins_.end()) {
-                    device->setDrumPadCollapsedPlugins(collapsedIt->second);
                 }
             }
 
@@ -3316,7 +3346,7 @@ void TrackChainContent::showSaveTrackPresetDialog() {
 
     auto* aw = new juce::AlertWindow(
         "Save MAGDA Track Preset",
-        "Enter a name for this track preset (use \"/\" to nest, e.g. \"Bass/808 Stack\"):",
+        R"(Enter a name for this track preset (use "/" to nest, e.g. "Bass/808 Stack"):)",
         juce::MessageBoxIconType::NoIcon);
     aw->addTextEditor("name", defaultName, "Name:");
     aw->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
@@ -3339,10 +3369,12 @@ void TrackChainContent::showSaveTrackPresetDialog() {
                     return;
                 if (self->selectedTrackId_ == magda::INVALID_TRACK_ID)
                     return;
-                const auto& elements =
-                    magda::TrackManager::getInstance().getChainElements(self->selectedTrackId_);
+                const auto* track =
+                    magda::TrackManager::getInstance().getTrack(self->selectedTrackId_);
+                if (track == nullptr)
+                    return;
                 auto& mgr = magda::PresetManager::getInstance();
-                if (!mgr.saveChainPreset(elements, name)) {
+                if (!mgr.saveChainPreset(*track, name)) {
                     showChainPresetErrorAsync("Save Track Preset Failed", mgr.getLastError());
                     return;
                 }
@@ -3370,9 +3402,11 @@ void TrackChainContent::showSaveTrackPresetDialog() {
 void TrackChainContent::saveCurrentTrackPreset() {
     if (currentPresetName_.isEmpty() || selectedTrackId_ == magda::INVALID_TRACK_ID)
         return;
-    const auto& elements = magda::TrackManager::getInstance().getChainElements(selectedTrackId_);
+    const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+    if (track == nullptr)
+        return;
     auto& pm = magda::PresetManager::getInstance();
-    if (!pm.saveChainPreset(elements, currentPresetName_))
+    if (!pm.saveChainPreset(*track, currentPresetName_))
         showChainPresetErrorAsync("Save Track Preset Failed", pm.getLastError());
 }
 

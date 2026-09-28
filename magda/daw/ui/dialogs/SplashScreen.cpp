@@ -2,8 +2,9 @@
 
 #include "BinaryData.h"
 #include "core/StringTable.hpp"
+#include "engine/AudioEngineChoice.hpp"
 #include "magda.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda {
@@ -28,7 +29,7 @@ class SplashScreen::ContentComponent : public juce::Component {
             logo_ = juce::Drawable::createFromSVG(*xml);
             if (logo_) {
                 logo_->replaceColour(juce::Colour(0xFF000000),
-                                     DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                                     ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
             }
         }
 
@@ -38,8 +39,8 @@ class SplashScreen::ContentComponent : public juce::Component {
                                        BinaryData::conceptualmachinesbadge_svgSize))) {
             conceptualMachinesBadge_ = juce::Drawable::createFromSVG(*xml);
             if (conceptualMachinesBadge_) {
-                conceptualMachinesBadge_->replaceColour(juce::Colour(0xFFE7DFD2),
-                                                        DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                conceptualMachinesBadge_->replaceColour(
+                    juce::Colour(0xFFE7DFD2), ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
             }
         }
 
@@ -49,7 +50,7 @@ class SplashScreen::ContentComponent : public juce::Component {
             teLogo_ = juce::Drawable::createFromSVG(*xml);
             if (teLogo_) {
                 teLogo_->replaceColour(juce::Colour(0xFF000000),
-                                       DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                                       ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
             }
         }
 
@@ -59,7 +60,7 @@ class SplashScreen::ContentComponent : public juce::Component {
             juceLogo_ = juce::Drawable::createFromSVG(*xml);
             if (juceLogo_) {
                 juceLogo_->replaceColour(juce::Colour(0xFF000000),
-                                         DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                                         ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
             }
         }
 
@@ -69,7 +70,7 @@ class SplashScreen::ContentComponent : public juce::Component {
             faustLogo_ = juce::Drawable::createFromSVG(*xml);
             if (faustLogo_) {
                 faustLogo_->replaceColour(juce::Colour(0xFFD9D9D9),
-                                          DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                                          ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
             }
         }
     }
@@ -78,10 +79,10 @@ class SplashScreen::ContentComponent : public juce::Component {
         auto bounds = getLocalBounds();
 
         // Dark background
-        g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+        g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
 
         // Subtle rounded border
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 8.0f, 1.0f);
 
         // Draw logo centered in upper portion
@@ -95,26 +96,31 @@ class SplashScreen::ContentComponent : public juce::Component {
         // Title
         auto& fm = FontManager::getInstance();
         g.setFont(fm.getMicrogrammaFont(28.0f));
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         g.drawText("MAGDA", bounds.removeFromTop(40), juce::Justification::centred);
 
         // Subtitle
         g.setFont(fm.getUIFont(14.0f));
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         // Brand tagline — MAGDA acronym expansion, do not translate.
         g.drawText("Multi-Agent Digital Audio", bounds.removeFromTop(24),
                    juce::Justification::centred);
 
-        // Version
+        // Version, and the engine beside it once there is one and it is not the
+        // default: a report from the native engine says so from the first
+        // thing on screen, and every other splash reads as it always did.
+        auto versionText = tr("splash.version_prefix") + MAGDA_VERSION;
+        if (engineName_.isNotEmpty() && engineName_ != nameOf(AudioEngineChoice::Tracktion))
+            versionText << " (" << engineName_ << ")";
+
         g.setFont(fm.getUIFont(12.0f));
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
-        g.drawText(tr("splash.version_prefix") + MAGDA_VERSION, bounds.removeFromTop(20),
-                   juce::Justification::centred);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+        g.drawText(versionText, bounds.removeFromTop(20), juce::Justification::centred);
 
         // Status text
         bounds.removeFromTop(4);
         g.setFont(fm.getUIFont(11.0f));
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         g.drawText(statusText_, bounds.removeFromTop(18), juce::Justification::centred);
 
         // Credits line
@@ -126,13 +132,13 @@ class SplashScreen::ContentComponent : public juce::Component {
         int gap = 4;
         int dotGap = 4;
 
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-        g.drawHorizontalLine(creditsArea.getY(), (float)creditsArea.getX(),
-                             (float)creditsArea.getRight());
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
+        g.drawHorizontalLine(creditsArea.getY(), static_cast<float>(creditsArea.getX()),
+                             static_cast<float>(creditsArea.getRight()));
         creditsArea.removeFromTop(6);
 
         auto row = creditsArea.removeFromTop(20);
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
 
         juce::GlyphArrangement ga;
         auto measure = [&](const juce::String& text) {
@@ -199,7 +205,7 @@ class SplashScreen::ContentComponent : public juce::Component {
             conceptualMachinesBadge_->drawWithin(g, badgeArea.toFloat(),
                                                  juce::RectanglePlacement::centred, 1.0f);
             g.setFont(fm.getUIFont(9.0f));
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
             g.drawText(kConceptualMachinesCopyright, linkArea, juce::Justification::centred);
             badgeBounds_ = badgeArea.getUnion(linkArea);
         } else {
@@ -209,6 +215,11 @@ class SplashScreen::ContentComponent : public juce::Component {
 
     void setStatus(const juce::String& text) {
         statusText_ = text;
+        repaint();
+    }
+
+    void setEngine(const juce::String& engineName) {
+        engineName_ = engineName;
         repaint();
     }
 
@@ -225,6 +236,7 @@ class SplashScreen::ContentComponent : public juce::Component {
     std::unique_ptr<juce::Drawable> faustLogo_;
     juce::Rectangle<int> badgeBounds_;
     juce::String statusText_;
+    juce::String engineName_;
 };
 
 // =============================================================================
@@ -232,7 +244,7 @@ class SplashScreen::ContentComponent : public juce::Component {
 // =============================================================================
 
 SplashScreen::SplashScreen()
-    : DocumentWindow("", DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND), 0) {
+    : DocumentWindow("", ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND), 0) {
     setContentOwned(new ContentComponent(), true);
     setUsingNativeTitleBar(false);
     setTitleBarHeight(0);
@@ -244,11 +256,16 @@ SplashScreen::SplashScreen()
 
 void SplashScreen::lookAndFeelChanged() {
     juce::DocumentWindow::lookAndFeelChanged();
-    setBackgroundColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    setBackgroundColour(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
 }
 
 void SplashScreen::dismiss() {
     setVisible(false);
+}
+
+void SplashScreen::setEngine(const juce::String& engineName) {
+    if (auto* content = dynamic_cast<ContentComponent*>(getContentComponent()))
+        content->setEngine(engineName);
 }
 
 void SplashScreen::setStatus(const juce::String& text) {

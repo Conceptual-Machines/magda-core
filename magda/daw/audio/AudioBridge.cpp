@@ -1,6 +1,7 @@
 #include "AudioBridge.hpp"
 
 #include <algorithm>
+#include <functional>
 #include <unordered_set>
 
 #include "../core/AutomationManager.hpp"
@@ -12,12 +13,14 @@
 #include "../engine/PluginWindowManager.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
 #include "AudioThumbnailManager.hpp"
-#include "DeviceParameterDisplayTextProvider.hpp"
 #include "Vst3Preset.hpp"
 #include "modifiers/ADSRDebugLog.hpp"
+#include "plugin_manager/ExternalPluginState.hpp"
 #include "plugins/DeviceServices.hpp"
+#include "plugins/InsertConfigBridge.hpp"
 #include "plugins/InternalPluginRegistry.hpp"
-#include "plugins/MidiInThruSync.hpp"
+#include "plugins/MidiChordEnginePlugin.hpp"
+#include "plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "session/SessionMonitorPlugin.hpp"
 
 namespace magda {
@@ -112,9 +115,12 @@ void mergeMeterData(MeterData& dest, const MeterData& src) {
 
 }  // namespace
 
-AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
+AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit, TrackMeters& meters,
+                         DeviceMeters& deviceMeters)
     : engine_(engine),
       edit_(edit),
+      meters_(meters),
+      deviceMeters_(deviceMeters),
       trackController_(engine, edit),
       pluginManager_(engine, edit, trackController_, pluginWindowBridge_, transportState_,
                      TrackManager::getInstance()),
@@ -123,7 +129,6 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
       controlTargetResolver_(trackController_, pluginManager_),
       sidechainRouting_(pluginManager_, trackController_),
       insertDeviceEnablement_(edit),
-      samplerFileLoader_(pluginManager_),
       clipSynchronizer_(edit, trackController_, warpMarkerManager_),
       automationPlayback_(*this, edit),
       automationRecording_(edit) {
@@ -136,13 +141,13 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
     deviceServices.sessionContext = &sessionAudioMonitor_;
     deviceServices.meteringContext = &deviceMetering_;
     deviceServices.defaults.oscilloscope.timebaseMs = oscilloscopeDefaults.timebaseMs;
+    deviceServices.defaults.oscilloscope.traceColour = oscilloscopeDefaults.traceColour;
     deviceServices.defaults.spectrum.fftOrder = spectrumDefaults.fftOrder;
     deviceServices.defaults.spectrum.slopeDbPerOct = spectrumDefaults.slopeDbPerOct;
     deviceServices.defaults.spectrum.smoothing = spectrumDefaults.smoothing;
+    deviceServices.defaults.spectrum.traceColour = spectrumDefaults.traceColour;
     daw::audio::registerDeviceServices(daw::audio::DeviceSessionKey::fromAddress(&edit_),
                                        deviceServices);
-
-    installDeviceParameterDisplayTextProviderFactory();
 
     // Wire up async plugin load completion callback to notify UI
     pluginManager_.onAsyncPluginLoaded = [](TrackId trackId) {
@@ -157,6 +162,7 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
 
     // Register as TrackManager listener
     TrackManager::getInstance().addListener(this);
+    ProjectManager::getInstance().addListener(this);
 
     // Hook into ModulatorEngine's per-tick callback so that after the visual
     // sim updates each ModInfo, we overlay TE's authoritative LFO phase +
@@ -202,6 +208,7 @@ AudioBridge::~AudioBridge() {
         stopTimer();
 
         // Now safe to remove listeners as timer is stopped and shutdown flag is set
+        ProjectManager::getInstance().removeListener(this);
         TrackManager::getInstance().removeListener(this);
         // Note: ClipManager listener removed by ClipSynchronizer destructor
 
@@ -292,6 +299,35 @@ void AudioBridge::resetTestState() {
 }
 
 // =============================================================================
+// ProjectManagerListener implementation
+// =============================================================================
+
+/**
+ * @brief Drop the TE tracks and plugins the outgoing project was synced into
+ *
+ * The plugin sync is additive and keyed by chain path, and ids restart at 1 in
+ * every project: a device left mapped is one the next sync skips creating, and
+ * it becomes a husk with no editor and no processing.
+ */
+void AudioBridge::projectTeardown() {
+    for (auto trackId : trackController_.getAllTrackIds()) {
+        pluginManager_.cleanupTrackPlugins(trackId);
+        trackController_.removeAudioTrack(trackId);
+    }
+
+    // Device and rack ids restart in the next project, so a level left under
+    // one of those addresses outlives the device that made it (#2570). The
+    // producer as well as the store: an entry nothing polls -- a rack's, or a
+    // rack-inner device's, neither of which updateAllClients() touches --
+    // holds its last value until something overwrites it, and publishInto()
+    // would copy it back over the cleared store on the next tick. The next
+    // project's graph build re-acquires the taps it needs, and the rack
+    // metering map remakes its entries on the tick after that.
+    deviceMetering_.clear();
+    deviceMeters_.clear();
+}
+
+// =============================================================================
 // TrackManagerListener implementation
 // =============================================================================
 
@@ -360,6 +396,53 @@ void AudioBridge::syncRecordArmedToTE(TrackId trackId) {
     }
 }
 
+namespace {
+
+/**
+ * @brief Push a chord track's audition state to the Chord Engines on it (#2314).
+ *
+ * The device used to poll a `DeviceTrackContext` for this; an engine-built one
+ * has no session to poll, so the host pushes it where it already applies the
+ * mute. The audition toggle is the track's own mute, which is why this sits
+ * beside `setMute` rather than anywhere of its own.
+ *
+ * @param teTrack   the engine track whose plugins carry the devices
+ * @param trackInfo the model track it was built from; anything but a chord
+ *                  track returns immediately
+ */
+void pushChordAudition(te::AudioTrack& teTrack, const magda::TrackInfo& trackInfo) {
+    if (trackInfo.type != magda::TrackType::Chord)
+        return;
+
+    const auto push = [&trackInfo](te::Plugin* plugin) {
+        if (auto* engine = magda::daw::audio::tracktion_adapter::deviceFromPlugin<
+                magda::daw::audio::MidiChordEnginePlugin>(plugin))
+            engine->setChordTrackMuted(trackInfo.muted);
+    };
+
+    // Racks too, to any depth. `deviceFromPlugin` unwraps the host's device
+    // adapter and nothing else, so a Chord Engine dropped in a rack lives in
+    // that rack type's own plugin list; and a nested rack is a rack type of its
+    // own with a RackInstance in the outer one (RackSyncManager), so one level
+    // of descent still misses it.
+    //
+    // Unguarded recursion, like chain_walk's own descent: racks nest as a tree,
+    // and a rack that contained itself would already be a cycle in the model.
+    const std::function<void(te::Plugin*)> visit = [&](te::Plugin* plugin) {
+        push(plugin);
+
+        if (auto* rackInstance = dynamic_cast<te::RackInstance*>(plugin))
+            if (rackInstance->type != nullptr)
+                for (auto* innerPlugin : rackInstance->type->getPlugins())
+                    visit(innerPlugin);
+    };
+
+    for (auto* plugin : teTrack.pluginList)
+        visit(plugin);
+}
+
+}  // namespace
+
 void AudioBridge::trackPropertyChanged(int trackId) {
     // Track property changed (volume, pan, mute, solo, recordArmed) - sync to Tracktion Engine
     auto* track = getAudioTrack(trackId);
@@ -369,6 +452,7 @@ void AudioBridge::trackPropertyChanged(int trackId) {
             // Sync mute/solo to track
             track->setMute(trackInfo->muted);
             track->setSolo(trackInfo->soloed);
+            pushChordAudition(*track, *trackInfo);
 
             // Sync freeze state
             if (trackInfo->frozen != track->isFrozen(te::AudioTrack::individualFreeze)) {
@@ -432,6 +516,27 @@ void AudioBridge::trackPropertyChanged(int trackId) {
     automationRecording_.onTrackPropertyChanged(trackId);
 }
 
+// Guarded like syncAll: reassigning a track input the graph already has, while it
+// plays, is not safe in Tracktion.
+void AudioBridge::trackAudioInputChanged(TrackId trackId) {
+    const auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+    if (trackInfo != nullptr &&
+        trackController_.getTrackAudioInput(trackId) != trackInfo->audioInputDevice)
+        trackController_.setTrackAudioInput(trackId, trackInfo->audioInputDevice);
+}
+
+void AudioBridge::trackMidiInputChanged(TrackId trackId) {
+    const auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+    if (trackInfo != nullptr &&
+        midiInputRouter_.getTrackMidiInput(trackId) != trackInfo->midiInputDevice)
+        midiInputRouter_.setTrackMidiInput(trackId, trackInfo->midiInputDevice);
+}
+
+void AudioBridge::chainElementMoving(const ChainNodePath& sourcePath,
+                                     const ChainNodePath& destinationChain) {
+    pluginManager_.prepareForChainElementMove(sourcePath, destinationChain);
+}
+
 void AudioBridge::trackSelectionChanged(TrackId newTrackId) {
     juce::ignoreUnused(newTrackId);
     updateMidiInputRouting();
@@ -441,11 +546,14 @@ void AudioBridge::updateMidiInputRouting() {
     midiInputRouter_.updateMidiInputRouting();
 }
 
-void AudioBridge::refreshInsertDeviceEnablement() {
-    if (insertDeviceEnablement_.refresh())
-        if (auto* ctx = edit_.getCurrentPlaybackContext();
-            ctx != nullptr && ctx->isPlaybackGraphAllocated())
-            ctx->reallocate();
+bool AudioBridge::refreshInsertDeviceEnablement() {
+    if (!insertDeviceEnablement_.refresh())
+        return false;
+
+    if (auto* ctx = edit_.getCurrentPlaybackContext();
+        ctx != nullptr && ctx->isPlaybackGraphAllocated())
+        ctx->reallocate();
+    return true;
 }
 
 void AudioBridge::resyncAllInputMonitors() {
@@ -460,6 +568,15 @@ void AudioBridge::trackDevicesChanged(TrackId trackId) {
     DBG("AudioBridge::trackDevicesChanged: trackId=" << trackId);
     // Devices on a track changed - resync that track's plugins
     syncTrackPlugins(trackId);
+
+    // A Chord Engine that has just been created has never been told what the
+    // audition toggle is set to, and the toggle only pushes when it changes.
+    // Creating a chord track lands here rather than in the full sync as well:
+    // createTrack notifies before it adds the default devices, so the sync that
+    // followed had no engine to reach (#2314).
+    if (auto* teTrack = getAudioTrack(trackId))
+        if (const auto* trackInfo = TrackManager::getInstance().getTrack(trackId))
+            pushChordAudition(*teTrack, *trackInfo);
 
     // An added/removed external insert claims/releases its hardware ports
     // (#1623). Cheap and idempotent when no inserts changed.
@@ -568,6 +685,10 @@ void AudioBridge::deviceParameterChanged(const ChainNodePath& devicePath, int pa
     // A single device parameter changed - sync only that parameter to processor
     auto* processor = getDeviceProcessor(devicePath);
     if (!processor) {
+        // The model updated and the caller was told ok, but nothing reached
+        // the engine. Say so rather than dropping the write silently (#2288).
+        DBG("AudioBridge: dropping parameter change for device " << devicePath.getDeviceId()
+                                                                 << " - no processor");
         return;
     }
 
@@ -602,7 +723,6 @@ void AudioBridge::devicePropertyChanged(const ChainNodePath& devicePath) {
     if (auto tePlugin = pluginManager_.getPlugin(devicePath)) {
         tePlugin->setEnabled(effectiveEnabled);
         tePlugin->setDeltaSoloEnabled(device->deltaSolo);
-        daw::audio::syncPluginMidiInThru(tePlugin.get(), device->midiInThru);
     }
 
     // Wrapped instruments consume MIDI while active. Only top-level devices own
@@ -613,10 +733,11 @@ void AudioBridge::devicePropertyChanged(const ChainNodePath& devicePath) {
         if (auto* rackInstance = rackManager.getRackInstance(deviceId)) {
             rackInstance->setEnabled(effectiveEnabled);
         }
-        // Keep the wrapper's raw-MIDI passthrough in sync with the routing model
-        // (always on for a plain instrument; midiInThru-controlled for a
-        // MIDI-output device), so notes keep reaching downstream devices.
-        rackManager.setMidiInThru(deviceId, routing::makeRoutingNode(*device).passesRawMidiInput());
+        // Keep the wrapper's MIDI paths in sync with the routing model: the raw
+        // passthrough (always on for a plain instrument; midiInThru-controlled
+        // for a MIDI-output device) so notes keep reaching downstream devices,
+        // and the plugin's own MIDI output.
+        rackManager.updateMidiRouting(deviceId, routing::makeRoutingNode(*device));
     }
 
     // Push gain to the audio-graph atomic so DeviceGainNode picks it up.
@@ -632,11 +753,25 @@ void AudioBridge::devicePropertyChanged(const ChainNodePath& devicePath) {
 
     sidechainRouting_.handleDeviceSidechainChanged(devicePath.trackId, *device);
 
-    // External-insert routing changed (#1623): auto-enable any hardware port
-    // the insert now references, and re-apply the MIDI feedback guard so the
-    // send target's own input port is dropped from this track's routing.
+    // External-insert routing changed (#1623): the plugin follows the model the insert
+    // panel edits (#2279), any hardware port it now references is auto-enabled, and the
+    // MIDI feedback guard drops the send target's own input port from this track.
     if (daw::audio::internalPluginHasTag(device->pluginId, "external-insert")) {
-        refreshInsertDeviceEnablement();
+        if (auto* insert =
+                dynamic_cast<te::InsertPlugin*>(pluginManager_.getPlugin(devicePath).get())) {
+            const auto before = daw::audio::insertConfigOf(*insert);
+            daw::audio::applyInsertConfig(*insert, device->insert);
+            const auto after = daw::audio::insertConfigOf(*insert);
+
+            // The send and return are wired into the graph when it is built.
+            if (!refreshInsertDeviceEnablement() && (before.sendDevice != after.sendDevice ||
+                                                     before.returnDevice != after.returnDevice))
+                if (auto* ctx = edit_.getCurrentPlaybackContext();
+                    ctx != nullptr && ctx->isPlaybackGraphAllocated())
+                    ctx->reallocate();
+        } else {
+            refreshInsertDeviceEnablement();
+        }
         midiInputRouter_.reapplyExternalInstrumentSendbackGuard(devicePath.trackId);
     }
 }
@@ -709,26 +844,6 @@ void AudioBridge::captureAllPluginStates() {
     pluginManager_.captureAllPluginStates();
 }
 
-void AudioBridge::captureWarpMarkerStates() {
-    auto& cm = ClipManager::getInstance();
-    for (auto& clip : cm.getArrangementClips()) {
-        if (clip.isAudio() && audioEventRef(clip).warpEnabled) {
-            auto markers = clipSynchronizer_.getWarpMarkers(clip.id);
-            DBG("captureWarpMarkerStates: clip "
-                << clip.id << " warpEnabled=" << (int)audioEventRef(clip).warpEnabled
-                << " markers=" << (int)markers.size());
-            if (auto* event = primaryEventOf(cm.getClip(clip.id))) {
-                event->warpMarkers.clear();
-                for (const auto& m : markers) {
-                    event->warpMarkers.push_back({m.sourceTime, m.warpTime});
-                }
-                DBG("captureWarpMarkerStates: stored " << event->warpMarkers.size()
-                                                       << " markers into the audio event");
-            }
-        }
-    }
-}
-
 te::Plugin::Ptr AudioBridge::loadBuiltInPlugin(const TrackId trackId, const juce::String& type) {
     return pluginManager_.loadBuiltInPlugin(trackId, type);
 }
@@ -788,28 +903,9 @@ DeviceProcessor* AudioBridge::getDeviceProcessor(const ChainNodePath& devicePath
 }
 
 namespace {
-te::ExternalPlugin* asExternalPlugin(te::Plugin::Ptr plugin) {
+te::ExternalPlugin* asExternalPlugin(const te::Plugin::Ptr& plugin) {
     return dynamic_cast<te::ExternalPlugin*>(plugin.get());
 }
-
-// Loads / saves a .vstpreset blob via JUCE's VST3Client extension. Two-mode
-// visitor: when `dataIn` is non-empty we apply it as a preset; otherwise we
-// pull the current state into `dataOut`.
-struct Vst3PresetVisitor : juce::ExtensionsVisitor {
-    juce::MemoryBlock dataIn;
-    juce::MemoryBlock dataOut;
-    bool ok = false;
-    bool save = false;
-
-    void visitVST3Client(const VST3Client& client) override {
-        if (save) {
-            dataOut = client.getPreset();
-            ok = dataOut.getSize() > 0;
-        } else {
-            ok = client.setPreset(dataIn);
-        }
-    }
-};
 
 }  // namespace
 
@@ -821,13 +917,8 @@ juce::String AudioBridge::getVst3DeviceId(const ChainNodePath& devicePath) const
     if (pi == nullptr)
         return {};
     // Pull the current state as a .vstpreset; its header carries the 32-char
-    // class id. Visitor stays empty for non-VST3 plugins.
-    Vst3PresetVisitor visitor;
-    visitor.save = true;
-    pi->getExtensions(visitor);
-    if (!visitor.ok)
-        return {};  // not a VST3 plugin
-    return vst3::classIdFromPreset(visitor.dataOut);
+    // class id. Empty for a plugin that is not a VST3.
+    return vst3::classIdFromPreset(readVst3Preset(*pi).preset);
 }
 
 int AudioBridge::getPluginNumPrograms(const ChainNodePath& devicePath) const {
@@ -884,16 +975,12 @@ bool AudioBridge::loadPluginPresetFile(const ChainNodePath& devicePath,
         juce::MemoryBlock raw;
         if (!presetFile.loadFileAsData(raw))
             return false;
-        Vst3PresetVisitor visitor;
-        visitor.save = false;
-        visitor.dataIn = std::move(raw);
-        pi->getExtensions(visitor);
-        applied = visitor.ok;
+        applied = writeVst3Preset(*pi, raw) == Vst3PresetOutcome::Applied;
     } else if (extension == ".aupreset") {
         juce::MemoryBlock raw;
         if (!presetFile.loadFileAsData(raw))
             return false;
-        pi->setCurrentProgramStateInformation(raw.getData(), (int)raw.getSize());
+        pi->setCurrentProgramStateInformation(raw.getData(), static_cast<int>(raw.getSize()));
         applied = true;
     }
 
@@ -913,13 +1000,11 @@ bool AudioBridge::savePluginPresetFile(const ChainNodePath& devicePath,
     const auto extension = presetFile.getFileExtension().toLowerCase();
 
     if (extension == ".vstpreset") {
-        Vst3PresetVisitor visitor;
-        visitor.save = true;
-        pi->getExtensions(visitor);
-        if (!visitor.ok)
-            return false;
+        const auto preset = readVst3Preset(*pi).preset;
+        if (preset.getSize() == 0)
+            return false;  // not a VST3 plugin
         presetFile.getParentDirectory().createDirectory();
-        return presetFile.replaceWithData(visitor.dataOut.getData(), visitor.dataOut.getSize());
+        return presetFile.replaceWithData(preset.getData(), preset.getSize());
     }
 
     if (extension == ".aupreset") {
@@ -993,6 +1078,7 @@ void AudioBridge::syncAll() {
             // Sync mute/solo state to TE (essential on project load)
             teTrack->setMute(track.muted);
             teTrack->setSolo(track.soloed);
+            pushChordAudition(*teTrack, track);
 
             // Sync audio output routing (group/aux targets now exist from first pass)
             trackController_.setTrackAudioOutput(track.id, track.audioOutputDevice);
@@ -1172,6 +1258,10 @@ void AudioBridge::onMidiDevicesAvailable() {
     midiInputRouter_.onMidiDevicesAvailable();
 }
 
+void AudioBridge::refreshActiveMidiInputs() {
+    midiInputRouter_.refreshActiveMidiInputs();
+}
+
 void AudioBridge::applyPendingMidiRoutes() {
     midiInputRouter_.applyPendingRoutes();
 }
@@ -1244,6 +1334,11 @@ void AudioBridge::timerCallback() {
     // Update metering from level measurers (runs at 30 FPS on message thread).
     // (Skipped entirely during an offline render by the early return above, so
     // the live meters don't twitch to the render's audio either.)
+    updateMetersFromGraph();
+}
+
+/// What the graph taps say, pushed to everything that draws a meter.
+void AudioBridge::updateMetersFromGraph() {
     trackController_.withTrackMapping(
         [this](const std::map<TrackId, te::AudioTrack*>& trackMapping) {
             refreshInputMeterClients(trackMapping);
@@ -1276,9 +1371,9 @@ void AudioBridge::timerCallback() {
                         if (!hasData)
                             continue;
 
-                        meteringBuffer_.pushLevels(trackId, data);
-                        recordingMeteringBuffer_.pushLevels(trackId, data);
-                        remoteMeteringBuffer_.pushLevels(trackId, data);
+                        meters_.mixer.pushLevels(trackId, data);
+                        meters_.recording.pushLevels(trackId, data);
+                        meters_.setRemotePeak(trackId, data);
 
                         // Write audio peak to sidechain bus for Audio-triggered modulators
                         float peak = std::max(data.peakL, data.peakR);
@@ -1299,7 +1394,7 @@ void AudioBridge::timerCallback() {
         auto meteringMap = pluginManager_.getRackSyncManager().getMeteringMap();
         for (const auto& [trackId, info] : meteringMap) {
             MeterData trackMeter;
-            if (!meteringBuffer_.peekLatest(trackId, trackMeter))
+            if (!meters_.mixer.peekLatest(trackId, trackMeter))
                 continue;
 
             for (const auto& devicePath : info.devicePaths) {
@@ -1313,6 +1408,9 @@ void AudioBridge::timerCallback() {
             }
         }
     }
+
+    // Where the chain UI reads them from, whichever engine rendered (#2570).
+    deviceMetering_.publishInto(deviceMeters_);
 
     // Keep the master meter client registered on the CURRENT playback context.
     // The context is destroyed + rebuilt after an offline render frees it, so
@@ -1334,29 +1432,8 @@ void AudioBridge::timerCallback() {
         float peakL = juce::Decibels::decibelsToGain(levelL.dB);
         float peakR = juce::Decibels::decibelsToGain(levelR.dB);
 
-        masterPeakL_.store(peakL, std::memory_order_relaxed);
-        masterPeakR_.store(peakR, std::memory_order_relaxed);
+        meters_.setMasterPeak(peakL, peakR);
     }
-}
-
-// =============================================================================
-// Automation Recording
-// =============================================================================
-
-void AudioBridge::setAutomationWriteEnabled(bool enabled) {
-    automationRecording_.setWriteEnabled(enabled);
-}
-
-bool AudioBridge::isAutomationWriteEnabled() const {
-    return automationRecording_.isWriteEnabled();
-}
-
-void AudioBridge::setAutomationMode(AutomationMode mode) {
-    automationRecording_.setMode(mode);
-}
-
-AutomationMode AudioBridge::getAutomationMode() const {
-    return automationRecording_.getMode();
 }
 
 // =============================================================================
@@ -1399,30 +1476,6 @@ float AudioBridge::getMasterPan() const {
 // Audio Routing
 // =============================================================================
 
-juce::BigInteger AudioBridge::getEnabledInputChannels() const {
-    juce::BigInteger enabled;
-    auto& dm = engine_.getDeviceManager();
-    for (auto* dev : dm.getWaveInputDevices()) {
-        if (dev->isEnabled()) {
-            for (const auto& ch : dev->getChannels())
-                enabled.setBit(ch.indexInDevice, true);
-        }
-    }
-    return enabled;
-}
-
-std::map<int, juce::String> AudioBridge::getInputDeviceNamesByChannel() const {
-    std::map<int, juce::String> result;
-    auto& dm = engine_.getDeviceManager();
-    for (auto* dev : dm.getWaveInputDevices()) {
-        if (dev->isEnabled()) {
-            for (const auto& ch : dev->getChannels())
-                result[ch.indexInDevice] = dev->getName();
-        }
-    }
-    return result;
-}
-
 juce::BigInteger AudioBridge::getEnabledOutputChannels() const {
     juce::BigInteger enabled;
     auto& dm = engine_.getDeviceManager();
@@ -1433,6 +1486,18 @@ juce::BigInteger AudioBridge::getEnabledOutputChannels() const {
         }
     }
     return enabled;
+}
+
+std::map<int, juce::String> AudioBridge::getOutputDeviceNamesByChannel() const {
+    std::map<int, juce::String> result;
+    auto& dm = engine_.getDeviceManager();
+    for (auto* dev : dm.getWaveOutputDevices()) {
+        if (dev->isEnabled()) {
+            for (const auto& ch : dev->getChannels())
+                result[ch.indexInDevice] = dev->getName();
+        }
+    }
+    return result;
 }
 
 void AudioBridge::setTrackAudioOutput(TrackId trackId, const juce::String& destination) {
@@ -1466,14 +1531,6 @@ void AudioBridge::enableAllMidiInputDevices() {
 
 void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDeviceId) {
     midiInputRouter_.setTrackMidiInput(trackId, midiDeviceId);
-}
-
-void AudioBridge::setSurfaceOnlyMidiInputPort(const juce::String& midiDeviceIdOrName) {
-    midiInputRouter_.setSurfaceOnlyMidiInputPort(midiDeviceIdOrName);
-}
-
-void AudioBridge::clearSurfaceOnlyMidiInputPorts() {
-    midiInputRouter_.clearSurfaceOnlyMidiInputPorts();
 }
 
 juce::String AudioBridge::getTrackMidiInput(TrackId trackId) const {
@@ -1511,12 +1568,8 @@ bool AudioBridge::togglePluginWindow(const ChainNodePath& devicePath) {
                   : false;
 }
 
-bool AudioBridge::loadSamplerSample(const ChainNodePath& devicePath, const juce::File& file) {
-    return samplerFileLoader_.loadSample(devicePath, file);
-}
-
 // =============================================================================
-// Warp Markers (delegated to ClipSynchronizer)
+// Transient Detection (delegated to ClipSynchronizer)
 // =============================================================================
 
 void AudioBridge::setTransientSensitivity(ClipId clipId, float sensitivity) {
@@ -1525,30 +1578,6 @@ void AudioBridge::setTransientSensitivity(ClipId clipId, float sensitivity) {
 
 bool AudioBridge::getTransientTimes(ClipId clipId) {
     return clipSynchronizer_.getTransientTimes(clipId);
-}
-
-void AudioBridge::enableWarp(ClipId clipId) {
-    clipSynchronizer_.enableWarp(clipId);
-}
-
-void AudioBridge::disableWarp(ClipId clipId) {
-    clipSynchronizer_.disableWarp(clipId);
-}
-
-std::vector<WarpMarkerInfo> AudioBridge::getWarpMarkers(ClipId clipId) {
-    return clipSynchronizer_.getWarpMarkers(clipId);
-}
-
-int AudioBridge::addWarpMarker(ClipId clipId, double sourceTime, double warpTime) {
-    return clipSynchronizer_.addWarpMarker(clipId, sourceTime, warpTime);
-}
-
-double AudioBridge::moveWarpMarker(ClipId clipId, int index, double newWarpTime) {
-    return clipSynchronizer_.moveWarpMarker(clipId, index, newWarpTime);
-}
-
-void AudioBridge::removeWarpMarker(ClipId clipId, int index) {
-    clipSynchronizer_.removeWarpMarker(clipId, index);
 }
 
 // =============================================================================
@@ -1577,8 +1606,8 @@ void AudioBridge::ensureSessionMonitorPlugin() {
     auto& masterList = edit_.getMasterPluginList();
 
     // Check if a SessionMonitorPlugin already exists
-    for (int i = 0; i < masterList.size(); ++i) {
-        if (auto* existing = dynamic_cast<SessionMonitorPlugin*>(masterList[i])) {
+    for (auto* i : masterList) {
+        if (auto* existing = dynamic_cast<SessionMonitorPlugin*>(i)) {
             sessionMonitorPlugin_ = existing;
             sessionMonitorPlugin_->setSessionContext(&sessionAudioMonitor_);
             return;
@@ -1591,8 +1620,8 @@ void AudioBridge::ensureSessionMonitorPlugin() {
     masterList.insertPlugin(pluginState, 0);
 
     // Find the newly created plugin
-    for (int i = 0; i < masterList.size(); ++i) {
-        if (auto* mon = dynamic_cast<SessionMonitorPlugin*>(masterList[i])) {
+    for (auto* i : masterList) {
+        if (auto* mon = dynamic_cast<SessionMonitorPlugin*>(i)) {
             sessionMonitorPlugin_ = mon;
             sessionMonitorPlugin_->setSessionContext(&sessionAudioMonitor_);
             return;

@@ -20,12 +20,17 @@
 #include <string>
 #include <vector>
 
+struct sqlite3;
+
 namespace magda::media {
 
 class MediaDatabase;
 
 struct EffectiveMetadata {
     std::optional<double> bpm;
+    /// What the scan measured, filled by getUserMetadataForFile only, so a
+    /// drop can tell the user's tempo from the library's.
+    std::optional<double> detectedBpm;
     std::optional<std::string> keyRoot;
     std::optional<std::string> keyScale;
     std::optional<double> totalBeats;
@@ -106,6 +111,11 @@ int updateEditableMediaRows(MediaDatabase& db, const std::vector<std::int64_t>& 
 
 int resetMediaRowsToDetected(MediaDatabase& db, const std::vector<std::int64_t>& fileIds);
 
+// Forget everything musical the library holds for these rows: the scan's
+// tempo and key as well as the user's overrides and warp markers. The row
+// stays; the next scan or BEAT press measures again. Returns rows changed.
+int clearMediaRowMetadata(MediaDatabase& db, const std::vector<std::int64_t>& fileIds);
+
 [[nodiscard]] std::vector<MissingFileCandidate> findMissingFileCandidates(MediaDatabase& db,
                                                                           std::int64_t fileId,
                                                                           int limit = 12);
@@ -120,6 +130,11 @@ int deleteMediaRows(MediaDatabase& db, const std::vector<std::int64_t>& fileIds)
 // media_file.path UNIQUE, so this handles symlink/alias/case variants. Files
 // on disk are not deleted. Returns removed media_file rows.
 int removeDuplicateFilePathRows(MediaDatabase& db);
+
+// Rewrite every stored path to its libraryPath, merging rows that turn out to be one file
+// onto the keeper removeDuplicateFilePathRows would pick. Returns rows removed or rewritten;
+// throws MediaDatabaseError on failure.
+int canonicalizeLibraryPaths(sqlite3* db);
 
 [[nodiscard]] std::optional<std::vector<WarpMarkerMetadata>> getUserWarpMarkers(
     MediaDatabase& db, const std::filesystem::path& path);

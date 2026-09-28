@@ -1,9 +1,14 @@
 #include "AudioThumbnailManager.hpp"
 
 #include "WaveformPeakCache.hpp"
+#include "core/BlockMath.hpp"
+#include "media_db/AudioFeatures.hpp"
+#include "media_db/BeatTracker.hpp"
 
 // clang-format off
 #include <tracktion_engine/tracktion_engine.h>
+
+#include <algorithm>
 // clang-format on
 
 namespace magda {
@@ -16,6 +21,8 @@ AudioThumbnailManager::AudioThumbnailManager() {
     // Thumbnails are also cached to disk in a temp directory
     thumbnailCache_ = std::make_unique<juce::AudioThumbnailCache>(100);
 }
+
+AudioThumbnailManager::~AudioThumbnailManager() = default;
 
 AudioThumbnailManager& AudioThumbnailManager::getInstance() {
     static AudioThumbnailManager instance;
@@ -163,28 +170,6 @@ void AudioThumbnailManager::drawWaveform(juce::Graphics& g, const juce::Rectangl
     }
 }
 
-namespace {
-// BPM DSP fallback is disabled. Tracktion/SoundTouch BPMDetect is crashing on
-// some files inside its worker thread; return unknown BPM instead of risking the app.
-double runBpmDetection(const juce::String& filePath) {
-    juce::ignoreUnused(filePath);
-    constexpr double result = 0.0;
-    return result;
-}
-}  // namespace
-
-double AudioThumbnailManager::detectBPM(const juce::String& filePath) {
-    // Check cache first
-    auto it = bpmCache_.find(filePath);
-    if (it != bpmCache_.end()) {
-        return it->second;
-    }
-
-    double result = runBpmDetection(filePath);
-    bpmCache_[filePath] = result;
-    return result;
-}
-
 double AudioThumbnailManager::getCachedBPM(const juce::String& filePath) const {
     auto it = bpmCache_.find(filePath);
     return it != bpmCache_.end() ? it->second : 0.0;
@@ -195,23 +180,73 @@ void AudioThumbnailManager::cacheBPM(const juce::String& filePath, double bpm) {
         bpmCache_[filePath] = bpm;
 }
 
+double AudioThumbnailManager::measureTempoOnBackgroundThread(const juce::String& filePath) {
+    if (!beatTracker_ && !beatTrackerFailed_ && media::BeatTracker::isAvailable()) {
+        try {
+            beatTracker_ =
+                std::make_unique<media::BeatTracker>(media::BeatTracker::defaultModelPath());
+        } catch (const std::exception& e) {
+            beatTrackerFailed_ = true;
+        }
+    }
+    try {
+        return media::detectTempo(std::filesystem::path(filePath.toStdString()), beatTracker_.get())
+            .value_or(0.0);
+    } catch (const std::exception& e) {
+        return 0.0;
+    }
+}
+
 void AudioThumbnailManager::requestBPMDetection(const juce::String& filePath,
                                                 std::function<void(double)> onComplete) {
-    // Caches are message-thread only (no locks).
-    JUCE_ASSERT_MESSAGE_THREAD;
+    // Caches are message-thread only (no locks). The model tests have no
+    // message thread at all, and that is not the mistake this guards.
+    jassert(juce::MessageManager::getInstanceWithoutCreating() == nullptr ||
+            juce::MessageManager::getInstance()->isThisTheMessageThread());
 
-    // Cache hit — fire callback synchronously and return.
-    auto cacheIt = bpmCache_.find(filePath);
-    if (cacheIt != bpmCache_.end()) {
+    if (auto cached = bpmCache_.find(filePath); cached != bpmCache_.end()) {
         if (onComplete)
-            onComplete(cacheIt->second);
+            onComplete(cached->second);
+        return;
+    }
+    // No message loop means nowhere to deliver a result: the model tests.
+    if (!juce::File(filePath).existsAsFile() ||
+        juce::MessageManager::getInstanceWithoutCreating() == nullptr) {
+        if (onComplete)
+            onComplete(0.0);
         return;
     }
 
-    const double result = runBpmDetection(filePath);
-    bpmCache_[filePath] = result;
+    const bool inFlight = pendingBpm_.count(filePath) > 0;
+    auto& waiting = pendingBpm_[filePath];
     if (onComplete)
-        onComplete(result);
+        waiting.push_back(std::move(onComplete));
+    if (inFlight) {
+        return;
+    }
+
+    getOrCreateBackgroundPool().addJob([filePath]() {
+        auto& self = getInstance();
+        const double bpm = self.measureTempoOnBackgroundThread(filePath);
+        // A miss is forgotten only while a model could still arrive: this build
+        // can run one and none is installed yet.
+#if defined(MAGDA_HAVE_CLAP) && MAGDA_HAVE_CLAP
+        const bool modelCouldArrive = self.beatTracker_ == nullptr;
+#else
+        const bool modelCouldArrive = false;
+#endif
+        const bool remember = bpm > 0.0 || !modelCouldArrive;
+        juce::MessageManager::callAsync([filePath, bpm, remember]() {
+            auto& self = getInstance();
+            if (remember)
+                self.bpmCache_[filePath] = bpm;
+            auto node = self.pendingBpm_.extract(filePath);
+            if (node.empty())
+                return;
+            for (auto& callback : node.mapped())
+                callback(bpm);
+        });
+    });
 }
 
 const juce::Array<double>* AudioThumbnailManager::getCachedTransients(
@@ -293,16 +328,16 @@ void AudioThumbnailManager::drawWaveformFromSamples(
 
     const double sampleRate = reader->sampleRate;
     const juce::int64 totalFileLength = reader->lengthInSamples;
-    const juce::int64 startSample = juce::jlimit<juce::int64>(
+    const auto startSample = juce::jlimit<juce::int64>(
         0, totalFileLength, static_cast<juce::int64>(startTime * sampleRate));
-    const juce::int64 endSample = juce::jlimit<juce::int64>(
+    const auto endSample = juce::jlimit<juce::int64>(
         startSample, totalFileLength, static_cast<juce::int64>(endTime * sampleRate));
     const juce::int64 totalSamples = endSample - startSample;
 
     if (totalSamples <= 0)
         return;
 
-    const float midY = static_cast<float>(bounds.getCentreY());
+    const auto midY = static_cast<float>(bounds.getCentreY());
     const float halfHeight = static_cast<float>(height) * 0.5f * verticalZoom;
     const double samplesPerPixel = static_cast<double>(totalSamples) / width;
 
@@ -349,7 +384,7 @@ void AudioThumbnailManager::drawWaveformFromSamples(
                 float val = s0 + static_cast<float>(frac) * (s1 - s0);
 
                 float y = chMidY - val * chHalfHeight;
-                float px = static_cast<float>(bounds.getX() + x);
+                auto px = static_cast<float>(bounds.getX() + x);
 
                 if (x == 0)
                     path.startNewSubPath(px, y);
@@ -391,7 +426,7 @@ void AudioThumbnailManager::drawWaveformFromSamples(
             chunkBuffer.setSize(numChannels, maxChunk);
         }
 
-        const size_t w = static_cast<size_t>(width);
+        const auto w = static_cast<size_t>(width);
 
         for (int ch = 0; ch < numChannels; ++ch) {
             float chMidY = midY;
@@ -406,14 +441,14 @@ void AudioThumbnailManager::drawWaveformFromSamples(
             std::vector<float> maxValues(w);
 
             for (int x = 0; x < width; ++x) {
-                const juce::int64 colStart =
+                const auto colStart =
                     static_cast<juce::int64>(static_cast<double>(x) * totalSamples / width);
                 const juce::int64 colEnd = std::min(
                     static_cast<juce::int64>(static_cast<double>(x + 1) * totalSamples / width),
                     totalSamples);
 
-                float minVal = 1.0f;
-                float maxVal = -1.0f;
+                float minVal = 0.0f;
+                float maxVal = 0.0f;
 
                 if (usePeakCache) {
                     const auto mm = peakCache->getMinMaxForRange(ch, startSample + colStart,
@@ -421,26 +456,18 @@ void AudioThumbnailManager::drawWaveformFromSamples(
                     minVal = mm.min;
                     maxVal = mm.max;
                 } else if (useFullBuffer) {
-                    const float* samples = buffer.getReadPointer(ch);
-                    for (juce::int64 s = colStart; s < colEnd; ++s) {
-                        const float v = samples[s];
-                        if (v < minVal)
-                            minVal = v;
-                        if (v > maxVal)
-                            maxVal = v;
-                    }
+                    const auto column = magda::blockMinMax(buffer.getReadPointer(ch) + colStart,
+                                                           static_cast<int>(colEnd - colStart));
+                    minVal = column.getStart();
+                    maxVal = column.getEnd();
                 } else {
                     int count = static_cast<int>(colEnd - colStart);
                     int readCount = juce::jmin(count, chunkBuffer.getNumSamples());
                     reader->read(&chunkBuffer, 0, readCount, startSample + colStart, true, true);
-                    const float* samples = chunkBuffer.getReadPointer(ch);
-                    for (int s = 0; s < readCount; ++s) {
-                        const float v = samples[s];
-                        if (v < minVal)
-                            minVal = v;
-                        if (v > maxVal)
-                            maxVal = v;
-                    }
+                    const auto column =
+                        magda::blockMinMax(chunkBuffer.getReadPointer(ch), readCount);
+                    minVal = column.getStart();
+                    maxVal = column.getEnd();
                 }
 
                 if (minVal > maxVal)
@@ -545,7 +572,7 @@ void AudioThumbnailManager::requestPeakCacheLoad(const juce::String& audioFilePa
     });
 }
 
-void AudioThumbnailManager::shutdown() {
+void AudioThumbnailManager::stopBackgroundWork() {
     // Stop any in-flight peak-compute jobs before tearing down state.
     if (backgroundThreadPool_) {
         // Drain UNBOUNDED (timeout < 0). A finite timeout that a peak-compute
@@ -554,7 +581,15 @@ void AudioThumbnailManager::shutdown() {
         backgroundThreadPool_->removeAllJobs(true, -1);
         backgroundThreadPool_.reset();
     }
+    pendingBpm_.clear();
     pendingPeakComputes_.clear();
+    // With the thread, since only it touched the model: an ONNX session left
+    // to static destruction died locking a mutex the runtime had already freed.
+    beatTracker_.reset();
+}
+
+void AudioThumbnailManager::shutdown() {
+    stopBackgroundWork();
     peakCaches_.clear();
 
     // Clear the cache first — this cancels any pending background thumbnail jobs

@@ -1,9 +1,10 @@
 #include "TimeRuler.hpp"
 
+#include <algorithm>
 #include <cmath>
 
+#include "ActiveTheme.hpp"
 #include "CursorManager.hpp"
-#include "DarkTheme.hpp"
 #include "FontManager.hpp"
 #include "LayoutConfig.hpp"
 #include "LoopStripRenderer.hpp"
@@ -22,12 +23,12 @@ TimeRuler::~TimeRuler() {
 
 void TimeRuler::paint(juce::Graphics& g) {
     // Background
-    g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::BACKGROUND_ALT));
 
     int height = getHeight();
     int tickAreaTop = height - tickHeightMajor();
 
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
 
     // Border line above ticks
     g.fillRect(0, tickAreaTop, getWidth(), 1);
@@ -191,7 +192,7 @@ void TimeRuler::timerCallback() {
     }
 }
 
-int TimeRuler::getPreferredHeight() const {
+int TimeRuler::getPreferredHeight() {
     return LayoutConfig::getInstance().timeRulerHeight;
 }
 
@@ -412,7 +413,7 @@ void TimeRuler::mouseMove(const juce::MouseEvent& event) {
         desiredCursor == juce::MouseCursor::IBeamCursor) {
         auto loopCursor = loopInteraction_.getCursor(event.x, event.y);
         if (loopCursor != juce::MouseCursor::NormalCursor)
-            desiredCursor = loopCursor;
+            desiredCursor = std::move(loopCursor);
     }
 
     setMouseCursor(desiredCursor);
@@ -460,8 +461,7 @@ void TimeRuler::drawSecondsMode(juce::Graphics& g) {
     // Find first visible time
     double startTime = pixelToTime(0);
     startTime = std::floor(startTime / interval) * interval;
-    if (startTime < 0)
-        startTime = 0;
+    startTime = std::max<double>(startTime, 0);
 
     // Draw markers
     g.setFont(11.0f);
@@ -481,7 +481,7 @@ void TimeRuler::drawSecondsMode(juce::Graphics& g) {
 
         // Draw tick
         g.setColour(
-            DarkTheme::getColour(isMajor ? DarkTheme::TEXT_SECONDARY : DarkTheme::TEXT_DIM));
+            ActiveTheme::getColour(isMajor ? ActiveTheme::TEXT_SECONDARY : ActiveTheme::TEXT_DIM));
         g.drawVerticalLine(x, static_cast<float>(tickBottom - tickHeight),
                            static_cast<float>(tickBottom));
 
@@ -490,7 +490,7 @@ void TimeRuler::drawSecondsMode(juce::Graphics& g) {
             bool hasLoop = loopEnabled && loopLength > 0.0;
             int loopSpace = hasLoop ? LOOP_STRIP_HEIGHT : 0;
             int lblBottom = tickBottom - tickHeightMajor() - loopSpace;
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
             juce::String label = formatTimeLabel(time, interval);
             g.drawText(label, x - 30, 1, 60, lblBottom - 1, juce::Justification::centredTop, false);
         }
@@ -506,21 +506,21 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
     // ~50px apart, growing to multi-bar steps when zoomed out. A finer snap grid
     // still snaps but never forces the display denser than the adaptive interval.
     constexpr int minPixelSpacing = 50;  // matches LayoutConfig::minGridPixelSpacing
-    const double frac = GridConstants::findBeatSubdivision(zoom, minPixelSpacing);
+    const double barLengthBeats = getBeatsPerBar();
+    const double sigBeat = signatureBeatLength(timeSigDenominator);
+    const double frac = GridConstants::findBeatSubdivision(zoom, sigBeat, minPixelSpacing);
     double intervalBeats =
         (frac > 0.0) ? frac
-                     : static_cast<double>(timeSigNumerator) *
-                           GridConstants::findBarMultiple(zoom, timeSigNumerator, minPixelSpacing);
-    if (gridResolutionBeats > intervalBeats)
-        intervalBeats = gridResolutionBeats;
+                     : barLengthBeats *
+                           GridConstants::findBarMultiple(zoom, barLengthBeats, minPixelSpacing);
+    intervalBeats = std::max(intervalBeats, gridResolutionBeats);
 
-    double pixelsPerBeat = zoom;
-    double pixelsPerBar = zoom * timeSigNumerator;
-    double barLengthBeats = static_cast<double>(timeSigNumerator);
+    double pixelsPerBeat = zoom * sigBeat;
+    double pixelsPerBar = zoom * barLengthBeats;
 
     // Check if grid interval aligns with bar and beat boundaries
     bool alignsWithBars = GridConstants::gridAlignsWithBars(intervalBeats, barLengthBeats);
-    bool alignsWithBeats = GridConstants::gridAlignsWithBeats(intervalBeats);
+    bool alignsWithBeats = GridConstants::gridAlignsWithBeats(intervalBeats, sigBeat);
     bool gridAligned = alignsWithBars && alignsWithBeats;
 
     int tickBottom = height;
@@ -552,13 +552,11 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
     double barOriginBeats = barOriginSeconds * tempo / 60.0;
 
     double firstVisibleBeat = (currentScrollOffset - leftPadding) / zoom + barOriginBeats;
-    if (firstVisibleBeat < barOriginBeats)
-        firstVisibleBeat = barOriginBeats;
+    firstVisibleBeat = std::max(firstVisibleBeat, barOriginBeats);
 
-    long long startStep =
+    auto startStep =
         static_cast<long long>(std::floor((firstVisibleBeat - barOriginBeats) / intervalBeats));
-    if (startStep < 0)
-        startStep = 0;
+    startStep = std::max<long long>(startStep, 0);
 
     double totalTimelineBeats = timelineLength * tempo / 60.0;
     // Determine which musical subdivision level to label (must be power-of-2 division of a beat).
@@ -568,6 +566,8 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
     {
         const double subdivLevels[] = {0.5, 0.25, 0.125, 0.0625, 0.03125};
         for (double level : subdivLevels) {
+            if (level >= sigBeat)
+                continue;
             double pixelsPerLevel = level * zoom;
             if (pixelsPerLevel >= 65.0) {
                 subdivLabelBeats = level;
@@ -606,23 +606,23 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
         if (gridAligned) {
             double beatsFromOrigin = step * intervalBeats;
             auto [isBarStart, isBeatStart] =
-                GridConstants::classifyBeatPosition(beatsFromOrigin, barLengthBeats);
+                GridConstants::classifyBeatPosition(beatsFromOrigin, barLengthBeats, sigBeat);
 
             if (isBarStart) {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
                 g.drawVerticalLine(x, static_cast<float>(tickBottom - tickHeightMajor()),
                                    static_cast<float>(tickBottom));
             } else if (isBeatStart) {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.7f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.7f));
                 g.drawVerticalLine(x, static_cast<float>(tickBottom - mediumTickHeight),
                                    static_cast<float>(tickBottom));
             } else {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
                 g.drawVerticalLine(x, static_cast<float>(tickBottom - tickHeightMinor()),
                                    static_cast<float>(tickBottom));
             }
         } else {
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
             g.drawVerticalLine(x, static_cast<float>(tickBottom - tickHeightMinor()),
                                static_cast<float>(tickBottom));
         }
@@ -631,10 +631,9 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
     // Pass 2: Bar labels (highest priority — always drawn when interval allows)
     {
         // Iterate by bar
-        long long startBarStep = static_cast<long long>(
+        auto startBarStep = static_cast<long long>(
             std::floor((firstVisibleBeat - barOriginBeats) / barLengthBeats));
-        if (startBarStep < 0)
-            startBarStep = 0;
+        startBarStep = std::max<long long>(startBarStep, 0);
 
         for (long long barStep = startBarStep;; ++barStep) {
             double beat = barOriginBeats + barStep * barLengthBeats;
@@ -649,7 +648,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
 
             int bar = static_cast<int>(barStep) + 1;
             if ((bar - 1) % barLabelInterval == 0) {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
                 g.setFont(FontManager::getInstance().getUIFont(12.0f).boldened());
                 g.drawText(juce::String(bar), x - 35, labelY, 70, labelHeight,
                            juce::Justification::centred);
@@ -657,7 +656,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
 
             // Also draw bar tick for non-aligned grids (aligned grids drew it in pass 1)
             if (!gridAligned) {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
                 g.drawVerticalLine(x, static_cast<float>(tickBottom - tickHeightMajor()),
                                    static_cast<float>(tickBottom));
             }
@@ -666,13 +665,12 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
 
     // Pass 3: Beat labels (skip beat 1 = bar start, check overlap with bar labels)
     if (pixelsPerBeat >= 20) {
-        long long startBeatStep =
-            static_cast<long long>(std::floor(firstVisibleBeat - barOriginBeats));
-        if (startBeatStep < 0)
-            startBeatStep = 0;
+        auto startBeatStep =
+            static_cast<long long>(std::floor((firstVisibleBeat - barOriginBeats) / sigBeat));
+        startBeatStep = std::max<long long>(startBeatStep, 0);
 
         for (long long beatStep = startBeatStep;; ++beatStep) {
-            double beat = barOriginBeats + static_cast<double>(beatStep);
+            double beat = barOriginBeats + static_cast<double>(beatStep) * sigBeat;
             if (beat > barOriginBeats + totalTimelineBeats)
                 break;
 
@@ -682,14 +680,14 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             if (x < 0)
                 continue;
 
-            double beatsFromOrigin = static_cast<double>(beatStep);
+            auto beatsFromOrigin = static_cast<double>(beatStep) * sigBeat;
             double barRemainder = std::fmod(beatsFromOrigin, barLengthBeats);
-            bool isBarStart = barRemainder < 0.001;
+            bool isBarStart = barRemainder < 0.001 || barRemainder > barLengthBeats - 0.001;
             if (isBarStart)
                 continue;
 
-            int bar = static_cast<int>(beatsFromOrigin / barLengthBeats) + 1;
-            int beatInBar = static_cast<int>(barRemainder) + 1;
+            int bar = static_cast<int>((beatsFromOrigin + 0.001) / barLengthBeats) + 1;
+            int beatInBar = static_cast<int>(std::round(barRemainder / sigBeat)) + 1;
 
             // Uniform interval: show every Nth beat within each bar (0-based index)
             if ((beatInBar - 1) % beatLabelInterval != 0)
@@ -702,14 +700,14 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             if (std::abs(x - barX) < 40)
                 continue;
 
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
             g.setFont(FontManager::getInstance().getUIFont(10.0f));
             g.drawText(juce::String(bar) + "." + juce::String(beatInBar), x - 25, labelY, 50,
                        labelHeight, juce::Justification::centred);
 
             // Also draw beat tick for non-aligned grids
             if (!gridAligned) {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.7f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.7f));
                 g.drawVerticalLine(x, static_cast<float>(tickBottom - mediumTickHeight),
                                    static_cast<float>(tickBottom));
             }
@@ -719,10 +717,9 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
     // Pass 4: Subdivision labels at musically meaningful positions
     if (subdivLabelBeats > 0.0 && gridAligned) {
         // Iterate at the subdivision label level (not at grid resolution)
-        long long startSubdivStep = static_cast<long long>(
+        auto startSubdivStep = static_cast<long long>(
             std::floor((firstVisibleBeat - barOriginBeats) / subdivLabelBeats));
-        if (startSubdivStep < 0)
-            startSubdivStep = 0;
+        startSubdivStep = std::max<long long>(startSubdivStep, 0);
 
         for (long long subdivStep = startSubdivStep;; ++subdivStep) {
             double beatsFromOrigin = subdivStep * subdivLabelBeats;
@@ -738,7 +735,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
 
             // Skip positions that are bar or beat starts (already labeled)
             auto [isBarStart, isBeatStart] =
-                GridConstants::classifyBeatPosition(beatsFromOrigin, barLengthBeats);
+                GridConstants::classifyBeatPosition(beatsFromOrigin, barLengthBeats, sigBeat);
             if (isBarStart || isBeatStart)
                 continue;
 
@@ -747,8 +744,8 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
                 beatsInBar += barLengthBeats;
 
             int bar = static_cast<int>(beatsFromOrigin / barLengthBeats) + 1;
-            int beatInBar = static_cast<int>(beatsInBar) + 1;
-            double subdivInBeat = std::fmod(beatsInBar, 1.0);
+            int beatInBar = static_cast<int>(beatsInBar / sigBeat) + 1;
+            double subdivInBeat = std::fmod(beatsInBar, sigBeat);
 
             // Check overlap with nearest bar label
             double barBeat = barOriginBeats + static_cast<double>(bar - 1) * barLengthBeats;
@@ -758,10 +755,10 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
                 continue;
 
             // Check overlap with nearest beat labels
-            double beatBeat = barOriginBeats + std::floor(beatsFromOrigin);
+            double beatBeat = barOriginBeats + std::floor(beatsFromOrigin / sigBeat) * sigBeat;
             int beatX =
                 static_cast<int>(std::round(beatBeat * zoom)) - currentScrollOffset + leftPadding;
-            double nextBeatBeat = beatBeat + 1.0;
+            double nextBeatBeat = beatBeat + sigBeat;
             int nextBeatX = static_cast<int>(std::round(nextBeatBeat * zoom)) -
                             currentScrollOffset + leftPadding;
             if (std::abs(x - beatX) < 35 || std::abs(x - nextBeatX) < 35)
@@ -775,7 +772,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             bool isOn16th = std::abs(pos16th - sixteenth) < eps && sixteenth > 0;
 
             if (isOn16th) {
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
                 g.setFont(FontManager::getInstance().getUIFont(8.0f));
                 g.drawText(juce::String(bar) + "." + juce::String(beatInBar) + "." +
                                juce::String(sixteenth + 1),
@@ -812,8 +809,8 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             g.fillRect(phaseX - 1, tickAreaTop, 2, tickHeightMajor());
             // Downward triangle at top of tick area
             juce::Path flag;
-            float fx = static_cast<float>(phaseX);
-            float triTop = static_cast<float>(tickAreaTop);
+            auto fx = static_cast<float>(phaseX);
+            auto triTop = static_cast<float>(tickAreaTop);
             flag.addTriangle(fx - 5.0f, triTop, fx + 5.0f, triTop, fx, triTop + 8.0f);
             g.fillPath(flag);
         }
@@ -826,10 +823,13 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
         int cursorX = timeToPixel(displayTime);
         if (cursorX >= 0 && cursorX <= width) {
             g.setColour(juce::Colours::black.withAlpha(0.5f));
-            g.drawLine(float(cursorX - 1), 0.f, float(cursorX - 1), float(height), 1.f);
-            g.drawLine(float(cursorX + 1), 0.f, float(cursorX + 1), float(height), 1.f);
+            g.drawLine(static_cast<float>(cursorX - 1), 0.f, static_cast<float>(cursorX - 1),
+                       static_cast<float>(height), 1.f);
+            g.drawLine(static_cast<float>(cursorX + 1), 0.f, static_cast<float>(cursorX + 1),
+                       static_cast<float>(height), 1.f);
             g.setColour(juce::Colours::white);
-            g.drawLine(float(cursorX), 0.f, float(cursorX), float(height), 2.f);
+            g.drawLine(static_cast<float>(cursorX), 0.f, static_cast<float>(cursorX),
+                       static_cast<float>(height), 2.f);
         }
     }
 
@@ -838,41 +838,27 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
         int handleX = timeToPixel(playheadHandlePosition_);
         if (handleX >= 0 && handleX <= width) {
             int tickAreaTop = height - tickHeightMajor();
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
 
             // Size the triangle to the playhead band (the tick area below the
             // label divider) so it fills that rectangle instead of poking past
             // the ruler bottom into the grid.
             juce::Path triangle;
-            const float x = static_cast<float>(handleX);
-            const float yTop = static_cast<float>(tickAreaTop);
-            const float yTip = static_cast<float>(height - 1);
+            const auto x = static_cast<float>(handleX);
+            const auto yTop = static_cast<float>(tickAreaTop);
+            const auto yTip = static_cast<float>(height - 1);
             triangle.addTriangle(x - 6.0f, yTop, x + 6.0f, yTop, x, yTip);
             g.fillPath(triangle);
         }
     }
 
-    // Draw playhead line if playing — only when within the clip's time range
-    if (playheadPosition >= 0.0 && clipLength > 0.0) {
-        double relPos = playheadPosition - timeOffset;
-        if (relPos >= 0.0 && relPos <= clipLength) {
-            double displayTime = relativeMode ? (playheadPosition - timeOffset) : playheadPosition;
-
-            // Wrap playhead within loop region when looping is active
-            if (loopEnabled && loopActive && loopLength > 0.0) {
-                double loopStart = relativeMode ? loopOffset : (timeOffset + loopOffset);
-                double wrapped = std::fmod(displayTime - loopStart, loopLength);
-                if (wrapped < 0.0)
-                    wrapped += loopLength;
-                displayTime = loopStart + wrapped;
-            }
-
-            int playheadX = timeToPixel(displayTime);
-            if (playheadX >= 0 && playheadX <= width) {
-                int tickAreaTop = height - tickHeightMajor();
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-                g.fillRect(playheadX - 1, tickAreaTop, 2, tickHeightMajor());
-            }
+    // Draw playhead line if playing; the owner has already placed it on this ruler's axis
+    if (playheadPosition >= 0.0) {
+        int playheadX = timeToPixel(playheadPosition);
+        if (playheadX >= 0 && playheadX <= width) {
+            int tickAreaTop = height - tickHeightMajor();
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+            g.fillRect(playheadX - 1, tickAreaTop, 2, tickHeightMajor());
         }
     }
 }
@@ -897,7 +883,7 @@ double TimeRuler::calculateMarkerInterval() const {
     return 600.0;  // 10 minutes
 }
 
-juce::String TimeRuler::formatTimeLabel(double time, double interval) const {
+juce::String TimeRuler::formatTimeLabel(double time, double interval) {
     int totalSeconds = static_cast<int>(time);
     int minutes = totalSeconds / 60;
     int seconds = totalSeconds % 60;
@@ -922,8 +908,8 @@ juce::String TimeRuler::formatTimeLabel(double time, double interval) const {
 }
 
 juce::String TimeRuler::formatBarsBeatsLabel(double time) const {
-    double secondsPerBeat = 60.0 / tempo;
-    double secondsPerBar = secondsPerBeat * timeSigNumerator;
+    double secondsPerBeat = 60.0 / tempo * signatureBeatLength(timeSigDenominator);
+    double secondsPerBar = 60.0 / tempo * getBeatsPerBar();
 
     int bar = static_cast<int>(time / secondsPerBar) + 1;
     double remainder = std::fmod(time, secondsPerBar);

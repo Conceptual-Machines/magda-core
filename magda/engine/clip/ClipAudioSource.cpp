@@ -1,6 +1,13 @@
 #include "clip/ClipAudioSource.hpp"
 
 #include <algorithm>
+#include <cmath>
+#include <optional>
+#include <tuple>
+#include <vector>
+
+#include "clip/EventPlacement.hpp"
+#include "clip/SessionPlayback.hpp"
 
 namespace magda::engine {
 
@@ -10,7 +17,24 @@ namespace {
 /// clip ending exactly on a block boundary contributes nothing to the block
 /// that starts there.
 bool reachesInto(const SnapshotSpan& span, const BlockInfo& block) {
-    return span.startSeconds < block.endSeconds && span.endSeconds > block.startSeconds;
+    return span.seconds.start < block.seconds.end && span.seconds.end > block.seconds.start;
+}
+
+/// @p block from sample @p offset on, where a hand-back lands. Cut by samples, as
+/// materialSubBlock is, and not continuous: nothing played the part before it.
+BlockInfo tailFrom(const BlockInfo& block, int offset) {
+    const auto rate = block.rate();
+    const auto skipped = rate > 0.0 ? static_cast<double>(offset) / rate : 0.0;
+
+    auto tail = block;
+    tail.numSamples = block.numSamples - offset;
+    tail.seconds.start = block.seconds.start + skipped;
+    tail.beats.start = block.beatAtTime(tail.seconds.start);
+    tail.monotonicSeconds.start = block.monotonicSeconds.start + skipped;
+    tail.monotonicBeats.start = block.monotonicBeats.start + (tail.beats.start - block.beats.start);
+    tail.monotonicSamples.start = block.monotonicSamples.start + SampleDuration{offset};
+    tail.continuous = false;
+    return tail;
 }
 
 }  // namespace
@@ -18,7 +42,12 @@ bool reachesInto(const SnapshotSpan& span, const BlockInfo& block) {
 ClipAudioSource::ClipAudioSource(TrackId trackId, ClipSnapshotFeed& clips, ClipStreamFeed& streams)
     : trackId_(trackId), clips_(clips), streams_(streams) {}
 
+ClipAudioSource::ClipAudioSource(TrackId trackId, ClipSnapshotFeed& clips, ClipStreamFeed& streams,
+                                 LaunchHandleFeed& handles, Section section)
+    : trackId_(trackId), clips_(clips), streams_(streams), handles_(&handles), section_(section) {}
+
 void ClipAudioSource::prepare(const RenderContext& context) {
+    sampleRate_ = context.sampleRate;
     // Longer than a block, because a clip playing faster than its file consumes
     // more reading than it renders and both live in here (ClipStretcher.hpp).
     scratch_.setSize(context.numChannels, stretchScratchSamples(context.maxBlockSize), false, true,
@@ -34,61 +63,26 @@ ClipVoice* ClipAudioSource::voiceFor(ClipId clipId, EventId eventId) {
         if (voice.playing(clipId, eventId))
             return &voice;
 
+    // A fading voice holds no entry and is still sounding, so claiming it would
+    // cut the tail it is in the middle of.
     for (auto& voice : voices_)
-        if (voice.clipId() == INVALID_CLIP_ID)
+        if (voice.clipId() == INVALID_CLIP_ID && !voice.fading())
             return &voice;
 
     return nullptr;
 }
 
-void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float> out) {
-    out.clear();
-
-    const ClipStreamFeed::Reader streams(streams_);
-    const auto [firstStream, lastStream] =
-        streams ? streams->rangeFor(trackId_)
-                : std::pair<const ClipStreamTable::Entry*, const ClipStreamTable::Entry*>{nullptr,
-                                                                                          nullptr};
-
-    // Every stream this track has, sounding or not, once per block. The stream
-    // a cue is most useful to is one nobody is reading from: a clip that has
-    // not started would otherwise not hear about the position it was pointed at
-    // until the material was already due (#2016).
-    for (const auto* entry = firstStream; entry != lastStream; ++entry)
-        entry->stream->applyPendingCue();
-
-    const auto numSamples = std::min(block.numSamples, static_cast<int>(out.getNumSamples()));
-
-    const auto silence = [this] {
-        for (auto& voice : voices_)
-            voice.release();
-    };
-
-    if (!block.playing || numSamples <= 0)
-        return silence();
-
-    const ClipSnapshotFeed::Reader snapshot(clips_);
-    if (!snapshot)
-        return silence();
-
-    const auto* track = snapshot->find(trackId_);
-    if (track == nullptr)
-        return silence();
-
-    // What sounds, and through what. Gathered before anything is rendered so
-    // the voices that are not in it can be let go first: a voice still holding
-    // a clip that stopped last block would otherwise keep a slot a clip
-    // starting this one needs.
-    std::array<Sounding, kMaxVoicesPerTrack> sounding;
-    auto soundingCount = 0;
-
-    for (const auto& clip : track->audio) {
+void ClipAudioSource::gather(const std::vector<AudioClipPlayback>& clips, const BlockInfo& block,
+                             int outOffset, const Streams& streams,
+                             std::array<Sounding, kMaxVoicesPerTrack>& sounding,
+                             int& soundingCount) {
+    for (const auto& clip : clips) {
         // Sorted by where they start (ClipSnapshot.hpp), so once one begins at
         // or after the end of this block, so does everything behind it. Without
         // the break a track pays for its whole tail on every callback, all
         // session, and the cost grows with the length of the arrangement rather
         // than with what is playing.
-        if (clip.span.startSeconds >= block.endSeconds)
+        if (clip.span.seconds.start >= block.seconds.end)
             break;
 
         if (!reachesInto(clip.span, block))
@@ -99,11 +93,11 @@ void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float
                 continue;
 
             const auto* found =
-                std::find_if(firstStream, lastStream, [&](const ClipStreamTable::Entry& entry) {
+                std::find_if(streams.first, streams.last, [&](const ClipStreamTable::Entry& entry) {
                     return entry.clipId == clip.clipId && entry.eventId == event.eventId;
                 });
 
-            if (found == lastStream || soundingCount == kMaxVoicesPerTrack) {
+            if (found == streams.last || soundingCount == kMaxVoicesPerTrack) {
                 // No reader standing by, or no voice left to play it through.
                 // Both happen and they are different failures: a track may hold
                 // more readers than a callback has voices (kMaxReadersPerTrack
@@ -115,12 +109,323 @@ void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float
                 continue;
             }
 
-            sounding[static_cast<std::size_t>(soundingCount++)] = Sounding{
-                &clip, &event, found->stream.get(), found->stretcher.get(), found->preRollSamples};
+            sounding[static_cast<std::size_t>(soundingCount++)] = Sounding{&clip,
+                                                                           &event,
+                                                                           found->stream.get(),
+                                                                           found->stretcher.get(),
+                                                                           found->preRollSamples,
+                                                                           found->standby.get(),
+                                                                           block,
+                                                                           outOffset};
         }
     }
+}
+
+void ClipAudioSource::gatherSession(const TrackClipPlayback& track, const BlockInfo& block,
+                                    const Streams& streams,
+                                    std::array<Sounding, kMaxVoicesPerTrack>& sounding,
+                                    int& soundingCount) {
+    const LaunchHandleFeed::Reader handles(*handles_);
+    if (!handles)
+        return;
+
+    // The status is the launcher's, worked out before anything rendered
+    // (SessionLauncher.hpp), so this source and the MIDI one see the same block.
+    const auto renderSlot = [&](const SessionSlotPlayback& slot, const SplitStatus& status) {
+        const auto play = [&](const BlockPiece& piece, int offset, int count) {
+            if (count <= 0 || !piece.origin)
+                return;
+
+            const auto material =
+                materialSubBlock(block, piece.range, *piece.origin, offset, count);
+            gather(slot.audio, material, offset, streams, sounding, soundingCount);
+        };
+
+        const auto split = splitSample(block, status).value;
+
+        play(status.beforeEvent, 0, split);
+
+        if (status.afterEvent)
+            play(*status.afterEvent, split, block.numSamples - split);
+
+        // Per clip rather than per track, because the ramp is the voice's own
+        // (ClipVoice::releaseInto). The handle's answer rather than the shape
+        // of the split, so a stop on the first sample is the same edge as one
+        // half way through (LaunchHandle::silencedAt).
+        const auto silenced = status.silencedAt();
+        if (!silenced)
+            return;
+
+        for (const auto& clip : slot.audio)
+            for (const auto& event : clip.events) {
+                if (stoppingCount_ >= kMaxVoicesPerTrack)
+                    return;
+
+                stopping_[static_cast<std::size_t>(stoppingCount_++)] =
+                    Stopping{clip.clipId, event.eventId, silenced->value};
+            }
+    };
+
+    forEachSlot(*handles.get(), track, renderSlot);
+}
+
+bool ClipAudioSource::silentFor(const BlockInfo& block) const {
+    // A stopped block still cues the next Play (renderMaterial).
+    if (section_ != Section::Session || handles_ == nullptr || !block.playing)
+        return false;
+
+    for (const auto& voice : voices_)
+        if (voice.clipId() != INVALID_CLIP_ID || voice.fading())
+            return false;
+
+    const LaunchHandleFeed::Reader handles(*handles_);
+    if (!handles)
+        return true;
+
+    const auto [first, last] = handles->rangeFor(trackId_);
+    return std::none_of(first, last, [](const LaunchHandleTable::Entry& entry) {
+        if (entry.handle == nullptr)
+            return false;
+        const auto& status = entry.handle->blockStatus();
+        return status.soundingAtStart || status.playingAtEnd() || status.beforeEvent.playing();
+    });
+}
+
+void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float> out) {
+    // Here rather than in the gather, which every path through the render can
+    // return before reaching: a stale edge would release a voice twice.
+    stoppingCount_ = 0;
+
+    // What the callback pinned for this block (#2490). The material and the
+    // hold that gates it come from one publish, and so does what this track's
+    // MIDI plays over the same block.
+    const auto* snapshot = clips_.live();
+    const auto* track = snapshot != nullptr ? snapshot->find(trackId_) : nullptr;
+
+    if (section_ == Section::Session) {
+        renderMaterial(block, out, snapshot, track);
+        return;
+    }
+
+    // Every Arrangement source has a hold to apply (#2485), handles or not.
+    const auto* hold = clips_.holdFor(trackId_);
+    const auto numSamples = static_cast<int>(out.getNumSamples());
+    const auto from = hold != nullptr ? std::clamp(hold->from.value, 0, numSamples) : 0;
+
+    if (block.playing && hold != nullptr && !hold->sounds()) {
+        // Held for the whole block, so nothing is rendered to be thrown away. The
+        // hand-back starts its voices afresh, primed by the pool (#2787).
+        for (auto& voice : voices_)
+            voice.cut();
+        out.clear();
+    } else if (block.playing && from > 0) {
+        // Handed back inside the block: the voices start where the hand-back lands.
+        out.getSubBlock(0, static_cast<std::size_t>(from)).clear();
+        renderMaterial(tailFrom(block, from), out.getSubBlock(static_cast<std::size_t>(from)),
+                       snapshot, track);
+    } else {
+        renderMaterial(block, out, snapshot, track);
+    }
+
+    applySectionHold(out, hold);
+}
+
+void ClipAudioSource::applySectionHold(juce::dsp::AudioBlock<float> out,
+                                       const SectionHold* resolved) {
+    const auto numSamples = static_cast<int>(out.getNumSamples());
+
+    // Null for a track the snapshot does not carry, which has no mode to be
+    // gated by and nothing to silence.
+    const auto hold = resolved != nullptr ? *resolved : SectionHold::arrangement(numSamples);
+
+    // Resolved against the block the callback named, which the executor may
+    // have capped to what the plan was prepared for (PlanExecutor::beginBlock),
+    // so the span can outrun the buffer this call was handed.
+    const auto from = std::clamp(hold.from.value, 0, numSamples);
+    const auto until = std::clamp(hold.until.value, from, numSamples);
+    const auto count = until - from;
+
+    // What it rendered and keeps, before anything corrects it (StopDeClick::push).
+    if (count > 0)
+        handOver_.push(
+            out.getSubBlock(static_cast<std::size_t>(from), static_cast<std::size_t>(count)));
+
+    // The session's share is dropped. A block it owned whole was never rendered,
+    // and taking the track back starts at the timeline's position (#2787).
+    if (from > 0)
+        out.getSubBlock(0, static_cast<std::size_t>(from)).clear();
+    if (until < numSamples)
+        out.getSubBlock(static_cast<std::size_t>(until)).clear();
+
+    // Taking it back lands mid-material, the same step a voice starting
+    // mid-file leaves.
+    if (count > 0) {
+        auto span =
+            out.getSubBlock(static_cast<std::size_t>(from), static_cast<std::size_t>(count));
+        if (hold.gained)
+            handBack_.begin(span, kSectionDeClickSamples);
+        else
+            handBack_.advance(span);
+
+        // A gap shorter than the ramp hands over the level it actually reached.
+        if (hold.lost && handBack_.active())
+            handOver_.push(span);
+    }
+
+    if (hold.lost)
+        handBack_.reset();
+
+    // Losing it leaves the other step. A ramp from an earlier block finishes
+    // into whatever is here now rather than being cut off.
+    if (hold.lost)
+        handOver_.begin(out, until, kSectionDeClickSamples);
+    else
+        handOver_.advance(out);
+}
+
+void ClipAudioSource::prepareForPlay(const TrackClipPlayback& track, const BlockInfo& block,
+                                     const Streams& streams) {
+    const auto cue = [&](const std::vector<AudioClipPlayback>& clips, bool session) {
+        for (const auto& clip : clips) {
+            for (const auto& event : clip.events) {
+                const auto* entry =
+                    std::find_if(streams.first, streams.last, [&](const auto& value) {
+                        return value.clipId == clip.clipId && value.eventId == event.eventId;
+                    });
+                if (entry == streams.last)
+                    continue;
+
+                auto at = session ? event.span.seconds.start
+                                  : std::max({block.seconds.start, clip.span.seconds.start,
+                                              event.span.seconds.start});
+                if (entry->stretcher != nullptr) {
+                    // Match the voice's fixed cell grid, including a stopped
+                    // cursor inside a cell. Cueing the cursor itself would
+                    // still force a backwards seek on the first callback.
+                    const auto start = sampleAt(event.span.seconds.start * sampleRate_);
+                    const auto sample = sampleAt(at * sampleRate_);
+                    const auto cell = static_cast<std::int64_t>(
+                        std::floor(static_cast<double>(sample - start) / kStretchCellSamples));
+                    at = static_cast<double>(start + cell * kStretchCellSamples) / sampleRate_;
+                }
+                const auto positionAt = [&](double moment) {
+                    const auto beat =
+                        session ? beatAlongSpan(event, moment) : block.beatAtTime(moment);
+                    return readingPositionAt(clip, event, moment, beat, sampleRate_);
+                };
+
+                if (entry->stretcher != nullptr) {
+                    const auto read = stretchReadAt(*entry->stretcher, entry->preRollSamples, at,
+                                                    sampleRate_, positionAt);
+                    entry->stream->prepareRead(read.from - read.preRoll);
+                    continue;
+                }
+
+                // Where the voice's plain path reads from: a trimmed start sits a
+                // fraction into the sample it begins on (ClipVoice::render).
+                const auto into = session ? 0.0 : fractionAt(block.offsetForTime(at));
+                entry->stream->prepareRead(firstSampleFrom(positionAt(at) - into));
+            }
+        }
+    };
+    if (section_ == Section::Session) {
+        for (const auto& slot : track.session)
+            cue(slot.audio, true);
+    } else {
+        cue(track.audio, false);
+    }
+}
+
+void ClipAudioSource::renderMaterial(const BlockInfo& block, juce::dsp::AudioBlock<float> out,
+                                     const ClipSnapshot* snapshot, const TrackClipPlayback* track) {
+    out.clear();
+
+    const ClipStreamFeed::Reader streams(streams_);
+    Streams table;
+    if (streams)
+        std::tie(table.first, table.last) = streams->rangeFor(trackId_);
+
+    const auto silence = [this] {
+        for (auto& voice : voices_)
+            voice.release();
+    };
+
+    // Held to what the caller provided as well as to what the block claims: the
+    // session hands its voices sub-blocks of this one.
+    auto lane = block;
+    lane.numSamples = std::min(block.numSamples, static_cast<int>(out.getNumSamples()));
+
+    if (!block.playing) {
+        // Stopped callbacks still run. Rewind and refill here, while there is
+        // time for disk I/O, instead of priming the next Play with silence.
+        if (track != nullptr)
+            prepareForPlay(*track, block, table);
+        return silence();
+    }
+
+    if (lane.numSamples <= 0)
+        return silence();
+
+    if (snapshot == nullptr)
+        return silence();
+
+    // Compiled against a tempo map that has since changed: every second in it
+    // is wrong by however much the map moved (ClipSnapshot.hpp).
+    //
+    // Counted, and then played anyway. Not because playing it is right, but
+    // because the alternatives are worse in front of an audience: silence is a
+    // hole in the middle of a set, and the stale spans usually stop overlapping
+    // the block anyway, so refusing them mostly turns an accidental gap into a
+    // deliberate one. Re-deriving the seconds from the beats, which do survive
+    // a tempo edit, would be compiling on the audio thread, which is the one
+    // thing a snapshot exists to have already done.
+    //
+    // The count is the point. Zero is the only right answer and reaching it is
+    // the publish's job: the map and the snapshot compiled for it are meant to
+    // swap together, and this says when they did not (#2337).
+    //
+    // Coarser than the question it stands in for, and knowingly. The
+    // fingerprint is the whole map, while an arrangement clip's seconds depend
+    // on the map at its own placement and a session slot's depend on it only
+    // over beats zero to its length, because a slot compiles at the origin
+    // (ClipSnapshotCompiler.cpp). A tempo change at bar 200 moves neither a
+    // slot nor a clip before it, and still changes the fingerprint. Which is
+    // another reason this counts rather than acts.
+    if (block.tempo != nullptr && snapshot->tempoFingerprint != block.tempo->fingerprint())
+        staleSnapshots_.fetch_add(1, std::memory_order_relaxed);
+
+    if (track == nullptr)
+        return silence();
+
+    // What sounds, and through what. Gathered before anything is rendered so
+    // the voices that are not in it can be let go first: a voice still holding
+    // a clip that stopped last block would otherwise keep a slot a clip
+    // starting this one needs.
+    std::array<Sounding, kMaxVoicesPerTrack> sounding;
+    auto soundingCount = 0;
+
+    if (section_ == Section::Session)
+        gatherSession(*track, lane, table, sounding, soundingCount);
+    else
+        gather(track->audio, lane, 0, table, sounding, soundingCount);
+
+    // Pointers, not the array's iterators: those are a class type on MSVC and a
+    // pointer on libc++, so `const auto*` deduces from one and not the other.
+    const auto stopping = [&](const ClipVoice& voice) -> const Stopping* {
+        const auto* first = stopping_.data();
+        const auto* last = first + stoppingCount_;
+
+        const auto* found = std::find_if(
+            first, last, [&](const Stopping& s) { return voice.playing(s.clipId, s.eventId); });
+
+        return found != last ? found : nullptr;
+    };
 
     for (auto& voice : voices_) {
+        // A release ramp from an earlier block, which sounds whether or not
+        // anything replaced the voice that left it.
+        voice.carryTail(out);
+
         if (voice.clipId() == INVALID_CLIP_ID)
             continue;
 
@@ -129,7 +434,10 @@ void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float
                 return voice.playing(s.clip->clipId, s.event->eventId);
             });
 
-        if (!stillSounding)
+        // Let go before anything renders, so a voice holding a clip that
+        // stopped last block does not keep a slot this one needs. Not one
+        // stopping in this block: that is released below, after it renders.
+        if (!stillSounding && stopping(voice) == nullptr)
             voice.release();
     }
 
@@ -150,8 +458,23 @@ void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float
             continue;
         }
 
-        voice->render(*entry.clip, *entry.event, block, *entry.stream, entry.stretcher,
-                      entry.preRoll, scratch, out);
+        voice->render(*entry.clip, *entry.event, entry.block, *entry.stream, entry.stretcher,
+                      entry.preRoll, scratch,
+                      out.getSubBlock(static_cast<std::size_t>(entry.outOffset),
+                                      static_cast<std::size_t>(entry.block.numSamples)),
+                      section_ == Section::Session, entry.standby,
+                      snapshot != nullptr ? snapshot->serial : 0);
+    }
+
+    // After rendering: a slot that stops half way through a block still sounds
+    // the first half, and the ramp carries on from what that half ended at. One
+    // stopped on the first sample carries on from the block before.
+    for (auto& voice : voices_) {
+        if (voice.clipId() == INVALID_CLIP_ID)
+            continue;
+
+        if (const auto* stopped = stopping(voice))
+            voice.releaseInto(out, stopped->offset, kSectionDeClickSamples);
     }
 }
 

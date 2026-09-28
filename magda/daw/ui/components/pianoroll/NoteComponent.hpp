@@ -149,7 +149,7 @@ class NoteComponent : public juce::Component, private juce::Timer {
     void timerCallback() override;
 
     // Interaction helpers
-    bool isOnLeftEdge(int x) const;
+    static bool isOnLeftEdge(int x);
     bool isOnRightEdge(int x) const;
     void updateCursor();
 

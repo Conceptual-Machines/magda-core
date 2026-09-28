@@ -1,0 +1,409 @@
+#include "io/TakeRecorder.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <span>
+#include <utility>
+
+namespace magda::engine {
+
+namespace {
+
+int takeChannels(const TakeRecorderSettings& settings) {
+    return std::max<int>(1, static_cast<int>(settings.channels.size()));
+}
+
+RenderContext fileContext(const RenderContext& context, const TakeRecorderSettings& settings) {
+    return {.sampleRate = context.sampleRate,
+            .maxBlockSize = context.maxBlockSize,
+            .numChannels = takeChannels(settings)};
+}
+
+RecordStreamSettings queueFor(const TakeRecorderSettings& settings) {
+    auto queue = settings.stream;
+    queue.numChannels = takeChannels(settings);
+    return queue;
+}
+
+/// The passes' lengths, which is what says which of them plays.
+std::vector<std::int64_t> passLengths(std::span<const RecordedPass> passes) {
+    std::vector<std::int64_t> lengths;
+    lengths.reserve(passes.size());
+
+    for (const auto& pass : passes)
+        lengths.push_back(pass.samples);
+
+    return lengths;
+}
+
+}  // namespace
+
+TakeRecorder::TakeRecorder(const LiveInputFeed& feed, const RenderContext& context, RecordTap& tap,
+                           TakeRecorderSettings settings)
+    : settings_(std::move(settings)),
+      input_(feed, settings_.channels, settings_.latencySamples),
+      sink_(settings_.directory, settings_.name, settings_.file, fileContext(context, settings_)),
+      stream_(sink_, queueFor(settings_)),
+      tap_(tap) {
+    scratch_.setSize(takeChannels(settings_), std::max(1, context.maxBlockSize), false, true,
+                     false);
+
+    if (settings_.latencySamples < 0)
+        pad_.setSize(takeChannels(settings_), -settings_.latencySamples, false, true, false);
+}
+
+void TakeRecorder::capture(const BlockInfo& block, bool countingIn, const LoopRange& loop) {
+    if (postRollRequested_.exchange(false, std::memory_order_acq_rel) && state_ == State::rolling)
+        beginPostRoll();
+
+    if (state_ == State::postRoll) {
+        capturePostRoll(block, 0, block.numSamples);
+        return;
+    }
+
+    // A slot take is on its run's clock, not the transport's (#2464).
+    if (settings_.slot) {
+        captureRun(block);
+        return;
+    }
+
+    if (state_ == State::stopped)
+        return;
+
+    // A count-in is time before the play position and a stop is where a take
+    // ends, so neither is part of one.
+    if (!block.playing || countingIn) {
+        if (state_ == State::rolling) {
+            beginPostRoll();
+            capturePostRoll(block, 0, block.numSamples);
+        }
+
+        return;
+    }
+
+    if (state_ == State::waiting) {
+        start(block, loop);
+    } else if (!block.continuous) {
+        if (!atLoopStart(block, loop)) {
+            beginPostRoll();
+            capturePostRoll(block, 0, block.numSamples);
+            return;
+        }
+
+        openPass(block, loop);
+    }
+
+    write(block, 0, block.numSamples);
+
+    // Timeline the take has covered, which is what a pass boundary is counted
+    // in. Not the samples written: those are the same stretch read a latency
+    // later, and the head correction is what puts the two back together.
+    arrivals_ += block.numSamples;
+}
+
+void TakeRecorder::captureRun(const BlockInfo& block) {
+    if (state_ == State::stopped)
+        return;
+
+    const auto run = slotRun(*settings_.slot);
+
+    // The slot was retired or refilled: the take ends where it stood.
+    if (run.gone) {
+        if (state_ == State::rolling) {
+            beginPostRoll();
+            capturePostRoll(block, 0, block.numSamples);
+        }
+
+        return;
+    }
+
+    // A stopped transport passes no timeline, so the take holds none of this
+    // block. Its edges are still read: a request applied in a stopped block is
+    // reported by that block alone (#2464 review).
+    const auto samples = block.playing ? block.numSamples : 0;
+
+    auto from = 0;
+    auto closing = false;
+
+    if (state_ == State::waiting) {
+        // An end in this block belongs to the run before this one.
+        if (!run.beganAt)
+            return;
+
+        from = std::min(run.beganAt->value, samples);
+        start(block, LoopRange{}, from);
+    } else if (run.endedAt) {
+        // A launch in this block begins the next take, not this one.
+        closing = true;
+    }
+
+    const auto to = closing ? std::min(run.endedAt->value, samples) : samples;
+
+    if (to > from) {
+        write(block, from, to);
+        arrivals_ += to - from;
+    }
+
+    if (closing) {
+        beginPostRoll();
+        capturePostRoll(block, to, block.numSamples);
+    }
+}
+
+void TakeRecorder::start(const BlockInfo& block, const LoopRange& loop, int from) {
+    state_ = State::rolling;
+    rolling_.store(true, std::memory_order_relaxed);
+
+    startBeat_ = block.beats.start;
+    startSeconds_ = block.seconds.start;
+
+    // A take that begins inside the block begins where the launch fired, not
+    // at the block's own start (#2464).
+    if (from > 0 && block.rate() > 0.0) {
+        startSeconds_ = block.seconds.start + (static_cast<double>(from) / block.rate());
+        startBeat_ = block.beatAtTime(startSeconds_);
+    }
+
+    endBeat_ = startBeat_;
+    startedAtLoopStart_ = atLoopStart(block, loop);
+    headDrop_ = std::max(0, settings_.latencySamples);
+
+    passOrigin_ = 0;
+    passOriginBeat_ = startBeat_;
+    pendingCount_ = 0;
+    tap_.open(startBeat_);
+
+    // A negative latency asks for samples from before the take was armed.
+    // Silence stands in for them, which is what leaves the first real sample
+    // where it happened.
+    if (const auto padded = pad_.getNumSamples(); padded > 0) {
+        stream_.writeAudio(juce::dsp::AudioBlock<const float>(std::as_const(pad_)), padded);
+        written_ += padded;
+        captured_.store(written_, std::memory_order_relaxed);
+    }
+}
+
+void TakeRecorder::openPass(const BlockInfo& block, const LoopRange& loop) {
+    loopStartBeat_ = loop.startBeat;
+    loopEndBeat_ = loop.endBeat;
+
+    // Never behind what is already queued. A boundary the writer has gone past
+    // could only be honoured wherever it happened to have got to, which is a
+    // pass whose length depends on when the disk ran. The clamp is what a
+    // negative adjustment costs: it queues a pass's last samples before the
+    // wrap, so its first pass runs that much long and the rest of the grid
+    // sits that much late.
+    const auto boundary = std::max(arrivals_, written_);
+
+    if (firstBoundary_ < 0)
+        firstBoundary_ = boundary;
+
+    // One acceptance, and the file and the preview both follow it: a boundary
+    // refused here is refused for both, which is what keeps them the same
+    // passes rather than two opinions about where a pass ended.
+    if (!sink_.markPassEnd(boundary)) {
+        ++boundariesLost_;
+        return;
+    }
+
+    // The preview turns over where the sink does: at the boundary, not at the
+    // wrap that named it.
+    if (pendingCount_ < kPendingCapacity)
+        pending_[(pendingHead_ + pendingCount_++) % kPendingCapacity] = {boundary,
+                                                                         block.beats.start};
+}
+
+void TakeRecorder::openTapPass(const BlockInfo& block) {
+    const auto& pass = pending_[pendingHead_];
+
+    passOrigin_ = pass.boundary;
+    passOriginBeat_ =
+        block.beatAtTime(startSeconds_ + (static_cast<double>(pass.boundary) / block.rate()));
+    tap_.open(pass.startBeat);
+
+    pendingHead_ = (pendingHead_ + 1) % kPendingCapacity;
+    --pendingCount_;
+}
+
+void TakeRecorder::stop() {
+    state_ = State::stopped;
+    rolling_.store(false, std::memory_order_release);
+    capturesPostRoll_.store(false, std::memory_order_release);
+    tap_.close();
+}
+
+void TakeRecorder::punchOut() {
+    if (state_ == State::rolling)
+        beginPostRoll();
+    else if (state_ == State::waiting)
+        stop();
+}
+
+bool TakeRecorder::requestPostRoll() {
+    if (settings_.latencySamples <= 0 || !rolling_.load(std::memory_order_acquire))
+        return false;
+
+    closeRequested_.store(true, std::memory_order_release);
+    postRollRequested_.store(true, std::memory_order_relaxed);
+    capturesPostRoll_.store(true, std::memory_order_release);
+    return true;
+}
+
+void TakeRecorder::beginPostRoll() {
+    if (state_ != State::rolling)
+        return;
+
+    postRollRemaining_ = std::max(0, settings_.latencySamples);
+    if (postRollRemaining_ == 0) {
+        stop();
+        return;
+    }
+
+    state_ = State::postRoll;
+    capturesPostRoll_.store(true, std::memory_order_release);
+}
+
+void TakeRecorder::capturePostRoll(const BlockInfo& block, int from, int to) {
+    if (state_ != State::postRoll)
+        return;
+
+    const auto available = std::max(0, std::min(to, block.numSamples) - std::max(0, from));
+    const auto kept = std::min(postRollRemaining_, available);
+    if (kept > 0) {
+        const auto offset = std::clamp(from, 0, block.numSamples);
+        write(block, offset, offset + kept);
+        postRollRemaining_ -= kept;
+    }
+
+    if (postRollRemaining_ == 0)
+        stop();
+}
+
+void TakeRecorder::write(const BlockInfo& block, int from, int to) {
+    const auto numSamples = std::min(block.numSamples, scratch_.getNumSamples());
+    if (numSamples <= 0)
+        return;
+
+    input_.render(block, juce::dsp::AudioBlock<float>(scratch_).getSubBlock(
+                             0, static_cast<std::size_t>(numSamples)));
+
+    const auto captured = juce::dsp::AudioBlock<const float>(std::as_const(scratch_));
+
+    // The input is rendered whole; only what the take keeps of it is the
+    // window the caller named.
+    auto offset = std::clamp(from, 0, numSamples);
+    const auto end = std::clamp(to, offset, numSamples);
+
+    if (headDrop_ > 0) {
+        const auto dropped = std::min(headDrop_, end - offset);
+        headDrop_ -= dropped;
+        offset += dropped;
+    }
+
+    const auto kept = end - offset;
+    if (kept <= 0)
+        return;
+
+    const auto keptBlock =
+        captured.getSubBlock(static_cast<std::size_t>(offset), static_cast<std::size_t>(kept));
+
+    stream_.writeAudio(keptBlock, kept);
+
+    // The pass's own audio, at the position it was written at, so a peak and
+    // the samples behind it are the same stretch. Every boundary this block
+    // reaches is taken, the way the sink takes them: a loop shorter than the
+    // block puts more than one inside it.
+    auto drawn = 0;
+    while (pendingCount_ > 0 && block.rate() > 0.0 &&
+           written_ + kept > pending_[pendingHead_].boundary) {
+        const auto at = static_cast<int>(pending_[pendingHead_].boundary - written_);
+        if (at > drawn)
+            tap_.addPeaks(keptBlock.getSubBlock(static_cast<std::size_t>(drawn),
+                                                static_cast<std::size_t>(at - drawn)),
+                          at - drawn, (written_ + drawn) - passOrigin_);
+
+        openTapPass(block);
+        drawn = at;
+    }
+
+    tap_.addPeaks(keptBlock.getSubBlock(static_cast<std::size_t>(drawn),
+                                        static_cast<std::size_t>(kept - drawn)),
+                  kept - drawn, (written_ + drawn) - passOrigin_);
+
+    written_ += kept;
+    captured_.store(written_, std::memory_order_relaxed);
+
+    // Where the take now ends, asked of the tempo map at the moment its own
+    // audio reaches: the samples were placed a latency earlier than they
+    // arrived, and across a tempo change the two are not the same length.
+    if (const auto rate = block.rate(); rate > 0.0)
+        endBeat_ = block.beatAtTime(startSeconds_ + (static_cast<double>(written_) / rate));
+
+    tap_.extend(std::max(0.0, endBeat_ - passOriginBeat_));
+}
+
+RecordedTake TakeRecorder::finish() {
+    if (finished_)
+        return result_;
+
+    finished_ = true;
+    stop();
+    stream_.finish();
+
+    result_.samplesLost = stream_.samplesLost();
+    result_.passesLost = boundariesLost_;
+    result_.failed = stream_.failed() || sink_.failed();
+
+    auto passes = sink_.passes();
+
+    // A first pass that did not begin on the loop start is a lead-in: with no
+    // offset of its own it cannot share the clip start the others do, and a
+    // wrap having happened at all is what makes it a lead-in rather than the
+    // whole recording.
+    auto headPadding = static_cast<std::int64_t>(pad_.getNumSamples());
+
+    if (passes.size() > 1 && !startedAtLoopStart_) {
+        passes.front().file.deleteFile();
+        passes = passes.subspan(1);
+
+        // The padding went with the pass it was at the head of.
+        headPadding = 0;
+    }
+
+    if (!passes.empty()) {
+        const auto active = activeTake(passLengths(passes), headPadding);
+        result_.file = passes[active].file;
+
+        // One pass is an ordinary clip, and the model keeps `takes` empty for
+        // one of those: they are loop-record alternatives or nothing.
+        if (passes.size() > 1) {
+            for (const auto& pass : passes)
+                result_.clip.takes.push_back(AudioTake{
+                    .filePath = pass.file.getFullPathName(),
+                    .durationSeconds = pass.durationSeconds,
+                });
+
+            result_.clip.currentTakeIndex = static_cast<int>(active);
+        }
+    }
+
+    placeClip(result_);
+    return result_;
+}
+
+void TakeRecorder::placeClip(RecordedTake& take) const {
+    // Loop-aligned once a pass boundary has actually been reached, rather than
+    // once a wrap has been seen: a take stopped between the two holds only the
+    // stretch it began on, and putting that at the loop start would play it
+    // somewhere it was never recorded.
+    if (firstBoundary_ >= 0 && written_ > firstBoundary_) {
+        take.startBeat = loopStartBeat_;
+        take.lengthBeats = std::max(0.0, loopEndBeat_ - loopStartBeat_);
+        return;
+    }
+
+    take.startBeat = startBeat_;
+    take.lengthBeats = std::max(0.0, endBeat_ - startBeat_);
+}
+
+}  // namespace magda::engine

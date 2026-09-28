@@ -1,8 +1,10 @@
 #include "modulation/FollowerEditorPanel.hpp"
 
+#include <utility>
+
 #include "audio/modifiers/ADSRDebugLog.hpp"
 #include "core/AutomationInfo.hpp"
-#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
@@ -13,7 +15,7 @@ FollowerEditorPanel::FollowerEditorPanel() {
 
     // Name label at top (editable)
     nameLabel_.setFont(FontManager::getInstance().getUIFontBold(10.0f));
-    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     nameLabel_.setJustificationType(juce::Justification::centred);
     nameLabel_.setText("No Mod Selected", juce::dontSendNotification);
     nameLabel_.setEditable(false, true, false);
@@ -28,8 +30,9 @@ FollowerEditorPanel::FollowerEditorPanel() {
     // the rest of the modulation toolbar.
     sourceButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     sourceButton_.setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE));
-    sourceButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+                            ActiveTheme::getColour(ActiveTheme::SURFACE));
+    sourceButton_.setColour(juce::TextButton::textColourOffId,
+                            ActiveTheme::getSecondaryTextColour());
     sourceButton_.onClick = [this]() {
         if (onSourceClicked)
             onSourceClicked();
@@ -38,7 +41,7 @@ FollowerEditorPanel::FollowerEditorPanel() {
 
     // Time sliders fold their label into the value text (e.g. "A 100 ms").
     auto setupTimeSlider = [this](TextSlider& s, const juce::String& tag, double def,
-                                  std::function<float&()> field) {
+                                  const std::function<float&()>& field) {
         s.setRange(0.0, 5000.0, 1.0);
         s.setSkewForCentre(250.0);
         s.setValue(def, juce::dontSendNotification);
@@ -80,15 +83,15 @@ FollowerEditorPanel::FollowerEditorPanel() {
     // Band-limit detection: a toggle + cutoff slider per band. Filtering the raw
     // source before peak detection lets the follower track just the bass or just
     // the highs of its source.
-    auto setupBandToggle = [this](juce::TextButton& b, std::function<bool&()> field,
+    auto setupBandToggle = [this](juce::TextButton& b, const std::function<bool&()>& field,
                                   TextSlider& freq) {
         b.setClickingTogglesState(true);
         b.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-        b.setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
+        b.setColour(juce::TextButton::buttonColourId, ActiveTheme::getColour(ActiveTheme::SURFACE));
         b.setColour(juce::TextButton::buttonOnColourId,
-                    DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
-        b.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
-        b.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+                    ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE));
+        b.setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
+        b.setColour(juce::TextButton::textColourOnId, ActiveTheme::getTextColour());
         b.onClick = [this, &b, field, &freq]() {
             field() = b.getToggleState();
             freq.setEnabled(b.getToggleState());
@@ -102,7 +105,7 @@ FollowerEditorPanel::FollowerEditorPanel() {
         };
         addAndMakeVisible(b);
     };
-    auto setupFreqSlider = [this](TextSlider& s, double def, std::function<float&()> field) {
+    auto setupFreqSlider = [this](TextSlider& s, double def, const std::function<float&()>& field) {
         s.setRange(20.0, 20000.0, 1.0);
         s.setSkewForCentre(1000.0);
         s.setValue(def, juce::dontSendNotification);
@@ -139,36 +142,38 @@ FollowerEditorPanel::FollowerEditorPanel() {
 
     modMatrixContent_.onDeleteLink = [this](magda::ControlTarget target) {
         if (selectedModIndex_ >= 0 && onModLinkDeleted)
-            onModLinkDeleted(selectedModIndex_, target);
+            onModLinkDeleted(selectedModIndex_, std::move(target));
     };
     modMatrixContent_.onToggleBipolar = [this](magda::ControlTarget target, bool bipolar) {
         if (selectedModIndex_ >= 0 && onModLinkBipolarChanged)
-            onModLinkBipolarChanged(selectedModIndex_, target, bipolar);
+            onModLinkBipolarChanged(selectedModIndex_, std::move(target), bipolar);
     };
     modMatrixContent_.onToggleEnabled = [this](magda::ControlTarget target, bool enabled) {
         if (selectedModIndex_ >= 0 && onModLinkEnabledChanged)
-            onModLinkEnabledChanged(selectedModIndex_, target, enabled);
+            onModLinkEnabledChanged(selectedModIndex_, std::move(target), enabled);
     };
     modMatrixContent_.onAmountChanged = [this](magda::ControlTarget target, float amount) {
         if (selectedModIndex_ >= 0 && onModLinkAmountChanged)
-            onModLinkAmountChanged(selectedModIndex_, target, amount);
+            onModLinkAmountChanged(selectedModIndex_, std::move(target), amount);
     };
 }
 
 void FollowerEditorPanel::lookAndFeelChanged() {
     // Re-apply cached theme colours after a live theme switch.
-    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
 
     sourceButton_.setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE));
-    sourceButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+                            ActiveTheme::getColour(ActiveTheme::SURFACE));
+    sourceButton_.setColour(juce::TextButton::textColourOffId,
+                            ActiveTheme::getSecondaryTextColour());
 
     for (auto* btn : {&hpEnableButton_, &lpEnableButton_}) {
-        btn->setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
+        btn->setColour(juce::TextButton::buttonColourId,
+                       ActiveTheme::getColour(ActiveTheme::SURFACE));
         btn->setColour(juce::TextButton::buttonOnColourId,
-                       DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE));
-        btn->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
-        btn->setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+                       ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE));
+        btn->setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
+        btn->setColour(juce::TextButton::textColourOnId, ActiveTheme::getTextColour());
     }
 
     repaint();
@@ -257,14 +262,14 @@ void FollowerEditorPanel::fireFollowerChanged() {
 }
 
 void FollowerEditorPanel::paint(juce::Graphics& g) {
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.03f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.03f));
     g.fillRect(getLocalBounds());
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(getLocalBounds());
 
     // Caption flow mirrors resized().
     auto bounds = getLocalBounds().reduced(6);
-    g.setColour(DarkTheme::getSecondaryTextColour());
+    g.setColour(ActiveTheme::getSecondaryTextColour());
     g.setFont(FontManager::getInstance().getUIFont(8.0f));
     bounds.removeFromTop(18 + 6);  // name + gap
     bounds.removeFromTop(46 + 6);  // display + gap

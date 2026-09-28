@@ -10,17 +10,27 @@
 
 #include "../core/ChainNodePath.hpp"
 #include "../core/ClipTypes.hpp"
+#include "../core/ParameterInfo.hpp"
 #include "../core/TypeIds.hpp"
 #include "remote_scopes.hpp"
 
 namespace magda {
 
 class MagdaApi;
+class ClipApi;
 struct AutomationLaneInfo;
+struct AutomationClipInfo;
 struct ClipInfo;
 struct DeviceCatalogEntry;
+struct DevicePresetEntry;
 struct DeviceInfo;
 struct ProjectInfo;
+struct ReferenceImpactPlan;
+struct RoutingEndpoint;
+struct TrackRoutingView;
+struct DroppedRoutingConnection;
+struct TrackSendView;
+struct InvalidatedSendConnection;
 struct TrackInfo;
 
 namespace remote {
@@ -83,6 +93,16 @@ struct Error {
     ErrorCode code = ErrorCode::InternalError;
     juce::String message;
     std::vector<ValidationIssue> issues;
+    /** Optional operation-specific, transport-safe structured diagnostics. */
+    juce::var details;
+
+    Error() = default;
+    Error(ErrorCode codeIn, juce::String messageIn, std::vector<ValidationIssue> issuesIn = {},
+          juce::var detailsIn = {})
+        : code(codeIn),
+          message(std::move(messageIn)),
+          issues(std::move(issuesIn)),
+          details(std::move(detailsIn)) {}
 
     bool operator==(const Error&) const = default;
 };
@@ -96,7 +116,24 @@ struct MidiNoteDto {
     bool operator==(const MidiNoteDto&) const = default;
 };
 
+/** One typed MIDI event in the public Remote API representation. */
+struct MidiEventDto {
+    EventId id = INVALID_EVENT_ID;
+    juce::String type;
+    int note = 0;
+    int velocity = 0;
+    int controller = 0;
+    int value = 0;
+    double beat = 0.0;
+    double lengthBeats = 0.0;
+    bool keyswitch = false;
+
+    bool operator==(const MidiEventDto&) const = default;
+};
+
 struct ProjectDto {
+    bool open = false;
+    std::optional<juce::String> path;
     juce::String name;
     double tempo = 120.0;
     int timeSignatureNumerator = 4;
@@ -108,6 +145,8 @@ struct ProjectDto {
     bool loopEnabled = false;
     double loopStartBeats = 0.0;
     double loopEndBeats = 0.0;
+    bool dirty = false;
+    bool hasSaveTarget = false;
 
     bool operator==(const ProjectDto&) const = default;
 };
@@ -124,6 +163,7 @@ struct TrackDto {
     bool muted = false;
     bool soloed = false;
     bool recordArmed = false;
+    juce::String inputMonitor = "off";
     bool frozen = false;
     juce::String audioInputDevice;
     juce::String midiInputDevice;
@@ -131,6 +171,77 @@ struct TrackDto {
     juce::String midiOutputDevice;
 
     bool operator==(const TrackDto&) const = default;
+};
+
+struct RoutingEndpointDto {
+    juce::String id;
+    juce::String name;
+    juce::String media;
+    juce::String direction;
+    juce::String kind;
+    bool available = true;
+    int channelCount = 0;
+    std::optional<TrackId> trackId;
+
+    bool operator==(const RoutingEndpointDto&) const = default;
+};
+
+struct TrackRoutingDto {
+    TrackId trackId = INVALID_TRACK_ID;
+    juce::String audioInputEndpointId;
+    juce::String midiInputEndpointId;
+    juce::String audioOutputEndpointId;
+    juce::String midiOutputEndpointId;
+    bool recordArmed = false;
+    juce::String inputMonitor = "off";
+
+    bool operator==(const TrackRoutingDto&) const = default;
+};
+
+struct DroppedRoutingConnectionDto {
+    TrackId trackId = INVALID_TRACK_ID;
+    juce::String field;
+    juce::String endpointId;
+    juce::String reason;
+
+    bool operator==(const DroppedRoutingConnectionDto&) const = default;
+};
+
+struct TrackSendDto {
+    juce::String id;
+    TrackId sourceTrackId = INVALID_TRACK_ID;
+    juce::String destinationEndpointId;
+    double level = 1.0;
+    bool enabled = true;
+    juce::String position = "post_fader";
+
+    bool operator==(const TrackSendDto&) const = default;
+};
+
+struct InvalidatedSendConnectionDto {
+    juce::String sendId;
+    juce::String destinationEndpointId;
+    juce::String reason;
+
+    bool operator==(const InvalidatedSendConnectionDto&) const = default;
+};
+
+struct ChordEntryDto {
+    ClipId clipId = INVALID_CLIP_ID;
+    double clipBeat = 0.0;
+    double startBeat = 0.0;
+    double lengthBeats = 0.0;
+    juce::String name;
+
+    bool operator==(const ChordEntryDto&) const = default;
+};
+
+/** Safe snapshot of the singleton chord track and its ordered progression. */
+struct ChordTrackDto {
+    std::optional<TrackDto> track;
+    std::vector<ChordEntryDto> chords;
+
+    bool operator==(const ChordTrackDto&) const = default;
 };
 
 struct ClipDto {
@@ -147,7 +258,10 @@ struct ClipDto {
     juce::String launchMode;
     juce::String launchQuantize;
     juce::String followAction;
+    double followActionDelayBeats = 0.0;
+    int followActionLoopCount = 1;
     std::vector<MidiNoteDto> notes;
+    std::vector<MidiEventDto> midiEvents;
 
     bool operator==(const ClipDto&) const = default;
 };
@@ -182,6 +296,80 @@ struct DevicePathDto {
     bool operator==(const DevicePathDto&) const = default;
 };
 
+/** A reference endpoint projected without pointers, host paths, or plugin identity. */
+struct ReferenceAddressDto {
+    juce::String kind;
+    std::optional<TrackId> trackId;
+    std::optional<DevicePathDto> devicePath;
+    std::optional<AutomationLaneId> automationLaneId;
+    std::optional<MacroId> macroId;
+    std::optional<ModId> modId;
+    std::optional<int> linkIndex;
+    std::optional<int> parameterIndex;
+    juce::String parameterStableId;
+    juce::String bindingId;
+    std::optional<juce::String> route;
+    std::optional<int> routeIndex;
+
+    bool operator==(const ReferenceAddressDto&) const = default;
+};
+
+struct ReferenceImpactEntryDto {
+    juce::String referenceKind;
+    ReferenceAddressDto source;
+    ReferenceAddressDto target;
+    juce::String reason;
+
+    bool operator==(const ReferenceImpactEntryDto&) const = default;
+};
+
+struct RemappedReferenceDto {
+    juce::String referenceKind;
+    ReferenceAddressDto source;
+    ReferenceAddressDto target;
+    ReferenceAddressDto newTarget;
+    juce::String reason;
+
+    bool operator==(const RemappedReferenceDto&) const = default;
+};
+
+/** Complete preflight decision returned by preset/replacement operations. */
+struct ReferenceImpactResultDto {
+    std::vector<ReferenceImpactEntryDto> preservedReferences;
+    std::vector<RemappedReferenceDto> remappedReferences;
+    std::vector<ReferenceImpactEntryDto> droppedReferences;
+    std::vector<ReferenceImpactEntryDto> rejectedReferences;
+
+    bool operator==(const ReferenceImpactResultDto&) const = default;
+};
+
+/**
+ * @brief A device's sidechain: the slot it declares and the source feeding it.
+ *
+ * The declaration and the routing together, because neither is much use alone:
+ * `port` says what the device will take, the rest says what it is being given
+ * (#2329). A device that declares no port still reports one, as "none".
+ */
+struct DeviceSidechainDto {
+    /// What the device declares on its slot: "none", "audio" or "midi".
+    juce::String port = "none";
+    /// Channels an audio key carries. Zero for every other port.
+    int portChannels = 0;
+
+    /// What is routed to it: "none", "audio" or "midi".
+    juce::String type = "none";
+    /// The track the key is taken from; absent when nothing is routed.
+    std::optional<TrackId> sourceTrackId;
+    /// Where on that track: "preFx" or "postFader".
+    juce::String tapPoint = "postFader";
+    /// Trim on the key, on the edge feeding the device.
+    double gainDb = 0.0;
+    /// Monitor the key in place of the device's own output.
+    bool listen = false;
+
+    bool operator==(const DeviceSidechainDto&) const = default;
+};
+
 struct DeviceDto {
     DeviceId id = INVALID_DEVICE_ID;
     TrackId trackId = INVALID_TRACK_ID;
@@ -198,13 +386,43 @@ struct DeviceDto {
     bool instrument = false;
     bool bypassed = false;
     double gainDb = 0.0;
+    DeviceSidechainDto sidechain;
 
     bool operator==(const DeviceDto&) const = default;
+};
+
+/**
+ * @brief One parameter of a live device, in real units (Hz, dB, %).
+ *
+ * `index` is the address `devices.setParameter` takes. The three booleans
+ * mirror the user's Configure Parameters customization: shown in the device
+ * UI, pinned to the mini mixer, and opted in to AI/agent control. Internal
+ * devices carry no per-parameter opt-in, so `aiAgentEnabled` is always true
+ * there; for external plugins it is exactly the subset the user ticked.
+ */
+struct DeviceParameterDto {
+    int index = -1;
+    juce::String stableId;
+    juce::String name;
+    juce::String unit;
+    double minValue = 0.0;
+    double maxValue = 1.0;
+    double defaultValue = 0.0;
+    double currentValue = 0.0;
+    double normalizedValue = 0.0;
+    ParameterScale scale = ParameterScale::Linear;  // serialized as the store's wire strings
+    std::vector<juce::String> choices;  // labels for discrete parameters; empty otherwise
+    bool visible = false;
+    bool miniMixer = false;
+    bool aiAgentEnabled = false;
+
+    bool operator==(const DeviceParameterDto&) const = default;
 };
 
 struct ChainDto {
     ChainId id = INVALID_CHAIN_ID;
     RackId rackId = INVALID_RACK_ID;
+    DevicePathDto nodePath;
     juce::String name;
     int outputIndex = 0;
     bool muted = false;
@@ -223,6 +441,7 @@ struct RackDto {
     TrackId trackId = INVALID_TRACK_ID;
     std::optional<RackId> parentRackId;
     std::optional<ChainId> parentChainId;
+    DevicePathDto nodePath;
     juce::String name;
     bool bypassed = false;
     double volumeDb = 0.0;
@@ -232,10 +451,34 @@ struct RackDto {
     bool operator==(const RackDto&) const = default;
 };
 
+/** One visible Drum Grid slot. Empty slots have no chain address. */
+struct PadDto {
+    DevicePathDto gridPath;
+    int index = 0;
+    int midiNote = 0;
+    bool populated = false;
+    std::optional<ChainId> chainId;
+    std::optional<DevicePathDto> chainPath;
+    int lowNote = 0;
+    int highNote = 0;
+    int rootNote = 0;
+    juce::String name;
+    double levelDb = 0.0;
+    double pan = 0.0;
+    bool muted = false;
+    bool solo = false;
+    bool bypassed = false;
+    int outputBus = 0;
+    std::vector<DevicePathDto> devicePaths;
+
+    bool operator==(const PadDto&) const = default;
+};
+
 struct DeviceGraphDto {
     std::vector<DeviceDto> devices;
     std::vector<RackDto> racks;
     std::vector<ChainDto> chains;
+    std::vector<PadDto> pads;
 
     bool operator==(const DeviceGraphDto&) const = default;
 };
@@ -266,6 +509,15 @@ struct DeviceCatalogEntryDto {
     bool operator==(const DeviceCatalogEntryDto&) const = default;
 };
 
+struct DevicePresetDto {
+    juce::String id;
+    juce::String name;
+    juce::String category;
+    juce::String source;  // "magda" | "plugin"
+
+    bool operator==(const DevicePresetDto&) const = default;
+};
+
 struct SelectionDto {
     std::optional<TrackId> trackId;
     std::optional<ClipId> clipId;
@@ -287,16 +539,50 @@ struct TransportDto {
     bool operator==(const TransportDto&) const = default;
 };
 
+struct SessionSceneDto {
+    SceneId id = INVALID_SCENE_ID;
+    int sceneIndex = -1;   // zero-based model/API position
+    int displayIndex = 0;  // one-based label position
+    juce::String name;
+    std::uint32_t colourArgb = 0;
+
+    bool operator==(const SessionSceneDto&) const = default;
+};
+
+struct SessionTrackDto {
+    TrackId trackId = INVALID_TRACK_ID;
+    std::optional<ClipId> activeClipId;
+    juce::String playbackMode;
+
+    bool operator==(const SessionTrackDto&) const = default;
+};
+
+struct SessionClipLaunchSettingsDto {
+    juce::String launchMode;
+    juce::String launchQuantize;
+    juce::String followAction;
+    double followActionDelayBeats = 0.0;
+    int followActionLoopCount = 1;
+
+    bool operator==(const SessionClipLaunchSettingsDto&) const = default;
+};
+
 struct SessionSlotDto {
     TrackId trackId = INVALID_TRACK_ID;
+    SceneId sceneId = INVALID_SCENE_ID;
     int sceneIndex = -1;
-    ClipId clipId = INVALID_CLIP_ID;
+    std::optional<ClipId> clipId;
     juce::String state;
+    bool recordArmed = false;
+    bool recording = false;
+    std::optional<SessionClipLaunchSettingsDto> launchSettings;
 
     bool operator==(const SessionSlotDto&) const = default;
 };
 
 struct SessionDto {
+    std::vector<SessionSceneDto> scenes;
+    std::vector<SessionTrackDto> tracks;
     std::vector<SessionSlotDto> slots;
 
     bool operator==(const SessionDto&) const = default;
@@ -334,7 +620,27 @@ struct AutomationLaneDto {
     bool operator==(const AutomationLaneDto&) const = default;
 };
 
-enum class OperationAccess { Read, Write };
+struct AutomationClipDto {
+    AutomationClipId id = INVALID_AUTOMATION_CLIP_ID;
+    AutomationLaneId laneId = INVALID_AUTOMATION_LANE_ID;
+    juce::String name;
+    std::uint32_t colourArgb = 0;
+    double startBeat = 0.0;
+    double lengthBeats = 0.0;
+    bool looping = false;
+    double loopLengthBeats = 0.0;
+    std::vector<AutomationPointDto> points;
+
+    bool operator==(const AutomationClipDto&) const = default;
+};
+
+enum class OperationAccess {
+    Read,
+    /// A synchronous, undoable project mutation that advances the revision.
+    Write,
+    /// Ephemeral control such as cancelling a job: idempotent, but not a project edit.
+    Control,
+};
 
 /**
  * @brief Per-request identity, permission, limits, and concurrency expectations.
@@ -343,6 +649,26 @@ enum class OperationAccess { Read, Write };
  * the handler.
  */
 struct RequestContext {
+    // Installed by RemoteApiService immediately before invoking a handler.
+    // Transport-provided values are overwritten; never client-controlled.
+    class DiagnosticsSource* diagnostics = nullptr;
+    // Installed by RemoteApiService. Job endpoints and future job-producing
+    // operations share this one owner-scoped registry across both transports.
+    class RemoteJobManager* jobs = nullptr;
+    // Async completions retain the registry through this owner rather than
+    // keeping the borrowed pointer above past service shutdown.
+    std::shared_ptr<class RemoteJobManager> jobsOwner;
+    class RemoteSessionRecordings* sessionRecordings = nullptr;
+    std::shared_ptr<class RemoteSessionRecordings> sessionRecordingsOwner;
+    class EngineJobSource* engineJobs = nullptr;
+    std::shared_ptr<class EngineJobSource> engineJobsOwner;
+    // The validated project revision at handler entry. Future job-producing
+    // handlers capture this as RemoteJobSpec::acceptedRevision; client values
+    // are overwritten alongside the two service pointers above.
+    Revision revision = INITIAL_REVISION;
+    // Async completions use the live shared counter for their terminal
+    // revision and optimistic-concurrency check.
+    std::shared_ptr<std::atomic<Revision>> revisionOwner;
     /**
      * The transport's own handle for the caller — `ws:3:7`, `mcp:sess-…`.
      *
@@ -529,22 +855,44 @@ std::optional<Error> validateOperationInput(const OperationDescriptor& operation
                                             const juce::var& input);
 
 juce::var toJson(const MidiNoteDto& dto);
+juce::var toJson(const MidiEventDto& dto);
 juce::var toJson(const ProjectDto& dto);
 juce::var toJson(const TrackDto& dto);
+juce::var toJson(const RoutingEndpointDto& dto);
+juce::var toJson(const TrackRoutingDto& dto);
+juce::var toJson(const DroppedRoutingConnectionDto& dto);
+juce::var toJson(const TrackSendDto& dto);
+juce::var toJson(const InvalidatedSendConnectionDto& dto);
+juce::var toJson(const ChordEntryDto& dto);
+juce::var toJson(const ChordTrackDto& dto);
 juce::var toJson(const ClipDto& dto);
 juce::var toJson(const DeviceDto& dto);
 juce::var toJson(const ChainDto& dto);
 juce::var toJson(const RackDto& dto);
 juce::var toJson(const DeviceGraphDto& dto);
+juce::var toJson(const PadDto& dto);
 juce::var toJson(const DeviceCatalogEntryDto& dto);
+juce::var toJson(const DevicePresetDto& dto);
+juce::var toJson(const DeviceParameterDto& dto);
 juce::var toJson(const SelectionDto& dto);
 juce::var toJson(const TransportDto& dto);
+juce::var toJson(const SessionSceneDto& dto);
+juce::var toJson(const SessionTrackDto& dto);
+juce::var toJson(const SessionClipLaunchSettingsDto& dto);
 juce::var toJson(const SessionSlotDto& dto);
 juce::var toJson(const SessionDto& dto);
 juce::var toJson(const AutomationPointDto& dto);
 juce::var toJson(const DevicePathDto& dto);
 juce::var toJson(const AutomationTargetDto& dto);
 juce::var toJson(const AutomationLaneDto& dto);
+juce::var toJson(const AutomationClipDto& dto);
+juce::var toJson(const ReferenceAddressDto& dto);
+juce::var toJson(const ReferenceImpactEntryDto& dto);
+juce::var toJson(const RemappedReferenceDto& dto);
+juce::var toJson(const ReferenceImpactResultDto& dto);
+
+/** Shared closed schema embedded by every operation that reports reference impact. */
+const juce::var& referenceImpactResultSchema();
 
 /**
  * @brief Decode a device path from its wire form.
@@ -556,8 +904,12 @@ juce::var toJson(const AutomationLaneDto& dto);
 DevicePathDto devicePathFromJson(const juce::var& json);
 
 std::optional<MidiNoteDto> midiNoteFromJson(const juce::var& json, Error& error);
+std::optional<MidiEventDto> midiEventFromJson(const juce::var& json, Error& error);
 std::optional<ProjectDto> projectFromJson(const juce::var& json, Error& error);
 std::optional<TrackDto> trackFromJson(const juce::var& json, Error& error);
+std::optional<RoutingEndpointDto> routingEndpointFromJson(const juce::var& json, Error& error);
+std::optional<TrackRoutingDto> trackRoutingFromJson(const juce::var& json, Error& error);
+std::optional<TrackSendDto> trackSendFromJson(const juce::var& json, Error& error);
 std::optional<ClipDto> clipFromJson(const juce::var& json, Error& error);
 std::optional<DeviceDto> deviceFromJson(const juce::var& json, Error& error);
 std::optional<ChainDto> chainFromJson(const juce::var& json, Error& error);
@@ -565,17 +917,43 @@ std::optional<RackDto> rackFromJson(const juce::var& json, Error& error);
 std::optional<DeviceGraphDto> deviceGraphFromJson(const juce::var& json, Error& error);
 std::optional<DeviceCatalogEntryDto> deviceCatalogEntryFromJson(const juce::var& json,
                                                                 Error& error);
+std::optional<DevicePresetDto> devicePresetFromJson(const juce::var& json, Error& error);
+std::optional<DeviceParameterDto> deviceParameterFromJson(const juce::var& json, Error& error);
 std::optional<SelectionDto> selectionFromJson(const juce::var& json, Error& error);
 std::optional<TransportDto> transportFromJson(const juce::var& json, Error& error);
 std::optional<SessionDto> sessionFromJson(const juce::var& json, Error& error);
 std::optional<AutomationLaneDto> automationLaneFromJson(const juce::var& json, Error& error);
+std::optional<AutomationClipDto> automationClipFromJson(const juce::var& json, Error& error);
+std::optional<ReferenceImpactResultDto> referenceImpactResultFromJson(const juce::var& json,
+                                                                      Error& error);
 
-ProjectDto makeProjectDto(const ProjectInfo& project);
+ProjectDto makeProjectDto(const ProjectInfo& project, bool open, bool dirty, bool hasSaveTarget,
+                          juce::String path = {});
 TrackDto makeTrackDto(const TrackInfo& track);
+RoutingEndpointDto makeRoutingEndpointDto(const RoutingEndpoint& endpoint);
+TrackRoutingDto makeTrackRoutingDto(const TrackRoutingView& routing);
+DroppedRoutingConnectionDto makeDroppedRoutingConnectionDto(
+    const DroppedRoutingConnection& connection);
+TrackSendDto makeTrackSendDto(const TrackSendView& send);
+InvalidatedSendConnectionDto makeInvalidatedSendConnectionDto(
+    const InvalidatedSendConnection& connection);
+ChordTrackDto makeChordTrackDto(const TrackInfo* track, ClipApi& clips);
 ClipDto makeClipDto(const ClipInfo& clip);
+std::vector<MidiEventDto> makeMidiEventDtos(const ClipInfo& clip);
 DeviceGraphDto makeDeviceGraphDto(const std::vector<TrackInfo>& tracks);
+std::vector<PadDto> makePadDtos(const DeviceInfo& grid, const ChainNodePath& gridPath);
 DeviceCatalogEntryDto makeDeviceCatalogEntryDto(const DeviceCatalogEntry& entry);
+DevicePresetDto makeDevicePresetDto(const DevicePresetEntry& entry);
+/**
+ * @brief One DTO per parameter of the device at @p devicePath.
+ *
+ * The list comes from DeviceParameterList.hpp, so a hosted plugin reports what
+ * its instance has (#2634); the flags come from @p device's own selections.
+ */
+std::vector<DeviceParameterDto> makeDeviceParameterDtos(const DeviceInfo& device,
+                                                        const ChainNodePath& devicePath);
 SelectionDto makeSelectionDto(MagdaApi& api);
+AutomationClipDto makeAutomationClipDto(const AutomationClipInfo& clip);
 TransportDto makeTransportDto(MagdaApi& api);
 SessionDto makeSessionDto(MagdaApi& api);
 AutomationLaneDto makeAutomationLaneDto(const AutomationLaneInfo& lane);
@@ -598,6 +976,8 @@ DevicePathDto makeDevicePathDto(const ChainNodePath& path);
  * implicit form, which is the same path by every accessor.
  */
 std::optional<ChainNodePath> toChainNodePath(const DevicePathDto& dto);
+
+ReferenceImpactResultDto makeReferenceImpactResultDto(const ReferenceImpactPlan& plan);
 
 // makeSelectionDto, makeTransportDto, and makeSessionDto read MagdaApi live
 // state and assert the JUCE message thread. Tests drive them from the Catch2

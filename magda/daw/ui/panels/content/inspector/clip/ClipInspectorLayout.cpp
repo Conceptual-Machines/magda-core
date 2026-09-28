@@ -1,4 +1,4 @@
-#include "../../../../themes/DarkTheme.hpp"
+#include "../../../../themes/ActiveTheme.hpp"
 #include "../ClipInspector.hpp"
 
 namespace magda::daw::ui {
@@ -256,6 +256,14 @@ void ClipInspector::resized() {
             }
             if (clipStretchValue_ && clipStretchValue_->isVisible()) {
                 clipStretchValue_->setBounds(right.reduced(0, 1));
+                // The beats field shows in time mode too (#2676); it takes the
+                // next row rather than the stretch field's cell.
+                if (clipBeatsLengthValue_->isVisible()) {
+                    addSpace(4);
+                    auto row3 = addRow(22);
+                    row3.removeFromLeft(halfWidth + colGap);
+                    right = row3;
+                }
             }
             if (clipBeatsLengthValue_->isVisible()) {
                 auto beatsArea = right.reduced(0, 1);
@@ -455,7 +463,7 @@ void ClipInspector::resized() {
 
 void ClipInspector::ClipPropsContainer::paint(juce::Graphics& g) {
     // Draw separator lines between sections
-    g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
     for (int y : separatorYPositions) {
         g.drawHorizontalLine(y, 0.0f, static_cast<float>(getWidth()));
     }

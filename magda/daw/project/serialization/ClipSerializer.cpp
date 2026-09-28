@@ -1,3 +1,5 @@
+#include <cmath>
+
 #include "ProjectSerializer.hpp"
 #include "SerializationHelpers.hpp"
 
@@ -14,7 +16,7 @@ juce::var serializeMidiCurveHandle(const MidiCurveHandle& handle) {
     obj->setProperty("dx", handle.dx);
     obj->setProperty("dy", handle.dy);
     obj->setProperty("linked", handle.linked);
-    return juce::var(obj);
+    return {obj};
 }
 
 void deserializeMidiCurveHandle(const juce::var& json, MidiCurveHandle& handle) {
@@ -32,6 +34,104 @@ double getValidProjectTempo(double projectTempo) {
     return isValidBpm(projectTempo) ? projectTempo : DEFAULT_BPM;
 }
 
+const char* toString(Provenance from) {
+    switch (from) {
+        case Provenance::FileMetadata:
+            return "fileMetadata";
+        case Provenance::Analysis:
+            return "analysis";
+        case Provenance::User:
+            return "user";
+        case Provenance::None:
+            break;
+    }
+    return "none";
+}
+
+const char* toString(RegionExtent extent) {
+    switch (extent) {
+        case RegionExtent::Interpretation:
+            return "interpretation";
+        case RegionExtent::Explicit:
+            return "explicit";
+        case RegionExtent::WholeSource:
+            break;
+    }
+    return "wholeSource";
+}
+
+const char* toString(LoopLengthIntent intent) {
+    return intent == LoopLengthIntent::Musical ? "musical" : "source";
+}
+
+const char* toString(PlaybackIntent intent) {
+    switch (intent) {
+        case PlaybackIntent::Beat:
+            return "beat";
+        case PlaybackIntent::Free:
+            break;
+    }
+    return "free";
+}
+
+Provenance provenanceFromString(const juce::String& text, Provenance fallback) {
+    if (text == "none")
+        return Provenance::None;
+    if (text == "fileMetadata")
+        return Provenance::FileMetadata;
+    if (text == "analysis")
+        return Provenance::Analysis;
+    if (text == "user")
+        return Provenance::User;
+    return fallback;
+}
+
+RegionExtent regionExtentFromString(const juce::String& text, RegionExtent fallback) {
+    if (text == "wholeSource")
+        return RegionExtent::WholeSource;
+    if (text == "interpretation")
+        return RegionExtent::Interpretation;
+    if (text == "explicit")
+        return RegionExtent::Explicit;
+    return fallback;
+}
+
+LoopLengthIntent loopLengthIntentFromString(const juce::String& text, LoopLengthIntent fallback) {
+    if (text == "source")
+        return LoopLengthIntent::Source;
+    if (text == "musical")
+        return LoopLengthIntent::Musical;
+    return fallback;
+}
+
+PlaybackIntent playbackIntentFromString(const juce::String& text, PlaybackIntent fallback) {
+    if (text == "free")
+        return PlaybackIntent::Free;
+    if (text == "beat")
+        return PlaybackIntent::Beat;
+    if (text == "beatWhenKnown")  // a project saved while waiting for a tempo
+        return fallback;
+    return fallback;
+}
+
+/// Defaults for a project saved before ownership existed (#2674): a stored
+/// tempo came from detection, a locked beat count from the user, a non-zero
+/// region was drawn by hand, and autoTempo on was a request for beat mode.
+Provenance legacyBpmProvenance(double interpBpm) {
+    return interpBpm > 0.0 ? Provenance::Analysis : Provenance::None;
+}
+Provenance legacyBeatsProvenance(double interpTotalBeats, bool locked) {
+    if (interpTotalBeats <= 0.0)
+        return Provenance::None;
+    return locked ? Provenance::User : Provenance::Analysis;
+}
+RegionExtent legacyLoopExtent(int64_t loopLengthSamples) {
+    return loopLengthSamples > 0 ? RegionExtent::Explicit : RegionExtent::WholeSource;
+}
+PlaybackIntent legacyPlaybackIntent(bool autoTempo) {
+    return autoTempo ? PlaybackIntent::Beat : PlaybackIntent::Free;
+}
+
 juce::var serializeAudioEvent(const AudioEvent& event) {
     auto* obj = new juce::DynamicObject();
     obj->setProperty("id", event.id);
@@ -46,15 +146,20 @@ juce::var serializeAudioEvent(const AudioEvent& event) {
     obj->setProperty("anchorSamples", juce::String(event.sourceAnchorSamples));
     obj->setProperty("loopStartSamples", juce::String(event.loopStartSamples));
     obj->setProperty("loopLengthSamples", juce::String(event.loopLengthSamples));
+    obj->setProperty("loopExtent", toString(event.loopExtent));
+    obj->setProperty("loopLengthIntent", toString(event.loopLengthIntent));
+    obj->setProperty("musicalLoopLengthBeats", event.musicalLoopLengthBeats);
 
     obj->setProperty("interpBpm", event.interpBpm);
+    obj->setProperty("bpmFrom", toString(event.bpmFrom));
     obj->setProperty("interpTotalBeats", event.interpTotalBeats);
-    obj->setProperty("interpTotalBeatsLocked", event.interpTotalBeatsLocked);
+    obj->setProperty("beatsFrom", toString(event.beatsFrom));
     if (!event.keyRoot.empty())
         obj->setProperty("keyRoot", juce::String(event.keyRoot));
     if (!event.keyScale.empty())
         obj->setProperty("keyScale", juce::String(event.keyScale));
 
+    obj->setProperty("playbackIntent", toString(event.playbackIntent));
     obj->setProperty("autoTempo", event.autoTempo);
     obj->setProperty("speedRatio", event.speedRatio);
     if (event.timeStretchMode != 0)
@@ -100,7 +205,7 @@ juce::var serializeAudioEvent(const AudioEvent& event) {
     obj->setProperty("fadeInBehaviour", event.fadeInBehaviour);
     obj->setProperty("fadeOutBehaviour", event.fadeOutBehaviour);
 
-    return juce::var(obj);
+    return {obj};
 }
 
 int64_t readSamples(const juce::DynamicObject& obj, const char* key) {
@@ -121,15 +226,35 @@ void deserializeAudioEvent(const juce::var& json, AudioEvent& event) {
 
     event.sourceAnchorSamples = readSamples(*obj, "anchorSamples");
     event.loopStartSamples = readSamples(*obj, "loopStartSamples");
-    event.loopLengthSamples = readSamples(*obj, "loopLengthSamples");
+    const auto storedLoopLengthSamples = readSamples(*obj, "loopLengthSamples");
+    const LoopLengthState loopLength{
+        .samples = storedLoopLengthSamples,
+        .extent = regionExtentFromString(obj->getProperty("loopExtent").toString(),
+                                         legacyLoopExtent(storedLoopLengthSamples)),
+        .intent = loopLengthIntentFromString(obj->getProperty("loopLengthIntent").toString(),
+                                             LoopLengthIntent::Source),
+        .musicalBeats = obj->hasProperty("musicalLoopLengthBeats")
+                            ? static_cast<double>(obj->getProperty("musicalLoopLengthBeats"))
+                            : 0.0,
+    };
 
     event.interpBpm = obj->getProperty("interpBpm");
     event.interpTotalBeats = obj->getProperty("interpTotalBeats");
-    event.interpTotalBeatsLocked = static_cast<bool>(obj->getProperty("interpTotalBeatsLocked"));
+    // interpTotalBeatsLocked is read, never written: it only feeds the default.
+    const bool legacyLocked = static_cast<bool>(obj->getProperty("interpTotalBeatsLocked"));
+    event.bpmFrom = provenanceFromString(obj->getProperty("bpmFrom").toString(),
+                                         legacyBpmProvenance(event.interpBpm));
+    event.beatsFrom =
+        provenanceFromString(obj->getProperty("beatsFrom").toString(),
+                             legacyBeatsProvenance(event.interpTotalBeats, legacyLocked));
     event.keyRoot = obj->getProperty("keyRoot").toString().toStdString();
     event.keyScale = obj->getProperty("keyScale").toString().toStdString();
+    event.restoreLoopLength(loopLength);
 
+    // autoTempo is restored as stored, not re-resolved: load must not move it.
     event.autoTempo = static_cast<bool>(obj->getProperty("autoTempo"));
+    event.playbackIntent = playbackIntentFromString(obj->getProperty("playbackIntent").toString(),
+                                                    legacyPlaybackIntent(event.autoTempo));
     event.speedRatio = obj->getProperty("speedRatio");
     if (event.speedRatio <= 0.0)
         event.speedRatio = 1.0;
@@ -258,8 +383,10 @@ void migrateLegacyAudioClip(const LegacyAudioSource& v1, const LegacyAudioFields
 
     event.interpBpm = v1.interpBpm;
     event.interpTotalBeats = v1.interpTotalBeats;
-    event.interpTotalBeatsLocked = v1.interpTotalBeatsLocked;
+    event.bpmFrom = legacyBpmProvenance(v1.interpBpm);
+    event.beatsFrom = legacyBeatsProvenance(v1.interpTotalBeats, v1.interpTotalBeatsLocked);
     event.autoTempo = legacy.autoTempo;
+    event.playbackIntent = legacyPlaybackIntent(legacy.autoTempo);
     event.speedRatio = v1.speedRatio > 0.0 ? v1.speedRatio : 1.0;
     event.timeStretchMode = v1.timeStretchMode;
     event.warpEnabled = v1.warpEnabled;
@@ -283,6 +410,8 @@ void migrateLegacyAudioClip(const LegacyAudioSource& v1, const LegacyAudioFields
                                                  : v1.loopStartSeconds);
     event.setLoopLengthSeconds(beatsAuthoritative ? v1.loopLengthBeats * secondsPerBeat
                                                   : v1.loopLengthSeconds);
+    // The setter tags Explicit; a zero-length v1 region meant the whole file.
+    event.loopExtent = legacyLoopExtent(event.loopLengthSamples);
 
     event.autoPitch = legacy.autoPitch;
     event.autoPitchMode = legacy.autoPitchMode;
@@ -307,6 +436,13 @@ void migrateLegacyAudioClip(const LegacyAudioSource& v1, const LegacyAudioFields
 
 /// Takes and comp sections are unchanged by the event split.
 void readAudioTakesAndComp(const juce::DynamicObject& audioObj, ClipInfo& outClip) {
+    if (auto* window = audioObj.getProperty("envelopeWindow").getDynamicObject()) {
+        const double startBeat = window->getProperty("startBeat");
+        const double lengthBeats = window->getProperty("lengthBeats");
+        if (std::isfinite(startBeat) && std::isfinite(lengthBeats) && lengthBeats > 0.0)
+            outClip.audio().envelopeWindow = ClipPlacement{startBeat, lengthBeats};
+    }
+
     auto takesVar = audioObj.getProperty("takes");
     if (takesVar.isArray()) {
         for (const auto& takeVar : *takesVar.getArray()) {
@@ -397,10 +533,11 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
             obj->setProperty("loopStartBeats", clip.loopStartBeats);
         if (clip.loopLengthBeats > 0.0)
             obj->setProperty("loopLengthBeats", clip.loopLengthBeats);
-        if (midi.sourceFilePath.isNotEmpty() || !midi.takes.empty()) {
+        if (midi.sourceFilePath.isNotEmpty() || !midi.takes.empty() || midi.nextEventId != 1) {
             auto* midiObj = new juce::DynamicObject();
             if (midi.sourceFilePath.isNotEmpty())
                 midiObj->setProperty("sourceFilePath", midi.sourceFilePath);
+            midiObj->setProperty("nextEventId", midi.nextEventId);
             // Loop-record takes (one note set per pass).
             if (!midi.takes.empty()) {
                 juce::Array<juce::var> takesArray;
@@ -415,9 +552,17 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
                     juce::Array<juce::var> pbs;
                     for (const auto& pb : take.pitchBend)
                         pbs.add(serializeMidiPitchBendData(pb));
+                    juce::Array<juce::var> pressure;
+                    for (const auto& event : take.channelPressure)
+                        pressure.add(serializeMidiChannelPressureData(event));
+                    juce::Array<juce::var> polyAftertouch;
+                    for (const auto& event : take.polyAftertouch)
+                        polyAftertouch.add(serializeMidiPolyAftertouchData(event));
                     takeObj->setProperty("notes", juce::var(notes));
                     takeObj->setProperty("cc", juce::var(ccs));
                     takeObj->setProperty("pitchBend", juce::var(pbs));
+                    takeObj->setProperty("channelPressure", juce::var(pressure));
+                    takeObj->setProperty("polyAftertouch", juce::var(polyAftertouch));
                     takesArray.add(juce::var(takeObj));
                 }
                 midiObj->setProperty("takes", juce::var(takesArray));
@@ -457,6 +602,13 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
             eventsArray.add(serializeAudioEvent(event));
         audioObj->setProperty("events", eventsArray);
         audioObj->setProperty("nextEventId", clip.audio().nextEventId);
+
+        if (const auto& window = clip.audio().envelopeWindow) {
+            auto* windowObj = new juce::DynamicObject();
+            windowObj->setProperty("startBeat", window->startBeat);
+            windowObj->setProperty("lengthBeats", window->lengthBeats);
+            audioObj->setProperty("envelopeWindow", juce::var(windowObj));
+        }
 
         // Loop-record takes (one source file per pass). Persist so the take
         // alternates survive save/reload; the engine rebuilds them on sync.
@@ -514,6 +666,20 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
         obj->setProperty("midiPitchBendData", juce::var(pbArray));
     }
 
+    if (!clip.midiChannelPressureData.empty()) {
+        juce::Array<juce::var> pressureArray;
+        for (const auto& pressure : clip.midiChannelPressureData)
+            pressureArray.add(serializeMidiChannelPressureData(pressure));
+        obj->setProperty("midiChannelPressureData", juce::var(pressureArray));
+    }
+
+    if (!clip.midiPolyAftertouchData.empty()) {
+        juce::Array<juce::var> aftertouchArray;
+        for (const auto& aftertouch : clip.midiPolyAftertouchData)
+            aftertouchArray.add(serializeMidiPolyAftertouchData(aftertouch));
+        obj->setProperty("midiPolyAftertouchData", juce::var(aftertouchArray));
+    }
+
     // Chord annotations
     if (!clip.chordAnnotations.empty()) {
         juce::Array<juce::var> chordArray;
@@ -531,7 +697,7 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     if (clip.nextChordGroupId > 1)
         obj->setProperty("nextChordGroupId", clip.nextChordGroupId);
 
-    return juce::var(obj);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& outClip,
@@ -587,7 +753,6 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
         lastError_ = "Clip is missing placement";
         return false;
     }
-    outClip.deriveTimesFromBeats(projectTempo);
 
     // Enabled state (missing in projects saved before #1736 → default true)
     if (!obj->getProperty("enabled").isVoid())
@@ -683,6 +848,8 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
 
         if (auto* midiObj = obj->getProperty("midi").getDynamicObject()) {
             outClip.midi().sourceFilePath = midiObj->getProperty("sourceFilePath").toString();
+            if (midiObj->hasProperty("nextEventId"))
+                outClip.midi().nextEventId = static_cast<int>(midiObj->getProperty("nextEventId"));
 
             // Loop-record takes
             auto takesVar = midiObj->getProperty("takes");
@@ -712,6 +879,20 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
                             MidiPitchBendData pb;
                             if (deserializeMidiPitchBendData(pv, pb))
                                 take.pitchBend.push_back(pb);
+                        }
+                    }
+                    if (auto* pressure = takeObj->getProperty("channelPressure").getArray()) {
+                        for (const auto& value : *pressure) {
+                            MidiChannelPressureData event;
+                            if (deserializeMidiChannelPressureData(value, event))
+                                take.channelPressure.push_back(event);
+                        }
+                    }
+                    if (auto* aftertouch = takeObj->getProperty("polyAftertouch").getArray()) {
+                        for (const auto& value : *aftertouch) {
+                            MidiPolyAftertouchData event;
+                            if (deserializeMidiPolyAftertouchData(value, event))
+                                take.polyAftertouch.push_back(event);
                         }
                     }
                     takes.push_back(std::move(take));
@@ -877,6 +1058,26 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
         }
     }
 
+    auto midiPressureVar = obj->getProperty("midiChannelPressureData");
+    if (midiPressureVar.isArray()) {
+        for (const auto& value : *midiPressureVar.getArray()) {
+            MidiChannelPressureData pressure;
+            if (!deserializeMidiChannelPressureData(value, pressure))
+                return false;
+            outClip.midiChannelPressureData.push_back(pressure);
+        }
+    }
+
+    auto midiAftertouchVar = obj->getProperty("midiPolyAftertouchData");
+    if (midiAftertouchVar.isArray()) {
+        for (const auto& value : *midiAftertouchVar.getArray()) {
+            MidiPolyAftertouchData aftertouch;
+            if (!deserializeMidiPolyAftertouchData(value, aftertouch))
+                return false;
+            outClip.midiPolyAftertouchData.push_back(aftertouch);
+        }
+    }
+
     // Chord annotations
     auto chordAnnotVar = obj->getProperty("chordAnnotations");
     if (chordAnnotVar.isArray()) {
@@ -896,7 +1097,7 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     if (obj->hasProperty("nextChordGroupId"))
         outClip.nextChordGroupId = static_cast<int>(obj->getProperty("nextChordGroupId"));
 
-    outClip.deriveTimesFromBeats(projectTempo);
+    outClip.ensureMidiEventIds();
 
     return true;
 }
@@ -915,11 +1116,19 @@ juce::var ProjectSerializer::serializeMidiNote(const MidiNote& data) {
             auto* pObj = new juce::DynamicObject();
             pObj->setProperty("beat", p.beat);
             pObj->setProperty("semitones", p.semitones);
+            // Only when bent (#2198), so a project full of straight glides is
+            // written exactly as it was before the field existed.
+            if (p.tension != 0.0)
+                pObj->setProperty("tension", p.tension);
             points.add(juce::var(pObj));
         }
         obj->setProperty("pitchExpression", juce::var(points));
     }
-    return juce::var(obj);
+    if (data.keyswitch)
+        obj->setProperty("keyswitch", true);
+    if (data.id != INVALID_EVENT_ID)
+        obj->setProperty("id", data.id);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeMidiNote(const juce::var& json, MidiNote& data) {
@@ -934,6 +1143,10 @@ bool ProjectSerializer::deserializeMidiNote(const juce::var& json, MidiNote& dat
     DESER(lengthBeats);
     if (obj->hasProperty("chordGroup"))
         data.chordGroup = static_cast<int>(obj->getProperty("chordGroup"));
+    if (obj->hasProperty("keyswitch"))
+        data.keyswitch = static_cast<bool>(obj->getProperty("keyswitch"));
+    if (obj->hasProperty("id"))
+        data.id = static_cast<int>(obj->getProperty("id"));
     auto pitchExpVar = obj->getProperty("pitchExpression");
     if (pitchExpVar.isArray()) {
         for (const auto& pVar : *pitchExpVar.getArray()) {
@@ -941,6 +1154,10 @@ bool ProjectSerializer::deserializeMidiNote(const juce::var& json, MidiNote& dat
                 MidiPitchExpressionPoint p;
                 p.beat = pObj->getProperty("beat");
                 p.semitones = pObj->getProperty("semitones");
+                // Absent in projects written before #2198, and absent again in
+                // any straight segment since: the default is the straight line.
+                if (pObj->hasProperty("tension"))
+                    p.tension = pObj->getProperty("tension");
                 data.pitchExpression.push_back(p);
             }
         }
@@ -957,7 +1174,9 @@ juce::var ProjectSerializer::serializeMidiCCData(const MidiCCData& data) {
     SER(tension);
     obj->setProperty("inHandle", serializeMidiCurveHandle(data.inHandle));
     obj->setProperty("outHandle", serializeMidiCurveHandle(data.outHandle));
-    return juce::var(obj);
+    if (data.id != INVALID_EVENT_ID)
+        obj->setProperty("id", data.id);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeMidiCCData(const juce::var& json, MidiCCData& data) {
@@ -975,6 +1194,8 @@ bool ProjectSerializer::deserializeMidiCCData(const juce::var& json, MidiCCData&
         DESER(tension);
     deserializeMidiCurveHandle(obj->getProperty("inHandle"), data.inHandle);
     deserializeMidiCurveHandle(obj->getProperty("outHandle"), data.outHandle);
+    if (obj->hasProperty("id"))
+        data.id = static_cast<int>(obj->getProperty("id"));
     return true;
 }
 
@@ -986,7 +1207,9 @@ juce::var ProjectSerializer::serializeMidiPitchBendData(const MidiPitchBendData&
     SER(tension);
     obj->setProperty("inHandle", serializeMidiCurveHandle(data.inHandle));
     obj->setProperty("outHandle", serializeMidiCurveHandle(data.outHandle));
-    return juce::var(obj);
+    if (data.id != INVALID_EVENT_ID)
+        obj->setProperty("id", data.id);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeMidiPitchBendData(const juce::var& json,
@@ -1004,6 +1227,56 @@ bool ProjectSerializer::deserializeMidiPitchBendData(const juce::var& json,
         DESER(tension);
     deserializeMidiCurveHandle(obj->getProperty("inHandle"), data.inHandle);
     deserializeMidiCurveHandle(obj->getProperty("outHandle"), data.outHandle);
+    if (obj->hasProperty("id"))
+        data.id = static_cast<int>(obj->getProperty("id"));
+    return true;
+}
+
+juce::var ProjectSerializer::serializeMidiChannelPressureData(const MidiChannelPressureData& data) {
+    auto* obj = new juce::DynamicObject();
+    SER(value);
+    SER(beatPosition);
+    if (data.id != INVALID_EVENT_ID)
+        obj->setProperty("id", data.id);
+    return {obj};
+}
+
+bool ProjectSerializer::deserializeMidiChannelPressureData(const juce::var& json,
+                                                           MidiChannelPressureData& data) {
+    if (!json.isObject()) {
+        lastError_ = "MIDI channel pressure data is not an object";
+        return false;
+    }
+    auto* obj = json.getDynamicObject();
+    DESER(value);
+    DESER(beatPosition);
+    if (obj->hasProperty("id"))
+        data.id = static_cast<int>(obj->getProperty("id"));
+    return true;
+}
+
+juce::var ProjectSerializer::serializeMidiPolyAftertouchData(const MidiPolyAftertouchData& data) {
+    auto* obj = new juce::DynamicObject();
+    SER(noteNumber);
+    SER(value);
+    SER(beatPosition);
+    if (data.id != INVALID_EVENT_ID)
+        obj->setProperty("id", data.id);
+    return {obj};
+}
+
+bool ProjectSerializer::deserializeMidiPolyAftertouchData(const juce::var& json,
+                                                          MidiPolyAftertouchData& data) {
+    if (!json.isObject()) {
+        lastError_ = "MIDI poly aftertouch data is not an object";
+        return false;
+    }
+    auto* obj = json.getDynamicObject();
+    DESER(noteNumber);
+    DESER(value);
+    DESER(beatPosition);
+    if (obj->hasProperty("id"))
+        data.id = static_cast<int>(obj->getProperty("id"));
     return true;
 }
 

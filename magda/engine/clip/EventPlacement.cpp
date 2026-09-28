@@ -57,9 +57,9 @@ double constantRate(const AudioEventPlayback& event) {
  */
 double warpExtentSecondsOf(const AudioEventPlayback& event) {
     if (usesBeatFace(event))
-        return event.span.lengthBeats() * 60.0 / event.interpBpm;
+        return event.span.beats.length() * 60.0 / event.interpBpm;
 
-    return event.span.lengthSeconds() * constantRate(event);
+    return event.span.seconds.length() * constantRate(event);
 }
 
 /// Source seconds the event reads, which is the stretch a mirrored read turns
@@ -94,19 +94,13 @@ double floorMod(double value, double modulus) {
 /**
  * @brief A warped event's loop region, measured in warp time.
  *
- * Warp is the one thing that cannot let the reading chain do its own tiling.
- * Everywhere else a loop is folded below the stream, so a position climbs
- * forever and a wrap is not a position change at all (io/SourceReaders.hpp);
- * that works because the reading advances linearly, and under warp it does not.
  * A second pass through a warped loop has to bend the same way the first did,
- * and folding a position that has already been through the map would put the
- * fold in the wrong domain: the map would go on extending at slope 1 past the
- * loop's end and every pass after the first would play straight.
- *
- * So a warped loop folds here, in warp time, and @ref sourceReadFor leaves the
- * tiling below switched off. The reading position then saws back at each wrap
- * instead of climbing, which the stream reads as a seek -- one per pass, which
- * is what a warped loop costs and is bounded.
+ * so the fold happens in warp time, before the map: folded after it, the map
+ * would extend at slope 1 past the loop's end and every later pass would play
+ * straight. The folded reading is then carried on by whole loops, so it climbs
+ * across a wrap as an unwarped loop's does and the tiling below the stream
+ * folds it back (@ref sourceReadFor). A stretcher reading ahead across the wrap
+ * then reads the next pass rather than past the loop's end.
  *
  * Inactive when the event does not loop, does not warp, or has no region.
  */
@@ -114,6 +108,7 @@ struct WarpLoop {
     bool active = false;
     double startWarp = 0.0;
     double lengthWarp = 0.0;
+    std::int64_t lengthSamples = 0;
 };
 
 WarpLoop warpLoopOf(const AudioEventPlayback& event, double sourceRate) {
@@ -134,6 +129,7 @@ WarpLoop warpLoopOf(const AudioEventPlayback& event, double sourceRate) {
 
     loop.startWarp = event.warp.sourceToWarpSeconds(startSeconds);
     loop.lengthWarp = event.warp.sourceToWarpSeconds(endSeconds) - loop.startWarp;
+    loop.lengthSamples = length;
     loop.active = loop.lengthWarp > 0.0;
 
     return loop;
@@ -160,21 +156,43 @@ double warpedReadingSample(const AudioEventPlayback& event, double elapsedWarp, 
     auto at = event.reversed ? anchorWarp + warpExtentSecondsOf(event) - elapsedWarp
                              : anchorWarp + elapsedWarp;
 
-    if (const auto loop = warpLoopOf(event, sourceRate); loop.active)
-        at = loop.startWarp + floorMod(at - loop.startWarp, loop.lengthWarp);
+    // Whole passes, which a reversed event counts down through.
+    auto passes = 0.0;
+    auto carried = 0.0;
+    if (const auto loop = warpLoopOf(event, sourceRate); loop.active) {
+        passes = std::floor((at - loop.startWarp) / loop.lengthWarp);
+        at -= passes * loop.lengthWarp;
+        carried = passes * static_cast<double>(loop.lengthSamples);
+    }
 
     const auto source = event.warp.sourceSecondsAt(at) * sourceRate;
 
     // Into the mirrored file's coordinates, which is what the reading delivers
-    // for a reversed event. No loop variant: the fold above has already put the
-    // position inside the region, so mirroring the file mirrors the region with
-    // it.
+    // for a reversed event, where the region is mirrored with the file.
     const auto inReading =
-        event.reversed
-            ? static_cast<double>(samplesIn(event.sourceDurationSeconds, sourceRate)) - 1.0 - source
-            : source;
+        event.reversed ? static_cast<double>(samplesIn(event.sourceDurationSeconds, sourceRate)) -
+                             1.0 - source - carried
+                       : source + carried;
 
     return inReading * (sourceRate > 0.0 ? deviceSampleRate / sourceRate : 1.0);
+}
+
+double resolvedStartSample(const AudioEventPlayback& event, double sourceRate) {
+    if (!event.warp.empty())
+        return warpedReadingSample(event, 0.0, sourceRate, sourceRate);
+
+    const auto how = sourceReadFor(event, sourceRate);
+    auto anchor = event.anchorSamples;
+
+    if (event.reversed) {
+        const auto last = event.anchorSamples + regionOf(event, sourceRate) - 1;
+        anchor = how.loopLengthSamples > 0
+                     ? how.loopStartSamples + how.loopLengthSamples - 1 -
+                           floorMod(last - event.loopStartSamples, how.loopLengthSamples)
+                     : how.lengthInSamples - 1 - last;
+    }
+
+    return static_cast<double>(anchor);
 }
 
 }  // namespace
@@ -188,9 +206,9 @@ SourceRead sourceReadFor(const AudioEventPlayback& event, double deviceSampleRat
     how.deviceSampleRate = deviceSampleRate;
     how.reversed = event.reversed;
 
-    // Not for a warped event: its loop folds in warp time, above the map, and
-    // tiling here as well would fold it twice (WarpLoop).
-    if (event.loopEnabled && event.warp.empty()) {
+    // A warped event's reading already climbs by whole loops (WarpLoop), so
+    // this folds it back exactly as it folds an unwarped one.
+    if (event.loopEnabled) {
         // A loop with no length of its own is the event's own stretch of the
         // file. The model's rule for the field rather than a default chosen
         // here (AudioEvent::loopLengthSamples).
@@ -215,45 +233,40 @@ SourceRead sourceReadFor(const AudioEventPlayback& event, double deviceSampleRat
 
 ClipPlacement placementFor(const AudioEventPlayback& event, double deviceSampleRate) {
     const auto sourceRate = sourceRateOf(event, deviceSampleRate);
-    const auto how = sourceReadFor(event, deviceSampleRate);
-
-    // A warped event's start is its map evaluated at no elapsed, which is the
-    // same function a block reads through. Derived rather than mirrored here,
-    // because the map already answers reverse and looping and a second
-    // derivation of either could disagree with it.
-    if (!event.warp.empty())
-        return ClipPlacement{event.span.startSeconds, event.span.endSeconds,
-                             static_cast<std::int64_t>(std::llround(
-                                 warpedReadingSample(event, 0.0, sourceRate, deviceSampleRate)))};
-
-    auto anchor = event.anchorSamples;
-
-    if (event.reversed) {
-        // What plays first is what played last: the sample at the far end of
-        // what this event reads, in the mirrored file's own coordinates. Looped
-        // or not is the same question asked of a different stretch, the loop's
-        // rather than the event's, because a looped event reads the region
-        // round and round and its last sample is wherever the phase had got to.
-        //
-        // The incumbent works the same value out and writes it back over the
-        // clip's offset when the flag is set. Here the model keeps its own
-        // coordinates, which is what lets an editor go on showing the region
-        // the user chose, and the conversion happens on the way to the reader.
-        const auto last = event.anchorSamples + regionOf(event, sourceRate) - 1;
-
-        anchor = how.loopLengthSamples > 0
-                     ? how.loopStartSamples + how.loopLengthSamples - 1 -
-                           floorMod(last - event.loopStartSamples, how.loopLengthSamples)
-                     : how.lengthInSamples - 1 - last;
-    }
+    const auto anchor = resolvedStartSample(event, sourceRate);
 
     // Into the device's samples, which is what the reading is counted in and
     // what the callback consumes one of per output sample.
     const auto scale = sourceRate > 0.0 ? deviceSampleRate / sourceRate : 1.0;
 
-    return ClipPlacement{
-        event.span.startSeconds, event.span.endSeconds,
-        static_cast<std::int64_t>(std::llround(static_cast<double>(anchor) * scale))};
+    return ClipPlacement{event.span.seconds,
+                         static_cast<std::int64_t>(std::llround(anchor * scale))};
+}
+
+bool startsInsideSourceMaterial(const AudioEventPlayback& event, double deviceSampleRate) {
+    const auto sourceRate = sourceRateOf(event, deviceSampleRate);
+    auto start = resolvedStartSample(event, sourceRate);
+    const auto how = sourceReadFor(event, deviceSampleRate);
+
+    if (how.loopLengthSamples > 0)
+        start = static_cast<double>(how.loopStartSamples) +
+                floorMod(start - static_cast<double>(how.loopStartSamples),
+                         static_cast<double>(how.loopLengthSamples));
+
+    const auto scale = sourceRate > 0.0 ? deviceSampleRate / sourceRate : 1.0;
+    start = static_cast<double>(std::llround(start * scale));
+    const auto length =
+        static_cast<double>(samplesIn(event.sourceDurationSeconds, deviceSampleRate));
+    return start > 0 && start < length;
+}
+
+double beatAlongSpan(const AudioEventPlayback& event, double seconds) {
+    const auto span = event.span.seconds.length();
+    if (!(span > 0.0))
+        return event.span.beats.start;
+
+    const auto through = (seconds - event.span.seconds.start) / span;
+    return event.span.beats.start + through * event.span.beats.length();
 }
 
 double readingRateOf(const AudioEventPlayback& event) {
@@ -265,21 +278,21 @@ double readingRateOf(const AudioEventPlayback& event) {
         // are both already resolved here, and their ratio is the tempo it sits
         // under. A ramp inside the span averages out, which is what an average
         // is for.
-        const auto beats = event.span.lengthBeats();
-        const auto seconds = event.span.lengthSeconds();
+        const auto beats = event.span.beats.length();
+        const auto seconds = event.span.seconds.length();
 
         rate = beats > 0.0 && seconds > 0.0 ? (beats * 60.0 / seconds) / event.interpBpm : 1.0;
     }
 
-    // The steepest the map runs anywhere, not its average. A warped event has
-    // no single rate -- that is what warp is -- and what a stretcher is sized
-    // and primed against has to cover the fastest stretch of it rather than the
-    // one it spends the most time at. The clamp below is what keeps that
-    // bounded.
-    if (!event.warp.empty())
-        rate *= event.warp.maxSourcePerWarp();
-
     return std::clamp(rate > 0.0 ? rate : 1.0, kMinStretchRate, kMaxStretchRate);
+}
+
+double peakReadingRateOf(const AudioEventPlayback& event) {
+    // Off the flag and the steepest a marker may ever be dragged to, never the
+    // map it has now: sized to the map, every marker edit replaced the stretcher
+    // under a playing clip and was heard as a gap.
+    const auto rate = readingRateOf(event);
+    return event.warpEnabled ? std::min(rate * kMaxStretchRate, kMaxStretchRate) : rate;
 }
 
 namespace {
@@ -321,17 +334,18 @@ double readingPositionAt(const AudioClipPlayback& clip, const AudioEventPlayback
     // Under warp this is what the markers measure rather than what is read: the
     // map turns the one into the other, and it is the only thing that can.
     double elapsed = 0.0;
+    const auto& envelope = clip.envelopeSpan();
 
     if (usesBeatFace(event)) {
-        const auto at = ramped(clip, beat, clip.span.startBeat, clip.span.endBeat, clip.fadeInBeats,
-                               clip.fadeOutBeats);
+        const auto at = ramped(clip, beat, envelope.beats.start, envelope.beats.end,
+                               clip.fadeInBeats, clip.fadeOutBeats);
 
-        elapsed = (at - event.span.startBeat) * 60.0 / event.interpBpm;
+        elapsed = (at - event.span.beats.start) * 60.0 / event.interpBpm;
     } else {
-        const auto at = ramped(clip, seconds, clip.span.startSeconds, clip.span.endSeconds,
+        const auto at = ramped(clip, seconds, envelope.seconds.start, envelope.seconds.end,
                                clip.fadeInSeconds, clip.fadeOutSeconds);
 
-        elapsed = (at - event.span.startSeconds) * constantRate(event);
+        elapsed = (at - event.span.seconds.start) * constantRate(event);
     }
 
     if (!event.warp.empty())
@@ -359,6 +373,7 @@ StretchSetup stretchSetupFor(const AudioClipPlayback& clip, const AudioEventPlay
     setup.sampleRate = context.sampleRate;
     setup.maxBlockSamples = context.maxBlockSize;
     setup.nominalRate = readingRateOf(event);
+    setup.peakRate = peakReadingRateOf(event);
     // Warp counts as following as much as auto tempo does. The flag means the
     // rate moves inside the event, so the nominal above is an approximation and
     // a clip averaging unity is still stretching in both directions around it.

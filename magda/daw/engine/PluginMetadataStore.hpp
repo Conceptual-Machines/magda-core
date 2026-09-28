@@ -89,7 +89,7 @@ class PluginMetadataStore {
         juce::File exclusions;
     };
 
-    PluginMetadataStore(const juce::File& databaseFile, LegacyFiles legacyFiles);
+    PluginMetadataStore(juce::File databaseFile, LegacyFiles legacyFiles);
     void createSchema();
     void importLegacyFilesOnce();
 

@@ -10,6 +10,10 @@ namespace magda::daw::audio {
 
 class FaustParamPool;
 
+/// The state keys both runtime Faust devices keep their patch under. Saved projects carry them.
+inline constexpr const char* kFaustDspNameProperty = "dspName";
+inline constexpr const char* kFaustDspSourceProperty = "dspSource";
+
 /**
  * @brief Editor-facing contract shared by the Faust devices.
  *

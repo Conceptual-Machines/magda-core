@@ -18,12 +18,18 @@
 #include "exec/PlanExecutor.hpp"
 #include "exec/PlanValues.hpp"
 #include "io/PrefetchThread.hpp"
+#include "launch/SessionLauncher.hpp"
+#include "magda/daw/audio/plugin_manager/ExternalPluginState.hpp"
+#include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
+#include "magda/daw/core/ChainWalk.hpp"
 #include "plan/PlanCompiler.hpp"
 #include "transport/TempoMap.hpp"
 
 namespace magda::nulldiff {
 
 using namespace magda::engine;
+
+namespace adapter = ::magda::daw::audio::engine_adapter;
 
 namespace {
 
@@ -74,7 +80,7 @@ class ChainMidiTap final : public MidiTap {
         // rather than accumulating, so this recovers that count exactly and
         // keeps doing so through the tail, where the timeline stands still.
         const auto blockStart =
-            static_cast<std::int64_t>(std::llround(block.startSeconds * sampleRate_));
+            static_cast<std::int64_t>(std::llround(block.seconds.start * sampleRate_));
 
         for (const auto message : midi) {
             const auto data = message.getMessage();
@@ -140,36 +146,154 @@ class GainDevice final : public EngineDevice {
     }
 };
 
-/// Every device the case declares, by the identity the plan addresses it with.
+/// The engine's half of the instrument contract in NullDiffGain.hpp (#2139).
 ///
-/// Keyed by DeviceKey and not by DeviceId: an id is unique within a chain
-/// segment and not across them (#1899), so a map keyed by the number alone
-/// would let a post-FX device stand in for the FX device with the same one.
-/// OpKey::deviceKey() carries the segment for that reason; this has to match.
-void collectDevices(const std::vector<magda::ChainElement>& elements,
-                    std::map<DeviceKey, const magda::DeviceInfo*>& out) {
-    for (const auto& element : elements) {
-        if (magda::isDevice(element)) {
-            const auto& device = magda::getDevice(element);
-            out[DeviceKey{ChainSegment::Fx, device.id}] = &device;
-        } else if (magda::isRack(element)) {
-            // A rack's chains sit in the segment the rack itself does.
-            for (const auto& chain : magda::getRack(element).chains)
-                collectDevices(chain.elements, out);
+/// One sample per note-on into pair 0, half of it into pair 1. The pairs the
+/// plan gave it and no others: `extraOutputs` is one block per pair the device
+/// declared, cleared on the way in, so a pair nothing opened is written and
+/// dropped rather than skipped here.
+class ImpulseSynthDevice final : public EngineDevice {
+  public:
+    void process(DeviceBlock& block) override {
+        if (block.midiIn == nullptr)
+            return;
+
+        const auto numSamples = static_cast<int>(block.audio.getNumSamples());
+
+        for (const auto metadata : *block.midiIn) {
+            const auto message = metadata.getMessage();
+            if (!message.isNoteOn())
+                continue;
+
+            const auto at = metadata.samplePosition;
+            if (at < 0 || at >= numSamples)
+                continue;
+
+            const auto level = static_cast<float>(message.getVelocity()) / 127.0f;
+            write(block.audio, at, level);
+
+            for (auto& pair : block.extraOutputs)
+                write(pair, at, level * kMultiOutSecondPairScale);
         }
     }
+
+  private:
+    static void write(juce::dsp::AudioBlock<float>& target, int sample, float level) {
+        for (std::size_t channel = 0; channel < target.getNumChannels(); ++channel)
+            target.setSample(static_cast<int>(channel), sample,
+                             target.getSample(static_cast<int>(channel), sample) + level);
+    }
+};
+
+/**
+ * @brief Correct every external device against the scan, before the plan reads it.
+ *
+ * The plan is compiled from the model, and for an external plugin two of the
+ * things it compiles from are the project's guesses rather than facts: the
+ * effect/instrument role, which decides whether the device is routed MIDI at
+ * all, and the cached capability flags. A project imported from another host
+ * carries whatever that host said, and #2252's whole point is that resolution
+ * is entitled to correct it.
+ *
+ * So resolution happens here, once, against a copy of the model, and both the
+ * plan and the device creation below read the corrected one. A failure is left
+ * alone rather than reported: the creation below asks the same question and
+ * reports the same answer, and one diagnostic per absent plugin is what a
+ * reader wants.
+ */
+std::map<DeviceKey, std::string> resolveExternalDevices(
+    std::vector<TrackInfo>& tracks, TrackInfo& master,
+    const adapter::ExternalPluginServices& services) {
+    std::map<DeviceKey, std::string> identities;
+
+    for (auto& [key, device] : adapter::devicesIn(tracks, master)) {
+        if (!adapter::isExternalDevice(*device))
+            continue;
+
+        auto resolved = adapter::resolveEngineExternalPlugin(*device, services);
+        if (!resolved)
+            continue;
+
+        // What the scan actually matched, kept for the report. The project's
+        // own name for the device is not the answer: a project names what its
+        // author called the slot, and what the render ran is whichever build of
+        // whichever plugin this machine matched it to.
+        const auto& description = resolved.description;
+        identities.emplace(key, (description.name + " " +
+                                 (description.version.isNotEmpty() ? description.version
+                                                                   : juce::String("no version")) +
+                                 " (" + description.pluginFormatName + ")")
+                                    .toStdString());
+
+        *device = std::move(resolved.planDevice);
+    }
+
+    return identities;
 }
 
-std::map<DeviceKey, const magda::DeviceInfo*> devicesIn(const Case& value) {
-    std::map<DeviceKey, const magda::DeviceInfo*> devices;
-    for (const auto& track : value.tracks) {
-        collectDevices(track.chain.fxChainElements, devices);
-        for (const auto& element : track.chain.postFxChainElements)
-            devices[DeviceKey{ChainSegment::PostFx, element.device.id}] = &element.device;
-        for (const auto& element : track.chain.mixerAnalysisElements)
-            devices[DeviceKey{ChainSegment::MixerAnalysis, element.device.id}] = &element.device;
+/// The keys of the Device ops @p plan emits, which is which of a project's
+/// devices actually render.
+std::set<DeviceKey> deviceKeysIn(const RenderPlan& plan) {
+    std::set<DeviceKey> keys;
+
+    for (const auto& op : plan.ops)
+        if (op.kind == OpKind::Device)
+            keys.insert(op.key.deviceKey());
+
+    return keys;
+}
+
+/**
+ * @brief Create every external plugin the plan reaches, before the plan is final.
+ *
+ * Scan metadata is not the whole answer about an external device. A plugin's own
+ * saved state is allowed to change its topology -- a sampler whose patch turns
+ * its drum outs on, a compressor whose patch enables its sidechain, an
+ * instrument that is stereo for one program and mono for another -- and
+ * adaptExternalPluginInstance() reads the live bus counts and MIDI capabilities
+ * back only after the chunk has been applied, which is why it hands a
+ * resolvedDevice back at all.
+ *
+ * Those facts have to reach the model before PlanCompiler freezes port widths
+ * and MIDI edges from it. So the instances are made here, their corrections
+ * written into @p tracks and @p master, and the plan compiled from the result;
+ * the same instances are then bound, rather than a second set made from the
+ * corrected model.
+ *
+ * @p reached is the first compile's answer to which devices render, and it is
+ * all the first compile is used for. A device on a bypassed chain is not
+ * instantiated and not reported, because a project does not go without a plugin
+ * it was never going to run.
+ */
+std::map<DeviceKey, adapter::ExternalDeviceResult> createExternalDevices(
+    std::vector<TrackInfo>& tracks, TrackInfo& master, const std::set<DeviceKey>& reached,
+    const adapter::ExternalPluginServices& services) {
+    std::map<DeviceKey, adapter::ExternalDeviceResult> created;
+
+    for (auto& [key, device] : adapter::devicesIn(tracks, master)) {
+        if (!adapter::isExternalDevice(*device) || !reached.contains(key))
+            continue;
+
+        // Built for an offline render, which is what this leg is; see the
+        // binding loop for why that matters on both sides.
+        auto result = adapter::createEngineExternalDevice(*device, services,
+                                                          /*offlineRender=*/true);
+
+        if (result.device != nullptr) {
+            // The live topology first, then what the restore left behind on top
+            // of it. Both are read from this model by what comes next: the
+            // compiler for the widths and the roles, the value layer for the
+            // parameters.
+            if (result.resolvedDevice.has_value())
+                *device = *result.resolvedDevice;
+
+            magda::applyRestoredParameters(*device, result.restoredParameters);
+        }
+
+        created.emplace(key, std::move(result));
     }
-    return devices;
+
+    return created;
 }
 
 engine::TempoMap tempoMapFor(const Case& value) {
@@ -233,7 +357,7 @@ class BufferSink final : public OfflineRenderSink {
 
 }  // namespace
 
-NativeRender renderNative(const Case& value) {
+NativeRender renderNative(const Case& value, const InstalledPlugins& installed) {
     NativeRender result;
 
     const RenderContext context{value.sampleRate, value.blockSize, value.channels};
@@ -245,9 +369,30 @@ NativeRender renderNative(const Case& value) {
     for (const auto& track : value.tracks) {
         ClipLane lane;
         lane.trackId = track.id;
-        for (const auto& clip : value.clips)
-            if (clip.trackId == track.id)
+        lane.playbackMode = track.playbackMode;
+        for (const auto& clip : value.clips) {
+            if (clip.trackId != track.id)
+                continue;
+
+            // Sorted into the lane it belongs to rather than left to the
+            // compiler's own guard, because the two are answering different
+            // questions: the guard exists so that a caller who put a session
+            // clip in an arrangement lane hears about it, and this leg is the
+            // caller deciding what goes in one.
+            //
+            // A session clip is a slot, positioned by scene rather than by
+            // beat, and it sounds only once something launches it (#2441). The
+            // demo project's sixty-four were dropped here until now, and were
+            // sixty-four diagnostics before that.
+            //
+            // Where the incumbent puts the same split:
+            // ClipSynchronizer::syncArrangementClipToEngine refuses a session
+            // clip and syncSessionClipToSlot puts it in a te::ClipSlot.
+            if (clip.view == ClipView::Session)
+                lane.session.push_back(clip);
+            else
                 lane.clips.push_back(clip);
+        }
         lanes.push_back(std::move(lane));
     }
 
@@ -263,9 +408,46 @@ NativeRender renderNative(const Case& value) {
 
     // --- the plan ------------------------------------------------------------
 
+    // The scan an external plugin is resolved against, and the settings one is
+    // instantiated at. Both legs read the same scan; a leg that was handed none
+    // resolves nothing and says so per device below.
+    const adapter::ExternalPluginServices services{
+        .formats = installed.formats, .knownPlugins = installed.knownPlugins, .context = context};
+
+    // The model the plan and the devices are both built from, corrected against
+    // the scan first. Resolution may change the role an external device is
+    // compiled with, and a plan compiled from the project's own guess would
+    // route MIDI to the wrong places before any plugin was created.
+    auto tracks = value.tracks;
+    auto master = value.master;
+    const auto identities = resolveExternalDevices(tracks, master, services);
+
     CompileOptions options;
     options.deviceMeters = false;
-    const auto plan = compileRenderPlan(value.tracks, value.master, options);
+
+    // Compiled twice, and the first one is thrown away. Its only job is to say
+    // which devices this project actually renders, so that the plugins can be
+    // made -- and a plugin's own state is entitled to change the topology the
+    // second compile reads (createExternalDevices).
+    //
+    // A project with no external device compiles the same plan both times, which
+    // is every case in the code-built corpus.
+    auto externals = createExternalDevices(
+        tracks, master, deviceKeysIn(compileRenderPlan(tracks, master, options)), services);
+
+    // What the render actually ran, for the report's environment line. Read off
+    // the created set rather than the resolved one: resolution answers every
+    // external device in the project, and the ones that reached a plan op and
+    // loaded are the ones that made a sound.
+    for (const auto& [key, created] : externals) {
+        if (created.device == nullptr)
+            continue;
+
+        if (const auto identity = identities.find(key); identity != identities.end())
+            result.plugins.push_back(identity->second);
+    }
+
+    const auto plan = compileRenderPlan(tracks, master, options);
     for (const auto& diagnostic : plan.diagnostics)
         result.diagnostics.push_back("plan: " + diagnostic);
 
@@ -283,54 +465,142 @@ NativeRender renderNative(const Case& value) {
     ClipVoicePool voices(files, reader, context);
     voices.setSnapshot(snapshot);
 
+    // A handle per slot the snapshot compiled, published whole, which is what
+    // RuntimeStateStore::publishHandles does for playback (#2441). Built once
+    // and never replaced, so every incarnation is left at zero: what the number
+    // exists to catch is a slot emptied and refilled between the click and the
+    // block, and a render has no in between.
+    std::map<SlotKey, std::unique_ptr<LaunchHandle>> handleStore;
+    auto handleTable = std::make_shared<LaunchHandleTable>();
+
+    for (const auto& track : snapshot->tracks)
+        for (const auto& slot : track.session) {
+            const SlotKey key{track.trackId, slot.sceneIndex};
+            auto& handle = handleStore[key];
+            handle = std::make_unique<LaunchHandle>();
+            handleTable->entries.push_back(LaunchHandleTable::Entry{
+                .key = key, .handle = handle.get(), .follow = slot.follow});
+        }
+
+    // The audio thread's binary search depends on it, and the snapshot already
+    // arrives in this order.
+    std::sort(handleTable->entries.begin(), handleTable->entries.end(),
+              [](const auto& a, const auto& b) { return a.key < b.key; });
+
+    // Whether this case has a session at all, which decides how the
+    // arrangement's sources are built below. An empty table renders the same
+    // arrangement either way (sectionHold over no entries is the whole block),
+    // so this leaves a case without one on the path it has always taken.
+    const auto hasSession = !handleTable->entries.empty();
+
+    LaunchHandleFeed handles;
+    LaunchRequestQueue requests;
+    handles.publish(handleTable);
+
     std::map<TrackId, std::unique_ptr<ClipAudioSource>> audioSources;
     std::map<TrackId, std::unique_ptr<ClipMidiSource>> midiSources;
+    std::map<TrackId, std::unique_ptr<ClipAudioSource>> sessionAudioSources;
+    std::map<TrackId, std::unique_ptr<ClipMidiSource>> sessionMidiSources;
     std::vector<std::unique_ptr<Passthrough>> passthroughs;
-    std::vector<std::unique_ptr<GainDevice>> gains;
 
-    const auto modelDevices = devicesIn(value);
+    // The devices the app's own factory built, kept alive for the render. One
+    // vector for all of them, because what they have in common is who owns them
+    // rather than what they are.
+    std::vector<std::unique_ptr<EngineDevice>> hosted;
+    std::vector<std::unique_ptr<GainDevice>> gains;
+    std::vector<std::unique_ptr<ImpulseSynthDevice>> synths;
+
+    const auto modelDevices = adapter::devicesIn(tracks, master);
 
     // The tracks the corpus compares MIDI for, which is the same question the
     // incumbent asks when it decides where to put a capture. Asked once, of the
     // model, through the compiler's own predicate, rather than inferred from the
     // graph afterwards.
     std::set<TrackId> midiTracks;
-    for (const auto& track : value.tracks)
+    for (const auto& track : tracks)
         if (chainConsumesMidi(track))
             midiTracks.insert(track.id);
 
     std::map<TrackId, std::unique_ptr<ChainMidiTap>> taps;
 
+    // The corpus renders offline and binds no hardware, so a track naming a
+    // live input is not a fixture defect (#2628).
     PlanBindings bindings;
+    bindings.liveSession = false;
 
     for (const auto& op : plan.ops) {
         switch (op.kind) {
+            // A track's arrangement source reads the handles too, so that it
+            // knows the block a slot took the track off it and where in that
+            // block it happened (#2302). Only where there is a session to take
+            // it: a case with no slots is the render it always was.
             case OpKind::ClipAudio: {
                 auto source =
-                    std::make_unique<ClipAudioSource>(op.key.trackId, clips, voices.feed());
+                    hasSession
+                        ? std::make_unique<ClipAudioSource>(op.key.trackId, clips, voices.feed(),
+                                                            handles, Section::Arrangement)
+                        : std::make_unique<ClipAudioSource>(op.key.trackId, clips, voices.feed());
                 source->prepare(context);
                 bindings.clipAudio[op.key.trackId] = source.get();
                 audioSources[op.key.trackId] = std::move(source);
+
+                // The session plays through the same op, bound only for a case that has one:
+                // the executor reports an unbound session only when something else bound one.
+                if (hasSession) {
+                    auto session = std::make_unique<ClipAudioSource>(
+                        op.key.trackId, clips, voices.feed(), handles, Section::Session);
+                    session->prepare(context);
+                    bindings.sessionAudio[op.key.trackId] = session.get();
+                    sessionAudioSources[op.key.trackId] = std::move(session);
+                }
                 break;
             }
 
             case OpKind::ClipMidi: {
-                auto source = std::make_unique<ClipMidiSource>(op.key.trackId, clips);
+                auto source = hasSession ? std::make_unique<ClipMidiSource>(
+                                               op.key.trackId, clips, handles, Section::Arrangement)
+                                         : std::make_unique<ClipMidiSource>(op.key.trackId, clips);
                 source->prepare(context);
                 bindings.clipMidi[op.key.trackId] = source.get();
                 midiSources[op.key.trackId] = std::move(source);
                 break;
             }
 
+            // The session's MIDI, bound only for a case that has one, as above.
+            case OpKind::SessionMidi: {
+                if (!hasSession)
+                    break;
+
+                auto source = std::make_unique<ClipMidiSource>(op.key.trackId, clips, handles,
+                                                               Section::Session);
+                source->prepare(context);
+                bindings.sessionMidi[op.key.trackId] = source.get();
+                sessionMidiSources[op.key.trackId] = std::move(source);
+                break;
+            }
+
             case OpKind::Device: {
-                // A gain device where the model says the project has one, and a
-                // stand-in everywhere else. The stand-in exists because the
-                // executor refuses an unbound Device op, and it passes signal
-                // because that is what the incumbent does with a device it does
-                // not instantiate. The gain is the exception the slice is for:
-                // the incumbent really does instantiate its twin.
+                // The corpus's own two where the model names them, the app's
+                // own factory for everything else, and a stand-in for what
+                // neither can build.
+                //
+                // The corpus's two come first because nothing else can build
+                // them: they are registered so that the incumbent can create
+                // one, and they carry no createDevice, so the factory would
+                // return null for both and they would fall through to the
+                // stand-in. Every device MAGDA ships that has moved to the SDK
+                // is built by the factory below, which is what makes a corpus
+                // case able to contain one (#2174).
                 const auto found = modelDevices.find(op.key.deviceKey());
-                const auto* model = found == modelDevices.end() ? nullptr : found->second;
+                auto* model = found == modelDevices.end() ? nullptr : found->second;
+
+                if (model != nullptr && isImpulseSynthDevice(*model)) {
+                    auto device = std::make_unique<ImpulseSynthDevice>();
+                    device->prepare(context);
+                    bindings.devices[op.key.deviceKey()] = device.get();
+                    synths.push_back(std::move(device));
+                    break;
+                }
 
                 if (model != nullptr && isGainDevice(*model)) {
                     auto device = std::make_unique<GainDevice>();
@@ -340,6 +610,69 @@ NativeRender renderNative(const Case& value) {
                     break;
                 }
 
+                if (model != nullptr && adapter::isExternalDevice(*model)) {
+                    // Already made, above, because the plan was compiled from
+                    // what the instance turned out to be rather than from what
+                    // the project guessed. This binds that instance; a second
+                    // one made here would be a second plugin, at its own state,
+                    // for a plan describing the first.
+                    const auto made = externals.find(op.key.deviceKey());
+
+                    if (made != externals.end() && made->second.device != nullptr) {
+                        made->second.device->prepare(context);
+                        bindings.devices[op.key.deviceKey()] = made->second.device.get();
+                        hosted.push_back(std::move(made->second.device));
+                        break;
+                    }
+
+                    // Said out loud, always. A plugin this machine does not
+                    // have is not a quieter project, it is a different one, and
+                    // a case that compared anyway would be passing by having
+                    // tested less than it claims. The runner turns any
+                    // diagnostic the case did not declare into unmeasurable,
+                    // which is the same treatment a proxy that never arrived
+                    // already gets (#2175).
+                    //
+                    // An op with nothing made for it at all is a device the
+                    // first compile did not reach and the second did, which is
+                    // the plan changing shape around the corrected topology.
+                    result.diagnostics.push_back(
+                        "devices: " + (made != externals.end()
+                                           ? made->second.failure.toStdString()
+                                           : "external plugin \"" + model->name.toStdString() +
+                                                 "\" was not reached by the first compile"));
+                } else if (model != nullptr) {
+                    // Built for an offline render, because that is what this
+                    // leg is and what the other leg's Renderer tells its own
+                    // devices. A device that skips live-only work has to skip
+                    // it on both sides or the corpus is comparing two different
+                    // decisions about the same block.
+                    if (auto device = adapter::createEngineDevice(*model, /*offlineRender=*/true)) {
+                        device->prepare(context);
+                        bindings.devices[op.key.deviceKey()] = device.get();
+                        hosted.push_back(std::move(device));
+                        break;
+                    }
+
+                    // A device the app can build and the engine cannot, said
+                    // out loud. The stand-in below still has to be bound,
+                    // because the executor refuses an unbound Device op, but a
+                    // case that reached it is measuring a project the engine did
+                    // not really render.
+                    //
+                    // Only for a device some catalog knows. An id nothing
+                    // registered is not a device either engine runs -- the MIDI
+                    // cases' instrument slot is one, and the incumbent puts a
+                    // capture there rather than a plugin -- and reporting those
+                    // would make every such case unmeasurable over an asymmetry
+                    // that does not exist.
+                    if (adapter::isRegisteredDevice(model->pluginId))
+                        result.diagnostics.push_back("devices: no native device for " +
+                                                     model->pluginId.toStdString());
+                }
+
+                // The stand-in passes signal because that is what the incumbent
+                // does with a device it does not instantiate.
                 auto device = std::make_unique<Passthrough>();
                 device->prepare(context);
                 bindings.devices[op.key.deviceKey()] = device.get();
@@ -368,8 +701,8 @@ NativeRender renderNative(const Case& value) {
     // The op values and the parameter table together, out of one call, so the
     // two cannot be published out of step (#2117).
     PlanValues values;
-    for (const auto& diagnostic : resolvePlanValues(plan, value.tracks, value.master, values,
-                                                    value.lanes, value.automationClips))
+    for (const auto& diagnostic :
+         resolvePlanValues(plan, tracks, master, values, value.lanes, value.automationClips))
         result.diagnostics.push_back("values: " + diagnostic);
 
     // What the table could not honour: a link naming something the project does
@@ -384,8 +717,7 @@ NativeRender renderNative(const Case& value) {
     // device is handed an empty window, and the gain device reads that as
     // unity, so the project would sound plausible and assert nothing.
     PlanExecutor executor;
-    for (const auto& diagnostic :
-         executor.prepare(plan, bindings, context, nullptr, values.params.get()))
+    for (const auto& diagnostic : executor.prepare(plan, bindings, context, nullptr, &values))
         result.diagnostics.push_back("prepare: " + diagnostic);
 
     if (!executor.isPrepared()) {
@@ -410,13 +742,28 @@ NativeRender renderNative(const Case& value) {
                     result.primingSamples = std::max(result.primingSamples, entry.preRollSamples);
     }
 
+    // What the case asked to launch, queued before the first block rather than
+    // driven during the render (#2441).
+    //
+    // In monotonic beats, which start at zero on the render's first block: the
+    // clock accumulates the beats it has rolled and the locate never enters
+    // them (TransportClock.cpp). A render has no pre-roll to count, which the
+    // fork's does -- the incumbent leg's launch works out its own origin.
+    if (!value.launches.empty()) {
+        LaunchRequestQueue::Gesture gesture(requests);
+        for (const auto& launch : value.launches)
+            gesture.play(SlotKey{launch.trackId, launch.sceneIndex}, launch.beat - value.startBeat);
+    }
+
     OfflineRenderRequest request;
     request.startBeat = value.startBeat;
     request.endBeat = value.endBeat;
     request.blockSize = value.blockSize;
 
     BufferSink sink(value.channels);
-    const auto rendered = renderOffline(executor, values, context, tempo, request, sink, &voices);
+    const auto rendered = renderOffline(
+        executor, values, context, tempo, request, sink, &voices, &clips,
+        OfflineLauncher{hasSession ? &handles : nullptr, hasSession ? &requests : nullptr});
 
     if (rendered.refused) {
         result.failure = "the offline render refused the plan it was given";
@@ -429,7 +776,11 @@ NativeRender renderNative(const Case& value) {
     // that every entry it provisioned has been through it.
     for (const auto& [trackId, source] : audioSources)
         result.starvedVoices += source->starvedVoices();
+    for (const auto& [trackId, source] : sessionAudioSources)
+        result.starvedVoices += source->starvedVoices();
     for (const auto& [trackId, source] : midiSources)
+        result.droppedMidiEvents += source->droppedEvents();
+    for (const auto& [trackId, source] : sessionMidiSources)
         result.droppedMidiEvents += source->droppedEvents();
 
     // Every eligible track gets an entry, including one whose tap never fired.
@@ -448,6 +799,16 @@ NativeRender renderNative(const Case& value) {
     // time rather than as one track's timeline followed by another's.
     std::stable_sort(result.midi.begin(), result.midi.end(),
                      [](const MidiEvent& a, const MidiEvent& b) { return a.sample < b.sample; });
+
+    // One sentence, however many devices said it. A Drum Grid has a pad per
+    // note and every pad holds the same sampler, so a device the engine cannot
+    // build is a diagnostic repeated sixteen times that says nothing the first
+    // one did not. Repetition also has to be counted by anything declaring the
+    // diagnostic it expects (NullDiffCase::expectedDiagnostics), which would
+    // make a case's declaration depend on how many pads a grid happens to have.
+    std::stable_sort(result.diagnostics.begin(), result.diagnostics.end());
+    result.diagnostics.erase(std::unique(result.diagnostics.begin(), result.diagnostics.end()),
+                             result.diagnostics.end());
 
     return result;
 }
