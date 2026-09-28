@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <map>
+#include <set>
 #include <string>
 
 #include "AudioClipTestHelpers.hpp"
@@ -989,7 +990,7 @@ TEST_CASE("Project Serialization Basics", "[project][serialization]") {
         REQUIRE_FALSE(mediaDir.getChildFile("stems").exists());
     }
 
-    SECTION("Loading folds the retired media roots and relinks the clips") {
+    SECTION("Loading preserves retired media roots and saving folds them") {
         auto& projectManager = ProjectManager::getInstance();
         REQUIRE(projectManager.newProject());
 
@@ -997,7 +998,7 @@ TEST_CASE("Project Serialization Basics", "[project][serialization]") {
 
         // Build a project laid out the pre-#2170 way: the clips point straight
         // at the retired roots inside the media tree the save is about to
-        // create, so nothing folds them until the load does.
+        // create, so the initial save leaves these legacy paths intact.
         auto tempFile = fixture.createTempProjectFile(".mgd");
         auto actualFile = ProjectTestFixture::wrappedPath(tempFile);
         auto mediaDir = actualFile.getParentDirectory().getChildFile(
@@ -1024,7 +1025,18 @@ TEST_CASE("Project Serialization Basics", "[project][serialization]") {
 
         REQUIRE(projectManager.loadProject(actualFile));
 
-        // Retired roots are gone, their content folded into the survivors.
+        REQUIRE(bounceFile.existsAsFile());
+        REQUIRE(editFile.existsAsFile());
+        REQUIRE(stemFile.existsAsFile());
+        REQUIRE_FALSE(projectManager.isDirty());
+        juce::StringArray loadedPaths;
+        for (const auto& clip : ClipManager::getInstance().getClips())
+            loadedPaths.add(magda::audioEventRef(clip).sourceFilePath());
+        REQUIRE(loadedPaths.contains(bounceFile.getFullPathName()));
+        REQUIRE(loadedPaths.contains(editFile.getFullPathName()));
+        REQUIRE(loadedPaths.contains(stemFile.getFullPathName()));
+
+        REQUIRE(projectManager.saveProject());
         REQUIRE_FALSE(mediaDir.getChildFile("bounces").exists());
         REQUIRE_FALSE(mediaDir.getChildFile("external-edits").exists());
         REQUIRE_FALSE(mediaDir.getChildFile("stems").exists());
@@ -1047,14 +1059,6 @@ TEST_CASE("Project Serialization Basics", "[project][serialization]") {
         REQUIRE(clipPaths.contains(foldedEdit.getFullPathName()));
         REQUIRE(clipPaths.contains(foldedStem.getFullPathName()));
 
-        // The .mgd on disk still names the folders that just went away.
-        REQUIRE(projectManager.isDirty());
-
-        // Saving is what makes the fold durable, and it leaves the project
-        // clean again. Left dirty, the next test's newProject() would block on
-        // the unsaved-changes dialog, since ProjectManager is a singleton and
-        // Catch2 sections share it.
-        REQUIRE(projectManager.saveProject());
         REQUIRE_FALSE(projectManager.isDirty());
 
         StagedProjectData staged;
@@ -4102,4 +4106,120 @@ TEST_CASE("Legacy unassigned Session clips migrate into deterministic durable sl
     REQUIRE(loaded.scenes.size() == kDefaultSessionSceneCount);
     REQUIRE(ClipManager::getInstance().getClip(first)->sceneIndex == 0);
     REQUIRE(ClipManager::getInstance().getClip(second)->sceneIndex == 1);
+}
+
+TEST_CASE("Opening legacy media preserves the source through a copied save",
+          "[project][serialization][legacy-media][2919]") {
+    ProjectTestFixture fixture;
+    const auto freshProjectTarget = [&fixture] {
+        const auto file =
+            testTempRoot().getChildFile("legacy-media-" + juce::Uuid().toString() + ".mgd");
+        fixture.tempFiles.push_back(file);
+        fixture.tempDirs.push_back(ProjectTestFixture::wrappedPath(file).getParentDirectory());
+        return file;
+    };
+    auto& projects = ProjectManager::getInstance();
+    REQUIRE(projects.newProject(ProjectManager::UnsavedChangesPolicy::Discard));
+    const auto track = TrackManager::getInstance().createTrack("Audio", TrackType::Media);
+    const auto target = freshProjectTarget();
+    const auto source = ProjectTestFixture::wrappedPath(target);
+    const auto folder = source.getParentDirectory();
+    const auto media = folder.getChildFile(source.getFileNameWithoutExtension() + "_Media");
+    const std::map<juce::String, juce::String> content{{"bounces/kick.wav", "bounce"},
+                                                       {"renders/kick.wav", "render"},
+                                                       {"external-edits/vox.wav", "edit"},
+                                                       {"stems/Vocals/vocals.wav", "stem"}};
+    for (const auto& [path, bytes] : content) {
+        const auto file = media.getChildFile(path);
+        REQUIRE(file.getParentDirectory().createDirectory());
+        REQUIRE(file.replaceWithText(bytes));
+        REQUIRE(ClipManager::getInstance().createAudioClipBeats(
+                    track, 0.0, 4.0, file.getFullPathName(), ClipView::Arrangement) !=
+                INVALID_CLIP_ID);
+    }
+    auto info = projects.getCurrentProjectInfo();
+    info.name = source.getFileNameWithoutExtension();
+    info.filePath = source.getFullPathName();
+    info.version = "0.20.0";
+    REQUIRE(ProjectSerializer::saveToFile(source, info));
+    REQUIRE(projects.closeProject(ProjectManager::UnsavedChangesPolicy::Discard));
+
+    const auto snapshot = [](const juce::File& directory) {
+        std::map<juce::String, juce::String> files;
+        for (const auto& file :
+             directory.findChildFiles(juce::File::findFiles | juce::File::findDirectories, true)) {
+            juce::MemoryBlock bytes;
+            if (file.isDirectory())
+                files[file.getRelativePathFrom(directory)] = "directory";
+            else {
+                REQUIRE(file.loadFileAsData(bytes));
+                files[file.getRelativePathFrom(directory)] = bytes.toBase64Encoding();
+            }
+        }
+        return files;
+    };
+    const auto original = snapshot(folder);
+    REQUIRE(projects.loadProject(source));
+    REQUIRE(snapshot(folder) == original);
+    REQUIRE_FALSE(projects.isDirty());
+    auto sample = media.getChildFile("external-edits/vox.wav");
+    ScopedSamplerMediaProvider sampler(sample);
+
+    SECTION("Closing without saving leaves the v0 project intact") {
+        REQUIRE(projects.closeProject(ProjectManager::UnsavedChangesPolicy::Discard));
+        REQUIRE(snapshot(folder) == original);
+    }
+
+    SECTION("A failed destination leaves the source available for a later copy") {
+        const auto failedTarget = freshProjectTarget();
+        const auto blockedFolder =
+            ProjectTestFixture::wrappedPath(failedTarget).getParentDirectory();
+        fixture.tempFiles.push_back(blockedFolder);
+        REQUIRE(blockedFolder.replaceWithText("not a directory"));
+        REQUIRE_FALSE(projects.saveProjectAs(failedTarget, ProjectManager::MediaTransfer::Copy));
+        REQUIRE(snapshot(folder) == original);
+        REQUIRE(projects.getCurrentProjectFile() == source);
+        REQUIRE(sample == media.getChildFile("external-edits/vox.wav"));
+    }
+
+    SECTION("A copy folds legacy roots, preserves collisions and reopens independently") {
+        const auto copyTarget = freshProjectTarget();
+        REQUIRE(projects.saveProjectAs(copyTarget, ProjectManager::MediaTransfer::Copy));
+        const auto copy = projects.getCurrentProjectFile();
+        const auto copyMedia = projects.getMediaDirectory();
+        REQUIRE(snapshot(folder) == original);
+        REQUIRE(sample == copyMedia.getChildFile("imported/vox.wav"));
+        REQUIRE_FALSE(copyMedia.getChildFile("bounces").exists());
+        REQUIRE_FALSE(copyMedia.getChildFile("external-edits").exists());
+        REQUIRE_FALSE(copyMedia.getChildFile("stems").exists());
+        std::set<juce::String> copiedContent;
+        for (const auto& clip : ClipManager::getInstance().getClips()) {
+            const juce::File file(magda::audioEventRef(clip).sourceFilePath());
+            REQUIRE(file.isAChildOf(copyMedia));
+            REQUIRE(file.existsAsFile());
+            copiedContent.insert(file.loadFileAsString());
+        }
+        REQUIRE(copiedContent == std::set<juce::String>{"bounce", "render", "edit", "stem"});
+        REQUIRE(projects.loadProject(copy));
+        REQUIRE(snapshot(folder) == original);
+        REQUIRE_FALSE(projects.isDirty());
+        for (const auto& clip : ClipManager::getInstance().getClips()) {
+            const juce::File file(magda::audioEventRef(clip).sourceFilePath());
+            REQUIRE(file.isAChildOf(copyMedia));
+            REQUIRE(file.existsAsFile());
+        }
+    }
+
+    SECTION("An old move record does not replace a source that still exists") {
+        const auto record = media.getChildFile(".magda-media-moves.json");
+        REQUIRE(record.replaceWithText(R"({"bounces/kick.wav":"renders/kick.wav"})"));
+        const auto recordedOriginal = snapshot(folder);
+        REQUIRE(projects.loadProject(source));
+        REQUIRE(snapshot(folder) == recordedOriginal);
+        REQUIRE_FALSE(projects.isDirty());
+        juce::StringArray paths;
+        for (const auto& clip : ClipManager::getInstance().getClips())
+            paths.add(magda::audioEventRef(clip).sourceFilePath());
+        REQUIRE(paths.contains(media.getChildFile("bounces/kick.wav").getFullPathName()));
+    }
 }

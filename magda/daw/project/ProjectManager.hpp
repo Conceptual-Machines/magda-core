@@ -572,8 +572,11 @@ class ProjectManager {
     static void migrateMediaFiles(const juce::File& oldDir, const juce::File& newDir,
                                   MediaTransfer transfer);
 
+    /// Resolve missing paths moved by older builds without changing the source tree (#2919).
+    void resolveLegacyMediaPaths(const juce::File& mediaRoot);
+
     /**
-     * @brief Fold the media roots retired by #2170 into the surviving three.
+     * @brief Fold the media roots retired by #2170 when saving, never when opening.
      *
      * A project saved before the collapse still has bounces/, external-edits/
      * and stems/ on disk. Their contents move into renders/ and imported/ and

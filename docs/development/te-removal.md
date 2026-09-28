@@ -39,10 +39,17 @@ Build metadata comes from tags unless `MAGDA_FULL_VERSION` is supplied. Testing
 the v1 alert on a branch still described by v0 tags requires a v1 build version,
 for example `-DMAGDA_FULL_VERSION=1.0.0-dev`.
 
+Opening a project no longer creates or folds media folders. The loader only
+resolves paths recorded as moved by earlier builds, and only if the original
+is missing and the recorded replacement remains inside the media tree. An
+in-place save folds legacy roots; Save As folds them during transfer. A v1
+migration still forces Copy, preserving the v0 tree.
+
+Regression coverage exercises unchanged source bytes/folders on open and
+close, a rejected save destination, copying nested legacy media with colliding
+names, sampler-reference relinking, reopening the copy, and stale move records.
 Full application qualification still needs v0 fixtures from both engines,
-alert acceptance/deferral, failed saves, source/media preservation and reopening
-the v1 copy. In particular, the older load-time media-folder migration needs
-an audit under #2919; the save-copy guard does not change that existing loader.
+alert acceptance/deferral and failures during media transfer or serialization.
 
 ## Remaining production consumers
 

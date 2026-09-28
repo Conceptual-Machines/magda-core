@@ -160,6 +160,21 @@ std::map<juce::String, juce::String> readMediaMoves(const juce::File& mediaRoot)
     return record;
 }
 
+juce::String previouslyMovedMediaPath(const juce::File& mediaRoot,
+                                      const std::map<juce::String, juce::String>& record,
+                                      const juce::String& path) {
+    const auto source = ProjectManager::localFileForStoredMediaPath(path);
+    if (source == juce::File{} || source.exists())
+        return {};
+    const auto relative = mediaRelativePath(mediaRoot, source);
+    const auto recorded = record.find(relative);
+    if (relative.isEmpty() || recorded == record.end())
+        return {};
+    const auto moved = mediaRoot.getChildFile(recorded->second);
+    return moved.isAChildOf(mediaRoot) && moved.existsAsFile() ? moved.getFullPathName()
+                                                               : juce::String{};
+}
+
 void writeMediaMoves(const juce::File& mediaRoot,
                      const std::map<juce::String, juce::String>& record) {
     auto object = std::make_unique<juce::DynamicObject>();
@@ -531,6 +546,8 @@ bool ProjectManager::saveProjectAs(const juce::File& file, MediaTransfer transfe
 
     if (oldMediaDir != juce::File() && oldMediaDir != targetMediaDir && oldMediaDir.isDirectory()) {
         migrateMediaFiles(oldMediaDir, targetMediaDir, transfer);
+    } else if (oldMediaDir == targetMediaDir) {
+        foldLegacyMediaDirectories(targetMediaDir);
     }
 
     if (requiresV1ProjectCopy() && chosenAudioEngine() == AudioEngineChoice::Magda &&
@@ -661,15 +678,13 @@ void ProjectManager::commitStagedProject(
 
     juce::String mediaDirName = file.getFileNameWithoutExtension() + "_Media";
     mediaDirectory_ = file.getParentDirectory().getChildFile(mediaDirName);
-    ensureMediaSubdirectories(mediaDirectory_);
 
     // The previous project's undo stack references track and clip ids that are gone.
     UndoManager::getInstance().clearHistory();
     clearDirty();
 
-    // Projects saved before #2170 still have the retired media roots on disk.
-    // Runs after clearDirty() so the dirty flag it raises survives.
-    foldLegacyMediaDirectories(mediaDirectory_);
+    // Opening must preserve the v0 source until the user saves a v1 copy (#2919).
+    resolveLegacyMediaPaths(mediaDirectory_);
 
     if (recoveredFromAutosave) {
         markDirty();
@@ -1427,6 +1442,14 @@ void ProjectManager::migrateMediaFiles(const juce::File& oldDir, const juce::Fil
     }
 }
 
+void ProjectManager::resolveLegacyMediaPaths(const juce::File& mediaRoot) {
+    const auto record = readMediaMoves(mediaRoot);
+    if (!relinkMediaPaths([&](const juce::String& path) {
+             return previouslyMovedMediaPath(mediaRoot, record, path);
+         }).empty())
+        markDirty();
+}
+
 void ProjectManager::foldLegacyMediaDirectories(const juce::File& mediaRoot) {
     if (mediaRoot == juce::File() || !mediaRoot.isDirectory())
         return;
@@ -1456,21 +1479,7 @@ void ProjectManager::foldLegacyMediaDirectories(const juce::File& mediaRoot) {
         if (it != moves.end())
             return it->second;
 
-        // A project folded on an earlier load but never saved still names the
-        // old location in its .mgd. Only the record of what a fold actually
-        // moved can say where the file went: a destination that merely shares
-        // the name may be an unrelated file, and the .mgd may name something
-        // that was already missing before any fold ran.
-        const auto relative = mediaRelativePath(mediaRoot, juce::File(path));
-        if (relative.isEmpty())
-            return {};
-
-        const auto recorded = record.find(relative);
-        if (recorded == record.end())
-            return {};
-
-        const auto moved = mediaRoot.getChildFile(recorded->second);
-        return moved.existsAsFile() ? moved.getFullPathName() : juce::String();
+        return previouslyMovedMediaPath(mediaRoot, record, path);
     };
 
     // The paths in the .mgd on disk still name folders that just went away, so
