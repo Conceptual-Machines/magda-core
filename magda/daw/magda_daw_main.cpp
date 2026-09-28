@@ -287,7 +287,7 @@ class MagdaDAWApplication : public JUCEApplication {
 
         // Before the splash, which sits on top of every window, and before the
         // engine is built, so a yes renders through the MAGDA engine this launch.
-        magda::daw::ui::offerMagdaEngineOnFirstLaunch([this] {
+        magda::daw::ui::offerMagdaEngineAtLaunch([this] {
             // 2b. Show splash screen
             splashScreen_ = magda::SplashScreen::create();
 
