@@ -8,12 +8,12 @@
 
 #include "../core/DeviceState.hpp"
 #include "../core/RackInfo.hpp"
+#include "audio/plugins/SavedDeviceState.hpp"
 #include "plugins/compiled/MagdaChorusCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaClipperCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaDelayCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaReverbCompiledPlugin.hpp"
-#include "plugins/tracktion/TracktionDeviceStateBridge.hpp"
 
 namespace magda::daw::audio {
 
@@ -160,12 +160,12 @@ bool isSetByPatch(const DeviceInfo& device, const juce::ValueTree& props, const 
 /// 4OSC keeps wave shape, filter type and voice mode outside its parameters,
 /// as properties on its own ValueTree.
 ///
-/// Through devicePluginTreeFromState() rather than device_state::decode():
+/// Through savedDeviceStateTree() rather than device_state::decode():
 /// a project old enough to hold a 4OSC often stores it as legacy engine XML,
 /// which decode() refuses. Reading nothing there left every oscillator
 /// looking like "none" and the translated synth silent.
 juce::ValueTree savedProperties(const DeviceInfo& device) {
-    return tracktion_adapter::devicePluginTreeFromState(device.pluginState);
+    return savedDeviceStateTree(device.pluginState);
 }
 
 int propertyOr(const juce::ValueTree& props, const juce::String& name, int fallback) {

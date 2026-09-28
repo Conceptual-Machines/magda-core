@@ -10,6 +10,7 @@
 #include <unordered_set>
 
 #include "../audio/AudioThumbnailManager.hpp"
+#include "../audio/FourOscMigration.hpp"
 #include "../audio/sampling/SamplerMedia.hpp"
 #include "../core/AppPaths.hpp"
 #include "../core/AutomationManager.hpp"
@@ -19,6 +20,7 @@
 #include "../core/TrackManager.hpp"
 #include "../core/UndoManager.hpp"
 #include "../engine/AudioEngine.hpp"
+#include "ProjectVersionMigration.hpp"
 #include "engine/AudioEngineChoice.hpp"
 #include "serialization/ProjectSerializer.hpp"
 #include "version.hpp"
@@ -480,7 +482,16 @@ void ProjectManager::seedCurrentProjectFromConfig() {
     }
 }
 
+bool ProjectManager::requiresV1ProjectCopy() const {
+    return currentFile_ != juce::File{} &&
+           project_version::needsV1Copy(currentProject_.version, MAGDA_VERSION);
+}
+
 bool ProjectManager::saveProject() {
+    if (requiresV1ProjectCopy()) {
+        lastError_ = "Save this v0 project as a new v1 project using Save As.";
+        return false;
+    }
     if (currentFile_.getFullPathName().isEmpty() ||
         !currentFile_.getParentDirectory().isDirectory()) {
         lastError_ = "No file path set. Use Save As.";
@@ -495,6 +506,14 @@ bool ProjectManager::saveProjectAs(const juce::File& file, MediaTransfer transfe
     // If the user picked /path/to/MyProject.mgd, wrap it as /path/to/MyProject/MyProject.mgd.
     // If it's already inside a matching folder, use it as-is.
     auto actualFile = saveTargetFor(file);
+    if (requiresV1ProjectCopy()) {
+        if (!project_version::isSeparateProject(currentFile_, actualFile)) {
+            lastError_ = "Save this v0 project as a new v1 project in a separate folder. "
+                         "The original project must remain available to v0.";
+            return false;
+        }
+        transfer = MediaTransfer::Copy;
+    }
     auto projectName = file.getFileNameWithoutExtension();
     if (!actualFile.getParentDirectory().createDirectory()) {
         lastError_ = "Failed to create project directory: " +
@@ -513,6 +532,10 @@ bool ProjectManager::saveProjectAs(const juce::File& file, MediaTransfer transfe
     if (oldMediaDir != juce::File() && oldMediaDir != targetMediaDir && oldMediaDir.isDirectory()) {
         migrateMediaFiles(oldMediaDir, targetMediaDir, transfer);
     }
+
+    if (requiresV1ProjectCopy() && chosenAudioEngine() == AudioEngineChoice::Magda &&
+        daw::audio::convertFourOscDevices(TrackManager::getInstance()) > 0)
+        markDirty();
 
     // Capture live plugin state before serializing. Runs after the migration
     // above, not before it: the migration re-points samplers and drum pads at
@@ -1128,6 +1151,7 @@ void ProjectManager::removeListener(ProjectManagerListener* listener) {
 }
 
 void ProjectManager::beginProjectTeardown() {
+    ++projectGeneration_;
     // The transport first: a listener about to drop what it built for this
     // project should not be dropping it out from under a running render.
     resetTransportForProjectBoundary();
@@ -1759,7 +1783,7 @@ bool ProjectManager::showUnsavedChangesDialog() {
 
     if (result == 1) {
         // Save — attempt to save, abort if save fails
-        if (!currentFile_.getFullPathName().isEmpty()) {
+        if (!currentFile_.getFullPathName().isEmpty() && !requiresV1ProjectCopy()) {
             if (!saveProject()) {
                 juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                                                        "Save Failed",

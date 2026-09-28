@@ -3,12 +3,9 @@
 #include <ranges>
 #include <span>
 
-#include "../audio/TracktionHelpers.hpp"
-#include "../audio/plugin_manager/ExternalPluginStateUtil.hpp"
 #include "../audio/plugins/DeviceCatalogParameters.hpp"
 #include "../audio/plugins/InternalPluginRegistry.hpp"
 #include "../audio/plugins/MagdaDevice.hpp"
-#include "../audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "../engine/AudioEngine.hpp"
 #include "../engine/PluginService.hpp"
 #include "ChainWalk.hpp"
@@ -22,6 +19,7 @@
 #include "PluginPreferences.hpp"
 #include "RackInfo.hpp"
 #include "TrackManager.hpp"
+#include "audio/plugins/SavedDeviceState.hpp"
 
 namespace magda {
 
@@ -224,16 +222,9 @@ juce::String stripPresetRuntimePluginState(const juce::String& pluginState) {
     if (pluginState.isEmpty() || !device_state::looksLikeLegacyEngineState(pluginState))
         return pluginState;
 
-    auto xml = juce::parseXML(pluginState);
-    if (!xml)
-        return pluginState;
-
-    auto state = juce::ValueTree::fromXml(*xml);
+    auto state = device_state::legacyEngineStateTree(pluginState);
     if (!state.isValid())
         return pluginState;
-
-    stripTracktionIdsRecursive(state);
-    stripModifierAssignmentsRecursive(state);
 
     if (auto strippedXml = state.createXml())
         return strippedXml->toString();
@@ -2063,8 +2054,7 @@ namespace {
 /// engine that renders is told to match it.
 void projectAuthoredStateToEngine(const ChainNodePath& devicePath, const juce::String& docText,
                                   bool resetWhenUndecodable = true) {
-    if (!resetWhenUndecodable &&
-        !daw::audio::tracktion_adapter::devicePluginTreeFromState(docText).isValid())
+    if (!resetWhenUndecodable && !daw::audio::savedDeviceStateTree(docText).isValid())
         return;
 
     PluginService::getInstance().projectAuthoredStateAt(devicePath);

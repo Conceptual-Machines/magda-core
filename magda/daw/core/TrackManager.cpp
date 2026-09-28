@@ -7,7 +7,6 @@
 #include <unordered_set>
 
 #include "../audio/MidiBridge.hpp"
-#include "../audio/TracktionHelpers.hpp"
 #include "../audio/plugins/SidechainTriggerBus.hpp"
 #include "../engine/AudioEngine.hpp"
 #include "../engine/PluginService.hpp"
@@ -131,16 +130,9 @@ juce::String stripDuplicateRuntimePluginState(const juce::String& pluginState) {
     if (pluginState.isEmpty() || !device_state::looksLikeLegacyEngineState(pluginState))
         return pluginState;
 
-    auto xml = juce::parseXML(pluginState);
-    if (!xml)
-        return pluginState;
-
-    auto state = juce::ValueTree::fromXml(*xml);
+    auto state = device_state::legacyEngineStateTree(pluginState);
     if (!state.isValid())
         return pluginState;
-
-    stripTracktionIdsRecursive(state);
-    stripModifierAssignmentsRecursive(state);
 
     if (auto strippedXml = state.createXml())
         return strippedXml->toString();

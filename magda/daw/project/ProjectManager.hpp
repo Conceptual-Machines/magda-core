@@ -143,6 +143,13 @@ class ProjectManager {
      */
     bool saveProject();
 
+    /// A v0 project must be saved into a separate v1 project folder.
+    bool requiresV1ProjectCopy() const;
+
+    std::uint64_t getProjectGeneration() const {
+        return projectGeneration_;
+    }
+
     /// What a Save As does with the media the project is carrying.
     enum class MediaTransfer {
         /// The project is moving, so its recordings, renders and imports go
@@ -521,6 +528,7 @@ class ProjectManager {
     bool autoSaveEnabled_ = true;
     int undoableMutationDepth_ = 0;
     std::uint64_t mutationRevision_ = 0;
+    std::uint64_t projectGeneration_ = 0;
     bool interactiveRecoveryAllowedForCurrentOpen_ = true;
 
     /// Held rather than inherited, and made only when autosave starts: a

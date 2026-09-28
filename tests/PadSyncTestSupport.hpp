@@ -4,8 +4,8 @@
 
 #include "magda/daw/audio/plugins/DrumGridPlugin.hpp"
 #include "magda/daw/audio/plugins/InternalPluginRegistry.hpp"
+#include "magda/daw/audio/plugins/SavedDeviceState.hpp"
 #include "magda/daw/audio/plugins/compiled/CompiledPluginRegistry.hpp"
-#include "magda/daw/audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "magda/daw/audio/plugins/tracktion/TracktionInternalPluginAdapter.hpp"
 #include "magda/daw/core/DeviceInfo.hpp"
 #include "magda/daw/core/DrumGridPads.hpp"
@@ -34,7 +34,8 @@ inline daw::audio::DrumGridPlugin::PadPluginFactory padPluginFactory(
         if (const auto* spec = daw::audio::findInternalPluginSpecForLoadType(device.pluginId)) {
             plugin = ta::createInternalPlugin(*spec, edit, device.pluginState);
         } else if (device.pluginState.isNotEmpty()) {
-            if (auto saved = ta::devicePluginTreeFromState(device.pluginState); saved.isValid())
+            if (auto saved = magda::daw::audio::savedDeviceStateTree(device.pluginState);
+                saved.isValid())
                 plugin = edit.getPluginCache().createNewPlugin(saved);
         }
 
@@ -48,7 +49,8 @@ inline daw::audio::DrumGridPlugin::PadPluginFactory padPluginFactory(
         // every internal device: a sampler is built fresh and reads its sample
         // path out of the tree it is restored with.
         if (plugin != nullptr && device.pluginState.isNotEmpty()) {
-            if (auto saved = ta::devicePluginTreeFromState(device.pluginState); saved.isValid())
+            if (auto saved = magda::daw::audio::savedDeviceStateTree(device.pluginState);
+                saved.isValid())
                 plugin->restorePluginStateFromValueTree(saved);
         }
 

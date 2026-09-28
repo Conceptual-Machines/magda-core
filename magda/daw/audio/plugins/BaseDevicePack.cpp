@@ -3,6 +3,7 @@
 #include <array>
 #include <memory>
 
+#include "audio/plugins/SavedDeviceState.hpp"
 #include "plugins/ArpeggiatorPlugin.hpp"
 #include "plugins/AudioSidechainMonitorPlugin.hpp"
 #include "plugins/DeviceServices.hpp"
@@ -124,7 +125,7 @@ te::Plugin::Ptr restoreSavedPlugin(te::Edit& edit, const juce::String& savedPlug
     if (savedPluginState.isEmpty())
         return {};
 
-    auto savedState = tracktion_adapter::devicePluginTreeFromState(savedPluginState);
+    auto savedState = savedDeviceStateTree(savedPluginState);
     if (!savedState.isValid()) {
         DBG("restoreSavedPlugin: failed to parse saved plugin state");
         return {};

@@ -41,11 +41,6 @@ namespace te = tracktion::engine;
 /// capture site cannot silently skip that check.
 juce::String captureInternalDeviceState(te::Plugin& plugin, const juce::String& existingState);
 
-/// Build the engine plugin tree used to construct or restore a device from
-/// saved state. Accepts v2 JSON and legacy (v1) engine XML; returns an invalid
-/// tree when `savedState` is empty or unusable.
-juce::ValueTree devicePluginTreeFromState(const juce::String& savedState);
-
 /**
  * @brief Rewrite a nested retired-device plugin tree onto its compiled
  *        successor, before the engine is asked to build it.

@@ -19,6 +19,7 @@
 #include "ExternalPluginLookup.hpp"
 #include "ExternalPluginStateUtil.hpp"
 #include "PluginManager.hpp"
+#include "audio/plugins/SavedDeviceState.hpp"
 #include "modifiers/CurveSnapshot.hpp"
 #include "modifiers/ModifierHelpers.hpp"
 #include "modifiers/ModifierSync.hpp"
@@ -2136,7 +2137,7 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
         // with its sample and one inside a rack came back empty.
         if (plugin != nullptr && ps.isNotEmpty()) {
             namespace ta = daw::audio::tracktion_adapter;
-            if (auto savedState = ta::devicePluginTreeFromState(ps); savedState.isValid())
+            if (auto savedState = magda::daw::audio::savedDeviceStateTree(ps); savedState.isValid())
                 plugin->restorePluginStateFromValueTree(savedState);
         }
     } else {
@@ -2584,8 +2585,7 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
                      device.pluginId.containsIgnoreCase(
                          daw::audio::MagdaSamplerPlugin::xmlTypeName)) &&
                     device.hasPluginState()) {
-                    auto savedState = daw::audio::tracktion_adapter::devicePluginTreeFromState(
-                        device.pluginState);
+                    auto savedState = daw::audio::savedDeviceStateTree(device.pluginState);
                     if (savedState.isValid())
                         plugin->restorePluginStateFromValueTree(savedState);
                 }
@@ -2624,8 +2624,7 @@ te::Plugin::Ptr PluginManager::createInternalPlugin(const juce::String& xmlTypeN
         return daw::audio::tracktion_adapter::createInternalPlugin(*spec, edit_, savedPluginState);
 
     if (savedPluginState.isNotEmpty()) {
-        auto savedState =
-            daw::audio::tracktion_adapter::devicePluginTreeFromState(savedPluginState);
+        auto savedState = daw::audio::savedDeviceStateTree(savedPluginState);
         if (savedState.isValid() && savedPluginStateMatchesRequestedType(savedState, xmlTypeName)) {
             if (auto plugin = edit_.getPluginCache().createNewPlugin(savedState))
                 return plugin;

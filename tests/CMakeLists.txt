@@ -55,6 +55,7 @@ set(TEST_SOURCES
     agents/test_llm_tool_calls.cpp
     agents/test_generic_sound_design_parameters.cpp
     project/test_update_checker.cpp
+    project/test_project_version_migration.cpp
     devices/test_plugin_loading.cpp
     devices/test_plugin_format.cpp
     devices/test_device_authored_state.cpp
@@ -66,6 +67,7 @@ set(TEST_SOURCES
     devices/test_internal_plugin_registry.cpp
     # Engine-neutral internal device state schema v2 (issue #1887)
     devices/test_device_state_codec.cpp
+    devices/test_saved_device_state.cpp
     devices/test_chord_engine_device.cpp
     # All-notes-off beside the events, which the instrument used to drop (#2418)
     devices/test_instrument_panic.cpp
@@ -617,6 +619,30 @@ endif()
 
 # Create test executable
 add_executable(magda_tests ${TEST_SOURCES})
+
+# This restore boundary must keep building without the Tracktion-linked DAW (#2919).
+add_executable(magda_saved_state_tests
+    devices/test_saved_device_state.cpp
+    project/test_project_version_migration.cpp
+    ../magda/daw/core/DeviceState.cpp
+    ../magda/daw/audio/plugins/InternalPluginRegistry.cpp
+    ../magda/daw/audio/plugins/SavedDeviceState.cpp
+)
+target_compile_features(magda_saved_state_tests PRIVATE cxx_std_23)
+target_include_directories(magda_saved_state_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/magda/daw
+    ${CMAKE_SOURCE_DIR}/magda/daw/audio
+)
+target_compile_definitions(magda_saved_state_tests PRIVATE JUCE_USE_CURL=0)
+target_link_libraries(magda_saved_state_tests PRIVATE
+    Catch2::Catch2WithMain
+    juce::juce_core
+    juce::juce_events
+    juce::juce_data_structures
+    juce::juce_audio_basics
+)
+add_test(NAME saved_device_state_native COMMAND magda_saved_state_tests)
 
 # Link libraries
 target_link_libraries(magda_tests
