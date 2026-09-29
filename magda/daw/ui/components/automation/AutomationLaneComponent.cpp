@@ -815,8 +815,7 @@ void AutomationLaneComponent::paintScaleLabelsFor(juce::Graphics& g, juce::Recta
                     numberText = juce::String(static_cast<int>(std::round(clamped)));
                 }
                 // Only append "%" when the parameter is actually unit-less AND
-                // on a 0..1 range — otherwise the suffix is misleading (e.g.
-                // 4OSC's filterFreq stores 0..135 as a MIDI note number).
+                // on a 0..1 range; otherwise the suffix is misleading.
                 juce::String suffix;
                 if (paramInfo.unit.isNotEmpty()) {
                     suffix = paramInfo.unit;

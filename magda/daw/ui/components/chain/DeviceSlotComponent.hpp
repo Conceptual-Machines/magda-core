@@ -77,8 +77,6 @@ class DeviceSlotComponent : public NodeComponent,
     void updateFromDevice(const magda::DeviceInfo& device);
 
     // Custom UI tab index (for saving/restoring across rebuilds)
-    int getCustomUITabIndex() const;
-    void setCustomUITabIndex(int index);
 
     // Callbacks for owner-specific behavior
     std::function<void()> onDeviceDeleted;

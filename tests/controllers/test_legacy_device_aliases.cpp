@@ -66,8 +66,8 @@ TEST_CASE("Retired Tracktion devices resolve to their successor by every stored 
     }
 
     // Devices MAGDA still ships, and the successors themselves, have none.
-    for (const auto* id : {"toneGenerator", "4osc", "volume", "magda_eq", "magda_delay",
-                           "magda_filter", "magda_convolution", ""}) {
+    for (const auto* id : {"toneGenerator", "volume", "magda_eq", "magda_delay", "magda_filter",
+                           "magda_convolution", ""}) {
         INFO("live id: " << id);
         CHECK(legacy_devices::retiredDeviceSuccessor(id).isEmpty());
     }

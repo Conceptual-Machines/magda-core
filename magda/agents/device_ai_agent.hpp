@@ -19,7 +19,7 @@ namespace magda {
  *
  * Two flavours sit underneath this:
  *  - `SoundDesignAgent` — picks parameter values for an existing device
- *    (e.g. 4OSC). Output shape: a Preset of params + waves + flags.
+ *    (e.g. Poly Synth). Output shape: a preset of parameter values.
  *  - `CoderAgent` — generates code for devices that host code (e.g.
  *    Faust). Output shape: a source string compiled by the device.
  *

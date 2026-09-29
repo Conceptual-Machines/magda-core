@@ -20,9 +20,9 @@ namespace magda::daw::ui {
  * --examples) never reach the handler — they're handled by the registry.
  */
 struct SlashCommand {
-    juce::String name;         // "design" (no slash)
+    juce::String name;         // "theme" (no slash)
     juce::String description;  // one-liner for autocomplete + --help header
-    juce::String usage;        // "/design [--category=<cat>] <description>"
+    juce::String usage;        // "/theme <description>"
     juce::String details;      // multi-line body shown by --help
 
     // Category → example prompts. Categories matched case-insensitively

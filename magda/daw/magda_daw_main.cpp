@@ -113,15 +113,10 @@ class MagdaDAWApplication : public JUCEApplication {
     std::unique_ptr<magda::MainWindow> mainWindow_;
     std::unique_ptr<magda::MainLookAndFeel> lookAndFeel_;
     std::unique_ptr<magda::SplashScreen> splashScreen_;
-    // True once this process has committed to running as the DAW. Two kinds of
-    // process never do, yet JUCE still calls shutdown() on them: plugin scanner
-    // children, which return from initialise() immediately, and a second launch
-    // that the single-instance gate turns away before initialise() runs at all.
-    // Neither has anything to tear down. Latched early, not at the end of
-    // initialise(), so a failed engine init still gets the full teardown.
+    // False for a second launch the single-instance gate turns away before
+    // initialise() runs; JUCE still calls shutdown() on it. Latched early so a
+    // failed engine init still gets the full teardown.
     bool runningAsApp_ = false;
-    // This process is a TE plugin scanner child, so it has third-party plugin
-    // dylibs loaded. Matters only for how it terminates: see shutdown().
 
   public:
     /** Convenience accessor used by the free functions in scripting_app.hpp. */
@@ -179,7 +174,6 @@ class MagdaDAWApplication : public JUCEApplication {
         audio device (most ASIO drivers are single-client, so the second one
         gets no audio at all) and race each other writing the shared config,
         log and caches under the user data dir.
-
     */
     bool moreThanOneInstanceAllowed() override {
         return false;
@@ -534,13 +528,10 @@ class MagdaDAWApplication : public JUCEApplication {
     }
 
     void shutdown() override {
-        // Nothing was built, so there is nothing to tear down: a plugin scanner
-        // child, or a second launch that the single-instance gate turned away
-        // before initialise() ran. Both still land here. Running the teardown
-        // below would lazily construct every singleton purely to shut it down.
+        // A second launch the single-instance gate turned away built nothing;
+        // the teardown below would construct every singleton just to shut it down.
         if (!runningAsApp_) {
             DBG("=== SHUTDOWN (uninitialised process) ===");
-
             return;
         }
 

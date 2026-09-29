@@ -482,9 +482,7 @@ void MidiBridge::handleIncomingMidiMessage(juce::MidiInput* source,
         bool matches = (deviceId == sourceDeviceId || deviceId == "all");
 
         if (matches) {
-            // NOTE: MIDI routing to plugins is now handled by Tracktion Engine's
-            // native InputDeviceInstance -> MidiInputDeviceNode system.
-            // MidiBridge only monitors MIDI activity for UI visualization.
+            // The engine routes MIDI to devices; this only feeds UI activity meters.
 
             if (message.isNoteOn()) {
                 if (auto* meters = meters_.load(std::memory_order_acquire))

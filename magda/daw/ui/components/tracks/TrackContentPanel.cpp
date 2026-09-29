@@ -176,10 +176,6 @@ std::vector<FileDropGhost> makeMidiDropGhosts(const juce::File& midiFile, double
 
     for (int listIdx = 0; listIdx < static_cast<int>(imported->tracks.size()); ++listIdx) {
         const auto* list = &imported->tracks[static_cast<size_t>(listIdx)];
-        if (list == nullptr ||
-            (list->notes.empty() && list->controllers.empty() && list->pitchBends.empty()))
-            continue;
-
         double lengthBeats = imported->lengthBeats;
         if (lengthBeats <= 0.0)
             lengthBeats = list->endBeat;
@@ -3636,9 +3632,6 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
 
             for (int listIdx = 0; listIdx < static_cast<int>(imported->tracks.size()); ++listIdx) {
                 const auto* list = &imported->tracks[static_cast<size_t>(listIdx)];
-                if (list->notes.empty() && list->controllers.empty() && list->pitchBends.empty())
-                    continue;
-
                 // Compute clip length in beats, round up to next bar
                 double lengthBeats = imported->lengthBeats;
                 if (lengthBeats <= 0.0)

@@ -49,9 +49,7 @@ struct RawMidiListener {
 /// What the fork's virtual keyboard device is called.
 inline constexpr const char* kQwertyMidiDeviceName = "QWERTY Keyboard";
 
-/// The keyboard's device ID on both engines: what the fork's virtual device
-/// reports (tracktion_DeviceManager.cpp:248 derives it from the name), so a
-/// track routed to it on one engine is routed to it on the other.
+/// The keyboard's device ID. Kept in the v0 format so projects routed to it still resolve.
 inline juce::String qwertyMidiDeviceId() {
     return "vmidiin_" + juce::String::toHexString(juce::String(kQwertyMidiDeviceName).hashCode());
 }
@@ -93,11 +91,10 @@ class MidiBridge : public juce::MidiInputCallback {
     /**
      * @brief The engine that renders is attaching, offering @p virtualInputs of its own.
      *
-     * Tracktion's enabled virtual devices under the fork, the QWERTY keyboard under the
-     * native engine: devices the system's MIDI list never holds but a track can route to.
+     * The QWERTY keyboard: a device the system's MIDI list never holds but a track can route to.
      *
      * @p owner is an opaque token for whoever may hand the service back. A later attach
-     * replaces it, which is how the native engine layers over the fork it holds.
+     * replaces it.
      */
     void useEngine(const void* owner, std::function<std::vector<MidiDeviceInfo>()> virtualInputs);
 

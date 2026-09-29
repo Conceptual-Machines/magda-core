@@ -125,12 +125,8 @@ class DeviceCustomUIManager {
     void refreshParameterValues(const magda::DeviceInfo& device);
 
     /**
-     * Read the FourOsc mod matrix from the plugin and push it to FourOscUI.
-     */
-
-    /**
      * Set the chain path of the device this custom UI is bound to. Once set,
-     * internal plugin lookups (FourOsc, Sampler, Faust, etc.) go through the
+     * internal plugin lookups (Sampler, Faust, etc.) go through the
      * path rather than a bare DeviceId — required for section-scoped ids.
      * Callable repeatedly; latest value wins.
      *
@@ -179,12 +175,8 @@ class DeviceCustomUIManager {
     /// plan that holds the device, or an instance a rebuild retired (#2585).
     bool needsDeviceRebind() const;
 
-    // Tab index for FourOscUI persistence across rebuilds
-    int getCustomUITabIndex() const;
-    void setCustomUITabIndex(int index);
-
     // Re-resolve path-bound plugin pointers for UIs that depend on a live
-    // Tracktion plugin. Safe to call before the plugin exists.
+    // rendered device. Safe to call before the device exists.
     void refreshLivePluginBindings();
 
     // Invalidate the current UI context and clear live plugin bindings before
@@ -205,10 +197,6 @@ class DeviceCustomUIManager {
     void refreshChordEngineMidiActivity(magda::MidiNoteStrip& strip,
                                         std::array<int, 32>& lastChordNotes,
                                         int& lastChordCount) const;
-
-    // Pending tab index (set before fourOscUI_ is created, consumed in create())
-    static constexpr int NO_PENDING_TAB = -1;
-    int pendingCustomUITabIndex_ = NO_PENDING_TAB;
 
     // Direct accessors needed by DeviceSlotComponent for setNodePath() and getDrumPad*()
     DrumGridUI* getDrumGridUI() const {

@@ -64,11 +64,7 @@ set(AGENTS_SOURCES
     llm_client_factory.hpp
     model_downloader.hpp
     model_downloader.cpp
-    four_osc_agent.hpp
-    four_osc_agent.cpp
     theme_agent.cpp
-    four_osc_apply.hpp
-    four_osc_apply.cpp
     poly_step_sequencer_agent.hpp
     poly_step_sequencer_agent.cpp
     poly_step_sequencer_apply.hpp

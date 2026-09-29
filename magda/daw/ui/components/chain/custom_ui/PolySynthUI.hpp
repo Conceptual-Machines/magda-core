@@ -29,8 +29,8 @@ namespace magda::daw::ui {
  *
  * Every control is a LinkableTextSlider carrying its host slot index via
  * setParamIndex(), so mod / macro / automation / MIDI-Learn drag-linking is
- * wired by the standard DeviceSlotComponent::setupCustomUILinking() path
- * (exactly like FourOscUI). The manager pushes live
+ * wired by the standard DeviceSlotComponent::setupCustomUILinking() path.
+ * The manager pushes live
  * values in via updateFromParameters().
  */
 class PolySynthUI : public juce::Component, private juce::Timer {

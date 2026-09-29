@@ -824,10 +824,7 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     // Now that nodePath_ is valid, update param slots with the device path
     updateParamModulation();
 
-    // Bind the AI panel to the now-resolved path. Doing this in the
-    // constructor caught the panel before nodePath_ was set, so generations
-    // were running with an empty path and the apply step was bailing with
-    // "target device is not a 4OSC".
+    // Bind the AI panel here: in the constructor nodePath_ is not yet set.
     if (aiPanel_) {
         aiPanel_->setDevicePath(nodePath_);
         aiPanel_->setDevicePluginId(device_.pluginId);
@@ -842,14 +839,6 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     refreshControllerIndicators();
 
     refreshInlinePluginBindings();
-}
-
-int DeviceSlotComponent::getCustomUITabIndex() const {
-    return customUI_.getCustomUITabIndex();
-}
-
-void DeviceSlotComponent::setCustomUITabIndex(int index) {
-    customUI_.setCustomUITabIndex(index);
 }
 
 int DeviceSlotComponent::getPreferredWidth() const {

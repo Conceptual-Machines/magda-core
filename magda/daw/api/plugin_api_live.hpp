@@ -16,8 +16,6 @@ class PluginApiLive final : public PluginApi {
                                            const StepSequencerPattern& pattern) override;
     juce::String applyPolySequencerPattern(const ChainNodePath& path,
                                            const PolySequencerPattern& pattern) override;
-    juce::String applyFourOscUpdate(const ChainNodePath& path,
-                                    const FourOscUpdate& update) override;
     juce::String applyFaustSource(const ChainNodePath& path, const juce::String& displayName,
                                   const juce::String& source, bool verified) override;
 };

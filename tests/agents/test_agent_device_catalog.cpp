@@ -39,8 +39,8 @@ const DeviceInfo* getOnlyDevice(TrackId trackId) {
     return &getDevice(track->chain.fxChainElements.front());
 }
 
-constexpr std::array<const char*, 6> kDocumentedCompatibilityAliases = {
-    "eq", "pitch shift", "pitch_shift", "ir reverb", "ir_reverb", "4osc"};
+constexpr std::array<const char*, 5> kDocumentedCompatibilityAliases = {
+    "eq", "pitch shift", "pitch_shift", "ir reverb", "ir_reverb"};
 
 }  // namespace
 
@@ -102,9 +102,7 @@ TEST_CASE("Agent device catalog accepts documented and human-friendly aliases",
     }
     CHECK(lookupInternalPluginByAlias("EQ") == lookupInternalPluginByAlias("eq"));
 
-    const auto* fourOsc = lookupInternalPluginByAlias("4osc");
-    REQUIRE(fourOsc != nullptr);
-    CHECK(fourOsc->id == InternalPlugin::FourOsc);
+    CHECK(lookupInternalPluginByAlias("4osc") == nullptr);
 
     const auto description = getInternalPluginCatalogDescription();
     for (const auto& entry : getInternalPlugins()) {
@@ -127,10 +125,8 @@ TEST_CASE("Agent device capabilities declare UI and dedicated-agent routing",
         CHECK(entry.capabilities.automatable == !entry.pluginId.equalsIgnoreCase("insert"));
     }
 
-    const auto& fourOsc = getInternalPluginCapabilities("4OSC");
-    CHECK(fourOsc.soundDesignAgent == SoundDesignAgentKind::FourOsc);
-    CHECK(fourOsc.supportsDeviceAI());
-    CHECK(createSoundDesignAgentFor("4osc") != nullptr);
+    CHECK_FALSE(getInternalPluginCapabilities("4osc").supportsDeviceAI());
+    CHECK(createSoundDesignAgentFor("4osc") == nullptr);
 
     const auto& step = getInternalPluginCapabilities("stepsequencer");
     CHECK(step.soundDesignAgent == SoundDesignAgentKind::StepSequencer);
@@ -188,8 +184,8 @@ TEST_CASE("Command state exposes bounded selected-track and selected-device cont
 
     DeviceInfo synth;
     synth.id = 7;
-    synth.name = "4OSC Synth";
-    synth.pluginId = "4osc";
+    synth.name = "Poly Synth";
+    synth.pluginId = "magda_polysynth";
     synth.deviceType = DeviceType::Instrument;
     synth.isInstrument = true;
     for (int i = 0; i < 30; ++i) {
@@ -238,7 +234,7 @@ TEST_CASE("Command state exposes bounded selected-track and selected-device cont
 
     const auto* selectedDevice = root->getProperty("selected_device").getDynamicObject();
     REQUIRE(selectedDevice != nullptr);
-    CHECK(selectedDevice->getProperty("plugin_id").toString() == "4osc");
+    CHECK(selectedDevice->getProperty("plugin_id").toString() == "magda_polysynth");
     CHECK(static_cast<bool>(selectedDevice->getProperty("parameters_truncated")));
     const auto* parameters = selectedDevice->getProperty("parameters").getArray();
     REQUIRE(parameters != nullptr);

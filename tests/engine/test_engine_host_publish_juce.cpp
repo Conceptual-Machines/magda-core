@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <memory>
 #include <ranges>
 
@@ -27,6 +28,7 @@
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/DeviceState.hpp"
 #include "magda/daw/core/TrackManager.hpp"
+#include "magda/daw/core/UndoManager.hpp"
 #include "magda/daw/core/controllers/BindingRegistry.hpp"
 #include "magda/daw/engine/host/EngineHost.hpp"
 #include "magda/daw/engine/host/EngineProject.hpp"
@@ -1631,9 +1633,18 @@ class NativeTransientCacheTest final : public juce::UnitTest {
             manager.setTransientSensitivity(clip, 0.8f);
             expect(cache.getCachedTransients(path) == nullptr);
             expect(!manager.getTransientTimes(clip));
+            beginTest("A settled sensitivity is one undoable edit, and undo re-detects");
+            expect(waitForSettledSensitivity());
+            expect(waitForCache(path));
+            expectWithinAbsoluteError(beatSensitivityOf(clip), 0.8f, 1.0e-6f);
+            magda::UndoManager::getInstance().undo();
+            expectWithinAbsoluteError(beatSensitivityOf(clip), 0.5f, 1.0e-6f);
+            expect(cache.getCachedTransients(path) == nullptr);
+            expect(waitForCache(path));
             beginTest("Deleting a debounced clip does not strand its source analysis");
+            manager.setTransientSensitivity(clip, 0.3f);
             magda::ClipManager::getInstance().deleteClip(clip);
-            juce::MessageManager::getInstance()->runDispatchLoopUntil(200);
+            expect(waitForSettledSensitivity());
             const auto another =
                 magda::ClipManager::getInstance().createAudioClipBeats(track, 0, 2, path);
             expect(!manager.getTransientTimes(another));
@@ -1642,13 +1653,37 @@ class NativeTransientCacheTest final : public juce::UnitTest {
             cache.clearCachedTransients(path);
             expect(!manager.getTransientTimes(another));
             manager.stopBackgroundWork();
-            juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+            drainMessageQueue();
             expect(cache.getCachedTransients(path) == nullptr);
             file.deleteFile();
         });
     }
 
   private:
+    static float beatSensitivityOf(magda::ClipId clip) {
+        const auto* event = magda::primaryEventOf(magda::ClipManager::getInstance().getClip(clip));
+        return event != nullptr ? event->beatSensitivity : -1.0f;
+    }
+
+    static bool waitForSettledSensitivity() {
+        const auto deadline = juce::Time::getMillisecondCounter() + 3000;
+        auto& manager = magda::WarpMarkerManager::getInstance();
+        while (manager.hasPendingSensitivity()) {
+            if (juce::Time::getMillisecondCounter() >= deadline)
+                return false;
+            juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+        }
+        return true;
+    }
+
+    // Runs every callback posted before this one.
+    static void drainMessageQueue() {
+        auto drained = std::make_shared<std::atomic<bool>>(false);
+        juce::MessageManager::callAsync([drained] { drained->store(true); });
+        while (!drained->load())
+            juce::MessageManager::getInstance()->runDispatchLoopUntil(1);
+    }
+
     static bool waitForCache(const juce::String& path) {
         const auto deadline = juce::Time::getMillisecondCounter() + 3000;
         while (juce::Time::getMillisecondCounter() < deadline) {

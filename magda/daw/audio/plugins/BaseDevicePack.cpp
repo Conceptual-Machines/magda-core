@@ -55,7 +55,6 @@ void add(InternalPluginRegistry& registry, InternalPluginSpec spec) {
     juce::ignoreUnused(registered);
 }
 
-constexpr const char* kFourOscAliases[] = {"4osc", "4OSC Synth"};
 constexpr const char* kToneAliases[] = {"tone", "tonegenerator"};
 constexpr const char* kToneTags[] = {"utility", "test", "tone"};
 constexpr const char* kMeterAliases[] = {"meter", "levelmeter"};
@@ -108,21 +107,6 @@ void registerUtilityDevices(InternalPluginRegistry& registry) {
             .browserCategory = "Legacy",
             .description = "Legacy Tracktion volume and pan device, kept for old project loads.",
             .createMode = InternalPluginCreateMode::SavedStateOrFresh,
-            .tags = kLegacyTags,
-            .tagCount = static_cast<int>(std::size(kLegacyTags)),
-        });
-    add(registry,
-        {
-            .pluginId = "4osc",
-            .displayName = "4OSC Synth",
-            .browserCategory = "Synth",
-            .description =
-                "Retired 4OSC state translated to Poly Synth by the existing project translator.",
-            .createMode = InternalPluginCreateMode::SavedStateOrFresh,
-            .loadAliases = kFourOscAliases,
-            .loadAliasCount = static_cast<int>(std::size(kFourOscAliases)),
-            .showInBrowser = false,
-            .isInstrument = true,
             .tags = kLegacyTags,
             .tagCount = static_cast<int>(std::size(kLegacyTags)),
         });

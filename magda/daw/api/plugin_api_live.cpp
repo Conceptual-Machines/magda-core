@@ -1,7 +1,5 @@
 #include "plugin_api_live.hpp"
 
-#include <set>
-
 #include "../audio/faust/FaustModelEdits.hpp"
 #include "../audio/plugins/FaustInstrumentPlugin.hpp"
 #include "../audio/plugins/FaustPlugin.hpp"
@@ -10,11 +8,9 @@
 #include "../audio/plugins/StepSequencerPlugin.hpp"
 #include "../core/ChainWalk.hpp"
 #include "../core/DrumGridPads.hpp"
-#include "../core/ParameterUtils.hpp"
 #include "../core/PresetManager.hpp"
 #include "../core/StepPatternCommands.hpp"
 #include "../core/TrackManager.hpp"
-#include "../core/aliases/ParamNameNormalize.hpp"
 #include "../engine/AudioEngine.hpp"
 #include "../engine/PluginService.hpp"
 
@@ -250,10 +246,6 @@ juce::String PluginApiLive::applyPolySequencerPattern(const ChainNodePath& path,
         PresetManager::getInstance().setSuggestedPresetName(device->id, pattern.description);
     return "applied " + juce::String(stepsWritten) + " step(s), " + juce::String(notesWritten) +
            " note(s) to " + device->name;
-}
-
-juce::String PluginApiLive::applyFourOscUpdate(const ChainNodePath&, const FourOscUpdate&) {
-    return "4OSC is retired in v1. Convert the project with the existing 4OSC translator.";
 }
 
 juce::String PluginApiLive::applyFaustSource(const ChainNodePath& path,

@@ -17,8 +17,7 @@ namespace magda {
 /**
  * @brief The audio interface as a choice Audio Settings makes and the engine keeps.
  *
- * AudioIOService under the native engine, an adapter over Tracktion's wave devices under
- * Tracktion.
+ * Implemented by AudioIOService.
  */
 class AudioIOControl : public HardwareChannels {
   public:

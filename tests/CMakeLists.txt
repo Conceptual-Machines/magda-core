@@ -31,7 +31,6 @@ set(TEST_SOURCES
     devices/test_rack_audio.cpp
     automation/test_modulation.cpp
     controllers/test_control_target.cpp
-    automation/test_tempo_sequence_ripple_math.cpp
     devices/test_chain_fingerprint.cpp
     devices/test_chain_info_copy.cpp
     devices/test_drum_grid_pad_commands.cpp

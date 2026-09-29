@@ -562,14 +562,6 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
     return 0;
 }
 
-int DeviceCustomUIManager::getCustomUITabIndex() const {
-    return 0;
-}
-
-void DeviceCustomUIManager::setCustomUITabIndex(int index) {
-    pendingCustomUITabIndex_ = index;
-}
-
 std::shared_ptr<daw::audio::MagdaDevice> DeviceCustomUIManager::liveDevice() const {
     if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine())
         return audioEngine->renderedDevice(devicePath_);
@@ -694,10 +686,6 @@ void DeviceCustomUIManager::refreshChordEngineMidiActivity(magda::MidiNoteStrip&
     }
     lastChordCount = count;
 }
-
-// =============================================================================
-// readAndPushModMatrix
-// =============================================================================
 
 void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& device) {
     if (polySynthUI_ && device.pluginId.equalsIgnoreCase("magda_polysynth"))
@@ -1253,8 +1241,6 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
     // Plugin drag and drop onto pads: an instrument replaces the pad
     drumGridUI_->onPluginDropped = [postPadEdit, updatePadFromModel,
                                     loadSampleToPad](int padIndex, const juce::DynamicObject& obj) {
-        auto& tm = magda::TrackManager::getInstance();
-
         bool isExternal = obj.getProperty("isExternal");
         juce::String uniqueId = obj.getProperty("uniqueId").toString();
 

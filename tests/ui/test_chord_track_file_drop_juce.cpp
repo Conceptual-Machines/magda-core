@@ -154,6 +154,7 @@ class ChordTrackFileDropTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] {
             juce::MidiMessageSequence sequence;
             sequence.addEvent(juce::MidiMessage::timeSignatureMetaEvent(3, 4), 0.0);
+            sequence.addEvent(juce::MidiMessage::textMetaEvent(3, "Keys"), 0.0);
             sequence.addEvent(juce::MidiMessage::noteOn(1, 60, 0.8f), 480.0);
             sequence.addEvent(juce::MidiMessage::noteOff(1, 60), 1440.0);
             sequence.addEvent(juce::MidiMessage::controllerEvent(1, 64, 99), 960.0);
@@ -181,6 +182,8 @@ class ChordTrackFileDropTest final : public juce::UnitTest {
             const auto& tracks = TrackManager::getInstance().getTracks();
             expectEquals(static_cast<int>(tracks.size()), 2);
             if (tracks.size() == 2) {
+                expectEquals(tracks[0].name, juce::String("Keys 1"));
+                expectEquals(tracks[1].name, juce::String("Keys 2"));
                 const auto first = ClipManager::getInstance().getClipsOnTrack(tracks[0].id);
                 const auto second = ClipManager::getInstance().getClipsOnTrack(tracks[1].id);
                 expect(first.size() == 1 && second.size() == 1);
