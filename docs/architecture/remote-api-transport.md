@@ -23,9 +23,9 @@ where the obvious candidate falls down.
 
 ## Rejected: CHOC `choc_HTTPServer.h` + Boost.Beast
 
-`third_party/tracktion_engine/modules/3rd_party/choc/network/choc_HTTPServer.h`
-is already in the tree via the Tracktion Engine submodule, and #1856 named it as
-the thing to evaluate. Nothing in the repo compiles it today.
+`choc_HTTPServer.h`, from the CHOC library that shipped inside the Tracktion Engine
+submodule, was in the tree when #1856 named it as the thing to evaluate. It is no
+longer vendored and nothing compiled it.
 
 It accepts every upgrade unconditionally. `upgradeToWebsocket` (L465–473) starts
 the handshake and *then* calls `upgradedToWebSocket(target)`, which receives the

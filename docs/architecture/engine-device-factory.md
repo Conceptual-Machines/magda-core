@@ -12,8 +12,7 @@ internal registry and the compiled-Faust catalog — rather than keeping a
 third list of what exists. It returns null for anything not yet ported to the
 SDK (`InternalPluginSpec`/`CompiledPluginSpec` both carry `createDevice`).
 That null must stay visible: a caller has to report an unrunnable device
-rather than silently pass signal through, because a stand-in the incumbent
-engine doesn't have is a divergence disguised as a null.
+rather than silently pass signal through, because a stand-in that changes the signal is a divergence disguised as a null.
 
 Parameters aren't written here — the plan's value layer resolves them per
 block and the adapter writes them before each `process()`, so a device starts

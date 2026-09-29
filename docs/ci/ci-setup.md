@@ -77,7 +77,7 @@ GitHub Actions pricing:
 - **macOS runners**: 10x more expensive
 - **Windows runners**: 2x more expensive
 
-Since JUCE/Tracktion code is cross-platform, Linux CI provides good coverage at minimal cost. Local development still happens on macOS.
+Since JUCE code is cross-platform, Linux CI provides good coverage at minimal cost. Local development still happens on macOS.
 
 ## Future Improvements
 

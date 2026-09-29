@@ -34,7 +34,7 @@ void paint(juce::Graphics& g) override {
 }
 
 // In plugin loading
-te::Plugin::Ptr loadPlugin(const juce::PluginDescription& desc) {
+std::unique_ptr<juce::AudioPluginInstance> loadPlugin(const juce::PluginDescription& desc) {
     MAGDA_MONITOR_SCOPE("PluginLoad");
 
     // Plugin loading code...

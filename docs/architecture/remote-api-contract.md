@@ -228,7 +228,7 @@ Reapplying identical state is revision-neutral.
 
 `devices.replace` takes an existing `devicePath`, a `catalogId` from
 `devices.catalog`, and an optional opaque `presetId`. It stages the replacement
-and preset while the incumbent is still live, then exchanges them in the same
+and preset while the current device is still live, then exchanges them in the same
 chain slot as one undoable edit. The response contains the replacement's new
 path, the safe device graph, and a complete reference-impact plan. Parameter
 targets are remapped only when the device identity is compatible and matching
@@ -579,8 +579,7 @@ updated clip on the `clips` topic.
 capture, cancellation support, and whether stopping one slot necessarily stops
 the backend's shared recording transport. The occupied-slot policy is closed to
 `fail`: recording never silently replaces existing material. Native supports
-slot cancellation; Tracktion reports it unsupported and also reports that its
-slot-stop boundary stops the shared recording pass.
+slot cancellation.
 
 Slots are addressed by stable `trackId` plus `sceneId`.
 `session.armSlotRecording` queues or unqueues an empty slot without changing the
