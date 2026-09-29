@@ -81,6 +81,8 @@ class EngineHost {
     };
     using GrooveProvider = std::function<std::vector<GrooveEntry>()>;
 
+    static std::vector<double> detectSourceTransients(const juce::String& path, float sensitivity);
+
     EngineHost();
     ~EngineHost();
 

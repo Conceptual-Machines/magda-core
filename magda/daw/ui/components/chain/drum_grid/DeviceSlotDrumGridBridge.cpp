@@ -3,7 +3,6 @@
 #include <utility>
 
 #include "NodeComponent.hpp"
-#include "audio/plugins/DrumGridPlugin.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/TrackManager.hpp"
 #include "drum_grid/DrumGridUI.hpp"
@@ -209,7 +208,7 @@ void wireLinkableControl(Control& control, const PadChainLinkCallbacks& callback
 }  // namespace
 
 bool isDrumGridPluginId(const juce::String& pluginId) {
-    return pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName);
+    return pluginId.containsIgnoreCase("drumgrid");
 }
 
 void applySlotName(NodeComponent& slot, bool isDrumGrid, const juce::String& deviceName) {

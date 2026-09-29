@@ -1,4 +1,3 @@
-#include <tracktion_engine/tracktion_engine.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -107,7 +106,8 @@ TEST_CASE("A write is kept as Tracktion's updateTemplate keeps it", "[groove-sto
     CHECK(!store.upsert({.name = "Empty", .latenessProportions = {}}));
 }
 
-TEST_CASE("What is saved is what Tracktion saves, and reads back", "[groove-store][2761]") {
+TEST_CASE("The groove store preserves the existing saved format and reads it back",
+          "[groove-store][2761]") {
     const juce::TemporaryFile file(".xml");
     REQUIRE(file.getFile().replaceWithText(R"(<?xml version="1.0" encoding="UTF-8"?>
 <PROPERTIES><VALUE name="Kept" val="1"/></PROPERTIES>)"));
@@ -118,15 +118,10 @@ TEST_CASE("What is saved is what Tracktion saves, and reads back", "[groove-stor
             store.upsert({.name = "Ahead", .notesPerBeat = 4, .latenessProportions = latenesses}));
     }
 
-    // Written as the fork's upsert builds a template, then through its own createXml.
-    tracktion::GrooveTemplate expected;
-    expected.setName("Ahead");
-    expected.setNumberOfNotes(static_cast<int>(latenesses.size()));
-    expected.setNotesPerBeat(4);
-    expected.setParameterized(true);
-    for (int i = 0; i < static_cast<int>(latenesses.size()); ++i)
-        expected.setLatenessProportion(i, latenesses[static_cast<size_t>(i)], 1.0f);
-    const std::unique_ptr<juce::XmlElement> expectedXml(expected.createXml());
+    // Pin the persisted format directly; the retired engine is no longer an oracle.
+    const auto expectedXml = juce::parseXML(
+        R"(<GROOVETEMPLATE name="Ahead" numberOfNotes="4" notesPerBeat="4" parameterized="1"><SHIFT delta="0.123"/><SHIFT delta="-0.5"/></GROOVETEMPLATE>)");
+    REQUIRE(expectedXml != nullptr);
 
     const auto settings = juce::parseXML(file.getFile());
     REQUIRE(settings != nullptr);

@@ -41,6 +41,7 @@
 #include "../views/SessionView.hpp"
 #include "audio/MidiBridge.hpp"
 #include "audio/midi/QwertyMidiKeyboard.hpp"
+#include "audio/plugins/engine/EngineExternalDevice.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/Config.hpp"
 #include "core/LinkModeManager.hpp"
@@ -52,7 +53,6 @@
 #include "core/UndoManager.hpp"
 #include "core/UserAlert.hpp"
 #include "engine/AudioEngine.hpp"
-#include "engine/MagdaUIBehaviour.hpp"
 #include "engine/PlaybackPositionTimer.hpp"
 #include "project/ProjectManager.hpp"
 #include "stem_separation/StemSeparationService.hpp"
@@ -642,7 +642,7 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     // Plugin editor windows are separate top-level windows in the engine layer,
     // outside this component's key chain. Inject the command manager so they can
     // route unconsumed keys (Space = play/stop, etc.) back to the transport.
-    PluginEditorWindow::appCommandManager = &commandManager;
+    daw::audio::engine_adapter::EngineExternalDevice::setApplicationCommandManager(&commandManager);
 
     // Use external engine if provided, otherwise create our own
     if (externalEngine) {
@@ -1383,7 +1383,7 @@ MainWindow::MainComponent::~MainComponent() {
     commandManager.setFirstCommandTarget(nullptr);
 
     // Stop plugin editor windows referencing this command manager once it's gone.
-    PluginEditorWindow::appCommandManager = nullptr;
+    daw::audio::engine_adapter::EngineExternalDevice::setApplicationCommandManager(nullptr);
 
     // Stop position timer before destroying
     DBG("    [5e] Stopping position timer...");

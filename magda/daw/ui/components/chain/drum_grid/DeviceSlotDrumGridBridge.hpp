@@ -16,10 +16,6 @@
 #include "core/SelectionManager.hpp"
 #include "core/TypeIds.hpp"
 
-namespace tracktion::inline engine {
-class Plugin;
-}
-
 namespace magda::daw::ui {
 
 class DrumGridUI;

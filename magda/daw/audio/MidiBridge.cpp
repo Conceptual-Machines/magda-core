@@ -9,7 +9,6 @@
 #include "../core/Config.hpp"
 #include "../core/RangesHelpers.hpp"
 #include "../core/TrackManager.hpp"
-#include "AudioBridge.hpp"
 #include "TrackMeters.hpp"
 #include "midi/MidiDeviceMatch.hpp"
 
@@ -55,7 +54,6 @@ void MidiBridge::forgetEngine(const void* owner) {
     stopAllInputs();
 
     owner_ = nullptr;
-    clearAudioBridge();
     onActiveInputsChanged = nullptr;
     virtualInputs_ = nullptr;
     meters_.store(nullptr, std::memory_order_release);
@@ -65,10 +63,6 @@ void MidiBridge::forgetEngine(const void* owner) {
     // callbacks have already drained.
     juce::ScopedLock lock(routingLock_);
     activeMidiOutputs_.clear();
-}
-
-void MidiBridge::setAudioBridge(AudioBridge* audioBridge) {
-    audioBridge_.store(audioBridge, std::memory_order_release);
 }
 
 void MidiBridge::clearLiveSink(LiveMidiSink* sink) {
@@ -215,22 +209,12 @@ bool MidiBridge::injectMidiToTrack(TrackId trackId, const juce::MidiMessage& msg
         handled = true;
     }
 
-    auto* bridge = audioBridge_.load(std::memory_order_acquire);
-    if (bridge != nullptr) {
-        if (auto* audioTrack = bridge->getAudioTrack(trackId)) {
-            audioTrack->injectLiveMidiMessage(msg, {});
-            handled = true;
-        }
-    }
-
     if (!handled)
         return false;
 
     if (msg.isNoteOn()) {
         if (auto* meters = meters_.load(std::memory_order_acquire))
             meters->midiActivity.triggerActivity(trackId);
-        if (bridge != nullptr)
-            bridge->triggerMidiActivity(trackId);
         TrackManager::getInstance().triggerMidiNoteOn(trackId);
     } else if (msg.isNoteOff()) {
         TrackManager::getInstance().triggerMidiNoteOff(trackId);
@@ -505,8 +489,6 @@ void MidiBridge::handleIncomingMidiMessage(juce::MidiInput* source,
             if (message.isNoteOn()) {
                 if (auto* meters = meters_.load(std::memory_order_acquire))
                     meters->midiActivity.triggerActivity(trackId);
-                if (auto* bridge = audioBridge_.load(std::memory_order_acquire))
-                    bridge->triggerMidiActivity(trackId);
                 TrackManager::getInstance().triggerMidiNoteOn(trackId);
             } else if (message.isNoteOff()) {
                 TrackManager::getInstance().triggerMidiNoteOff(trackId);
@@ -589,8 +571,6 @@ void MidiBridge::broadcastSynthesizedNote(const juce::String& sourceDeviceId, in
         if (isNoteOn) {
             if (auto* meters = meters_.load(std::memory_order_acquire))
                 meters->midiActivity.triggerActivity(trackId);
-            if (auto* bridge = audioBridge_.load(std::memory_order_acquire))
-                bridge->triggerMidiActivity(trackId);
             TrackManager::getInstance().triggerMidiNoteOn(trackId);
         } else {
             TrackManager::getInstance().triggerMidiNoteOff(trackId);
@@ -624,15 +604,6 @@ void MidiBridge::playQwertyNote(int note, int velocity, bool isNoteOn) {
         isNoteOn ? juce::MidiMessage::noteOn(1, note, static_cast<juce::uint8>(velocity))
                  : juce::MidiMessage::noteOff(1, note, static_cast<juce::uint8>(velocity));
 
-    if (auto* bridge = audioBridge_.load(std::memory_order_acquire)) {
-        if (auto* vmd = bridge->getQwertyMidiDevice()) {
-            if (isNoteOn)
-                vmd->keyboardState.noteOn(1, note, static_cast<float>(velocity) / 127.0f);
-            else
-                vmd->keyboardState.noteOff(1, note, 0.0f);
-        }
-    }
-
     if (auto* sink = liveSink_.load(std::memory_order_acquire))
         sink->pushMidi(qwertyMidiDeviceId(), message);
 
@@ -641,10 +612,6 @@ void MidiBridge::playQwertyNote(int note, int velocity, bool isNoteOn) {
 
 void MidiBridge::setQwertyEnabled(bool enabled) {
     qwertyEnabled_ = enabled;
-    if (auto* bridge = audioBridge_.load(std::memory_order_acquire)) {
-        if (auto* vmd = bridge->getQwertyMidiDevice())
-            vmd->setEnabled(enabled);
-    }
 }
 
 void MidiBridge::startMonitoring(TrackId trackId) {

@@ -22,7 +22,6 @@
 namespace magda {
 
 // Forward declarations
-class AudioBridge;
 struct TrackMeters;
 
 // ============================================================================
@@ -117,20 +116,6 @@ class MidiBridge : public juce::MidiInputCallback {
      * engine is gone has nowhere to route.
      */
     void forgetEngine(const void* owner);
-
-    /**
-     * @brief Set the AudioBridge reference used for triggering MIDI activity
-     * and track lookup. Must be called after AudioBridge is created.
-     */
-    void setAudioBridge(AudioBridge* audioBridge);
-
-    /**
-     * @brief Clear the AudioBridge pointer before it's destroyed, to avoid a
-     * dangling pointer between shutdown steps.
-     */
-    void clearAudioBridge() {
-        audioBridge_.store(nullptr, std::memory_order_release);
-    }
 
     /**
      * @brief Set the shared meters object that feeds the MIDI activity light.
@@ -386,7 +371,6 @@ class MidiBridge : public juce::MidiInputCallback {
     // so atomic for the same reason @ref liveSink_ is. Each read loads once into a local:
     // testing the member and then dereferencing it is two loads, and the engine can go
     // between them. None are owned here.
-    std::atomic<AudioBridge*> audioBridge_{nullptr};
 
     // Shared MIDI-activity monitor (#2579).
     std::atomic<TrackMeters*> meters_{nullptr};

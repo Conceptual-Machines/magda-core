@@ -1,5 +1,6 @@
 #include "AudioThumbnailManager.hpp"
 
+#include "WarpMarkerManager.hpp"
 #include "WaveformPeakCache.hpp"
 #include "core/BlockMath.hpp"
 #include "media_db/AudioFeatures.hpp"
@@ -572,6 +573,7 @@ void AudioThumbnailManager::requestPeakCacheLoad(const juce::String& audioFilePa
 }
 
 void AudioThumbnailManager::stopBackgroundWork() {
+    WarpMarkerManager::getInstance().stopBackgroundWork();
     // Stop any in-flight peak-compute jobs before tearing down state.
     if (backgroundThreadPool_) {
         // Drain UNBOUNDED (timeout < 0). A finite timeout that a peak-compute

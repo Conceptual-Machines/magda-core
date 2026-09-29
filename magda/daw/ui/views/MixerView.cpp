@@ -8,7 +8,6 @@
 #include "../../audio/MeteringBuffer.hpp"
 #include "../../audio/MidiBridge.hpp"
 #include "../../audio/TrackMeters.hpp"
-#include "../../audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "../../core/MixerStripOrder.hpp"
 #include "../../core/RackInfo.hpp"
 #include "../../engine/AudioEngine.hpp"

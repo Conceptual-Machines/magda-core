@@ -143,7 +143,6 @@ class AudioSettingsDialog : public juce::Component, private HardwareChannels::Li
     void refreshChosenInterface();
     void showOpenInterface();
     void savePreferencesIfNeeded();
-    void onAudioEngineSelected();
 
     std::unique_ptr<MidiInputList> midiInputList_;
     std::unique_ptr<CustomChannelSelector> inputChannelSelector_;
@@ -179,9 +178,6 @@ class AudioSettingsDialog : public juce::Component, private HardwareChannels::Li
 
     // Which engine renders. Here because it is an audio-device-level choice and
     // this is where a user already comes to change one (#2559).
-    juce::Label engineLabel_;
-    juce::ComboBox engineComboBox_;
-    juce::Label engineRestartLabel_;
 
     juce::TextButton closeButton_;
     juce::Label deviceNameLabel_;

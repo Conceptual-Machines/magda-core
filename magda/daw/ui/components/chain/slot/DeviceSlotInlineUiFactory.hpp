@@ -1,7 +1,6 @@
 #pragma once
 
 #include <juce_gui_basics/juce_gui_basics.h>
-#include <tracktion_engine/tracktion_engine.h>
 
 #include <functional>
 #include <memory>
@@ -43,7 +42,6 @@ struct DeviceSlotInlineUiCallbacks {
     std::function<void(int, float)> onCompiledParamLinkAmountChanged;
     std::function<void(int)> onShowAutomationLane;
     std::function<magda::ChainNodePath()> getNodePath;
-    std::function<tracktion::engine::Plugin::Ptr()> getLivePlugin;
     /// Hands the parameter grid a way to read the device's meters. Only
     /// device families that report values back call it; the rest leave the
     /// grid's supplier null.
@@ -59,7 +57,6 @@ struct DeviceSlotInlineUiCallbackContext {
     std::function<void()> onShowDeviceModPanel;
     std::function<void()> onShowDeviceMacroPanel;
     std::function<void(int)> onShowAutomationLane;
-    std::function<tracktion::engine::Plugin::Ptr()> getLivePlugin;
 };
 
 DeviceSlotInlineUiCallbacks makeDeviceSlotInlineUiCallbacks(
@@ -90,9 +87,6 @@ void updateDeviceSlotInlineUi(const magda::DeviceInfo& device, CompiledDevicePan
 void refreshDeviceSlotInlineUiParameterValues(const magda::DeviceInfo& device,
                                               CompiledDevicePanel* compiledPanel,
                                               DeviceCustomUIManager& customUI);
-
-void readAndPushDeviceSlotInlineUiModMatrix(magda::DeviceId deviceId,
-                                            DeviceCustomUIManager& customUI);
 
 void configureDeviceSlotLinkableSliders(
     const std::vector<LinkableTextSlider*>& sliders, const magda::DeviceInfo& device,

@@ -260,9 +260,6 @@ bool DuplicateAutomationTimeSelectionCommand::shouldDuplicateLane(
     const AutomationLaneInfo& lane) const {
     if (!lane.visible || !lane.isAbsolute())
         return false;
-    // Tempo is rippled directly on edit.tempoSequence (see TempoSequenceRippleCommand).
-    if (lane.target.kind == ControlTarget::Kind::Tempo)
-        return false;
     if (!laneIds_.empty()) {
         return std::ranges::find(laneIds_, lane.id) != laneIds_.end();
     }
@@ -733,10 +730,6 @@ void DuplicateAutomationTimeSelectionCommand::undo() {
 
 bool InsertTimeAutomationCommand::shouldShiftLane(const AutomationLaneInfo& lane) const {
     if (!lane.visible || !lane.isAbsolute())
-        return false;
-    // The Tempo lane mirrors edit.tempoSequence, which is rippled directly by
-    // TempoSequenceRippleCommand. Shifting it here too would double the ripple.
-    if (lane.target.kind == ControlTarget::Kind::Tempo)
         return false;
     if (!laneIds_.empty()) {
         return std::ranges::find(laneIds_, lane.id) != laneIds_.end();

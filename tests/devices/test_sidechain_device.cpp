@@ -30,7 +30,7 @@ TEST_CASE("Sidechain device - classification and registry", "[sidechain][device]
         REQUIRE(juce::String(metadata->browserCategory) == "Dynamics");
     }
 
-    SECTION("registry spec is browsable, effect, with a processor factory") {
+    SECTION("registry spec is browsable, effect, with a native device factory") {
         const daw::audio::InternalPluginSpec* spec = nullptr;
         for (const auto* s : daw::audio::getAllInternalPluginSpecs()) {
             if (juce::String(s->pluginId).equalsIgnoreCase("sidechain")) {
@@ -42,7 +42,7 @@ TEST_CASE("Sidechain device - classification and registry", "[sidechain][device]
         REQUIRE(daw::audio::internalPluginHasTag(*spec, "sidechain"));
         REQUIRE(spec->showInBrowser);
         REQUIRE_FALSE(spec->isInstrument);
-        REQUIRE(spec->createProcessor != nullptr);
+        REQUIRE(spec->createDevice != nullptr);
     }
 
     SECTION("not an analysis device (keeps macros and mods)") {

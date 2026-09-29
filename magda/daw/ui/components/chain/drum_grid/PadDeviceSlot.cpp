@@ -1,7 +1,6 @@
 #include "drum_grid/PadDeviceSlot.hpp"
 
 #include <BinaryData.h>
-#include <tracktion_engine/tracktion_engine.h>
 
 #include "audio/DeviceParameterList.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
@@ -21,8 +20,6 @@
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
-
-namespace te = tracktion::engine;
 
 namespace magda::daw::ui {
 
@@ -169,10 +166,7 @@ void PadDeviceSlot::setDevice(Binding binding) {
     if (device_.pluginId.equalsIgnoreCase(daw::audio::MagdaSamplerPlugin::xmlTypeName))
         setupForSampler();
     else if (!setupForSharedDeviceUi(device_)) {
-        if (binding_.plugin != nullptr)
-            setupForExternalPlugin(binding_.plugin);
-        else
-            setupForHostedParameters();
+        setupForHostedParameters();
     }
 
     // Collapsed is the model's, so it survives the chain rebuild every pad edit makes.
@@ -347,16 +341,6 @@ bool PadDeviceSlot::setupForSharedDeviceUi(const magda::DeviceInfo& device) {
             onLayoutChanged();
     };
     callbacks.getNodePath = [this]() { return devicePath_; };
-    // Tracktion's pad plugin has no path its bridge resolves, so it is handed over;
-    // under the native engine there is none and the faceplate asks for the path.
-    if (binding_.livePlugin || binding_.plugin != nullptr)
-        callbacks.getLivePlugin = [this]() -> te::Plugin::Ptr {
-            if (binding_.livePlugin)
-                if (auto plugin = binding_.livePlugin())
-                    return plugin;
-            return te::Plugin::Ptr(binding_.plugin);
-        };
-
     const auto createdKind = createDeviceSlotInlineUi(device_, traits_, devicePath_, *this,
                                                       {.compiledPanel = compiledPanel_,
                                                        .faustUI = faustUI_,
@@ -384,7 +368,6 @@ bool PadDeviceSlot::setupForSharedDeviceUi(const magda::DeviceInfo& device) {
     }
 
     updateDeviceSlotInlineUi(device_, compiledPanel_.get(), *customUI_);
-    readAndPushDeviceSlotInlineUiModMatrix(device_.id, *customUI_);
     if (traits_.compiledPresentation != nullptr || faustUI_ != nullptr) {
         sharedParamGrid_ =
             std::make_unique<ParamHostComponent>(createDeviceSlotParamLayout(traits_));
@@ -414,59 +397,6 @@ void PadDeviceSlot::updateSharedParameterSlots() {
     updateDeviceSlotParameterSlots(
         device_, devicePath_, *sharedParamGrid_, compiledPanel_.get(), traits_,
         {.reloadParameterSlots = [this]() { updateSharedParameterSlots(); }});
-}
-
-void PadDeviceSlot::setupForExternalPlugin(te::Plugin* plugin) {
-    resetSharedInlineUi();
-    // Hide SamplerUI
-    if (samplerUI_)
-        samplerUI_->setVisible(false);
-
-    nameLabel_.setText(plugin->getName(), juce::dontSendNotification);
-
-    // Show UI button for external plugins
-    uiButton_->setVisible(true);
-    uiButton_->onClick = [this, plugin]() {
-        bool isOpen = uiButton_->getToggleState();
-        uiButton_->setActive(isOpen);
-        if (auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin)) {
-            if (ext->windowState) {
-                if (isOpen)
-                    ext->windowState->showWindowExplicitly();
-                else
-                    ext->windowState->hideWindowTemporarily();
-            }
-        } else {
-            if (isOpen)
-                plugin->showWindowExplicitly();
-        }
-    };
-
-    // Populate param slots
-    auto params = plugin->getAutomatableParameters();
-    visibleParamCount_ = params.size();
-    for (int i = 0; i < PLUGIN_PARAM_SLOTS; ++i) {
-        auto& slot = paramSlots_[static_cast<size_t>(i)];
-        if (i < params.size()) {
-            auto* param = params[i];
-            slot->setParamIndex(i);
-            slot->setParamName(param->getParameterName());
-            slot->setParamValue(param->getCurrentNormalisedValue());
-            slot->onValueChanged = [param](double value) {
-                // setParameterFromHost, not setParameter: the latter is silently
-                // dropped once a macro or mod is attached to the parameter.
-                param->setParameterFromHost(static_cast<float>(value), juce::sendNotificationSync);
-            };
-            slot->setVisible(true);
-        } else {
-            slot->setVisible(false);
-        }
-    }
-
-    // 8 columns × 4 rows, matching DeviceSlotComponent layout
-    constexpr int paramsPerRow = 8;
-    constexpr int PARAM_CELL_WIDTH = 48;
-    preferredWidth_ = PARAM_CELL_WIDTH * paramsPerRow;
 }
 
 void PadDeviceSlot::setupForHostedParameters() {

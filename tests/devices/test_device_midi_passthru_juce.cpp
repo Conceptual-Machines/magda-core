@@ -1,15 +1,12 @@
 #include <juce_core/juce_core.h>
-#include <tracktion_engine/tracktion_engine.h>
 
 #include <memory>
 #include <vector>
 
-#include "SharedTestEngine.hpp"
 #include "exec/EngineDevice.hpp"
 #include "exec/RenderContext.hpp"
 #include "magda/daw/audio/plugins/ArpeggiatorPlugin.hpp"
 #include "magda/daw/audio/plugins/engine/EngineMagdaDevice.hpp"
-#include "third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_TestUtilities.h"
 
 // Non-note MIDI through the arpeggiator, on both adapters (#2417).
 //
@@ -24,7 +21,6 @@ namespace {
 
 namespace audio = magda::daw::audio;
 namespace adapter = magda::daw::audio::engine_adapter;
-namespace te = tracktion::engine;
 
 constexpr double kSampleRate = 44100.0;
 constexpr int kBlockSize = 64;
@@ -59,41 +55,6 @@ bool isNoteOn(const juce::MidiMessage& message) {
 }
 
 /// What the fork's leg leaves on the buffer the host reads back.
-std::vector<juce::MidiMessage> teLegOutput(te::Edit& edit) {
-    juce::ValueTree state(te::IDs::PLUGIN);
-    state.setProperty(te::IDs::type, audio::ArpeggiatorPlugin::xmlTypeName, nullptr);
-    auto plugin = edit.getPluginCache().createNewPlugin(state);
-    if (plugin == nullptr)
-        return {};
-
-    te::PluginInitialisationInfo initInfo;
-    initInfo.startTime = tracktion::TimePosition();
-    initInfo.sampleRate = kSampleRate;
-    initInfo.blockSizeSamples = kBlockSize;
-    plugin->baseClassInitialise(initInfo);
-
-    juce::AudioBuffer<float> buffer(2, kBlockSize);
-    buffer.clear();
-
-    te::MidiMessageArray midi;
-    midi.addMidiMessage(heldNote(), 0.0, te::MPESourceID{});
-    midi.addMidiMessage(pedal(), 0.0, te::MPESourceID{});
-
-    te::PluginRenderContext context(
-        &buffer, juce::AudioChannelSet::stereo(), 0, kBlockSize, &midi, 0.0,
-        tracktion::TimeRange(tracktion::TimePosition(),
-                             tracktion::TimePosition::fromSeconds(kBlockSize / kSampleRate)),
-        true, false, false, false);
-    plugin->applyToBuffer(context);
-
-    std::vector<juce::MidiMessage> output;
-    output.reserve(static_cast<std::size_t>(midi.size()));
-    for (const auto& message : midi)
-        output.push_back(message);
-
-    plugin->deleteFromParent();
-    return output;
-}
 
 /// The same block through the engine's leg, read back off the port.
 std::vector<juce::MidiMessage> engineLegOutput() {
@@ -131,27 +92,16 @@ class DeviceMidiPassThruTest final : public juce::UnitTest {
     DeviceMidiPassThruTest() : juce::UnitTest("Device MIDI Pass-Through", "magda") {}
 
     void runTest() override {
-        beginTest("Engine setup");
+        beginTest("The native adapter carry the pedal past the arpeggiator");
 
-        auto& wrapper = magda::test::getSharedEngine();
-        auto edit = te::test_utilities::createTestEdit(*wrapper.getEngine(), 1);
-        expect(edit != nullptr);
-        if (edit == nullptr)
-            return;
-
-        beginTest("Both adapters carry the pedal past the arpeggiator");
-
-        const auto teLeg = teLegOutput(*edit);
         const auto engineLeg = engineLegOutput();
 
-        expect(count(teLeg, isForwardedPedal) == 1, "The fork's leg should pass the pedal on");
         expect(count(engineLeg, isForwardedPedal) == 1, "The engine's leg should pass it on too");
 
-        beginTest("Neither adapter echoes the note the arpeggiator replaced");
+        beginTest("The native adapter never echoes the note the arpeggiator replaced");
 
         // One note-on on each leg: the arpeggio's. The input's own would be
         // the chord playing under the pattern, which is what thru is for.
-        expect(count(teLeg, isNoteOn) == 1, "The fork's leg should emit only the generated note");
         expect(count(engineLeg, isNoteOn) == 1, "The engine's leg should emit only its own too");
     }
 };

@@ -3,12 +3,8 @@ set(TEST_SOURCES
     # Must be in both test targets: a debug-CRT dialog blocks a headless run
     # until the CI job times out, hiding the diagnostic that caused it.
     windows_no_dialogs.cpp
-    audio/test_audio_bridge.cpp
     audio/test_vst3_preset.cpp
-    audio/test_audiobridge_track_limit_bug.cpp
-    audio/test_audiobridge_plugin_cleanup_bug.cpp
     automation/test_auto_tempo.cpp
-    audio/test_audio_clip_stretch.cpp
     clips/test_audio_clip_source_display.cpp
     clips/test_clip_bpm_invariant.cpp
     audio/test_source_pool.cpp
@@ -18,7 +14,6 @@ set(TEST_SOURCES
     clips/test_clip_schema_migration.cpp
     audio/test_audio_source_length.cpp
     audio/test_audio_export.cpp
-    audio/test_offline_render_contract.cpp
     audio/test_audio_to_midi.cpp
     project/test_command.cpp
     agents/test_command_model.cpp
@@ -75,7 +70,6 @@ set(TEST_SOURCES
     devices/test_instrument_idle.cpp
     devices/test_device_sdk_handles.cpp
     devices/test_external_insert_registry.cpp
-    devices/test_external_insert_enablement.cpp
     devices/test_insert_capture.cpp
     devices/test_plugin_window_manager.cpp
     devices/test_plugin_capabilities.cpp
@@ -108,8 +102,6 @@ set(TEST_SOURCES
     ../magda/daw/ui/components/chain/ChainNodePathDrag.cpp
     ui/test_momentary_param_button.cpp
     ui/test_clip_slot_button.cpp
-    audio/test_delta_solo.cpp
-    utilities/test_hash_combine.cpp
     clips/test_waveform_editor_absolute_mode.cpp
     clips/test_clip_batch_edit.cpp
     clips/test_clip_commands.cpp
@@ -143,7 +135,6 @@ set(TEST_SOURCES
     clips/test_recorded_audio_clip_creation.cpp
     devices/test_sidechain_triggers.cpp
     devices/test_sidechain_device.cpp
-    automation/test_curve_snapshot.cpp
     automation/test_curve_editor_preview.cpp
     automation/test_automation_curve_simplifier.cpp
     # Bake modulation to automation (issue #162)
@@ -152,7 +143,7 @@ set(TEST_SOURCES
     automation/test_automation_clip_lanes.cpp
     devices/test_plugin_service_teardown.cpp
     devices/test_scan_report.cpp
-    devices/test_drum_grid_plugin.cpp
+    devices/test_drum_grid_native.cpp
     devices/test_sampler_media_model.cpp
     # The sampler's one cross-thread boundary (#2384): what the audio thread may
     # read about the loaded sound, with the installed sound itself immutable.
@@ -184,7 +175,6 @@ set(TEST_SOURCES
     devices/test_step_pattern_state.cpp
     # Coalescing a pattern drag into one undo step, and only that drag (#2335)
     devices/test_step_pattern_commands.cpp
-    devices/test_plugin_state_strippers.cpp
     devices/test_step_sequencer_state.cpp
     # Handing a published pattern to the audio thread a block at a time (#2335)
     midi/test_published_pattern.cpp
@@ -220,7 +210,6 @@ set(TEST_SOURCES
     # Keyboard clip nudging (#1957)
     # Which engine a run comes up on (#2559): the variable, the setting, and the
     # order between them.
-    engine/test_audio_engine_choice.cpp
     clips/test_clip_nudge.cpp
     # The MPE pitch glide's curve (#2198): the shape the piano roll draws, the
     # compiler compiles and the Tracktion bridge hands over, and the inverse the
@@ -402,7 +391,6 @@ set(TEST_SOURCES
 # Native audio engine (epic #1882). The engine is a dark target with no TE and
 # no UI, but its compiler is exercised here: the model fixtures it compiles are
 # plain value types, so the plan tests are ordinary model-level Catch2 tests.
-if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES clips/test_session_arrangement_capture.cpp)
     list(APPEND TEST_SOURCES engine/test_render_plan_compiler.cpp)
     list(APPEND TEST_SOURCES engine/test_render_plan_executor.cpp)
@@ -615,7 +603,6 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     # native engine and the export path is plain serialization.
     list(APPEND TEST_SOURCES DawProjectRoundTrip.cpp)
     list(APPEND TEST_SOURCES engine/test_dawproject_round_trip.cpp)
-endif()
 
 # Create test executable
 add_executable(magda_tests ${TEST_SOURCES})
@@ -673,10 +660,8 @@ target_link_libraries(magda_tests
     # there; direct links would recompile the JUCE stack into this target.
 )
 
-if(MAGDA_BUILD_NATIVE_ENGINE)
     target_link_libraries(magda_tests PRIVATE magda_engine magda_engine_devices
                           magda_engine_host)
-endif()
 
 # Include directories
 target_include_directories(magda_tests
@@ -698,10 +683,6 @@ target_compile_definitions(magda_tests
     # the compiler shows up as a reviewable diff rather than a rewritten
     # build artefact.
     MAGDA_PLAN_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/tests/goldens/plan"
-    # The Tracktion compatibility engine must NOT auto-wire the live Tempo lane
-    # sync: it attaches to the AutomationManager singleton and would perturb
-    # engine-neutral tests. Its fork-only suite was retired in #2556.
-    MAGDA_NO_AUTO_TEMPO_LANE_SYNC=1
     # Friend access for agents/test_llama_model_manager.cpp. The define also happens to
     # arrive transitively via magda_daw's INTERFACE re-export of its own
     # COMPILE_DEFINITIONS; set it explicitly so this target does not depend on
@@ -777,33 +758,20 @@ target_sources(magda_juce_tests PRIVATE
     utilities/test_zoom_simple.cpp
     engine/test_assertion_watch_juce.cpp
     midi/test_midi_recording_juce.cpp
-    ui/test_node_id_collision_juce.cpp
-    engine/test_time_signature_beats_juce.cpp
     routing/test_remote_routing_engine_conformance_juce.cpp
     # Hardware output selections must reach the TE wave output devices (#2264)
-    routing/test_hardware_output_routing_juce.cpp
     ../magda/daw/ui/components/mixer/RoutingSelector.cpp
     ../magda/daw/ui/components/mixer/HardwareInputLevels.cpp
-    controllers/test_controller_track_level_write_juce.cpp
     # OSC control surfaces (issue #1757): a live receive thread and real packets
     controllers/test_osc_service_juce.cpp
-    devices/test_post_fx_fader_order_juce.cpp
-    devices/test_sampler_relocate_juce.cpp
-    devices/test_chord_audition_push_juce.cpp
-    devices/test_insert_config_bridge_juce.cpp
-    devices/test_device_param_schema_juce.cpp
     # pluginState v1 -> v2 over the legacy corpus (#2079). Here rather than in
     # magda_tests because the conversion reads the values off a live plugin.
-    project/test_legacy_corpus_migration_juce.cpp
-    devices/test_device_state_schema_juce.cpp
-    devices/test_convolution_device_juce.cpp
     # One device, one discontinuity, both adapters (#2418).
     devices/test_device_panic_flag_juce.cpp
     # Where each adapter puts an input event, and the arp's answer to it (#2415).
     devices/test_arpeggiator_event_time_juce.cpp
     # The traffic the same device passes on rather than consumes (#2417).
     devices/test_device_midi_passthru_juce.cpp
-    devices/test_mutable_add_not_replace_juce.cpp
     # The one suite from the old engine-level set that was already ported to
     # an app-owned service. It exercises no Tracktion object (#2556).
     midi/test_midi_bridge_note_events_juce.cpp
@@ -852,9 +820,6 @@ target_sources(magda_juce_tests PRIVATE
     # target, and nothing else in either suite paints a lane header.
     automation/test_automation_grid_ticks_juce.cpp
     ../magda/daw/ui/components/automation/AutomationLaneHeader.cpp
-    dsp/test_faust_sidechain_juce.cpp
-    dsp/test_faust_instrument_tempo_juce.cpp
-    dsp/test_faust_instrument_voice_modes_juce.cpp
     ui/test_runtime_theme_juce.cpp
     ui/test_user_theme_juce.cpp
     ui/test_syntax_highlighting_juce.cpp
@@ -905,33 +870,17 @@ target_sources(magda_juce_tests PRIVATE
     audio/test_audio_io_service_juce.cpp
     # Audio Settings' Active MIDI inputs, saved in Config
     audio/test_active_midi_inputs_juce.cpp
-    # Audio Settings driving Tracktion's interface through its wave devices (#2749)
-    engine/test_tracktion_audio_io_juce.cpp
     ../magda/daw/ui/components/chain/slot/StepSequencerClipExport.cpp
 )
 
-# The null-diff corpus (#2040). It lives here rather than in magda_tests because
-# the incumbent leg is a te::Edit, and Edits in that target take later tests down
-# with them. The comparator, the material and the corpus itself are model-only
-# and are compiled into both, so they can also be tested on their own.
-if(MAGDA_BUILD_NATIVE_ENGINE)
+# Native waveform expectations and host integration regressions.
     target_sources(magda_juce_tests PRIVATE
         NullDiffMaterial.cpp
         NullDiffCompare.cpp
         NullDiffCorpus.cpp
         NullDiffHostedPlugin.cpp
         NullDiffNativeLeg.cpp
-        NullDiffTeLeg.cpp
-        NullDiffRunner.cpp
         engine/test_null_diff_juce.cpp
-
-        # The real-project corpus (#2081). The fixture rig is compiled into
-        # magda_tests too, where it is tested without rendering anything; here
-        # it feeds the same runner the code-built corpus uses, so the two
-        # corpora cannot disagree about what counts as a null.
-        MgdFixture.cpp
-        MgdFixtures.cpp
-        engine/test_real_project_corpus_juce.cpp
 
         # What the app hands the engine at runtime (#2551). Here rather than in
         # magda_tests because it reads TrackManager and ClipManager, and those
@@ -971,7 +920,6 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         # Controllers, OSC and sound design use the native hosted parameter path (#2655).
         controllers/test_native_controller_parameters_juce.cpp
     )
-endif()
 
 # Link required libraries for JUCE tests
 target_link_libraries(magda_juce_tests
@@ -993,21 +941,9 @@ target_link_libraries(magda_juce_tests
     $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>
 )
 
-# The native engine, for the null-diff corpus (#2040). This is the one target
-# that links both it and Tracktion, which is the whole point of it: the corpus
-# renders one project through each and compares.
-#
-# magda_engine_devices with it (#2174): the device layer the native leg binds a
-# Device op through, so both legs run the app's own devices rather than a pair
-# written for the corpus.
-#
-# magda_engine_host because magda_daw now carries MagdaAudioEngine, which calls
-# into it (#2551). Nothing here drives the app's engine; this is the link the
-# class needs to exist at all.
-if(MAGDA_BUILD_NATIVE_ENGINE)
+# Native rendering and app host services.
     target_link_libraries(magda_juce_tests PRIVATE magda_engine magda_engine_devices
                           magda_engine_host)
-endif()
 
 # The Faust standard library is deliberately NOT staged beside this binary,
 # unlike magda_tests (#2081).
@@ -1027,12 +963,10 @@ endif()
 # just the same, so this waits on #2238 rather than on anything of ours.
 #
 # What the corpus loses is the one project hosting a runtime Faust device, named
-# and skipped where the skip is (engine/test_real_project_corpus_juce.cpp). magda_tests
 # keeps the staging: it renders that same project through the block-size gate,
 # instantiates no Faust instrument, and is green on Linux and macOS.
 
 target_compile_definitions(magda_juce_tests PRIVATE MAGDA_ENABLE_TEST_HOOKS=1
-    MAGDA_NO_AUTO_TEMPO_LANE_SYNC=1
     # JUCE_LOG_ASSERTIONS is set on magda_daw instead, gated on MAGDA_BUILD_TESTS:
     # that is where Tracktion is compiled, and an assertion's logging is decided
     # where the macro expands rather than where the test that wants to read it
@@ -1100,14 +1034,12 @@ add_test(NAME syntax_highlighting_juce
 # entries because they fail for different reasons and one of them is much
 # cheaper: a mapping disagreement moves every clip in every project, so it is
 # worth seeing on its own before any waveform is compared.
-if(MAGDA_BUILD_NATIVE_ENGINE)
     add_test(NAME null_diff_maps_juce
              COMMAND magda_juce_tests "Null Diff Maps")
     add_test(NAME null_diff_corpus_juce
              COMMAND magda_juce_tests "Null Diff Corpus")
     add_test(NAME trimmed_session_launch_juce
              COMMAND magda_juce_tests "Trimmed Session Launch")
-endif()
 
 add_test(NAME midi_bridge_note_events_juce
          COMMAND magda_juce_tests "MidiBridge Note Events Tests")

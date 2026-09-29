@@ -32,7 +32,7 @@ sys.path.insert(0, str(ROOT / "tools" / "transport_check"))
 sys.path.insert(0, str(ROOT / "scripts"))
 from clients import WsClient  # noqa: E402
 from discovery import config_file, data_dir, find_records, os_default_app_data_dir  # noqa: E402
-from parity_bench import describe_machine, git_state  # noqa: E402
+from smoke_machine import describe_machine, git_state  # noqa: E402
 
 CLIENT = "magda-smoke"
 SCOPES = ("edit", "transport", "session")
@@ -223,7 +223,7 @@ def connect(args):
         return Magda(None, running, args.timeout)
 
     app = Path(args.app) if args.app else default_app()
-    env = dict(os.environ, MAGDA_AUDIO_ENGINE="magda")
+    env = dict(os.environ)
     try:
         process = subprocess.Popen([str(app)], env=env, stdout=subprocess.DEVNULL,
                                    stderr=subprocess.DEVNULL)

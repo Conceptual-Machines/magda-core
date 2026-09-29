@@ -187,7 +187,6 @@ jobs:
         seq 1 10 | xargs -P 4 -I{} sh -c '
           export HOME="$1/home-{}"
           export XDG_CONFIG_HOME="$HOME/.config"
-          export MAGDA_AUDIO_ENGINE=magda
           # JUCE resolves tempDirectory from TMPDIR on Linux, and the test
           # fixtures write .wav material into fixed-name dirs under it, so
           # concurrent runs sharing /tmp clobbered one another ("the material

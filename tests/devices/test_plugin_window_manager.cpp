@@ -118,34 +118,6 @@ TEST_CASE("MainWindow component destruction order", "[ui][shutdown]") {
     }
 }
 
-TEST_CASE("Tracktion Engine shutdown sequence", "[ui][shutdown][tracktion]") {
-    SECTION("Transport stopped before Edit destroyed") {
-        std::vector<std::string> shutdownOrder;
-
-        // Correct order from TracktionEngineWrapper::shutdown
-        shutdownOrder.push_back("stop_transport");
-        shutdownOrder.push_back("free_playback_context");
-        shutdownOrder.push_back("destroy_edit");
-        shutdownOrder.push_back("close_devices");
-        shutdownOrder.push_back("destroy_engine");
-
-        REQUIRE(shutdownOrder[0] == "stop_transport");
-        REQUIRE(shutdownOrder[1] == "free_playback_context");
-        REQUIRE(shutdownOrder[2] == "destroy_edit");
-
-        // Devices closed before engine destroyed
-        auto devicesIdx = std::find(shutdownOrder.begin(), shutdownOrder.end(), "close_devices") -
-                          shutdownOrder.begin();
-        auto engineIdx = std::find(shutdownOrder.begin(), shutdownOrder.end(), "destroy_engine") -
-                         shutdownOrder.begin();
-        REQUIRE(static_cast<size_t>(devicesIdx) < static_cast<size_t>(engineIdx));
-    }
-}
-
-// ============================================================================
-// Thread Safety Tests
-// ============================================================================
-
 TEST_CASE("PluginWindowManager thread safety", "[ui][plugin][window][threading]") {
     SECTION("Atomic shutdown flag protects concurrent access") {
         std::atomic<bool> isShuttingDown{false};

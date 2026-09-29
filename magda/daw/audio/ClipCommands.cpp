@@ -12,13 +12,10 @@
 #include "../core/RangesHelpers.hpp"
 #include "../engine/AudioEngine.hpp"
 #include "../engine/RenderProgressWindow.hpp"
-#include "../engine/TracktionFork.hpp"
 #include "../project/ProjectManager.hpp"
 #include "../ui/state/TimelineController.hpp"
 #include "audio/insert_capture/InsertRenderCapture.hpp"
-#include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
-#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "core/ChainWalk.hpp"
 #include "core/ClipOcclusion.hpp"
 #include "core/ClipOperations.hpp"
@@ -30,8 +27,6 @@
 #include "core/WarpMarkerCommands.hpp"
 
 namespace magda {
-
-namespace te = tracktion;
 
 namespace {
 
@@ -2790,16 +2785,6 @@ struct SliceRegion {
     double timelinePos;
 };
 
-int parameterIndexForParamId(te::Plugin& plugin, const juce::String& paramId) {
-    auto params = plugin.getAutomatableParameters();
-    for (int i = 0; i < static_cast<int>(params.size()); ++i) {
-        if (params[static_cast<size_t>(i)] != nullptr &&
-            params[static_cast<size_t>(i)]->paramID == paramId)
-            return i;
-    }
-    return -1;
-}
-
 void prepareDrumGridAdsrMacros(DeviceInfo& drumGridDevice) {
     static constexpr std::array<const char*, 4> kMacroNames = {"Attack", "Decay", "Sustain",
                                                                "Release"};
@@ -2840,63 +2825,27 @@ void zeroSamplerAdsrBase(const ChainNodePath& samplerPath,
     trackManager.setDeviceParameterValue(samplerPath, Sampler::kRelease, lowest(Sampler::kRelease));
 }
 
-void addSamplerAdsrMacroLinks(DeviceInfo& drumGridDevice, TrackId trackId, int chainIndex,
-                              DeviceId samplerDeviceId, te::Plugin& sampler) {
-    if (samplerDeviceId == INVALID_DEVICE_ID)
-        return;
-
-    struct AdsrParam {
-        int macroIndex;
-        const char* paramId;
-    };
-
-    const std::array<AdsrParam, 4> adsrParams = {
-        {{0, "attack"}, {1, "decay"}, {2, "sustain"}, {3, "release"}}};
-
-    // The pad sampler is a DrumGrid-internal device, registered in the audio
-    // sync under a nested chainDevice path (see syncDrumGridPadPlugins). Build
-    // the same path here so the macro link resolves; a topLevelDevice path
-    // would not be found and the modulation would never attach.
-    const auto samplerPath =
-        ChainNodePath::chainDevice(trackId, drumGridDevice.id, chainIndex, samplerDeviceId);
-    for (const auto& adsrParam : adsrParams) {
-        if (adsrParam.macroIndex < 0 ||
-            adsrParam.macroIndex >= static_cast<int>(drumGridDevice.macros.size()))
-            continue;
-
-        const int paramIndex = parameterIndexForParamId(sampler, adsrParam.paramId);
-        if (paramIndex < 0)
-            continue;
-
-        MacroLink link;
-        link.target = ControlTarget::pluginParam(samplerPath, paramIndex);
-        link.amount = 1.0f;
-        link.bipolar = false;
-        drumGridDevice.macros[static_cast<size_t>(adsrParam.macroIndex)].links.push_back(link);
-    }
-}
-
-void linkAssignedDrumGridSamplerAdsrMacros(DeviceInfo& drumGridDevice, TrackId trackId,
-                                           daw::audio::DrumGridPlugin& drumGrid) {
+void linkAssignedDrumGridSamplerAdsrMacros(DeviceInfo& drumGridDevice, TrackId trackId) {
     prepareDrumGridAdsrMacros(drumGridDevice);
-
-    for (const auto& chain : drumGrid.getChains()) {
-        if (chain == nullptr || chain->plugins.empty())
+    if (!drumGridDevice.pads)
+        return;
+    using Sampler = daw::audio::MagdaSamplerPlugin;
+    const Sampler sampler;
+    constexpr std::array<int, 4> indices = {Sampler::kAttack, Sampler::kDecay, Sampler::kSustain,
+                                            Sampler::kRelease};
+    for (const auto& pad : drumGridDevice.pads->chains) {
+        const auto devices = pad.getDevices();
+        if (devices.empty() || !devices.front()->pluginId.equalsIgnoreCase(Sampler::xmlTypeName))
             continue;
-
-        auto* plugin = chain->plugins[0].get();
-        if (plugin == nullptr)
-            continue;
-
-        const auto* sampler =
-            daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MagdaSamplerPlugin>(plugin);
-        const auto samplerDeviceId = drumGrid.getPluginDeviceId(chain->index, 0);
-        if (sampler == nullptr || samplerDeviceId == INVALID_DEVICE_ID)
-            continue;
-
-        zeroSamplerAdsrBase(
-            padDevicePath(trackId, drumGridDevice.id, chain->index, samplerDeviceId), *sampler);
-        addSamplerAdsrMacroLinks(drumGridDevice, trackId, chain->index, samplerDeviceId, *plugin);
+        const auto path = padDevicePath(trackId, drumGridDevice.id, pad.id, devices.front()->id);
+        zeroSamplerAdsrBase(path, sampler);
+        for (size_t i = 0; i < indices.size(); ++i) {
+            MacroLink link;
+            link.target = ControlTarget::pluginParam(path, indices[i]);
+            link.amount = 1.0f;
+            link.bipolar = false;
+            drumGridDevice.macros[i].links.push_back(link);
+        }
     }
 }
 
@@ -2910,7 +2859,7 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
         return;
 
     int numSlices = static_cast<int>(slices.size());
-    numSlices = std::min(numSlices, daw::audio::DrumGridPlugin::maxPads);
+    numSlices = std::min(numSlices, kPadCount);
 
     // Create Instrument track with DrumGridPlugin
     auto& trackManager = TrackManager::getInstance();
@@ -2934,24 +2883,14 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
         return;
 
     const auto gridPath = ChainNodePath::topLevelDevice(newTrackId, drumGridDeviceId);
-    auto gridPlugin = tracktion_fork::pluginAt(gridPath);
-    auto* drumGrid = dynamic_cast<daw::audio::DrumGridPlugin*>(gridPlugin.get());
-
-    if (!drumGrid) {
-        DBG("buildDrumGridFromSlices: DrumGridPlugin not found on new track");
-        return;
-    }
-
     // Load samples to pads and set region boundaries. Both go into the MODEL
     // and the plugin follows by sync: the markers are what makes a slice a
     // slice, and written onto the plugin they would be gone at the next
     // rebuild, leaving sixteen pads playing the whole file (#2379).
     for (int i = 0; i < numSlices; ++i) {
         const auto& slice = slices[static_cast<size_t>(i)];
-        const auto samplerDeviceId =
-            trackManager.setPadDevice(gridPath, i,
-                                      padSamplerDevice(audioFile.getFullPathName(),
-                                                       daw::audio::DrumGridPlugin::baseNote + i));
+        const auto samplerDeviceId = trackManager.setPadDevice(
+            gridPath, i, padSamplerDevice(audioFile.getFullPathName(), kPadBaseNote + i));
 
         const auto* pad = trackManager.getPad(gridPath, i);
         if (samplerDeviceId == INVALID_DEVICE_ID || pad == nullptr)
@@ -2967,7 +2906,7 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
                                              static_cast<float>(slice.sourceEnd));
     }
 
-    linkAssignedDrumGridSamplerAdsrMacros(*drumGridDevice, newTrackId, *drumGrid);
+    linkAssignedDrumGridSamplerAdsrMacros(*drumGridDevice, newTrackId);
     trackManager.notifyTrackDevicesChanged(newTrackId);
 
     // Create MIDI clip with notes triggering each pad
@@ -2997,7 +2936,7 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
             noteLengthBeats = 0.01;
 
         MidiNote note;
-        note.noteNumber = daw::audio::DrumGridPlugin::baseNote + i;
+        note.noteNumber = kPadBaseNote + i;
         note.velocity = 100;
         note.startBeat = noteStartBeat;
         note.lengthBeats = noteLengthBeats;
@@ -3010,9 +2949,6 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
 }  // namespace
 
 void sliceWarpMarkersToDrumGrid(ClipId clipId, double tempo) {
-    if (!tracktion_fork::isRendering())
-        return;
-
     auto* clip = ClipManager::getInstance().getClip(clipId);
     if (!clip || !clip->isAudio() || magda::audioEventRef(*clip).sourceFilePath().isEmpty())
         return;
@@ -3073,7 +3009,7 @@ void sliceWarpMarkersToDrumGrid(ClipId clipId, double tempo) {
 }
 
 void sliceAtGridToDrumGrid(ClipId clipId, double gridInterval, double tempo) {
-    if (!tracktion_fork::isRendering() || gridInterval <= 0.0)
+    if (gridInterval <= 0.0)
         return;
 
     auto* clip = ClipManager::getInstance().getClip(clipId);

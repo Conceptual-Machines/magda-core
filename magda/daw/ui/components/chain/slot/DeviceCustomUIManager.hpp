@@ -1,7 +1,6 @@
 #pragma once
 
 #include <juce_gui_basics/juce_gui_basics.h>
-#include <tracktion_engine/tracktion_engine.h>
 
 #include <array>
 #include <memory>
@@ -29,7 +28,6 @@ class ArpeggiatorUI;
 class ChordPanelContent;
 class DrumGridUI;
 class ExternalInsertUI;
-class FourOscUI;
 class ImpulseResponseUI;
 class LevelsUI;
 class LinkableTextSlider;
@@ -95,7 +93,6 @@ class DeviceCustomUIManager {
         std::function<magda::ChainNodePath()> getNodePath;
         // Optional live-plugin resolver for embedded device contexts that do
         // not have an AudioBridge-resolvable ChainNodePath, such as DrumGrid pad chains.
-        std::function<tracktion::engine::Plugin::Ptr()> getLivePlugin;
         // Optional stable UI context. If omitted, DeviceCustomUIManager creates
         // a BasicDeviceUiContext so migrations can adopt the context gradually.
         std::shared_ptr<magda::DeviceUiContext> deviceUiContext;
@@ -130,7 +127,6 @@ class DeviceCustomUIManager {
     /**
      * Read the FourOsc mod matrix from the plugin and push it to FourOscUI.
      */
-    void readAndPushModMatrix(magda::DeviceId deviceId);
 
     /**
      * Set the chain path of the device this custom UI is bound to. Once set,
@@ -218,9 +214,7 @@ class DeviceCustomUIManager {
     DrumGridUI* getDrumGridUI() const {
         return drumGridUI_.get();
     }
-    FourOscUI* getFourOscUI() const {
-        return fourOscUI_.get();
-    }
+
     ChordPanelContent* getChordEngineUI() const {
         return chordEngineUI_.get();
     }
@@ -246,7 +240,6 @@ class DeviceCustomUIManager {
     // Re-point the faceplates that poll a live MAGDA device at whatever the
     // engine renders for this slot now (#2585).
     void bindDeviceFaceplates();
-    tracktion::engine::Plugin::Ptr getLivePlugin() const;
     // The MAGDA device the rendering engine holds for this slot, or the one
     // inside the slot's own plugin override. Empty for a hosted te::Plugin.
     std::shared_ptr<daw::audio::MagdaDevice> liveDevice() const;
@@ -262,8 +255,6 @@ class DeviceCustomUIManager {
     bool createMidiUtilityUI(const magda::DeviceInfo& device, juce::Component& parent,
                              const Callbacks& callbacks);
     void createExternalInsertUI(const magda::DeviceInfo& device, juce::Component& parent);
-    bool createFourOscUI(const magda::DeviceInfo& device, juce::Component& parent,
-                         const Callbacks& callbacks);
     bool createCustomInstrumentUI(const magda::DeviceInfo& device, juce::Component& parent,
                                   const Callbacks& callbacks);
     bool createSimpleEffectUI(const magda::DeviceInfo& device, juce::Component& parent,
@@ -281,7 +272,6 @@ class DeviceCustomUIManager {
     // section-scoped device ids.
     magda::ChainNodePath devicePath_;
     std::shared_ptr<magda::DeviceUiContext> deviceUiContext_;
-    std::function<tracktion::engine::Plugin::Ptr()> livePluginProvider_;
     /// Holds open the instance the raw device pointers below read (#2585).
     std::shared_ptr<daw::audio::MagdaDevice> boundDevice_;
     /// Which device the analyser faceplates last read their settings off.
@@ -297,7 +287,6 @@ class DeviceCustomUIManager {
     std::unique_ptr<ExternalInsertUI> externalInsertUI_;
     std::unique_ptr<SamplerUI> samplerUI_;
     std::unique_ptr<DrumGridUI> drumGridUI_;
-    std::unique_ptr<FourOscUI> fourOscUI_;
     std::unique_ptr<PolySynthUI> polySynthUI_;
     std::unique_ptr<FMUI> fmUI_;
     std::unique_ptr<MateriaUI> materiaUI_;

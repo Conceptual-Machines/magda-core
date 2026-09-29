@@ -221,7 +221,6 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/fontaudio/fad-filter-bandpass.svg
     ../../assets/icons/fontaudio/fad-filter-notch.svg
     # Fontaudio logo icons
-    ../../assets/icons/fontaudio/fad-logo-tracktion.svg
     ../../assets/icons/fontaudio/fad-logo-juce.svg
     # AI icons
     ../../assets/icons/ai/psychology.svg
@@ -332,7 +331,6 @@ add_library(magda_devices STATIC)
 add_library(magda::devices ALIAS magda_devices)
 add_library(magda_base_devices STATIC)
 add_library(magda::base_devices ALIAS magda_base_devices)
-add_library(magda_tracktion_compat_devices STATIC)
 set_target_properties(magda_devices PROPERTIES
     PUBLIC_HEADER
     "audio/plugins/DeviceParameterHandle.hpp;audio/plugins/DevicePluginHandle.hpp;audio/plugins/DeviceServices.hpp;audio/plugins/DeviceSessionKey.hpp;audio/plugins/IFaustEditorModel.hpp;audio/plugins/InternalPluginRegistry.hpp;audio/plugins/MagdaDevice.hpp"
@@ -526,10 +524,11 @@ set(MAGDA_JUCE_STACK
     juce::juce_audio_devices
     juce::juce_audio_formats
     juce::juce_audio_utils
+    juce::juce_audio_processors
+    juce::juce_dsp
     juce::juce_gui_basics
     juce::juce_gui_extra
     juce::juce_osc  # OSC control surfaces (#1757); ships with JUCE, no new dependency
-    tracktion::tracktion_engine
     juce_llm
 )
 set(MAGDA_DEVICE_JUCE_STACK
@@ -548,7 +547,6 @@ target_link_libraries(magda_daw
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,magda_base_devices>"  # engine-neutral base pack
     # Host-owned legacy devices retain registration anchors while their DSP
     # implementations migrate to MagdaDevice.
-    "$<LINK_LIBRARY:WHOLE_ARCHIVE,magda_tracktion_compat_devices>"
     MagdaAssets
     PRIVATE
     ${MAGDA_JUCE_STACK}
@@ -617,31 +615,10 @@ target_link_libraries(magda_base_devices
     magda::mutable
     faust::libfaust
 )
-target_compile_features(magda_tracktion_compat_devices PRIVATE cxx_std_23)
-target_include_directories(magda_tracktion_compat_devices PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/third_party/faust/architecture
-    $<TARGET_PROPERTY:tracktion::tracktion_engine,INTERFACE_INCLUDE_DIRECTORIES>
-)
-target_compile_definitions(magda_tracktion_compat_devices PRIVATE
-    $<TARGET_PROPERTY:tracktion::tracktion_engine,INTERFACE_COMPILE_DEFINITIONS>
-    # JUCE_LOG_ASSERTIONS changes Tracktion Plugin's layout. Keep this pack's
-    # derived Plugin classes ABI-compatible with the Plugin compiled in magda_daw.
-    $<$<BOOL:${MAGDA_BUILD_TESTS}>:JUCE_LOG_ASSERTIONS=1>
-)
-target_link_libraries(magda_tracktion_compat_devices
-    PRIVATE
-    magda_device_sdk
-    MagdaAssets
-    magda::mutable
-    faust::libfaust
-)
-
 # magda_faust_backend carries which libfaust factory this build actually
 # contains, so FaustBackend.hpp resolves to the backend that is really linked.
 target_link_libraries(magda_devices PRIVATE magda_faust_backend)
 target_link_libraries(magda_base_devices PRIVATE magda_faust_backend)
-target_link_libraries(magda_tracktion_compat_devices PRIVATE magda_faust_backend)
 
 if(MAGDA_PRO_DEVICES)
     if(NOT EXISTS "${MAGDA_PRO_DEVICES_DIR}/CMakeLists.txt")
@@ -664,17 +641,6 @@ if(MAGDA_PRO_DEVICES)
     target_compile_definitions(magda_daw PUBLIC MAGDA_PRO_DEVICES_ENABLED=1)
 endif()
 
-# Signalsmith's FFT-heavy processing cannot reliably meet real-time audio
-# deadlines at -O0. Keep the rest of Debug builds fully debuggable, but compile
-# Tracktion's dedicated time-stretch translation unit with optimisation so the
-# local app exercises representative DSP performance.
-set_source_files_properties(
-    "${CMAKE_SOURCE_DIR}/third_party/tracktion_engine/modules/tracktion_engine/tracktion_engine_timestretch.cpp"
-    TARGET_DIRECTORY magda_daw
-    PROPERTIES COMPILE_OPTIONS
-        "$<$<AND:$<CONFIG:Debug>,$<CXX_COMPILER_ID:MSVC>>:/O2>;$<$<AND:$<CONFIG:Debug>,$<NOT:$<CXX_COMPILER_ID:MSVC>>>:-O2>"
-)
-
 # Re-export JUCE/TE compile usage (include dirs + defines, NO sources) so
 # dependents can still #include JUCE headers. magda_daw's own resolved
 # INCLUDE_DIRECTORIES / COMPILE_DEFINITIONS already hold the full transitive
@@ -692,34 +658,11 @@ target_compile_definitions(magda_daw
     JUCE_PLUGINHOST_AU=1
     JUCE_PLUGINHOST_LV2=1
     JUCE_MODAL_LOOPS_PERMITTED=1
-    TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH=1
-    TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH=1
     MAGDA_DAWPROJECT_SCHEMA_DIR="${CMAKE_SOURCE_DIR}/third_party/dawproject"
     $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
-    # Whether there is a second engine to choose at all (#2551). MagdaAudioEngine
-    # is compiled here whatever the answer, so it is the one place that has to
-    # ask: without the host below linked, choosing that engine is a link error
-    # rather than a quiet fallback.
-    $<$<BOOL:${MAGDA_BUILD_NATIVE_ENGINE}>:MAGDA_HAS_NATIVE_ENGINE=1>
     PRIVATE
-    # Tracktion Engine carries a MAGDA test hook (magdaTestEvaluateLoopSessionDecision,
-    # in tracktion_TransportControl.cpp) gated on MAGDA_ENABLE_TEST_HOOKS. TE now
-    # compiles ONCE here instead of being recompiled by magda_juce_tests, so the
-    # hook must be built into magda_daw's archive when tests are enabled, or the
-    # JUCE test exe fails to link it. Off for release (MAGDA_BUILD_TESTS=OFF), so
-    # the hook is never shipped.
     $<$<BOOL:${MAGDA_BUILD_TESTS}>:MAGDA_ENABLE_TEST_HOOKS=1>
-    # Route jassert through juce::Logger rather than straight to stderr, so a
-    # test can read the engine's own assertions as a result instead of as
-    # console noise. It has to be set here because this is where Tracktion is
-    # compiled, and an assertion's logging is decided where the macro expands,
-    # not where the test that wants to see it lives.
-    #
-    # What it buys: an assertion is not fatal, so a graph Tracktion objects to
-    # renders anyway and produces a buffer that compares perfectly well. The
-    # null-diff runner watches per case and refuses to certify one that
-    # provoked an assertion. Test builds only, on the same gate as the hook
-    # above, so nothing about a shipping build changes.
+    # All JUCE consumers must agree on assertion logging and ListenerList layout.
     $<$<BOOL:${MAGDA_BUILD_TESTS}>:JUCE_LOG_ASSERTIONS=1>
 )
 
@@ -732,7 +675,7 @@ target_link_libraries(magda_daw_app
     # magda::engine and the app's end of it (#2551). Here rather than on
     # magda_daw because magda_daw only names the host through a pimpl'd header:
     # the engine's own includes never reach it.
-    $<$<BOOL:${MAGDA_BUILD_NATIVE_ENGINE}>:magda_engine_host>
+    magda_engine_host
     # JUCE/TE come transitively from magda_daw: its re-exported INTERFACE gives
     # the headers + defines to compile this target's own sources, and its
     # $<LINK_ONLY:...> forwards the modules' frameworks + the objects already in
@@ -745,8 +688,6 @@ target_compile_definitions(magda_daw_app
     JUCE_PLUGINHOST_VST3=1
     JUCE_PLUGINHOST_AU=1
     JUCE_PLUGINHOST_LV2=1
-    TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH=1
-    TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH=1
     $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
 )
 
@@ -847,12 +788,11 @@ target_include_directories(magda_plugin_scanner
 target_link_libraries(magda_cli
     PRIVATE
     magda_daw
-    $<$<BOOL:${MAGDA_BUILD_NATIVE_ENGINE}>:magda_engine_host>
+    magda_engine_host
     juce::juce_core
     juce::juce_events
     juce::juce_audio_devices
     juce::juce_audio_formats
-    tracktion::tracktion_engine
     $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>
 )
 
@@ -861,8 +801,6 @@ target_compile_definitions(magda_cli
     JUCE_PLUGINHOST_VST3=1
     JUCE_PLUGINHOST_AU=1
     JUCE_PLUGINHOST_LV2=1
-    TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH=1
-    TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH=1
     JUCE_WEB_BROWSER=0
     $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
 )

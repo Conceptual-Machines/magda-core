@@ -1,7 +1,6 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "../../magda/daw/audio/modifiers/ModifierHelpers.hpp"
 #include "../../magda/daw/core/MacroInfo.hpp"
 #include "../../magda/daw/core/ModInfo.hpp"
 #include "../../magda/daw/core/TrackManager.hpp"
@@ -15,16 +14,6 @@ ControlTarget testPluginParam(DeviceId deviceId, int paramIndex, TrackId trackId
 }
 
 }  // namespace
-
-TEST_CASE("Modifier assignment mapping preserves bipolar link semantics", "[modulation][bipolar]") {
-    auto unipolar = mapLinkAssignment(0.25f, false);
-    REQUIRE(unipolar.value == Catch::Approx(0.25f));
-    REQUIRE(unipolar.offset == Catch::Approx(0.0f));
-
-    auto bipolar = mapLinkAssignment(0.25f, true);
-    REQUIRE(bipolar.value == Catch::Approx(0.5f));
-    REQUIRE(bipolar.offset == Catch::Approx(-0.25f));
-}
 
 // ============================================================================
 // MacroInfo Tests

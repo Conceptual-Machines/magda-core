@@ -48,6 +48,12 @@ magda::daw::engine_host::EngineHost::HardwareChannelCatalog hardwareCatalog(
 
 namespace magda {
 
+std::unique_ptr<AudioEngine> createDefaultAudioEngine(AudioEngineOptions options) {
+    Config::getInstance().load();
+    juce::Logger::writeToLog("[engine] rendering through magda::engine");
+    return std::make_unique<MagdaAudioEngine>(options);
+}
+
 MagdaAudioEngine::MagdaAudioEngine(AudioEngineOptions options) : headless_(options.headless) {
     // Here rather than in initialize(), so that everything below can ask it
     // things without first asking whether it exists. It renders nothing until

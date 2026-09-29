@@ -182,14 +182,6 @@ int internalPostFxAnalysisOrder(const juce::String& pluginId) {
     return -1;
 }
 
-DevicePluginPtr createInternalPluginFromSpec(const InternalPluginSpec& spec,
-                                             DeviceSessionKey sessionKey,
-                                             const juce::String& savedPluginState) {
-    if (spec.createInSession == nullptr)
-        return {};
-    return spec.createInSession(spec, sessionKey, savedPluginState);
-}
-
 bool adoptCanonicalPluginType(const juce::ValueTree& state) {
     if (!state.isValid())
         return false;
@@ -206,15 +198,6 @@ bool adoptCanonicalPluginType(const juce::ValueTree& state) {
     juce::ValueTree writable = state;
     writable.setProperty(typeProperty(), spec->pluginId, nullptr);
     return true;
-}
-
-DevicePluginPtr createRegisteredPlugin(const DevicePluginCreationContext& context) {
-    const auto type = context.state[typeProperty()].toString();
-    const auto* spec = findInternalPluginSpecForLoadType(type);
-    if (spec == nullptr || spec->createPlugin == nullptr)
-        return {};
-    adoptCanonicalPluginType(context.state);
-    return spec->createPlugin(context);
 }
 
 std::unique_ptr<MagdaDevice> createRegisteredDevice(const DevicePluginCreationContext& context) {

@@ -1,15 +1,12 @@
 #pragma once
 
 #include <juce_audio_devices/juce_audio_devices.h>
-#include <tracktion_engine/tracktion_engine.h>
 
 #include <functional>
 
 #include "PerformanceProfiler.hpp"
 
 namespace magda {
-
-namespace te = tracktion;
 
 /**
  * @brief Comprehensive benchmark suite for periodic performance testing
@@ -82,11 +79,10 @@ class BenchmarkSuite {
 
     /**
      * @brief Run all benchmarks
-     * @param engine Tracktion Engine instance
      * @param sampleDurationSeconds How long to collect samples
      * @return Benchmark results
      */
-    BenchmarkResults runAll(te::Engine& engine, double sampleDurationSeconds = 10.0) {
+    BenchmarkResults runAll(double sampleDurationSeconds = 10.0) {
         BenchmarkResults results;
 
         DBG("[BENCHMARK] Starting comprehensive benchmark (duration: " << sampleDurationSeconds
@@ -199,8 +195,7 @@ class BenchmarkSuite {
  */
 class PeriodicBenchmarkRunner : public juce::Timer {
   public:
-    PeriodicBenchmarkRunner(te::Engine& engine, const juce::File& outputDir)
-        : engine_(engine), outputDir_(outputDir) {
+    PeriodicBenchmarkRunner(const juce::File& outputDir) : outputDir_(outputDir) {
         outputDir_.createDirectory();
     }
 
@@ -241,7 +236,6 @@ class PeriodicBenchmarkRunner : public juce::Timer {
         DBG("[BENCHMARK] Results saved to: " << outputFile.getFullPathName());
     }
 
-    te::Engine& engine_;
     juce::File outputDir_;
     BenchmarkSuite suite_;
 };

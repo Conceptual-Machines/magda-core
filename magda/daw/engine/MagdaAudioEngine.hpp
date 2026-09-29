@@ -9,7 +9,6 @@
 #include "../audio/TrackMeters.hpp"
 #include "../audio/io/AudioIOService.hpp"
 #include "AudioEngine.hpp"
-#include "AudioEngineChoice.hpp"
 #include "PluginService.hpp"
 
 namespace magda::daw::engine_host {
@@ -23,38 +22,10 @@ class MagdaApiLive;
 
 /**
  * @file MagdaAudioEngine.hpp
- * @brief The app's second AudioEngine, backed by magda::engine (#2551).
+ * @brief Native audio engine and the app services it owns.
  *
- * The engine has seven finished subsystems and a corpus of 74 cases, and until
- * this class existed none of it had ever been driven by an audio device: there
- * was no caller of EngineSession outside the test binaries. What is left to
- * settle -- monitor round trip, input latency, how a plugin behaves under a
- * real host -- cannot be settled offline, so the engine has to be reachable
- * from a running app before the rest of #1897 is worth doing.
- *
- * Selected in createDefaultAudioEngine rather than chosen at build time, so
- * both engines ship in one binary and switching them is a setting.
- *
- * ## What magda::engine answers
- *
- * Transport, tempo, loop and metronome are held here, published to an
- * EngineSession and rendered from the audio device callback: what fills the
- * output buffer is magda::engine and nothing else, and what the ruler converts
- * through is the map it renders with. Tempo automation is #2554.
- *
- * Session launch and recording are driven through EngineHost (#2552, #2553):
- * live audio and MIDI inputs, monitoring, punch/count-in, Arrangement takes,
- * Session slot takes and performance capture all share the device callback.
- *
- * No Tracktion object sits under it (#2761). What is not an engine question --
- * plugin lists, grooves, MIDI, the project save hooks -- belongs to the app's
- * services, which this lends what they need and takes back at shutdown.
- *
- * ## What here is temporary
- *
- * The engine-selection vocabulary -- this class being a choice at all, the
- * environment variable, the setting -- goes at #2557, when there is nothing left
- * to choose between.
+ * EngineHost renders transport, playback, recording and offline exports.
+ * Plugin lists, MIDI, grooves and project save hooks use app-owned services.
  */
 
 namespace magda {
@@ -69,7 +40,7 @@ class MagdaAudioEngine final : public AudioEngine,
     ~MagdaAudioEngine() override;
 
     juce::String engineName() const override {
-        return nameOf(AudioEngineChoice::Magda);
+        return "magda::engine";
     }
 
     bool initialize() override;

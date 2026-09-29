@@ -7,11 +7,7 @@
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/core/UndoManager.hpp"
 #include "magda/daw/engine/AudioEngine.hpp"
-#include "magda/daw/engine/AudioEngineChoice.hpp"
-#include "magda/daw/engine/TracktionEngineWrapper.hpp"
-#if MAGDA_HAS_NATIVE_ENGINE
-    #include "magda/daw/engine/MagdaAudioEngine.hpp"
-#endif
+#include "magda/daw/engine/MagdaAudioEngine.hpp"
 
 namespace {
 
@@ -24,12 +20,8 @@ class RemoteRoutingEngineConformanceTest final : public juce::UnitTest {
 
     void runTest() override {
         magda::test::runWithCleanJuceState([this] {
-            exercise(nameOf(AudioEngineChoice::Tracktion),
-                     std::make_unique<TracktionEngineWrapper>());
-#if MAGDA_HAS_NATIVE_ENGINE
-            exercise(nameOf(AudioEngineChoice::Magda),
+            exercise("magda::engine",
                      std::make_unique<MagdaAudioEngine>(AudioEngineOptions{.headless = true}));
-#endif
         });
     }
 

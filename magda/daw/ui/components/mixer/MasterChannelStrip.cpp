@@ -2,7 +2,6 @@
 
 #include <cmath>
 
-#include "../../../audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "../../../engine/AudioEngine.hpp"
 #include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"

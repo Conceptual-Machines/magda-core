@@ -229,7 +229,6 @@ class DeviceSlotComponent : public NodeComponent,
     magda::DeviceInfo device_;
     DeviceSlotTraits traits_;
     DeviceSlotModMacroCommandCallbacks modMacroCommandCallbacks();
-    std::unique_ptr<juce::Drawable> tracktionLogo_;
 
     // Header controls
     std::unique_ptr<magda::SvgButton> modButton_;

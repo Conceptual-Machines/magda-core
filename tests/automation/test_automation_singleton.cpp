@@ -441,3 +441,28 @@ TEST_CASE("AutomationManager::BatchScope destructor survives a throwing listener
     mgr.removeListener(&listener);
     REQUIRE(listener.called);
 }
+
+TEST_CASE("Native tempo automation follows insert and duplicate with undo",
+          "[automation][commands][tempo]") {
+    resetState();
+    auto& mgr = AutomationManager::getInstance();
+    const auto laneId = mgr.createLane(ControlTarget::tempo(), AutomationLaneType::Absolute);
+    REQUIRE(laneId != INVALID_AUTOMATION_LANE_ID);
+    mgr.addPoint(laneId, 2.0, 0.4, AutomationCurveType::Linear);
+    InsertTimeAutomationCommand insert(1.0, 3.0, {});
+    REQUIRE(insert.canShiftPoints());
+    insert.execute();
+    REQUIRE(findPointAt(mgr.getLane(laneId), 5.0) != nullptr);
+    REQUIRE(findPointAt(mgr.getLane(laneId), 2.0) == nullptr);
+    insert.undo();
+    REQUIRE(findPointAt(mgr.getLane(laneId), 2.0) != nullptr);
+    DuplicateAutomationTimeSelectionCommand duplicate(1.0, 3.0, {}, 5.0);
+    REQUIRE(duplicate.canDuplicatePoints());
+    duplicate.execute();
+    const auto* point = findPointAt(mgr.getLane(laneId), 6.0);
+    REQUIRE(point != nullptr);
+    REQUIRE(point->value == Catch::Approx(0.4));
+    duplicate.undo();
+    REQUIRE(findPointAt(mgr.getLane(laneId), 6.0) == nullptr);
+    REQUIRE(findPointAt(mgr.getLane(laneId), 2.0) != nullptr);
+}

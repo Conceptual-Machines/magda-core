@@ -127,13 +127,7 @@ endif()
 # Options
 option(MAGDA_BUILD_TESTS "Build tests" ON)
 option(MAGDA_BUILD_EXAMPLES "Build developer example tools (e.g. lua_smoke REPL)" OFF)
-option(MAGDA_BUILD_JUCE_ADAPTER "Build JUCE/Tracktion adapter" OFF)
 option(MAGDA_BUILD_FAUST_VEC_BENCH "Build the Faust scalar-vs-vector codegen benchmark" OFF)
-# The native engine (epic #1882) is dark: built and tested, never linked into
-# the app. On by default so it cannot drift away from the model it compiles.
-option(MAGDA_BUILD_NATIVE_ENGINE "Build the native audio engine target" ON)
-# The parity envelope bench (#2082), in a tree of its own with tests off (make parity-bench).
-option(MAGDA_BUILD_PARITY_BENCH "Build the native-against-Tracktion parity bench" OFF)
 
 # JUCE_LOG_ASSERTIONS changes juce::ListenerList's layout, and so juce::ValueTree's. magda_daw
 # sets it for tests; outside Debug, where JUCE does not, every target in the tree has to agree.
@@ -194,13 +188,8 @@ set(CMAKE_C_VISIBILITY_PRESET hidden)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 
-# JUCE is a first-class dependency of this repo, not something we inherit from
-# Tracktion Engine. It must be added before the engine so the engine binds to
-# this copy; the engine's own nested modules/juce stays dormant.
+# JUCE is the explicit framework dependency for the app and native host.
 add_subdirectory(third_party/JUCE)
-
-# Tracktion Engine for DAW functionality (using local submodule)
-add_subdirectory(third_party/tracktion_engine)
 
 # SoundTouch — time stretching for the native engine (#1882, #2037). Vendored here
 # rather than borrowed from the Tracktion fork, which the engine may not include.
@@ -378,9 +367,7 @@ add_subdirectory(magda/agents)
 
 # Native audio engine — isolated from magda/daw on purpose, so it is added
 # after the model layer it compiles and links nothing else from it.
-if(MAGDA_BUILD_NATIVE_ENGINE)
-    add_subdirectory(magda/engine)
-endif()
+add_subdirectory(magda/engine)
 
 # Examples
 if(MAGDA_BUILD_EXAMPLES)
@@ -393,9 +380,6 @@ if(MAGDA_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
-if(MAGDA_BUILD_PARITY_BENCH AND MAGDA_BUILD_NATIVE_ENGINE)
-    add_subdirectory(tests/parity)
-endif()
 
 # Faust scalar-vs-vector codegen benchmark (#1397). Dispatch-only; it doubles
 # the Faust generation work, so it stays out of ordinary builds.
@@ -404,10 +388,6 @@ if(MAGDA_BUILD_FAUST_VEC_BENCH)
 endif()
 
 
-# JUCE adapter (optional)
-if(MAGDA_BUILD_JUCE_ADAPTER)
-    add_subdirectory(adapters/juce)
-endif()
 
 # Install rules
 install(TARGETS magda_daw_app

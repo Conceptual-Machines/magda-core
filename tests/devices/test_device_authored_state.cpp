@@ -9,7 +9,7 @@
 #include "../../magda/daw/core/TrackManager.hpp"
 #include "../../magda/daw/core/UndoManager.hpp"
 #include "../../magda/daw/engine/PluginService.hpp"
-#include "../../magda/daw/engine/TracktionEngineWrapper.hpp"
+#include "TestAudioEngine.hpp"
 
 using namespace magda;
 namespace ds = magda::device_state;
@@ -22,7 +22,7 @@ namespace ds = magda::device_state;
 
 namespace {
 
-class RenderedDeviceEngine final : public TracktionEngineWrapper {
+class RenderedDeviceEngine final : public magda::test::TestAudioEngine, public PluginStateProvider {
   public:
     RenderedDeviceEngine()
         : rendered(std::make_shared<daw::audio::OscilloscopePlugin>(

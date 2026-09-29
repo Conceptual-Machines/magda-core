@@ -21,7 +21,6 @@
 #include "../core/UndoManager.hpp"
 #include "../engine/AudioEngine.hpp"
 #include "ProjectVersionMigration.hpp"
-#include "engine/AudioEngineChoice.hpp"
 #include "serialization/ProjectSerializer.hpp"
 #include "version.hpp"
 
@@ -533,7 +532,7 @@ bool ProjectManager::saveProjectAs(const juce::File& file, MediaTransfer transfe
         migrateMediaFiles(oldMediaDir, targetMediaDir, transfer);
     }
 
-    if (requiresV1ProjectCopy() && chosenAudioEngine() == AudioEngineChoice::Magda &&
+    if (requiresV1ProjectCopy() &&
         daw::audio::convertFourOscDevices(TrackManager::getInstance()) > 0)
         markDirty();
 
@@ -553,7 +552,7 @@ bool ProjectManager::saveProjectAs(const juce::File& file, MediaTransfer transfe
 
     // Which engine wrote it, so opening it under the other one knows whether
     // this project has been through that engine's migration (#2437).
-    newProject.savedWithEngine = settingWordFor(chosenAudioEngine());
+    newProject.savedWithEngine = "magda";
     newProject.version = MAGDA_VERSION;
 
     // Save to file

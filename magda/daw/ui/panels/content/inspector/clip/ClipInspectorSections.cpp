@@ -14,6 +14,7 @@
 #include "../ClipInspector.hpp"
 #include "BinaryData.h"
 #include "audio/CompService.hpp"
+#include "audio/WarpMarkerManager.hpp"
 #include "core/AudioClipSourceDisplay.hpp"
 #include "core/ClipBatchEdit.hpp"
 #include "core/ClipCommands.hpp"
@@ -26,7 +27,6 @@
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
-#include "engine/TracktionFork.hpp"
 #include "music/GrooveLibrary.hpp"
 #include "project/ProjectManager.hpp"
 
@@ -1758,7 +1758,7 @@ void ClipInspector::initPlaybackSection() {
     transientSensitivityValue_->onValueChange = [this]() {
         if (primaryClipId() == magda::INVALID_CLIP_ID)
             return;
-        magda::tracktion_fork::setTransientSensitivity(
+        magda::WarpMarkerManager::getInstance().setTransientSensitivity(
             primaryClipId(), static_cast<float>(transientSensitivityValue_->getValue()));
     };
     clipPropsContainer_.addChildComponent(*transientSensitivityValue_);

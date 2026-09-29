@@ -108,22 +108,6 @@ void paintMidiUtilityHeader(juce::Graphics& g, juce::Rectangle<int> headerArea,
     g.drawText(label, textArea, juce::Justification::centredLeft);
 }
 
-void paintTracktionHeader(juce::Graphics& g, juce::Rectangle<int> textArea,
-                          const DeviceSlotContentPaintState& state) {
-    const auto textColour = state.bypassed ? ActiveTheme::getSecondaryTextColour().withAlpha(0.5f)
-                                           : ActiveTheme::getSecondaryTextColour();
-    g.setColour(textColour);
-
-    constexpr int logoSize = 14;
-    auto logoBounds = textArea.removeFromLeft(logoSize).toFloat();
-    logoBounds = logoBounds.withSizeKeepingCentre(logoSize, logoSize);
-    state.tracktionLogo->drawWithin(g, logoBounds, juce::RectanglePlacement::centred,
-                                    state.bypassed ? 0.3f : 0.6f);
-    textArea.removeFromLeft(4);
-    g.setFont(FontManager::getInstance().getUIFont(9.0f));
-    g.drawText("Tracktion / " + state.deviceName, textArea, juce::Justification::centredLeft);
-}
-
 void paintExternalHeader(juce::Graphics& g, juce::Rectangle<int> textArea,
                          const DeviceSlotContentPaintState& state) {
     const auto textColour = state.bypassed ? ActiveTheme::getSecondaryTextColour().withAlpha(0.5f)
@@ -157,8 +141,7 @@ void paintDeviceSlotContent(juce::Graphics& g, juce::Rectangle<int> contentArea,
     if (state.traits.isChordEngine || state.traits.isArpeggiator || state.traits.isStrum ||
         state.traits.isStepSequencer || state.traits.isPolyStepSequencer) {
         paintMidiUtilityHeader(g, headerArea, textArea, state);
-    } else if (state.traits.isTracktionDevice && state.tracktionLogo != nullptr) {
-        paintTracktionHeader(g, textArea, state);
+
     } else {
         paintExternalHeader(g, textArea, state);
     }

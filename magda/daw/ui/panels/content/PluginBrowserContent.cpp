@@ -14,7 +14,6 @@
 #include "../../themes/SmallComboBoxLookAndFeel.hpp"
 #include "PluginBrowserMetadataMerge.hpp"
 #include "audio/plugins/ArpeggiatorPlugin.hpp"
-#include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/FaustPlugin.hpp"
 #include "audio/plugins/InternalPluginRegistry.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
@@ -31,7 +30,6 @@
 #include "core/PluginParameterConfigStore.hpp"
 #include "core/PluginPreferences.hpp"
 #include "core/TrackManager.hpp"
-#include "engine/AudioEngineChoice.hpp"
 #include "engine/PluginMetadataStore.hpp"
 #include "engine/PluginService.hpp"
 
@@ -566,10 +564,8 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
     // no separate hand-maintained list to keep in sync.
     // Under the MAGDA engine a device it cannot play would arrive silent, so it
     // is not offered (#2437).
-    const auto runnable = chosenAudioEngine() != AudioEngineChoice::Magda;
-    const auto listedInBrowser = [runnable](const audio::InternalPluginSpec* spec) {
-        return spec->showInBrowser &&
-               (runnable || audio::engine_adapter::engineRendersDevice(spec->pluginId));
+    const auto listedInBrowser = [](const audio::InternalPluginSpec* spec) {
+        return spec->showInBrowser && audio::engine_adapter::engineRendersDevice(spec->pluginId);
     };
     const auto asBrowserEntry = [](const audio::InternalPluginSpec* spec) {
         return PluginBrowserInfo::createInternal(spec->displayName, spec->pluginId,

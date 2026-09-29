@@ -8,7 +8,6 @@
 #include "ai/AIPanelComponent.hpp"
 #include "audio/DeviceMeters.hpp"
 #include "audio/DeviceParameterList.hpp"
-#include "audio/plugin_manager/PluginManager.hpp"
 #include "audio/plugins/InternalPluginRegistry.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/PolyStepSequencerPlugin.hpp"
@@ -916,18 +915,6 @@ void DeviceSlotComponent::showSavePluginPresetDialog() {
 
 void DeviceSlotComponent::refreshDeviceTraits(const magda::DeviceInfo& device) {
     traits_ = makeDeviceSlotTraits(device);
-
-    if (traits_.isTracktionDevice && tracktionLogo_ == nullptr) {
-        tracktionLogo_ = juce::Drawable::createFromImageData(BinaryData::fadlogotracktion_svg,
-                                                             BinaryData::fadlogotracktion_svgSize);
-        if (tracktionLogo_)
-            tracktionLogo_->replaceColour(juce::Colours::black,
-                                          ActiveTheme::getSecondaryTextColour());
-        if (tracktionLogo_)
-            ActiveTheme::applyToSvgIcon(*tracktionLogo_);
-    } else if (!traits_.isTracktionDevice) {
-        tracktionLogo_.reset();
-    }
 }
 
 void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
@@ -1164,7 +1151,6 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
                             .hasCustomUI = customUI_.hasAnyUI(),
                             .manufacturer = device_.manufacturer,
                             .deviceName = device_.name,
-                            .tracktionLogo = tracktionLogo_.get(),
                             .stepRecording = stepRecording},
                            stripsAnalysisChrome() ? 0 : METER_STRIP_WIDTH, CONTENT_HEADER_HEIGHT,
                            paginationRowHeight(), faustHeaderHeight());
@@ -1696,7 +1682,6 @@ void DeviceSlotComponent::createCustomUI() {
 
     if (createdKind == DeviceSlotInlineUiKind::Custom) {
         updateDeviceSlotInlineUi(device_, compiledPanel_.get(), customUI_);
-        readAndPushDeviceSlotInlineUiModMatrix(device_.id, customUI_);
         wirePadChainLinkCallbacks();
     }
 

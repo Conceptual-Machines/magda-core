@@ -7,7 +7,6 @@
 #include "audio/FourOscMigration.hpp"
 #include "core/Config.hpp"
 #include "core/TrackManager.hpp"
-#include "engine/AudioEngineChoice.hpp"
 #include "project/ProjectManager.hpp"
 
 namespace magda::daw::ui {
@@ -41,8 +40,7 @@ void convertAndSave() {
     const auto destination = audio::convertedProjectFileFor(projects.getCurrentProjectFile(),
                                                             projects.requiresV1ProjectCopy());
 
-    if (chosenAudioEngine() == AudioEngineChoice::Magda)
-        audio::convertFourOscDevices(TrackManager::getInstance());
+    audio::convertFourOscDevices(TrackManager::getInstance());
 
     // The conversion writes the model directly. Without this a failed save
     // below leaves it in the session with nothing to say it is unsaved, and
@@ -72,15 +70,13 @@ void convertAndSave() {
 void offerFourOscConversion() {
     auto& projects = ProjectManager::getInstance();
     const auto v1Copy = projects.requiresV1ProjectCopy();
-    const auto nativeEngine = chosenAudioEngine() == AudioEngineChoice::Magda;
-    if (!v1Copy && (!nativeEngine || Config::getInstance().getSkipFourOscConversionPrompt()))
+    if (!v1Copy && Config::getInstance().getSkipFourOscConversionPrompt())
         return;
 
     // Already through this engine's migration, so there is nothing to offer.
     // An empty word is a project saved before the field existed, which is a
     // Tracktion project.
-    if (!v1Copy && projects.getCurrentProjectInfo().savedWithEngine ==
-                       settingWordFor(AudioEngineChoice::Magda))
+    if (!v1Copy && projects.getCurrentProjectInfo().savedWithEngine == "magda")
         return;
 
     if (projects.getCurrentProjectFile() == juce::File{})
@@ -91,8 +87,7 @@ void offerFourOscConversion() {
     if (master == nullptr)
         return;
 
-    const auto candidates = nativeEngine ? audio::findFourOscDevices(tracks.getTracks(), *master)
-                                         : std::vector<audio::FourOscCandidate>{};
+    const auto candidates = audio::findFourOscDevices(tracks.getTracks(), *master);
 
     auto prompt = std::make_shared<Prompt>(v1Copy ? "Save as a new v1 project?"
                                                   : "Open as a MAGDA Engine project?",
@@ -108,7 +103,7 @@ void offerFourOscConversion() {
 
     const auto source = projects.getCurrentProjectFile();
     const auto generation = projects.getProjectGeneration();
-    const auto onDismissed = [prompt, source, generation, nativeEngine](int result) {
+    const auto onDismissed = [prompt, source, generation](int result) {
         // Remembered whichever button was pressed: somebody who ticks it and
         // converts this project does not want asking about the next.
         if (prompt->dontAskAgain.getToggleState())
@@ -119,11 +114,10 @@ void offerFourOscConversion() {
 
         // Off the modal callback, so the alert is gone before a save dialog or
         // an error of its own can appear behind it.
-        juce::MessageManager::callAsync([source, generation, nativeEngine] {
+        juce::MessageManager::callAsync([source, generation] {
             auto& projects = ProjectManager::getInstance();
             if (projects.getProjectGeneration() != generation ||
-                projects.getCurrentProjectFile() != source ||
-                (chosenAudioEngine() == AudioEngineChoice::Magda) != nativeEngine)
+                projects.getCurrentProjectFile() != source)
                 return;
             convertAndSave();
         });

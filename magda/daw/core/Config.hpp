@@ -152,14 +152,6 @@ class Config {
         skipFourOscConversionPrompt = skip;
     }
 
-    /// Whether the launch-time offer of the MAGDA engine has been turned off.
-    bool getSkipMagdaEnginePrompt() const {
-        return skipMagdaEnginePrompt;
-    }
-    void setSkipMagdaEnginePrompt(bool skip) {
-        skipMagdaEnginePrompt = skip;
-    }
-
     bool getOpenPluginWindowOnDrop() const {
         return openPluginWindowOnDrop;
     }
@@ -382,17 +374,6 @@ class Config {
     }
     void setPreferredOutputDevice(const std::string& deviceName) {
         preferredOutputDevice = deviceName;
-    }
-
-    /// Which engine renders, as the word MAGDA_AUDIO_ENGINE takes (#2559). A
-    /// word rather than the enum because core does not depend on the engine
-    /// layer and the file stores a word either way; parseAudioEngine and
-    /// settingWordFor in AudioEngineChoice.hpp are the only two conversions.
-    std::string getAudioEngine() const {
-        return audioEngine;
-    }
-    void setAudioEngine(const std::string& word) {
-        audioEngine = word;
     }
 
     int getPreferredInputChannels() const {
@@ -1429,7 +1410,6 @@ class Config {
     // Open a device's editor window automatically when it is dropped into a chain
     bool openPluginWindowOnDrop = false;
     bool skipFourOscConversionPrompt = false;
-    bool skipMagdaEnginePrompt = false;
     bool transportDefaultBarsBeats = true;  // Default to bars/beats (false = seconds)
 
     // Panel visibility settings
@@ -1640,12 +1620,11 @@ class Config {
     int bounceBitDepth = 32;  // 16, 24, 32 — default 32-bit for internal bounces
 
     // Audio device settings
-    std::string preferredAudioDevice;       // Preferred audio interface (empty = system default)
-    std::string preferredInputDevice;       // Preferred input device (empty = system default)
-    std::string preferredOutputDevice;      // Preferred output device (empty = system default)
-    std::string audioEngine = "tracktion";  // Which engine renders (#2559)
-    int preferredInputChannels = 0;   // Preferred input channel count (0 = use device default)
-    int preferredOutputChannels = 0;  // Preferred output channel count (0 = use device default)
+    std::string preferredAudioDevice;   // Preferred audio interface (empty = system default)
+    std::string preferredInputDevice;   // Preferred input device (empty = system default)
+    std::string preferredOutputDevice;  // Preferred output device (empty = system default)
+    int preferredInputChannels = 0;     // Preferred input channel count (0 = use device default)
+    int preferredOutputChannels = 0;    // Preferred output channel count (0 = use device default)
     std::optional<AudioIOSettings> audioIO;
     std::vector<std::string> inactiveMidiInputs;  // Names, so a new port starts active
 

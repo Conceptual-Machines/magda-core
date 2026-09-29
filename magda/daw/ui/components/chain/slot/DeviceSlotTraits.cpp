@@ -23,7 +23,6 @@ DeviceSlotTraits makeDeviceSlotTraits(const juce::String& pluginId) {
     const auto& agentCapabilities = magda::getInternalPluginCapabilities(pluginId);
     traits.isAISupported = agentCapabilities.supportsDeviceAI();
     traits.isSoundDesignSupported = agentCapabilities.supportsSoundDesign();
-    traits.isTracktionDevice = magda::isTracktionEngineStockPlugin(pluginId);
     traits.compiledPresentation = findCompiledPresentation(pluginId);
     return traits;
 }

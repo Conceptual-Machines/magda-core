@@ -112,6 +112,8 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
     // ===== The plugin's own window (#2580). Call on the control executor. =====
 
     /// False for a plugin with no editor of its own.
+    /// App shortcuts for keys the floating plugin editor does not consume.
+    static void setApplicationCommandManager(juce::ApplicationCommandManager* manager);
     bool showEditor();
 
     /// Control executor only; excludes rendering while accessing program/state data.

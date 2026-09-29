@@ -20,7 +20,6 @@ struct DeviceSlotTraits {
     bool hasAnalyzerPopout = false;  // scope/spectrum pop into a floating window; levels does not
     bool isAISupported = false;
     bool isSoundDesignSupported = false;
-    bool isTracktionDevice = false;
     const CompiledPresentationSpec* compiledPresentation = nullptr;
 };
 

@@ -7,10 +7,6 @@
 #include "core/TypeIds.hpp"
 #include "plugins/DevicePluginHandle.hpp"
 
-namespace magda {
-class DeviceProcessor;
-}
-
 namespace magda::daw::audio {
 
 class MagdaDevice;
@@ -32,10 +28,6 @@ struct InternalPluginSpec {
     bool canCreateOnTrack = true;
     const char* const* loadAliases = nullptr;
     int loadAliasCount = 0;
-    // Host-owned compatibility callbacks. Engine-neutral packs must leave
-    // these null and use createDevice below.
-    bool (*matchesPlugin)(DevicePluginRef) = nullptr;
-    std::unique_ptr<DeviceProcessor> (*createProcessor)(DeviceId, DevicePluginPtr) = nullptr;
     bool showInBrowser = false;         // listed in the plugin browser (single source of truth)
     bool isInstrument = false;          // browser hint: synth/sampler vs effect
     const char* const* tags = nullptr;  // extensible behavioural classifications
@@ -44,11 +36,7 @@ struct InternalPluginSpec {
     // The saved state decides which parameters the device has (a runtime Faust patch), so an
     // instance built from one state cannot stand in for another.
     bool stateDefinesParameters = false;
-    DevicePluginPtr (*createInSession)(const InternalPluginSpec&, DeviceSessionKey,
-                                       const juce::String& savedPluginState) = nullptr;
     std::unique_ptr<MagdaDevice> (*createDevice)(const DevicePluginCreationContext&) = nullptr;
-    // Transitional hook for host-native plugins that have not moved to MagdaDevice yet.
-    DevicePluginPtr (*createPlugin)(const DevicePluginCreationContext&) = nullptr;
 };
 
 struct InternalParameterAliasSpec {
@@ -125,10 +113,6 @@ bool isInternalAnalysisPlugin(const juce::String& pluginId);
 bool isInternalMidiGeneratorPlugin(const juce::String& pluginId);
 int internalPostFxAnalysisOrder(const juce::String& pluginId);
 
-DevicePluginPtr createInternalPluginFromSpec(const InternalPluginSpec& spec,
-                                             DeviceSessionKey sessionKey,
-                                             const juce::String& savedPluginState = {});
 std::unique_ptr<MagdaDevice> createRegisteredDevice(const DevicePluginCreationContext& context);
-DevicePluginPtr createRegisteredPlugin(const DevicePluginCreationContext& context);
 
 }  // namespace magda::daw::audio

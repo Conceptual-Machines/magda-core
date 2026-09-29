@@ -1,7 +1,6 @@
 #pragma once
 
 #include <juce_gui_basics/juce_gui_basics.h>
-#include <tracktion_engine/tracktion_engine.h>
 
 #include <array>
 #include <functional>
@@ -22,10 +21,6 @@
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TextSlider.hpp"
 #include "ui/components/mixer/LevelMeter.hpp"
-
-namespace tracktion::inline engine {
-class Plugin;
-}
 
 namespace magda::daw::audio {
 class MagdaDevice;
@@ -59,8 +54,6 @@ class PadDeviceSlot : public juce::Component, private juce::Timer {
         /// The instance rendering the device, on either engine. Null while none does.
         std::function<std::shared_ptr<daw::audio::MagdaDevice>()> renderedDevice;
         /// Tracktion's plugin for the device, where that engine hosts one.
-        tracktion::engine::Plugin* plugin = nullptr;
-        std::function<tracktion::engine::Plugin::Ptr()> livePlugin;
     };
 
     /** @brief Show a sampler, a MAGDA faceplate or a hosted plugin's parameters for @p binding. */
@@ -178,7 +171,6 @@ class PadDeviceSlot : public juce::Component, private juce::Timer {
     // the other way, to the model at devicePath_, and reach it by projection (#2379).
     void setupForSampler();
     void refreshSamplerDisplay(const std::shared_ptr<daw::audio::MagdaSamplerPlugin>& sampler);
-    void setupForExternalPlugin(tracktion::engine::Plugin* plugin);
     /// A hosted plugin no Tracktion plugin stands for: its parameters as the engine describes them.
     void setupForHostedParameters();
     bool setupForSharedDeviceUi(const magda::DeviceInfo& device);

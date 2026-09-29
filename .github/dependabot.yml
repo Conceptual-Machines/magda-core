@@ -18,9 +18,6 @@ updates:
       - "dependencies"
       - "security"
     ignore:
-      # Tracktion Engine is a fork we control and bump deliberately (it carries
-      # MAGDA patches), so Dependabot must never open PRs for it.
-      - dependency-name: "third_party/tracktion_engine"
       # Same for Faust: our fork carries the wasmtime embedding patches
       # (WASMTIME_LIB/WASMTIME_INCLUDE_DIR + the raw calling convention for the
       # math imports). A Dependabot bump would move the pointer to an upstream

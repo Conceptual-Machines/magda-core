@@ -18,7 +18,6 @@
 #include "../core/HostedParameterEdit.hpp"
 #include "../core/TempoMap.hpp"
 #include "../core/TimeTypes.hpp"
-#include "AudioEngineChoice.hpp"
 #include "AudioEngineListener.hpp"
 
 namespace juce {
@@ -160,7 +159,7 @@ struct AudioEngineOptions {
  * @brief Abstract audio engine interface
  *
  * This provides a clean abstraction over the actual audio engine implementation.
- * Concrete implementations (e.g., TracktionEngineWrapper) inherit from this.
+ * MagdaAudioEngine implements this using the native engine.
  *
  * Also inherits from AudioEngineListener so the TimelineController can notify
  * the audio engine of state changes via the observer pattern.
@@ -169,12 +168,9 @@ class AudioEngine : public AudioEngineListener {
   public:
     ~AudioEngine() override = default;
 
-    /// Which engine this is, for the about box (#2559). Asked of the engine
-    /// that was built rather than of chosenAudioEngine(), whose answer moves
-    /// the moment the setting changes and only means anything at the next
-    /// start.
+    /// Rendering engine name for the about box.
     virtual juce::String engineName() const {
-        return nameOf(AudioEngineChoice::Tracktion);
+        return "magda::engine";
     }
 
     // ===== Lifecycle =====

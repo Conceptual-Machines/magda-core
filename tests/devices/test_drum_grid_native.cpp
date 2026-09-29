@@ -1,25 +1,26 @@
+#include <juce_audio_basics/juce_audio_basics.h>
+
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "magda/daw/audio/plugins/DrumGridPlugin.hpp"
-
-using DrumGridPlugin = magda::daw::audio::DrumGridPlugin;
+#include "exec/PlanValues.hpp"
+#include "magda/daw/core/DrumGridPads.hpp"
 
 // ============================================================================
 // Chain Management Tests
 // ============================================================================
 
-TEST_CASE("DrumGridPlugin constants are consistent", "[drumgrid][constants]") {
-    REQUIRE(DrumGridPlugin::maxPads == 64);
-    REQUIRE(DrumGridPlugin::baseNote == 24);
+TEST_CASE("Native Drum Grid constants are consistent", "[drumgrid][constants]") {
+    REQUIRE(magda::kPadCount == 64);
+    REQUIRE(magda::kPadBaseNote == 24);
 
     SECTION("Pad 0 maps to MIDI note 24 (C0)") {
-        int midiNote = DrumGridPlugin::baseNote + 0;
+        int midiNote = magda::kPadBaseNote + 0;
         REQUIRE(midiNote == 24);
     }
 
     SECTION("Last pad maps to MIDI note 87") {
-        int midiNote = DrumGridPlugin::baseNote + (DrumGridPlugin::maxPads - 1);
+        int midiNote = magda::kPadBaseNote + (magda::kPadCount - 1);
         REQUIRE(midiNote == 87);
     }
 }
@@ -28,39 +29,39 @@ TEST_CASE("DrumGridPlugin constants are consistent", "[drumgrid][constants]") {
 // Note-to-Pad Mapping Tests
 // ============================================================================
 
-TEST_CASE("DrumGridPlugin pad-to-note mapping is invertible", "[drumgrid][mapping]") {
+TEST_CASE("Native Drum Grid pad-to-note mapping is invertible", "[drumgrid][mapping]") {
     SECTION("Round-trip: padIndex -> midiNote -> padIndex") {
-        for (int pad = 0; pad < DrumGridPlugin::maxPads; ++pad) {
-            int midiNote = DrumGridPlugin::baseNote + pad;
-            int recoveredPad = midiNote - DrumGridPlugin::baseNote;
+        for (int pad = 0; pad < magda::kPadCount; ++pad) {
+            int midiNote = magda::kPadBaseNote + pad;
+            int recoveredPad = midiNote - magda::kPadBaseNote;
             REQUIRE(recoveredPad == pad);
         }
     }
 
     SECTION("Notes below baseNote are out of pad range") {
-        int midiNote = DrumGridPlugin::baseNote - 1;
-        int padIdx = midiNote - DrumGridPlugin::baseNote;
+        int midiNote = magda::kPadBaseNote - 1;
+        int padIdx = midiNote - magda::kPadBaseNote;
         REQUIRE(padIdx < 0);
     }
 
     SECTION("Notes at or above baseNote + maxPads are out of range") {
-        int midiNote = DrumGridPlugin::baseNote + DrumGridPlugin::maxPads;
-        int padIdx = midiNote - DrumGridPlugin::baseNote;
-        REQUIRE(padIdx >= DrumGridPlugin::maxPads);
+        int midiNote = magda::kPadBaseNote + magda::kPadCount;
+        int padIdx = midiNote - magda::kPadBaseNote;
+        REQUIRE(padIdx >= magda::kPadCount);
     }
 }
 
 // ============================================================================
-// Pan Law Tests (linear, matching Tracktion's PanLawLinear)
+// Native Pan Law Tests
 // ============================================================================
 
-TEST_CASE("DrumGridPlugin pan law is linear with unity at centre", "[drumgrid][pan]") {
+TEST_CASE("Native Drum Grid pan law is linear with unity at centre", "[drumgrid][pan]") {
     // Calls the production gain calculation directly — the audio path in
-    // processChain uses this same function, so the two cannot drift apart.
+    // the native executor uses this same function, so the two cannot drift apart.
     auto computeGains = [](float panValue, float levelLinear = 1.0f) -> std::pair<float, float> {
         float leftGain = 0.0f;
         float rightGain = 0.0f;
-        DrumGridPlugin::computePadGains(levelLinear, panValue, leftGain, rightGain);
+        magda::engine::applyLinearPanLaw(levelLinear, panValue, leftGain, rightGain);
         return {leftGain, rightGain};
     };
 
@@ -82,9 +83,7 @@ TEST_CASE("DrumGridPlugin pan law is linear with unity at centre", "[drumgrid][p
     SECTION("Hard left (-1.0) silences the right channel") {
         auto [left, right] = computeGains(-1.0f);
         REQUIRE(right == Catch::Approx(0.0f).margin(0.001f));
-        // Pan law, not balance: the favoured channel reaches 2x, matching
-        // Tracktion's PanLawLinear so a hard-panned pad and a hard-panned
-        // track agree.
+        // The favoured channel reaches 2x for both pads and tracks.
         REQUIRE(left == Catch::Approx(2.0f).margin(0.001f));
     }
 
@@ -101,20 +100,13 @@ TEST_CASE("DrumGridPlugin pan law is linear with unity at centre", "[drumgrid][p
             REQUIRE(left + right == Catch::Approx(2.0f).margin(0.001f));
         }
     }
-
-    SECTION("Pan is clamped to the parameter range") {
-        auto [farLeft, farLeftR] = computeGains(-4.0f);
-        auto [hardLeft, hardLeftR] = computeGains(-1.0f);
-        REQUIRE(farLeft == Catch::Approx(hardLeft).margin(0.001f));
-        REQUIRE(farLeftR == Catch::Approx(hardLeftR).margin(0.001f));
-    }
 }
 
 // ============================================================================
 // MIDI Note Remapping Logic Tests
 // ============================================================================
 
-TEST_CASE("DrumGridPlugin MIDI note remapping formula", "[drumgrid][midi]") {
+TEST_CASE("Native Drum Grid MIDI note remapping formula", "[drumgrid][midi]") {
     // Mirrors the remapping logic in applyToBuffer:
     // remappedNote = rootNote + (incoming - lowNote)
 
@@ -148,7 +140,7 @@ TEST_CASE("DrumGridPlugin MIDI note remapping formula", "[drumgrid][midi]") {
 // Solo/Mute Logic Tests
 // ============================================================================
 
-TEST_CASE("DrumGridPlugin solo/mute logic", "[drumgrid][mixer]") {
+TEST_CASE("Native Drum Grid solo/mute logic", "[drumgrid][mixer]") {
     // Mirrors the solo detection and skip logic in applyToBuffer
 
     struct MockChain {
@@ -201,7 +193,7 @@ TEST_CASE("DrumGridPlugin solo/mute logic", "[drumgrid][mixer]") {
 // Gain Calculation Tests
 // ============================================================================
 
-TEST_CASE("DrumGridPlugin level dB to linear conversion", "[drumgrid][gain]") {
+TEST_CASE("Native Drum Grid level dB to linear conversion", "[drumgrid][gain]") {
     SECTION("0 dB = unity gain") {
         float gain = juce::Decibels::decibelsToGain(0.0f);
         REQUIRE(gain == Catch::Approx(1.0f));

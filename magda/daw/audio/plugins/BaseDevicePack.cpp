@@ -5,82 +5,33 @@
 
 #include "audio/plugins/SavedDeviceState.hpp"
 #include "plugins/ArpeggiatorPlugin.hpp"
-#include "plugins/AudioSidechainMonitorPlugin.hpp"
 #include "plugins/DeviceServices.hpp"
-#include "plugins/DrumGridPlugin.hpp"
 #include "plugins/FaustInstrumentPlugin.hpp"
 #include "plugins/FaustPlugin.hpp"
-#include "plugins/FollowerSourceTapPlugin.hpp"
-#include "plugins/InsertCapturePlugin.hpp"
-#include "plugins/InstrumentMeterTapPlugin.hpp"
 #include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/LevelsPlugin.hpp"
 #include "plugins/MagdaConvolutionPlugin.hpp"
 #include "plugins/MagdaSamplerPlugin.hpp"
 #include "plugins/MidiChordEnginePlugin.hpp"
-#include "plugins/MidiReceivePlugin.hpp"
 #include "plugins/MidiStrumPlugin.hpp"
 #include "plugins/OscilloscopePlugin.hpp"
 #include "plugins/PolyStepSequencerPlugin.hpp"
-#include "plugins/SidechainMonitorPlugin.hpp"
 #include "plugins/SidechainPlugin.hpp"
 #include "plugins/SpectrumAnalyzerPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
 #include "plugins/ToneGeneratorPlugin.hpp"
-#include "plugins/TrackMeasurementPlugin.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
 #include "plugins/mutable/MutableCloudsPlugin.hpp"
 #include "plugins/mutable/MutableElementsPlugin.hpp"
 #include "plugins/mutable/MutableRingsPlugin.hpp"
-#include "plugins/tracktion/TracktionDeviceAdapters.hpp"
-#include "plugins/tracktion/TracktionDeviceStateBridge.hpp"
-#include "plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
-#include "processors/DeviceProcessor.hpp"
-#include "processors/internal/MidiDeviceProcessors.hpp"
-#include "processors/internal/NativeDeviceProcessors.hpp"
-#include "session/SessionMonitorPlugin.hpp"
 
 namespace magda::daw::audio {
 
 namespace {
 
-namespace ta = tracktion_adapter;
-
-template <typename PluginType> bool matches(DevicePluginRef plugin) {
-    return dynamic_cast<PluginType*>(ta::pluginFromRef(plugin)) != nullptr;
-}
-
-/// The same question for a device the host adapter wraps: what the chain holds
-/// is the wrapper, and the device is inside it.
-template <typename DeviceType> bool matchesDevice(DevicePluginRef plugin) {
-    return ta::deviceFromPlugin<DeviceType>(ta::pluginFromRef(plugin)) != nullptr;
-}
-
 template <typename DeviceType>
 std::unique_ptr<MagdaDevice> createDevice(const DevicePluginCreationContext&) {
     return std::make_unique<DeviceType>();
-}
-
-template <typename ProcessorType>
-std::unique_ptr<DeviceProcessor> makeProcessor(DeviceId deviceId, DevicePluginPtr plugin) {
-    return std::make_unique<ProcessorType>(deviceId, ta::pluginFromHandle(plugin));
-}
-
-template <typename PluginType>
-DevicePluginPtr createPlugin(const DevicePluginCreationContext& context) {
-    return ta::pluginHandle(new PluginType(ta::creationInfo(context)));
-}
-
-template <typename PluginType>
-DevicePluginPtr createRealtimePlugin(const DevicePluginCreationContext& context) {
-    auto info = ta::creationInfo(context);
-    auto* plugin = new PluginType(info);
-    plugin->setRealtimeContext(getDeviceServices(context.sessionKey).realtimeContext);
-    return ta::pluginHandle(plugin);
-}
-
-DevicePluginPtr createDrumGridPlugin(const DevicePluginCreationContext& context) {
-    return ta::pluginHandle(new DrumGridPlugin(ta::creationInfo(context)));
 }
 
 /// What a device is created from: the host's own preferences when it supplied
@@ -98,79 +49,12 @@ std::unique_ptr<MagdaDevice> createSpectrumAnalyzerDevice(
     return std::make_unique<SpectrumAnalyzerPlugin>(defaultsFor(context).spectrum);
 }
 
-DevicePluginPtr createMidiReceivePlugin(const DevicePluginCreationContext& context) {
-    return ta::pluginHandle(new ::magda::MidiReceivePlugin(ta::creationInfo(context),
-                                                           defaultsFor(context).midiReceive));
-}
-
-DevicePluginPtr createInstrumentMeterTapPlugin(const DevicePluginCreationContext& context) {
-    auto services = getDeviceServices(context.sessionKey);
-    return ta::pluginHandle(
-        new InstrumentMeterTapPlugin(ta::creationInfo(context), services.meteringContext));
-}
-
-DevicePluginPtr createSessionMonitorPlugin(const DevicePluginCreationContext& context) {
-    auto* plugin = new ::magda::SessionMonitorPlugin(ta::creationInfo(context));
-    plugin->setSessionContext(getDeviceServices(context.sessionKey).sessionContext);
-    return ta::pluginHandle(plugin);
-}
-
-te::Plugin::Ptr createFreshValueTreePlugin(te::Edit& edit, const char* xmlTypeName) {
-    juce::ValueTree pluginState(te::IDs::PLUGIN);
-    pluginState.setProperty(te::IDs::type, xmlTypeName, nullptr);
-    return edit.getPluginCache().createNewPlugin(pluginState);
-}
-
-te::Plugin::Ptr restoreSavedPlugin(te::Edit& edit, const juce::String& savedPluginState) {
-    if (savedPluginState.isEmpty())
-        return {};
-
-    auto savedState = savedDeviceStateTree(savedPluginState);
-    if (!savedState.isValid()) {
-        DBG("restoreSavedPlugin: failed to parse saved plugin state");
-        return {};
-    }
-
-    return edit.getPluginCache().createNewPlugin(savedState);
-}
-
-DevicePluginPtr createTracktionPlugin(const InternalPluginSpec& spec, DeviceSessionKey sessionKey,
-                                      const juce::String& savedPluginState) {
-    auto& edit = ta::editFromSessionKey(sessionKey);
-    if (auto restored = restoreSavedPlugin(edit, savedPluginState))
-        return ta::pluginHandle(restored);
-    if (auto plugin = edit.getPluginCache().createNewPlugin(spec.pluginId, {}))
-        return ta::pluginHandle(plugin);
-    return ta::pluginHandle(createFreshValueTreePlugin(edit, spec.pluginId));
-}
-
-DevicePluginPtr createValueTreePlugin(const InternalPluginSpec& spec, DeviceSessionKey sessionKey,
-                                      const juce::String& savedPluginState) {
-    auto& edit = ta::editFromSessionKey(sessionKey);
-    if (auto restored = restoreSavedPlugin(edit, savedPluginState))
-        return ta::pluginHandle(restored);
-    return ta::pluginHandle(createFreshValueTreePlugin(edit, spec.pluginId));
-}
-
-DevicePluginPtr createFreshValueTreePlugin(const InternalPluginSpec& spec,
-                                           DeviceSessionKey sessionKey, const juce::String&) {
-    return ta::pluginHandle(
-        createFreshValueTreePlugin(ta::editFromSessionKey(sessionKey), spec.pluginId));
-}
-
-DevicePluginPtr createLevelMeterPlugin(const InternalPluginSpec&, DeviceSessionKey sessionKey,
-                                       const juce::String&) {
-    auto& edit = ta::editFromSessionKey(sessionKey);
-    return ta::pluginHandle(edit.getPluginCache().createNewPlugin(te::LevelMeterPlugin::create()));
-}
-
 void add(InternalPluginRegistry& registry, InternalPluginSpec spec) {
     const bool registered = registry.registerPlugin(spec);
     jassert(registered);
     juce::ignoreUnused(registered);
 }
 
-constexpr const char* kLowpassAliases[] = {"lowpass"};
 constexpr const char* kFourOscAliases[] = {"4osc", "4OSC Synth"};
 constexpr const char* kToneAliases[] = {"tone", "tonegenerator"};
 constexpr const char* kToneTags[] = {"utility", "test", "tone"};
@@ -185,8 +69,8 @@ constexpr const char* kSidechainAliases[] = {"duck", "pump", "volumeshaper"};
 constexpr const char* kFaustAliases[] = {"faust"};
 constexpr const char* kFaustInstrumentAliases[] = {"faustinstrument"};
 
-constexpr const char* kTracktionTags[] = {"tracktion-engine"};
-constexpr const char* kExternalInsertTags[] = {"tracktion-engine", "external-insert"};
+constexpr const char* kLegacyTags[] = {"legacy"};
+constexpr const char* kExternalInsertTags[] = {"external-insert"};
 constexpr const char* kDrumGridTags[] = {"drum-grid"};
 // Not midi-generator: it reads the chain's MIDI and writes none (#2427).
 constexpr const char* kChordEngineTags[] = {"chord-engine"};
@@ -211,39 +95,37 @@ constexpr const char* kMutableElementsTags[] = {"mutable-instrument", "mutable-e
 constexpr const char* kMutableRingsTags[] = {"mutable-instrument", "mutable-rings"};
 constexpr const char* kMutableCloudsTags[] = {"mutable-clouds"};
 
-// The stock Tracktion devices MAGDA still ships. The rest of the set (EQ,
+// Persisted identifiers retained for existing project translation. The old set (EQ,
 // Compressor, Delay, Chorus, Phaser, Reverb, Pitch Shift, Lowpass, IR Reverb)
 // was retired once MAGDA's own devices replaced them; their type names now
 // resolve to those successors instead of to a registration here
 // (core/LegacyDeviceAliases.hpp).
-void registerTracktionDevices(InternalPluginRegistry& registry) {
+void registerUtilityDevices(InternalPluginRegistry& registry) {
     add(registry,
-        {.pluginId = te::VolumeAndPanPlugin::xmlTypeName,
-         .displayName = "Legacy Volume/Pan",
-         .browserCategory = "Legacy",
-         .description = "Legacy Tracktion volume and pan device, kept for old project loads.",
-         .createMode = InternalPluginCreateMode::SavedStateOrFresh,
-         .matchesPlugin = matches<te::VolumeAndPanPlugin>,
-         .createProcessor = makeProcessor<UtilityProcessor>,
-         .tags = kTracktionTags,
-         .tagCount = static_cast<int>(std::size(kTracktionTags)),
-         .createInSession = createTracktionPlugin});
+        {
+            .pluginId = "volume",
+            .displayName = "Legacy Volume/Pan",
+            .browserCategory = "Legacy",
+            .description = "Legacy Tracktion volume and pan device, kept for old project loads.",
+            .createMode = InternalPluginCreateMode::SavedStateOrFresh,
+            .tags = kLegacyTags,
+            .tagCount = static_cast<int>(std::size(kLegacyTags)),
+        });
     add(registry,
-        {.pluginId = te::FourOscPlugin::xmlTypeName,
-         .displayName = "4OSC Synth",
-         .browserCategory = "Synth",
-         .description =
-             "Four-oscillator subtractive instrument with modulation and macro-friendly controls.",
-         .createMode = InternalPluginCreateMode::SavedStateOrFresh,
-         .loadAliases = kFourOscAliases,
-         .loadAliasCount = static_cast<int>(std::size(kFourOscAliases)),
-         .matchesPlugin = matches<te::FourOscPlugin>,
-         .createProcessor = makeProcessor<FourOscProcessor>,
-         .showInBrowser = true,
-         .isInstrument = true,
-         .tags = kTracktionTags,
-         .tagCount = static_cast<int>(std::size(kTracktionTags)),
-         .createInSession = createTracktionPlugin});
+        {
+            .pluginId = "4osc",
+            .displayName = "4OSC Synth",
+            .browserCategory = "Synth",
+            .description =
+                "Retired 4OSC state translated to Poly Synth by the existing project translator.",
+            .createMode = InternalPluginCreateMode::SavedStateOrFresh,
+            .loadAliases = kFourOscAliases,
+            .loadAliasCount = static_cast<int>(std::size(kFourOscAliases)),
+            .showInBrowser = false,
+            .isInstrument = true,
+            .tags = kLegacyTags,
+            .tagCount = static_cast<int>(std::size(kLegacyTags)),
+        });
     add(registry,
         {.pluginId = ToneGeneratorPlugin::xmlTypeName,
          .displayName = "Test Tone",
@@ -253,36 +135,33 @@ void registerTracktionDevices(InternalPluginRegistry& registry) {
          .createMode = InternalPluginCreateMode::SavedStateOrFresh,
          .loadAliases = kToneAliases,
          .loadAliasCount = static_cast<int>(std::size(kToneAliases)),
-         .matchesPlugin = matchesDevice<ToneGeneratorPlugin>,
-         .createProcessor = makeProcessor<ToneGeneratorProcessor>,
          .showInBrowser = true,
          .tags = kToneTags,
          .tagCount = static_cast<int>(std::size(kToneTags)),
-         .createInSession = createValueTreePlugin,
          .createDevice = createDevice<ToneGeneratorPlugin>});
-    add(registry, {.pluginId = te::LevelMeterPlugin::xmlTypeName,
-                   .displayName = "Level Meter",
-                   .browserCategory = "Meter",
-                   .description = "Signal meter for monitoring level inside a chain.",
-                   .createMode = InternalPluginCreateMode::LevelMeterValueTree,
-                   .canCreateDetached = false,
-                   .loadAliases = kMeterAliases,
-                   .loadAliasCount = static_cast<int>(std::size(kMeterAliases)),
-                   .matchesPlugin = matches<te::LevelMeterPlugin>,
-                   .tags = kTracktionTags,
-                   .tagCount = static_cast<int>(std::size(kTracktionTags)),
-                   .createInSession = createLevelMeterPlugin});
-    add(registry,
-        {.pluginId = te::InsertPlugin::xmlTypeName,
-         .displayName = "External Insert",
-         .browserCategory = "External",
-         .description = "Hardware send/return insert for outboard audio FX and MIDI instruments.",
-         .createMode = InternalPluginCreateMode::SavedStateOrFresh,
-         .canCreateDetached = false,
-         .matchesPlugin = matches<te::InsertPlugin>,
-         .tags = kExternalInsertTags,
-         .tagCount = static_cast<int>(std::size(kExternalInsertTags)),
-         .createInSession = createTracktionPlugin});
+    add(registry, {
+                      .pluginId = "level",
+                      .displayName = "Level Meter",
+                      .browserCategory = "Meter",
+                      .description = "Signal meter for monitoring level inside a chain.",
+                      .createMode = InternalPluginCreateMode::LevelMeterValueTree,
+                      .canCreateDetached = false,
+                      .loadAliases = kMeterAliases,
+                      .loadAliasCount = static_cast<int>(std::size(kMeterAliases)),
+                      .tags = kLegacyTags,
+                      .tagCount = static_cast<int>(std::size(kLegacyTags)),
+                  });
+    add(registry, {
+                      .pluginId = "insert",
+                      .displayName = "External Insert",
+                      .browserCategory = "External",
+                      .description =
+                          "Hardware send/return insert for outboard audio FX and MIDI instruments.",
+                      .createMode = InternalPluginCreateMode::SavedStateOrFresh,
+                      .canCreateDetached = false,
+                      .tags = kExternalInsertTags,
+                      .tagCount = static_cast<int>(std::size(kExternalInsertTags)),
+                  });
 }
 
 void registerNativeDevices(InternalPluginRegistry& registry) {
@@ -295,37 +174,30 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
          // The sample path lives in the device state, so a restore has to
          // rebuild the plugin from it rather than from a fresh tree.
          .createMode = InternalPluginCreateMode::SavedStateOrFresh,
-         .matchesPlugin = matchesDevice<MagdaSamplerPlugin>,
-         .createProcessor = makeProcessor<MagdaSamplerProcessor>,
          .showInBrowser = true,
          .isInstrument = true,
-         .createInSession = createValueTreePlugin,
          .createDevice = createDevice<MagdaSamplerPlugin>});
     add(registry,
-        {.pluginId = DrumGridPlugin::xmlTypeName,
-         .displayName = "Drum Grid",
-         .browserCategory = "Drums",
-         .description = "Pad-based drum instrument with per-pad sample and effect chains.",
-         .createMode = InternalPluginCreateMode::FreshValueTree,
-         .matchesPlugin = matches<DrumGridPlugin>,
-         .createProcessor = makeProcessor<DrumGridProcessor>,
-         .showInBrowser = true,
-         .isInstrument = true,
-         .tags = kDrumGridTags,
-         .tagCount = static_cast<int>(std::size(kDrumGridTags)),
-         .createInSession = createFreshValueTreePlugin,
-         .createPlugin = createDrumGridPlugin});
+        {
+            .pluginId = "drumgrid",
+            .displayName = "Drum Grid",
+            .browserCategory = "Drums",
+            .description = "Pad-based drum instrument with per-pad sample and effect chains.",
+            .createMode = InternalPluginCreateMode::FreshValueTree,
+            .showInBrowser = true,
+            .isInstrument = true,
+            .tags = kDrumGridTags,
+            .tagCount = static_cast<int>(std::size(kDrumGridTags)),
+        });
     add(registry,
         {.pluginId = MidiChordEnginePlugin::xmlTypeName,
          .displayName = "Chord Engine",
          .browserCategory = "MIDI",
          .description = "MIDI processor for chord generation, voicing, and harmonic transforms.",
          .createMode = InternalPluginCreateMode::SavedStateOrFresh,
-         .matchesPlugin = matchesDevice<MidiChordEnginePlugin>,
          .showInBrowser = true,
          .tags = kChordEngineTags,
          .tagCount = static_cast<int>(std::size(kChordEngineTags)),
-         .createInSession = createValueTreePlugin,
          .createDevice = createDevice<MidiChordEnginePlugin>});
     add(registry,
         {.pluginId = ArpeggiatorPlugin::xmlTypeName,
@@ -333,12 +205,9 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
          .browserCategory = "MIDI",
          .description = "MIDI arpeggiator for rhythmic note patterns and held-note motion.",
          .createMode = InternalPluginCreateMode::SavedStateOrFresh,
-         .matchesPlugin = matchesDevice<ArpeggiatorPlugin>,
-         .createProcessor = makeProcessor<ArpeggiatorProcessor>,
          .showInBrowser = true,
          .tags = kArpeggiatorTags,
          .tagCount = static_cast<int>(std::size(kArpeggiatorTags)),
-         .createInSession = createValueTreePlugin,
          .createDevice = createDevice<ArpeggiatorPlugin>});
     add(registry, {.pluginId = MidiStrumPlugin::xmlTypeName,
                    .displayName = "Strum",
@@ -346,12 +215,9 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
                    .description = "Curve-shaped strum: turns a held chord into a strum / roll / "
                                   "arpeggio for any instrument.",
                    .createMode = InternalPluginCreateMode::SavedStateOrFresh,
-                   .matchesPlugin = matchesDevice<MidiStrumPlugin>,
-                   .createProcessor = makeProcessor<StrumProcessor>,
                    .showInBrowser = true,
                    .tags = kStrumTags,
                    .tagCount = static_cast<int>(std::size(kStrumTags)),
-                   .createInSession = createValueTreePlugin,
                    .createDevice = createDevice<MidiStrumPlugin>});
     add(registry,
         {.pluginId = StepSequencerPlugin::xmlTypeName,
@@ -359,12 +225,9 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
          .browserCategory = "MIDI",
          .description = "MIDI step sequencer for pattern-driven notes and rhythmic control.",
          .createMode = InternalPluginCreateMode::SavedStateOrFresh,
-         .matchesPlugin = matchesDevice<StepSequencerPlugin>,
-         .createProcessor = makeProcessor<StepSequencerProcessor>,
          .showInBrowser = true,
          .tags = kStepSequencerTags,
          .tagCount = static_cast<int>(std::size(kStepSequencerTags)),
-         .createInSession = createValueTreePlugin,
          .createDevice = createDevice<StepSequencerPlugin>});
     add(registry,
         {.pluginId = PolyStepSequencerPlugin::xmlTypeName,
@@ -373,12 +236,9 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
          .description =
              "Polyphonic MIDI step sequencer with multiple notes per step for chord patterns.",
          .createMode = InternalPluginCreateMode::SavedStateOrFresh,
-         .matchesPlugin = matchesDevice<PolyStepSequencerPlugin>,
-         .createProcessor = makeProcessor<PolyStepSequencerProcessor>,
          .showInBrowser = true,
          .tags = kPolyStepSequencerTags,
          .tagCount = static_cast<int>(std::size(kPolyStepSequencerTags)),
-         .createInSession = createValueTreePlugin,
          .createDevice = createDevice<PolyStepSequencerPlugin>});
     add(registry, {.pluginId = SidechainPlugin::xmlTypeName,
                    .displayName = "Sidechain",
@@ -388,13 +248,10 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
                    .createMode = InternalPluginCreateMode::SavedStateOrFresh,
                    .loadAliases = kSidechainAliases,
                    .loadAliasCount = static_cast<int>(std::size(kSidechainAliases)),
-                   .matchesPlugin = matchesDevice<SidechainPlugin>,
-                   .createProcessor = makeProcessor<SidechainProcessor>,
                    .showInBrowser = true,
                    .tags = kSidechainTags,
                    .tagCount = static_cast<int>(std::size(kSidechainTags)),
                    .defaultModulationParamIndex = SidechainPlugin::kGainParamIndex,
-                   .createInSession = createValueTreePlugin,
                    .createDevice = createDevice<SidechainPlugin>});
     add(registry,
         {.pluginId = MagdaConvolutionPlugin::xmlTypeName,
@@ -406,14 +263,11 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
          .createMode = InternalPluginCreateMode::SavedStateOrFresh,
          .loadAliases = kConvolutionLoadAliases,
          .loadAliasCount = static_cast<int>(std::size(kConvolutionLoadAliases)),
-         .matchesPlugin = matchesDevice<MagdaConvolutionPlugin>,
-         .createProcessor = makeProcessor<MagdaConvolutionProcessor>,
          .showInBrowser = true,
          .tags = kConvolutionTags,
          .tagCount = static_cast<int>(std::size(kConvolutionTags)),
          // The impulse response lives in the device state, so a restore has to
          // rebuild the plugin from it rather than from a fresh tree.
-         .createInSession = createValueTreePlugin,
          .createDevice = createDevice<MagdaConvolutionPlugin>});
     add(registry, {.pluginId = FaustPlugin::xmlTypeName,
                    .displayName = "Faust",
@@ -422,13 +276,10 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
                    .createMode = InternalPluginCreateMode::SavedStateOrFresh,
                    .loadAliases = kFaustAliases,
                    .loadAliasCount = static_cast<int>(std::size(kFaustAliases)),
-                   .matchesPlugin = matchesDevice<FaustPlugin>,
-                   .createProcessor = makeProcessor<FaustProcessor>,
                    .showInBrowser = true,
                    .tags = kFaustTags,
                    .tagCount = static_cast<int>(std::size(kFaustTags)),
                    .stateDefinesParameters = true,
-                   .createInSession = createValueTreePlugin,
                    .createDevice = createDevice<FaustPlugin>});
     add(registry, {.pluginId = FaustInstrumentPlugin::xmlTypeName,
                    .displayName = "Faust Instrument",
@@ -437,14 +288,11 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
                    .createMode = InternalPluginCreateMode::SavedStateOrFresh,
                    .loadAliases = kFaustInstrumentAliases,
                    .loadAliasCount = static_cast<int>(std::size(kFaustInstrumentAliases)),
-                   .matchesPlugin = matchesDevice<FaustInstrumentPlugin>,
-                   .createProcessor = makeProcessor<FaustInstrumentProcessor>,
                    .showInBrowser = true,
                    .isInstrument = true,
                    .tags = kFaustInstrumentTags,
                    .tagCount = static_cast<int>(std::size(kFaustInstrumentTags)),
                    .stateDefinesParameters = true,
-                   .createInSession = createValueTreePlugin,
                    .createDevice = createDevice<FaustInstrumentPlugin>});
     add(registry,
         {.pluginId = OscilloscopePlugin::xmlTypeName,
@@ -457,7 +305,6 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
          .showInBrowser = true,
          .tags = kOscilloscopeTags,
          .tagCount = static_cast<int>(std::size(kOscilloscopeTags)),
-         .createInSession = createValueTreePlugin,
          .createDevice = createOscilloscopeDevice});
     add(registry,
         {.pluginId = SpectrumAnalyzerPlugin::xmlTypeName,
@@ -470,7 +317,6 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
          .showInBrowser = true,
          .tags = kSpectrumTags,
          .tagCount = static_cast<int>(std::size(kSpectrumTags)),
-         .createInSession = createValueTreePlugin,
          .createDevice = createSpectrumAnalyzerDevice});
     add(registry,
         {.pluginId = LevelsPlugin::xmlTypeName,
@@ -483,7 +329,6 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
          .showInBrowser = true,
          .tags = kLevelsTags,
          .tagCount = static_cast<int>(std::size(kLevelsTags)),
-         .createInSession = createValueTreePlugin,
          .createDevice = createDevice<LevelsPlugin>});
     add(registry,
         {.pluginId = MutableElementsPlugin::xmlTypeName,
@@ -492,13 +337,10 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
          .description = "Mutable Instruments Elements port: modal-synthesis voice (bow/blow/strike "
                         "exciter into a modal + string resonator and stereo space).",
          .createMode = InternalPluginCreateMode::FreshValueTree,
-         .matchesPlugin = matchesDevice<MutableElementsPlugin>,
-         .createProcessor = makeProcessor<MutableElementsProcessor>,
          .showInBrowser = true,
          .isInstrument = true,
          .tags = kMutableElementsTags,
          .tagCount = static_cast<int>(std::size(kMutableElementsTags)),
-         .createInSession = createFreshValueTreePlugin,
          .createDevice = createDevice<MutableElementsPlugin>});
     add(registry, {.pluginId = MutableRingsPlugin::xmlTypeName,
                    .displayName = "Halo",
@@ -506,13 +348,10 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
                    .description = "Mutable Instruments Rings port: polyphonic resonator (modal / "
                                   "sympathetic / inharmonic / FM models) excited by MIDI.",
                    .createMode = InternalPluginCreateMode::FreshValueTree,
-                   .matchesPlugin = matchesDevice<MutableRingsPlugin>,
-                   .createProcessor = makeProcessor<MutableRingsProcessor>,
                    .showInBrowser = true,
                    .isInstrument = true,
                    .tags = kMutableRingsTags,
                    .tagCount = static_cast<int>(std::size(kMutableRingsTags)),
-                   .createInSession = createFreshValueTreePlugin,
                    .createDevice = createDevice<MutableRingsPlugin>});
     add(registry, {.pluginId = MutableCloudsPlugin::xmlTypeName,
                    .displayName = "Nimbus",
@@ -520,91 +359,10 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
                    .description = "Mutable Instruments Clouds port: granular texture processor "
                                   "(granular / stretch / looping-delay / spectral) with freeze.",
                    .createMode = InternalPluginCreateMode::FreshValueTree,
-                   .matchesPlugin = matchesDevice<MutableCloudsPlugin>,
-                   .createProcessor = makeProcessor<MutableCloudsProcessor>,
                    .showInBrowser = true,
                    .tags = kMutableCloudsTags,
                    .tagCount = static_cast<int>(std::size(kMutableCloudsTags)),
-                   .createInSession = createFreshValueTreePlugin,
                    .createDevice = createDevice<MutableCloudsPlugin>});
-}
-
-void registerInfrastructureDevices(InternalPluginRegistry& registry) {
-    add(registry,
-        {.pluginId = ::magda::MidiReceivePlugin::xmlTypeName,
-         .displayName = "MIDI Receive",
-         .browserCategory = "MIDI",
-         .description = "Internal MIDI routing endpoint used by MAGDA track and device routing.",
-         .createMode = InternalPluginCreateMode::Unsupported,
-         .canCreateDetached = false,
-         .canCreateOnTrack = false,
-         .matchesPlugin = matches<::magda::MidiReceivePlugin>,
-         .createPlugin = createMidiReceivePlugin});
-    add(registry, {.pluginId = ::magda::SidechainMonitorPlugin::xmlTypeName,
-                   .displayName = "Sidechain Monitor",
-                   .browserCategory = "Utility",
-                   .description = "Internal monitor used to expose sidechain signal state.",
-                   .createMode = InternalPluginCreateMode::Unsupported,
-                   .canCreateDetached = false,
-                   .canCreateOnTrack = false,
-                   .matchesPlugin = matches<::magda::SidechainMonitorPlugin>,
-                   .createPlugin = createRealtimePlugin<::magda::SidechainMonitorPlugin>});
-    add(registry, {.pluginId = ::magda::AudioSidechainMonitorPlugin::xmlTypeName,
-                   .displayName = "Audio Sidechain Monitor",
-                   .browserCategory = "Utility",
-                   .description = "Internal audio monitor used by sidechain-aware devices.",
-                   .createMode = InternalPluginCreateMode::Unsupported,
-                   .canCreateDetached = false,
-                   .canCreateOnTrack = false,
-                   .matchesPlugin = matches<::magda::AudioSidechainMonitorPlugin>,
-                   .createPlugin = createRealtimePlugin<::magda::AudioSidechainMonitorPlugin>});
-    add(registry, {.pluginId = InstrumentMeterTapPlugin::xmlTypeName,
-                   .displayName = "Instrument Meter Tap",
-                   .browserCategory = "Meter",
-                   .description = "Internal meter tap used to observe instrument output levels.",
-                   .createMode = InternalPluginCreateMode::Unsupported,
-                   .canCreateDetached = false,
-                   .canCreateOnTrack = false,
-                   .matchesPlugin = matches<InstrumentMeterTapPlugin>,
-                   .createPlugin = createInstrumentMeterTapPlugin});
-    add(registry,
-        {.pluginId = TrackMeasurementPlugin::xmlTypeName,
-         .displayName = "Track Measurement",
-         .browserCategory = "Meter",
-         .description =
-             "Internal post-fader tap measuring loudness, peak and stereo for the mixing tools.",
-         .createMode = InternalPluginCreateMode::Unsupported,
-         .canCreateDetached = false,
-         .canCreateOnTrack = false,
-         .matchesPlugin = matches<TrackMeasurementPlugin>,
-         .createPlugin = createPlugin<TrackMeasurementPlugin>});
-    add(registry, {.pluginId = ::magda::SessionMonitorPlugin::xmlTypeName,
-                   .displayName = "Session Monitor",
-                   .browserCategory = "Session",
-                   .description = "Internal monitor used by session playback and launch state.",
-                   .createMode = InternalPluginCreateMode::Unsupported,
-                   .canCreateDetached = false,
-                   .canCreateOnTrack = false,
-                   .matchesPlugin = matches<::magda::SessionMonitorPlugin>,
-                   .createPlugin = createSessionMonitorPlugin});
-    add(registry, {.pluginId = FollowerSourceTapPlugin::xmlTypeName,
-                   .displayName = "Follower Source Tap",
-                   .browserCategory = "Utility",
-                   .description = "Internal source tap used by follower modulators.",
-                   .createMode = InternalPluginCreateMode::Unsupported,
-                   .canCreateDetached = false,
-                   .canCreateOnTrack = false,
-                   .matchesPlugin = matches<FollowerSourceTapPlugin>,
-                   .createPlugin = createRealtimePlugin<FollowerSourceTapPlugin>});
-    add(registry, {.pluginId = InsertCapturePlugin::xmlTypeName,
-                   .displayName = "Insert Capture",
-                   .browserCategory = "Utility",
-                   .description = "Internal capture endpoint used by external insert routing.",
-                   .createMode = InternalPluginCreateMode::Unsupported,
-                   .canCreateDetached = false,
-                   .canCreateOnTrack = false,
-                   .matchesPlugin = matches<InsertCapturePlugin>,
-                   .createPlugin = createPlugin<InsertCapturePlugin>});
 }
 
 void registerCompiledParameterAliases(InternalPluginRegistry& registry) {
@@ -626,9 +384,8 @@ void registerCompiledParameterAliases(InternalPluginRegistry& registry) {
 }  // namespace
 
 void registerBaseDevices(InternalPluginRegistry& registry) {
-    registerTracktionDevices(registry);
+    registerUtilityDevices(registry);
     registerNativeDevices(registry);
-    registerInfrastructureDevices(registry);
     registerCompiledParameterAliases(registry);
 }
 

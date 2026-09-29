@@ -16,10 +16,6 @@
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TextSlider.hpp"
 
-namespace tracktion::inline engine {
-class Plugin;
-}
-
 namespace magda::daw::audio {
 class MagdaSamplerPlugin;
 }  // namespace magda::daw::audio

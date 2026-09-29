@@ -14,10 +14,9 @@
 <p align="center">
   数字音频工作站
 </p>
-<p align="center"><img src="assets/treaktion-engine-logo.png" alt="Powered by Tracktion Engine" width="250" height="80"></p>
 
 ---
-MAGDA是一款免费的, 深度集成 AI 的开源数字音频工作站（DAW），基于 C++23、JUCE 框架与 Tracktion 音频引擎开发.
+MAGDA是一款免费的, 深度集成 AI 的开源数字音频工作站（DAW），基于 C++23、JUCE 框架与 MAGDA 原生音频引擎开发.
  - [English](README.md) | **简体中文**
 
 ### 特性
@@ -120,7 +119,7 @@ magda/
 ├── daw/        # DAW application (C++/JUCE)
 │   ├── audio/      # Audio processing
 │   ├── core/       # Track, clip, selection management
-│   ├── engine/     # Tracktion Engine wrapper
+│   ├── engine/     # Native engine host
 │   ├── interfaces/ # Abstract interfaces
 │   ├── profiling/  # Performance profiling
 │   ├── project/    # Project management and serialization
@@ -135,7 +134,6 @@ docs/           # Documentation
 
 ## Dependencies项目依赖组件
 
-- [Tracktion Engine](https://github.com/Tracktion/tracktion_engine) - Audio engine
 - [JUCE](https://juce.com/) - C++ application framework (GUI, audio I/O, plugin hosting, MIDI, DSP)
 - [juce-llm](https://github.com/Conceptual-Machines/juce-llm) - LLM API client module
 - [llama.cpp](https://github.com/ggml-org/llama.cpp) - Embedded local LLM inference

@@ -5,10 +5,7 @@
 #include <cstddef>
 #include <vector>
 
-// Pure, engine-free beats-domain ripple math for the tempo / time-sig / pitch
-// sequences. Kept free of Tracktion Engine so it can be unit-tested in the fast
-// CLI (Catch2) target; TempoSequenceRippleCommand applies the result to a real
-// te::Edit (which the JUCE test target covers).
+// Pure beats-domain ripple math for anchored event sequences.
 namespace magda::temporipple {
 
 enum class Mode {
@@ -21,7 +18,7 @@ constexpr double kBeatEps = 1.0e-6;
 
 // Ripple one sequence's events. `T` is any struct with a public `double beat`
 // member (plus whatever payload it carries). Index 0 is the beat-0 anchor that
-// TE always keeps; it never moves and is never dropped or duplicated.
+// is retained; it never moves and is never dropped or duplicated.
 template <typename T>
 std::vector<T> rippleEvents(const std::vector<T>& in, Mode mode, double startBeat, double endBeat) {
     const double dur = endBeat - startBeat;
