@@ -42,16 +42,6 @@ CMAKE_ARGS=(
   -DMAGDA_BUILD_TESTS=ON
   "${VCPKG_ARGS[@]}"
 )
-# The parity bench's own Release tree with tests off, as make parity-bench-build configures it.
-PARITY_BUILD_DIR="cmake-build-parity"
-PARITY_CMAKE_ARGS=(
-  -G Ninja
-  -DCMAKE_BUILD_TYPE=Release
-  -DMAGDA_BUILD_TESTS=OFF
-  -DMAGDA_BUILD_PARITY_BENCH=ON
-  "${VCPKG_ARGS[@]}"
-)
-
 case "${1:-debug}" in
   debug)
     mkdir -p "$BUILD_DIR"
@@ -73,26 +63,6 @@ case "${1:-debug}" in
     fi
     cd "$BUILD_DIR" && ninja magda_tests && ./tests/magda_tests.exe
     ;;
-  parity-bench-build)
-    mkdir -p "$PARITY_BUILD_DIR"
-    if [ ! -f "$PARITY_BUILD_DIR/build.ninja" ]; then
-      (cd "$PARITY_BUILD_DIR" && cmake "${PARITY_CMAKE_ARGS[@]}" ..) || exit 1
-    fi
-    ninja -C "$PARITY_BUILD_DIR" magda_parity_bench
-    ;;
-  parity-bench)
-    shift
-    bash "$0" parity-bench-build || exit 1
-    # The Store's python3 stub exits non-zero, so fall back to uv when it is all there is.
-    if python3 -c "" 2>/dev/null; then
-      PYTHON=(python3)
-    elif command -v uv >/dev/null; then
-      PYTHON=(uv run --no-project python)
-    else
-      echo "parity-bench needs python3 or uv" >&2; exit 1
-    fi
-    "${PYTHON[@]}" scripts/parity_bench.py --bench-dir "$PARITY_BUILD_DIR" "$@"
-    ;;
   clean)
     rm -rf cmake-build-debug cmake-build-release
     ;;
@@ -101,6 +71,6 @@ case "${1:-debug}" in
     cd "$BUILD_DIR" && cmake "${CMAKE_ARGS[@]}" ..
     ;;
   *)
-    echo "Usage: bash winbuild.sh [debug|run|test|clean|configure|parity-bench-build|parity-bench [args]]"
+    echo "Usage: bash winbuild.sh [debug|run|test|clean|configure]"
     ;;
 esac

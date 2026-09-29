@@ -93,9 +93,9 @@ A device header can show two dots side-by-side (green for profile coverage, oran
 
 ![Macro panel with green automap dots](../assets/images/interface/controllers-automap.png)
 
-*Above: a 4OSC Synth focused with an automap-mapped controller. Each macro knob carries a green dot — the automap profile is driving them, and the device-header dot mirrors the same green.*
+*Above: a synth focused with an automap-mapped controller. Each macro knob carries a green dot — the automap profile is driving them, and the device-header dot mirrors the same green.*
 
-![4OSC filter showing an orange MIDI-learn dot on FREQ](../assets/images/interface/controllers-midilearn.png)
+![Synth filter showing an orange MIDI-learn dot on FREQ](../assets/images/interface/controllers-midilearn.png)
 
 *Above: the FREQ slider has an orange dot — a user MIDI Learn binding is in effect. The device-header dot turns orange to mirror it.*
 

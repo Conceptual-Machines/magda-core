@@ -1,15 +1,15 @@
 ---
 name: audio-thread
-description: Audio thread safety and lock-free programming patterns for JUCE/Tracktion Engine. Use when writing Plugin::applyToBuffer(), real-time audio callbacks, metering, or any code that touches the audio thread. Covers what is forbidden, lock-free communication, and codebase-specific patterns.
+description: Audio thread safety and lock-free programming patterns for MAGDA's native engine. Use when writing MagdaDevice::process(), MagdaCompiledEffect hooks, real-time audio callbacks, metering, or any code that touches the audio thread. Covers what is forbidden, lock-free communication, and codebase-specific patterns.
 ---
 
 # Audio Thread Safety & Lock-Free Patterns
 
-The audio thread in JUCE/Tracktion Engine runs under strict real-time constraints. Any blocking or unbounded operation causes audible glitches (clicks, dropouts, silence). This skill covers what is forbidden, how to communicate safely between threads, and the patterns used in this codebase.
+The audio thread in MAGDA's native engine (`magda/engine/`) runs under strict real-time constraints. Any blocking or unbounded operation causes audible glitches (clicks, dropouts, silence). This skill covers what is forbidden, how to communicate safely between threads, and the patterns used in this codebase.
 
 ## What Is Forbidden on the Audio Thread
 
-All of the following can block, allocate, or take unbounded time. Never do any of these inside `Plugin::applyToBuffer()`, `AudioProcessor::processBlock()`, or any code called from the audio callback.
+All of the following can block, allocate, or take unbounded time. Never do any of these inside `MagdaDevice::process()`, `AudioProcessor::processBlock()`, or any code called from the audio callback.
 
 ### 1. Memory Allocation
 
@@ -23,14 +23,14 @@ arr.add(42);                               // may reallocate
 myStdVector.push_back(x);                  // may reallocate
 ```
 
-**Instead:** Pre-allocate in `initialise()` or use stack-allocated fixed-size buffers.
+**Instead:** Pre-allocate in `prepare()` or use stack-allocated fixed-size buffers.
 
 ```cpp
 // OK - stack allocation with known size
 float temp[2048];
 
-// OK - pre-allocated in initialise(), reused in applyToBuffer()
-std::vector<float> scratchBuffer;  // member variable, resized in initialise()
+// OK - pre-allocated in prepare(), reused in process()
+std::vector<float> scratchBuffer;  // member variable, resized in prepare()
 ```
 
 ### 2. Locks and Mutexes
@@ -84,18 +84,18 @@ for (auto& item : dynamicContainer) { /* ... */ }  // if container can grow
 Use for single values shared between audio and UI threads. `memory_order_relaxed` is sufficient when there is no ordering dependency between multiple variables.
 
 ```cpp
-class MyPlugin : public te::Plugin {
+class MyDevice : public MagdaDevice {
     std::atomic<float> gainLevel{1.0f};
 
-    // Message thread (UI/parameter change):
+    // Message thread (UI/state change):
     void setGain(float g) {
         gainLevel.store(g, std::memory_order_relaxed);
     }
 
     // Audio thread:
-    void applyToBuffer(const PluginRenderContext& rc) override {
+    void process(DeviceProcessContext& ctx) override {
         float g = gainLevel.load(std::memory_order_relaxed);
-        rc.destBuffer->applyGain(0, rc.bufferNumSamples, g);
+        ctx.audio->applyGain(ctx.startSample, ctx.numSamples, g);
     }
 };
 ```
@@ -105,15 +105,15 @@ class MyPlugin : public te::Plugin {
 The audio thread writes a running maximum. The UI thread reads and resets in one atomic operation, ensuring no peaks are lost and no lock is needed.
 
 ```cpp
-class MyPlugin : public te::Plugin {
+class MyDevice : public MagdaDevice {
     std::atomic<float> peakLeft{0.0f};
     std::atomic<float> peakRight{0.0f};
 
     // Audio thread: update running peak
-    void applyToBuffer(const PluginRenderContext& rc) override {
-        auto& buf = *rc.destBuffer;
-        float newPeakL = buf.getMagnitude(0, rc.bufferStartSample, rc.bufferNumSamples);
-        float newPeakR = buf.getMagnitude(1, rc.bufferStartSample, rc.bufferNumSamples);
+    void process(DeviceProcessContext& ctx) override {
+        auto& buf = *ctx.audio;
+        float newPeakL = buf.getMagnitude(0, ctx.startSample, ctx.numSamples);
+        float newPeakR = buf.getMagnitude(1, ctx.startSample, ctx.numSamples);
 
         // Only store if new peak is greater than current
         auto prevL = peakLeft.load(std::memory_order_relaxed);
@@ -135,29 +135,13 @@ class MyPlugin : public te::Plugin {
 };
 ```
 
-### Pattern 3: juce::CachedValue for ValueTree-Backed Properties
+### Pattern 3: Resolved Parameter Values
 
-`CachedValue<T>` caches a ValueTree property in a local variable that is safe to read on the audio thread (the cached copy is updated on the message thread via listener, but the read is just a plain member access).
+Do not read a ValueTree or CachedValue on the audio thread. Automatable parameters reach a device already resolved: the engine combines stored value, automation and modulation (`magda/engine/param/ParamResolve.hpp`) and hands the device one value stream per parameter. A device writes the values it is given into its DSP at the top of `process()`; `MagdaCompiledEffect::process()` does this in `writeZones()` before `compute()`.
 
-```cpp
-class MyPlugin : public te::Plugin {
-    juce::CachedValue<float> levelParam;
-    juce::CachedValue<float> panParam;
+`MagdaDevice::setParameterValue(slot, normalized)` is the message-thread entry point. Store it in a `std::atomic<float>` (as `CompiledFaustInterface` does) and read that on the audio thread.
 
-    void initialise(const PluginInitialisationInfo&) override {
-        // Bind to ValueTree properties (message thread)
-        levelParam.referTo(state, IDs::level, nullptr, 0.8f);
-        panParam.referTo(state, IDs::pan, nullptr, 0.0f);
-    }
-
-    void applyToBuffer(const PluginRenderContext& rc) override {
-        // Safe to read cached value on audio thread
-        float level = levelParam.get();
-        float pan = panParam.get();
-        // ... apply to buffer ...
-    }
-};
-```
+Non-parameter state (sample paths, sequencer steps) comes in through `restoreState()` on the message thread. Build the new data off-thread and swap it in atomically (a pointer exchange or an `AbstractFifo` message), never edit the structure the audio thread is iterating.
 
 ### Pattern 4: std::atomic<bool> for Flags and Triggers
 
@@ -210,45 +194,45 @@ class MeterBridge {
 };
 ```
 
-## Tracktion Engine Specifics
+## Native Engine Specifics
 
-### Plugin Lifecycle & Threading
+### Device Lifecycle & Threading
 
-```
-Message Thread                    Audio Thread
-──────────────                    ────────────
-Plugin::initialise()              Plugin::applyToBuffer()
-Plugin::deinitialise()              (called every audio block)
-Plugin::restorePluginStateFromValueTree()
-ValueTree listeners fire
-```
+`MagdaDevice` (`magda/daw/audio/plugins/MagdaDevice.hpp`) is the engine-neutral device contract.
 
-- `Plugin::applyToBuffer(const PluginRenderContext& rc)` runs on the **audio thread**.
-- `Plugin::initialise()` and `Plugin::deinitialise()` run on the **message thread**.
-- Never access `Edit&`, `ValueTree`, or `UndoManager` from `applyToBuffer()`. Use `CachedValue` instead.
+| Call | Thread |
+|------|--------|
+| `prepare()`, `release()`, `reset()` | message thread, before/after rendering |
+| `parameterValue()`, `setParameterValue()`, `flushState()`, `restoreState()` | message thread |
+| `process(DeviceProcessContext&)` | audio thread, every block |
 
-### PluginRenderContext Quick Reference
+- Never touch a `ValueTree`, `magda::UndoManager` or model manager from `process()`.
+- Everything a device needs per block arrives in `DeviceProcessContext`.
+
+### DeviceProcessContext Quick Reference
 
 ```cpp
-void applyToBuffer(const PluginRenderContext& rc) override {
-    auto& audio = *rc.destBuffer;          // juce::AudioBuffer<float>&
-    auto& midi  = *rc.bufferForMidiMessages; // MidiMessageArray&
-    int startSample = rc.bufferStartSample;
-    int numSamples  = rc.bufferNumSamples;
-    double sampleRate = sampleRateValue;   // from initialise()
+void process(DeviceProcessContext& ctx) override {
+    auto& audio = *ctx.audio;              // juce::AudioBuffer<float>&, window is [startSample, startSample + numSamples)
+    const auto* midiIn = ctx.midiIn;       // may be null: no MIDI routed
+    auto* midiOut = ctx.midiOut;           // DeviceMidiOutput*, null with midiIn
+    const auto* tempo = ctx.tempoMap;
+    bool playing = ctx.isPlaying;
+    // ctx.sidechain: read-only key channels, ctx.numSidechainChannels may be 0
+    // sample rate and max block size come from prepare(), not from the context
 }
 ```
 
-### Rack Wrapping
+### Compiled Effects
 
-When a plugin is rack-wrapped (inserted into a RackType), Tracktion Engine manages the audio routing. The plugin's `applyToBuffer()` is still called on the audio thread, but the buffer routing is handled by the rack. Initialise/deinitialise lifecycle is managed by the rack's node graph.
+Faust-based devices derive from `MagdaCompiledEffect` (`magda/daw/audio/plugins/compiled/`). `process()` is final in shape: it writes zones, then calls `beforeCompute()`, `processAudio()`, `afterCompute()`. A device with custom DSP overrides `processAudio(DeviceProcessContext&)`; the same audio-thread rules apply to every hook.
 
 ## Common Patterns in This Codebase
 
 ### Per-Chain Peak Metering
 
 ```cpp
-// In a multi-chain plugin (e.g., drum grid with multiple output chains):
+// In a multi-chain device (e.g., drum grid with multiple output chains):
 struct Chain {
     std::atomic<float> peak{0.0f};
     // ... other chain state ...
@@ -257,9 +241,9 @@ struct Chain {
 std::array<Chain, 16> chains;
 
 // Audio thread: update peak for each chain
-void applyToBuffer(const PluginRenderContext& rc) override {
+void process(DeviceProcessContext& ctx) override {
     for (int i = 0; i < numActiveChains; ++i) {
-        float mag = getChainMagnitude(i, rc);
+        float mag = getChainMagnitude(i, ctx);
         auto prev = chains[i].peak.load(std::memory_order_relaxed);
         if (mag > prev)
             chains[i].peak.store(mag, std::memory_order_relaxed);
@@ -284,7 +268,7 @@ void triggerPad(int padIndex) {
 }
 
 // Audio thread
-void applyToBuffer(const PluginRenderContext& rc) override {
+void process(DeviceProcessContext& ctx) override {
     for (int i = 0; i < 16; ++i) {
         if (padTriggers[i].exchange(false, std::memory_order_relaxed)) {
             startPadPlayback(i);
@@ -293,30 +277,12 @@ void applyToBuffer(const PluginRenderContext& rc) override {
 }
 ```
 
-### CachedValue for Level/Pan
-
-```cpp
-// Backed by ValueTree so values persist and can be automated
-juce::CachedValue<float> level, pan;
-
-void initialise(const PluginInitialisationInfo& info) override {
-    level.referTo(state, IDs::level, nullptr, 0.8f);
-    pan.referTo(state, IDs::pan, nullptr, 0.0f);
-}
-
-void applyToBuffer(const PluginRenderContext& rc) override {
-    float l = level.get();
-    float p = pan.get();
-    // Apply gain and panning to buffer...
-}
-```
-
 ## Debugging Checklist
 
 If you hear clicks, dropouts, or glitches:
 
-1. **Search for allocations** in `applyToBuffer()` - look for `new`, `String`, `Array`, `vector` operations
+1. **Search for allocations** in `process()` - look for `new`, `String`, `Array`, `vector` operations
 2. **Search for locks** - grep for `ScopedLock`, `lock_guard`, `CriticalSection` in audio path
 3. **Check for DBG()** calls in audio code - these do file I/O
-4. **Verify pre-allocation** - all buffers sized in `initialise()`, not in `applyToBuffer()`
-5. **Check CachedValue usage** - ensure `referTo()` is called in `initialise()`, not in `applyToBuffer()`
+4. **Verify pre-allocation** - all buffers sized in `prepare()`, not in `process()`
+5. **Check for ValueTree or CachedValue reads** on the audio path - parameters arrive resolved, state via `restoreState()`

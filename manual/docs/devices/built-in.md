@@ -19,7 +19,6 @@ MAGDA ships with its own native MIDI devices, instruments, and effects. All buil
 | **Drum Kit** | Five synthetic drum voices: Kick, Snare, Hat, Tom, Clap. See [Drum Kit](drum-kit.md). |
 | **Physical Models** | Struck Marimba, Djembe, and Bell physical models. See [Physical Models](physical-models.md). |
 | **Materia / Halo / Nimbus** | Ports of Mutable Instruments Elements, Rings, and Clouds. See [Mutable Ports](mutable.md). |
-| **4OSC Synth** | Four-oscillator subtractive synthesizer with internal mod matrix. See [4OSC Synth](4osc.md). |
 | **Drum Grid** | Chain-based drum machine with per-pad FX. See [Drum Grid](drum-grid.md). |
 | **Sampler** | 8-voice sample player with ADSR and pitch controls. See [Sampler](sampler.md). |
 | **Faust Instrument** | 16-voice synth that plays a Faust DSP you write and compile at runtime. See [Faust Instrument](faust-instrument.md). |

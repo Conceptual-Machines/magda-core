@@ -81,14 +81,13 @@ Files under 300 lines, header files with only declarations, and test files shoul
 ## Project-Specific Context
 
 ### Architecture
-- **DAW Core** (`magda/daw/`): Main application using JUCE and Tracktion Engine
+- **DAW Core** (`magda/daw/`): Main application using JUCE and the native audio engine
 - **Agents System** (`magda/agents/`): Multi-agent generative audio system
 - **UI Components** (`magda/daw/ui/`): JUCE-based user interface
-- **Audio Engine** (`magda/daw/engine/`): Tracktion Engine wrapper and audio processing
+- **Audio Engine** (`magda/engine/`): Native render engine and audio processing
 
 ### Key Technologies
 - **JUCE**: Cross-platform C++ framework for audio applications
-- **Tracktion Engine**: Professional DAW audio engine
 - **C++23**: Modern C++ standard with all features enabled
 - **CMake**: Build system with Ninja generator
 - **Catch2**: Testing framework

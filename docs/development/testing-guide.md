@@ -2,20 +2,31 @@
 
 ## Overview
 
-This guide covers testing strategies for MAGDA, a JUCE-based DAW application with Tracktion Engine integration.
+This guide covers testing strategies for MAGDA, a JUCE-based DAW with its own native audio engine (`magda/engine/`).
 
 ## Testing Framework
 
-We use **Catch2** for C++ unit tests and JUCE's built-in test framework for integration tests.
+There are four test executables, all defined in `tests/CMakeLists.txt`:
+
+| Target | Framework | What it holds |
+| --- | --- | --- |
+| `magda_tests` | Catch2 | model-level tests, including the native engine (`[engine]`) |
+| `magda_juce_tests` | `juce::UnitTest` | tests that need a real message thread, a shared engine or UI components |
+| `magda_transport_api_tests` | Catch2 | the native transport API |
+| `magda_saved_state_tests` | Catch2 | saved device state |
 
 ```bash
-# Run all tests
-cd cmake-build-debug
-ctest --output-on-failure
+make test                                  # build and run magda_tests
+make test-juce                             # build and run magda_juce_tests
+make test-juce JUCE_TEST="Null Diff"       # one JUCE test class
+ctest --test-dir cmake-build-debug -R 'transport_api_native|saved_device_state_native'
 
-# Run specific test
-./tests/magda_tests "[plugin]"
+./cmake-build-debug/tests/magda_tests "[engine]"
 ```
+
+Prefer model-level Catch2 tests; reach for `magda_juce_tests` only when the test needs a
+running engine or a message thread. See `docs/architecture/native-engine.md` for the engine
+tags and the corpus.
 
 ## Testing Strategy
 
@@ -111,25 +122,10 @@ TEST_CASE("Component bounds", "[ui]") {
 Test interactions between real components in a controlled environment.
 
 ```cpp
-TEST_CASE("Tracktion Engine Edit lifecycle", "[integration][tracktion]") {
-    auto engine = std::make_unique<tracktion::Engine>("TestEngine");
-
-    auto tempFile = juce::File::getSpecialLocation(juce::File::tempDirectory)
-                        .getChildFile("test.tracktionedit");
-
-    auto edit = tracktion::createEmptyEdit(*engine, tempFile);
-
-    REQUIRE(edit != nullptr);
-    REQUIRE(edit->getNumAudioTracks() >= 0);
-
-    // Test track creation
-    auto track = edit->insertNewAudioTrack(tracktion::TrackInsertPoint::append(), nullptr);
-    REQUIRE(track != nullptr);
-
-    // Cleanup
-    edit.reset();
-    engine.reset();
-    tempFile.deleteFile();
+TEST_CASE("A project compiles to a plan", "[integration][engine]") {
+    // Build the model, compile it, and assert on the canonical dump.
+    const auto plan = compilePlan(buildProject());
+    REQUIRE(validatePlan(plan).empty());
 }
 ```
 
@@ -147,12 +143,6 @@ class IAudioEngine {
     virtual void play() = 0;
     virtual void stop() = 0;
     virtual bool isPlaying() const = 0;
-};
-
-// Real implementation
-class TracktionEngineWrapper : public IAudioEngine {
-    void play() override { /* real implementation */ }
-    // ...
 };
 
 // Mock for testing
@@ -266,31 +256,6 @@ TEST_CASE("MainWindow component destruction order", "[ui][shutdown]") {
 }
 ```
 
-### Transport and Playback Context
-
-```cpp
-TEST_CASE("Tracktion Engine shutdown sequence", "[shutdown][tracktion]") {
-    std::vector<std::string> shutdownOrder;
-
-    // Correct order prevents device hang
-    shutdownOrder.push_back("stop_transport");
-    shutdownOrder.push_back("free_playback_context");
-    shutdownOrder.push_back("destroy_edit");
-    shutdownOrder.push_back("close_devices");
-    shutdownOrder.push_back("destroy_engine");
-
-    REQUIRE(shutdownOrder[0] == "stop_transport");
-    REQUIRE(shutdownOrder[1] == "free_playback_context");
-
-    // Verify devices closed before engine destroyed
-    auto devicesIdx = std::find(shutdownOrder.begin(), shutdownOrder.end(),
-                                 "close_devices") - shutdownOrder.begin();
-    auto engineIdx = std::find(shutdownOrder.begin(), shutdownOrder.end(),
-                               "destroy_engine") - shutdownOrder.begin();
-    REQUIRE(devicesIdx < engineIdx);
-}
-```
-
 ## Thread Safety Tests
 
 ```cpp
@@ -338,7 +303,7 @@ TEST_CASE("CriticalSection protects shared state", "[threading]") {
 - ✅ Use meaningful test names (`TEST_CASE("What it tests", "[tag]")`)
 
 ### DON'T:
-- ❌ Test JUCE/Tracktion internal implementation details
+- ❌ Test JUCE internal implementation details
 - ❌ Create actual windows in unit tests (use headless)
 - ❌ Test rendering/painting (test state instead)
 - ❌ Rely on timing (use deterministic sequences)
@@ -349,7 +314,7 @@ TEST_CASE("CriticalSection protects shared state", "[threading]") {
 
 MAGDA ships on macOS, Linux and Windows, and every test runs on all three. A
 test that mentions a **process id, a path, a permission bit, or a signal** is
-making a platform assumption, whether or not it looks like one — and the one
+making a platform assumption, whether or not it looks like one - and the one
 platform that disagrees is usually Windows, which is also the slowest CI leg to
 find out from.
 
@@ -376,7 +341,7 @@ When the difference is the point, guard it and say why:
 #if !JUCE_WINDOWS
 // The parent of this process: alive, and not us. Reaching a foreign pid's
 // liveness on Windows portably needs a toolhelp snapshot, which is more
-// machinery than this warrants — the abandoned-record case covers the other
+// machinery than this warrants - the abandoned-record case covers the other
 // half of the same branch everywhere.
 #endif
 ```
@@ -390,7 +355,7 @@ anything involving signals.
 
 ```bash
 # Build tests
-cmake --build cmake-build-debug --target magda_tests
+make test-build
 
 # Run all tests
 cd cmake-build-debug
@@ -444,4 +409,3 @@ open coverage_html/index.html
 
 - [Catch2 Documentation](https://github.com/catchorg/Catch2)
 - [JUCE UnitTest Tutorial](https://docs.juce.com/master/tutorial_unit_tests.html)
-- [Tracktion Engine Examples](https://github.com/Tracktion/tracktion_engine/tree/master/examples)

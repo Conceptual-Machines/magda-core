@@ -28,11 +28,10 @@ about the document rather than about its quality.
 
 | Doc | What it covers |
 | --- | --- |
-| [native-engine.md](architecture/native-engine.md) | the engine replacing Tracktion Engine: plan, executor, clips, threads |
+| [native-engine.md](architecture/native-engine.md) | the native engine: plan, executor, clips, threads |
 | [engine-session-classes.md](architecture/engine-session-classes.md) | the native engine session's ownership and references |
 | [faust-integration.md](architecture/faust-integration.md) | how Faust DSP is compiled and hosted |
 | [faust-param-pool.md](architecture/faust-param-pool.md) | the 64-slot parameter pool and its routing rules |
-| [tracktion-parameter-writes.md](architecture/tracktion-parameter-writes.md) | why host parameter writes go through `setParameterFromHost` |
 | [remote-api-contract.md](architecture/remote-api-contract.md) | the remote API's surface |
 | [remote-api-transport.md](architecture/remote-api-transport.md) | the WebSocket transport behind it |
 | [remote-api-permissions.md](architecture/remote-api-permissions.md) | what a remote client may do, and what is recorded about it |

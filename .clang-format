@@ -65,12 +65,9 @@ IncludeCategories:
   # JUCE headers
   - Regex: '^<juce_.*>'
     Priority: 3
-  # Tracktion headers
-  - Regex: '^<tracktion_.*>'
-    Priority: 4
   # Local project headers
   - Regex: '^".*"'
-    Priority: 5
+    Priority: 4
 
 # Pointer and reference alignment
 PointerAlignment: Left
