@@ -59,6 +59,7 @@ TEST_CASE("Retired Tracktion devices resolve to their successor by every stored 
         {"lowpass", "magda_filter"},
         {"impulseResponse", "magda_convolution"},
         {"impulseresponse", "magda_convolution"},
+        {"volume", "magda_utility"},
     };
     for (const auto& [id, successor] : retired) {
         INFO("retired id: " << id);
@@ -66,8 +67,8 @@ TEST_CASE("Retired Tracktion devices resolve to their successor by every stored 
     }
 
     // Devices MAGDA still ships, and the successors themselves, have none.
-    for (const auto* id : {"toneGenerator", "volume", "magda_eq", "magda_delay", "magda_filter",
-                           "magda_convolution", ""}) {
+    for (const auto* id : {"toneGenerator", "magda_utility", "magda_eq", "magda_delay",
+                           "magda_filter", "magda_convolution", ""}) {
         INFO("live id: " << id);
         CHECK(legacy_devices::retiredDeviceSuccessor(id).isEmpty());
     }
@@ -207,6 +208,16 @@ TEST_CASE("Lowpass carries its cutoff and low/high mode across", "[devices][lega
     auto highpass = retiredDevice("lowpass", {param(0, 300.0f), param(1, 1.0f)});
     REQUIRE(legacy_devices::migrateRetiredDevice(highpass));
     CHECK(slot(highpass, 4).value() == Approx(2.0f));  // HP
+}
+
+TEST_CASE("Volume/Pan carries gain and pan onto the Utility", "[devices][legacy][aliases]") {
+    auto device = retiredDevice("volume", {param(0, 0.5f), param(1, -0.25f)});
+
+    REQUIRE(legacy_devices::migrateRetiredDevice(device));
+
+    CHECK(device.pluginId == "magda_utility");
+    CHECK(slot(device, 0).value() == Approx(-6.0206f).margin(0.001f));
+    CHECK(slot(device, 1).value() == Approx(-0.25f));
 }
 
 TEST_CASE("Pitch Shift keeps its transposition and stays fully wet", "[devices][legacy][aliases]") {

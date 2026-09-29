@@ -1,5 +1,6 @@
 #include "LegacyDeviceAliases.hpp"
 
+#include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_data_structures/juce_data_structures.h>
 
 #include <cmath>
@@ -125,6 +126,15 @@ float reverbMix(float wet, float dry) {
     if (total <= 0.0f)
         return 0.0f;
     return juce::jlimit(0.0f, 1.0f, wetGain / total);
+}
+
+float linearGainToDb(float gain, float) {
+    return gain <= 0.0f ? -60.0f
+                        : juce::jlimit(-60.0f, 12.0f, juce::Decibels::gainToDecibels(gain));
+}
+
+float panPassthrough(float pan, float) {
+    return juce::jlimit(-1.0f, 1.0f, pan);
 }
 
 float pitchSemitones(float semitones, float) {
@@ -365,6 +375,20 @@ constexpr RetiredProperty kReverbProperties[] = {
 };
 // Dropped: freeze (5) — the compiled reverb has no infinite-hold mode.
 
+// --- Volume/Pan ("volume") -> magda_utility ---------------------------------
+// Linear gain and -1..1 pan; both land in the utility's dB gain and pan slots.
+constexpr const char* kUtilityTypes[] = {"volume"};
+constexpr const char* kUtilityNames[] = {"Volume/Pan", "Legacy Volume/Pan"};
+constexpr SlotMapping kUtilitySlots[] = {
+    mapped(0, "Gain", 0, linearGainToDb),
+    mapped(1, "Pan", 1, panPassthrough),
+};
+
+constexpr RetiredProperty kUtilityProperties[] = {
+    {0, "volume"},
+    {1, "pan"},
+};
+
 // --- Pitch Shift ("pitchShifter") -> magda_pitch ----------------------------
 constexpr const char* kPitchTypes[] = {"pitchShifter", "pitchshift"};
 constexpr const char* kPitchNames[] = {"Pitch Shift"};
@@ -435,6 +459,7 @@ constexpr RetiredDevice kRetiredDevices[] = {
     {"magda_reverb", "Reverb", kReverbTypes, kReverbNames, kReverbSlots, kReverbProperties},
     {"magda_pitch", "Pitch", kPitchTypes, kPitchNames, kPitchSlots, kPitchProperties},
     {"magda_filter", "Filter", kFilterTypes, kFilterNames, kFilterSlots, kFilterProperties},
+    {"magda_utility", "Utility", kUtilityTypes, kUtilityNames, kUtilitySlots, kUtilityProperties},
     {"magda_convolution", "IR Reverb", kConvolutionTypes, kConvolutionNames, kConvolutionSlots,
      kConvolutionProperties, kConvolutionCarried, true},
 };
