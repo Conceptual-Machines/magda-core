@@ -191,7 +191,7 @@ set(TEST_SOURCES
     # Hardware channels labelled by the interface's own names (#2734)
     ui/test_channel_labels.cpp
     # Tracktion's saved audio interface, migrated to AudioIOService (#2746)
-    audio/test_tracktion_audio_settings.cpp
+    audio/test_legacy_audio_settings.cpp
     # Hardware channels named as saved routes name them (#2747)
     audio/test_hardware_route_names.cpp
     # The input levels behind the input menu's meters

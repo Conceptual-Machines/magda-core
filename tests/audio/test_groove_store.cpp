@@ -3,7 +3,7 @@
 
 #include "magda/daw/core/GrooveStore.hpp"
 
-/// @file The groove library's persistence without Tracktion, in Tracktion's format (#2761).
+/// @file The groove library's persistence in MAGDA's own file, and the one-time import (#2761).
 
 using magda::GrooveStore;
 using magda::GrooveTemplateData;
@@ -13,15 +13,16 @@ namespace {
 constexpr int kShippedGrooves = 176;
 constexpr int kParameterizedGrooves = 21;
 
-void writeSettings(const juce::File& file, const juce::String& grooves) {
+void writeGrooves(const juce::File& file, const juce::String& grooves) {
+    REQUIRE(file.replaceWithText("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<GROOVETEMPLATES>" +
+                                 grooves + "</GROOVETEMPLATES>\n"));
+}
+
+/// The legacy Settings.xml layout: the list as the one child of the GrooveTemplates VALUE.
+void writeLegacySettings(const juce::File& file, const juce::String& grooves) {
     REQUIRE(file.replaceWithText("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<PROPERTIES>\n"
                                  "<VALUE name=\"GrooveTemplates\"><GROOVETEMPLATES>" +
                                  grooves + "</GROOVETEMPLATES></VALUE>\n</PROPERTIES>\n"));
-}
-
-const juce::XmlElement* savedGrooves(const juce::XmlElement& settings) {
-    const auto* value = settings.getChildByAttribute("name", "GrooveTemplates");
-    return value != nullptr ? value->getChildByName("GROOVETEMPLATES") : nullptr;
 }
 
 juce::StringArray namesOf(const GrooveStore& store) {
@@ -33,7 +34,7 @@ juce::StringArray namesOf(const GrooveStore& store) {
 
 }  // namespace
 
-TEST_CASE("An empty file is seeded as Tracktion seeds it", "[groove-store][2761]") {
+TEST_CASE("An empty file is seeded with the shipped grooves", "[groove-store][2761]") {
     const juce::TemporaryFile file(".xml");
     const GrooveStore store(file.getFile());
 
@@ -52,7 +53,7 @@ TEST_CASE("A stored list is the list, and the swings it lacks", "[groove-store][
     const juce::TemporaryFile file(".xml");
 
     SECTION("with a parameterized groove, the parameterized set is not added") {
-        writeSettings(file.getFile(), R"(<GROOVETEMPLATE name="Mine" numberOfNotes="4"
+        writeGrooves(file.getFile(), R"(<GROOVETEMPLATE name="Mine" numberOfNotes="4"
             notesPerBeat="4" parameterized="1"><SHIFT delta="0.25"/></GROOVETEMPLATE>)");
         const GrooveStore store(file.getFile());
 
@@ -63,7 +64,7 @@ TEST_CASE("A stored list is the list, and the swings it lacks", "[groove-store][
     }
 
     SECTION("with none, it is") {
-        writeSettings(file.getFile(), R"(<GROOVETEMPLATE name="Mine" numberOfNotes="2"
+        writeGrooves(file.getFile(), R"(<GROOVETEMPLATE name="Mine" numberOfNotes="2"
             notesPerBeat="2"><SHIFT delta="0.1"/></GROOVETEMPLATE>)");
         const GrooveStore store(file.getFile());
 
@@ -71,9 +72,9 @@ TEST_CASE("A stored list is the list, and the swings it lacks", "[groove-store][
     }
 }
 
-TEST_CASE("A write is kept as Tracktion's updateTemplate keeps it", "[groove-store][2761]") {
+TEST_CASE("A write is canonicalised as the groove editor expects", "[groove-store][2761]") {
     const juce::TemporaryFile file(".xml");
-    writeSettings(file.getFile(), R"(<GROOVETEMPLATE name="Mine" numberOfNotes="2"
+    writeGrooves(file.getFile(), R"(<GROOVETEMPLATE name="Mine" numberOfNotes="2"
         notesPerBeat="2" parameterized="1"><SHIFT delta="0.1"/></GROOVETEMPLATE>)");
     GrooveStore store(file.getFile());
 
@@ -106,11 +107,8 @@ TEST_CASE("A write is kept as Tracktion's updateTemplate keeps it", "[groove-sto
     CHECK(!store.upsert({.name = "Empty", .latenessProportions = {}}));
 }
 
-TEST_CASE("The groove store preserves the existing saved format and reads it back",
-          "[groove-store][2761]") {
+TEST_CASE("The groove store saves its own file and reads it back", "[groove-store][2761]") {
     const juce::TemporaryFile file(".xml");
-    REQUIRE(file.getFile().replaceWithText(R"(<?xml version="1.0" encoding="UTF-8"?>
-<PROPERTIES><VALUE name="Kept" val="1"/></PROPERTIES>)"));
     const std::vector<float> latenesses{0.12345f, -0.5f, 0.0f, 0.0f};
     {
         GrooveStore store(file.getFile());
@@ -118,16 +116,13 @@ TEST_CASE("The groove store preserves the existing saved format and reads it bac
             store.upsert({.name = "Ahead", .notesPerBeat = 4, .latenessProportions = latenesses}));
     }
 
-    // Pin the persisted format directly; the retired engine is no longer an oracle.
     const auto expectedXml = juce::parseXML(
         R"(<GROOVETEMPLATE name="Ahead" numberOfNotes="4" notesPerBeat="4" parameterized="1"><SHIFT delta="0.123"/><SHIFT delta="-0.5"/></GROOVETEMPLATE>)");
     REQUIRE(expectedXml != nullptr);
 
-    const auto settings = juce::parseXML(file.getFile());
-    REQUIRE(settings != nullptr);
-    CHECK(settings->getChildByAttribute("name", "Kept") != nullptr);
-    const auto* saved = savedGrooves(*settings);
+    const auto saved = juce::parseXML(file.getFile());
     REQUIRE(saved != nullptr);
+    REQUIRE(saved->hasTagName("GROOVETEMPLATES"));
     const auto* ahead = saved->getChildByAttribute("name", "Ahead");
     REQUIRE(ahead != nullptr);
     CHECK(ahead->isEquivalentTo(expectedXml.get(), false));
@@ -137,4 +132,37 @@ TEST_CASE("The groove store preserves the existing saved format and reads it bac
     CHECK(reread.grooves().size() == kShippedGrooves + kParameterizedGrooves + 3);
     CHECK(reread.grooves().back().latenessProportions ==
           std::vector<float>{0.123f, -0.5f, 0.0f, 0.0f});
+}
+
+TEST_CASE("The legacy Settings.xml list is imported once", "[groove-store][2761]") {
+    const juce::TemporaryFile file(".xml");
+    const juce::TemporaryFile legacy(".xml");
+    writeLegacySettings(legacy.getFile(), R"(<GROOVETEMPLATE name="Mine" numberOfNotes="4"
+        notesPerBeat="4" parameterized="1"><SHIFT delta="0.25"/></GROOVETEMPLATE>)");
+
+    {
+        const GrooveStore store(file.getFile(), legacy.getFile());
+        CHECK(namesOf(store) == juce::StringArray{"Mine", "Basic 8th Swing", "Basic 16th Swing"});
+    }
+    // Imported means saved, so the legacy file is not read again and is left as it was.
+    CHECK(file.getFile().existsAsFile());
+    CHECK(juce::parseXML(legacy.getFile())->getChildByAttribute("name", "GrooveTemplates") !=
+          nullptr);
+
+    writeLegacySettings(legacy.getFile(), R"(<GROOVETEMPLATE name="Other" numberOfNotes="2"
+        notesPerBeat="2" parameterized="1"><SHIFT delta="0.1"/></GROOVETEMPLATE>)");
+    const GrooveStore again(file.getFile(), legacy.getFile());
+    CHECK(namesOf(again).contains("Mine"));
+    CHECK(!namesOf(again).contains("Other"));
+}
+
+TEST_CASE("A legacy file with no groove list imports nothing", "[groove-store][2761]") {
+    const juce::TemporaryFile file(".xml");
+    const juce::TemporaryFile legacy(".xml");
+    REQUIRE(legacy.getFile().replaceWithText(
+        "<PROPERTIES><VALUE name=\"Kept\" val=\"1\"/></PROPERTIES>"));
+
+    const GrooveStore store(file.getFile(), legacy.getFile());
+    CHECK(store.grooves().size() == kShippedGrooves + kParameterizedGrooves + 2);
+    CHECK(!file.getFile().exists());
 }

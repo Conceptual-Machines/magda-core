@@ -10,8 +10,8 @@ namespace magda {
 
 namespace {
 
-constexpr auto kSettingsTag = "PROPERTIES";
-constexpr auto kSettingKey = "GrooveTemplates";
+constexpr auto kLegacySettingsTag = "PROPERTIES";
+constexpr auto kLegacySettingKey = "GrooveTemplates";
 constexpr auto kListTag = "GROOVETEMPLATES";
 constexpr auto kGrooveTag = "GROOVETEMPLATE";
 constexpr auto kUnnamed = "Unnamed";
@@ -25,14 +25,6 @@ constexpr const char* kBasicSwings[] = {
     R"(<GROOVETEMPLATE name="Basic 8th Swing" numberOfNotes="2" notesPerBeat="2" parameterized="1"><SHIFT delta="0.0"/><SHIFT delta="0.66"/></GROOVETEMPLATE>)",
     R"(<GROOVETEMPLATE name="Basic 16th Swing" numberOfNotes="2" notesPerBeat="4" parameterized="1"><SHIFT delta="0.0"/><SHIFT delta="0.66"/></GROOVETEMPLATE>)",
 };
-
-/** @brief @p file as juce::PropertiesFile keeps it, or an empty one where it is not that. */
-std::unique_ptr<juce::XmlElement> readSettings(const juce::File& file) {
-    auto settings = file.existsAsFile() ? juce::parseXML(file) : nullptr;
-    if (settings == nullptr || !settings->hasTagName(kSettingsTag))
-        return std::make_unique<juce::XmlElement>(kSettingsTag);
-    return settings;
-}
 
 GrooveTemplateData parseGroove(const juce::XmlElement& node) {
     GrooveTemplateData groove;
@@ -102,11 +94,19 @@ juce::String unnumbered(const juce::String& name) {
 
 }  // namespace
 
-GrooveStore::GrooveStore(juce::File settingsFile) : settingsFile_(std::move(settingsFile)) {
-    // Read without a juce::PropertiesFile, which is a Timer and so wants a message manager.
-    const auto settings = readSettings(settingsFile_);
-    if (const auto* stored = settings->getChildByAttribute("name", kSettingKey))
-        grooves_ = parseList(stored->getChildByName(kListTag));
+GrooveStore::GrooveStore(juce::File grooveFile, const juce::File& legacySettingsFile)
+    : grooveFile_(std::move(grooveFile)) {
+    bool migrated = false;
+    if (grooveFile_.existsAsFile()) {
+        grooves_ = parseList(juce::parseXML(grooveFile_).get());
+    } else if (legacySettingsFile.existsAsFile()) {
+        // Read without a juce::PropertiesFile, which is a Timer and so wants a message manager.
+        const auto settings = juce::parseXMLIfTagMatches(legacySettingsFile, kLegacySettingsTag);
+        if (settings != nullptr)
+            if (const auto* stored = settings->getChildByAttribute("name", kLegacySettingKey))
+                grooves_ = parseList(stored->getChildByName(kListTag));
+        migrated = !grooves_.empty();
+    }
 
     if (grooves_.empty())
         grooves_ =
@@ -122,6 +122,9 @@ GrooveStore::GrooveStore(juce::File settingsFile) : settingsFile_(std::move(sett
         if (!hasGroove(grooves_, swing.name))
             grooves_.push_back(std::move(swing));
     }
+
+    if (migrated)
+        save();
 }
 
 bool GrooveStore::upsert(const GrooveTemplateData& groove) {
@@ -155,23 +158,12 @@ bool GrooveStore::upsert(const GrooveTemplateData& groove) {
 }
 
 void GrooveStore::save() const {
-    auto list = std::make_unique<juce::XmlElement>(kListTag);
+    juce::XmlElement list(kListTag);
     for (const auto& groove : grooves_)
-        list->addChildElement(grooveXml(groove).release());
+        list.addChildElement(grooveXml(groove).release());
 
-    // The other keys kept, and the list as the one child of its VALUE, as PropertiesFile saves.
-    auto settings = readSettings(settingsFile_);
-    auto* value = settings->getChildByAttribute("name", kSettingKey);
-    if (value == nullptr) {
-        value = settings->createNewChildElement("VALUE");
-        value->setAttribute("name", kSettingKey);
-    }
-    value->removeAttribute("val");
-    value->deleteAllChildElements();
-    value->addChildElement(list.release());
-
-    settingsFile_.getParentDirectory().createDirectory();
-    settings->writeTo(settingsFile_);
+    grooveFile_.getParentDirectory().createDirectory();
+    list.writeTo(grooveFile_);
 }
 
 }  // namespace magda

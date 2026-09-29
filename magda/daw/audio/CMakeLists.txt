@@ -430,8 +430,8 @@ target_sources(magda_daw PRIVATE
     io/AudioIOService.hpp
     io/HardwareRouteNames.cpp
     io/HardwareRouteNames.hpp
-    io/TracktionAudioSettings.cpp
-    io/TracktionAudioSettings.hpp
+    io/LegacyAudioSettings.cpp
+    io/LegacyAudioSettings.hpp
     AudioThumbnailManager.cpp
     WaveformPeakCache.cpp
     analysis/MixAnalysisInput.cpp

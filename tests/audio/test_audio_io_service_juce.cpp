@@ -175,8 +175,8 @@ struct Rig {
         // The same interfaces on both, as Windows Audio's shared and exclusive modes have.
         backends.push_back(std::make_unique<FakeBackend>("Fake", request));
         backends.push_back(std::make_unique<FakeBackend>("Fake Exclusive", request));
-        service = std::make_unique<magda::AudioIOService>(std::move(backends),
-                                                          tracktionSettings.getFile());
+        service =
+            std::make_unique<magda::AudioIOService>(std::move(backends), legacySettings.getFile());
     }
 
     ~Rig() {
@@ -185,7 +185,7 @@ struct Rig {
     }
 
     std::shared_ptr<OpenRequest> request = std::make_shared<OpenRequest>();
-    juce::TemporaryFile tracktionSettings{".xml"};
+    juce::TemporaryFile legacySettings{".xml"};
     std::unique_ptr<magda::AudioIOService> service;
 };
 
@@ -362,7 +362,7 @@ class AudioIOServiceTest final : public juce::UnitTest {
         {
             Rig rig(std::nullopt);
             const auto allOn = juce::String::repeatedString("1", 256);
-            expect(rig.tracktionSettings.getFile().replaceWithText(
+            expect(rig.legacySettings.getFile().replaceWithText(
                 R"(<?xml version="1.0" encoding="UTF-8"?>
 <PROPERTIES>
   <VALUE name="audio_device_setup">

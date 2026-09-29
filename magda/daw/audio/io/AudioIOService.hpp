@@ -42,9 +42,9 @@ class AudioIOService : public AudioIOControl, private juce::ChangeListener {
     /** @brief On the platform's backends, migrating from MAGDA's Tracktion Settings.xml. */
     AudioIOService();
 
-    /** @brief On @p backends instead, with @p tracktionSettings as what a first run migrates. */
+    /** @brief On @p backends instead, with @p legacySettings as what a first run migrates. */
     AudioIOService(std::vector<std::unique_ptr<juce::AudioIODeviceType>> backends,
-                   juce::File tracktionSettings);
+                   juce::File legacySettings);
 
     ~AudioIOService() override;
 
@@ -135,7 +135,7 @@ class AudioIOService : public AudioIOControl, private juce::ChangeListener {
     void changeListenerCallback(juce::ChangeBroadcaster*) override;
 
     juce::AudioDeviceManager manager_;
-    juce::File tracktionSettings_;
+    juce::File legacySettings_;
 };
 
 }  // namespace magda

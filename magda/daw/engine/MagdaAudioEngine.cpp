@@ -9,8 +9,9 @@
 #include "../api/magda_api_live.hpp"
 #include "../audio/DeviceParameterDisplayTextProvider.hpp"
 #include "../audio/controllers/ControllerRouter.hpp"
-#include "../audio/io/TracktionAudioSettings.hpp"
+#include "../audio/io/LegacyAudioSettings.hpp"
 #include "../audio/sampling/SamplerMedia.hpp"
+#include "../core/AppPaths.hpp"
 #include "../core/Config.hpp"
 #include "../core/DeviceStateCommands.hpp"
 #include "../core/GrooveStore.hpp"
@@ -154,7 +155,8 @@ bool MagdaAudioEngine::initialize() {
                      Config::getInstance().getScanPluginsOnStartup());
 
     // The same file earlier versions kept them in (#2761).
-    grooveStore_ = std::make_unique<GrooveStore>(tracktionSettingsFile());
+    grooveStore_ = std::make_unique<GrooveStore>(paths::dataDir().getChildFile("grooves.xml"),
+                                                 legacySettingsFile());
     GrooveLibrary::getInstance().setStore(
         [this] { return grooveStore_->grooves(); },
         [this](const GrooveTemplateData& groove) { return grooveStore_->upsert(groove); });

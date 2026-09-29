@@ -4,7 +4,7 @@
 #include <iterator>
 
 #include "HardwareRouteNames.hpp"
-#include "TracktionAudioSettings.hpp"
+#include "LegacyAudioSettings.hpp"
 
 namespace magda {
 
@@ -37,11 +37,11 @@ void log(const juce::String& message) {
 
 }  // namespace
 
-AudioIOService::AudioIOService() : AudioIOService({}, tracktionSettingsFile()) {}
+AudioIOService::AudioIOService() : AudioIOService({}, legacySettingsFile()) {}
 
 AudioIOService::AudioIOService(std::vector<std::unique_ptr<juce::AudioIODeviceType>> backends,
-                               juce::File tracktionSettings)
-    : tracktionSettings_(std::move(tracktionSettings)) {
+                               juce::File legacySettings)
+    : legacySettings_(std::move(legacySettings)) {
     // Before the first scan: JUCE creates the platform's backends only when it has none.
     for (auto& backend : backends)
         manager_.addAudioDeviceType(std::move(backend));
@@ -59,7 +59,7 @@ void AudioIOService::open() {
     auto wanted = config.getAudioIO();
     const auto migrating = !wanted.has_value();
     if (migrating)
-        wanted = readTracktionAudioSettings(tracktionSettings_);
+        wanted = readLegacyAudioSettings(legacySettings_);
 
     const auto fitted = fit(wanted);
     if (const auto error = openFitted(fitted); error.isNotEmpty())
